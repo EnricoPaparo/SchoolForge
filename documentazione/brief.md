@@ -149,6 +149,73 @@ Le verifiche vengono erogate tramite strumenti esterni.
 
 ---
 
+# Prerequisiti di Deployment
+
+L'uso di SchoolForge richiede i seguenti prerequisiti non negoziabili. In assenza di uno qualsiasi di questi, il sistema non può essere avviato o non può offrire le funzionalità previste.
+
+## Google Workspace for Education
+
+Il Docente deve disporre di un account Google Workspace for Education assegnato da un istituto scolastico.
+
+Questo non è un vincolo tecnico aggirabile: è la scelta architetturale centrale del sistema.
+
+Un account Google personale (@gmail.com) non è sufficiente.
+
+Le funzionalità che dipendono da Google Workspace for Education includono:
+
+* autenticazione del Docente;
+* creazione e gestione di Google Forms per l'erogazione digitale delle verifiche (opzionale);
+* importazione del roster classi/studenti tramite Google Classroom API (opzionale).
+
+Le funzionalità che rimangono operative anche senza Google Workspace for Education non esistono: l'account Education è il prerequisito di accesso al sistema.
+
+## Progetto Google Cloud / Firebase
+
+È necessario un progetto Firebase su Google Cloud con i seguenti servizi abilitati:
+
+* Firebase Authentication;
+* Cloud Firestore;
+* Cloud Storage;
+* Cloud Functions v2;
+* Secret Manager.
+
+La decisione su regione, backup, RPO e RTO è documentata come C-01.
+
+## Connessione internet
+
+SchoolForge è un'applicazione web SPA con backend serverless. Non esiste una modalità offline.
+
+---
+
+# Contratto di Uscita
+
+SchoolForge garantisce che la conoscenza didattica del Docente rimanga di sua proprietà e sia recuperabile indipendentemente dalla disponibilità della piattaforma.
+
+## Cosa il Docente può sempre recuperare
+
+* **File Markdown originali e asset**: esportabili in qualsiasi momento tramite la funzione "Export repository". Il file ZIP contiene i file nella struttura originale, leggibili con qualsiasi editor di testo, senza dipendenza da SchoolForge.
+* **Snapshot delle Verifiche pubblicate**: i contenuti delle Verifiche (domande, soluzioni, rubriche, punteggi) sono conservati in Firestore. In caso di export Firestore, sono leggibili come documenti JSON standard.
+* **Storico delle consegne e correzioni**: incluso nell'export Firestore.
+* **Log di audit**: incluso nell'export Firestore.
+
+## Cosa non viene recuperato in modo automatico
+
+* Il rendering web delle lezioni (dipende dall'applicazione; il Markdown è autonomo).
+* I PDF generati (devono essere stati caricati su Google Drive dal Docente; SchoolForge conserva solo il link).
+* Le integrazioni Google (richiedono ri-configurazione OAuth in un nuovo sistema).
+
+## Procedura di uscita
+
+1. Eseguire "Export repository" dalla UI: produce un file ZIP con tutti i Markdown e gli asset correnti.
+2. Richiedere un export Firestore dal pannello Google Cloud (dati operativi, verifiche, storico).
+3. Scaricare i backup di Cloud Storage tramite `gsutil` o Cloud Console.
+4. Revocare le autorizzazioni OAuth di SchoolForge dal pannello Google del proprio account.
+5. Eliminare il progetto Firebase/Google Cloud se non più necessario.
+
+Il punto 1 è sempre disponibile dalla UI. I punti 2–5 richiedono accesso alla console Google Cloud.
+
+---
+
 # Modello Concettuale
 
 Programma
@@ -453,6 +520,20 @@ Archiviazione e Storico.
 ## Modulo 4
 
 Correzione Assistita AI.
+
+---
+
+# Decisioni Aperte
+
+Le seguenti decisioni non possono essere dedotte dal brief e richiedono una scelta esplicita del committente prima del relativo rilascio. Non devono essere sostituite da assunzioni tecniche nascoste.
+
+| ID | Decisione | Impatto | Owner | Scadenza |
+|---|---|---|---|---|
+| C-01 | Regione Google Cloud, politica di backup, RPO, RTO e responsabilità operativa | Provisioning infrastruttura e go-live produzione | Committente / Responsabile operativo | Prima del go-live Modulo 1 |
+| C-02 | Provider AI, condizioni contrattuali, residenza dei dati, consenso per l'invio di risposte degli studenti | Implementazione AiGateway e funzionalità AI | Committente | Prima del Modulo 4 AI |
+| C-03 | Regola didattica per l'uso della correzione automatica, ambito di applicazione e eventuale revisione umana obbligatoria | Abilitazione modalità automatica (feature flag) | Committente / Docente | Prima dell'abilitazione modalità automatica |
+
+Ogni decisione produce un verbale scritto nel repository che documenta: data, approvatore, opzioni valutate, scelta effettuata e vincoli operativi.
 
 ---
 
