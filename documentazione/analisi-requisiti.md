@@ -339,7 +339,8 @@ In caso di breaking change, il backend deve supportare entrambe le versioni del 
 **BR-AI-03.** Il sistema non deve rappresentare come supportata dal corpus un'affermazione priva di riferimento alle fonti selezionate. Gli output senza provenienza verificabile devono essere marcati non approvabili.  
 **BR-AI-04.** L'AI non ha potere di pubblicazione, assegnazione, cancellazione o modifica irreversibile di contenuti e archivi. Le sue uscite sono proposte, salvo la modalità di correzione automatica espressamente abilitata nel Modulo 4.  
 **NFR-AI-01.** Ogni invocazione AI deve registrare provider/modello, versione del template di istruzioni, timestamp, finalità, identità del docente, identificativi delle fonti, esito ed eventuale approvazione/modifica umana. Le informazioni sensibili nei log devono essere minimizzate.  
-**NFR-AI-02.** Prima di inviare risposte degli studenti a un provider AI, il sistema deve mostrare al docente la finalità e i dati trasmessi e richiedere un consenso operativo esplicito per la singola elaborazione o per una configurazione persistente chiaramente revocabile.
+**NFR-AI-02.** Prima di inviare risposte degli studenti a un provider AI, il sistema deve mostrare al docente la finalità e i dati trasmessi e richiedere un consenso operativo esplicito per la singola elaborazione o per una configurazione persistente chiaramente revocabile.  
+**NFR-AI-03.** Il sistema deve poter segnalare al docente risposte stilisticamente anomale rispetto al profilo atteso dello studente (es. terminologia inusualmente avanzata, coerenza lessicale improbabile). Il segnale è una marcatura consultiva; non blocca la correzione né attribuisce automaticamente un punteggio ridotto. La soglia di segnalazione è configurabile dal docente.
 
 Il vincolo "solo dalle lezioni selezionate" riguarda il corpus operativo e l'assenza di recupero esterno. L'architettura non deve dichiarare di poter eliminare la conoscenza pregressa di un modello fondazionale; deve invece impedire browsing/RAG esterno, limitare il contesto e richiedere evidenza di provenienza.
 
@@ -363,31 +364,37 @@ Il vincolo "solo dalle lezioni selezionate" riguarda il corpus operativo e l'ass
 
 ## 13. Classi, studenti e assegnazioni
 
-**FR-ANAG-01.** Il docente deve poter creare, rinominare, archiviare e consultare Classi.  
-**FR-ANAG-02.** Il docente deve poter creare, modificare, archiviare e cercare Studenti con almeno nome, cognome, email e Classe di appartenenza.  
-**FR-ANAG-03.** Il sistema deve poter importare e aggiornare Classi e Studenti dal servizio Google Workspace for Education autorizzato dal Docente, inclusi i roster disponibili tramite API Google Education. L'importazione deve essere opzionale: creazione e aggiornamento manuale restano sempre disponibili.  
-**BR-ANAG-01.** L'email dello Studente deve essere sintatticamente valida e univoca all'interno del set di Studenti attivi. Una modifica di email non deve scollegare consegne storiche già attribuite; deve creare una traccia dell'identificativo precedente.  
-**BR-ANAG-02.** Prima di applicare un'importazione Google il sistema deve mostrare Classi/Studenti da creare, aggiornare o archiviare. Non deve cancellare automaticamente dati locali o storici per effetto di un'assenza nella risposta dell'API.  
-**BR-ANAG-03.** L'importazione dell'anagrafica non crea account SchoolForge per gli Studenti. Email e identificativi Google servono soltanto a classi, assegnazioni e riconciliazione delle risposte provenienti dai canali esterni.  
-**BR-ANAG-04.** SchoolForge non deve inviare inviti di registrazione agli Studenti né offrire un portale Studente. L'eventuale condivisione del link Google Form avviene tramite canali esterni scelti dal Docente.  
-**FR-ASS-01.** Il docente deve poter creare un'Assegnazione scegliendo una Verifica pubblicata, una Classe intera o un insieme esplicito di Studenti, e un canale (`PDF` o `Google Forms`).  
+### 13.1 Creazione lazy degli studenti
+
+**BR-ANAG-01.** Gli studenti non devono essere pre-registrati. Il record di uno Studente viene creato automaticamente al primo import di una risposta Google Forms che contenga un'email non ancora presente nel sistema. Il record creato contiene esclusivamente l'email raccolta; nome, cognome e Classe sono facoltativi e possono essere completati in seguito dal Docente.  
+**BR-ANAG-02.** L'email dello Studente deve essere sintatticamente valida e univoca fra i record attivi. Una modifica successiva dell'email non deve scollegare Consegne già attribuite; deve conservare una traccia dell'identificativo precedente.  
+**BR-ANAG-03.** SchoolForge non invia inviti di registrazione agli Studenti né offre un portale Studente. L'eventuale condivisione del link Google Form avviene tramite canali esterni scelti dal Docente. Gli studenti non possiedono credenziali SchoolForge.
+
+### 13.2 Gestione opzionale di classi e anagrafica
+
+**FR-ANAG-01.** Il Docente deve poter creare, rinominare, archiviare e consultare Classi.  
+**FR-ANAG-02.** Il Docente deve poter completare, modificare, archiviare e cercare i record Studente esistenti (prodotti dalla creazione lazy o inseriti manualmente), aggiungendo almeno nome, cognome e Classe di appartenenza.  
+**FR-ANAG-03.** Il sistema deve poter importare e aggiornare Classi e Studenti dal servizio Google Workspace for Education autorizzato dal Docente tramite API Google Education. L'importazione è opzionale; la gestione manuale e la creazione lazy restano sempre disponibili.  
+**BR-ANAG-04.** Prima di applicare un'importazione da roster il sistema deve mostrare un'anteprima di creazioni, aggiornamenti e archiviazioni proposte. Non deve cancellare automaticamente dati locali, Consegne o storico per effetto di un'assenza nella risposta dell'API.
+
+### 13.3 Assegnazioni
+
+**FR-ASS-01.** Il Docente deve poter creare un'Assegnazione scegliendo una Verifica pubblicata, una Classe intera o un insieme esplicito di Studenti, e un canale (`PDF` o `Google Forms`). L'assegnazione a Classi o Studenti nominali è possibile soltanto se l'anagrafica è stata compilata; in assenza di anagrafica l'Assegnazione può essere non attribuita a destinatari specifici.  
 **FR-ASS-02.** Il sistema deve registrare data/ora di creazione, destinatari, Verifica, canale, URL Google Form se applicabile e stato dell'Assegnazione.  
-**BR-ASS-01.** Gli stati sono `preparata`, `erogata`, `chiusa`, `annullata`. Solo `erogata` può acquisire nuove Consegne; l'operazione di chiusura non modifica le Consegne già raccolte.  
-**BR-ASS-02.** La gestione di una Classe o Assegnazione non crea account SchoolForge per gli studenti né concede loro autorizzazioni applicative.
+**BR-ASS-01.** Gli stati sono `preparata`, `erogata`, `chiusa`, `annullata`. Solo `erogata` può acquisire nuove Consegne; la chiusura non modifica Consegne già raccolte.  
+**BR-ASS-02.** La gestione di Classi e Assegnazioni non crea account SchoolForge per gli Studenti né concede loro autorizzazioni applicative.
 
-**AC-ANAG-01.** Dato un roster Google Education autorizzato contenente una Classe e Studenti nuovi o aggiornati, quando il docente conferma l'anteprima dell'importazione, allora il sistema applica solo le variazioni presentate, non crea account Studente e non elimina consegne storiche.
+**AC-ANAG-01.** Data una risposta Google Forms con email non presente in anagrafica, quando viene importata, allora il sistema crea automaticamente un record Studente minimo con solo quell'email, senza bloccare l'import né richiedere pre-registrazione.  
+**AC-ANAG-02.** Dato un roster Google Education autorizzato contenente una Classe e Studenti nuovi o aggiornati, quando il Docente conferma l'anteprima, allora il sistema applica solo le variazioni presentate, non crea account Studente e non elimina Consegne storiche.
 
-## 14. Archiviazione e storico — Modulo 3
+## 14. Correzione manuale e percentuali — Modulo 3
 
-### 14.1 Acquisizione e conservazione
+### 14.1 Correzione manuale
 
-**FR-ARC-01.** Il sistema deve poter acquisire risposte provenienti da Google Forms per un Form collegato a una Verifica; deve inoltre consentire al docente l'inserimento o l'importazione manuale di una Consegna per le prove erogate in PDF o in altro canale esterno.  
-**FR-ARC-02.** Per ogni Consegna il sistema deve conservare almeno: Verifica, Studente, Classe al momento dell'assegnazione, data/ora, risposte, commenti, punteggio ottenuto, punteggio massimo e percentuale.  
-**FR-ARC-03.** Il docente deve poter associare alla Consegna allegati e PDF archiviabili e registrare il collegamento al file caricato manualmente nel proprio Google Drive istituzionale. La V1 non richiede caricamento o sincronizzazione automatica con Drive. Il sistema deve visualizzare il collegamento alla prova, alla soluzione, alla rubrica e alle fonti didattiche usate.  
-**FR-ARC-04.** Il docente deve poter consultare lo storico filtrando almeno per Programma, UDA, Lezione fonte, Classe, Studente, Verifica, intervallo di date e stato di correzione.  
-**BR-ARC-01.** Una Consegna acquisita è immutabile nel dato sorgente. Rettifiche di risposte, punteggi o commenti devono essere registrate come modifiche tracciate con autore, data, valore precedente, nuovo valore e motivazione.  
-**BR-ARC-02.** La Classe e la Verifica visualizzate nello storico sono quelle dell'Assegnazione/consegna originaria, anche se lo Studente cambia classe in seguito.  
-**BR-ARC-03.** Una Consegna priva di Studente identificato o Verifica mappata non entra nello storico definitivo; resta in quarantena fino alla risoluzione o allo scarto esplicito del docente.
+**FR-COR-MAN-01.** Il Docente deve poter inserire manualmente una Consegna per una Verifica pubblicata, indicando almeno la data di svolgimento e le risposte (o il riferimento al PDF cartaceo).  
+**FR-COR-MAN-02.** Il Docente deve poter assegnare un punteggio a ogni item della Consegna, aggiungere commenti e registrare rettifiche successive con autore, data, valore precedente, nuovo valore e motivazione.  
+**BR-COR-MAN-01.** Una Consegna acquisita è immutabile nel dato sorgente. Le rettifiche sono modifiche tracciate sopra il dato originale, non sovrascritture.  
+**FR-COR-MAN-03.** Il Docente deve poter registrare il collegamento al PDF della prova caricato manualmente nel proprio Google Drive istituzionale. La V1 non richiede caricamento o sincronizzazione automatica con Drive.
 
 ### 14.2 Punteggi e percentuali
 
@@ -397,11 +404,29 @@ Il vincolo "solo dalle lezioni selezionate" riguarda il corpus operativo e l'ass
 
 ### 14.3 Criteri di accettazione del Modulo 3
 
-**AC-ARC-01.** Data una risposta Google Forms con email corrispondente a uno Studente e mappatura di una Verifica, quando viene importata, allora il sistema crea una Consegna collegata a quello Studente, Classe storica e Verifica.  
-**AC-ARC-02.** Data una risposta senza mappatura certa, quando viene importata, allora non è associata automaticamente a uno Studente né inclusa nello storico definitivo.  
-**AC-ARC-03.** Data una rettifica di un punteggio, quando il docente la conferma, allora lo storico conserva valore precedente e nuovo con autore, data e motivazione e ricalcola automaticamente la percentuale.
+**AC-COR-MAN-01.** Il Docente inserisce una Consegna, assegna punteggi a tutti gli item e il sistema calcola la percentuale definitiva.  
+**AC-COR-MAN-02.** Il Docente rettifica un punteggio già assegnato e il sistema conserva valore precedente, nuovo valore, autore, data e motivazione e ricalcola la percentuale.  
+**AC-COR-MAN-03.** Una Consegna con un item privo di punteggio mostra la percentuale contrassegnata come non definitiva.
 
-## 15. Correzione AI — Modulo 4
+## 15. Archiviazione e storico — Modulo 4
+
+### 15.1 Acquisizione e conservazione
+
+**FR-ARC-01.** Il sistema deve poter acquisire risposte provenienti da Google Forms per un Form collegato a una Verifica; deve inoltre consentire al docente l'inserimento o l'importazione manuale di una Consegna per le prove erogate in PDF o in altro canale esterno.  
+**FR-ARC-02.** Per ogni Consegna il sistema deve conservare almeno: Verifica, Studente (se identificato), Classe al momento dell'assegnazione, data/ora, risposte, commenti, punteggio ottenuto, punteggio massimo e percentuale.  
+**FR-ARC-03.** Il docente deve poter associare alla Consegna allegati e PDF archiviabili e registrare il collegamento al file caricato manualmente nel proprio Google Drive istituzionale. Il sistema deve visualizzare il collegamento alla prova, alla soluzione, alla rubrica e alle fonti didattiche usate.  
+**FR-ARC-04.** Il docente deve poter consultare lo storico filtrando almeno per Programma, UDA, Lezione fonte, Classe, Studente, Verifica, intervallo di date e stato di correzione.  
+**BR-ARC-01.** Una Consegna acquisita è immutabile nel dato sorgente. Rettifiche di risposte, punteggi o commenti devono essere registrate come modifiche tracciate con autore, data, valore precedente, nuovo valore e motivazione.  
+**BR-ARC-02.** La Classe e la Verifica visualizzate nello storico sono quelle dell'Assegnazione/consegna originaria, anche se lo Studente cambia classe in seguito.  
+**BR-ARC-03.** Una Consegna priva di Verifica mappata non entra nello storico definitivo; resta in quarantena fino alla risoluzione o allo scarto esplicito del docente. Una Consegna priva di Studente identificato è accettata nello storico con il solo riferimento all'email raccolta.
+
+### 15.2 Criteri di accettazione del Modulo 4
+
+**AC-ARC-01.** Data una risposta Google Forms con email e mappatura di una Verifica, quando viene importata, allora il sistema crea una Consegna collegata all'email (e allo Studente se già presente in anagrafica), Classe storica e Verifica.  
+**AC-ARC-02.** Data una risposta senza mappatura certa della Verifica, quando viene importata, allora non è inclusa nello storico definitivo e il sistema la pone in quarantena.  
+**AC-ARC-03.** Data una risposta con email non presente in anagrafica, quando viene importata, allora il sistema crea automaticamente un record Studente minimo e collega la Consegna.
+
+## 16. Correzione AI — Modulo 5
 
 **FR-COR-01.** In modalità assistita l'AI deve poter proporre, per ogni risposta, punteggio, motivazione e commento usando esclusivamente: Lezione fonte, domanda, soluzione, rubrica e risposta dello Studente.  
 **FR-COR-02.** La proposta AI deve essere mostrata separatamente dalla correzione definitiva. Il docente deve poter approvare, modificare o rifiutare ogni proposta individualmente e deve poter approvare in un'unica operazione tutte le proposte AI idonee della Verifica o dell'insieme di Consegne selezionato.  
@@ -415,16 +440,16 @@ Il vincolo "solo dalle lezioni selezionate" riguarda il corpus operativo e l'ass
 
 **AC-COR-01.** Date dieci proposte AI per una Verifica, di cui otto complete e due bloccate, quando il docente conferma l'approvazione massiva, allora le otto proposte complete diventano definitive, le due bloccate restano non approvate e il log registra una singola azione con l'elenco degli otto item approvati.
 
-## 16. Requisiti trasversali di qualità, sicurezza e tutela dati
+## 17. Requisiti trasversali di qualità, sicurezza e tutela dati
 
-### 16.1 Integrità, tracciabilità e audit
+### 17.1 Integrità, tracciabilità e audit
 
 **NFR-INT-01.** Il sistema deve conservare il contenuto immutabile di ogni Verifica pubblicata, i suoi identificativi di Lezione fonte, data/ora e identità dell'operatore delle azioni rilevanti. Non è richiesto conservare revisioni storiche delle Lezioni.  
 **NFR-INT-02.** Devono essere tracciate almeno: importazione, validazione, sostituzione, eliminazione, esportazione, pubblicazione, assegnazione, acquisizione di consegne, modifica di correzioni/punteggi, azioni AI e cambi di configurazione sensibili.  
 **NFR-INT-03.** Il sistema deve impedire riferimenti orfani tra entità del dominio e deve segnalare ogni incoerenza rilevata senza eliminare dati storici.  
 **NFR-INT-04.** Backup e ripristino devono includere Markdown, asset, indice, archivi, collegamenti alle fonti e log di audit necessari a ricostruire lo storico. La frequenza, il RPO e il RTO sono decisioni di esercizio [C].
 
-### 16.2 Sicurezza e privacy
+### 17.2 Sicurezza e privacy
 
 **NFR-SEC-01.** Dati personali, risposte, punteggi, percentuali, asset e credenziali/tokens di integrazione devono essere protetti in transito e a riposo secondo lo stato dell'arte applicabile. I segreti non devono comparire in Markdown, esportazioni, log applicativi o UI non autorizzate.  
 **NFR-SEC-02.** Il principio di minimizzazione deve applicarsi a raccolta, visualizzazione, esportazione e trasmissione a servizi terzi.  
@@ -432,26 +457,27 @@ Il vincolo "solo dalle lezioni selezionate" riguarda il corpus operativo e l'ass
 **NFR-SEC-04.** L'architettura deve separare i permessi delle integrazioni Google e AI, richiedere il minimo privilegio e consentire revoca/rotazione senza perdita degli archivi già acquisiti.  
 **NFR-SEC-05.** L'uso di account Google Workspace for Education e Drive istituzionale è un vincolo di esercizio dichiarato dal committente. SchoolForge non deve sostituirsi alle autorizzazioni dell'istituto, né esporre gli artefatti a utenti diversi dal Docente proprietario.
 
-### 16.3 Usabilità, accessibilità e operatività
+### 17.3 Usabilità, accessibilità e operatività
 
 **NFR-UX-01.** Ogni operazione irreversibile o con impatto storico (eliminazione, disattivazione, pubblicazione, annullamento, importazione massiva, chiusura assegnazione, attivazione correzione automatica) deve mostrare conseguenze e richiedere conferma esplicita.  
 **NFR-UX-02.** Errori e stati bloccanti devono indicare oggetto, causa, effetto e azione correttiva; non devono essere esposti solo come codici tecnici.  
 **NFR-ACC-01.** Le funzioni del docente devono essere utilizzabili da tastiera, con struttura semantica e contrasto adeguato; tema chiaro e scuro non devono ridurre leggibilità o distinguibilità degli stati.  
 **NFR-OPS-01.** L'architettura deve prevedere monitoraggio di errori di importazione, rendering, integrazione Google, invocazioni AI, esportazioni e backup, senza registrare inutilmente contenuti didattici o dati personali nei sistemi di telemetria.
 
-## 17. Roadmap e dipendenze di rilascio
+## 18. Roadmap e dipendenze di rilascio
 
 | Modulo | Capacità rilasciata | Dipendenze consentite | Condizione di uscita |
 |---|---|---|---|
 | 1. Repository Didattico | Programmi, UDA, Markdown, asset, validazione, rendering, export | Autenticazione Google Workspace for Education e persistenza locale/applicativa | Funziona senza AI, Google Forms, studenti o archivi |
-| 2. Generazione Verifiche | Corpus selezionato, singola Verifica, soluzioni, rubriche, PDF; Google Forms se configurato | Modulo 1; AI solo opzionale | La Verifica conserva il proprio contenuto senza dipendere da revisioni delle Lezioni; percorso interamente manuale disponibile |
-| 3. Archiviazione e Storico | Classi, studenti, importazione Google Education opzionale, assegnazioni, consegne, punteggi, percentuali e PDF archiviabili su Drive | Moduli 1–2; Google Forms opzionale perché resta import manuale | Storico filtrabile e rettifiche auditabili |
-| 4. Correzione AI | Proposte assistite, approvazione massiva e modalità automatica esplicitamente abilitata | Modulo 3 e provider AI configurato | Ogni punteggio distingue origine AI/umana/automatica, ha contesto tracciato e può essere approvato in blocco |
+| 2. Generazione Verifiche e PDF | Corpus selezionato, singola Verifica, soluzioni, rubriche, PDF; Google Forms se configurato | Modulo 1; AI solo opzionale | La Verifica conserva il proprio contenuto senza dipendere da revisioni delle Lezioni; percorso interamente manuale disponibile |
+| 3. Correzione manuale e percentuali | Inserimento manuale Consegne, punteggi per item, calcolo percentuale, rettifiche auditabili, link Drive | Modulo 2 | Docente corregge una consegna, ottiene percentuale definitiva, rettifica un item e consulta la traccia; nessun AI necessario |
+| 4. Archiviazione, classi e storico | Classi, studenti (creazione lazy inclusa), importazione Google Education opzionale, assegnazioni, storico filtrabile, import Forms | Moduli 1–3; Google Forms opzionale perché resta import manuale | Storico filtrabile per classe/studente/verifica; rettifiche e import auditabili |
+| 5. Correzione AI | Proposte assistite, rilevamento anomalie stilistiche, approvazione massiva e modalità automatica esplicitamente abilitata | Modulo 3 (modello di correzione manuale) e provider AI configurato (C-02, C-03) | Ogni punteggio distingue origine AI/umana/automatica, ha contesto tracciato e può essere approvato in blocco |
 
 **BR-REL-01.** Non è consentito anticipare una dipendenza dei moduli successivi come requisito obbligatorio di un modulo precedente.  
-**BR-REL-02.** La disponibilità di Google Forms o AI non deve compromettere consultazione, esportazione PDF, archivio manuale o correzione manuale.
+**BR-REL-02.** La disponibilità di Google Forms o AI non deve compromettere consultazione, esportazione PDF, correzione manuale o archiviazione manuale.
 
-## 18. Decisioni da confermare prima dell'architettura esecutiva o del go-live
+## 19. Decisioni da confermare prima dell'architettura esecutiva o del go-live
 
 Queste non sono lacune che l'architetto può risolvere arbitrariamente: richiedono una decisione del committente o del responsabile di esercizio. Fino alla conferma devono essere implementate come configurazioni, non come costanti nascoste. Autenticazione Google Education, assenza di scale di voto, assenza di SLO iniziali e archiviazione manuale su Drive istituzionale sono invece decisioni già risolte in questa versione.
 
@@ -463,7 +489,7 @@ Queste non sono lacune che l'architetto può risolvere arbitrariamente: richiedo
 
 Per ciascuna decisione l'Owner è responsabile di produrre una scelta documentata entro la scadenza. Il responsabile tecnico è responsabile di segnalare con anticipo quando la mancanza della decisione rischia di bloccare l'avanzamento del delivery.
 
-## 19. Matrice di tracciabilità dei vincoli fondamentali
+## 20. Matrice di tracciabilità dei vincoli fondamentali
 
 | Decisione del brief | Requisiti che la rendono verificabile |
 |---|---|
@@ -479,7 +505,7 @@ Per ciascuna decisione l'Owner è responsabile di produrre una scelta documentat
 | Correzione AI assistita/automatica | FR-COR-01–04, BR-COR-01–04 |
 | Evoluzione modulare | BR-CORE-05, sezione 17 |
 
-## 20. Criteri globali di accettazione della baseline
+## 21. Criteri globali di accettazione della baseline
 
 La progettazione architetturale potrà essere considerata conforme a questa analisi solo se dimostra, con componenti, flussi, modello dati e piano di test, almeno quanto segue:
 

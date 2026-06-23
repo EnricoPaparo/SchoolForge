@@ -237,7 +237,7 @@ Ogni documento applicativo contiene `ownerUid`, `createdAt`, `updatedAt` e, se n
 | `exams` | `id`, `status`, `sourceLessonIds`, `configuration`, `publishedAt`, `googleForm`, `pdfMetadata` | Metadati della Verifica. Lo stato vincola le scritture. |
 | `exams/{examId}/items` | prompt, tipo, opzioni, soluzione, rubrica, punteggio massimo, `sourceLessonId` | Snapshot della Verifica. Immutabile dopo pubblicazione. Una subcollection evita limiti di dimensione di un singolo documento. |
 | `classes` | `id`, `name`, `active`, `externalSource` | Creazione manuale o importata. |
-| `students` | `id`, nome, cognome, email, `classId`, `googleExternalId`, `active` | L'email è unica fra studenti attivi; nessuna credenziale SchoolForge. |
+| `students` | `id`, email (obbligatoria), nome?, cognome?, `classId`?, `googleExternalId`?, `active` | Il documento è creato automaticamente al primo import Forms con quell'email (creazione lazy). Nome, cognome e classe sono facoltativi e completabili in seguito. L'email è unica fra studenti attivi; nessuna credenziale SchoolForge. |
 | `assignments` | `id`, `examId`, destinatari, canale, `formId`, stato, date | Una verifica può essere assegnata a una classe o a un insieme di studenti. |
 | `submissions` | `id`, `assignmentId`, `examId`, `studentId`, risposte, origine, `sourceResponseId`, stato | Import idempotente grazie a `sourceResponseId`. Le non mappate vanno in quarantena. |
 | `corrections` | `submissionId`, punteggi per item, commenti, provenienza, stato, percentuale | Conserva proposta AI, correzione umana e risultato definitivo distinti. |
@@ -336,8 +336,8 @@ La verifica non legge più il Markdown dopo la pubblicazione. Pertanto sostituir
 2. Salva `formId` nell'assegnazione e la mappa tra item SchoolForge e domande Form.
 3. Il docente distribuisce il link con canali esterni. SchoolForge non invia inviti e non registra studenti.
 4. Il docente avvia l'importazione delle risposte dal pannello dell'assegnazione.
-5. Il backend importa risposte nuove in modo idempotente, identifica lo studente tramite email/account raccolto e crea una Consegna.
-6. Risposte senza mappatura certa vanno in `quarantena`; nessuna attribuzione automatica è consentita.
+5. Il backend importa risposte nuove in modo idempotente. Per ogni risposta: cerca l'email raccolta nella collezione `students`; se non trovata, crea automaticamente un record Studente minimo con solo quella email (creazione lazy); infine crea la Consegna collegata allo Studente.
+6. Risposte senza mappatura certa alla Verifica vanno in `quarantena`; nessuna attribuzione automatica della Verifica è consentita.
 
 Il Form non è modificabile dopo la prima Consegna. Una modifica alla prova richiede una nuova Verifica e un nuovo Form.
 

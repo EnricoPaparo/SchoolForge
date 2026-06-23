@@ -389,19 +389,15 @@ L'identificazione dello studente deve essere possibile.
 
 # Classi e Studenti
 
-Il sistema deve poter gestire:
+Gli studenti non possiedono un account SchoolForge e non si registrano al sistema.
 
-* classi;
-* studenti;
-* email.
+Il sistema non richiede una pre-registrazione degli studenti. Il record di uno studente viene creato automaticamente al momento della prima risposta riconoscibile (email raccolta da Google Forms). Classi e dati anagrafici completi sono facoltativi e possono essere aggiunti in seguito.
 
-Gli studenti non possiedono un account SchoolForge.
+I dati di classe e studente servono esclusivamente per:
 
-I dati servono esclusivamente per:
-
-* assegnazione verifiche;
 * archiviazione;
-* tracciabilità.
+* tracciabilità;
+* consultazione dello storico.
 
 ---
 
@@ -507,17 +503,23 @@ Repository Didattico.
 
 ## Modulo 2
 
-Generazione Verifiche.
+Generazione Verifiche e PDF.
 
 ---
 
 ## Modulo 3
 
-Archiviazione e Storico.
+Correzione manuale e percentuali.
 
 ---
 
 ## Modulo 4
+
+Archiviazione, classi e storico.
+
+---
+
+## Modulo 5
 
 Correzione Assistita AI.
 

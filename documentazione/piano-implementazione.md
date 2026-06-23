@@ -28,12 +28,11 @@ Le uniche fasi di delivery sono le seguenti. Ogni fase termina con un prodotto f
 |---|---|---|
 | 1. Corsi, UDA e Lezioni | Il docente autenticato può creare Corsi/Programmi e UDA, caricare e gestire Lezioni Markdown, consultarle in sicurezza ed esportarle con gli asset. | Google Forms, classi/studenti, archiviazione, AI |
 | 2. Generazione Verifiche | Il docente seleziona lezioni/UDA, compone, approva, pubblica ed esporta una Verifica immutabile in PDF con soluzione e rubrica. Google Forms è un'estensione non bloccante. | Classi/studenti, archivio, correzione, AI |
-| 3. Archiviazione Verifiche | Il docente gestisce classi/studenti, assegna verifiche, registra/importa consegne, conserva link ai PDF Drive e consulta uno storico di prove **da correggere**. | Correzione manuale o AI |
-| 4. Correzione Verifiche | Il docente corregge le consegne, assegna punteggi, ottiene percentuali, rettifica con audit e, solo dopo le decisioni previste, usa correzione AI assistita/automatica. | Nessuna nuova macro-area; AI dipende da C-02/C-03 |
+| 3. Correzione manuale e percentuali | Il docente inserisce consegne manualmente, assegna punteggi per item, ottiene la percentuale definitiva, rettifica con audit e conserva il link al PDF su Drive. Non richiede anagrafica studenti. | Classi/studenti, Google Forms, AI |
+| 4. Archiviazione, classi e storico | Il docente gestisce classi e studenti (creazione lazy da Forms inclusa), assegna verifiche, importa consegne da Google Forms, consulta uno storico filtrabile e usa l'import roster opzionale. | Correzione AI |
+| 5. Correzione AI | Il docente usa correzione AI assistita e, solo dopo le decisioni C-02/C-03, la modalità automatica. | Nessuna nuova macro-area; dipende da C-02/C-03 |
 
-La Fase 3 archivia risposte e prove senza attribuire punteggi definitivi. Il passaggio da “da correggere” a “corretta” e il calcolo della percentuale appartengono alla Fase 4.
-
-Google Forms e importazione roster sono estensioni della Fase 3: possono essere consegnati nella stessa fase o dopo G4, ma la loro assenza non può bloccare il prodotto manuale di archiviazione.
+La Fase 3 introduce la correzione e il calcolo delle percentuali senza dipendere dall'anagrafica studenti: una consegna può essere inserita anche senza che lo studente sia pre-registrato. La Fase 4 aggiunge la gestione strutturata di classi, studenti, assegnazioni e l'import Google Forms con creazione lazy degli studenti.
 
 ## 2. Assunzioni operative e modalità di pianificazione
 
@@ -93,9 +92,9 @@ Un work package è concluso soltanto quando:
 | G0 — Baseline | Prima di scrivere codice applicativo | Approvazione di requisiti, architettura e questo piano | Tutto il delivery |
 | G1 — Setup operativo | Prima di ambiente `prod` | C-01: progetto/area Google Cloud, backup, RPO/RTO, responsabile operativo | Provisioning e go-live `prod`; non blocca sviluppo `dev` |
 | G2 — Fase 1 | Dopo Corsi, UDA e Lezioni | Import, rendering, export Markdown/asset e sicurezza verificati dal docente | Fase 2 e uso di contenuti reali |
-| G3 — Fase 2 | Dopo Generazione Verifiche | Pubblicazione immutabile, PDF e percorso manuale completi | Fase 3 e assegnazioni in produzione |
-| G4 — Fase 3 | Dopo Archiviazione Verifiche | Matching, quarantena, link Drive e storico di prove da correggere verificati | Fase 4 e go-live dell'archivio |
-| G5 — Fase 4 manuale | Dopo Correzione manuale | Punteggi, percentuali, rettifiche e audit verificati | Correzione operativa completa |
+| G3 — Fase 2 | Dopo Generazione Verifiche | Pubblicazione immutabile, PDF e percorso manuale completi | Fase 3 e uso di contenuti reali |
+| G4 — Fase 3 | Dopo Correzione manuale | Punteggi, percentuali, rettifiche e audit verificati | Fase 4 e go-live dell'archivio |
+| G5 — Fase 4 | Dopo Archiviazione, classi e storico | Import Forms, creazione lazy studenti, quarantena e storico filtrabile verificati | Correzione operativa completa |
 | G5-AI — Provider AI | Prima di qualsiasi chiamata AI reale | C-02: provider, contratto, residenza, consenso operativo | Correzione/generazione AI reale |
 | G6 — Correzione automatica | Prima di abilitare automazione | C-03: regola didattica, ambito e revisione umana | Modalità automatica; non blocca AI assistita |
 
@@ -109,19 +108,17 @@ flowchart TD
     P1 --> G2["G2 — prodotto Fase 1"]
     G2 --> P2["Fase 2 — Generazione Verifiche"]
     P2 --> G3["G3 — prodotto Fase 2"]
-    G3 --> P3["Fase 3 — Archiviazione Verifiche"]
+    G3 --> P3["Fase 3 — Correzione manuale e percentuali"]
     P3 --> G4["G4 — prodotto Fase 3"]
-    G4 --> P4["Fase 4 — Correzione manuale"]
-    P4 --> G5["G5 — prodotto Fase 4 manuale"]
+    G4 --> P4["Fase 4 — Archiviazione, classi e storico"]
+    P4 --> G5["G5 — prodotto Fase 4"]
 
-    P1 --> R["Anagrafica manuale — sviluppo anticipabile"]
-    R --> P3
     P2 --> GF["Google Forms — opzionale"]
-    GF -. "aggiunge import automatico" .-> P3
+    GF -. "aggiunge import automatico" .-> P4
 
     G5AI["G5-AI — C-02 provider AI"] --> AIQ["AI generazione opzionale"]
     G5AI --> AIC["AI correzione assistita"]
-    P4 --> AIC
+    P3 --> AIC
     AIC --> G6["G6 — C-03 automazione"]
     G6 --> AIA["Correzione automatica"]
 ```
@@ -133,8 +130,8 @@ flowchart TD
 | P1 | Infrastruttura Firebase, parser Markdown, web shell, fixture di test | G0 superato; contratti condivisi fissati entro la prima iterazione | Fase 1 pronta per import reale |
 | P2 | Rendering lezione e pipeline import/validazione | Parser e modello Lesson Contract comuni; nessuno cambia il contratto unilateralmente | Test import → rendering |
 | P3 | PDF e composizione verifica | Il PDF può usare fixture di snapshot; la pubblicazione reale aspetta il modello verifica definitivo | Pubblicazione immutabile |
-| P4 | Anagrafica manuale e Fase 2 | L'anagrafica può usare `examId` fittizi in test; assegnazioni reali aspettano G3 | Integrazione Fase 3 |
-| P5 | Roster Google Education e archivio manuale | Roster opzionale; il percorso manuale non attende token/API Google | G4 con fallback manuale funzionante |
+| P4 | Correzione manuale e composizione verifica | La correzione può usare fixture di snapshot; le consegne reali aspettano G3 | Calcolo percentuale affidabile |
+| P5 | Roster Google Education e anagrafica opzionale | Roster opzionale; la creazione lazy non attende l'anagrafica completa | G5 con fallback manuale funzionante |
 | P6 | Test automatici e sviluppo funzionale | Ogni package fornisce fixture e test nello stesso branch | Pull request del package |
 | P7 | Documentazione/runbook e sviluppo | Le API e le decisioni sono aggiornate durante il package, non alla fine del progetto | Gate della fase |
 
@@ -162,12 +159,12 @@ La roadmap seguente assume iterazioni di due settimane e un singolo sviluppatore
 | 3 | Fase 1C: promozione corrente, ricerca ed export | Test E2E repository | G2 — Corsi, UDA e Lezioni accettati |
 | 4 | Fase 2A: indice domande, bozza, snapshot e stati | Template PDF su fixture; anagrafica manuale anticipabile | Verifica pubblicata immutabile |
 | 5 | Fase 2B: PDF e Google Forms opzionale | Test mapping Forms in sandbox; documentazione operativa | G3 — Generazione Verifiche accettata |
-| 6 | Fase 3A: classi/studenti, assegnazioni, consegne e link Drive | Roster import opzionale; UI storico | Archivio manuale di prove da correggere |
-| 7 | Fase 3B: import Forms, quarantena, storico e monitoraggio | Backup/restore drill | G4 — Archiviazione Verifiche accettata |
-| 8 | Fase 4A: correzione manuale, punteggi, percentuali e rettifiche | Mock AI e test di provenienza senza provider | G5 — Correzione manuale accettata |
-| 9+ | Fase 4B: AI assistita dopo G5-AI; automatica dopo G6 | AiGateway e provider sandbox | Estensione AI della Fase 4, se approvata |
+| 6 | Fase 3A: correzione manuale, punteggi, percentuali e rettifiche | Mock AI e test di provenienza senza provider | G4 — Correzione manuale accettata |
+| 7 | Fase 4A: assegnazioni, consegne, creazione lazy studenti e link Drive | Roster import opzionale; UI storico | Archivio con storico filtrabile |
+| 8 | Fase 4B: import Forms, quarantena, storico e monitoraggio | Backup/restore drill | G5 — Archiviazione e storico accettati |
+| 9+ | Fase 5: AI assistita dopo G5-AI; automatica dopo G6 | AiGateway e provider sandbox | Estensione AI, se approvata |
 
-Il primo prodotto utile è G2. G3 aggiunge la generazione di verifiche, G4 l'archiviazione delle prove e G5 la correzione manuale completa. L'AI è un'estensione della Fase 4 e non è una condizione per i quattro prodotti manuali.
+Il primo prodotto utile è G2. G3 aggiunge la generazione di verifiche, G4 la correzione manuale con percentuali e G5 l'archiviazione completa con classi e storico. L'AI è un'estensione della Fase 5 e non è una condizione per i quattro prodotti manuali precedenti.
 
 ## 7. Work breakdown structure dettagliata
 
@@ -215,38 +212,40 @@ Le attività F-01–F-07 sono fondazioni interne della Fase 1. Non costituiscono
 
 **G3 — prova obbligatoria.** Il docente crea una verifica senza AI, pubblica, esporta prova/soluzione/rubrica, poi modifica una Lezione fonte e verifica che il contenuto pubblicato sia invariato. Google Forms è un'estensione: il mancato completamento di V-06 non blocca il rilascio PDF/manuale.
 
-### 7.3 Fase 3 — Archiviazione Verifiche
+### 7.3 Fase 3 — Correzione manuale e percentuali
+
+La correzione manuale è il prodotto obbligatorio della Fase 3. Non richiede anagrafica studenti, Google Forms né AI.
 
 | ID | Attività | Dipende da | Parallelo | Deliverable ed evidenza |
 |---|---|---|---|---|
-| A-01 | Gestione manuale Classi/Studenti, vincoli email e storico cambio email | F-03, F-05, F-06 | V-04–V-06 | Nessun account studente; dati validati e auditati |
+| CR-01 | Modello di correzione manuale, punteggi per item e calcolo percentuale | V-03, V-04 | CR-02 | Formula corretta; percentuale `non_definitiva` finché mancano item |
+| CR-02 | UI di correzione, commenti, rettifiche e audit valori precedenti | CR-01, F-06 | — | Docente inserisce consegna, corregge e visualizza traccia della rettifica |
+| CR-03 | Consegne manuali e link PDF Drive | CR-01, V-04 | CR-02 | Link Drive registrato senza upload/sync automatico |
+| CR-04 | Aggiornamento stati consegna/correzione e storico delle prove corrette | CR-02, CR-03 | — | Transizione `da_correggere` → `corretta` solo con punteggi definitivi |
+| CR-05 | Test E2E correzione manuale e verifica G4 | CR-01–CR-04 | — | Checklist G4 e percentuali verificabili su casi noti |
+
+**G4 — prova obbligatoria.** Il docente inserisce manualmente una consegna per una verifica pubblicata, assegna punteggi a tutti gli item, verifica la percentuale definitiva, rettifica un item e consulta valore precedente, nuovo valore, motivazione e audit. Nessuna funzionalità AI, classi o Google Forms è necessaria per superare G4.
+
+### 7.4 Fase 4 — Archiviazione, classi e storico
+
+La Fase 4 aggiunge la gestione strutturata di classi e studenti (con creazione lazy), le assegnazioni, l'import da Google Forms e lo storico filtrabile. Le attività A-01 e A-02 (anagrafica manuale e roster import) sono opzionali: la loro assenza non blocca l'import Forms né la consultazione dello storico.
+
+| ID | Attività | Dipende da | Parallelo | Deliverable ed evidenza |
+|---|---|---|---|---|
+| A-01 | Gestione manuale Classi/Studenti, vincoli email e storico cambio email (opzionale) | F-03, F-05, F-06 | V-04–V-06 | Nessun account studente; dati validati e auditati |
 | A-02 | Anteprima/import roster Google Education opzionale | A-01, token Google autorizzato | A-03, A-04 | Crea/aggiorna solo elementi confermati; non cancella storico |
-| A-03 | Assegnazioni per classe/studenti, stati e collegamento verifica | V-03, A-01 | A-02 | Solo verifica pubblicata assegnabile; destinatari e canale registrati |
-| A-04 | Consegne manuali e allegati/link PDF Drive | A-03, V-04 | A-02, A-05 | Link Drive registrato senza upload/sync automatico |
-| A-05 | Import risposte Google Forms e quarantena | A-03, V-06 | A-04, A-06 | Import idempotente; risposta non mappata non entra nello storico |
-| A-06 | Stato di correzione iniziale `da_correggere` e storico per classe/studente/verifica/intervallo/stato | A-03, A-04 | A-05, A-07 | Filtri indicizzati e paginati; nessun punteggio definitivo in Fase 3 |
-| A-07 | Monitoraggio, runbook archiviazione e test restore | A-04, A-06, G1 | A-05, A-06 | Checklist G4, test import ripetuto e restore documentato |
+| A-03 | Assegnazioni per classe/studenti, stati e collegamento verifica | V-03, CR-01 | A-02 | Solo verifica pubblicata assegnabile; destinatari e canale registrati |
+| A-04 | Import risposte Google Forms, creazione lazy studenti e quarantena | A-03, V-06 | A-01, A-05 | Import idempotente; studente creato automaticamente da email; risposta senza verifica mappata in quarantena |
+| A-05 | Storico filtrabile per classe/studente/verifica/intervallo/stato | A-03, CR-04 | A-04, A-06 | Filtri indicizzati e paginati; punteggi definitivi dalla Fase 3 visibili nello storico |
+| A-06 | Monitoraggio, runbook archiviazione e test restore | A-04, A-05, G1 | — | Checklist G5, test import ripetuto e restore documentato |
 
-**G4 — prova obbligatoria.** Il docente assegna una verifica, inserisce o importa una consegna, registra il link del PDF su Drive e consulta lo storico delle prove `da_correggere`. Una risposta senza email/mapping certo resta in quarantena. Il percorso manuale deve funzionare anche senza roster API e Google Forms.
-
-### 7.4 Fase 4 — Correzione Verifiche
-
-La correzione manuale è il prodotto obbligatorio della Fase 4. L'AI assistita è una capacità aggiuntiva della stessa fase, attivabile soltanto dopo G5-AI; non crea una quinta fase.
-
-| ID | Attività | Dipende da | Parallelo | Deliverable ed evidenza |
-|---|---|---|---|---|
-| CR-01 | Modello di correzione manuale, punteggi per item e calcolo percentuale | A-04, V-03 | CR-02 | Formula corretta; percentuale `non_definitiva` finché mancano item |
-| CR-02 | UI di correzione, commenti, rettifiche e audit valori precedenti | CR-01, F-06 | A-05 | Docente corregge una consegna e visualizza traccia della rettifica |
-| CR-03 | Aggiornamento stati consegna/correzione e storico delle prove corrette | CR-02, A-06 | CR-04 | Transizione `da_correggere` → `corretta` solo con punteggi definitivi |
-| CR-04 | Test E2E correzione manuale e verifica G5 | CR-01–CR-03 | — | Checklist G5 e percentuali verificabili su casi noti |
-
-**G5 — prova obbligatoria.** Il docente corregge una consegna archiviata, assegna punteggi, verifica la percentuale, rettifica un item e consulta valore precedente, nuovo valore, motivazione e audit. Nessuna funzionalità AI è necessaria per superare G5.
+**G5 — prova obbligatoria.** Il docente assegna una verifica, importa una risposta Google Forms (lo studente viene creato automaticamente), consulta lo storico filtrabile e verifica che una risposta senza verifica mappata resti in quarantena. Il percorso manuale deve funzionare anche senza roster API.
 
 #### Estensione AI della Fase 4
 
 | ID | Attività | Dipende da | Parallelo | Deliverable ed evidenza |
 |---|---|---|---|---|
-| I-00 | Risolvere decisione C-02 e registrare provider, consenso e ambiente sandbox | G4 | Preparazione mock/test | Verbale G5-AI e configurazione secret separata per ambiente |
+| I-00 | Risolvere decisione C-02 e registrare provider, consenso e ambiente sandbox | G5 | Preparazione mock/test | Verbale G5-AI e configurazione secret separata per ambiente |
 | I-01 | Implementare `AiGateway`, contesto chiuso, mock provider e audit provenienza | I-00, V-03 | I-02 | Test dimostra assenza di browsing/retrieval e fonti non selezionate |
 | I-02 | Generazione facoltativa domande/soluzioni/rubriche per Modulo 2 | I-01, V-02 | I-03 | Output sempre proposta; approvazione docente obbligatoria |
 | I-03 | Proposte correzione assistita sul modello di correzione manuale | I-01, CR-01 | I-02 | Punteggio entro massimo, criteri rubricati, proposta separata |

@@ -56,8 +56,14 @@ File PDF o altro documento generato e collegato in modo immutabile a una specifi
 ### Quarantena
 Stato in cui viene posta una Consegna acquisita da Google Forms che non può essere attribuita con certezza a uno Studente o a una Verifica. Una Consegna in quarantena non entra nello storico definitivo finché il Docente non la risolve o la scarta esplicitamente.
 
+### Studente
+Persona che svolge una Verifica. In SchoolForge lo Studente non possiede un account e non accede al sistema. Il record di uno Studente viene creato automaticamente al primo import di una risposta Google Forms che contenga un'email non ancora presente nel sistema (creazione lazy): in quel momento il record contiene solo l'email raccolta. Nome, cognome e Classe sono facoltativi e possono essere completati in seguito dal Docente, oppure importati tramite roster Google Education. L'identità dello Studente è sempre l'email raccolta dal Form; il record non dipende dalla pre-registrazione.
+
+### Classe
+Raggruppamento di Studenti creato manualmente dal Docente o importato tramite roster Google Education. La Classe è opzionale nella V1: le Consegne possono essere registrate e corrette anche senza che uno Studente appartenga a una Classe. La Classe viene registrata nello storico con il valore presente al momento dell'Assegnazione; eventuali cambi successivi non modificano lo storico pregresso.
+
 ### Roster
-Elenco di classi e studenti importabile dal servizio Google Workspace for Education tramite API Google Education. In SchoolForge l'importazione del roster è sempre opzionale; la gestione manuale di classi e studenti è il percorso sempre disponibile.
+Elenco di classi e studenti importabile dal servizio Google Workspace for Education tramite API Google Education. In SchoolForge l'importazione del roster è sempre opzionale; la gestione manuale di classi e studenti e la creazione lazy tramite Forms sono i percorsi sempre disponibili.
 
 ### Percentuale
 Rapporto percentuale tra punteggio ottenuto e punteggio massimo della Verifica, calcolato come `(punteggio ottenuto / punteggio massimo) × 100`. SchoolForge non converte la percentuale in voto; la scala di voto è una decisione pedagogica del Docente. La percentuale è contrassegnata come `non_definitiva` finché mancano punteggi per uno o più item.
