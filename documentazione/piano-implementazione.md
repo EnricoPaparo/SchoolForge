@@ -255,6 +255,174 @@ La correzione manuale è il prodotto obbligatorio della Fase 4. L'AI assistita �
 
 L'AI di generazione può essere rilasciata dopo G5-AI senza attendere la correzione AI. La correzione assistita richiede invece CR-01 perché deve riusare punteggio, percentuale, audit e modello di correzione manuale già affidabili.
 
+## 7.5 Pipeline CI/CD
+
+La pipeline è obbligatoria dall'iterazione 0. Non è un'attività "da fare dopo". Una PR che non passa la CI non può essere mergiata, indipendentemente dal gate di fase.
+
+### Stage 1 — Verifica (ogni PR e push su branch)
+
+```yaml
+# Trigger: ogni PR aperta o aggiornata; ogni push su branch feature/* e fix/*
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (tutti i package)
+        run: pnpm run typecheck
+
+      - name: Lint con eslint-plugin-security
+        run: pnpm run lint
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        # blocca la PR se trova pattern di chiave/token nel codice
+
+      - name: Vulnerability audit
+        run: pnpm audit --audit-level=moderate
+
+      - name: Unit e contract test
+        run: pnpm run test:unit
+
+      - name: Coverage check
+        run: pnpm run test:coverage
+        # Fallisce se le soglie di coverage per gate non sono rispettate
+```
+
+### Stage 2 — Integrazione (ogni PR verso main)
+
+```yaml
+  integration:
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'pnpm' }
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Install Java (per Firebase Emulator Suite)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Cache emulators
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}
+
+      - name: Integration test con emulatori
+        run: firebase emulators:exec --only firestore,storage,auth,functions
+             "pnpm run test:integration"
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN_CI }}
+          FIREBASE_PROJECT_ID: schoolforge-test-ci
+```
+
+### Stage 3 — E2E (obbligatorio prima dei gate G2, G3, G4, G5)
+
+```yaml
+  e2e:
+    runs-on: ubuntu-latest
+    needs: integration
+    if: github.base_ref == 'main'   # solo su PR verso main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'pnpm' }
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: E2E test su ambiente test
+        run: pnpm run test:e2e
+        env:
+          TEST_APP_URL: ${{ secrets.TEST_APP_URL }}
+```
+
+### Stage 4 — Deploy su ambiente dev (merge su main)
+
+```yaml
+  deploy-dev:
+    runs-on: ubuntu-latest
+    needs: [verify, integration]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+
+      - name: Deploy su Firebase dev
+        run: firebase deploy --project schoolforge-dev --only hosting,functions,firestore,storage
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN_CI }}
+```
+
+### Stage 5 — Deploy su produzione (solo con gate superato e approvazione manuale)
+
+```yaml
+  deploy-prod:
+    runs-on: ubuntu-latest
+    needs: deploy-dev
+    environment: production      # richiede approvazione manuale in GitHub Environments
+    if: startsWith(github.ref, 'refs/tags/gate-')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+
+      - name: Deploy su Firebase prod
+        run: firebase deploy --project schoolforge-prod --only hosting,functions,firestore,storage
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN_PROD }}
+```
+
+### Regole operative della pipeline
+
+| Regola | Dettaglio |
+|---|---|
+| PR bloccata senza Stage 1 verde | Nessuna eccezione; non si bypassa con `--no-verify` o skip CI |
+| Stage 2 verde richiesto per merge su main | I test di integrazione con emulatori devono passare |
+| Stage 3 E2E richiesto prima di ogni gate di fase | Non è sufficiente passare Stage 1 e 2 |
+| Le variabili di produzione non sono disponibili nelle PR | I segreti `PROD` sono protetti e disponibili solo nel job `deploy-prod` |
+| Ogni deploy registra versione, commit e timestamp | Loggato come audit event nel progetto Firebase di destinazione |
+| Il rollback usa il deployment precedente di Firebase Hosting | Non richiede un nuovo deploy del codice precedente |
+| Le feature flag disabilitate non richiedono pipeline separata | La disabilitazione è un cambio di configurazione backend, non di deploy |
+
 ## 8. Backlog tecnico trasversale
 
 Queste attività non sono una fase separata: vengono portate avanti dentro ogni modulo.

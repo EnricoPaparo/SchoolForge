@@ -142,12 +142,12 @@ La regione Google Cloud, la politica di backup e i valori RPO/RTO dipendono dall
 
 `dev` e `prod` devono usare progetti Firebase/Google Cloud distinti. È un costo di configurazione minimo che impedisce di mescolare token, Forms e dati didattici reali con test locali.
 
-## 6. Struttura del codice
+## 6. Struttura del codice e toolchain
 
 ```text
 SchoolForge/
 ├─ apps/
-│  └─ web/                       # SPA React + TypeScript
+│  └─ web/                       # SPA React + TypeScript (Vite)
 ├─ functions/
 │  └─ src/
 │     ├─ api/                    # handler HTTP/callable sottili
@@ -157,13 +157,50 @@ SchoolForge/
 │     └─ repositories/           # Firestore e Storage
 ├─ packages/
 │  └─ lesson-contract/           # parser, validatore e tipi Markdown condivisi
+├─ documentazione/
+│  ├─ diagrammi/                 # ER model, sequence diagrams, component diagram
+│  └─ ...
 ├─ firestore.rules
 ├─ storage.rules
 ├─ firestore.indexes.json
-└─ firebase.json
+├─ firebase.json
+├─ pnpm-workspace.yaml
+└─ package.json                  # root workspace
 ```
 
+### 6.1 Toolchain
+
+| Strumento | Versione | Scopo |
+|---|---|---|
+| **pnpm workspaces** | 9.x | Gestione monorepo; dipendenze condivise tra app/functions/packages |
+| **TypeScript** | 5.x | Linguaggio end-to-end; strict mode abilitato su tutti i package |
+| **Vite** | 5.x | Build e dev server della web app; ottimizzazione bundle produzione |
+| **ESLint** | 9.x | Linting con `eslint-plugin-security` per controlli statici di sicurezza |
+| **Vitest** | 2.x | Test unitari e di integrazione; compatibile con Firebase Emulator Suite |
+| **Playwright** | 1.45.x | Test end-to-end; eseguibili in parallelo su browser headless |
+| **Firebase Emulator Suite** | ultima stabile | Sviluppo locale senza dipendenza da servizi cloud reali |
+| **Zod** | 3.x | Validazione runtime dei payload API e output AI |
+
+### 6.2 Workspace pnpm
+
+```yaml
+# pnpm-workspace.yaml
+packages:
+  - 'apps/*'
+  - 'functions'
+  - 'packages/*'
+```
+
+I package condividono le type definitions di Firebase e TypeScript come `devDependencies` del workspace root. Ogni package ha il proprio `tsconfig.json` che estende un `tsconfig.base.json` di root.
+
+### 6.3 Pacchetto `lesson-contract`
+
 Il pacchetto `lesson-contract` è condiviso tra web e backend. Evita che browser e server interpretino il front matter o i blocchi `schoolforge-question` in modo diverso. Il backend resta l'autorità finale: una lezione è utilizzabile soltanto dopo la sua validazione lato server.
+
+Il pacchetto esporta:
+- `parseLessonMarkdown(source: string): ParseResult` — parser e validatore
+- Tipi TypeScript (`Lesson`, `Question`, `Rubric`, `ParseError`, ...)
+- Fixture di test per i casi validi e invalidi del contratto
 
 ## 7. Dati e persistenza
 
@@ -455,11 +492,13 @@ I test devono includere almeno questi casi negativi: account non autorizzato, Ma
 
 ## 16. Decisioni ancora aperte e limiti deliberati
 
-| ID | Decisione | Impatto architetturale |
-|---|---|---|
-| C-01 | Regione, backup, RPO/RTO e responsabilità operativa | Parametri di progetto Firebase/Google Cloud e piano di restore prima del go-live |
-| C-02 | Provider AI, condizioni, residenza e consenso | Implementazione concreta di `AiGateway`; nessun provider viene cablato prima della decisione |
-| C-03 | Regola per correzione automatica | Il flag resta disabilitato; si implementa solo correzione assistita e approvazione massiva |
+| ID | Decisione | Impatto architetturale | Owner | Scadenza |
+|---|---|---|---|---|
+| C-01 | Regione, backup, RPO/RTO e responsabilità operativa | Parametri di progetto Firebase/Google Cloud e piano di restore prima del go-live | Committente / Responsabile operativo | Prima del go-live Fase 1 (gate G1) |
+| C-02 | Provider AI, condizioni, residenza e consenso | Implementazione concreta di `AiGateway`; nessun provider viene cablato prima della decisione | Committente | Prima del gate G5-AI |
+| C-03 | Regola per correzione automatica | Il flag resta disabilitato; si implementa solo correzione assistita e approvazione massiva | Committente / Docente | Prima del gate G6 |
+
+Ogni decisione aperta produce un verbale nel repository: data, approvatore, opzioni valutate con pro e contro, scelta effettuata e vincoli operativi risultanti. Una decisione aperta non viene "risolta a voce" né incorporata silenziosamente nel codice.
 
 Limitazioni intenzionali della V1:
 
@@ -491,6 +530,20 @@ L'implementazione è conforme a questa architettura se dimostra che:
 
 ---
 
-## Appendice A — Stato della proposta
+## Appendice A — Diagrammi di dettaglio
+
+I seguenti diagrammi sono disponibili nella cartella `documentazione/diagrammi/`:
+
+| File | Contenuto |
+|---|---|
+| [`er-model.md`](diagrammi/er-model.md) | Modello dati ER completo di Firestore con indici |
+| [`sequence-import-lezione.md`](diagrammi/sequence-import-lezione.md) | Sequence diagram: import cartella, preflight, commit atomico, sostituzione singola lezione |
+| [`sequence-pubblicazione-verifica.md`](diagrammi/sequence-pubblicazione-verifica.md) | Sequence diagram: composizione → pubblicazione → PDF → link Drive; garanzia di immutabilità |
+| [`sequence-correzione-ai.md`](diagrammi/sequence-correzione-ai.md) | Sequence diagram: correzione AI assistita, approvazione massiva, modalità automatica |
+| [`component-frontend.md`](diagrammi/component-frontend.md) | Architettura dei componenti React, stato globale e pattern UI trasversali |
+
+---
+
+## Appendice B — Stato della proposta
 
 Questa architettura è pronta per l'avvio dell'implementazione delle Fasi 1–3. Le scelte C-01, C-02 e C-03 restano bloccanti soltanto per i rispettivi aspetti di esercizio e AI; non autorizzano scorciatoie nel modello di sicurezza, nella portabilità Markdown o nella tracciabilità delle verifiche.

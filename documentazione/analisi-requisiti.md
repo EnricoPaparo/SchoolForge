@@ -213,6 +213,42 @@ rubric:
 **BR-MD-03.** Il contenuto non conforme resta in stato `Non valido` e non può diventare fonte di nuove verifiche. Una Verifica già pubblicata rimane consultabile perché conserva il proprio contenuto indipendente.  
 **BR-MD-04.** Il sistema deve conservare ed esportare i Markdown originali e gli asset senza convertirli nel solo formato proprietario dell'applicazione.
 
+## 8.4 Strategia di versionamento del contratto Lesson Markdown
+
+Il contratto Lesson Markdown v1 è un'interfaccia pubblica tra i file del Docente e il sistema. Deve essere versioned esplicitamente per consentire evoluzioni future senza rompere file esistenti.
+
+### Regole di versionamento
+
+**BR-MD-VER-01.** Il campo `schoolforge` nel front matter è il numero di versione del contratto. Il valore `1` indica la versione corrente (Lesson Markdown v1). Un valore non supportato deve generare un errore esplicito con messaggio di migrazione.
+
+**BR-MD-VER-02.** La versione del contratto è monotonicamente crescente. Non esistono versioni a virgola mobile o patch (es. `1.1`): ogni cambiamento incompatibile produce `schoolforge: 2`.
+
+**BR-MD-VER-03.** Il parser deve rifiutare file con versione superiore a quella supportata (`schoolforge: 2` quando solo v1 è implementato) con un messaggio che indica la versione del parser e quella del file.
+
+**BR-MD-VER-04.** L'aggiunta di campi opzionali al contratto (campi che il parser può ignorare senza perdita) NON costituisce una breaking change e NON richiede un incremento di versione. Un parser v1 deve ignorare i campi sconosciuti nei blocchi `schoolforge-question` senza errore (warning permissivo).
+
+**BR-MD-VER-05.** Le seguenti modifiche costituiscono breaking change e richiedono incremento di versione:
+- rimozione o rinomina di un campo obbligatorio;
+- cambio del tipo di un campo esistente;
+- cambio della semantica di un valore esistente;
+- aggiunta di un campo obbligatorio.
+
+### Processo di evoluzione del contratto
+
+| Passo | Chi | Cosa |
+|---|---|---|
+| 1 | Committente + Sviluppatore | Proposta di modifica con motivazione, campi interessati e classificazione (breaking / non-breaking) |
+| 2 | Committente | Approvazione esplicita della modifica |
+| 3 | Sviluppatore | Aggiornamento di `analisi-requisiti.md` sezione 8, `glossario.md`, fixture del package `lesson-contract` |
+| 4 | Sviluppatore | Implementazione del parser aggiornato con test per entrambe le versioni (se breaking) |
+| 5 | Sviluppatore | Documentazione della procedura di migrazione per file esistenti (se breaking) |
+
+Una breaking change del contratto non viene mai distribuita senza uno strumento o una procedura di migrazione documentata che consenta al Docente di aggiornare i file Markdown esistenti.
+
+### Retrocompatibilità
+
+In caso di breaking change, il backend deve supportare entrambe le versioni del contratto per almeno un ciclo di rilascio. Il Docente deve ricevere un avviso in UI per i file con versione obsoleta e deve poter scaricarli per aggiornarli localmente.
+
 ## 9. Gestione repository didattico — Modulo 1
 
 ### 9.1 Programmi e UDA
@@ -419,11 +455,13 @@ Il vincolo "solo dalle lezioni selezionate" riguarda il corpus operativo e l'ass
 
 Queste non sono lacune che l'architetto può risolvere arbitrariamente: richiedono una decisione del committente o del responsabile di esercizio. Fino alla conferma devono essere implementate come configurazioni, non come costanti nascoste. Autenticazione Google Education, assenza di scale di voto, assenza di SLO iniziali e archiviazione manuale su Drive istituzionale sono invece decisioni già risolte in questa versione.
 
-| ID | Decisione | Impatto | Scadenza |
-|---|---|---|---|
-| C-01 | Posizione di hosting, backup, RPO/RTO e responsabilità operativa | Dati e continuità | Prima del Modulo 1 go-live |
-| C-02 | Provider AI, condizioni contrattuali, residenza dati e consenso operativo per l'invio di risposte | AI e privacy | Prima dei moduli AI |
-| C-03 | Regola didattica per uso della correzione automatica, inclusa eventuale revisione umana obbligatoria | Rischio valutativo | Prima del Modulo 4 |
+| ID | Decisione | Impatto | Owner | Scadenza |
+|---|---|---|---|---|
+| C-01 | Posizione di hosting, backup, RPO/RTO e responsabilità operativa | Dati e continuità | Committente / Responsabile operativo | Prima del Modulo 1 go-live (gate G1) |
+| C-02 | Provider AI, condizioni contrattuali, residenza dati e consenso operativo per l'invio di risposte | AI e privacy | Committente | Prima del gate G5-AI |
+| C-03 | Regola didattica per uso della correzione automatica, inclusa eventuale revisione umana obbligatoria | Rischio valutativo | Committente / Docente | Prima del gate G6 |
+
+Per ciascuna decisione l'Owner è responsabile di produrre una scelta documentata entro la scadenza. Il responsabile tecnico è responsabile di segnalare con anticipo quando la mancanza della decisione rischia di bloccare l'avanzamento del delivery.
 
 ## 19. Matrice di tracciabilità dei vincoli fondamentali
 
