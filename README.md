@@ -4,7 +4,7 @@ Repository didattico personale **Markdown-first** per un docente. SchoolForge ce
 
 ## Stato del progetto
 
-La baseline di progetto è definita: brief, requisiti, architettura e piano di implementazione sono disponibili nel repository. L'implementazione applicativa non è ancora iniziata; il prossimo incremento è la **Fase 1 — Corsi, UDA e Lezioni**.
+La baseline di progetto è definita: brief, requisiti, architettura e piano di implementazione sono disponibili nel repository. L'implementazione applicativa non è ancora iniziata; il prossimo incremento è il **Modulo 1 — Repository** (Programmi, UDA e Lezioni).
 
 ## Obiettivo
 
@@ -43,12 +43,13 @@ Leggere i documenti in questo ordine:
 
 ## Roadmap di delivery
 
-| Fase | Prodotto rilasciato |
+| Modulo | Prodotto rilasciato |
 |---|---|
-| 1. Corsi, UDA e Lezioni | Il docente autenticato crea Corsi/Programmi e UDA, carica, consulta ed esporta lezioni Markdown con asset. |
-| 2. Generazione Verifiche | Il docente compone, attiva ed esporta una verifica immutabile come PDF on-demand, con la relativa soluzione. |
-| 3. Archiviazione Verifiche | Il docente gestisce classi/studenti, assegnazioni, consegne e storico delle prove da correggere. |
-| 4. Correzione Verifiche | Il docente assegna punteggi e percentuali con audit; AI assistita e automatica sono estensioni autorizzate separatamente. |
+| M1. Repository | Il docente autenticato crea Programmi e UDA, carica, consulta ed esporta lezioni Markdown con pool di domande e asset. |
+| M2. Verifiche e Portale | Il docente compone e attiva una verifica immutabile, scarica il PDF docente; lo studente accede al Portale e scarica/svolge una sola volta (email bruciata); export programma svolto. |
+| M3. Correzione manuale | Il docente corregge le consegne digitali, assegna punteggi e percentuali con rettifiche tracciate. |
+| M4. Storico | Il docente consulta lo storico per studente e per verifica, con filtri. |
+| M5. AI | L'AI propone correzioni; il docente approva con un clic. Assistita e automatica sono estensioni autorizzate separatamente (C-02/C-03). |
 
 L'AI è un'integrazione opzionale (Modulo 5): non blocca il percorso manuale delle prime fasi. Google Forms, roster Google Education e Google Drive sono esplicitamente fuori perimetro nella v2.
 
@@ -56,12 +57,13 @@ L'AI è un'integrazione opzionale (Modulo 5): non blocca il percorso manuale del
 
 La soluzione prevista è un monolite modulare serverless su Firebase/Google Cloud:
 
-- web app TypeScript su Firebase Hosting;
-- Firebase Authentication con Google Workspace for Education;
-- Cloud Functions per logica di business, PDF e integrazioni;
-- Cloud Firestore per metadati, verifiche, consegne, correzioni e audit;
-- Cloud Storage per Markdown, asset e staging di importazione;
-- Google Drive del docente per il caricamento manuale dei PDF archiviabili.
+- web app docente e Portale Verifiche (app separata) in TypeScript su Firebase Hosting;
+- Firebase Authentication con Google Workspace for Education (docente e studenti);
+- Cloud Functions per logica di business, PDF on-demand ed email bruciata;
+- Cloud Firestore per metadati, verifiche, consegne, correzioni, email bruciate e audit;
+- Cloud Storage per Markdown, asset e staging di importazione.
+
+I PDF sono generati on-demand e mai conservati. Google Drive e Google Forms non sono utilizzati.
 
 L'AI è isolata dietro un gateway e resta disabilitata finché non saranno approvati provider, consenso e regole di automazione.
 
@@ -90,4 +92,4 @@ documentazione/
 
 ## Prossimo passo
 
-Avviare la Fase 1 seguendo il backlog iniziale del piano di implementazione: ambiente Firebase `dev`, autenticazione del docente, contratto Lesson Markdown, Corsi/UDA e importazione validata delle lezioni.
+Avviare il Modulo 1 seguendo il backlog iniziale del piano di implementazione: ambiente Firebase `dev`, autenticazione del docente, contratto Lesson Markdown, Programmi/UDA e importazione validata delle lezioni.
