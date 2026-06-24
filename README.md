@@ -11,9 +11,9 @@ La baseline di progetto è definita: brief, requisiti, architettura e piano di i
 Le lezioni Markdown sono la fonte canonica della conoscenza del docente. Da esse il sistema deve poter derivare:
 
 - rendering delle lezioni;
-- verifiche, soluzioni e rubriche;
-- PDF e Google Forms;
-- archiviazione di prove e consegne;
+- verifiche e soluzioni;
+- PDF on-demand e svolgimento digitale nel Portale Verifiche;
+- archiviazione delle consegne digitali;
 - correzione manuale e, successivamente, AI assistita.
 
 SchoolForge non è un LMS, un registro elettronico o un portale studenti.
@@ -46,11 +46,11 @@ Leggere i documenti in questo ordine:
 | Fase | Prodotto rilasciato |
 |---|---|
 | 1. Corsi, UDA e Lezioni | Il docente autenticato crea Corsi/Programmi e UDA, carica, consulta ed esporta lezioni Markdown con asset. |
-| 2. Generazione Verifiche | Il docente compone, pubblica ed esporta una verifica immutabile in PDF, con soluzione e rubrica. |
+| 2. Generazione Verifiche | Il docente compone, attiva ed esporta una verifica immutabile come PDF on-demand, con la relativa soluzione. |
 | 3. Archiviazione Verifiche | Il docente gestisce classi/studenti, assegnazioni, consegne e storico delle prove da correggere. |
 | 4. Correzione Verifiche | Il docente assegna punteggi e percentuali con audit; AI assistita e automatica sono estensioni autorizzate separatamente. |
 
-Google Forms, roster Google Education e AI sono integrazioni opzionali: non bloccano il percorso manuale delle prime fasi.
+L'AI è un'integrazione opzionale (Modulo 5): non blocca il percorso manuale delle prime fasi. Google Forms, roster Google Education e Google Drive sono esplicitamente fuori perimetro nella v2.
 
 ## Architettura target
 

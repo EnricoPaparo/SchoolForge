@@ -177,12 +177,12 @@ Le attività F-01–F-07 sono fondazioni interne. Non costituiscono un rilascio 
 | R-01 | CRUD Programmi/UDA, ordinamento, flag svolto, disattivazione | F-03, F-05, F-06 | R-02, R-04 | UI e API con audit; impossibile eliminare entità referenziata |
 | R-02 | Upload staging file/cartella e preflight import (lesson + pool + uda) | F-02, F-04, F-05 | R-01, R-04 | Piano import con validi, invalidi, conflitti, asset mancanti |
 | R-03 | Commit atomico visibile, promozione Storage, aggiornamento `questionIndex` | R-02, F-03, F-07 | R-04 | Nessun contenuto parziale visibile; rollback/cleanup documentati |
-| R-04 | Rendering Markdown sanificato: contenuto lezione, asset, domande self_check | F-04, F-06 | R-01, R-02 | Soluzioni e domande assessment non compaiono nel rendering |
+| R-04 | Rendering Markdown sanificato: contenuto lezione, asset, domande self_check | F-04, F-06 | R-01, R-02 | Soluzioni e domande del pool non compaiono nel rendering |
 | R-05 | Sostituzione/eliminazione lezione corrente e pulizia oggetti orfani | R-03 | R-06 | Verifica esistente invariata; lezione corrente aggiornata/eliminata con conferma |
 | R-06 | Ricerca locale, download sorgente, export ZIP repository | R-03, R-04 | R-05 | ZIP apribile fuori SchoolForge con Markdown e asset corretti |
 | R-07 | E2E Repository, hardening regole, guida operativa import | R-01–R-06 | — | Checklist G2 e test verdi |
 
-**G2 — prova obbligatoria.** Il docente importa una cartella reale con lesson.md, pool.md e UDA.md, consulta il rendering (senza soluzioni), verifica che i blocchi assessment non siano esposti e scarica un export ZIP apribile senza SchoolForge.
+**G2 — prova obbligatoria.** Il docente importa una cartella reale con lesson.md, pool.md e UDA.md, consulta il rendering (senza soluzioni), verifica che le domande del pool non siano esposte e scarica un export ZIP apribile senza SchoolForge.
 
 ---
 
@@ -385,7 +385,7 @@ jobs:
 
 | Milestone | Test automatici minimi | Test umano obbligatorio | Non procedere se |
 |---|---|---|---|
-| G2 | Parser lesson/pool/uda, import, rendering sanificato, Storage Rules, export | Cartella lezione reale; soluzioni non compaiono nel rendering | Assessment/soluzioni esposti o export incompleto |
+| G2 | Parser lesson/pool/uda, import, rendering sanificato, Storage Rules, export | Cartella lezione reale; soluzioni non compaiono nel rendering | Domande del pool/soluzioni esposte o export incompleto |
 | G3 | Attivazione, stati, snapshot, PDF docente, email bruciata (doppio tentativo), programma svolto | Creazione verifica manuale; portale studente con doppio download | Verifica modificabile dopo attivazione; secondo download non rifiutato |
 | G4 | Consegna manuale, punteggi per item, percentuale, rettifica, audit | Correzione completa di una consegna test | Percentuale errata o valore precedente perso |
 | G5 | Creazione lazy studente, storico per studente e verifica, filtri paginati | Storico filtrabile con dati reali | Storico incompleto o studente senza email tracciabile |

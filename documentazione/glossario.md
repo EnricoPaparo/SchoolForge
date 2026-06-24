@@ -21,7 +21,7 @@ Unità organizzativa principale all'interno di un Programma. È rappresentata da
 Unità di conoscenza didattica strutturata come coppia di file Markdown: `lezione-XXX-titolo.md` (contenuto didattico, immagini, obiettivi, domande di autoverifica) e `lezione-XXX-titolo.pool.md` (pool di domande di verifica). In SchoolForge esiste solo la versione corrente di una Lezione; non esistono revisioni storiche. Una Lezione appartiene a una sola UDA nella V1.
 
 ### Pool di domande
-File `lezione-XXX-titolo.pool.md` associato a una Lezione. Contiene esclusivamente domande di tipo `assessment` con campi obbligatori `id`, `tipo`, `difficoltà`, `peso`, `testo`, `soluzione`. Le domande del pool non appaiono nel rendering della Lezione; alimentano il `questionIndex` e sono selezionabili per le Verifiche.
+File `lezione-XXX-titolo.pool.md` associato a una Lezione. Contiene esclusivamente domande di verifica con campi obbligatori `id`, `tipo` (`open`/`closed_single`/`closed_multiple`), `difficoltà`, `peso`, `testo`, `soluzione`. Le domande del pool non appaiono nel rendering della Lezione; alimentano il `questionIndex` e sono selezionabili per le Verifiche.
 
 ### Domanda archiviata
 Domanda strutturata presente in un file pool.md valido, idonea a essere selezionata per una Verifica. Ha sempre `tipo`, `difficoltà`, `peso` e `soluzione` definiti. Si distingue dalla Domanda generata, prodotta da AI.
@@ -88,7 +88,7 @@ Blocco di codice recintato con linguaggio `schoolforge-question` che contiene un
 Attributo di una Lezione che indica se il coppia lesson.md/pool.md rispetta il contratto v1. I valori sono `valid` e `invalid`. Solo le Lezioni `valid` possono contribuire al `questionIndex` e essere selezionate per nuove Verifiche. Una Lezione `invalid` rimane consultabile ma non generativa.
 
 ### `questionIndex`
-Indice Firestore delle domande `assessment` estratte da tutti i file pool.md correnti validi. Viene aggiornato a ogni importazione, sostituzione o eliminazione di una Lezione. Non è la fonte canonica delle domande (quella è il file pool.md): serve per la composizione rapida delle Verifiche senza dover rileggere tutti i file.
+Indice Firestore delle domande di verifica estratte da tutti i file pool.md correnti validi. Viene aggiornato a ogni importazione, sostituzione o eliminazione di una Lezione. Non è la fonte canonica delle domande (quella è il file pool.md): serve per la composizione rapida delle Verifiche senza dover rileggere tutti i file.
 
 ### Snapshot immutabile
 Copia del contenuto di una Verifica (domande, soluzioni, punteggi massimi) scritta in Firestore nella subcollection `exams/{examId}/items` al momento dell'attivazione. Lo snapshot è autonomo dalla Lezione di origine: modificare o eliminare una Lezione non altera snapshot già creati. Non esiste snapshot su Cloud Storage né PDF conservato.
