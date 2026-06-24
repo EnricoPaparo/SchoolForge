@@ -133,6 +133,8 @@ Ogni componente aggiuntivo deve giustificare la propria esistenza.
 
 La qualità dell'esperienza utente non è negoziabile: design moderno, responsivo e graficamente curato in entrambe le applicazioni.
 
+Il costo operativo deve restare il più basso possibile: nessun servizio sempre acceso, nessun componente enterprise o integrazione a pagamento senza una necessità concreta. L'uso di Firebase Blaze per backend e invio email richiede billing, ma il progetto deve usare prima le quote incluse e pagare solo il consumo strettamente necessario.
+
 ---
 
 # Utenti
@@ -153,48 +155,31 @@ La V1 non prevede:
 
 Gli studenti non hanno un account SchoolForge.
 
-Gli studenti accedono esclusivamente al Portale Verifiche per scaricare la propria verifica o svolgerla digitalmente.
+Gli studenti accedono esclusivamente al Portale Verifiche per ricevere la propria verifica cartacea via email o svolgerla digitalmente.
 
-Gli studenti non si registrano al sistema. Il loro riconoscimento avviene tramite email scolastica Google inserita al momento dell'accesso alla verifica.
+Gli studenti non si registrano al sistema. L'email inserita al momento dell'accesso è un recapito e un identificatore del tentativo, non una credenziale né una prova dell'identità dello studente.
 
 ---
 
 # Prerequisiti di Deployment
 
-L'uso di SchoolForge richiede i seguenti prerequisiti non negoziabili. In assenza di uno qualsiasi di questi, il sistema non può essere avviato.
+## Accesso del Docente
 
-## Google Workspace for Education
+Il Docente deve poter accedere all'applicazione mediante un'identità autenticata.
 
-Il Docente deve disporre di un account Google Workspace for Education assegnato da un istituto scolastico.
+SchoolForge usa Firebase Authentication ma non richiede Google Workspace for Education. Il metodo di autenticazione del Docente è configurabile nell'ambiente Firebase, purché garantisca l'accesso esclusivo al Docente proprietario nella V1.
 
-Questo non è un vincolo tecnico aggirabile: è la scelta architetturale centrale del sistema.
+Gli studenti non devono disporre di account Google, account SchoolForge o preregistrazione.
 
-Un account Google personale (@gmail.com) non è sufficiente.
+## Firebase e dati applicativi
 
-Gli studenti devono disporre di un account Google scolastico. Qualora non ne fossero già in possesso, il docente ne coordina la creazione ad inizio anno.
+SchoolForge usa un progetto Firebase di proprietà del Docente come ambiente applicativo. I dati applicativi persistenti devono essere creati nella regione di Milano `europe-west8`, ove il singolo servizio Firebase/Google Cloud lo supporti.
 
-Le funzionalità che dipendono da Google Workspace for Education:
-
-* autenticazione del Docente;
-* identificazione degli studenti tramite email scolastica Google.
-
-## Progetto Firebase
-
-È necessario un progetto Firebase con i seguenti servizi abilitati:
-
-* Firebase Authentication;
-* Cloud Firestore;
-* Cloud Storage;
-* Cloud Functions v2;
-* Secret Manager.
-
-Il piano gratuito Firebase (Spark) è sufficiente per un singolo docente nella V1.
-
-La decisione su regione, backup, RPO e RTO è documentata come C-01.
+Firebase Hosting può usare una rete di distribuzione globale e Firebase Authentication è un servizio gestito con proprie caratteristiche di localizzazione. SchoolForge non dichiara quindi che ogni elaborazione tecnica avvenga esclusivamente in Italia; la decisione di regione riguarda database, file applicativi e runtime backend.
 
 ## Connessione internet
 
-SchoolForge è un'applicazione web SPA con backend serverless. Non esiste una modalità offline.
+SchoolForge è un'applicazione web con backend serverless. Non esiste una modalità offline.
 
 ---
 
@@ -205,23 +190,12 @@ SchoolForge garantisce che la conoscenza didattica del Docente rimanga di sua pr
 ## Cosa il Docente può sempre recuperare
 
 * **File Markdown originali e asset**: esportabili in qualsiasi momento tramite la funzione "Export repository". Il file ZIP contiene i file nella struttura originale, leggibili con qualsiasi editor di testo, senza dipendenza da SchoolForge.
-* **Dati operativi** (configurazioni verifiche, email bruciate, consegne digitali, correzioni): esportabili tramite export Firestore dal pannello Google Cloud, leggibili come documenti JSON standard.
-* **Log di audit**: incluso nell'export Firestore.
+* **Dati operativi** (configurazioni verifiche, email bruciate, consegne digitali, correzioni): esportabili tramite la funzione di export del sistema in formati standard e leggibili indipendentemente dalla piattaforma.
 
 ## Cosa non viene recuperato automaticamente
 
 * Il rendering web delle lezioni (dipende dall'applicazione; il Markdown è autonomo).
 * I PDF delle verifiche: non vengono mai conservati dal sistema; il docente ne è responsabile una volta scaricati.
-* Le integrazioni Google (richiedono ri-configurazione OAuth in un nuovo sistema).
-
-## Procedura di uscita
-
-1. Eseguire "Export repository" dalla UI: produce un file ZIP con tutti i Markdown e gli asset correnti.
-2. Richiedere un export Firestore dal pannello Google Cloud (dati operativi, verifiche, consegne digitali, storico).
-3. Revocare le autorizzazioni OAuth di SchoolForge dal pannello Google del proprio account.
-4. Eliminare il progetto Firebase se non più necessario.
-
-Il punto 1 è sempre disponibile dalla UI. I punti 2–4 richiedono accesso alla console Google Cloud.
 
 ---
 
@@ -280,7 +254,7 @@ UDA 2 — Sicurezza Informatica
 
 Le UDA rappresentano l'unità organizzativa principale all'interno di un Programma.
 
-Ogni UDA è rappresentata da un file `uda-XX-titolo.md` con front matter YAML contenente almeno: titolo, competenze, obiettivi, periodo, ore previste.
+Ogni UDA è rappresentata da un file `uda-XX-titolo.md` con front matter YAML contenente almeno: titolo, competenze, obiettivi.
 
 Le lezioni appartengono all'UDA per posizione nella cartella. Non è necessaria una lista manuale.
 
@@ -293,7 +267,7 @@ Le verifiche possono essere generate da una singola lezione, da più lezioni o d
 Le lezioni sono composte da due file Markdown:
 
 * `lezione-XXX-titolo.md` — contenuto didattico puro: testo, immagini, obiettivi, domande di autoverifica.
-* `lezione-XXX-titolo.pool.md` — pool delle domande di verifica associate a quella lezione.
+* `lezione-XXX-titolo.pool.md` — pool delle domande di verifica associate a quella lezione che non vengono esposte nella fruizione della lezione.
 
 Le lezioni vengono create e modificate esternamente al sistema.
 
@@ -322,7 +296,7 @@ Ogni domanda deve specificare:
 | `difficoltà` | `bassa` / `media` / `alta` |
 | `peso` | `basso` / `medio` / `alto` |
 | `testo` | testo della domanda |
-| `soluzione` | risposta modello (aperte) o opzioni corrette (chiuse) |
+| `soluzione` | risposta (aperte) o opzioni corrette (chiuse) |
 
 **Difficoltà** determina quale domande vengono selezionate in fase di generazione (filtro e minimo garantito per livello).
 
@@ -334,7 +308,7 @@ Ogni domanda deve specificare:
 |---|---|
 | Basso / Bassa | 0.75 |
 | Medio / Media | 1.00 |
-| Alto / Alta | 1.50 |
+| Alto / Alta | 1.25 |
 
 La percentuale finale è calcolata come `Σ(punti assegnati) / Σ(punti massimi) × 100`.
 
@@ -351,7 +325,7 @@ Requisiti:
 * tema scuro;
 * supporto immagini;
 * visualizzazione domande autoverifica;
-* esclusione domande di verifica dal rendering di fruizione.
+* esclusione delle domande del file pool dal rendering di fruizione.
 
 Non è richiesta una modalità slide.
 
@@ -389,8 +363,6 @@ Al momento della generazione, il sistema:
 3. completa il numero richiesto pescando casualmente tra le difficoltà ammesse;
 4. calcola il punteggio massimo per ogni domanda estratta.
 
-Le domande generate tramite AI devono basarsi esclusivamente sulle lezioni selezionate. L'utilizzo di conoscenza proveniente dal web è esplicitamente escluso.
-
 ---
 
 # PDF della Verifica
@@ -425,15 +397,15 @@ Lo studente apre il link e sceglie il canale:
 
 ## Canale A — Cartaceo
 
-Lo studente inserisce nome, cognome, email scolastica e, facoltativamente, classe. Il sistema genera il PDF con i dati precompilati e lo studente lo scarica. L'email è bruciata per quella verifica: non è possibile scaricare una seconda volta con la stessa email.
+Lo studente inserisce nome, cognome, email e, facoltativamente, classe. Il sistema genera il PDF con i dati precompilati e lo invia all'indirizzo dichiarato. L'email è un recapito, non una credenziale né una prova dell'identità o dell'appartenenza dello studente. L'email è bruciata per quella verifica: non è possibile ottenere un secondo invio con lo stesso indirizzo.
 
 Lo studente svolge la verifica su carta o con qualsiasi strumento esterno. La consegna avviene fisicamente al docente. Il sistema non è coinvolto nella correzione cartacea.
 
 ## Canale B — Digitale (Portale Verifiche)
 
-Lo studente inserisce nome, cognome, email scolastica e, facoltativamente, classe. Il sistema genera le domande e lo studente le svolge direttamente nel portale. L'email è bruciata per quella verifica.
+Lo studente inserisce nome, cognome, email e, facoltativamente, classe. Il sistema genera le domande e lo studente le svolge direttamente nel portale. L'email è bruciata per quella verifica.
 
-Le risposte vengono salvate strutturate su Firestore e sono disponibili per la correzione nel sistema.
+Le risposte vengono salvate strutturate nel database operativo e sono disponibili per la correzione nel sistema.
 
 ---
 
@@ -459,7 +431,7 @@ La deterrenza non è sicurezza: un'uscita dal tab non annulla la verifica. Il do
 
 Gli studenti non si registrano al sistema e non hanno un account SchoolForge.
 
-Il riconoscimento avviene tramite email scolastica Google inserita al momento dell'accesso alla verifica. Non è richiesta alcuna pre-registrazione.
+L'email è dichiarata al momento dell'accesso alla verifica esclusivamente come recapito e identificatore del tentativo. Può essere scolastica o personale; non è richiesta alcuna pre-registrazione, verifica di possesso o autenticazione.
 
 Il campo classe è facoltativo: lo studente può inserirlo al momento del download/accesso. Non è bloccante.
 
@@ -485,9 +457,31 @@ Ogni rettifica è tracciata con valore precedente, nuovo valore e motivazione.
 
 ---
 
+# Esportazione delle Verifiche Svolte
+
+Le verifiche svolte nel Portale Verifiche digitale devono poter essere esportate tutte insieme dal Docente tramite il comando **Esporta verifiche**.
+
+L'export è costruito dalle consegne digitali definitive e dai rispettivi snapshot di verifica effettivamente assegnati allo studente. Non dipende dalla versione corrente delle lezioni o dei pool.
+
+Per ogni consegna inclusa, il documento di export deve contenere almeno:
+
+* dati dichiarati dallo studente: nome, cognome, email e classe se presente;
+* dati della verifica: titolo, data e identificativo del tentativo;
+* domande effettivamente assegnate, con tipo, difficoltà, peso e punteggio massimo;
+* risposta fornita per ogni domanda;
+* punteggio, commento e percentuale, se la correzione è disponibile.
+
+Le consegne sono ordinate per verifica e poi per data di consegna. Le consegne annullate o eliminate non fanno parte dell'export.
+
+Il formato di presentazione (PDF unico, Markdown o altro formato standard) sarà deciso in fase di progettazione del renderer. Il contenuto elencato sopra è invece vincolante.
+
+L'export viene generato on-demand, scaricato dal Docente e non viene conservato dal sistema. Il Docente lo può caricare manualmente nel Drive dell'istituto; SchoolForge non richiede integrazione con Google Drive.
+
+---
+
 # Correzione Assistita AI
 
-La correzione AI è un modulo successivo, dipendente dalle decisioni C-02 e C-03.
+La correzione AI è un modulo successivo.
 
 Richiede consegne digitali strutturate (Portale Verifiche).
 
@@ -497,7 +491,7 @@ Ridurre il tempo di correzione del docente mantenendo la governance del processo
 
 ## Modalità Assistita
 
-L'AI propone punteggio, motivazione e commento per ogni risposta.
+L'AI propone punteggio, motivazione e commento per ogni risposta, con spiegazione degli errori.
 
 Il docente approva, modifica o rifiuta ogni proposta individualmente o in blocco.
 
@@ -509,11 +503,13 @@ Attivabile solo con opt-in esplicito del docente per la specifica verifica o ass
 
 Ogni esito automatico è marcato come tale e rimane modificabile.
 
+Il docente può inserire una breve nota testuale di correzione che l'AI deve considerare per la specifica verifica o assegnazione.
+
 ## Rilevamento Anomalie Stilistiche
 
 Il sistema può segnalare risposte stilisticamente incoerenti con il profilo dello studente.
 
-La segnalazione è consultiva: non blocca la correzione e non penalizza automaticamente lo studente.
+La segnalazione è consultiva: non blocca la correzione e non penalizza automaticamente lo studente. Il rapporto motivato è consultabile esclusivamente dal Docente.
 
 ## Contesto di Correzione
 
@@ -551,13 +547,13 @@ Generazione Verifiche e PDF: verifica come configurazione, generazione on-demand
 
 ## Modulo 3
 
-Portale Verifiche digitale: svolgimento online, consegne strutturate su Firestore.
+Portale Verifiche digitale: svolgimento online e consegne strutturate su Cloud Firestore.
 
 ---
 
 ## Modulo 4
 
-Correzione manuale e percentuali: correzione consegne digitali, punteggi, percentuali, rettifiche tracciate.
+Correzione manuale e percentuali: correzione consegne digitali, punteggi, percentuali, rettifiche tracciate ed export globale delle verifiche svolte.
 
 ---
 
@@ -567,14 +563,26 @@ Correzione Assistita AI: proposte assistite, approvazione massiva, modalità aut
 
 ---
 
+# Decisione Operativa Formalizzata — C-01
+
+| Voce | Decisione |
+|---|---|
+| Provider dell'ambiente | Firebase, su progetto di proprietà del Docente. |
+| Regione dei dati applicativi | Milano `europe-west8`, ove supportata dal servizio. |
+| Backup | Backup giornaliero di Cloud Firestore e copia protetta di Markdown e asset in Cloud Storage, con conservazione minima di 30 giorni e verifica periodica di ripristino. |
+| RPO | 24 ore: in caso di incidente può essere perso al massimo il lavoro successivo all'ultimo backup giornaliero riuscito. |
+| RTO | Best-effort: non è stabilito un tempo massimo contrattuale di ripristino. |
+| Responsabile operativo | Il Docente: proprietario del progetto, delle credenziali, del billing, della verifica dei backup e dell'avvio del ripristino. |
+
+---
+
 # Decisioni Aperte
 
 Le seguenti decisioni non possono essere dedotte dal brief e richiedono una scelta esplicita del committente prima del relativo rilascio. Non devono essere sostituite da assunzioni tecniche nascoste.
 
 | ID | Decisione | Impatto | Owner | Scadenza |
 |---|---|---|---|---|
-| C-01 | Regione Firebase, politica di backup, RPO, RTO e responsabilità operativa | Provisioning infrastruttura e go-live produzione | Committente / Responsabile operativo | Prima del go-live Modulo 1 |
-| C-02 | Provider AI, condizioni contrattuali, residenza dei dati, consenso per l'invio di risposte degli studenti | Implementazione AiGateway e funzionalità AI | Committente | Prima del Modulo 5 |
+| C-02 | Provider AI, condizioni contrattuali, residenza dei dati e condizioni di invio delle risposte degli studenti | Implementazione delle funzionalità AI | Committente / Docente | Prima del Modulo 5 |
 | C-03 | Regola didattica per l'uso della correzione automatica, ambito di applicazione e eventuale revisione umana obbligatoria | Abilitazione modalità automatica | Committente / Docente | Prima dell'abilitazione modalità automatica (Modulo 5) |
 
 Ogni decisione produce un verbale scritto nel repository che documenta: data, approvatore, opzioni valutate, scelta effettuata e vincoli operativi.
@@ -596,12 +604,6 @@ Supporto a più docenti.
 ## Editor Integrato
 
 Modifica dei Markdown direttamente dal sistema.
-
----
-
-## Analytics Didattiche
-
-Statistiche aggregate per classe, studente, UDA e argomento.
 
 ---
 
@@ -635,8 +637,6 @@ Non fanno parte del progetto:
 * videolezioni;
 * LMS completo;
 * social learning;
-* Google Drive come storage del sistema;
-* Google Forms come canale di erogazione;
 * PDF conservati dal sistema;
 * correzione di prove cartacee nel sistema;
 * portale studenti con account e autenticazione propria;
@@ -646,4 +646,4 @@ Non fanno parte del progetto:
 
 # Definizione Finale
 
-SchoolForge è un repository didattico Markdown-first che centralizza la conoscenza del docente e la utilizza come fonte unica per generare verifiche on-demand, supportare la correzione digitale e abilitare future analisi didattiche. La conoscenza rimane indipendente dalla piattaforma. Il PDF non viene mai conservato dal sistema. L'AI è una capacità opzionale e incrementale. Ogni modulo produce valore autonomo.
+SchoolForge è un repository didattico Markdown-first che centralizza la conoscenza del docente e la utilizza come fonte unica per generare verifiche on-demand, supportare la correzione digitale, esportare le verifiche svolte e abilitare future analisi didattiche. La conoscenza rimane indipendente dalla piattaforma. I documenti di verifica ed export sono generati on-demand e non vengono conservati dal sistema. L'AI è una capacità opzionale e incrementale. Ogni modulo produce valore autonomo.

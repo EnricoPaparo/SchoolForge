@@ -1,510 +1,401 @@
 # SchoolForge — Analisi dei requisiti
 
-**Versione:** 2.0  
+**Versione:** 3.0
 **Data:** 24 giugno 2026  
-**Stato:** baseline di requisiti per la progettazione architetturale  
-**Destinatario successivo:** Solution / Software Architect
+**Stato:** baseline funzionale approvabile
+**Input vincolante:** `documentazione/brief.md`
+**Output successivo:** architettura di sistema e piano di implementazione riallineati
 
 ---
 
 ## 1. Scopo, autorità e convenzioni
 
-Questo documento traduce il *Project Concept Brief* in requisiti di prodotto, regole operative, vincoli e criteri di accettazione verificabili. È l'input funzionale per la progettazione architetturale; non prescrive framework, database, provider AI o tecnologia di deployment.
+Questo documento trasforma il brief in requisiti di prodotto verificabili. Definisce comportamenti, dati, vincoli e criteri di accettazione; non impone framework, database, cloud, provider di autenticazione o provider AI.
 
-Le decisioni esplicite del brief sono vincolanti. Le specifiche contrassegnate **[D]** sono requisiti derivati: rendono operativa un'intenzione esplicita del brief senza cambiarne il perimetro. Devono essere trattate come baseline, salvo modifica approvata dal committente. Le voci **[C]** sono configurazioni o decisioni di esercizio che devono essere definite prima del relativo rilascio; non devono essere sostituite da assunzioni tecniche nascoste.
+In caso di conflitto prevalgono: obblighi di legge applicabili, decisioni esplicite del brief, questa analisi, architettura e implementazione. Un requisito derivato può rendere una decisione operativa, ma non può cambiare il perimetro del prodotto.
 
 | Prefisso | Significato |
 |---|---|
 | FR | Requisito funzionale |
-| BR | Regola di business vincolante |
+| BR | Regola di business |
 | NFR | Requisito non funzionale |
 | AC | Criterio di accettazione |
-| D | Specificazione derivata dall'analisi |
-| C | Decisione/configurazione da confermare |
+| C | Decisione di esercizio ancora necessaria |
 
-In caso di conflitto prevalgono, nell'ordine: obblighi di legge applicabili, decisioni esplicite del brief, questo documento, scelte architetturali. Nessuna scelta architetturale può ampliare lo scope o attenuare un requisito qui definito senza approvazione del committente.
+### 1.1 Decisioni applicate in questa baseline
 
-## 2. Sintesi esecutiva
+| ID | Decisione ricevuta | Conseguenza nei requisiti |
+|---|---|---|
+| D-01 | L'email dello studente è un recapito, non un'identità verificata. | Nessuna autenticazione, verifica di possesso, controllo di dominio o integrità dell'identità nel Portale. |
+| D-02 | Il docente non dipende da Google Workspace for Education. | Firebase Authentication gestisce l'accesso del docente con il provider configurato; Google Workspace non è richiesto. |
+| D-03 | Non serve ricreare una verifica passata dopo modifiche alle lezioni. | Non è richiesto versionare l'intero repository né rigenerare PDF passati. La configurazione resta immutabile; una consegna digitale conserva però le domande effettivamente mostrate, necessarie alla correzione. |
+| D-04 | La generazione AI di domande è eliminata. | I pool Markdown sono l'unica fonte delle domande di verifica. L'AI rimane solo nel Modulo 5, per la correzione. |
+| D-05 | Contratto pool e ciclo del Portale sono definiti da questa analisi. | Le sezioni 6 e 9 costituiscono la baseline da implementare e testare. |
+| D-06 | C-01 è stata formalizzata. | Firebase è il provider; dati applicativi in Milano `europe-west8` ove supportato, backup giornaliero completo, RPO 24 ore, RTO best-effort e Docente responsabile operativo. |
 
-SchoolForge è un repository didattico personale, **Markdown-first** e **knowledge-first**, per un solo docente. La lezione Markdown è la fonte canonica della conoscenza. Da una selezione esplicita di lezioni e UDA il sistema genera verifiche on-demand, le eroga tramite il Portale Verifiche, raccoglie le consegne digitali e supporta la correzione manuale e, opzionalmente, AI.
+### 1.2 Assunzione esplicita sul canale cartaceo
 
-Non è un LMS, un registro elettronico né un portale studenti con account. Gli studenti accedono esclusivamente al Portale Verifiche per scaricare o svolgere digitalmente la propria prova. Il PDF non viene mai conservato dal sistema: viene generato al volo, scaricato e dimenticato. L'AI è facoltativa e non può usare fonti web: ogni output dipende esclusivamente dal corpus didattico selezionato.
+Il brief aggiornato chiarisce che l'email serve a ricevere la verifica. Pertanto il canale cartaceo invia il PDF all'indirizzo dichiarato; non offre un download diretto allo studente. Il docente conserva invece il download diretto senza limiti. Questa scelta introduce un servizio di invio email come dipendenza di implementazione, ma non modifica la proprietà o la conservazione dei PDF: il sistema non li archivia.
 
-Il prodotto cresce per moduli indipendenti: il Repository Didattico produce valore senza AI, senza Portale e senza correzione.
+## 2. Visione, obiettivi e perimetro
 
-## 3. Obiettivi e misure di esito
+SchoolForge è un repository didattico personale, Markdown-first e knowledge-first, per un solo docente. La conoscenza vive in file Markdown portabili. Il sistema la consulta, valida, organizza e usa per presentare lezioni, comporre verifiche, raccogliere consegne digitali e assistere facoltativamente la correzione.
 
-### 3.1 Obiettivi di prodotto
+### 2.1 Obiettivi
 
-1. Centralizzare la conoscenza didattica in file Markdown portabili e indipendenti dalla piattaforma.
-2. Rendere la conoscenza ricercabile, navigabile e visualizzabile senza modificare i file nel sistema.
-3. Generare verifiche on-demand coerenti con la configurazione, con domande distribuite per difficoltà e peso.
-4. Raccogliere e storicizzare consegne digitali con punteggi, percentuali e tracciabilità delle rettifiche.
-5. Ridurre il lavoro operativo del docente senza trasferire all'AI la governance del processo o la proprietà della conoscenza.
+1. Conservare la conoscenza didattica in un formato autonomo, esportabile e leggibile senza SchoolForge.
+2. Evitare duplicazioni tra lezioni, questionari, verifiche e correzioni.
+3. Generare verifiche coerenti con fonti, tipi, difficoltà e pesi scelti dal docente.
+4. Consentire un canale cartaceo semplice e un canale digitale strutturato, senza account studenti.
+5. Mantenere il docente responsabile di attivazione, correzione e decisioni valutative.
+6. Rendere l'AI opzionale, confinata e incapace di bloccare i flussi manuali.
 
-### 3.2 Misure operative V1
+### 2.2 Perimetro incluso
 
-Il committente non stabilisce vincoli quantitativi stringenti su volumi, tempi di risposta o disponibilità. L'architettura deve rendere osservabili errori, durate e crescita dei contenuti per consentire una successiva definizione dei target sulla base dell'uso reale.
-
-## 4. Perimetro
-
-### 4.1 Incluso
-
-| Area | Funzione inclusa |
+| Area | Capacità |
 |---|---|
-| Repository | Gestione di programmi, UDA (con file UDA.md), lezioni Markdown, pool domande e relativi asset |
-| Programma svolto | Export come file testo della struttura UDA/lezioni selezionate dal docente, per deposito presso l'istituto |
-| Fruizione | Rendering lezioni con immagini, tema chiaro/scuro, autoverifica visibile, domande di verifica nascoste |
-| Verifiche | Configurazione on-demand con selezione corpus, difficoltà, peso, varianti; generazione PDF al volo |
-| Portale Verifiche | App separata: download PDF personalizzato o svolgimento digitale; email bruciata; deterrenza di base |
-| Pool domande | File `.pool.md` per lezione con tipo, difficoltà, peso e soluzione; punteggio max = coeff_diff × coeff_peso |
-| Correzione digitale | Punteggi per item, percentuali, rettifiche tracciate per consegne digitali |
-| AI successiva | Generazione domande, correzione assistita e, se espressamente abilitata, automatica |
+| Repository didattico | Programmi, UDA, lezioni, pool, asset, rendering, export ZIP e programma svolto. |
+| Verifiche | Configurazione, selezione da pool, punteggi, varianti, attivazione e PDF on-demand. |
+| Portale Verifiche | Invio PDF al recapito dichiarato oppure svolgimento digitale senza account. |
+| Correzione ed export | Consultazione consegne digitali, punteggi manuali, percentuale, rettifiche tracciate ed export globale delle verifiche svolte. |
+| AI successiva | Proposte di correzione, correzione automatica con opt-in e rapporto consultivo sulle anomalie stilistiche. |
 
-### 4.2 Escluso
+### 2.3 Fuori scope vincolante
 
-Sono espressamente fuori scope: registro elettronico, presenze, compiti, forum, chat, videolezioni, social learning, LMS completo, portale studenti con account SchoolForge, gestione multi-docente/multi-istituto, editor Markdown integrato, analytics didattiche, profilo studente AI, Google Drive come storage del sistema, Google Forms come canale di erogazione, PDF conservati dal sistema, correzione di prove cartacee nel sistema. La conoscenza proveniente dal web non è una fonte didattica primaria né una fonte consentita per la generazione AI.
+Registro elettronico, presenze, compiti, chat, forum, videolezioni, LMS, social learning, multi-docente, multi-istituto, editor Markdown integrato, account studenti, correzione di prove cartacee, PDF archiviati, fonti web per l'AI e generazione AI delle domande non devono apparire come dipendenze o funzionalità dei moduli previsti.
 
-## 5. Utenti, ruoli e autorizzazioni
+## 3. Utenti, ruoli e identità
 
 | Ruolo | Descrizione | Permessi |
 |---|---|---|
-| Docente proprietario | Unico utente applicativo della V1; usa l'account Google Workspace for Education assegnato dall'istituto | Accesso completo a contenuti, configurazioni, output, archivi e azioni AI |
-| Studente | Accede al solo Portale Verifiche; non è utente di SchoolForge | Download PDF personalizzato o svolgimento digitale tramite Portale; nessun accesso al repository, alle soluzioni o allo storico |
-| Servizio esterno | Provider AI, se configurato | Accesso strettamente limitato allo scopo della singola invocazione |
+| Docente proprietario | Unico utente applicativo della V1. | Gestisce contenuti, verifiche, invii, consegne, correzioni, export e impostazioni AI. |
+| Studente | Utente anonimo del solo link di una verifica. | Dichiara dati minimi, riceve il PDF oppure svolge e consegna nel Portale. |
+| Servizi esterni | Servizi email e, dal Modulo 5, AI. | Ricevono solo i dati strettamente necessari alla singola operazione. |
 
-**FR-AUTH-01.** Il sistema deve autenticare il Docente proprietario tramite il suo account Google Workspace for Education. L'accesso deve essere limitato all'account o al dominio Google Education configurato; account personali o non autorizzati non devono poter accedere.  
-**FR-AUTH-02.** La V1 espone un solo ruolo applicativo: Docente proprietario. Non deve introdurre ruoli organizzativi, condivisione tra docenti o deleghe.  
-**BR-AUTH-01.** Gli studenti non devono poter autenticarsi in SchoolForge, leggere i contenuti del repository, consultare soluzioni o accedere allo storico delle correzioni.  
-**NFR-AUTH-01.** L'identità del Docente deve essere associata a un identificatore Google stabile, non al solo indirizzo email.
+**FR-AUTH-01.** Il pannello del Docente deve usare Firebase Authentication con un provider configurato nell'ambiente. Il provider deve restituire un identificatore stabile e deve consentire di limitare l'accesso al solo Docente proprietario della V1, senza richiedere Google Workspace for Education.
 
-## 6. Glossario e modello di dominio
+**FR-AUTH-02.** La V1 non prevede registrazione, invito, delega o ruolo per altri docenti. Un cambio del Docente proprietario è un'operazione amministrativa fuori dalla normale UI.
 
-| Entità | Definizione e relazioni essenziali |
+**BR-AUTH-01.** Il Portale Verifiche non autentica lo studente. Nome, cognome, email e classe sono dichiarazioni dell'utente e non sono attribuiti a un'identità verificata.
+
+**BR-AUTH-02.** L'email può essere scolastica o personale. Il sistema deve normalizzarla solo per applicare la regola dell'email bruciata: rimozione degli spazi esterni e confronto case-insensitive. Non deve validarne dominio, titolare o appartenenza a una classe.
+
+**NFR-AUTH-01.** Soluzioni, opzioni corrette, dati di correzione e funzioni del Docente non devono essere esposti dal Portale o da URL studente.
+
+## 4. Modello di dominio
+
+| Entità | Definizione |
 |---|---|
-| Programma | Materia o percorso didattico. Contiene una o più UDA. |
-| UDA | Unità organizzativa principale. Rappresentata da un file `uda-XX-titolo.md` con attributi YAML (titolo, competenze, obiettivi, periodo, ore). Appartiene a un Programma, contiene Lezioni. |
-| Lezione | Coppia di file: `lezione-XXX-titolo.md` (contenuto didattico) e `lezione-XXX-titolo.pool.md` (pool domande, opzionale). Appartiene a una UDA per posizione nella cartella. SchoolForge non conserva revisioni storiche. |
-| Pool domande | Insieme di domande associate a una Lezione, definite nel file `.pool.md`. Ogni domanda ha tipo, difficoltà, peso e soluzione. |
-| Domanda archiviata | Domanda presente nel pool di una Lezione valida, idonea alla selezione per una Verifica. |
-| Domanda generata | Proposta prodotta da AI dal corpus autorizzato; utilizzabile solo dopo approvazione esplicita del docente. |
-| Verifica | Configurazione immutabile (corpus, n° domande, tipo, difficoltà, peso, varianti) dalla quale viene generato un PDF on-demand per ogni richiedente. Non è un documento pre-generato. |
-| Consegna digitale | Insieme di risposte strutturate inviate da uno Studente tramite il Portale Verifiche per una specifica Verifica. Immutabile nel dato sorgente. |
-| Correzione | Punteggi, commenti, motivazioni e percentuale associati a una Consegna digitale. Distingue origine manuale e AI. |
-| Email bruciata | Email con cui uno studente ha già scaricato o svolto una Verifica. Non può essere riutilizzata per la stessa Verifica. |
+| Programma | Materia o percorso didattico, contenitore di una o più UDA. |
+| UDA | Unità organizzativa rappresentata da un file `uda-XX-titolo.md`; contiene lezioni per posizione in cartella. |
+| Lezione | File `lezione-XXX-titolo.md` con contenuto didattico e, facoltativamente, file `.pool.md`. |
+| Pool | Insieme strutturato di domande di una lezione, non visualizzato nel rendering della lezione. |
+| Verifica | Configurazione che seleziona fonti e regole di estrazione; non è un PDF conservato. |
+| Istanza digitale | Snapshot della verifica effettivamente assegnato a un tentativo digitale, con le sole informazioni necessarie a svolgimento, correzione ed export didattico. |
+| Tentativo | Accesso di uno studente a una verifica per un canale; è associato a un solo recapito normalizzato. |
+| Consegna | Risposte inviate in modo definitivo nel canale digitale. |
+| Correzione | Punteggi, commenti, percentuale e relative rettifiche. |
 
-### 6.1 Relazioni obbligatorie
+**BR-DOM-01.** I riferimenti tecnici devono usare identificatori stabili, non titoli o nomi file. Rinominare un contenuto non può creare riferimenti orfani.
 
-```text
-Programma 1 ──< UDA (UDA.md) 1 ──< Lezione (content.md + pool.md)
-Lezione 1 ──< Domanda archiviata (nel pool)
+**BR-DOM-02.** Una lezione senza pool è valida e visualizzabile, ma non fornisce domande per la generazione delle verifiche.
 
-Verifica (configurazione) ──> genera PDF on-demand per Studente
-Verifica ──< Consegna digitale 1 ──1 Correzione
-```
+**BR-DOM-03.** Il sistema non è un archivio di versioni dei Markdown. File e asset correnti sono la conoscenza corrente; l'export repository restituisce tale stato corrente.
 
-**BR-DOM-01.** Ogni identificatore di dominio deve essere stabile e non dipendere da titolo, nome file o posizione di cartella.  
-**BR-DOM-02.** Una Verifica pubblicata non dipende dal contenuto corrente delle Lezioni: le domande e le soluzioni selezionate sono parte della configurazione immutabile.  
-**BR-DOM-03.** Un nome, un titolo o una UDA possono cambiare senza invalidare Consegne o Correzioni già archiviate.  
-**BR-DOM-04.** SchoolForge non conserva revisioni storiche delle Lezioni. La modifica o l'eliminazione di una Lezione agisce solo sul repository corrente.
+## 5. Repository didattico e programma svolto — Modulo 1
 
-## 7. Principi e vincoli architetturalmente rilevanti
+**FR-REP-01.** Il docente deve poter creare e gestire Programmi, importare UDA, lezioni, pool e asset mediante upload di file singoli, cartelle o archivio supportato dall'implementazione.
 
-**BR-CORE-01 — Markdown-first.** La conoscenza didattica esiste in file Markdown standard leggibili al di fuori di SchoolForge. Il database è un indice e un archivio di dati operativi; non è l'unica sede del contenuto didattico.
+**FR-REP-02.** Il sistema deve mostrare una validazione prima di rendere disponibili i file importati. Un errore in un pool non rende non valida la lezione, ma il pool non è selezionabile finché non viene corretto.
 
-**BR-CORE-02 — Fonte unica.** Il contenuto delle Lezioni e i pool domande costituiscono il corpus didattico. Verifiche, soluzioni e analisi devono dichiarare la provenienza da tale corpus.
+**FR-REP-03.** Il docente deve poter sostituire o eliminare file e cartelle. Prima dell'azione il sistema deve indicare gli elementi interessati e l'effetto sulle verifiche future. Non deve promettere la rigenerazione di verifiche cartacee già inviate.
 
-**BR-CORE-03 — Knowledge-first.** In caso di conflitto tra una funzione accessoria e conservazione, portabilità o integrità della conoscenza, deve prevalere la conoscenza.
+**FR-REP-04.** Il rendering della lezione deve supportare Markdown e immagini, tema chiaro e scuro, e domande di autoverifica presenti nel file lezione. Non deve renderizzare il file `.pool.md`.
 
-**BR-CORE-04 — AI optional.** Tutte le funzioni dei Moduli 1–4 devono restare utilizzabili con AI non configurata. L'assenza di AI deve produrre messaggi espliciti e percorsi manuali, non errori bloccanti.
+**FR-REP-05.** Il sistema deve produrre un ZIP con i Markdown e gli asset correnti nella struttura importata, senza trasformarli in formato proprietario.
 
-**BR-CORE-05 — Evoluzione incrementale.** Ogni modulo rilasciato è eseguibile senza dipendere dai moduli successivi. Nessun requisito del Modulo 1 può richiedere un provider AI o consegne digitali.
+**FR-REP-06.** Il docente deve poter selezionare UDA e lezioni svolte e scaricare un file di testo del programma svolto nell'ordine della struttura didattica.
 
-**BR-CORE-06 — PDF non conservato.** Il sistema non archivia mai PDF generati. Il PDF è prodotto on-demand, trasmesso al richiedente e immediatamente eliminato. La responsabilità della conservazione del PDF appartiene al Docente o allo Studente.
+**BR-REP-01.** Il sistema non modifica semanticamente il Markdown importato. Eventuali metadati operativi sono conservati separatamente dai file originali.
 
-## 8. Contratto dei file Markdown — Lesson Contract v1 [D]
+**AC-REP-01.** Data una UDA con una lezione valida e un pool non valido, il rendering della lezione funziona e la UI mostra gli errori del pool con file, domanda e campo interessati.
 
-Il formato segue Markdown CommonMark con YAML front matter. Le estensioni SchoolForge si limitano al front matter e ai file pool; un file resta leggibile come normale Markdown anche senza l'applicazione.
+**AC-REP-02.** Dato un repository con asset e cartelle annidate, l'export ZIP mantiene file, nomi e relazioni di percorso leggibili fuori da SchoolForge.
 
-### 8.1 File UDA — `uda-XX-titolo.md`
+## 6. Contratto Markdown e pool domande v1
 
-```yaml
+### 6.1 UDA e lezione
+
+**BR-MD-01.** Il file UDA deve chiamarsi `uda-XX-titolo.md` e dichiarare nel front matter YAML almeno `titolo`, `competenze` e `obiettivi`. `competenze` e `obiettivi` sono liste di stringhe non vuote.
+
+**BR-MD-02.** Una lezione deve chiamarsi `lezione-XXX-titolo.md`. Il contenuto Markdown è libero; il sistema non richiede un editor né impone una struttura didattica aggiuntiva.
+
+### 6.2 Formato del pool
+
+Ogni pool usa il nome della lezione con suffisso `.pool.md` e contiene solo il seguente front matter YAML. La scelta evita una grammatica Markdown ambigua e mantiene domande, formule e risposte multiriga esprimibili in Markdown mediante blocchi YAML `|`.
+
+```md
 ---
-schoolforge: 1
-kind: uda
-id: "tpsit-3-uda-01"
-program_id: "tpsit-3"
-title: "Reti e Protocolli"
-competencies:
-  - "Progettare e realizzare sistemi di elaborazione dati"
-objectives:
-  - "Comprendere il modello client-server"
-  - "Distinguere i principali protocolli di rete"
-period: "Ottobre – Dicembre"
-hours: 24
----
-```
-
-| Campo | Regola |
-|---|---|
-| `schoolforge` | Obbligatorio; valore `1`. |
-| `kind` | Obbligatorio; valore `uda`. |
-| `id` | Obbligatorio; univoco nel repository. |
-| `program_id` | Obbligatorio; deve identificare un Programma esistente. |
-| `title` | Obbligatorio. |
-| `competencies` | Obbligatorio; lista non vuota. |
-| `objectives` | Obbligatorio; lista non vuota. |
-| `period` | Facoltativo. |
-| `hours` | Facoltativo; numero intero positivo. |
-
-### 8.2 File lezione — `lezione-XXX-titolo.md`
-
-```yaml
----
-schoolforge: 1
-kind: lesson
-id: "lesson-tpsit-3-01"
-program_id: "tpsit-3"
-uda_id: "tpsit-3-uda-01"
-title: "Introduzione alle reti"
-objectives:
-  - "Descrivere il modello client-server"
-  - "Distinguere LAN e WAN"
+schema: schoolforge-pool/v1
+questions:
+  - id: q-001
+    tipo: aperta
+    difficolta: media
+    peso: alto
+    testo: |
+      Spiega la differenza tra HTTP e HTTPS.
+    soluzione: |
+      HTTPS aggiunge un canale cifrato con autenticazione del server.
+  - id: q-002
+    tipo: chiusa_singola
+    difficolta: bassa
+    peso: medio
+    testo: Quale protocollo risolve i nomi di dominio?
+    opzioni:
+      - id: a
+        testo: DNS
+      - id: b
+        testo: DHCP
+    soluzione: [a]
 ---
 ```
 
-| Campo | Regola |
-|---|---|
-| `schoolforge` | Obbligatorio; valore `1`. |
-| `kind` | Obbligatorio; valore `lesson`. |
-| `id` | Obbligatorio; univoco nel repository; non riutilizzabile dopo eliminazione. |
-| `program_id` | Obbligatorio. |
-| `uda_id` | Obbligatorio; deve identificare una UDA appartenente al `program_id`. |
-| `title` | Obbligatorio. |
-| `objectives` | Obbligatorio; lista non vuota. |
-
-Il corpo Markdown usa intestazioni di livello 2 nell'ordine: `## Contenuto` (obbligatoria), `## Autoverifica` (facoltativa). Le domande di autoverifica sono blocchi `schoolforge-question` con `kind: self_check` e sono visibili nel rendering di fruizione.
-
-**BR-MD-01.** Il rendering della lezione mostra contenuto, obiettivi e sole domande `self_check`. Non espone mai blocchi del pool domande, soluzioni o opzioni corrette.  
-**BR-MD-02.** Il parser segnala con file, riga e motivo ogni violazione del contratto. Non modifica automaticamente il file sorgente.  
-**BR-MD-03.** Un file non conforme resta in stato `non_valido` e non contribuisce alla generazione di verifiche. Le Verifiche già configurate rimangono intatte.  
-**BR-MD-04.** Il sistema conserva ed esporta i Markdown originali e gli asset senza convertirli in formato proprietario.
-
-### 8.3 File pool domande — `lezione-XXX-titolo.pool.md`
-
-Il file pool è opzionale. Se non presente, la lezione è valida ma non contribuisce alla generazione.
-
-Ogni domanda è un blocco `schoolforge-question` YAML:
-
-````markdown
-```schoolforge-question
-id: "q-tcpip-01"
-type: "open"
-difficulty: "media"
-weight: "alto"
-prompt: "Descrivi il funzionamento del protocollo TCP."
-solution: "TCP è un protocollo connection-oriented che garantisce..."
-```
-
-```schoolforge-question
-id: "q-tcpip-02"
-type: "closed_single"
-difficulty: "bassa"
-weight: "medio"
-prompt: "Quale porta usa HTTP di default?"
-options:
-  - id: "a"
-    text: "80"
-  - id: "b"
-    text: "443"
-  - id: "c"
-    text: "8080"
-correct_option_ids: ["a"]
-solution: "HTTP usa la porta 80 per default."
-```
-````
-
-| Campo | Regola |
-|---|---|
-| `id` | Obbligatorio; univoco nel file pool; stabile nel tempo. |
-| `type` | Obbligatorio: `open`, `closed_single`, `closed_multiple`. |
-| `difficulty` | Obbligatorio: `bassa`, `media`, `alta`. |
-| `weight` | Obbligatorio: `basso`, `medio`, `alto`. |
-| `prompt` | Obbligatorio; testo non vuoto. |
-| `solution` | Obbligatorio; risposta modello (aperte) o testo esplicativo. |
-| `options` e `correct_option_ids` | Obbligatori per tipi chiusi. |
-
-**Punteggio massimo per domanda** = `coeff_difficoltà × coeff_peso`
-
-| Livello | Coefficiente |
-|---|---|
-| `bassa` / `basso` | 0.75 |
-| `media` / `medio` | 1.00 |
-| `alta` / `alto` | 1.50 |
-
-`difficoltà` e `peso` sono attributi semanticamente distinti: `difficoltà` indica il livello cognitivo della domanda e guida la selezione; `peso` indica l'importanza didattica attribuita dal docente e guida il punteggio. Non devono essere usati come sinonimi.
-
-### 8.4 Strategia di versionamento del contratto
-
-**BR-MD-VER-01.** Il campo `schoolforge` è il numero di versione del contratto. Un valore non supportato genera un errore esplicito.  
-**BR-MD-VER-02.** La versione è monotonicamente crescente. Ogni cambiamento incompatibile produce `schoolforge: 2`.  
-**BR-MD-VER-03.** L'aggiunta di campi opzionali non costituisce breaking change. Il parser v1 ignora campi sconosciuti senza errore.  
-**BR-MD-VER-04.** Costituiscono breaking change: rimozione o rinomina di campo obbligatorio, cambio tipo o semantica, aggiunta di campo obbligatorio.  
-**BR-MD-VER-05.** Una breaking change non viene distribuita senza strumento o procedura di migrazione documentata.
-
-## 9. Gestione repository didattico — Modulo 1
+**BR-POOL-01.** `schema` deve essere esattamente `schoolforge-pool/v1`; `questions` è una lista, anche quando contiene una sola domanda.
 
-### 9.1 Programmi e UDA
-
-**FR-REP-01.** Il docente deve poter creare, rinominare, riordinare e disattivare Programmi e UDA.  
-**FR-REP-02.** Il docente deve poter creare il file UDA.md con i relativi attributi (titolo, competenze, obiettivi, periodo, ore) direttamente dall'interfaccia, senza editare manualmente il file.  
-**BR-REP-01.** Non è consentita l'eliminazione fisica di Programmi o UDA che hanno Lezioni, Verifiche o Consegne collegate. L'operazione è una disattivazione che ne preserva l'identificativo e lo storico.
-
-### 9.2 Acquisizione, sostituzione ed eliminazione lezioni
-
-**FR-REP-03.** Il sistema deve consentire il caricamento di singoli file Markdown e pool, di coppie lezione+pool e di cartelle intere con sottocartelle e asset.  
-**FR-REP-04.** Prima della conferma il sistema mostra un resoconto: file validi, file non validi, identificatori duplicati, asset mancanti e azione proposta per ciascun conflitto.  
-**FR-REP-05.** Il docente deve poter sostituire una Lezione mediante un nuovo file con lo stesso `id`. La sostituzione aggiorna il contenuto corrente; non crea revisioni storiche e non modifica Verifiche o Consegne già esistenti.  
-**FR-REP-06.** Il docente deve poter eliminare una Lezione previa conferma esplicita. L'eliminazione non modifica Verifiche o Consegne già esistenti.  
-**FR-REP-07.** Il docente deve poter scaricare il file Markdown originale e gli asset di una Lezione e deve poter esportare l'intero repository come ZIP.  
-**BR-REP-02.** Un'importazione a cartella è atomica: se contiene errori bloccanti, nessuna modifica è applicata finché il docente non seleziona le sole unità valide o corregge i file.
+**BR-POOL-02.** Ogni domanda richiede `id`, `tipo`, `difficolta`, `peso`, `testo` e `soluzione`. L'`id` è univoco nel singolo pool, composto da lettere minuscole, cifre e trattini.
 
-### 9.3 Programma svolto
-
-**FR-REP-08.** Il docente deve poter selezionare, per ogni Programma, le UDA e le singole Lezioni effettivamente svolte nel corso dell'anno e scaricare un file di testo con la struttura del programma svolto.  
-**BR-REP-03.** Il file generato è in formato testo semplice (`.txt`), non PDF. Contiene: nome del Programma, anno scolastico (se inserito), elenco delle UDA selezionate con le relative Lezioni selezionate. Non include contenuti didattici, soluzioni o dati degli studenti.  
-**AC-REP-05.** Dato un Programma con 3 UDA e il docente seleziona 2 UDA e 4 Lezioni su 6 della terza UDA, il file scaricato riporta le 2 UDA complete e la terza con le 4 Lezioni selezionate, senza le 2 escluse.
+**BR-POOL-03.** I valori ammessi sono: `tipo` = `aperta`, `chiusa_singola`, `chiusa_multipla`; `difficolta` = `bassa`, `media`, `alta`; `peso` = `basso`, `medio`, `alto`.
 
-### 9.4 Consultazione
+**BR-POOL-04.** Una domanda `aperta` usa `soluzione` come testo Markdown non vuoto e non dichiara `opzioni`. Una domanda chiusa dichiara almeno due `opzioni`, ognuna con `id` e `testo` univoci. Per `chiusa_singola`, `soluzione` contiene un solo id di opzione; per `chiusa_multipla` contiene da uno a un numero di id inferiore al numero di opzioni.
 
-**FR-REP-09.** Il docente deve poter navigare Programma → UDA → Lezione, cercare per titolo/obiettivo/testo e filtrare per stato di validazione.  
-**FR-REP-10.** Il sistema deve renderizzare le Lezioni in tema chiaro e scuro con supporto immagini.  
-**NFR-REP-01.** Il rendering deve sanificare HTML e URL, impedendo esecuzione di script e iframe non autorizzati.
+**BR-POOL-05.** Campi sconosciuti sono rifiutati nella versione v1. Un pool non valido è interamente escluso dalla selezione: il sistema non seleziona parzialmente domande da un file con errori.
 
-### 9.5 Criteri di accettazione del Modulo 1
+**BR-POOL-06.** Il punteggio massimo della domanda è `coefficiente_difficolta × coefficiente_peso`, con bassa/basso = 0,75, media/medio = 1,00 e alta/alto = 1,25. Il valore visualizzato usa due decimali.
 
-**AC-REP-01.** Dato un set valido di lezioni con immagini relative, quando il docente lo importa, allora le Lezioni sono visibili nell'UDA dichiarata, le immagini sono renderizzate e i file originali sono scaricabili.  
-**AC-REP-02.** Data una Lezione con domande nel pool, quando è aperta in modalità di fruizione, allora il prompt delle domande del pool, le soluzioni e le opzioni corrette non sono visibili.  
-**AC-REP-03.** Data una Lezione usata per configurare una Verifica attiva, quando viene sostituita o eliminata, allora la configurazione della Verifica resta invariata e le Consegne già ricevute restano consultabili.  
-**AC-REP-04.** Dato un Markdown non valido, quando viene importato, allora il sistema indica il motivo e la riga, non altera il sorgente e non lo rende selezionabile per configurare una nuova Verifica.
+**AC-POOL-01.** Un pool con due `id` uguali, una soluzione chiusa inesistente o un valore di difficoltà non ammesso viene rifiutato indicando la riga o il percorso YAML e la causa.
 
-## 10. Generazione e gestione delle verifiche — Modulo 2
+**AC-POOL-02.** Un pool valido con domanda aperta e domanda chiusa singola diventa selezionabile e non compare nel rendering della lezione.
 
-### 10.1 Verifica come configurazione
+## 7. Configurazione e selezione delle verifiche — Modulo 2
 
-Una Verifica non è un documento pre-generato. È un insieme di impostazioni immutabili dalla quale viene prodotto un PDF on-demand al momento della richiesta. Il PDF non viene mai conservato dal sistema.
+### 7.1 Configurazione e stati
 
-**FR-VER-01.** Il docente deve poter creare una Verifica selezionando una o più UDA e/o Lezioni come sorgente. La selezione di una UDA include tutte le Lezioni correnti valide con pool non vuoto.  
-**FR-VER-02.** Il docente deve definire per la Verifica: titolo, numero totale domande, numero domande aperte, numero domande chiuse, livelli di difficoltà da includere con numero minimo garantito per ciascun livello selezionato, variante (tutte uguali o tutte diverse).  
-**BR-VER-01.** `numero totale = domande aperte + domande chiuse`. Tutti i valori sono interi positivi, salvo uno tra aperte e chiuse che può essere zero.  
-**BR-VER-02.** Se la somma dei minimi per livello di difficoltà supera il numero totale di domande, il sistema blocca la configurazione con messaggio esplicito prima dell'attivazione.  
-**BR-VER-03.** Con variante "tutte uguali" il sistema fissa un seed alla prima generazione e lo riusa per tutti gli studenti. Con variante "tutte diverse" ogni email riceve un seed diverso.  
-**BR-VER-04.** Se le domande disponibili nel corpus non soddisfano la configurazione e l'AI non è attiva, il sistema blocca l'attivazione indicando il fabbisogno non coperto.  
-**BR-VER-05.** Una Domanda generata da AI non può essere inclusa nella configurazione finché il docente non la esamina e approva esplicitamente.
+**FR-VER-01.** Il docente crea una verifica con: titolo, una o più UDA e/o lezioni sorgenti, numero totale di domande, tipi ammessi, difficoltà ammesse e minimo per ciascuna difficoltà scelta, modalità variante e canale o canali abilitati.
 
-### 10.2 Attivazione e stati
+**BR-VER-01.** Una verifica percorre gli stati `bozza`, `attiva`, `chiusa`, `archiviata`. Solo la bozza è modificabile. L'attivazione rende immutabile la configurazione; la chiusura impedisce nuovi tentativi; l'archiviazione la nasconde dalle normali viste operative senza eliminare le consegne digitali.
 
-| Stato | Significato | Transizioni consentite |
-|---|---|---|
-| `bozza` | Configurazione in lavorazione | `attiva`, `annullata` |
-| `attiva` | Visibile agli studenti nel Portale; genera PDF on-demand | `chiusa`, `annullata` |
-| `chiusa` | Non accetta nuove richieste; Consegne esistenti consultabili | nessuna |
-| `annullata` | Non utilizzabile; Consegne esistenti consultabili | nessuna |
+**BR-VER-02.** Non sono richiesti calendario, durata configurabile, cronometro o chiusura automatica nella V1. L'apertura avviene con attivazione manuale e la chiusura con azione esplicita del docente.
 
-**BR-VER-06.** Solo una Verifica `attiva` può ricevere richieste dal Portale Verifiche.  
-**BR-VER-07.** L'annullamento non elimina Consegne o Correzioni già esistenti; deve registrarne motivo e data.  
-**BR-VER-08.** Le impostazioni della Verifica diventano immutabili al momento dell'attivazione.
+**BR-VER-03.** Il sistema blocca l'attivazione se non esistono fonti selezionate, tipi o difficoltà ammessi, se il totale è minore di uno, se la somma dei minimi supera il totale oppure se il pool corrente non contiene abbastanza domande eleggibili e distinte per soddisfare la configurazione.
 
-### 10.3 Generazione PDF on-demand
+**BR-VER-04.** Le impostazioni attivate non cambiano. Le lezioni e i pool possono però evolvere: una nuova generazione per uno studente che non ha ancora iniziato usa i contenuti correnti. Non è richiesto conservare o rigenerare le vecchie selezioni cartacee dopo una modifica delle fonti.
 
-**FR-VER-03.** Quando uno studente accede alla Verifica tramite il Portale, il sistema deve generare al volo un PDF personalizzato con i dati inseriti dallo studente e le domande selezionate secondo la configurazione.  
-**FR-VER-04.** Il PDF deve riportare in intestazione: titolo verifica (precompilato), nome (precompilato per studente, vuoto per docente), cognome (precompilato per studente, vuoto per docente), email (precompilata per studente, vuota per docente), classe (precompilata se inserita, vuota altrimenti), data (precompilata con la data del giorno per studente, non presente per docente), campo Punti/Max Punti (vuoto per tutti). Seguono le domande con il punteggio massimo indicato per ciascuna.  
-**FR-VER-05.** Il docente deve poter scaricare la Verifica in qualsiasi momento senza inserire dati e senza limitazioni. Il download del docente non brucia email e non modifica lo stato della Verifica.  
-**BR-VER-09.** Il PDF generato per uno studente non viene mai salvato dal sistema. Viene prodotto, trasmesso e immediatamente eliminato.  
-**BR-VER-10.** Il punteggio massimo di ogni domanda nel PDF è `coeff_difficoltà × coeff_peso` arrotondato a due decimali.
+### 7.2 Algoritmo di selezione
 
-### 10.4 Email bruciata
+**BR-SEL-01.** Il sistema raccoglie domande valide delle fonti selezionate, filtra per tipo e difficoltà ammessi, soddisfa i minimi di difficoltà e completa fino al totale usando solo domande ancora non scelte. La stessa domanda non può comparire due volte nella stessa istanza.
 
-**FR-VER-06.** Prima di generare il PDF per uno studente, il sistema deve verificare atomicamente che l'email inserita non abbia già scaricato o svolto quella Verifica.  
-**BR-VER-11.** Se l'email è già presente nel registro della Verifica, il sistema blocca la richiesta con messaggio esplicito e non genera il PDF.  
-**BR-VER-12.** La verifica e la scrittura dell'email nel registro devono avvenire in un'unica operazione atomica per evitare race condition in caso di richieste simultanee con la stessa email.
+**BR-SEL-02.** Per la modalità `tutte_uguali`, il sistema usa un seme stabile della verifica e genera lo stesso insieme di domande finché le fonti non cambiano. Per `tutte_diverse`, il seme deriva da verifica ed email normalizzata; la modalità produce una variante personalizzata, ma non promette unicità matematica tra tutti gli indirizzi quando il numero di combinazioni possibili è insufficiente.
 
-### 10.5 Criteri di accettazione del Modulo 2
+**BR-SEL-03.** Se, dopo l'attivazione, una modifica delle fonti rende impossibile generare una nuova istanza conforme, la richiesta è rifiutata con un messaggio che indica il vincolo non soddisfatto. La configurazione della verifica non viene alterata automaticamente.
 
-**AC-VER-01.** Dati minimi per difficoltà pari a 3 bassa + 3 media + 3 alta e totale domande 8, quando il docente tenta l'attivazione, allora il sistema la rifiuta con messaggio che spiega la violazione della somma.  
-**AC-VER-02.** Data una Verifica attiva, quando uno studente inserisce la sua email e scarica il PDF, allora una seconda richiesta con la stessa email viene bloccata con messaggio esplicito.  
-**AC-VER-03.** Data una Verifica attiva con variante "tutte diverse", quando due studenti con email diverse scaricano il PDF, allora possono ricevere set di domande diversi entrambi conformi ai minimi di difficoltà configurati.  
-**AC-VER-04.** Quando il docente scarica la Verifica, allora il PDF ha i campi nome/cognome/email vuoti e compilabili a mano, non riporta la data e non brucia nessuna email.
+### 7.3 PDF e invio al recapito
 
-## 11. Portale Verifiche — Modulo 2 (canale digitale)
+**FR-VER-02.** Il PDF studente contiene titolo, nome, cognome, email, classe se dichiarata, data del giorno, domande, punteggio massimo e spazio di risposta. Non espone soluzioni o opzioni corrette.
 
-Il Portale Verifiche è un'applicazione separata accessibile tramite link univoco per verifica. Gestisce sia il download PDF (canale cartaceo) sia lo svolgimento digitale.
+**FR-VER-03.** Il docente può generare e scaricare un PDF in ogni momento. Nome, cognome, email e classe sono vuoti e compilabili a mano; la data non è presente. Questo download non crea tentativi né brucia email.
 
-### 11.1 Accesso
+**FR-VER-04.** Per il canale cartaceo il sistema genera il PDF on-demand e lo invia al recapito dichiarato. Il PDF non è salvato come file persistente prima, durante o dopo l'invio.
 
-**FR-POR-01.** Lo studente deve poter selezionare la Verifica tramite il link fornito dal docente, inserire nome, cognome, email scolastica Google e, facoltativamente, classe.  
-**FR-POR-02.** Il sistema applica la logica email bruciata prima di procedere in qualsiasi canale (PDF o digitale).  
-**BR-POR-01.** Il campo classe è facoltativo e non bloccante. La sua assenza non impedisce né il download né lo svolgimento.
+**BR-VER-05.** L'email è bruciata per la coppia `verifica + recapito normalizzato`, indipendentemente dal canale scelto. È una regola di limitazione del tentativo, non una prova di identità e non un controllo anti-frode.
 
-### 11.2 Canale cartaceo — download PDF
+**BR-VER-06.** L'avvio del tentativo deve riservare il recapito in modo concorrente-sicuro. L'invio email deve usare una chiave di idempotenza; un errore prima dell'accettazione da parte del servizio email libera la riserva, mentre un tentativo inviato non può generare un secondo invio accidentale.
 
-**FR-POR-03.** Lo studente deve poter scaricare il PDF personalizzato con nome, cognome, email e data precompilati e classe precompilata se inserita.  
-**FR-POR-04.** Il filename del PDF deve includere nome e cognome dello studente per facilitare l'archiviazione fisica (es. `Verifica-Reti-Mario-Rossi.pdf`).
+**AC-VER-01.** Una configurazione con totale 8 e minimi 3 bassa, 3 media, 3 alta non può essere attivata.
 
-### 11.3 Canale digitale — svolgimento online
+**AC-VER-02.** Dopo un invio cartaceo riuscito, lo stesso recapito non può ricevere né una seconda email né avviare il canale digitale per la stessa verifica.
 
-**FR-POR-05.** Lo studente deve poter svolgere la Verifica direttamente nel Portale. Il Portale deve mostrare tutte le domande in sequenza verticale, ciascuna con tipo, difficoltà, peso, punteggio massimo e campo risposta (textarea per domande aperte, radio/checkbox per chiuse).  
-**FR-POR-06.** Il Portale deve funzionare in modalità fullscreen durante lo svolgimento. Deve rilevare l'uscita dal tab e mostrare un avviso visibile prominente. Deve disabilitare la funzionalità di copia-incolla nell'interfaccia.  
-**FR-POR-07.** Un header sticky deve mostrare nome studente e un bottone "Consegna" sempre visibile.  
-**FR-POR-08.** Al clic su "Consegna" il sistema deve salvare le risposte strutturate su Firestore con: email, nome, cognome, classe (se inserita), identificativo Verifica, risposta per ogni domanda e timestamp.  
-**BR-POR-02.** Le misure di deterrenza (fullscreen, rilevamento tab, disabilitazione copia-incolla UI) non costituiscono garanzie di sicurezza. Il docente è responsabile del controllo durante la prova.  
-**BR-POR-03.** Il Portale non deve contenere menu di navigazione, link esterni o elementi non necessari durante lo svolgimento.
+**AC-VER-03.** Il download docente non invia email, non persiste PDF e non modifica il registro dei tentativi.
 
-### 11.4 Criteri di accettazione del Portale
+## 8. Portale Verifiche digitale — Modulo 3
 
-**AC-POR-01.** Dato uno studente che inserisce email già bruciata, quando tenta l'accesso, allora il sistema blocca la richiesta con messaggio esplicito sia per canale PDF sia per canale digitale.  
-**AC-POR-02.** Dato uno studente che svolge la Verifica digitalmente e clicca Consegna, allora le risposte sono salvate su Firestore con tutti i campi obbligatori, l'email è bruciata e il docente può consultare la consegna.
+### 8.1 Avvio e tentativo
 
-## 12. AI: confini, provenienza e controlli
+**FR-POR-01.** Il link di una verifica attiva mostra esclusivamente i dati essenziali e la scelta del canale. Per il canale digitale lo studente inserisce nome, cognome, email e classe facoltativa; il sistema comunica chiaramente che l'email non è verificata e che il tentativo è unico.
 
-**FR-AI-01.** Il docente deve poter scegliere se usare AI per la generazione di domande o per la correzione, per singola azione e senza obbligo di attivazione globale.  
-**BR-AI-01.** Il contesto inviato all'AI deve contenere esclusivamente il contenuto corrente delle Lezioni selezionate, le istruzioni applicative e le configurazioni della Verifica. Non è consentito includere risultati di ricerca, browser, retrieval web o fonti Internet.  
-**BR-AI-02.** Per ogni domanda, soluzione o proposta di correzione generata da AI deve essere conservata una traccia di provenienza sufficiente a ricostruire corpus e configurazione usati.  
-**BR-AI-03.** Gli output AI senza provenienza verificabile devono essere marcati non approvabili.  
-**BR-AI-04.** L'AI non ha potere di attivazione, chiusura o modifica irreversibile di Verifiche e Consegne. Le sue uscite sono proposte, salvo la modalità di correzione automatica espressamente abilitata nel Modulo 5.  
-**NFR-AI-01.** Ogni invocazione AI deve registrare provider/modello, versione del template, timestamp, finalità, identità del docente, identificativi delle fonti, esito ed eventuale approvazione/modifica umana.  
-**NFR-AI-02.** Prima di inviare risposte degli studenti a un provider AI, il sistema deve mostrare al docente la finalità e i dati trasmessi e richiedere un consenso operativo esplicito per la singola elaborazione o per una configurazione persistente chiaramente revocabile.  
-**NFR-AI-03.** Il sistema deve poter segnalare al docente risposte stilisticamente anomale rispetto al profilo atteso dello studente. Il segnale è una marcatura consultiva; non blocca la correzione né penalizza automaticamente. La soglia è configurabile dal docente.
+**FR-POR-02.** All'avvio digitale il sistema crea un'istanza con le domande effettivamente assegnate, riserva l'email e fornisce un token opaco di ripresa valido solo per lo stesso browser. Il token non deve contenere dati personali, soluzioni o configurazione della verifica.
 
-## 13. Correzione manuale e percentuali — Modulo 3
+**BR-POR-01.** Da quando un tentativo digitale è avviato, l'email è bruciata anche se la consegna non viene completata. Il docente può chiudere la verifica per bloccare nuovi tentativi; i tentativi avviati prima della chiusura possono consegnare finché il docente non li annulla esplicitamente.
 
-### 13.1 Consegne digitali
+### 8.2 Svolgimento, salvataggio e consegna
 
-**FR-COR-01.** Il docente deve poter consultare tutte le Consegne digitali ricevute per una Verifica, con nome studente, classe, timestamp e stato di correzione.  
-**FR-COR-02.** Il docente deve poter aprire una Consegna e visualizzare domanda per domanda: testo della domanda, soluzione di riferimento, punteggio massimo e risposta dello studente.  
-**FR-COR-03.** Il docente deve poter assegnare un punteggio da 0 al massimo per ogni item e aggiungere un commento opzionale.  
-**BR-COR-01.** Una Consegna acquisita è immutabile nel dato sorgente. Le rettifiche di punteggi e commenti sono modifiche tracciate sopra il dato originale, non sovrascritture.
+**FR-POR-03.** Il Portale mostra le domande in sequenza verticale. Ogni domanda espone tipo, difficoltà, peso, punteggio massimo e un controllo di risposta coerente con il tipo. La classe resta facoltativa e non blocca il flusso.
 
-### 13.2 Punteggi e percentuali
+**FR-POR-04.** Le risposte devono essere salvate automaticamente come bozza durante lo svolgimento e dopo ogni modifica significativa. Un refresh o una breve interruzione di rete nello stesso browser deve consentire la ripresa del tentativo senza assegnare nuove domande.
 
-**FR-COR-04.** Il sistema deve calcolare e conservare automaticamente: punteggio ottenuto (somma punteggi definitivi), punteggio massimo (somma `coeff_diff × coeff_peso` di tutte le domande) e percentuale (`punteggio ottenuto / punteggio massimo × 100`).  
-**BR-COR-02.** Il punteggio visualizzato è arrotondato a due decimali; i valori non arrotondati devono essere conservati per eventuali ricalcoli.  
-**BR-COR-03.** Se una Consegna ha item privi di punteggio definitivo, la percentuale è contrassegnata come `non_definitiva`. Al completamento di tutti i punteggi o a ogni rettifica il sistema ricalcola automaticamente.  
-**BR-COR-04.** SchoolForge non gestisce scale di voto né conversioni percentuale-voto. La percentuale finale è l'unico output numerico del sistema. La conversione in voto è una decisione pedagogica del docente.
+**FR-POR-05.** L'header sticky mostra il nome dichiarato e il comando `Consegna`. Prima della consegna il sistema richiede conferma e segnala le domande senza risposta; lo studente può comunque consegnare se il docente non ha imposto completezza nella configurazione futura.
 
-### 13.3 Rettifiche
+**BR-POR-02.** La consegna definitiva rende immutabili risposte e domande dell'istanza. Il sistema conserva questa istanza solo per il canale digitale, perché è necessaria alla correzione; ciò non equivale a conservare il PDF del canale cartaceo.
 
-**FR-COR-05.** Il docente deve poter rettificare un punteggio o un commento già assegnato. Ogni rettifica deve registrare: autore, data, valore precedente, nuovo valore e motivazione obbligatoria.  
-**BR-COR-05.** Il log delle rettifiche è append-only. Non è consentita la cancellazione di una rettifica registrata.
+**BR-POR-03.** Il Portale non contiene menu, link esterni, soluzioni, opzioni corrette, risultati, voti o storico dello studente.
 
-### 13.4 Criteri di accettazione del Modulo 3
+### 8.3 Deterrenza realistica
 
-**AC-COR-01.** Il docente assegna punteggi a tutti gli item di una Consegna: il sistema calcola la percentuale definitiva correttamente secondo la formula.  
-**AC-COR-02.** Il docente rettifica un punteggio: il sistema conserva valore precedente, nuovo valore, autore, data e motivazione e ricalcola la percentuale.  
-**AC-COR-03.** Una Consegna con un item privo di punteggio mostra percentuale contrassegnata come `non_definitiva`.
+**FR-POR-06.** Il Portale deve richiedere l'ingresso in fullscreen quando il browser lo supporta, mostrare un avviso persistente in caso di uscita dal fullscreen o cambio scheda e disabilitare copia-incolla nella propria UI.
 
-## 14. Storico e consultazione — Modulo 4
+**BR-POR-04.** Fullscreen, rilevamento tab e blocco copia-incolla sono deterrenti, non sicurezza. L'uscita dal tab non annulla il tentativo e gli eventi sono visibili al docente solo come informazione consultiva.
 
-**FR-STO-01.** Il docente deve poter consultare lo storico delle Consegne digitali filtrando almeno per: Programma, UDA, Lezione sorgente, Verifica, nome/email studente, classe, intervallo di date, stato di correzione.  
-**FR-STO-02.** Il docente deve poter visualizzare per ogni studente l'elenco delle Verifiche svolte con percentuale e stato di correzione.  
-**BR-STO-01.** La classe visualizzata nello storico è quella inserita dallo studente al momento della Consegna, anche se il docente la aggiorna in seguito nel proprio registro.  
-**BR-STO-02.** Una Consegna digitale non può essere eliminata dallo storico. Può essere annullata con motivazione tracciata; l'annullamento non cancella i dati ma li esclude dalle aggregazioni.
+**AC-POR-01.** Uno studente avvia una prova digitale, ricarica la pagina nello stesso browser e ritrova le stesse domande e le risposte salvate.
 
-**AC-STO-01.** Il docente filtra lo storico per una specifica Verifica e ottiene l'elenco di tutte le Consegne con percentuale definitiva o indicatore `non_definitiva`.
+**AC-POR-02.** Dopo la consegna, il docente può consultare testo domanda, soluzione, risposta, dati dichiarati e timestamp; lo studente non può modificare né rivedere la consegna nel Portale.
 
-## 15. Correzione AI — Modulo 5
+## 9. Correzione manuale e percentuali — Modulo 4
 
-**FR-AI-COR-01.** In modalità assistita l'AI deve poter proporre, per ogni risposta, punteggio, motivazione e commento usando esclusivamente: contenuto della Lezione sorgente, domanda, soluzione e risposta dello studente.  
-**FR-AI-COR-02.** La proposta AI deve essere mostrata separatamente dalla correzione definitiva. Il docente deve poter approvare, modificare o rifiutare ogni proposta individualmente o in blocco per l'intera Verifica.  
-**FR-AI-COR-03.** La valutazione deve poter riconoscere risposte equivalenti, terminologia tecnica appropriata, approfondimenti corretti e conoscenze superiori ai requisiti minimi, sempre entro il punteggio massimo.  
-**FR-AI-COR-04.** La modalità automatica può assegnare e approvare una correzione solo se abilitata esplicitamente dal docente per la specifica Verifica. Ogni esito è marcato `automatico` e rimane modificabile con traccia completa.  
-**BR-AI-COR-01.** La modalità predefinita è assistita. La modalità automatica non è mai attivata per default.  
-**BR-AI-COR-02.** Se mancano domanda, soluzione, risposta o Lezione sorgente, la correzione AI è bloccata per l'item interessato; il sistema richiede correzione manuale.  
-**BR-AI-COR-03.** La proposta AI non può superare il punteggio massimo della domanda.  
-**BR-AI-COR-04.** L'approvazione massiva mostra prima della conferma numero e identificativi delle proposte incluse, esclude automaticamente quelle bloccate o già gestite dal docente, e registra un audit per ogni Correzione interessata.  
-**NFR-AI-COR-01.** L'archivio deve distinguere inequivocabilmente: punteggio proposto da AI, punteggio approvato/modificato dal docente, punteggio assegnato automaticamente e punteggio definitivo.
+**FR-COR-01.** Il docente può filtrare le consegne digitali per verifica, stato di correzione, recapito, nome dichiarato, classe e data.
 
-**AC-AI-COR-01.** Date dieci proposte AI, di cui otto complete e due bloccate, quando il docente conferma l'approvazione massiva, allora le otto diventano definitive, le due restano non approvate e il log registra un'unica azione con l'elenco degli otto item.
+**FR-COR-02.** Per ogni consegna il docente visualizza domanda, soluzione, risposta, punteggio massimo e dati dichiarati. Può assegnare a ogni domanda un punteggio da zero al massimo e un commento opzionale.
 
-## 16. Requisiti trasversali di qualità, sicurezza e tutela dati
+**FR-COR-03.** Il sistema calcola `somma punti assegnati / somma punti massimi × 100`. Finché esiste una domanda priva di punteggio definitivo, la percentuale è `non definitiva`.
 
-### 16.1 Integrità, tracciabilità e audit
+**BR-COR-01.** SchoolForge non converte percentuali in voti e non scrive nel registro elettronico.
 
-**NFR-INT-01.** Il sistema deve conservare la configurazione immutabile di ogni Verifica attivata, i suoi identificativi di Lezione sorgente, data/ora e identità dell'operatore per le azioni rilevanti.  
-**NFR-INT-02.** Devono essere tracciate almeno: importazione, validazione, sostituzione, eliminazione, configurazione verifica, attivazione, chiusura, consegna digitale, modifica correzioni/punteggi, azioni AI e cambi di configurazione sensibili.  
-**NFR-INT-03.** Il sistema deve impedire riferimenti orfani tra entità del dominio e segnalare ogni incoerenza rilevata senza eliminare dati storici.  
-**NFR-INT-04.** Backup e ripristino devono includere Markdown, asset, configurazioni verifiche, consegne digitali, correzioni e log di audit. Frequenza, RPO e RTO sono decisioni di esercizio [C].
+**FR-COR-04.** Il docente può rettificare punteggio o commento. Ogni rettifica registra autore, data, valore precedente, valore nuovo e motivazione obbligatoria; il log è append-only.
 
-### 16.2 Sicurezza e privacy
+**FR-DAT-01.** Il docente deve poter eliminare una consegna digitale quando necessario per la propria gestione dei dati. L'operazione richiede conferma, rimuove dati personali, risposte e correzioni; conserva solo un evento di audit non identificativo con data e motivazione. Non è ammessa per una correzione in corso senza conferma aggiuntiva.
 
-**NFR-SEC-01.** Dati personali, risposte, punteggi, percentuali, asset e credenziali di integrazione devono essere protetti in transito e a riposo. I segreti non devono comparire in Markdown, esportazioni o log applicativi.  
-**NFR-SEC-02.** Il principio di minimizzazione si applica a raccolta, visualizzazione, esportazione e trasmissione a servizi terzi.  
-**NFR-SEC-03.** I dati degli studenti raccolti (nome, cognome, email, classe, risposte) devono essere usati esclusivamente per le finalità dichiarate: correzione, storico e analisi didattica del docente.  
-**NFR-SEC-04.** L'architettura deve separare i permessi dell'integrazione AI, richiedere il minimo privilegio e consentire revoca/rotazione senza perdita degli archivi già acquisiti.  
-**NFR-SEC-05.** Il Portale Verifiche non deve esporre la configurazione della Verifica (soluzioni, opzioni corrette, punteggi) allo studente in nessuna fase dello svolgimento.
+**BR-DAT-01.** La V1 non stabilisce una durata di conservazione automatica. I dati restano disponibili al docente finché non vengono eliminati con la funzione prevista o secondo le procedure dell'ambiente di esercizio; la responsabilità della politica di conservazione rimane del docente/committente.
 
-### 16.3 Usabilità, accessibilità e operatività
+### 9.1 Esportazione globale delle verifiche svolte
 
-**NFR-UX-01.** Ogni operazione irreversibile (eliminazione, attivazione, chiusura, annullamento verifica, attivazione correzione automatica) deve mostrare conseguenze e richiedere conferma esplicita.  
-**NFR-UX-02.** Errori e stati bloccanti devono indicare oggetto, causa, effetto e azione correttiva; non devono essere esposti solo come codici tecnici.  
-**NFR-ACC-01.** Le funzioni del docente devono essere utilizzabili da tastiera con struttura semantica e contrasto adeguato. Tema chiaro e scuro non devono ridurre leggibilità o distinguibilità degli stati.  
-**NFR-UX-03.** Entrambe le applicazioni (SchoolForge e Portale Verifiche) devono essere responsive. SchoolForge è desktop-first; il Portale è mobile-first.  
-**NFR-OPS-01.** L'architettura deve prevedere monitoraggio di errori di importazione, rendering, generazione PDF, invocazioni AI e consegne, senza registrare inutilmente contenuti didattici o dati personali nei sistemi di telemetria.
+**FR-EXP-01.** Il docente deve disporre del comando `Esporta verifiche`, che genera un unico documento scaricabile contenente tutte le consegne digitali definitive non annullate e non eliminate presenti nel sistema. L'operazione non è limitata a una singola verifica o a un singolo studente.
 
-## 17. Roadmap e dipendenze di rilascio
+**FR-EXP-02.** L'export deve essere costruito dall'istanza digitale associata a ciascuna consegna, cioè dallo snapshot delle domande effettivamente assegnate, e non dal Markdown o dal pool corrente. La modifica o l'eliminazione successiva di una lezione non può rendere incompleta una consegna già esportabile.
 
-| Modulo | Capacità rilasciata | Dipendenze | Condizione di uscita |
+**BR-EXP-01.** Per ogni consegna esportata, il documento include almeno: titolo della verifica, identificativo del tentativo, data e ora di consegna, nome, cognome, email e classe se presenti; per ogni domanda, testo, tipo, difficoltà, peso, punteggio massimo e risposta dello studente; punteggio assegnato, commento, punteggio totale e percentuale quando disponibili.
+
+**BR-EXP-02.** Le consegne nell'export sono ordinate per verifica e, al suo interno, per data di consegna. Le consegne annullate, eliminate o ancora in bozza non vengono incluse.
+
+**BR-EXP-03.** Il contenuto dell'export è vincolante; il renderer potrà produrre un PDF unico, un documento Markdown o un altro formato standard deciso successivamente. Il formato non deve modificare dati, ordine o completezza dell'export.
+
+**BR-EXP-04.** L'export è generato on-demand per il download del docente e non viene conservato dal sistema. È destinato anche al caricamento manuale nel Drive dell'istituto; SchoolForge non richiede né implementa un'integrazione con Google Drive.
+
+**AC-EXP-01.** Date consegne definitive di verifiche diverse, una consegna annullata e una bozza non consegnata, quando il docente esegue `Esporta verifiche`, allora il documento contiene tutte e sole le consegne definitive, ordinate per verifica e data.
+
+**AC-EXP-02.** Dopo la modifica del Markdown sorgente, l'export di una consegna digitale già effettuata mostra ancora le stesse domande e risposte dell'istanza svolta.
+
+**AC-COR-01.** Dopo l'attribuzione dei punteggi a tutte le domande, la percentuale visualizzata corrisponde alla formula e usa due decimali.
+
+**AC-COR-02.** Una rettifica conserva valori, autore, data e motivazione e ricalcola la percentuale senza sovrascrivere la storia.
+
+## 10. Correzione assistita AI — Modulo 5
+
+La generazione AI delle domande non fa parte di SchoolForge. L'unico uso AI previsto è la correzione di consegne digitali già disponibili.
+
+**FR-AI-01.** In modalità assistita, l'AI può proporre punteggio, motivazione, commento e spiegazione degli errori per ogni risposta. Il docente può approvare, modificare o rifiutare una proposta singolarmente o in blocco.
+
+**FR-AI-02.** In modalità automatica, l'AI può rendere definitiva una proposta soltanto quando il docente ha attivato esplicitamente tale modalità per la specifica verifica. Ogni esito resta modificabile e marcato come `automatico`.
+
+**FR-AI-03.** Il docente può fornire una nota testuale di correzione per la specifica verifica. La nota è inviata all'AI solo per le correzioni alle quali è associata.
+
+**BR-AI-01.** Il contesto AI è limitato a lezione sorgente corrente, domanda dell'istanza, soluzione, risposta dello studente e nota del docente. Web, browsing, retrieval esterno, fonti non selezionate e generazione di nuove domande sono vietati.
+
+**BR-AI-02.** La modalità predefinita è assistita. L'AI non può attivare verifiche, modificare Markdown, inviare email, eliminare dati o annullare consegne.
+
+**BR-AI-03.** Se manca uno degli elementi necessari al contesto, l'item non è inviato all'AI e richiede correzione manuale.
+
+**FR-AI-04.** Il rapporto di anomalie stilistiche è esclusivamente consultivo per il docente: non modifica punteggi, non blocca né penalizza. Se non esiste un corpus di consegne digitali precedenti sufficiente a un confronto, il sistema deve dichiarare `riferimenti insufficienti` e non produrre inferenze sullo studente.
+
+**NFR-AI-01.** Per ogni elaborazione AI il sistema deve registrare finalità, docente, verifica, item coinvolti, provider/modello configurati, versione delle istruzioni, timestamp, esito, proposta e azione umana successiva. Non deve registrare nei log tecnici ulteriori copie delle risposte.
+
+**AC-AI-01.** Una proposta AI non approvata non altera punteggi o percentuale. Un'approvazione massiva applica solo gli item completi e registra gli item inclusi.
+
+## 11. Requisiti trasversali
+
+### 11.1 Integrità e sicurezza
+
+**NFR-SEC-01.** Tutti i dati personali, risposte, punteggi, contenuti privati e credenziali devono essere protetti in transito e a riposo. Segreti e token non devono comparire in Markdown, export del repository, messaggi utente o telemetria.
+
+**NFR-SEC-02.** Il Portale deve limitare tentativi ripetuti e richieste abusive sul link della verifica senza trasformare l'email in un sistema di autenticazione.
+
+**NFR-SEC-03.** Le operazioni del docente che eliminano dati, attivano o chiudono una verifica, annullano un tentativo o abilitano la correzione automatica richiedono conferma esplicita e indicano la conseguenza.
+
+**NFR-INT-01.** Devono essere tracciati almeno importazione, validazione, sostituzione, eliminazione, configurazione, attivazione, chiusura, avvio tentativo, invio email, consegna, correzione, rettifica, annullamento e operazioni AI.
+
+**NFR-INT-02.** I log di audit non sono modificabili dalla UI ordinaria. Devono indicare autore o servizio, oggetto, momento, azione ed esito; non devono contenere la risposta completa dello studente salvo necessità funzionale separata.
+
+**NFR-INT-03.** L'ambiente di produzione usa Firebase con Cloud Firestore, Cloud Storage e runtime backend configurati nella regione Milano `europe-west8` ove il servizio lo supporta. Firebase Hosting e Firebase Authentication non devono essere descritti come garanzia di elaborazione esclusivamente italiana.
+
+**NFR-INT-04.** Firestore e i contenuti Markdown/asset in Cloud Storage devono essere inclusi in un backup giornaliero con conservazione minima di 30 giorni. L'RPO è 24 ore; l'RTO è best-effort, senza tempo massimo contrattuale. Il Docente responsabile esegue o fa eseguire una verifica periodica di ripristino.
+
+### 11.2 Dati e portabilità
+
+**NFR-DAT-01.** Il sistema raccoglie nel Portale soltanto nome, cognome, email, classe facoltativa e le risposte necessarie ai canali scelti. Nessun dato dello studente è richiesto nel canale cartaceo oltre ai campi di intestazione dichiarati.
+
+**NFR-DAT-02.** I dati operativi devono essere esportabili dall'ambiente di esercizio in formati standard. L'export tecnico comprende configurazioni, registro dei tentativi, consegne digitali, correzioni e audit secondo i permessi del docente/committente; `Esporta verifiche` è l'export didattico globale, leggibile e destinato al docente.
+
+**NFR-DAT-03.** L'applicazione non certifica la base giuridica del trattamento né sostituisce gli adempimenti del docente o dell'istituto. Deve però rendere visibili i dati inviati ai servizi esterni e consentire al docente di non usare l'AI.
+
+### 11.3 Esperienza, accessibilità e operatività
+
+**NFR-UX-01.** Entrambe le applicazioni devono essere responsive; il pannello docente è desktop-first e il Portale è mobile-first. Stati, errori e blocchi devono indicare causa ed azione correttiva.
+
+**NFR-ACC-01.** Il target di implementazione è WCAG 2.2 livello AA per struttura semantica, tastiera, focus, contrasto, alternative testuali e messaggi di errore. Le misure di deterrenza non devono rendere impossibile lo svolgimento con tecnologie assistive.
+
+**NFR-OPS-01.** Devono essere osservabili errori di importazione, rendering, invio email, generazione PDF, consegna e AI, senza inviare contenuti o dati personali non necessari alla telemetria.
+
+**NFR-COST-01.** L'architettura deve privilegiare servizi managed e scale-to-zero, riusare le quote incluse Firebase e rifiutare componenti sempre attivi, enterprise o a pagamento non necessari ai requisiti. Prima del go-live il Docente deve configurare budget e avvisi di spesa nel progetto Firebase; il valore della soglia è una scelta operativa del Docente.
+
+## 12. Roadmap e dipendenze
+
+| Modulo | Capacità rilasciata | Dipendenze | Uscita verificabile |
 |---|---|---|---|
-| 1. Repository Didattico | Programmi, UDA (UDA.md), lezioni, pool domande, rendering, export ZIP, programma svolto | Autenticazione Google Workspace for Education | Funziona senza AI, senza Portale, senza correzione |
-| 2. Verifiche + Portale | Verifica on-demand, email bruciata, PDF personalizzato docente/studente, svolgimento digitale, consegne su Firestore | Modulo 1; AI solo opzionale | PDF generato correttamente; email bruciata atomica; consegna digitale salvata |
-| 3. Correzione manuale | Punteggi per item, percentuali, rettifiche tracciate per consegne digitali | Modulo 2 | Docente corregge consegna, ottiene percentuale definitiva, rettifica con traccia completa |
-| 4. Storico e consultazione | Storico filtrabile, viste per studente/verifica, annullamento tracciato | Moduli 1–3 | Storico filtrabile e aggregazioni corrette |
-| 5. Correzione AI | Generazione domande AI, correzione assistita, rilevamento anomalie stilistiche, approvazione massiva, modalità automatica opt-in | Modulo 3 + decisioni C-02/C-03 | Ogni punteggio distingue origine AI/umana/automatica; contesto tracciato |
+| 1. Repository didattico | Programmi, UDA, lezioni, pool, rendering, ZIP, programma svolto. | Accesso docente e validatore pool. | Funziona senza Portale, AI o correzione. |
+| 2. Verifiche e cartaceo | Configurazione, selezione da pool, PDF e invio email, download docente. | Modulo 1 e servizio email. | Vincoli validati, PDF non archiviato, recapito bruciato dopo invio. |
+| 3. Portale digitale | Istanza, bozza, ripresa, consegna e deterrenza. | Modulo 2. | Una consegna strutturata è consultabile dal docente. |
+| 4. Correzione manuale ed export | Punteggi, percentuale, rettifiche, eliminazione consegna ed export globale delle verifiche svolte. | Modulo 3. | Percentuali, audit ed export da snapshot verificabili. |
+| 5. Correzione AI | Proposte, approvazioni, opt-in automatico e rapporto consultivo. | Modulo 4, C-02 e C-03. | I flussi manuali restano operativi senza AI. |
 
-**BR-REL-01.** Non è consentito anticipare una dipendenza dei moduli successivi come requisito obbligatorio di un modulo precedente.  
-**BR-REL-02.** L'assenza di AI non deve compromettere consultazione, generazione PDF, svolgimento digitale o correzione manuale.
+**BR-REL-01.** Nessun modulo successivo può diventare prerequisito del precedente. L'assenza dell'AI non deve bloccare repository, PDF, email, Portale digitale o correzione manuale.
 
-## 18. Decisioni da confermare prima dell'architettura esecutiva o del go-live
+## 13. Decisioni di esercizio
 
-| ID | Decisione | Impatto | Owner | Scadenza |
-|---|---|---|---|---|
-| C-01 | Regione Firebase, politica di backup, RPO/RTO e responsabilità operativa | Dati e continuità | Committente / Responsabile operativo | Prima del Modulo 1 go-live |
-| C-02 | Provider AI, condizioni contrattuali, residenza dati e consenso operativo per l'invio di risposte | AI e privacy | Committente | Prima del Modulo 5 |
-| C-03 | Regola didattica per uso della correzione automatica, inclusa eventuale revisione umana obbligatoria | Rischio valutativo | Committente / Docente | Prima dell'abilitazione modalità automatica |
+### 13.1 C-01 formalizzata
 
-Per ciascuna decisione l'Owner produce una scelta documentata entro la scadenza. Il responsabile tecnico segnala con anticipo quando la mancanza rischia di bloccare il delivery.
-
-## 19. Matrice di tracciabilità dei vincoli fondamentali
-
-| Decisione del brief | Requisiti che la rendono verificabile |
+| Voce | Decisione |
 |---|---|
-| Markdown indipendente dal sistema | BR-CORE-01, BR-MD-04, FR-REP-07 |
-| Lezione come fonte unica | BR-CORE-02, BR-DOM-02, FR-VER-01, BR-AI-01 |
-| AI opzionale | BR-CORE-04, FR-AI-01, BR-VER-04, BR-REL-02 |
-| PDF non conservato | BR-CORE-06, BR-VER-09, FR-VER-05 |
-| Single docente / nessun account studenti | FR-AUTH-01/02, BR-AUTH-01, BR-POR-02 |
-| Non è un LMS/registro | Sezione 4.2; assenza di funzionalità studente in SchoolForge |
-| Verifiche da UDA/lezioni | FR-VER-01/02 |
-| Nessuna fonte web per AI | BR-AI-01/02/03 |
-| Correzione AI assistita/automatica | FR-AI-COR-01–04, BR-AI-COR-01–04 |
-| Evoluzione modulare | BR-CORE-05, sezione 17 |
+| Provider | Firebase, su progetto di proprietà del Docente. |
+| Regione dati | Milano `europe-west8`, ove supportata dal servizio Firebase/Google Cloud interessato. |
+| Backup | Giornaliero per Firestore e Cloud Storage, con conservazione minima di 30 giorni. |
+| RPO | 24 ore. |
+| RTO | Best-effort, senza target contrattuale numerico. |
+| Responsabile operativo | Docente proprietario del progetto e delle procedure di verifica/ripristino. |
 
-## 20. Criteri globali di accettazione della baseline
+### 13.2 Decisioni residue
 
-La progettazione architetturale è conforme a questa analisi solo se dimostra, con componenti, flussi, modello dati e piano di test, almeno:
+| ID | Decisione | Owner | Scadenza | Effetto se assente |
+|---|---|---|---|---|
+| C-02 | Provider AI, condizioni contrattuali, residenza dati e condizioni per l'invio delle risposte. | Docente / committente. | Prima del Modulo 5. | Modulo 5 disabilitato; gli altri moduli restano validi. |
+| C-03 | Regola didattica per la correzione automatica e necessità di revisione umana. | Docente. | Prima di abilitare la modalità automatica. | Rimane disponibile solo la modalità assistita. |
 
-1. il Markdown e gli asset rimangono leggibili ed esportabili senza SchoolForge;
-2. la configurazione di una Verifica attivata non viene modificata da successive modifiche o eliminazioni delle Lezioni;
-3. il PDF non viene mai conservato dal sistema dopo la trasmissione al richiedente;
-4. l'email bruciata è garantita da un'operazione atomica che previene race condition;
-5. le soluzioni e le opzioni corrette non sono mai esposte allo studente tramite il Portale;
-6. ogni dato di consegna, punteggio e percentuale è attribuibile, storicizzato e rettificabile senza perdita del valore precedente;
-7. l'AI è assente per default, non usa retrieval/web e non blocca i flussi manuali;
-8. gli elementi fuori scope non emergono come dipendenze del primo rilascio;
-9. le decisioni C-01–C-03 sono gestite come configurazioni o formalmente risolte prima del rilascio pertinente.
+Ogni decisione deve generare un breve verbale nel repository con data, responsabile, opzioni valutate, scelta e vincoli applicativi. Non è un requisito accettabile sostituire una decisione mancante con una scelta tecnica silenziosa.
+
+## 14. Criteri globali di accettazione
+
+La futura architettura e l'implementazione sono conformi solo se dimostrano con test e flussi completi che:
+
+1. Markdown e asset restano esportabili e leggibili senza SchoolForge;
+2. un pool invalido non compromette la lezione ma non può generare domande;
+3. la configurazione attivata è immutabile e la modifica di una lezione non pretende di ricreare PDF già inviati;
+4. l'email è un recapito non verificato e viene bruciata in modo concorrente-sicuro tra i due canali;
+5. il PDF cartaceo viene inviato senza essere archiviato e il download docente non altera il tentativo;
+6. un tentativo digitale riprende nello stesso browser con le stesse domande e diventa immutabile alla consegna;
+7. soluzioni e opzioni corrette non sono mai esposte al Portale;
+8. percentuali e rettifiche sono calcolabili e tracciabili senza gestire voti;
+9. l'AI non genera domande, non usa il web, non è necessaria ai flussi manuali e resta sotto controllo del docente;
+10. il comando `Esporta verifiche` include tutte e sole le consegne digitali definitive e usa gli snapshot svolti, non le lezioni correnti;
+11. C-01 è applicata nel progetto Firebase di produzione; C-02 e C-03 bloccano soltanto le funzionalità AI a cui si riferiscono.
 
 ---
 
-## Appendice A — Stato del documento
+## Appendice A — Stato della baseline
 
-Questo documento è la baseline funzionale aggiornata rispetto al brief v2.0. Non approva tecnologie né sostituisce le decisioni di esercizio elencate nella sezione 18. Qualunque modifica a principi Markdown-first, knowledge-first, AI optional, single-docente, PDF non conservato, assenza di account studenti o divieto di fonti web per la generazione AI costituisce modifica di perimetro e richiede approvazione esplicita del committente.
+Questa analisi sostituisce le versioni precedenti. `architettura.md` è allineata alla baseline Firebase qui definita; piano di implementazione, contratti API, sicurezza, test, glossario, diagrammi e README richiedono un riallineamento successivo.

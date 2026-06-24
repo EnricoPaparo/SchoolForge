@@ -1,466 +1,275 @@
 # SchoolForge — Piano di implementazione e workflow di delivery
 
-**Versione:** 2.0
+**Versione:** 3.1
 **Data:** 24 giugno 2026
-**Stato:** piano esecutivo proposto
-**Input vincolante:** [Architettura di sistema v2.0](architettura.md) e [Analisi dei requisiti v2.0](analisi-requisiti.md)
-**Destinatari:** committente, responsabile tecnico, sviluppatore/i, QA
+**Stato:** piano esecutivo per agenti di coding
+**Input vincolanti:** `brief.md`, `analisi-requisiti.md`, `architettura.md`
+**Regola di precedenza:** requisiti e architettura prevalgono su questo piano in caso di conflitto
 
 ---
 
 ## 1. Scopo del piano
 
-Questo documento trasforma l'architettura target in un workflow eseguibile. Definisce:
+Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di coding. Non assegna funzionalità enormi a un singolo agente e non spezza il lavoro in micro-task privi di valore autonomo.
 
-- cosa implementare e in quale ordine;
-- cosa può procedere in parallelo e quali dipendenze lo vietano;
-- i gate umani e tecnici che bloccano il passaggio di modulo;
-- gli artefatti, le prove e i criteri di uscita di ogni modulo;
-- il percorso minimo per ottenere valore prima dell'AI.
+Ogni pacchetto deve produrre un risultato osservabile, avere un solo responsabile tecnico, dichiarare dipendenze e includere la verifica necessaria. Un agente non amplia per inferenza perimetro, ruoli, provider, dati raccolti o funzionalità AI.
 
-Il piano privilegia incrementi piccoli e completi. Non si sviluppano componenti "per il futuro" se non abilitano un requisito immediato o una dipendenza esplicita. Non si costruiscono microservizi, sincronizzazione Drive, Google Forms, portale pesante o funzionalità AI prima che il nucleo manuale sia utilizzabile.
+### 1.1 Sequenza dei moduli prodotto
 
-### 1.1 I cinque moduli prodotto
-
-| Modulo | Prodotto funzionante al termine | Non dipende da |
+| Modulo | Capacità rilasciata | Può fermarsi qui? |
 |---|---|---|
-| M1 — Repository | Il docente carica lezioni con pool di domande, consulta il rendering (senza soluzioni), esporta il repository in ZIP | Portale, AI |
-| M2 — Verifiche e Portale | Il docente pubblica una verifica, scarica il PDF docente; lo studente accede al Portale e scarica il PDF una sola volta (email bruciata); export programma svolto | Correzione, AI |
-| M3 — Correzione manuale | Il docente corregge consegne digitali o cartacee, assegna punteggi, ottiene percentuali definitive, rettifica con audit | AI |
-| M4 — Storico | Il docente consulta lo storico studenti e risultati per verifica/studente con filtri | AI |
-| M5 — AI | L'AI propone correzioni; il docente approva con un clic (feature-flaggata) | — |
+| M1 — Repository didattico | Programmi, UDA, Markdown/pool, import validato, rendering, export ZIP e programma svolto. | Sì: è già un repository didattico utile. |
+| M2 — Verifiche cartacee | Configurazione, selezione, PDF docente, canale cartaceo via email e email bruciata. | Sì: il docente può distribuire prove cartacee. |
+| M3 — Portale digitale | Tentativi anonimi, snapshot, bozze, consegna e deterrenza di base. | Sì: il Portale raccoglie consegne strutturate. |
+| M4 — Correzione ed export | Punteggi, percentuali, rettifiche, eliminazione e `Esporta verifiche`. | Sì: ciclo digitale manuale completo. |
+| M5 — Correzione AI | Proposte assistite, anomalie consultive e, solo con gate, automatica. | Sì, ma è opzionale. |
 
-Ogni modulo rilascia un prodotto utilizzabile. Non è ammesso anticipare AI nella M1 o M2.
+M5 non è autorizzato a ritardare o modificare M1–M4.
 
-## 2. Assunzioni operative e modalità di pianificazione
+## 2. Ruoli, autorità e azioni umane
 
-### 2.1 Capacità di riferimento
-
-La sequenza è valida con un solo sviluppatore full-stack e un committente/docente disponibile per le verifiche funzionali. Le attività marcate **parallele** possono essere affidate a persone diverse; con un solo sviluppatore sono preparabili o alternate, ma non riducono automaticamente la durata di calendario.
-
-Le tempistiche sono espresse in **iterazioni relative di due settimane**. Prima dell'avvio devono essere calibrate su disponibilità effettiva, competenze, accesso all'account Google Education e decisione C-01.
-
-### 2.2 Regole di esecuzione
-
-1. Un modulo non inizia se il suo gate di ingresso non è superato.
-2. Un'attività è "completata" solo con codice, test, documentazione breve e prova di accettazione.
-3. Le modifiche ai requisiti aggiornano prima `analisi-requisiti.md`, poi `architettura.md`, poi questo piano.
-4. Le integrazioni AI sono feature flag disabilitati finché non collaudate con account e dati di test.
-5. Ogni rilascio deve mantenere utilizzabile il percorso manuale già rilasciato.
-6. Nessuna azione distruttiva o irreversibile è disponibile senza conferma esplicita e audit.
-
-## 3. Governance, branch e qualità di delivery
-
-### 3.1 Workflow Git
-
-| Elemento | Regola |
+| Ruolo | Responsabilità |
 |---|---|
-| Branch principale | `main` contiene soltanto incrementi integrati e verificati. |
-| Branch di lavoro | `feature/<modulo>-<descrizione>` oppure `fix/<descrizione>`. |
-| Pull request | Obbligatoria per ogni incremento. Descrive requisito coperto, test svolti, rischi e modifiche dati. |
-| Merge | Consentito solo con CI verde e gate funzionale della fase quando previsto. |
-| Commit | Piccoli e intenzionali; non mescolare refactor, cambio schema e funzionalità non correlate. |
-| Migrazioni dati | Versionate nel repository, ripetibili in ambiente test, mai eseguite prima del backup previsto. |
+| Docente / owner | Proprietario del progetto Firebase, billing, account amministrativi, budget, backup, restore e decisioni C-02/C-03. Approva i gate. |
+| Agente di coding | Implementa esclusivamente il pacchetto assegnato, esegue test locali/emulatori, aggiorna documentazione strettamente collegata e consegna evidenza. |
+| Revisore tecnico | Verifica il DoD, i confini del pacchetto, test, sicurezza e compatibilità con la baseline prima del merge. |
 
-### 3.2 Definition of Ready (DoR)
+### 2.1 Attività che richiedono il Docente
 
-Un work package può iniziare solo se possiede:
+| ID | Azione umana | Quando | Un agente può farla? |
+|---|---|---|---|
+| H-01 | Creare i progetti Firebase `dev` e `prod`, attivare billing Blaze e mantenere la proprietà sul proprio account. | Prima del provisioning reale. | Solo dopo accesso CLI autorizzato e approvazione esplicita; non può assumere billing o ownership. |
+| H-02 | Creare Firestore e bucket nella regione Milano `europe-west8`, dove supportata. | Prima del primo deploy dati. | Può eseguire la configurazione tecnica se H-01 è completata. |
+| H-03 | Configurare budget e avvisi di spesa, backup giornaliero, conservazione 30 giorni e primo restore test. | Prima di dati reali, gate G1. | Può assistere/configurare con accesso autorizzato; il Docente verifica l'esito. |
+| H-04 | Scegliere e verificare mittente/fornitore email per l'invio dei PDF cartacei. | Prima del canale cartaceo M2. | No: implica dominio, account e costi esterni del Docente. |
+| H-05 | Scegliere il formato iniziale di `Esporta verifiche`: PDF unico oppure Markdown. | Prima del pacchetto M4-E. | Il renderer è implementabile dall'agente dopo la scelta. |
+| H-06 | Decidere provider AI, condizioni e residenza dati. | Prima di M5-A. | No, è C-02. |
+| H-07 | Decidere regola didattica della correzione automatica. | Prima di M5-E. | No, è C-03. |
 
-- requisito e criterio di accettazione riferibili ai documenti di input;
-- dipendenze tecniche disponibili oppure mock approvato;
-- contratto di input/output definito;
-- dati sintetici o fixture per test;
-- responsabile e gate di accettazione identificati.
+## 3. Regole del workflow per agenti
+
+### 3.1 Definition of Ready (DoR)
+
+Un pacchetto può partire solo se:
+
+1. le sue dipendenze sono `completate` e le evidenze sono disponibili;
+2. eventuali gate umani applicabili sono approvati;
+3. input, file modificabili e criteri di accettazione sono dichiarati;
+4. non esiste un altro pacchetto attivo sugli stessi file o lo split è esplicito;
+5. l'agente può eseguire verifiche senza usare dati reali o segreti di produzione.
+
+### 3.2 Workflow obbligatorio di un pacchetto
+
+1. Leggere brief, requisiti, architettura, questo piano e i file del pacchetto.
+2. Verificare il DoR e dichiarare subito un blocco reale.
+3. Implementare solo lo scope assegnato.
+4. Eseguire i test dichiarati e aggiungere test per regressioni introdotte.
+5. Confrontare il diff con i vincoli: no account studenti, no PDF persistenti, no AI fuori M5, no ampliamento LMS.
+6. Consegnare handoff con file, test, evidenze, rischi e dipendenze sbloccate.
 
 ### 3.3 Definition of Done (DoD)
 
-Un work package è concluso soltanto quando:
+Un pacchetto è `completato` solo se:
 
-- il comportamento richiesto è implementato dietro controllo di autorizzazione;
-- test unitari e di integrazione pertinenti sono verdi;
-- gli errori attesi sono spiegati in UI/API senza stack trace;
-- i log/audit richiesti sono prodotti senza esporre contenuti sensibili;
-- documentazione tecnica e checklist di test sono aggiornate;
-- il committente ha verificato il criterio di accettazione quando il package conclude una milestone.
+- il risultato funziona nel percorso previsto e gestisce almeno il fallimento principale;
+- typecheck, lint, test unitari e test di integrazione pertinenti sono verdi;
+- non introduce segreti, dati reali o scritture client dirette su Firestore;
+- documentazione/API/test interessati sono aggiornati o il disallineamento è dichiarato;
+- il revisore verifica il diff e il criterio di accettazione del pacchetto;
+- il branch è integrabile senza modifiche non correlate.
 
-## 4. Gate decisionali e di rilascio
+### 3.4 Regole di dimensionamento
 
-| Gate | Quando | Decisione/prova richiesta | Blocco se non superato |
+Un pacchetto deve essere abbastanza piccolo da essere verificato integralmente in una review e abbastanza completo da produrre una capacità riconoscibile. Non sono ammessi pacchetti che combinano, senza motivo, backend, UI, migrazioni, deploy e AI. Se una modifica tocca più di un modulo, il pacchetto deve limitarsi al contratto condiviso e sbloccare i pacchetti successivi.
+
+### 3.5 Workflow Git
+
+`main` contiene solo lavoro revisionato e verificato. Ogni pacchetto usa un branch `feat/<id>-<slug>` oppure `fix/<id>-<slug>` e apre una PR limitata al suo scope. Il merge richiede pipeline verde e review; deploy di produzione richiede inoltre il gate del modulo e l'azione manuale del Docente. Un agente non unisce, forza push o modifica la configurazione di billing senza autorizzazione esplicita.
+
+## 4. Gate e stato del delivery
+
+| Gate | Condizione di ingresso | Evidenza richiesta | Autorizza |
 |---|---|---|---|
-| G0 — Baseline | Prima di scrivere codice applicativo | Approvazione di requisiti, architettura e questo piano | Tutto il delivery |
-| G1 — Setup operativo | Prima di ambiente `prod` | C-01: progetto Firebase, backup, RPO/RTO, responsabile | Provisioning prod; non blocca sviluppo `dev` |
-| G2 — M1 completo | Dopo Repository | Import, rendering, export Markdown/asset e sicurezza verificati dal docente | M2 e uso di contenuti reali |
-| G3 — M2 completo | Dopo Verifiche e Portale | Attivazione immutabile, PDF docente, email bruciata, programma svolto completi | M3 e uso operativo |
-| G4 — M3 completo | Dopo Correzione manuale | Punteggi, percentuali, rettifiche e audit verificati | M4 e go-live correzione |
-| G5 — M4 completo | Dopo Storico | Storico studenti e risultati filtrabile verificati | M5 |
-| G5-AI — Provider AI | Prima di qualsiasi chiamata AI reale | C-02: provider, contratto, residenza, consenso | Correzione/generazione AI reale |
-| G6 — Correzione automatica | Prima di abilitare automazione | C-03: regola didattica, ambito, revisione umana | Modalità automatica; non blocca AI assistita |
+| G0 — Baseline | Brief, requisiti, architettura e piano coerenti. | Review documentale e C-01 formalizzata. | Bootstrap del repository. |
+| G1 — Fondazioni Firebase | H-01/H-02/H-03 completate; CI ed Emulator Suite disponibili. | Progetti separati, budget, backup, restore test, Security Rules di default-deny. | M1 con dati sintetici. |
+| G2 — Repository didattico | M1 integrato. | Import valido/invalido, rendering senza pool, ZIP e programma svolto. | M2. |
+| G3 — Verifiche cartacee | M2 integrato e H-04 completata. | PDF docente, invio email idempotente, lock email concorrente, nessun PDF persistito. | M3. |
+| G4 — Portale digitale | M3 integrato. | Snapshot, bozza/ripresa, consegna immutabile, nessuna soluzione esposta. | M4. |
+| G5 — Correzione ed export | M4 integrato e H-05 completata. | Punteggi, rettifiche, eliminazione, export globale da snapshot. | Uso manuale completo. |
+| G6 — AI assistita | M5-A..D integrati e H-06 completata. | Contesto chiuso, audit, proposte assistite, anomalie consultive. | AI assistita. |
+| G7 — AI automatica | G6 e H-07 completati. | Opt-in per verifica, limiti punteggio, audit e rollback. | Correzione automatica. |
 
-Ogni gate produce un breve verbale nel repository: data, approvatore, elementi verificati, decisione e limitazioni note.
+Un gate blocca solo il proprio ambito: C-02 e C-03 non bloccano M1–M4.
 
 ## 5. Dipendenze e parallelismo
 
 ```mermaid
 flowchart TD
-    G0["G0 — baseline approvata"] --> M1["M1 — Repository"]
-    M1 --> G2["G2 — prodotto M1"]
-    G2 --> M2["M2 — Verifiche e Portale"]
-    M2 --> G3["G3 — prodotto M2"]
-    G3 --> M3["M3 — Correzione manuale"]
-    M3 --> G4["G4 — prodotto M3"]
-    G4 --> M4["M4 — Storico"]
-    M4 --> G5["G5 — prodotto M4"]
-
-    G5AI["G5-AI — C-02 provider AI"] --> AIC["M5 AI assistita"]
-    M3 --> AIC
-    AIC --> G6["G6 — C-03"]
-    G6 --> AIA["Correzione automatica"]
+    G0 --> F1["F-01 Workspace e CI"]
+    G0 --> H1["H-01/H-02 Firebase"]
+    H1 --> F2["F-02 Configurazione Firebase"]
+    F1 --> F3["F-03 Contratti e test base"]
+    F2 --> F4["F-04 Auth, rules, guard"]
+    F3 --> M1A["M1-A Parser pool"]
+    F4 --> M1B["M1-B Import e persistenza"]
+    M1A --> M1B
+    F1 --> M1C["M1-C Shell docente"]
+    M1B --> M1D["M1-D Programmi, UDA, lezioni"]
+    M1C --> M1D
+    M1D --> M1E["M1-E Rendering ed export"]
+    M1E --> G2
+    G2 --> M2A["M2-A Dominio verifica"]
+    G2 --> M2B["M2-B UI configurazione"]
+    G2 --> M2C["M2-C PdfRenderer docente"]
+    M2A --> M2D["M2-D Canale cartaceo"]
+    M2B --> M2D
+    M2C --> M2D
+    M2D --> G3
+    G3 --> M3A["M3-A Snapshot e tentativo"]
+    M3A --> M3B["M3-B UI Portale"]
+    M3A --> M3C["M3-C Bozza e consegna"]
+    M3B --> M3D["M3-D Integrazione Portale"]
+    M3C --> M3D
+    M3D --> G4
+    G4 --> M4A["M4-A Correzione e audit"]
+    G4 --> M4B["M4-B Modello export"]
+    M4A --> M4C["M4-C UI correzione"]
+    M4B --> M4D["M4-D Renderer export"]
+    M4C --> M4E["M4-E Integrazione M4"]
+    M4D --> M4E
+    M4E --> G5
 ```
 
-### 5.1 Regole di parallelismo
+I rami indicati come paralleli possono partire insieme solo dopo avere fissato i contratti TypeScript/API. Due agenti non modificano contemporaneamente lo stesso file di schema, Security Rules o endpoint.
 
-| Insieme | Attività | Condizione | Punto di sincronizzazione |
+## 6. Pacchetti preparatori
+
+| ID | Outcome e scope | Dipende da | Può procedere in parallelo | Evidenza DoD |
+|---|---|---|---|---|
+| F-01 | Creare monorepo TypeScript: workspace, build, lint, test, formattazione, convenzioni branch e CI senza deploy. | G0 | H-01/H-02 | Pipeline esegue build, lint, unit test su fixture. |
+| F-02 | Configurare Firebase `dev`/`test`, CLI, Emulator Suite, progetti e variabili non segrete. Non creare risorse `prod` senza H-01/H-02. | H-01, H-02 | F-01 | Emulatori avviabili e configurazioni separate. |
+| F-03 | Creare package condiviso `lesson-contract`, tipi di dominio minimi, fixture e test del contratto pool v1. | F-01 | F-02 | Parser accetta/rifiuta i casi di `analisi-requisiti.md`. |
+| F-04 | Implementare Firebase Auth docente, `ownerUid`, Security Rules default-deny, guard Cloud Functions, accesso Secret Manager e audit base. | F-01, F-02 | F-03 | Owner autorizzato; soggetto diverso e client diretto rifiutati da test emulatori. |
+
+## 7. M1 — Repository didattico
+
+| ID | Outcome e scope | Dipende da | Parallelo consentito | Evidenza DoD |
+|---|---|---|---|---|
+| M1-A | Validazione server-side di UDA, lezioni e pool; errori strutturati file/domanda/campo. | F-03, F-04 | M1-C | Pool invalido non rende invalida la lezione; fixture complete. |
+| M1-B | Staging Cloud Storage, preflight import, commit atomico, indice Firestore e cleanup. | M1-A, F-04 | M1-C | Import valido visibile; fallimento non lascia contenuti parziali. |
+| M1-C | Shell docente: sessione, layout responsive, tema chiaro/scuro, errori e conferme comuni. | F-01, F-04 | M1-A/M1-B | Owner accede; non-owner non entra; test accessibilità base. |
+| M1-D | CRUD Programmi/UDA/Lezioni e collegamento alla UI, senza editor Markdown. | M1-B, M1-C | — | Struttura didattica navigabile e operazioni auditabili. |
+| M1-E | Rendering Markdown sanitizzato, asset, esclusione pool, export ZIP e programma svolto `.txt`. | M1-D | — | ZIP portabile, rendering senza soluzioni, programma svolto corretto. |
+| M1-F | Test E2E M1, review sicurezza/import e preparazione evidenze G2. | M1-E | — | G2 approvabile senza funzionalità M2. |
+
+## 8. M2 — Verifiche cartacee
+
+| ID | Outcome e scope | Dipende da | Parallelo consentito | Evidenza DoD |
+|---|---|---|---|---|
+| M2-A | Dominio verifica: bozza/attiva/chiusa/archiviata, validazione fonti, minimi, varianti e selezione da pool corrente. | G2 | M2-B/M2-C | Attivazione invalida rifiutata; configurazione attiva immutabile. |
+| M2-B | UI docente per creare, controllare e attivare verifiche; messaggi di blocco comprensibili. | G2, contratto M2-A iniziale | M2-A/M2-C | Il docente non può superare vincoli da UI o API. |
+| M2-C | `PdfRenderer` per PDF docente, intestazione e punteggi, generazione stream senza persistenza. | G2 | M2-A/M2-B | PDF docente conforme e nessun oggetto PDF in Storage. |
+| M2-D | Link pubblico, lock Firestore `verifica + email`, MailGateway idempotente e canale cartaceo. | M2-A/M2-B/M2-C, H-04 | — | Due richieste concorrenti producono un solo invio; errore email non brucia indebitamente il recapito. |
+| M2-E | Test integrazione/E2E M2, costo e sicurezza del canale email, evidenze G3. | M2-D | — | PDF docente e invio studente verificati; nessun PDF persistito. |
+
+## 9. M3 — Portale digitale
+
+| ID | Outcome e scope | Dipende da | Parallelo consentito | Evidenza DoD |
+|---|---|---|---|---|
+| M3-A | Servizio tentativo digitale: token pubblico, lock email, snapshot al tentativo, cookie di ripresa e stati. | G3 | — | Nuovo tentativo crea snapshot; refresh non seleziona nuove domande. |
+| M3-B | UI Portale mobile-first: raccolta dati, sequenza domande e proiezione senza soluzioni. | M3-A, contratto endpoint | M3-C | Nessun menu/dato interno; uso da tastiera e mobile verificato. |
+| M3-C | Bozze, autosave, consegna immutabile, fullscreen/tab warning/copia-incolla UI. | M3-A | M3-B | Risposte riprendono nello stesso browser; consegna non è modificabile. |
+| M3-D | E2E e test negativi del Portale: token, rate limit, accesso a soluzioni, lock inter-canale. | M3-B, M3-C | — | Evidenze G4 e nessuna soluzione ottenibile dal client. |
+
+## 10. M4 — Correzione ed export
+
+| ID | Outcome e scope | Dipende da | Parallelo consentito | Evidenza DoD |
+|---|---|---|---|---|
+| M4-A | Servizio correzione: punteggi 0..massimo, percentuale, stato non definitivo, rettifiche append-only ed eliminazione dati. | G4 | M4-B | Percentuale e storico rettifiche corretti; eliminazione preserva solo audit non identificativo. |
+| M4-B | Costruire il modello canonico di `Esporta verifiche` da tutte le consegne definitive e snapshot, senza renderer finale. | G4 | M4-A | Ordine verifica/data, esclusione bozze/annullate, indipendenza dal Markdown corrente. |
+| M4-C | UI correzione: lista, filtri, dettaglio, punteggi, commenti e rettifiche. | M4-A | M4-B | Correzione manuale completa senza voto elettronico. |
+| M4-D | Implementare il renderer dell'export globale nel formato approvato da H-05 e il download on-demand. | M4-B, H-05 | M4-C | Un documento contiene tutte e sole le consegne richieste; nessuna persistenza. |
+| M4-E | Integrazione M4, E2E correzione/export, test su snapshot dopo modifica lezione ed evidenze G5. | M4-C, M4-D | — | Ciclo digitale manuale completo e approvabile. |
+
+## 11. M5 — Correzione AI opzionale
+
+| ID | Outcome e scope | Dipende da | Parallelo consentito | Evidenza DoD |
+|---|---|---|---|---|
+| M5-A | Configurare `AiGateway`, feature flag, segreti, policy C-02, audit e mock provider. | G5, H-06 | — | Nessun invio AI senza feature flag e configurazione valida. |
+| M5-B | Proposte assistite per item con contesto chiuso: lezione, domanda snapshot, soluzione, risposta e nota docente. | M5-A | — | Proposte non alterano correzioni definitive. |
+| M5-C | UI assistita: proposta, approva/modifica/rifiuta, bulk approval con riepilogo ed esclusioni. | M5-B | M5-D | Audit completo; bulk non applica item incompleti. |
+| M5-D | Rapporto anomalie stilistiche solo consultivo; `riferimenti insufficienti` quando non esiste evidenza. | M5-B | M5-C | Nessuna penalizzazione o modifica automatica. |
+| M5-E | Modalità automatica con opt-in per verifica, limiti punteggio, audit e rollback. | M5-C, H-07 | — | Non attiva per default e reversibile tramite rettifica. |
+| M5-F | Test di sicurezza, qualità e costi AI; evidenze G6/G7. | M5-C/M5-D/M5-E secondo gate | — | Nessun web/retrieval, costi osservabili, gate rispettati. |
+
+## 12. Qualità, CI/CD e costi
+
+### 12.1 Pipeline minima
+
+| Stage | Trigger | Blocca | Contenuto |
 |---|---|---|---|
-| P1 | Infrastruttura Firebase, parser Markdown, web shell | G0; contratti fissati entro prima iterazione | M1 pronto per import reale |
-| P2 | Rendering lezione e pipeline import/validazione | Parser e Lesson Contract comuni | Test import → rendering |
-| P3 | PDF e composizione verifica | PDF può usare fixture snapshot; attivazione reale aspetta modello verifica | Attivazione immutabile |
-| P4 | Portale studenti e email bruciata | Portale può usare mock backend; attivazione reale aspetta G2 | Email bruciata verificata |
-| P5 | Correzione manuale e storico | Correzione usa fixture; storico reale aspetta G3 | Percentuale affidabile |
-| P6 | Test automatici e sviluppo funzionale | Ogni package fornisce fixture e test nel medesimo branch | Pull request del package |
-| P7 | Documentazione e sviluppo | API e decisioni aggiornate durante il package, non alla fine | Gate della fase |
+| Verifica | Ogni push/PR | Merge | Format, lint, typecheck, unit test e build. |
+| Integrazione | PR verso `main` | Merge | Firebase Emulator Suite: Auth, Firestore, Storage e Functions. |
+| E2E | Prima dei gate G2–G7 | Gate | Browser test sui flussi del modulo e casi negativi. |
+| Deploy `dev` | Merge su `main` dopo test | — | Deploy controllato senza dati reali. |
+| Deploy `prod` | Gate approvato e azione manuale del Docente | Go-live | Backup verificato, release notes e smoke test. |
 
-### 5.2 Attività non parallelizzabili
+### 12.2 Regole di costo
 
-| Predecessore | Successore bloccato | Motivo |
-|---|---|---|
-| Parser/validatore Lesson Contract (lesson + pool + uda) | Import definitivo, questionIndex, rendering | Il contratto Markdown deve essere unico e stabile. |
-| Autorizzazione backend e regole Firestore/Storage | Caricamento reale, dati personali | Non si introducono dati reali con autorizzazioni provvisorie. |
-| Attivazione verifica e snapshot immutabile | PDF docente, portale, consegne | Tutti dipendono da `examId` e contenuto immutabile affidabili. |
-| Correzione manuale e calcolo percentuali | Correzione AI assistita | L'AI propone nel medesimo modello già verificato manualmente. |
-| C-02 | Provider AI reale | Non si fanno chiamate AI con dati didattici/studenti senza decisione formale. |
+- Sviluppo e test usano Emulator Suite e dati sintetici.
+- Non si introduce una VM, Cloud SQL, container sempre acceso, coda dedicata o servizio enterprise senza una decisione documentata.
+- Funzioni e Hosting devono scalare a zero; Storage usa lifecycle per staging, export temporanei e versioni non correnti.
+- Il Docente controlla budget/avvisi prima del primo deploy `prod`; un agente non modifica soglie o billing senza autorizzazione.
+- Ogni pacchetto che aggiunge una chiamata a provider esterno (email o AI) dichiara volume atteso, fallback ed eventuale costo variabile.
 
-## 6. Roadmap relativa
+### 12.3 Regole di rilascio e rollback
 
-| Iterazione | Obiettivo primario | Lavoro parallelo consentito | Gate/output |
-|---|---|---|---|
-| 0 | G0, backlog eseguibile, fixture e setup accessi | Preparazione Firebase `dev`, definizione owner Google | Baseline approvata e `dev` accessibile |
-| 1 | M1A: fondazioni interne, login docente, Programmi/UDA | Parser Lesson Contract (lesson + pool + uda); web shell; fixture | Login solo docente; CRUD Programmi/UDA |
-| 2 | M1B: staging, validazione pool e lesson, rendering | Tema, test parser, hardening regole | Import preflight con errori riga/file |
-| 3 | M1C: promozione corrente, questionIndex, ricerca, export | Test E2E repository | G2 — Repository accettato |
-| 4 | M2A: composizione verifica, attivazione, snapshot, PDF docente | Template PDF su fixture; export programma svolto | Verifica attivata immutabile; PDF docente |
-| 5 | M2B: Portale Verifiche (app separata), email bruciata, download PDF studente | Test portale in sandbox | G3 — Verifiche e Portale accettati |
-| 6 | M3A: consegne digitali e cartacee, punteggi per item, percentuali | Mock AI e test provenienza senza provider | Correzione manuale funzionante |
-| 7 | M3B: rettifiche con audit, stati correzione, UI definitiva | — | G4 — Correzione manuale accettata |
-| 8 | M4A: creazione lazy studenti, storico risultati, filtri e paginazione | Backup/restore drill | G5 — Storico accettato |
-| 9+ | M5: AI assistita dopo G5-AI; automatica dopo G6 | AiGateway e provider sandbox | Estensione AI, se approvata |
+1. Le modifiche Firestore devono essere compatibili con la versione applicativa precedente durante il deploy.
+2. Le funzionalità incomplete sono invisibili o disabilitate tramite flag server-side.
+3. Il rollback del codice non cancella Markdown, snapshot digitali, consegne o audit.
+4. Un errore import annulla la promozione da staging; un errore mail mantiene o rilascia il lock secondo lo stato idempotente documentato; un errore AI disabilita il flag.
+5. Un incidente dati attiva il runbook C-01: fermare le scritture interessate, valutare l'ultimo backup, ripristinare e documentare l'evento.
 
-## 7. Work breakdown structure dettagliata
+## 13. Handoff, dashboard e criteri finali
 
-### 7.1 M1 — Repository didattico
+### 13.1 Handoff obbligatorio dell'agente
 
-Le attività F-01–F-07 sono fondazioni interne. Non costituiscono un rilascio autonomo: il prodotto esiste solo dopo R-01–R-07 e G2.
+Ogni pacchetto concluso produce un breve handoff con:
 
-| ID | Attività | Dipende da | Parallelo con | Deliverable |
-|---|---|---|---|---|
-| F-01 | Inizializzare monorepo TypeScript, lint, test, build, CI | G0 | F-02, F-03 | Pipeline eseguibile su PR |
-| F-02 | Configurare Firebase `dev`, Emulator Suite | G0 | F-01, F-04 | Progetto `dev` e checklist setup |
-| F-03 | Schema Firestore, indici, Security Rules e Storage Rules iniziali | F-02 | F-04, F-05 | Test emulatori: account non autorizzato rifiutato |
-| F-04 | `lesson-contract`: parser UDA.md, lesson.md, pool.md, tipi e fixture | G0 | F-01, F-02 | Fixture valide/invalide; errori con file/riga/motivo |
-| F-05 | Identità Google Education, bootstrap owner, middleware autorizzazione | F-02, F-03 | F-04, F-06 | Login owner riuscito; non-owner rifiutato lato backend |
-| F-06 | Web shell docente, navigazione, tema, errori e conferme | F-01 | F-04, F-05 | UI con stati loading/error/empty coerenti |
-| F-07 | Audit service e formato errori API | F-03, F-05 | F-04, F-06 | Endpoint test registra audit senza dati sensibili |
+- ID e risultato conseguito;
+- file modificati e confini rispettati;
+- comandi di test eseguiti ed esito;
+- evidenze per il gate interessato;
+- debito tecnico o rischio residuo reale;
+- dipendenze sbloccate e prossima azione concreta.
 
-#### Completamento prodotto M1
+### 13.2 Dashboard di avanzamento
 
-| ID | Attività | Dipende da | Parallelo | Deliverable |
-|---|---|---|---|---|
-| R-01 | CRUD Programmi/UDA, ordinamento, flag svolto, disattivazione | F-03, F-05, F-06 | R-02, R-04 | UI e API con audit; impossibile eliminare entità referenziata |
-| R-02 | Upload staging file/cartella e preflight import (lesson + pool + uda) | F-02, F-04, F-05 | R-01, R-04 | Piano import con validi, invalidi, conflitti, asset mancanti |
-| R-03 | Commit atomico visibile, promozione Storage, aggiornamento `questionIndex` | R-02, F-03, F-07 | R-04 | Nessun contenuto parziale visibile; rollback/cleanup documentati |
-| R-04 | Rendering Markdown sanificato: contenuto lezione, asset, domande self_check | F-04, F-06 | R-01, R-02 | Soluzioni e domande assessment non compaiono nel rendering |
-| R-05 | Sostituzione/eliminazione lezione corrente e pulizia oggetti orfani | R-03 | R-06 | Verifica esistente invariata; lezione corrente aggiornata/eliminata con conferma |
-| R-06 | Ricerca locale, download sorgente, export ZIP repository | R-03, R-04 | R-05 | ZIP apribile fuori SchoolForge con Markdown e asset corretti |
-| R-07 | E2E Repository, hardening regole, guida operativa import | R-01–R-06 | — | Checklist G2 e test verdi |
-
-**G2 — prova obbligatoria.** Il docente importa una cartella reale con lesson.md, pool.md e UDA.md, consulta il rendering (senza soluzioni), verifica che i blocchi assessment non siano esposti e scarica un export ZIP apribile senza SchoolForge.
-
----
-
-### 7.2 M2 — Verifiche e Portale Verifiche
-
-| ID | Attività | Dipende da | Parallelo | Deliverable |
-|---|---|---|---|---|
-| V-01 | Risoluzione corpus da UDA/Lezioni e questionIndex corrente | R-03, R-04 | V-04 | Deduplicazione corretta; lezioni invalide escluse |
-| V-02 | Bozza verifica: filtri tipo/difficoltà/peso/quantità, composizione manuale | V-01, F-06 | V-04 | Blocco esplicito se corpus non copre il fabbisogno senza AI |
-| V-03 | Attivazione verifica, snapshot immutabile `exams/{id}/items`, stati | V-02, F-07 | V-04 | Attivazione transazionale; modifica successiva rifiutata |
-| V-04 | Servizio PDF on-demand: versione docente (campi vuoti compilabili) | F-01, F-06 | V-01–V-03 con fixture | PDF generato dallo snapshot; non scritto su Storage |
-| V-05 | Export programma svolto (txt on-demand da flag svolto su UDA/lezioni) | R-01, V-03 | V-06 | File .txt strutturato scaricabile; non conservato |
-| V-06 | UI attivazione, chiusura, annullamento, download PDF docente, audit | V-03, V-04 | V-07 | Conferme esplicite; storico di stato consultabile |
-| V-07 | App Portale Verifiche (URL separato), shell, tema mobile-first | F-01, F-06 | V-03–V-05 con mock | App distinta deployabile su Firebase Hosting |
-| V-08 | Autenticazione Google studente nel portale, validazione dominio Education | V-07, F-05 | — | Studenti con email non Education rifiutati |
-| V-09 | Email bruciata: transazione Firestore atomica, download PDF studente | V-03, V-04, V-08 | — | Secondo download rifiutato (409); record `burned` creato atomicamente |
-| V-10 | PDF studente con campi precompilati (nome, cognome, email, data) | V-04, V-09 | — | PDF studente distinto da PDF docente |
-| V-11 | Test regressione: lezione modificata/eliminata dopo attivazione | V-03, R-05 | V-04–V-10 | Verifica/PDF restano immutati |
-
-**G3 — prova obbligatoria.** Il docente crea una verifica senza AI, la attiva, scarica il PDF docente (campi vuoti compilabili). Uno studente apre il portale, autentica con email Google scolastica, scarica il PDF una volta. Un secondo tentativo di download è rifiutato. Il docente esporta il programma svolto come file .txt. Il docente modifica una lezione e verifica che lo snapshot sia invariato.
-
----
-
-### 7.3 M3 — Correzione manuale
-
-La correzione manuale è il prodotto obbligatorio. Non richiede AI.
-
-| ID | Attività | Dipende da | Parallelo | Deliverable |
-|---|---|---|---|---|
-| CR-01 | Modello consegna (digitale portale / cartacea manuale), struttura item | V-03 | CR-03 | Consegna collegata a verifica attiva; studente creato lazy da email |
-| CR-02 | Punteggi per item, validazione (0 ≤ p ≤ punteggio_max_item), calcolo percentuale | CR-01 | CR-03 | Formula corretta; percentuale `non_definitiva` finché mancano item |
-| CR-03 | UI correzione: lista consegne, editor punteggi, commenti, stato | CR-01, CR-02, F-06 | — | Docente corregge, salva, vede percentuale |
-| CR-04 | Rettifiche con audit (valore precedente, nuovo valore, motivazione) | CR-02, CR-03 | — | Traccia rettifica consultabile; ricalcolo automatico percentuale |
-| CR-05 | Transizioni stato consegna/correzione: `da_correggere` → `definitiva` | CR-03, CR-04 | — | Transizione solo con tutti gli item definitivi |
-| CR-06 | Test E2E correzione manuale e verifica G4 | CR-01–CR-05 | — | Checklist G4; percentuali verificabili su casi noti |
-
-**G4 — prova obbligatoria.** Il docente inserisce una consegna manuale per una verifica attiva, assegna punteggi a tutti gli item, verifica la percentuale definitiva, rettifica un item e consulta valore precedente, nuovo valore, motivazione e audit.
-
----
-
-### 7.4 M4 — Storico e consultazione
-
-| ID | Attività | Dipende da | Parallelo | Deliverable |
-|---|---|---|---|---|
-| S-01 | Creazione lazy studente al primo accesso portale o prima consegna manuale | V-08, CR-01 | S-02 | Record studente creato automaticamente; email = chiave univoca |
-| S-02 | Lista studenti con filtri (nome, email, classe opzionale) | S-01, F-03 | S-03 | Lista paginata; aggiornamento manuale nome/cognome/classe opzionale |
-| S-03 | Storico risultati per studente (verifiche, percentuali, stati) | CR-05, S-01 | S-04 | Vista studente con storico consegne e percentuali |
-| S-04 | Storico risultati per verifica (lista consegne e percentuali) | CR-05 | S-03 | Vista verifica con tutte le consegne corrette |
-| S-05 | Filtri e paginazione storico (per verifica, studente, intervallo, stato) | S-03, S-04 | — | Query indicizzate in Firestore; nessuna scansione client |
-| S-06 | Test storico e verifica G5 | S-01–S-05 | — | Checklist G5; storico filtrabile verificato |
-
-**G5 — prova obbligatoria.** Il docente consulta lo storico di uno studente (creato lazily), filtra per verifica, vede percentuali definitive. Uno studente senza nome/cognome compare comunque con la sua email.
-
----
-
-### 7.5 M5 — Correzione AI (dipende da C-02 e C-03)
-
-| ID | Attività | Dipende da | Parallelo | Deliverable |
-|---|---|---|---|---|
-| I-00 | Risolvere C-02; registrare provider, consenso, sandbox | G5 | Prep mock/test | Verbale G5-AI; secret separato per ambiente |
-| I-01 | `AiGateway`: contesto chiuso, mock provider, audit provenienza | I-00, V-03 | I-02 | Test dimostra assenza browsing/retrieval e fonti non selezionate |
-| I-02 | Proposte correzione sul modello CR-02 (punteggio entro max, origine tracciata) | I-01, CR-02 | — | Proposta `ai_proposed`; mai definitiva senza approvazione docente |
-| I-03 | Approvazione/rifiuto/modifica individuale e approvazione massiva | I-02 | — | Esclusione automatica item non idonei; audit per item e operazione |
-| I-04 | Anomaly detection stilistica (consultiva, non bloccante) | I-01 | I-03 | Flag visibile in UI; non impedisce approvazione |
-| I-05 | Modalità automatica dietro feature flag (C-03) | I-03, G6 | — | Non attiva per default; test e piano di rollback approvati |
-
----
-
-## 7.6 Pipeline CI/CD
-
-La pipeline è obbligatoria dall'iterazione 0.
-
-### Stage 1 — Verifica (ogni PR e push su branch)
-
-```yaml
-jobs:
-  verify:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with: { version: 9 }
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'pnpm' }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run typecheck
-      - run: pnpm run lint
-      - uses: gitleaks/gitleaks-action@v2
-      - run: pnpm audit --audit-level=moderate
-      - run: pnpm run test:unit
-      - run: pnpm run test:coverage
-```
-
-### Stage 2 — Integrazione (ogni PR verso main)
-
-```yaml
-  integration:
-    needs: verify
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'pnpm' }
-      - run: pnpm install --frozen-lockfile
-      - run: npm install -g firebase-tools
-      - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: '17' }
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/firebase/emulators
-          key: firebase-emulators-${{ runner.os }}
-      - run: firebase emulators:exec --only firestore,storage,auth,functions "pnpm run test:integration"
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN_CI }}
-          FIREBASE_PROJECT_ID: schoolforge-test-ci
-```
-
-### Stage 3 — E2E (obbligatorio prima dei gate G2, G3, G4, G5)
-
-```yaml
-  e2e:
-    needs: integration
-    if: github.base_ref == 'main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'pnpm' }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm run test:e2e
-        env:
-          TEST_APP_URL: ${{ secrets.TEST_APP_URL }}
-          TEST_PORTALE_URL: ${{ secrets.TEST_PORTALE_URL }}
-```
-
-### Stage 4 — Deploy su dev (merge su main)
-
-```yaml
-  deploy-dev:
-    needs: [verify, integration]
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'pnpm' }
-      - run: pnpm install --frozen-lockfile && pnpm run build
-      - run: firebase deploy --project schoolforge-dev --only hosting,functions,firestore,storage
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN_CI }}
-```
-
-### Stage 5 — Deploy su produzione (solo con gate e approvazione manuale)
-
-```yaml
-  deploy-prod:
-    needs: deploy-dev
-    environment: production
-    if: startsWith(github.ref, 'refs/tags/gate-')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'pnpm' }
-      - run: pnpm install --frozen-lockfile && pnpm run build
-      - run: firebase deploy --project schoolforge-prod --only hosting,functions,firestore,storage
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN_PROD }}
-```
-
-### Regole operative della pipeline
-
-| Regola | Dettaglio |
+| Campo | Valore |
 |---|---|
-| PR bloccata senza Stage 1 verde | Nessuna eccezione |
-| Stage 2 verde richiesto per merge su main | Test integrazione con emulatori obbligatori |
-| Stage 3 E2E richiesto prima di ogni gate di fase | Non sufficiente passare Stage 1 e 2 |
-| Variabili `PROD` non disponibili nelle PR | Disponibili solo nel job `deploy-prod` |
-| Deploy registra versione, commit e timestamp | Audit event nel progetto Firebase |
-| Rollback usa deployment precedente di Firebase Hosting | Nessun nuovo deploy del codice precedente |
+| Pacchetto | ID e titolo del piano. |
+| Stato | `non_avviato`, `in_corso`, `bloccato`, `in_review`, `completato`. |
+| Dipendenze | ID e stato; descrivere il blocker effettivo. |
+| Branch/PR | Riferimento del lavoro. |
+| Test | Comandi, evidenza e risultato. |
+| Gate | Gate coinvolto e decisione umana eventualmente richiesta. |
+| Rischi | Solo rischi nuovi o modificati. |
+| Prossima azione | Una singola azione verificabile. |
 
-## 8. Backlog tecnico trasversale
+### 13.3 Criteri di successo del piano
 
-| Area | Regola | Evidenza a ogni milestone |
-|---|---|---|
-| Sicurezza | Test regole Firebase, controllo owner server-side, segreti solo Secret Manager | Test accesso negato; revisione scope Google |
-| Accessibilità | Tastiera, semantica, contrasto nei due temi, errori comprensibili | Smoke test manuale e checklist UI |
-| Audit | Ogni transizione importante scrive evento minimizzato | Query audit per import, attivazione, correzione |
-| Osservabilità | Log strutturati, tempi, errori senza contenuti sensibili | Dashboard/error report con dati sintetici |
-| Performance | Paginazione, indici Firestore, misurazione import/render/search | Metriche raccolte; nessun SLO inventato |
-| Backup | Export Firestore/Storage, verifica restore, export Markdown | Evidenza G1/G4 secondo piano C-01 |
-| Documentazione | Aggiornamento API, schema, runbook, decisioni | PR contiene link alla documentazione aggiornata |
+Il delivery è corretto se:
 
-## 9. Piano di test per milestone
-
-| Milestone | Test automatici minimi | Test umano obbligatorio | Non procedere se |
-|---|---|---|---|
-| G2 | Parser lesson/pool/uda, import, rendering sanificato, Storage Rules, export | Cartella lezione reale; soluzioni non compaiono nel rendering | Assessment/soluzioni esposti o export incompleto |
-| G3 | Attivazione, stati, snapshot, PDF docente, email bruciata (doppio tentativo), programma svolto | Creazione verifica manuale; portale studente con doppio download | Verifica modificabile dopo attivazione; secondo download non rifiutato |
-| G4 | Consegna manuale, punteggi per item, percentuale, rettifica, audit | Correzione completa di una consegna test | Percentuale errata o valore precedente perso |
-| G5 | Creazione lazy studente, storico per studente e verifica, filtri paginati | Storico filtrabile con dati reali | Storico incompleto o studente senza email tracciabile |
-| G5-AI/I-03 | Contesto AI chiuso, assenza web, idoneità bulk approval, audit | Revisione proposte AI su dati consentiti | Provider invocabile senza consenso o item non idonei approvati |
-| G6 | Flag automatico, limiti punteggio, rollback, audit | Verifica didattica della regola automatica | Modalità automatica attiva per default |
-
-## 10. Sequenza di rilascio e rollback
-
-### 10.1 Regole di rilascio
-
-1. Ogni rilascio applicativo passa prima in `dev`, poi in `test`, infine in `prod` dopo il gate previsto.
-2. Le modifiche Firestore sono backward-compatible durante il rilascio.
-3. Le feature non complete sono protette da flag server-side e invisibili nella UI.
-4. Il deployment registra versione, commit e data nel log di rilascio.
-
-### 10.2 Rollback
-
-| Caso | Risposta |
-|---|---|
-| Regressione frontend/backend | Rollback al deployment precedente; dati immutabili già attivati non vengono riscritti. |
-| Errore import Markdown | Nessuna promozione visibile; cleanup staging e correzione del file sorgente. |
-| Email bruciata erronea | Il docente può invalidare manualmente un record `burned` tramite funzione amministrativa auditata. |
-| Errore AI | Disabilitare provider/feature flag; conservare proposte già auditabili; nessuna pubblicazione automatica. |
-| Errore dati o migrazione | Fermare write path interessato, ripristinare secondo C-01, documentare incidente. |
-
-## 11. Rischi e azioni preventive
-
-| Rischio | Probabilità/Impatto | Prevenzione | Trigger di escalation |
-|---|---|---|---|
-| Contratto Markdown modificato tardi | Media / Alta | Parser condiviso, fixture, G2 prima di M2 | Cambio a front matter/pool dopo dati reali |
-| Email bruciata con race condition | Bassa / Alta | Transazione Firestore atomica con test concorrenza | Due download dello stesso PDF dallo stesso email |
-| Portale studenti: doppio account Google | Bassa / Media | Validazione dominio Education; email come chiave | Studente con più account Google scolastici |
-| Snapshot verifica troppo grande | Bassa / Alta | Item in subcollection, transazioni e test publish | Limiti Firestore o item mancanti dopo attivazione |
-| Scope creep verso LMS/Forms | Media / Media | Registro change request e vincoli fuori scope in PR | Richiesta di Forms, Drive o portale pesante |
-| Provider AI non conforme | Media / Alta | G5-AI, mock gateway, feature flag | Necessità di browser/RAG o dati senza consenso |
-| Backup non testato | Media / Alta | C-01 e restore drill prima di prod | Impossibilità di ricostruire Markdown o Firestore |
-
-## 12. Dashboard di avanzamento
-
-| Campo | Valore richiesto |
-|---|---|
-| Work package | ID e titolo |
-| Stato | `non_avviato` / `in_corso` / `bloccato` / `in_review` / `completato` |
-| Dipendenze | ID, stato e blocker reale |
-| Branch/PR | Link o riferimento commit |
-| Test | Comandi/prove e esito |
-| Gate | Gate interessato e decisione richiesta |
-| Rischi | Nuovi rischi o modifiche alle assunzioni |
-| Prossima azione | Una sola azione concreta e verificabile |
-
-## 13. Criteri di successo del piano
-
-Il piano è applicato correttamente se:
-
-1. il Repository didattico è rilasciato e validato prima di dipendenze AI;
-2. ogni verifica attivata è immutabile e indipendente dalle lezioni correnti;
-3. il PDF non è mai scritto su nessuno storage; il download studente è atomicamente protetto da email bruciata;
-4. la correzione manuale è completa e affidabile prima di qualsiasi dipendenza AI;
-5. ogni rilascio produce una prova di accettazione del docente, non soltanto una demo tecnica;
-6. C-01 viene risolta prima del go-live; C-02/C-03 prima delle relative funzionalità AI;
-7. un rollback non elimina Markdown, snapshot di verifiche, consegne o audit;
-8. il progetto può fermarsi a G2, G3, G4 o G5 mantenendo un prodotto utile e coerente.
+1. ogni modulo rilascia una capacità usabile senza anticipare AI o scope LMS;
+2. nessun agente lavora su un pacchetto senza DoR o ignora un gate umano;
+3. verifiche e consegne digitali rispettano lock email, snapshot e assenza di PDF persistenti;
+4. `Esporta verifiche` è costruito da tutte le consegne definitive e non dalle lezioni correnti;
+5. test automatici, e2e e review crescono insieme al prodotto;
+6. Firebase resta configurato con costo minimo controllato e senza componenti sempre accesi;
+7. il progetto può fermarsi dopo G2, G3, G4 o G5 mantenendo un prodotto coerente e utile.
 
 ---
 
-## Appendice A — Primo backlog eseguibile
+## Appendice A — Primo pacchetto da assegnare
 
-L'ordine operativo immediato, dopo G0:
-
-1. F-01 — monorepo, CI, build e test;
-2. F-02 — Firebase `dev` ed Emulator Suite;
-3. F-04 — parser/validatore `lesson-contract` con fixture (lesson.md + pool.md + UDA.md);
-4. F-03 — schema/regole Firestore e Storage;
-5. F-05 — autenticazione e autorizzazione docente;
-6. F-06/F-07 — web shell docente, errori e audit;
-7. R-01/R-02 — Programmi/UDA e preflight import Markdown.
-
-Non va avviato il connettore AI. Il portale studenti può essere preparato come shell vuota, ma non deve ritardare la chiusura di G2.
+Il primo pacchetto assegnabile è **F-01 — Workspace e CI**, ma il provisioning Firebase reale non parte finché il Docente non ha completato H-01 e H-02. Dopo F-01, F-02 e F-03 possono avanzare in parallelo; F-04 richiede sia il workspace sia l'ambiente Firebase `dev`.
