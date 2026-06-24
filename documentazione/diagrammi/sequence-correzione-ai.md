@@ -1,4 +1,4 @@
-# SchoolForge — Sequenza correzione AI (Modulo 5)
+# SchoolForge — Sequenza correzione AI (Modulo 5 — fuori scope V1 / pianificato per V2)
 
 ```mermaid
 sequenceDiagram

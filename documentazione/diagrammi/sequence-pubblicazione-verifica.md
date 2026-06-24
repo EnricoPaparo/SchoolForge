@@ -12,18 +12,15 @@ sequenceDiagram
     SPA->>F: legge verifica (proiezione pubblica)
     F-->>SPA: titolo, canali disponibili
 
-    S->>SPA: sceglie canale cartaceo, inserisce dati
-    SPA->>F: runTransaction — verifica lock, crea recipientLock + deliveryAttempt
-    alt email libera
-        F-->>SPA: transazione ok
-        SPA->>SPA: seleziona domande da questionIndex
-        SPA->>SPA: genera PDF nel browser (@react-pdf/renderer)
-        SPA-->>S: download PDF diretto
-    else email già usata
-        F-->>SPA: lock esistente
-        SPA-->>S: errore "recapito già utilizzato"
+    S->>SPA: sceglie canale cartaceo, clicca "Stampa/Scarica PDF"
+    SPA->>SPA: genera PDF nel browser (VerificaPdfRenderer mode=student)
+    SPA-->>S: download PDF diretto
+    opt contatore opzionale
+        SPA->>F: incrementa downloadCount (atomico, nessun dato personale)
     end
 ```
+
+Il canale cartaceo è puramente fisico: nessun record di tentativo (`deliveryAttempt`) e nessun log di accesso. Non usa lock né email; più download sono ammessi. Al più viene incrementato il contatore atomico `downloadCount` sul documento della verifica.
 
 ## Canale digitale
 
@@ -34,23 +31,27 @@ sequenceDiagram
     participant CF as Cloud Function
     participant F as Firestore
 
-    S->>SPA: sceglie canale digitale, inserisce dati
+    S->>SPA: sceglie canale digitale, inserisce nome e cognome
     SPA->>CF: startDigitalAttempt(verificationToken, dati)
-    CF->>F: transazione — lock, tentativo, snapshot con soluzioni private
-    CF-->>SPA: proiezione domande senza soluzioni + Set-Cookie: resumeToken (HttpOnly/Secure)
-
-    loop autosave
-        S->>SPA: risponde a domanda
-        SPA->>F: saveDraft (answers)
+    CF->>F: transazione — brucia token mono-uso, crea tentativo, snapshot con soluzioni private, accessLog (nome, IP, user-agent, timestamp)
+    alt token non ancora usato
+        CF-->>SPA: proiezione domande senza soluzioni + Set-Cookie: resumeToken (HttpOnly/Secure)
+        loop autosave
+            S->>SPA: risponde a domanda
+            SPA->>F: saveDraft (answers)
+        end
+        S->>SPA: Consegna
+        SPA->>F: runTransaction — in_corso → consegnato, immutabile, audit
+        SPA-->>S: conferma consegna
+    else token già bruciato
+        CF-->>SPA: errore TOKEN_ALREADY_USED
+        SPA-->>S: "Questa prova è già stata avviata da questo link."
     end
-
-    S->>SPA: Consegna
-    SPA->>F: runTransaction — in_corso → consegnato, immutabile, audit
-    SPA-->>S: conferma consegna
 ```
 
 ## Note
 
-- Nel canale cartaceo il PDF è generato interamente nel browser; il server non è coinvolto nella produzione del documento.
-- Il lock `recipientLocks/{emailHash}` è unico per verifica: cartaceo e digitale condividono la stessa regola di email bruciata.
+- Nel canale cartaceo il PDF è generato interamente nel browser; il server non è coinvolto nella produzione del documento. Il canale cartaceo non crea record di tentativo né voci di `accessLog`.
+- Non esiste alcun lock email: l'unicità della consegna digitale è garantita dal token mono-uso del tentativo, bruciato alla prima chiamata `startDigitalAttempt`.
+- Solo l'accesso digitale registra nome dichiarato, IP, user-agent e timestamp in `accessLog`; il docente li consulta nel Report Accessi. Sono dati auto-dichiarati, non prove d'identità.
 - Lo snapshot digitale con soluzioni private è creato dalla Cloud Function e mai esposto al client portale.

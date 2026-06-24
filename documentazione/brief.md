@@ -95,6 +95,8 @@ Il sistema deve essere un consumatore della conoscenza.
 
 La perdita del sistema non deve comportare la perdita dei contenuti.
 
+In V1 il docente produce i file Markdown esternamente (con strumenti AI come Claude o GPT, o manualmente). SchoolForge importa e valida il contenuto. Un editor integrato è pianificato per V2.
+
 ---
 
 ## Knowledge First
@@ -155,9 +157,9 @@ La V1 non prevede:
 
 Gli studenti non hanno un account SchoolForge.
 
-Gli studenti accedono esclusivamente alla sezione Portale dell'applicazione tramite un link univoco di verifica.
+Gli studenti accedono esclusivamente alla sezione Portale dell'applicazione tramite il link aperto di una verifica.
 
-Gli studenti non si registrano al sistema. L'email inserita al momento dell'accesso è un recapito e un identificatore del tentativo, non una credenziale né una prova dell'identità dello studente.
+Gli studenti non si registrano al sistema. Al momento dell'accesso lo studente dichiara nome e cognome: sono dati auto-dichiarati, non verificati, né una credenziale né una prova dell'identità. Il sistema registra nome dichiarato, indirizzo IP, timestamp e user-agent come audit trail consultabile dal docente nel Report Accessi.
 
 ---
 
@@ -190,7 +192,7 @@ SchoolForge garantisce che la conoscenza didattica del Docente rimanga di sua pr
 ## Cosa il Docente può sempre recuperare
 
 * **File Markdown originali e asset**: esportabili in qualsiasi momento tramite la funzione "Export repository". Il file ZIP contiene i file nella struttura originale, leggibili con qualsiasi editor di testo, senza dipendenza da SchoolForge.
-* **Dati operativi** (configurazioni verifiche, email registrate, consegne digitali, correzioni): esportabili tramite la funzione di export del sistema in formati standard e leggibili indipendentemente dalla piattaforma.
+* **Dati operativi** (configurazioni verifiche, log accessi, consegne digitali, correzioni): esportabili tramite la funzione di export del sistema in formati standard e leggibili indipendentemente dalla piattaforma.
 
 ## Cosa non viene recuperato automaticamente
 
@@ -272,7 +274,7 @@ Le lezioni sono composte da due file Markdown:
 
 Le lezioni vengono create e modificate esternamente al sistema.
 
-La V1 non prevede editor integrato.
+In V1 il docente produce i file Markdown esternamente (con strumenti AI come Claude o GPT, o manualmente). SchoolForge importa e valida il contenuto. Un editor integrato è pianificato per V2.
 
 Il sistema deve permettere:
 
@@ -294,22 +296,16 @@ Ogni domanda deve specificare:
 | Attributo | Valori possibili |
 |---|---|
 | `tipo` | `aperta` / `chiusa_singola` / `chiusa_multipla` |
-| `difficoltà` | `bassa` / `media` / `alta` |
-| `peso` | `basso` / `medio` / `alto` |
+| `difficoltà` | `1` / `2` / `3` |
+| `peso` | `1` / `2` / `3` |
 | `testo` | testo della domanda |
 | `soluzione` | risposta (aperte) o opzioni corrette (chiuse) |
 
-**Difficoltà** determina quali domande vengono selezionate in fase di generazione (filtro e minimo garantito per livello).
+**Difficoltà** (scala `1`, `2`, `3`) determina quali domande vengono selezionate in fase di generazione (filtro e minimo garantito per livello).
 
-**Peso** determina quanto conta la domanda nel punteggio finale (importanza didattica, lunghezza, centralità dell'argomento). Il peso non è un secondo attributo di difficoltà: una domanda può essere facile ma avere peso alto, e viceversa.
+**Peso** (scala `1`, `2`, `3`) determina quanto conta la domanda nel punteggio finale (importanza didattica, lunghezza, centralità dell'argomento). Il peso non è un secondo attributo di difficoltà: una domanda con `difficoltà` 1 può avere `peso` 3, e viceversa.
 
-**Punteggio massimo per domanda** = `coeff_difficoltà × coeff_peso`
-
-| Livello | Coefficiente |
-|---|---|
-| Basso / Bassa | 0.75 |
-| Medio / Media | 1.00 |
-| Alto / Alta | 1.25 |
+**Punteggio massimo per domanda** = `difficoltà × peso` (scala lineare, intervallo 1–9).
 
 La percentuale finale è calcolata come `Σ(punti assegnati) / Σ(punti massimi) × 100`.
 
@@ -354,10 +350,10 @@ Il docente crea una verifica definendo:
 * numero totale di domande;
 * tipo di domande da includere (aperte, chiuse o entrambe);
 * difficoltà da includere, con numero minimo garantito per ciascun livello selezionato;
-* varianti: tutte uguali (seed fisso, tutti gli studenti ricevono le stesse domande) o tutte diverse (seed per email, ogni studente riceve un set diverso);
+* varianti: tutte uguali (seed fisso, tutti gli studenti ricevono le stesse domande) o tutte diverse (seed per tentativo, ogni studente riceve un set diverso);
 * classi associate (opzionale, dalla lista configurata).
 
-Le impostazioni diventano immutabili al momento dell'attivazione della verifica.
+La configurazione della verifica è sempre modificabile dal docente, anche dopo l'attivazione. L'unico elemento immutabile è lo snapshot di un tentativo digitale: dal momento dell'avvio, la copia delle domande mostrate allo studente non cambia. La configurazione della verifica è sempre modificabile; lo snapshot di un tentativo è immutabile dal momento dell'avvio.
 
 Il PDF viene generato on-demand nel browser al momento della richiesta e non viene mai conservato dal sistema.
 
@@ -389,7 +385,6 @@ Il PDF generato riporta in intestazione:
 | Titolo verifica | precompilato | precompilato |
 | Nome | precompilato | vuoto, compilabile a mano |
 | Cognome | precompilato | vuoto, compilabile a mano |
-| Email | precompilata | vuoto, compilabile a mano |
 | Classe | precompilata se selezionata | vuoto, compilabile a mano |
 | Data | precompilata (data del giorno) | non presente |
 | Punti / Max Punti | vuoto per tutti | vuoto per tutti |
@@ -398,27 +393,29 @@ Seguono le domande con punteggio massimo indicato per ciascuna e spazio per la r
 
 ## Download docente
 
-Il docente può scaricare la verifica in qualsiasi momento, senza inserire dati e senza limitazioni. Il PDF generato ha i campi intestazione vuoti e compilabili a mano, utile per stampa, fotocopie ed erogazione cartacea tradizionale. Il download del docente non brucia email e non modifica lo stato della verifica.
+Il docente può scaricare la verifica in qualsiasi momento, senza inserire dati e senza limitazioni. Il PDF generato ha i campi intestazione vuoti e compilabili a mano, utile per stampa, fotocopie ed erogazione cartacea tradizionale. Il download del docente non registra alcun accesso e non modifica lo stato della verifica.
 
 ---
 
 # Distribuzione e Canali di Erogazione
 
-Ogni verifica attiva è accessibile tramite un link univoco generato dal sistema.
+Ogni verifica è accessibile tramite un link generato dal sistema. La verifica non ha una lista di destinatari preassegnati: è semplicemente **aperta** o **chiusa** dal docente. Chiunque disponga del link può accedere finché la verifica è aperta. Il docente gestisce fisicamente la distribuzione del link (e degli eventuali token) in classe.
 
-Il docente distribuisce il link tramite i canali che preferisce (bacheca scolastica, chat di classe, email).
+Il docente distribuisce il link tramite i canali che preferisce (bacheca scolastica, chat di classe).
+
+Se uno studente arriva tardi, il docente può avviare un nuovo tentativo digitale generando un token aggiuntivo, oppure consegnare una copia cartacea; non è prevista la riapertura di un tentativo già inviato.
 
 Lo studente apre il link e sceglie il canale:
 
 ## Canale A — Cartaceo
 
-Lo studente inserisce nome, cognome, email e, facoltativamente, classe. Il sistema genera il PDF con i dati precompilati direttamente nel browser dello studente; il PDF viene scaricato senza passare per il server. L'email è un recapito e un identificatore del tentativo, non una credenziale. L'email è bruciata per quella verifica: non è possibile scaricare un secondo PDF con lo stesso indirizzo.
+Il canale cartaceo è puramente fisico. Il docente (o lo studente dal link aperto) clicca "Stampa/Scarica PDF": il PDF viene generato direttamente nel browser e scaricato, senza passare per il server. Il canale cartaceo **non** crea alcun record di tentativo (`deliveryAttempt`) e **non** registra alcun accesso. Se utile, un semplice contatore atomico `downloadCount` sul documento della verifica può essere incrementato a ogni download. Non c'è alcun lock: il canale cartaceo non limita i download.
 
 Lo studente svolge la verifica su carta o con qualsiasi strumento esterno. La consegna avviene fisicamente al docente. Il sistema non è coinvolto nella correzione cartacea.
 
 ## Canale B — Digitale (Portale Verifiche)
 
-Lo studente inserisce nome, cognome, email e, facoltativamente, classe. Il sistema crea un tentativo digitale tramite una Cloud Function che genera il token di sessione e salva lo snapshot delle domande senza esporre soluzioni. Lo studente svolge la verifica direttamente nel portale. L'email è bruciata per quella verifica.
+Lo studente inserisce nome, cognome e, facoltativamente, classe. Chiunque abbia il link può avviare un tentativo digitale finché la verifica è aperta; il token è generato on-demand, oppure il docente pre-genera un insieme di N token generici. Il sistema crea il tentativo digitale tramite una Cloud Function che brucia il token mono-uso del tentativo, genera il token di sessione, registra il log di accesso (nome, IP, timestamp, user-agent) e salva lo snapshot delle domande senza esporre soluzioni. Lo studente svolge la verifica direttamente nel portale. Il token mono-uso impedisce una seconda consegna digitale dallo stesso token.
 
 Le risposte vengono salvate strutturate nel database operativo e sono disponibili per la correzione nel sistema.
 
@@ -460,6 +457,12 @@ SchoolForge non gestisce voti finali. La conversione percentuale in voto è una 
 
 Ogni rettifica è tracciata con valore precedente, nuovo valore e motivazione.
 
+## Registro Correzioni
+
+Dalla UI di correzione il docente può aprire un popup **Registro Correzioni**: una tabella di verifica rapida con una riga per consegna corretta, con le colonne **Nome**, **Cognome**, **Punteggio**, **Percentuale** e **Data consegna**. Serve a controllare a colpo d'occhio gli esiti di una verifica.
+
+Dallo stesso popup il docente può, in via opzionale, esportare il registro come **PDF** o **CSV**. L'export è generato on-demand nel browser e non viene conservato dal sistema. Questa vista sostituisce un'esportazione grezza su file da copiare e incollare.
+
 ---
 
 # Esportazione delle Verifiche Svolte
@@ -470,7 +473,7 @@ L'export è costruito dalle consegne digitali definitive e dai rispettivi snapsh
 
 Per ogni consegna inclusa, il documento di export deve contenere almeno:
 
-* dati dichiarati dallo studente: nome, cognome, email e classe se presente;
+* dati dichiarati dallo studente: nome, cognome e classe se presente; più i dati di accesso (IP, timestamp) a fini di audit;
 * dati della verifica: titolo, data e identificativo del tentativo;
 * domande effettivamente assegnate, con tipo, difficoltà, peso e punteggio massimo;
 * risposta fornita per ogni domanda;
@@ -490,7 +493,7 @@ Il Docente sceglie il formato al momento dell'export. I file vengono scaricati s
 
 # Correzione Assistita AI
 
-La correzione AI è un modulo successivo.
+**Fuori scope V1 / pianificato per V2.** La correzione AI è il Modulo 5 ed è interamente rinviata alla V2. La descrizione seguente resta valida come specifica del modulo, ma non fa parte del perimetro V1.
 
 Richiede consegne digitali strutturate (Portale Verifiche).
 
@@ -513,12 +516,6 @@ Attivabile solo con opt-in esplicito del docente per la specifica verifica o ass
 Ogni esito automatico è marcato come tale e rimane modificabile.
 
 Il docente può inserire una breve nota testuale di correzione che l'AI deve considerare per la specifica verifica o assegnazione.
-
-## Rilevamento Anomalie Stilistiche
-
-Il sistema può segnalare risposte stilisticamente incoerenti con il profilo dello studente.
-
-La segnalazione è consultiva: non blocca la correzione e non penalizza automaticamente lo studente. Il rapporto motivato è consultabile esclusivamente dal Docente.
 
 ## Contesto di Correzione
 
@@ -555,13 +552,13 @@ Portale Verifiche digitale: svolgimento online, snapshot tramite Cloud Function,
 
 ## Modulo 4
 
-Correzione manuale e percentuali: correzione consegne digitali, punteggi, percentuali, rettifiche tracciate ed export globale in PDF, Markdown e CSV.
+Correzione manuale e percentuali: correzione consegne digitali, punteggi, percentuali, rettifiche tracciate, popup Registro Correzioni (con export PDF/CSV) ed export globale in PDF, Markdown e CSV.
 
 ---
 
-## Modulo 5
+## Modulo 5 — fuori scope V1 / pianificato per V2
 
-Correzione Assistita AI: proposte assistite, approvazione massiva, modalità automatica opt-in, rilevamento anomalie stilistiche.
+Correzione Assistita AI: proposte assistite, approvazione massiva, modalità automatica opt-in. Spostato interamente alla V2.
 
 ---
 
@@ -571,23 +568,23 @@ Correzione Assistita AI: proposte assistite, approvazione massiva, modalità aut
 |---|---|
 | Provider dell'ambiente | Firebase, su progetto di proprietà del Docente. |
 | Regione dei dati applicativi | Milano `europe-west8`, ove supportata dal servizio. |
-| Backup | Backup giornaliero di Cloud Firestore e copia protetta di Markdown e asset in Cloud Storage, con conservazione minima di 30 giorni e verifica periodica di ripristino. |
-| RPO | 24 ore: in caso di incidente può essere perso al massimo il lavoro successivo all'ultimo backup giornaliero riuscito. |
-| RTO | Best-effort: non è stabilito un tempo massimo contrattuale di ripristino. |
-| Responsabile operativo | Il Docente: proprietario del progetto, delle credenziali, del billing, della verifica dei backup e dell'avvio del ripristino. |
+| Backup | Markdown e asset in Cloud Storage sono portabili e protetti dalla ridondanza nativa di Storage (nessun job di backup dedicato). Per Firestore il Docente avvia un export manuale on-demand dalla pagina impostazioni; nessuno scheduler o cron. |
+| RPO | Best-effort: affidato all'export manuale Firestore eseguito dal Docente; non è garantito un punto di ripristino entro un intervallo fisso. |
+| RTO | Non garantito in V1. |
+| Responsabile operativo | Il Docente: proprietario del progetto, delle credenziali, del billing, dell'esecuzione degli export manuali e dell'avvio del ripristino. |
 
 ---
 
 # Decisioni Aperte
 
-Le seguenti decisioni non possono essere dedotte dal brief e richiedono una scelta esplicita del committente prima del relativo rilascio. Non devono essere sostituite da assunzioni tecniche nascoste.
+In V1 non restano decisioni aperte bloccanti. Le decisioni C-02 e C-03 riguardano il Modulo 5 (AI), spostato interamente alla V2; non condizionano il rilascio della V1. C-02 è inoltre risolta in linea di principio (vedi sotto).
 
-| ID | Decisione | Impatto | Owner | Scadenza |
+| ID | Decisione | Stato | Owner | Scadenza |
 |---|---|---|---|---|
-| C-02 | Provider AI, condizioni contrattuali, residenza dei dati e condizioni di invio delle risposte degli studenti | Implementazione delle funzionalità AI | Committente / Docente | Prima del Modulo 5 |
-| C-03 | Regola didattica per l'uso della correzione automatica, ambito di applicazione e eventuale revisione umana obbligatoria | Abilitazione modalità automatica | Committente / Docente | Prima dell'abilitazione modalità automatica (Modulo 5) |
+| C-02 | Provider AI e modello di default | **Risolta (V2):** OpenAI API (default `gpt-4o-mini`) oppure Anthropic Claude API (default `claude-haiku-4-5-20251001`); il Docente configura la chiave API nelle impostazioni. | Committente / Docente | V2, prima del Modulo 5 |
+| C-03 | Regola didattica per la correzione automatica, ambito e eventuale revisione umana obbligatoria | Rinviata alla V2 insieme a M5 | Committente / Docente | V2, prima dell'abilitazione modalità automatica |
 
-Ogni decisione produce un verbale scritto nel repository che documenta: data, approvatore, opzioni valutate, scelta effettuata e vincoli operativi.
+Vedi anche `decisioni.md` per il registro completo. Ogni decisione produce un verbale scritto nel repository che documenta: data, approvatore, opzioni valutate, scelta effettuata e vincoli operativi.
 
 ---
 
@@ -606,6 +603,18 @@ Supporto a più docenti.
 ## Editor Integrato
 
 Modifica dei Markdown direttamente dal sistema.
+
+---
+
+## Sommario Curricolare PDF
+
+Generazione automatica di un sommario curricolare (curriculum vitae della classe) in PDF a partire dai programmi svolti. In V1 resta disponibile l'export del programma svolto in Markdown; la generazione PDF di questo sommario curricolare è rinviata alla V2. Il programma svolto in PDF descritto nel Modulo 1 resta invece parte della V1.
+
+---
+
+## Specchietto Consegne
+
+Popup sulla verifica attiva che mostra in tempo reale chi ha consegnato e chi non ha ancora consegnato.
 
 ---
 

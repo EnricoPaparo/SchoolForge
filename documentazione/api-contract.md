@@ -6,6 +6,23 @@
 
 ---
 
+## Struttura file nel repository
+
+I tipi e gli artefatti di questo contratto risiedono nei seguenti percorsi:
+
+| Percorso | Contenuto |
+|---|---|
+| `src/types/firestore.ts` | Tutte le interfacce dei documenti Firestore (sezione 2). |
+| `src/types/functions.ts` | Tipi di request/response delle Cloud Functions. |
+| `packages/lesson-contract/src/index.ts` | Schemi Zod del contratto pool v1 (package interno del workspace, non pubblicato su npm). |
+| `functions/src/index.ts` | Entry point delle Cloud Functions. |
+| `functions/src/startDigitalAttempt.ts` | Funzione M3 `startDigitalAttempt`. |
+| `src/components/pdf/VerificaPdfRenderer.tsx` | Renderer PDF unificato (`mode="teacher" \| "student"`). |
+
+> Nota: nel contesto della SPA, `src/contracts/lesson.ts` riesporta gli schemi da `packages/lesson-contract/src/index.ts` per semplificare gli import del client.
+
+---
+
 ## 1. Architettura API
 
 ### 1.1 Scritture client dirette
@@ -35,7 +52,7 @@ Tutte le Cloud Functions restituiscono:
 }
 ```
 
-Codici di errore di dominio: `VALIDATION_FAILED`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `INVALID_STATE`, `RECIPIENT_ALREADY_USED`, `RATE_LIMITED`, `CONFIRMATION_REQUIRED`.
+Codici di errore di dominio: `VALIDATION_FAILED`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `INVALID_STATE`, `TOKEN_ALREADY_USED`, `RATE_LIMITED`, `CONFIRMATION_REQUIRED`.
 
 Le operazioni irreversibili richiedono `confirmation: true` nel payload: attivazione/chiusura/archiviazione verifica, eliminazione consegna, abilitazione modalità automatica AI.
 
@@ -94,9 +111,9 @@ interface QuestionIndex {
   udaId: string;
   programId: string;
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
-  difficolta: 'bassa' | 'media' | 'alta';
-  peso: 'basso' | 'medio' | 'alto';
-  maxPoints: number;           // coeff_difficolta * coeff_peso
+  difficolta: 1 | 2 | 3;
+  peso: 1 | 2 | 3;
+  maxPoints: number;           // difficolta * peso (scala lineare, 1–9)
   valid: boolean;
 }
 
@@ -105,46 +122,47 @@ interface Verification {
   id: string;
   ownerUid: string;
   title: string;
-  state: 'bozza' | 'attiva' | 'chiusa' | 'archiviata';
+  state: 'bozza' | 'attiva' | 'chiusa' | 'archiviata';  // 'attiva' = link aperto
   publicTokenHash: string | null;  // presente solo se attiva
   sources: string[];               // lessonId[] o udaId[]
-  config: {
+  config: {                        // sempre modificabile dal docente, anche dopo l'attivazione
     totalQuestions: number;
     allowedTypes: string[];
-    difficulties: { level: string; min: number }[];
+    difficulties: { level: 1 | 2 | 3; min: number }[];
     variant: 'tutte_uguali' | 'tutte_diverse';
     channels: ('cartaceo' | 'digitale')[];
     classes: string[];             // classi associate (opzionale)
   };
+  downloadCount: number;           // contatore atomico opzionale dei download cartacei; nessun dato personale
   activatedAt: Timestamp | null;
   createdAt: Timestamp;
 }
 
-// verifications/{id}/recipientLocks/{emailHash}
-interface RecipientLock {
-  emailHash: string;               // SHA-256 dell'email normalizzata
-  channel: 'cartaceo' | 'digitale';
-  attemptId: string;
-  state: 'reserved' | 'completed';
-  createdAt: Timestamp;
-}
-
-// deliveryAttempts/{attemptId}
+// deliveryAttempts/{attemptId} — solo canale digitale (il canale cartaceo non crea tentativi)
 interface DeliveryAttempt {
   id: string;
   verificationId: string;
-  channel: 'cartaceo' | 'digitale';
   declaredData: {
     name: string;
     surname: string;
-    email: string;
     class?: string;
   };
-  state: 'reserved' | 'completed' | 'in_progress' | 'submitted' | 'cancelled';
-  resumeTokenHash: string | null;  // solo digitale; hash del cookie di ripresa
+  declaredName: string;            // "Cognome Nome" auto-dichiarato, non verificato
+  declaredIp: string;              // IP di provenienza al momento dell'accesso
+  userAgent: string;               // user-agent del browser dello studente
+  state: 'in_progress' | 'submitted' | 'cancelled';
+  resumeTokenHash: string | null;  // hash del cookie di ripresa
   resumeTokenExpiry: Timestamp | null;
   createdAt: Timestamp;
   submittedAt: Timestamp | null;
+}
+
+// deliveryAttempts/{id}/accessLog/{logId} — subcollection
+interface AccessLogEntry {
+  declaredName: string;            // "Cognome Nome"
+  declaredIp: string;
+  userAgent: string;
+  timestamp: Timestamp;
 }
 
 // deliveryAttempts/{id}/snapshot/items — subcollection
@@ -152,9 +170,9 @@ interface SnapshotItem {
   questionId: string;
   order: number;
   tipo: string;
-  difficolta: string;
-  peso: string;
-  maxPoints: number;
+  difficolta: 1 | 2 | 3;
+  peso: 1 | 2 | 3;
+  maxPoints: number;               // difficolta * peso (1–9)
   testo: string;
   opzioni: { id: string; testo: string }[] | null;
   soluzione: string | string[];    // privato; mai esposto al client portale
@@ -220,7 +238,7 @@ interface AuditEvent {
 | Programma svolto | Leggi `programs`, `udas`, `lessons` (flag svolto) | — |
 | Export ZIP | Leggi struttura + download file Storage | — |
 
-Il parser `lesson-contract` esegue la validazione nel client prima di qualsiasi scrittura. Se il client riceve errori, la UI li mostra senza scrivere su Firestore o Storage.
+Il parser `lesson-contract` (package interno `packages/lesson-contract/src/index.ts`, riesportato da `src/contracts/lesson.ts`) esegue la validazione nel client prima di qualsiasi scrittura. Se il client riceve errori, la UI li mostra senza scrivere su Firestore o Storage.
 
 ### 3.2 Verifiche
 
@@ -235,11 +253,10 @@ Il parser `lesson-contract` esegue la validazione nel client prima di qualsiasi 
 
 | Operazione | Scrittura Firestore |
 |---|---|
-| Verifica disponibilità email | Legge `recipientLocks/{emailHash}` |
-| Crea lock + tentativo | Transazione: scrive `recipientLocks` e `deliveryAttempts` solo se lock assente |
-| Genera PDF | Solo lettura Firestore + `questionIndex`; genera nel browser |
+| Genera PDF cartaceo | Solo lettura Firestore + `questionIndex`; genera nel browser |
+| Incremento contatore (opzionale) | Incremento atomico di `downloadCount` su `verifications`; nessun dato personale |
 
-La transazione usa `runTransaction` del Firebase SDK client-side. La Security Rule su `recipientLocks` permette la creazione solo se `!exists()`.
+Il canale cartaceo è puramente fisico: cliccando "Stampa/Scarica PDF" il documento è generato nel browser e scaricato. Non crea alcun record di tentativo (`deliveryAttempts`) né voce di log di accesso. Non esiste lock né vincolo di unicità: più download sono ammessi. Al più viene incrementato il contatore atomico `downloadCount`.
 
 ### 3.4 Correzione ed export
 
@@ -248,6 +265,7 @@ La transazione usa `runTransaction` del Firebase SDK client-side. La Security Ru
 | Leggi consegne | Query `deliveryAttempts` filtrata per `ownerUid` |
 | Assegna punteggio | Scrivi `corrections` e `correctionEvents` |
 | Rettifica | Appendi `correctionEvents`, aggiorna `corrections` |
+| Registro Correzioni (popup) | Solo lettura `corrections` + `deliveryAttempts` (nome, cognome, punteggio, percentuale, data consegna); export PDF/CSV generato nel browser, nessuna scrittura |
 | Elimina consegna | Transazione: rimuove `declaredData`, `answers`, `corrections`; preserva `auditEvents` |
 | Export verifiche | Leggi `deliveryAttempts` + `snapshot/items` + `answers` + `corrections`; genera nel browser |
 
@@ -269,11 +287,23 @@ Content-Type: application/json
   "declaredData": {
     "name": "Mario",
     "surname": "Rossi",
-    "email": "mario@example.com",
     "class": "3A"           // opzionale
   }
 }
 ```
+
+#### Regole di validazione di `declaredData`
+
+`name` e `surname` (che compongono il `declaredName` nel formato `Cognome Nome`) sono validati server-side:
+
+| Vincolo | Regola |
+|---|---|
+| Lunghezza minima | `minLength` 2 |
+| Lunghezza massima | `maxLength` 100 |
+| Caratteri ammessi | lettere (incluse lettere accentate), spazi, apostrofi (`'`) e trattini (`-`) |
+| Non vuoto | non può essere vuoto né composto solo da spazi (whitespace-only) |
+
+`class`, se presente, deve corrispondere a una voce della lista classi configurata dal docente. La violazione di una qualsiasi di queste regole produce `VALIDATION_FAILED`.
 
 ### Response 200
 
@@ -287,9 +317,9 @@ Content-Type: application/json
         "id": "snapshot-item-uuid",
         "order": 1,
         "tipo": "aperta",
-        "difficolta": "media",
-        "peso": "alto",
-        "maxPoints": 1.25,
+        "difficolta": 2,
+        "peso": 3,
+        "maxPoints": 6,
         "testo": "Spiega la differenza tra HTTP e HTTPS.",
         "opzioni": null
       }
@@ -303,20 +333,23 @@ Il cookie di ripresa (`Set-Cookie: resumeToken=...; HttpOnly; Secure; SameSite=S
 
 Le soluzioni (`soluzione`) non sono mai incluse nella risposta al client portale.
 
+Alla prima chiamata riuscita la Function brucia il token mono-uso del tentativo e registra in `accessLog` il nome dichiarato (`Cognome Nome`), l'IP di provenienza, lo user-agent e il timestamp. Questi dati alimentano il Report Accessi del docente. Il nome è auto-dichiarato e non verificato.
+
 ### Response 4xx
 
 | Condizione | Codice HTTP | Codice errore |
 |---|---|---|
 | Token verifica non trovato o verifica non attiva | 404 | `NOT_FOUND` |
-| Email già usata per questa verifica | 409 | `RECIPIENT_ALREADY_USED` |
+| Token del tentativo già bruciato | 409 | `TOKEN_ALREADY_USED` |
 | Rate limit raggiunto | 429 | `RATE_LIMITED` |
 | Payload non valido | 400 | `VALIDATION_FAILED` |
+| `declaredName` non valido (lunghezza fuori 2–100, caratteri non ammessi, vuoto o whitespace-only) | 400 | `VALIDATION_FAILED` |
 
 ---
 
-## 5. Cloud Functions AI — Modulo 5
+## 5. Cloud Functions AI — Modulo 5 (fuori scope V1 / pianificato per V2)
 
-Disponibili solo con C-02 approvata e feature flag `aiEnabled = true`.
+Disponibili solo in V2, con C-02 risolta (provider AI configurato dal docente) e feature flag `aiEnabled = true`.
 
 | Funzione | Request | Response |
 |---|---|---|
@@ -338,8 +371,8 @@ Le Security Rules Firestore devono garantire:
 | `settings/owner` | Lettura + scrittura | — | Scrittura |
 | `programs`, `udas`, `lessons`, `questionIndex` | Lettura + scrittura | Lettura limitata (solo verifica attiva) | — |
 | `verifications` | Lettura + scrittura | Lettura proiezione pubblica (solo attiva) | Lettura completa |
-| `verifications/*/recipientLocks` | Lettura | Creazione (se non esiste) | Eliminazione |
 | `deliveryAttempts` | Lettura | Creazione + scrittura (solo proprio tentativo con token sessione) | Lettura altri tentativi |
+| `deliveryAttempts/*/accessLog` | Lettura (Report Accessi) | Scrittura solo via Function | Lettura/scrittura diretta |
 | `deliveryAttempts/*/snapshot/items` | Lettura completa | Lettura senza `soluzione` | — |
 | `corrections`, `correctionEvents` | Lettura + scrittura | — | — |
 | `auditEvents` | Lettura | — | Scrittura |
@@ -352,8 +385,7 @@ Le Security Rules esatte vengono scritte e testate in F-04 con Emulator Suite ob
 
 | Condizione | Messaggio utente | Azione suggerita |
 |---|---|---|
-| Email già usata (cartaceo) | "Questo indirizzo è già stato usato per questa verifica." | — |
-| Email già usata (digitale) | "Questo indirizzo ha già un tentativo avviato per questa verifica." | — |
+| Token digitale già usato | "Questa prova è già stata avviata da questo link. Contatta il docente se è un errore." | Contattare il docente |
 | Verifica non attiva | "Il link non è attivo o la verifica è chiusa." | Contattare il docente |
 | Configurazione non attivabile | "Impossibile attivare: [motivo specifico]." | Correggere la configurazione |
 | Rate limit | "Troppo richieste. Attendere qualche minuto." | Riprovare |
