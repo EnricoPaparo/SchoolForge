@@ -1,0 +1,18 @@
+{
+  "name": "@schoolforge/functions",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'functions: unit tests added in M3'"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": "20"
+  }
+}
