@@ -1,0 +1,11 @@
+node_modules
+dist
+lib
+.firebase
+coverage
+pnpm-lock.yaml
+
+# Existing documentation — formatting preserved as-is
+documentazione/
+README.md
+CONTRIBUTING.md
