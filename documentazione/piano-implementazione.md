@@ -17,7 +17,7 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 | Modulo | Capacità rilasciata | Può fermarsi qui? |
 |---|---|---|
 | M1 — Repository didattico | Programmi, UDA, Markdown/pool, import validato, rendering, export ZIP, programma svolto (PDF + Markdown). | Sì |
-| M2 — Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente, canale cartaceo con log accessi. | Sì |
+| M2 — Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente, canale cartaceo fisico senza record (al più `downloadCount`). | Sì |
 | M3 — Portale digitale | Tentativi anonimi, snapshot via Cloud Function, token mono-uso, token sessione, log nome+IP, bozze, consegna, deterrenza. | Sì |
 | M4 — Correzione ed export | Punteggi, percentuali, rettifiche, eliminazione e `Esporta verifiche` in PDF/Markdown/CSV. | Sì |
 
@@ -42,7 +42,7 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 | H-03 | Configurare budget e avvisi di spesa; verificare l'export Firestore manuale dalle impostazioni. | Prima di dati reali, gate G1. | Può assistere con accesso autorizzato; il Docente verifica l'esito. |
 | H-04 | Scegliere il formato iniziale di `Esporta verifiche`: PDF, Markdown o CSV come default. | Prima del pacchetto M4-D. | Il renderer è implementabile dall'agente dopo la scelta. |
 | H-05 (V2) | Confermare provider AI e modello (C-02 risolta: OpenAI `gpt-4o-mini` o Anthropic Claude `claude-haiku-4-5-20251001`) e condizioni d'uso. | V2, prima di M5-A. | No, è C-02. |
-| H-06 (V2) | Decidere regola didattica della correzione automatica. | V2, prima di M5-E. | No, è C-03. |
+| H-06 (V2) | Decidere regola didattica della correzione automatica. | V2, prima di M5-D. | No, è C-03. |
 
 ---
 
@@ -95,10 +95,10 @@ Un pacchetto è abbastanza piccolo da essere verificato in una review e abbastan
 | G0 — Baseline | Brief, requisiti, architettura e piano coerenti. | Review documentale e C-01 formalizzata. | Bootstrap del repository. |
 | G1 — Fondazioni Firebase | H-01/H-02/H-03 completate; CI ed Emulator Suite disponibili. | Progetti separati, budget, export Firestore manuale disponibile, Security Rules default-deny. | M1 con dati sintetici. |
 | G2 — Repository didattico | M1 integrato. | Import valido/invalido, rendering senza pool, ZIP e programma svolto. | M2. |
-| G3 — Verifiche e cartaceo | M2 integrato. | PDF browser, accesso cartaceo registrato (nome+IP), nessun PDF persistito. | M3. |
+| G3 — Verifiche e cartaceo | M2 integrato. | PDF browser, canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`), nessun PDF persistito. | M3. |
 | G4 — Portale digitale | M3 integrato. | Token mono-uso, log nome+IP, snapshot, bozza/ripresa, consegna immutabile, nessuna soluzione esposta. | M4. |
 | G5 — Correzione ed export | M4 integrato e H-04 completata. | Punteggi, rettifiche, eliminazione, export PDF/Markdown/CSV da snapshot. | Uso manuale completo — fine V1. |
-| G6 — AI assistita (V2) | M5-A..D integrati e H-05 completata. | Contesto chiuso, audit, proposte assistite, anomalie consultive. | AI assistita. |
+| G6 — AI assistita (V2) | M5-A..C integrati e H-05 completata. | Contesto chiuso, audit, proposte assistite per risposta, approvazione massiva. | AI assistita. |
 | G7 — AI automatica (V2) | G6 e H-06 completati. | Opt-in per verifica, audit e rollback. | Correzione automatica. |
 
 C-02 e C-03 riguardano la V2 e non bloccano M1–M4.
@@ -201,13 +201,13 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 |---|---|---|---|---|
 | M4-A | Servizio correzione client: punteggi 0..massimo, percentuale, stato non definitivo, rettifiche append-only, eliminazione dati. | G4 | M4-B | Percentuale e storico rettifiche corretti; eliminazione preserva solo audit. |
 | M4-B | Modello canonico export: leggi tutte le consegne definitive e snapshot, ordina per verifica/data, escludi bozze/annullate. | G4 | M4-A | Ordine corretto; indipendenza dal Markdown corrente. |
-| M4-C | UI correzione: lista filtri (classe inclusa), dettaglio, punteggi, commenti, rettifiche. | M4-A | M4-B | Correzione manuale completa senza voto elettronico. |
+| M4-C | UI correzione: lista filtri (classe inclusa), dettaglio, punteggi, commenti, rettifiche, popup `Registro Correzioni` (tabella nome/cognome/punteggio/percentuale/data con export PDF/CSV opzionale). | M4-A | M4-B | Correzione manuale completa senza voto elettronico; Registro Correzioni consultabile ed esportabile. |
 | M4-D | Renderer export nel browser: genera PDF, Markdown e CSV dal modello canonico; download on-demand. Attende H-04 per il formato di default. | M4-B/H-04 | M4-C | Documento contiene tutte e sole le consegne richieste nei tre formati; nessuna persistenza. |
 | M4-E | Integrazione M4, E2E correzione/export, test su snapshot dopo modifica lezione, evidenze G5. | M4-C/M4-D | — | Ciclo digitale manuale completo. |
 
 ---
 
-> **M5 — Correzione AI** è spostato interamente alla V2. I pacchetti M5-A..F non fanno parte della V1: sono dettagliati nella sezione "V2 — Roadmap futura" in fondo a questo documento.
+> **M5 — Correzione AI** è spostato interamente alla V2. I pacchetti M5-A..E non fanno parte della V1: sono dettagliati nella sezione "V2 — Roadmap futura" in fondo a questo documento.
 
 ---
 
@@ -429,10 +429,10 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | Campo | Valore |
 |---|---|
 | Prerequisiti | M2-A/M2-B/M2-C |
-| File da creare | link pubblico, registrazione accesso (deliveryAttempt + accessLog), download PDF browser |
-| File da modificare | `firestore.rules` (deliveryAttempts/accessLog) |
-| Test minimi | Accesso cartaceo registra nome+IP+user-agent; nessun lock; nessun PDF persistito |
-| Evidenza richiesta | Report Accessi popolato; PDF non in Storage |
+| File da creare | link pubblico, download PDF browser, incremento atomico opzionale di `downloadCount` |
+| File da modificare | `firestore.rules` (incremento `downloadCount` su `verifications`) |
+| Test minimi | Nessun record di tentativo né voce accessLog; nessun lock; più download ammessi; nessun PDF persistito |
+| Evidenza richiesta | Nessun `deliveryAttempt`/accessLog creato; PDF non in Storage |
 
 #### M2-E — Integrazione M2
 
@@ -513,10 +513,10 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | Campo | Valore |
 |---|---|
 | Prerequisiti | M4-A |
-| File da creare | UI lista/filtri (classe inclusa), dettaglio, punteggi, rettifiche |
-| File da modificare | router teacher |
-| Test minimi | Correzione manuale completa senza voto elettronico |
-| Evidenza richiesta | E2E correzione |
+| File da creare | UI lista/filtri (classe inclusa), dettaglio, punteggi, rettifiche, popup `Registro Correzioni` con export PDF/CSV nel browser |
+| File da modificare | router teacher, `apps/web/src/components/pdf/` (renderer Registro Correzioni) |
+| Test minimi | Correzione manuale completa senza voto elettronico; Registro Correzioni elenca nome/cognome/punteggio/percentuale/data ed esporta in PDF/CSV senza persistenza |
+| Evidenza richiesta | E2E correzione; popup Registro Correzioni ed export |
 
 #### M4-D — Renderer export PDF/MD/CSV
 
@@ -553,8 +553,15 @@ Pacchetti previsti (dettaglio di specifica, non in V1):
 | M5-A | `AiGateway`, feature flag, Secret Manager, policy C-02, audit e mock provider. | G5/H-05 | Nessun invio AI senza feature flag e chiave valida. |
 | M5-B | Proposte assistite per item con contesto chiuso. | M5-A | Proposte non alterano correzioni definitive. |
 | M5-C | UI assistita: proposta, approva/modifica/rifiuta, bulk approval con riepilogo. | M5-B | Audit completo; bulk non applica item incompleti. |
-| M5-D | Rapporto anomalie stilistiche consultivo; `riferimenti insufficienti` senza evidenza. | M5-B | Nessuna penalizzazione automatica. |
-| M5-E | Modalità automatica con opt-in per verifica, audit e rollback. Richiede C-03 e H-06. | M5-C/H-06 | Non attiva per default; reversibile. |
-| M5-F | Test sicurezza, qualità e costi AI; evidenze G6/G7. | M5-C/M5-D/M5-E | Nessun web/retrieval; costi osservabili; gate rispettati. |
+| M5-D | Modalità automatica con opt-in per verifica, regole configurabili, audit e rollback. Richiede C-03 e H-06. | M5-C/H-06 | Non attiva per default; reversibile. |
+| M5-E | Test sicurezza, qualità e costi AI; evidenze G6/G7. | M5-C/M5-D | Nessun web/retrieval; costi osservabili; gate rispettati. |
 
 I gate G6 (AI assistita) e G7 (AI automatica) appartengono alla V2.
+
+### Altre funzionalità rinviate alla V2
+
+Oltre al Modulo 5, sono rinviate alla V2 le seguenti funzionalità, fuori dal perimetro V1:
+
+- **Editor integrato lezioni e domande:** modifica dei file Markdown delle lezioni e dei pool direttamente dal sistema. In V1 i file sono prodotti esternamente (strumenti AI come Claude o GPT, o manualmente) e SchoolForge si limita a importarli e validarli.
+- **Specchietto consegne:** popup sulla verifica attiva che mostra in tempo reale chi ha consegnato e chi non ha ancora consegnato.
+- **Sommario curricolare PDF:** generazione automatica di un sommario curricolare (curriculum vitae della classe) in PDF dai programmi svolti. In V1 resta disponibile l'export del programma svolto in Markdown e PDF descritto in M1; è solo la generazione di questo ulteriore sommario curricolare in PDF a essere rinviata alla V2.

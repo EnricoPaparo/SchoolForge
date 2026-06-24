@@ -112,7 +112,7 @@ Questa funzione è il punto critico di sicurezza del Portale digitale.
 |---|---|
 | G1 | Security Rules default-deny testate in Emulator; `ownerUid` funzionante; budget configurato; export manuale Firestore disponibile dalle impostazioni. |
 | G2 | Sanitizzazione Markdown verificata; Storage privato; import non scrive contenuti parziali; ZIP portabile. |
-| G3 | PDF generato nel browser senza persistenza; accesso cartaceo registrato (nome+IP); nessun PDF in Storage. |
+| G3 | PDF generato nel browser senza persistenza; canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`); nessun PDF in Storage. |
 | G4 | `startDigitalAttempt` con token mono-uso e token sessione cookie HttpOnly/Secure; log nome+IP; soluzioni non nel response; bozza/consegna immutabile. |
 | G5 | Correzione, audit, eliminazione ed export solo docente; export non persistito. |
 | G6/G7 (V2) | C-02 risolta / C-03; AI senza web; audit completo; opt-in; rollback verificato. |

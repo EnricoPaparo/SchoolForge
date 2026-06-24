@@ -47,6 +47,7 @@
 |---|---|
 | Correzione | Punteggi e commenti assegnati dal docente a una consegna digitale. |
 | Rettifica | Modifica auditata di un punteggio/commento con valore precedente e motivazione obbligatoria. |
+| Registro Correzioni | Popup nella UI di correzione con una tabella per consegna corretta (nome, cognome, punteggio, percentuale, data consegna), per la verifica rapida degli esiti; export opzionale in PDF o CSV generato nel browser. |
 | Percentuale | `punti assegnati / punti massimi × 100`; non è un voto elettronico. |
 | Correzione assistita AI | Proposta non definitiva di punteggio e commento, approvabile dal docente. |
 | Correzione automatica | Esito AI definitivo solo con opt-in della verifica e C-03 approvata. Modulo M5, pianificato per la V2. |

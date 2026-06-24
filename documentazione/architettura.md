@@ -107,7 +107,7 @@ Tutte le altre operazioni (import, stati verifica, correzione, export) usano Fir
 
 ### ADR-08 — PDF e documenti generati nel browser
 
-**Decisione.** Tutti i PDF (verifica docente, verifica studente cartaceo, programma svolto, export verifiche) e gli altri formati di export (Markdown, CSV) sono generati nel browser con `@react-pdf/renderer` o equivalente. Nessun file generato viene scritto su Cloud Storage o Firestore.
+**Decisione.** Tutti i PDF (verifica docente, verifica studente cartaceo, programma svolto, export verifiche, Registro Correzioni) e gli altri formati di export (Markdown, CSV) sono generati nel browser con `@react-pdf/renderer` o equivalente. Nessun file generato viene scritto su Cloud Storage o Firestore.
 
 **Motivazione.** Eliminare la generazione PDF server-side rimuove la necessità di Cloud Functions per questo scopo, abbatte i costi e semplifica l'architettura. Il browser moderno è in grado di generare PDF di qualità professionale senza infrastruttura server.
 
@@ -294,9 +294,10 @@ sequenceDiagram
 
 1. Il docente consulta le consegne digitali, filtra per verifica/stato/classe.
 2. Assegna punteggi e commenti; la SPA calcola percentuale e scrive in Firestore.
-3. Il docente avvia `Esporta verifiche`: la SPA legge tutte le consegne definitive e i relativi snapshot.
-4. La SPA genera nel browser il documento nel formato scelto (PDF, Markdown o CSV) e avvia il download.
-5. Il docente carica il file manualmente nel Drive dell'istituto; nessuna chiamata Drive dall'applicazione.
+3. Il docente apre il popup `Registro Correzioni`: la SPA mostra la tabella nome/cognome/punteggio/percentuale/data e, su richiesta, ne genera nel browser l'export PDF o CSV senza persistenza.
+4. Il docente avvia `Esporta verifiche`: la SPA legge tutte le consegne definitive e i relativi snapshot.
+5. La SPA genera nel browser il documento nel formato scelto (PDF, Markdown o CSV) e avvia il download.
+6. Il docente carica il file manualmente nel Drive dell'istituto; nessuna chiamata Drive dall'applicazione.
 
 ---
 

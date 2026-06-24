@@ -95,6 +95,8 @@ Il sistema deve essere un consumatore della conoscenza.
 
 La perdita del sistema non deve comportare la perdita dei contenuti.
 
+In V1 il docente produce i file Markdown esternamente (con strumenti AI come Claude o GPT, o manualmente). SchoolForge importa e valida il contenuto. Un editor integrato è pianificato per V2.
+
 ---
 
 ## Knowledge First
@@ -155,7 +157,7 @@ La V1 non prevede:
 
 Gli studenti non hanno un account SchoolForge.
 
-Gli studenti accedono esclusivamente alla sezione Portale dell'applicazione tramite un link univoco di verifica.
+Gli studenti accedono esclusivamente alla sezione Portale dell'applicazione tramite il link aperto di una verifica.
 
 Gli studenti non si registrano al sistema. Al momento dell'accesso lo studente dichiara nome e cognome: sono dati auto-dichiarati, non verificati, né una credenziale né una prova dell'identità. Il sistema registra nome dichiarato, indirizzo IP, timestamp e user-agent come audit trail consultabile dal docente nel Report Accessi.
 
@@ -272,7 +274,7 @@ Le lezioni sono composte da due file Markdown:
 
 Le lezioni vengono create e modificate esternamente al sistema.
 
-La V1 non prevede editor integrato.
+In V1 il docente produce i file Markdown esternamente (con strumenti AI come Claude o GPT, o manualmente). SchoolForge importa e valida il contenuto. Un editor integrato è pianificato per V2.
 
 Il sistema deve permettere:
 
@@ -301,7 +303,7 @@ Ogni domanda deve specificare:
 
 **Difficoltà** (scala `1`, `2`, `3`) determina quali domande vengono selezionate in fase di generazione (filtro e minimo garantito per livello).
 
-**Peso** (scala `1`, `2`, `3`) determina quanto conta la domanda nel punteggio finale (importanza didattica, lunghezza, centralità dell'argomento). Il peso non è un secondo attributo di difficoltà: una domanda può essere facile ma avere peso alto, e viceversa.
+**Peso** (scala `1`, `2`, `3`) determina quanto conta la domanda nel punteggio finale (importanza didattica, lunghezza, centralità dell'argomento). Il peso non è un secondo attributo di difficoltà: una domanda con `difficoltà` 1 può avere `peso` 3, e viceversa.
 
 **Punteggio massimo per domanda** = `difficoltà × peso` (scala lineare, intervallo 1–9).
 
@@ -455,6 +457,12 @@ SchoolForge non gestisce voti finali. La conversione percentuale in voto è una 
 
 Ogni rettifica è tracciata con valore precedente, nuovo valore e motivazione.
 
+## Registro Correzioni
+
+Dalla UI di correzione il docente può aprire un popup **Registro Correzioni**: una tabella di verifica rapida con una riga per consegna corretta, con le colonne **Nome**, **Cognome**, **Punteggio**, **Percentuale** e **Data consegna**. Serve a controllare a colpo d'occhio gli esiti di una verifica.
+
+Dallo stesso popup il docente può, in via opzionale, esportare il registro come **PDF** o **CSV**. L'export è generato on-demand nel browser e non viene conservato dal sistema. Questa vista sostituisce un'esportazione grezza su file da copiare e incollare.
+
 ---
 
 # Esportazione delle Verifiche Svolte
@@ -509,12 +517,6 @@ Ogni esito automatico è marcato come tale e rimane modificabile.
 
 Il docente può inserire una breve nota testuale di correzione che l'AI deve considerare per la specifica verifica o assegnazione.
 
-## Rilevamento Anomalie Stilistiche
-
-Il sistema può segnalare risposte stilisticamente incoerenti con il profilo dello studente.
-
-La segnalazione è consultiva: non blocca la correzione e non penalizza automaticamente lo studente. Il rapporto motivato è consultabile esclusivamente dal Docente.
-
 ## Contesto di Correzione
 
 L'AI utilizza esclusivamente:
@@ -550,13 +552,13 @@ Portale Verifiche digitale: svolgimento online, snapshot tramite Cloud Function,
 
 ## Modulo 4
 
-Correzione manuale e percentuali: correzione consegne digitali, punteggi, percentuali, rettifiche tracciate ed export globale in PDF, Markdown e CSV.
+Correzione manuale e percentuali: correzione consegne digitali, punteggi, percentuali, rettifiche tracciate, popup Registro Correzioni (con export PDF/CSV) ed export globale in PDF, Markdown e CSV.
 
 ---
 
 ## Modulo 5 — fuori scope V1 / pianificato per V2
 
-Correzione Assistita AI: proposte assistite, approvazione massiva, modalità automatica opt-in, rilevamento anomalie stilistiche. Spostato interamente alla V2.
+Correzione Assistita AI: proposte assistite, approvazione massiva, modalità automatica opt-in. Spostato interamente alla V2.
 
 ---
 
@@ -601,6 +603,18 @@ Supporto a più docenti.
 ## Editor Integrato
 
 Modifica dei Markdown direttamente dal sistema.
+
+---
+
+## Sommario Curricolare PDF
+
+Generazione automatica di un sommario curricolare (curriculum vitae della classe) in PDF a partire dai programmi svolti. In V1 resta disponibile l'export del programma svolto in Markdown; la generazione PDF di questo sommario curricolare è rinviata alla V2. Il programma svolto in PDF descritto nel Modulo 1 resta invece parte della V1.
+
+---
+
+## Specchietto Consegne
+
+Popup sulla verifica attiva che mostra in tempo reale chi ha consegnato e chi non ha ancora consegnato.
 
 ---
 

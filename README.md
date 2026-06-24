@@ -22,6 +22,7 @@ La baseline documentale v4.0 è completa. Non esiste ancora codice applicativo, 
 
 | Documento | Funzione |
 |---|---|
+| [Indice](documentazione/INDEX.md) | Punto di ingresso e ordine di lettura della documentazione. |
 | [Brief](documentazione/brief.md) | Visione, perimetro e decisioni del prodotto. |
 | [Requisiti](documentazione/analisi-requisiti.md) | Regole funzionali, qualità e criteri di accettazione. |
 | [Architettura](documentazione/architettura.md) | Firebase, SPA unica, Security Rules, dati, flussi tecnici. |
@@ -37,10 +38,10 @@ La baseline documentale v4.0 è completa. Non esiste ancora codice applicativo, 
 ## Moduli di delivery
 
 1. **M1 — Repository didattico**: programmi, UDA, lezioni, pool, rendering, export ZIP, programma svolto (PDF + Markdown).
-2. **M2 — Verifiche e cartaceo**: configurazione, classi, PDF browser, download docente e studente, log accessi.
+2. **M2 — Verifiche e cartaceo**: configurazione, classi, PDF browser, download docente e studente, canale cartaceo fisico senza record (al più `downloadCount`).
 3. **M3 — Portale digitale**: snapshot via Cloud Function, token mono-uso, token sessione, log nome+IP, bozza, consegna strutturata.
-4. **M4 — Correzione ed export**: punteggi, percentuali, rettifiche, export in PDF/Markdown/CSV.
-5. **M5 — Correzione AI** *(fuori scope V1 / pianificato per V2)*: proposte assistite, opt-in automatico, anomalie stilistiche.
+4. **M4 — Correzione ed export**: punteggi, percentuali, rettifiche, popup Registro Correzioni (export PDF/CSV), export in PDF/Markdown/CSV.
+5. **M5 — Correzione AI** *(fuori scope V1 / pianificato per V2)*: proposte assistite per risposta, approvazione massiva, correzione automatica opt-in con regole configurabili.
 
 La V1 comprende i moduli M1–M4 e può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2.
 

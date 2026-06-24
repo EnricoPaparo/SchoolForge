@@ -265,6 +265,7 @@ Il canale cartaceo è puramente fisico: cliccando "Stampa/Scarica PDF" il docume
 | Leggi consegne | Query `deliveryAttempts` filtrata per `ownerUid` |
 | Assegna punteggio | Scrivi `corrections` e `correctionEvents` |
 | Rettifica | Appendi `correctionEvents`, aggiorna `corrections` |
+| Registro Correzioni (popup) | Solo lettura `corrections` + `deliveryAttempts` (nome, cognome, punteggio, percentuale, data consegna); export PDF/CSV generato nel browser, nessuna scrittura |
 | Elimina consegna | Transazione: rimuove `declaredData`, `answers`, `corrections`; preserva `auditEvents` |
 | Export verifiche | Leggi `deliveryAttempts` + `snapshot/items` + `answers` + `corrections`; genera nel browser |
 

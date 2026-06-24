@@ -56,7 +56,7 @@ SchoolForge è un repository didattico personale, Markdown-first e knowledge-fir
 | Verifiche | Configurazione, classi, selezione da pool, punteggi, varianti, attivazione e PDF on-demand nel browser. |
 | Portale Verifiche | Download PDF diretto allo studente (canale cartaceo) oppure svolgimento digitale senza account. |
 | Correzione ed export | Consultazione consegne digitali, punteggi manuali, percentuale, rettifiche tracciate ed export in PDF/Markdown/CSV. |
-| AI successiva (V2) | Proposte di correzione, correzione automatica con opt-in e rapporto consultivo sulle anomalie stilistiche. Fuori scope V1. |
+| AI successiva (V2) | Proposte di correzione per risposta, approvazione massiva e correzione automatica con opt-in e regole configurabili. Fuori scope V1. |
 
 ### 2.3 Fuori scope vincolante
 
@@ -102,6 +102,8 @@ Registro elettronico, presenze, compiti, chat, forum, videolezioni, LMS, social 
 **BR-DOM-03.** Il sistema non è un archivio di versioni dei Markdown. File e asset correnti sono la conoscenza corrente; l'export repository restituisce tale stato corrente.
 
 ## 5. Repository didattico e programma svolto — Modulo 1
+
+In V1 il docente produce i file Markdown esternamente (con strumenti AI come Claude o GPT, o manualmente). SchoolForge importa e valida il contenuto. Un editor integrato è pianificato per V2.
 
 **FR-REP-01.** Il docente deve poter creare e gestire Programmi, importare UDA, lezioni, pool e asset mediante upload di file singoli o cartelle.
 
@@ -275,6 +277,10 @@ questions:
 
 **FR-COR-04.** Il docente può rettificare punteggio o commento. Ogni rettifica registra autore, data, valore precedente, valore nuovo e motivazione obbligatoria; il log è append-only.
 
+**FR-COR-05.** Dalla UI di correzione il docente può aprire un popup `Registro Correzioni`: una tabella di verifica con una riga per consegna corretta e le colonne nome, cognome, punteggio, percentuale e data consegna. Dallo stesso popup il docente può, in via opzionale, esportare il registro come PDF o CSV, generato on-demand nel browser e non conservato dal sistema.
+
+**AC-COR-03.** Il popup `Registro Correzioni` elenca tutte e sole le consegne corrette della verifica con punteggio, percentuale e data consegna; l'export PDF/CSV riproduce le stesse righe senza persistenza.
+
 **FR-DAT-01.** Il docente deve poter eliminare una consegna digitale. L'operazione richiede conferma, rimuove dati personali, risposte e correzioni; conserva un evento di audit non identificativo con data e motivazione.
 
 **BR-DAT-01.** La V1 non stabilisce una durata di conservazione automatica. La responsabilità della politica di conservazione rimane del docente.
@@ -316,8 +322,6 @@ questions:
 **BR-AI-02.** L'AI non può attivare verifiche, modificare Markdown, eliminare dati o annullare consegne.
 
 **BR-AI-03.** Se manca uno degli elementi necessari al contesto, l'item non è inviato all'AI e richiede correzione manuale.
-
-**FR-AI-04.** Il rapporto anomalie stilistiche è esclusivamente consultivo per il docente: non modifica punteggi né blocca la correzione. Se non esiste un corpus sufficiente, il sistema dichiara `riferimenti insufficienti`.
 
 **NFR-AI-01.** Per ogni elaborazione AI il sistema registra finalità, docente, verifica, item coinvolti, provider/modello, versione istruzioni, timestamp, esito, proposta e azione umana. Non registra nei log copie aggiuntive delle risposte.
 
@@ -367,7 +371,7 @@ questions:
 | 2. Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente e studente (canale cartaceo fisico senza record). | Modulo 1. | Vincoli validati, PDF non archiviato, canale cartaceo senza record. |
 | 3. Portale digitale | Istanza, snapshot via Function, token mono-uso, log nome+IP, bozza, ripresa, consegna e deterrenza. | Modulo 2. | Una consegna strutturata è consultabile dal docente. |
 | 4. Correzione manuale ed export | Punteggi, percentuale, rettifiche, eliminazione consegna ed export PDF/Markdown/CSV. | Modulo 3. | Percentuali, audit ed export da snapshot verificabili. |
-| 5. Correzione AI (V2) | Proposte, approvazioni, opt-in automatico e rapporto consultivo. Fuori scope V1. | Modulo 4 (in V2). | I flussi manuali restano operativi senza AI. |
+| 5. Correzione AI (V2) | Proposte di correzione per risposta, approvazione massiva e correzione automatica opt-in con regole configurabili. Fuori scope V1. | Modulo 4 (in V2). | I flussi manuali restano operativi senza AI. |
 
 **BR-REL-01.** Nessun modulo successivo può diventare prerequisito del precedente.
 
