@@ -1,160 +1,183 @@
 # SchoolForge — Architettura di sistema
 
-**Versione:** 3.1
+**Versione:** 4.0
 **Data:** 24 giugno 2026
-**Stato:** architettura target Firebase, pronta per il piano esecutivo
-**Input vincolanti:** `brief.md` e `analisi-requisiti.md` v3.0
+**Stato:** architettura target, pronta per il piano esecutivo
+**Input vincolanti:** `brief.md` e `analisi-requisiti.md`
 **Destinatari:** implementazione e Docente responsabile operativo
 
 ---
 
 ## 1. Scopo e perimetro
 
-SchoolForge è un'applicazione web serverless per un solo docente, composta da un pannello docente e da un Portale Verifiche separato. La piattaforma scelta è Firebase, su un progetto di proprietà del Docente.
+SchoolForge è un'applicazione web Firebase-first per un solo docente. È composta da una **singola SPA** con due sezioni distinte:
 
-Firebase è usato per Hosting, Authentication, Cloud Firestore, Cloud Storage e Cloud Functions v2. Cloud Logging e Secret Manager supportano osservabilità e gestione dei segreti. Il piano operativo deve essere Blaze: il prodotto usa funzioni backend, invio email, backup e servizi gestiti che non devono dipendere dai limiti del piano gratuito.
+- **Sezione docente** (`/teacher/*`) — autenticata, desktop-first.
+- **Sezione portale** (`/exam/:token`) — pubblica, mobile-first, senza login studente.
 
-Il piano Blaze non significa progettare una piattaforma costosa: SchoolForge usa solo servizi managed, senza VM, database SQL, container sempre accesi, code dedicate o componenti enterprise. Hosting e funzioni devono scalare a zero; bucket e backup usano lifecycle; il Docente configura budget e avvisi di spesa prima del go-live. Il sistema non promette costo zero, perché backend e invio email possono generare consumo, ma ogni costo aggiuntivo deve essere giustificato da un requisito reale.
+Firebase Hosting serve la SPA. Firebase Authentication protegge la sezione docente. Cloud Firestore e Cloud Storage gestiscono dati e file. Il piano Blaze è richiesto per Cloud Functions (usate solo per il token di sessione digitale nel Modulo 3 e per l'AI nel Modulo 5) e per il backup. Hosting, Auth, Firestore e Storage scalano a zero e usano le quote incluse per un singolo docente senza costi fissi significativi.
 
-Il progetto non richiede Google Workspace for Education, Google Drive API o account Google per gli studenti. Il Drive dell'istituto è una destinazione manuale per gli export scaricati dal docente.
+Il progetto non richiede Google Workspace for Education, Google Drive API, account Google per gli studenti o invio di email.
 
-### 1.1 Localizzazione e limite della dichiarazione geografica
+### 1.1 Localizzazione
 
-Cloud Firestore, Cloud Storage e Cloud Functions v2 devono essere configurati in Milano, `europe-west8`, ove il singolo servizio lo supporta. Questa è la regione dei dati applicativi persistenti, dei file didattici e del runtime di business.
-
-Firebase Hosting usa una CDN gestita e Firebase Authentication ha caratteristiche proprie di trattamento/localizzazione. L'architettura non dichiara quindi che ogni richiesta, controllo di identità o cache tecnica avvenga esclusivamente in Italia. Prima dell'invio di dati studenti a un provider AI resta inoltre obbligatoria C-02.
+Cloud Firestore, Cloud Storage e Cloud Functions v2 sono configurati in Milano `europe-west8`. Firebase Hosting usa una CDN globale; Firebase Authentication ha proprie caratteristiche di localizzazione. L'architettura non dichiara che ogni richiesta avvenga esclusivamente in Italia.
 
 ### 1.2 Esito atteso
 
 L'implementazione deve consentire al docente di:
 
-1. accedere con un provider Firebase Authentication configurato senza vincolo Workspace;
+1. accedere con Firebase Authentication senza dipendenza da Google Workspace;
 2. caricare, validare, consultare ed esportare Markdown, pool e asset;
 3. attivare verifiche con configurazione immutabile;
-4. inviare un PDF cartaceo a un recapito dichiarato oppure raccogliere svolgimenti digitali;
-5. correggere e rettificare consegne digitali;
-6. esportare tutte le consegne digitali definitive dai rispettivi snapshot;
+4. distribuire PDF della verifica — download diretto per il docente o per lo studente nel canale cartaceo;
+5. raccogliere svolgimenti digitali con snapshot sicuro;
+6. correggere consegne digitali ed esportarle in PDF, Markdown e CSV;
 7. usare facoltativamente l'AI solo per la correzione nel Modulo 5.
+
+---
 
 ## 2. Principi architetturali
 
 | Principio | Decisione concreta |
 |---|---|
 | Markdown-first | Markdown e asset originali vivono in Cloud Storage; Firestore contiene indice, stati e dati operativi. |
-| Monolite modulare | Due SPA e un solo backend Cloud Functions con moduli di dominio, non microservizi. |
-| Backend autorevole | Solo Cloud Functions applica transizioni, punteggi, invii, audit, export e accessi ai dati privati. |
-| Single-docente | Un solo `ownerUid` Firebase è autorizzato nel pannello docente; nessun tenant, delega o ruolo aggiuntivo. |
-| Studente senza account | Il Portale usa un link di verifica non enumerabile; l'email è un recapito e non viene usata come autenticazione. |
-| PDF effimero | PDF cartacei ed export sono generati on-demand e non scritti in Firestore, Cloud Storage o Drive. |
-| Snapshot al tentativo | Configurazione della verifica immutabile all'attivazione; snapshot completo solo quando parte un tentativo digitale. |
-| AI opzionale | L'AI è disabilitata per default, non genera domande e non è una dipendenza dei flussi manuali. |
-| Dati nella regione scelta | Firestore, Storage e Functions usano `europe-west8` ove supportato; backup ed esercizio seguono C-01 formalizzata. |
-| Disciplina di costo | Nessuna risorsa sempre attiva; preferenza per quote incluse, scale-to-zero, lifecycle e avvisi budget. |
+| SPA unica | Una sola applicazione con routing `/teacher/*` e `/exam/:token`; nessun deployment separato per il portale. |
+| Client autorevole con regole | Il client docente scrive direttamente su Firestore e Storage entro i limiti delle Security Rules; solo le operazioni che richiedono un segreto server-side (token di sessione, AI) passano da Cloud Functions. |
+| Single-docente | Un solo `ownerUid` Firebase è autorizzato nella sezione docente; nessun tenant, delega o ruolo aggiuntivo. |
+| Studente senza account | Il portale usa un link non enumerabile; l'email è un recapito e un lock di tentativo, non un'autenticazione. |
+| PDF e documenti effimeri | PDF, export (PDF/Markdown/CSV) e programma svolto sono generati on-demand nel browser con `@react-pdf/renderer` e non scritti su Firestore o Cloud Storage. |
+| Snapshot al tentativo digitale | Configurazione immutabile all'attivazione; snapshot completo con soluzioni private solo quando parte un tentativo digitale, creato dalla Cloud Function. |
+| AI opzionale | Disabilitata per default, non genera domande, richiede C-02 e dipende da Cloud Functions solo nel Modulo 5. |
+| Disciplina di costo | Nessuna risorsa sempre attiva; scale-to-zero, quota incluse, avvisi budget. Cloud Functions usate solo dove strettamente necessario. |
+
+---
 
 ## 3. Decisioni architetturali
 
 ### ADR-01 — Firebase come piattaforma gestita
 
-**Decisione.** SchoolForge usa Firebase come piattaforma applicativa e Google Cloud come infrastruttura sottostante. Il progetto Firebase, il billing e gli accessi amministrativi sono di proprietà del Docente responsabile operativo.
+**Decisione.** SchoolForge usa Firebase come piattaforma applicativa. Il progetto Firebase, il billing e gli accessi amministrativi sono di proprietà del Docente.
 
-**Motivazione.** Per una V1 single-docente Firebase riduce il lavoro di provisioning: hosting HTTPS, autenticazione, database, object storage, funzioni, emulatori e osservabilità sono integrati. Firestore è sufficiente ai flussi previsti, inclusa la garanzia di email bruciata tramite transazioni.
+**Motivazione.** Per una V1 single-docente Firebase riduce il lavoro di provisioning: hosting HTTPS, autenticazione, database, object storage, funzioni, emulatori e osservabilità sono integrati. Firestore è sufficiente ai flussi previsti, inclusa la garanzia di email bruciata tramite transazioni client-side.
 
-**Conseguenza.** Non è prevista una portabilità automatica del runtime. La portabilità richiesta riguarda Markdown, asset, dati operativi ed export; non richiede di eseguire SchoolForge su un secondo cloud senza migrazione.
+**Conseguenza.** La portabilità richiesta riguarda Markdown, asset e dati operativi in formato standard; non richiede eseguire SchoolForge su un secondo cloud senza migrazione.
 
-### ADR-02 — Monolite modulare Cloud Functions v2
+### ADR-02 — SPA unica con routing
 
-**Decisione.** Il backend è un solo progetto TypeScript su Cloud Functions v2, con moduli Repository, Verifiche, Portale, Correzione, Export, Audit, Mail e AI. Le funzioni pubbliche sono endpoint sottili; le regole di business vivono in servizi interni condivisi.
+**Decisione.** Una sola applicazione React su Firebase Hosting, con routing `/teacher/*` (autenticata) e `/exam/:token` (pubblica). Code splitting per mantenere il bundle del portale leggero.
 
-**Motivazione.** Il volume e il numero di utenti non giustificano microservizi, code dedicate o VM permanenti. Il codice resta organizzato per dominio e testabile in Emulator Suite.
+**Motivazione.** Due app separate richiedono due pipeline CI/CD, due configurazioni Hosting e duplicazione del codice condiviso (es. tipi, componenti UI). Con un singolo deployment il costo operativo è inferiore e la manutenzione è più semplice. La separazione di sicurezza è garantita dalle Security Rules e dal controllo `ownerUid`, non dalla separazione fisica dei deployment.
 
-### ADR-03 — Firestore operativo, Cloud Storage canonico
+### ADR-03 — Cloud Functions solo per sessione digitale e AI
 
-**Decisione.** Cloud Storage conserva Markdown originali, asset e staging temporaneo. Cloud Firestore conserva metadati, indici, configurazioni, tentativi, snapshot digitali, correzioni, audit e lock delle email.
+**Decisione.** Le Cloud Functions sono usate esclusivamente per:
+- `startDigitalAttempt` (M3): crea lock email, tentativo, snapshot con soluzioni private e token opaco di sessione.
+- Modulo AI (M5): chiama il provider AI con contesto chiuso e registra l'audit.
 
-**Motivazione.** I file sono la conoscenza del docente; il database serve a rendere disponibili operazioni, ricerca e integrità senza trasformarsi nella fonte dei contenuti didattici.
+Tutte le altre operazioni (import, stati verifica, correzione, export) usano Firebase SDK direttamente dal client con Security Rules.
 
-### ADR-04 — Firebase Authentication per il solo docente
+**Motivazione.** Le Cloud Functions sono necessarie solo quando un segreto server-side è indispensabile: il token di sessione studente (cookie HttpOnly, firmato server-side) e la chiave API AI. Per tutto il resto, Firestore Security Rules garantisce l'autorizzazione senza overhead di Function.
 
-**Decisione.** Il pannello docente usa Firebase Authentication con un provider configurato dal Docente. Il backend confronta `request.auth.uid` con `settings/owner.ownerUid`. Google Sign-In può essere configurato ma non è richiesto; nessun controllo di dominio Workspace è ammesso.
+**Conseguenza.** Il costo Cloud Functions è trascurabile per un singolo docente. Le Security Rules devono essere progettate con cura; i test Emulator Suite sono obbligatori.
+
+### ADR-04 — Firestore operativo, Cloud Storage canonico
+
+**Decisione.** Cloud Storage conserva Markdown originali e asset. Cloud Firestore conserva metadati, indici, configurazioni, tentativi, snapshot digitali, correzioni e audit.
+
+**Motivazione.** I file sono la conoscenza del docente; Firestore serve a rendere disponibili operazioni, ricerca e integrità senza diventare la fonte dei contenuti didattici.
+
+### ADR-05 — Firebase Authentication per il solo docente
+
+**Decisione.** La sezione docente usa Firebase Authentication. Il client verifica che `auth.uid == ownerUid` nelle Security Rules per ogni scrittura sensibile; la Cloud Function `startDigitalAttempt` fa la stessa verifica server-side.
 
 **Motivazione.** L'app deve proteggere un unico proprietario senza imporre il tipo di account di scuola.
 
-### ADR-05 — Portale pubblico e tentativi anonimi
+### ADR-06 — Portale pubblico e token di sessione
 
-**Decisione.** Il link pubblico contiene un token casuale ad alta entropia associato a una verifica attiva. Lo studente dichiara i dati richiesti; il backend crea un tentativo solo dopo aver applicato la regola email bruciata. Un token opaco di ripresa è consegnato nel browser per le sole bozze digitali.
+**Decisione.** Il link pubblico contiene un token casuale ad alta entropia associato a una verifica attiva. Lo studente dichiara i dati richiesti; `startDigitalAttempt` crea lock, tentativo e snapshot in transazione Firestore e restituisce un token opaco di ripresa come cookie sicuro.
 
-**Motivazione.** L'email non deve diventare una finta autenticazione. Il token link limita l'enumerazione delle verifiche; il token di ripresa consente refresh nello stesso browser senza creare un secondo tentativo.
+**Motivazione.** Il token di sessione deve essere firmato server-side per impedire forgery. Il cookie HttpOnly/Secure/SameSite garantisce che il token non sia leggibile da JavaScript. Questa è l'unica operazione che richiede la Function.
 
-### ADR-06 — Immutabilità configurazione, snapshot al tentativo
+### ADR-07 — Snapshot al tentativo, immutabilità alla consegna
 
-**Decisione.** L'attivazione congela configurazione, fonti, regole di selezione e stato della verifica, ma non copia tutte le domande. Al primo avvio digitale il backend seleziona dalle fonti correnti e salva lo snapshot delle domande effettivamente assegnate, incluse soluzioni private e punteggi massimi.
+**Decisione.** L'attivazione congela la configurazione ma non copia tutte le domande. Al primo avvio digitale la Function seleziona le domande dalle fonti correnti, salva lo snapshot con soluzioni private in Firestore e restituisce al client solo la proiezione senza soluzioni.
 
-**Motivazione.** Una lezione modificata può cambiare le future generazioni, come scelto nel brief. Correzione ed export restano però possibili perché lavorano sullo snapshot dell'istanza svolta.
+**Motivazione.** Correzione ed export lavorano sullo snapshot dell'istanza svolta, indipendentemente da modifiche successive alle lezioni.
 
-### ADR-07 — MailGateway e PDF senza persistenza
+### ADR-08 — PDF e documenti generati nel browser
 
-**Decisione.** Il PDF cartaceo è generato nel backend e passato a un `MailGateway` con chiave di idempotenza del tentativo. Il provider email concreto resta una configurazione tecnica protetta in Secret Manager; nessun PDF viene salvato come oggetto o allegato interno prima/dopo l'invio.
+**Decisione.** Tutti i PDF (verifica docente, verifica studente cartaceo, programma svolto, export verifiche) e gli altri formati di export (Markdown, CSV) sono generati nel browser con `@react-pdf/renderer` o equivalente. Nessun file generato viene scritto su Cloud Storage o Firestore.
 
-**Motivazione.** L'email bruciata deve evitare doppie emissioni concorrenti, senza creare un archivio PDF in contrasto con il brief.
+**Motivazione.** Eliminare la generazione PDF server-side rimuove la necessità di Cloud Functions per questo scopo, abbatte i costi e semplifica l'architettura. Il browser moderno è in grado di generare PDF di qualità professionale senza infrastruttura server.
 
-### ADR-08 — Export globale da snapshot digitali
+### ADR-09 — Secret Manager solo per M5
 
-**Decisione.** `Esporta verifiche` legge tutte le consegne digitali definitive non annullate o eliminate e i relativi snapshot in Firestore. `DocumentRenderer` produce un unico PDF, Markdown o altro formato standard deciso successivamente e lo trasmette al browser del docente senza persisterlo.
+**Decisione.** Secret Manager non è usato nei Moduli 1–4. Viene introdotto in M5 esclusivamente per la chiave API del provider AI.
+
+**Motivazione.** Senza invio email e senza operazioni server-side che richiedano credenziali esterne nei primi quattro moduli, Secret Manager non ha giustificazione fino all'AI.
+
+### ADR-10 — Export globale da snapshot digitali
+
+**Decisione.** `Esporta verifiche` legge tutte le consegne digitali definitive non annullate o eliminate e i relativi snapshot in Firestore. Il client produce PDF, Markdown o CSV nel browser e lo scarica senza persistenza.
 
 **Motivazione.** L'archivio didattico esportato non dipende da Markdown correnti, pool, lezioni eliminate o Drive API.
+
+---
 
 ## 4. Architettura logica
 
 ```mermaid
 flowchart LR
-    D["Docente autenticato"] --> W["Web app docente\nFirebase Hosting"]
-    S["Studente anonimo"] --> P["Portale Verifiche\nFirebase Hosting"]
+    D["Docente autenticato"] --> SPA["SPA — Firebase Hosting\n/teacher/* e /exam/:token"]
+    S["Studente anonimo"] --> SPA
 
-    W --> A["Firebase Authentication"]
-    W --> B["Cloud Functions v2\nbackend modulare"]
-    P --> B
+    SPA -->|"ownerUid"| A["Firebase Authentication"]
+    SPA -->|"Security Rules"| F["Cloud Firestore\nstati e dati operativi"]
+    SPA -->|"Security Rules"| CS["Cloud Storage\nMarkdown, asset"]
+    SPA -->|"startDigitalAttempt\nM5 AI"| CF["Cloud Functions v2\n(solo M3 + M5)"]
 
-    B --> F["Cloud Firestore\nstati e dati operativi"]
-    B --> CS["Cloud Storage\nMarkdown, asset, staging"]
-    B --> PDF["PdfRenderer\neffimero"]
-    B --> M["MailGateway"]
-    B -. "Modulo 5" .-> AI["AiGateway"]
+    CF --> F
+    CF -. "Modulo 5" .-> AI["AiGateway\nprovider AI"]
 
-    PDF --> OUT["Download docente / email\nnessuna persistenza PDF"]
+    SPA --> PDF["@react-pdf/renderer\nnel browser"]
+    PDF --> DL["Download\nnessuna persistenza"]
 ```
 
 ### 4.1 Confini di responsabilità
 
 | Componente | Responsabilità | Non deve fare |
 |---|---|---|
-| Web app docente | UI, rendering sicuro, import, anteprime, conferme e chiamate autenticate. | Scrivere direttamente Firestore, applicare stati, chiamare AI/email. |
-| Portale Verifiche | Link pubblico, dati dichiarati, bozza, svolgimento, consegna e deterrenza. | Esporre soluzioni, correzioni, dati di altri tentativi o configurazioni interne. |
-| Cloud Functions | Autorizzazione, dominio, transazioni, import/export, PDF, mail, audit e AI. | Fidarsi di valori calcolati dal browser o mettere segreti nel client. |
-| Cloud Firestore | Stato operativo, indici, tentativi, snapshot digitali, correzioni, audit e lock email. | Diventare la fonte canonica delle lezioni o archiviare PDF. |
-| Cloud Storage | Markdown, asset e staging temporaneo. | Conservare PDF cartacei o export didattici. |
-| MailGateway | Accettare PDF effimero, destinatario e idempotency key. | Decidere domande, autorizzazioni o punteggi. |
-| AiGateway | Correzione opzionale con contesto chiuso e audit. | Generare domande, usare web o eseguire azioni irreversibili. |
+| SPA — sezione docente | UI, validazione locale lesson-contract, rendering Markdown sicuro, scritture Firestore/Storage entro le regole, generazione PDF/CSV/Markdown nel browser. | Esporre soluzioni, chiamare AI direttamente, bypassare Security Rules. |
+| SPA — sezione portale | Link pubblico, dati dichiarati, `startDigitalAttempt` call, bozza, svolgimento, consegna, deterrenza. | Esporre soluzioni, correzioni, dati di altri tentativi. |
+| Cloud Functions | `startDigitalAttempt`: lock, snapshot con soluzioni private, token sessione. M5: chiamate AI con contesto chiuso e audit. | Generare PDF, inviare email, applicare stati verifica, scrivere Markdown. |
+| Cloud Firestore | Stato operativo, indici, tentativi, snapshot digitali, correzioni, audit, lock email. | Diventare fonte canonica delle lezioni o archiviare PDF. |
+| Cloud Storage | Markdown, asset. | Conservare PDF o export didattici. |
+| AiGateway (M5) | Correzione con contesto chiuso e audit. | Generare domande, usare web, eseguire azioni irreversibili. |
+
+---
 
 ## 5. Architettura fisica e ambienti
 
 | Livello | Servizio | Configurazione |
 |---|---|---|
-| Web app docente | Firebase Hosting | SPA TypeScript, HTTPS e cache asset con hash. |
-| Portale | Firebase Hosting, seconda app | URL separato, mobile-first, nessuna sessione docente condivisa. |
-| Identità docente | Firebase Authentication | Provider configurabile; `ownerUid` autorizzato lato server. |
-| Backend | Cloud Functions v2 | TypeScript, `europe-west8` ove supportato, endpoint HTTP/callable. |
+| Applicazione web | Firebase Hosting | SPA TypeScript, HTTPS, code splitting `/teacher` e `/exam`. |
+| Identità docente | Firebase Authentication | Provider configurabile; `ownerUid` verificato nelle Security Rules. |
+| Backend (limitato) | Cloud Functions v2 | TypeScript, `europe-west8`, solo `startDigitalAttempt` e modulo AI. |
 | Dati operativi | Cloud Firestore Native | Database in `europe-west8` (Milano). |
-| File | Cloud Storage | Bucket privato in `europe-west8`, versioning e lifecycle di backup. |
-| Segreti | Secret Manager | Credenziali provider email e AI; mai in Firestore o browser. |
+| File | Cloud Storage | Bucket privato in `europe-west8`, versioning per backup. |
+| Segreti | Secret Manager | Solo da M5: chiave API provider AI. |
 | Osservabilità | Cloud Logging e Error Reporting | Log strutturati senza risposte o PDF. |
 
 | Ambiente | Progetto Firebase | Dati |
 |---|---|---|
-| `dev` | Progetto separato + Emulator Suite | Solo fixture sintetiche e segreti di sviluppo. |
-| `test` | Progetto separato o emulatori controllati | Dati di collaudo isolati. |
-| `prod` | Progetto Firebase del Docente | Dati reali, regione Milano e backup attivi. |
+| `dev` | Progetto separato + Emulator Suite | Solo fixture sintetiche. |
+| `test` | Emulatori controllati | Dati di collaudo isolati. |
+| `prod` | Progetto Firebase del Docente | Dati reali, regione Milano, backup attivi. |
 
-`dev`, `test` e `prod` non condividono utenti, database, bucket, credenziali o token.
+`dev`, `test` e `prod` non condividono utenti, database, bucket o token.
+
+---
 
 ## 6. Dati e persistenza
 
@@ -165,151 +188,185 @@ repository/current/{programId}/{udaId}/uda-XX-titolo.md
 repository/current/{programId}/{udaId}/lezione-XXX-titolo.md
 repository/current/{programId}/{udaId}/lezione-XXX-titolo.pool.md
 repository/current/{programId}/{udaId}/assets/{relative-path}
-staging/{importId}/...                       # eliminato dopo commit, annullamento o scadenza
-repository-exports/{exportId}.zip            # temporaneo, eliminato dopo download
 ```
 
-Cloud Storage versioning conserva versioni non correnti soltanto come protezione operativa/backup, non come funzionalità di cronologia visibile del prodotto. Una lifecycle policy elimina staging ed export temporanei e mantiene le versioni necessarie al periodo di backup stabilito.
+Non esistono staging, export temporanei o PDF in Cloud Storage. Il client docente scrive direttamente in `repository/current` entro le Security Rules. Una lifecycle policy gestisce le versioni per il periodo di backup.
 
 ### 6.2 Cloud Firestore
 
 | Collezione | Dati principali | Regola |
 |---|---|---|
-| `settings/owner` | `ownerUid`, feature flag e configurazioni | Unico proprietario V1. |
+| `settings/owner` | `ownerUid`, feature flag, lista classi | Unico proprietario V1. |
 | `programs`, `udas`, `lessons` | identificatori, titoli, percorsi Storage, validazione e ordine | Firestore è indice, non fonte Markdown. |
-| `questionIndex` | `lessonId`, `questionRef`, tipo, difficoltà, peso e validità | Derivato dal pool valido. |
-| `verifications` | configurazione immutabile, fonti, stato, token pubblico hashato | Stati `draft`, `active`, `closed`, `archived`. |
-| `verifications/{id}/recipientLocks/{emailHash}` | hash recapito, canale, stato, tentativo e timestamp | Un documento per recapito normalizzato; creato in transazione. |
-| `deliveryAttempts` | verifica, canale, dati dichiarati, stato, timestamp e idempotency key | Cartaceo: `reserved/sent`; digitale: `in_progress/submitted`. |
-| `deliveryAttempts/{id}/snapshot/items` | domanda, opzioni, soluzione privata, punteggio massimo, origine | Creato solo per tentativo digitale. |
-| `deliveryAttempts/{id}/answers` | risposta, stato bozza/consegnata e timestamp | Immutabile dopo consegna. |
-| `corrections`, `correctionEvents` | punteggi, commenti, percentuale, origine e rettifiche | Eventi append-only. |
-| `auditEvents` | attore, azione, oggetto, esito, motivazione, timestamp | Nessuna risposta completa nei log tecnici. |
+| `questionIndex` | `lessonId`, `questionRef`, tipo, difficoltà, peso, validità | Derivato dal pool valido. |
+| `verifications` | configurazione immutabile, fonti, stato, token pubblico hashato, classi | Stati `bozza`, `attiva`, `chiusa`, `archiviata`. |
+| `verifications/{id}/recipientLocks/{emailHash}` | hash recapito, canale, stato, tentativo, timestamp | Un documento per recapito normalizzato; creato in transazione. |
+| `deliveryAttempts` | verifica, canale, dati dichiarati, stato, timestamp | Cartaceo: `riservato/completato`; digitale: `in_corso/consegnato`. |
+| `deliveryAttempts/{id}/snapshot/items` | domanda, opzioni, soluzione privata, punteggio massimo, origine | Solo per tentativo digitale; creato dalla Cloud Function. |
+| `deliveryAttempts/{id}/answers` | risposta, stato bozza/consegnata, timestamp | Immutabile dopo consegna. |
+| `corrections`, `correctionEvents` | punteggi, commenti, percentuale, origine, rettifiche | Eventi append-only. |
+| `auditEvents` | attore, azione, oggetto, esito, motivazione, timestamp | Nessuna risposta completa nei log. |
 
 ### 6.3 Transazioni obbligatorie
 
-| Evento | Garanzia del backend |
+| Evento | Garanzia |
 |---|---|
-| Attivazione verifica | Transazione: valida configurazione, passa `draft → active`, fissa configurazione e scrive audit. |
-| Avvio cartaceo | Transazione Firestore: verifica assenza lock, crea lock e tentativo `reserved`; l'invio idempotente marca `sent` oppure rilascia la riserva se fallisce prima dell'accettazione. |
-| Avvio digitale | Transazione: verifica lock, crea tentativo, lock, snapshot e token di ripresa hashato. |
-| Salvataggio bozza | Aggiorna solo il tentativo autorizzato dal token di ripresa; non seleziona nuove domande. |
-| Consegna | Transazione: `in_progress → submitted`, rende snapshot/risposte immutabili e registra audit. |
-| Rettifica | Inserisce evento con precedente/nuovo valore e ricalcola percentuale. |
-| Eliminazione consegna | Rimuove dati personali, risposte e correzioni; preserva un audit non identificativo. |
+| Attivazione verifica | Transazione client Firestore SDK: valida configurazione, passa `bozza → attiva`, congela config e scrive audit. |
+| Avvio cartaceo | Transazione client Firestore SDK: verifica assenza lock, crea lock + tentativo `riservato`. |
+| Avvio digitale | Cloud Function: transazione Firestore — lock, tentativo, snapshot con soluzioni private e token sessione. |
+| Salvataggio bozza | Client scrive su `answers` del tentativo autorizzato dal token di sessione; nessuna nuova selezione domande. |
+| Consegna | Transazione client: `in_corso → consegnato`, snapshot/risposte immutabili, audit. |
+| Rettifica | Evento append-only con precedente/nuovo valore; percentuale ricalcolata. |
+| Eliminazione consegna | Rimuove dati personali, risposte e correzioni; preserva audit non identificativo. |
+
+---
 
 ## 7. Flussi applicativi
 
-### 7.1 Accesso e importazione
+### 7.1 Import lezioni
 
-1. Il docente si autentica tramite Firebase Authentication.
-2. Cloud Functions verifica `uid == settings/owner.ownerUid` per ogni operazione privata.
-3. Il docente carica file/asset nello staging con accesso temporaneo autorizzato.
-4. `RepositoryService` valida il contratto UDA, lezione e pool; mostra errori prima del commit.
-5. Dopo conferma, il backend promuove i file in `repository/current`, aggiorna Firestore e scrive audit.
+1. Il docente seleziona file o cartella nella SPA.
+2. La SPA esegue il parser `lesson-contract` localmente e mostra errori strutturati prima di scrivere.
+3. Il docente conferma: la SPA scrive Markdown e asset direttamente in `repository/current` su Cloud Storage entro le Security Rules.
+4. La SPA aggiorna `lessons`, `udas` e `questionIndex` in Firestore.
+5. L'audit viene scritto in `auditEvents`.
 
 ### 7.2 Attivazione verifica
 
-1. Il docente configura fonti, tipi, difficoltà, minimi, numero domande, varianti e canali.
-2. `VerificationService` interroga `questionIndex` e valida la disponibilità corrente.
-3. L'attivazione crea il token pubblico e congela configurazione/fonti, non le domande.
-4. Una modifica successiva alle lezioni riguarda solo tentativi ancora non avviati.
+1. Il docente configura fonti, tipi, difficoltà, minimi, varianti, classi.
+2. La SPA interroga `questionIndex` e valida disponibilità localmente.
+3. La SPA esegue una transazione Firestore: crea token pubblico, congela configurazione, passa stato a `attiva`, scrive audit.
 
 ### 7.3 Canale cartaceo
 
 ```mermaid
 sequenceDiagram
     participant S as Studente
-    participant P as Portale
-    participant B as Cloud Functions
+    participant SPA as SPA — portale
     participant F as Firestore
-    participant M as MailGateway
 
-    S->>P: apre link e dichiara dati
-    P->>B: startPaperDelivery
-    B->>F: transazione lock recapito + tentativo reserved
-    alt recapito libero
-        B->>B: seleziona domande e genera PDF effimero
-        B->>M: invia PDF con idempotency key
-        M-->>B: accettato
-        B->>F: tentativo sent + audit
-        B-->>P: conferma invio
-    else recapito già usato
-        B-->>P: errore esplicito
+    S->>SPA: apre link e sceglie canale cartaceo
+    SPA->>SPA: mostra form dati studente
+    S->>SPA: inserisce nome, cognome, email, classe
+    SPA->>F: transazione — verifica lock, crea lock + tentativo
+    alt email libera
+        F-->>SPA: ok
+        SPA->>SPA: genera PDF nel browser (@react-pdf/renderer)
+        SPA-->>S: download PDF diretto
+    else email già usata
+        F-->>SPA: lock esistente
+        SPA-->>S: errore esplicito
     end
 ```
 
 ### 7.4 Canale digitale e snapshot
 
-1. Lo studente apre una verifica attiva attraverso il token pubblico e dichiara i dati richiesti.
-2. Il backend crea in transazione lock, tentativo, snapshot e token opaco di ripresa, salvato nel Portale in cookie sicuro.
-3. Il Portale riceve solo la proiezione studente dello snapshot, senza soluzioni o opzioni corrette.
-4. Le risposte sono salvate come bozza. Refresh o breve interruzione nello stesso browser recuperano il medesimo tentativo.
-5. Alla consegna, backend e Firestore rendono i dati immutabili e avviano la disponibilità per la correzione.
+```mermaid
+sequenceDiagram
+    participant S as Studente
+    participant SPA as SPA — portale
+    participant CF as Cloud Function
+    participant F as Firestore
+
+    S->>SPA: apre link e sceglie canale digitale
+    S->>SPA: inserisce nome, cognome, email, classe
+    SPA->>CF: startDigitalAttempt(token, dati)
+    CF->>F: transazione — lock email, tentativo, snapshot con soluzioni private, token sessione
+    CF-->>SPA: proiezione domande senza soluzioni + cookie sessione
+    SPA-->>S: mostra domande
+
+    loop autosave
+        S->>SPA: risponde
+        SPA->>F: saveDraft (bozza)
+    end
+
+    S->>SPA: Consegna
+    SPA->>F: transazione — in_corso → consegnato, immutabile, audit
+```
 
 ### 7.5 Correzione ed export globale
 
-1. Il docente assegna punteggi e commenti; `CorrectionService` calcola totale e percentuale.
-2. `exportCompletedVerifications` seleziona tutte le consegne `submitted`, non annullate né eliminate.
-3. `ExportService` combina dati dichiarati, metadati verifica, snapshot, risposte e correzioni nell'ordine `verifica → data di consegna`.
-4. `DocumentRenderer` produce il documento nel formato stabilito in futuro, lo invia al browser del docente e lo elimina al termine della risposta.
-5. Il docente carica il file manualmente nel Drive dell'istituto; nessuna chiamata Drive viene eseguita dall'applicazione.
+1. Il docente consulta le consegne digitali, filtra per verifica/stato/classe.
+2. Assegna punteggi e commenti; la SPA calcola percentuale e scrive in Firestore.
+3. Il docente avvia `Esporta verifiche`: la SPA legge tutte le consegne definitive e i relativi snapshot.
+4. La SPA genera nel browser il documento nel formato scelto (PDF, Markdown o CSV) e avvia il download.
+5. Il docente carica il file manualmente nel Drive dell'istituto; nessuna chiamata Drive dall'applicazione.
 
-## 8. API logiche e autorizzazione
+---
 
-| Area | Operazioni |
+## 8. API Firestore e Cloud Function
+
+### 8.1 Scritture client dirette (Security Rules)
+
+| Area | Operazioni client |
 |---|---|
-| Sessione | `getSession`, `getOwnerSettings` |
-| Repository | `stageImport`, `previewImport`, `commitImport`, `replaceContent`, `deleteContent`, `exportRepository`, `exportProgrammaSvolto` |
-| Verifiche | `createVerificationDraft`, `updateVerificationDraft`, `activateVerification`, `closeVerification`, `archiveVerification`, `generateTeacherPdf` |
-| Portale | `getPublicVerification`, `startPaperDelivery`, `startDigitalAttempt`, `saveDraft`, `submitAttempt` |
-| Correzione | `listSubmissions`, `getSubmission`, `setItemScore`, `rectifyScore`, `deleteSubmission` |
-| Export | `exportCompletedVerifications` |
-| AI futura | `proposeCorrection`, `approveCorrection`, `bulkApproveCorrections` |
+| Repository | Scrivi/elimina Markdown e asset in `repository/current`; aggiorna `lessons`, `udas`, `questionIndex`, `programs`. |
+| Verifiche | Crea/modifica bozza; transazione attivazione/chiusura/archiviazione; scrivi `auditEvents`. |
+| Correzione | Scrivi `corrections`, `correctionEvents`, elimina consegna. |
 
-Le API docente richiedono Firebase ID token e verifica server-side dell'`ownerUid`. Le API Portale ricevono token pubblico della verifica e, per una bozza, token opaco del tentativo. Le Security Rules negano l'accesso diretto del client a dati operativi, soluzioni, correzioni e audit; le scritture di dominio passano dalle Cloud Functions.
+### 8.2 Cloud Functions
+
+| Funzione | Attore | Scopo |
+|---|---|---|
+| `startDigitalAttempt` | SPA portale | Transazione Firestore — lock, tentativo, snapshot con soluzioni private, token sessione. |
+| `proposeCorrection` (M5) | SPA docente | Invia contesto chiuso ad AiGateway, salva proposta e audit. |
+| `approveCorrection` (M5) | SPA docente | Applica proposta al record di correzione. |
+| `bulkApproveCorrections` (M5) | SPA docente | Approva batch di proposte con riepilogo esclusioni. |
+| `enableAutomaticCorrection` (M5) | SPA docente | Opt-in per verifica, richiede C-03 e conferma. |
+
+Tutti gli endpoint richiedono Firebase ID token valido ad eccezione di `startDigitalAttempt` che accetta solo il token pubblico della verifica.
+
+Le Security Rules negano accesso diretto del client a `snapshot/items` con soluzioni private, correzioni e audit; questi percorsi sono leggibili solo dalla Function o dall'`ownerUid`.
+
+---
 
 ## 9. Sicurezza, backup e osservabilità
 
 ### 9.1 Controlli essenziali
 
-- Il token pubblico non è derivato da titolo, id sequenziale o email.
-- Il token di ripresa è `Secure`, `HttpOnly`, con `SameSite` appropriato, a vita limitata e memorizzato lato server solo come hash.
-- Gli endpoint pubblici applicano rate limit e validazione del payload; questi controlli non trasformano l'email in autenticazione.
-- Il renderer Markdown applica sanitizzazione/whitelist; i pool non sono renderizzati nel percorso di fruizione.
-- Risposte, punteggi, email e PDF non sono inseriti nei log tecnici.
-- Segreti email e AI vivono in Secret Manager e non raggiungono browser, Firestore, Markdown o repository Git.
+- `ownerUid` verificato nelle Security Rules per ogni scrittura nella sezione docente.
+- Il token pubblico verifica non è enumerabile (UUID v4 hashato).
+- Il token di sessione digitale è un cookie `Secure`, `HttpOnly`, `SameSite=Strict`, a vita limitata; il valore in Firestore è solo l'hash.
+- Il client portale non può leggere soluzioni, correzioni, audit o dati di altri tentativi (Security Rules).
+- Il renderer Markdown applica sanitizzazione/whitelist; i pool non sono resi visibili nel percorso di fruizione.
+- Risposte, punteggi e dati personali non sono inseriti nei log tecnici.
+- La chiave API AI vive in Secret Manager e non raggiunge browser, Firestore, Markdown o repository Git.
 
-### 9.2 Backup formalizzato
+### 9.2 Backup
 
 | Oggetto | Protezione |
 |---|---|
-| Cloud Firestore | Backup giornaliero automatizzato, conservazione minima 30 giorni e verifica periodica di restore. |
-| Cloud Storage | Versioning degli oggetti e lifecycle coerente con 30 giorni minimi per versioni di backup; staging/export temporanei esclusi dalla conservazione. |
-| Codice e configurazione | Repository Git e configurazione Firebase versionata; i segreti non sono inclusi. |
-| Dati esportabili | Export repository, export tecnico dei dati e `Esporta verifiche` disponibili indipendentemente dai backup. |
+| Cloud Firestore | Backup giornaliero automatizzato, conservazione minima 30 giorni, verifica periodica di restore. |
+| Cloud Storage | Versioning e lifecycle coerente con 30 giorni minimi. |
+| Codice | Repository Git; i segreti non sono inclusi. |
+| Dati esportabili | Export repository (ZIP), export verifiche (PDF/MD/CSV) disponibili indipendentemente dai backup. |
 
-L'RPO è 24 ore. L'RTO è best-effort: non esiste un SLA né una promessa quantitativa di ripristino. Il Docente possiede progetto, billing e credenziali, controlla lo stato dei backup e avvia o delega il ripristino quando necessario.
+RPO 24 ore. RTO best-effort. Il Docente controlla backup e billing.
 
 ### 9.3 Osservabilità
 
-Ogni Cloud Function registra `requestId`, modulo, azione, esito e durata. Error Reporting segnala fallimenti di importazione, PDF, invio email, consegna, export e AI. Le dashboard non devono contenere testo delle risposte o contenuti dei PDF.
+Ogni Cloud Function registra `requestId`, azione, esito e durata. Error Reporting segnala fallimenti di import, tentativo digitale, consegna e AI. Nessun log contiene testo delle risposte o dati personali non necessari.
+
+---
 
 ## 10. Struttura del codice e test
 
 ```text
 SchoolForge/
-├─ apps/
-│  ├─ teacher-web/                # SPA docente
-│  └─ exam-portal/                # SPA Portale Verifiche
+├─ app/                         # SPA unica (React + Vite)
+│  ├─ src/
+│  │  ├─ routes/
+│  │  │  ├─ teacher/            # /teacher/* — autenticata
+│  │  │  └─ exam/               # /exam/:token — pubblica
+│  │  ├─ features/              # repository, verifiche, portale, correzione, export
+│  │  ├─ renderers/             # @react-pdf/renderer, Markdown sicuro, CSV
+│  │  └─ lib/                   # firebase client, tipi condivisi
 ├─ functions/
 │  └─ src/
-│     ├─ api/                     # endpoint HTTP/callable sottili
-│     ├─ modules/                 # repository, verifiche, portale, correzione, export, audit
-│     ├─ adapters/                # Firebase Admin, Storage, MailGateway, AiGateway
-│     └─ renderers/               # Markdown sicuro e documenti/PDF
+│     ├─ startDigitalAttempt.ts
+│     └─ ai/                    # M5: AiGateway e endpoint AI
 ├─ packages/
-│  └─ lesson-contract/            # parser e validatore Markdown/pool v1
+│  └─ lesson-contract/          # parser e validatore Markdown/pool v1 (condiviso)
 ├─ firestore.rules
 ├─ storage.rules
 ├─ firestore.indexes.json
@@ -319,39 +376,40 @@ SchoolForge/
 
 | Livello | Evidenza minima |
 |---|---|
-| Unit | Parser pool, selezione domande, punteggi, stati e renderer export. |
-| Integration | Emulator Suite: Security Rules, transazioni lock email, import Storage e snapshot digitale. |
-| End-to-end | Login docente, import, attivazione, invio cartaceo, svolgimento digitale, correzione ed export globale. |
-| Sicurezza | Soluzioni non esposte, owner diverso rifiutato, token scaduto rifiutato e rate limit applicato. |
-| Restore | Prova documentata di recupero Firestore/Storage secondo backup C-01. |
-| AI futura | Contesto chiuso, nessun web, audit e blocco della correzione automatica prima di C-03. |
+| Unit | Parser pool, selezione domande, punteggi, stati, renderer export. |
+| Integration | Emulator Suite: Security Rules, transazioni lock email, import Storage, snapshot digitale. |
+| End-to-end | Login docente, import, attivazione, download cartaceo, svolgimento digitale, correzione, export. |
+| Sicurezza | Soluzioni non esposte al portale, owner diverso rifiutato, token scaduto rifiutato, Security Rules default-deny. |
+| Restore | Prova documentata di recupero Firestore/Storage secondo C-01. |
+| AI (M5) | Contesto chiuso, nessun web, audit, blocco senza C-02/C-03. |
+
+---
 
 ## 11. Tracciabilità e criteri di accettazione
 
 | Requisito | Meccanismo |
 |---|---|
-| Markdown indipendente | Cloud Storage degli originali, parser condiviso ed export ZIP. |
-| Docente senza vincolo Workspace | Firebase Authentication configurabile e `ownerUid` server-side. |
-| Studenti senza account | Link pubblico, dati dichiarati e token di ripresa; nessuna registrazione. |
-| Email bruciata | Lock Firestore creato in transazione per `verifica + email normalizzata`. |
-| PDF non conservato | Renderer effimero, nessuna scrittura su Firestore/Storage/Drive. |
-| Modifiche alle lezioni | Configurazione immutabile; snapshot creato solo al tentativo digitale. |
-| Correzione | Snapshot privato, risposte immutabili, correzioni e rettifiche tracciate. |
-| Esporta verifiche | Query di tutte le consegne definitive e renderizzazione dai loro snapshot. |
-| AI opzionale | AiGateway isolato, feature flag e contesto chiuso. |
+| Markdown indipendente | Cloud Storage originali, parser condiviso, export ZIP. |
+| Docente senza vincolo Workspace | Firebase Authentication configurabile, `ownerUid` nelle Security Rules. |
+| Studenti senza account | Link pubblico, dati dichiarati, token sessione; nessuna registrazione. |
+| Email bruciata | Lock Firestore in transazione per `verifica + email normalizzata`. |
+| PDF non conservato | Generazione browser, nessuna scrittura su Firestore/Storage. |
+| Snapshot digitale | Creato dalla Function al tentativo; immutabile alla consegna. |
+| Export verifiche | Tutte le consegne definitive dai snapshot, senza dipendenza dal Markdown corrente. |
+| AI opzionale | AiGateway isolato, feature flag, C-02 obbligatoria. |
 
 L'implementazione è conforme solo se dimostra che:
 
-1. solo il `ownerUid` configurato accede ai dati applicativi privati;
-2. Firestore, Storage e Functions applicativi usano Milano `europe-west8` ove supportato;
+1. solo il `ownerUid` configurato scrive dati applicativi privati;
+2. Firestore, Storage e Functions usano Milano `europe-west8` ove supportato;
 3. Markdown e asset restano esportabili e leggibili fuori da SchoolForge;
-4. il Portale non usa account studenti e non espone soluzioni;
-5. il lock Firestore impedisce tentativi concorrenti sul medesimo recapito, anche fra canali;
-6. PDF cartacei ed export sono creati senza persistenza;
-7. una consegna digitale conserva snapshot e risposte immutabili dopo l'invio;
-8. `Esporta verifiche` include tutte e sole le consegne definitive non annullate, dai relativi snapshot;
-9. backup giornalieri, RPO 24 ore e almeno una prova di restore risultano documentati;
-10. AI non genera domande e resta estranea ai moduli manuali.
+4. il portale non espone soluzioni e non richiede account studente;
+5. il lock Firestore impedisce tentativi concorrenti sullo stesso recapito;
+6. PDF e documenti di export sono creati senza persistenza;
+7. uno snapshot digitale è immutabile dopo la consegna;
+8. `Esporta verifiche` include tutte e sole le consegne definitive dai relativi snapshot;
+9. backup giornalieri, RPO 24 ore e una prova di restore sono documentati;
+10. l'AI non genera domande e resta estranea ai moduli manuali.
 
 ---
 
@@ -361,5 +419,3 @@ L'implementazione è conforme solo se dimostra che:
 |---|---|---|
 | C-02 | Provider AI, condizioni e residenza dati. | Modulo 5 non viene attivato. |
 | C-03 | Regola didattica per correzione automatica. | Rimane disponibile solo la modalità assistita. |
-
-Piano di implementazione, contratti API, sicurezza, test, glossario, diagrammi e README devono essere riallineati a questa architettura Firebase prima dell'avvio del codice.
