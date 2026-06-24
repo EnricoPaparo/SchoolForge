@@ -44,6 +44,7 @@ firebase.json
 - Nessun segreto in Git, Markdown, client o log.
 - Nessun PDF persistente in Storage o Firestore.
 - Nessun account studente, Google Workspace obbligatorio, Google Drive API, Forms o generazione AI di domande.
+- Il limite di tentativo usa esclusivamente nome e cognome normalizzati: l'email è un recapito del canale cartaceo e non va usata come chiave, credenziale o rate-limit applicativo.
 - Sviluppo e test usano Emulator Suite e fixture sintetiche.
 
 ## Verifica prima della PR

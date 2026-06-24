@@ -1,10 +1,13 @@
 # SchoolForge — Glossario
 
+**Versione:** 3.2
+
 ## Dominio didattico
 
 | Termine | Significato |
 |---|---|
 | Programma | Materia o percorso che contiene una o più UDA. |
+| Manifesto Programma | `programma.yaml` che dichiara ID stabili, struttura e ordine di UDA/lezioni. |
 | UDA | Unità organizzativa rappresentata da `uda-XX-titolo.md`. |
 | Lezione | Contenuto Markdown didattico, con pool opzionale associato. |
 | Pool | File `.pool.md` strutturato secondo `schoolforge-pool/v1`; non è renderizzato come lezione. |
@@ -17,12 +20,15 @@
 | Termine | Significato |
 |---|---|
 | Verifica | Configurazione con fonti, quantità, tipi, difficoltà, minimi, varianti e canali. |
-| Configurazione immutabile | Configurazione bloccata dopo l'attivazione; non equivale a copiare tutte le domande. |
-| Tentativo | Accesso cartaceo o digitale associato a verifica e recapito normalizzato. |
-| Email bruciata | Regola che consente un solo tentativo per coppia verifica/recapito; non prova l'identità. |
+| Configurazione immutabile | Configurazione e snapshot pubblicato bloccati dopo l'attivazione. |
+| Snapshot pubblicato | Domande eleggibili, soluzioni e punteggi fissati all'attivazione per una verifica; non è una versione del repository. |
+| Tentativo | Accesso cartaceo o digitale associato a verifica e nome/cognome normalizzati. |
+| Nome/cognome bruciati | Regola che consente un solo tentativo per coppia verifica/nome/cognome; non prova l'identità. |
+| Participant lock | Documento Firestore con HMAC della coppia nome/cognome che impedisce avvii concorrenti. |
 | Snapshot digitale | Copia privata delle domande effettivamente assegnate a un tentativo digitale, con dati necessari a correzione/export. |
 | Consegna definitiva | Tentativo digitale inviato; domande e risposte non sono più modificabili dallo studente. |
 | Bozza | Risposte temporanee riprendibili nello stesso browser con token opaco. |
+| Reset del tentativo | Annullamento docente auditato; rilascia il participant lock solo su richiesta esplicita. |
 | Portale Verifiche | Applicazione separata e pubblica per invio cartaceo o svolgimento digitale, senza account studente. |
 | Export verifiche | Documento unico generato da tutte le consegne digitali definitive e dai loro snapshot. |
 
@@ -43,7 +49,7 @@
 |---|---|
 | `ownerUid` | UID Firebase Authentication dell'unico docente autorizzato nella V1. |
 | Cloud Firestore | Database operativo di stati, tentativi, snapshot, correzioni e audit. |
-| Cloud Storage | File Markdown, asset e staging; non contiene PDF o export didattici persistenti. |
+| Cloud Storage | Snapshot tecnici di Markdown/asset, staging ed export repository temporaneo; non contiene PDF o export didattici persistenti. |
 | Cloud Functions v2 | Backend autorevole per regole, transazioni e integrazioni. |
 | Firebase Emulator Suite | Ambiente locale per Auth, Firestore, Storage e Functions con dati sintetici. |
 | Secret Manager | Archivio dei segreti per provider email e AI. |

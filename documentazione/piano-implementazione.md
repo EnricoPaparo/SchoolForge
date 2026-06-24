@@ -1,6 +1,6 @@
 # SchoolForge — Piano di implementazione e workflow di delivery
 
-**Versione:** 3.1
+**Versione:** 3.2
 **Data:** 24 giugno 2026
 **Stato:** piano esecutivo per agenti di coding
 **Input vincolanti:** `brief.md`, `analisi-requisiti.md`, `architettura.md`
@@ -19,7 +19,7 @@ Ogni pacchetto deve produrre un risultato osservabile, avere un solo responsabil
 | Modulo | Capacità rilasciata | Può fermarsi qui? |
 |---|---|---|
 | M1 — Repository didattico | Programmi, UDA, Markdown/pool, import validato, rendering, export ZIP e programma svolto. | Sì: è già un repository didattico utile. |
-| M2 — Verifiche cartacee | Configurazione, selezione, PDF docente, canale cartaceo via email e email bruciata. | Sì: il docente può distribuire prove cartacee. |
+| M2 — Verifiche cartacee | Configurazione, snapshot pubblicato, PDF docente, canale cartaceo via email e limite nome/cognome. | Sì: il docente può distribuire prove cartacee. |
 | M3 — Portale digitale | Tentativi anonimi, snapshot, bozze, consegna e deterrenza di base. | Sì: il Portale raccoglie consegne strutturate. |
 | M4 — Correzione ed export | Punteggi, percentuali, rettifiche, eliminazione e `Esporta verifiche`. | Sì: ciclo digitale manuale completo. |
 | M5 — Correzione AI | Proposte assistite, anomalie consultive e, solo con gate, automatica. | Sì, ma è opzionale. |
@@ -45,6 +45,7 @@ M5 non è autorizzato a ritardare o modificare M1–M4.
 | H-05 | Scegliere il formato iniziale di `Esporta verifiche`: PDF unico oppure Markdown. | Prima del pacchetto M4-E. | Il renderer è implementabile dall'agente dopo la scelta. |
 | H-06 | Decidere provider AI, condizioni e residenza dati. | Prima di M5-A. | No, è C-02. |
 | H-07 | Decidere regola didattica della correzione automatica. | Prima di M5-E. | No, è C-03. |
+| H-08 | Scegliere il provider Firebase Authentication del docente e approvare il bootstrap controllato di `ownerUid`. | Prima del gate G1. | L'agente implementa il bootstrap in F-04; non configura `prod` né imposta l'owner senza autorizzazione. |
 
 ## 3. Regole del workflow per agenti
 
@@ -90,10 +91,10 @@ Un pacchetto deve essere abbastanza piccolo da essere verificato integralmente i
 
 | Gate | Condizione di ingresso | Evidenza richiesta | Autorizza |
 |---|---|---|---|
-| G0 — Baseline | Brief, requisiti, architettura e piano coerenti. | Review documentale e C-01 formalizzata. | Bootstrap del repository. |
-| G1 — Fondazioni Firebase | H-01/H-02/H-03 completate; CI ed Emulator Suite disponibili. | Progetti separati, budget, backup, restore test, Security Rules di default-deny. | M1 con dati sintetici. |
+| G0 — Baseline | Brief, requisiti, architettura, contratti, piano e test coerenti. | Review documentale v3.2, C-01 formalizzata e nessun disallineamento dichiarato. | Bootstrap del repository. |
+| G1 — Fondazioni Firebase | H-01/H-02/H-03/H-08 completate; CI ed Emulator Suite disponibili. | Progetti separati, provider Auth e owner bootstrap approvati, budget, backup, restore test, Security Rules di default-deny. | M1 con dati sintetici. |
 | G2 — Repository didattico | M1 integrato. | Import valido/invalido, rendering senza pool, ZIP e programma svolto. | M2. |
-| G3 — Verifiche cartacee | M2 integrato e H-04 completata. | PDF docente, invio email idempotente, lock email concorrente, nessun PDF persistito. | M3. |
+| G3 — Verifiche cartacee | M2 integrato e H-04 completata. | Snapshot pubblicato, PDF docente, invio email idempotente, lock nome/cognome concorrente, nessun PDF persistito. | M3. |
 | G4 — Portale digitale | M3 integrato. | Snapshot, bozza/ripresa, consegna immutabile, nessuna soluzione esposta. | M4. |
 | G5 — Correzione ed export | M4 integrato e H-05 completata. | Punteggi, rettifiche, eliminazione, export globale da snapshot. | Uso manuale completo. |
 | G6 — AI assistita | M5-A..D integrati e H-06 completata. | Contesto chiuso, audit, proposte assistite, anomalie consultive. | AI assistita. |
@@ -106,7 +107,7 @@ Un gate blocca solo il proprio ambito: C-02 e C-03 non bloccano M1–M4.
 ```mermaid
 flowchart TD
     G0 --> F1["F-01 Workspace e CI"]
-    G0 --> H1["H-01/H-02 Firebase"]
+    G0 --> H1["H-01/H-02 Firebase + H-08 Auth"]
     H1 --> F2["F-02 Configurazione Firebase"]
     F1 --> F3["F-03 Contratti e test base"]
     F2 --> F4["F-04 Auth, rules, guard"]
@@ -117,7 +118,10 @@ flowchart TD
     M1B --> M1D["M1-D Programmi, UDA, lezioni"]
     M1C --> M1D
     M1D --> M1E["M1-E Rendering ed export"]
-    M1E --> G2
+    M1D --> M1F["M1-F Kit e dashboard"]
+    M1E --> M1G["M1-G Evidenze M1"]
+    M1F --> M1G
+    M1G --> G2
     G2 --> M2A["M2-A Dominio verifica"]
     G2 --> M2B["M2-B UI configurazione"]
     G2 --> M2C["M2-C PdfRenderer docente"]
@@ -148,38 +152,39 @@ I rami indicati come paralleli possono partire insieme solo dopo avere fissato i
 |---|---|---|---|---|
 | F-01 | Creare monorepo TypeScript: workspace, build, lint, test, formattazione, convenzioni branch e CI senza deploy. | G0 | H-01/H-02 | Pipeline esegue build, lint, unit test su fixture. |
 | F-02 | Configurare Firebase `dev`/`test`, CLI, Emulator Suite, progetti e variabili non segrete. Non creare risorse `prod` senza H-01/H-02. | H-01, H-02 | F-01 | Emulatori avviabili e configurazioni separate. |
-| F-03 | Creare package condiviso `lesson-contract`, tipi di dominio minimi, fixture e test del contratto pool v1. | F-01 | F-02 | Parser accetta/rifiuta i casi di `analisi-requisiti.md`. |
-| F-04 | Implementare Firebase Auth docente, `ownerUid`, Security Rules default-deny, guard Cloud Functions, accesso Secret Manager e audit base. | F-01, F-02 | F-03 | Owner autorizzato; soggetto diverso e client diretto rifiutati da test emulatori. |
+| F-03 | Creare package condiviso `lesson-contract`: schema runtime e tipi per manifesto, UDA, lezione, pool, tentativo, risposte e API; fixture e test contrattuali. | F-01 | F-02 | Parser accetta/rifiuta i casi di `analisi-requisiti.md`, `contratto-importazione.md` e `stati-e-invarianti.md`. |
+| F-04 | Implementare Firebase Auth docente, bootstrap controllato `ownerUid`, Security Rules default-deny, guard Cloud Functions, accesso Secret Manager e audit base. | F-01, F-02 | F-03 | Owner autorizzato; soggetto diverso e client diretto rifiutati da test emulatori. |
 
 ## 7. M1 — Repository didattico
 
 | ID | Outcome e scope | Dipende da | Parallelo consentito | Evidenza DoD |
 |---|---|---|---|---|
-| M1-A | Validazione server-side di UDA, lezioni e pool; errori strutturati file/domanda/campo. | F-03, F-04 | M1-C | Pool invalido non rende invalida la lezione; fixture complete. |
-| M1-B | Staging Cloud Storage, preflight import, commit atomico, indice Firestore e cleanup. | M1-A, F-04 | M1-C | Import valido visibile; fallimento non lascia contenuti parziali. |
+| M1-A | Validazione server-side di manifesto Programma, UDA, lezioni e pool; errori strutturati file/domanda/campo. | F-03, F-04 | M1-C | Pool invalido non rende invalida la lezione; manifesto/UDA/lezione invalidi bloccano il commit. |
+| M1-B | Staging Cloud Storage, preflight import, snapshot tecnico, puntatore Firestore, indice e cleanup. | M1-A, F-04 | M1-C | Import valido visibile; fallimento non lascia contenuti parziali né cambia `activeContentSnapshotId`. |
 | M1-C | Shell docente: sessione, layout responsive, tema chiaro/scuro, errori e conferme comuni. | F-01, F-04 | M1-A/M1-B | Owner accede; non-owner non entra; test accessibilità base. |
 | M1-D | CRUD Programmi/UDA/Lezioni e collegamento alla UI, senza editor Markdown. | M1-B, M1-C | — | Struttura didattica navigabile e operazioni auditabili. |
 | M1-E | Rendering Markdown sanitizzato, asset, esclusione pool, export ZIP e programma svolto `.txt`. | M1-D | — | ZIP portabile, rendering senza soluzioni, programma svolto corretto. |
-| M1-F | Test E2E M1, review sicurezza/import e preparazione evidenze G2. | M1-E | — | G2 approvabile senza funzionalità M2. |
+| M1-F | Kit template Programma/UDA/Lezione/Pool e dashboard di prontezza, senza editor o generazione contenuti. | M1-D | M1-E | Template conforme e dashboard con validità, pool assente/invalido e domande eleggibili. |
+| M1-G | Test E2E M1, review sicurezza/import e preparazione evidenze G2. | M1-E, M1-F | — | G2 approvabile senza funzionalità M2. |
 
 ## 8. M2 — Verifiche cartacee
 
 | ID | Outcome e scope | Dipende da | Parallelo consentito | Evidenza DoD |
 |---|---|---|---|---|
-| M2-A | Dominio verifica: bozza/attiva/chiusa/archiviata, validazione fonti, minimi, varianti e selezione da pool corrente. | G2 | M2-B/M2-C | Attivazione invalida rifiutata; configurazione attiva immutabile. |
+| M2-A | Dominio verifica: bozza/attiva/chiusa/archiviata, validazione fonti, `publishedQuestionSnapshot`, minimi, varianti e selezione deterministica. | G2 | M2-B/M2-C | Attivazione invalida rifiutata; configurazione e snapshot attivi immutabili. |
 | M2-B | UI docente per creare, controllare e attivare verifiche; messaggi di blocco comprensibili. | G2, contratto M2-A iniziale | M2-A/M2-C | Il docente non può superare vincoli da UI o API. |
 | M2-C | `PdfRenderer` per PDF docente, intestazione e punteggi, generazione stream senza persistenza. | G2 | M2-A/M2-B | PDF docente conforme e nessun oggetto PDF in Storage. |
-| M2-D | Link pubblico, lock Firestore `verifica + email`, MailGateway idempotente e canale cartaceo. | M2-A/M2-B/M2-C, H-04 | — | Due richieste concorrenti producono un solo invio; errore email non brucia indebitamente il recapito. |
+| M2-D | Link pubblico, lock Firestore `verifica + nome/cognome`, MailGateway idempotente e canale cartaceo. | M2-A/M2-B/M2-C, H-04 | — | Due richieste concorrenti producono un solo invio; errore email non blocca indebitamente nome/cognome. |
 | M2-E | Test integrazione/E2E M2, costo e sicurezza del canale email, evidenze G3. | M2-D | — | PDF docente e invio studente verificati; nessun PDF persistito. |
 
 ## 9. M3 — Portale digitale
 
 | ID | Outcome e scope | Dipende da | Parallelo consentito | Evidenza DoD |
 |---|---|---|---|---|
-| M3-A | Servizio tentativo digitale: token pubblico, lock email, snapshot al tentativo, cookie di ripresa e stati. | G3 | — | Nuovo tentativo crea snapshot; refresh non seleziona nuove domande. |
+| M3-A | Servizio tentativo digitale: token pubblico, lock nome/cognome, snapshot al tentativo, cookie di sessione, annullamento/reset e stati. | G3 | — | Nuovo tentativo crea snapshot; refresh non seleziona nuove domande; reset auditato invalida token e rilascia il lock solo se richiesto. |
 | M3-B | UI Portale mobile-first: raccolta dati, sequenza domande e proiezione senza soluzioni. | M3-A, contratto endpoint | M3-C | Nessun menu/dato interno; uso da tastiera e mobile verificato. |
 | M3-C | Bozze, autosave, consegna immutabile, fullscreen/tab warning/copia-incolla UI. | M3-A | M3-B | Risposte riprendono nello stesso browser; consegna non è modificabile. |
-| M3-D | E2E e test negativi del Portale: token, rate limit, accesso a soluzioni, lock inter-canale. | M3-B, M3-C | — | Evidenze G4 e nessuna soluzione ottenibile dal client. |
+| M3-D | E2E e test negativi del Portale: token, rate limit, accesso a soluzioni, lock inter-canale e reset. | M3-B, M3-C | — | Evidenze G4 e nessuna soluzione ottenibile dal client. |
 
 ## 10. M4 — Correzione ed export
 
@@ -262,7 +267,7 @@ Il delivery è corretto se:
 
 1. ogni modulo rilascia una capacità usabile senza anticipare AI o scope LMS;
 2. nessun agente lavora su un pacchetto senza DoR o ignora un gate umano;
-3. verifiche e consegne digitali rispettano lock email, snapshot e assenza di PDF persistenti;
+3. verifiche e consegne digitali rispettano lock nome/cognome, snapshot e assenza di PDF persistenti;
 4. `Esporta verifiche` è costruito da tutte le consegne definitive e non dalle lezioni correnti;
 5. test automatici, e2e e review crescono insieme al prodotto;
 6. Firebase resta configurato con costo minimo controllato e senza componenti sempre accesi;
@@ -272,4 +277,4 @@ Il delivery è corretto se:
 
 ## Appendice A — Primo pacchetto da assegnare
 
-Il primo pacchetto assegnabile è **F-01 — Workspace e CI**, ma il provisioning Firebase reale non parte finché il Docente non ha completato H-01 e H-02. Dopo F-01, F-02 e F-03 possono avanzare in parallelo; F-04 richiede sia il workspace sia l'ambiente Firebase `dev`.
+Il primo pacchetto assegnabile è **F-01 — Workspace e CI**, ma il provisioning Firebase reale non parte finché il Docente non ha completato H-01 e H-02. H-08 è obbligatorio prima di G1 e del bootstrap `ownerUid`. Dopo F-01, F-02 e F-03 possono avanzare in parallelo; F-04 richiede sia il workspace sia l'ambiente Firebase `dev`.

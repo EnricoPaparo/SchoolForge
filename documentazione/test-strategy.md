@@ -1,5 +1,7 @@
 # SchoolForge — Strategia di test
 
+**Versione:** 3.2
+
 ## 1. Obiettivo
 
 I test dimostrano i requisiti della baseline; non servono solo a far passare la build. Ogni pacchetto del piano aggiunge test proporzionati al rischio e non introduce dati reali negli ambienti `dev` o `test`.
@@ -16,11 +18,15 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 
 ## 3. Fixture obbligatorie
 
-- UDA, lezione e pool validi;
+- manifesto Programma, UDA, lezione e pool validi;
+- manifesto con ID duplicato, file mancante, path traversal e asset non ammesso;
 - pool con id duplicato, difficoltà invalida, opzione/soluzione incoerente;
 - verifica con minimi impossibili e fonti insufficienti;
-- tentativo cartaceo e digitale con lo stesso recapito;
-- snapshot digitale prima e dopo modifica della lezione sorgente;
+- vettori deterministici per `schoolforge-selection/v1`, inclusi minimi per difficoltà e nessuna domanda duplicata;
+- tentativo cartaceo e digitale con lo stesso nome/cognome e email differenti;
+- snapshot pubblicato e snapshot digitale prima e dopo modifica della lezione sorgente;
+- risposta aperta oltre limite, risposta chiusa con opzione estranea e punteggi in centesimi ai limiti di arrotondamento;
+- tentativo annullato con e senza rilascio esplicito del lock;
 - correzione parziale, rettifica ed eliminazione;
 - export con consegne definitive, bozza, annullata ed eliminata;
 - output AI valido, incompleto e non autorizzato.
@@ -30,9 +36,9 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 | Gate | Test automatici | Test umano |
 |---|---|---|
 | G1 | Auth owner/non-owner, Rules default-deny, emulatori. | Verifica budget, backup e restore. |
-| G2 | Parser, import atomico, rendering sanitizzato, export ZIP. | Import di cartella didattica reale senza pool esposto. |
-| G3 | Stati verifica, PDF stream, lock email concorrente, MailGateway mock. | Invio a recapito di test e controllo nessun PDF persistito. |
-| G4 | Token Portale, snapshot, bozza/ripresa, consegna immutabile. | Mobile, tastiera, fullscreen/warning e assenza soluzioni. |
+| G2 | Parser manifesto, import a visibilità atomica, rendering sanitizzato, export ZIP e dashboard prontezza. | Import di cartella didattica reale senza pool esposto. |
+| G3 | Stati verifica, snapshot pubblicato, PDF stream, lock nome/cognome concorrente, MailGateway mock. | Invio a recapito di test e controllo nessun PDF persistito. |
+| G4 | Token Portale, snapshot, bozza/ripresa, annullamento/reset e consegna immutabile. | Mobile, tastiera, fullscreen/warning e assenza soluzioni. |
 | G5 | Percentuale, rettifiche, eliminazione, export globale da snapshot. | Revisione documento export e caricamento manuale Drive. |
 | G6/G7 | Contesto AI chiuso, audit, bulk approval, opt-in automatico. | Revisione didattica e policy C-02/C-03. |
 
@@ -42,12 +48,13 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 2. Un client non legge direttamente soluzioni, correzioni o audit.
 3. Un pool invalido non entra nella selezione.
 4. Una configurazione non valida non viene attivata.
-5. Due richieste concorrenti con lo stesso recapito generano un solo tentativo.
-6. Refresh del Portale non cambia lo snapshot.
+5. Due richieste concorrenti con lo stesso nome/cognome generano un solo tentativo anche con email differenti.
+6. Refresh del Portale non cambia lo snapshot e una modifica della lezione non altera il snapshot pubblicato.
 7. Dopo consegna, risposte e snapshot non sono modificabili.
 8. Una modifica del Markdown non altera export/correzione di una consegna svolta.
 9. PDF ed export non esistono in Storage dopo la risposta HTTP/email.
-10. AI non riceve web/retrieval e non modifica punteggi senza approvazione o C-03.
+10. L'annullamento non rilascia il lock senza richiesta docente esplicita; il token di ripresa è invalidato.
+11. AI non riceve web/retrieval e non modifica punteggi senza approvazione o C-03.
 
 ## 6. Pipeline
 

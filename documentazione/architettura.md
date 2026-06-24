@@ -1,9 +1,9 @@
 # SchoolForge — Architettura di sistema
 
-**Versione:** 3.1
+**Versione:** 3.2
 **Data:** 24 giugno 2026
 **Stato:** architettura target Firebase, pronta per il piano esecutivo
-**Input vincolanti:** `brief.md` e `analisi-requisiti.md` v3.0
+**Input vincolanti:** `brief.md` e `analisi-requisiti.md` v3.2
 **Destinatari:** implementazione e Docente responsabile operativo
 
 ---
@@ -44,9 +44,9 @@ L'implementazione deve consentire al docente di:
 | Monolite modulare | Due SPA e un solo backend Cloud Functions con moduli di dominio, non microservizi. |
 | Backend autorevole | Solo Cloud Functions applica transizioni, punteggi, invii, audit, export e accessi ai dati privati. |
 | Single-docente | Un solo `ownerUid` Firebase è autorizzato nel pannello docente; nessun tenant, delega o ruolo aggiuntivo. |
-| Studente senza account | Il Portale usa un link di verifica non enumerabile; l'email è un recapito e non viene usata come autenticazione. |
+| Studente senza account | Il Portale usa un link di verifica non enumerabile; l'email è un recapito e nome/cognome dichiarati limitano il tentativo senza autenticare lo studente. |
 | PDF effimero | PDF cartacei ed export sono generati on-demand e non scritti in Firestore, Cloud Storage o Drive. |
-| Snapshot al tentativo | Configurazione della verifica immutabile all'attivazione; snapshot completo solo quando parte un tentativo digitale. |
+| Snapshot pubblicato e al tentativo | L'attivazione congela l'insieme eleggibile della verifica; il tentativo digitale salva inoltre la sola prova assegnata e svolta. |
 | AI opzionale | L'AI è disabilitata per default, non genera domande e non è una dipendenza dei flussi manuali. |
 | Dati nella regione scelta | Firestore, Storage e Functions usano `europe-west8` ove supportato; backup ed esercizio seguono C-01 formalizzata. |
 | Disciplina di costo | Nessuna risorsa sempre attiva; preferenza per quote incluse, scale-to-zero, lifecycle e avvisi budget. |
@@ -57,7 +57,7 @@ L'implementazione deve consentire al docente di:
 
 **Decisione.** SchoolForge usa Firebase come piattaforma applicativa e Google Cloud come infrastruttura sottostante. Il progetto Firebase, il billing e gli accessi amministrativi sono di proprietà del Docente responsabile operativo.
 
-**Motivazione.** Per una V1 single-docente Firebase riduce il lavoro di provisioning: hosting HTTPS, autenticazione, database, object storage, funzioni, emulatori e osservabilità sono integrati. Firestore è sufficiente ai flussi previsti, inclusa la garanzia di email bruciata tramite transazioni.
+**Motivazione.** Per una V1 single-docente Firebase riduce il lavoro di provisioning: hosting HTTPS, autenticazione, database, object storage, funzioni, emulatori e osservabilità sono integrati. Firestore è sufficiente ai flussi previsti, incluso il lock concorrente per nome e cognome tramite transazioni.
 
 **Conseguenza.** Non è prevista una portabilità automatica del runtime. La portabilità richiesta riguarda Markdown, asset, dati operativi ed export; non richiede di eseguire SchoolForge su un secondo cloud senza migrazione.
 
@@ -81,21 +81,21 @@ L'implementazione deve consentire al docente di:
 
 ### ADR-05 — Portale pubblico e tentativi anonimi
 
-**Decisione.** Il link pubblico contiene un token casuale ad alta entropia associato a una verifica attiva. Lo studente dichiara i dati richiesti; il backend crea un tentativo solo dopo aver applicato la regola email bruciata. Un token opaco di ripresa è consegnato nel browser per le sole bozze digitali.
+**Decisione.** Il link pubblico contiene un token casuale a 256 bit associato a una verifica attiva. Lo studente dichiara i dati richiesti; il backend crea un tentativo solo dopo aver applicato il lock `verifica + nome + cognome` normalizzati. L'email resta un recapito cartaceo e non partecipa al lock. Un token opaco di ripresa è consegnato nel browser per le sole bozze digitali.
 
-**Motivazione.** L'email non deve diventare una finta autenticazione. Il token link limita l'enumerazione delle verifiche; il token di ripresa consente refresh nello stesso browser senza creare un secondo tentativo.
+**Motivazione.** Nome, cognome ed email non devono diventare una finta autenticazione. Il token link limita l'enumerazione delle verifiche; il token di ripresa consente refresh nello stesso browser senza creare un secondo tentativo.
 
-### ADR-06 — Immutabilità configurazione, snapshot al tentativo
+### ADR-06 — Immutabilità configurazione, snapshot pubblicato e al tentativo
 
-**Decisione.** L'attivazione congela configurazione, fonti, regole di selezione e stato della verifica, ma non copia tutte le domande. Al primo avvio digitale il backend seleziona dalle fonti correnti e salva lo snapshot delle domande effettivamente assegnate, incluse soluzioni private e punteggi massimi.
+**Decisione.** L'attivazione congela configurazione, fonti, regole di selezione e un `publishedQuestionSnapshot` delle domande eleggibili, incluse soluzioni private e punteggi massimi. Per `tutte_uguali` salva anche l'insieme selezionato; per `tutte_diverse` seleziona in modo deterministico dal medesimo snapshot con seed da verifica e participant key. Al primo avvio digitale il backend salva la sola prova effettivamente assegnata.
 
-**Motivazione.** Una lezione modificata può cambiare le future generazioni, come scelto nel brief. Correzione ed export restano però possibili perché lavorano sullo snapshot dell'istanza svolta.
+**Motivazione.** Una modifica della lezione non deve creare prove diverse nella stessa verifica attiva. Correzione ed export restano possibili perché lavorano sullo snapshot dell'istanza svolta; il repository continua a non esporre una cronologia prodotto.
 
 ### ADR-07 — MailGateway e PDF senza persistenza
 
 **Decisione.** Il PDF cartaceo è generato nel backend e passato a un `MailGateway` con chiave di idempotenza del tentativo. Il provider email concreto resta una configurazione tecnica protetta in Secret Manager; nessun PDF viene salvato come oggetto o allegato interno prima/dopo l'invio.
 
-**Motivazione.** L'email bruciata deve evitare doppie emissioni concorrenti, senza creare un archivio PDF in contrasto con il brief.
+**Motivazione.** Il participant lock deve evitare doppie emissioni concorrenti, senza creare un archivio PDF in contrasto con il brief.
 
 ### ADR-08 — Export globale da snapshot digitali
 
@@ -130,7 +130,7 @@ flowchart LR
 | Web app docente | UI, rendering sicuro, import, anteprime, conferme e chiamate autenticate. | Scrivere direttamente Firestore, applicare stati, chiamare AI/email. |
 | Portale Verifiche | Link pubblico, dati dichiarati, bozza, svolgimento, consegna e deterrenza. | Esporre soluzioni, correzioni, dati di altri tentativi o configurazioni interne. |
 | Cloud Functions | Autorizzazione, dominio, transazioni, import/export, PDF, mail, audit e AI. | Fidarsi di valori calcolati dal browser o mettere segreti nel client. |
-| Cloud Firestore | Stato operativo, indici, tentativi, snapshot digitali, correzioni, audit e lock email. | Diventare la fonte canonica delle lezioni o archiviare PDF. |
+| Cloud Firestore | Stato operativo, indici, snapshot pubblicati e digitali, tentativi, correzioni, audit e participant lock. | Diventare la fonte canonica delle lezioni o archiviare PDF. |
 | Cloud Storage | Markdown, asset e staging temporaneo. | Conservare PDF cartacei o export didattici. |
 | MailGateway | Accettare PDF effimero, destinatario e idempotency key. | Decidere domande, autorizzazioni o punteggi. |
 | AiGateway | Correzione opzionale con contesto chiuso e audit. | Generare domande, usare web o eseguire azioni irreversibili. |
@@ -145,7 +145,7 @@ flowchart LR
 | Backend | Cloud Functions v2 | TypeScript, `europe-west8` ove supportato, endpoint HTTP/callable. |
 | Dati operativi | Cloud Firestore Native | Database in `europe-west8` (Milano). |
 | File | Cloud Storage | Bucket privato in `europe-west8`, versioning e lifecycle di backup. |
-| Segreti | Secret Manager | Credenziali provider email e AI; mai in Firestore o browser. |
+| Segreti | Secret Manager | Credenziali provider email/AI, `participantLockSecret` e `selectionSecret`; mai in Firestore o browser. |
 | Osservabilità | Cloud Logging e Error Reporting | Log strutturati senza risposte o PDF. |
 
 | Ambiente | Progetto Firebase | Dati |
@@ -161,26 +161,27 @@ flowchart LR
 ### 6.1 Cloud Storage
 
 ```text
-repository/current/{programId}/{udaId}/uda-XX-titolo.md
-repository/current/{programId}/{udaId}/lezione-XXX-titolo.md
-repository/current/{programId}/{udaId}/lezione-XXX-titolo.pool.md
-repository/current/{programId}/{udaId}/assets/{relative-path}
+repository/content/{programId}/{contentSnapshotId}/programma.yaml
+repository/content/{programId}/{contentSnapshotId}/udas/{udaId}/uda-XX-titolo.md
+repository/content/{programId}/{contentSnapshotId}/udas/{udaId}/lezione-XXX-titolo.md
+repository/content/{programId}/{contentSnapshotId}/udas/{udaId}/lezione-XXX-titolo.pool.md
+repository/content/{programId}/{contentSnapshotId}/udas/{udaId}/assets/{relative-path}
 staging/{importId}/...                       # eliminato dopo commit, annullamento o scadenza
 repository-exports/{exportId}.zip            # temporaneo, eliminato dopo download
 ```
 
-Cloud Storage versioning conserva versioni non correnti soltanto come protezione operativa/backup, non come funzionalità di cronologia visibile del prodotto. Una lifecycle policy elimina staging ed export temporanei e mantiene le versioni necessarie al periodo di backup stabilito.
+Il puntatore Firestore `activeContentSnapshotId` determina l'unico contenuto visibile di un Programma; uno snapshot non attivo è pulito dopo il commit o il rollback. Cloud Storage versioning conserva versioni non correnti soltanto come protezione operativa/backup, non come funzionalità di cronologia visibile del prodotto. Una lifecycle policy elimina staging ed export temporanei e mantiene le versioni necessarie al periodo di backup stabilito.
 
 ### 6.2 Cloud Firestore
 
 | Collezione | Dati principali | Regola |
 |---|---|---|
 | `settings/owner` | `ownerUid`, feature flag e configurazioni | Unico proprietario V1. |
-| `programs`, `udas`, `lessons` | identificatori, titoli, percorsi Storage, validazione e ordine | Firestore è indice, non fonte Markdown. |
+| `programs`, `udas`, `lessons` | identificatori, titoli, `activeContentSnapshotId`, percorsi Storage, validazione e ordine | Firestore è indice, non fonte Markdown. |
 | `questionIndex` | `lessonId`, `questionRef`, tipo, difficoltà, peso e validità | Derivato dal pool valido. |
-| `verifications` | configurazione immutabile, fonti, stato, token pubblico hashato | Stati `draft`, `active`, `closed`, `archived`. |
-| `verifications/{id}/recipientLocks/{emailHash}` | hash recapito, canale, stato, tentativo e timestamp | Un documento per recapito normalizzato; creato in transazione. |
-| `deliveryAttempts` | verifica, canale, dati dichiarati, stato, timestamp e idempotency key | Cartaceo: `reserved/sent`; digitale: `in_progress/submitted`. |
+| `verifications` | configurazione immutabile, `publishedQuestionSnapshot`, stato, token pubblico hashato | Stati `draft`, `active`, `closed`, `archived`. |
+| `verifications/{id}/participantLocks/{participantKeyHash}` | HMAC nome/cognome, canale, stato, tentativo e timestamp | Un documento per nome/cognome normalizzati; creato in transazione. |
+| `deliveryAttempts` | verifica, canale, dati dichiarati, stato, timestamp e idempotency key | Cartaceo: `reserved/sent/cancelled`; digitale: `in_progress/submitted/cancelled`. |
 | `deliveryAttempts/{id}/snapshot/items` | domanda, opzioni, soluzione privata, punteggio massimo, origine | Creato solo per tentativo digitale. |
 | `deliveryAttempts/{id}/answers` | risposta, stato bozza/consegnata e timestamp | Immutabile dopo consegna. |
 | `corrections`, `correctionEvents` | punteggi, commenti, percentuale, origine e rettifiche | Eventi append-only. |
@@ -190,12 +191,13 @@ Cloud Storage versioning conserva versioni non correnti soltanto come protezione
 
 | Evento | Garanzia del backend |
 |---|---|
-| Attivazione verifica | Transazione: valida configurazione, passa `draft → active`, fissa configurazione e scrive audit. |
-| Avvio cartaceo | Transazione Firestore: verifica assenza lock, crea lock e tentativo `reserved`; l'invio idempotente marca `sent` oppure rilascia la riserva se fallisce prima dell'accettazione. |
-| Avvio digitale | Transazione: verifica lock, crea tentativo, lock, snapshot e token di ripresa hashato. |
+| Attivazione verifica | Transazione: valida configurazione, crea `publishedQuestionSnapshot`, passa `draft → active`, fissa configurazione e scrive audit. |
+| Avvio cartaceo | Transazione Firestore: verifica assenza participant lock, crea lock e tentativo `reserved`; l'invio idempotente marca `sent` oppure annulla e rilascia la riserva se fallisce prima dell'accettazione. |
+| Avvio digitale | Transazione: verifica lock, crea tentativo, lock, snapshot della prova e token di ripresa hashato. |
 | Salvataggio bozza | Aggiorna solo il tentativo autorizzato dal token di ripresa; non seleziona nuove domande. |
 | Consegna | Transazione: `in_progress → submitted`, rende snapshot/risposte immutabili e registra audit. |
 | Rettifica | Inserisce evento con precedente/nuovo valore e ricalcola percentuale. |
+| Annullamento tentativo | Con conferma e motivazione, marca `cancelled`, invalida token e rilascia il lock solo se richiesto esplicitamente. |
 | Eliminazione consegna | Rimuove dati personali, risposte e correzioni; preserva un audit non identificativo. |
 
 ## 7. Flussi applicativi
@@ -205,15 +207,15 @@ Cloud Storage versioning conserva versioni non correnti soltanto come protezione
 1. Il docente si autentica tramite Firebase Authentication.
 2. Cloud Functions verifica `uid == settings/owner.ownerUid` per ogni operazione privata.
 3. Il docente carica file/asset nello staging con accesso temporaneo autorizzato.
-4. `RepositoryService` valida il contratto UDA, lezione e pool; mostra errori prima del commit.
-5. Dopo conferma, il backend promuove i file in `repository/current`, aggiorna Firestore e scrive audit.
+4. `RepositoryService` valida manifesto, UDA, lezione e pool; mostra errori prima del commit.
+5. Dopo conferma, il backend crea uno snapshot tecnico completo, aggiorna in transazione `activeContentSnapshotId` e scrive audit. Gli utenti non vedono mai lo staging o un commit parziale.
 
 ### 7.2 Attivazione verifica
 
 1. Il docente configura fonti, tipi, difficoltà, minimi, numero domande, varianti e canali.
 2. `VerificationService` interroga `questionIndex` e valida la disponibilità corrente.
-3. L'attivazione crea il token pubblico e congela configurazione/fonti, non le domande.
-4. Una modifica successiva alle lezioni riguarda solo tentativi ancora non avviati.
+3. L'attivazione crea il token pubblico, congela configurazione/fonti e il `publishedQuestionSnapshot`.
+4. Una modifica successiva alle lezioni riguarda solo verifiche future.
 
 ### 7.3 Canale cartaceo
 
@@ -227,14 +229,14 @@ sequenceDiagram
 
     S->>P: apre link e dichiara dati
     P->>B: startPaperDelivery
-    B->>F: transazione lock recapito + tentativo reserved
-    alt recapito libero
+    B->>F: transazione lock nome/cognome + tentativo reserved
+    alt nome/cognome liberi
         B->>B: seleziona domande e genera PDF effimero
         B->>M: invia PDF con idempotency key
         M-->>B: accettato
         B->>F: tentativo sent + audit
         B-->>P: conferma invio
-    else recapito già usato
+    else nome/cognome già usati
         B-->>P: errore esplicito
     end
 ```
@@ -242,7 +244,7 @@ sequenceDiagram
 ### 7.4 Canale digitale e snapshot
 
 1. Lo studente apre una verifica attiva attraverso il token pubblico e dichiara i dati richiesti.
-2. Il backend crea in transazione lock, tentativo, snapshot e token opaco di ripresa, salvato nel Portale in cookie sicuro.
+2. Il backend crea in transazione lock per nome/cognome, tentativo, snapshot e token opaco di ripresa, salvato nel Portale in cookie di sessione sicuro.
 3. Il Portale riceve solo la proiezione studente dello snapshot, senza soluzioni o opzioni corrette.
 4. Le risposte sono salvate come bozza. Refresh o breve interruzione nello stesso browser recuperano il medesimo tentativo.
 5. Alla consegna, backend e Firestore rendono i dati immutabili e avviano la disponibilità per la correzione.
@@ -262,8 +264,8 @@ sequenceDiagram
 | Sessione | `getSession`, `getOwnerSettings` |
 | Repository | `stageImport`, `previewImport`, `commitImport`, `replaceContent`, `deleteContent`, `exportRepository`, `exportProgrammaSvolto` |
 | Verifiche | `createVerificationDraft`, `updateVerificationDraft`, `activateVerification`, `closeVerification`, `archiveVerification`, `generateTeacherPdf` |
-| Portale | `getPublicVerification`, `startPaperDelivery`, `startDigitalAttempt`, `saveDraft`, `submitAttempt` |
-| Correzione | `listSubmissions`, `getSubmission`, `setItemScore`, `rectifyScore`, `deleteSubmission` |
+| Portale | `getPublicVerification`, `startPaperDelivery`, `startDigitalAttempt`, `getAttempt`, `saveDraft`, `submitAttempt` |
+| Correzione | `listSubmissions`, `getSubmission`, `setItemScore`, `rectifyScore`, `cancelAttempt`, `deleteSubmission` |
 | Export | `exportCompletedVerifications` |
 | AI futura | `proposeCorrection`, `approveCorrection`, `bulkApproveCorrections` |
 
@@ -273,12 +275,12 @@ Le API docente richiedono Firebase ID token e verifica server-side dell'`ownerUi
 
 ### 9.1 Controlli essenziali
 
-- Il token pubblico non è derivato da titolo, id sequenziale o email.
-- Il token di ripresa è `Secure`, `HttpOnly`, con `SameSite` appropriato, a vita limitata e memorizzato lato server solo come hash.
-- Gli endpoint pubblici applicano rate limit e validazione del payload; questi controlli non trasformano l'email in autenticazione.
+- Il token pubblico è casuale a 256 bit e non è derivato da titolo, id sequenziale, nome, cognome o email.
+- Il token di ripresa è casuale a 256 bit, `Secure`, `HttpOnly`, `SameSite=Strict`, con cookie di sessione e memorizzato lato server solo come hash; è invalido dopo consegna o annullamento.
+- Gli endpoint pubblici applicano rate limit prima di invio email, PDF e snapshot: contatori Firestore a scadenza di 24 ore per token verifica e impronta IP HMAC; i limiti esatti sono nel contratto API. Questi controlli non trasformano nome, cognome o email in autenticazione.
 - Il renderer Markdown applica sanitizzazione/whitelist; i pool non sono renderizzati nel percorso di fruizione.
 - Risposte, punteggi, email e PDF non sono inseriti nei log tecnici.
-- Segreti email e AI vivono in Secret Manager e non raggiungono browser, Firestore, Markdown o repository Git.
+- Segreti email/AI, `participantLockSecret` e `selectionSecret` vivono in Secret Manager e non raggiungono browser, Firestore, Markdown o repository Git.
 
 ### 9.2 Backup formalizzato
 
@@ -320,9 +322,9 @@ SchoolForge/
 | Livello | Evidenza minima |
 |---|---|
 | Unit | Parser pool, selezione domande, punteggi, stati e renderer export. |
-| Integration | Emulator Suite: Security Rules, transazioni lock email, import Storage e snapshot digitale. |
+| Integration | Emulator Suite: Security Rules, transazioni participant lock, import Storage e snapshot digitale. |
 | End-to-end | Login docente, import, attivazione, invio cartaceo, svolgimento digitale, correzione ed export globale. |
-| Sicurezza | Soluzioni non esposte, owner diverso rifiutato, token scaduto rifiutato e rate limit applicato. |
+| Sicurezza | Soluzioni non esposte, owner diverso rifiutato, token annullato rifiutato e rate limit applicato. |
 | Restore | Prova documentata di recupero Firestore/Storage secondo backup C-01. |
 | AI futura | Contesto chiuso, nessun web, audit e blocco della correzione automatica prima di C-03. |
 
@@ -333,9 +335,9 @@ SchoolForge/
 | Markdown indipendente | Cloud Storage degli originali, parser condiviso ed export ZIP. |
 | Docente senza vincolo Workspace | Firebase Authentication configurabile e `ownerUid` server-side. |
 | Studenti senza account | Link pubblico, dati dichiarati e token di ripresa; nessuna registrazione. |
-| Email bruciata | Lock Firestore creato in transazione per `verifica + email normalizzata`. |
+| Limite tentativo | Participant lock Firestore creato in transazione per `verifica + nome/cognome normalizzati`. |
 | PDF non conservato | Renderer effimero, nessuna scrittura su Firestore/Storage/Drive. |
-| Modifiche alle lezioni | Configurazione immutabile; snapshot creato solo al tentativo digitale. |
+| Modifiche alle lezioni | Configurazione e snapshot pubblicato immutabili; ogni consegna digitale conserva inoltre il proprio snapshot. |
 | Correzione | Snapshot privato, risposte immutabili, correzioni e rettifiche tracciate. |
 | Esporta verifiche | Query di tutte le consegne definitive e renderizzazione dai loro snapshot. |
 | AI opzionale | AiGateway isolato, feature flag e contesto chiuso. |
@@ -346,7 +348,7 @@ L'implementazione è conforme solo se dimostra che:
 2. Firestore, Storage e Functions applicativi usano Milano `europe-west8` ove supportato;
 3. Markdown e asset restano esportabili e leggibili fuori da SchoolForge;
 4. il Portale non usa account studenti e non espone soluzioni;
-5. il lock Firestore impedisce tentativi concorrenti sul medesimo recapito, anche fra canali;
+5. il lock Firestore impedisce tentativi concorrenti per il medesimo nome/cognome, anche fra canali;
 6. PDF cartacei ed export sono creati senza persistenza;
 7. una consegna digitale conserva snapshot e risposte immutabili dopo l'invio;
 8. `Esporta verifiche` include tutte e sole le consegne definitive non annullate, dai relativi snapshot;
@@ -362,4 +364,4 @@ L'implementazione è conforme solo se dimostra che:
 | C-02 | Provider AI, condizioni e residenza dati. | Modulo 5 non viene attivato. |
 | C-03 | Regola didattica per correzione automatica. | Rimane disponibile solo la modalità assistita. |
 
-Piano di implementazione, contratti API, sicurezza, test, glossario, diagrammi e README devono essere riallineati a questa architettura Firebase prima dell'avvio del codice.
+Piano di implementazione, contratti API, sicurezza, test, glossario, diagrammi, README e guida agente sono allineati alla baseline v3.2. Una nuova modifica architetturale richiede l'aggiornamento contestuale dei documenti interessati prima del merge.
