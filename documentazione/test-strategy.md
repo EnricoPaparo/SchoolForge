@@ -1,6 +1,6 @@
 # SchoolForge — Strategia di test
 
-**Versione:** 2.1
+**Versione:** 2.2
 
 ---
 
@@ -16,7 +16,7 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 |---|---|---|
 | Unit | Vitest | Parser `lesson-contract`, selezione domande, punteggi, stati verifica, renderer export (PDF/MD/CSV), funzioni pure. |
 | Contract | Fixture Markdown e payload Firestore | Contratto pool v1, errori strutturati, tipi TypeScript di `api-contract.md`. |
-| Integration | Firebase Emulator Suite | Security Rules, transazioni Firestore (participant lock digitale, log accesso, attivazione verifica), Storage, `startDigitalAttempt` Function. |
+| Integration | Firebase Emulator Suite | Security Rules, commit `activeImportId`, transazioni Firestore, gateway `startDigitalAttempt`/`continueDigitalAttempt`, participant lock, reset e snapshot pubblicato. |
 | E2E | Playwright | Flussi docente + Portale attraverso browser (include generazione PDF e download). |
 | Manuale | Checklist gate | UX, accessibilità, PDF nel browser, backup/restore e costi. |
 
@@ -31,8 +31,11 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 - tentativo digitale: avvio, bozza, ripresa dopo refresh, consegna;
 - secondo avvio digitale con lo stesso nome+cognome sulla stessa verifica (rifiutato: `PARTICIPANT_ALREADY_USED`);
 - re-import di una lezione con pool modificato (aggiornamento `questionIndex`);
-- import fallito con pool invalido (il `questionIndex` esistente resta integro);
-- snapshot digitale prima e dopo modifica della lezione sorgente;
+- import fallito con pool invalido o upload interrotto (l'`activeImportId` e il contenuto visibile restano invariati);
+- snapshot pubblicato prima e dopo modifica della lezione sorgente;
+- tentativo digitale con cookie assente, scaduto e revocato (rifiutati dal gateway);
+- lookup pubblico: `get` con hash del token valido ammesso, `list` dei link e accesso al documento verifica privato rifiutati;
+- reset docente di tentativo `in_progress` con motivazione e audit; reset di consegna rifiutato;
 - correzione parziale, rettifica ed eliminazione;
 - export con consegne definitive, bozza, annullata ed eliminata in tutti e tre i formati;
 - output AI valido, incompleto e non autorizzato (M5/V2).
@@ -44,9 +47,9 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 | Gate | Test automatici | Test umano |
 |---|---|---|
 | G1 | Auth owner/non-owner; Security Rules default-deny; Emulator. | Verifica budget ed export Firestore manuale dalle impostazioni. |
-| G2 | Parser pool valido/invalido; import atomico; rendering sanitizzato; export ZIP; programma svolto MD e PDF; kit e dashboard prontezza. | Import di cartella didattica reale; nessun pool esposto nel rendering. |
+| G2 | Parser pool valido/invalido; upload isolato e commit `activeImportId`; rendering sanitizzato; export ZIP; programma svolto MD e PDF; kit e dashboard prontezza. | Import di cartella didattica reale; nessun pool esposto nel rendering. |
 | G3 | Stati verifica; PDF generato nel browser; canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`); nessun PDF in Storage. | Download PDF dal browser su mobile e desktop. |
-| G4 | `startDigitalAttempt`: participant lock nome+cognome, token sessione cookie, snapshot senza soluzioni, log accesso; bozza/ripresa; consegna immutabile. | Mobile, tastiera, fullscreen/warning; nessuna soluzione visibile a studente. |
+| G4 | Gateway: participant lock nome+cognome, cookie, nessun write Firestore dal portale, snapshot senza soluzioni, log accesso; bozza/ripresa/consegna; reset auditato; consegna immutabile. | Mobile, tastiera, fullscreen/warning; nessuna soluzione visibile a studente. |
 | G5 | Percentuale e rettifiche; eliminazione dati; export PDF/MD/CSV da snapshot; consegna modificata lezione. | Revisione documento export nei tre formati; caricamento manuale Drive. |
 | G6/G7 (V2) | Contesto AI chiuso; audit; bulk approval; opt-in automatico; C-03 gate. | Revisione didattica e policy. |
 
@@ -55,22 +58,24 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 ## 5. Test negativi non negoziabili
 
 1. Un utente Firebase diverso dall'owner non legge o scrive dati docente.
-2. Un client non legge direttamente `soluzione` dallo snapshot di un tentativo digitale.
-3. Un pool invalido non entra nella selezione domande.
-4. Una configurazione non valida non viene attivata.
-5. Un secondo avvio digitale con lo stesso nome+cognome normalizzati sulla stessa verifica è rifiutato con `PARTICIPANT_ALREADY_USED`; ogni accesso resta tracciato nel Report Accessi.
-6. Refresh del Portale non cambia lo snapshot né le risposte in bozza.
-7. Dopo consegna digitale, risposte e snapshot non sono modificabili.
-8. La modifica di un Markdown sorgente non altera export e correzione di una consegna già svolta.
-9. PDF e documenti export non esistono in Storage o Firestore dopo la generazione.
-10. AI non riceve soluzioni di altre domande, non usa web e non modifica punteggi senza approvazione o C-03.
+2. Un client portale non legge né scrive direttamente tentativi, risposte o snapshot; le soluzioni non compaiono in alcuna risposta del gateway.
+3. Il Portale può ottenere solo `publicVerificationLinks/{hash(token)}` con `get`; non può elencare link né leggere la verifica privata.
+4. Un pool invalido non entra nella selezione domande.
+5. Una configurazione non valida non viene attivata.
+6. Un secondo avvio digitale con lo stesso nome+cognome normalizzati sulla stessa verifica è rifiutato con `PARTICIPANT_ALREADY_USED`; ogni accesso resta tracciato nel Report Accessi.
+7. Refresh del Portale non cambia lo snapshot né le risposte in bozza.
+8. Dopo consegna digitale, risposte e snapshot non sono modificabili.
+9. Un import fallito non cambia l'`activeImportId`; la modifica di un Markdown sorgente non altera verifica pubblicata, export e correzione di una consegna già svolta.
+10. Cookie assente, scaduto o revocato non permette ripresa, bozza né consegna; il reset può annullare solo un tentativo in corso e richiede audit.
+11. PDF e documenti export non esistono in Storage o Firestore dopo la generazione.
+12. AI non riceve soluzioni di altre domande, non usa web e non modifica punteggi senza approvazione o C-03.
 
 ---
 
 ## 5c. Casi di test su questionIndex e re-import
 
 1. **Re-import di una lezione con pool modificato aggiorna correttamente questionIndex** — dopo il re-import dall'interfaccia, le voci di `questionIndex` riflettono il nuovo pool (aggiunte, rimozioni, valori `difficolta`/`peso`/`maxPoints` aggiornati).
-2. **Import fallito (pool invalido) non corrompe il questionIndex esistente** — un re-import con pool invalido viene rifiutato e le voci di `questionIndex` preesistenti restano invariate.
+2. **Import fallito non cambia il Programma attivo** — un re-import con pool invalido oppure upload interrotto non aggiorna `activeImportId`; l'import e il `questionIndex` visibili restano invariati.
 
 ---
 

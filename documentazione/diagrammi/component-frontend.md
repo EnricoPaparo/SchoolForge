@@ -19,7 +19,7 @@ flowchart TB
 
     T -->|"Firebase ID token + Security Rules"| FS["Firestore"]
     T -->|"Security Rules"| CS["Cloud Storage\nMarkdown, asset"]
-    Digital -->|"startDigitalAttempt"| CF["Cloud Function\n(solo M3 e M5/V2)"]
+    Digital -->|"start / continue digitale"| CF["Cloud Functions\n(gateway M3 e M5/V2)"]
     CF --> FS
     CF -. "M5/V2" .-> AI["AiGateway"]
     Paper -->|"mode=student"| Pdf
@@ -31,8 +31,8 @@ flowchart TB
 
 - La SPA è un'unica applicazione con code splitting per le due sezioni.
 - La sezione docente usa Firebase Authentication; il Portale non ha login studente.
-- La sezione docente scrive direttamente su Firestore e Storage entro le Security Rules; nessuna Cloud Function per import, verifiche, correzione o export.
-- `startDigitalAttempt` è l'unica Cloud Function nei Moduli 1–4: crea il participant lock per nome+cognome, genera il token di sessione server-side, registra il log di accesso (nome+IP) e lo snapshot con soluzioni private.
+- La sezione docente scrive direttamente su Firestore e Storage entro le Security Rules; import, pubblicazione, correzione ed export non richiedono Cloud Function.
+- Il gateway M3 comprende `startDigitalAttempt` e `continueDigitalAttempt`: crea il participant lock per nome+cognome, genera e verifica il token di sessione server-side, registra il log di accesso (nome+IP), legge/riprende il tentativo e salva bozza/consegna. Il Portale non scrive tentativi direttamente in Firestore.
 - Esiste un unico componente PDF, `VerificaPdfRenderer`, con prop `mode="teacher" | "student"`: in modalità `student` nasconde le soluzioni. È usato sia dal docente (download e correzione) sia dal canale cartaceo studente.
 - I PDF (verifica docente, verifica studente cartaceo, programma svolto, export) sono generati nel browser con `@react-pdf/renderer`; nessun PDF passa per il server.
 - Il Portale riceve solo la proiezione dello snapshot senza soluzioni, audit, log accessi o correzioni.

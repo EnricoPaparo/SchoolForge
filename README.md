@@ -13,7 +13,7 @@ La baseline documentale v4.1 è completa. Non esiste ancora codice applicativo, 
 - Il sistema non invia email agli studenti; il PDF cartaceo è scaricato direttamente nel browser.
 - PDF, export e programma svolto sono generati on-demand nel browser e non conservati dal sistema.
 - Lo studente dichiara nome e cognome (non verificati); ogni accesso digitale è tracciato con nome+IP+timestamp+user-agent (Report Accessi). Il limite di un tentativo digitale per verifica usa nome+cognome normalizzati, mai l'email.
-- Cloud Functions usate solo per il token di sessione digitale (M3); l'AI (M5) è fuori scope V1 / pianificata per V2.
+- Il write path del Portale digitale usa un piccolo gateway Cloud Functions: avvio, ripresa, bozza e consegna sono autorizzati lato server tramite cookie di sessione; l'AI (M5) è fuori scope V1 / pianificata per V2.
 - Il Portale digitale salva uno snapshot sicuro della prova tramite Cloud Function.
 - L'AI (V2) è opzionale, non genera domande e non usa fonti web.
 - Firebase è la piattaforma; costi e componenti restano minimi, con scale-to-zero e avvisi budget.
@@ -53,7 +53,8 @@ SPA unica (Firebase Hosting)
 └── /exam/:token     — portale pubblico, canale cartaceo (PDF browser) e digitale
 
 Cloud Functions:
-└── startDigitalAttempt  — M3: lock nome+cognome, snapshot con soluzioni private, log nome+IP, cookie sessione
+├── startDigitalAttempt  — M3: lock nome+cognome, snapshot con soluzioni private, log nome+IP, cookie sessione
+└── continueDigitalAttempt — M3: ripresa, bozza e consegna autorizzate dal cookie HttpOnly
 └── AI endpoints         — M5 (V2): AiGateway con chiave in Secret Manager
 
 PDF generati nel browser (@react-pdf/renderer) — nessun server coinvolto

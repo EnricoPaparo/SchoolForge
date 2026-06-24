@@ -26,6 +26,7 @@ apps/web/src/
   lib/                # firebase client, tipi condivisi
 functions/src/
   startDigitalAttempt.ts
+  continueDigitalAttempt.ts
   ai/                 # M5 (V2): AiGateway e endpoint AI
 packages/
   lesson-contract/    # parser e validatore pool v1 (package interno del workspace, non pubblicato su npm)
@@ -41,9 +42,9 @@ Il monorepo usa **pnpm workspaces** (`pnpm-workspace.yaml`). Non usare npm o yar
 ## Vincoli architetturali
 
 - Una sola SPA su Firebase Hosting; nessun deployment separato per il portale.
-- Cloud Functions solo per `startDigitalAttempt` (M3) e AI (M5). Qualsiasi Function aggiuntiva richiede approvazione esplicita.
+- Cloud Functions solo per il gateway M3 `startDigitalAttempt`/`continueDigitalAttempt` e AI (M5). Qualsiasi Function aggiuntiva richiede approvazione esplicita.
 - PDF e documenti generati nel browser con `@react-pdf/renderer`; nessun documento generato server-side.
-- Il client docente scrive direttamente su Firestore e Storage entro le Security Rules.
+- Il client docente scrive direttamente su Firestore e Storage entro le Security Rules; il Portale non scrive mai direttamente tentativi, risposte o snapshot.
 - Nessun invio email agli studenti.
 
 ## Regole tecniche

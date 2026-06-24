@@ -1,6 +1,6 @@
 # SchoolForge — Sicurezza e protezione dei dati
 
-**Versione:** 2.1
+**Versione:** 2.2
 **Stato:** requisiti da implementare nei pacchetti F-04 e successivi
 
 ---
@@ -17,9 +17,11 @@ Proteggere Markdown, asset, dati dichiarati dagli studenti, risposte, punteggi, 
 |---|---|---|
 | Sezione docente | Accesso di soggetto non owner | Firebase Auth + `ownerUid` nelle Security Rules. |
 | Firestore/Storage | Lettura o scrittura diretta non autorizzata | Security Rules default-deny; percorsi sensibili protetti per ruolo. |
-| Verifica pubblica | Enumerazione o accesso a soluzioni | Token casuale non enumerabile; proiezione pubblica senza soluzioni; rate limit. |
-| Tentativo digitale | Forgery del token sessione | Token firmato server-side nella Cloud Function; cookie Secure/HttpOnly/SameSite. |
+| Verifica pubblica | Enumerazione o accesso a soluzioni | Token casuale non enumerabile; lookup `get` su hash del token, mai `list`; proiezione pubblica senza soluzioni; rate limit. |
+| Tentativo digitale | Forgery o riuso del token sessione | Gateway server-side; cookie Secure/HttpOnly/SameSite verificato a ogni lettura, bozza e consegna. |
 | Tentativo digitale | Doppio avvio della stessa persona dichiarata | Participant lock per verifica e nome+cognome normalizzati, creato dalla Cloud Function in transazione. |
+| Import didattico | Pubblicazione parziale tra Storage e Firestore | Upload sotto `importId` isolato, poi commit transazionale del solo `activeImportId`. |
+| Verifica attiva | Modifica retroattiva di fonti/regole | Snapshot pubblicato immutabile all'attivazione; per modificare si duplica la bozza. |
 | Accountability accessi | Abuso del link, accessi non riconosciuti | Log nome dichiarato + IP + user-agent + timestamp; Report Accessi consultabile dal docente. |
 | Markdown | XSS o asset non sicuri | Parser condiviso, sanitizzazione e whitelist rendering. |
 | AI (V2) | Dati non autorizzati o prompt injection | C-02 risolta, contesto chiuso, nessun web/tool, feature flag, audit. |
@@ -35,17 +37,20 @@ Le Security Rules Firestore e Storage sono il perimetro di sicurezza principale 
 
 - Default-deny: qualsiasi percorso non esplicitamente aperto è negato.
 - `ownerUid` è verificato come `request.auth.uid == resource.data.ownerUid` o confrontato con `settings/owner.ownerUid`.
-- `deliveryAttempts/*/snapshot/items` non espone mai il campo `soluzione` al client portale (Security Rule con `request.auth == null` blocca il campo, o la Function non lo include nella proiezione).
-- `deliveryAttempts/*/accessLog` è scrivibile solo dalla Cloud Function e leggibile solo dall'owner (Report Accessi).
-- `corrections`, `correctionEvents` e `auditEvents` sono leggibili solo dall'owner.
+- `publicVerificationLinks/{SHA-256(token)}` consente al portale solo `get` del documento esatto: nessun `list`, nessuna configurazione privata e nessun token in chiaro nel database.
+- Il client portale non legge né scrive direttamente `deliveryAttempts`, `answers`, `snapshot`, `participantLocks` o `accessLog`: tutte le operazioni digitali passano dal gateway.
+- `verifications/*/publishedSnapshot` contiene le soluzioni ed è leggibile solo da owner e Function; `publishedProjection` è l'unico dato pubblico, senza soluzioni e solo quando la verifica è attiva.
+- `deliveryAttempts/*/accessLog` è scritto solo dalla Cloud Function e leggibile solo dall'owner (Report Accessi).
+- Il reset docente è ammesso solo in una transazione Firestore su un tentativo `in_progress`, con motivazione, invalidazione sessione, rilascio lock e audit append-only; le Rules verificano lo stato e il batch previsto. Non può riaprire una consegna.
+- `corrections`, `correctionEvents` e `auditEvents` sono leggibili solo dall'owner. Gli eventi di audit sono solo append: il docente può crearli con schema/azione ammessi, ma non aggiornarli o cancellarli.
 
 Le Security Rules esatte vengono scritte e testate in F-04 con Emulator Suite obbligatoria. Nessuna regola permissiva temporanea è ammessa con dati reali.
 
 ---
 
-## 4. Cloud Function: startDigitalAttempt
+## 4. Gateway M3: `startDigitalAttempt` e `continueDigitalAttempt`
 
-Questa funzione è il punto critico di sicurezza del Portale digitale.
+Le due Function sono il punto critico di sicurezza del Portale digitale. Sono le sole a usare Admin SDK sul percorso pubblico.
 
 **Garanzie richieste:**
 
@@ -54,6 +59,8 @@ Questa funzione è il punto critico di sicurezza del Portale digitale.
 - Lo snapshot include le soluzioni private in Firestore ma non le include nella risposta HTTP al client.
 - Il token di sessione è generato server-side, consegnato come `Set-Cookie: resumeToken=...; HttpOnly; Secure; SameSite=Strict; Max-Age=3600`.
 - Solo l'hash del token di sessione è salvato in Firestore (`resumeTokenHash`); il token in chiaro non è mai persistito.
+- `continueDigitalAttempt` confronta hash, scadenza e stato del tentativo prima di ogni `get`, `saveDraft` o `submitAttempt`; nessuna Security Rule tenta di autorizzare un cookie.
+- `submitAttempt` rende immutabili risposte e snapshot in transazione; il reset docente revoca la sessione impostando lo stato a `cancelled` prima di rimuovere il lock.
 - Vengono registrati nome dichiarato (`Cognome Nome`), IP, user-agent e timestamp in `accessLog` come audit trail.
 - Rate limit applicato per IP e per token verifica.
 
@@ -64,6 +71,12 @@ Questa funzione è il punto critico di sicurezza del Portale digitale.
 - PDF docente, PDF cartaceo studente, programma svolto (PDF/Markdown) ed export verifiche (PDF/Markdown/CSV) sono generati nel browser e non scritti su Cloud Storage o Firestore.
 - Nessuna Cloud Function produce o salva PDF.
 - I file temporanei del browser (blob URL) sono rilasciati immediatamente dopo il download.
+
+### 5.1 Import e pubblicazione immutabile
+
+- L'import non sostituisce mai l'albero attivo: Storage e indici sono preparati sotto un nuovo `importId`; finché la transazione non cambia `activeImportId`, l'app legge l'import precedente.
+- Gli import incompleti non sono visibili e possono essere rimossi da lifecycle o comando docente; non costituiscono una cronologia utente.
+- L'attivazione copia fonti, regole, candidati e soluzioni nel `publishedSnapshot`. Da `attiva` in poi configurazione e fonti non sono più modificabili.
 
 ---
 
@@ -111,8 +124,8 @@ Questa funzione è il punto critico di sicurezza del Portale digitale.
 | Gate | Controlli minimi |
 |---|---|
 | G1 | Security Rules default-deny testate in Emulator; `ownerUid` funzionante; budget configurato; export manuale Firestore disponibile dalle impostazioni. |
-| G2 | Sanitizzazione Markdown verificata; Storage privato; import non scrive contenuti parziali; ZIP portabile. |
+| G2 | Sanitizzazione Markdown verificata; Storage privato; import isolato e commit di `activeImportId` (fallimento non cambia il contenuto visibile); ZIP portabile. |
 | G3 | PDF generato nel browser senza persistenza; canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`); nessun PDF in Storage. |
-| G4 | `startDigitalAttempt` con participant lock nome+cognome e token sessione cookie HttpOnly/Secure; log nome+IP; soluzioni non nel response; bozza/consegna immutabile. |
+| G4 | Gateway `startDigitalAttempt`/`continueDigitalAttempt` con participant lock nome+cognome e cookie HttpOnly/Secure; nessun write Firestore dal portale; log nome+IP; soluzioni non nel response; bozza/consegna immutabile; reset controllato e auditato. |
 | G5 | Correzione, audit, eliminazione ed export solo docente; export non persistito. |
 | G6/G7 (V2) | C-02 risolta / C-03; AI senza web; audit completo; opt-in; rollback verificato. |

@@ -1,6 +1,6 @@
 # SchoolForge — Analisi dei requisiti
 
-**Versione:** 4.1
+**Versione:** 4.2
 **Data:** 24 giugno 2026
 **Stato:** baseline funzionale approvata
 **Input vincolante:** `documentazione/brief.md`
@@ -28,7 +28,7 @@ In caso di conflitto prevalgono: obblighi di legge applicabili, decisioni esplic
 |---|---|---|
 | D-01 | Lo studente dichiara nome e cognome (auto-dichiarati, non verificati); il sistema registra nome+IP+timestamp+user-agent come audit trail. | Nessuna autenticazione né email nel Portale; il canale digitale blocca un solo tentativo per verifica e nome+cognome normalizzati. |
 | D-02 | Il docente non dipende da Google Workspace for Education. | Firebase Authentication gestisce l'accesso docente; Google Workspace non è richiesto. |
-| D-03 | Non serve ricreare una verifica passata dopo modifiche alle lezioni. | Non è richiesto versionare l'intero repository. La configurazione della verifica è sempre modificabile dal docente; l'unico elemento immutabile è lo snapshot di un tentativo digitale, che conserva le domande effettivamente mostrate dal momento dell'avvio. |
+| D-03 | Non serve ricreare una verifica passata dopo modifiche alle lezioni. | Non è richiesto versionare l'intero repository: un solo `activeImportId` è visibile. La configurazione è modificabile solo in bozza; snapshot pubblicato e tentativo digitale conservano le domande effettivamente assegnate. |
 | D-04 | La generazione AI di domande è eliminata. | I pool Markdown sono l'unica fonte delle domande. L'AI rimane solo nel Modulo 5 (correzione), fuori scope V1 / pianificato per V2. |
 | D-05 | Il sistema non invia email agli studenti. | Il canale cartaceo genera il PDF direttamente nel browser dello studente; nessun provider email è richiesto nei Moduli 1–4. |
 | D-06 | PDF, export e programma svolto sono generati nel browser. | Nessuna Cloud Function per la generazione di documenti; `@react-pdf/renderer` nel client. |
@@ -99,7 +99,7 @@ Registro elettronico, presenze, compiti, chat, forum, videolezioni, LMS, social 
 
 **BR-DOM-02.** Una lezione senza pool è valida e visualizzabile, ma non fornisce domande per la generazione delle verifiche.
 
-**BR-DOM-03.** Il sistema non è un archivio di versioni dei Markdown. File e asset correnti sono la conoscenza corrente; l'export repository restituisce tale stato corrente.
+**BR-DOM-03.** Il sistema non è un archivio di versioni dei Markdown. Ogni import crea un `importId` tecnico invisibile alla UI; il puntatore `activeImportId` seleziona un solo stato corrente e l'export repository restituisce soltanto tale stato. Snapshot non attivi sono staging/recupero operativo, non cronologia di prodotto.
 
 ## 5. Repository didattico e programma svolto — Modulo 1
 
@@ -122,6 +122,8 @@ In V1 il docente produce i file Markdown esternamente (con strumenti AI come Cla
 **BR-REP-01.** Il sistema non modifica semanticamente il Markdown importato. I metadati operativi sono conservati separatamente dai file originali.
 
 **BR-REP-02.** Il `questionIndex` è riallineato esclusivamente tramite re-import tramite l'interfaccia. Modifiche dirette ai file in Cloud Storage senza re-import non sono supportate e lasciano l'indice desincronizzato. In caso di desincronizzazione, re-importare le lezioni interessate.
+
+**BR-REP-03.** L'import segue `preflight → upload isolato → commit di visibilità`: parser e indice vengono preparati sotto un nuovo `importId`; solo una transazione Firestore che aggiorna `activeImportId` rende insieme visibili file, metadati e indice. Un errore prima del commit non modifica il Programma corrente; gli oggetti isolati sono rimovibili dal docente e soggetti a cleanup.
 
 **AC-REP-01.** Data una UDA con una lezione valida e un pool non valido, il rendering della lezione funziona e la UI mostra gli errori del pool con file, domanda e campo interessati.
 
@@ -197,13 +199,13 @@ questions:
 
 **FR-VER-01.** Il docente crea una verifica con: titolo, una o più UDA e/o lezioni sorgenti, numero totale di domande, tipi ammessi, difficoltà ammesse e minimo per ciascuna difficoltà scelta, modalità variante e canale o canali abilitati, e classi associate (opzionale).
 
-**BR-VER-01.** Una verifica percorre gli stati `bozza`, `attiva` (aperta), `chiusa`, `archiviata`. La configurazione della verifica è sempre modificabile dal docente, anche dopo l'attivazione; l'attivazione apre il link e non congela la configurazione. La chiusura impedisce nuovi tentativi; l'archiviazione la nasconde dalle normali viste operative senza eliminare le consegne digitali. L'unico elemento immutabile è lo snapshot di un tentativo digitale (vedi BR-POR-02): la configurazione della verifica è sempre modificabile; lo snapshot di un tentativo è immutabile dal momento dell'avvio.
+**BR-VER-01.** Una verifica percorre gli stati `bozza`, `attiva` (aperta), `chiusa`, `archiviata`. Solo la bozza è modificabile. L'attivazione crea il `publishedSnapshot`, congela configurazione, fonti, regole di selezione e selezione comune; la chiusura impedisce nuovi tentativi; l'archiviazione la nasconde dalle normali viste operative senza eliminare consegne o snapshot necessari. Per riusare una prova il docente duplica la bozza in una nuova verifica.
 
 **BR-VER-02.** Non sono richiesti calendario, durata configurabile, cronometro o chiusura automatica nella V1.
 
 **BR-VER-03.** Il sistema blocca l'attivazione se non esistono fonti selezionate, tipi o difficoltà ammessi, se il totale è minore di uno, se la somma dei minimi supera il totale oppure se il pool corrente non contiene abbastanza domande eleggibili.
 
-**BR-VER-04.** La configurazione della verifica può essere modificata dal docente in qualsiasi momento. Anche lezioni e pool possono evolvere: una nuova generazione per uno studente che non ha ancora avviato un tentativo usa la configurazione e i contenuti correnti. Lo snapshot di un tentativo già avviato resta immutabile.
+**BR-VER-04.** Lezioni e pool possono evolvere per verifiche future, ma non alterano una verifica attiva: generazione digitale, PDF cartaceo, correzione ed export leggono il `publishedSnapshot`. Per `tutte_uguali` il sistema conserva una selezione comune; per `tutte_diverse` conserva l'insieme eleggibile e genera dal medesimo insieme per ogni participant lock. Il canale cartaceo richiede `tutte_uguali`.
 
 ### 8.2 Algoritmo di selezione
 
@@ -245,11 +247,13 @@ questions:
 
 **BR-POR-01.** Da quando un tentativo digitale è avviato, nome e cognome normalizzati sono bruciati anche se la consegna non viene completata: un secondo avvio digitale con la stessa coppia per la stessa verifica è rifiutato. Il lock limita il tentativo ma non certifica l'identità.
 
+**FR-POR-07.** Il docente può resettare un tentativo solo nello stato `in_corso`, con conferma e motivazione obbligatoria. Il reset marca il tentativo `annullato`, invalida il cookie di sessione, rilascia il participant lock e registra audit; non riapre una consegna `consegnato`.
+
 ### 10.2 Svolgimento, salvataggio e consegna
 
 **FR-POR-03.** Il Portale mostra le domande in sequenza verticale. Ogni domanda espone tipo, difficoltà, peso, punteggio massimo e un controllo di risposta coerente con il tipo.
 
-**FR-POR-04.** Le risposte devono essere salvate automaticamente come bozza. Un refresh nello stesso browser deve consentire la ripresa del tentativo senza assegnare nuove domande.
+**FR-POR-04.** Le risposte devono essere salvate automaticamente come bozza. Ripresa, salvataggio e consegna usano `continueDigitalAttempt`, che verifica il cookie server-side; il Portale non accede direttamente a tentativi o risposte in Firestore. Un refresh nello stesso browser deve consentire la ripresa del tentativo senza assegnare nuove domande.
 
 **FR-POR-05.** L'header sticky mostra il nome dichiarato e il comando `Consegna`. Prima della consegna il sistema richiede conferma e segnala le domande senza risposta.
 
@@ -405,10 +409,10 @@ La futura architettura e l'implementazione sono conformi solo se dimostrano con 
 
 1. Markdown e asset restano esportabili e leggibili senza SchoolForge;
 2. un pool invalido non compromette la lezione ma non può generare domande;
-3. la configurazione della verifica resta sempre modificabile; lo snapshot di un tentativo digitale è immutabile dal momento dell'avvio;
+3. l'import incompleto non diventa visibile; la configurazione è modificabile solo in bozza e snapshot pubblicato/tentativo digitale restano immutabili;
 4. lo studente dichiara nome e cognome non verificati; ogni accesso è tracciato con nome+IP+timestamp+user-agent e il tentativo digitale usa un lock concorrente per verifica e nome+cognome normalizzati;
 5. il PDF cartaceo è generato nel browser senza persistenza e senza creare record di tentativo o di accesso; il download docente non altera alcuno stato;
-6. un tentativo digitale riprende nello stesso browser con le stesse domande e diventa immutabile alla consegna;
+6. un tentativo digitale riprende nello stesso browser con le stesse domande e diventa immutabile alla consegna; nessun client portale scrive direttamente tentativi o risposte e il docente può annullare soltanto un tentativo in corso, con audit;
 7. soluzioni e opzioni corrette non sono mai esposte al Portale;
 8. percentuali e rettifiche sono calcolabili e tracciabili senza gestire voti;
 9. l'AI non genera domande, non usa il web, non è necessaria ai flussi manuali;

@@ -1,6 +1,6 @@
 # SchoolForge — Registro delle decisioni
 
-**Versione:** 1.1
+**Versione:** 1.2
 **Stato:** indice piatto di tutte le decisioni di prodotto, requisiti e architettura
 **Input vincolanti:** `brief.md`, `analisi-requisiti.md`, `architettura.md`
 
@@ -23,7 +23,7 @@ Legenda stato:
 |---|---|---|---|---|
 | D-01 | Identità studente non verificata e limite digitale | ✅ Chiusa | analisi-requisiti.md | Lo studente dichiara nome e cognome (auto-dichiarati, non verificati); il canale digitale consente un tentativo per verifica e nome+cognome normalizzati. |
 | D-02 | Indipendenza da Google Workspace | ✅ Chiusa | analisi-requisiti.md | Firebase Authentication gestisce l'accesso docente senza Google Workspace for Education. |
-| D-03 | Nessun versioning del repository | ✅ Chiusa | analisi-requisiti.md | Configurazione immutabile e snapshot della consegna; non si versiona l'intero repository. |
+| D-03 | Nessun versioning del repository | ✅ Chiusa | analisi-requisiti.md | Import isolati con un solo `activeImportId` visibile; configurazione pubblicata e snapshot della consegna immutabili; non si versiona l'intero repository. |
 | D-04 | Nessuna generazione AI di domande | ✅ Chiusa | analisi-requisiti.md | I pool Markdown sono l'unica fonte; l'AI resta confinata alla correzione (V2). |
 | D-05 | Nessun invio email agli studenti | ✅ Chiusa | analisi-requisiti.md | Il canale cartaceo genera il PDF nel browser; nessun provider email. |
 | D-06 | PDF ed export generati nel browser | ✅ Chiusa | analisi-requisiti.md | `@react-pdf/renderer` nel client; nessuna Cloud Function per i documenti. |
@@ -39,14 +39,15 @@ Legenda stato:
 |---|---|---|---|---|
 | ADR-01 | Firebase come piattaforma | ✅ Chiusa | architettura.md | Piattaforma gestita Firebase di proprietà del Docente. |
 | ADR-02 | SPA unica con routing | ✅ Chiusa | architettura.md | Una sola app React con `/teacher/*` e `/exam/:token`. |
-| ADR-03 | Cloud Functions minime | ✅ Chiusa | architettura.md | Solo `startDigitalAttempt` (M3) e AI (M5/V2). |
+| ADR-03 | Gateway digitale e AI in Cloud Functions | ✅ Chiusa | architettura.md | M3 usa solo `startDigitalAttempt` e `continueDigitalAttempt`; AI resta in M5/V2. Il Portale non scrive tentativi direttamente. |
 | ADR-04 | Firestore operativo, Storage canonico | ✅ Chiusa | architettura.md | Markdown/asset in Storage; Firestore per stato e dati operativi. |
 | ADR-05 | Auth per il solo docente | ✅ Chiusa | architettura.md | `auth.uid == ownerUid` nelle Security Rules e server-side. |
 | ADR-06 | Portale pubblico, lock partecipante e token sessione | ✅ Chiusa | architettura.md | Link non enumerabile; lock digitale per verifica e nome+cognome normalizzati; token sessione firmato server-side via cookie sicuro. |
-| ADR-07 | Snapshot al tentativo, immutabile alla consegna | ✅ Chiusa | architettura.md | Snapshot con soluzioni private creato all'avvio digitale. |
+| ADR-07 | Snapshot pubblicato e al tentativo | ✅ Chiusa | architettura.md | Snapshot privato di fonti/regole/candidati creato all'attivazione; snapshot con soluzioni private creato all'avvio digitale. |
 | ADR-08 | PDF generati nel browser | ✅ Chiusa | architettura.md | Nessun PDF su server o Storage. |
 | ADR-09 | Secret Manager solo per AI | ✅ Chiusa | architettura.md | Introdotto solo in M5 (V2) per la chiave API AI. |
 | ADR-10 | Export globale da snapshot digitali | ✅ Chiusa | architettura.md | `Esporta verifiche` legge consegne definitive e snapshot. |
+| ADR-11 | Visibilità atomica dell'import | ✅ Chiusa | architettura.md | Storage e indici sono preparati sotto `importId`; una transazione aggiorna `activeImportId` solo a import completo. |
 
 ---
 

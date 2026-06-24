@@ -64,7 +64,7 @@ Un pacchetto può partire solo se:
 2. Verificare il DoR e dichiarare subito un blocco reale.
 3. Implementare solo lo scope assegnato.
 4. Eseguire i test dichiarati e aggiungere test per regressioni introdotte.
-5. Confrontare il diff con i vincoli: no account studenti, no email, no PDF persistenti, no AI in V1 (M5 è V2), no ampliamento LMS, nessuna Cloud Function aggiuntiva oltre `startDigitalAttempt`; il limite digitale usa verifica più nome/cognome normalizzati.
+5. Confrontare il diff con i vincoli: no account studenti, no email, no PDF persistenti, no AI in V1 (M5 è V2), no ampliamento LMS, nessuna Cloud Function oltre al gateway M3 `startDigitalAttempt`/`continueDigitalAttempt`; il limite digitale usa verifica più nome/cognome normalizzati.
 6. Consegnare handoff con file, test, evidenze, rischi e dipendenze sbloccate.
 
 ### 3.3 Definition of Done (DoD)
@@ -132,7 +132,7 @@ flowchart TD
     M2B --> M2D
     M2C --> M2D
     M2D --> G3
-    G3 --> M3A["M3-A startDigitalAttempt Function"]
+    G3 --> M3A["M3-A Gateway digitale Functions"]
     M3A --> M3B["M3-B UI Portale"]
     M3A --> M3C["M3-C Bozza e consegna"]
     M3B --> M3D["M3-D Integrazione Portale"]
@@ -167,7 +167,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
 | M1-A | Validazione client-side di UDA, lezioni e pool con `lesson-contract`; errori strutturati file/domanda/campo. | F-03/F-04 | M1-C | Pool invalido non invalida la lezione; fixture complete. |
-| M1-B | Import diretto su Cloud Storage e Firestore (Security Rules); update `questionIndex`. | M1-A/F-04 | M1-C | Import valido visibile; fallimento non lascia contenuti parziali. |
+| M1-B | Import isolato su Cloud Storage e Firestore (Security Rules), commit `activeImportId`, indice per import e cleanup. | M1-A/F-04 | M1-C | Import valido visibile; fallimento non altera il Programma corrente. |
 | M1-C | Shell docente: sessione Auth, layout responsive, tema chiaro/scuro, errori e conferme comuni. | F-01/F-04 | M1-A/M1-B | Owner accede; non-owner non entra; test accessibilità base. |
 | M1-D | CRUD Programmi/UDA/Lezioni, navigazione struttura didattica, flag "svolto" per programma svolto. | M1-B/M1-C | — | Struttura navigabile e operazioni auditabili. |
 | M1-E | Rendering Markdown sanitizzato, asset, esclusione pool; export ZIP; programma svolto in PDF e Markdown generati nel browser. | M1-D | — | ZIP portabile, rendering senza soluzioni, programma svolto corretto in entrambi i formati. |
@@ -180,10 +180,10 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
-| M2-A | Dominio verifica: stati, configurazione (sempre modificabile dal docente), classi, validazione fonti, minimi, varianti. Transazioni Firestore client-side per attivazione/chiusura. | G2 | M2-B/M2-C | Attivazione invalida rifiutata; configurazione modificabile anche dopo l'attivazione; classi persistite. |
+| M2-A | Dominio verifica: stati, bozza modificabile, `publishedSnapshot` immutabile all'attivazione, classi, minimi e varianti. Transazioni Firestore client-side per attivazione/chiusura. | G2 | M2-B/M2-C | Attivazione invalida rifiutata; configurazione attiva immutabile; classi persistite. |
 | M2-B | UI docente: crea/modifica/attiva verifiche, gestione classi nelle impostazioni, messaggi di blocco comprensibili. | G2, contratto M2-A | M2-A/M2-C | Il docente non può superare vincoli da UI. |
 | M2-C | `VerificaPdfRenderer` browser unico (`mode="teacher" \| "student"`) con `@react-pdf/renderer`: PDF docente (intestazione vuota) e PDF studente (dati precompilati, soluzioni nascoste). | G2 | M2-A/M2-B | PDF conforme ai campi del brief; mode student senza soluzioni; nessun file in Storage. |
-| M2-D | Canale cartaceo: link pubblico, generazione PDF nel browser, download diretto. Nessun record di tentativo né accessLog; al più incremento atomico di `downloadCount`. | M2-A/M2-B/M2-C | — | Nessun record di tentativo o accesso creato; nessun lock; nessun PDF persistito. |
+| M2-D | Canale cartaceo: link pubblico, PDF dal `publishedProjection` nel browser e download diretto, solo variante `tutte_uguali`. Nessun record di tentativo né accessLog; al più incremento atomico di `downloadCount`. | M2-A/M2-B/M2-C | — | Nessun record di tentativo o accesso creato; nessun lock; nessun PDF persistito. |
 | M2-E | Test integrazione/E2E M2, evidenze G3. | M2-D | — | PDF browser verificato; canale cartaceo senza record. |
 
 ---
@@ -192,9 +192,9 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
-| M3-A | Cloud Function `startDigitalAttempt`: transazione Firestore (participant lock verifica+nome/cognome, tentativo, snapshot con soluzioni private), token sessione cookie HttpOnly/Secure. | G3 | — | Lock concorrente creato; snapshot creato; refresh non seleziona nuove domande; soluzioni non nel response body. |
+| M3-A | Gateway digitale Cloud Functions: `startDigitalAttempt` e `continueDigitalAttempt` per ripresa, bozza e consegna; transazione Firestore, participant lock, snapshot con soluzioni private e cookie HttpOnly/Secure. | G3 | — | Lock concorrente creato; refresh non seleziona nuove domande; salvataggi/consegna autorizzati lato server; soluzioni non nel response body. |
 | M3-B | UI Portale mobile-first: raccolta dati, scelta canale, sequenza domande, proiezione senza soluzioni. | M3-A, contratto endpoint | M3-C | Nessun menu/dato interno; uso da tastiera e mobile verificato. |
-| M3-C | Bozze, autosave, consegna immutabile, fullscreen/tab warning/copia-incolla UI. | M3-A | M3-B | Risposte riprendono nello stesso browser; consegna non modificabile. |
+| M3-C | Bozze, autosave, consegna immutabile e reset docente auditato; fullscreen/tab warning/copia-incolla UI. | M3-A | M3-B | Risposte riprendono nello stesso browser; consegna non modificabile; reset rilascia solo un tentativo in corso. |
 | M3-D | E2E e test negativi: lock nome+cognome, rate limit, soluzioni non accessibili. | M3-B/M3-C | — | Evidenze G4; nessuna soluzione ottenibile dal client. |
 
 ---
@@ -231,7 +231,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 - Sviluppo e test usano Emulator Suite e fixture sintetiche.
 - Nessuna VM, Cloud SQL, container sempre acceso, coda dedicata o servizio enterprise senza decisione documentata.
-- L'unica Cloud Function nella V1 è `startDigitalAttempt`; qualsiasi Function aggiuntiva proposta da un agente deve essere giustificata e approvata.
+- Le sole Cloud Functions nella V1 sono il gateway M3 `startDigitalAttempt` e `continueDigitalAttempt`; qualsiasi Function aggiuntiva proposta da un agente deve essere giustificata e approvata.
 - PDF e documenti generati nel browser, mai su server.
 - Il Docente controlla budget/avvisi prima del primo deploy `prod`.
 - In V2, ogni pacchetto che aggiunge una chiamata a provider esterno (AI) dichiara volume atteso e costo variabile.
@@ -460,15 +460,15 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 
 ### M3 — Portale digitale
 
-#### M3-A — startDigitalAttempt Function
+#### M3-A — Gateway digitale Functions
 
 | Campo | Valore |
 |---|---|
 | Prerequisiti | G3 |
-| File da creare | `functions/src/startDigitalAttempt.ts`, `functions/src/index.ts`, `src/types/functions.ts` |
-| File da modificare | `firestore.rules` (snapshot/accessLog) |
-| Test minimi | Participant lock creato; snapshot creato; refresh non seleziona nuove domande; soluzioni assenti dal body; secondo avvio con stesso nome/cognome → `PARTICIPANT_ALREADY_USED` |
-| Evidenza richiesta | Test integrazione Function; log accesso registrato |
+| File da creare | `functions/src/startDigitalAttempt.ts`, `functions/src/continueDigitalAttempt.ts`, `functions/src/index.ts`, `src/types/functions.ts` |
+| File da modificare | `firestore.rules` (nega il Portale su tentativi/risposte/snapshot; owner reset controllato) |
+| Test minimi | Participant lock e snapshot creati; refresh via cookie non seleziona nuove domande; bozza/consegna passano dal gateway; soluzioni assenti dal body; secondo avvio con stesso nome+cognome → `PARTICIPANT_ALREADY_USED`; cookie invalido rifiutato |
+| Evidenza richiesta | Test integrazione delle due Function; log accesso e audit registrati |
 
 #### M3-B — UI Portale
 
@@ -485,9 +485,9 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | Campo | Valore |
 |---|---|
 | Prerequisiti | M3-A |
-| File da creare | autosave, consegna immutabile, fullscreen/tab warning |
-| File da modificare | `firestore.rules` (answers) |
-| Test minimi | Risposte riprendono nello stesso browser; consegna non modificabile |
+| File da creare | autosave tramite gateway, consegna immutabile, reset docente, fullscreen/tab warning |
+| File da modificare | client Functions e UI docente del reset |
+| Test minimi | Risposte riprendono nello stesso browser; consegna non modificabile; reset solo di tentativo in corso con motivazione e audit |
 | Evidenza richiesta | E2E ripresa e consegna |
 
 #### M3-D — Integrazione Portale

@@ -1,25 +1,25 @@
-# SchoolForge â€” Project Concept Brief
+# SchoolForge — Project Concept Brief
 
 ### Scopo del Documento
 
 Questo documento descrive il concept del progetto SchoolForge.
 
-Il documento rappresenta la fonte di veritÃ  iniziale del progetto e deve essere utilizzato come input per una successiva Analisi dei Requisiti.
+Il documento rappresenta la fonte di verità iniziale del progetto e deve essere utilizzato come input per una successiva Analisi dei Requisiti.
 
-L'obiettivo di questo documento non Ã¨ descrivere la soluzione tecnica.
+L'obiettivo di questo documento non è descrivere la soluzione tecnica.
 
-L'obiettivo Ã¨ descrivere:
+L'obiettivo è descrivere:
 
 * il problema da risolvere;
 * la visione del prodotto;
 * il perimetro del progetto;
-* le decisioni giÃ  prese;
+* le decisioni già prese;
 * i vincoli progettuali;
 * la roadmap prevista.
 
 Le decisioni esplicitamente dichiarate in questo documento devono essere considerate deliberate.
 
-L'analisi successiva puÃ² proporre miglioramenti tecnici ma non deve alterare gli obiettivi fondamentali del progetto.
+L'analisi successiva può proporre miglioramenti tecnici ma non deve alterare gli obiettivi fondamentali del progetto.
 
 ---
 
@@ -36,7 +36,7 @@ Un docente gestisce normalmente:
 * correzioni;
 * archiviazione delle prove.
 
-Oggi queste attivitÃ  sono normalmente distribuite tra strumenti differenti:
+Oggi queste attività sono normalmente distribuite tra strumenti differenti:
 
 * documenti Word;
 * PDF;
@@ -48,22 +48,22 @@ Oggi queste attivitÃ  sono normalmente distribuite tra strumenti differenti:
 Questo comporta:
 
 * duplicazione del lavoro;
-* scarsa riusabilitÃ  dei contenuti;
-* difficoltÃ  di manutenzione;
-* difficoltÃ  di tracciabilitÃ ;
+* scarsa riusabilità dei contenuti;
+* difficoltà di manutenzione;
+* difficoltà di tracciabilità;
 * perdita di conoscenza nel tempo.
 
-Il problema principale non Ã¨ la generazione delle verifiche.
+Il problema principale non è la generazione delle verifiche.
 
-Il problema principale Ã¨ l'assenza di una base di conoscenza didattica centralizzata da cui possano derivare tutte le altre attivitÃ .
+Il problema principale è l'assenza di una base di conoscenza didattica centralizzata da cui possano derivare tutte le altre attività.
 
 ---
 
 ## Visione
 
-SchoolForge Ã¨ un repository didattico Markdown-first.
+SchoolForge è un repository didattico Markdown-first.
 
-La conoscenza didattica Ã¨ l'asset principale del sistema.
+La conoscenza didattica è l'asset principale del sistema.
 
 Le lezioni rappresentano la fonte unica della conoscenza.
 
@@ -95,27 +95,27 @@ Il sistema deve essere un consumatore della conoscenza.
 
 La perdita del sistema non deve comportare la perdita dei contenuti.
 
-In V1 il docente produce i file Markdown esternamente (con strumenti AI come Claude o GPT, o manualmente). SchoolForge importa e valida il contenuto. Un editor integrato Ã¨ pianificato per V2.
+In V1 il docente produce i file Markdown esternamente (con strumenti AI come Claude o GPT, o manualmente). SchoolForge importa e valida il contenuto. Un editor integrato è pianificato per V2.
 
 ---
 
 ### Knowledge First
 
-La conoscenza Ã¨ l'asset principale.
+La conoscenza è l'asset principale.
 
-Le funzionalitÃ  del sistema sono derivate dalla conoscenza.
+Le funzionalità del sistema sono derivate dalla conoscenza.
 
-La progettazione deve sempre privilegiare la conservazione e l'organizzazione della conoscenza rispetto alle funzionalitÃ  accessorie.
+La progettazione deve sempre privilegiare la conservazione e l'organizzazione della conoscenza rispetto alle funzionalità accessorie.
 
 ---
 
 ### AI Optional
 
-L'intelligenza artificiale non Ã¨ un prerequisito del sistema.
+L'intelligenza artificiale non è un prerequisito del sistema.
 
 Il sistema deve essere utilizzabile anche senza AI.
 
-L'AI rappresenta una capacitÃ  aggiuntiva e non una dipendenza architetturale.
+L'AI rappresenta una capacità aggiuntiva e non una dipendenza architetturale.
 
 ---
 
@@ -129,13 +129,13 @@ Ogni rilascio deve produrre valore autonomo.
 
 ### Minimalista ma Eccellente
 
-Il sistema deve essere il piÃ¹ semplice possibile nella sua architettura.
+Il sistema deve essere il più semplice possibile nella sua architettura.
 
 Ogni componente aggiuntivo deve giustificare la propria esistenza.
 
-La qualitÃ  dell'esperienza utente non Ã¨ negoziabile: design moderno, responsivo e graficamente curato.
+La qualità dell'esperienza utente non è negoziabile: design moderno, responsivo e graficamente curato.
 
-Il costo operativo deve restare il piÃ¹ basso possibile: nessun servizio sempre acceso, nessun componente enterprise o integrazione a pagamento senza una necessitÃ  concreta. L'uso di Firebase Blaze Ã¨ richiesto, ma il progetto deve usare prima le quote incluse e pagare solo il consumo strettamente necessario.
+Il costo operativo deve restare il più basso possibile: nessun servizio sempre acceso, nessun componente enterprise o integrazione a pagamento senza una necessità concreta. L'uso di Firebase Blaze è richiesto, ma il progetto deve usare prima le quote incluse e pagare solo il consumo strettamente necessario.
 
 ---
 
@@ -159,7 +159,7 @@ Gli studenti non hanno un account SchoolForge.
 
 Gli studenti accedono esclusivamente alla sezione Portale dell'applicazione tramite il link aperto di una verifica.
 
-Gli studenti non si registrano al sistema. Al momento dell'accesso lo studente dichiara nome e cognome: sono dati auto-dichiarati, non verificati, nÃ© una credenziale nÃ© una prova dell'identitÃ . Nel canale digitale la coppia nome+cognome normalizzata consente un solo tentativo per verifica; non viene mai usata l'email. Il sistema registra nome dichiarato, indirizzo IP, timestamp e user-agent come audit trail consultabile dal docente nel Report Accessi.
+Gli studenti non si registrano al sistema. Al momento dell'accesso lo studente dichiara nome e cognome: sono dati auto-dichiarati, non verificati, né una credenziale né una prova dell'identità. Nel canale digitale la coppia nome+cognome normalizzata consente un solo tentativo per verifica; non viene mai usata l'email. Il sistema registra nome dichiarato, indirizzo IP, timestamp e user-agent come audit trail consultabile dal docente nel Report Accessi.
 
 ---
 
@@ -167,37 +167,37 @@ Gli studenti non si registrano al sistema. Al momento dell'accesso lo studente d
 
 ### Accesso del Docente
 
-Il Docente deve poter accedere all'applicazione mediante un'identitÃ  autenticata.
+Il Docente deve poter accedere all'applicazione mediante un'identità autenticata.
 
-SchoolForge usa Firebase Authentication ma non richiede Google Workspace for Education. Il metodo di autenticazione del Docente Ã¨ configurabile nell'ambiente Firebase, purchÃ© garantisca l'accesso esclusivo al Docente proprietario nella V1.
+SchoolForge usa Firebase Authentication ma non richiede Google Workspace for Education. Il metodo di autenticazione del Docente è configurabile nell'ambiente Firebase, purché garantisca l'accesso esclusivo al Docente proprietario nella V1.
 
 Gli studenti non devono disporre di account Google, account SchoolForge o preregistrazione.
 
 ### Firebase e dati applicativi
 
-SchoolForge usa un progetto Firebase di proprietÃ  del Docente come ambiente applicativo. I dati applicativi persistenti devono essere creati nella regione di Milano `europe-west8`, ove il singolo servizio Firebase/Google Cloud lo supporti.
+SchoolForge usa un progetto Firebase di proprietà del Docente come ambiente applicativo. I dati applicativi persistenti devono essere creati nella regione di Milano `europe-west8`, ove il singolo servizio Firebase/Google Cloud lo supporti.
 
-Firebase Hosting puÃ² usare una rete di distribuzione globale e Firebase Authentication Ã¨ un servizio gestito con proprie caratteristiche di localizzazione. SchoolForge non dichiara quindi che ogni elaborazione tecnica avvenga esclusivamente in Italia; la decisione di regione riguarda database, file applicativi e runtime backend.
+Firebase Hosting può usare una rete di distribuzione globale e Firebase Authentication è un servizio gestito con proprie caratteristiche di localizzazione. SchoolForge non dichiara quindi che ogni elaborazione tecnica avvenga esclusivamente in Italia; la decisione di regione riguarda database, file applicativi e runtime backend.
 
 ### Connessione internet
 
-SchoolForge Ã¨ un'applicazione web con backend serverless. Non esiste una modalitÃ  offline.
+SchoolForge è un'applicazione web con backend serverless. Non esiste una modalità offline.
 
 ---
 
 ## Contratto di Uscita
 
-SchoolForge garantisce che la conoscenza didattica del Docente rimanga di sua proprietÃ  e sia recuperabile indipendentemente dalla disponibilitÃ  della piattaforma.
+SchoolForge garantisce che la conoscenza didattica del Docente rimanga di sua proprietà e sia recuperabile indipendentemente dalla disponibilità della piattaforma.
 
-### Cosa il Docente puÃ² sempre recuperare
+### Cosa il Docente può sempre recuperare
 
 * **File Markdown originali e asset**: esportabili in qualsiasi momento tramite la funzione "Export repository". Il file ZIP contiene i file nella struttura originale, leggibili con qualsiasi editor di testo, senza dipendenza da SchoolForge.
 * **Dati operativi** (configurazioni verifiche, log accessi, consegne digitali, correzioni): esportabili tramite la funzione di export del sistema in formati standard e leggibili indipendentemente dalla piattaforma.
 
 ### Cosa non viene recuperato automaticamente
 
-* Il rendering web delle lezioni (dipende dall'applicazione; il Markdown Ã¨ autonomo).
-* I PDF delle verifiche: non vengono mai conservati dal sistema; il docente ne Ã¨ responsabile una volta scaricati.
+* Il rendering web delle lezioni (dipende dall'applicazione; il Markdown è autonomo).
+* I PDF delle verifiche: non vengono mai conservati dal sistema; il docente ne è responsabile una volta scaricati.
 
 ---
 
@@ -205,14 +205,14 @@ SchoolForge garantisce che la conoscenza didattica del Docente rimanga di sua pr
 
 ```
 Programma
-    â†“
-  UDA  â†â”€â”€ UDA.md (titolo, competenze, obiettivi...)
-    â†“
- Lezione â†â”€â”€ lezione.md (contenuto didattico)
+    ↓
+  UDA  ←── UDA.md (titolo, competenze, obiettivi...)
+    ↓
+ Lezione ←── lezione.md (contenuto didattico)
              lezione.pool.md (pool domande)
-    â†“
+    ↓
 Conoscenza Didattica
-    â†“
+    ↓
 Verifiche on-demand / Correzioni / Analisi future
 ```
 
@@ -228,40 +228,40 @@ Esempi:
 * TPSIT Quarto Anno
 * Sistemi e Reti Terzo Anno
 
-Un programma contiene una o piÃ¹ UDA.
+Un programma contiene una o più UDA.
 
 ### Programma Svolto
 
-Il docente puÃ² selezionare le UDA e le lezioni effettivamente svolte nel corso dell'anno e scaricare il programma svolto in due formati:
+Il docente può selezionare le UDA e le lezioni effettivamente svolte nel corso dell'anno e scaricare il programma svolto in due formati:
 
-* **Markdown** â€” file portabile, leggibile con qualsiasi editor, consegnabile digitalmente.
-* **PDF** â€” generato on-demand nel browser, pronto per la stampa e il deposito presso l'istituto.
+* **Markdown** — file portabile, leggibile con qualsiasi editor, consegnabile digitalmente.
+* **PDF** — generato on-demand nel browser, pronto per la stampa e il deposito presso l'istituto.
 
 Struttura del contenuto generato:
 
 ```
-Programma: TPSIT â€” Terzo Anno
+Programma: TPSIT — Terzo Anno
 Anno scolastico: 2025/2026
 
-UDA 1 â€” Reti e Protocolli
-  â€¢ Lezione 1 â€” Introduzione a TCP/IP
-  â€¢ Lezione 2 â€” HTTP e HTTPS
+UDA 1 — Reti e Protocolli
+  • Lezione 1 — Introduzione a TCP/IP
+  • Lezione 2 — HTTP e HTTPS
 
-UDA 2 â€” Sicurezza Informatica
-  â€¢ Lezione 1 â€” Crittografia simmetrica
+UDA 2 — Sicurezza Informatica
+  • Lezione 1 — Crittografia simmetrica
 ```
 
 ---
 
 ## UDA
 
-Le UDA rappresentano l'unitÃ  organizzativa principale all'interno di un Programma.
+Le UDA rappresentano l'unità organizzativa principale all'interno di un Programma.
 
-Ogni UDA Ã¨ rappresentata da un file `uda-XX-titolo.md` con front matter YAML contenente almeno: titolo, competenze, obiettivi.
+Ogni UDA è rappresentata da un file `uda-XX-titolo.md` con front matter YAML contenente almeno: titolo, competenze, obiettivi.
 
-Le lezioni appartengono all'UDA per posizione nella cartella. Non Ã¨ necessaria una lista manuale.
+Le lezioni appartengono all'UDA per posizione nella cartella. Non è necessaria una lista manuale.
 
-Le verifiche possono essere generate da una singola lezione, da piÃ¹ lezioni o da una o piÃ¹ UDA complete.
+Le verifiche possono essere generate da una singola lezione, da più lezioni o da una o più UDA complete.
 
 ---
 
@@ -269,12 +269,12 @@ Le verifiche possono essere generate da una singola lezione, da piÃ¹ lezioni o
 
 Le lezioni sono composte da due file Markdown:
 
-* `lezione-XXX-titolo.md` â€” contenuto didattico puro: testo, immagini, obiettivi, domande di autoverifica.
-* `lezione-XXX-titolo.pool.md` â€” pool delle domande di verifica associate a quella lezione, non esposte nella fruizione della lezione.
+* `lezione-XXX-titolo.md` — contenuto didattico puro: testo, immagini, obiettivi, domande di autoverifica.
+* `lezione-XXX-titolo.pool.md` — pool delle domande di verifica associate a quella lezione, non esposte nella fruizione della lezione.
 
 Le lezioni vengono create e modificate esternamente al sistema.
 
-In V1 il docente produce i file Markdown esternamente (con strumenti AI come Claude o GPT, o manualmente). SchoolForge importa e valida il contenuto. Un editor integrato Ã¨ pianificato per V2.
+In V1 il docente produce i file Markdown esternamente (con strumenti AI come Claude o GPT, o manualmente). SchoolForge importa e valida il contenuto. Un editor integrato è pianificato per V2.
 
 Il sistema deve permettere:
 
@@ -283,9 +283,9 @@ Il sistema deve permettere:
 * sostituzione file;
 * eliminazione file.
 
-Per ridurre il tempo di avvio senza introdurre un editor, il Modulo 1 include un kit di template per Programma/UDA/Lezione/Pool e una dashboard di prontezza: struttura valida, lezioni senza pool, pool non validi e numero di domande eleggibili. Non genera contenuti nÃ© modifica i Markdown.
+Per ridurre il tempo di avvio senza introdurre un editor, il Modulo 1 include un kit di template per Programma/UDA/Lezione/Pool e una dashboard di prontezza: struttura valida, lezioni senza pool, pool non validi e numero di domande eleggibili. Non genera contenuti né modifica i Markdown.
 
-Il file pool Ã¨ opzionale. Se non esiste, la lezione Ã¨ valida e consultabile ma non contribuisce alla generazione delle verifiche.
+Il file pool è opzionale. Se non esiste, la lezione è valida e consultabile ma non contribuisce alla generazione delle verifiche.
 
 ---
 
@@ -298,18 +298,18 @@ Ogni domanda deve specificare:
 | Attributo | Valori possibili |
 |---|---|
 | `tipo` | `aperta` / `chiusa_singola` / `chiusa_multipla` |
-| `difficoltÃ ` | `1` / `2` / `3` |
+| `difficoltà` | `1` / `2` / `3` |
 | `peso` | `1` / `2` / `3` |
 | `testo` | testo della domanda |
 | `soluzione` | risposta (aperte) o opzioni corrette (chiuse) |
 
-**DifficoltÃ ** (scala `1`, `2`, `3`) determina quali domande vengono selezionate in fase di generazione (filtro e minimo garantito per livello).
+**Difficoltà** (scala `1`, `2`, `3`) determina quali domande vengono selezionate in fase di generazione (filtro e minimo garantito per livello).
 
-**Peso** (scala `1`, `2`, `3`) determina quanto conta la domanda nel punteggio finale (importanza didattica, lunghezza, centralitÃ  dell'argomento). Il peso non Ã¨ un secondo attributo di difficoltÃ : una domanda con `difficoltÃ ` 1 puÃ² avere `peso` 3, e viceversa.
+**Peso** (scala `1`, `2`, `3`) determina quanto conta la domanda nel punteggio finale (importanza didattica, lunghezza, centralità dell'argomento). Il peso non è un secondo attributo di difficoltà: una domanda con `difficoltà` 1 può avere `peso` 3, e viceversa.
 
-**Punteggio massimo per domanda** = `difficoltÃ  Ã— peso` (scala lineare, intervallo 1â€“9).
+**Punteggio massimo per domanda** = `difficoltà × peso` (scala lineare, intervallo 1–9).
 
-La percentuale finale Ã¨ calcolata come `Î£(punti assegnati) / Î£(punti massimi) Ã— 100`.
+La percentuale finale è calcolata come `Σ(punti assegnati) / Σ(punti massimi) × 100`.
 
 ---
 
@@ -326,7 +326,7 @@ Requisiti:
 * visualizzazione domande autoverifica;
 * esclusione delle domande del file pool dal rendering di fruizione.
 
-Non Ã¨ richiesta una modalitÃ  slide.
+Non è richiesta una modalità slide.
 
 ---
 
@@ -334,34 +334,34 @@ Non Ã¨ richiesta una modalitÃ  slide.
 
 Il docente configura la lista delle proprie classi nelle impostazioni dell'applicazione.
 
-La lista Ã¨ riutilizzata in due contesti:
+La lista è riutilizzata in due contesti:
 
-* **Configurazione verifica** â€” il docente puÃ² associare una verifica a una o piÃ¹ classi della lista.
-* **Portale Verifiche** â€” lo studente seleziona la propria classe da un menu a tendina; la classe non Ã¨ richiesta ed Ã¨ selezionabile tra le opzioni configurate dal docente.
+* **Configurazione verifica** — il docente può associare una verifica a una o più classi della lista.
+* **Portale Verifiche** — lo studente seleziona la propria classe da un menu a tendina; la classe non è richiesta ed è selezionabile tra le opzioni configurate dal docente.
 
 ---
 
 ## Generazione Verifiche
 
-Una verifica Ã¨ un insieme di impostazioni di configurazione, non un documento pre-generato.
+Una verifica è un insieme di impostazioni di configurazione, non un documento pre-generato.
 
 Il docente crea una verifica definendo:
 
 * titolo;
-* sorgente: una o piÃ¹ UDA e/o lezioni singole;
+* sorgente: una o più UDA e/o lezioni singole;
 * numero totale di domande;
 * tipo di domande da includere (aperte, chiuse o entrambe);
-* difficoltÃ  da includere, con numero minimo garantito per ciascun livello selezionato;
-* varianti: tutte uguali (seed fisso, tutti gli studenti ricevono le stesse domande) o tutte diverse (seed per tentativo, ogni studente riceve un set diverso);
+* difficoltà da includere, con numero minimo garantito per ciascun livello selezionato;
+* varianti: tutte uguali (una selezione comune pubblicata, tutti gli studenti ricevono le stesse domande) o tutte diverse (il gateway determina la selezione per ogni tentativo a partire dal set di candidati pubblicato);
 * classi associate (opzionale, dalla lista configurata).
 
-La configurazione della verifica Ã¨ sempre modificabile dal docente, anche dopo l'attivazione. L'unico elemento immutabile Ã¨ lo snapshot di un tentativo digitale: dal momento dell'avvio, la copia delle domande mostrate allo studente non cambia. La configurazione della verifica Ã¨ sempre modificabile; lo snapshot di un tentativo Ã¨ immutabile dal momento dell'avvio.
+La configurazione è modificabile solo finché la verifica è in bozza. All'attivazione il sistema congela fonti, regole, candidati e soluzioni in uno snapshot pubblicato; la verifica resta immutabile fino ad archiviazione. Per cambiare contenuto o configurazione il docente duplica una nuova bozza. Il canale cartaceo è disponibile solo con variante tutte uguali; ogni tentativo digitale conserva poi il proprio snapshot immutabile.
 
 Il PDF viene generato on-demand nel browser al momento della richiesta e non viene mai conservato dal sistema.
 
 ### Configurazione: validazione
 
-Se la somma dei minimi di difficoltÃ  supera il numero totale di domande configurato, il sistema blocca la configurazione con un messaggio esplicito prima dell'attivazione.
+Se la somma dei minimi di difficoltà supera il numero totale di domande configurato, il sistema blocca la configurazione con un messaggio esplicito prima dell'attivazione.
 
 ---
 
@@ -370,15 +370,15 @@ Se la somma dei minimi di difficoltÃ  supera il numero totale di domande confi
 Al momento della generazione, il sistema:
 
 1. raccoglie tutte le domande disponibili dalle lezioni/UDA selezionate;
-2. rispetta i minimi per livello di difficoltÃ ;
-3. completa il numero richiesto pescando casualmente tra le difficoltÃ  ammesse;
+2. rispetta i minimi per livello di difficoltà;
+3. completa il numero richiesto pescando casualmente tra le difficoltà ammesse;
 4. calcola il punteggio massimo per ogni domanda estratta.
 
 ---
 
 ## PDF della Verifica
 
-Il PDF Ã¨ generato nel browser tramite `@react-pdf/renderer` e scaricato direttamente senza persistenza sul server.
+Il PDF è generato nel browser tramite `@react-pdf/renderer` e scaricato direttamente senza persistenza sul server.
 
 Il PDF generato riporta in intestazione:
 
@@ -395,29 +395,29 @@ Seguono le domande con punteggio massimo indicato per ciascuna e spazio per la r
 
 ### Download docente
 
-Il docente puÃ² scaricare la verifica in qualsiasi momento, senza inserire dati e senza limitazioni. Il PDF generato ha i campi intestazione vuoti e compilabili a mano, utile per stampa, fotocopie ed erogazione cartacea tradizionale. Il download del docente non registra alcun accesso e non modifica lo stato della verifica.
+Il docente può scaricare la verifica in qualsiasi momento, senza inserire dati e senza limitazioni. Il PDF generato ha i campi intestazione vuoti e compilabili a mano, utile per stampa, fotocopie ed erogazione cartacea tradizionale. Il download del docente non registra alcun accesso e non modifica lo stato della verifica.
 
 ---
 
 ## Distribuzione e Canali di Erogazione
 
-Ogni verifica Ã¨ accessibile tramite un link generato dal sistema. La verifica non ha una lista di destinatari preassegnati: Ã¨ semplicemente **aperta** o **chiusa** dal docente. Chiunque disponga del link puÃ² accedere finchÃ© la verifica Ã¨ aperta. Il docente gestisce fisicamente la distribuzione del link (e degli eventuali token) in classe.
+Ogni verifica è accessibile tramite un link generato dal sistema. La verifica non ha una lista di destinatari preassegnati: è semplicemente **aperta** o **chiusa** dal docente. Chiunque disponga del link può accedere finché la verifica è aperta. Il docente gestisce fisicamente la distribuzione del link (e degli eventuali token) in classe.
 
 Il docente distribuisce il link tramite i canali che preferisce (bacheca scolastica, chat di classe).
 
-Se uno studente arriva tardi, il docente puÃ² consegnare una copia cartacea. Nel canale digitale, una coppia nome+cognome giÃ  usata non puÃ² avviare una seconda prova per la stessa verifica; non Ã¨ prevista la riapertura di un tentativo giÃ  inviato.
+Se uno studente arriva tardi, il docente può consegnare una copia cartacea. Nel canale digitale, una coppia nome+cognome già usata non può avviare una seconda prova per la stessa verifica; non è prevista la riapertura di un tentativo già inviato. Il docente può invece annullare un tentativo ancora in corso, dopo conferma e motivazione: il sistema registra l'audit, revoca la sessione e libera il lock.
 
 Lo studente apre il link e sceglie il canale:
 
-### Canale A â€” Cartaceo
+### Canale A — Cartaceo
 
-Il canale cartaceo Ã¨ puramente fisico. Il docente (o lo studente dal link aperto) clicca "Stampa/Scarica PDF": il PDF viene generato direttamente nel browser e scaricato, senza passare per il server. Il canale cartaceo **non** crea alcun record di tentativo (`deliveryAttempt`) e **non** registra alcun accesso. Se utile, un semplice contatore atomico `downloadCount` sul documento della verifica puÃ² essere incrementato a ogni download. Non c'Ã¨ alcun lock: il canale cartaceo non limita i download.
+Il canale cartaceo è puramente fisico. Il docente (o lo studente dal link aperto) clicca "Stampa/Scarica PDF": il PDF viene generato direttamente nel browser e scaricato, senza passare per il server. Il canale cartaceo **non** crea alcun record di tentativo (`deliveryAttempt`) e **non** registra alcun accesso. Se utile, un semplice contatore atomico `downloadCount` sul documento della verifica può essere incrementato a ogni download. Non c'è alcun lock: il canale cartaceo non limita i download.
 
-Lo studente svolge la verifica su carta o con qualsiasi strumento esterno. La consegna avviene fisicamente al docente. Il sistema non Ã¨ coinvolto nella correzione cartacea.
+Lo studente svolge la verifica su carta o con qualsiasi strumento esterno. La consegna avviene fisicamente al docente. Il sistema non è coinvolto nella correzione cartacea.
 
-### Canale B â€” Digitale (Portale Verifiche)
+### Canale B — Digitale (Portale Verifiche)
 
-Lo studente inserisce nome, cognome e, facoltativamente, classe. Chiunque abbia il link puÃ² avviare un tentativo digitale finchÃ© la verifica Ã¨ aperta, purchÃ© la stessa coppia nome+cognome normalizzata non abbia giÃ  avviato una prova per quella verifica. Il sistema crea il tentativo digitale tramite una Cloud Function che riserva questa coppia, genera il token di sessione, registra il log di accesso (nome, IP, timestamp, user-agent) e salva lo snapshot delle domande senza esporre soluzioni. Lo studente svolge la verifica direttamente nel portale. Il lock limita il tentativo ma non prova l'identitÃ .
+Lo studente inserisce nome, cognome e, facoltativamente, classe. Chiunque abbia il link può avviare un tentativo digitale finché la verifica è aperta, purché la stessa coppia nome+cognome normalizzata non abbia già avviato una prova per quella verifica. Il sistema crea il tentativo tramite una Cloud Function che riserva questa coppia, genera il token di sessione, registra il log di accesso (nome, IP, timestamp, user-agent) e salva lo snapshot delle domande senza esporre soluzioni. Ripresa, salvataggio bozza e consegna passano dalla stessa piccola superficie server-side, perché il cookie HttpOnly non è autorizzabile dalle Security Rules. Lo studente svolge la verifica direttamente nel portale. Il lock limita il tentativo ma non prova l'identità.
 
 Le risposte vengono salvate strutturate nel database operativo e sono disponibili per la correzione nel sistema.
 
@@ -425,19 +425,19 @@ Le risposte vengono salvate strutturate nel database operativo e sono disponibil
 
 ## Portale Verifiche
 
-Il Portale Verifiche Ã¨ una sezione dell'applicazione accessibile tramite URL pubblico dedicato (`/exam/:token`).
+Il Portale Verifiche è una sezione dell'applicazione accessibile tramite URL pubblico dedicato (`/exam/:token`).
 
 Requisiti:
 
 * design moderno, responsivo, mobile-first;
 * schermata di accesso essenziale: dati studente e scelta del canale;
 * schermata di svolgimento in fullscreen con tutte le domande in sequenza verticale;
-* ogni domanda mostra: tipo, difficoltÃ , peso, punteggio massimo e campo risposta;
+* ogni domanda mostra: tipo, difficoltà, peso, punteggio massimo e campo risposta;
 * header sticky con nome studente e bottone "Consegna" sempre visibile;
 * deterrenza di base: fullscreen obbligatorio, rilevamento uscita tab con avviso visibile, copia-incolla disabilitato nella UI;
 * zero menu, zero navigazione, zero elementi non necessari durante lo svolgimento.
 
-La deterrenza non Ã¨ sicurezza: un'uscita dal tab non annulla la verifica. Il docente Ã¨ l'anti-cheat reale.
+La deterrenza non è sicurezza: un'uscita dal tab non annulla la verifica. Il docente è l'anti-cheat reale.
 
 ---
 
@@ -445,7 +445,7 @@ La deterrenza non Ã¨ sicurezza: un'uscita dal tab non annulla la verifica. Il 
 
 ### Correzione Cartacea
 
-La correzione delle prove cartacee avviene interamente fuori dal sistema. SchoolForge non Ã¨ coinvolto.
+La correzione delle prove cartacee avviene interamente fuori dal sistema. SchoolForge non è coinvolto.
 
 ### Correzione Digitale
 
@@ -453,17 +453,17 @@ Le consegne digitali del Portale Verifiche sono disponibili nel sistema per la c
 
 Il docente visualizza domanda per domanda con la risposta dello studente e il punteggio massimo. Assegna un punteggio da 0 al massimo e un commento opzionale.
 
-La percentuale finale Ã¨ calcolata automaticamente: `Î£(punti assegnati) / Î£(punti massimi) Ã— 100`.
+La percentuale finale è calcolata automaticamente: `Σ(punti assegnati) / Σ(punti massimi) × 100`.
 
-SchoolForge non gestisce voti finali. La conversione percentuale in voto Ã¨ una decisione pedagogica del docente.
+SchoolForge non gestisce voti finali. La conversione percentuale in voto è una decisione pedagogica del docente.
 
-Ogni rettifica Ã¨ tracciata con valore precedente, nuovo valore e motivazione.
+Ogni rettifica è tracciata con valore precedente, nuovo valore e motivazione.
 
 ### Registro Correzioni
 
-Dalla UI di correzione il docente puÃ² aprire un popup **Registro Correzioni**: una tabella di verifica rapida con una riga per consegna corretta, con le colonne **Nome**, **Cognome**, **Punteggio**, **Percentuale** e **Data consegna**. Serve a controllare a colpo d'occhio gli esiti di una verifica.
+Dalla UI di correzione il docente può aprire un popup **Registro Correzioni**: una tabella di verifica rapida con una riga per consegna corretta, con le colonne **Nome**, **Cognome**, **Punteggio**, **Percentuale** e **Data consegna**. Serve a controllare a colpo d'occhio gli esiti di una verifica.
 
-Dallo stesso popup il docente puÃ², in via opzionale, esportare il registro come **PDF** o **CSV**. L'export Ã¨ generato on-demand nel browser e non viene conservato dal sistema. Questa vista sostituisce un'esportazione grezza su file da copiare e incollare.
+Dallo stesso popup il docente può, in via opzionale, esportare il registro come **PDF** o **CSV**. L'export è generato on-demand nel browser e non viene conservato dal sistema. Questa vista sostituisce un'esportazione grezza su file da copiare e incollare.
 
 ---
 
@@ -471,23 +471,23 @@ Dallo stesso popup il docente puÃ², in via opzionale, esportare il registro co
 
 Le verifiche svolte nel Portale Verifiche digitale devono poter essere esportate tutte insieme dal Docente tramite il comando **Esporta verifiche**.
 
-L'export Ã¨ costruito dalle consegne digitali definitive e dai rispettivi snapshot di verifica effettivamente assegnati allo studente. Non dipende dalla versione corrente delle lezioni o dei pool.
+L'export è costruito dalle consegne digitali definitive e dai rispettivi snapshot di verifica effettivamente assegnati allo studente. Non dipende dalla versione corrente delle lezioni o dei pool.
 
 Per ogni consegna inclusa, il documento di export deve contenere almeno:
 
-* dati dichiarati dallo studente: nome, cognome e classe se presente; piÃ¹ i dati di accesso (IP, timestamp) a fini di audit;
+* dati dichiarati dallo studente: nome, cognome e classe se presente; più i dati di accesso (IP, timestamp) a fini di audit;
 * dati della verifica: titolo, data e identificativo del tentativo;
-* domande effettivamente assegnate, con tipo, difficoltÃ , peso e punteggio massimo;
+* domande effettivamente assegnate, con tipo, difficoltà, peso e punteggio massimo;
 * risposta fornita per ogni domanda;
-* punteggio, commento e percentuale, se la correzione Ã¨ disponibile.
+* punteggio, commento e percentuale, se la correzione è disponibile.
 
 Le consegne sono ordinate per verifica e poi per data di consegna. Le consegne annullate o eliminate non fanno parte dell'export.
 
-L'export Ã¨ generato on-demand nel browser del Docente in tre formati:
+L'export è generato on-demand nel browser del Docente in tre formati:
 
-* **PDF** â€” documento unico pronto per la stampa e l'archiviazione;
-* **Markdown** â€” portabile e leggibile senza SchoolForge;
-* **CSV** â€” compatibile con Excel, Google Sheets e registro elettronico.
+* **PDF** — documento unico pronto per la stampa e l'archiviazione;
+* **Markdown** — portabile e leggibile senza SchoolForge;
+* **CSV** — compatibile con Excel, Google Sheets e registro elettronico.
 
 Il Docente sceglie il formato al momento dell'export. I file vengono scaricati senza persistenza sul server.
 
@@ -495,7 +495,7 @@ Il Docente sceglie il formato al momento dell'export. I file vengono scaricati s
 
 ## Correzione Assistita AI
 
-**Fuori scope V1 / pianificato per V2.** La correzione AI Ã¨ il Modulo 5 ed Ã¨ interamente rinviata alla V2. La descrizione seguente resta valida come specifica del modulo, ma non fa parte del perimetro V1.
+**Fuori scope V1 / pianificato per V2.** La correzione AI è il Modulo 5 ed è interamente rinviata alla V2. La descrizione seguente resta valida come specifica del modulo, ma non fa parte del perimetro V1.
 
 Richiede consegne digitali strutturate (Portale Verifiche).
 
@@ -503,21 +503,21 @@ Richiede consegne digitali strutturate (Portale Verifiche).
 
 Ridurre il tempo di correzione del docente mantenendo la governance del processo in mano al docente.
 
-### ModalitÃ  Assistita
+### Modalità Assistita
 
 L'AI propone punteggio, motivazione e commento per ogni risposta, con spiegazione degli errori.
 
 Il docente approva, modifica o rifiuta ogni proposta individualmente o in blocco.
 
-### ModalitÃ  Automatica
+### Modalità Automatica
 
 L'AI assegna e approva automaticamente la correzione.
 
 Attivabile solo con opt-in esplicito del docente per la specifica verifica o assegnazione.
 
-Ogni esito automatico Ã¨ marcato come tale e rimane modificabile.
+Ogni esito automatico è marcato come tale e rimane modificabile.
 
-Il docente puÃ² inserire una breve nota testuale di correzione che l'AI deve considerare per la specifica verifica o assegnazione.
+Il docente può inserire una breve nota testuale di correzione che l'AI deve considerare per la specifica verifica o assegnazione.
 
 ### Contesto di Correzione
 
@@ -558,20 +558,20 @@ Correzione manuale e percentuali: correzione consegne digitali, punteggi, percen
 
 ---
 
-### Modulo 5 â€” fuori scope V1 / pianificato per V2
+### Modulo 5 — fuori scope V1 / pianificato per V2
 
-Correzione Assistita AI: proposte assistite, approvazione massiva, modalitÃ  automatica opt-in. Spostato interamente alla V2.
+Correzione Assistita AI: proposte assistite, approvazione massiva, modalità automatica opt-in. Spostato interamente alla V2.
 
 ---
 
-## Decisione Operativa Formalizzata â€” C-01
+## Decisione Operativa Formalizzata — C-01
 
 | Voce | Decisione |
 |---|---|
-| Provider dell'ambiente | Firebase, su progetto di proprietÃ  del Docente. |
+| Provider dell'ambiente | Firebase, su progetto di proprietà del Docente. |
 | Regione dei dati applicativi | Milano `europe-west8`, ove supportata dal servizio. |
 | Backup | Markdown e asset in Cloud Storage sono portabili e protetti dalla ridondanza nativa di Storage (nessun job di backup dedicato). Per Firestore il Docente avvia un export manuale on-demand dalla pagina impostazioni; nessuno scheduler o cron. |
-| RPO | Best-effort: affidato all'export manuale Firestore eseguito dal Docente; non Ã¨ garantito un punto di ripristino entro un intervallo fisso. |
+| RPO | Best-effort: affidato all'export manuale Firestore eseguito dal Docente; non è garantito un punto di ripristino entro un intervallo fisso. |
 | RTO | Non garantito in V1. |
 | Responsabile operativo | Il Docente: proprietario del progetto, delle credenziali, del billing, dell'esecuzione degli export manuali e dell'avvio del ripristino. |
 
@@ -579,12 +579,12 @@ Correzione Assistita AI: proposte assistite, approvazione massiva, modalitÃ  a
 
 ## Decisioni Aperte
 
-In V1 non restano decisioni aperte bloccanti. Le decisioni C-02 e C-03 riguardano il Modulo 5 (AI), spostato interamente alla V2; non condizionano il rilascio della V1. C-02 Ã¨ inoltre risolta in linea di principio (vedi sotto).
+In V1 non restano decisioni aperte bloccanti. Le decisioni C-02 e C-03 riguardano il Modulo 5 (AI), spostato interamente alla V2; non condizionano il rilascio della V1. C-02 è inoltre risolta in linea di principio (vedi sotto).
 
 | ID | Decisione | Stato | Owner | Scadenza |
 |---|---|---|---|---|
 | C-02 | Provider AI e modello di default | **Risolta (V2):** OpenAI API (default `gpt-4o-mini`) oppure Anthropic Claude API (default `claude-haiku-4-5-20251001`); il Docente configura la chiave API nelle impostazioni. | Committente / Docente | V2, prima del Modulo 5 |
-| C-03 | Regola didattica per la correzione automatica, ambito e eventuale revisione umana obbligatoria | Rinviata alla V2 insieme a M5 | Committente / Docente | V2, prima dell'abilitazione modalitÃ  automatica |
+| C-03 | Regola didattica per la correzione automatica, ambito e eventuale revisione umana obbligatoria | Rinviata alla V2 insieme a M5 | Committente / Docente | V2, prima dell'abilitazione modalità automatica |
 
 Vedi anche `decisioni.md` per il registro completo. Ogni decisione produce un verbale scritto nel repository che documenta: data, approvatore, opzioni valutate, scelta effettuata e vincoli operativi.
 
@@ -592,13 +592,13 @@ Vedi anche `decisioni.md` per il registro completo. Ogni decisione produce un ve
 
 ## Evoluzioni Future
 
-Le seguenti funzionalitÃ  non fanno parte della V1.
+Le seguenti funzionalità non fanno parte della V1.
 
 ---
 
 ### Multi Docente
 
-Supporto a piÃ¹ docenti.
+Supporto a più docenti.
 
 ---
 
@@ -610,7 +610,7 @@ Modifica dei Markdown direttamente dal sistema.
 
 ### Sommario Curricolare PDF
 
-Generazione automatica di un sommario curricolare (curriculum vitae della classe) in PDF a partire dai programmi svolti. In V1 resta disponibile l'export del programma svolto in Markdown; la generazione PDF di questo sommario curricolare Ã¨ rinviata alla V2. Il programma svolto in PDF descritto nel Modulo 1 resta invece parte della V1.
+Generazione automatica di un sommario curricolare (curriculum vitae della classe) in PDF a partire dai programmi svolti. In V1 resta disponibile l'export del programma svolto in Markdown; la generazione PDF di questo sommario curricolare è rinviata alla V2. Il programma svolto in PDF descritto nel Modulo 1 resta invece parte della V1.
 
 ---
 
@@ -632,9 +632,9 @@ Produzione di:
 * suggerimenti di studio;
 * sintesi delle competenze.
 
-L'obiettivo non Ã¨ il semplice storico dei punteggi.
+L'obiettivo non è il semplice storico dei punteggi.
 
-L'obiettivo Ã¨ costruire una rappresentazione dell'evoluzione didattica dello studente.
+L'obiettivo è costruire una rappresentazione dell'evoluzione didattica dello studente.
 
 ---
 
@@ -660,4 +660,4 @@ Non fanno parte del progetto:
 
 ## Definizione Finale
 
-SchoolForge Ã¨ un repository didattico Markdown-first che centralizza la conoscenza del docente e la utilizza come fonte unica per generare verifiche on-demand, raccogliere consegne digitali, supportare la correzione manuale, esportare le verifiche svolte e abilitare future analisi didattiche. La conoscenza rimane indipendente dalla piattaforma. I PDF, gli export e il programma svolto sono generati on-demand nel browser e non vengono conservati dal sistema. L'AI Ã¨ una capacitÃ  opzionale e incrementale. Ogni modulo produce valore autonomo.
+SchoolForge è un repository didattico Markdown-first che centralizza la conoscenza del docente e la utilizza come fonte unica per generare verifiche on-demand, raccogliere consegne digitali, supportare la correzione manuale, esportare le verifiche svolte e abilitare future analisi didattiche. La conoscenza rimane indipendente dalla piattaforma. I PDF, gli export e il programma svolto sono generati on-demand nel browser e non vengono conservati dal sistema. L'AI è una capacità opzionale e incrementale. Ogni modulo produce valore autonomo.

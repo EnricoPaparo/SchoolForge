@@ -42,7 +42,8 @@ SchoolForge/
 ├─ functions/                    # Cloud Functions v2 (TypeScript)
 │  └─ src/
 │     ├─ index.ts                # entry point
-│     └─ startDigitalAttempt.ts  # funzione M3
+│     ├─ startDigitalAttempt.ts  # avvio digitale M3
+│     └─ continueDigitalAttempt.ts # ripresa, bozza e consegna M3
 ├─ firestore.rules
 ├─ storage.rules
 ├─ firestore.indexes.json
@@ -89,7 +90,7 @@ Le variabili esposte al client devono avere prefisso `VITE_`:
 
 ### 5.2 Cloud Functions
 
-La chiave API del provider AI è richiesta **solo in V2 (M5)** ed è gestita tramite Firebase Functions config / Secret Manager, mai esposta al client né committata su Git. Nei Moduli 1–4 nessun segreto server-side è necessario.
+La chiave API del provider AI è richiesta **solo in V2 (M5)** ed è gestita tramite Firebase Functions config / Secret Manager, mai esposta al client né committata su Git. Nei Moduli 1–4 non sono necessari segreti applicativi: il gateway M3 usa un token di sessione opaco, hashato in Firestore e consegnato esclusivamente come cookie HttpOnly.
 
 ---
 

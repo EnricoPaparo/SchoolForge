@@ -23,19 +23,20 @@
 |---|---|
 | Verifica | Configurazione con fonti, classi, quantità, tipi, difficoltà, minimi e varianti. È un link aperto o chiuso: nessuna lista di destinatari preassegnati. |
 | Verifica aperta / chiusa | Stato gestito dal docente: finché è aperta, chiunque abbia il link può accedere; chiusa, non accetta nuovi tentativi. |
-| Configurazione modificabile | La configurazione della verifica è sempre modificabile dal docente, anche dopo l'attivazione. L'unico elemento immutabile è lo snapshot di un tentativo. |
-| Snapshot immutabile | La configurazione della verifica è sempre modificabile; lo snapshot di un tentativo digitale è immutabile dal momento dell'avvio. |
+| Configurazione in bozza | Fonti, minimi, varianti e canali sono modificabili solo nello stato `bozza`. Per cambiare una verifica pubblicata si duplica una nuova bozza. |
+| Snapshot pubblicato | Copia privata e immutabile di fonti, regole, candidati e soluzioni creata all'attivazione; rende riproducibile la verifica anche se le lezioni cambiano. |
+| Snapshot immutabile del tentativo | Copia privata delle domande effettivamente assegnate a uno studente; è immutabile dal momento dell'avvio. |
 | Tentativo | Accesso digitale associato a una verifica e a una coppia nome+cognome normalizzata. Il canale cartaceo non genera tentativi. |
 | Tentativo di Accesso | Evento registrato all'avvio di un tentativo digitale: nome dichiarato (`Cognome Nome`), indirizzo IP, timestamp e user-agent. Dà visibilità di audit al docente; non prova l'identità. |
 | Report Accessi | Vista per-verifica disponibile al docente con i tentativi di accesso digitali (nome dichiarato, IP, timestamp). |
-| Participant lock | Documento Firestore creato dalla Cloud Function per `verifica + nome+cognome normalizzati`; impedisce un secondo avvio digitale con la stessa coppia. È un limite operativo, non una prova d'identità. |
+| Participant lock | Documento Firestore creato dalla Cloud Function per `verifica + nome+cognome normalizzati`; impedisce un secondo avvio digitale con la stessa coppia. È un limite operativo, non una prova d'identità. Il docente può rilasciarlo solo annullando un tentativo in corso con audit. |
 | Canale cartaceo | Canale puramente fisico: il PDF è generato e scaricato nel browser. Non crea record di tentativo né log di accesso; al più incrementa un contatore atomico `downloadCount`. Il sistema non invia email. |
 | downloadCount | Contatore atomico opzionale sul documento della verifica, incrementato a ogni download cartaceo; non contiene dati personali. |
-| Canale digitale | Lo studente svolge la verifica nel Portale; le risposte sono strutturate in Firestore. |
+| Canale digitale | Lo studente svolge la verifica nel Portale; avvio, ripresa, bozza e consegna passano dal gateway Cloud Functions. Il browser non scrive direttamente in Firestore. |
 | Snapshot digitale | Copia privata delle domande (con soluzioni) create dalla Cloud Function al tentativo digitale; mai esposta al client portale. |
 | Consegna definitiva | Tentativo digitale inviato; domande e risposte non sono più modificabili. |
 | Bozza | Risposte temporanee riprendibili nello stesso browser con token di sessione. |
-| Token di sessione | Cookie HttpOnly/Secure/SameSite generato dalla Cloud Function `startDigitalAttempt`; consente la ripresa del tentativo nello stesso browser. |
+| Token di sessione | Cookie HttpOnly/Secure/SameSite generato da `startDigitalAttempt` e verificato da `continueDigitalAttempt`; consente la ripresa del tentativo nello stesso browser. |
 | Portale Verifiche | Sezione pubblica dell'applicazione (`/exam/:token`) per canale cartaceo e digitale; senza account studente. |
 | Export verifiche | Documento generato on-demand nel browser (PDF, Markdown o CSV) da tutte le consegne digitali definitive. |
 
@@ -61,8 +62,10 @@
 |---|---|
 | `ownerUid` | UID Firebase Authentication dell'unico docente autorizzato nella V1. |
 | Cloud Firestore | Database operativo di stati, tentativi, snapshot, log di accesso, correzioni e audit. |
-| Cloud Storage | File Markdown, asset; non contiene PDF o export didattici persistenti. |
-| Cloud Functions v2 | Backend usato solo per `startDigitalAttempt` (M3) e AI (M5). |
+| Import isolato | Insieme di Markdown, asset e indici preparato sotto un `importId` prima di diventare visibile. |
+| `activeImportId` | Puntatore sul Programma che rende visibile un solo import completo; il suo commit Firestore evita una pubblicazione parziale tra Storage e indici. |
+| Cloud Storage | File Markdown e asset sotto `repository/imports`; non contiene PDF o export didattici persistenti. |
+| Cloud Functions v2 | Backend usato per il gateway M3 `startDigitalAttempt`/`continueDigitalAttempt` e AI (M5). |
 | Security Rules | Regole Firestore e Storage che garantiscono autorizzazione e default-deny; sono il perimetro di sicurezza principale nei Moduli 1–4. |
 | `@react-pdf/renderer` | Libreria browser per la generazione di PDF on-demand nel client; nessun server coinvolto. |
 | `lesson-contract` | Package TypeScript interno del monorepo (`packages/lesson-contract`, non pubblicato su npm); schemi Zod, parser e validatore del contratto pool v1, condiviso tra SPA e Cloud Functions via workspace reference. |
