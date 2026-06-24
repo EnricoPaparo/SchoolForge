@@ -17,12 +17,11 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 | Modulo | Capacità rilasciata | Può fermarsi qui? |
 |---|---|---|
 | M1 — Repository didattico | Programmi, UDA, Markdown/pool, import validato, rendering, export ZIP, programma svolto (PDF + Markdown). | Sì |
-| M2 — Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente, canale cartaceo con lock email. | Sì |
-| M3 — Portale digitale | Tentativi anonimi, snapshot via Cloud Function, token sessione, bozze, consegna, deterrenza. | Sì |
+| M2 — Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente, canale cartaceo con log accessi. | Sì |
+| M3 — Portale digitale | Tentativi anonimi, snapshot via Cloud Function, token mono-uso, token sessione, log nome+IP, bozze, consegna, deterrenza. | Sì |
 | M4 — Correzione ed export | Punteggi, percentuali, rettifiche, eliminazione e `Esporta verifiche` in PDF/Markdown/CSV. | Sì |
-| M5 — Correzione AI | Proposte assistite, anomalie consultive e, solo con gate, automatica. | Sì, opzionale |
 
-M5 non è autorizzato a ritardare o modificare M1–M4.
+**M5 — Correzione AI** è fuori scope V1 ed è pianificato per la V2. Vedi la sezione "V2 — Roadmap futura" in fondo. M5 non fa parte del perimetro né delle dipendenze della V1.
 
 ---
 
@@ -40,10 +39,10 @@ M5 non è autorizzato a ritardare o modificare M1–M4.
 |---|---|---|---|
 | H-01 | Creare progetti Firebase `dev` e `prod`, attivare billing Blaze, mantenere la proprietà. | Prima del provisioning reale. | Solo dopo accesso CLI autorizzato e approvazione esplicita. |
 | H-02 | Creare Firestore e bucket nella regione Milano `europe-west8`. | Prima del primo deploy dati. | Può eseguire la configurazione tecnica se H-01 è completata. |
-| H-03 | Configurare budget e avvisi di spesa, backup giornaliero, conservazione 30 giorni e primo restore test. | Prima di dati reali, gate G1. | Può assistere con accesso autorizzato; il Docente verifica l'esito. |
+| H-03 | Configurare budget e avvisi di spesa; verificare l'export Firestore manuale dalle impostazioni. | Prima di dati reali, gate G1. | Può assistere con accesso autorizzato; il Docente verifica l'esito. |
 | H-04 | Scegliere il formato iniziale di `Esporta verifiche`: PDF, Markdown o CSV come default. | Prima del pacchetto M4-D. | Il renderer è implementabile dall'agente dopo la scelta. |
-| H-05 | Decidere provider AI, condizioni e residenza dati. | Prima di M5-A. | No, è C-02. |
-| H-06 | Decidere regola didattica della correzione automatica. | Prima di M5-E. | No, è C-03. |
+| H-05 (V2) | Confermare provider AI e modello (C-02 risolta: OpenAI `gpt-4o-mini` o Anthropic Claude `claude-haiku-4-5-20251001`) e condizioni d'uso. | V2, prima di M5-A. | No, è C-02. |
+| H-06 (V2) | Decidere regola didattica della correzione automatica. | V2, prima di M5-E. | No, è C-03. |
 
 ---
 
@@ -65,7 +64,7 @@ Un pacchetto può partire solo se:
 2. Verificare il DoR e dichiarare subito un blocco reale.
 3. Implementare solo lo scope assegnato.
 4. Eseguire i test dichiarati e aggiungere test per regressioni introdotte.
-5. Confrontare il diff con i vincoli: no account studenti, no PDF persistenti, no AI fuori M5, no ampliamento LMS, nessuna Cloud Function aggiuntiva oltre `startDigitalAttempt` e AI.
+5. Confrontare il diff con i vincoli: no account studenti, no email, no PDF persistenti, no AI in V1 (M5 è V2), no ampliamento LMS, nessuna Cloud Function aggiuntiva oltre `startDigitalAttempt`.
 6. Consegnare handoff con file, test, evidenze, rischi e dipendenze sbloccate.
 
 ### 3.3 Definition of Done (DoD)
@@ -94,15 +93,15 @@ Un pacchetto è abbastanza piccolo da essere verificato in una review e abbastan
 | Gate | Condizione di ingresso | Evidenza richiesta | Autorizza |
 |---|---|---|---|
 | G0 — Baseline | Brief, requisiti, architettura e piano coerenti. | Review documentale e C-01 formalizzata. | Bootstrap del repository. |
-| G1 — Fondazioni Firebase | H-01/H-02/H-03 completate; CI ed Emulator Suite disponibili. | Progetti separati, budget, backup, restore test, Security Rules default-deny. | M1 con dati sintetici. |
+| G1 — Fondazioni Firebase | H-01/H-02/H-03 completate; CI ed Emulator Suite disponibili. | Progetti separati, budget, export Firestore manuale disponibile, Security Rules default-deny. | M1 con dati sintetici. |
 | G2 — Repository didattico | M1 integrato. | Import valido/invalido, rendering senza pool, ZIP e programma svolto. | M2. |
-| G3 — Verifiche e cartaceo | M2 integrato. | PDF browser, lock email concorrente, nessun PDF persistito. | M3. |
-| G4 — Portale digitale | M3 integrato. | Snapshot, bozza/ripresa, consegna immutabile, nessuna soluzione esposta. | M4. |
-| G5 — Correzione ed export | M4 integrato e H-04 completata. | Punteggi, rettifiche, eliminazione, export PDF/Markdown/CSV da snapshot. | Uso manuale completo. |
-| G6 — AI assistita | M5-A..D integrati e H-05 completata. | Contesto chiuso, audit, proposte assistite, anomalie consultive. | AI assistita. |
-| G7 — AI automatica | G6 e H-06 completati. | Opt-in per verifica, audit e rollback. | Correzione automatica. |
+| G3 — Verifiche e cartaceo | M2 integrato. | PDF browser, accesso cartaceo registrato (nome+IP), nessun PDF persistito. | M3. |
+| G4 — Portale digitale | M3 integrato. | Token mono-uso, log nome+IP, snapshot, bozza/ripresa, consegna immutabile, nessuna soluzione esposta. | M4. |
+| G5 — Correzione ed export | M4 integrato e H-04 completata. | Punteggi, rettifiche, eliminazione, export PDF/Markdown/CSV da snapshot. | Uso manuale completo — fine V1. |
+| G6 — AI assistita (V2) | M5-A..D integrati e H-05 completata. | Contesto chiuso, audit, proposte assistite, anomalie consultive. | AI assistita. |
+| G7 — AI automatica (V2) | G6 e H-06 completati. | Opt-in per verifica, audit e rollback. | Correzione automatica. |
 
-C-02 e C-03 non bloccano M1–M4.
+C-02 e C-03 riguardano la V2 e non bloccano M1–M4.
 
 ---
 
@@ -125,7 +124,7 @@ flowchart TD
     M1E --> G2
     G2 --> M2A["M2-A Dominio verifica e classi"]
     G2 --> M2B["M2-B UI configurazione"]
-    G2 --> M2C["M2-C PdfRenderer browser"]
+    G2 --> M2C["M2-C VerificaPdfRenderer browser"]
     M2A --> M2D["M2-D Canale cartaceo"]
     M2B --> M2D
     M2C --> M2D
@@ -179,8 +178,8 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 |---|---|---|---|---|
 | M2-A | Dominio verifica: stati, configurazione, classi, validazione fonti, minimi, varianti. Transazioni Firestore client-side per attivazione/chiusura. | G2 | M2-B/M2-C | Attivazione invalida rifiutata; configurazione attiva immutabile; classi persistite. |
 | M2-B | UI docente: crea/modifica/attiva verifiche, gestione classi nelle impostazioni, messaggi di blocco comprensibili. | G2, contratto M2-A | M2-A/M2-C | Il docente non può superare vincoli da UI. |
-| M2-C | `PdfRenderer` browser con `@react-pdf/renderer`: PDF docente (intestazione vuota) e PDF studente (dati precompilati). | G2 | M2-A/M2-B | PDF conforme ai campi del brief; nessun file in Storage. |
-| M2-D | Canale cartaceo: link pubblico, lock email (transazione Firestore client), generazione PDF nel browser, download diretto. | M2-A/M2-B/M2-C | — | Due richieste concorrenti producono un solo download; second lock rifiutato; nessun PDF persistito. |
+| M2-C | `VerificaPdfRenderer` browser unico (`mode="teacher" \| "student"`) con `@react-pdf/renderer`: PDF docente (intestazione vuota) e PDF studente (dati precompilati, soluzioni nascoste). | G2 | M2-A/M2-B | PDF conforme ai campi del brief; mode student senza soluzioni; nessun file in Storage. |
+| M2-D | Canale cartaceo: link pubblico, registrazione accesso (deliveryAttempt + accessLog con nome/IP/user-agent), generazione PDF nel browser, download diretto. | M2-A/M2-B/M2-C | — | Accesso registrato nel Report Accessi; nessun lock; nessun PDF persistito. |
 | M2-E | Test integrazione/E2E M2, lock concorrente, evidenze G3. | M2-D | — | PDF browser e lock studente verificati. |
 
 ---
@@ -208,16 +207,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 ---
 
-## 11. M5 — Correzione AI opzionale
-
-| ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
-|---|---|---|---|---|
-| M5-A | `AiGateway`, feature flag, Secret Manager, policy C-02, audit e mock provider. | G5/H-05 | — | Nessun invio AI senza feature flag e C-02 valida. |
-| M5-B | Proposte assistite per item con contesto chiuso. | M5-A | — | Proposte non alterano correzioni definitive. |
-| M5-C | UI assistita: proposta, approva/modifica/rifiuta, bulk approval con riepilogo. | M5-B | M5-D | Audit completo; bulk non applica item incompleti. |
-| M5-D | Rapporto anomalie stilistiche solo consultivo; `riferimenti insufficienti` senza evidenza sufficiente. | M5-B | M5-C | Nessuna penalizzazione automatica. |
-| M5-E | Modalità automatica con opt-in per verifica, audit e rollback. Richiede C-03 e H-06. | M5-C/H-06 | — | Non attiva per default; reversibile tramite rettifica. |
-| M5-F | Test sicurezza, qualità e costi AI; evidenze G6/G7. | M5-C/M5-D/M5-E | — | Nessun web/retrieval; costi osservabili; gate rispettati. |
+> **M5 — Correzione AI** è spostato interamente alla V2. I pacchetti M5-A..F non fanno parte della V1: sono dettagliati nella sezione "V2 — Roadmap futura" in fondo a questo documento.
 
 ---
 
@@ -237,18 +227,18 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 - Sviluppo e test usano Emulator Suite e fixture sintetiche.
 - Nessuna VM, Cloud SQL, container sempre acceso, coda dedicata o servizio enterprise senza decisione documentata.
-- L'unica Cloud Function nei Moduli 1–4 è `startDigitalAttempt`; qualsiasi Function aggiuntiva proposta da un agente deve essere giustificata e approvata.
+- L'unica Cloud Function nella V1 è `startDigitalAttempt`; qualsiasi Function aggiuntiva proposta da un agente deve essere giustificata e approvata.
 - PDF e documenti generati nel browser, mai su server.
 - Il Docente controlla budget/avvisi prima del primo deploy `prod`.
-- Ogni pacchetto che aggiunge una chiamata a provider esterno (AI) dichiara volume atteso e costo variabile.
+- In V2, ogni pacchetto che aggiunge una chiamata a provider esterno (AI) dichiara volume atteso e costo variabile.
 
 ### 12.3 Regole di rilascio e rollback
 
 1. Le modifiche Firestore devono essere compatibili con la versione applicativa precedente durante il deploy.
 2. Le funzionalità incomplete sono invisibili o disabilitate tramite flag server-side.
 3. Il rollback del codice non cancella Markdown, snapshot digitali, consegne o audit.
-4. Un errore import non scrive su Firestore; un errore di lock cartaceo non genera il PDF.
-5. Un incidente dati attiva C-01: fermare le scritture interessate, valutare l'ultimo backup, ripristinare e documentare.
+4. Un errore import non scrive su Firestore; un errore di avvio digitale non rilascia un token bruciato a metà.
+5. Un incidente dati attiva C-01: fermare le scritture interessate, valutare l'ultimo export Firestore manuale, ripristinare e documentare.
 
 ---
 
@@ -282,7 +272,7 @@ Ogni pacchetto concluso produce:
 
 1. Ogni modulo rilascia una capacità usabile senza anticipare AI o scope LMS.
 2. Nessun agente lavora su un pacchetto senza DoR o ignora un gate umano.
-3. Verifiche e consegne digitali rispettano lock email, snapshot e assenza di PDF persistenti.
+3. Verifiche e consegne digitali rispettano il token mono-uso, il log nome+IP, lo snapshot e l'assenza di PDF persistenti.
 4. `Esporta verifiche` è costruito da tutte le consegne definitive e non dalle lezioni correnti.
 5. Test automatici, E2E e review crescono insieme al prodotto.
 6. Firebase resta configurato con costo minimo; nessuna Cloud Function aggiuntiva senza approvazione.
@@ -293,3 +283,278 @@ Ogni pacchetto concluso produce:
 ## Appendice A — Primo pacchetto da assegnare
 
 Il primo pacchetto assegnabile è **F-01 — Workspace e CI**. Il provisioning Firebase reale non parte finché il Docente non ha completato H-01 e H-02. Dopo F-01, F-02 e F-03 possono avanzare in parallelo; F-04 richiede sia il workspace sia l'ambiente Firebase `dev`.
+
+---
+
+## Appendice B — Schede pacchetti dettagliate
+
+Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il monorepo descritto in `toolchain.md`.
+
+### F-01 — Workspace e CI
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | G0 |
+| File da creare | `package.json`, `pnpm-workspace.yaml`, `apps/web/`, `packages/lesson-contract/`, `functions/`, config lint/format, workflow CI |
+| File da modificare | — |
+| Test minimi | Pipeline esegue build, lint, typecheck e unit test su una fixture banale |
+| Evidenza richiesta | Log CI verde con i quattro step; albero del workspace |
+
+### F-02 — Configurazione Firebase
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | H-01/H-02 |
+| File da creare | `firebase.json`, `.firebaserc`, `firestore.indexes.json`, config emulatori |
+| File da modificare | `package.json` (script emulatori) |
+| Test minimi | Avvio Emulator Suite (Auth/Firestore/Storage/Functions) sulle porte di `toolchain.md` |
+| Evidenza richiesta | Output `firebase emulators:start`; alias `dev`/`test` separati |
+
+### F-03 — lesson-contract e test base
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | F-01 |
+| File da creare | `packages/lesson-contract/src/index.ts`, fixture pool valide/invalide, `*.contract.test.ts` |
+| File da modificare | `apps/web/src/contracts/lesson.ts` (riesporta dal package) |
+| Test minimi | Il parser accetta/rifiuta i casi di `analisi-requisiti.md` con errori file/domanda/campo |
+| Evidenza richiesta | Report Vitest contract; elenco casi coperti |
+
+### F-04 — Auth, Rules, guard
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | F-01/F-02 |
+| File da creare | `firestore.rules`, `storage.rules`, test Emulator delle regole, guard auth SPA |
+| File da modificare | `apps/web/src/lib/firebase.ts` |
+| Test minimi | Owner autorizzato; soggetto diverso rifiutato; default-deny |
+| Evidenza richiesta | Test Emulator regole verdi; matrice percorsi/ruoli |
+
+### M1 — Repository didattico
+
+#### M1-A — Validazione pool
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | F-03/F-04 |
+| File da creare | `apps/web/src/features/repository/validate*.ts`, `*.test.ts` |
+| File da modificare | `apps/web/src/contracts/lesson.ts` (se servono helper) |
+| Test minimi | Pool invalido non invalida la lezione; errori strutturati per file/domanda/campo |
+| Evidenza richiesta | Fixture complete e report test |
+
+#### M1-B — Import e Firestore
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M1-A/F-04 |
+| File da creare | `apps/web/src/features/repository/import*.ts`, `src/types/firestore.ts` |
+| File da modificare | `firestore.rules` (lessons/udas/questionIndex) |
+| Test minimi | Import valido visibile; fallimento non lascia contenuti parziali |
+| Evidenza richiesta | Test integrazione Emulator import atomico |
+
+#### M1-C — Shell docente
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | F-01/F-04 |
+| File da creare | `apps/web/src/routes/teacher/`, layout, tema chiaro/scuro |
+| File da modificare | router SPA |
+| Test minimi | Owner accede; non-owner non entra; accessibilità base |
+| Evidenza richiesta | E2E login; check a11y |
+
+#### M1-D — Programmi, UDA, lezioni
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M1-B/M1-C |
+| File da creare | feature CRUD struttura, flag "svolto" |
+| File da modificare | `src/types/firestore.ts` |
+| Test minimi | Struttura navigabile; operazioni auditabili |
+| Evidenza richiesta | E2E navigazione; auditEvents prodotti |
+
+#### M1-E — Rendering, export ZIP, programma svolto
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M1-D |
+| File da creare | renderer Markdown sanitizzato, export ZIP, programma svolto PDF+MD |
+| File da modificare | `apps/web/src/components/pdf/` |
+| Test minimi | ZIP portabile; rendering senza pool; programma svolto nei due formati |
+| Evidenza richiesta | ZIP esportato; rendering senza soluzioni |
+
+#### M1-F — Integrazione M1
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M1-E |
+| File da creare | `*.e2e.ts` M1 |
+| File da modificare | — |
+| Test minimi | E2E M1 completo; review sicurezza import |
+| Evidenza richiesta | Evidenze G2 |
+
+### M2 — Verifiche e canale cartaceo
+
+#### M2-A — Dominio verifica e classi
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | G2 |
+| File da creare | dominio verifica, transazioni attivazione/chiusura, gestione classi |
+| File da modificare | `src/types/firestore.ts`, `firestore.rules` |
+| Test minimi | Attivazione invalida rifiutata; config attiva immutabile; classi persistite |
+| Evidenza richiesta | Test integrazione transazioni |
+
+#### M2-B — UI configurazione
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | G2, contratto M2-A |
+| File da creare | UI crea/modifica/attiva verifiche, impostazioni classi |
+| File da modificare | router teacher |
+| Test minimi | Il docente non può superare vincoli da UI |
+| Evidenza richiesta | E2E configurazione |
+
+#### M2-C — VerificaPdfRenderer
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | G2 |
+| File da creare | `apps/web/src/components/pdf/VerificaPdfRenderer.tsx` (mode teacher\|student) |
+| File da modificare | — |
+| Test minimi | PDF docente (intestazione vuota) e studente (precompilato) conformi al brief; mode student nasconde soluzioni; nessun file in Storage |
+| Evidenza richiesta | PDF generati nei due mode |
+
+#### M2-D — Canale cartaceo
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M2-A/M2-B/M2-C |
+| File da creare | link pubblico, registrazione accesso (deliveryAttempt + accessLog), download PDF browser |
+| File da modificare | `firestore.rules` (deliveryAttempts/accessLog) |
+| Test minimi | Accesso cartaceo registra nome+IP+user-agent; nessun lock; nessun PDF persistito |
+| Evidenza richiesta | Report Accessi popolato; PDF non in Storage |
+
+#### M2-E — Integrazione M2
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M2-D |
+| File da creare | `*.e2e.ts` M2 |
+| File da modificare | — |
+| Test minimi | PDF browser e log accessi verificati |
+| Evidenza richiesta | Evidenze G3 |
+
+### M3 — Portale digitale
+
+#### M3-A — startDigitalAttempt Function
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | G3 |
+| File da creare | `functions/src/startDigitalAttempt.ts`, `functions/src/index.ts`, `src/types/functions.ts` |
+| File da modificare | `firestore.rules` (snapshot/accessLog) |
+| Test minimi | Token mono-uso bruciato; snapshot creato; refresh non seleziona nuove domande; soluzioni assenti dal body; secondo avvio → `TOKEN_ALREADY_USED` |
+| Evidenza richiesta | Test integrazione Function; log accesso registrato |
+
+#### M3-B — UI Portale
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M3-A, contratto endpoint |
+| File da creare | `apps/web/src/routes/exam/`, UI mobile-first |
+| File da modificare | router SPA |
+| Test minimi | Nessun menu/dato interno; uso da tastiera e mobile |
+| Evidenza richiesta | E2E mobile; nessuna soluzione nel client |
+
+#### M3-C — Bozza e consegna
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M3-A |
+| File da creare | autosave, consegna immutabile, fullscreen/tab warning |
+| File da modificare | `firestore.rules` (answers) |
+| Test minimi | Risposte riprendono nello stesso browser; consegna non modificabile |
+| Evidenza richiesta | E2E ripresa e consegna |
+
+#### M3-D — Integrazione Portale
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M3-B/M3-C |
+| File da creare | `*.e2e.ts` M3, test negativi |
+| File da modificare | — |
+| Test minimi | Token, rate limit, soluzioni non accessibili, secondo avvio rifiutato |
+| Evidenza richiesta | Evidenze G4 |
+
+### M4 — Correzione ed export
+
+#### M4-A — Correzione e audit
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | G4 |
+| File da creare | servizio correzione, rettifiche append-only, eliminazione dati |
+| File da modificare | `src/types/firestore.ts`, `firestore.rules` |
+| Test minimi | Percentuale e storico corretti; eliminazione preserva solo audit |
+| Evidenza richiesta | Test correzione/rettifica |
+
+#### M4-B — Modello export
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | G4 |
+| File da creare | modello canonico export da snapshot |
+| File da modificare | — |
+| Test minimi | Ordine per verifica/data; indipendenza dal Markdown corrente; esclude bozze/annullate |
+| Evidenza richiesta | Test modello su fixture miste |
+
+#### M4-C — UI correzione
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M4-A |
+| File da creare | UI lista/filtri (classe inclusa), dettaglio, punteggi, rettifiche |
+| File da modificare | router teacher |
+| Test minimi | Correzione manuale completa senza voto elettronico |
+| Evidenza richiesta | E2E correzione |
+
+#### M4-D — Renderer export PDF/MD/CSV
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M4-B/H-04 |
+| File da creare | renderer export tre formati nel browser |
+| File da modificare | `apps/web/src/components/pdf/` |
+| Test minimi | Documento contiene tutte e sole le consegne richieste nei tre formati; nessuna persistenza |
+| Evidenza richiesta | Export nei tre formati |
+
+#### M4-E — Integrazione M4
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M4-C/M4-D |
+| File da creare | `*.e2e.ts` M4 |
+| File da modificare | — |
+| Test minimi | Ciclo digitale manuale completo; snapshot dopo modifica lezione |
+| Evidenza richiesta | Evidenze G5 |
+
+---
+
+## Appendice C — V2 — Roadmap futura
+
+La V2 introduce il **Modulo 5 — Correzione AI**, fuori dal perimetro V1. Dipende da M4 completato e dalle decisioni C-02 (risolta) e C-03.
+
+**C-02 risolta:** il provider AI è OpenAI API (modello di default `gpt-4o-mini`) oppure Anthropic Claude API (modello di default `claude-haiku-4-5-20251001`); il Docente configura la chiave API nelle impostazioni. La chiave vive in Secret Manager / Firebase Functions config.
+
+Pacchetti previsti (dettaglio di specifica, non in V1):
+
+| ID | Outcome e scope | Dipende da | Evidenza DoD |
+|---|---|---|---|
+| M5-A | `AiGateway`, feature flag, Secret Manager, policy C-02, audit e mock provider. | G5/H-05 | Nessun invio AI senza feature flag e chiave valida. |
+| M5-B | Proposte assistite per item con contesto chiuso. | M5-A | Proposte non alterano correzioni definitive. |
+| M5-C | UI assistita: proposta, approva/modifica/rifiuta, bulk approval con riepilogo. | M5-B | Audit completo; bulk non applica item incompleti. |
+| M5-D | Rapporto anomalie stilistiche consultivo; `riferimenti insufficienti` senza evidenza. | M5-B | Nessuna penalizzazione automatica. |
+| M5-E | Modalità automatica con opt-in per verifica, audit e rollback. Richiede C-03 e H-06. | M5-C/H-06 | Non attiva per default; reversibile. |
+| M5-F | Test sicurezza, qualità e costi AI; evidenze G6/G7. | M5-C/M5-D/M5-E | Nessun web/retrieval; costi osservabili; gate rispettati. |
+
+I gate G6 (AI assistita) e G7 (AI automatica) appartengono alla V2.

@@ -137,15 +137,6 @@ interface Verification {
   createdAt: Timestamp;
 }
 
-// verifications/{id}/recipientLocks/{emailHash}
-interface RecipientLock {
-  emailHash: string;               // SHA-256 dell'email normalizzata
-  channel: 'cartaceo' | 'digitale';
-  attemptId: string;
-  state: 'reserved' | 'completed';
-  createdAt: Timestamp;
-}
-
 // deliveryAttempts/{attemptId}
 interface DeliveryAttempt {
   id: string;
@@ -154,14 +145,24 @@ interface DeliveryAttempt {
   declaredData: {
     name: string;
     surname: string;
-    email: string;
     class?: string;
   };
+  declaredName: string;            // "Cognome Nome" auto-dichiarato, non verificato
+  declaredIp: string;              // IP di provenienza al momento dell'accesso
+  userAgent: string;               // user-agent del browser dello studente
   state: 'reserved' | 'completed' | 'in_progress' | 'submitted' | 'cancelled';
   resumeTokenHash: string | null;  // solo digitale; hash del cookie di ripresa
   resumeTokenExpiry: Timestamp | null;
   createdAt: Timestamp;
   submittedAt: Timestamp | null;
+}
+
+// deliveryAttempts/{id}/accessLog/{logId} — subcollection
+interface AccessLogEntry {
+  declaredName: string;            // "Cognome Nome"
+  declaredIp: string;
+  userAgent: string;
+  timestamp: Timestamp;
 }
 
 // deliveryAttempts/{id}/snapshot/items — subcollection
@@ -237,7 +238,7 @@ interface AuditEvent {
 | Programma svolto | Leggi `programs`, `udas`, `lessons` (flag svolto) | — |
 | Export ZIP | Leggi struttura + download file Storage | — |
 
-Il parser `lesson-contract` esegue la validazione nel client prima di qualsiasi scrittura. Se il client riceve errori, la UI li mostra senza scrivere su Firestore o Storage.
+Il parser `lesson-contract` (package interno `packages/lesson-contract/src/index.ts`, riesportato da `src/contracts/lesson.ts`) esegue la validazione nel client prima di qualsiasi scrittura. Se il client riceve errori, la UI li mostra senza scrivere su Firestore o Storage.
 
 ### 3.2 Verifiche
 
@@ -252,11 +253,10 @@ Il parser `lesson-contract` esegue la validazione nel client prima di qualsiasi 
 
 | Operazione | Scrittura Firestore |
 |---|---|
-| Verifica disponibilità email | Legge `recipientLocks/{emailHash}` |
-| Crea lock + tentativo | Transazione: scrive `recipientLocks` e `deliveryAttempts` solo se lock assente |
+| Crea tentativo cartaceo | Scrive `deliveryAttempts` con `declaredName`, `declaredIp`, `userAgent` e una voce `accessLog` |
 | Genera PDF | Solo lettura Firestore + `questionIndex`; genera nel browser |
 
-La transazione usa `runTransaction` del Firebase SDK client-side. La Security Rule su `recipientLocks` permette la creazione solo se `!exists()`.
+Il canale cartaceo non usa lock: lo studente inserisce nome e cognome, scarica il PDF dal browser e l'accesso viene registrato nel log nome+IP a fini di audit. Non esiste alcun vincolo di unicità per recapito.
 
 ### 3.4 Correzione ed export
 
@@ -286,7 +286,6 @@ Content-Type: application/json
   "declaredData": {
     "name": "Mario",
     "surname": "Rossi",
-    "email": "mario@example.com",
     "class": "3A"           // opzionale
   }
 }
@@ -320,20 +319,22 @@ Il cookie di ripresa (`Set-Cookie: resumeToken=...; HttpOnly; Secure; SameSite=S
 
 Le soluzioni (`soluzione`) non sono mai incluse nella risposta al client portale.
 
+Alla prima chiamata riuscita la Function brucia il token mono-uso del tentativo e registra in `accessLog` il nome dichiarato (`Cognome Nome`), l'IP di provenienza, lo user-agent e il timestamp. Questi dati alimentano il Report Accessi del docente. Il nome è auto-dichiarato e non verificato.
+
 ### Response 4xx
 
 | Condizione | Codice HTTP | Codice errore |
 |---|---|---|
 | Token verifica non trovato o verifica non attiva | 404 | `NOT_FOUND` |
-| Email già usata per questa verifica | 409 | `RECIPIENT_ALREADY_USED` |
+| Token del tentativo già bruciato | 409 | `TOKEN_ALREADY_USED` |
 | Rate limit raggiunto | 429 | `RATE_LIMITED` |
 | Payload non valido | 400 | `VALIDATION_FAILED` |
 
 ---
 
-## 5. Cloud Functions AI — Modulo 5
+## 5. Cloud Functions AI — Modulo 5 (fuori scope V1 / pianificato per V2)
 
-Disponibili solo con C-02 approvata e feature flag `aiEnabled = true`.
+Disponibili solo in V2, con C-02 risolta (provider AI configurato dal docente) e feature flag `aiEnabled = true`.
 
 | Funzione | Request | Response |
 |---|---|---|
@@ -355,8 +356,8 @@ Le Security Rules Firestore devono garantire:
 | `settings/owner` | Lettura + scrittura | — | Scrittura |
 | `programs`, `udas`, `lessons`, `questionIndex` | Lettura + scrittura | Lettura limitata (solo verifica attiva) | — |
 | `verifications` | Lettura + scrittura | Lettura proiezione pubblica (solo attiva) | Lettura completa |
-| `verifications/*/recipientLocks` | Lettura | Creazione (se non esiste) | Eliminazione |
 | `deliveryAttempts` | Lettura | Creazione + scrittura (solo proprio tentativo con token sessione) | Lettura altri tentativi |
+| `deliveryAttempts/*/accessLog` | Lettura (Report Accessi) | Scrittura solo via Function | Lettura/scrittura diretta |
 | `deliveryAttempts/*/snapshot/items` | Lettura completa | Lettura senza `soluzione` | — |
 | `corrections`, `correctionEvents` | Lettura + scrittura | — | — |
 | `auditEvents` | Lettura | — | Scrittura |
@@ -369,8 +370,7 @@ Le Security Rules esatte vengono scritte e testate in F-04 con Emulator Suite ob
 
 | Condizione | Messaggio utente | Azione suggerita |
 |---|---|---|
-| Email già usata (cartaceo) | "Questo indirizzo è già stato usato per questa verifica." | — |
-| Email già usata (digitale) | "Questo indirizzo ha già un tentativo avviato per questa verifica." | — |
+| Token digitale già usato | "Questa prova è già stata avviata da questo link. Contatta il docente se è un errore." | Contattare il docente |
 | Verifica non attiva | "Il link non è attivo o la verifica è chiusa." | Contattare il docente |
 | Configurazione non attivabile | "Impossibile attivare: [motivo specifico]." | Correggere la configurazione |
 | Rate limit | "Troppo richieste. Attendere qualche minuto." | Riprovare |

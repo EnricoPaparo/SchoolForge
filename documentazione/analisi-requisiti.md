@@ -26,14 +26,14 @@ In caso di conflitto prevalgono: obblighi di legge applicabili, decisioni esplic
 
 | ID | Decisione | Conseguenza nei requisiti |
 |---|---|---|
-| D-01 | L'email dello studente è un recapito e un lock di tentativo, non un'identità verificata. | Nessuna autenticazione, verifica di possesso o controllo di dominio nel Portale. |
+| D-01 | Lo studente dichiara nome e cognome (auto-dichiarati, non verificati); il sistema registra nome+IP+timestamp+user-agent come audit trail. | Nessuna autenticazione né email nel Portale; il token del tentativo digitale è mono-uso. |
 | D-02 | Il docente non dipende da Google Workspace for Education. | Firebase Authentication gestisce l'accesso docente; Google Workspace non è richiesto. |
 | D-03 | Non serve ricreare una verifica passata dopo modifiche alle lezioni. | Non è richiesto versionare l'intero repository. La configurazione resta immutabile; una consegna digitale conserva le domande effettivamente mostrate. |
-| D-04 | La generazione AI di domande è eliminata. | I pool Markdown sono l'unica fonte delle domande. L'AI rimane solo nel Modulo 5 per la correzione. |
+| D-04 | La generazione AI di domande è eliminata. | I pool Markdown sono l'unica fonte delle domande. L'AI rimane solo nel Modulo 5 (correzione), fuori scope V1 / pianificato per V2. |
 | D-05 | Il sistema non invia email agli studenti. | Il canale cartaceo genera il PDF direttamente nel browser dello studente; nessun provider email è richiesto nei Moduli 1–4. |
 | D-06 | PDF, export e programma svolto sono generati nel browser. | Nessuna Cloud Function per la generazione di documenti; `@react-pdf/renderer` nel client. |
 | D-07 | Le classi sono una lista configurabile dal docente. | La lista è usata nelle impostazioni verifica e come menu a tendina nel portale studente. |
-| D-08 | C-01 formalizzata. | Firebase; dati applicativi in Milano `europe-west8`; backup giornaliero; RPO 24 ore; RTO best-effort; Docente responsabile operativo. |
+| D-08 | C-01 formalizzata. | Firebase; dati applicativi in Milano `europe-west8`; backup Storage nativo + export Firestore manuale on-demand; RPO best-effort; RTO non garantito in V1; Docente responsabile operativo. |
 
 ## 2. Visione, obiettivi e perimetro
 
@@ -56,7 +56,7 @@ SchoolForge è un repository didattico personale, Markdown-first e knowledge-fir
 | Verifiche | Configurazione, classi, selezione da pool, punteggi, varianti, attivazione e PDF on-demand nel browser. |
 | Portale Verifiche | Download PDF diretto allo studente (canale cartaceo) oppure svolgimento digitale senza account. |
 | Correzione ed export | Consultazione consegne digitali, punteggi manuali, percentuale, rettifiche tracciate ed export in PDF/Markdown/CSV. |
-| AI successiva | Proposte di correzione, correzione automatica con opt-in e rapporto consultivo sulle anomalie stilistiche. |
+| AI successiva (V2) | Proposte di correzione, correzione automatica con opt-in e rapporto consultivo sulle anomalie stilistiche. Fuori scope V1. |
 
 ### 2.3 Fuori scope vincolante
 
@@ -68,15 +68,15 @@ Registro elettronico, presenze, compiti, chat, forum, videolezioni, LMS, social 
 |---|---|---|
 | Docente proprietario | Unico utente applicativo della V1. | Gestisce contenuti, classi, verifiche, consegne, correzioni, export e impostazioni AI. |
 | Studente | Utente anonimo del solo link di una verifica. | Dichiara dati minimi, scarica il PDF oppure svolge e consegna nel Portale. |
-| Servizi esterni | Dal Modulo 5, il provider AI. | Riceve solo i dati strettamente necessari alla correzione. |
+| Servizi esterni (V2) | Dal Modulo 5 (V2), il provider AI. | Riceve solo i dati strettamente necessari alla correzione. |
 
 **FR-AUTH-01.** Il pannello del Docente deve usare Firebase Authentication con un provider configurato nell'ambiente. Il provider deve restituire un identificatore stabile e deve consentire di limitare l'accesso al solo Docente proprietario della V1, senza richiedere Google Workspace for Education.
 
 **FR-AUTH-02.** La V1 non prevede registrazione, invito, delega o ruolo per altri docenti.
 
-**BR-AUTH-01.** Il Portale Verifiche non autentica lo studente. Nome, cognome, email e classe sono dichiarazioni dell'utente e non sono attribuiti a un'identità verificata.
+**BR-AUTH-01.** Il Portale Verifiche non autentica lo studente. Nome, cognome e classe sono dichiarazioni dell'utente e non sono attribuiti a un'identità verificata. Non è richiesta email.
 
-**BR-AUTH-02.** L'email è normalizzata solo per applicare il lock del tentativo: rimozione degli spazi esterni e confronto case-insensitive. Il sistema non valida dominio, titolare o appartenenza a una classe.
+**BR-AUTH-02.** All'avvio di una prova il sistema registra il nome dichiarato (formato `Cognome Nome`), l'indirizzo IP, il timestamp e lo user-agent in un log di accesso. È un audit trail consultabile dal docente (Report Accessi), non una prova d'identità. Il token del tentativo digitale è mono-uso.
 
 **NFR-AUTH-01.** Soluzioni, opzioni corrette, dati di correzione e funzioni del Docente non devono essere esposti dal Portale o da URL studente.
 
@@ -91,7 +91,7 @@ Registro elettronico, presenze, compiti, chat, forum, videolezioni, LMS, social 
 | Classe | Voce della lista configurata dal docente nelle impostazioni; usata nelle verifiche e nel portale. |
 | Verifica | Configurazione che seleziona fonti, classi e regole di estrazione; non è un PDF conservato. |
 | Istanza digitale | Snapshot della verifica effettivamente assegnato a un tentativo digitale, con le sole informazioni necessarie a svolgimento, correzione ed export. |
-| Tentativo | Accesso di uno studente a una verifica per un canale; è associato a un solo recapito normalizzato. |
+| Tentativo | Accesso di uno studente a una verifica per un canale; registra nome dichiarato, IP, timestamp e user-agent. Il tentativo digitale usa un token mono-uso. |
 | Consegna | Risposte inviate in modo definitivo nel canale digitale. |
 | Correzione | Punteggi, commenti, percentuale e relative rettifiche. |
 
@@ -203,15 +203,15 @@ questions:
 
 **BR-SEL-01.** Il sistema raccoglie domande valide delle fonti selezionate, filtra per tipo e difficoltà ammessi, soddisfa i minimi di difficoltà e completa fino al totale usando solo domande non ancora scelte. La stessa domanda non può comparire due volte nella stessa istanza.
 
-**BR-SEL-02.** Per `tutte_uguali`, il sistema usa un seme stabile della verifica. Per `tutte_diverse`, il seme deriva da verifica ed email normalizzata.
+**BR-SEL-02.** Per `tutte_uguali`, il sistema usa un seme stabile della verifica. Per `tutte_diverse`, il seme deriva da verifica e identificativo del tentativo.
 
 **BR-SEL-03.** Se una modifica successiva all'attivazione rende impossibile generare una nuova istanza conforme, la richiesta è rifiutata con un messaggio che indica il vincolo non soddisfatto.
 
 ### 8.3 PDF verifica
 
-**FR-VER-02.** Il PDF studente (generato nel browser) contiene titolo, nome, cognome, email, classe se dichiarata, data del giorno, domande, punteggio massimo e spazio di risposta. Non espone soluzioni o opzioni corrette.
+**FR-VER-02.** Il PDF studente (generato nel browser) contiene titolo, nome, cognome, classe se dichiarata, data del giorno, domande, punteggio massimo e spazio di risposta. Non espone soluzioni o opzioni corrette.
 
-**FR-VER-03.** Il docente può generare e scaricare un PDF in ogni momento. Nome, cognome, email e classe sono vuoti e compilabili a mano; la data non è presente. Questo download non crea tentativi né brucia email.
+**FR-VER-03.** Il docente può generare e scaricare un PDF in ogni momento. Nome, cognome e classe sono vuoti e compilabili a mano; la data non è presente. Questo download non crea tentativi né registra accessi.
 
 **AC-VER-01.** Una configurazione con totale 8 e minimi 3 bassa, 3 media, 3 alta non può essere attivata.
 
@@ -219,25 +219,25 @@ questions:
 
 ## 9. Portale Verifiche — canale cartaceo — Modulo 2
 
-**FR-PAP-01.** Dopo aver inserito nome, cognome, email e classe facoltativa, lo studente riceve il PDF della verifica direttamente come download nel browser, generato da `@react-pdf/renderer` senza passare per il server.
+**FR-PAP-01.** Dopo aver inserito nome, cognome e classe facoltativa, lo studente riceve il PDF della verifica direttamente come download nel browser, generato da `@react-pdf/renderer` senza passare per il server.
 
-**FR-PAP-02.** Il lock del recapito è creato in transazione Firestore prima della generazione del PDF. Se la transazione fallisce (email già usata), il PDF non viene generato.
+**FR-PAP-02.** L'accesso cartaceo registra un tentativo con nome dichiarato, IP, timestamp e user-agent in un log di accesso. Il canale cartaceo non applica lock e non limita il numero di download.
 
-**BR-PAP-01.** L'email è bruciata per la coppia `verifica + recapito normalizzato` indipendentemente dal canale scelto. Dopo un download cartaceo riuscito, lo stesso recapito non può ottenere un secondo PDF né avviare il canale digitale per la stessa verifica.
+**BR-PAP-01.** Il canale cartaceo non ha vincoli di unicità: più download dello stesso PDF sono ammessi. Ogni accesso è tracciato nel Report Accessi a fini di audit.
 
-**AC-PAP-01.** Due richieste concorrenti con lo stesso recapito per la stessa verifica producono un solo download PDF; la seconda riceve errore esplicito.
+**AC-PAP-01.** Due richieste con gli stessi dati per la stessa verifica producono entrambe un download; entrambi gli accessi compaiono nel Report Accessi con i rispettivi IP e timestamp.
 
-**AC-PAP-02.** Dopo il download cartaceo, il recapito risulta bloccato per tutti i canali della stessa verifica.
+**AC-PAP-02.** Dopo un download cartaceo, lo studente può ancora avviare il canale digitale: il token digitale mono-uso è indipendente dal canale cartaceo.
 
 ## 10. Portale Verifiche digitale — Modulo 3
 
 ### 10.1 Avvio e tentativo
 
-**FR-POR-01.** Il link di una verifica attiva mostra esclusivamente i dati essenziali e la scelta del canale. Per il canale digitale lo studente inserisce nome, cognome, email e classe facoltativa.
+**FR-POR-01.** Il link di una verifica attiva mostra esclusivamente i dati essenziali e la scelta del canale. Per il canale digitale lo studente inserisce nome, cognome e classe facoltativa.
 
-**FR-POR-02.** All'avvio digitale la Cloud Function `startDigitalAttempt` crea in transazione lock, tentativo, snapshot con soluzioni private e token opaco di sessione consegnato come cookie sicuro. Il client riceve solo la proiezione delle domande senza soluzioni.
+**FR-POR-02.** All'avvio digitale la Cloud Function `startDigitalAttempt` crea in transazione il tentativo, lo snapshot con soluzioni private, una voce di log accesso (nome, IP, timestamp, user-agent) e un token opaco di sessione consegnato come cookie sicuro; contestualmente brucia il token mono-uso del tentativo. Il client riceve solo la proiezione delle domande senza soluzioni.
 
-**BR-POR-01.** Da quando un tentativo digitale è avviato, l'email è bruciata anche se la consegna non viene completata.
+**BR-POR-01.** Da quando un tentativo digitale è avviato, il token mono-uso è bruciato anche se la consegna non viene completata: un secondo avvio digitale sullo stesso token è rifiutato.
 
 ### 10.2 Svolgimento, salvataggio e consegna
 
@@ -263,7 +263,7 @@ questions:
 
 ## 11. Correzione manuale e percentuali — Modulo 4
 
-**FR-COR-01.** Il docente può filtrare le consegne digitali per verifica, stato di correzione, recapito, nome dichiarato, classe e data.
+**FR-COR-01.** Il docente può filtrare le consegne digitali per verifica, stato di correzione, nome dichiarato, classe e data.
 
 **FR-COR-02.** Per ogni consegna il docente visualizza domanda, soluzione, risposta, punteggio massimo e dati dichiarati. Può assegnare a ogni domanda un punteggio da zero al massimo e un commento opzionale.
 
@@ -285,7 +285,7 @@ questions:
 
 **FR-EXP-03.** Il docente sceglie il formato al momento dell'export: **PDF** (documento unico), **Markdown** (portabile) o **CSV** (compatibile con Excel/Sheets). Il contenuto è identico nei tre formati.
 
-**BR-EXP-01.** Per ogni consegna esportata il documento include almeno: titolo della verifica, identificativo tentativo, data e ora consegna, nome, cognome, email e classe se presenti; per ogni domanda, testo, tipo, difficoltà, peso, punteggio massimo e risposta; punteggio assegnato, commento, totale e percentuale quando disponibili.
+**BR-EXP-01.** Per ogni consegna esportata il documento include almeno: titolo della verifica, identificativo tentativo, data e ora consegna, nome, cognome e classe se presenti, più i dati di accesso (IP, timestamp) a fini di audit; per ogni domanda, testo, tipo, difficoltà, peso, punteggio massimo e risposta; punteggio assegnato, commento, totale e percentuale quando disponibili.
 
 **BR-EXP-02.** Le consegne nell'export sono ordinate per verifica e, al suo interno, per data di consegna. Le consegne annullate, eliminate o ancora in bozza non vengono incluse.
 
@@ -299,7 +299,9 @@ questions:
 
 **AC-COR-02.** Una rettifica conserva valori, autore, data e motivazione e ricalcola la percentuale senza sovrascrivere la storia.
 
-## 12. Correzione assistita AI — Modulo 5
+## 12. Correzione assistita AI — Modulo 5 (fuori scope V1 / pianificato per V2)
+
+> Questo modulo è interamente rinviato alla V2. I requisiti seguenti restano la specifica vincolante del modulo ma non fanno parte del perimetro V1.
 
 **FR-AI-01.** In modalità assistita, l'AI può proporre punteggio, motivazione, commento e spiegazione degli errori. Il docente può approvare, modificare o rifiutare ogni proposta singolarmente o in blocco.
 
@@ -335,11 +337,11 @@ questions:
 
 **NFR-INT-03.** Firestore, Storage e Functions usano Milano `europe-west8` ove il servizio lo supporta.
 
-**NFR-INT-04.** Firestore e Cloud Storage devono essere inclusi in un backup giornaliero con conservazione minima di 30 giorni. RPO 24 ore; RTO best-effort.
+**NFR-INT-04.** I Markdown e gli asset in Cloud Storage sono portabili e protetti dalla ridondanza nativa di Storage; non è previsto un job di backup dedicato. Firestore è esportabile on-demand tramite un comando manuale dalla pagina impostazioni. RPO best-effort (export manuale); RTO non garantito in V1.
 
 ### 13.2 Dati e portabilità
 
-**NFR-DAT-01.** Il sistema raccoglie nel Portale soltanto nome, cognome, email, classe facoltativa e le risposte necessarie ai canali scelti.
+**NFR-DAT-01.** Il sistema raccoglie nel Portale soltanto nome, cognome, classe facoltativa e le risposte necessarie ai canali scelti, più i dati tecnici di accesso (IP, user-agent, timestamp) a fini di audit. Non raccoglie email.
 
 **NFR-DAT-02.** I dati operativi devono essere esportabili in formati standard. `Esporta verifiche` è l'export didattico globale in PDF, Markdown o CSV.
 
@@ -353,17 +355,17 @@ questions:
 
 **NFR-OPS-01.** Devono essere osservabili errori di importazione, rendering, generazione PDF, consegna e AI, senza inviare dati personali non necessari alla telemetria.
 
-**NFR-COST-01.** L'architettura privilegia servizi managed e scale-to-zero. Cloud Functions usate solo per sessione digitale (M3) e AI (M5). Prima del go-live il Docente configura budget e avvisi di spesa.
+**NFR-COST-01.** L'architettura privilegia servizi managed e scale-to-zero. Cloud Functions usate solo per sessione digitale (M3) e AI (M5/V2). Prima del go-live il Docente configura budget e avvisi di spesa.
 
 ## 14. Roadmap e dipendenze
 
 | Modulo | Capacità rilasciata | Dipendenze | Uscita verificabile |
 |---|---|---|---|
 | 1. Repository didattico | Programmi, UDA, lezioni, pool, rendering, ZIP, programma svolto (PDF + Markdown). | Accesso docente e validatore pool. | Funziona senza Portale, AI o correzione. |
-| 2. Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente e studente, email bruciata. | Modulo 1. | Vincoli validati, PDF non archiviato, recapito bruciato. |
-| 3. Portale digitale | Istanza, snapshot via Function, bozza, ripresa, consegna e deterrenza. | Modulo 2. | Una consegna strutturata è consultabile dal docente. |
+| 2. Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente e studente, log accessi. | Modulo 1. | Vincoli validati, PDF non archiviato, accessi tracciati. |
+| 3. Portale digitale | Istanza, snapshot via Function, token mono-uso, log nome+IP, bozza, ripresa, consegna e deterrenza. | Modulo 2. | Una consegna strutturata è consultabile dal docente. |
 | 4. Correzione manuale ed export | Punteggi, percentuale, rettifiche, eliminazione consegna ed export PDF/Markdown/CSV. | Modulo 3. | Percentuali, audit ed export da snapshot verificabili. |
-| 5. Correzione AI | Proposte, approvazioni, opt-in automatico e rapporto consultivo. | Modulo 4, C-02 e C-03. | I flussi manuali restano operativi senza AI. |
+| 5. Correzione AI (V2) | Proposte, approvazioni, opt-in automatico e rapporto consultivo. Fuori scope V1. | Modulo 4 (in V2). | I flussi manuali restano operativi senza AI. |
 
 **BR-REL-01.** Nessun modulo successivo può diventare prerequisito del precedente.
 
@@ -375,17 +377,19 @@ questions:
 |---|---|
 | Provider | Firebase, progetto di proprietà del Docente. |
 | Regione dati | Milano `europe-west8`, ove supportata. |
-| Backup | Giornaliero per Firestore e Cloud Storage, conservazione minima 30 giorni. |
-| RPO | 24 ore. |
-| RTO | Best-effort. |
+| Backup | Storage: ridondanza nativa, nessun job dedicato. Firestore: export manuale on-demand dal docente. |
+| RPO | Best-effort (export manuale). |
+| RTO | Non garantito in V1. |
 | Responsabile operativo | Docente. |
 
-### 15.2 Decisioni residue
+### 15.2 Decisioni residue (V2)
 
-| ID | Decisione | Owner | Scadenza | Effetto se assente |
+C-02 e C-03 riguardano il Modulo 5 (AI), spostato interamente alla V2; non bloccano la V1.
+
+| ID | Decisione | Stato | Owner | Scadenza |
 |---|---|---|---|---|
-| C-02 | Provider AI, condizioni contrattuali, residenza dati. | Docente. | Prima del Modulo 5. | Modulo 5 disabilitato; gli altri moduli restano validi. |
-| C-03 | Regola didattica per la correzione automatica. | Docente. | Prima di abilitare la modalità automatica. | Rimane disponibile solo la modalità assistita. |
+| C-02 | Provider AI e modello di default. | Risolta (V2): OpenAI `gpt-4o-mini` o Anthropic Claude `claude-haiku-4-5-20251001`, chiave configurata dal docente. | Docente. | V2, prima del Modulo 5. |
+| C-03 | Regola didattica per la correzione automatica. | Rinviata alla V2. | Docente. | V2, prima della modalità automatica. |
 
 ## 16. Criteri globali di accettazione
 
@@ -394,11 +398,11 @@ La futura architettura e l'implementazione sono conformi solo se dimostrano con 
 1. Markdown e asset restano esportabili e leggibili senza SchoolForge;
 2. un pool invalido non compromette la lezione ma non può generare domande;
 3. la configurazione attivata è immutabile;
-4. l'email è un recapito non verificato e viene bruciata in modo concorrente-sicuro tra i due canali;
+4. lo studente dichiara nome e cognome non verificati; ogni accesso è tracciato con nome+IP+timestamp+user-agent e il tentativo digitale usa un token mono-uso;
 5. il PDF cartaceo è generato nel browser senza persistenza e il download docente non altera il tentativo;
 6. un tentativo digitale riprende nello stesso browser con le stesse domande e diventa immutabile alla consegna;
 7. soluzioni e opzioni corrette non sono mai esposte al Portale;
 8. percentuali e rettifiche sono calcolabili e tracciabili senza gestire voti;
 9. l'AI non genera domande, non usa il web, non è necessaria ai flussi manuali;
 10. `Esporta verifiche` include tutte e sole le consegne digitali definitive e usa gli snapshot svolti;
-11. C-01 è applicata; C-02 e C-03 bloccano soltanto le funzionalità AI a cui si riferiscono.
+11. C-01 è applicata; C-02 e C-03 riguardano solo il Modulo 5 (V2) e non bloccano la V1.
