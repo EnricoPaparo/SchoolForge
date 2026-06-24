@@ -35,17 +35,19 @@ corepack prepare pnpm@latest --activate
 ```
 SchoolForge/
 ├─ apps/
-│  └─ web/                        # SPA React + TypeScript (Vite)
+│  ├─ web/                        # SPA React + TypeScript (Vite) — docente
+│  └─ portale/                    # App React leggera — Portale Verifiche (studenti)
 ├─ functions/
 │  └─ src/
 │     ├─ api/                     # Handler Cloud Functions (sottili)
 │     ├─ domain/                  # Logica di business per modulo
 │     │  ├─ repository/
 │     │  ├─ exams/
-│     │  ├─ archive/
-│     │  └─ corrections/
-│     ├─ integrations/            # Google Forms, roster, Drive, AiGateway
-│     ├─ services/                # PDF, audit, autorizzazione, import/export
+│     │  ├─ portale/              # accesso studente, email bruciata, consegne
+│     │  ├─ corrections/
+│     │  └─ storico/
+│     ├─ integrations/            # AiGateway (Modulo 5)
+│     ├─ services/                # PDF, audit, autorizzazione, import/export, email-bruciata
 │     └─ repositories/            # Accesso Firestore e Storage
 ├─ packages/
 │  └─ lesson-contract/            # Parser, validatore e tipi Markdown condivisi
@@ -259,8 +261,9 @@ fix/<descrizione>       → correzione bug
 
 Esempi:
 - `feature/repository-import-preflight`
-- `feature/exams-publish-transaction`
-- `fix/lesson-parser-rubric-score-validation`
+- `feature/exams-activate-transaction`
+- `feature/portale-email-bruciata`
+- `fix/lesson-parser-pool-difficulty-validation`
 
 Un branch deve coprire una sola unità verticale piccola. Non mescolare refactor, nuove funzionalità e correzioni bug nello stesso branch.
 
@@ -285,9 +288,9 @@ I commit devono essere piccoli e intenzionali. Usa il formato:
 Tipi: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
 
 Esempi:
-- `feat(lesson-contract): add validation for rubric.max_score mismatch`
-- `fix(exams): reject publish when solution is missing for open question`
-- `test(security-rules): add negative test for non-owner lesson write`
+- `feat(lesson-contract): add pool difficulty/weight validation`
+- `fix(exams): reject activation when solution is missing for open question`
+- `test(security-rules): add negative test for direct burned access`
 
 ---
 
@@ -304,22 +307,41 @@ Per il deploy in produzione, la CI usa le variabili protette configurate nel sis
 
 ---
 
-## Aggiornare la documentazione
+## Aggiornare la documentazione (regola di propagazione)
 
-Le modifiche ai requisiti aggiornano i documenti in questo ordine:
+La documentazione è 10/10 solo se resta **coerente**. Una modifica concettuale non è completa finché non è propagata a tutti i documenti che ne dipendono, **in quest'ordine**:
 
-1. `documentazione/analisi-requisiti.md`
-2. `documentazione/architettura.md`
-3. `documentazione/piano-implementazione.md`
-4. `documentazione/api-contract.md` (se l'API cambia)
+1. `documentazione/analisi-requisiti.md` (requisito/regola)
+2. `documentazione/architettura.md` (meccanismo)
+3. `documentazione/api-contract.md` (se cambia un endpoint o un payload)
+4. `documentazione/sicurezza.md` (se cambia accesso, dati personali o superficie d'attacco)
+5. `documentazione/test-strategy.md` (caso positivo + caso negativo)
+6. `documentazione/diagrammi/*` (se cambia un flusso o il modello dati)
+7. `documentazione/piano-implementazione.md` (se cambia ordine, gate o deliverable)
+8. `documentazione/glossario.md` (se nasce o cambia un termine — è l'autorità sul vocabolario)
+9. `documentazione/edge-case.md` (se emerge un nuovo caso di confine)
 
-Le modifiche al formato Markdown aggiornano:
+Le decisioni aperte (C-01/C-02/C-03, privacy) vivono in `documentazione/decisioni/`: non sostituirle con assunzioni nel codice o in altri documenti.
 
-1. `documentazione/analisi-requisiti.md` sezione 8 (contratto)
-2. Fixture in `packages/lesson-contract/src/__fixtures__/`
-3. `documentazione/glossario.md` se viene introdotto un nuovo termine
+Non si aggiorna solo il codice lasciando i documenti obsoleti, e non si aggiorna un documento "alto" lasciando indietro quelli derivati.
 
-Non si aggiorna solo il codice lasciando i documenti obsoleti.
+### Checklist documentale di PR
+
+Ogni PR che tocca concetto, API, dati o flussi deve poter rispondere "sì" a:
+
+- [ ] I documenti dipendenti sono aggiornati secondo la regola di propagazione?
+- [ ] Versione/data/header dei documenti modificati sono allineati (v2.0)?
+- [ ] Nessun link relativo `.md` è rotto? (`pnpm run check:docs`)
+- [ ] Nessun termine/identificatore fuori perimetro v2 reintrodotto? (`pnpm run check:docs`)
+- [ ] Il vocabolario è coerente con il glossario?
+
+### Check automatico
+
+Lo script `scripts/check-docs.sh` (eseguito anche in CI, stage 1) verifica i link relativi tra i documenti e segnala gli identificatori fuori perimetro v2: API del vecchio design (Forms/roster/Drive), nomi di endpoint o stati superati e riferimenti a versioni precedenti dei documenti. L'elenco esatto dei pattern è nello script. Eseguilo in locale prima della PR:
+
+```bash
+pnpm run check:docs
+```
 
 ---
 
