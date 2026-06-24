@@ -104,7 +104,7 @@ Verifica ──< Consegna digitale 1 ──1 Correzione
 ```
 
 **BR-DOM-01.** Ogni identificatore di dominio deve essere stabile e non dipendere da titolo, nome file o posizione di cartella.  
-**BR-DOM-02.** Una Verifica pubblicata non dipende dal contenuto corrente delle Lezioni: le domande e le soluzioni selezionate sono parte della configurazione immutabile.  
+**BR-DOM-02.** Una Verifica attivata non dipende dal contenuto corrente delle Lezioni: le domande e le soluzioni selezionate sono parte della configurazione immutabile.  
 **BR-DOM-03.** Un nome, un titolo o una UDA possono cambiare senza invalidare Consegne o Correzioni già archiviate.  
 **BR-DOM-04.** SchoolForge non conserva revisioni storiche delle Lezioni. La modifica o l'eliminazione di una Lezione agisce solo sul repository corrente.
 

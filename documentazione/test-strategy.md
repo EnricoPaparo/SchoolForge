@@ -1,23 +1,23 @@
 # SchoolForge — Strategia di test
 
-**Versione:** 1.0
-**Data:** 22 giugno 2026
+**Versione:** 2.0
+**Data:** 24 giugno 2026
 **Stato:** baseline
-**Input vincolante:** [Architettura v1.0](architettura.md), sezione 14; [Piano di implementazione v1.0](piano-implementazione.md), sezione 9
+**Input vincolante:** [Architettura v2.0](architettura.md), sezione 15; [Piano di implementazione v2.0](piano-implementazione.md), sezione 9
 **Destinatari:** team di implementazione, QA, responsabile tecnico
 
 ---
 
 ## 1. Filosofia
 
-SchoolForge è un sistema che gestisce conoscenza didattica, dati personali di minori e documenti valutativi. La qualità del test non è opzionale: un bug nella pubblicazione di una Verifica, nel calcolo della percentuale o nella protezione dei dati di uno studente ha conseguenze reali.
+SchoolForge gestisce conoscenza didattica, dati personali di minori e documenti valutativi. La qualità del test non è opzionale: un bug nell'attivazione di una Verifica, nel calcolo della percentuale, nella protezione dei dati di uno studente o nella transazione di email bruciata ha conseguenze reali.
 
-I principi guida sono:
+Principi guida:
 
 1. **Test come specifica eseguibile.** Ogni requisito funzionale e ogni regola di business ha almeno un test che ne verifica il rispetto e un test che ne verifica la violazione.
-2. **Nessuna fiducia implicita nel percorso felice.** I casi negativi, i boundary e le precondizioni non rispettate sono test di prima classe.
-3. **Isolamento reale.** I test non usano servizi cloud reali. L'unica eccezione documentata e intenzionale sono i test di integrazione manuali con Google Education (checklist, non automatici).
-4. **Test che falliscono per le ragioni giuste.** Un test che fallisce per un'asserzione sbagliata è un test non valido; un test che passa pur senza testare il comportamento atteso è peggio di nessun test.
+2. **Nessuna fiducia implicita nel percorso felice.** Casi negativi, boundary e precondizioni non rispettate sono test di prima classe.
+3. **Isolamento reale.** I test non usano servizi cloud reali. L'unica eccezione documentata sono i test manuali con account Google Workspace for Education (checklist, non CI).
+4. **Test che falliscono per le ragioni giuste.** Un test che passa senza verificare il comportamento atteso è peggio di nessun test.
 5. **Velocità come requisito.** La suite unit+contract deve completarsi in meno di 60 secondi su un laptop standard. I test E2E devono essere parallelizzabili.
 
 ---
@@ -27,12 +27,12 @@ I principi guida sono:
 | Strumento | Versione minima | Scopo |
 |---|---|---|
 | **Vitest** | 2.x | Test unitari e di integrazione TypeScript (backend e `lesson-contract`) |
-| **Playwright** | 1.45.x | Test end-to-end della web app |
+| **Playwright** | 1.45.x | Test end-to-end di web app docente e Portale Verifiche |
 | **Firebase Emulator Suite** | ultima stabile | Emulazione locale di Firestore, Storage, Auth, Functions |
+| **@firebase/rules-unit-testing** | ultima stabile | Test delle Security Rules Firestore e Storage |
 | **Zod** | 3.x | Validazione runtime degli schema (usata anche nei test come fixture validator) |
 | **@testing-library/react** | 16.x | Test dei componenti React isolati |
 | **MSW (Mock Service Worker)** | 2.x | Mock degli endpoint Firebase Callable Functions nei test React |
-| **supertest** | 6.x | Test HTTP degli endpoint Cloud Functions fuori dall'emulatore |
 
 ---
 
@@ -43,16 +43,18 @@ I principi guida sono:
 **Scopo:** Verificare la logica di ogni modulo in isolamento, senza I/O esterno.
 
 **Cosa testare:**
-- Parser e validatore `lesson-contract` (tutti i casi validi e invalidi del contratto Markdown v1)
-- Calcolo percentuale (`(score / maxScore) * 100`, arrotondamento, stato `non_definitiva`)
-- Macchina a stati delle Verifiche (transizioni consentite e negate)
-- Macchina a stati delle Consegne
-- Macchina a stati delle Assegnazioni
+- Parser e validatore `lesson-contract`: `parseUda`, `parseLessonMarkdown`, `parsePoolMarkdown` (tutti i casi validi e invalidi del contratto v1)
+- Calcolo punteggio massimo per item (`coeff_difficoltà × coeff_peso`, arrotondamento a 2 decimali)
+- Calcolo percentuale (`Σ punti / Σ max × 100`, stato `non_definitiva`)
+- Macchina a stati delle Verifiche (`bozza` → `attiva` → `chiusa`/`annullata`; transizioni negate)
+- Macchina a stati delle Correzioni (`da_correggere` → `in_corso` → `definitiva`)
+- Validazione configurazione verifica (somma minimi ≤ totale; totale = aperte + chiuse)
+- Selezione domande dal pool (rispetto minimi per difficoltà; seed fisso vs per-email)
 - Logica di deduplicazione del corpus (UDA + Lezioni selezionate)
 - Validazione dei payload delle Cloud Functions (schema Zod)
-- Logica di matching email studenti (Import Forms)
-- Costruzione del contesto AI (verifica che non includa lezioni non selezionate)
-- Validazione output AiGateway (punteggio ≤ massimo, criteri rubrica presenti)
+- Normalizzazione email per la chiave `burned` (lowercase/trim)
+- Costruzione del contesto AI (verifica che non includa lezioni non selezionate) — Modulo 5
+- Validazione output AiGateway (punteggio ≤ `maxScore` dell'item) — Modulo 5
 - Funzioni di utilità (sanitizzazione Markdown, normalizzazione testo per ricerca)
 
 **Coverage minima:** 90% linee per `lesson-contract`, `domain/`, `services/`; 80% per `api/`, `repositories/`.
@@ -63,61 +65,73 @@ I principi guida sono:
 
 ### 3.2 Contract test
 
-**Scopo:** Verificare il contratto Lesson Markdown v1 con un set esaustivo di fixture.
+**Scopo:** Verificare il contratto Lesson Markdown v1 con un set esaustivo di fixture. Nella v2 i file lezione e pool sono **separati**: `lezione-XXX.md` e `lezione-XXX.pool.md`.
 
 **Fixture da includere:**
 
 ```
 packages/lesson-contract/src/__fixtures__/
-  valid/
-    minimal.md                  # solo campi obbligatori
-    full-self-check.md          # self_check con tutti i campi
-    full-assessment-open.md     # assessment aperto con rubrica
-    full-assessment-closed.md   # assessment chiuso con opzioni e chiave
-    multiple-questions.md       # più domande di entrambi i tipi
-    with-images.md              # immagini relative e HTTPS
-    with-tables-code.md         # tabelle, blocchi codice, liste
-  invalid/
-    missing-schoolforge-field.md
-    missing-id.md
-    duplicate-question-id.md
-    invalid-question-kind.md
-    unknown-difficulty.md
-    closed-without-options.md
-    closed-without-correct.md
-    correct-option-not-in-options.md
-    rubric-score-mismatch.md    # sum(criteria.maxScore) ≠ rubric.maxScore
-    self-check-in-wrong-section.md
-    assessment-in-autoverifica.md
-    missing-content-section.md
-    sections-wrong-order.md
-    program-id-empty.md
-    objectives-empty-list.md
+  uda/
+    valid/
+      minimal-uda.md              # campi obbligatori
+      full-uda.md                 # competenze, obiettivi, periodo, ore
+    invalid/
+      missing-kind.md
+      empty-competencies.md
+      unknown-program-id.md
+  lesson/
+    valid/
+      minimal-lesson.md           # solo Contenuto
+      lesson-with-selfcheck.md    # ## Autoverifica con kind: self_check
+      lesson-with-images.md       # immagini relative e HTTPS
+      lesson-with-tables-code.md  # tabelle, blocchi codice, liste
+    invalid/
+      missing-schoolforge-field.md
+      missing-id.md
+      missing-uda-id.md
+      objectives-not-a-list.md
+      content-section-missing.md
+      sections-wrong-order.md
+  pool/
+    valid/
+      pool-open.md                # domanda open con soluzione
+      pool-closed-single.md       # closed_single con options e correct_option_ids
+      pool-closed-multiple.md     # closed_multiple
+      pool-mixed.md               # più domande di tipi diversi
+    invalid/
+      duplicate-question-id.md
+      unknown-type.md
+      unknown-difficulty.md
+      unknown-weight.md
+      closed-without-options.md
+      closed-without-correct.md
+      correct-option-not-in-options.md
+      missing-solution.md
+      malformed-yaml-block.md
 ```
 
-Ogni fixture valida ha uno snapshot dell'output atteso del parser. Ogni fixture invalida ha la lista degli errori attesi con file, riga e messaggio.
+Ogni fixture valida ha uno snapshot dell'output atteso del parser. Ogni fixture invalida ha la lista degli errori attesi con file, riga (quando applicabile) e messaggio.
 
 **Test parametrici:**
 
 ```typescript
 describe('lesson-contract parser', () => {
-  describe('valid fixtures', () => {
-    const fixtures = glob.sync('__fixtures__/valid/*.md');
-    it.each(fixtures)('parses %s without errors', async (fixturePath) => {
-      const result = await parseLessonMarkdown(readFileSync(fixturePath, 'utf8'));
+  describe('valid pool fixtures', () => {
+    const fixtures = glob.sync('__fixtures__/pool/valid/*.md');
+    it.each(fixtures)('parses %s without errors', (fixturePath) => {
+      const result = parsePoolMarkdown(readFileSync(fixturePath, 'utf8'));
       expect(result.errors).toHaveLength(0);
-      expect(result.lesson).toMatchSnapshot();
+      expect(result.questions).toMatchSnapshot();
     });
   });
 
-  describe('invalid fixtures', () => {
-    const fixtures = glob.sync('__fixtures__/invalid/*.md');
-    it.each(fixtures)('rejects %s with expected errors', async (fixturePath) => {
-      const result = await parseLessonMarkdown(readFileSync(fixturePath, 'utf8'));
+  describe('invalid pool fixtures', () => {
+    const fixtures = glob.sync('__fixtures__/pool/invalid/*.md');
+    it.each(fixtures)('rejects %s with explicit errors', (fixturePath) => {
+      const result = parsePoolMarkdown(readFileSync(fixturePath, 'utf8'));
       expect(result.errors.length).toBeGreaterThan(0);
-      // ogni errore ha file, line, message
       result.errors.forEach(err => {
-        expect(err).toMatchObject({ line: expect.any(Number), message: expect.any(String) });
+        expect(err).toMatchObject({ message: expect.any(String) });
       });
     });
   });
@@ -133,8 +147,8 @@ describe('lesson-contract parser', () => {
 **Setup:**
 
 ```bash
-# prima di eseguire i test di integrazione
-firebase emulators:start --only firestore,storage,auth,functions --project schoolforge-dev
+firebase emulators:exec --only firestore,storage,auth,functions \
+  --project schoolforge-test-ci "pnpm run test:integration"
 ```
 
 **Cosa testare:**
@@ -145,8 +159,9 @@ describe('Firestore Security Rules', () => {
   it('denies unauthenticated reads on /lessons', async () => { ... });
   it('denies reads from a non-owner authenticated user', async () => { ... });
   it('allows reads from the owner', async () => { ... });
-  it('denies direct writes from the owner (all collections)', async () => { ... });
-  it('allows backend (service account) to write lessons', async () => { ... });
+  it('denies direct writes from the owner (all domain collections)', async () => { ... });
+  it('denies any client read/write on /burned', async () => { ... });
+  it('denies a student token from reading submissions', async () => { ... });
 });
 ```
 
@@ -156,27 +171,44 @@ describe('commitImport atomicity', () => {
   it('makes NO lesson visible if commit fails halfway', async () => { ... });
   it('makes ALL selected lessons visible after successful commit', async () => { ... });
   it('does not leave orphaned staging files after commit', async () => { ... });
-  it('does not modify questionIndex for invalid lessons', async () => { ... });
+  it('does not add pool questions of invalid lessons to questionIndex', async () => { ... });
 });
 ```
 
-**Pubblicazione Verifica:**
+**Attivazione Verifica:**
 ```typescript
-describe('publishExam', () => {
-  it('freezes exam items and sets status to published', async () => { ... });
-  it('rejects publish if any item is missing solution', async () => { ... });
-  it('rejects modification of a published exam', async () => { ... });
-  it('does NOT update exam items when lesson is replaced', async () => { ... });
-  it('does NOT update exam items when lesson is deleted', async () => { ... });
+describe('activateExam', () => {
+  it('freezes exam items into exams/{id}/items and sets status attiva', async () => { ... });
+  it('rejects activation if any item is missing solution or maxScore', async () => { ... });
+  it('rejects modification of an active exam', async () => { ... });
+  it('does NOT update exam items when source lesson is replaced', async () => { ... });
+  it('does NOT update exam items when source lesson is deleted', async () => { ... });
+  it('fixes a single seed for variant tutte_uguali', async () => { ... });
 });
 ```
 
-**Idempotenza import Forms:**
+**Email bruciata (cuore della v2):**
 ```typescript
-describe('importFormResponses idempotency', () => {
-  it('creates one submission for one response, even if imported twice', async () => { ... });
-  it('quarantines responses without student email match', async () => { ... });
-  it('quarantines responses with ambiguous email match', async () => { ... });
+describe('email bruciata transaction', () => {
+  it('serves the PDF and creates a burned record on first request', async () => { ... });
+  it('rejects a second request with the same email (409)', async () => { ... });
+  it('normalizes email (case/trim) before checking burned', async () => { ... });
+  it('does NOT create a burned record for the teacher PDF', async () => { ... });
+  it('allows only ONE of two concurrent requests with the same email', async () => {
+    // due transazioni simultanee → esattamente un successo, un 409
+  });
+  it('burns email identically for the digital channel (startDigitalAttempt)', async () => { ... });
+});
+```
+
+**Portale — svolgimento digitale:**
+```typescript
+describe('portale digital attempt', () => {
+  it('returns questions WITHOUT solutions or correct_option_ids', async () => { ... });
+  it('rejects access for an email outside the Education domain', async () => { ... });
+  it('saves a structured submission on submitAnswers', async () => { ... });
+  it('rejects a second submitAnswers for the same attempt', async () => { ... });
+  it('creates the student lazily on first portal access', async () => { ... });
 });
 ```
 
@@ -186,7 +218,7 @@ describe('correction percentage calculation', () => {
   it('calculates correct percentage for complete correction', async () => { ... });
   it('marks percentage as non_definitiva when items are missing', async () => { ... });
   it('recalculates percentage on score update', async () => { ... });
-  it('preserves previous score in audit on update', async () => { ... });
+  it('preserves previous score, author, date and reason on rettifica', async () => { ... });
 });
 ```
 
@@ -194,9 +226,9 @@ describe('correction percentage calculation', () => {
 ```typescript
 describe('audit log', () => {
   it('writes audit event on lesson import', async () => { ... });
-  it('writes audit event on exam publication', async () => { ... });
+  it('writes audit event on exam activation', async () => { ... });
   it('writes audit event on correction update with previous value', async () => { ... });
-  it('does NOT include student response text in audit event', async () => { ... });
+  it('does NOT include student response text or personal data in audit event', async () => { ... });
 });
 ```
 
@@ -204,7 +236,7 @@ describe('audit log', () => {
 
 ### 3.4 End-to-end test (Playwright)
 
-**Scopo:** Verificare i flussi completi del Docente nella web app su ambiente `test`.
+**Scopo:** Verificare i flussi completi del Docente (web app) e dello Studente (Portale) su ambiente `test`.
 
 **Configurazione:**
 
@@ -212,12 +244,9 @@ describe('audit log', () => {
 // playwright.config.ts
 export default defineConfig({
   testDir: './e2e',
-  use: {
-    baseURL: process.env.TEST_APP_URL,
-    storageState: 'e2e/.auth/teacher.json',  // sessione pre-autenticata
-  },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'web-docente', use: { ...devices['Desktop Chrome'], baseURL: process.env.TEST_APP_URL } },
+    { name: 'portale-studente', use: { ...devices['Pixel 7'], baseURL: process.env.TEST_PORTALE_URL } },
   ],
 });
 ```
@@ -226,66 +255,74 @@ export default defineConfig({
 
 **G2 — Repository:**
 ```typescript
-test('teacher imports a lesson folder and views it rendered', async ({ page }) => {
-  // 1. Login
-  // 2. Naviga a Repository > Importa
-  // 3. Carica cartella di test con 3 lezioni valide e 1 invalida
-  // 4. Verifica piano di import: 3 valide, 1 invalida con errori
-  // 5. Conferma le 3 valide
-  // 6. Naviga a Lezione
-  // 7. Verifica rendering Markdown e immagini
-  // 8. Verifica assenza blocchi assessment nel DOM
-  // 9. Scarica export ZIP e verifica struttura
+test('teacher imports a lesson folder (lesson + pool) and views it rendered', async ({ page }) => {
+  // 1. Login docente
+  // 2. Repository > Importa: cartella con 3 lezioni valide (con .pool.md) e 1 invalida
+  // 3. Verifica piano: 3 valide, 1 invalida con errori riga/file
+  // 4. Conferma le 3 valide
+  // 5. Apri una lezione in fruizione
+  // 6. Verifica rendering Markdown e immagini
+  // 7. Verifica che le domande del pool e le soluzioni NON siano nel DOM
+  // 8. Scarica export ZIP e verifica struttura apribile fuori SchoolForge
 });
 
-test('lesson with assessment questions does NOT show them in view mode', async ({ page }) => {
-  // Verifica che l'elemento DOM contenente assessment non esista
-  const assessmentElements = page.locator('[data-question-kind="assessment"]');
-  await expect(assessmentElements).toHaveCount(0);
+test('pool questions and solutions are NOT shown in lesson view', async ({ page }) => {
+  const poolElements = page.locator('[data-source="pool"]');
+  await expect(poolElements).toHaveCount(0);
 });
 ```
 
-**G3 — Verifiche:**
+**G3 — Verifiche e Portale:**
 ```typescript
-test('teacher creates, publishes exam and PDF is correct', async ({ page }) => {
-  // 1. Crea verifica da 2 lezioni
-  // 2. Seleziona domande, aggiunge soluzioni e rubriche mancanti
-  // 3. Pubblica con conferma
-  // 4. Verifica stato "pubblicata"
-  // 5. Genera PDF prova e verifica contenuto (titolo, domande)
-  // 6. Verifica che il PDF non contenga le soluzioni
-  // 7. Sostituisce la lezione sorgente
-  // 8. Verifica che la verifica pubblicata abbia ancora le domande originali
+test('teacher creates, activates exam and downloads docente PDF', async ({ page }) => {
+  // 1. Crea verifica da 2 lezioni, configura totale/aperte/chiuse/minimi difficoltà
+  // 2. Attiva con conferma → stato "attiva"
+  // 3. Scarica PDF docente: campi intestazione vuoti, nessuna data, niente soluzioni
+  // 4. Sostituisce una lezione sorgente
+  // 5. Verifica che lo snapshot della verifica sia invariato
+});
+
+test('student downloads exam PDF only once (email bruciata)', async ({ page }) => {
+  // Portale: apri link verifica attiva
+  // Autentica con email Google scolastica (account test)
+  // Canale cartaceo: scarica PDF (filename con nome+cognome)
+  // Secondo tentativo con la stessa email → bloccato con messaggio esplicito (409)
+});
+
+test('student completes the digital channel and submits', async ({ page }) => {
+  // Portale fullscreen: tutte le domande in sequenza
+  // Nessuna soluzione visibile; header sticky con bottone Consegna
+  // Consegna → risposte salvate; il docente le vede in "da_correggere"
+});
+
+test('teacher exports programma svolto as .txt', async ({ page }) => {
+  // Flagga UDA/lezioni come svolte; scarica .txt strutturato
 });
 ```
 
-**G4 — Archivio:**
+**G4 — Correzione:**
 ```typescript
-test('teacher archives a submission with Drive link', async ({ page }) => {
-  // 1. Assegna verifica a classe
-  // 2. Inserisce manualmente una consegna per uno studente
-  // 3. Registra un link Drive fittizio
-  // 4. Verifica che lo storico mostri la consegna in stato "da_correggere"
-  // 5. Verifica che lo studente non sia accessibile dalla web app senza login docente
+test('teacher corrects a digital submission and sees percentage', async ({ page }) => {
+  // 1. Apri consegna da correggere
+  // 2. Assegna punteggio (0..maxScore) a ogni item
+  // 3. Verifica percentuale definitiva
+  // 4. Rettifica un punteggio con motivazione
+  // 5. Verifica valore precedente, nuovo valore e motivazione nell'audit trail
 });
 ```
 
-**G5 — Correzione:**
+**G5 — Storico:**
 ```typescript
-test('teacher corrects a submission and sees percentage', async ({ page }) => {
-  // 1. Naviga alla consegna da correggere
-  // 2. Assegna punteggio a ogni item
-  // 3. Verifica percentuale calcolata
-  // 4. Rettifica un punteggio
-  // 5. Verifica che il valore precedente sia visibile nell'audit trail
+test('teacher consults student history and filters by exam', async ({ page }) => {
+  // Studente creato lazy compare con la sola email
+  // Storico filtrabile per verifica; percentuali definitive e non_definitiva
 });
 ```
 
-**Accessibilità (smoke test per ogni milestone):**
+**Accessibilità (smoke test per milestone):**
 ```typescript
 test('main views are keyboard-navigable', async ({ page }) => {
-  // Naviga per tab nelle viste principali senza mouse
-  // Verifica focus visible e skip links
+  // Navigazione da tastiera nelle viste principali; focus visibile e skip links
 });
 ```
 
@@ -293,91 +330,83 @@ test('main views are keyboard-navigable', async ({ page }) => {
 
 ### 3.5 Test manuali (checklist)
 
-I seguenti test richiedono account reali Google Workspace for Education e non sono automatizzabili in CI. Vengono eseguiti prima di ogni gate che riguardi integrazioni Google.
+Richiedono account reali Google Workspace for Education e non sono automatizzabili in CI. Eseguiti prima dei gate che coinvolgono l'autenticazione Google reale o l'AI.
 
-**Checklist pre-G3 (Google Forms):**
-- [ ] Creare un Form da una verifica pubblicata con account Education test
-- [ ] Verificare che il Form abbia tutte le domande compatibili
-- [ ] Verificare che incompatibilità di tipo vengano segnalate correttamente
-- [ ] Verificare che il Form richieda autenticazione Google per la compilazione
-- [ ] Compilare il Form con account studente test
-- [ ] Importare le risposte e verificare che vengano attribuite correttamente
-- [ ] Compilare il Form una seconda volta con lo stesso account e verificare idempotenza
-- [ ] Revocare il token OAuth e verificare che il percorso PDF manuale rimanga funzionale
+**Checklist pre-G3 (autenticazione reale Portale):**
+- [ ] Studente con email del dominio Education configurato accede al Portale
+- [ ] Studente con email Google NON Education viene rifiutato
+- [ ] Download PDF studente con dati precompilati corretti
+- [ ] Secondo download con la stessa email rifiutato
+- [ ] Docente scarica il PDF senza limiti e senza bruciare email
 
-**Checklist pre-G4 (Roster Google Education):**
-- [ ] Collegare l'API Google Education con account test
-- [ ] Verificare che l'anteprima roster mostri correttamente classi e studenti
-- [ ] Confermare l'importazione di un sottoinsieme e verificare che il resto non venga toccato
-- [ ] Rimuovere uno studente dalla sorgente e verificare che l'import proponga archiviazione, non eliminazione
-- [ ] Verificare che le consegne già archiviate di uno studente archiviato rimangano nello storico
-
-**Checklist pre-G5-AI (Provider AI):**
-- [ ] Configurare il provider AI con account sandbox
-- [ ] Generare domande da 1 lezione e verificare che non includano contenuti da altre lezioni
-- [ ] Verificare che il log di audit contenga hash del contesto e modello
-- [ ] Inviare una risposta di studente per la correzione assistita
-- [ ] Verificare che il punteggio proposto non superi il massimo della rubrica
-- [ ] Rifiutare una proposta AI e verificare che resti in stato "rifiutata" dopo bulk approve
+**Checklist pre-G5-AI (Provider AI — Modulo 5):**
+- [ ] Configurare il provider AI con account sandbox (decisione C-02)
+- [ ] Generare domande da 1 lezione e verificare che non includano contenuti di altre lezioni
+- [ ] Verificare che l'audit contenga hash del contesto e modello
+- [ ] Inviare una risposta studente per la correzione assistita previo consenso esplicito
+- [ ] Verificare che il punteggio proposto non superi il `maxScore` dell'item
+- [ ] Rifiutare una proposta AI e verificare che resti esclusa dall'approvazione massiva
 - [ ] Verificare che la correzione AI sia distinguibile da quella manuale nello storico
 
 ---
 
 ## 4. Testing del parser Markdown (`lesson-contract`)
 
-Il parser è il componente più critico del sistema: un bug qui compromette importazione, indice delle domande, composizione delle verifiche e rendering. Deve avere copertura al 100% dei branch.
+Il parser è il componente più critico: un bug qui compromette importazione, `questionIndex`, composizione delle verifiche e rendering. Copertura al 100% dei branch.
 
-### 4.1 Casi limite da coprire obbligatoriamente
+### 4.1 Casi limite obbligatori
 
-**Front matter:**
+**Front matter (UDA e lezione):**
 - `schoolforge: 2` (versione non supportata) → errore esplicito con istruzione di migrazione
-- `id` con caratteri speciali o spazi → errore con riga
-- `id` uguale a quello di una lezione già presente → segnalato come conflitto (non errore parser)
-- `objectives` come stringa invece di lista → errore
-- `program_id` presente ma `uda_id` assente → errore
+- `id` con caratteri non ammessi o spazi → errore
+- `id` uguale a una lezione esistente → conflitto (non errore parser)
+- `objectives`/`competencies` come stringa invece di lista → errore
+- lezione con `program_id` presente ma `uda_id` assente → errore
+- `uda_id` che non appartiene al `program_id` → errore (rilevato in fase di import)
 
-**Corpo:**
-- Sezioni nell'ordine sbagliato (`## Domande di verifica` prima di `## Contenuto`) → errore
-- Sezione `## Contenuto` duplicata → errore
-- Sezioni `## Autoverifica` e `## Domande di verifica` assenti → valido (opzionali)
-- Immagine con URL `file://` → errore di sicurezza
-- Immagine con URL `javascript:` → errore di sicurezza
-- HTML inline (`<script>`) → parsing senza esecuzione (il renderer è responsabile della sanitizzazione; il parser lo segnala come warning)
+**Corpo lezione:**
+- Sezioni in ordine sbagliato (`## Autoverifica` prima di `## Contenuto`) → errore
+- Sezione `## Contenuto` mancante o duplicata → errore
+- `## Autoverifica` assente → valido (opzionale)
+- Immagine con URL `file://` o `javascript:` → errore di sicurezza
+- HTML inline (`<script>`) → parsing senza esecuzione; segnalato come warning (il renderer sanifica)
 
-**Blocchi `schoolforge-question`:**
-- YAML malformato (indentazione errata) → errore con riga
-- `id` duplicato nella stessa lezione → errore
-- `kind` non in `['self_check', 'assessment']` → errore
-- `type: closed_single` senza `options` → errore
+**Blocchi `schoolforge-question` nel file `.pool.md`:**
+- YAML malformato (indentazione) → errore con riga
+- `id` duplicato nello stesso pool → errore
+- `type` non in `['open','closed_single','closed_multiple']` → errore
+- `difficulty` non in `['bassa','media','alta']` → errore
+- `weight` non in `['basso','medio','alto']` → errore
+- `closed_single`/`closed_multiple` senza `options` → errore
 - `correct_option_ids` che riferisce un id non in `options` → errore
-- `rubric.max_score` diverso dalla somma di `criteria.max_score` → errore
-- Domanda con campi extra non dichiarati → warning (permissivo per estensibilità futura)
-- `difficulty` mancante su domanda `assessment` → errore
+- `solution` mancante → errore
+- Campi extra non dichiarati → warning (permissivo per estensibilità, BR-MD-VER-03)
 
-### 4.2 Strategia di golden file test
+> Nota v2: non esistono blocchi `assessment` dentro la lezione né rubriche. Le domande di verifica vivono solo nel file `.pool.md`; nella lezione sono ammesse solo domande `kind: self_check`.
+
+### 4.2 Golden file test
 
 ```typescript
-// Per ogni fixture valida, lo snapshot viene creato al primo run e committato.
-// Le modifiche allo snapshot richiedono review esplicita.
-it('parses full-assessment-closed.md to expected AST', async () => {
-  const input = readFileSync('__fixtures__/valid/full-assessment-closed.md', 'utf8');
-  const result = parseLessonMarkdown(input);
-  expect(result).toMatchSnapshot();
+it('parses pool-closed-single.md to expected structure', () => {
+  const input = readFileSync('__fixtures__/pool/valid/pool-closed-single.md', 'utf8');
+  expect(parsePoolMarkdown(input)).toMatchSnapshot();
 });
 ```
+
+Gli snapshot sono committati; le modifiche richiedono review esplicita.
 
 ---
 
 ## 5. Testing delle Firebase Security Rules
 
-Le Security Rules vengono testate con `@firebase/rules-unit-testing` contro l'emulatore Firestore e Storage.
+Testate con `@firebase/rules-unit-testing` contro gli emulatori Firestore e Storage.
 
 ### 5.1 Pattern di test
 
 ```typescript
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 
-describe('Firestore rules - lessons collection', () => {
+describe('Firestore rules', () => {
   let testEnv: RulesTestEnvironment;
 
   beforeAll(async () => {
@@ -387,42 +416,31 @@ describe('Firestore rules - lessons collection', () => {
     });
   });
 
+  const owner = () => testEnv.authenticatedContext('owner-uid', { schoolforge_owner: true }).firestore();
+  const student = () => testEnv.authenticatedContext('stud-uid', {}).firestore();
+
   it('owner can read a lesson', async () => {
-    const db = testEnv.authenticatedContext('owner-uid', {
-      schoolforge_owner: true,
-    }).firestore();
-    await assertSucceeds(db.collection('lessons').doc('lesson-1').get());
+    await assertSucceeds(owner().collection('lessons').doc('lesson-1').get());
   });
-
-  it('non-owner cannot read a lesson', async () => {
-    const db = testEnv.authenticatedContext('other-uid', {
-      schoolforge_owner: false,
-    }).firestore();
-    await assertFails(db.collection('lessons').doc('lesson-1').get());
+  it('student cannot read submissions', async () => {
+    await assertFails(student().collection('submissions').doc('s1').get());
   });
-
+  it('nobody can read burned directly', async () => {
+    await assertFails(owner().collection('burned').doc('e1').get());
+    await assertFails(student().collection('burned').doc('e1').get());
+  });
   it('owner cannot write directly to lessons', async () => {
-    const db = testEnv.authenticatedContext('owner-uid', {
-      schoolforge_owner: true,
-    }).firestore();
-    await assertFails(db.collection('lessons').doc('new').set({ title: 'test' }));
+    await assertFails(owner().collection('lessons').doc('new').set({ title: 'x' }));
   });
-
   it('unauthenticated user cannot read anything', async () => {
-    const db = testEnv.unauthenticatedContext().firestore();
-    await assertFails(db.collection('lessons').doc('lesson-1').get());
+    await assertFails(testEnv.unauthenticatedContext().firestore().collection('lessons').doc('l1').get());
   });
 });
 ```
 
 ### 5.2 Copertura minima delle rules
 
-Per ogni collezione Firestore devono essere presenti almeno:
-- test "owner può leggere"
-- test "non autenticato non può leggere"
-- test "autenticato non-owner non può leggere"
-- test "owner non può scrivere direttamente"
-- test "unauthenticated non può scrivere"
+Per ogni collezione di dominio: "owner legge", "non autenticato non legge", "autenticato non-owner non legge", "owner non scrive direttamente", "unauthenticated non scrive". Per `burned`: nessun client legge o scrive.
 
 ---
 
@@ -430,11 +448,9 @@ Per ogni collezione Firestore devono essere presenti almeno:
 
 ### 6.1 Fixture statiche
 
-Le fixture sono file commessi nel repository sotto `__fixtures__/` o `test/fixtures/`. Non contengono dati personali reali. Nomi di studenti e email nelle fixture usano il formato `studente-N@test.schoolforge.example`.
+File committati sotto `__fixtures__/` o `test/fixtures/`. Nessun dato personale reale. Email nelle fixture nel formato `studente-N@test.schoolforge.example`.
 
 ### 6.2 Factory functions
-
-Per i test di integrazione che richiedono dati in Firestore, si usano factory functions tipizzate:
 
 ```typescript
 // test/factories/lesson.ts
@@ -446,7 +462,8 @@ export function createLessonFixture(overrides?: Partial<Lesson>): Lesson {
     udaId: 'uda-test',
     status: 'valid',
     objectives: ['Obiettivo 1'],
-    storagePath: 'repository/current/lessons/lesson-test/source.md',
+    storagePath: 'repository/current/program-test/uda-test/lezione-001.md',
+    poolPath: 'repository/current/program-test/uda-test/lezione-001.pool.md',
     ...overrides,
   };
 }
@@ -454,18 +471,15 @@ export function createLessonFixture(overrides?: Partial<Lesson>): Lesson {
 
 ### 6.3 Seed e cleanup
 
-I test di integrazione che usano l'emulatore devono:
-1. usare progetti Firestore distinti per suite parallele (`projectId: 'test-${uuid}'`);
-2. ripulire i dati dopo ogni test (o usare `clearFirestore()` in `afterEach`);
-3. non assumere uno stato pre-esistente dell'emulatore.
+I test di integrazione su emulatore devono: usare progetti distinti per suite parallele; ripulire i dati dopo ogni test (`clearFirestore()` in `afterEach`); non assumere stato pre-esistente.
 
 ---
 
 ## 7. CI pipeline e test
 
-```yaml
-# Schema della pipeline CI (GitHub Actions / equivalente)
+Coerente con il piano di implementazione §7.6.
 
+```yaml
 on: [push, pull_request]
 
 jobs:
@@ -475,29 +489,26 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run typecheck          # tsc --noEmit su tutti i package
-      - run: pnpm run lint               # ESLint con plugin security
-      - run: pnpm run test:unit          # Vitest unit + contract
-      - run: pnpm run test:coverage      # verifica soglie di coverage
-      - run: pnpm audit                  # vulnerabilità dipendenze
+      - run: pnpm run typecheck
+      - run: pnpm run lint
+      - run: pnpm run test:unit
+      - run: pnpm run test:coverage
+      - run: pnpm audit --audit-level=moderate
 
   integration:
     runs-on: ubuntu-latest
     needs: unit-and-contract
-    services:
-      # Firebase Emulator avviato come step, non come service Docker
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
       - run: npm install -g firebase-tools
       - run: firebase emulators:exec --only firestore,storage,auth,functions "pnpm run test:integration"
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
 
   e2e:
     runs-on: ubuntu-latest
     needs: integration
+    if: github.base_ref == 'main'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -506,50 +517,56 @@ jobs:
       - run: pnpm run test:e2e
         env:
           TEST_APP_URL: ${{ secrets.TEST_APP_URL }}
-          # usa ambiente 'test' con dati sintetici, non prod
+          TEST_PORTALE_URL: ${{ secrets.TEST_PORTALE_URL }}
 ```
 
 **Regole di merge:**
 - PR bloccata se `unit-and-contract` non è verde
 - PR bloccata se `integration` non è verde
-- `e2e` è richiesto prima dei gate di fase (G2, G3, G4, G5)
+- `e2e` richiesto prima dei gate di fase (G2, G3, G4, G5)
 - Un test che fallisce non può essere skippato senza issue tracciata
 
 ---
 
 ## 8. Coverage minima per gate
 
-| Gate | Package | Coverage minima linee |
+| Gate | Package | Coverage minima |
 |---|---|---|
 | G2 | `lesson-contract` | 100% branch |
 | G2 | `domain/repository` | 90% |
 | G2 | `firestore.rules`, `storage.rules` | 100% casi elencati in §5.2 |
 | G3 | `domain/exams` | 90% |
-| G3 | `services/pdf` | 80% |
-| G4 | `domain/archive` | 90% |
-| G4 | `domain/students` | 85% |
-| G5 | `domain/corrections` | 95% |
+| G3 | `services/pdf`, `services/email-bruciata` | 90% |
+| G3 | `domain/portale` | 90% |
+| G4 | `domain/corrections` | 95% |
+| G5 | `domain/storico` | 85% |
 | G5-AI | `integrations/ai-gateway` | 90% |
 
 ---
 
 ## 9. Test dei casi negativi obbligatori
 
-I seguenti casi negativi devono essere presenti come test espliciti prima del gate corrispondente. Non possono essere sostituiti da "funziona nel percorso felice".
+Devono essere presenti come test espliciti prima del gate corrispondente. Non sostituibili da "funziona nel percorso felice".
 
 | Caso negativo | Gate | Tipo di test |
 |---|---|---|
 | Account non autorizzato riceve 403 su ogni endpoint | G2 | Integration |
 | Markdown invalido non entra nel repository | G2 | Integration |
 | Asset mancante non blocca l'import delle lezioni valide | G2 | Integration |
-| Blocchi `assessment` assenti nel modello di visualizzazione | G2 | Unit + E2E |
-| Doppia importazione Forms non crea due consegne | G3 | Integration |
-| Risposta non mappabile finisce in quarantena, non nello storico | G4 | Integration |
-| Tentativo di modificare verifica pubblicata → rifiuto | G3 | Integration |
+| Domande del pool/soluzioni assenti nel modello di fruizione | G2 | Unit + E2E |
+| Somma minimi difficoltà > totale → attivazione rifiutata | G3 | Unit |
+| Tentativo di modificare verifica attiva → rifiuto | G3 | Integration |
+| Lezione modificata/eliminata dopo attivazione → snapshot invariato | G3 | Integration |
+| Secondo download con stessa email → 409 (email bruciata) | G3 | Integration |
+| Due richieste concorrenti con stessa email → un solo successo | G3 | Integration |
+| Download docente non crea record `burned` | G3 | Integration |
+| Email fuori dominio Education → accesso Portale rifiutato | G3 | Integration |
+| Payload Portale privo di soluzioni/opzioni corrette | G3 | Integration |
+| Secondo `submitAnswers` per stesso attempt → rifiuto | G3 | Integration |
+| Percentuale con item senza punteggio → `non_definitiva` | G4 | Unit |
+| Rettifica punteggio → valore precedente conservato in audit | G4 | Integration |
+| Verifica `annullata`/`chiusa` non accetta nuovi accessi dal Portale | G3 | Unit |
+| Studente senza nome/cognome compare comunque con la sua email | G5 | Integration |
 | Proposta AI incompleta esclusa dall'approvazione massiva | G5-AI | Integration |
-| Token integrazione revocato → percorso manuale rimane funzionale | G4 | Integration |
-| Punteggio AI > massimo → rifiuto dal gateway | G5-AI | Unit |
-| Percentuale con item senza punteggio → `non_definitiva` | G5 | Unit |
-| Rettifica punteggio → valore precedente conservato in audit | G5 | Integration |
-| Verifica `annullata` non può ricevere nuove assegnazioni | G3 | Unit |
-| Eliminazione studente → consegne storiche invariate | G4 | Integration |
+| Punteggio AI > `maxScore` item → rifiuto dal gateway | G5-AI | Unit |
+| Chiamata AI senza consenso esplicito → rifiuto | G5-AI | Integration |

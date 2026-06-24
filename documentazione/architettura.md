@@ -48,6 +48,16 @@ Al termine dell'implementazione il docente deve poter:
 
 **Motivazione.** L'uso obbligatorio di Google Workspace for Education rende naturale l'ecosistema Firebase. Il piano Spark è gratuito e sufficiente per un singolo docente. La piattaforma gestita riduce al minimo gestione di server, certificati e scalabilità.
 
+**Alternative valutate e scartate.**
+
+| Alternativa | Perché scartata |
+|---|---|
+| Backend tradizionale (VM/container) + Postgres | Costo operativo e di manutenzione ingiustificato per un singolo docente; nessuno scale-to-zero; gestione certificati/patch a carico nostro. |
+| Supabase / altro BaaS | Sposterebbe l'identità fuori dall'ecosistema Google, mentre Google Workspace for Education è un prerequisito non negoziabile: l'autenticazione del docente e degli studenti è già lì. |
+| Firebase su piano Blaze fin da subito | Non necessario per un singolo docente in V1; Spark + Emulator Suite copre sviluppo e go-live iniziale. Si passa a Blaze solo se Secret Manager/Logging lo richiedono. |
+
+La scelta di Firebase non è un'assunzione: deriva dal vincolo Education e dal profilo d'uso (un docente, volumi bassi, nessun server da presidiare).
+
 **Conseguenza.** Il progetto è TypeScript end-to-end. Non sono previsti Kubernetes, VM permanenti, Cloud SQL, code di messaggi o infrastruttura multi-account nella V1.
 
 ### ADR-02 — Monolite modulare serverless, non microservizi
@@ -543,7 +553,7 @@ Frequenza, regione, RPO e RTO sono bloccati dalla decisione C-01.
 | M4 — Storico | Lista studenti lazy, storico risultati per studente e per verifica, filtri e ricerche | Il docente consulta lo storico delle verifiche corrette |
 | M5 — AI | AiGateway, proposta correzione, approvazione massiva, anomaly detection | L'AI propone punteggi; il docente approva con un clic (feature-flaggata) |
 
-Ogni modulo rilascia un prodotto utilizzabile. Non è ammesso anticipare AI o roster nella M1.
+Ogni modulo rilascia un prodotto utilizzabile. Non è ammesso anticipare l'AI nella M1.
 
 ## 15. Strategia di test
 

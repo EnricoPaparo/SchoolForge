@@ -1,10 +1,12 @@
 # SchoolForge — Modello dati ER
 
-**Versione:** 1.0
-**Data:** 22 giugno 2026
-**Riferimento:** [Architettura v1.0](../architettura.md), sezione 7.2
+**Versione:** 2.0
+**Data:** 24 giugno 2026
+**Riferimento:** [Architettura v2.0](../architettura.md), sezione 8.2
 
-Questo diagramma rappresenta il modello dati operativo in Cloud Firestore. Le collezioni di Cloud Storage (`repository/current/`, `staging/`, `exports/`) non sono incluse perché non hanno relazioni Firestore; la loro struttura è documentata in [architettura.md](../architettura.md), sezione 7.1.
+Questo diagramma rappresenta il modello dati operativo in Cloud Firestore. Le collezioni di Cloud Storage (`repository/current/`, `staging/`, `exports/`) non sono incluse perché non hanno relazioni Firestore; la loro struttura è in [architettura.md](../architettura.md), sezione 8.1.
+
+In v2.0 **non** esistono più le collezioni `classes`, `assignments`, `artifacts` e `integrationStatus` (eliminate con Forms/roster/Drive). È introdotta la collezione `burned` per l'email bruciata. Gli `exam_items` non contengono rubriche.
 
 ---
 
@@ -24,6 +26,7 @@ erDiagram
     PROGRAMS {
         string id PK
         string title
+        string schoolYear
         boolean active
         number sortOrder
         string ownerUid
@@ -35,6 +38,11 @@ erDiagram
         string id PK
         string programId FK
         string title
+        array competenze
+        array obiettivi
+        string periodo
+        number ore
+        boolean svolto
         boolean active
         number sortOrder
         string ownerUid
@@ -49,10 +57,11 @@ erDiagram
         string title
         array objectives
         string storagePath
-        string assetBasePath
+        string poolPath
         string status
         array validationErrors
         string plainText
+        boolean svolto
         string ownerUid
         timestamp createdAt
         timestamp updatedAt
@@ -61,10 +70,10 @@ erDiagram
     QUESTION_INDEX {
         string id PK
         string lessonId FK
-        string kind
-        string type
-        string difficulty
-        string prompt
+        string tipo
+        string difficolta
+        string peso
+        string testo
         boolean availability
         string ownerUid
         timestamp indexedAt
@@ -72,12 +81,13 @@ erDiagram
 
     EXAMS {
         string id PK
+        string title
         string status
         array sourceLessonIds
         map configuration
-        timestamp publishedAt
-        map googleForm
-        map pdfMetadata
+        number seed
+        timestamp activatedAt
+        timestamp closedAt
         string ownerUid
         timestamp createdAt
         timestamp updatedAt
@@ -86,164 +96,116 @@ erDiagram
     EXAM_ITEMS {
         string id PK
         string examId FK
-        string prompt
-        string type
-        string difficulty
-        array options
+        string testo
+        string tipo
+        string difficolta
+        string peso
+        array opzioni
         array correctOptionIds
-        string solution
-        map rubric
-        number maxScore
+        string soluzione
+        number punteggioMax
         string sourceLessonId FK
         map aiProvenance
     }
 
-    CLASSES {
-        string id PK
-        string name
-        boolean active
-        string externalSource
-        string ownerUid
-        timestamp createdAt
-        timestamp updatedAt
+    BURNED_EMAILS {
+        string email PK
+        string examId FK
+        string channel
+        timestamp burnedAt
     }
 
     STUDENTS {
         string id PK
-        string classId FK
+        string email
         string firstName
         string lastName
-        string email
-        string googleExternalId
-        boolean active
-        string previousEmail
+        string className
         string ownerUid
         timestamp createdAt
         timestamp updatedAt
     }
 
-    ASSIGNMENTS {
-        string id PK
-        string examId FK
-        string classId FK
-        array studentIds
-        string channel
-        string status
-        string formId
-        timestamp createdAt
-        timestamp closedAt
-        string ownerUid
-    }
-
     SUBMISSIONS {
         string id PK
-        string assignmentId FK
         string examId FK
         string studentId FK
-        string classIdAtSubmission
-        array responses
-        string origin
-        string sourceResponseId
-        string status
+        string email
+        string classNameAtSubmission
+        array risposte
+        string channel
         timestamp submittedAt
-        timestamp importedAt
         string ownerUid
     }
 
     CORRECTIONS {
         string submissionId PK_FK
-        array itemScores
-        array itemComments
-        string provenance
-        string status
-        number percentage
+        array items
+        number percentuale
         boolean percentageIsDefinitive
+        string stato
         string ownerUid
         timestamp createdAt
         timestamp updatedAt
     }
 
-    ARTIFACTS {
-        string id PK
-        string examId FK
-        string submissionId FK
-        string type
-        string hash
-        string driveUrl
-        string driveFileId
-        string ownerUid
-        timestamp generatedAt
-    }
-
     AUDIT_EVENTS {
         string id PK
-        string actor
-        string action
-        string objectType
-        string objectId
+        string attore
+        string azione
+        string oggettoType
+        string oggettoId
         timestamp timestamp
-        string outcome
-        string reason
+        string esito
+        string motivazione
         map minimalData
-        string ownerUid
-    }
-
-    INTEGRATION_STATUS {
-        string id PK
-        string type
-        boolean connected
-        array scopesGranted
-        string lastOutcome
-        string lastErrorSafe
-        timestamp lastCheckedAt
         string ownerUid
     }
 
     PROGRAMS ||--o{ UDAS : "contiene"
     UDAS ||--o{ LESSONS : "contiene"
-    LESSONS ||--o{ QUESTION_INDEX : "indicizza domande da"
+    LESSONS ||--o{ QUESTION_INDEX : "indicizza domande pool da"
     LESSONS }o--o{ EXAM_ITEMS : "origine di (via sourceLessonId)"
-    EXAMS ||--|{ EXAM_ITEMS : "ha items (subcollection)"
-    EXAMS ||--o{ ASSIGNMENTS : "assegnata in"
-    CLASSES ||--o{ STUDENTS : "contiene"
-    CLASSES ||--o{ ASSIGNMENTS : "destinataria di"
-    ASSIGNMENTS ||--o{ SUBMISSIONS : "genera"
+    EXAMS ||--|{ EXAM_ITEMS : "ha items (subcollection, snapshot)"
+    EXAMS ||--o{ BURNED_EMAILS : "registra email bruciate (subcollection)"
+    EXAMS ||--o{ SUBMISSIONS : "riceve consegne"
     STUDENTS ||--o{ SUBMISSIONS : "ha consegnato"
     SUBMISSIONS ||--|| CORRECTIONS : "ha correzione"
-    EXAMS ||--o{ ARTIFACTS : "ha artefatti"
-    SUBMISSIONS ||--o{ ARTIFACTS : "ha artefatti"
 ```
 
 ---
 
 ## Note sul modello
 
-### Relazioni implicite da capire
+### `EXAM_ITEMS` è una subcollection di `EXAMS`
+In Firestore: `exams/{examId}/items/{itemId}`. È lo **snapshot immutabile** creato in transazione al momento dell'attivazione. Solo il backend scrive, e solo in quel momento. Non contiene rubriche: il punteggio massimo è `coeff_difficoltà × coeff_peso`.
 
-**`EXAM_ITEMS` è una subcollection di `EXAMS`**
-In Firestore, `exams/{examId}/items/{itemId}`. Il diagramma ER la rappresenta come entità separata per chiarezza. L'immutabilità degli item è garantita dalle regole di accesso (solo backend può scrivere, e solo al momento della pubblicazione).
+### `BURNED_EMAILS` è una subcollection di `EXAMS`
+In Firestore: `burned/{examId}/emails/{email}` (la chiave è l'email normalizzata). Né docente né studente vi accedono direttamente: la verifica-e-scrittura è una transazione atomica del solo backend (vedi architettura §8.3 e sicurezza §3.2). Garantisce un download/svolgimento per email per verifica.
 
-**`CORRECTIONS` ha chiave `submissionId` come PK**
-Una Consegna ha al più una Correzione. La relazione è 1-a-1; la chiave della Correzione coincide con quella della Consegna per design, evitando un join.
+### `CORRECTIONS` ha chiave `submissionId`
+Una Consegna ha al più una Correzione (1-a-1); la chiave coincide con quella della Consegna per evitare un join. Ogni item conserva punteggio, commento, origine (`manual`/`ai_proposed`/`automatic`) e lo storico delle rettifiche.
 
-**`QUESTION_INDEX` non è la fonte canonica**
-Il `questionIndex` è derivato dal Markdown e aggiornato ad ogni import. In caso di discrepanza, il Markdown in Cloud Storage è autoritativo. L'indice serve per la composizione rapida; non va usato come fonte di verità per il contenuto delle domande.
+### `QUESTION_INDEX` non è la fonte canonica
+È derivato dai file `.pool.md` correnti validi e aggiornato a ogni import/sostituzione/eliminazione. In caso di discrepanza, il Markdown in Cloud Storage è autoritativo.
 
-**`STUDENTS.classIdAtSubmission` vs `SUBMISSIONS.classIdAtSubmission`**
-Lo Studente può cambiare Classe nel tempo. La Consegna registra la Classe al momento dell'assegnazione in `classIdAtSubmission` per garantire l'integrità storica (BR-ARC-02).
+### `STUDENTS` è creato lazy
+Il record nasce al primo accesso al Portale (o alla prima consegna manuale) con la sola `email` come chiave univoca; nome, cognome e classe sono facoltativi e completabili in seguito dal docente.
 
-**`EXAM_ITEMS.aiProvenance`**
-Presente solo per domande generate da AI. Contiene provider, modelId, templateVersion, contextHash. Nullable per domande archiviate.
+### Integrità storica della classe
+`SUBMISSIONS.classNameAtSubmission` registra la classe dichiarata al momento della consegna; un successivo aggiornamento del record studente non altera lo storico (BR-STO-01).
+
+### `EXAM_ITEMS.aiProvenance`
+Presente solo per domande generate da AI (Modulo 5): provider, modelId, templateVersion, contextHash. Nullable per domande archiviate dal pool.
 
 ### Campi presenti su ogni documento applicativo
-
 | Campo | Tipo | Scopo |
 |---|---|---|
 | `ownerUid` | `string` | Semplifica i controlli di sicurezza nel backend; unico nella V1 |
 | `createdAt` | `Timestamp` | Data di creazione |
 | `updatedAt` | `Timestamp` | Data dell'ultimo aggiornamento |
 
-`auditEvents` e `exam_items` (immutabili) non hanno `updatedAt`.
+`auditEvents`, `exam_items` e `burned` (immutabili/append-only) non hanno `updatedAt`.
 
 ---
 
@@ -265,8 +227,8 @@ Presente solo per domande generate da AI. Contiene provider, modelId, templateVe
       "fields": [
         { "fieldPath": "ownerUid", "order": "ASCENDING" },
         { "fieldPath": "lessonId", "order": "ASCENDING" },
-        { "fieldPath": "kind", "order": "ASCENDING" },
-        { "fieldPath": "difficulty", "order": "ASCENDING" }
+        { "fieldPath": "tipo", "order": "ASCENDING" },
+        { "fieldPath": "difficolta", "order": "ASCENDING" }
       ]
     },
     {
@@ -282,7 +244,6 @@ Presente solo per domande generate da AI. Contiene provider, modelId, templateVe
       "fields": [
         { "fieldPath": "ownerUid", "order": "ASCENDING" },
         { "fieldPath": "examId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "submittedAt", "order": "DESCENDING" }
       ]
     },
@@ -298,7 +259,7 @@ Presente solo per domande generate da AI. Contiene provider, modelId, templateVe
       "collectionGroup": "auditEvents",
       "fields": [
         { "fieldPath": "ownerUid", "order": "ASCENDING" },
-        { "fieldPath": "action", "order": "ASCENDING" },
+        { "fieldPath": "azione", "order": "ASCENDING" },
         { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
     }

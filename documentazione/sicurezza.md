@@ -1,23 +1,27 @@
 # SchoolForge — Sicurezza e protezione dei dati
 
-**Versione:** 1.0
-**Data:** 22 giugno 2026
+**Versione:** 2.0
+**Data:** 24 giugno 2026
 **Stato:** baseline
-**Input vincolante:** [Architettura v1.0](architettura.md), [Analisi dei requisiti v1.1](analisi-requisiti.md)
+**Input vincolante:** [Architettura v2.0](architettura.md), [Analisi dei requisiti v2.0](analisi-requisiti.md)
 **Destinatari:** team di implementazione, responsabile operativo, revisore di sicurezza
 
 ---
 
 ## 1. Scopo e perimetro
 
-Questo documento consolida in un unico riferimento tutte le decisioni, le regole e i controlli di sicurezza di SchoolForge. Traduce NFR-SEC-01–05, BR-AUTH-01, BR-MD-01, NFR-AI-01–02 e ADR-01–06 in regole concrete, implementabili e verificabili.
+Questo documento consolida in un unico riferimento tutte le decisioni, le regole e i controlli di sicurezza di SchoolForge. Traduce NFR-SEC-01–05, BR-AUTH-01, BR-MD-01, BR-VER-11/12, NFR-AI-01–02 e gli ADR dell'architettura v2.0 in regole concrete, implementabili e verificabili.
 
 L'obiettivo non è la sicurezza teorica. L'obiettivo è garantire che:
 
-1. solo il Docente proprietario possa leggere o modificare dati SchoolForge;
-2. i dati personali degli studenti e le risposte alle prove siano protetti in transito e a riposo;
-3. le integrazioni Google e AI non amplino la superficie di attacco oltre il necessario;
-4. un'eventuale compromissione sia rilevabile e contenibile.
+1. solo il Docente proprietario possa leggere o modificare i dati gestionali di SchoolForge;
+2. lo Studente acceda al solo Portale Verifiche, senza poter leggere soluzioni, dati di altri studenti o configurazioni interne;
+3. ogni email possa scaricare/svolgere una Verifica una sola volta, in modo atomico (email bruciata);
+4. i dati personali degli studenti e le risposte alle prove siano protetti in transito e a riposo;
+5. il provider AI (Modulo 5) non ampli la superficie di attacco oltre il necessario;
+6. un'eventuale compromissione sia rilevabile e contenibile.
+
+Coerentemente con la v2.0, **Google Forms, l'import roster Google Education e Google Drive sono eliminati**: non esistono token OAuth Forms/roster da proteggere, né artefatti su Drive.
 
 ---
 
@@ -30,10 +34,10 @@ Il modello segue la metodologia STRIDE applicata ai componenti principali di Sch
 | Asset | Sensibilità | Conseguenze di una compromissione |
 |---|---|---|
 | Markdown e asset delle Lezioni | Media | Perdita di conoscenza didattica proprietaria |
-| Domande e soluzioni delle Verifiche | Alta | Divulgazione delle risposte prima della somministrazione |
-| Risposte degli studenti e punteggi | Alta | Violazione privacy minori; rischio legale/disciplinare |
-| Token OAuth Google (Forms, roster) | Critica | Accesso non autorizzato all'account Education del Docente |
-| Credenziali provider AI | Alta | Costi non autorizzati; accesso a dati didattici |
+| Domande e soluzioni del pool / snapshot Verifiche | Alta | Divulgazione delle risposte prima della somministrazione |
+| Risposte degli studenti, punteggi, percentuali | Alta | Violazione privacy di minori; rischio legale/disciplinare |
+| Registro email bruciate (`burned`) | Alta | Aggiramento del vincolo "un download per studente" |
+| Credenziali provider AI (Modulo 5) | Alta | Costi non autorizzati; accesso a dati didattici |
 | Configurazione `settings/owner` | Critica | Acquisizione del controllo completo del sistema |
 | Log di audit | Media | Manipolazione della tracciabilità delle azioni |
 
@@ -42,26 +46,28 @@ Il modello segue la metodologia STRIDE applicata ai componenti principali di Sch
 | Componente | Spoofing | Tampering | Repudiation | Info Disclosure | Denial of Service | Elevation of Privilege |
 |---|---|---|---|---|---|---|
 | Firebase Auth / token docente | Mitigato da Google Sign-In + controllo `sub` server-side | Mitigato da token firmati JWT | Mitigato da audit log append-only | Basso rischio | Dipende da Google | Mitigato da backend authority |
-| Cloud Functions (backend) | Mitigato da verifica token Firebase | Mitigato da transazioni Firestore e validazione input | Mitigato da audit event per ogni azione rilevante | Mitigato da nessuno stack trace in risposta | Mitigato da rate limiting Cloud Functions | Mitigato da nessun ruolo elevabile |
-| Firestore | Non applicabile (accesso solo tramite SDK con auth) | Mitigato da Security Rules + backend authority | Mitigato da append-only audit | Mitigato da Security Rules che negano accesso senza token valido | Dipende da Google | Mitigato da ownerUid su ogni documento |
-| Cloud Storage | Non applicabile | Mitigato da Storage Rules + backend authority | Mitigato da audit event import | Mitigato da bucket privato | Dipende da Google | Mitigato da nessun URL pubblico |
-| Web app (browser) | Mitigato da CSP e HTTPS | Mitigato da input sanitization e CSP | Non applicabile (browser non scrive audit) | Mitigato da nessun dato assessment nel modello di visualizzazione | Non applicabile | Mitigato da nessun privilegio backend nel browser |
-| Google Forms / roster | Mitigato da token OAuth in Secret Manager | Mitigato da idempotenza import e quarantena | Mitigato da integrationStatus e audit | Mitigato da scope minimi OAuth | Fuori controllo SchoolForge | Mitigato da scope minimi OAuth |
-| AiGateway | Mitigato da contesto chiuso costruito dal backend | Mitigato da nessun tool esterno | Mitigato da audit AI con hash contesto | Mitigato da prompt injection detection e context restriction | Fuori controllo SchoolForge | Non applicabile |
+| Firebase Auth / token studente (Portale) | Mitigato da Google Sign-In + verifica dominio Education | Token firmati JWT | Email bruciata + audit | Mitigato: il portale non riceve soluzioni | Dipende da Google | Mitigato: nessun privilegio docente sul token studente |
+| Cloud Functions (backend) | Verifica token Firebase per ogni richiesta | Transazioni Firestore e validazione input (Zod) | Audit event per azione rilevante | Nessuno stack trace in risposta | Rate limiting Cloud Functions | Nessun ruolo elevabile |
+| Firestore | Accesso solo tramite SDK con auth | Security Rules + backend authority | Append-only audit | Rules che negano accesso senza token valido | Dipende da Google | `ownerUid` su ogni documento; `burned` solo backend |
+| Cloud Storage | Non applicabile | Storage Rules + backend authority | Audit event import | Bucket privato, URL firmati a scadenza breve | Dipende da Google | Nessun URL pubblico |
+| Web app docente (browser) | CSP e HTTPS | Input sanitization e CSP | Browser non scrive audit | Modello rendering privo di soluzioni/pool | Non applicabile | Nessun privilegio backend nel browser |
+| Portale Verifiche (browser) | CSP e HTTPS | Risposte validate server-side | Consegna con timestamp + audit | Nessuna soluzione/opzione corretta nel payload svolgimento | Non applicabile | Studente non può invocare endpoint docente |
+| AiGateway (Modulo 5) | Contesto chiuso costruito dal backend | Nessun tool esterno | Audit AI con hash contesto | Context restriction; output validato | Fuori controllo SchoolForge | Non applicabile |
 
 ### 2.3 Rischi residui accettati
 
 | Rischio | Motivazione accettazione |
 |---|---|
-| Disponibilità dipende da Google Cloud | Scelta architetturale deliberata (ADR-01); SLA Google è adeguato per uso didattico |
-| Prompt injection su risposte studenti | Rischio mitigato dal contesto chiuso; non eliminabile completamente con modelli fondazionali |
-| Side-channel da metadati di utilizzo | Nell'uso singolo-docente il rischio è accettabile; da rivalutare in multi-docente |
+| Disponibilità dipende da Google Cloud | Scelta architetturale deliberata (ADR-01); SLA Google adeguato per uso didattico |
+| Deterrenza anti-cheat del Portale non è sicurezza | Dichiarato esplicitamente (BR-POR-02): il docente è l'anti-cheat reale |
+| Prompt injection su risposte studenti (Modulo 5) | Mitigato dal contesto chiuso; non eliminabile con modelli fondazionali |
+| Condivisione di un link verifica tra studenti | L'email bruciata limita a un download per email; più email restano possibili (atteso) |
 
 ---
 
 ## 3. Firestore Security Rules
 
-Le regole seguenti implementano il principio "nega tutto per default, concedi il minimo necessario". Il backend (service account Cloud Functions) bypassa le rules; queste proteggono da accessi diretti al database.
+Le regole seguono il principio "nega tutto per default, concedi il minimo necessario". Il backend (service account Cloud Functions) bypassa le rules; queste proteggono da accessi diretti al database. In particolare, **nessuna collezione consente scritture dirette dal client**: ogni scrittura passa dal backend, comprese le consegne del Portale e i record `burned`.
 
 ```javascript
 rules_version = '2';
@@ -70,86 +76,54 @@ service cloud.firestore {
 
     // ── Funzioni di supporto ──────────────────────────────────────────────
 
-    // Verifica che il richiedente sia il docente proprietario autenticato.
-    // Usa il claim 'sub' (soggetto Google stabile) che il backend ha verificato
-    // e iniettato come custom claim durante il login.
+    // Docente proprietario: claim iniettato dal backend al primo login verificato.
     function isOwner() {
       return request.auth != null
           && request.auth.token.schoolforge_owner == true;
     }
 
-    // Verifica che un documento di update non modifichi campi immutabili.
-    function doesNotChange(fields) {
-      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
-    }
-
     // ── settings/owner ────────────────────────────────────────────────────
-    // Lettura: solo docente proprietario (per configurazione iniziale dell'UI).
-    // Scrittura: mai dal client. Solo il backend (service account) configura l'owner.
+    // Lettura: solo docente proprietario. Scrittura: mai dal client (solo backend).
     match /settings/owner {
       allow read: if isOwner();
       allow write: if false;
     }
 
-    // ── programs ──────────────────────────────────────────────────────────
-    match /programs/{programId} {
-      allow read: if isOwner();
-      allow write: if false; // solo backend
-    }
+    // ── Collezioni di dominio del docente ─────────────────────────────────
+    // Lettura: solo docente. Scrittura: solo backend (service account).
+    match /programs/{programId}       { allow read: if isOwner(); allow write: if false; }
+    match /udas/{udaId}               { allow read: if isOwner(); allow write: if false; }
+    match /lessons/{lessonId}         { allow read: if isOwner(); allow write: if false; }
+    match /questionIndex/{questionId} { allow read: if isOwner(); allow write: if false; }
 
-    // ── udas ──────────────────────────────────────────────────────────────
-    match /udas/{udaId} {
-      allow read: if isOwner();
-      allow write: if false;
-    }
-
-    // ── lessons ───────────────────────────────────────────────────────────
-    match /lessons/{lessonId} {
-      allow read: if isOwner();
-      allow write: if false;
-    }
-
-    // ── questionIndex ─────────────────────────────────────────────────────
-    // Lettura consentita per composizione verifiche lato client (read-only).
-    // Scrittura: solo backend al momento dell'import/sostituzione.
-    match /questionIndex/{questionId} {
-      allow read: if isOwner();
-      allow write: if false;
-    }
-
-    // ── exams ─────────────────────────────────────────────────────────────
     match /exams/{examId} {
       allow read: if isOwner();
-      allow write: if false; // pubblicazione e stati: solo backend
-
-      // items: subcollection immutabile dopo pubblicazione
+      allow write: if false; // attivazione e stati: solo backend
+      // Snapshot immutabile creato al momento dell'attivazione: solo backend.
       match /items/{itemId} {
         allow read: if isOwner();
         allow write: if false;
       }
     }
 
-    // ── classes ───────────────────────────────────────────────────────────
-    match /classes/{classId} {
-      allow read: if isOwner();
+    // ── burned: registro email bruciate ───────────────────────────────────
+    // Né il docente né lo studente leggono o scrivono direttamente.
+    // La verifica-e-scrittura è una transazione atomica eseguita SOLO dal backend.
+    match /burned/{examId}/emails/{email} {
+      allow read: if false;
       allow write: if false;
     }
 
     // ── students ──────────────────────────────────────────────────────────
-    // Dati personali: accesso strettamente al docente proprietario.
+    // Dati personali. Lettura solo docente; creazione lazy e update solo backend.
     match /students/{studentId} {
       allow read: if isOwner();
       allow write: if false;
     }
 
-    // ── assignments ───────────────────────────────────────────────────────
-    match /assignments/{assignmentId} {
-      allow read: if isOwner();
-      allow write: if false;
-    }
-
-    // ── submissions ───────────────────────────────────────────────────────
-    // Risposte studenti: massima protezione.
+    // ── submissions: risposte studenti ────────────────────────────────────
+    // Inserite dal Portale tramite backend; lette solo dal docente.
+    // Lo studente NON legge le proprie risposte dopo la consegna.
     match /submissions/{submissionId} {
       allow read: if isOwner();
       allow write: if false;
@@ -161,22 +135,9 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // ── artifacts ─────────────────────────────────────────────────────────
-    match /artifacts/{artifactId} {
-      allow read: if isOwner();
-      allow write: if false;
-    }
-
     // ── auditEvents ───────────────────────────────────────────────────────
-    // Lettura: docente (per consultare lo storico).
-    // Scrittura: mai dal client. Il log deve essere append-only lato backend.
+    // Lettura docente (storico); scrittura mai dal client; append-only lato backend.
     match /auditEvents/{eventId} {
-      allow read: if isOwner();
-      allow write: if false;
-    }
-
-    // ── integrationStatus ─────────────────────────────────────────────────
-    match /integrationStatus/{integrationId} {
       allow read: if isOwner();
       allow write: if false;
     }
@@ -191,9 +152,41 @@ service cloud.firestore {
 
 **Note implementative:**
 
-- Il custom claim `schoolforge_owner: true` viene iniettato dal backend al primo login verificato del docente tramite Firebase Admin SDK. Il backend verifica il soggetto Google (`sub`) contro `settings/owner.googleSubject` prima di iniettare il claim.
-- Le Security Rules sono un secondo livello di difesa. Il controllo principale avviene nel backend: ogni endpoint Cloud Function verifica token Firebase, soggetto Google stabile e configurazione `settings/owner` prima di eseguire qualsiasi operazione.
-- Non esiste una regola che consenta scritture dirette dal client su collezioni di dominio. Questa scelta è deliberata e non deve essere allentata anche se un endpoint backend non fosse ancora implementato.
+- Il custom claim `schoolforge_owner: true` viene iniettato dal backend al primo login verificato del docente tramite Firebase Admin SDK, dopo aver confrontato il soggetto Google (`sub`) con `settings/owner.googleSubject`.
+- Lo **Studente non ha alcun claim di proprietà**: il suo token Google scolastico autentica le sole chiamate al backend del Portale (§ 3.1). Non può leggere alcuna collezione Firestore direttamente: le rules negano ogni lettura a chi non è owner.
+- Le Security Rules sono il secondo livello di difesa. Il controllo principale è nel backend: ogni endpoint verifica token, soggetto/dominio e precondizioni di business prima di operare.
+- La collezione `burned` non è leggibile né scrivibile da alcun client: il vincolo "un download per email" è garantito solo dalla transazione backend (§ 3.2). Questa scelta è deliberata e non deve essere allentata.
+
+### 3.1 Accesso dello Studente al Portale Verifiche
+
+Lo Studente non scrive mai direttamente su Firestore. Il flusso è interamente mediato dal backend:
+
+1. il Portale chiama `getExamPublic` (nessuna autenticazione): riceve solo titolo e stato, mai domande o soluzioni;
+2. lo Studente si autentica con Google scolastico; il backend verifica che l'email appartenga al dominio Education configurato (`settings/owner.allowedDomain`);
+3. per il canale digitale, `startDigitalAttempt` restituisce le domande **senza** `solution` né `correct_option_ids`;
+4. `submitAnswers` salva la Consegna tramite backend; lo Studente non può rileggerla.
+
+Il backend rifiuta (`FORBIDDEN`) qualsiasi tentativo di un token studente di invocare endpoint del Docente.
+
+### 3.2 Transazione di email bruciata
+
+Il download/avvio per uno Studente è protetto da una transazione Firestore atomica (BR-VER-12):
+
+```text
+transaction:
+  ref = burned/{examId}/emails/{normalizedEmail}
+  doc = get(ref)
+  if doc exists:            → abort → EMAIL_BURNED (HTTP 409)
+  else:
+    set(ref, { email, burnedAt: now, channel })
+    commit
+  poi: genera PDF / avvia attempt
+```
+
+- L'email è normalizzata (lowercase, trim) prima del confronto, per evitare aggiramenti banali.
+- Il documento `burned` è creato **dentro** la stessa transazione che autorizza il download: due richieste simultanee con la stessa email non possono entrambe avere successo.
+- Il **Docente** (`generatePdfDocente`) non passa da questa transazione e non crea record `burned`.
+- Esiste una funzione amministrativa auditata per invalidare manualmente un record `burned` errato (cfr. piano-implementazione §10.2); non è esposta come auto-servizio.
 
 ---
 
@@ -204,38 +197,33 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // ── Funzione di supporto ─────────────────────────────────────────────
     function isOwner() {
       return request.auth != null
           && request.auth.token.schoolforge_owner == true;
     }
 
     // ── repository/current ───────────────────────────────────────────────
-    // Lettura: docente proprietario (per download diretto del sorgente).
-    // Scrittura: solo service account backend (promozione dal staging).
+    // Lettura: docente (download diretto del sorgente). Scrittura: solo backend.
     match /repository/current/{allPaths=**} {
       allow read: if isOwner();
-      allow write: if false; // solo backend service account
+      allow write: if false;
     }
 
     // ── staging ──────────────────────────────────────────────────────────
-    // Il docente può caricare file nel proprio prefisso di staging.
-    // Il prefisso è generato dal backend e comunicato al client come URL firmato
-    // o come regola con prefisso specifico (importId).
-    // La promozione da staging a current è esclusivamente backend.
+    // Upload iniziale consentito al docente nel proprio prefisso import.
+    // Promozione a current e cancellazione: solo backend.
     match /staging/{importId}/{allPaths=**} {
-      // Upload iniziale consentito al docente autenticato; validazione avviene backend.
       allow write: if isOwner()
                    && request.resource.size < 50 * 1024 * 1024; // 50 MB per file
       allow read: if isOwner();
-      allow delete: if false; // pulizia solo backend (job o cleanup function)
+      allow delete: if false;
     }
 
     // ── exports ──────────────────────────────────────────────────────────
     // Export ZIP temporanei generati dal backend e scaricabili dal docente.
     match /exports/{exportId}/{allPaths=**} {
       allow read: if isOwner();
-      allow write: if false; // solo backend
+      allow write: if false;
       allow delete: if false;
     }
 
@@ -249,20 +237,21 @@ service firebase.storage {
 
 **Note implementative:**
 
-- Il limite di 50 MB per file in staging è un controllo client-side aggiuntivo. Il backend valida ulteriormente dimensione e tipo di file prima di promuovere dal staging.
-- Il bucket non deve avere URL pubblici. Tutti i file sono accessibili tramite URL firmati generati dal backend con scadenza breve.
-- Gli oggetti orfani in staging vengono rimossi da una Cloud Function schedulata con scadenza configurabile (default: 24 ore).
+- Il limite di 50 MB per file in staging è un controllo aggiuntivo lato client/rules; il backend valida ulteriormente dimensione e tipo prima di promuovere.
+- Il bucket non deve avere URL pubblici. Tutti i file sono accessibili tramite URL firmati a scadenza breve generati dal backend.
+- **I PDF non vengono mai scritti su Cloud Storage**: sono generati on-demand e trasmessi al richiedente. Non esiste alcun prefisso per PDF persistenti.
+- Gli oggetti orfani in staging vengono rimossi da una Cloud Function schedulata (default: 24 ore).
 
 ---
 
 ## 5. Content Security Policy (CSP)
 
-La web app SPA su Firebase Hosting deve dichiarare la seguente CSP nell'header HTTP `Content-Security-Policy`. La configurazione va in `firebase.json` nella sezione `hosting.headers`.
+Entrambe le app (web docente e Portale) su Firebase Hosting devono dichiarare la CSP nell'header HTTP `Content-Security-Policy`, configurata in `firebase.json` (`hosting.headers`).
 
 ```json
 {
   "key": "Content-Security-Policy",
-  "value": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://storage.googleapis.com data:; font-src 'self'; connect-src 'self' https://firebaseapp.com https://*.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self';"
+  "value": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://storage.googleapis.com data:; font-src 'self'; connect-src 'self' https://*.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self';"
 }
 ```
 
@@ -270,16 +259,16 @@ La web app SPA su Firebase Hosting deve dichiarare la seguente CSP nell'header H
 
 | Direttiva | Valore | Motivazione |
 |---|---|---|
-| `default-src` | `'none'` | Nega tutto per default; ogni risorsa deve essere esplicitamente consentita |
+| `default-src` | `'none'` | Nega tutto per default; ogni risorsa va consentita esplicitamente |
 | `script-src` | `'self'` | Solo script dal proprio dominio; nessun inline script |
-| `style-src` | `'self' 'unsafe-inline'` | Consente stili inline per il renderer Markdown; da restringere se si adotta CSS-in-JS con nonce |
-| `img-src` | `'self' https://storage.googleapis.com data:` | Immagini dal bundle e da Cloud Storage; `data:` per eventuali immagini base64 nel Markdown |
-| `connect-src` | Firebase SDK + Google APIs | Solo le API necessarie all'applicazione |
+| `style-src` | `'self' 'unsafe-inline'` | Stili inline per il renderer Markdown; da restringere con nonce se si adotta CSS-in-JS |
+| `img-src` | `'self' https://storage.googleapis.com data:` | Immagini dal bundle e da Cloud Storage; `data:` per immagini base64 nel Markdown |
+| `connect-src` | Firebase SDK + Google APIs + Cloud Functions | Solo le API necessarie |
 | `frame-src` | `'none'` | Nessun iframe; previene clickjacking |
 | `object-src` | `'none'` | Nessun plugin |
-| `base-uri` | `'self'` | Previene attacchi via `<base>` injection |
+| `base-uri` | `'self'` | Previene `<base>` injection |
 
-**Header aggiuntivi obbligatori:**
+**Header aggiuntivi obbligatori (entrambe le app):**
 
 ```json
 [
@@ -291,22 +280,24 @@ La web app SPA su Firebase Hosting deve dichiarare la seguente CSP nell'header H
 ]
 ```
 
+> Nota Portale: la modalità fullscreen di svolgimento richiede l'API `requestFullscreen`, che non è governata dalla CSP. La disabilitazione del copia-incolla è una misura di deterrenza UI (BR-POR-02), non una garanzia di sicurezza.
+
 ---
 
 ## 6. CORS
 
-Le Cloud Functions v2 non richiedono configurazione CORS esplicita se invocate tramite Firebase SDK callable. Se viene esposto un endpoint HTTP puro, la configurazione CORS deve:
+Le Cloud Functions v2 non richiedono configurazione CORS esplicita se invocate tramite Firebase SDK callable. Per eventuali endpoint HTTP puri, la configurazione CORS deve:
 
-1. consentire solo l'origine del dominio Firebase Hosting di produzione e, in sviluppo, `http://localhost:*`;
-2. negare credenziali (`withCredentials: false`) su endpoint pubblici non applicabili;
+1. consentire solo le origini dei due domini Firebase Hosting di produzione (web docente e Portale) e, in sviluppo, `http://localhost:*`;
+2. negare credenziali su endpoint pubblici non applicabili;
 3. non usare `Access-Control-Allow-Origin: *` su alcun endpoint che restituisca dati applicativi.
 
 ```typescript
-// Esempio di middleware CORS per endpoint HTTP puri in Cloud Functions
 import cors from 'cors';
 
 const allowedOrigins = [
-  process.env.HOSTING_URL, // es. https://schoolforge-prod.web.app
+  process.env.HOSTING_URL,          // es. https://schoolforge-prod.web.app
+  process.env.PORTALE_URL,          // es. https://portale.schoolforge.app
   ...(process.env.NODE_ENV === 'development' ? ['http://localhost:5173'] : []),
 ];
 
@@ -332,53 +323,39 @@ export const corsMiddleware = cors({
 
 | Segreto | Dove viene conservato | Chi può leggerlo |
 |---|---|---|
-| Token OAuth Google Forms | Secret Manager (`schoolforge/google-forms-token`) | Solo service account Cloud Functions autorizzato |
-| Token OAuth roster Google Education | Secret Manager (`schoolforge/google-roster-token`) | Solo service account Cloud Functions autorizzato |
-| Credenziali provider AI (futuro) | Secret Manager (`schoolforge/ai-provider-key`) | Solo service account Cloud Functions AiGateway |
+| Credenziali provider AI (Modulo 5) | Secret Manager (`schoolforge/ai-provider-key`) | Solo service account Cloud Functions AiGateway |
 | Firebase Admin SDK key | Secret Manager in CI o variabile protetta CI | Solo pipeline CI/CD |
 | `settings/owner` (soggetto Google) | Firestore (non è un segreto tecnico) | Backend e docente tramite UI |
 
+Non esistono più token OAuth Google Forms o roster: l'eliminazione di Forms/Drive/roster rimuove un'intera classe di segreti dalla superficie da gestire.
+
 ### 7.2 Regole operative per i segreti
 
-1. **Mai nel codice sorgente.** Nessun segreto, token o chiave API deve comparire in file TypeScript, JSON, YAML, `.env` committati, commenti o log.
-2. **Mai in Firestore o Cloud Storage.** Questi sistemi sono accessibili (tramite regole) al docente; i segreti appartengono a Secret Manager.
-3. **Mai nei log.** Cloud Logging non deve ricevere token, risposte API complesse o risposte degli studenti.
-4. **Mai nel browser.** Il client non riceve token OAuth, chiavi AI o refresh token. Riceve solo token Firebase applicativi di breve durata.
-5. **Rotazione senza downtime.** L'implementazione deve supportare la rotazione di ogni segreto senza modifiche al codice: i segreti sono letti da Secret Manager a runtime, non cablati in variabili di build.
+1. **Mai nel codice sorgente.** Nessun segreto, token o chiave API in file TypeScript, JSON, YAML, `.env` committati, commenti o log.
+2. **Mai in Firestore o Cloud Storage.** Questi sistemi sono leggibili (tramite regole) dal docente; i segreti appartengono a Secret Manager.
+3. **Mai nei log.** Cloud Logging non riceve chiavi, risposte AI complete o risposte degli studenti.
+4. **Mai nel browser.** Il client riceve solo token Firebase di breve durata; nessuna chiave AI.
+5. **Rotazione senza downtime.** I segreti sono letti da Secret Manager a runtime, non cablati in build.
 
 ### 7.3 Pipeline CI/CD e segreti
 
 | Variabile CI | Contenuto | Accesso |
 |---|---|---|
-| `FIREBASE_TOKEN` o OIDC | Token per deploy Firebase CLI | Solo job di deploy; mai in log |
-| `GCP_SERVICE_ACCOUNT_KEY` | Chiave per operazioni GCP (migrazioni, backup) | Solo job amministrativi |
-| `FIREBASE_PROJECT_ID_DEV` | ID progetto `dev` | Tutti i job CI |
-| `FIREBASE_PROJECT_ID_PROD` | ID progetto `prod` | Solo job di deploy post-gate |
+| `FIREBASE_TOKEN_CI` | Token per deploy/test su `dev`/`test` | Solo job CI; mai in log |
+| `FIREBASE_TOKEN_PROD` | Token per deploy `prod` | Solo job `deploy-prod` post-gate |
+| `FIREBASE_PROJECT_ID_DEV` / `_PROD` | ID progetti | Dev a tutti i job; Prod solo a deploy post-gate |
 
-Le variabili CI devono essere marcate come "protected" e "masked" nel sistema CI. Un job di PR non deve avere accesso alle variabili di produzione.
-
-La pipeline non deve mai stampare variabili d'ambiente in output, nemmeno per debug.
-
-### 7.4 Rotazione dei token OAuth
-
-Quando un token OAuth Google viene revocato o scade:
-
-1. il backend rileva il fallimento dell'integrazione e aggiorna `integrationStatus` con l'errore (senza dettagli del token);
-2. il Docente vede un banner di integrazione non disponibile nella UI;
-3. i percorsi manuali (PDF, import manuale, storico) continuano a funzionare;
-4. il Docente ri-autorizza l'integrazione tramite il flusso OAuth nella UI;
-5. il backend aggiorna il segreto in Secret Manager e aggiorna `integrationStatus`.
+Le variabili CI devono essere "protected" e "masked". Un job di PR non deve avere accesso alle variabili di produzione. La pipeline non stampa mai variabili d'ambiente in output.
 
 ---
 
 ## 8. Sanitizzazione del Markdown
 
-Il renderer Markdown della web app deve usare una libreria di sanitizzazione (es. DOMPurify) con configurazione restrittiva prima di inserire HTML nel DOM.
+Il renderer Markdown deve usare una libreria di sanitizzazione (es. DOMPurify) con configurazione restrittiva prima di inserire HTML nel DOM.
 
-### 8.1 Tag HTML consentiti nel rendering
+### 8.1 Tag e attributi consentiti
 
 ```typescript
-// Configurazione DOMPurify per il rendering delle lezioni
 const ALLOWED_TAGS = [
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
   'p', 'br', 'hr',
@@ -396,20 +373,19 @@ const ALLOWED_ATTR = [
   'colspan', 'rowspan',
 ];
 
-// Forza target="_blank" + rel="noopener noreferrer" su tutti i link
-// Blocca URL locali (file://, javascript:, data: su img non-base64)
+// Forza target="_blank" + rel="noopener noreferrer" su tutti i link.
+// Blocca URL pericolosi (file://, javascript:, data: su img non base64).
 ```
 
 ### 8.2 Cosa non deve mai apparire nel rendering di fruizione
 
-Il modello dati consegnato alla pagina di fruizione non deve contenere:
+Il modello dati consegnato alla pagina di fruizione (`getLessonForRendering`) non deve contenere:
 
-- blocchi `assessment` o il loro contenuto;
+- domande del pool (`.pool.md`) o il loro contenuto;
 - soluzioni e chiavi di risposta;
-- rubriche di correzione;
 - opzioni corrette di domande chiuse.
 
-Questo è un controllo **backend**, non solo frontend. L'endpoint che restituisce la lezione per il rendering deve costruire un modello privo di questi elementi, indipendentemente da ciò che il browser richiede.
+Sono visibili solo le domande di autoverifica (`kind: self_check`). Questo è un controllo **backend**, non solo frontend: l'endpoint costruisce un modello privo di questi elementi, indipendentemente da ciò che il browser richiede (BR-MD-01).
 
 ---
 
@@ -419,93 +395,88 @@ Questo è un controllo **backend**, non solo frontend. L'endpoint che restituisc
 
 | Dato | Fonte | Finalità | Conservazione |
 |---|---|---|---|
-| Nome, cognome studente | Inserimento manuale o roster Google | Archiviazione e matching consegne | Fino all'archiviazione/eliminazione esplicita |
-| Email studente | Inserimento manuale, roster o risposta Forms | Identificazione nelle consegne | Fino all'archiviazione/eliminazione esplicita |
-| Identificativo Google studente | Roster Google Education | Matching stabile | Fino all'eliminazione esplicita |
-| Risposte alle verifiche | Import Forms o inserimento manuale | Correzione e archiviazione | Immutabili; eliminazione solo su decisione del Docente |
+| Nome, cognome studente | Inserimento studente al portale o manuale docente | Identificazione consegne, archiviazione | Fino a eliminazione esplicita |
+| Email studente (Google scolastica) | Inserimento al portale | Identità dello studente, email bruciata, matching consegne | Fino a eliminazione esplicita |
+| Classe (opzionale) | Inserimento studente o docente | Organizzazione | Fino a eliminazione esplicita |
+| Risposte alle verifiche | Svolgimento digitale o inserimento manuale | Correzione e storico | Immutabili; eliminazione solo su decisione del Docente |
 | Punteggi e percentuali | Calcolo backend | Storico valutativo | Immutabili con rettifiche tracciate |
+
+I dati riguardano **minori**: le regole di minimizzazione vanno applicate con rigore (vedi anche brief, sezione privacy, e i verbali in `documentazione/decisioni/`).
 
 ### 9.2 Regole di minimizzazione
 
-1. I log applicativi (Cloud Logging) non devono contenere nome, email, risposte o punteggi di studenti.
-2. Gli audit event contengono solo identificativi tecnici (`studentId`, `submissionId`), non dati anagrafici.
-3. I prompt inviati all'AI per la correzione assistita devono essere mostrati al Docente prima dell'invio (NFR-AI-02) e non devono contenere informazioni identificative dello studente non necessarie alla correzione.
-4. L'export ZIP del repository contiene solo Markdown e asset; non include dati anagrafici, risposte o punteggi.
-5. I PDF di soluzione e rubrica non devono contenere dati di studenti specifici.
+1. I log applicativi (Cloud Logging) non contengono nome, email, risposte o punteggi di studenti.
+2. Gli audit event contengono solo identificativi tecnici (`studentId`, `submissionId`, `examId`), non dati anagrafici né testo delle risposte.
+3. I prompt inviati all'AI per la correzione (Modulo 5) sono mostrati al Docente prima dell'invio (NFR-AI-02) e non contengono informazioni identificative dello studente non necessarie alla correzione.
+4. L'export ZIP del repository contiene solo Markdown e asset; nessun dato anagrafico, risposta o punteggio.
+5. Il PDF non viene mai conservato; il file `.txt` del programma svolto non contiene dati di studenti.
 
-### 9.3 Consenso per l'invio di dati all'AI
+### 9.3 Consenso per l'invio di dati all'AI (Modulo 5)
 
 Prima di inviare risposte di uno studente a un provider AI, il backend deve:
 
-1. verificare che sia configurato un consenso operativo del Docente (globale per Verifica o per singola Consegna);
-2. mostrare al Docente i dati che verranno trasmessi (lezione, domanda, soluzione, rubrica, risposta — senza identificativi anagrafici dello studente se non necessari);
-3. richiedere conferma esplicita o fare riferimento a una configurazione persistente chiaramente revocabile;
+1. verificare un consenso operativo del Docente (per Verifica o per singola Consegna), in linea con la decisione C-02;
+2. mostrare al Docente i dati che verranno trasmessi (lezione, domanda, soluzione, risposta — senza identificativi anagrafici non necessari);
+3. richiedere conferma esplicita o riferirsi a una configurazione persistente chiaramente revocabile;
 4. registrare nell'audit event: provider, modello, timestamp, finalità, hash del contesto e consenso.
 
 ### 9.4 Eliminazione dei dati
 
-SchoolForge V1 non implementa un sistema di eliminazione automatica o schedulata. Il Docente può eliminare:
-
-- Lezioni (elimina file da Storage e indice da Firestore; non modifica Verifiche esistenti);
-- Classi e Studenti (disattivazione; le Consegne storiche rimangono collegate ma lo Studente è marcato inattivo);
-- Consegne in quarantena (scarto esplicito).
-
-L'eliminazione fisica di dati personali da Firestore richiede un'operazione backend con audit. Non è disponibile come auto-servizio nella V1.
+SchoolForge V1 non implementa eliminazione automatica o schedulata. Il Docente può eliminare Lezioni (file da Storage e indice da Firestore; non modifica Verifiche esistenti). L'eliminazione fisica di dati personali da Firestore (studente, consegne) richiede un'operazione backend auditata e non è disponibile come auto-servizio nella V1; la base giuridica e i tempi di retention sono definiti nel verbale di decisione privacy.
 
 ---
 
-## 10. Sicurezza dell'integrazione AI
+## 10. Sicurezza dell'integrazione AI (Modulo 5)
 
 ### 10.1 Controlli di contesto
 
-Il modulo `AiGateway` deve implementare i seguenti controlli prima di ogni chiamata:
+`AiGateway` implementa i seguenti controlli prima di ogni chiamata:
 
 ```typescript
 interface AiContext {
-  lessonContent: string;       // solo contenuto della lezione selezionata
+  lessonContent: string;       // solo contenuto della/e lezione/i selezionata/e
   questionPrompt: string;
   solution: string;
-  rubric: Rubric;
   studentResponse?: string;    // solo per correzione; opzionale per generazione
-  // Non presenti: altri file, URL, tool, funzioni, browser
+  // Non presenti: altri file, URL, tool, funzioni, browser, retrieval
 }
 
-// Controllo: il context non deve superare una dimensione massima configurabile
-// per prevenire prompt injection via contenuto Markdown molto lungo.
+// Il context non deve superare una dimensione massima configurabile (anti prompt-injection).
 function validateContextSize(ctx: AiContext, maxTokensEstimate: number): void;
 
-// Controllo: il prompt di sistema deve essere un template fisso versioned,
-// non una stringa costruita dinamicamente da input utente.
+// Il prompt di sistema è un template fisso versionato, non costruito da input utente.
 function buildSystemPrompt(templateVersion: string): string;
 ```
 
+Non esistono rubriche: la valutazione AI propone un punteggio entro il `maxScore` dell'item (`coeff_difficoltà × coeff_peso`), non criteri strutturati.
+
 ### 10.2 Protezione da prompt injection
 
-Il Markdown delle lezioni è contenuto scritto dal Docente, non input utente non fidato. Tuttavia, per precauzione:
+Il Markdown delle lezioni è scritto dal Docente, non input non fidato. Per precauzione:
 
-1. il contenuto Markdown viene troncato al limite configurabile di token prima dell'invio;
-2. il prompt di sistema specifica esplicitamente che l'AI non deve eseguire istruzioni presenti nel contenuto della lezione;
-3. l'output dell'AI viene validato con Zod prima di essere restituito al chiamante (struttura, tipi, limiti numerici);
-4. un punteggio proposto che eccede il massimo della rubrica viene rifiutato dal gateway, non solo dalla UI.
+1. il contenuto è troncato al limite di token prima dell'invio;
+2. il prompt di sistema specifica che l'AI non deve eseguire istruzioni presenti nel contenuto della lezione;
+3. l'output dell'AI è validato con Zod prima di essere restituito (struttura, tipi, limiti numerici);
+4. un punteggio proposto che eccede il `maxScore` dell'item viene rifiutato dal gateway, non solo dalla UI.
 
 ### 10.3 Audit AI
 
-Ogni invocazione AI produce un documento in `auditEvents` con:
+Ogni invocazione AI produce un documento in `auditEvents`:
 
 ```typescript
 interface AiAuditEvent {
   actor: 'system';
   action: 'ai_invocation';
-  purpose: 'question_generation' | 'correction_proposal' | 'rubric_generation';
+  purpose: 'question_generation' | 'correction_proposal';
   provider: string;
   modelId: string;
   templateVersion: string;
   contextHash: string;         // hash SHA-256 del contesto inviato
-  lessonIds: string[];         // lezioni incluse nel contesto
+  lessonIds: string[];
   examId?: string;
   submissionId?: string;
   outcome: 'success' | 'error' | 'refused';
-  approvedBy?: string;         // 'teacher' | 'automatic'
+  approvedBy?: 'teacher' | 'automatic';
   approvedAt?: Timestamp;
   timestamp: Timestamp;
 }
@@ -515,37 +486,44 @@ interface AiAuditEvent {
 
 ## 11. Checklist di sicurezza per gate
 
-### Gate G2 (Fase 1 — Repository)
+### Gate G2 (M1 — Repository)
 
 - [ ] Account non autorizzato riceve HTTP 403 su tutti gli endpoint
-- [ ] Account non autorizzato riceve errore 403 anche accedendo direttamente a Firestore (Security Rules)
-- [ ] Un blocco `assessment` non compare nel modello di visualizzazione
-- [ ] La CSP è attiva in produzione e blocca script inline non autorizzati
+- [ ] Account non autorizzato riceve errore anche accedendo direttamente a Firestore (Security Rules)
+- [ ] Le domande del pool e le soluzioni non compaiono nel modello di rendering della lezione
+- [ ] La CSP è attiva e blocca script inline non autorizzati
 - [ ] Nessun segreto nel codice sorgente (scan automatico in CI)
 - [ ] URL firmati di Storage hanno scadenza ≤ 1 ora
-- [ ] Gli header di sicurezza HTTP sono presenti su tutte le risposte
+- [ ] Gli header di sicurezza HTTP sono presenti su tutte le risposte di entrambe le app
 
-### Gate G3 (Fase 2 — Verifiche)
+### Gate G3 (M2 — Verifiche e Portale)
 
-- [ ] Una verifica pubblicata non è modificabile tramite chiamata diretta API
-- [ ] Soluzione e rubrica non compaiono nell'endpoint di rendering lezione
-- [ ] Il PDF di prova non contiene soluzione o rubrica
-- [ ] Il PDF di soluzione non è accessibile senza autenticazione
+- [ ] Una verifica attivata non è modificabile tramite chiamata diretta API
+- [ ] Soluzioni e opzioni corrette non compaiono nel payload del Portale (download e svolgimento)
+- [ ] Il PDF non viene scritto su alcuno storage dopo la generazione
+- [ ] Un secondo download/svolgimento con la stessa email è rifiutato con 409 (email bruciata)
+- [ ] La transazione `burned` è atomica: due richieste simultanee con la stessa email non riescono entrambe
+- [ ] Il download del Docente non crea record `burned`
+- [ ] Un token studente non può invocare endpoint del Docente
 
-### Gate G4 (Fase 3 — Archivio)
+### Gate G4 (M3 — Correzione)
 
-- [ ] Dati anagrafici studenti assenti nei log Cloud Logging
-- [ ] Token OAuth Google conservato solo in Secret Manager
-- [ ] La revoca dell'integrazione Forms non compromette storico manuale
-- [ ] Una risposta Forms senza email certa finisce in quarantena, non nello storico
+- [ ] Dati anagrafici e testo risposte assenti nei log Cloud Logging e negli audit event
+- [ ] Le rettifiche conservano valore precedente, autore, data e motivazione (append-only)
 
-### Gate G5-AI (Correzione AI)
+### Gate G5 (M4 — Storico)
 
-- [ ] Nessuna chiamata AI avviene senza consenso esplicito del Docente
-- [ ] Il contesto inviato all'AI non contiene lezioni non selezionate
-- [ ] L'output AI viene validato (schema Zod) prima dell'uso
-- [ ] Un punteggio AI > punteggio massimo viene rifiutato dal gateway
-- [ ] Il log di audit contiene hash del contesto e modello usato
+- [ ] Lo storico è leggibile solo dal Docente; nessun endpoint espone risultati di uno studente ad altri
+- [ ] Le query usano indici dichiarati; nessuna scansione client di dati personali
+
+### Gate G5-AI / G6 (Modulo 5)
+
+- [ ] Nessuna chiamata AI senza consenso esplicito del Docente
+- [ ] Il contesto inviato all'AI non contiene lezioni non selezionate né web/retrieval
+- [ ] L'output AI è validato (schema Zod) prima dell'uso
+- [ ] Un punteggio AI > `maxScore` dell'item viene rifiutato dal gateway
+- [ ] L'audit contiene hash del contesto e modello usato
+- [ ] La modalità automatica non è attiva per default (C-03)
 
 ---
 
@@ -557,5 +535,5 @@ interface AiAuditEvent {
 | `npm audit` / `pnpm audit` | Vulnerabilità nelle dipendenze | Ogni PR + settimanale |
 | `eslint-plugin-security` | Pattern insicuri nel codice TypeScript | Ogni PR |
 | `zod` (runtime) | Validazione input/output AI e API | Runtime |
-| Firebase Rules Playground | Test manuale delle Security Rules | Ogni modifica alle rules |
+| `@firebase/rules-unit-testing` | Test automatici delle Security Rules (incl. `burned` e accesso studente) | Ogni modifica alle rules |
 | Lighthouse | Header sicurezza, CSP, HTTPS | Ogni deploy staging |

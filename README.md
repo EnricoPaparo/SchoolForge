@@ -4,16 +4,16 @@ Repository didattico personale **Markdown-first** per un docente. SchoolForge ce
 
 ## Stato del progetto
 
-La baseline di progetto è definita: brief, requisiti, architettura e piano di implementazione sono disponibili nel repository. L'implementazione applicativa non è ancora iniziata; il prossimo incremento è la **Fase 1 — Corsi, UDA e Lezioni**.
+La baseline di progetto è definita: brief, requisiti, architettura e piano di implementazione sono disponibili nel repository. L'implementazione applicativa non è ancora iniziata; il prossimo incremento è il **Modulo 1 — Repository** (Programmi, UDA e Lezioni).
 
 ## Obiettivo
 
 Le lezioni Markdown sono la fonte canonica della conoscenza del docente. Da esse il sistema deve poter derivare:
 
 - rendering delle lezioni;
-- verifiche, soluzioni e rubriche;
-- PDF e Google Forms;
-- archiviazione di prove e consegne;
+- verifiche e soluzioni;
+- PDF on-demand e svolgimento digitale nel Portale Verifiche;
+- archiviazione delle consegne digitali;
 - correzione manuale e, successivamente, AI assistita.
 
 SchoolForge non è un LMS, un registro elettronico o un portale studenti.
@@ -35,29 +35,35 @@ Leggere i documenti in questo ordine:
 | [Brief](documentazione/brief.md) | Visione, problema, vincoli e perimetro iniziale. |
 | [Analisi dei requisiti](documentazione/analisi-requisiti.md) | Requisiti funzionali/non funzionali, regole di dominio e criteri di accettazione. |
 | [Architettura](documentazione/architettura.md) | Architettura target Firebase/Google Cloud, modello dati, sicurezza e integrazioni. |
+| [Contratto API](documentazione/api-contract.md) | Endpoint Cloud Functions, payload, errori. |
+| [Sicurezza](documentazione/sicurezza.md) | Modello di minaccia, Security Rules, email bruciata, privacy. |
+| [Strategia di test](documentazione/test-strategy.md) | Livelli di test, coverage per gate, casi negativi obbligatori. |
 | [Piano di implementazione](documentazione/piano-implementazione.md) | Workflow esecutivo, dipendenze, lavoro parallelo, gate e test. |
+| [Glossario](documentazione/glossario.md) | Vocabolario univoco; in caso di ambiguità prevale questa definizione. |
 
 ## Roadmap di delivery
 
-| Fase | Prodotto rilasciato |
+| Modulo | Prodotto rilasciato |
 |---|---|
-| 1. Corsi, UDA e Lezioni | Il docente autenticato crea Corsi/Programmi e UDA, carica, consulta ed esporta lezioni Markdown con asset. |
-| 2. Generazione Verifiche | Il docente compone, pubblica ed esporta una verifica immutabile in PDF, con soluzione e rubrica. |
-| 3. Archiviazione Verifiche | Il docente gestisce classi/studenti, assegnazioni, consegne e storico delle prove da correggere. |
-| 4. Correzione Verifiche | Il docente assegna punteggi e percentuali con audit; AI assistita e automatica sono estensioni autorizzate separatamente. |
+| M1. Repository | Il docente autenticato crea Programmi e UDA, carica, consulta ed esporta lezioni Markdown con pool di domande e asset. |
+| M2. Verifiche e Portale | Il docente compone e attiva una verifica immutabile, scarica il PDF docente; lo studente accede al Portale e scarica/svolge una sola volta (email bruciata); export programma svolto. |
+| M3. Correzione manuale | Il docente corregge le consegne digitali, assegna punteggi e percentuali con rettifiche tracciate. |
+| M4. Storico | Il docente consulta lo storico per studente e per verifica, con filtri. |
+| M5. AI | L'AI propone correzioni; il docente approva con un clic. Assistita e automatica sono estensioni autorizzate separatamente (C-02/C-03). |
 
-Google Forms, roster Google Education e AI sono integrazioni opzionali: non bloccano il percorso manuale delle prime fasi.
+L'AI è un'integrazione opzionale (Modulo 5): non blocca il percorso manuale delle prime fasi. Google Forms, roster Google Education e Google Drive sono esplicitamente fuori perimetro nella v2.
 
 ## Architettura target
 
 La soluzione prevista è un monolite modulare serverless su Firebase/Google Cloud:
 
-- web app TypeScript su Firebase Hosting;
-- Firebase Authentication con Google Workspace for Education;
-- Cloud Functions per logica di business, PDF e integrazioni;
-- Cloud Firestore per metadati, verifiche, consegne, correzioni e audit;
-- Cloud Storage per Markdown, asset e staging di importazione;
-- Google Drive del docente per il caricamento manuale dei PDF archiviabili.
+- web app docente e Portale Verifiche (app separata) in TypeScript su Firebase Hosting;
+- Firebase Authentication con Google Workspace for Education (docente e studenti);
+- Cloud Functions per logica di business, PDF on-demand ed email bruciata;
+- Cloud Firestore per metadati, verifiche, consegne, correzioni, email bruciate e audit;
+- Cloud Storage per Markdown, asset e staging di importazione.
+
+I PDF sono generati on-demand e mai conservati. Google Drive e Google Forms non sono utilizzati.
 
 L'AI è isolata dietro un gateway e resta disabilitata finché non saranno approvati provider, consenso e regole di automazione.
 
@@ -65,12 +71,25 @@ L'AI è isolata dietro un gateway e resta disabilitata finché non saranno appro
 
 ```text
 documentazione/
-├─ brief.md
-├─ analisi-requisiti.md
-├─ architettura.md
-└─ piano-implementazione.md
+├─ brief.md                  # visione, problema, perimetro
+├─ analisi-requisiti.md      # requisiti FR/BR/NFR/AC
+├─ architettura.md           # architettura target Firebase/Google Cloud
+├─ api-contract.md           # contratto Cloud Functions
+├─ sicurezza.md              # modello di minaccia, regole, privacy
+├─ test-strategy.md          # livelli di test, gate, casi negativi
+├─ piano-implementazione.md  # workflow, moduli, gate, CI/CD
+├─ glossario.md              # vocabolario univoco del progetto
+├─ edge-case.md              # casi di confine del dominio con comportamento atteso
+├─ decisioni/                # verbali delle decisioni aperte (C-01/02/03, privacy)
+└─ diagrammi/
+   ├─ er-model.md
+   ├─ component-frontend.md
+   ├─ sequence-import-lezione.md
+   ├─ sequence-attivazione-verifica.md
+   ├─ sequence-portale-studente.md
+   └─ sequence-correzione-ai.md
 ```
 
 ## Prossimo passo
 
-Avviare la Fase 1 seguendo il backlog iniziale del piano di implementazione: ambiente Firebase `dev`, autenticazione del docente, contratto Lesson Markdown, Corsi/UDA e importazione validata delle lezioni.
+Avviare il Modulo 1 seguendo il backlog iniziale del piano di implementazione: ambiente Firebase `dev`, autenticazione del docente, contratto Lesson Markdown, Programmi/UDA e importazione validata delle lezioni.

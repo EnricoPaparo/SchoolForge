@@ -1,8 +1,10 @@
 # SchoolForge — Sequence: Importazione lezione o cartella
 
-**Versione:** 1.0
-**Data:** 22 giugno 2026
-**Riferimento:** [Architettura v1.0](../architettura.md), sezione 8.2
+**Versione:** 2.0
+**Data:** 24 giugno 2026
+**Riferimento:** [Architettura v2.0](../architettura.md), sezione 9.2
+
+In v2.0 una lezione è una coppia di file: `lezione-XXX-titolo.md` (contenuto) e `lezione-XXX-titolo.pool.md` (pool domande, opzionale). L'import valida entrambi tramite `lesson-contract`.
 
 ---
 
@@ -18,7 +20,7 @@ sequenceDiagram
     participant SR as Cloud Storage (repository/current)
     participant FS as Firestore
 
-    D->>W: seleziona cartella da importare
+    D->>W: seleziona cartella da importare (lesson.md, pool.md, UDA.md, asset)
     W->>CF: stageImport({ files: [...metadati...] })
     CF->>F: verifica token Firebase + soggetto Google
     F-->>CF: token valido, owner confermato
@@ -31,24 +33,24 @@ sequenceDiagram
 
     W->>CF: previewImport({ importId })
     CF->>ST: legge tutti i file dal prefisso staging/{importId}/
-    CF->>CF: parseLessonMarkdown() su ogni .md trovato
+    CF->>CF: parseLessonMarkdown(), parsePoolMarkdown(), parseUda()
     CF->>CF: valida contratto Lesson Markdown v1
     CF->>CF: risolve conflitti, asset mancanti, programId/udaId sconosciuti
-    CF-->>W: { validLessons, invalidFiles, conflicts, missingAssets }
+    CF-->>W: { validLessons (con hasPool, poolQuestionCount), invalidFiles, conflicts, missingAssets }
 
     W->>D: mostra piano di import con validi, invalidi, conflitti
 
     alt il docente conferma tutto o un sottoinsieme valido
         D->>W: conferma con selectedLessonIds
         W->>CF: commitImport({ importId, confirmation: true, selectedLessonIds })
-        CF->>F: verifica token (nuova verifica per operazione irreversibile)
+        CF->>F: verifica token (operazione irreversibile)
         F-->>CF: token valido
 
         note over CF,SR: Transazione atomica visibile
-        CF->>ST: legge Markdown e asset delle lezioni selezionate da staging
-        CF->>SR: copia Markdown e asset in repository/current/lessons/{lessonId}/
-        CF->>FS: upsert documenti in collezione `lessons` (transazione)
-        CF->>FS: aggiorna `questionIndex` (rimuove vecchie, aggiunge nuove domande)
+        CF->>ST: legge lesson.md, pool.md e asset delle lezioni selezionate
+        CF->>SR: copia in repository/current/{programId}/{udaId}/
+        CF->>FS: upsert documenti in `lessons` (transazione)
+        CF->>FS: aggiorna `questionIndex` dalle domande dei pool validi
         CF->>FS: scrive audit event IMPORT_COMMITTED
         CF->>ST: elimina prefisso staging/{importId}/
 
@@ -57,7 +59,6 @@ sequenceDiagram
 
     else il docente annulla
         D->>W: annulla importazione
-        W->>CF: (non è richiesta una chiamata esplicita di cancel nella V1)
         note over ST: Il prefisso staging/{importId}/ scade automaticamente dopo 24h
         W->>D: torna alla schermata repository
     end
@@ -94,19 +95,19 @@ sequenceDiagram
     participant FS as Firestore
 
     D->>W: seleziona "Sostituisci" su una lezione esistente
-    W->>CF: stageImport({ files: [{ relativePath: "source.md", ... }] })
-    CF-->>W: { importId, uploadUrls: [{ signedUrl }] }
-    W->>ST: PUT nuovo file .md su URL firmato
+    W->>CF: stageImport({ files: [{ relativePath: "lezione-001.md" }, { relativePath: "lezione-001.pool.md" }] })
+    CF-->>W: { importId, uploadUrls }
+    W->>ST: PUT nuovi file su URL firmato
 
     W->>CF: replaceLesson({ lessonId, importId, confirmation: true })
     CF->>CF: verifica che l'id nel front matter corrisponda a lessonId
-    CF->>CF: parseLessonMarkdown() e valida
-    CF->>SR: sovrascrive repository/current/lessons/{lessonId}/source.md
-    CF->>FS: aggiorna documento `lessons/{lessonId}` (status, plainText, validationErrors)
+    CF->>CF: parseLessonMarkdown() + parsePoolMarkdown() e valida
+    CF->>SR: sovrascrive i file correnti della lezione
+    CF->>FS: aggiorna `lessons/{lessonId}` (status, plainText, validationErrors, poolPath)
     CF->>FS: aggiorna `questionIndex` (solo per questa lezione)
     CF->>FS: scrive audit event LESSON_REPLACED
 
-    note over FS: exam_items già pubblicati NON vengono toccati
+    note over FS: exams/{id}/items già attivati NON vengono toccati
 
     CF-->>W: { lessonId, validationStatus: 'valid' | 'invalid' }
     W->>D: conferma sostituzione con nuovo stato di validazione
@@ -118,7 +119,7 @@ sequenceDiagram
 
 | Scenario di errore | Comportamento |
 |---|---|
-| Caricamento interrotto a metà (Storage) | I file non ancora caricati non sono in staging; `commitImport` fallisce perché il manifesto non è completo. Nessuna modifica al repository. |
-| Errore durante la copia da staging a repository | La transazione Firestore non viene completata; i file già copiati in Storage vengono rimossi da un job di cleanup. Nessuna Lezione diventa visibile. |
-| Errore durante l'aggiornamento Firestore | Rollback della transazione; i file già copiati in Storage vengono rimossi. Stato del repository invariato. |
-| Timeout della funzione | L'importazione rimane in `staging` e scade dopo 24 ore. Il Docente deve ripetere l'operazione. |
+| Caricamento interrotto a metà (Storage) | I file non caricati non sono in staging; `commitImport` fallisce perché il manifesto non è completo. Nessuna modifica al repository. |
+| Errore durante la copia da staging a repository | La transazione Firestore non si completa; i file già copiati vengono rimossi da un job di cleanup. Nessuna Lezione diventa visibile. |
+| Errore durante l'aggiornamento Firestore | Rollback della transazione; file copiati rimossi. Stato del repository invariato. |
+| Timeout della funzione | L'importazione resta in `staging` e scade dopo 24 ore. Il Docente ripete l'operazione. |
