@@ -1,24 +1,57 @@
-# SchoolForge — Sequenza verifica, tentativo e snapshot
+# SchoolForge — Sequenza canale cartaceo e canale digitale
+
+## Canale cartaceo
 
 ```mermaid
 sequenceDiagram
-    participant D as Docente
-    participant B as Cloud Functions
+    participant S as Studente
+    participant SPA as SPA portale
     participant F as Firestore
-    participant S as Studente/Portale
 
-    D->>B: activateVerification(confirmation=true)
-    B->>F: valida, salva configurazione e snapshot pubblicato immutabili
-    B-->>D: link pubblico con token casuale
+    S->>SPA: apre link verifica
+    SPA->>F: legge verifica (proiezione pubblica)
+    F-->>SPA: titolo, canali disponibili
 
-    S->>B: startDigitalAttempt(dati dichiarati)
-    B->>F: transazione lock nome/cognome + tentativo
-    B->>B: seleziona domande da snapshot pubblicato
-    B->>F: salva snapshot privato e token ripresa
-    B-->>S: proiezione domande senza soluzioni
-
-    S->>B: saveDraft / submitAttempt
-    B->>F: bozza o consegna immutabile + audit
+    S->>SPA: sceglie canale cartaceo, clicca "Stampa/Scarica PDF"
+    SPA->>SPA: genera PDF nel browser (VerificaPdfRenderer mode=student)
+    SPA-->>S: download PDF diretto
+    opt contatore opzionale
+        SPA->>F: incrementa downloadCount (atomico, nessun dato personale)
+    end
 ```
 
-L'attivazione crea uno snapshot pubblicato delle domande eleggibili; il solo tentativo digitale salva inoltre le domande effettivamente svolte. Modifiche future alle lezioni non alterano generazione, correzione o export della verifica già attiva.
+Il canale cartaceo è puramente fisico: nessun record di tentativo (`deliveryAttempt`) e nessun log di accesso. Non usa lock né email; più download sono ammessi. Al più viene incrementato il contatore atomico `downloadCount` sul documento della verifica.
+
+## Canale digitale
+
+```mermaid
+sequenceDiagram
+    participant S as Studente
+    participant SPA as SPA portale
+    participant CF as Cloud Function
+    participant F as Firestore
+
+    S->>SPA: sceglie canale digitale, inserisce nome e cognome
+    SPA->>CF: startDigitalAttempt(verificationToken, dati)
+    CF->>F: transazione — crea participant lock nome+cognome, tentativo, snapshot con soluzioni private, accessLog (nome, IP, user-agent, timestamp)
+    alt nome e cognome non ancora usati
+        CF-->>SPA: proiezione domande senza soluzioni + Set-Cookie: resumeToken (HttpOnly/Secure)
+        loop autosave
+            S->>SPA: risponde a domanda
+            SPA->>F: saveDraft (answers)
+        end
+        S->>SPA: Consegna
+        SPA->>F: runTransaction — in_corso → consegnato, immutabile, audit
+        SPA-->>S: conferma consegna
+    else nome e cognome già usati
+        CF-->>SPA: errore PARTICIPANT_ALREADY_USED
+        SPA-->>S: "Questa prova risulta già avviata con questi dati."
+    end
+```
+
+## Note
+
+- Nel canale cartaceo il PDF è generato interamente nel browser; il server non è coinvolto nella produzione del documento. Il canale cartaceo non crea record di tentativo né voci di `accessLog`.
+- Non esiste alcun lock email: l'unicità della consegna digitale è garantita dal participant lock per verifica e nome+cognome normalizzati, creato alla prima chiamata `startDigitalAttempt`.
+- Solo l'accesso digitale registra nome dichiarato, IP, user-agent e timestamp in `accessLog`; il docente li consulta nel Report Accessi. Sono dati auto-dichiarati, non prove d'identità.
+- Lo snapshot digitale con soluzioni private è creato dalla Cloud Function e mai esposto al client portale.

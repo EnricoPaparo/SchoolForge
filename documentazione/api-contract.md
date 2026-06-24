@@ -1,99 +1,400 @@
 # SchoolForge — Contratto API
 
-**Versione:** 3.2
-**Stato:** contratto logico e di payload pre-implementazione
-**Autorità:** requisiti v3.2, architettura v3.2, stati e invarianti
+**Versione:** 2.1
+**Stato:** contratto pre-implementazione
+**Autorità:** `analisi-requisiti.md` e `architettura.md`
 
-## 1. Convenzioni
+---
 
-Le API sono Cloud Functions v2 sotto `/v1`. Le operazioni docente richiedono Firebase ID token e controllo server-side di `ownerUid`. Le operazioni Portale richiedono il token pubblico della verifica e, per bozze/consegne, il token opaco del tentativo. Nessun endpoint usa nome, cognome o email come credenziale.
+## Struttura file nel repository
 
-Ogni risposta usa:
+I tipi e gli artefatti di questo contratto risiedono nei seguenti percorsi:
+
+| Percorso | Contenuto |
+|---|---|
+| `src/types/firestore.ts` | Tutte le interfacce dei documenti Firestore (sezione 2). |
+| `src/types/functions.ts` | Tipi di request/response delle Cloud Functions. |
+| `packages/lesson-contract/src/index.ts` | Schemi Zod del contratto pool v1 (package interno del workspace, non pubblicato su npm). |
+| `functions/src/index.ts` | Entry point delle Cloud Functions. |
+| `functions/src/startDigitalAttempt.ts` | Funzione M3 `startDigitalAttempt`. |
+| `src/components/pdf/VerificaPdfRenderer.tsx` | Renderer PDF unificato (`mode="teacher" \| "student"`). |
+
+> Nota: nel contesto della SPA, `src/contracts/lesson.ts` riesporta gli schemi da `packages/lesson-contract/src/index.ts` per semplificare gli import del client.
+
+---
+
+## 1. Architettura API
+
+### 1.1 Scritture client dirette
+
+La maggior parte delle operazioni nei Moduli 1–4 usa Firebase SDK direttamente dal client con Firestore Security Rules. Non esistono Cloud Functions intermedie per repository, verifiche, correzione o export.
+
+Il client docente è autenticato tramite Firebase Authentication; le Security Rules verificano `request.auth.uid == ownerUid` per ogni scrittura sensibile.
+
+### 1.2 Cloud Functions
+
+Le Cloud Functions sono usate solo per due categorie di operazioni:
+
+| Funzione | Modulo | Motivo |
+|---|---|---|
+| `startDigitalAttempt` | M3 | Richiede token di sessione server-side con cookie HttpOnly/Secure. |
+| `proposeCorrection`, `approveCorrection`, `bulkApproveCorrections`, `enableAutomaticCorrection` | M5 | Richiedono chiave API AI in Secret Manager. |
+
+### 1.3 Convenzioni risposta
+
+Tutte le Cloud Functions restituiscono:
 
 ```json
-{ "requestId": "…", "data": {}, "error": null }
+{
+  "requestId": "uuid-v4",
+  "data": {},
+  "error": null
+}
 ```
 
-Un errore è `{ "code": "…", "message": "…", "details": {} }`. I codici minimi sono `VALIDATION_FAILED`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `INVALID_STATE`, `PARTICIPANT_ALREADY_USED`, `RATE_LIMITED`, `DELIVERY_FAILED`, `CONFIRMATION_REQUIRED` e `ATTEMPT_TOKEN_INVALID`.
+Codici di errore di dominio: `VALIDATION_FAILED`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `INVALID_STATE`, `PARTICIPANT_ALREADY_USED`, `RATE_LIMITED`, `CONFIRMATION_REQUIRED`.
 
-Operazioni irreversibili richiedono `confirmation: true`: commit import, attivazione/chiusura/archiviazione verifica, annullamento tentativo, eliminazione consegna e abilitazione AI automatica. Il backend genera `requestId`, audit e idempotency key; il client non fornisce valori di stato o audit.
+Le operazioni irreversibili richiedono `confirmation: true` nel payload: attivazione/chiusura/archiviazione verifica, eliminazione consegna, abilitazione modalità automatica AI.
 
-## 2. Tipi condivisi
+---
 
-```ts
-type DeclaredStudent = {
-  firstName: string;
-  lastName: string;
-  email: string;
-  className?: string;
-};
+## 2. Struttura Firestore — Tipi TypeScript
 
-type Answer =
-  | { kind: 'text'; value: string }
-  | { kind: 'optionIds'; value: string[] };
+I tipi seguenti definiscono la struttura dei documenti Firestore. Sono il contratto vincolante per l'implementazione.
 
-type Confirmation = { confirmation: true };
+```typescript
+// settings/owner
+interface OwnerSettings {
+  ownerUid: string;
+  classes: string[];           // lista classi configurate dal docente
+  featureFlags: {
+    aiEnabled: boolean;
+    aiAutoEnabled: boolean;
+  };
+}
+
+// programs/{programId}
+interface Program {
+  id: string;
+  ownerUid: string;
+  title: string;
+  order: number;
+  createdAt: Timestamp;
+}
+
+// udas/{udaId}
+interface Uda {
+  id: string;
+  programId: string;
+  title: string;
+  storagePath: string;         // percorso in Cloud Storage
+  order: number;
+  validationStatus: 'valid' | 'invalid' | 'pending';
+}
+
+// lessons/{lessonId}
+interface Lesson {
+  id: string;
+  udaId: string;
+  programId: string;
+  title: string;
+  storagePath: string;
+  poolPath: string | null;     // null se pool assente
+  poolStatus: 'valid' | 'invalid' | 'absent';
+  poolErrors: string[];
+  order: number;
+}
+
+// questionIndex/{questionId}
+interface QuestionIndex {
+  lessonId: string;
+  udaId: string;
+  programId: string;
+  tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
+  difficolta: 1 | 2 | 3;
+  peso: 1 | 2 | 3;
+  maxPoints: number;           // difficolta * peso (scala lineare, 1–9)
+  valid: boolean;
+}
+
+// verifications/{verificationId}
+interface Verification {
+  id: string;
+  ownerUid: string;
+  title: string;
+  state: 'bozza' | 'attiva' | 'chiusa' | 'archiviata';  // 'attiva' = link aperto
+  publicTokenHash: string | null;  // presente solo se attiva
+  sources: string[];               // lessonId[] o udaId[]
+  config: {                        // sempre modificabile dal docente, anche dopo l'attivazione
+    totalQuestions: number;
+    allowedTypes: string[];
+    difficulties: { level: 1 | 2 | 3; min: number }[];
+    variant: 'tutte_uguali' | 'tutte_diverse';
+    channels: ('cartaceo' | 'digitale')[];
+    classes: string[];             // classi associate (opzionale)
+  };
+  downloadCount: number;           // contatore atomico opzionale dei download cartacei; nessun dato personale
+  activatedAt: Timestamp | null;
+  createdAt: Timestamp;
+}
+
+// deliveryAttempts/{attemptId} — solo canale digitale (il canale cartaceo non crea tentativi)
+interface DeliveryAttempt {
+  id: string;
+  verificationId: string;
+  declaredData: {
+    name: string;
+    surname: string;
+    class?: string;
+  };
+  declaredName: string;            // "Cognome Nome" auto-dichiarato, non verificato
+  declaredIp: string;              // IP di provenienza al momento dell'accesso
+  userAgent: string;               // user-agent del browser dello studente
+  state: 'in_progress' | 'submitted' | 'cancelled';
+  resumeTokenHash: string | null;  // hash del cookie di ripresa
+  resumeTokenExpiry: Timestamp | null;
+  createdAt: Timestamp;
+  submittedAt: Timestamp | null;
+}
+
+// deliveryAttempts/{id}/accessLog/{logId} — subcollection
+interface AccessLogEntry {
+  declaredName: string;            // "Cognome Nome"
+  declaredIp: string;
+  userAgent: string;
+  timestamp: Timestamp;
+}
+
+// deliveryAttempts/{id}/snapshot/items — subcollection
+interface SnapshotItem {
+  questionId: string;
+  order: number;
+  tipo: string;
+  difficolta: 1 | 2 | 3;
+  peso: 1 | 2 | 3;
+  maxPoints: number;               // difficolta * peso (1–9)
+  testo: string;
+  opzioni: { id: string; testo: string }[] | null;
+  soluzione: string | string[];    // privato; mai esposto al client portale
+  lessonSource: string;
+}
+
+// deliveryAttempts/{id}/answers — subcollection
+interface Answer {
+  itemId: string;
+  value: string | string[] | null;
+  state: 'draft' | 'submitted';
+  updatedAt: Timestamp;
+}
+
+// corrections/{attemptId}
+interface Correction {
+  attemptId: string;
+  verificationId: string;
+  totalPoints: number;
+  maxPoints: number;
+  percentage: number | null;       // null se non definitiva
+  state: 'partial' | 'complete';
+  origin: 'manual' | 'ai_assisted' | 'ai_auto';
+  updatedAt: Timestamp;
+}
+
+// correctionEvents/{eventId}
+interface CorrectionEvent {
+  attemptId: string;
+  itemId: string;
+  actor: string;                   // ownerUid o 'ai'
+  previousScore: number | null;
+  newScore: number;
+  previousComment: string | null;
+  newComment: string;
+  reason: string;                  // obbligatorio per rettifiche
+  createdAt: Timestamp;
+}
+
+// auditEvents/{eventId}
+interface AuditEvent {
+  actor: string;
+  action: string;
+  objectType: string;
+  objectId: string;
+  outcome: 'success' | 'failure';
+  reason?: string;
+  timestamp: Timestamp;
+}
 ```
 
-`firstName` e `lastName` sono richiesti, Unicode NFC, con spazi esterni rimossi e spazi interni compressi prima della costruzione del participant key. `email` resta obbligatoria nel payload corrente per coerenza del dato dichiarato, ma è usata esclusivamente per il canale cartaceo e non entra nel lock. Il package condiviso esporta schema runtime e tipi TypeScript identici; non sono ammessi tipi duplicati tra frontend e backend.
+---
 
-## 3. Sessione e repository
+## 3. Operazioni client (Firestore SDK)
 
-| Operazione | Attore | Input essenziale | Esito |
+### 3.1 Repository didattico
+
+| Operazione | Scrittura Firestore | Storage |
+|---|---|---|
+| Importa Markdown/asset | Scrivi `lessons`, `udas`, aggiorna `questionIndex` | Scrivi in `repository/current/{programId}/{udaId}/` |
+| Sostituisci file | Aggiorna `lessons` o `udas` con nuovo `storagePath` | Overwrite su Storage |
+| Elimina file/cartella | Aggiorna stato `lessons`/`udas` | Elimina da Storage |
+| Programma svolto | Leggi `programs`, `udas`, `lessons` (flag svolto) | — |
+| Export ZIP | Leggi struttura + download file Storage | — |
+
+Il parser `lesson-contract` (package interno `packages/lesson-contract/src/index.ts`, riesportato da `src/contracts/lesson.ts`) esegue la validazione nel client prima di qualsiasi scrittura. Se il client riceve errori, la UI li mostra senza scrivere su Firestore o Storage.
+
+### 3.2 Verifiche
+
+| Operazione | Scrittura Firestore |
+|---|---|
+| Crea/modifica bozza | `verifications.set()` — solo stato `bozza` |
+| Attiva verifica | Transazione: valida config contro `questionIndex`, genera `publicTokenHash`, passa a `attiva` |
+| Chiudi / archivia | Transazione con `confirmation: true` nel client, aggiorna stato e scrive `auditEvents` |
+| Download PDF docente | Solo lettura Firestore + `questionIndex`; genera nel browser |
+
+### 3.3 Canale cartaceo
+
+| Operazione | Scrittura Firestore |
+|---|---|
+| Genera PDF cartaceo | Solo lettura Firestore + `questionIndex`; genera nel browser |
+| Incremento contatore (opzionale) | Incremento atomico di `downloadCount` su `verifications`; nessun dato personale |
+
+Il canale cartaceo è puramente fisico: cliccando "Stampa/Scarica PDF" il documento è generato nel browser e scaricato. Non crea alcun record di tentativo (`deliveryAttempts`) né voce di log di accesso. Non esiste lock né vincolo di unicità: più download sono ammessi. Al più viene incrementato il contatore atomico `downloadCount`.
+
+### 3.4 Correzione ed export
+
+| Operazione | Scrittura Firestore |
+|---|---|
+| Leggi consegne | Query `deliveryAttempts` filtrata per `ownerUid` |
+| Assegna punteggio | Scrivi `corrections` e `correctionEvents` |
+| Rettifica | Appendi `correctionEvents`, aggiorna `corrections` |
+| Registro Correzioni (popup) | Solo lettura `corrections` + `deliveryAttempts` (nome, cognome, punteggio, percentuale, data consegna); export PDF/CSV generato nel browser, nessuna scrittura |
+| Elimina consegna | Transazione: rimuove `declaredData`, `answers`, `corrections`; preserva `auditEvents` |
+| Export verifiche | Leggi `deliveryAttempts` + `snapshot/items` + `answers` + `corrections`; genera nel browser |
+
+---
+
+## 4. Cloud Function: startDigitalAttempt
+
+Questa è l'unica Cloud Function nei Moduli 1–4.
+
+### Request
+
+```
+POST /v1/startDigitalAttempt
+Authorization: Bearer <Firebase ID token studente — non richiesto>
+Content-Type: application/json
+
+{
+  "verificationToken": "uuid-pubblico-verifica",
+  "declaredData": {
+    "name": "Mario",
+    "surname": "Rossi",
+    "class": "3A"           // opzionale
+  }
+}
+```
+
+#### Regole di validazione di `declaredData`
+
+`name` e `surname` (che compongono il `declaredName` nel formato `Cognome Nome`) sono validati server-side:
+
+| Vincolo | Regola |
+|---|---|
+| Lunghezza minima | `minLength` 2 |
+| Lunghezza massima | `maxLength` 100 |
+| Caratteri ammessi | lettere (incluse lettere accentate), spazi, apostrofi (`'`) e trattini (`-`) |
+| Non vuoto | non può essere vuoto né composto solo da spazi (whitespace-only) |
+
+`class`, se presente, deve corrispondere a una voce della lista classi configurata dal docente. La violazione di una qualsiasi di queste regole produce `VALIDATION_FAILED`.
+
+### Response 200
+
+```json
+{
+  "requestId": "req-uuid",
+  "data": {
+    "attemptId": "attempt-uuid",
+    "questions": [
+      {
+        "id": "snapshot-item-uuid",
+        "order": 1,
+        "tipo": "aperta",
+        "difficolta": 2,
+        "peso": 3,
+        "maxPoints": 6,
+        "testo": "Spiega la differenza tra HTTP e HTTPS.",
+        "opzioni": null
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+Il cookie di ripresa (`Set-Cookie: resumeToken=...; HttpOnly; Secure; SameSite=Strict; Max-Age=3600`) è impostato nell'header HTTP della risposta. Non compare nel body JSON.
+
+Le soluzioni (`soluzione`) non sono mai incluse nella risposta al client portale.
+
+Alla prima chiamata riuscita la Function normalizza nome e cognome, verifica in transazione l'assenza di `participantLocks/{SHA-256(nomeNormalizzato + U+001F + cognomeNormalizzato)}`, crea il lock e registra in `accessLog` il nome dichiarato (`Cognome Nome`), l'IP di provenienza, lo user-agent e il timestamp. Questi dati alimentano il Report Accessi del docente. Il nome è auto-dichiarato e non verificato.
+
+### Response 4xx
+
+| Condizione | Codice HTTP | Codice errore |
+|---|---|---|
+| Token verifica non trovato o verifica non attiva | 404 | `NOT_FOUND` |
+| Nome e cognome già usati per la verifica | 409 | `PARTICIPANT_ALREADY_USED` |
+| Rate limit raggiunto | 429 | `RATE_LIMITED` |
+| Payload non valido | 400 | `VALIDATION_FAILED` |
+| `declaredName` non valido (lunghezza fuori 2–100, caratteri non ammessi, vuoto o whitespace-only) | 400 | `VALIDATION_FAILED` |
+
+---
+
+## 5. Cloud Functions AI — Modulo 5 (fuori scope V1 / pianificato per V2)
+
+Disponibili solo in V2, con C-02 risolta (provider AI configurato dal docente) e feature flag `aiEnabled = true`.
+
+| Funzione | Request | Response |
+|---|---|---|
+| `proposeCorrection` | `{ attemptId, itemId }` | `{ proposal: { score, comment, explanation } }` |
+| `approveCorrection` | `{ attemptId, itemId, score, comment }` | `{ correctionId }` |
+| `bulkApproveCorrections` | `{ attemptId, approvals: [{ itemId, score, comment }] }` | `{ applied: number, skipped: number }` |
+| `enableAutomaticCorrection` | `{ verificationId, confirmation: true }` | `{ enabled: boolean }` — richiede anche C-03 |
+
+Tutte richiedono Firebase ID token con `ownerUid` verificato server-side.
+
+---
+
+## 6. Proiezioni Security Rules
+
+Le Security Rules Firestore devono garantire:
+
+| Percorso | Docente (`ownerUid`) | Client portale | Nessuno |
 |---|---|---|---|
-| `getSession`, `getOwnerSettings` | Docente | — | Owner, feature flag, ambiente. |
-| `stageImport` | Docente | metadati file, contenuti dichiarati | `importId`, URL temporanei e limiti. |
-| `previewImport` | Docente | `importId` | Anteprima, errori strutturati, conteggi. |
-| `commitImport` | Docente | `importId`, `confirmation` | Snapshot tecnico attivo e audit. |
-| `replaceContent`, `deleteContent` | Docente | ID stabile, `confirmation` quando distruttivo | Operazione auditata. |
-| `exportRepository`, `exportProgrammaSvolto` | Docente | filtri consentiti | Download on-demand. |
-| `getReadinessDashboard`, `downloadRepositoryTemplate` | Docente | `programId` per dashboard | Stato di prontezza / ZIP template. |
+| `settings/owner` | Lettura + scrittura | — | Scrittura |
+| `programs`, `udas`, `lessons`, `questionIndex` | Lettura + scrittura | Lettura limitata (solo verifica attiva) | — |
+| `verifications` | Lettura + scrittura | Lettura proiezione pubblica (solo attiva) | Lettura completa |
+| `verifications/*/participantLocks` | Lettura | Scrittura solo via Function | Lettura/scrittura diretta |
+| `deliveryAttempts` | Lettura | Creazione + scrittura (solo proprio tentativo con token sessione) | Lettura altri tentativi |
+| `deliveryAttempts/*/accessLog` | Lettura (Report Accessi) | Scrittura solo via Function | Lettura/scrittura diretta |
+| `deliveryAttempts/*/snapshot/items` | Lettura completa | Lettura senza `soluzione` | — |
+| `corrections`, `correctionEvents` | Lettura + scrittura | — | — |
+| `auditEvents` | Lettura | — | Scrittura |
 
-`previewImport` restituisce ogni errore con `path`, `phase`, `code` e `message`. `commitImport` rifiuta un manifesto, UDA o lezione invalidi; un pool invalido è riportato ma non blocca la lezione.
+Le Security Rules esatte vengono scritte e testate in F-04 con Emulator Suite obbligatoria.
 
-## 4. Verifiche e canale cartaceo
+---
 
-| Operazione | Attore | Input essenziale | Esito |
-|---|---|---|---|
-| `createVerificationDraft`, `updateVerificationDraft` | Docente | configurazione e fonti | Bozza validabile. |
-| `activateVerification`, `closeVerification`, `archiveVerification` | Docente | `verificationId`, `confirmation` | Transizione auditata. |
-| `generateTeacherPdf` | Docente | `verificationId` | Stream PDF senza persistenza. |
-| `getPublicVerification` | Portale | token pubblico | Proiezione minima della verifica attiva. |
-| `startPaperDelivery` | Portale | token pubblico, `DeclaredStudent` | Participant lock, PDF effimero e richiesta MailGateway. |
+## 7. Messaggi di errore UX
 
-`activateVerification` salva `publishedQuestionSnapshot`; non legge più Markdown o pool correnti nelle generazioni della verifica attiva. `startPaperDelivery` non restituisce il PDF al browser studente. Un lock già esistente restituisce `PARTICIPANT_ALREADY_USED` e non deve chiamare il renderer o il provider email.
+| Condizione | Messaggio utente | Azione suggerita |
+|---|---|---|
+| Nome e cognome già usati | "Per questa verifica risulta già avviato un tentativo con questi dati. Contatta il docente se è un errore." | Contattare il docente |
+| Verifica non attiva | "Il link non è attivo o la verifica è chiusa." | Contattare il docente |
+| Configurazione non attivabile | "Impossibile attivare: [motivo specifico]." | Correggere la configurazione |
+| Rate limit | "Troppo richieste. Attendere qualche minuto." | Riprovare |
+| Pool insufficiente | "Non ci sono abbastanza domande per questa configurazione." | Aggiungere domande al pool |
+| Token sessione scaduto | "La sessione è scaduta. Aprire di nuovo il link della verifica." | — |
 
-## 5. Portale digitale
+---
 
-| Operazione | Attore | Input essenziale | Esito |
-|---|---|---|---|
-| `startDigitalAttempt` | Portale | token pubblico, `DeclaredStudent` | Lock, snapshot privato e cookie di ripresa. |
-| `getAttempt` | Portale | cookie token | Proiezione studente dello snapshot, senza soluzioni. |
-| `saveDraft` | Portale | cookie token, `itemId`, `Answer` | Bozza del medesimo tentativo. |
-| `submitAttempt` | Portale | cookie token, `confirmation` | Consegna immutabile. |
+## 8. Versionamento
 
-Il token di ripresa è gestito come cookie di sessione `Secure`, `HttpOnly`, `SameSite=Strict`; non compare in URL, log o payload esportati. `saveDraft` rifiuta risposte incompatibili con tipo/opzioni dello snapshot e non crea mai un secondo tentativo.
-
-## 6. Correzione, annullamento ed export
-
-| Operazione | Attore | Input essenziale | Esito |
-|---|---|---|---|
-| `listSubmissions`, `getSubmission` | Docente | filtri dichiarati / `attemptId` | Consultazione delle consegne digitali. |
-| `setItemScore`, `rectifyScore` | Docente | `attemptId`, `itemId`, centesimi, commento | Punteggi, percentuale e audit. |
-| `cancelAttempt` | Docente | `attemptId`, motivazione, `releaseParticipantLock`, `confirmation`, `finalConfirmation` se `submitted` | Stato `cancelled`, token invalidato e rilascio lock solo esplicito. |
-| `deleteSubmission` | Docente | `attemptId`, motivazione, `confirmation` | Rimozione dati personali e audit non identificativo; lock invariato. |
-| `exportCompletedVerifications` | Docente | — | Unico documento da tutte le consegne definitive e snapshot. |
-
-Punteggi e massimi viaggiano come interi `pointsCenti`; la UI converte esclusivamente per visualizzazione. Il backend rifiuta punteggi minori di zero o maggiori del massimo dello snapshot.
-
-## 7. Limiti pubblici e idempotenza
-
-Il backend applica finestre fisse per token verifica e impronta IP HMAC: 60 letture pubbliche in 15 minuti, 5 avvii tentativo in 15 minuti e 120 salvataggi bozza in 15 minuti. I contatori Firestore hanno TTL di 24 ore e vengono valutati prima di operazioni costose. I limiti sono soglie protettive iniziali; ogni modifica richiede aggiornamento di test, documentazione e valutazione del costo.
-
-`startPaperDelivery` usa come idempotency key l'ID del tentativo. Retry di rete sulla stessa richiesta restituiscono l'esito già noto e non generano un secondo invio. `startDigitalAttempt` crea lock e tentativo in una transazione Firestore.
-
-## 8. AI futura e compatibilità
-
-`proposeCorrection`, `approveCorrection` e `bulkApproveCorrections` restano disabilitate finché C-02 non è approvata. `enableAutomaticCorrection` richiede anche C-03 e conferma esplicita per la verifica interessata.
-
-Cambi incompatibili richiedono una nuova versione `/v2` oppure compatibilità temporanea documentata. Payload pubblici non espongono mai soluzioni, opzioni corrette, punteggi assegnati, audit o configurazioni interne.
+Gli endpoint Cloud Function sono sotto `/v1`. Cambi incompatibili richiedono nuova versione. I payload pubblici non espongono mai soluzioni, correzioni o configurazioni interne.
