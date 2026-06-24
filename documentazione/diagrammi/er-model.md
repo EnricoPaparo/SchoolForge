@@ -6,8 +6,8 @@ erDiagram
     PROGRAM ||--o{ UDA : contains
     UDA ||--o{ LESSON : contains
     LESSON ||--o{ QUESTION_INDEX : derives
-    VERIFICATION ||--o{ RECIPIENT_LOCK : protects
     VERIFICATION ||--o{ DELIVERY_ATTEMPT : receives
+    DELIVERY_ATTEMPT ||--o{ ACCESS_LOG : records
     DELIVERY_ATTEMPT ||--o{ SNAPSHOT_ITEM : contains
     DELIVERY_ATTEMPT ||--o{ ANSWER : contains
     DELIVERY_ATTEMPT ||--o| CORRECTION : receives
@@ -39,18 +39,18 @@ erDiagram
         object config
         string[] classes
     }
-    RECIPIENT_LOCK {
-        string emailHash
-        string channel
-        string attemptId
-        string state
-    }
     DELIVERY_ATTEMPT {
         string verificationId
         string channel
         object declaredData
         string state
         string resumeTokenHash
+    }
+    ACCESS_LOG {
+        string declaredName
+        string declaredIp
+        string userAgent
+        datetime timestamp
     }
     SNAPSHOT_ITEM {
         string testo
@@ -84,7 +84,8 @@ erDiagram
 ## Vincoli
 
 - `questionIndex` è derivato dai pool; Markdown in Cloud Storage resta la fonte canonica.
-- `recipientLocks/{emailHash}` è unico per verifica e blocca entrambi i canali: lo stesso hash non può avere due lock distinti.
+- Il tentativo digitale è protetto da un token mono-uso bruciato alla prima chiamata `startDigitalAttempt`; non esiste più alcun lock basato su email.
+- `accessLog` registra ogni tentativo di accesso (`declaredName` nel formato `Cognome Nome`, `declaredIp`, `userAgent`, `timestamp`) e alimenta il Report Accessi del docente. È un log di audit, non una prova d'identità.
 - `snapshot/items` esiste solo per tentativi digitali, è creato dalla Cloud Function `startDigitalAttempt` e diventa immutabile alla consegna. Il campo `soluzione` non è mai esposto al client portale.
 - PDF, export didattici e programma svolto non sono entità Firestore o Cloud Storage.
 - `OWNER_SETTINGS.classes` è la lista di classi configurata dal docente; usata in `VERIFICATION.config.classes` e come menu nel portale.

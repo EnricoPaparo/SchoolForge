@@ -6,6 +6,23 @@
 
 ---
 
+## Struttura file nel repository
+
+I tipi e gli artefatti di questo contratto risiedono nei seguenti percorsi:
+
+| Percorso | Contenuto |
+|---|---|
+| `src/types/firestore.ts` | Tutte le interfacce dei documenti Firestore (sezione 2). |
+| `src/types/functions.ts` | Tipi di request/response delle Cloud Functions. |
+| `packages/lesson-contract/src/index.ts` | Schemi Zod del contratto pool v1 (package interno del workspace, non pubblicato su npm). |
+| `functions/src/index.ts` | Entry point delle Cloud Functions. |
+| `functions/src/startDigitalAttempt.ts` | Funzione M3 `startDigitalAttempt`. |
+| `src/components/pdf/VerificaPdfRenderer.tsx` | Renderer PDF unificato (`mode="teacher" \| "student"`). |
+
+> Nota: nel contesto della SPA, `src/contracts/lesson.ts` riesporta gli schemi da `packages/lesson-contract/src/index.ts` per semplificare gli import del client.
+
+---
+
 ## 1. Architettura API
 
 ### 1.1 Scritture client dirette
@@ -35,7 +52,7 @@ Tutte le Cloud Functions restituiscono:
 }
 ```
 
-Codici di errore di dominio: `VALIDATION_FAILED`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `INVALID_STATE`, `RECIPIENT_ALREADY_USED`, `RATE_LIMITED`, `CONFIRMATION_REQUIRED`.
+Codici di errore di dominio: `VALIDATION_FAILED`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `INVALID_STATE`, `TOKEN_ALREADY_USED`, `RATE_LIMITED`, `CONFIRMATION_REQUIRED`.
 
 Le operazioni irreversibili richiedono `confirmation: true` nel payload: attivazione/chiusura/archiviazione verifica, eliminazione consegna, abilitazione modalità automatica AI.
 
