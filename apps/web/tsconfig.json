@@ -3,10 +3,7 @@
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "noEmit": true,
-    "paths": {
-      "@schoolforge/lesson-contract": ["../../packages/lesson-contract/src/index.ts"]
-    }
+    "noEmit": true
   },
   "include": ["src", "vite.config.ts"]
 }

@@ -26,9 +26,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@schoolforge/lesson-contract':
-        specifier: workspace:*
-        version: link:../../packages/lesson-contract
       react:
         specifier: ^18.3.1
         version: 18.3.1
