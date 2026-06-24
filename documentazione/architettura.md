@@ -553,7 +553,7 @@ Frequenza, regione, RPO e RTO sono bloccati dalla decisione C-01.
 | M4 — Storico | Lista studenti lazy, storico risultati per studente e per verifica, filtri e ricerche | Il docente consulta lo storico delle verifiche corrette |
 | M5 — AI | AiGateway, proposta correzione, approvazione massiva, anomaly detection | L'AI propone punteggi; il docente approva con un clic (feature-flaggata) |
 
-Ogni modulo rilascia un prodotto utilizzabile. Non è ammesso anticipare AI o roster nella M1.
+Ogni modulo rilascia un prodotto utilizzabile. Non è ammesso anticipare l'AI nella M1.
 
 ## 15. Strategia di test
 

@@ -1,5 +1,9 @@
 # SchoolForge — Project Concept Brief
 
+**Versione:** 2.0
+**Data:** 24 giugno 2026
+**Stato:** fonte di verità del concept
+
 ## Scopo del Documento
 
 Questo documento descrive il concept del progetto SchoolForge.
@@ -521,7 +525,7 @@ Il docente approva, modifica o rifiuta ogni proposta individualmente o in blocco
 
 L'AI assegna e approva automaticamente la correzione.
 
-Attivabile solo con opt-in esplicito del docente per la specifica verifica o assegnazione.
+Attivabile solo con opt-in esplicito del docente per la specifica verifica.
 
 Ogni esito automatico è marcato come tale e rimane modificabile.
 
