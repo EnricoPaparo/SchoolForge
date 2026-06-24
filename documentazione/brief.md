@@ -198,6 +198,22 @@ SchoolForge è un'applicazione web SPA con backend serverless. Non esiste una mo
 
 ---
 
+# Privacy e Tutela dei Minori
+
+Dal Modulo 2 SchoolForge tratta dati personali di minori (nome, cognome, email scolastica, classe, risposte alle verifiche). Questo è un vincolo di prodotto, non un dettaglio implementativo.
+
+Principi:
+
+* **Minimizzazione**: si raccoglie solo ciò che serve a identificare la consegna e a correggerla. Niente dati anagrafici nei log o negli audit; niente dati di studenti negli export del repository.
+* **Titolarità scolastica**: in ambito didattico il titolare del trattamento è di norma l'istituto; il docente opera nel suo perimetro. L'assetto va formalizzato prima del primo trattamento reale.
+* **Residenza dei dati**: la regione di trattamento (decisione C-01) deve essere coerente con la tutela di dati di minori in ambito UE.
+* **Invio all'AI solo con consenso**: nessuna risposta di uno studente è inviata a un provider AI senza consenso esplicito del docente e senza che ne siano mostrati i dati trasmessi.
+* **Diritti degli interessati**: accesso, rettifica e cancellazione sono gestiti tramite operazioni backend auditate.
+
+Base giuridica, contenuto dell'informativa, periodo di retention e procedura di cancellazione sono fissati nel verbale [`decisioni/privacy-minori.md`](decisioni/privacy-minori.md), che deve essere `decisa` prima del go-live in produzione del Modulo 2.
+
+---
+
 # Contratto di Uscita
 
 SchoolForge garantisce che la conoscenza didattica del Docente rimanga di sua proprietà e sia recuperabile indipendentemente dalla disponibilità della piattaforma.

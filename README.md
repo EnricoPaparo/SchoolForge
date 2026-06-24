@@ -77,7 +77,8 @@ documentazione/
 ├─ test-strategy.md          # livelli di test, gate, casi negativi
 ├─ piano-implementazione.md  # workflow, moduli, gate, CI/CD
 ├─ glossario.md              # vocabolario univoco del progetto
-├─ decisioni/                # verbali delle decisioni aperte (C-01/02/03)
+├─ edge-case.md              # casi di confine del dominio con comportamento atteso
+├─ decisioni/                # verbali delle decisioni aperte (C-01/02/03, privacy)
 └─ diagrammi/
    ├─ er-model.md
    ├─ component-frontend.md
