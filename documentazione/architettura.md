@@ -29,7 +29,7 @@ L'implementazione deve consentire al docente di:
 
 1. accedere con Firebase Authentication senza dipendenza da Google Workspace;
 2. caricare, validare, consultare ed esportare Markdown, pool e asset;
-3. attivare verifiche con configurazione immutabile;
+3. attivare verifiche (aprire il link), con configurazione sempre modificabile dal docente;
 4. distribuire PDF della verifica — download diretto per il docente o per lo studente nel canale cartaceo;
 5. raccogliere svolgimenti digitali con snapshot sicuro;
 6. correggere consegne digitali ed esportarle in PDF, Markdown e CSV;
@@ -47,7 +47,7 @@ L'implementazione deve consentire al docente di:
 | Single-docente | Un solo `ownerUid` Firebase è autorizzato nella sezione docente; nessun tenant, delega o ruolo aggiuntivo. |
 | Studente senza account | Il portale usa un link non enumerabile; lo studente dichiara nome e cognome (non verificati) e ogni accesso è tracciato con nome+IP+timestamp+user-agent. Il tentativo digitale usa un token mono-uso. |
 | PDF e documenti effimeri | PDF, export (PDF/Markdown/CSV) e programma svolto sono generati on-demand nel browser con `@react-pdf/renderer` e non scritti su Firestore o Cloud Storage. |
-| Snapshot al tentativo digitale | Configurazione immutabile all'attivazione; snapshot completo con soluzioni private solo quando parte un tentativo digitale, creato dalla Cloud Function. |
+| Snapshot al tentativo digitale | La configurazione della verifica resta sempre modificabile dal docente; l'unico elemento immutabile è lo snapshot di un tentativo digitale, creato con soluzioni private dalla Cloud Function al momento dell'avvio. |
 | AI opzionale | Disabilitata per default, non genera domande, dipende da Cloud Functions solo nel Modulo 5 (fuori scope V1 / pianificato per V2). |
 | Disciplina di costo | Nessuna risorsa sempre attiva; scale-to-zero, quota incluse, avvisi budget. Cloud Functions usate solo dove strettamente necessario. |
 
@@ -101,9 +101,9 @@ Tutte le altre operazioni (import, stati verifica, correzione, export) usano Fir
 
 ### ADR-07 — Snapshot al tentativo, immutabilità alla consegna
 
-**Decisione.** L'attivazione congela la configurazione ma non copia tutte le domande. Al primo avvio digitale la Function seleziona le domande dalle fonti correnti, salva lo snapshot con soluzioni private in Firestore e restituisce al client solo la proiezione senza soluzioni.
+**Decisione.** L'attivazione apre il link ma non congela la configurazione, che resta sempre modificabile dal docente. All'avvio di un tentativo digitale la Function seleziona le domande dalle fonti e dalla configurazione correnti, salva lo snapshot con soluzioni private in Firestore e restituisce al client solo la proiezione senza soluzioni. Lo snapshot di quel tentativo è immutabile dal momento dell'avvio.
 
-**Motivazione.** Correzione ed export lavorano sullo snapshot dell'istanza svolta, indipendentemente da modifiche successive alle lezioni.
+**Motivazione.** Correzione ed export lavorano sullo snapshot dell'istanza svolta, indipendentemente da modifiche successive alla configurazione o alle lezioni. Principio: la configurazione della verifica è sempre modificabile; lo snapshot di un tentativo è immutabile dal momento dell'avvio.
 
 ### ADR-08 — PDF e documenti generati nel browser
 
@@ -194,6 +194,8 @@ repository/current/{programId}/{udaId}/assets/{relative-path}
 
 Non esistono staging, export temporanei o PDF in Cloud Storage. Il client docente scrive direttamente in `repository/current` entro le Security Rules. Una lifecycle policy gestisce le versioni per il periodo di backup.
 
+Il `questionIndex` è riallineato esclusivamente tramite re-import tramite l'interfaccia. Modifiche dirette ai file in Cloud Storage senza re-import non sono supportate e lasciano l'indice desincronizzato. In caso di desincronizzazione, re-importare le lezioni interessate.
+
 ### 6.2 Cloud Firestore
 
 [→ Diagramma ER](diagrammi/er-model.md)
@@ -203,9 +205,9 @@ Non esistono staging, export temporanei o PDF in Cloud Storage. Il client docent
 | `settings/owner` | `ownerUid`, feature flag, lista classi | Unico proprietario V1. |
 | `programs`, `udas`, `lessons` | identificatori, titoli, percorsi Storage, validazione e ordine | Firestore è indice, non fonte Markdown. |
 | `questionIndex` | `lessonId`, `questionRef`, tipo, difficoltà, peso, validità | Derivato dal pool valido. |
-| `verifications` | configurazione immutabile, fonti, stato, token pubblico hashato, classi | Stati `bozza`, `attiva`, `chiusa`, `archiviata`. |
-| `deliveryAttempts` | verifica, canale, dati dichiarati (`declaredName`, `declaredIp`, `userAgent`), stato, timestamp | Cartaceo: `riservato/completato`; digitale: `in_corso/consegnato`. |
-| `deliveryAttempts/{id}/accessLog` | nome dichiarato, IP, user-agent, timestamp | Audit trail; scritto via Function, letto dal Report Accessi del docente. |
+| `verifications` | configurazione modificabile, fonti, stato, token pubblico hashato, classi, `downloadCount` (contatore cartaceo opzionale) | Stati `bozza`, `attiva` (aperta), `chiusa`, `archiviata`. Config sempre modificabile dal docente. |
+| `deliveryAttempts` | verifica, dati dichiarati (`declaredName`, `declaredIp`, `userAgent`), stato, timestamp | Solo canale digitale: `in_corso/consegnato`. Il canale cartaceo non crea tentativi. |
+| `deliveryAttempts/{id}/accessLog` | nome dichiarato, IP, user-agent, timestamp | Audit trail dei soli tentativi digitali; scritto via Function, letto dal Report Accessi del docente. |
 | `deliveryAttempts/{id}/snapshot/items` | domanda, opzioni, soluzione privata, punteggio massimo, origine | Solo per tentativo digitale; creato dalla Cloud Function. |
 | `deliveryAttempts/{id}/answers` | risposta, stato bozza/consegnata, timestamp | Immutabile dopo consegna. |
 | `corrections`, `correctionEvents` | punteggi, commenti, percentuale, origine, rettifiche | Eventi append-only. |
@@ -215,8 +217,8 @@ Non esistono staging, export temporanei o PDF in Cloud Storage. Il client docent
 
 | Evento | Garanzia |
 |---|---|
-| Attivazione verifica | Transazione client Firestore SDK: valida configurazione, passa `bozza → attiva`, congela config e scrive audit. |
-| Avvio cartaceo | Scrittura client Firestore SDK: crea tentativo `riservato` con `declaredName`/`declaredIp`/`userAgent` e voce `accessLog`. Nessun lock. |
+| Attivazione verifica | Transazione client Firestore SDK: valida configurazione, passa `bozza → attiva` (apre il link) e scrive audit. La config resta modificabile dopo l'attivazione. |
+| Download cartaceo | Nessun record di tentativo né voce `accessLog`. Opzionale: incremento atomico di `downloadCount` sul documento `verifications`. Nessun lock, nessun dato personale. |
 | Avvio digitale | Cloud Function: transazione Firestore — brucia token mono-uso, crea tentativo, snapshot con soluzioni private, log accesso e token sessione. |
 | Salvataggio bozza | Client scrive su `answers` del tentativo autorizzato dal token di sessione; nessuna nuova selezione domande. |
 | Consegna | Transazione client: `in_corso → consegnato`, snapshot/risposte immutabili, audit. |
@@ -239,9 +241,9 @@ Non esistono staging, export temporanei o PDF in Cloud Storage. Il client docent
 
 ### 7.2 Attivazione verifica
 
-1. Il docente configura fonti, tipi, difficoltà, minimi, varianti, classi.
+1. Il docente configura fonti, tipi, difficoltà, minimi, varianti, classi. La configurazione resta modificabile anche dopo l'attivazione.
 2. La SPA interroga `questionIndex` e valida disponibilità localmente.
-3. La SPA esegue una transazione Firestore: crea token pubblico, congela configurazione, passa stato a `attiva`, scrive audit.
+3. La SPA esegue una transazione Firestore: crea token pubblico, apre il link (stato `attiva`), scrive audit.
 
 ### 7.3 Canale cartaceo
 
@@ -254,12 +256,14 @@ sequenceDiagram
     participant F as Firestore
 
     S->>SPA: apre link e sceglie canale cartaceo
-    SPA->>SPA: mostra form dati studente
-    S->>SPA: inserisce nome, cognome, classe
-    SPA->>F: crea tentativo + accessLog (nome, IP, user-agent, timestamp)
     SPA->>SPA: genera PDF nel browser (@react-pdf/renderer)
     SPA-->>S: download PDF diretto
+    opt contatore opzionale
+        SPA->>F: incrementa downloadCount (atomico, nessun dato personale)
+    end
 ```
+
+Il canale cartaceo è puramente fisico: nessun record di tentativo, nessun log di accesso. Al più un contatore atomico `downloadCount` sul documento della verifica.
 
 ### 7.4 Canale digitale e snapshot
 
@@ -304,7 +308,7 @@ sequenceDiagram
 |---|---|
 | Repository | Scrivi/elimina Markdown e asset in `repository/current`; aggiorna `lessons`, `udas`, `questionIndex`, `programs`. |
 | Verifiche | Crea/modifica bozza; transazione attivazione/chiusura/archiviazione; scrivi `auditEvents`. |
-| Canale cartaceo | Crea tentativo cartaceo con `declaredName`/`declaredIp`/`userAgent` e voce `accessLog`. |
+| Canale cartaceo | Nessuna scrittura di tentativo o `accessLog`. Solo, in opzione, incremento atomico di `downloadCount` su `verifications`. |
 | Correzione | Scrivi `corrections`, `correctionEvents`, elimina consegna. |
 
 ### 8.2 Cloud Functions

@@ -294,22 +294,16 @@ Ogni domanda deve specificare:
 | Attributo | Valori possibili |
 |---|---|
 | `tipo` | `aperta` / `chiusa_singola` / `chiusa_multipla` |
-| `difficoltà` | `bassa` / `media` / `alta` |
-| `peso` | `basso` / `medio` / `alto` |
+| `difficoltà` | `1` / `2` / `3` |
+| `peso` | `1` / `2` / `3` |
 | `testo` | testo della domanda |
 | `soluzione` | risposta (aperte) o opzioni corrette (chiuse) |
 
-**Difficoltà** determina quali domande vengono selezionate in fase di generazione (filtro e minimo garantito per livello).
+**Difficoltà** (scala `1`, `2`, `3`) determina quali domande vengono selezionate in fase di generazione (filtro e minimo garantito per livello).
 
-**Peso** determina quanto conta la domanda nel punteggio finale (importanza didattica, lunghezza, centralità dell'argomento). Il peso non è un secondo attributo di difficoltà: una domanda può essere facile ma avere peso alto, e viceversa.
+**Peso** (scala `1`, `2`, `3`) determina quanto conta la domanda nel punteggio finale (importanza didattica, lunghezza, centralità dell'argomento). Il peso non è un secondo attributo di difficoltà: una domanda può essere facile ma avere peso alto, e viceversa.
 
-**Punteggio massimo per domanda** = `coeff_difficoltà × coeff_peso`
-
-| Livello | Coefficiente |
-|---|---|
-| Basso / Bassa | 0.75 |
-| Medio / Media | 1.00 |
-| Alto / Alta | 1.25 |
+**Punteggio massimo per domanda** = `difficoltà × peso` (scala lineare, intervallo 1–9).
 
 La percentuale finale è calcolata come `Σ(punti assegnati) / Σ(punti massimi) × 100`.
 
@@ -357,7 +351,7 @@ Il docente crea una verifica definendo:
 * varianti: tutte uguali (seed fisso, tutti gli studenti ricevono le stesse domande) o tutte diverse (seed per tentativo, ogni studente riceve un set diverso);
 * classi associate (opzionale, dalla lista configurata).
 
-Le impostazioni diventano immutabili al momento dell'attivazione della verifica.
+La configurazione della verifica è sempre modificabile dal docente, anche dopo l'attivazione. L'unico elemento immutabile è lo snapshot di un tentativo digitale: dal momento dell'avvio, la copia delle domande mostrate allo studente non cambia. La configurazione della verifica è sempre modificabile; lo snapshot di un tentativo è immutabile dal momento dell'avvio.
 
 Il PDF viene generato on-demand nel browser al momento della richiesta e non viene mai conservato dal sistema.
 
@@ -403,21 +397,23 @@ Il docente può scaricare la verifica in qualsiasi momento, senza inserire dati 
 
 # Distribuzione e Canali di Erogazione
 
-Ogni verifica attiva è accessibile tramite un link univoco generato dal sistema.
+Ogni verifica è accessibile tramite un link generato dal sistema. La verifica non ha una lista di destinatari preassegnati: è semplicemente **aperta** o **chiusa** dal docente. Chiunque disponga del link può accedere finché la verifica è aperta. Il docente gestisce fisicamente la distribuzione del link (e degli eventuali token) in classe.
 
-Il docente distribuisce il link tramite i canali che preferisce (bacheca scolastica, chat di classe, email).
+Il docente distribuisce il link tramite i canali che preferisce (bacheca scolastica, chat di classe).
+
+Se uno studente arriva tardi, il docente può avviare un nuovo tentativo digitale generando un token aggiuntivo, oppure consegnare una copia cartacea; non è prevista la riapertura di un tentativo già inviato.
 
 Lo studente apre il link e sceglie il canale:
 
 ## Canale A — Cartaceo
 
-Lo studente inserisce nome, cognome e, facoltativamente, classe. Il sistema genera il PDF con i dati precompilati direttamente nel browser dello studente; il PDF viene scaricato senza passare per il server. L'accesso è registrato (nome dichiarato, IP, timestamp, user-agent) come audit trail per il docente. Non c'è alcun lock: il canale cartaceo non limita i download.
+Il canale cartaceo è puramente fisico. Il docente (o lo studente dal link aperto) clicca "Stampa/Scarica PDF": il PDF viene generato direttamente nel browser e scaricato, senza passare per il server. Il canale cartaceo **non** crea alcun record di tentativo (`deliveryAttempt`) e **non** registra alcun accesso. Se utile, un semplice contatore atomico `downloadCount` sul documento della verifica può essere incrementato a ogni download. Non c'è alcun lock: il canale cartaceo non limita i download.
 
 Lo studente svolge la verifica su carta o con qualsiasi strumento esterno. La consegna avviene fisicamente al docente. Il sistema non è coinvolto nella correzione cartacea.
 
 ## Canale B — Digitale (Portale Verifiche)
 
-Lo studente inserisce nome, cognome e, facoltativamente, classe. Il sistema crea un tentativo digitale tramite una Cloud Function che brucia il token mono-uso del tentativo, genera il token di sessione, registra il log di accesso (nome, IP, timestamp, user-agent) e salva lo snapshot delle domande senza esporre soluzioni. Lo studente svolge la verifica direttamente nel portale. Il token mono-uso impedisce una seconda consegna digitale dallo stesso link.
+Lo studente inserisce nome, cognome e, facoltativamente, classe. Chiunque abbia il link può avviare un tentativo digitale finché la verifica è aperta; il token è generato on-demand, oppure il docente pre-genera un insieme di N token generici. Il sistema crea il tentativo digitale tramite una Cloud Function che brucia il token mono-uso del tentativo, genera il token di sessione, registra il log di accesso (nome, IP, timestamp, user-agent) e salva lo snapshot delle domande senza esporre soluzioni. Lo studente svolge la verifica direttamente nel portale. Il token mono-uso impedisce una seconda consegna digitale dallo stesso token.
 
 Le risposte vengono salvate strutturate nel database operativo e sono disponibili per la correzione nel sistema.
 

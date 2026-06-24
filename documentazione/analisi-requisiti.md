@@ -28,7 +28,7 @@ In caso di conflitto prevalgono: obblighi di legge applicabili, decisioni esplic
 |---|---|---|
 | D-01 | Lo studente dichiara nome e cognome (auto-dichiarati, non verificati); il sistema registra nome+IP+timestamp+user-agent come audit trail. | Nessuna autenticazione né email nel Portale; il token del tentativo digitale è mono-uso. |
 | D-02 | Il docente non dipende da Google Workspace for Education. | Firebase Authentication gestisce l'accesso docente; Google Workspace non è richiesto. |
-| D-03 | Non serve ricreare una verifica passata dopo modifiche alle lezioni. | Non è richiesto versionare l'intero repository. La configurazione resta immutabile; una consegna digitale conserva le domande effettivamente mostrate. |
+| D-03 | Non serve ricreare una verifica passata dopo modifiche alle lezioni. | Non è richiesto versionare l'intero repository. La configurazione della verifica è sempre modificabile dal docente; l'unico elemento immutabile è lo snapshot di un tentativo digitale, che conserva le domande effettivamente mostrate dal momento dell'avvio. |
 | D-04 | La generazione AI di domande è eliminata. | I pool Markdown sono l'unica fonte delle domande. L'AI rimane solo nel Modulo 5 (correzione), fuori scope V1 / pianificato per V2. |
 | D-05 | Il sistema non invia email agli studenti. | Il canale cartaceo genera il PDF direttamente nel browser dello studente; nessun provider email è richiesto nei Moduli 1–4. |
 | D-06 | PDF, export e programma svolto sono generati nel browser. | Nessuna Cloud Function per la generazione di documenti; `@react-pdf/renderer` nel client. |
@@ -91,7 +91,7 @@ Registro elettronico, presenze, compiti, chat, forum, videolezioni, LMS, social 
 | Classe | Voce della lista configurata dal docente nelle impostazioni; usata nelle verifiche e nel portale. |
 | Verifica | Configurazione che seleziona fonti, classi e regole di estrazione; non è un PDF conservato. |
 | Istanza digitale | Snapshot della verifica effettivamente assegnato a un tentativo digitale, con le sole informazioni necessarie a svolgimento, correzione ed export. |
-| Tentativo | Accesso di uno studente a una verifica per un canale; registra nome dichiarato, IP, timestamp e user-agent. Il tentativo digitale usa un token mono-uso. |
+| Tentativo | Accesso digitale di uno studente a una verifica; registra nome dichiarato, IP, timestamp e user-agent e usa un token mono-uso. Il canale cartaceo non genera tentativi. |
 | Consegna | Risposte inviate in modo definitivo nel canale digitale. |
 | Correzione | Punteggi, commenti, percentuale e relative rettifiche. |
 
@@ -117,6 +117,8 @@ Registro elettronico, presenze, compiti, chat, forum, videolezioni, LMS, social 
 
 **BR-REP-01.** Il sistema non modifica semanticamente il Markdown importato. I metadati operativi sono conservati separatamente dai file originali.
 
+**BR-REP-02.** Il `questionIndex` è riallineato esclusivamente tramite re-import tramite l'interfaccia. Modifiche dirette ai file in Cloud Storage senza re-import non sono supportate e lasciano l'indice desincronizzato. In caso di desincronizzazione, re-importare le lezioni interessate.
+
 **AC-REP-01.** Data una UDA con una lezione valida e un pool non valido, il rendering della lezione funziona e la UI mostra gli errori del pool con file, domanda e campo interessati.
 
 **AC-REP-02.** Dato un repository con asset e cartelle annidate, l'export ZIP mantiene file, nomi e relazioni di percorso leggibili fuori da SchoolForge.
@@ -139,16 +141,16 @@ schema: schoolforge-pool/v1
 questions:
   - id: q-001
     tipo: aperta
-    difficolta: media
-    peso: alto
+    difficolta: 2
+    peso: 3
     testo: |
       Spiega la differenza tra HTTP e HTTPS.
     soluzione: |
       HTTPS aggiunge un canale cifrato con autenticazione del server.
   - id: q-002
     tipo: chiusa_singola
-    difficolta: bassa
-    peso: medio
+    difficolta: 1
+    peso: 2
     testo: Quale protocollo risolve i nomi di dominio?
     opzioni:
       - id: a
@@ -163,13 +165,13 @@ questions:
 
 **BR-POOL-02.** Ogni domanda richiede `id`, `tipo`, `difficolta`, `peso`, `testo` e `soluzione`. L'`id` è univoco nel singolo pool, composto da lettere minuscole, cifre e trattini.
 
-**BR-POOL-03.** I valori ammessi sono: `tipo` = `aperta`, `chiusa_singola`, `chiusa_multipla`; `difficolta` = `bassa`, `media`, `alta`; `peso` = `basso`, `medio`, `alto`.
+**BR-POOL-03.** I valori ammessi sono: `tipo` = `aperta`, `chiusa_singola`, `chiusa_multipla`; `difficolta` = `1`, `2`, `3`; `peso` = `1`, `2`, `3`.
 
 **BR-POOL-04.** Una domanda `aperta` usa `soluzione` come testo Markdown non vuoto e non dichiara `opzioni`. Una domanda chiusa dichiara almeno due `opzioni`, ognuna con `id` e `testo` univoci. Per `chiusa_singola`, `soluzione` contiene un solo id di opzione; per `chiusa_multipla` contiene da uno a un numero di id inferiore al numero di opzioni.
 
 **BR-POOL-05.** Campi sconosciuti sono rifiutati nella versione v1. Un pool non valido è interamente escluso dalla selezione.
 
-**BR-POOL-06.** Il punteggio massimo della domanda è `coeff_difficolta × coeff_peso`, con bassa/basso = 0,75, media/medio = 1,00 e alta/alto = 1,25.
+**BR-POOL-06.** Il punteggio massimo della domanda è `difficolta × peso` su scala lineare: `difficolta` e `peso` assumono valori `1`, `2` o `3`, quindi il punteggio massimo è un intero nell'intervallo 1–9.
 
 **AC-POOL-01.** Un pool con due `id` uguali, una soluzione chiusa inesistente o un valore di difficoltà non ammesso viene rifiutato indicando la riga o il percorso YAML e la causa.
 
@@ -191,13 +193,13 @@ questions:
 
 **FR-VER-01.** Il docente crea una verifica con: titolo, una o più UDA e/o lezioni sorgenti, numero totale di domande, tipi ammessi, difficoltà ammesse e minimo per ciascuna difficoltà scelta, modalità variante e canale o canali abilitati, e classi associate (opzionale).
 
-**BR-VER-01.** Una verifica percorre gli stati `bozza`, `attiva`, `chiusa`, `archiviata`. Solo la bozza è modificabile. L'attivazione rende immutabile la configurazione; la chiusura impedisce nuovi tentativi; l'archiviazione la nasconde dalle normali viste operative senza eliminare le consegne digitali.
+**BR-VER-01.** Una verifica percorre gli stati `bozza`, `attiva` (aperta), `chiusa`, `archiviata`. La configurazione della verifica è sempre modificabile dal docente, anche dopo l'attivazione; l'attivazione apre il link e non congela la configurazione. La chiusura impedisce nuovi tentativi; l'archiviazione la nasconde dalle normali viste operative senza eliminare le consegne digitali. L'unico elemento immutabile è lo snapshot di un tentativo digitale (vedi BR-POR-02): la configurazione della verifica è sempre modificabile; lo snapshot di un tentativo è immutabile dal momento dell'avvio.
 
 **BR-VER-02.** Non sono richiesti calendario, durata configurabile, cronometro o chiusura automatica nella V1.
 
 **BR-VER-03.** Il sistema blocca l'attivazione se non esistono fonti selezionate, tipi o difficoltà ammessi, se il totale è minore di uno, se la somma dei minimi supera il totale oppure se il pool corrente non contiene abbastanza domande eleggibili.
 
-**BR-VER-04.** Le impostazioni attivate non cambiano. Le lezioni e i pool possono evolvere: una nuova generazione per uno studente che non ha ancora iniziato usa i contenuti correnti.
+**BR-VER-04.** La configurazione della verifica può essere modificata dal docente in qualsiasi momento. Anche lezioni e pool possono evolvere: una nuova generazione per uno studente che non ha ancora avviato un tentativo usa la configurazione e i contenuti correnti. Lo snapshot di un tentativo già avviato resta immutabile.
 
 ### 8.2 Algoritmo di selezione
 
@@ -213,27 +215,27 @@ questions:
 
 **FR-VER-03.** Il docente può generare e scaricare un PDF in ogni momento. Nome, cognome e classe sono vuoti e compilabili a mano; la data non è presente. Questo download non crea tentativi né registra accessi.
 
-**AC-VER-01.** Una configurazione con totale 8 e minimi 3 bassa, 3 media, 3 alta non può essere attivata.
+**AC-VER-01.** Una configurazione con totale 8 e minimi 3 per difficoltà `1`, 3 per difficoltà `2`, 3 per difficoltà `3` non può essere attivata.
 
 **AC-VER-02.** Il download docente non persiste PDF e non modifica il registro dei tentativi.
 
 ## 9. Portale Verifiche — canale cartaceo — Modulo 2
 
-**FR-PAP-01.** Dopo aver inserito nome, cognome e classe facoltativa, lo studente riceve il PDF della verifica direttamente come download nel browser, generato da `@react-pdf/renderer` senza passare per il server.
+**FR-PAP-01.** Il canale cartaceo è puramente fisico. Cliccando "Stampa/Scarica PDF", il PDF della verifica viene generato direttamente nel browser con `@react-pdf/renderer` e scaricato, senza passare per il server.
 
-**FR-PAP-02.** L'accesso cartaceo registra un tentativo con nome dichiarato, IP, timestamp e user-agent in un log di accesso. Il canale cartaceo non applica lock e non limita il numero di download.
+**FR-PAP-02.** Il canale cartaceo non crea alcun record di tentativo (`deliveryAttempt`) e non registra alcun accesso (nessun log di accesso). Il canale cartaceo non applica lock e non limita il numero di download.
 
-**BR-PAP-01.** Il canale cartaceo non ha vincoli di unicità: più download dello stesso PDF sono ammessi. Ogni accesso è tracciato nel Report Accessi a fini di audit.
+**BR-PAP-01.** Il canale cartaceo non ha vincoli di unicità: più download dello stesso PDF sono ammessi. Se utile, un semplice contatore atomico `downloadCount` sul documento della verifica può essere incrementato a ogni download; non viene tracciato alcun dato personale né di accesso.
 
-**AC-PAP-01.** Due richieste con gli stessi dati per la stessa verifica producono entrambe un download; entrambi gli accessi compaiono nel Report Accessi con i rispettivi IP e timestamp.
+**AC-PAP-01.** Più richieste per la stessa verifica producono ciascuna un download; nessun record di tentativo né voce di log di accesso viene creato.
 
-**AC-PAP-02.** Dopo un download cartaceo, lo studente può ancora avviare il canale digitale: il token digitale mono-uso è indipendente dal canale cartaceo.
+**AC-PAP-02.** Il download cartaceo è indipendente dal canale digitale: avviare un tentativo digitale resta possibile e usa il proprio token mono-uso.
 
 ## 10. Portale Verifiche digitale — Modulo 3
 
 ### 10.1 Avvio e tentativo
 
-**FR-POR-01.** Il link di una verifica attiva mostra esclusivamente i dati essenziali e la scelta del canale. Per il canale digitale lo studente inserisce nome, cognome e classe facoltativa.
+**FR-POR-01.** La verifica è un link aperto: non esiste una lista di destinatari preassegnati. Finché la verifica è aperta, chiunque disponga del link può accedere; il docente gestisce fisicamente la distribuzione del link (e degli eventuali token) in classe. Il link di una verifica attiva mostra esclusivamente i dati essenziali e la scelta del canale. Per il canale digitale lo studente inserisce nome, cognome e classe facoltativa; il token è generato on-demand oppure scelto da un insieme di N token generici pre-generati dal docente.
 
 **FR-POR-02.** All'avvio digitale la Cloud Function `startDigitalAttempt` crea in transazione il tentativo, lo snapshot con soluzioni private, una voce di log accesso (nome, IP, timestamp, user-agent) e un token opaco di sessione consegnato come cookie sicuro; contestualmente brucia il token mono-uso del tentativo. Il client riceve solo la proiezione delle domande senza soluzioni.
 
@@ -331,7 +333,7 @@ questions:
 
 **NFR-SEC-03.** Le operazioni che eliminano dati, attivano o chiudono una verifica, annullano un tentativo o abilitano la correzione automatica richiedono conferma esplicita.
 
-**NFR-INT-01.** Devono essere tracciati almeno: importazione, validazione, sostituzione, eliminazione, configurazione, attivazione, chiusura, avvio tentativo, download cartaceo, consegna, correzione, rettifica, annullamento e operazioni AI.
+**NFR-INT-01.** Devono essere tracciati almeno: importazione, validazione, sostituzione, eliminazione, configurazione, attivazione, chiusura, avvio tentativo digitale, consegna, correzione, rettifica, annullamento e operazioni AI. Il download cartaceo non è un evento tracciato (canale puramente fisico).
 
 **NFR-INT-02.** I log di audit non sono modificabili dalla UI ordinaria e non devono contenere la risposta completa dello studente.
 
@@ -362,7 +364,7 @@ questions:
 | Modulo | Capacità rilasciata | Dipendenze | Uscita verificabile |
 |---|---|---|---|
 | 1. Repository didattico | Programmi, UDA, lezioni, pool, rendering, ZIP, programma svolto (PDF + Markdown). | Accesso docente e validatore pool. | Funziona senza Portale, AI o correzione. |
-| 2. Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente e studente, log accessi. | Modulo 1. | Vincoli validati, PDF non archiviato, accessi tracciati. |
+| 2. Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente e studente (canale cartaceo fisico senza record). | Modulo 1. | Vincoli validati, PDF non archiviato, canale cartaceo senza record. |
 | 3. Portale digitale | Istanza, snapshot via Function, token mono-uso, log nome+IP, bozza, ripresa, consegna e deterrenza. | Modulo 2. | Una consegna strutturata è consultabile dal docente. |
 | 4. Correzione manuale ed export | Punteggi, percentuale, rettifiche, eliminazione consegna ed export PDF/Markdown/CSV. | Modulo 3. | Percentuali, audit ed export da snapshot verificabili. |
 | 5. Correzione AI (V2) | Proposte, approvazioni, opt-in automatico e rapporto consultivo. Fuori scope V1. | Modulo 4 (in V2). | I flussi manuali restano operativi senza AI. |
@@ -397,9 +399,9 @@ La futura architettura e l'implementazione sono conformi solo se dimostrano con 
 
 1. Markdown e asset restano esportabili e leggibili senza SchoolForge;
 2. un pool invalido non compromette la lezione ma non può generare domande;
-3. la configurazione attivata è immutabile;
+3. la configurazione della verifica resta sempre modificabile; lo snapshot di un tentativo digitale è immutabile dal momento dell'avvio;
 4. lo studente dichiara nome e cognome non verificati; ogni accesso è tracciato con nome+IP+timestamp+user-agent e il tentativo digitale usa un token mono-uso;
-5. il PDF cartaceo è generato nel browser senza persistenza e il download docente non altera il tentativo;
+5. il PDF cartaceo è generato nel browser senza persistenza e senza creare record di tentativo o di accesso; il download docente non altera alcuno stato;
 6. un tentativo digitale riprende nello stesso browser con le stesse domande e diventa immutabile alla consegna;
 7. soluzioni e opzioni corrette non sono mai esposte al Portale;
 8. percentuali e rettifiche sono calcolabili e tracciabili senza gestire voti;

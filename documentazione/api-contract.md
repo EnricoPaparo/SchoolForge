@@ -111,9 +111,9 @@ interface QuestionIndex {
   udaId: string;
   programId: string;
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
-  difficolta: 'bassa' | 'media' | 'alta';
-  peso: 'basso' | 'medio' | 'alto';
-  maxPoints: number;           // coeff_difficolta * coeff_peso
+  difficolta: 1 | 2 | 3;
+  peso: 1 | 2 | 3;
+  maxPoints: number;           // difficolta * peso (scala lineare, 1–9)
   valid: boolean;
 }
 
@@ -122,26 +122,26 @@ interface Verification {
   id: string;
   ownerUid: string;
   title: string;
-  state: 'bozza' | 'attiva' | 'chiusa' | 'archiviata';
+  state: 'bozza' | 'attiva' | 'chiusa' | 'archiviata';  // 'attiva' = link aperto
   publicTokenHash: string | null;  // presente solo se attiva
   sources: string[];               // lessonId[] o udaId[]
-  config: {
+  config: {                        // sempre modificabile dal docente, anche dopo l'attivazione
     totalQuestions: number;
     allowedTypes: string[];
-    difficulties: { level: string; min: number }[];
+    difficulties: { level: 1 | 2 | 3; min: number }[];
     variant: 'tutte_uguali' | 'tutte_diverse';
     channels: ('cartaceo' | 'digitale')[];
     classes: string[];             // classi associate (opzionale)
   };
+  downloadCount: number;           // contatore atomico opzionale dei download cartacei; nessun dato personale
   activatedAt: Timestamp | null;
   createdAt: Timestamp;
 }
 
-// deliveryAttempts/{attemptId}
+// deliveryAttempts/{attemptId} — solo canale digitale (il canale cartaceo non crea tentativi)
 interface DeliveryAttempt {
   id: string;
   verificationId: string;
-  channel: 'cartaceo' | 'digitale';
   declaredData: {
     name: string;
     surname: string;
@@ -150,8 +150,8 @@ interface DeliveryAttempt {
   declaredName: string;            // "Cognome Nome" auto-dichiarato, non verificato
   declaredIp: string;              // IP di provenienza al momento dell'accesso
   userAgent: string;               // user-agent del browser dello studente
-  state: 'reserved' | 'completed' | 'in_progress' | 'submitted' | 'cancelled';
-  resumeTokenHash: string | null;  // solo digitale; hash del cookie di ripresa
+  state: 'in_progress' | 'submitted' | 'cancelled';
+  resumeTokenHash: string | null;  // hash del cookie di ripresa
   resumeTokenExpiry: Timestamp | null;
   createdAt: Timestamp;
   submittedAt: Timestamp | null;
@@ -170,9 +170,9 @@ interface SnapshotItem {
   questionId: string;
   order: number;
   tipo: string;
-  difficolta: string;
-  peso: string;
-  maxPoints: number;
+  difficolta: 1 | 2 | 3;
+  peso: 1 | 2 | 3;
+  maxPoints: number;               // difficolta * peso (1–9)
   testo: string;
   opzioni: { id: string; testo: string }[] | null;
   soluzione: string | string[];    // privato; mai esposto al client portale
@@ -253,10 +253,10 @@ Il parser `lesson-contract` (package interno `packages/lesson-contract/src/index
 
 | Operazione | Scrittura Firestore |
 |---|---|
-| Crea tentativo cartaceo | Scrive `deliveryAttempts` con `declaredName`, `declaredIp`, `userAgent` e una voce `accessLog` |
-| Genera PDF | Solo lettura Firestore + `questionIndex`; genera nel browser |
+| Genera PDF cartaceo | Solo lettura Firestore + `questionIndex`; genera nel browser |
+| Incremento contatore (opzionale) | Incremento atomico di `downloadCount` su `verifications`; nessun dato personale |
 
-Il canale cartaceo non usa lock: lo studente inserisce nome e cognome, scarica il PDF dal browser e l'accesso viene registrato nel log nome+IP a fini di audit. Non esiste alcun vincolo di unicità per recapito.
+Il canale cartaceo è puramente fisico: cliccando "Stampa/Scarica PDF" il documento è generato nel browser e scaricato. Non crea alcun record di tentativo (`deliveryAttempts`) né voce di log di accesso. Non esiste lock né vincolo di unicità: più download sono ammessi. Al più viene incrementato il contatore atomico `downloadCount`.
 
 ### 3.4 Correzione ed export
 
@@ -291,6 +291,19 @@ Content-Type: application/json
 }
 ```
 
+#### Regole di validazione di `declaredData`
+
+`name` e `surname` (che compongono il `declaredName` nel formato `Cognome Nome`) sono validati server-side:
+
+| Vincolo | Regola |
+|---|---|
+| Lunghezza minima | `minLength` 2 |
+| Lunghezza massima | `maxLength` 100 |
+| Caratteri ammessi | lettere (incluse lettere accentate), spazi, apostrofi (`'`) e trattini (`-`) |
+| Non vuoto | non può essere vuoto né composto solo da spazi (whitespace-only) |
+
+`class`, se presente, deve corrispondere a una voce della lista classi configurata dal docente. La violazione di una qualsiasi di queste regole produce `VALIDATION_FAILED`.
+
 ### Response 200
 
 ```json
@@ -303,9 +316,9 @@ Content-Type: application/json
         "id": "snapshot-item-uuid",
         "order": 1,
         "tipo": "aperta",
-        "difficolta": "media",
-        "peso": "alto",
-        "maxPoints": 1.25,
+        "difficolta": 2,
+        "peso": 3,
+        "maxPoints": 6,
         "testo": "Spiega la differenza tra HTTP e HTTPS.",
         "opzioni": null
       }
@@ -329,6 +342,7 @@ Alla prima chiamata riuscita la Function brucia il token mono-uso del tentativo 
 | Token del tentativo già bruciato | 409 | `TOKEN_ALREADY_USED` |
 | Rate limit raggiunto | 429 | `RATE_LIMITED` |
 | Payload non valido | 400 | `VALIDATION_FAILED` |
+| `declaredName` non valido (lunghezza fuori 2–100, caratteri non ammessi, vuoto o whitespace-only) | 400 | `VALIDATION_FAILED` |
 
 ---
 

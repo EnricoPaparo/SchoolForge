@@ -12,13 +12,15 @@ sequenceDiagram
     SPA->>F: legge verifica (proiezione pubblica)
     F-->>SPA: titolo, canali disponibili
 
-    S->>SPA: sceglie canale cartaceo, inserisce nome e cognome
+    S->>SPA: sceglie canale cartaceo, clicca "Stampa/Scarica PDF"
     SPA->>SPA: genera PDF nel browser (VerificaPdfRenderer mode=student)
-    SPA->>F: scrive deliveryAttempt + accessLog (nome, IP, user-agent, timestamp)
     SPA-->>S: download PDF diretto
+    opt contatore opzionale
+        SPA->>F: incrementa downloadCount (atomico, nessun dato personale)
+    end
 ```
 
-Il canale cartaceo non usa lock né email: lo studente scarica il PDF e l'accesso viene registrato a fini di audit. Più download sono ammessi.
+Il canale cartaceo è puramente fisico: nessun record di tentativo (`deliveryAttempt`) e nessun log di accesso. Non usa lock né email; più download sono ammessi. Al più viene incrementato il contatore atomico `downloadCount` sul documento della verifica.
 
 ## Canale digitale
 
@@ -49,7 +51,7 @@ sequenceDiagram
 
 ## Note
 
-- Nel canale cartaceo il PDF è generato interamente nel browser; il server non è coinvolto nella produzione del documento.
-- Non esiste più alcun lock email: l'unicità della consegna digitale è garantita dal token mono-uso del tentativo, bruciato alla prima chiamata `startDigitalAttempt`.
-- Ogni accesso (cartaceo e digitale) registra nome dichiarato, IP, user-agent e timestamp in `accessLog`; il docente li consulta nel Report Accessi. Sono dati auto-dichiarati, non prove d'identità.
+- Nel canale cartaceo il PDF è generato interamente nel browser; il server non è coinvolto nella produzione del documento. Il canale cartaceo non crea record di tentativo né voci di `accessLog`.
+- Non esiste alcun lock email: l'unicità della consegna digitale è garantita dal token mono-uso del tentativo, bruciato alla prima chiamata `startDigitalAttempt`.
+- Solo l'accesso digitale registra nome dichiarato, IP, user-agent e timestamp in `accessLog`; il docente li consulta nel Report Accessi. Sono dati auto-dichiarati, non prove d'identità.
 - Lo snapshot digitale con soluzioni private è creato dalla Cloud Function e mai esposto al client portale.

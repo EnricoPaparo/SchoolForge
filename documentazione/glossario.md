@@ -10,7 +10,7 @@
 | UDA | Unità organizzativa rappresentata da `uda-XX-titolo.md`. |
 | Lezione | Contenuto Markdown didattico, con pool opzionale associato. |
 | Pool | File `.pool.md` strutturato secondo `schoolforge-pool/v1`; non è renderizzato come lezione. |
-| Domanda | Item di pool con tipo, difficoltà, peso, testo e soluzione. |
+| Domanda | Item di pool con tipo, difficoltà (`1`/`2`/`3`), peso (`1`/`2`/`3`), testo e soluzione. Il punteggio massimo è `difficoltà × peso` (scala lineare, 1–9). |
 | Domanda di autoverifica | Domanda visibile nella lezione; non è una domanda del pool di verifica. |
 | Classe | Voce della lista configurata dal docente nelle impostazioni; usata nelle verifiche e come menu a tendina nel portale. |
 | Programma svolto | Documento generato on-demand nel browser (PDF e Markdown) dalle UDA/lezioni flaggate dal docente. |
@@ -21,13 +21,16 @@
 
 | Termine | Significato |
 |---|---|
-| Verifica | Configurazione con fonti, classi, quantità, tipi, difficoltà, minimi e varianti. |
-| Configurazione immutabile | Configurazione bloccata dopo l'attivazione; non equivale a copiare tutte le domande. |
-| Tentativo | Accesso cartaceo o digitale associato a una verifica. |
-| Tentativo di Accesso | Evento registrato all'avvio di una prova: nome dichiarato (`Cognome Nome`), indirizzo IP, timestamp e user-agent. Dà visibilità di audit al docente; non prova l'identità. |
-| Report Accessi | Vista per-verifica disponibile al docente con tutti i tentativi di accesso (nome dichiarato, IP, timestamp). |
-| Token mono-uso | Token di avvio del tentativo digitale, bruciato alla prima chiamata `startDigitalAttempt`. Impedisce una seconda consegna digitale; abbinato al log nome+IP per l'audit. |
-| Canale cartaceo | Lo studente scarica il PDF direttamente nel browser; il sistema non invia email. |
+| Verifica | Configurazione con fonti, classi, quantità, tipi, difficoltà, minimi e varianti. È un link aperto o chiuso: nessuna lista di destinatari preassegnati. |
+| Verifica aperta / chiusa | Stato gestito dal docente: finché è aperta, chiunque abbia il link può accedere; chiusa, non accetta nuovi tentativi. |
+| Configurazione modificabile | La configurazione della verifica è sempre modificabile dal docente, anche dopo l'attivazione. L'unico elemento immutabile è lo snapshot di un tentativo. |
+| Snapshot immutabile | La configurazione della verifica è sempre modificabile; lo snapshot di un tentativo digitale è immutabile dal momento dell'avvio. |
+| Tentativo | Accesso digitale associato a una verifica. Il canale cartaceo non genera tentativi. |
+| Tentativo di Accesso | Evento registrato all'avvio di un tentativo digitale: nome dichiarato (`Cognome Nome`), indirizzo IP, timestamp e user-agent. Dà visibilità di audit al docente; non prova l'identità né impone vincoli (il docente gestisce manualmente eventuali nomi diversi dallo stesso IP). |
+| Report Accessi | Vista per-verifica disponibile al docente con i tentativi di accesso digitali (nome dichiarato, IP, timestamp). |
+| Token mono-uso | Token di avvio del tentativo digitale, generato on-demand o pre-generato in un insieme di N token generici; bruciato alla prima chiamata `startDigitalAttempt`. Impedisce una seconda consegna digitale; abbinato al log nome+IP per l'audit. |
+| Canale cartaceo | Canale puramente fisico: il PDF è generato e scaricato nel browser. Non crea record di tentativo né log di accesso; al più incrementa un contatore atomico `downloadCount`. Il sistema non invia email. |
+| downloadCount | Contatore atomico opzionale sul documento della verifica, incrementato a ogni download cartaceo; non contiene dati personali. |
 | Canale digitale | Lo studente svolge la verifica nel Portale; le risposte sono strutturate in Firestore. |
 | Snapshot digitale | Copia privata delle domande (con soluzioni) create dalla Cloud Function al tentativo digitale; mai esposta al client portale. |
 | Consegna definitiva | Tentativo digitale inviato; domande e risposte non sono più modificabili. |

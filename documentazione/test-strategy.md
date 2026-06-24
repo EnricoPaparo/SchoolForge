@@ -27,9 +27,11 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 - UDA, lezione e pool validi;
 - pool con id duplicato, difficoltà invalida, opzione/soluzione incoerente;
 - verifica con minimi impossibili e fonti insufficienti;
-- tentativo cartaceo con registrazione accesso (nome+IP, download PDF browser);
+- download cartaceo (PDF nel browser) che non crea record di tentativo né accessLog; al più incrementa `downloadCount`;
 - tentativo digitale: avvio, bozza, ripresa dopo refresh, consegna;
 - secondo avvio digitale sullo stesso token (rifiutato: `TOKEN_ALREADY_USED`);
+- re-import di una lezione con pool modificato (aggiornamento `questionIndex`);
+- import fallito con pool invalido (il `questionIndex` esistente resta integro);
 - snapshot digitale prima e dopo modifica della lezione sorgente;
 - correzione parziale, rettifica ed eliminazione;
 - export con consegne definitive, bozza, annullata ed eliminata in tutti e tre i formati;
@@ -43,7 +45,7 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 |---|---|---|
 | G1 | Auth owner/non-owner; Security Rules default-deny; Emulator. | Verifica budget ed export Firestore manuale dalle impostazioni. |
 | G2 | Parser pool valido/invalido; import atomico; rendering sanitizzato; export ZIP; programma svolto MD e PDF. | Import di cartella didattica reale; nessun pool esposto nel rendering. |
-| G3 | Stati verifica; PDF generato nel browser; accesso cartaceo registrato (nome+IP); nessun PDF in Storage. | Download PDF dal browser su mobile e desktop; Report Accessi verificato. |
+| G3 | Stati verifica; PDF generato nel browser; canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`); nessun PDF in Storage. | Download PDF dal browser su mobile e desktop. |
 | G4 | `startDigitalAttempt`: token mono-uso, token sessione cookie, snapshot senza soluzioni, log accesso; bozza/ripresa; consegna immutabile. | Mobile, tastiera, fullscreen/warning; nessuna soluzione visibile a studente. |
 | G5 | Percentuale e rettifiche; eliminazione dati; export PDF/MD/CSV da snapshot; consegna modificata lezione. | Revisione documento export nei tre formati; caricamento manuale Drive. |
 | G6/G7 (V2) | Contesto AI chiuso; audit; bulk approval; opt-in automatico; C-03 gate. | Revisione didattica e policy. |
@@ -65,6 +67,13 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 
 ---
 
+## 5c. Casi di test su questionIndex e re-import
+
+1. **Re-import di una lezione con pool modificato aggiorna correttamente questionIndex** — dopo il re-import dall'interfaccia, le voci di `questionIndex` riflettono il nuovo pool (aggiunte, rimozioni, valori `difficolta`/`peso`/`maxPoints` aggiornati).
+2. **Import fallito (pool invalido) non corrompe il questionIndex esistente** — un re-import con pool invalido viene rifiutato e le voci di `questionIndex` preesistenti restano invariate.
+
+---
+
 ## 5b. Convenzioni, fixture ed esecuzione
 
 ### Convenzione di naming
@@ -77,7 +86,7 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 
 ### Fixture — pool valido (Markdown)
 
-Pool minimo valido con tre domande, difficoltà 1–3 (bassa/media/alta):
+Pool minimo valido con tre domande, difficoltà 1–3 e peso 1–3 (scala lineare; punteggio massimo = `difficoltà × peso`):
 
 ```md
 ---
@@ -85,8 +94,8 @@ schema: schoolforge-pool/v1
 questions:
   - id: q-001
     tipo: chiusa_singola
-    difficolta: bassa
-    peso: basso
+    difficolta: 1
+    peso: 1
     testo: Quale protocollo risolve i nomi di dominio?
     opzioni:
       - id: a
@@ -96,16 +105,16 @@ questions:
     soluzione: [a]
   - id: q-002
     tipo: aperta
-    difficolta: media
-    peso: medio
+    difficolta: 2
+    peso: 2
     testo: |
       Spiega la differenza tra HTTP e HTTPS.
     soluzione: |
       HTTPS aggiunge un canale cifrato con autenticazione del server.
   - id: q-003
     tipo: chiusa_multipla
-    difficolta: alta
-    peso: alto
+    difficolta: 3
+    peso: 3
     testo: Quali sono livelli del modello TCP/IP?
     opzioni:
       - id: a

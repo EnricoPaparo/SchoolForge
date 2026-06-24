@@ -176,11 +176,11 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
-| M2-A | Dominio verifica: stati, configurazione, classi, validazione fonti, minimi, varianti. Transazioni Firestore client-side per attivazione/chiusura. | G2 | M2-B/M2-C | Attivazione invalida rifiutata; configurazione attiva immutabile; classi persistite. |
+| M2-A | Dominio verifica: stati, configurazione (sempre modificabile dal docente), classi, validazione fonti, minimi, varianti. Transazioni Firestore client-side per attivazione/chiusura. | G2 | M2-B/M2-C | Attivazione invalida rifiutata; configurazione modificabile anche dopo l'attivazione; classi persistite. |
 | M2-B | UI docente: crea/modifica/attiva verifiche, gestione classi nelle impostazioni, messaggi di blocco comprensibili. | G2, contratto M2-A | M2-A/M2-C | Il docente non può superare vincoli da UI. |
 | M2-C | `VerificaPdfRenderer` browser unico (`mode="teacher" \| "student"`) con `@react-pdf/renderer`: PDF docente (intestazione vuota) e PDF studente (dati precompilati, soluzioni nascoste). | G2 | M2-A/M2-B | PDF conforme ai campi del brief; mode student senza soluzioni; nessun file in Storage. |
-| M2-D | Canale cartaceo: link pubblico, registrazione accesso (deliveryAttempt + accessLog con nome/IP/user-agent), generazione PDF nel browser, download diretto. | M2-A/M2-B/M2-C | — | Accesso registrato nel Report Accessi; nessun lock; nessun PDF persistito. |
-| M2-E | Test integrazione/E2E M2, lock concorrente, evidenze G3. | M2-D | — | PDF browser e lock studente verificati. |
+| M2-D | Canale cartaceo: link pubblico, generazione PDF nel browser, download diretto. Nessun record di tentativo né accessLog; al più incremento atomico di `downloadCount`. | M2-A/M2-B/M2-C | — | Nessun record di tentativo o accesso creato; nessun lock; nessun PDF persistito. |
+| M2-E | Test integrazione/E2E M2, evidenze G3. | M2-D | — | PDF browser verificato; canale cartaceo senza record. |
 
 ---
 
