@@ -1,184 +1,190 @@
 # SchoolForge — Architettura di sistema
 
-**Versione:** 1.0  
-**Data:** 22 giugno 2026  
-**Stato:** architettura target per l'implementazione  
-**Input vincolante:** [Analisi dei requisiti v1.1](analisi-requisiti.md)  
+**Versione:** 2.0
+**Data:** 24 giugno 2026
+**Stato:** architettura target per l'implementazione
+**Input vincolante:** [Analisi dei requisiti v2.0](analisi-requisiti.md)
 **Destinatario:** team di implementazione e responsabile di esercizio
 
 ---
 
 ## 1. Obiettivo e perimetro architetturale
 
-Questo documento definisce la soluzione tecnica di SchoolForge. Traduce i requisiti in componenti, confini, dati, flussi e decisioni implementative. È intenzionalmente una soluzione **minimale, modulare e gestita**: un'applicazione web per un solo docente, un backend serverless unico e servizi Google gestiti.
+Questo documento definisce la soluzione tecnica di SchoolForge. Traduce i requisiti in componenti, confini, dati, flussi e decisioni implementative. È intenzionalmente una soluzione **minimale, modulare e gestita**: un'applicazione web per un solo docente, un backend serverless, un portale studenti leggero e servizi Firebase.
 
-L'architettura non introduce LMS, account studenti, multi-docente, sincronizzazione automatica di Drive, versioni delle lezioni o varianti della stessa verifica. Il sistema conserva il Markdown come conoscenza portabile; conserva invece in modo immutabile il contenuto delle verifiche pubblicate, perché sono entità operative e storiche autonome.
+L'architettura non introduce LMS, Google Forms, Google Drive, sincronizzazione automatica, versioni delle lezioni, varianti della stessa verifica o rubriche di correzione. Il sistema conserva il Markdown come conoscenza portabile; i PDF di verifica sono generati su richiesta e mai conservati.
 
 ### 1.1 Esito atteso
 
 Al termine dell'implementazione il docente deve poter:
 
 1. accedere con il proprio account Google Workspace for Education;
-2. caricare, validare, consultare ed esportare lezioni Markdown con asset;
-3. comporre una singola verifica da lezioni/UDA selezionate, senza dipendere dall'AI;
-4. pubblicare ed esportare PDF o Google Form;
-5. gestire classi e studenti manualmente o tramite importazione Google Education opzionale;
-6. archiviare consegne, punteggi, percentuali e link ai PDF caricati manualmente su Drive;
+2. caricare, validare, consultare ed esportare lezioni e pool di domande Markdown;
+3. comporre una verifica da lezioni/UDA selezionate e scaricare il PDF della versione docente;
+4. distribuire agli studenti un link al Portale Verifiche per lo svolgimento digitale;
+5. scaricare le risposte, correggere manualmente e registrare punteggi e percentuali;
+6. esportare il programma svolto come file di testo per il deposito scolastico;
 7. aggiungere in seguito AI per generazione e correzione senza alterare i flussi manuali.
 
 ## 2. Principi architetturali
 
 | Principio | Decisione concreta |
 |---|---|
-| Markdown-first | Il file `.md` originale e gli asset sono archiviati come file in Cloud Storage e possono essere esportati in una cartella portabile. Firestore contiene solo indice, stato e dati operativi. |
-| Semplicità operativa | Un solo frontend, un solo backend serverless modulare, un solo database documentale e un solo storage a oggetti. Nessun cluster, container da amministrare, broker o microservizio. |
+| Markdown-first | I file `.md` originali e gli asset sono archiviati in Cloud Storage ed esportabili. Firestore contiene solo indice, stati e dati operativi. |
+| Semplicità operativa | Un frontend docente, un portale studenti leggero, un backend serverless modulare, un database documentale e uno storage a oggetti. Nessun cluster, container, broker o microservizio. |
 | Un solo docente | Tutte le risorse sono protette da un unico proprietario Google configurato. Non vengono progettati tenant, organizzazioni, ruoli o condivisione. |
-| Backend autorevole | Le scritture con regole di business passano dal backend. Il browser non può pubblicare verifiche, scrivere audit, importare risposte o gestire credenziali esterne direttamente. |
-| Dati storici autonomi | Una verifica pubblicata contiene le proprie domande, soluzioni, rubriche e punteggi massimi; non legge revisioni di lezioni che non esistono nel modello. |
-| AI opzionale | L'AI è un adattatore disabilitato per default. I moduli 1–3 non hanno dipendenze runtime da un provider AI. |
-| Integrazioni isolate | Google Forms, roster Google Education e AI sono porte di integrazione dietro servizi applicativi dedicati. Un errore o una revoca non compromette repository, PDF o archivio manuale. |
-| Sicurezza per difetto | Accesso del solo docente, token esterni in Secret Manager, audit append-only e minimizzazione dei dati inviati fuori dall'applicazione. |
+| Backend autorevole | Le scritture con regole di business passano dal backend. Il browser non può pubblicare verifiche, scrivere audit, esporre soluzioni o gestire credenziali esterne direttamente. |
+| PDF su richiesta, mai conservato | Il PDF è un artefatto temporaneo generato dal backend e scaricato immediatamente. Non viene scritto su Cloud Storage né su Drive dopo il download. |
+| Studenti senza account | Gli studenti accedono al Portale Verifiche con il link della verifica e la propria email Google scolastica. Non hanno un account SchoolForge. Il record studente è creato in modo lazy al primo accesso al portale. |
+| Email bruciata | Un Firestore transaction atomica garantisce che ogni email possa scaricare il PDF di una verifica una sola volta. Il docente non ha questo limite. |
+| AI opzionale | L'AI è un adattatore disabilitato per default. I moduli 1–4 non hanno dipendenze runtime da un provider AI. |
+| Sicurezza per difetto | Accesso del solo docente alla web app, autenticazione Google per il portale studenti, token esterni in Secret Manager, audit append-only e minimizzazione dei dati fuori dall'applicazione. |
 
 ## 3. Decisioni architetturali
 
-### ADR-01 — Firebase / Google Cloud come piattaforma gestita
+### ADR-01 — Firebase su piano Spark come piattaforma
 
-**Decisione.** SchoolForge usa Firebase su Google Cloud: Firebase Hosting, Firebase Authentication, Cloud Firestore, Cloud Storage, Cloud Functions di seconda generazione, Secret Manager e Cloud Logging.
+**Decisione.** SchoolForge usa Firebase: Firebase Hosting, Firebase Authentication, Cloud Firestore, Cloud Storage e Cloud Functions v2. Secret Manager e Cloud Logging sono aggiunti su piano Blaze (pay-as-you-go) solo se necessario per il go-live; per lo sviluppo locale si usa Firebase Emulator Suite.
 
-**Motivazione.** L'uso obbligatorio di Google Workspace for Education e Google Forms rende naturale l'integrazione con l'ecosistema Google. La piattaforma gestita riduce al minimo gestione di server, aggiornamenti, certificati, database e scalabilità. È adeguata a un solo docente e può crescere senza reingegnerizzazione nelle prime fasi.
+**Motivazione.** L'uso obbligatorio di Google Workspace for Education rende naturale l'ecosistema Firebase. Il piano Spark è gratuito e sufficiente per un singolo docente. La piattaforma gestita riduce al minimo gestione di server, certificati e scalabilità.
 
-**Conseguenza.** Il progetto deve essere TypeScript end-to-end. Non sono previsti Kubernetes, VM permanenti, Cloud SQL, code di messaggi, service mesh o un'infrastruttura multi-account nella V1.
+**Conseguenza.** Il progetto è TypeScript end-to-end. Non sono previsti Kubernetes, VM permanenti, Cloud SQL, code di messaggi o infrastruttura multi-account nella V1.
 
 ### ADR-02 — Monolite modulare serverless, non microservizi
 
 **Decisione.** Il backend è un unico progetto Cloud Functions con moduli di dominio interni. Ogni funzione pubblica chiama servizi applicativi e repository condivisi, non altri servizi distribuiti.
 
-**Motivazione.** I confini funzionali sono chiari, ma il volume e il numero di utenti non giustificano costi operativi di microservizi. I moduli restano separati nel codice e possono essere estratti soltanto se l'uso reale lo richiederà.
+**Motivazione.** I confini funzionali sono chiari, ma il volume e il numero di utenti non giustificano costi operativi di microservizi. I moduli restano separati nel codice.
 
-### ADR-03 — Storage separato per conoscenza e metadati
+### ADR-03 — Storage separato per conoscenza e metadati; nessun Drive
 
 **Decisione.**
 
-- Cloud Storage conserva Markdown originali, asset e file temporanei di importazione.
-- Firestore conserva indice, stato, relazioni, verifiche, assegnazioni, consegne, correzioni e audit.
-- Google Drive istituzionale del docente resta la destinazione manuale dei PDF archiviabili; SchoolForge conserva solo link/ID Drive e metadati associati.
+- Cloud Storage conserva Markdown originali, asset e file temporanei di staging.
+- Firestore conserva indice, stati, relazioni, configurazioni verifiche, consegne, correzioni e audit.
+- Google Drive non è utilizzato in nessuna forma: né per storage PDF né per link/ID archiviati.
 
-**Motivazione.** Il Markdown resta scaricabile senza dipendere dal database. Firestore è usato dove è appropriato: query, stati, relazioni e storico operativo. Drive non richiede token o sincronizzazione nella V1.
+**Motivazione.** Il PDF è usa-e-getta. Il docente lo scarica, lo usa, fine. Conservare link Drive aggiungerebbe dipendenze, token, scope e complessità senza valore.
 
-### ADR-04 — Una sola verifica, snapshot immutabile al momento della pubblicazione
+### ADR-04 — Verifica come configurazione immutabile; PDF on-demand
 
-**Decisione.** Non esistono versioni o varianti della verifica né revisioni storiche delle lezioni. Una verifica passa da bozza a pubblicata una sola volta e, in quel passaggio, il backend congela le domande e i materiali necessari alla correzione.
+**Decisione.** Non esistono versioni o varianti della verifica né revisioni storiche delle lezioni. Una verifica passa da bozza ad attiva una sola volta. Al momento dell'attivazione il backend congela la configurazione (domande, soluzioni, punteggi) in Firestore. Il PDF è generato su richiesta e scaricato; non viene scritto su nessuno storage permanente.
 
-**Motivazione.** La verifica deve rimanere leggibile e correggibile anche se il docente riscrive o elimina una lezione. Conservare il contenuto della verifica è sufficiente; conservare tutte le vecchie lezioni sarebbe complessità non richiesta.
+**Motivazione.** La verifica deve rimanere leggibile e correggibile anche se il docente riscrive o elimina una lezione. La generazione on-demand elimina il bisogno di archiviazione e link Drive.
 
-### ADR-05 — Google Education per identità e roster, non per portale studenti
+### ADR-05 — Portale Verifiche come app separata
 
-**Decisione.** L'accesso al sistema usa Google Workspace for Education del docente. L'importazione di classi/studenti usa, quando disponibile e autorizzata, un'API Google Education per i roster; rimane sempre disponibile l'inserimento manuale. Gli studenti non accedono a SchoolForge.
+**Decisione.** Il Portale Verifiche è una seconda applicazione React (o framework leggero) deployata su un URL diverso (es. `portale.schoolforge.app`). Gli studenti vi accedono con il link della verifica e autenticazione Google scolastica. Non condivide route, stato globale o autenticazione con la web app docente.
 
-**Motivazione.** Si ottengono dati anagrafici e matching delle risposte senza introdurre account, registrazione, reset password o portale studenti.
+**Motivazione.** Separare il portale isola la superficie d'attacco, semplifica il fullscreen-mode durante la prova e chiarisce i confini di ruolo: il docente gestisce, lo studente svolge.
 
-### ADR-06 — AI dietro un adattatore chiuso
+### ADR-06 — Email bruciata con transazione Firestore
 
-**Decisione.** Ogni chiamata AI passa da `AiGateway`. Il gateway riceve un pacchetto di contesto costruito dal backend, non espone browsing, tool esterni o retrieval e registra la provenienza. Il provider concreto resta non selezionato fino alla decisione C-02.
+**Decisione.** Il download del PDF da parte di uno studente è protetto da una transazione Firestore che verifica assenza di un record `burned/{examId}/{email}` e lo crea atomicamente prima di servire il PDF. Se il record esiste, il download è rifiutato. Il docente non è soggetto a questo meccanismo.
 
-**Motivazione.** Il vincolo “solo dalle lezioni selezionate” va applicato dal sistema, non affidato a una semplice istruzione testuale del modello.
+**Motivazione.** Garantisce un solo download per studente per verifica senza race condition, senza dipendere da lock applicativi o sessioni.
+
+### ADR-07 — AI dietro un adattatore chiuso
+
+**Decisione.** Ogni chiamata AI passa da `AiGateway`. Il gateway riceve un pacchetto di contesto costruito dal backend (lezione + pool + risposta studente), non espone browsing, tool esterni o retrieval e registra provenienza. Il provider concreto resta non selezionato fino alla decisione C-02.
+
+**Motivazione.** Il vincolo "solo dalle lezioni selezionate" va applicato dal sistema, non affidato a una semplice istruzione testuale del modello.
 
 ## 4. Architettura logica
 
 ```mermaid
 flowchart LR
-    T["Docente — Google Workspace for Education"] --> W["Web app TypeScript"]
+    D["Docente — Google Workspace"] --> W["Web app SchoolForge"]
+    S["Studente — account Google scol."] --> P["Portale Verifiche"]
+
     W --> A["Firebase Authentication"]
-    W --> B["Backend modulare — Cloud Functions v2"]
+    W --> B["Backend — Cloud Functions v2"]
 
-    B --> F["Cloud Firestore — metadati e storico"]
-    B --> S["Cloud Storage — Markdown, asset, staging"]
-    B --> M["Servizio PDF"]
-    B --> G["Google Workspace APIs"]
-    G --> GF["Google Forms"]
-    G --> GR["Roster Google Education opzionale"]
-    B -. "Modulo 4, disabilitato" .-> AI["AiGateway / provider AI"]
+    P --> A
+    P --> B
 
-    W --> R["Rendering Markdown sanificato"]
-    M --> D["PDF scaricabile"]
-    D -. "upload manuale" .-> GD["Google Drive istituzionale"]
+    B --> F["Cloud Firestore\nmetadati, stati, consegne"]
+    B --> CS["Cloud Storage\nMarkdown, asset, staging"]
+    B --> PDF["Servizio PDF on-demand"]
+
+    B -. "Modulo 5, disabilitato" .-> AI["AiGateway / provider AI"]
+
+    PDF --> DL["PDF scaricato dal docente/studente\n(non conservato)"]
 ```
 
 ### 4.1 Confini di responsabilità
 
 | Componente | Responsabilità | Non deve fare |
 |---|---|---|
-| Web app | Interfaccia docente, rendering sicuro, anteprime, richieste al backend, conferme esplicite | Applicare transizioni di stato, memorizzare token Google, pubblicare verifiche, inviare prompt AI direttamente |
-| Backend | Autorizzazione, regole di business, transazioni, audit, import/export, PDF, integrazioni | Renderizzare UI, conservare Markdown come unico dato proprietario, esporre dati a studenti |
-| Cloud Storage | Originali Markdown, asset e staging temporaneo | Indice relazionale, stati o dati personali delle consegne |
-| Firestore | Indice, relazioni, snapshot verifiche, consegne, punteggi, percentuali, audit | Sostituire file Markdown/asset come fonte canonica delle lezioni |
-| Google Forms | Canale esterno di erogazione e origine risposte | Gestione dell'intero storico SchoolForge o autorizzazione applicativa |
-| Google Drive | Posizione manuale dei PDF archiviabili | Sincronizzazione automatica o storage controllato da SchoolForge nella V1 |
+| Web app (docente) | Interfaccia docente, rendering sicuro, anteprime, richieste al backend, conferme esplicite | Applicare transizioni di stato, pubblicare verifiche, inviare prompt AI direttamente, conservare PDF |
+| Portale Verifiche (studente) | Link verifica, autenticazione Google, email bruciata, download PDF, invio risposte digitali | Accedere a dati di altri studenti, aggirare l'email bruciata, mostrare soluzioni |
+| Backend | Autorizzazione, regole di business, transazioni, audit, import/export, PDF, email bruciata | Renderizzare UI, conservare Markdown come unico dato proprietario, esporre soluzioni nel rendering |
+| Cloud Storage | Originali Markdown, asset e staging temporaneo | Indice relazionale, stati, PDF persistenti |
+| Firestore | Indice, relazioni, configurazioni verifiche, consegne, punteggi, percentuali, audit, email bruciate | Sostituire file Markdown/asset come fonte canonica delle lezioni |
 | AiGateway | Generazione/correzione opzionale con contesto chiuso | Browser, RAG web, pubblicazione, cancellazione o decisioni irreversibili |
 
 ## 5. Architettura fisica e runtime
 
 ### 5.1 Servizi gestiti
 
-| Livello | Servizio | Configurazione minima |
+| Livello | Servizio | Note |
 |---|---|---|
-| Frontend | Firebase Hosting | SPA statica, HTTPS gestito, cache per asset con hash |
-| Identità | Firebase Authentication con Google | Account proprietario/dominio Education consentito, controllo server-side del soggetto Google stabile |
-| API e job brevi | Cloud Functions v2, TypeScript | Endpoint autenticati, timeout configurati, nessuna funzione pubblica anonima |
+| Frontend docente | Firebase Hosting | SPA React, HTTPS gestito, cache per asset con hash |
+| Frontend studenti | Firebase Hosting (seconda app) | React o framework leggero, URL separato, fullscreen exam mode |
+| Identità | Firebase Authentication con Google | Account proprietario/dominio Education consentito; studenti autenticati con email Google scolastica |
+| API e job | Cloud Functions v2, TypeScript | Endpoint autenticati, timeout configurati, nessuna funzione pubblica anonima |
 | Metadati | Cloud Firestore | Modalità nativa, indici espliciti per filtri dello storico |
 | File | Cloud Storage | Bucket privato, accesso solo al proprietario e al service account backend |
-| Segreti | Secret Manager | Token OAuth delle integrazioni e future credenziali AI; mai nel client o in Firestore |
-| Osservabilità | Cloud Logging e metriche standard | Errori strutturati, durata operazioni, esclusione di testo delle risposte/log sensibili |
-
-La regione Google Cloud, la politica di backup e i valori RPO/RTO dipendono dalla decisione C-01. Il codice deve leggere questi elementi dalla configurazione di deployment; non deve assumere una regione o una politica di retention nel dominio applicativo.
+| Segreti | Secret Manager | Credenziali AI future; token backend; mai nel client o in Firestore |
+| Osservabilità | Cloud Logging | Errori strutturati, durata operazioni, esclusione di testo risposte/PDF |
 
 ### 5.2 Ambienti
 
 | Ambiente | Uso | Dati |
 |---|---|---|
 | `dev` | sviluppo locale e Firebase Emulator Suite | dati sintetici; nessun token o studente reale |
-| `test` | test di integrazione e collaudo di Google Forms/roster, se necessario | account e dati di prova separati |
+| `test` | test di integrazione e collaudo portale | account e dati di prova separati |
 | `prod` | docente reale | solo dati operativi autorizzati |
 
-`dev` e `prod` devono usare progetti Firebase/Google Cloud distinti. È un costo di configurazione minimo che impedisce di mescolare token, Forms e dati didattici reali con test locali.
+`dev` e `prod` devono usare progetti Firebase distinti.
 
 ## 6. Struttura del codice e toolchain
 
 ```text
 SchoolForge/
 ├─ apps/
-│  └─ web/                       # SPA React + TypeScript (Vite)
+│  ├─ web/                       # SPA React + TypeScript (Vite) — docente
+│  └─ portale/                   # App React leggera — studenti
 ├─ functions/
 │  └─ src/
 │     ├─ api/                    # handler HTTP/callable sottili
-│     ├─ domain/                 # programmi, lezioni, verifiche, archivio
-│     ├─ integrations/           # Google Forms, roster, Drive-link, AI
-│     ├─ services/               # PDF, audit, autorizzazione, import/export
+│     ├─ domain/                 # programmi, uda, lezioni, verifiche, correzione
+│     ├─ services/               # PDF, audit, autorizzazione, import/export, email-bruciata
 │     └─ repositories/           # Firestore e Storage
 ├─ packages/
 │  └─ lesson-contract/           # parser, validatore e tipi Markdown condivisi
 ├─ documentazione/
-│  ├─ diagrammi/                 # ER model, sequence diagrams, component diagram
+│  ├─ diagrammi/
 │  └─ ...
 ├─ firestore.rules
 ├─ storage.rules
 ├─ firestore.indexes.json
 ├─ firebase.json
 ├─ pnpm-workspace.yaml
-└─ package.json                  # root workspace
+└─ package.json
 ```
 
 ### 6.1 Toolchain
 
 | Strumento | Versione | Scopo |
 |---|---|---|
-| **pnpm workspaces** | 9.x | Gestione monorepo; dipendenze condivise tra app/functions/packages |
-| **TypeScript** | 5.x | Linguaggio end-to-end; strict mode abilitato su tutti i package |
-| **Vite** | 5.x | Build e dev server della web app; ottimizzazione bundle produzione |
-| **ESLint** | 9.x | Linting con `eslint-plugin-security` per controlli statici di sicurezza |
+| **pnpm workspaces** | 9.x | Gestione monorepo |
+| **TypeScript** | 5.x | Linguaggio end-to-end; strict mode su tutti i package |
+| **Vite** | 5.x | Build e dev server delle web app |
+| **ESLint** | 9.x | Linting con `eslint-plugin-security` |
 | **Vitest** | 2.x | Test unitari e di integrazione; compatibile con Firebase Emulator Suite |
-| **Playwright** | 1.45.x | Test end-to-end; eseguibili in parallelo su browser headless |
-| **Firebase Emulator Suite** | ultima stabile | Sviluppo locale senza dipendenza da servizi cloud reali |
+| **Playwright** | 1.45.x | Test end-to-end su browser headless |
+| **Firebase Emulator Suite** | ultima stabile | Sviluppo locale senza dipendenza da cloud reali |
 | **Zod** | 3.x | Validazione runtime dei payload API e output AI |
 
 ### 6.2 Workspace pnpm
@@ -191,96 +197,172 @@ packages:
   - 'packages/*'
 ```
 
-I package condividono le type definitions di Firebase e TypeScript come `devDependencies` del workspace root. Ogni package ha il proprio `tsconfig.json` che estende un `tsconfig.base.json` di root.
-
 ### 6.3 Pacchetto `lesson-contract`
 
-Il pacchetto `lesson-contract` è condiviso tra web e backend. Evita che browser e server interpretino il front matter o i blocchi `schoolforge-question` in modo diverso. Il backend resta l'autorità finale: una lezione è utilizzabile soltanto dopo la sua validazione lato server.
+Il pacchetto `lesson-contract` è condiviso tra web app, portale e backend. Evita che browser e server interpretino il front matter, i file UDA.md o i pool `.pool.md` in modo diverso. Il backend resta l'autorità finale: una lezione è utilizzabile soltanto dopo la sua validazione lato server.
 
 Il pacchetto esporta:
-- `parseLessonMarkdown(source: string): ParseResult` — parser e validatore
-- Tipi TypeScript (`Lesson`, `Question`, `Rubric`, `ParseError`, ...)
-- Fixture di test per i casi validi e invalidi del contratto
+- `parseUda(source: string): UdaParseResult`
+- `parseLessonMarkdown(source: string): LessonParseResult`
+- `parsePoolMarkdown(source: string): PoolParseResult`
+- Tipi TypeScript (`Uda`, `Lesson`, `PoolQuestion`, `ParseError`, ...)
+- Fixture di test per casi validi e invalidi del contratto
 
-## 7. Dati e persistenza
+## 7. Struttura dei file Markdown
 
-### 7.1 Cloud Storage: conoscenza Markdown corrente
+### 7.1 UDA.md
+
+```yaml
+---
+schoolforge: 1
+kind: uda
+id: uda-001
+titolo: "Reti locali e protocolli"
+competenze:
+  - "Configurare reti LAN in ambiente simulato"
+obiettivi:
+  - "Conoscere il modello OSI"
+periodo: "Ottobre–Dicembre 2025"
+ore: 20
+---
+```
+
+Il file `UDA.md` è l'entità organizzativa. Ogni UDA ha il proprio file nella cartella del programma. Gli UDA di un programma possono essere flaggati per il programma svolto.
+
+### 7.2 lezione-XXX-titolo.md
+
+```yaml
+---
+schoolforge: 1
+kind: lesson
+id: lez-001
+titolo: "Il modello OSI"
+uda: uda-001
+obiettivi:
+  - "Elencare i 7 livelli OSI"
+---
+```
+
+Contiene solo il contenuto didattico, immagini e domande di autoverifica (`kind: self_check`). Non contiene domande di verifica.
+
+### 7.3 lezione-XXX-titolo.pool.md
+
+```yaml
+---
+schoolforge: 1
+kind: pool
+lesson_id: lez-001
+---
+```
+
+```schoolforge-question
+id: q-001
+tipo: closed_single
+difficoltà: media
+peso: alto
+testo: "Quale livello OSI gestisce il routing?"
+opzioni:
+  - id: a
+    testo: "Livello 2 — Data Link"
+  - id: b
+    testo: "Livello 3 — Network"
+  - id: c
+    testo: "Livello 4 — Transport"
+soluzione:
+  corrette: [b]
+```
+
+Il file `.pool.md` contiene esclusivamente domande di verifica con campi obbligatori `id`, `tipo`, `difficoltà`, `peso`, `testo`, `soluzione`. Campo opzionale: `opzioni` (per domande chiuse).
+
+### 7.4 Tipi di domanda
+
+| `tipo` | Descrizione |
+|---|---|
+| `open` | Risposta aperta libera; soluzione = risposta modello testuale |
+| `closed_single` | Scelta singola; soluzione = `{ corrette: [id] }` |
+| `closed_multiple` | Scelta multipla; soluzione = `{ corrette: [id, ...] }` |
+
+### 7.5 Coefficienti di punteggio
+
+| `difficoltà` / `peso` | Basso / Bassa (0.75) | Medio / Media (1.00) | Alto / Alta (1.50) |
+|---|---|---|---|
+| **Bassa (0.75)** | 0.75 × 0.75 = **0.56** | 1.00 × 0.75 = **0.75** | 1.50 × 0.75 = **1.13** |
+| **Media (1.00)** | 0.75 × 1.00 = **0.75** | 1.00 × 1.00 = **1.00** | 1.50 × 1.00 = **1.50** |
+| **Alta (1.50)** | 0.75 × 1.50 = **1.13** | 1.00 × 1.50 = **1.50** | 1.50 × 1.50 = **2.25** |
+
+`punteggio_max_item = coeff_difficoltà × coeff_peso`
+
+`percentuale = (Σ punti assegnati / Σ punti massimi) × 100`
+
+## 8. Dati e persistenza
+
+### 8.1 Cloud Storage: conoscenza Markdown corrente
 
 ```text
 repository/
   current/
-    lessons/{lessonId}/source.md
-    lessons/{lessonId}/assets/{relative-path}
-  exports/{exportId}/schoolforge-repository.zip       # temporaneo e con scadenza
-staging/{importId}/...                                # temporaneo e con scadenza
+    {programId}/uda.md
+    {programId}/{udaId}/lezione-001-titolo.md
+    {programId}/{udaId}/lezione-001-titolo.pool.md
+    {programId}/{udaId}/assets/{relative-path}
+  exports/{exportId}/schoolforge-repository.zip   # temporaneo, con scadenza
+staging/{importId}/...                            # temporaneo, con scadenza
 ```
 
 Regole:
+- sostituzione aggiorna i file correnti; non crea revisioni storiche;
+- staging è rimosso dopo importazione/annullamento/scadenza;
+- i PDF non vengono mai scritti in questo bucket.
 
-- `source.md` e gli asset in `repository/current` sono la copia corrente della Lezione.
-- una sostituzione aggiorna tale copia corrente; non crea una cartella o una revisione consultabile;
-- i file in `staging` non sono visibili come contenuto didattico e vengono rimossi dopo importazione/annullamento/scadenza;
-- eventuali oggetti orfani di una sostituzione interrotta vengono eliminati da un job di pulizia; non sono dati storici;
-- l'export ricrea una struttura di cartelle con Markdown e asset, senza trasformarli in un formato proprietario.
+### 8.2 Firestore: modello dati operativo
 
-### 7.2 Firestore: modello dati operativo
-
-Ogni documento applicativo contiene `ownerUid`, `createdAt`, `updatedAt` e, se necessario, `createdBy`. `ownerUid` è sempre lo stesso nella V1, ma rende esplicita la proprietà e semplifica i controlli di sicurezza senza implementare il multi-docente.
+Ogni documento contiene `ownerUid`, `createdAt`, `updatedAt`.
 
 | Collezione | Campi principali | Note |
 |---|---|---|
-| `settings/owner` | `googleSubject`, `allowedEmail`, `allowedDomain`, configurazioni feature | Documento unico configurato al bootstrap. Il soggetto Google stabile è il controllo autoritativo. |
-| `programs` | `id`, `title`, `active`, `sortOrder` | Disattivazione, non cancellazione, se referenziato. |
-| `udas` | `id`, `programId`, `title`, `active`, `sortOrder` | Relazione con il programma. |
-| `lessons` | `id`, `programId`, `udaId`, `title`, `objectives`, `storagePath`, `assetBasePath`, `status`, `validationErrors`, `plainText` | Indice della Lezione corrente; `plainText` è derivato per ricerca locale. |
-| `questionIndex` | `id`, `lessonId`, `kind`, `type`, `difficulty`, `prompt`, `availability` | Indice corrente delle sole domande estratte da lezioni valide. Non è fonte canonica. |
-| `exams` | `id`, `status`, `sourceLessonIds`, `configuration`, `publishedAt`, `googleForm`, `pdfMetadata` | Metadati della Verifica. Lo stato vincola le scritture. |
-| `exams/{examId}/items` | prompt, tipo, opzioni, soluzione, rubrica, punteggio massimo, `sourceLessonId` | Snapshot della Verifica. Immutabile dopo pubblicazione. Una subcollection evita limiti di dimensione di un singolo documento. |
-| `classes` | `id`, `name`, `active`, `externalSource` | Creazione manuale o importata. |
-| `students` | `id`, email (obbligatoria), nome?, cognome?, `classId`?, `googleExternalId`?, `active` | Il documento è creato automaticamente al primo import Forms con quell'email (creazione lazy). Nome, cognome e classe sono facoltativi e completabili in seguito. L'email è unica fra studenti attivi; nessuna credenziale SchoolForge. |
-| `assignments` | `id`, `examId`, destinatari, canale, `formId`, stato, date | Una verifica può essere assegnata a una classe o a un insieme di studenti. |
-| `submissions` | `id`, `assignmentId`, `examId`, `studentId`, risposte, origine, `sourceResponseId`, stato | Import idempotente grazie a `sourceResponseId`. Le non mappate vanno in quarantena. |
-| `corrections` | `submissionId`, punteggi per item, commenti, provenienza, stato, percentuale | Conserva proposta AI, correzione umana e risultato definitivo distinti. |
-| `artifacts` | `examId`/`submissionId`, tipo, hash, `driveUrl`, `driveFileId`, generato il | Registra PDF e link Drive; non copia automaticamente file su Drive. |
-| `auditEvents` | attore, azione, oggetto, timestamp, esito, motivazione, dati minimi | Append-only, scritto solo dal backend. |
-| `integrationStatus` | tipo, connessa, scope concessi, ultimo esito, ultimo errore non sensibile | Non contiene refresh token o segreti. |
+| `settings/owner` | `googleSubject`, `allowedEmail`, `allowedDomain`, feature flags | Documento unico configurato al bootstrap |
+| `programs` | `id`, `title`, `active`, `sortOrder` | Disattivazione, non cancellazione se referenziato |
+| `udas` | `id`, `programId`, `title`, `competenze`, `obiettivi`, `periodo`, `ore`, `active`, `sortOrder`, `svolto` | `svolto: true` include l'UDA nell'export programma svolto |
+| `lessons` | `id`, `programId`, `udaId`, `title`, `storagePath`, `poolPath`, `status`, `validationErrors`, `plainText` | `status`: `valid` / `invalid` |
+| `questionIndex` | `id`, `lessonId`, `tipo`, `difficoltà`, `peso`, `testo`, `availability` | Indice derivato; non è fonte canonica |
+| `exams` | `id`, `status`, `config`, `sourceLessonIds`, `createdAt`, `activatedAt` | `status`: `bozza` / `attiva` / `chiusa` / `annullata` |
+| `exams/{examId}/items` | `questionId`, `tipo`, `difficoltà`, `peso`, `punteggio_max`, `testo`, `opzioni`, `soluzione`, `lessonId` | Snapshot immutabile al momento dell'attivazione |
+| `burned/{examId}` (subcollection: `emails`) | `email`, `burnedAt` | Record atomico dell'email che ha scaricato il PDF |
+| `students` | `id`, `email`, `nome?`, `cognome?`, `classe?`, `createdAt` | Creazione lazy al primo accesso al portale; email = chiave univoca |
+| `submissions` | `id`, `examId`, `studentId`, `email`, `risposte[]`, `submittedAt`, `channel` | `channel`: `portale` / `cartacea` |
+| `corrections` | `submissionId`, `items[]` (punteggio, commento, provenienza, definitivo), `percentuale`, `stato` | Stato: `da_correggere` / `in_corso` / `definitiva` |
+| `auditEvents` | `attore`, `azione`, `oggetto`, `timestamp`, `esito`, `motivazione` | Append-only, scritto solo dal backend |
 
-### 7.3 Immutabilità e transazioni
+### 8.3 Immutabilità e transazioni
 
 | Evento | Garanzia del backend |
 |---|---|
-| Pubblicazione verifica | Transazione Firestore che controlla completezza, scrive/chiude gli item della verifica, aggiorna lo stato e crea audit event. |
-| Modifica verifica pubblicata | Rifiutata. Il docente crea una nuova verifica. |
-| Sostituzione Lezione | Aggiorna solo `lessons` e `questionIndex` correnti; non scrive su `exams/{id}/items`. |
-| Import risposta Forms | Usa `formResponseId` come chiave idempotente; una risposta già acquisita non crea doppie consegne. |
-| Rettifica punteggio | Conserva valore precedente, nuovo valore e motivazione; ricalcola percentuale. |
-| Approvazione AI massiva | Seleziona solo proposte idonee, aggiorna in batch e registra un audit per ogni correzione interessata più un audit di operazione. |
+| Attivazione verifica | Transazione Firestore: copia snapshot item, imposta `attiva`, scrive audit |
+| Modifica verifica attiva | Rifiutata — il docente crea una nuova verifica |
+| Download studente (email bruciata) | Transazione: verifica assenza record in `burned/{examId}/emails`, crea record, serve PDF |
+| Sostituzione lezione | Aggiorna `lessons` e `questionIndex`; non tocca `exams/{id}/items` |
+| Rettifica punteggio | Conserva valore precedente, nuovo valore, motivazione; ricalcola percentuale |
 
-### 7.4 Calcolo di punteggio e percentuale
-
-Il backend è l'unico responsabile del calcolo. Per una Consegna completa:
+### 8.4 Calcolo percentuale
 
 ```text
-punteggio ottenuto = somma dei punteggi definitivi assegnati agli item
-punteggio massimo  = somma dei punteggi massimi degli item della Verifica
-percentuale        = (punteggio ottenuto / punteggio massimo) × 100
+punteggio_max_item = coeff_difficoltà × coeff_peso
+punteggio massimo verifica = Σ punteggio_max_item (tutti gli item)
+percentuale = (Σ punti assegnati definitivi / punteggio massimo) × 100
 ```
 
-La percentuale è conservata con precisione numerica e visualizzata arrotondata a due decimali. Se almeno un item non possiede un punteggio definitivo, la percentuale è `non_definitiva`; non esiste conversione automatica in voto. Ogni rettifica passa dal backend, registra il valore precedente e ricalcola il risultato.
+La percentuale è `non_definitiva` finché mancano punteggi per uno o più item. Il backend è l'unico responsabile del calcolo; non esiste conversione automatica in voto.
 
-## 8. Flussi applicativi principali
+## 9. Flussi applicativi principali
 
-### 8.1 Accesso del docente
+### 9.1 Accesso del docente
 
 1. Il docente esegue Google Sign-In nella web app.
 2. Firebase Authentication rilascia un token applicativo.
 3. Il backend verifica token Firebase, soggetto Google stabile e configurazione `settings/owner`.
-4. Se soggetto/account/dominio non sono autorizzati, il backend rifiuta ogni richiesta e non restituisce dati.
-5. Il browser può leggere solo dati dell'unico proprietario; tutte le scritture significative usano endpoint backend autenticati.
+4. Se soggetto/account/dominio non sono autorizzati, il backend rifiuta ogni richiesta.
 
-L'email non è una chiave di identità: serve per visualizzazione e policy di accesso, mentre il soggetto Google stabile gestisce l'eventuale cambio di indirizzo.
-
-### 8.2 Importazione di una lezione o cartella
+### 9.2 Importazione di lezioni
 
 ```mermaid
 sequenceDiagram
@@ -291,240 +373,244 @@ sequenceDiagram
     participant F as Firestore
 
     D->>W: seleziona file/cartella
-    W->>S: carica nel percorso staging autenticato
+    W->>S: carica in staging autenticato
     W->>B: richiede preflight importazione
-    B->>S: legge Markdown e asset
-    B->>B: valida contratto Lesson Markdown v1
-    B-->>W: piano, errori, conflitti e anteprima
-    D->>W: conferma solo elementi desiderati
+    B->>S: legge Markdown, pool e asset
+    B->>B: valida contratto v1
+    B-->>W: piano, errori, conflitti, anteprima
+    D->>W: conferma elementi desiderati
     W->>B: conferma importazione
-    B->>S: promuove contenuto corrente
-    B->>F: aggiorna indice e questionIndex in modo coerente
+    B->>S: promuove in repository/current
+    B->>F: aggiorna lessons e questionIndex
     B->>F: scrive audit event
 ```
 
-L'atomicità visibile è ottenuta con un manifesto di importazione: contenuti e asset sono prima completi in staging; solo dopo validazione e conferma il backend aggiorna i documenti Firestore che li rendono correnti. Un file parzialmente caricato non appare mai nel repository.
+### 9.3 Composizione e attivazione di una verifica
 
-### 8.3 Rendering e ricerca lezione
-
-Il backend valida ed estrae una rappresentazione strutturata dal Markdown. La web app renderizza esclusivamente:
-
-- front matter ammesso;
-- contenuto Markdown sanificato;
-- immagini consentite;
-- domande `self_check`.
-
-Blocchi `assessment`, soluzioni, chiavi corrette e rubriche non sono inclusi nel modello consegnato alla pagina di fruizione. Il renderer disabilita HTML eseguibile, script, iframe e URL locali.
-
-La ricerca V1 è locale e deterministica: l'indice `plainText`, titolo e obiettivi delle lezioni correnti viene caricato a pagine e filtrato nel browser normalizzando maiuscole/minuscole e accenti. Non viene introdotto un motore di ricerca esterno. Durata e dimensione dell'indice vengono misurate; solo dati reali potranno giustificare un componente dedicato in futuro.
-
-### 8.4 Composizione, pubblicazione ed esportazione di una verifica
-
-1. Il docente seleziona UDA/Lezioni; il backend risolve l'insieme deduplicato di lezioni valide.
-2. Il backend legge il `questionIndex` corrente, applica tipo/difficoltà/quantità e segnala fabbisogno non coperto senza AI.
+1. Il docente seleziona UDA/Lezioni → il backend risolve le lezioni valide.
+2. Il backend legge `questionIndex` corrente, applica filtri tipo/difficoltà/peso/quantità.
 3. Il docente approva e modifica la composizione in bozza.
-4. Il backend verifica completezza di soluzioni, rubriche e punteggi massimi.
-5. Alla pubblicazione copia le domande approvate in `exams/{examId}/items`, imposta `published` e scrive audit.
-6. Il servizio PDF legge solo lo snapshot della verifica e genera prova, soluzione o rubrica come output separati.
-7. Il docente scarica il PDF e, se desiderato, lo carica manualmente su Drive; l'app registra il link/ID fornito.
+4. Il backend verifica completezza (soluzioni, punteggi massimi, almeno una domanda).
+5. All'attivazione: copia le domande in `exams/{examId}/items`, imposta `attiva`, scrive audit.
+6. La verifica non legge più Markdown dopo l'attivazione.
 
-La verifica non legge più il Markdown dopo la pubblicazione. Pertanto sostituire o eliminare una lezione non modifica prova, PDF, rubriche o correzioni esistenti.
+### 9.4 Download PDF docente
 
-### 8.5 Google Forms e importazione risposte
+1. Il docente richiede il PDF (versione docente o versione studente vuota).
+2. Il backend legge lo snapshot `exams/{examId}/items` e genera il PDF on-demand.
+3. Il PDF è restituito come stream HTTP; non viene scritto su Cloud Storage.
+4. Campi PDF: titolo (precompilato), nome/cognome/email (vuoti compilabili), classe (opzionale), data (vuota), Punti/Max Punti (vuoti).
+5. Nessun record `burned` viene creato per il docente.
 
-1. Per una verifica `pubblicata`, il backend crea un Form con l'account Google Education connesso.
-2. Salva `formId` nell'assegnazione e la mappa tra item SchoolForge e domande Form.
-3. Il docente distribuisce il link con canali esterni. SchoolForge non invia inviti e non registra studenti.
-4. Il docente avvia l'importazione delle risposte dal pannello dell'assegnazione.
-5. Il backend importa risposte nuove in modo idempotente. Per ogni risposta: cerca l'email raccolta nella collezione `students`; se non trovata, crea automaticamente un record Studente minimo con solo quella email (creazione lazy); infine crea la Consegna collegata allo Studente.
-6. Risposte senza mappatura certa alla Verifica vanno in `quarantena`; nessuna attribuzione automatica della Verifica è consentita.
+### 9.5 Accesso studente al Portale Verifiche e download PDF
 
-Il Form non è modificabile dopo la prima Consegna. Una modifica alla prova richiede una nuova Verifica e un nuovo Form.
+```mermaid
+sequenceDiagram
+    participant S as Studente
+    participant P as Portale Verifiche
+    participant B as Backend
+    participant F as Firestore
 
-### 8.6 Classi e studenti
+    S->>P: apre link verifica
+    P->>B: verifica stato verifica (attiva?)
+    B-->>P: ok, verifica attiva
+    S->>P: accede con Google (email scol.)
+    P->>B: richiede download PDF con email
+    B->>F: transaction: legge burned/{examId}/{email}
+    alt email non ancora bruciata
+        B->>F: crea record burned atomicamente
+        B->>B: genera PDF con campi precompilati
+        B-->>P: stream PDF
+        P-->>S: download avviato
+    else email già bruciata
+        B-->>P: errore 409 — già scaricato
+    end
+```
 
-L'inserimento manuale è il percorso sempre disponibile. Se il docente autorizza l'integrazione roster:
+Il PDF studente contiene: titolo (precompilato), nome/cognome/email (precompilati dall'autenticazione Google), data (precompilata), Punti/Max Punti (vuoti).
 
-1. il backend usa il token Google conservato in Secret Manager e richiede soltanto gli scope minimi del roster;
-2. recupera classi e studenti dal servizio Google Education configurato;
-3. calcola un'anteprima di creazioni, aggiornamenti e archiviazioni proposte;
-4. applica solo le modifiche confermate dal docente;
-5. non cancella mai automaticamente studenti, consegne o storico per assenza da una risposta API.
+### 9.6 Consegna e correzione manuale
 
-### 8.7 Correzione AI e approvazione massiva — Fase 4
+1. Il docente raccoglie i PDF compilati dagli studenti (cartaceo o digitale).
+2. Per ogni consegna digitale, il portale permette allo studente di caricare le risposte (testo/file).
+3. Il docente vede tutte le consegne in stato `da_correggere`.
+4. Per ogni item il docente inserisce il punteggio (0 ... punteggio_max_item).
+5. Il backend calcola la percentuale quando tutti gli item hanno punteggio definitivo.
+6. Rettifiche successive conservano il valore precedente e la motivazione.
 
-L'estensione AI della Fase 4 non viene attivata prima delle decisioni C-02 e C-03. La correzione manuale e il calcolo delle percentuali restano il prodotto obbligatorio della fase. Quando l'AI è attiva, il flusso è:
+### 9.7 Export programma svolto
 
-1. il backend costruisce un contesto chiuso per ogni risposta: Lezione fonte selezionata, item della verifica, soluzione, rubrica e risposta dello studente;
-2. `AiGateway` invia il contesto al provider, senza browser, strumenti, retrieval o altre lezioni;
-3. l'output diventa proposta `ai_proposed`, con fonte, modello, template e hash del contesto registrati;
-4. il docente approva/modifica/rifiuta un item oppure usa “approva tutte le proposte idonee” per una verifica o selezione di consegne;
-5. il backend esclude proposte bloccate, incomplete, rifiutate o già modificate, mostra il riepilogo e richiede conferma;
-6. dopo la conferma aggiorna solo le proposte idonee e registra audit per l'operazione e gli item coinvolti.
+1. Il docente flagga UDA e/o lezioni come "svolte" nel programma.
+2. Richiede l'export del programma svolto.
+3. Il backend genera un file `.txt` con struttura:
 
-La modalità automatica è protetta da feature flag disabilitato e non viene implementata come default nascosto.
+```text
+Programma: TPSIT — Terzo Anno
+Anno scolastico: 2025/2026
 
-## 9. API applicative
+UDA 1 — Reti locali e protocolli
+  * Lezione 001 — Il modello OSI
+  * Lezione 002 — Indirizzamento IP
+UDA 2 — Sicurezza informatica
+  * Lezione 005 — Crittografia simmetrica
+```
 
-La web app usa endpoint HTTPS/callable autenticati. Gli handler devono essere sottili: validano input e token, poi delegano a servizi di dominio. Il contratto usa JSON con errori strutturati `{ code, message, details }` e non espone stack trace.
+4. Il file è scaricato immediatamente; non viene conservato su Cloud Storage.
+
+### 9.8 Correzione AI — Modulo 5
+
+L'AI non viene attivata prima della decisione C-02. Quando attiva:
+
+1. Il backend costruisce un contesto chiuso: testo domanda, soluzione, risposta studente.
+2. `AiGateway` invia il contesto al provider senza web o retrieval esterno.
+3. L'output diventa proposta `ai_proposed` con provenienza registrata.
+4. Il docente approva/modifica/rifiuta ogni proposta o usa "approva tutte le proposte idonee".
+5. Il backend esclude proposte incomplete/rifiutate, mostra riepilogo, richiede conferma.
+6. Dopo conferma aggiorna solo le proposte idonee e registra audit per operazione e item.
+
+## 10. API applicative
 
 | Modulo | Operazioni principali |
 |---|---|
 | Autorizzazione | `getSession`, `getOwnerConfiguration` |
-| Repository | `createProgram`, `updateProgram`, `createUda`, `stageImport`, `previewImport`, `commitImport`, `replaceLesson`, `deleteLesson`, `exportRepository` |
-| Verifiche | `createExamDraft`, `composeExam`, `updateExamDraft`, `publishExam`, `cancelExam`, `generatePdf` |
-| Google Forms | `connectGoogleForms`, `createGoogleForm`, `importFormResponses` |
-| Anagrafica | `listClasses`, `saveClass`, `saveStudent`, `previewRosterImport`, `applyRosterImport` |
-| Archivio | `createAssignment`, `closeAssignment`, `createManualSubmission`, `resolveQuarantine`, `recordDriveArtifact`, `updateCorrection` |
-| AI futuro | `connectAiProvider`, `generateQuestions`, `proposeCorrection`, `approveCorrection`, `bulkApproveCorrections` |
+| Repository | `createProgram`, `updateProgram`, `createUda`, `updateUda`, `stageImport`, `previewImport`, `commitImport`, `replaceLesson`, `deleteLesson`, `exportRepository`, `exportProgrammaSvolto` |
+| Verifiche | `createExamDraft`, `composeExam`, `updateExamDraft`, `activateExam`, `closeExam`, `cancelExam`, `generatePdfDocente` |
+| Portale | `getExamPublic`, `burnEmailAndGeneratePdf`, `submitAnswers` |
+| Correzione | `listSubmissions`, `updateItemScore`, `finalizeCorrection` |
+| Storico | `listStudents`, `getStudentHistory`, `listExamResults` |
+| AI futuro | `connectAiProvider`, `proposeCorrection`, `approveCorrection`, `bulkApproveCorrections` |
 
-Operazioni che modificano stato (`publishExam`, `commitImport`, `closeAssignment`, `bulkApproveCorrections`, ecc.) devono richiedere un `confirmation` esplicito dal client. Il backend controlla comunque precondizioni e non accetta una conferma come sostituto delle regole di business.
+Operazioni che modificano stato irreversibile (`activateExam`, `commitImport`, `bulkApproveCorrections`) richiedono un `confirmation` esplicito dal client.
 
-## 10. Sicurezza e autorizzazione
+## 11. Sicurezza e autorizzazione
 
-### 10.1 Regole di accesso
+### 11.1 Regole di accesso
 
 | Risorsa | Lettura | Scrittura |
 |---|---|---|
-| Firestore dati applicativi | Solo token del Docente proprietario | Solo Cloud Functions; il client non scrive dati di dominio direttamente |
-| Cloud Storage `repository/current` | Solo Docente proprietario tramite URL autenticati o backend | Solo backend |
-| Cloud Storage `staging` | Solo Docente proprietario nell'import corrente | Upload del docente nel prefisso autorizzato; promozione solo backend |
-| Secret Manager | Solo service account delle funzioni autorizzate | Solo procedura backend/amministrativa di connessione |
-| Google Drive | Gestito fuori da SchoolForge dal docente | Nessun upload/sync automatico nella V1 |
+| Firestore dati docente | Solo token del Docente proprietario | Solo Cloud Functions |
+| Firestore `burned` | Solo backend | Solo backend (transazione atomica) |
+| Firestore `submissions`/`corrections` | Solo Docente proprietario | Backend (portale per insert, docente per update) |
+| Cloud Storage `repository/current` | Solo Docente tramite backend | Solo backend |
+| Cloud Storage `staging` | Solo Docente nell'import corrente | Upload docente nel prefisso; promozione solo backend |
+| Secret Manager | Solo service account funzioni | Solo procedura amministrativa |
 
-Le Firestore Security Rules e Storage Rules sono un secondo livello di difesa; il controllo principale resta nel backend, che valida identità, ownership, stato e transizioni.
+### 11.2 Portale studenti
 
-### 10.2 Token e integrazioni Google
+- Gli studenti si autenticano con Google (account scolastico); il backend verifica che l'email appartenga al dominio Education configurato.
+- Il portale non espone soluzioni, punteggi di altri studenti o configurazioni interne.
+- Il fullscreen è imposto dal portale durante la prova (deterrenza, non garanzia tecnica).
+- L'unica garanzia tecnica di integrità è l'email bruciata: un download = una persona.
 
-- Il token di autenticazione Firebase non è usato come deposito di autorizzazioni permanenti per Forms o roster.
-- La connessione a Google Forms/roster richiede consenso separato e scope minimi per la funzione richiesta.
-- I refresh token sono conservati esclusivamente in Secret Manager, associati all'unico docente e mai restituiti al browser.
-- La revoca di un'integrazione rende indisponibile solo quella funzione; repository, PDF, anagrafica manuale e storico restano operativi.
-- La V1 non richiede scope Drive perché il caricamento dei PDF è manuale.
+### 11.3 Gestione dati sensibili
 
-### 10.3 Gestione dati sensibili
+- Risposte, punteggi e percentuali non vengono riportati integralmente nei log.
+- Gli audit registrano identificativi e metadati, non il testo completo delle risposte.
+- I PDF non vengono scritti su nessuno storage; non sono recuperabili dopo il download.
+- Prima di una chiamata AI con risposte studenti, il backend verifica configurazione espressa del docente.
 
-- Markdown e lezioni non possono contenere segreti; la validazione segnala file che contengono pattern di chiavi palesi secondo regole configurabili.
-- Risposte, punteggi e percentuali non devono essere riportati integralmente nei log applicativi.
-- Gli audit registrano identificativi e metadati necessari a ricostruire l'azione, non il testo completo di una risposta dello studente.
-- Prima di una chiamata AI con risposte di studenti, il backend verifica consenso operativo/configurazione espressa dal docente.
+## 12. Affidabilità, osservabilità e backup
 
-## 11. Affidabilità, osservabilità e backup
+### 12.1 Osservabilità minima
 
-### 11.1 Osservabilità minima
+Ogni endpoint produce log strutturati con `requestId`, modulo, azione, esito e durata. Dashboard iniziali: errori import Markdown, fallimenti PDF, errori AI, fallimenti backup.
 
-Ogni endpoint e integrazione deve produrre log strutturati con:
+### 12.2 Backup
 
-- `requestId`, modulo, azione, esito e durata;
-- identificativi tecnici dell'oggetto, mai il contenuto completo;
-- codice errore normalizzato;
-- provider e modello per AI, senza prompt o risposta completa;
-- `formId`/stato di importazione per Google Forms, senza elencare risposte nei log.
+1. Export/snapshot programmato Firestore.
+2. Protezione e verifica del bucket Cloud Storage.
+3. Test di ripristino periodico in ambiente non produttivo.
+4. Verifica che un export repository produca Markdown e asset leggibili fuori da SchoolForge.
 
-Dashboard e alert iniziali devono coprire errori import Markdown, fallimenti PDF, errori Google, errori AI, importazioni in quarantena e fallimenti backup. Non vengono introdotti SLO numerici fino a quando non esisteranno dati d'uso; vengono però raccolte metriche per stabilirli.
+Frequenza, regione, RPO e RTO sono bloccati dalla decisione C-01.
 
-### 11.2 Backup e ripristino
+## 13. Prestazioni e scelte di efficienza
 
-Il piano tecnico deve comprendere:
+- Hosting statico e funzioni scale-to-zero: nessun server inattivo.
+- Markdown e asset serviti da Storage con cache per file con hash.
+- `questionIndex` derivato all'import, non estratto a ogni composizione.
+- PDF generato su richiesta, non precomputato.
+- Ricerca V1 locale nel browser su `plainText` paginato da Firestore.
+- Query Firestore su indici dichiarati, non scansioni client.
 
-1. export/snapshot programmato Firestore;
-2. protezione e verifica del bucket Cloud Storage;
-3. test di ripristino periodico in ambiente non produttivo;
-4. elenco di configurazioni e secret da ricreare senza esportarne il valore;
-5. verifica che un export repository produca Markdown e asset leggibili fuori da SchoolForge.
+## 14. Piano di implementazione in cinque moduli
 
-Frequenza, regione di conservazione, RPO, RTO e responsabile operativo sono bloccati dalla decisione C-01. L'implementazione non va in produzione senza questi parametri, ma i moduli applicativi possono essere sviluppati e testati con configurazioni provvisorie.
-
-## 12. Prestazioni e scelte di efficienza
-
-Non esistono obiettivi quantitativi approvati. L'architettura evita comunque sprechi prevedibili:
-
-- Hosting statico e funzioni scale-to-zero: nessun server inattivo da mantenere;
-- Markdown e asset serviti da Storage con cache per file con hash;
-- indice delle domande derivato al momento dell'import, non estratto a ogni composizione;
-- rendering e ricerca lato browser sui dati necessari, senza un motore di ricerca esterno;
-- paginazione per storico, consegne, audit e risultati importati;
-- query Firestore supportate da indici dichiarati, non da scansioni client di archivi personali;
-- PDF generato su richiesta e non precomputato per ogni stato intermedio;
-- import Forms idempotente, così da poter ripetere un'operazione dopo un errore senza duplicare dati.
-
-Un servizio aggiuntivo può essere proposto solo con evidenza osservabile: crescita dell'indice, tempi di import, errori di timeout o costo ricorrente non accettabile. La soluzione di partenza non include cache distribuite, database relazionale, motore vettoriale o motore full-text esterno.
-
-## 13. Piano di implementazione in quattro fasi
-
-| Fase | Componenti da completare | Prodotto funzionante e criterio di uscita |
+| Modulo | Componenti | Prodotto funzionante |
 |---|---|---|
-| 1. Corsi, UDA e Lezioni | Fondazioni tecniche interne, autenticazione Google Education, Programmi/UDA, Markdown, asset, validazione, rendering, export | Il docente autenticato crea Corsi/Programmi e UDA, carica/gestisce Lezioni Markdown e le esporta senza AI, Forms, studenti o archivi |
-| 2. Generazione Verifiche | Corpus selezionato, singola Verifica, soluzioni, rubriche, PDF; Google Forms se configurato | Il docente crea e pubblica una Verifica manualmente. Il contenuto resta immutabile e il percorso PDF funziona senza classi, archivio o AI |
-| 3. Archiviazione Verifiche | Classi, studenti, importazione Google Education opzionale, assegnazioni, consegne, quarantena, link PDF Drive e storico `da_correggere` | Il docente archivia prove e risposte attribuibili senza calcolare punteggi o percentuali definitivi |
-| 4. Correzione Verifiche | Correzione manuale, punteggi, percentuali, rettifiche/audit; AI assistita, approvazione massiva e automatica soltanto se autorizzate | Il docente corregge manualmente ogni prova e ottiene percentuali affidabili. L'AI estende il prodotto ma non è un prerequisito della correzione manuale |
+| M1 — Repository | Auth, programmi, UDA, import Markdown (lesson + pool), validazione, rendering, export ZIP | Il docente carica lezioni con pool, vede rendering senza soluzioni, esporta repository |
+| M2 — Verifiche e Portale | Composizione verifica, attivazione, PDF docente, Portale Verifiche, email bruciata, export programma svolto | Il docente pubblica una verifica; lo studente scarica il PDF una sola volta |
+| M3 — Correzione manuale | Consegne (digitale + cartacea), punteggi, percentuali, rettifiche, audit | Il docente corregge manualmente e ottiene percentuali affidabili |
+| M4 — Storico | Lista studenti lazy, storico risultati per studente e per verifica, filtri e ricerche | Il docente consulta lo storico delle verifiche corrette |
+| M5 — AI | AiGateway, proposta correzione, approvazione massiva, anomaly detection | L'AI propone punteggi; il docente approva con un clic (feature-flaggata) |
 
-Ogni fase rilascia un prodotto utilizzabile. Non è ammesso anticipare dipendenze AI, Google Forms o roster nella Fase 1.
+Ogni modulo rilascia un prodotto utilizzabile. Non è ammesso anticipare AI o roster nella M1.
 
-## 14. Strategia di test
+## 15. Strategia di test
 
 | Livello | Oggetto | Evidenza richiesta |
 |---|---|---|
-| Unit | parser Markdown, validatore, calcolo percentuale, transizioni stato, mapping Forms | test TypeScript deterministici |
-| Contract | front matter, blocchi domanda, payload API, errori strutturati | fixture valide/non valide e snapshot di output |
-| Integration | Firestore/Storage rules, import atomico visibile, publish verifica, idempotenza Forms | Firebase Emulator Suite e test backend |
-| End-to-end | login docente, import, rendering senza assessment, verifica/PDF, assegnazione, archivio | Playwright su ambiente test |
-| Manuale integrazioni | OAuth Google, Forms, roster, Drive link | checklist con account test Education |
-| AI futuro | contesto consentito, assenza web/retrieval, provenienza, approvazione massiva | provider sandbox/mock e log di audit |
+| Unit | parser Markdown (lesson/pool/uda), calcolo percentuale, transizioni stato | test TypeScript deterministici |
+| Contract | front matter, blocchi domanda pool, payload API, errori strutturati | fixture valide/invalide e snapshot di output |
+| Integration | Firestore/Storage rules, import atomico, attivazione verifica, email bruciata atomica | Firebase Emulator Suite e test backend |
+| End-to-end | login docente, import, rendering senza soluzioni, verifica/PDF, portale studente, correzione | Playwright su ambiente test |
+| AI futuro | contesto consentito, assenza web/retrieval, provenienza, approvazione massiva | provider sandbox/mock e audit log |
 | Restore | ripristino Firestore/Storage ed export Markdown | prova documentata secondo C-01 |
 
-I test devono includere almeno questi casi negativi: account non autorizzato, Markdown invalido, asset assente, doppia importazione Form, risposta non mappabile, tentativo di modificare verifica pubblicata, tentativo di esporre blocchi `assessment`, proposta AI incompleta nell'approvazione massiva e token integrazione revocato.
+Casi negativi obbligatori: account non autorizzato, Markdown invalido, asset assente, email già bruciata (secondo tentativo), tentativo di modificare verifica attiva, tentativo di esporre soluzioni nel rendering, proposta AI incompleta nell'approvazione massiva.
 
-## 15. Tracciabilità requisiti → architettura
+## 16. Tracciabilità requisiti → architettura
 
 | Requisito/decisione | Meccanismo architetturale |
 |---|---|
 | Markdown indipendente | Cloud Storage degli originali, export ZIP, Firestore come indice/operativo |
-| Nessuna revisione lezione/versione verifica | Storage corrente per le lezioni; item immutabili per la verifica pubblicata |
-| Google Education docente | Firebase Auth Google + controllo server-side di soggetto/account autorizzato |
-| Studenti senza account | Nessun ruolo studente, nessuna route pubblica, anagrafica solo operativa |
-| Google Forms | Adattatore Forms, mapping `examId`/item/Form, import idempotente e quarantena |
-| Roster opzionale | Adattatore Google Education con anteprima e conferma; fallback manuale |
-| Punteggi/percentuali, non voti | servizio di calcolo server-side e storico rettifiche |
-| Drive manuale | generazione PDF + artefatto con URL/ID Drive, senza API Drive obbligatoria |
-| AI optional e senza web | `AiGateway`, contesto chiuso, feature flag, audit provenienza |
-| Approvazione massiva AI | endpoint backend transazionale/batch con filtro idoneità e audit per item |
+| Nessuna revisione lezione | Storage corrente per le lezioni; snapshot immutabile in `exams/{id}/items` |
+| Google Education docente | Firebase Auth Google + controllo server-side soggetto/dominio |
+| Studenti senza account | Nessun ruolo studente in web app; portale separato con autenticazione Google scolastica |
+| PDF mai conservato | Generazione on-demand, stream HTTP, nessuna scrittura su storage |
+| Email bruciata | Transazione Firestore atomica su collezione `burned` |
+| Pool domande con peso/difficoltà | File `.pool.md` con campi obbligatori; `questionIndex` Firestore derivato |
+| Scoring `coeff_d × coeff_p` | Servizio calcolo server-side; tabella coefficienti in `lesson-contract` |
+| Portale Verifiche separato | App React separata, URL distinto, ADR-05 |
+| Nessun Drive | ADR-03: eliminato definitivamente; nessun link/ID archiviato |
+| Nessun Forms | ADR-03: eliminato definitivamente; portale è l'unico canale digitale |
+| Nessuna rubrica | Domande hanno solo `soluzione`; il punteggio è assegnato liberamente dal docente |
+| Export programma svolto | Flag `svolto` su UDA/lezioni; export `.txt` on-demand |
+| AI optional | `AiGateway`, contesto chiuso, feature flag, audit provenienza |
 
-## 16. Decisioni ancora aperte e limiti deliberati
+## 17. Decisioni ancora aperte e limiti deliberati
 
-| ID | Decisione | Impatto architetturale | Owner | Scadenza |
-|---|---|---|---|---|
-| C-01 | Regione, backup, RPO/RTO e responsabilità operativa | Parametri di progetto Firebase/Google Cloud e piano di restore prima del go-live | Committente / Responsabile operativo | Prima del go-live Fase 1 (gate G1) |
-| C-02 | Provider AI, condizioni, residenza e consenso | Implementazione concreta di `AiGateway`; nessun provider viene cablato prima della decisione | Committente | Prima del gate G5-AI |
-| C-03 | Regola per correzione automatica | Il flag resta disabilitato; si implementa solo correzione assistita e approvazione massiva | Committente / Docente | Prima del gate G6 |
+| ID | Decisione | Impatto | Scadenza |
+|---|---|---|---|
+| C-01 | Regione, backup, RPO/RTO | Parametri Firebase, piano di restore | Prima del go-live M1 |
+| C-02 | Provider AI, condizioni, residenza | Implementazione concreta `AiGateway` | Prima del gate M5 |
+| C-03 | Regola per correzione automatica | Il flag resta disabilitato fino alla decisione | Prima del gate M5 |
 
-Ogni decisione aperta produce un verbale nel repository: data, approvatore, opzioni valutate con pro e contro, scelta effettuata e vincoli operativi risultanti. Una decisione aperta non viene "risolta a voce" né incorporata silenziosamente nel codice.
+Ogni decisione aperta produce un verbale nel repository: data, approvatore, opzioni valutate, scelta effettuata.
 
 Limitazioni intenzionali della V1:
 
 - nessun editor Markdown nel browser;
-- nessuna sincronizzazione bidirezionale con Drive;
+- nessuna sincronizzazione Drive o Forms;
 - nessun invio automatico di email agli studenti;
-- nessun account/portale studente;
-- nessuna analitica didattica avanzata;
 - nessun supporto multi-docente;
 - nessuna versione di lezione o di verifica;
-- nessun provider AI obbligatorio.
+- nessuna rubrica di correzione;
+- nessun PDF conservato.
 
-## 17. Criteri di accettazione dell'architettura
+## 18. Criteri di accettazione dell'architettura
 
-L'implementazione è conforme a questa architettura se dimostra che:
+L'implementazione è conforme se dimostra che:
 
-1. il solo docente Google Education autorizzato può leggere o modificare dati SchoolForge;
-2. i Markdown e gli asset sono esportabili e leggibili fuori dall'applicazione;
-3. le domande di verifica e relative soluzioni non vengono esposte nel rendering della lezione;
-4. una verifica pubblicata conserva i propri item e non cambia se la lezione viene sostituita o eliminata;
-5. il backend impedisce modifiche a una verifica pubblicata e registra le azioni rilevanti;
-6. Google Forms e roster sono opzionali e non bloccano flussi manuali;
-7. una risposta Form importata due volte non genera due consegne;
-8. punteggio e percentuale sono calcolati nel backend senza logica di voto;
-9. il link Drive è registrabile senza che l'app richieda accesso/sincronizzazione Drive;
-10. AI, se abilitata in futuro, riceve soltanto il contesto autorizzato, non usa web/retrieval e consente approvazione massiva auditabile;
+1. solo il docente Google Education autorizzato può leggere o modificare dati SchoolForge;
+2. Markdown e asset sono esportabili e leggibili fuori dall'applicazione;
+3. le soluzioni delle domande di verifica non vengono esposte nel rendering delle lezioni;
+4. una verifica attivata conserva i propri item anche se la lezione viene modificata o eliminata;
+5. il backend impedisce modifiche a una verifica attiva e registra le azioni rilevanti;
+6. il PDF non viene scritto su nessuno storage dopo il download;
+7. un'email studente che ha già scaricato il PDF non può riscaricare lo stesso PDF (409);
+8. il docente non ha restrizioni di download del PDF;
+9. punteggio e percentuale sono calcolati nel backend senza logica di voto;
+10. AI, se abilitata, riceve solo il contesto autorizzato (domanda + soluzione + risposta), non usa web/retrieval e consente approvazione massiva auditabile;
 11. ambiente `dev` non contiene dati o token di produzione;
 12. backup, export e restore sono verificabili prima del go-live secondo C-01.
 
@@ -536,14 +622,15 @@ I seguenti diagrammi sono disponibili nella cartella `documentazione/diagrammi/`
 
 | File | Contenuto |
 |---|---|
-| [`er-model.md`](diagrammi/er-model.md) | Modello dati ER completo di Firestore con indici |
-| [`sequence-import-lezione.md`](diagrammi/sequence-import-lezione.md) | Sequence diagram: import cartella, preflight, commit atomico, sostituzione singola lezione |
-| [`sequence-pubblicazione-verifica.md`](diagrammi/sequence-pubblicazione-verifica.md) | Sequence diagram: composizione → pubblicazione → PDF → link Drive; garanzia di immutabilità |
-| [`sequence-correzione-ai.md`](diagrammi/sequence-correzione-ai.md) | Sequence diagram: correzione AI assistita, approvazione massiva, modalità automatica |
-| [`component-frontend.md`](diagrammi/component-frontend.md) | Architettura dei componenti React, stato globale e pattern UI trasversali |
+| [`er-model.md`](diagrammi/er-model.md) | Modello dati ER Firestore con indici |
+| [`sequence-import-lezione.md`](diagrammi/sequence-import-lezione.md) | Import cartella, preflight, commit atomico |
+| [`sequence-attivazione-verifica.md`](diagrammi/sequence-attivazione-verifica.md) | Composizione → attivazione → PDF docente |
+| [`sequence-portale-studente.md`](diagrammi/sequence-portale-studente.md) | Portale: autenticazione → email bruciata → download PDF |
+| [`sequence-correzione-ai.md`](diagrammi/sequence-correzione-ai.md) | Correzione AI, approvazione massiva |
+| [`component-frontend.md`](diagrammi/component-frontend.md) | Architettura componenti React (web + portale) |
 
 ---
 
 ## Appendice B — Stato della proposta
 
-Questa architettura è pronta per l'avvio dell'implementazione delle Fasi 1–3. Le scelte C-01, C-02 e C-03 restano bloccanti soltanto per i rispettivi aspetti di esercizio e AI; non autorizzano scorciatoie nel modello di sicurezza, nella portabilità Markdown o nella tracciabilità delle verifiche.
+Questa architettura è pronta per l'avvio dell'implementazione di M1–M3. Le scelte C-01, C-02 e C-03 restano bloccanti solo per i rispettivi aspetti di esercizio e AI; non autorizzano scorciatoie nel modello di sicurezza, nella portabilità Markdown o nella tracciabilità delle verifiche.
