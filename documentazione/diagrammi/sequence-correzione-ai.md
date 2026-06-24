@@ -1,8 +1,10 @@
 # SchoolForge — Sequence: Correzione AI assistita e approvazione massiva
 
-**Versione:** 1.0
-**Data:** 22 giugno 2026
-**Riferimento:** [Architettura v1.0](../architettura.md), sezione 8.7
+**Versione:** 2.0
+**Data:** 24 giugno 2026
+**Riferimento:** [Architettura v2.0](../architettura.md), sezione 9.8
+
+La correzione AI è il Modulo 5, attivabile solo dopo la decisione C-02 (provider) e, per la modalità automatica, C-03. Usa un contesto chiuso (lezione + domanda + soluzione + risposta) senza web né retrieval. Non esistono rubriche: il vincolo numerico è il punteggio massimo dell'item (`coeff_difficoltà × coeff_peso`).
 
 ---
 
@@ -20,49 +22,44 @@ sequenceDiagram
     note over D: Prerequisiti: C-02 risolto, AI configurata, G5-AI superato
 
     D->>W: apre una consegna da correggere e richiede proposta AI
+    W->>D: mostra i dati che verranno inviati al provider AI
+    note over W,D: lezione fonte, domanda, soluzione, risposta (senza dati anagrafici)
 
-    W->>D: mostra dati che verranno inviati al provider AI
-    note over W,D: lezione fonte, domanda, soluzione, rubrica, risposta (senza dati anagrafici studente)
-
-    D->>W: conferma consenso esplicito (o usa consenso persistente già configurato)
+    D->>W: conferma consenso esplicito (o usa consenso persistente configurato)
     W->>CF: proposeCorrection({ submissionId, consentGiven: true })
 
-    CF->>FS: legge `submissions/{id}` → risposte dello studente
-    CF->>FS: legge `exams/{examId}/items/` → domande, soluzioni, rubriche, maxScore
-    CF->>FS: legge `lessons/{lessonId}` → storagePath della lezione fonte
+    CF->>FS: legge submissions/{id} → risposte dello studente
+    CF->>FS: legge exams/{examId}/items → domande, soluzioni, punteggio max
+    CF->>FS: legge lessons/{lessonId} → storagePath della lezione fonte
 
     loop per ogni item della consegna
-        CF->>GW: buildContext({ lessonContent, question, solution, rubric, studentResponse })
-        note over GW: verifica dimensione contesto; applica template di sistema versioned
+        CF->>GW: buildContext({ lessonContent, question, solution, studentResponse })
+        note over GW: verifica dimensione contesto; applica template di sistema versionato
         GW->>AI: invia contesto chiuso (senza browser, tool, retrieval)
-        AI-->>GW: risposta strutturata { score, reasoning, criteriaApplied }
-        GW->>GW: valida risposta (Zod schema): score ≤ maxScore, criteri presenti
+        AI-->>GW: risposta strutturata { proposedScore, reasoning }
+        GW->>GW: valida (Zod): proposedScore ≤ punteggio max dell'item
         GW-->>CF: proposta validata + AiProvenance (provider, model, templateVersion, contextHash)
     end
 
-    CF->>FS: scrive proposte in `corrections/{submissionId}.itemScores` con status: 'ai_proposed'
-    CF->>FS: scrive audit event AI_CORRECTION_PROPOSED (con hash contesto, provider, modello)
-    CF-->>W: { proposals: [...] }
+    CF->>FS: scrive proposte in corrections/{submissionId}.items con origin: 'ai_proposed'
+    CF->>FS: scrive audit event AI_CORRECTION_PROPOSED (hash contesto, provider, modello)
+    CF-->>W: { proposals, styleAnomalies? }
 
-    W->>D: mostra proposte AI affiancate alla risposta; punteggio e motivazione per item
+    W->>D: mostra proposte affiancate alla risposta; punteggio e motivazione per item
 
     loop per ogni item
         alt Docente approva
             D->>W: approva proposta item N
-            W->>CF: updateCorrection({ submissionId, itemCorrections: [{ examItemId, score, ... }] })
-            CF->>FS: aggiorna item → status: 'teacher_approved', aggiorna percentuale
+            W->>CF: updateItemScore({ submissionId, itemScores: [{ examItemId, score }] })
+            CF->>FS: aggiorna item → origin: 'manual' (approvato), ricalcola percentuale
         else Docente modifica
             D->>W: modifica punteggio o commento dell'item N
-            W->>CF: updateCorrection({ submissionId, itemCorrections: [{ examItemId, score, reason }] })
-            CF->>FS: aggiorna item → status: 'teacher_modified', salva valore precedente in audit
-        else Docente rifiuta
-            D->>W: rifiuta proposta item N
-            W->>CF: updateCorrection con score esplicito del docente
-            CF->>FS: aggiorna item → status: 'teacher_corrected', proposta AI marcata 'rifiutata'
+            W->>CF: updateItemScore({ submissionId, itemScores: [{ examItemId, score, reason }] })
+            CF->>FS: aggiorna item, salva valore precedente nell'audit (rettifica tracciata)
         end
     end
 
-    CF->>FS: ricalcola percentuale finale quando tutti gli item sono definitivi
+    CF->>FS: ricalcola percentuale finale quando tutti gli item hanno punteggio
 ```
 
 ---
@@ -77,31 +74,22 @@ sequenceDiagram
     participant FS as Firestore
 
     D->>W: apre pannello "Approva tutte le proposte" per una Verifica o selezione
-
     W->>CF: bulkApproveCorrections({ examId, confirmation: false })
     note over CF: prima chiamata senza confirmation: restituisce solo il riepilogo
-    CF->>FS: legge tutte le correzioni per la verifica
-    CF->>CF: filtra le proposte idonee (status: 'ai_proposed', complete, non rifiutate, non già modificate)
-    CF-->>W: {
-        approved: 8,
-        skipped: 2,
-        skippedIds: ['sub-3 (proposta incompleta)', 'sub-7 (già modificata dal docente)']
-    }
+    CF->>FS: legge le correzioni con proposte AI
+    CF->>CF: filtra le idonee (origin 'ai_proposed', complete, non bloccate, non già modificate)
+    CF-->>W: { approved: 8, skipped: 2, skippedItemIds: [...] }
 
-    W->>D: mostra riepilogo: 8 proposte saranno approvate, 2 escluse con motivo
+    W->>D: mostra riepilogo: 8 approvate, 2 escluse con motivo
 
     D->>W: conferma approvazione massiva
     W->>CF: bulkApproveCorrections({ examId, confirmation: true })
-
-    CF->>FS: transazione batch:
-    note over CF,FS: per ogni delle 8 proposte idonee:
-    CF->>FS: aggiorna `corrections/{submissionId}` → status item: 'teacher_approved'
+    note over CF,FS: per ognuna delle 8 proposte idonee
+    CF->>FS: aggiorna corrections/{submissionId} → item origin: 'manual' (approvato)
     CF->>FS: ricalcola percentuale per la consegna
-    CF->>FS: scrive audit event CORRECTION_APPROVED per ogni consegna modificata
-    CF->>FS: scrive audit event BULK_APPROVE_COMPLETED (con count e lista examItemId)
-
+    CF->>FS: scrive audit event CORRECTION_APPROVED per ogni consegna + BULK_APPROVE_COMPLETED
     CF-->>W: { approved: 8, skipped: 2 }
-    W->>D: riepilogo operazione; le 2 escluse rimangono da correggere manualmente
+    W->>D: le 2 escluse restano da correggere manualmente
 ```
 
 ---
@@ -117,27 +105,25 @@ sequenceDiagram
     participant AI as Provider AI
     participant FS as Firestore
 
-    note over D: La modalità automatica è abilitata esplicitamente per questa Verifica
+    note over D: La modalità automatica è abilitata esplicitamente per questa Verifica (C-03)
 
-    D->>W: attiva correzione automatica per l'Assegnazione X
-    W->>D: mostra avviso: "La correzione sarà applicata automaticamente; resterà modificabile"
+    D->>W: attiva correzione automatica per la Verifica X
+    W->>D: avviso: "La correzione sarà applicata automaticamente; resterà modificabile"
     D->>W: conferma esplicita
 
     W->>CF: proposeCorrection({ submissionId, consentGiven: true, autoApprove: true })
     CF->>GW: (stesso flusso di generazione contesto della modalità assistita)
     GW->>AI: invia contesto
     AI-->>GW: risposta
-    GW-->>CF: proposta validata
+    GW-->>CF: proposta validata (≤ punteggio max)
 
-    CF->>FS: scrive la correzione direttamente con status: 'automatic'
+    CF->>FS: scrive la correzione con origin: 'automatic'
     CF->>FS: ricalcola percentuale
-    CF->>FS: scrive audit event AI_AUTO_CORRECTION con flag 'automatic: true'
-
-    CF-->>W: { percentage, correctionStatus: 'complete' }
+    CF->>FS: scrive audit event AI_AUTO_CORRECTION (automatic: true)
+    CF-->>W: { percentage, correctionStatus: 'definitiva' }
     W->>D: consegna corretta automaticamente; modificabile in qualsiasi momento
 
-    note over D: Il Docente può sempre sovrascrivere una correzione automatica;
-    note over D: la modifica crea un audit con valore precedente e nuovo valore
+    note over D: Ogni modifica successiva crea un audit con valore precedente e nuovo valore
 ```
 
 ---
@@ -146,10 +132,10 @@ sequenceDiagram
 
 | Garanzia | Meccanismo |
 |---|---|
-| Solo le lezioni selezionate nel contesto | Il backend costruisce il contesto; il gateway non accetta contesti con lessonIds non selezionati |
-| Nessun browsing o retrieval | Il gateway non ha tool esterni configurati; il sistema prompt lo vieta esplicitamente |
-| Punteggio ≤ massimo | Validazione Zod del gateway; proposta rifiutata se viola il vincolo |
-| Criteri rubrica dichiarati | Validazione schema gateway; proposta marcata 'incompleta' se assenti |
-| Provenienza tracciata | Ogni proposta include provider, modelId, templateVersion, contextHash (SHA-256 del contesto) |
-| Consenso verificato | Il backend verifica la configurazione del consenso prima di qualsiasi invocazione AI |
-| Proposta ≠ decisione | Nessuna proposta AI diventa definitiva senza approvazione docente (eccetto modalità automatica esplicitamente abilitata) |
+| Solo le lezioni selezionate nel contesto | Il backend costruisce il contesto; il gateway rifiuta lessonIds non selezionati |
+| Nessun browsing o retrieval | Il gateway non ha tool esterni; il system prompt lo vieta esplicitamente |
+| Punteggio ≤ massimo dell'item | Validazione Zod del gateway; proposta rifiutata se viola il vincolo |
+| Item non correggibile → bloccato | Se mancano domanda/soluzione/risposta/lezione, la proposta è `blocked` e richiede correzione manuale |
+| Provenienza tracciata | Ogni proposta include provider, modelId, templateVersion, contextHash (SHA-256) |
+| Consenso verificato | Il backend verifica il consenso prima di qualsiasi invocazione AI |
+| Proposta ≠ decisione | Nessuna proposta diventa definitiva senza approvazione docente, salvo modalità automatica esplicitamente abilitata |

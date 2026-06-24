@@ -35,7 +35,11 @@ Leggere i documenti in questo ordine:
 | [Brief](documentazione/brief.md) | Visione, problema, vincoli e perimetro iniziale. |
 | [Analisi dei requisiti](documentazione/analisi-requisiti.md) | Requisiti funzionali/non funzionali, regole di dominio e criteri di accettazione. |
 | [Architettura](documentazione/architettura.md) | Architettura target Firebase/Google Cloud, modello dati, sicurezza e integrazioni. |
+| [Contratto API](documentazione/api-contract.md) | Endpoint Cloud Functions, payload, errori. |
+| [Sicurezza](documentazione/sicurezza.md) | Modello di minaccia, Security Rules, email bruciata, privacy. |
+| [Strategia di test](documentazione/test-strategy.md) | Livelli di test, coverage per gate, casi negativi obbligatori. |
 | [Piano di implementazione](documentazione/piano-implementazione.md) | Workflow esecutivo, dipendenze, lavoro parallelo, gate e test. |
+| [Glossario](documentazione/glossario.md) | Vocabolario univoco; in caso di ambiguità prevale questa definizione. |
 
 ## Roadmap di delivery
 
@@ -65,10 +69,22 @@ L'AI è isolata dietro un gateway e resta disabilitata finché non saranno appro
 
 ```text
 documentazione/
-├─ brief.md
-├─ analisi-requisiti.md
-├─ architettura.md
-└─ piano-implementazione.md
+├─ brief.md                  # visione, problema, perimetro
+├─ analisi-requisiti.md      # requisiti FR/BR/NFR/AC
+├─ architettura.md           # architettura target Firebase/Google Cloud
+├─ api-contract.md           # contratto Cloud Functions
+├─ sicurezza.md              # modello di minaccia, regole, privacy
+├─ test-strategy.md          # livelli di test, gate, casi negativi
+├─ piano-implementazione.md  # workflow, moduli, gate, CI/CD
+├─ glossario.md              # vocabolario univoco del progetto
+├─ decisioni/                # verbali delle decisioni aperte (C-01/02/03)
+└─ diagrammi/
+   ├─ er-model.md
+   ├─ component-frontend.md
+   ├─ sequence-import-lezione.md
+   ├─ sequence-attivazione-verifica.md
+   ├─ sequence-portale-studente.md
+   └─ sequence-correzione-ai.md
 ```
 
 ## Prossimo passo
