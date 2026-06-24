@@ -44,7 +44,7 @@ export type PoolQuestion =
 
 export interface ParsedPool {
   schema: 'schoolforge-pool/v1';
-  domande: PoolQuestion[];
+  questions: PoolQuestion[];
 }
 
 export type PoolParseResult =

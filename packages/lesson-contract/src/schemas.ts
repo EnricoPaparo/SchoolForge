@@ -23,13 +23,23 @@ const ApertaSchema = QuestionBaseSchema.extend({
 
 const ChiusaSingolaSchema = QuestionBaseSchema.extend({
   tipo: z.literal('chiusa_singola'),
-  opzioni: z.array(QuestionOptionSchema).min(2, 'opzioni must have at least 2 items'),
+  opzioni: z
+    .array(QuestionOptionSchema)
+    .min(2, 'opzioni must have at least 2 items')
+    .refine((opts) => new Set(opts.map((o) => o.id)).size === opts.length, {
+      message: 'opzioni ids must be unique',
+    }),
   soluzione: z.array(z.string()).length(1, 'chiusa_singola soluzione must have exactly 1 item'),
 }).strict();
 
 const ChiusaMultiplaSchema = QuestionBaseSchema.extend({
   tipo: z.literal('chiusa_multipla'),
-  opzioni: z.array(QuestionOptionSchema).min(2, 'opzioni must have at least 2 items'),
+  opzioni: z
+    .array(QuestionOptionSchema)
+    .min(2, 'opzioni must have at least 2 items')
+    .refine((opts) => new Set(opts.map((o) => o.id)).size === opts.length, {
+      message: 'opzioni ids must be unique',
+    }),
   soluzione: z.array(z.string()).min(1, 'soluzione must have at least 1 item'),
 }).strict();
 
@@ -42,6 +52,6 @@ export const QuestionSchema = z.discriminatedUnion('tipo', [
 export const PoolFrontMatterSchema = z
   .object({
     schema: z.literal('schoolforge-pool/v1'),
-    domande: z.array(QuestionSchema),
+    questions: z.array(QuestionSchema),
   })
   .strict();

@@ -15,15 +15,15 @@ function extractFrontMatter(content: string): string | null {
 function issueToError(
   issue: ZodIssue,
   fileName: string | null,
-  domande: unknown[],
+  questions: unknown[],
 ): PoolValidationError {
   const path = issue.path;
   let questionId: string | null = null;
   let questionIndex: number | null = null;
 
-  if (path[0] === 'domande' && typeof path[1] === 'number') {
+  if (path[0] === 'questions' && typeof path[1] === 'number') {
     questionIndex = path[1];
-    const q = domande[questionIndex];
+    const q = questions[questionIndex];
     if (
       q &&
       typeof q === 'object' &&
@@ -40,29 +40,27 @@ function issueToError(
 }
 
 function validateCrossQuestion(
-  domande: PoolQuestion[],
+  questions: PoolQuestion[],
   fileName: string | null,
 ): PoolValidationError[] {
   const errors: PoolValidationError[] = [];
   const seen = new Map<string, number>();
 
-  for (let i = 0; i < domande.length; i++) {
-    const q = domande[i];
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
 
-    // Duplicate id check
     if (seen.has(q.id)) {
       errors.push({
         fileName,
         questionId: q.id,
         questionIndex: i,
-        field: 'domande[' + i + '].id',
+        field: `questions[${i}].id`,
         message: `Duplicate question id "${q.id}" (first seen at index ${seen.get(q.id)})`,
       });
     } else {
       seen.set(q.id, i);
     }
 
-    // Validate soluzione references valid option ids for closed questions
     if (q.tipo === 'chiusa_singola' || q.tipo === 'chiusa_multipla') {
       const optionIds = new Set(q.opzioni.map((o) => o.id));
 
@@ -72,19 +70,18 @@ function validateCrossQuestion(
             fileName,
             questionId: q.id,
             questionIndex: i,
-            field: 'domande[' + i + '].soluzione',
+            field: `questions[${i}].soluzione`,
             message: `soluzione references unknown option id "${sol}"`,
           });
         }
       }
 
-      // chiusa_multipla: soluzione must be < total options
       if (q.tipo === 'chiusa_multipla' && q.soluzione.length >= q.opzioni.length) {
         errors.push({
           fileName,
           questionId: q.id,
           questionIndex: i,
-          field: 'domande[' + i + '].soluzione',
+          field: `questions[${i}].soluzione`,
           message: `chiusa_multipla soluzione must have fewer items than opzioni (got ${q.soluzione.length} of ${q.opzioni.length})`,
         });
       }
@@ -98,12 +95,7 @@ export function parsePool(content: string, fileName?: string): PoolParseResult {
   const resolvedFileName = fileName ?? null;
 
   const frontMatterRaw = extractFrontMatter(content);
-  if (frontMatterRaw === null) {
-    // Try parsing the whole content as YAML (no front matter delimiters)
-    return parseFrontMatterString(content, resolvedFileName);
-  }
-
-  return parseFrontMatterString(frontMatterRaw, resolvedFileName);
+  return parseFrontMatterString(frontMatterRaw ?? content, resolvedFileName);
 }
 
 function parseFrontMatterString(yaml: string, fileName: string | null): PoolParseResult {
@@ -128,34 +120,33 @@ function parseFrontMatterString(yaml: string, fileName: string | null): PoolPars
   const result = PoolFrontMatterSchema.safeParse(raw);
 
   if (!result.success) {
-    const rawDomande =
-      raw && typeof raw === 'object' && 'domande' in raw
-        ? (((raw as Record<string, unknown>).domande as unknown[]) ?? [])
+    const rawQuestions =
+      raw && typeof raw === 'object' && 'questions' in raw
+        ? (((raw as Record<string, unknown>).questions as unknown[]) ?? [])
         : [];
 
     const errors: PoolValidationError[] = result.error.issues.map((issue) =>
-      issueToError(issue, fileName, rawDomande),
+      issueToError(issue, fileName, rawQuestions),
     );
 
     return { ok: false, errors };
   }
 
-  const { domande } = result.data;
+  const { questions } = result.data;
 
-  // Annotate maxPoints and cast to PoolQuestion
-  const questions: PoolQuestion[] = domande.map((q) => ({
+  const parsedQuestions: PoolQuestion[] = questions.map((q) => ({
     ...q,
     maxPoints: q.difficolta * q.peso,
   })) as PoolQuestion[];
 
-  const crossErrors = validateCrossQuestion(questions, fileName);
+  const crossErrors = validateCrossQuestion(parsedQuestions, fileName);
   if (crossErrors.length > 0) {
     return { ok: false, errors: crossErrors };
   }
 
   const pool: ParsedPool = {
     schema: 'schoolforge-pool/v1',
-    domande: questions,
+    questions: parsedQuestions,
   };
 
   return { ok: true, pool };
