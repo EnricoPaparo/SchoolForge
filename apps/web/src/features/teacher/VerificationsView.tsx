@@ -13,7 +13,9 @@ import {
 } from '../repository/verifications/questionIndexService.js';
 import { listClasses, type ClassItem } from '../repository/classes/classesService.js';
 import { listPrograms, type ProgramItem } from '../repository/programs/programsService.js';
-import { db } from '../../lib/firebase.js';
+import { loadSelectedQuestions } from '../repository/verifications/loadSelectedQuestions.js';
+import { downloadStudentPdf } from '../repository/verifications/verificationPdf.js';
+import { db, storage } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import styles from './VerificationsView.module.css';
 
@@ -63,6 +65,10 @@ export function VerificationsView() {
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
+
+  // ── PDF state ───────────────────────────────────────────────────
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   useEffect(() => {
     void loadAll();
@@ -212,6 +218,27 @@ export function VerificationsView() {
       setActivateError(err instanceof Error ? err.message : "Errore durante l'attivazione.");
     } finally {
       setActivating(false);
+    }
+  }
+
+  async function handleDownloadPdf() {
+    if (!selectedVer || selectedVer.status !== 'active') return;
+    setPdfLoading(true);
+    setPdfError(null);
+    try {
+      const snapshot = selectedVer.teacherSnapshot;
+      if (!snapshot) return;
+      const refs = snapshot.questionRefs;
+      const result = await loadSelectedQuestions(refs, storage);
+      if (!result.ok) {
+        setPdfError(result.error);
+        return;
+      }
+      const classNameResolved =
+        classes.find((c) => c.id === snapshot.classId)?.name ?? snapshot.className ?? null;
+      await downloadStudentPdf(snapshot, result.questions, classNameResolved);
+    } finally {
+      setPdfLoading(false);
     }
   }
 
@@ -489,6 +516,21 @@ export function VerificationsView() {
               <p className={styles.detailMeta}>
                 Domande configurate: {selectedVer.config.questionRefs.length}
               </p>
+              <div className={styles.actionBar}>
+                <button
+                  type="button"
+                  disabled={pdfLoading}
+                  onClick={() => void handleDownloadPdf()}
+                  aria-label="Scarica PDF"
+                >
+                  {pdfLoading ? 'Generazione PDF…' : 'Scarica PDF'}
+                </button>
+              </div>
+              {pdfError && (
+                <p role="alert" className="text-error">
+                  {pdfError}
+                </p>
+              )}
               {!showCloseConfirm ? (
                 <div className={styles.actionBar}>
                   <button
