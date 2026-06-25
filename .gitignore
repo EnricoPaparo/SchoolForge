@@ -1,6 +1,7 @@
 node_modules
 dist
-lib
+/lib
+packages/*/lib
 .firebase
 .env
 .env.local

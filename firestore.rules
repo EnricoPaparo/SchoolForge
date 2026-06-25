@@ -1,9 +1,68 @@
 rules_version = '2';
 
-// Default-deny: no access until F-04 implements ownerUid-based rules.
-// These rules are intentionally closed for local emulator development.
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Checks that the caller's uid matches the ownerUid stored in settings/owner.
+    function isOwner() {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/settings/owner)
+        && request.auth.uid
+           == get(/databases/$(database)/documents/settings/owner).data.ownerUid;
+    }
+
+    // --- settings/owner ---
+    // First authenticated user to write becomes the owner (no existing doc).
+    // Subsequent updates/deletes require ownerUid match.
+    match /settings/owner {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+                    && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isOwner();
+    }
+
+    // --- Teacher-owned collections ---
+    match /programs/{docId} {
+      allow read, write: if isOwner();
+    }
+    match /programs/{programId}/{sub=**} {
+      allow read, write: if isOwner();
+    }
+
+    match /verifications/{docId} {
+      allow read, write: if isOwner();
+    }
+    match /verifications/{verificationId}/{sub=**} {
+      allow read, write: if isOwner();
+      // TODO M2: publicVerificationLinks readable when verification is active
+    }
+
+    match /auditEvents/{docId} {
+      allow read, write: if isOwner();
+    }
+
+    match /corrections/{docId} {
+      allow read, write: if isOwner();
+    }
+    match /correctionEvents/{docId} {
+      allow read, write: if isOwner();
+    }
+
+    // deliveryAttempts: owner can read (for corrections/export); writes via Cloud Functions (M3)
+    match /deliveryAttempts/{docId} {
+      allow read: if isOwner();
+      allow write: if false;
+    }
+    match /deliveryAttempts/{docId}/{sub=**} {
+      allow read: if isOwner();
+      allow write: if false;
+    }
+
+    // --- Default deny ---
     match /{document=**} {
       allow read, write: if false;
     }

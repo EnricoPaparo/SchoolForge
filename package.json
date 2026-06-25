@@ -13,16 +13,20 @@
     "test": "pnpm -r test",
     "emulators": "firebase emulators:start --project dev",
     "emulators:export": "firebase emulators:start --project dev --export-on-exit .emulator-data --import .emulator-data",
-    "firebase:use:dev": "firebase use dev"
+    "firebase:use:dev": "firebase use dev",
+    "test:rules": "firebase emulators:exec --project demo-schoolforge --only firestore,auth,storage \"pnpm --filter @schoolforge/web test:rules\""
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "esbuild"
+      "esbuild",
+      "protobufjs",
+      "re2"
     ]
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "eslint": "^9.17.0",
+    "firebase-tools": "^14.0.0",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.2"

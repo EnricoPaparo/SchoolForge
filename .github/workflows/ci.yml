@@ -20,6 +20,18 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      - name: Setup Java 21 (for Firebase emulators)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Cache Firebase emulators
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -37,3 +49,6 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Security Rules tests
+        run: pnpm test:rules
