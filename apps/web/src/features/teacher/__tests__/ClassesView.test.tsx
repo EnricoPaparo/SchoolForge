@@ -66,7 +66,9 @@ describe('ClassesView', () => {
 
     // Use the id-targeted input for new class name
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    fireEvent.change(document.getElementById('new-class-name')!, { target: { value: 'Nuova Classe' } });
+    fireEvent.change(document.getElementById('new-class-name')!, {
+      target: { value: 'Nuova Classe' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /crea classe/i }));
 
     await waitFor(() =>
