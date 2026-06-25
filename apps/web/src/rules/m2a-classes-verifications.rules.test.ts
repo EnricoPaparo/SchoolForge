@@ -105,6 +105,28 @@ describe('Firestore rules — /classes/{classId}', () => {
     });
     await assertFails(getDoc(doc(anonDb(), 'classes/c1')));
   });
+
+  it('non-owner cannot create a class with their own ownerUid', async () => {
+    await seedOwner();
+    await assertFails(
+      setDoc(doc(otherDb(), 'classes/c2'), {
+        ownerUid: OTHER_UID,
+        name: 'Classe 4A',
+        description: null,
+      }),
+    );
+  });
+
+  it("non-owner cannot create a class with the owner's ownerUid", async () => {
+    await seedOwner();
+    await assertFails(
+      setDoc(doc(otherDb(), 'classes/c3'), {
+        ownerUid: OWNER_UID,
+        name: 'Classe 4A',
+        description: null,
+      }),
+    );
+  });
 });
 
 // ─── Verifications ────────────────────────────────────────────────────────────
@@ -162,6 +184,99 @@ describe('Firestore rules — /verifications/{verificationId}', () => {
       });
     });
     await assertFails(getDoc(doc(anonDb(), 'verifications/v1')));
+  });
+});
+
+// ─── Verification immutability ────────────────────────────────────────────────
+
+describe('Firestore rules — verification immutability', () => {
+  const DRAFT_DOC = {
+    ownerUid: OWNER_UID,
+    status: 'draft',
+    config: { title: 'V1', classId: null, programId: 'p1', importId: 'i1', questionRefs: [] },
+    teacherSnapshot: null,
+    activatedAt: null,
+    closedAt: null,
+  };
+
+  const ACTIVE_DOC = {
+    ...DRAFT_DOC,
+    status: 'active',
+    teacherSnapshot: {
+      title: 'V1',
+      classId: null,
+      className: null,
+      programId: 'p1',
+      importId: 'i1',
+      questionRefs: [],
+      activatedAt: null,
+    },
+  };
+
+  it('owner can update config when status is draft', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), DRAFT_DOC);
+    });
+    await assertSucceeds(
+      setDoc(doc(ownerDb(), 'verifications/v1'), {
+        ...DRAFT_DOC,
+        config: { ...DRAFT_DOC.config, title: 'V1 aggiornata' },
+      }),
+    );
+  });
+
+  it('owner cannot update config when status is active', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), ACTIVE_DOC);
+    });
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/v1'), {
+        ...ACTIVE_DOC,
+        config: { ...ACTIVE_DOC.config, title: 'Modificata' },
+      }),
+    );
+  });
+
+  it('owner cannot modify teacherSnapshot when status is active', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), ACTIVE_DOC);
+    });
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/v1'), {
+        ...ACTIVE_DOC,
+        teacherSnapshot: { ...ACTIVE_DOC.teacherSnapshot, title: 'Hacked' },
+      }),
+    );
+  });
+
+  it('owner can close an active verification (status active -> closed)', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), ACTIVE_DOC);
+    });
+    await assertSucceeds(
+      setDoc(doc(ownerDb(), 'verifications/v1'), {
+        ...ACTIVE_DOC,
+        status: 'closed',
+        closedAt: null,
+      }),
+    );
+  });
+
+  it('non-owner cannot update a verification in any status', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), DRAFT_DOC);
+    });
+    await assertFails(
+      setDoc(doc(otherDb(), 'verifications/v1'), {
+        ...DRAFT_DOC,
+        config: { ...DRAFT_DOC.config, title: 'X' },
+      }),
+    );
   });
 });
 

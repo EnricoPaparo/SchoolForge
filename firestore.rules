@@ -27,8 +27,8 @@ service cloud.firestore {
 
     // --- Teacher-owned collections ---
     match /classes/{classId} {
-      allow read, write: if isOwner();
-      allow create: if request.auth != null && request.resource.data.ownerUid == request.auth.uid;
+      allow read, update, delete: if isOwner();
+      allow create: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
     }
 
     match /programs/{docId} {
@@ -39,10 +39,22 @@ service cloud.firestore {
     }
 
     match /verifications/{docId} {
-      allow read, write: if isOwner();
+      allow read, delete: if isOwner();
+      allow create: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
+      // Draft: any owner update allowed.
+      // Active: only status transition to 'closed' is permitted.
+      // Closed: no updates allowed.
+      allow update: if isOwner()
+        && (
+          resource.data.status == 'draft'
+          || (resource.data.status == 'active' && request.resource.data.status == 'closed')
+        );
     }
     match /verifications/{verificationId}/{sub=**} {
-      allow read, write: if isOwner();
+      // read: owner only; write on sub-collections handled per-path in later milestones.
+      // Note: {sub=**} can match the document itself (zero segments), so write is intentionally
+      // omitted here — update semantics on /verifications/{docId} are enforced above.
+      allow read: if isOwner();
       // TODO M2: publicVerificationLinks readable when verification is active
     }
 
