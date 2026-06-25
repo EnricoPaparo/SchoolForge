@@ -16,6 +16,7 @@ import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { fetchLessonContent } from './lessonContent.js';
 import { exportZip } from './exportZip.js';
 import { downloadMarkdown, downloadPdf, generateMarkdown } from './programmaSvolto.js';
+import { ReadinessView } from './ReadinessView.js';
 
 export function ProgramsView() {
   const { user } = useAuth();
@@ -29,6 +30,8 @@ export function ProgramsView() {
 
   const [selectedUdaDir, setSelectedUdaDir] = useState<string | null>(null);
   const [lessons, setLessons] = useState<LessonItem[] | null>(null);
+
+  const [allLessons, setAllLessons] = useState<LessonItem[] | null>(null);
 
   const [selectedLesson, setSelectedLesson] = useState<LessonItem | null>(null);
   const [lessonContent, setLessonContent] = useState<string | null>(null);
@@ -64,6 +67,7 @@ export function ProgramsView() {
     setSelectedProgram(p);
     setSelectedUdaDir(null);
     setLessons(null);
+    setAllLessons(null);
     setUdas(null);
     setEditTitle(null);
     setSelectedLesson(null);
@@ -72,10 +76,15 @@ export function ProgramsView() {
     setExportZipError(null);
     if (!p.activeImportId) return;
     try {
-      const list = await listUdas(p.id, p.activeImportId, db);
-      setUdas(list);
+      const [udaList, lessonList] = await Promise.all([
+        listUdas(p.id, p.activeImportId, db),
+        listLessons(p.id, p.activeImportId, db),
+      ]);
+      setUdas(udaList);
+      setAllLessons(lessonList);
     } catch {
       setUdas([]);
+      setAllLessons([]);
     }
   }
 
@@ -346,6 +355,7 @@ export function ProgramsView() {
               )}
             </div>
           )}
+          <ReadinessView program={selectedProgram} udas={udas} lessons={allLessons} />
         </div>
       )}
     </section>

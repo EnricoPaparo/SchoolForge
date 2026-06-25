@@ -7,6 +7,11 @@ import { TeacherShell } from '../TeacherShell.js';
 const mockSignOut = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ app: {}, auth: {}, db: {}, storage: {} }));
+vi.mock('../templateKit.js', () => ({
+  TEMPLATES: [],
+  downloadTemplate: vi.fn(),
+  downloadKitZip: vi.fn(),
+}));
 vi.mock('../../../lib/auth.js', () => ({
   useAuth: () => ({
     user: { uid: 'owner-uid', email: 'teacher@test.com', displayName: null },
@@ -33,10 +38,10 @@ describe('TeacherShell', () => {
     expect(screen.getByRole('button', { name: 'Impostazioni' })).toBeTruthy();
   });
 
-  it('shows default section heading and placeholder text', () => {
+  it('shows default section heading and template kit section', () => {
     render(<TeacherShell />);
     expect(screen.getByRole('heading', { name: 'Repository didattico' })).toBeTruthy();
-    expect(screen.getByText('Funzione non ancora implementata.')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Kit template' })).toBeTruthy();
   });
 
   it('switches section on nav click', () => {
