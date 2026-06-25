@@ -50,6 +50,11 @@ export function VerificationsView() {
   const [questionIndexError, setQuestionIndexError] = useState<string | null>(null);
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
 
+  // ── Draft edit state ────────────────────────────────────────────
+  const [editDraftTitle, setEditDraftTitle] = useState('');
+  const [editDraftClassId, setEditDraftClassId] = useState('');
+  const [savingDraft, setSavingDraft] = useState(false);
+
   // ── Activation / close state ────────────────────────────────────
   const [showActivateConfirm, setShowActivateConfirm] = useState(false);
   const [activating, setActivating] = useState(false);
@@ -87,7 +92,9 @@ export function VerificationsView() {
     setCloseError(null);
     setQuestionIndex(null);
     setQuestionIndexError(null);
-    setSelectedQuestionIds(new Set(v.config.questionRefs.map((r) => r.lessonId)));
+    setSelectedQuestionIds(new Set(v.config.questionRefs.map((r) => r.questionIndexEntryId)));
+    setEditDraftTitle(v.config.title);
+    setEditDraftClassId(v.config.classId ?? '');
 
     if (v.config.programId && v.config.importId) {
       try {
@@ -96,6 +103,23 @@ export function VerificationsView() {
       } catch {
         setQuestionIndexError('Impossibile caricare il pool di domande.');
       }
+    }
+  }
+
+  async function handleSaveDraftMeta(e: FormEvent) {
+    e.preventDefault();
+    if (!selectedVer || selectedVer.status !== 'draft') return;
+    const title = editDraftTitle.trim();
+    if (!title) return;
+    setSavingDraft(true);
+    try {
+      const classId = editDraftClassId || null;
+      await updateVerificationConfig(selectedVer.id, { title, classId }, ownerUid, db);
+      const updated = { ...selectedVer, config: { ...selectedVer.config, title, classId } };
+      setSelectedVer(updated);
+      setVerifications((prev) => prev?.map((v) => (v.id === updated.id ? updated : v)) ?? null);
+    } finally {
+      setSavingDraft(false);
     }
   }
 
@@ -142,11 +166,25 @@ export function VerificationsView() {
   }
 
   async function handleSaveQuestionRefs() {
-    if (!selectedVer) return;
-    const questionRefs = Array.from(selectedQuestionIds).map((id) => ({
-      lessonId: id,
-      questionIndex: 0,
-    }));
+    if (!selectedVer || !questionIndex) return;
+    const entryMap = new Map(questionIndex.map((e) => [e.id, e]));
+    const questionRefs = Array.from(selectedQuestionIds)
+      .map((id) => {
+        const entry = entryMap.get(id);
+        if (!entry) return null;
+        return {
+          questionIndexEntryId: entry.id,
+          questionLocalId: entry.questionLocalId,
+          udaDir: entry.udaDir,
+          lessonFilename: entry.lessonFilename,
+          poolStorageRef: entry.poolStorageRef,
+          tipo: entry.tipo,
+          difficolta: entry.difficolta,
+          peso: entry.peso,
+          maxPoints: entry.maxPoints,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
     await updateVerificationConfig(selectedVer.id, { questionRefs }, ownerUid, db);
     setSelectedVer((prev) => (prev ? { ...prev, config: { ...prev.config, questionRefs } } : prev));
     setVerifications(
@@ -319,6 +357,35 @@ export function VerificationsView() {
               </p>
             )}
           </div>
+
+          {/* ── Draft: edit title/class ── */}
+          {selectedVer.status === 'draft' && (
+            <form onSubmit={(e) => void handleSaveDraftMeta(e)} className={styles.draftEditForm}>
+              <label htmlFor="draft-title">Titolo bozza</label>
+              <input
+                id="draft-title"
+                type="text"
+                value={editDraftTitle}
+                onChange={(e) => setEditDraftTitle(e.target.value)}
+              />
+              <label htmlFor="draft-class">Classe</label>
+              <select
+                id="draft-class"
+                value={editDraftClassId}
+                onChange={(e) => setEditDraftClassId(e.target.value)}
+              >
+                <option value="">— Nessuna classe —</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <button type="submit" disabled={savingDraft || !editDraftTitle.trim()}>
+                {savingDraft ? 'Salvataggio…' : 'Salva bozza'}
+              </button>
+            </form>
+          )}
 
           {/* ── Draft: question selection + activate ── */}
           {selectedVer.status === 'draft' && (
