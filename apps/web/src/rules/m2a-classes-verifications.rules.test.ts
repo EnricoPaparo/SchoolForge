@@ -252,7 +252,7 @@ describe('Firestore rules — verification immutability', () => {
     );
   });
 
-  it('owner can close an active verification (status active -> closed)', async () => {
+  it('owner can close active -> closed changing only status/closedAt/updatedAt', async () => {
     await seedOwner();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'verifications/v1'), ACTIVE_DOC);
@@ -262,7 +262,64 @@ describe('Firestore rules — verification immutability', () => {
         ...ACTIVE_DOC,
         status: 'closed',
         closedAt: null,
+        updatedAt: null,
       }),
+    );
+  });
+
+  it('owner cannot close active -> closed while also modifying config', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), ACTIVE_DOC);
+    });
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/v1'), {
+        ...ACTIVE_DOC,
+        status: 'closed',
+        closedAt: null,
+        config: { ...ACTIVE_DOC.config, title: 'Cambiato' },
+      }),
+    );
+  });
+
+  it('owner cannot close active -> closed while also modifying teacherSnapshot', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), ACTIVE_DOC);
+    });
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/v1'), {
+        ...ACTIVE_DOC,
+        status: 'closed',
+        closedAt: null,
+        teacherSnapshot: { ...ACTIVE_DOC.teacherSnapshot, title: 'Hacked' },
+      }),
+    );
+  });
+
+  it('owner cannot close active -> closed while also modifying ownerUid', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), ACTIVE_DOC);
+    });
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/v1'), {
+        ...ACTIVE_DOC,
+        status: 'closed',
+        closedAt: null,
+        ownerUid: OTHER_UID,
+      }),
+    );
+  });
+
+  it('closed verification cannot be updated', async () => {
+    await seedOwner();
+    const CLOSED_DOC = { ...ACTIVE_DOC, status: 'closed', closedAt: null };
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), CLOSED_DOC);
+    });
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/v1'), { ...CLOSED_DOC, closedAt: null }),
     );
   });
 

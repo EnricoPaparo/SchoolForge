@@ -42,13 +42,14 @@ service cloud.firestore {
       allow read, delete: if isOwner();
       allow create: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
       // Draft: any owner update allowed.
-      // Active: only status transition to 'closed' is permitted.
+      // Active: only close allowed; only status/closedAt/updatedAt may change.
       // Closed: no updates allowed.
+      allow update: if isOwner() && resource.data.status == 'draft';
       allow update: if isOwner()
-        && (
-          resource.data.status == 'draft'
-          || (resource.data.status == 'active' && request.resource.data.status == 'closed')
-        );
+        && resource.data.status == 'active'
+        && request.resource.data.status == 'closed'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'closedAt', 'updatedAt']);
     }
     match /verifications/{verificationId}/{sub=**} {
       // read: owner only; write on sub-collections handled per-path in later milestones.
