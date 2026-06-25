@@ -1,0 +1,65 @@
+/* ── Template kit view ─────────────────────────────────────────── */
+.section {
+  max-width: 560px;
+}
+
+.intro {
+  color: var(--color-text-muted);
+  font-size: 0.9375rem;
+  margin-bottom: 1.5rem;
+}
+
+.templateList {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.templateItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.625rem 1rem;
+  gap: 1rem;
+}
+
+.templateName {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text);
+  flex: 1;
+}
+
+.downloadBtn {
+  font-size: 0.8125rem;
+  padding: 0.3125rem 0.75rem;
+  flex-shrink: 0;
+}
+
+.zipBtn {
+  display: inline-flex;
+  justify-content: center;
+  padding: 0.5625rem 1.25rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #fff;
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.zipBtn:hover:not(:disabled) {
+  background-color: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.errorMsg {
+  margin-top: 0.625rem;
+  color: var(--color-error);
+  font-size: 0.875rem;
+}

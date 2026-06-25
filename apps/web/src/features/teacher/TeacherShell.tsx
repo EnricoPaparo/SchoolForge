@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
 import { ProgramsView } from './ProgramsView.js';
 import { TemplateKitView } from './TemplateKitView.js';
+import styles from './TeacherShell.module.css';
 
 type Section = 'repository' | 'programmi' | 'verifiche' | 'impostazioni';
 
@@ -19,19 +20,21 @@ export function TeacherShell() {
   const activeLabel = SECTIONS.find((s) => s.id === activeSection)?.label ?? '';
 
   return (
-    <div>
-      <header>
-        <span>SchoolForge</span>
-        <span>{user?.displayName ?? user?.email}</span>
-        <button type="button" onClick={() => void signOut()}>
+    <div className={styles.layout}>
+      <header className={styles.header}>
+        <span className={styles.logo}>SchoolForge</span>
+        <span className={styles.userEmail}>{user?.displayName ?? user?.email}</span>
+        <button type="button" className={styles.logoutBtn} onClick={() => void signOut()}>
           Esci
         </button>
       </header>
-      <nav aria-label="Sezioni docente">
+
+      <nav aria-label="Sezioni docente" className={styles.nav}>
         {SECTIONS.map(({ id, label }) => (
           <button
             key={id}
             type="button"
+            className={styles.navBtn}
             onClick={() => setActiveSection(id)}
             aria-current={activeSection === id ? 'page' : undefined}
           >
@@ -39,14 +42,15 @@ export function TeacherShell() {
           </button>
         ))}
       </nav>
-      <main>
-        <h1>{activeLabel}</h1>
+
+      <main className={styles.main}>
+        <h1 className={styles.sectionTitle}>{activeLabel}</h1>
         {activeSection === 'repository' ? (
           <TemplateKitView />
         ) : activeSection === 'programmi' ? (
           <ProgramsView />
         ) : (
-          <p>Funzione non ancora implementata.</p>
+          <p className="text-muted">Funzione non ancora implementata.</p>
         )}
       </main>
     </div>

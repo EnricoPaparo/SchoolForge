@@ -1,0 +1,281 @@
+/* ── ProgramsView layout ───────────────────────────────────────── */
+.container {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 680px) {
+  .container {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Programs sidebar ──────────────────────────────────────────── */
+.sidebar {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+}
+
+.sidebarTitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.programList {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.programItem {
+  display: block;
+}
+
+.programBtn {
+  width: 100%;
+  text-align: left;
+  justify-content: flex-start;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  border-radius: var(--radius);
+  color: var(--color-text);
+  background: none;
+  border: 1px solid transparent;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.programBtn:hover:not(:disabled) {
+  background-color: var(--color-primary-light);
+  border-color: transparent;
+}
+
+.programBtn[aria-pressed='true'] {
+  background-color: var(--color-primary-light);
+  color: var(--color-primary);
+  font-weight: 600;
+  border-color: transparent;
+}
+
+/* Create program form */
+.createForm {
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.875rem;
+  margin-top: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.createLabel {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.createBtn {
+  justify-content: center;
+  font-size: 0.8125rem;
+  padding: 0.375rem 0.75rem;
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.createBtn:hover:not(:disabled) {
+  background-color: var(--color-primary-light);
+}
+
+/* ── Detail panel ──────────────────────────────────────────────── */
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Program title / edit */
+.programHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.programTitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+  flex: 1;
+}
+
+.editTitleForm {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.editTitleForm label {
+  flex: 1;
+  min-width: 180px;
+}
+
+/* Export toolbar */
+.exportBar {
+  display: flex;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+  align-items: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+}
+
+.exportBarLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-right: 0.25rem;
+}
+
+/* UDA / Lesson panels */
+.contentPanel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.25rem;
+}
+
+.udaTitle {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.udaList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.udaBtn {
+  width: 100%;
+  text-align: left;
+  justify-content: flex-start;
+  padding: 0.4375rem 0.75rem;
+  font-size: 0.875rem;
+  border-radius: var(--radius);
+  background: none;
+  border: 1px solid transparent;
+}
+
+.udaBtn:hover:not(:disabled) {
+  background-color: var(--color-surface-subtle);
+  border-color: transparent;
+}
+
+.udaBtn[aria-pressed='true'] {
+  background-color: var(--color-primary-light);
+  color: var(--color-primary);
+  font-weight: 600;
+  border-color: transparent;
+}
+
+/* Lesson section */
+.lessonSection {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.lessonTitle {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-muted);
+  margin-bottom: 0.625rem;
+}
+
+.lessonList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.lessonRow {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.3125rem 0.5rem;
+  border-radius: var(--radius);
+}
+
+.lessonRow:hover {
+  background-color: var(--color-surface-subtle);
+}
+
+.lessonBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.875rem;
+  text-align: left;
+  color: var(--color-text);
+  cursor: pointer;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lessonBtn:hover {
+  color: var(--color-primary);
+  background: none;
+}
+
+.lessonBtn[aria-pressed='true'] {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.lessonCompleted .lessonBtn {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+}
+
+/* Lesson content panel */
+.lessonContentPanel {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.lessonContentTitle {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--color-text);
+}
