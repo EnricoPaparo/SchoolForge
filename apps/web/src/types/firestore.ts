@@ -117,9 +117,19 @@ export type ClassDoc = {
 export type VerificationStatus = 'draft' | 'active' | 'closed';
 
 export type VerificationQuestionRef = {
-  lessonId: string;
-  questionIndex: number; // position in pool
-  questionText?: never; // NEVER store question text or solutions here
+  /** Firestore document id of the questionIndex entry (stable, unique per question) */
+  questionIndexEntryId: string;
+  /** Human-readable identifiers for display and M2-C pool lookup */
+  questionLocalId: string;
+  udaDir: string;
+  lessonFilename: string;
+  poolStorageRef: string;
+  /** Metadata snapshot at selection time */
+  tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
+  difficolta: 1 | 2 | 3;
+  peso: 1 | 2 | 3;
+  maxPoints: number;
+  // NEVER include: questionText, answers, correctAnswer, solution
 };
 
 export type VerificationConfig = {

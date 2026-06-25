@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
 import { ProgramsView } from './ProgramsView.js';
 import { TemplateKitView } from './TemplateKitView.js';
+import { VerificationsView } from './VerificationsView.js';
+import { ClassesView } from './ClassesView.js';
 import styles from './TeacherShell.module.css';
 
 type Section = 'repository' | 'programmi' | 'verifiche' | 'impostazioni';
@@ -49,9 +51,11 @@ export function TeacherShell() {
           <TemplateKitView />
         ) : activeSection === 'programmi' ? (
           <ProgramsView />
-        ) : (
-          <p className="text-muted">Funzione non ancora implementata.</p>
-        )}
+        ) : activeSection === 'verifiche' ? (
+          <VerificationsView />
+        ) : activeSection === 'impostazioni' ? (
+          <ClassesView />
+        ) : null}
       </main>
     </div>
   );

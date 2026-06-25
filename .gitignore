@@ -12,3 +12,5 @@ coverage
 .emulator-data/
 # Firebase emulator debug logs
 *-debug.log
+# Generated artifacts
+*.pdf
