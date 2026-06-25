@@ -76,6 +76,7 @@ const sampleQuestionIndexEntries = [
     id: 'qi-1',
     udaDir: 'UDA1',
     lessonFilename: 'lezione1.md',
+    poolStorageRef: 'gs://bucket/imports/imp-1/UDA1/lezione1.pool.md',
     questionLocalId: 'q1',
     tipo: 'chiusa_singola' as const,
     difficolta: 2 as const,
@@ -86,6 +87,7 @@ const sampleQuestionIndexEntries = [
     id: 'qi-2',
     udaDir: 'UDA1',
     lessonFilename: 'lezione2.md',
+    poolStorageRef: 'gs://bucket/imports/imp-1/UDA1/lezione2.pool.md',
     questionLocalId: 'q2',
     tipo: 'aperta' as const,
     difficolta: 3 as const,
@@ -93,6 +95,18 @@ const sampleQuestionIndexEntries = [
     maxPoints: 4,
   },
 ];
+
+const sampleQuestionRef = {
+  questionIndexEntryId: 'qi-1',
+  questionLocalId: 'q1',
+  udaDir: 'UDA1',
+  lessonFilename: 'lezione1.md',
+  poolStorageRef: 'gs://bucket/imports/imp-1/UDA1/lezione1.pool.md',
+  tipo: 'chiusa_singola' as const,
+  difficolta: 2 as const,
+  peso: 1 as const,
+  maxPoints: 2,
+};
 
 function setupDefaults() {
   mockListVerifications.mockResolvedValue([]);
@@ -256,11 +270,10 @@ describe('VerificationsView', () => {
     setupDefaults();
     const activeVer = makeDraftVer({
       status: 'active',
-      config: { ...makeDraftVer().config, questionRefs: [{ lessonId: 'qi-1', questionIndex: 0 }] },
+      config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] },
     });
-    mockListVerifications.mockResolvedValue([makeDraftVer()]);
-    mockActivateVerification.mockResolvedValue(undefined);
     mockListVerifications.mockResolvedValueOnce([makeDraftVer()]).mockResolvedValue([activeVer]);
+    mockActivateVerification.mockResolvedValue(undefined);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
     fireEvent.click(screen.getByText('Verifica Algebra'));
@@ -275,6 +288,29 @@ describe('VerificationsView', () => {
     );
   });
 
+  it('saves questionRefs with questionIndexEntryId and no question content', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
+    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
+
+    await waitFor(() => expect(mockUpdateVerificationConfig).toHaveBeenCalled());
+    const [, configArg] = mockUpdateVerificationConfig.mock.calls[0];
+    const ref = configArg.questionRefs[0];
+    expect(ref.questionIndexEntryId).toBe('qi-1');
+    expect(ref).not.toHaveProperty('questionText');
+    expect(ref).not.toHaveProperty('answers');
+    expect(ref).not.toHaveProperty('correctAnswer');
+    expect(ref).not.toHaveProperty('solution');
+    expect(ref).not.toHaveProperty('questionIndex');
+  });
+
   it('shows active verification as read-only after activation', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([
@@ -282,7 +318,7 @@ describe('VerificationsView', () => {
         status: 'active',
         config: {
           ...makeDraftVer().config,
-          questionRefs: [{ lessonId: 'qi-1', questionIndex: 0 }],
+          questionRefs: [sampleQuestionRef],
         },
       }),
     ]);
@@ -306,7 +342,7 @@ describe('VerificationsView', () => {
         status: 'active',
         config: {
           ...makeDraftVer().config,
-          questionRefs: [{ lessonId: 'qi-1', questionIndex: 0 }],
+          questionRefs: [sampleQuestionRef],
         },
       }),
     ]);
@@ -321,7 +357,7 @@ describe('VerificationsView', () => {
     setupDefaults();
     const activeVer = makeDraftVer({
       status: 'active',
-      config: { ...makeDraftVer().config, questionRefs: [{ lessonId: 'qi-1', questionIndex: 0 }] },
+      config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] },
     });
     const closedVer = { ...activeVer, status: 'closed' as const };
     mockListVerifications.mockResolvedValueOnce([activeVer]).mockResolvedValue([closedVer]);
@@ -351,5 +387,28 @@ describe('VerificationsView', () => {
     await waitFor(() => screen.getAllByText('chiusa').length >= 1);
     expect(screen.queryByRole('button', { name: /attiva verifica/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /chiudi verifica/i })).toBeNull();
+  });
+
+  it('draft title/class edit calls updateVerificationConfig', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+
+    await waitFor(() => screen.getByLabelText(/titolo bozza/i));
+    fireEvent.change(screen.getByLabelText(/titolo bozza/i), {
+      target: { value: 'Verifica Modificata' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /salva bozza/i }));
+
+    await waitFor(() =>
+      expect(mockUpdateVerificationConfig).toHaveBeenCalledWith(
+        'ver-1',
+        expect.objectContaining({ title: 'Verifica Modificata' }),
+        'owner-uid',
+        {},
+      ),
+    );
   });
 });

@@ -42,7 +42,19 @@ const VALID_CONFIG: VerificationConfig = {
   classId: 'class-1',
   programId: 'prog-1',
   importId: 'imp-1',
-  questionRefs: [{ lessonId: 'lesson-1', questionIndex: 0 }],
+  questionRefs: [
+    {
+      questionIndexEntryId: 'qi-1',
+      questionLocalId: 'q1',
+      udaDir: 'UDA1',
+      lessonFilename: 'lezione1.md',
+      poolStorageRef: 'gs://bucket/imports/imp-1/UDA1/lezione1.pool.md',
+      tipo: 'chiusa_singola',
+      difficolta: 2,
+      peso: 1,
+      maxPoints: 2,
+    },
+  ],
 };
 
 beforeEach(() => {
