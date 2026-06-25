@@ -6,3 +6,5 @@ lib
 .env.local
 *.local
 coverage
+# Firebase emulator export data
+.emulator-data/

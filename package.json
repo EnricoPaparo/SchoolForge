@@ -10,7 +10,10 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,yaml,yml}\" --ignore-path .prettierignore",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md,yaml,yml}\" --ignore-path .prettierignore",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "emulators": "firebase emulators:start --project dev",
+    "emulators:export": "firebase emulators:start --project dev --export-on-exit .emulator-data --import .emulator-data",
+    "firebase:use:dev": "firebase use dev"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
