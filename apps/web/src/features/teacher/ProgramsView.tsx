@@ -10,8 +10,12 @@ import {
   type ProgramItem,
   type UdaItem,
 } from '../repository/programs/programsService.js';
-import { db } from '../../lib/firebase.js';
+import { db, storage } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
+import { MarkdownRenderer } from './MarkdownRenderer.js';
+import { fetchLessonContent } from './lessonContent.js';
+import { exportZip } from './exportZip.js';
+import { downloadMarkdown, downloadPdf, generateMarkdown } from './programmaSvolto.js';
 
 export function ProgramsView() {
   const { user } = useAuth();
@@ -26,11 +30,21 @@ export function ProgramsView() {
   const [selectedUdaDir, setSelectedUdaDir] = useState<string | null>(null);
   const [lessons, setLessons] = useState<LessonItem[] | null>(null);
 
+  const [selectedLesson, setSelectedLesson] = useState<LessonItem | null>(null);
+  const [lessonContent, setLessonContent] = useState<string | null>(null);
+  const [lessonContentError, setLessonContentError] = useState<string | null>(null);
+  const [lessonContentLoading, setLessonContentLoading] = useState(false);
+
   const [newTitle, setNewTitle] = useState('');
   const [creating, setCreating] = useState(false);
 
   const [editTitle, setEditTitle] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const [exportingZip, setExportingZip] = useState(false);
+  const [exportZipError, setExportZipError] = useState<string | null>(null);
+
+  const [pdfDownloading, setPdfDownloading] = useState(false);
 
   useEffect(() => {
     void loadPrograms();
@@ -52,6 +66,10 @@ export function ProgramsView() {
     setLessons(null);
     setUdas(null);
     setEditTitle(null);
+    setSelectedLesson(null);
+    setLessonContent(null);
+    setLessonContentError(null);
+    setExportZipError(null);
     if (!p.activeImportId) return;
     try {
       const list = await listUdas(p.id, p.activeImportId, db);
@@ -65,11 +83,29 @@ export function ProgramsView() {
     if (!selectedProgram?.activeImportId) return;
     setSelectedUdaDir(udaDir);
     setLessons(null);
+    setSelectedLesson(null);
+    setLessonContent(null);
+    setLessonContentError(null);
     try {
       const all = await listLessons(selectedProgram.id, selectedProgram.activeImportId, db);
       setLessons(all.filter((l) => l.udaDir === udaDir));
     } catch {
       setLessons([]);
+    }
+  }
+
+  async function handleSelectLesson(lesson: LessonItem) {
+    setSelectedLesson(lesson);
+    setLessonContent(null);
+    setLessonContentError(null);
+    setLessonContentLoading(true);
+    try {
+      const content = await fetchLessonContent(lesson.storageRef, storage);
+      setLessonContent(content);
+    } catch {
+      setLessonContentError('Impossibile caricare il contenuto della lezione.');
+    } finally {
+      setLessonContentLoading(false);
     }
   }
 
@@ -116,6 +152,46 @@ export function ProgramsView() {
       db,
     );
     setLessons((prev) => prev?.map((l) => (l.id === lesson.id ? { ...l, completed } : l)) ?? null);
+  }
+
+  async function handleExportZip() {
+    if (!selectedProgram) return;
+    setExportingZip(true);
+    setExportZipError(null);
+    try {
+      await exportZip(selectedProgram, storage, db);
+    } catch {
+      setExportZipError('Impossibile esportare il ZIP.');
+    } finally {
+      setExportingZip(false);
+    }
+  }
+
+  async function handleDownloadProgrammaSvoltoMd() {
+    if (!selectedProgram || !udas || !lessons) return;
+    const allLessons = await listLessons(
+      selectedProgram.id,
+      selectedProgram.activeImportId ?? '',
+      db,
+    );
+    const content = generateMarkdown(selectedProgram, udas, allLessons);
+    downloadMarkdown(content, `programma-svolto-${selectedProgram.title.replace(/\s+/g, '_')}.md`);
+  }
+
+  async function handleDownloadProgrammaSvoltoPdf() {
+    if (!selectedProgram || !udas) return;
+    setPdfDownloading(true);
+    try {
+      const allLessons = await listLessons(
+        selectedProgram.id,
+        selectedProgram.activeImportId ?? '',
+        db,
+      );
+      const content = generateMarkdown(selectedProgram, udas, allLessons);
+      await downloadPdf(content, `programma-svolto-${selectedProgram.title.replace(/\s+/g, '_')}`);
+    } finally {
+      setPdfDownloading(false);
+    }
   }
 
   if (loadError) return <p role="alert">{loadError}</p>;
@@ -176,6 +252,31 @@ export function ProgramsView() {
             </h2>
           )}
 
+          {selectedProgram.activeImportId && (
+            <div>
+              <button type="button" onClick={() => void handleExportZip()} disabled={exportingZip}>
+                {exportingZip ? 'Esportazione…' : 'Esporta ZIP'}
+              </button>
+              {exportZipError && <p role="alert">{exportZipError}</p>}
+
+              <button
+                type="button"
+                onClick={() => void handleDownloadProgrammaSvoltoMd()}
+                disabled={!udas}
+              >
+                Programma svolto (MD)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleDownloadProgrammaSvoltoPdf()}
+                disabled={!udas || pdfDownloading}
+              >
+                {pdfDownloading ? 'Generazione PDF…' : 'Programma svolto (PDF)'}
+              </button>
+            </div>
+          )}
+
           {!selectedProgram.activeImportId ? (
             <p>Nessun import attivo per questo programma.</p>
           ) : udas === null ? (
@@ -218,11 +319,28 @@ export function ProgramsView() {
                               checked={l.completed ?? false}
                               onChange={() => void handleToggleLesson(l)}
                             />
-                            {l.filename}
+                            <button
+                              type="button"
+                              onClick={() => void handleSelectLesson(l)}
+                              aria-pressed={selectedLesson?.id === l.id}
+                            >
+                              {l.filename}
+                            </button>
                           </label>
                         </li>
                       ))}
                     </ul>
+                  )}
+
+                  {selectedLesson && (
+                    <div>
+                      <h5>{selectedLesson.filename}</h5>
+                      {lessonContentLoading && <p aria-busy="true">Caricamento contenuto…</p>}
+                      {lessonContentError && <p role="alert">{lessonContentError}</p>}
+                      {lessonContent !== null && !lessonContentLoading && (
+                        <MarkdownRenderer markdown={lessonContent} />
+                      )}
+                    </div>
                   )}
                 </div>
               )}
