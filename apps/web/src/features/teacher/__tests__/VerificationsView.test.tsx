@@ -118,6 +118,7 @@ const sampleQuestionRef = {
 };
 
 function setupDefaults() {
+  vi.clearAllMocks();
   mockListVerifications.mockResolvedValue([]);
   mockListPrograms.mockResolvedValue([sampleProgram]);
   mockListClasses.mockResolvedValue([sampleClass]);
@@ -477,6 +478,28 @@ describe('VerificationsView', () => {
       [fakeQuestion],
       'Classe 3A',
     );
+  });
+
+  it('shows error and does not call services when active verification has no teacherSnapshot', async () => {
+    setupDefaults();
+    const activeVerNoSnapshot = makeDraftVer({
+      status: 'active',
+      config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] },
+      teacherSnapshot: null,
+    });
+    mockListVerifications.mockResolvedValue([activeVerNoSnapshot]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf/i }));
+
+    await waitFor(() => screen.getByRole('alert'));
+    expect(screen.getByRole('alert').textContent).toMatch(
+      /snapshot della verifica non disponibile/i,
+    );
+    expect(mockLoadSelectedQuestions).not.toHaveBeenCalled();
+    expect(mockDownloadStudentPdf).not.toHaveBeenCalled();
   });
 
   it('shows error message when loadSelectedQuestions fails', async () => {

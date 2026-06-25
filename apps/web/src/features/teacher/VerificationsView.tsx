@@ -227,7 +227,10 @@ export function VerificationsView() {
     setPdfError(null);
     try {
       const snapshot = selectedVer.teacherSnapshot;
-      if (!snapshot) return;
+      if (!snapshot) {
+        setPdfError('Snapshot della verifica non disponibile. Riattiva o ricrea la verifica.');
+        return;
+      }
       const refs = snapshot.questionRefs;
       const result = await loadSelectedQuestions(refs, storage);
       if (!result.ok) {
