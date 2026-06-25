@@ -10,3 +10,5 @@ functions/lib
 coverage
 # Firebase emulator export data
 .emulator-data/
+# Firebase emulator debug logs
+*-debug.log
