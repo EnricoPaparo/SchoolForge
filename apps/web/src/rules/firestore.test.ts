@@ -81,9 +81,9 @@ describe('settings/owner — read', () => {
 describe('programs', () => {
   it('allows owner to write and read programs', async () => {
     await seedOwner();
-    const ctx = testEnv.authenticatedContext(OWNER_UID);
-    await assertSucceeds(setDoc(doc(ctx.firestore(), 'programs/p1'), { title: 'Test' }));
-    await assertSucceeds(getDoc(doc(ctx.firestore(), 'programs/p1')));
+    const db = testEnv.authenticatedContext(OWNER_UID).firestore();
+    await assertSucceeds(setDoc(doc(db, 'programs/p1'), { title: 'Test' }));
+    await assertSucceeds(getDoc(doc(db, 'programs/p1')));
   });
 
   it('denies a different authenticated user from reading programs', async () => {
@@ -118,11 +118,9 @@ describe('programs', () => {
 describe('auditEvents', () => {
   it('allows owner to write and read audit events', async () => {
     await seedOwner();
-    const ctx = testEnv.authenticatedContext(OWNER_UID);
-    await assertSucceeds(
-      setDoc(doc(ctx.firestore(), 'auditEvents/evt-1'), { action: 'auth.signIn' }),
-    );
-    await assertSucceeds(getDoc(doc(ctx.firestore(), 'auditEvents/evt-1')));
+    const db = testEnv.authenticatedContext(OWNER_UID).firestore();
+    await assertSucceeds(setDoc(doc(db, 'auditEvents/evt-1'), { action: 'auth.signIn' }));
+    await assertSucceeds(getDoc(doc(db, 'auditEvents/evt-1')));
   });
 
   it('denies other authenticated user from writing audit events', async () => {
@@ -163,8 +161,8 @@ describe('default deny', () => {
   });
 
   it('denies unauthenticated access to any path', async () => {
-    const ctx = testEnv.unauthenticatedContext();
-    await assertFails(getDoc(doc(ctx.firestore(), 'programs/p1')));
-    await assertFails(getDoc(doc(ctx.firestore(), 'anything/doc-1')));
+    const db = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(db, 'programs/p1')));
+    await assertFails(getDoc(doc(db, 'anything/doc-1')));
   });
 });
