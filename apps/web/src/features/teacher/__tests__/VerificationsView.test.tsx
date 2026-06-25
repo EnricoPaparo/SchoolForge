@@ -14,7 +14,16 @@ const mockListQuestionIndex = vi.fn();
 const mockListPrograms = vi.fn();
 const mockListClasses = vi.fn();
 
-vi.mock('../../../lib/firebase.js', () => ({ db: {} }));
+const mockLoadSelectedQuestions = vi.fn();
+const mockDownloadStudentPdf = vi.fn();
+
+vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
+vi.mock('../../repository/verifications/loadSelectedQuestions.js', () => ({
+  loadSelectedQuestions: (...args: unknown[]) => mockLoadSelectedQuestions(...args),
+}));
+vi.mock('../../repository/verifications/verificationPdf.js', () => ({
+  downloadStudentPdf: (...args: unknown[]) => mockDownloadStudentPdf(...args),
+}));
 vi.mock('../../../lib/auth.js', () => ({
   useAuth: () => ({ user: { uid: 'owner-uid' } }),
 }));
@@ -109,6 +118,7 @@ const sampleQuestionRef = {
 };
 
 function setupDefaults() {
+  vi.clearAllMocks();
   mockListVerifications.mockResolvedValue([]);
   mockListPrograms.mockResolvedValue([sampleProgram]);
   mockListClasses.mockResolvedValue([sampleClass]);
@@ -116,6 +126,8 @@ function setupDefaults() {
   mockUpdateVerificationConfig.mockResolvedValue(undefined);
   mockActivateVerification.mockResolvedValue(undefined);
   mockCloseVerification.mockResolvedValue(undefined);
+  mockLoadSelectedQuestions.mockResolvedValue({ ok: true, questions: [] });
+  mockDownloadStudentPdf.mockResolvedValue(undefined);
 }
 
 describe('VerificationsView', () => {
@@ -387,6 +399,134 @@ describe('VerificationsView', () => {
     await waitFor(() => screen.getAllByText('chiusa').length >= 1);
     expect(screen.queryByRole('button', { name: /attiva verifica/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /chiudi verifica/i })).toBeNull();
+  });
+
+  it('active verification shows Scarica PDF button', async () => {
+    setupDefaults();
+    const activeVer = makeDraftVer({
+      status: 'active',
+      config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] },
+      teacherSnapshot: {
+        title: 'Verifica Algebra',
+        classId: 'cls-1',
+        className: 'Classe 3A',
+        programId: 'prog-1',
+        importId: 'imp-1',
+        questionRefs: [sampleQuestionRef],
+        activatedAt: null,
+      },
+    });
+    mockListVerifications.mockResolvedValue([activeVer]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf/i }));
+    expect(screen.getByRole('button', { name: /scarica pdf/i })).toBeTruthy();
+  });
+
+  it('draft verification does not show Scarica PDF button', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByRole('button', { name: /attiva verifica/i }));
+    expect(screen.queryByRole('button', { name: /scarica pdf/i })).toBeNull();
+  });
+
+  it('closed verification does not show Scarica PDF button', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer({ status: 'closed', config: { ...makeDraftVer().config, questionRefs: [] } }),
+    ]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getAllByText('chiusa').length >= 1);
+    expect(screen.queryByRole('button', { name: /scarica pdf/i })).toBeNull();
+  });
+
+  it('clicking Scarica PDF calls loadSelectedQuestions and downloadStudentPdf', async () => {
+    setupDefaults();
+    const teacherSnapshot = {
+      title: 'Verifica Algebra',
+      classId: 'cls-1',
+      className: 'Classe 3A',
+      programId: 'prog-1',
+      importId: 'imp-1',
+      questionRefs: [sampleQuestionRef],
+      activatedAt: null,
+    };
+    const activeVer = makeDraftVer({
+      status: 'active',
+      config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] },
+      teacherSnapshot,
+    });
+    mockListVerifications.mockResolvedValue([activeVer]);
+    const fakeQuestion = { ref: sampleQuestionRef, testo: 'Domanda?', tipo: 'aperta' as const };
+    mockLoadSelectedQuestions.mockResolvedValue({ ok: true, questions: [fakeQuestion] });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf/i }));
+
+    await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
+    expect(mockLoadSelectedQuestions).toHaveBeenCalledWith([sampleQuestionRef], {});
+    expect(mockDownloadStudentPdf).toHaveBeenCalledWith(
+      teacherSnapshot,
+      [fakeQuestion],
+      'Classe 3A',
+    );
+  });
+
+  it('shows error and does not call services when active verification has no teacherSnapshot', async () => {
+    setupDefaults();
+    const activeVerNoSnapshot = makeDraftVer({
+      status: 'active',
+      config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] },
+      teacherSnapshot: null,
+    });
+    mockListVerifications.mockResolvedValue([activeVerNoSnapshot]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf/i }));
+
+    await waitFor(() => screen.getByRole('alert'));
+    expect(screen.getByRole('alert').textContent).toMatch(
+      /snapshot della verifica non disponibile/i,
+    );
+    expect(mockLoadSelectedQuestions).not.toHaveBeenCalled();
+    expect(mockDownloadStudentPdf).not.toHaveBeenCalled();
+  });
+
+  it('shows error message when loadSelectedQuestions fails', async () => {
+    setupDefaults();
+    const activeVer = makeDraftVer({
+      status: 'active',
+      config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] },
+      teacherSnapshot: {
+        title: 'Verifica Algebra',
+        classId: 'cls-1',
+        className: 'Classe 3A',
+        programId: 'prog-1',
+        importId: 'imp-1',
+        questionRefs: [sampleQuestionRef],
+        activatedAt: null,
+      },
+    });
+    mockListVerifications.mockResolvedValue([activeVer]);
+    mockLoadSelectedQuestions.mockResolvedValue({ ok: false, error: 'Pool non trovato: gs://...' });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf/i }));
+
+    await waitFor(() => screen.getByRole('alert'));
+    expect(screen.getByRole('alert').textContent).toMatch(/pool non trovato/i);
   });
 
   it('draft title/class edit calls updateVerificationConfig', async () => {
