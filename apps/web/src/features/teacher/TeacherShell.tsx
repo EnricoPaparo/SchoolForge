@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
 import { ProgramsView } from './ProgramsView.js';
+import { TemplateKitView } from './TemplateKitView.js';
 
 type Section = 'repository' | 'programmi' | 'verifiche' | 'impostazioni';
 
@@ -40,7 +41,9 @@ export function TeacherShell() {
       </nav>
       <main>
         <h1>{activeLabel}</h1>
-        {activeSection === 'programmi' ? (
+        {activeSection === 'repository' ? (
+          <TemplateKitView />
+        ) : activeSection === 'programmi' ? (
           <ProgramsView />
         ) : (
           <p>Funzione non ancora implementata.</p>
