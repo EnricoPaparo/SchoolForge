@@ -1,0 +1,100 @@
+/* ── Readiness dashboard ───────────────────────────────────────── */
+.section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+}
+
+.title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-muted);
+  margin-bottom: 0.875rem;
+}
+
+.overallRow {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-bottom: 1rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.capList {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.capItem {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.capOk {
+  color: var(--color-success);
+}
+
+.capNo {
+  color: var(--color-error);
+}
+
+.checkList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.checkItem {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.checkIcon {
+  flex-shrink: 0;
+  font-size: 0.875rem;
+}
+
+.checkIconOk {
+  color: var(--color-success);
+}
+
+.checkIconWarning {
+  color: var(--color-warning);
+}
+
+.checkIconError {
+  color: var(--color-error);
+}
+
+.checkLabel {
+  flex: 1;
+  color: var(--color-text);
+}
+
+.checkValue {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+
+.checkDetail {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}

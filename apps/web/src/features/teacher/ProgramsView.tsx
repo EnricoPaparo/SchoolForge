@@ -17,6 +17,7 @@ import { fetchLessonContent } from './lessonContent.js';
 import { exportZip } from './exportZip.js';
 import { downloadMarkdown, downloadPdf, generateMarkdown } from './programmaSvolto.js';
 import { ReadinessView } from './ReadinessView.js';
+import styles from './ProgramsView.module.css';
 
 export function ProgramsView() {
   const { user } = useAuth();
@@ -203,20 +204,34 @@ export function ProgramsView() {
     }
   }
 
-  if (loadError) return <p role="alert">{loadError}</p>;
-  if (programs === null) return <p aria-busy="true">Caricamento…</p>;
+  if (loadError)
+    return (
+      <p role="alert" className="text-error">
+        {loadError}
+      </p>
+    );
+  if (programs === null)
+    return (
+      <p aria-busy="true" className="state-loading">
+        Caricamento…
+      </p>
+    );
 
   return (
-    <section aria-label="Programmi">
-      <div>
-        <h2>Programmi</h2>
-        {programs.length === 0 && <p>Nessun programma. Creane uno.</p>}
+    <section aria-label="Programmi" className={styles.container}>
+      {/* ── Sidebar: program list + create form ── */}
+      <aside className={styles.sidebar}>
+        <h2 className={styles.sidebarTitle}>Programmi</h2>
+
+        {programs.length === 0 && <p className="state-empty">Nessun programma. Creane uno.</p>}
+
         {programs.length > 0 && (
-          <ul>
+          <ul className={styles.programList}>
             {programs.map((p) => (
-              <li key={p.id}>
+              <li key={p.id} className={styles.programItem}>
                 <button
                   type="button"
+                  className={styles.programBtn}
                   aria-pressed={selectedProgram?.id === p.id}
                   onClick={() => void handleSelectProgram(p)}
                 >
@@ -226,24 +241,40 @@ export function ProgramsView() {
             ))}
           </ul>
         )}
-        <form onSubmit={(e) => void handleCreate(e)}>
-          <label>
+
+        <form className={styles.createForm} onSubmit={(e) => void handleCreate(e)}>
+          <label className={styles.createLabel} htmlFor="new-program-title">
             Titolo nuovo programma
-            <input type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
           </label>
-          <button type="submit" disabled={creating || !newTitle.trim()}>
+          <input
+            id="new-program-title"
+            type="text"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+          />
+          <button
+            type="submit"
+            className={styles.createBtn}
+            disabled={creating || !newTitle.trim()}
+          >
             {creating ? 'Creazione…' : 'Crea programma'}
           </button>
         </form>
-      </div>
+      </aside>
 
+      {/* ── Detail panel ── */}
       {selectedProgram && (
-        <div>
+        <div className={styles.detail}>
+          {/* Program title */}
           {editTitle !== null ? (
-            <form onSubmit={(e) => void handleSaveTitle(e)}>
-              <label>
+            <form className={styles.editTitleForm} onSubmit={(e) => void handleSaveTitle(e)}>
+              <label htmlFor="edit-program-title">
                 Modifica titolo
-                <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+                <input
+                  id="edit-program-title"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                />
               </label>
               <button type="submit" disabled={saving || !editTitle.trim()}>
                 Salva
@@ -253,20 +284,21 @@ export function ProgramsView() {
               </button>
             </form>
           ) : (
-            <h2>
-              {selectedProgram.title}
+            <div className={styles.programHeader}>
+              <h2 className={styles.programTitle}>{selectedProgram.title}</h2>
               <button type="button" onClick={() => setEditTitle(selectedProgram.title)}>
                 Modifica titolo
               </button>
-            </h2>
+            </div>
           )}
 
+          {/* Export toolbar */}
           {selectedProgram.activeImportId && (
-            <div>
+            <div className={styles.exportBar}>
+              <span className={styles.exportBarLabel}>Esporta</span>
               <button type="button" onClick={() => void handleExportZip()} disabled={exportingZip}>
                 {exportingZip ? 'Esportazione…' : 'Esporta ZIP'}
               </button>
-              {exportZipError && <p role="alert">{exportZipError}</p>}
 
               <button
                 type="button"
@@ -283,24 +315,34 @@ export function ProgramsView() {
               >
                 {pdfDownloading ? 'Generazione PDF…' : 'Programma svolto (PDF)'}
               </button>
+
+              {exportZipError && (
+                <p role="alert" className="text-error">
+                  {exportZipError}
+                </p>
+              )}
             </div>
           )}
 
+          {/* UDA + Lesson content */}
           {!selectedProgram.activeImportId ? (
-            <p>Nessun import attivo per questo programma.</p>
+            <p className="state-empty">Nessun import attivo per questo programma.</p>
           ) : udas === null ? (
-            <p aria-busy="true">Caricamento UDA…</p>
+            <p aria-busy="true" className="state-loading">
+              Caricamento UDA…
+            </p>
           ) : (
-            <div>
-              <h3>UDA</h3>
+            <div className={styles.contentPanel}>
+              <h3 className={styles.udaTitle}>UDA</h3>
               {udas.length === 0 ? (
-                <p>Nessuna UDA.</p>
+                <p className="state-empty">Nessuna UDA.</p>
               ) : (
-                <ul>
+                <ul className={styles.udaList}>
                   {udas.map((u) => (
                     <li key={u.id}>
                       <button
                         type="button"
+                        className={styles.udaBtn}
                         aria-pressed={selectedUdaDir === u.dir}
                         onClick={() => void handleSelectUda(u.dir)}
                       >
@@ -312,40 +354,54 @@ export function ProgramsView() {
               )}
 
               {selectedUdaDir && (
-                <div>
-                  <h4>Lezioni — {selectedUdaDir}</h4>
+                <div className={styles.lessonSection}>
+                  <h4 className={styles.lessonTitle}>Lezioni — {selectedUdaDir}</h4>
                   {lessons === null ? (
-                    <p aria-busy="true">Caricamento lezioni…</p>
+                    <p aria-busy="true" className="state-loading">
+                      Caricamento lezioni…
+                    </p>
                   ) : lessons.length === 0 ? (
-                    <p>Nessuna lezione.</p>
+                    <p className="state-empty">Nessuna lezione.</p>
                   ) : (
-                    <ul>
+                    <ul className={styles.lessonList}>
                       {lessons.map((l) => (
-                        <li key={l.id}>
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={l.completed ?? false}
-                              onChange={() => void handleToggleLesson(l)}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => void handleSelectLesson(l)}
-                              aria-pressed={selectedLesson?.id === l.id}
-                            >
-                              {l.filename}
-                            </button>
-                          </label>
+                        <li
+                          key={l.id}
+                          className={`${styles.lessonRow}${l.completed ? ` ${styles.lessonCompleted}` : ''}`}
+                        >
+                          <input
+                            type="checkbox"
+                            id={`lesson-check-${l.id}`}
+                            checked={l.completed ?? false}
+                            onChange={() => void handleToggleLesson(l)}
+                            aria-label={`Segna ${l.filename} come svolta`}
+                          />
+                          <button
+                            type="button"
+                            className={styles.lessonBtn}
+                            onClick={() => void handleSelectLesson(l)}
+                            aria-pressed={selectedLesson?.id === l.id}
+                          >
+                            {l.filename}
+                          </button>
                         </li>
                       ))}
                     </ul>
                   )}
 
                   {selectedLesson && (
-                    <div>
-                      <h5>{selectedLesson.filename}</h5>
-                      {lessonContentLoading && <p aria-busy="true">Caricamento contenuto…</p>}
-                      {lessonContentError && <p role="alert">{lessonContentError}</p>}
+                    <div className={styles.lessonContentPanel}>
+                      <h5 className={styles.lessonContentTitle}>{selectedLesson.filename}</h5>
+                      {lessonContentLoading && (
+                        <p aria-busy="true" className="state-loading">
+                          Caricamento contenuto…
+                        </p>
+                      )}
+                      {lessonContentError && (
+                        <p role="alert" className="text-error">
+                          {lessonContentError}
+                        </p>
+                      )}
                       {lessonContent !== null && !lessonContentLoading && (
                         <MarkdownRenderer markdown={lessonContent} />
                       )}
@@ -355,6 +411,7 @@ export function ProgramsView() {
               )}
             </div>
           )}
+
           <ReadinessView program={selectedProgram} udas={udas} lessons={allLessons} />
         </div>
       )}

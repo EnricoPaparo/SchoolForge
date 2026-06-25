@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { downloadKitZip, downloadTemplate, TEMPLATES } from './templateKit.js';
+import styles from './TemplateKitView.module.css';
 
 export function TemplateKitView() {
   const [zipping, setZipping] = useState(false);
@@ -18,22 +19,40 @@ export function TemplateKitView() {
   }
 
   return (
-    <section aria-label="Kit template">
+    <section aria-label="Kit template" className={styles.section}>
       <h3>Kit template</h3>
-      <p>Scarica i file template per preparare il tuo repository didattico.</p>
-      <ul>
+      <p className={styles.intro}>
+        Scarica i file template per preparare il tuo repository didattico.
+      </p>
+
+      <ul className={styles.templateList}>
         {TEMPLATES.map((t) => (
-          <li key={t.filename}>
-            <button type="button" onClick={() => downloadTemplate(t.filename)}>
+          <li key={t.filename} className={styles.templateItem}>
+            <span className={styles.templateName}>{t.name}</span>
+            <button
+              type="button"
+              className={styles.downloadBtn}
+              onClick={() => downloadTemplate(t.filename)}
+            >
               Scarica {t.name}
             </button>
           </li>
         ))}
       </ul>
-      <button type="button" onClick={() => void handleDownloadZip()} disabled={zipping}>
+
+      <button
+        type="button"
+        className={styles.zipBtn}
+        onClick={() => void handleDownloadZip()}
+        disabled={zipping}
+      >
         {zipping ? 'Generazione ZIP…' : 'Scarica kit completo (ZIP)'}
       </button>
-      {zipError && <p role="alert">{zipError}</p>}
+      {zipError && (
+        <p role="alert" className={styles.errorMsg}>
+          {zipError}
+        </p>
+      )}
     </section>
   );
 }

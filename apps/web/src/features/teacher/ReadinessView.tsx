@@ -1,5 +1,6 @@
 import type { LessonItem, ProgramItem, UdaItem } from '../repository/programs/programsService.js';
 import { computeReadiness, type ReadinessStatus } from '../repository/readiness/readinessReport.js';
+import styles from './ReadinessView.module.css';
 
 type Props = {
   program: ProgramItem | null;
@@ -7,10 +8,10 @@ type Props = {
   lessons: LessonItem[] | null;
 };
 
-function statusIcon(status: ReadinessStatus): string {
-  if (status === 'ok') return '✓';
-  if (status === 'warning') return '⚠';
-  return '✗';
+function statusBadgeClass(status: ReadinessStatus): string {
+  if (status === 'ok') return 'badge badge-ok';
+  if (status === 'warning') return 'badge badge-warning';
+  return 'badge badge-error';
 }
 
 function statusLabel(status: ReadinessStatus): string {
@@ -19,11 +20,25 @@ function statusLabel(status: ReadinessStatus): string {
   return 'Bloccato';
 }
 
+function checkIconClass(status: ReadinessStatus): string {
+  if (status === 'ok') return styles.checkIconOk;
+  if (status === 'warning') return styles.checkIconWarning;
+  return styles.checkIconError;
+}
+
+function checkIconSymbol(status: ReadinessStatus): string {
+  if (status === 'ok') return '✓';
+  if (status === 'warning') return '⚠';
+  return '✗';
+}
+
 export function ReadinessView({ program, udas, lessons }: Props) {
   if (udas == null || lessons == null) {
     return (
-      <section aria-label="Dashboard di prontezza">
-        <p aria-busy="true">Caricamento dati prontezza…</p>
+      <section aria-label="Dashboard di prontezza" className={styles.section}>
+        <p aria-busy="true" className="state-loading">
+          Caricamento dati prontezza…
+        </p>
       </section>
     );
   }
@@ -37,23 +52,48 @@ export function ReadinessView({ program, udas, lessons }: Props) {
   });
 
   return (
-    <section aria-label="Dashboard di prontezza">
-      <h3>Prontezza repository</h3>
-      <p>
-        <strong>Stato complessivo:</strong> {statusIcon(report.overallStatus)}{' '}
-        {statusLabel(report.overallStatus)}
-      </p>
-      <ul aria-label="Capacità disponibili">
-        <li>Consultazione lezioni: {report.canConsultLessons ? '✓' : '✗'}</li>
-        <li>Export programma svolto: {report.canExportProgrammaSvolto ? '✓' : '✗'}</li>
-        <li>Generazione verifiche: {report.canGenerateVerifiche ? '✓' : '✗'}</li>
+    <section aria-label="Dashboard di prontezza" className={styles.section}>
+      <h3 className={styles.title}>Prontezza repository</h3>
+
+      <div className={styles.overallRow}>
+        <strong>Stato complessivo:</strong>
+        <span className={statusBadgeClass(report.overallStatus)}>
+          {statusLabel(report.overallStatus)}
+        </span>
+      </div>
+
+      <ul aria-label="Capacità disponibili" className={styles.capList}>
+        <li className={styles.capItem}>
+          <span className={report.canConsultLessons ? styles.capOk : styles.capNo}>
+            {report.canConsultLessons ? '✓' : '✗'}
+          </span>
+          Consultazione lezioni
+        </li>
+        <li className={styles.capItem}>
+          <span className={report.canExportProgrammaSvolto ? styles.capOk : styles.capNo}>
+            {report.canExportProgrammaSvolto ? '✓' : '✗'}
+          </span>
+          Export programma svolto
+        </li>
+        <li className={styles.capItem}>
+          <span className={report.canGenerateVerifiche ? styles.capOk : styles.capNo}>
+            {report.canGenerateVerifiche ? '✓' : '✗'}
+          </span>
+          Generazione verifiche
+        </li>
       </ul>
-      <ul aria-label="Controlli di prontezza">
+
+      <ul aria-label="Controlli di prontezza" className={styles.checkList}>
         {report.checks.map((check) => (
-          <li key={check.id}>
-            {statusIcon(check.status)} {check.label}
-            {check.value !== undefined && <span> ({check.value})</span>}
-            {check.detail && <span>: {check.detail}</span>}
+          <li key={check.id} className={styles.checkItem}>
+            <span className={`${styles.checkIcon} ${checkIconClass(check.status)}`}>
+              {checkIconSymbol(check.status)}
+            </span>
+            <span className={styles.checkLabel}>{check.label}</span>
+            {check.value !== undefined && (
+              <span className={styles.checkValue}>({check.value})</span>
+            )}
+            {check.detail && <span className={styles.checkDetail}>: {check.detail}</span>}
           </li>
         ))}
       </ul>

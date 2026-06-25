@@ -3,6 +3,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import { OwnerSetup } from './OwnerSetup.js';
+import styles from './OwnerSetup.module.css';
 
 type GateState = 'loading' | 'owner' | 'setup';
 
@@ -31,9 +32,13 @@ export function OwnerGate({ children }: { children: ReactNode }) {
 
   if (state === 'loading') {
     return (
-      <main>
-        <p aria-busy="true">Caricamento…</p>
-      </main>
+      <div className={styles.loadingScreen}>
+        <main>
+          <p className={styles.loadingText} aria-busy="true">
+            Caricamento…
+          </p>
+        </main>
+      </div>
     );
   }
 

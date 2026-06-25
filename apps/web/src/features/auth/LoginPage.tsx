@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
+import styles from './LoginPage.module.css';
 
 export function LoginPage() {
   const { signIn } = useAuth();
@@ -22,27 +23,47 @@ export function LoginPage() {
   };
 
   return (
-    <div>
-      <h1>SchoolForge</h1>
-      <form onSubmit={(e) => void handleSubmit(e)}>
-        <label>
-          Email
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        </label>
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </label>
-        {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={submitting}>
-          {submitting ? 'Accesso…' : 'Accedi'}
-        </button>
-      </form>
+    <div className={styles.page}>
+      <div className={styles.card}>
+        <h1 className={styles.title}>SchoolForge</h1>
+        <p className={styles.subtitle}>Accedi al portale docente</p>
+        <form className={styles.form} onSubmit={(e) => void handleSubmit(e)}>
+          <div className={styles.fieldGroup}>
+            <label className={styles.label} htmlFor="login-email">
+              Email
+            </label>
+            <input
+              id="login-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+            />
+          </div>
+          <div className={styles.fieldGroup}>
+            <label className={styles.label} htmlFor="login-password">
+              Password
+            </label>
+            <input
+              id="login-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+            />
+          </div>
+          {error && (
+            <p role="alert" className={styles.errorMsg}>
+              {error}
+            </p>
+          )}
+          <button type="submit" className={styles.submitBtn} disabled={submitting}>
+            {submitting ? 'Accesso…' : 'Accedi'}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

@@ -22,5 +22,5 @@ export function MarkdownRenderer({ markdown }: MarkdownRendererProps) {
     ADD_ATTR: ['target', 'rel'],
   });
 
-  return <div dangerouslySetInnerHTML={{ __html: safeHtml }} />;
+  return <div className="prose" dangerouslySetInnerHTML={{ __html: safeHtml }} />;
 }
