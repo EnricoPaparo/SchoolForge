@@ -18,6 +18,15 @@ vi.mock('../../../lib/auth.js', () => ({
     signOut: mockSignOut,
   }),
 }));
+vi.mock('../../repository/verifications/verificationsService.js', () => ({
+  listVerifications: vi.fn().mockResolvedValue([]),
+}));
+vi.mock('../../repository/classes/classesService.js', () => ({
+  listClasses: vi.fn().mockResolvedValue([]),
+}));
+vi.mock('../../repository/programs/programsService.js', () => ({
+  listPrograms: vi.fn().mockResolvedValue([]),
+}));
 
 describe('TeacherShell', () => {
   it('renders user email in header', () => {
