@@ -1,4 +1,4 @@
-import type { Timestamp } from 'firebase/firestore';
+import type { FieldValue, Timestamp } from 'firebase/firestore';
 
 export interface OwnerSettings {
   ownerUid: string;
@@ -12,7 +12,13 @@ export type AuditAction =
   | 'import.committed'
   | 'program.created'
   | 'program.updated'
-  | 'lesson.completed';
+  | 'lesson.completed'
+  | 'class.created'
+  | 'class.updated'
+  | 'verification.created'
+  | 'verification.updated'
+  | 'verification.activated'
+  | 'verification.closed';
 
 export interface AuditEvent {
   actorUid: string;
@@ -97,3 +103,52 @@ export interface StoredValidationIssue {
   code: string;
   message: string;
 }
+
+// ─── M2-A — Classes & Verifications ──────────────────────────────────────────
+
+export type ClassDoc = {
+  ownerUid: string;
+  name: string;
+  description: string | null;
+  createdAt: Timestamp | FieldValue;
+  updatedAt: Timestamp | FieldValue;
+};
+
+export type VerificationStatus = 'draft' | 'active' | 'closed';
+
+export type VerificationQuestionRef = {
+  lessonId: string;
+  questionIndex: number; // position in pool
+  questionText?: never; // NEVER store question text or solutions here
+};
+
+export type VerificationConfig = {
+  title: string;
+  classId: string | null;
+  programId: string;
+  importId: string;
+  questionRefs: VerificationQuestionRef[];
+  questionsPerStudent?: number | null;
+};
+
+/** Teacher-side full snapshot (owner-only, set at activation) */
+export type VerificationTeacherSnapshot = {
+  title: string;
+  classId: string | null;
+  className: string | null;
+  programId: string;
+  importId: string;
+  questionRefs: VerificationQuestionRef[];
+  activatedAt: Timestamp;
+};
+
+export type VerificationDoc = {
+  ownerUid: string;
+  status: VerificationStatus;
+  config: VerificationConfig;
+  teacherSnapshot: VerificationTeacherSnapshot | null; // set at activation
+  createdAt: Timestamp | FieldValue;
+  updatedAt: Timestamp | FieldValue;
+  activatedAt: Timestamp | FieldValue | null;
+  closedAt: Timestamp | FieldValue | null;
+};
