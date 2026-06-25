@@ -26,6 +26,11 @@ service cloud.firestore {
     }
 
     // --- Teacher-owned collections ---
+    match /classes/{classId} {
+      allow read, write: if isOwner();
+      allow create: if request.auth != null && request.resource.data.ownerUid == request.auth.uid;
+    }
+
     match /programs/{docId} {
       allow read, write: if isOwner();
     }
