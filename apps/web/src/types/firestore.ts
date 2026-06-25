@@ -5,7 +5,14 @@ export interface OwnerSettings {
   createdAt: Timestamp;
 }
 
-export type AuditAction = 'owner.created' | 'auth.signIn' | 'auth.signOut' | 'import.committed';
+export type AuditAction =
+  | 'owner.created'
+  | 'auth.signIn'
+  | 'auth.signOut'
+  | 'import.committed'
+  | 'program.created'
+  | 'program.updated'
+  | 'lesson.completed';
 
 export interface AuditEvent {
   actorUid: string;
@@ -62,6 +69,9 @@ export interface LessonDoc {
   questionCount: number;
   storageRef: string;
   poolStorageRef: string | null;
+  /** Set by the teacher in M1-D to mark a lesson as completed. */
+  completed?: boolean;
+  completedAt?: Timestamp | null;
 }
 
 /** Stored at programs/{programId}/imports/{importId}/questionIndex/{entryId} */

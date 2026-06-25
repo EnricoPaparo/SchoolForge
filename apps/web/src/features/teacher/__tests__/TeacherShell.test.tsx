@@ -6,6 +6,7 @@ import { TeacherShell } from '../TeacherShell.js';
 
 const mockSignOut = vi.fn();
 
+vi.mock('../../../lib/firebase.js', () => ({ app: {}, auth: {}, db: {}, storage: {} }));
 vi.mock('../../../lib/auth.js', () => ({
   useAuth: () => ({
     user: { uid: 'owner-uid', email: 'teacher@test.com', displayName: null },

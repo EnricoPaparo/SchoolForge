@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
+import { ProgramsView } from './ProgramsView.js';
 
 type Section = 'repository' | 'programmi' | 'verifiche' | 'impostazioni';
 
@@ -39,7 +40,11 @@ export function TeacherShell() {
       </nav>
       <main>
         <h1>{activeLabel}</h1>
-        <p>Funzione non ancora implementata.</p>
+        {activeSection === 'programmi' ? (
+          <ProgramsView />
+        ) : (
+          <p>Funzione non ancora implementata.</p>
+        )}
       </main>
     </div>
   );
