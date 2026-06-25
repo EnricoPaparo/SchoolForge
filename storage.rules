@@ -1,14 +1,11 @@
 rules_version = '2';
 
-// Single-docente: any authenticated user is the owner.
-// repository/ paths require authentication; everything else is denied.
-// TODO F-04+: enforce ownerUid via custom claims once Auth is provisioned.
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // Repository imports — authenticated access only
-    match /repository/{allPaths=**} {
-      allow read, write: if request.auth != null;
+    // repository/{ownerUid}/... — only the matching owner can read/write
+    match /repository/{ownerUid}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == ownerUid;
     }
 
     // Default deny

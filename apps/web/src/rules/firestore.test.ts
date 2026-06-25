@@ -69,6 +69,12 @@ describe('settings/owner — read', () => {
     await assertSucceeds(getDoc(doc(ctx.firestore(), 'settings/owner')));
   });
 
+  it('denies non-owner authenticated user from reading settings/owner', async () => {
+    await seedOwner();
+    const ctx = testEnv.authenticatedContext(OTHER_UID);
+    await assertFails(getDoc(doc(ctx.firestore(), 'settings/owner')));
+  });
+
   it('denies unauthenticated read of settings/owner', async () => {
     await seedOwner();
     const ctx = testEnv.unauthenticatedContext();

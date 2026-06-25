@@ -19,7 +19,7 @@ service cloud.firestore {
     // First authenticated user to write becomes the owner (no existing doc).
     // Subsequent updates/deletes require ownerUid match.
     match /settings/owner {
-      allow read: if isAuthenticated();
+      allow read: if isOwner();
       allow create: if isAuthenticated()
                     && request.resource.data.ownerUid == request.auth.uid;
       allow update, delete: if isOwner();
