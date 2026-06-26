@@ -279,3 +279,27 @@
   margin-bottom: 1rem;
   color: var(--color-text);
 }
+
+/* Import ZIP */
+.importBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 0.75rem;
+}
+
+.importLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-right: 0.25rem;
+}
+
+.importSuccess {
+  font-size: 0.875rem;
+  color: var(--color-success, green);
+  width: 100%;
+}
