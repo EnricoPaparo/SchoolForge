@@ -35,6 +35,15 @@ vi.mock('../exportZip.js', () => ({
   exportZip: (...args: unknown[]) => mockExportZip(...args),
 }));
 
+const mockImportRepository = vi.fn();
+const mockReadZipFile = vi.fn();
+vi.mock('../../../features/repository/import/importRepository.js', () => ({
+  importRepository: (...args: unknown[]) => mockImportRepository(...args),
+}));
+vi.mock('../../../features/repository/import/readZipFile.js', () => ({
+  readZipFile: (...args: unknown[]) => mockReadZipFile(...args),
+}));
+
 const mockGenerateMarkdown = vi.fn().mockReturnValue('# Programma svolto');
 const mockDownloadMarkdown = vi.fn();
 const mockDownloadPdf = vi.fn().mockResolvedValue(undefined);
@@ -47,6 +56,16 @@ vi.mock('../programmaSvolto.js', () => ({
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
+  mockReadZipFile.mockResolvedValue([]);
+  mockImportRepository.mockResolvedValue({
+    status: 'committed',
+    programId: 'prog-1',
+    importId: 'imp-new',
+    validationIssues: [],
+    udaCount: 2,
+    lessonCount: 5,
+    questionCount: 10,
+  });
 });
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -307,5 +326,146 @@ describe('ProgramsView — Programma svolto buttons', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
     expect(await screen.findByRole('button', { name: 'Programma svolto (MD)' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Programma svolto (PDF)' })).toBeTruthy();
+  });
+});
+
+describe('ProgramsView — Import ZIP', () => {
+  it('import button not visible when no program is selected', async () => {
+    mockListPrograms.mockResolvedValue([]);
+    render(<ProgramsView />);
+    await screen.findByText(/Nessun programma/);
+    expect(screen.queryByRole('button', { name: /importa zip/i })).toBeNull();
+  });
+
+  it('shows import ZIP section when a program is selected', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    render(<ProgramsView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
+    expect(await screen.findByRole('button', { name: /importa zip/i })).toBeTruthy();
+    expect(screen.getByLabelText(/importa zip didattico/i)).toBeTruthy();
+  });
+
+  it('import button is disabled without file selected', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    render(<ProgramsView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
+    const btn = await screen.findByRole('button', { name: /importa zip/i });
+    expect(btn).toHaveProperty('disabled', true);
+  });
+
+  it('calls importRepository with correct programId when ZIP is selected and imported', async () => {
+    const updatedProgram = { ...PROGRAM, activeImportId: 'imp-new' };
+    mockListPrograms.mockResolvedValueOnce([PROGRAM]).mockResolvedValue([updatedProgram]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    render(<ProgramsView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
+
+    const fileInput = await screen.findByLabelText(/importa zip didattico/i);
+    const fakeFile = new File(['zip content'], 'repo.zip', { type: 'application/zip' });
+    fireEvent.change(fileInput, { target: { files: [fakeFile] } });
+
+    const btn = screen.getByRole('button', { name: /importa zip/i });
+    expect(btn).toHaveProperty('disabled', false);
+    fireEvent.click(btn);
+
+    await waitFor(() => expect(mockImportRepository).toHaveBeenCalledTimes(1));
+    const [input] = mockImportRepository.mock.calls[0];
+    expect(input.programId).toBe('prog-1');
+    expect(input.ownerUid).toBe('owner-uid');
+    expect(input.programmaTitle).toBe('Informatica');
+  });
+
+  it('shows loading state during import', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    mockImportRepository.mockReturnValue(new Promise(() => {}));
+    render(<ProgramsView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
+
+    const fileInput = await screen.findByLabelText(/importa zip didattico/i);
+    fireEvent.change(fileInput, {
+      target: { files: [new File(['zip'], 'r.zip', { type: 'application/zip' })] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /importa zip/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /importazione/i })).toHaveProperty(
+        'disabled',
+        true,
+      ),
+    );
+  });
+
+  it('shows success message with counts after successful import', async () => {
+    const updatedProgram = { ...PROGRAM, activeImportId: 'imp-new' };
+    mockListPrograms.mockResolvedValueOnce([PROGRAM]).mockResolvedValue([updatedProgram]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    render(<ProgramsView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
+
+    const fileInput = await screen.findByLabelText(/importa zip didattico/i);
+    fireEvent.change(fileInput, {
+      target: { files: [new File(['zip'], 'r.zip', { type: 'application/zip' })] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /importa zip/i }));
+
+    await waitFor(() => expect(screen.getByText(/import completato/i)).toBeTruthy());
+    expect(screen.getByText(/2 UDA/i)).toBeTruthy();
+    expect(screen.getByText(/5 lezioni/i)).toBeTruthy();
+    expect(screen.getByText(/10 domande/i)).toBeTruthy();
+  });
+
+  it('shows error when importRepository returns validation_failed', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    mockImportRepository.mockResolvedValue({
+      status: 'validation_failed',
+      validationIssues: [
+        {
+          level: 'error',
+          path: 'uda-01/uda.md',
+          field: 'titolo',
+          code: 'missing',
+          message: 'Campo titolo mancante',
+        },
+      ],
+    });
+    render(<ProgramsView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
+
+    const fileInput = await screen.findByLabelText(/importa zip didattico/i);
+    fireEvent.change(fileInput, {
+      target: { files: [new File(['zip'], 'r.zip', { type: 'application/zip' })] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /importa zip/i }));
+
+    await waitFor(() => screen.getByRole('alert'));
+    expect(screen.getByRole('alert').textContent).toMatch(/validazione fallita/i);
+  });
+
+  it('shows error when importRepository throws', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    mockImportRepository.mockRejectedValue(new Error('Storage non raggiungibile'));
+    render(<ProgramsView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
+
+    const fileInput = await screen.findByLabelText(/importa zip didattico/i);
+    fireEvent.change(fileInput, {
+      target: { files: [new File(['zip'], 'r.zip', { type: 'application/zip' })] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /importa zip/i }));
+
+    await waitFor(() => screen.getByRole('alert'));
+    expect(screen.getByRole('alert').textContent).toMatch(/storage non raggiungibile/i);
   });
 });

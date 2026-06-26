@@ -10,6 +10,8 @@ import {
   type ProgramItem,
   type UdaItem,
 } from '../repository/programs/programsService.js';
+import { importRepository } from '../repository/import/importRepository.js';
+import { readZipFile } from '../repository/import/readZipFile.js';
 import { db, storage } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
@@ -50,6 +52,16 @@ export function ProgramsView() {
 
   const [pdfDownloading, setPdfDownloading] = useState(false);
 
+  // ── Import ZIP state ────────────────────────────────────────────
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<{
+    udaCount: number;
+    lessonCount: number;
+    questionCount: number;
+  } | null>(null);
+
   useEffect(() => {
     void loadPrograms();
   }, []);
@@ -75,6 +87,9 @@ export function ProgramsView() {
     setLessonContent(null);
     setLessonContentError(null);
     setExportZipError(null);
+    setImportFile(null);
+    setImportError(null);
+    setImportResult(null);
     if (!p.activeImportId) return;
     try {
       const [udaList, lessonList] = await Promise.all([
@@ -116,6 +131,51 @@ export function ProgramsView() {
       setLessonContentError('Impossibile caricare il contenuto della lezione.');
     } finally {
       setLessonContentLoading(false);
+    }
+  }
+
+  async function handleImport() {
+    if (!selectedProgram || !importFile) return;
+    setImporting(true);
+    setImportError(null);
+    setImportResult(null);
+    try {
+      const files = await readZipFile(importFile);
+      const result = await importRepository(
+        {
+          ownerUid,
+          programmaTitle: selectedProgram.title,
+          programId: selectedProgram.id,
+          files,
+        },
+        { db, storage },
+      );
+      if (result.status === 'validation_failed') {
+        const first = result.validationIssues[0];
+        setImportError(
+          first
+            ? `Validazione fallita: ${first.message} (${first.path})`
+            : 'Validazione fallita: struttura ZIP non valida.',
+        );
+        return;
+      }
+      const counts = {
+        udaCount: result.udaCount,
+        lessonCount: result.lessonCount,
+        questionCount: result.questionCount,
+      };
+      setImportFile(null);
+      // Reload programs and reselect with updated activeImportId
+      const updated = await listPrograms(db);
+      setPrograms(updated);
+      const refreshed = updated.find((p) => p.id === selectedProgram.id);
+      if (refreshed) await handleSelectProgram(refreshed);
+      // Set result after reselect so handleSelectProgram's reset doesn't clear it
+      setImportResult(counts);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Errore durante l'importazione.");
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -291,6 +351,42 @@ export function ProgramsView() {
               </button>
             </div>
           )}
+
+          {/* Import ZIP */}
+          <div className={styles.importBar}>
+            <label htmlFor="import-zip-input" className={styles.importLabel}>
+              Importa ZIP didattico
+            </label>
+            <input
+              id="import-zip-input"
+              type="file"
+              accept=".zip"
+              disabled={importing}
+              onChange={(e) => {
+                setImportFile(e.target.files?.[0] ?? null);
+                setImportError(null);
+                setImportResult(null);
+              }}
+            />
+            <button
+              type="button"
+              disabled={importing || !importFile}
+              onClick={() => void handleImport()}
+            >
+              {importing ? 'Importazione…' : 'Importa ZIP'}
+            </button>
+            {importError && (
+              <p role="alert" className="text-error">
+                {importError}
+              </p>
+            )}
+            {importResult && (
+              <p className={styles.importSuccess} aria-live="polite">
+                Import completato: {importResult.udaCount} UDA, {importResult.lessonCount} lezioni,{' '}
+                {importResult.questionCount} domande.
+              </p>
+            )}
+          </div>
 
           {/* Export toolbar */}
           {selectedProgram.activeImportId && (
