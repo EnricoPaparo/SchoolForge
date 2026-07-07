@@ -125,6 +125,33 @@ describe('QuestionPicker — filters', () => {
     expect(screen.getByText(/Nessuna domanda corrisponde ai filtri/)).toBeTruthy();
     expect(screen.queryByRole('list', { name: 'Elenco domande filtrate' })).toBeNull();
   });
+
+  it('combines multiple active filters (UDA + tipo) with AND semantics', () => {
+    renderPicker();
+    // uda-01-reti has qi-1 (aperta) and qi-2 (chiusa_singola); combining both
+    // filters must narrow to only qi-2, not the union of either filter alone.
+    fireEvent.change(screen.getByLabelText('Filtra per UDA'), {
+      target: { value: 'uda-01-reti' },
+    });
+    fireEvent.change(screen.getByLabelText('Filtra per tipo'), {
+      target: { value: 'chiusa_singola' },
+    });
+    const list = questionList();
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(list).getByText('#q2')).toBeTruthy();
+  });
+
+  it('combines a filter with free-text search with AND semantics', () => {
+    renderPicker();
+    fireEvent.change(screen.getByLabelText('Filtra per UDA'), {
+      target: { value: 'uda-01-reti' },
+    });
+    // "tcp" only matches qi-2's lesson filename, not qi-1's.
+    fireEvent.change(screen.getByLabelText('Cerca domande'), { target: { value: 'tcp' } });
+    const list = questionList();
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(list).getByText('#q2')).toBeTruthy();
+  });
 });
 
 describe('QuestionPicker — selection', () => {
