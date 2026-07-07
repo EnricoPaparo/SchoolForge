@@ -1,5 +1,10 @@
 # SchoolForge — Indice della documentazione
 
+## Stato MVP
+
+**M1 + M2 completati.** Il flusso docente cartaceo è funzionante in locale con emulatori Firebase.
+Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente e [evidenze/smoke-mvp-docente-cartaceo.md](evidenze/smoke-mvp-docente-cartaceo.md) per la checklist smoke test.
+
 ## Per iniziare
 
 SchoolForge è un repository didattico Markdown-first per un solo docente. Se è la prima volta, parti dal [brief](brief.md) per capire problema, visione e perimetro, poi consulta il [glossario](glossario.md) per il vocabolario condiviso (verifica, tentativo, pool, canale cartaceo/digitale, lock nome+cognome). Tutta la documentazione è in italiano e la baseline è la versione 4.1.
@@ -36,6 +41,12 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [toolchain.md](toolchain.md) | Versioni e setup. | Per avviare l'ambiente. |
 | [piano-implementazione.md](piano-implementazione.md) | Pacchetti e gate. | Per sapere cosa implementare. |
 | [ux-patterns.md](ux-patterns.md) | Pattern di stato della SPA. | Per la UI docente e portale. |
+| [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) | Guida operativa MVP in locale. | Per avviare e usare l'MVP oggi. |
+
+## Evidenze
+
+- [evidenze/G2-M1.md](evidenze/G2-M1.md) — gate G2: evidenze milestone M1.
+- [evidenze/smoke-mvp-docente-cartaceo.md](evidenze/smoke-mvp-docente-cartaceo.md) — smoke test MVP docente cartaceo (M1+M2).
 
 ## Diagrammi
 
