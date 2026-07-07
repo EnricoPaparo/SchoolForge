@@ -14,12 +14,19 @@ import { importRepository } from '../repository/import/importRepository.js';
 import { readZipFile } from '../repository/import/readZipFile.js';
 import { db, storage } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
-import { MarkdownRenderer } from './MarkdownRenderer.js';
-import { fetchLessonContent } from './lessonContent.js';
 import { exportZip } from './exportZip.js';
 import { downloadMarkdown, downloadPdf, generateMarkdown } from './programmaSvolto.js';
-import { ReadinessView } from './ReadinessView.js';
+import { ImportZipModal, type ImportZipResult } from './ImportZipModal.js';
 import styles from './ProgramsView.module.css';
+
+type CourseState = {
+  udas: UdaItem[] | null;
+  lessons: LessonItem[] | null;
+  loadError?: string;
+  exporting?: boolean;
+  exportError?: string | null;
+  pdfDownloading?: boolean;
+};
 
 export function ProgramsView() {
   const { user } = useAuth();
@@ -28,155 +35,120 @@ export function ProgramsView() {
   const [programs, setPrograms] = useState<ProgramItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [selectedProgram, setSelectedProgram] = useState<ProgramItem | null>(null);
-  const [udas, setUdas] = useState<UdaItem[] | null>(null);
+  const [courseState, setCourseState] = useState<Record<string, CourseState>>({});
+  const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
+  const [expandedUdas, setExpandedUdas] = useState<Set<string>>(new Set());
 
-  const [selectedUdaDir, setSelectedUdaDir] = useState<string | null>(null);
-  const [lessons, setLessons] = useState<LessonItem[] | null>(null);
+  const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
+  const [editTitleValue, setEditTitleValue] = useState('');
+  const [savingTitle, setSavingTitle] = useState(false);
 
-  const [allLessons, setAllLessons] = useState<LessonItem[] | null>(null);
-
-  const [selectedLesson, setSelectedLesson] = useState<LessonItem | null>(null);
-  const [lessonContent, setLessonContent] = useState<string | null>(null);
-  const [lessonContentError, setLessonContentError] = useState<string | null>(null);
-  const [lessonContentLoading, setLessonContentLoading] = useState(false);
+  const [infoOpenProgramId, setInfoOpenProgramId] = useState<string | null>(null);
 
   const [newTitle, setNewTitle] = useState('');
   const [creating, setCreating] = useState(false);
 
-  const [editTitle, setEditTitle] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const [exportingZip, setExportingZip] = useState(false);
-  const [exportZipError, setExportZipError] = useState<string | null>(null);
-
-  const [pdfDownloading, setPdfDownloading] = useState(false);
-
-  // ── Import ZIP state ────────────────────────────────────────────
+  // ── Import ZIP modal state ─────────────────────────────────────
+  const [importModalProgramId, setImportModalProgramId] = useState<string | null>(null);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
-  const [importResult, setImportResult] = useState<{
-    udaCount: number;
-    lessonCount: number;
-    questionCount: number;
-  } | null>(null);
+  const [importResult, setImportResult] = useState<ImportZipResult | null>(null);
 
   useEffect(() => {
     void loadPrograms();
   }, []);
+
+  function updateCourseState(programId: string, patch: Partial<CourseState>) {
+    setCourseState((prev) => ({
+      ...prev,
+      [programId]: { ...(prev[programId] ?? { udas: null, lessons: null }), ...patch },
+    }));
+  }
 
   async function loadPrograms() {
     setLoadError(null);
     try {
       const list = await listPrograms(db);
       setPrograms(list);
+      list.forEach((p) => {
+        if (p.activeImportId) void loadCourseSummary(p);
+      });
     } catch {
       setLoadError('Impossibile caricare i programmi.');
     }
   }
 
-  async function handleSelectProgram(p: ProgramItem) {
-    setSelectedProgram(p);
-    setSelectedUdaDir(null);
-    setLessons(null);
-    setAllLessons(null);
-    setUdas(null);
-    setEditTitle(null);
-    setSelectedLesson(null);
-    setLessonContent(null);
-    setLessonContentError(null);
-    setExportZipError(null);
-    setImportFile(null);
-    setImportError(null);
-    setImportResult(null);
-    if (!p.activeImportId) return;
+  async function loadCourseSummary(program: ProgramItem) {
+    if (!program.activeImportId) {
+      updateCourseState(program.id, { udas: [], lessons: [] });
+      return;
+    }
+    const importId = program.activeImportId;
+    updateCourseState(program.id, { udas: null, lessons: null, loadError: undefined });
     try {
-      const [udaList, lessonList] = await Promise.all([
-        listUdas(p.id, p.activeImportId, db),
-        listLessons(p.id, p.activeImportId, db),
+      const [udas, lessons] = await Promise.all([
+        listUdas(program.id, importId, db),
+        listLessons(program.id, importId, db),
       ]);
-      setUdas(udaList);
-      setAllLessons(lessonList);
+      updateCourseState(program.id, { udas, lessons });
     } catch {
-      setUdas([]);
-      setAllLessons([]);
+      updateCourseState(program.id, {
+        udas: [],
+        lessons: [],
+        loadError: 'Impossibile caricare i dati del corso.',
+      });
     }
   }
 
-  async function handleSelectUda(udaDir: string) {
-    if (!selectedProgram?.activeImportId) return;
-    setSelectedUdaDir(udaDir);
-    setLessons(null);
-    setSelectedLesson(null);
-    setLessonContent(null);
-    setLessonContentError(null);
-    try {
-      const all = await listLessons(selectedProgram.id, selectedProgram.activeImportId, db);
-      setLessons(all.filter((l) => l.udaDir === udaDir));
-    } catch {
-      setLessons([]);
+  function toggleCourse(program: ProgramItem) {
+    setExpandedCourses((prev) => {
+      const next = new Set(prev);
+      if (next.has(program.id)) next.delete(program.id);
+      else next.add(program.id);
+      return next;
+    });
+    if (program.activeImportId && !courseState[program.id]) {
+      void loadCourseSummary(program);
     }
   }
 
-  async function handleSelectLesson(lesson: LessonItem) {
-    setSelectedLesson(lesson);
-    setLessonContent(null);
-    setLessonContentError(null);
-    setLessonContentLoading(true);
-    try {
-      const content = await fetchLessonContent(lesson.storageRef, storage);
-      setLessonContent(content);
-    } catch {
-      setLessonContentError('Impossibile caricare il contenuto della lezione.');
-    } finally {
-      setLessonContentLoading(false);
-    }
+  function toggleUda(programId: string, udaDir: string) {
+    const key = `${programId}:${udaDir}`;
+    setExpandedUdas((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   }
 
-  async function handleImport() {
-    if (!selectedProgram || !importFile) return;
-    setImporting(true);
-    setImportError(null);
-    setImportResult(null);
-    try {
-      const files = await readZipFile(importFile);
-      const result = await importRepository(
-        {
-          ownerUid,
-          programmaTitle: selectedProgram.title,
-          programId: selectedProgram.id,
-          files,
+  function toggleInfo(programId: string) {
+    setInfoOpenProgramId((prev) => (prev === programId ? null : programId));
+  }
+
+  async function handleToggleLesson(program: ProgramItem, lesson: LessonItem) {
+    if (!program.activeImportId) return;
+    const completed = !(lesson.completed ?? false);
+    await setLessonCompleted(
+      program.id,
+      program.activeImportId,
+      lesson.id,
+      completed,
+      ownerUid,
+      db,
+    );
+    setCourseState((prev) => {
+      const cur = prev[program.id];
+      if (!cur?.lessons) return prev;
+      return {
+        ...prev,
+        [program.id]: {
+          ...cur,
+          lessons: cur.lessons.map((l) => (l.id === lesson.id ? { ...l, completed } : l)),
         },
-        { db, storage },
-      );
-      if (result.status === 'validation_failed') {
-        const first = result.validationIssues[0];
-        setImportError(
-          first
-            ? `Validazione fallita: ${first.message} (${first.path})`
-            : 'Validazione fallita: struttura ZIP non valida.',
-        );
-        return;
-      }
-      const counts = {
-        udaCount: result.udaCount,
-        lessonCount: result.lessonCount,
-        questionCount: result.questionCount,
       };
-      setImportFile(null);
-      // Reload programs and reselect with updated activeImportId
-      const updated = await listPrograms(db);
-      setPrograms(updated);
-      const refreshed = updated.find((p) => p.id === selectedProgram.id);
-      if (refreshed) await handleSelectProgram(refreshed);
-      // Set result after reselect so handleSelectProgram's reset doesn't clear it
-      setImportResult(counts);
-    } catch (err) {
-      setImportError(err instanceof Error ? err.message : "Errore durante l'importazione.");
-    } finally {
-      setImporting(false);
-    }
+    });
   }
 
   async function handleCreate(e: FormEvent) {
@@ -193,74 +165,111 @@ export function ProgramsView() {
     }
   }
 
-  async function handleSaveTitle(e: FormEvent) {
+  function startEditTitle(program: ProgramItem) {
+    setEditingProgramId(program.id);
+    setEditTitleValue(program.title);
+  }
+
+  async function handleSaveTitle(e: FormEvent, program: ProgramItem) {
     e.preventDefault();
-    if (!selectedProgram || editTitle === null) return;
-    const t = editTitle.trim();
+    const t = editTitleValue.trim();
     if (!t) return;
-    setSaving(true);
+    setSavingTitle(true);
     try {
-      await updateProgramTitle(selectedProgram.id, t, ownerUid, db);
-      const updated = { ...selectedProgram, title: t };
-      setSelectedProgram(updated);
-      setPrograms((prev) => prev?.map((p) => (p.id === updated.id ? updated : p)) ?? null);
-      setEditTitle(null);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleToggleLesson(lesson: LessonItem) {
-    if (!selectedProgram?.activeImportId) return;
-    const completed = !(lesson.completed ?? false);
-    await setLessonCompleted(
-      selectedProgram.id,
-      selectedProgram.activeImportId,
-      lesson.id,
-      completed,
-      ownerUid,
-      db,
-    );
-    setLessons((prev) => prev?.map((l) => (l.id === lesson.id ? { ...l, completed } : l)) ?? null);
-  }
-
-  async function handleExportZip() {
-    if (!selectedProgram) return;
-    setExportingZip(true);
-    setExportZipError(null);
-    try {
-      await exportZip(selectedProgram, storage, db);
-    } catch {
-      setExportZipError('Impossibile esportare il ZIP.');
-    } finally {
-      setExportingZip(false);
-    }
-  }
-
-  async function handleDownloadProgrammaSvoltoMd() {
-    if (!selectedProgram || !udas || !lessons) return;
-    const allLessons = await listLessons(
-      selectedProgram.id,
-      selectedProgram.activeImportId ?? '',
-      db,
-    );
-    const content = generateMarkdown(selectedProgram, udas, allLessons);
-    downloadMarkdown(content, `programma-svolto-${selectedProgram.title.replace(/\s+/g, '_')}.md`);
-  }
-
-  async function handleDownloadProgrammaSvoltoPdf() {
-    if (!selectedProgram || !udas) return;
-    setPdfDownloading(true);
-    try {
-      const allLessons = await listLessons(
-        selectedProgram.id,
-        selectedProgram.activeImportId ?? '',
-        db,
+      await updateProgramTitle(program.id, t, ownerUid, db);
+      setPrograms(
+        (prev) => prev?.map((p) => (p.id === program.id ? { ...p, title: t } : p)) ?? null,
       );
-      const content = generateMarkdown(selectedProgram, udas, allLessons);
-      await downloadPdf(content, `programma-svolto-${selectedProgram.title.replace(/\s+/g, '_')}`);
+      setEditingProgramId(null);
     } finally {
-      setPdfDownloading(false);
+      setSavingTitle(false);
+    }
+  }
+
+  async function handleExportZip(program: ProgramItem) {
+    updateCourseState(program.id, { exporting: true, exportError: null });
+    try {
+      await exportZip(program, storage, db);
+    } catch {
+      updateCourseState(program.id, { exportError: 'Impossibile esportare il ZIP.' });
+    } finally {
+      updateCourseState(program.id, { exporting: false });
+    }
+  }
+
+  async function handleDownloadProgrammaSvoltoMd(program: ProgramItem) {
+    const cs = courseState[program.id];
+    if (!program.activeImportId || !cs?.udas) return;
+    const allLessons = await listLessons(program.id, program.activeImportId, db);
+    const content = generateMarkdown(program, cs.udas, allLessons);
+    downloadMarkdown(content, `programma-svolto-${program.title.replace(/\s+/g, '_')}.md`);
+  }
+
+  async function handleDownloadProgrammaSvoltoPdf(program: ProgramItem) {
+    const cs = courseState[program.id];
+    if (!program.activeImportId || !cs?.udas) return;
+    updateCourseState(program.id, { pdfDownloading: true });
+    try {
+      const allLessons = await listLessons(program.id, program.activeImportId, db);
+      const content = generateMarkdown(program, cs.udas, allLessons);
+      await downloadPdf(content, `programma-svolto-${program.title.replace(/\s+/g, '_')}`);
+    } finally {
+      updateCourseState(program.id, { pdfDownloading: false });
+    }
+  }
+
+  function openImportModal(program: ProgramItem) {
+    setImportModalProgramId(program.id);
+    setImportFile(null);
+    setImportError(null);
+    setImportResult(null);
+  }
+
+  function closeImportModal() {
+    setImportModalProgramId(null);
+  }
+
+  async function handleImport() {
+    const program = programs?.find((p) => p.id === importModalProgramId);
+    if (!program || !importFile) return;
+    setImporting(true);
+    setImportError(null);
+    setImportResult(null);
+    try {
+      const files = await readZipFile(importFile);
+      const result = await importRepository(
+        {
+          ownerUid,
+          programmaTitle: program.title,
+          programId: program.id,
+          files,
+        },
+        { db, storage },
+      );
+      if (result.status === 'validation_failed') {
+        const first = result.validationIssues[0];
+        setImportError(
+          first
+            ? `Validazione fallita: ${first.message} (${first.path})`
+            : 'Validazione fallita: struttura ZIP non valida.',
+        );
+        return;
+      }
+      const counts: ImportZipResult = {
+        udaCount: result.udaCount,
+        lessonCount: result.lessonCount,
+        questionCount: result.questionCount,
+      };
+      setImportFile(null);
+      const updated = await listPrograms(db);
+      setPrograms(updated);
+      const refreshed = updated.find((p) => p.id === program.id);
+      if (refreshed) await loadCourseSummary(refreshed);
+      setImportResult(counts);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Errore durante l'importazione.");
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -277,239 +286,282 @@ export function ProgramsView() {
       </p>
     );
 
+  const modalProgram = importModalProgramId
+    ? programs.find((p) => p.id === importModalProgramId)
+    : undefined;
+
   return (
-    <section aria-label="Programmi" className={styles.container}>
-      {/* ── Sidebar: program list + create form ── */}
-      <aside className={styles.sidebar}>
-        <h2 className={styles.sidebarTitle}>Programmi</h2>
+    <section aria-label="Corsi" className={styles.container}>
+      <div className={styles.headerRow}>
+        <h2 className={styles.headerTitle}>Corsi</h2>
+      </div>
 
-        {programs.length === 0 && <p className="state-empty">Nessun programma. Creane uno.</p>}
+      <form className={styles.createForm} onSubmit={(e) => void handleCreate(e)}>
+        <label className={styles.createLabel} htmlFor="new-program-title">
+          Titolo nuovo programma
+        </label>
+        <input
+          id="new-program-title"
+          type="text"
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+        />
+        <button type="submit" className={styles.createBtn} disabled={creating || !newTitle.trim()}>
+          {creating ? 'Creazione…' : 'Crea programma'}
+        </button>
+      </form>
 
-        {programs.length > 0 && (
-          <ul className={styles.programList}>
-            {programs.map((p) => (
-              <li key={p.id} className={styles.programItem}>
-                <button
-                  type="button"
-                  className={styles.programBtn}
-                  aria-pressed={selectedProgram?.id === p.id}
-                  onClick={() => void handleSelectProgram(p)}
-                >
-                  {p.title}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+      {programs.length === 0 ? (
+        <p className="state-empty">Nessun programma. Creane uno.</p>
+      ) : (
+        <ul className={styles.courseList}>
+          {programs.map((program) => {
+            const cs = courseState[program.id];
+            const expanded = expandedCourses.has(program.id);
+            const udaCount = cs?.udas?.length ?? 0;
+            const lessonsTotal = cs?.lessons?.length ?? 0;
+            const lessonsDone = cs?.lessons?.filter((l) => l.completed).length ?? 0;
+            const questionsTotal =
+              cs?.lessons?.reduce((sum, l) => sum + (l.questionCount ?? 0), 0) ?? 0;
+            const dataLoading =
+              program.activeImportId != null && (cs?.udas == null || cs?.lessons == null);
 
-        <form className={styles.createForm} onSubmit={(e) => void handleCreate(e)}>
-          <label className={styles.createLabel} htmlFor="new-program-title">
-            Titolo nuovo programma
-          </label>
-          <input
-            id="new-program-title"
-            type="text"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-          />
-          <button
-            type="submit"
-            className={styles.createBtn}
-            disabled={creating || !newTitle.trim()}
-          >
-            {creating ? 'Creazione…' : 'Crea programma'}
-          </button>
-        </form>
-      </aside>
+            return (
+              <li key={program.id} className={styles.courseItem}>
+                <div className={styles.courseHeader}>
+                  <button
+                    type="button"
+                    className={styles.courseToggle}
+                    aria-expanded={expanded}
+                    aria-controls={`course-panel-${program.id}`}
+                    onClick={() => toggleCourse(program)}
+                  >
+                    <span
+                      className={`${styles.caret}${expanded ? ` ${styles.caretOpen}` : ''}`}
+                      aria-hidden="true"
+                    >
+                      ▶
+                    </span>
+                    <span className={styles.courseTitle}>{program.title}</span>
+                    <span
+                      className={`badge ${program.activeImportId ? 'badge-ok' : 'badge-warning'}`}
+                    >
+                      {program.activeImportId ? 'Importato' : 'Nessun import'}
+                    </span>
+                    <span className={styles.courseCounters}>
+                      {dataLoading
+                        ? 'Caricamento dati…'
+                        : `UDA: ${udaCount} · Lezioni: ${lessonsDone}/${lessonsTotal} svolte · Domande: ${questionsTotal} disponibili`}
+                    </span>
+                  </button>
 
-      {/* ── Detail panel ── */}
-      {selectedProgram && (
-        <div className={styles.detail}>
-          {/* Program title */}
-          {editTitle !== null ? (
-            <form className={styles.editTitleForm} onSubmit={(e) => void handleSaveTitle(e)}>
-              <label htmlFor="edit-program-title">
-                Modifica titolo
-                <input
-                  id="edit-program-title"
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                />
-              </label>
-              <button type="submit" disabled={saving || !editTitle.trim()}>
-                Salva
-              </button>
-              <button type="button" onClick={() => setEditTitle(null)}>
-                Annulla
-              </button>
-            </form>
-          ) : (
-            <div className={styles.programHeader}>
-              <h2 className={styles.programTitle}>{selectedProgram.title}</h2>
-              <button type="button" onClick={() => setEditTitle(selectedProgram.title)}>
-                Modifica titolo
-              </button>
-            </div>
-          )}
-
-          {/* Import ZIP */}
-          <div className={styles.importBar}>
-            <label htmlFor="import-zip-input" className={styles.importLabel}>
-              Importa ZIP didattico
-            </label>
-            <input
-              id="import-zip-input"
-              type="file"
-              accept=".zip"
-              disabled={importing}
-              onChange={(e) => {
-                setImportFile(e.target.files?.[0] ?? null);
-                setImportError(null);
-                setImportResult(null);
-              }}
-            />
-            <button
-              type="button"
-              disabled={importing || !importFile}
-              onClick={() => void handleImport()}
-            >
-              {importing ? 'Importazione…' : 'Importa ZIP'}
-            </button>
-            {importError && (
-              <p role="alert" className="text-error">
-                {importError}
-              </p>
-            )}
-            {importResult && (
-              <p className={styles.importSuccess} aria-live="polite">
-                Import completato: {importResult.udaCount} UDA, {importResult.lessonCount} lezioni,{' '}
-                {importResult.questionCount} domande.
-              </p>
-            )}
-          </div>
-
-          {/* Export toolbar */}
-          {selectedProgram.activeImportId && (
-            <div className={styles.exportBar}>
-              <span className={styles.exportBarLabel}>Esporta</span>
-              <button type="button" onClick={() => void handleExportZip()} disabled={exportingZip}>
-                {exportingZip ? 'Esportazione…' : 'Esporta ZIP'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void handleDownloadProgrammaSvoltoMd()}
-                disabled={!udas}
-              >
-                Programma svolto (MD)
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void handleDownloadProgrammaSvoltoPdf()}
-                disabled={!udas || pdfDownloading}
-              >
-                {pdfDownloading ? 'Generazione PDF…' : 'Programma svolto (PDF)'}
-              </button>
-
-              {exportZipError && (
-                <p role="alert" className="text-error">
-                  {exportZipError}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* UDA + Lesson content */}
-          {!selectedProgram.activeImportId ? (
-            <p className="state-empty">Nessun import attivo per questo programma.</p>
-          ) : udas === null ? (
-            <p aria-busy="true" className="state-loading">
-              Caricamento UDA…
-            </p>
-          ) : (
-            <div className={styles.contentPanel}>
-              <h3 className={styles.udaTitle}>UDA</h3>
-              {udas.length === 0 ? (
-                <p className="state-empty">Nessuna UDA.</p>
-              ) : (
-                <ul className={styles.udaList}>
-                  {udas.map((u) => (
-                    <li key={u.id}>
-                      <button
-                        type="button"
-                        className={styles.udaBtn}
-                        aria-pressed={selectedUdaDir === u.dir}
-                        onClick={() => void handleSelectUda(u.dir)}
-                      >
-                        {u.dir}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {selectedUdaDir && (
-                <div className={styles.lessonSection}>
-                  <h4 className={styles.lessonTitle}>Lezioni — {selectedUdaDir}</h4>
-                  {lessons === null ? (
-                    <p aria-busy="true" className="state-loading">
-                      Caricamento lezioni…
-                    </p>
-                  ) : lessons.length === 0 ? (
-                    <p className="state-empty">Nessuna lezione.</p>
-                  ) : (
-                    <ul className={styles.lessonList}>
-                      {lessons.map((l) => (
-                        <li
-                          key={l.id}
-                          className={`${styles.lessonRow}${l.completed ? ` ${styles.lessonCompleted}` : ''}`}
-                        >
-                          <input
-                            type="checkbox"
-                            id={`lesson-check-${l.id}`}
-                            checked={l.completed ?? false}
-                            onChange={() => void handleToggleLesson(l)}
-                            aria-label={`Segna ${l.filename} come svolta`}
-                          />
-                          <button
-                            type="button"
-                            className={styles.lessonBtn}
-                            onClick={() => void handleSelectLesson(l)}
-                            aria-pressed={selectedLesson?.id === l.id}
-                          >
-                            {l.filename}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  {selectedLesson && (
-                    <div className={styles.lessonContentPanel}>
-                      <h5 className={styles.lessonContentTitle}>{selectedLesson.filename}</h5>
-                      {lessonContentLoading && (
-                        <p aria-busy="true" className="state-loading">
-                          Caricamento contenuto…
-                        </p>
-                      )}
-                      {lessonContentError && (
-                        <p role="alert" className="text-error">
-                          {lessonContentError}
-                        </p>
-                      )}
-                      {lessonContent !== null && !lessonContentLoading && (
-                        <MarkdownRenderer markdown={lessonContent} />
-                      )}
-                    </div>
-                  )}
+                  <div
+                    className={styles.courseActions}
+                    role="group"
+                    aria-label={`Azioni corso ${program.title}`}
+                  >
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      title="Modifica titolo"
+                      aria-label={`Modifica titolo — ${program.title}`}
+                      onClick={() => startEditTitle(program)}
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      title="Importa ZIP"
+                      aria-label={`Importa ZIP — ${program.title}`}
+                      onClick={() => openImportModal(program)}
+                    >
+                      ⬆️
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      title="Esporta ZIP"
+                      aria-label={`Esporta ZIP — ${program.title}`}
+                      disabled={!program.activeImportId || cs?.exporting}
+                      onClick={() => void handleExportZip(program)}
+                    >
+                      {cs?.exporting ? '…' : '⬇️'}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      title="Programma svolto (MD)"
+                      aria-label={`Programma svolto (MD) — ${program.title}`}
+                      disabled={!program.activeImportId || !cs?.udas}
+                      onClick={() => void handleDownloadProgrammaSvoltoMd(program)}
+                    >
+                      📝
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      title="Programma svolto (PDF)"
+                      aria-label={`Programma svolto (PDF) — ${program.title}`}
+                      disabled={!program.activeImportId || !cs?.udas || cs?.pdfDownloading}
+                      onClick={() => void handleDownloadProgrammaSvoltoPdf(program)}
+                    >
+                      {cs?.pdfDownloading ? '…' : '🖨️'}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      title="Info corso"
+                      aria-label={`Info corso — ${program.title}`}
+                      aria-expanded={infoOpenProgramId === program.id}
+                      onClick={() => toggleInfo(program.id)}
+                    >
+                      ℹ️
+                    </button>
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
 
-          <ReadinessView program={selectedProgram} udas={udas} lessons={allLessons} />
-        </div>
+                {editingProgramId === program.id && (
+                  <form
+                    className={styles.editTitleForm}
+                    onSubmit={(e) => void handleSaveTitle(e, program)}
+                  >
+                    <label htmlFor={`edit-program-title-${program.id}`}>
+                      Modifica titolo
+                      <input
+                        id={`edit-program-title-${program.id}`}
+                        value={editTitleValue}
+                        onChange={(e) => setEditTitleValue(e.target.value)}
+                      />
+                    </label>
+                    <button type="submit" disabled={savingTitle || !editTitleValue.trim()}>
+                      Salva
+                    </button>
+                    <button type="button" onClick={() => setEditingProgramId(null)}>
+                      Annulla
+                    </button>
+                  </form>
+                )}
+
+                {cs?.exportError && (
+                  <p role="alert" className={`text-error ${styles.actionError}`}>
+                    {cs.exportError}
+                  </p>
+                )}
+
+                {infoOpenProgramId === program.id && (
+                  <div
+                    className={styles.infoPanel}
+                    role="region"
+                    aria-label={`Informazioni corso ${program.title}`}
+                  >
+                    <dl className={styles.infoList}>
+                      <dt>Import attivo</dt>
+                      <dd>{program.activeImportId ?? 'Nessuno'}</dd>
+                      <dt>UDA totali</dt>
+                      <dd>{udaCount}</dd>
+                      <dt>Lezioni svolte</dt>
+                      <dd>
+                        {lessonsDone} / {lessonsTotal}
+                      </dd>
+                      <dt>Domande disponibili</dt>
+                      <dd>{questionsTotal}</dd>
+                    </dl>
+                  </div>
+                )}
+
+                {expanded && (
+                  <div id={`course-panel-${program.id}`} className={styles.udaPanel}>
+                    {!program.activeImportId ? (
+                      <p className="state-empty">Nessun import attivo per questo programma.</p>
+                    ) : cs?.udas == null ? (
+                      <p aria-busy="true" className="state-loading">
+                        Caricamento UDA…
+                      </p>
+                    ) : cs.udas.length === 0 ? (
+                      <p className="state-empty">Nessuna UDA.</p>
+                    ) : (
+                      <ul className={styles.udaList}>
+                        {cs.udas.map((uda) => {
+                          const udaKey = `${program.id}:${uda.dir}`;
+                          const udaExpanded = expandedUdas.has(udaKey);
+                          const udaLessons = (cs.lessons ?? []).filter((l) => l.udaDir === uda.dir);
+                          const udaDone = udaLessons.filter((l) => l.completed).length;
+
+                          return (
+                            <li key={uda.id} className={styles.udaItem}>
+                              <button
+                                type="button"
+                                className={styles.udaToggle}
+                                aria-expanded={udaExpanded}
+                                aria-controls={`uda-panel-${uda.id}`}
+                                onClick={() => toggleUda(program.id, uda.dir)}
+                              >
+                                <span
+                                  className={`${styles.caret}${udaExpanded ? ` ${styles.caretOpen}` : ''}`}
+                                  aria-hidden="true"
+                                >
+                                  ▶
+                                </span>
+                                <span className={styles.udaDir}>{uda.dir}</span>
+                                <span className={styles.udaCounters}>
+                                  Lezioni: {udaDone}/{udaLessons.length} svolte
+                                </span>
+                              </button>
+
+                              {udaExpanded && (
+                                <div id={`uda-panel-${uda.id}`} className={styles.lessonPanel}>
+                                  {udaLessons.length === 0 ? (
+                                    <p className="state-empty">Nessuna lezione.</p>
+                                  ) : (
+                                    <ul className={styles.lessonList}>
+                                      {udaLessons.map((lesson) => (
+                                        <li
+                                          key={lesson.id}
+                                          className={`${styles.lessonRow}${lesson.completed ? ` ${styles.lessonCompleted}` : ''}`}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            id={`lesson-check-${lesson.id}`}
+                                            checked={lesson.completed ?? false}
+                                            onChange={() =>
+                                              void handleToggleLesson(program, lesson)
+                                            }
+                                            aria-label={`Segna ${lesson.filename} come svolta`}
+                                          />
+                                          <span className={styles.lessonFilename}>
+                                            {lesson.filename}
+                                          </span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {modalProgram && (
+        <ImportZipModal
+          programTitle={modalProgram.title}
+          file={importFile}
+          importing={importing}
+          error={importError}
+          result={importResult}
+          onFileChange={setImportFile}
+          onImport={() => void handleImport()}
+          onClose={closeImportModal}
+        />
       )}
     </section>
   );

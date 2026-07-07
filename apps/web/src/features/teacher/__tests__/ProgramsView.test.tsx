@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProgramsView } from '../ProgramsView.js';
 
@@ -23,11 +23,6 @@ vi.mock('../../../features/repository/programs/programsService.js', () => ({
   listUdas: (...args: unknown[]) => mockListUdas(...args),
   listLessons: (...args: unknown[]) => mockListLessons(...args),
   setLessonCompleted: (...args: unknown[]) => mockSetLessonCompleted(...args),
-}));
-
-const mockFetchLessonContent = vi.fn();
-vi.mock('../lessonContent.js', () => ({
-  fetchLessonContent: (...args: unknown[]) => mockFetchLessonContent(...args),
 }));
 
 const mockExportZip = vi.fn();
@@ -107,6 +102,14 @@ const LESSON_1 = {
 
 const LESSON_2 = { ...LESSON_1, id: 'lesson-2', filename: 'lezione-002.md', completed: true };
 
+async function expandCourse(name: RegExp) {
+  fireEvent.click(await screen.findByRole('button', { name }));
+}
+
+async function expandUda(name: RegExp) {
+  fireEvent.click(await screen.findByRole('button', { name }));
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe('ProgramsView — loading state', () => {
@@ -135,12 +138,33 @@ describe('ProgramsView — empty state', () => {
   });
 });
 
-describe('ProgramsView — programs list', () => {
-  it('renders program names', async () => {
+describe('ProgramsView — course list as accordion', () => {
+  it('renders each course as a collapsed accordion toggle', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM, PROGRAM_NO_IMPORT]);
     render(<ProgramsView />);
-    expect(await screen.findByRole('button', { name: 'Informatica' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Vuoto' })).toBeTruthy();
+    const informatica = await screen.findByRole('button', { name: /^Informatica/ });
+    const vuoto = await screen.findByRole('button', { name: /^Vuoto/ });
+    expect(informatica.getAttribute('aria-expanded')).toBe('false');
+    expect(vuoto.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('shows import status badge and counters in the course header', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1, LESSON_2]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+    expect(await screen.findByText('Importato')).toBeTruthy();
+    expect(await screen.findByText(/UDA: 1/)).toBeTruthy();
+    expect(await screen.findByText(/Lezioni: 1\/2 svolte/)).toBeTruthy();
+    expect(await screen.findByText(/Domande: 4 disponibili/)).toBeTruthy();
+  });
+
+  it('shows "Nessun import" badge for a program without an active import', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM_NO_IMPORT]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Vuoto/ });
+    expect(await screen.findByText('Nessun import')).toBeTruthy();
   });
 });
 
@@ -159,39 +183,40 @@ describe('ProgramsView — create program', () => {
     await waitFor(() => {
       expect(mockCreateProgram).toHaveBeenCalledWith('Informatica', 'owner-uid', {});
     });
-    expect(await screen.findByRole('button', { name: 'Informatica' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /^Informatica/ })).toBeTruthy();
   });
 });
 
-describe('ProgramsView — program with no import', () => {
-  it('shows no-import message when activeImportId is null', async () => {
+describe('ProgramsView — expanding a course with no active import', () => {
+  it('shows no-import message when a course with no import is expanded', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM_NO_IMPORT]);
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Vuoto' }));
+    await expandCourse(/^Vuoto/);
     expect(await screen.findByText(/Nessun import attivo/)).toBeTruthy();
   });
 });
 
-describe('ProgramsView — UDA selection', () => {
-  it('loads and shows UDAs when program is selected', async () => {
+describe('ProgramsView — expanding a course shows UDA', () => {
+  it('loads and shows UDAs when a course is expanded', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM]);
     mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([]);
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
-    expect(await screen.findByRole('button', { name: 'uda-01-reti' })).toBeTruthy();
+    await expandCourse(/^Informatica/);
+    expect(await screen.findByRole('button', { name: /uda-01-reti/ })).toBeTruthy();
   });
 });
 
-describe('ProgramsView — lesson list', () => {
-  it('loads and shows lessons when UDA is selected', async () => {
+describe('ProgramsView — expanding a UDA shows lessons', () => {
+  it('shows lessons for the expanded UDA', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM]);
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON_1, LESSON_2]);
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'uda-01-reti' }));
-    expect(await screen.findByRole('button', { name: 'lezione-001.md' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'lezione-002.md' })).toBeTruthy();
+    await expandCourse(/^Informatica/);
+    await expandUda(/uda-01-reti/);
+    expect(await screen.findByText('lezione-001.md')).toBeTruthy();
+    expect(screen.getByText('lezione-002.md')).toBeTruthy();
   });
 
   it('shows completed checkbox state correctly', async () => {
@@ -199,12 +224,26 @@ describe('ProgramsView — lesson list', () => {
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON_1, LESSON_2]);
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'uda-01-reti' }));
-    await screen.findByRole('button', { name: 'lezione-001.md' });
+    await expandCourse(/^Informatica/);
+    await expandUda(/uda-01-reti/);
+    await screen.findByText('lezione-001.md');
     const checkboxes = screen.getAllByRole('checkbox');
     expect((checkboxes[0] as HTMLInputElement).checked).toBe(false);
     expect((checkboxes[1] as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('does not open Markdown content when a lesson row is present — no viewer rendered', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    render(<ProgramsView />);
+    await expandCourse(/^Informatica/);
+    await expandUda(/uda-01-reti/);
+    const filename = await screen.findByText('lezione-001.md');
+    fireEvent.click(filename);
+    // Lesson filename is plain text, not a button — no markdown/prose viewer appears.
+    expect(screen.queryByRole('button', { name: 'lezione-001.md' })).toBeNull();
+    expect(document.querySelector('.prose')).toBeNull();
   });
 });
 
@@ -215,9 +254,9 @@ describe('ProgramsView — toggle lesson completed', () => {
     mockListLessons.mockResolvedValue([LESSON_1]);
     mockSetLessonCompleted.mockResolvedValue(undefined);
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'uda-01-reti' }));
-    await screen.findByRole('button', { name: 'lezione-001.md' });
+    await expandCourse(/^Informatica/);
+    await expandUda(/uda-01-reti/);
+    await screen.findByText('lezione-001.md');
 
     const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
     expect(checkbox.checked).toBe(false);
@@ -243,9 +282,8 @@ describe('ProgramsView — edit program title', () => {
     mockListUdas.mockResolvedValue([UDA]);
     mockUpdateProgramTitle.mockResolvedValue(undefined);
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
-    await screen.findByRole('button', { name: 'Modifica titolo' });
-    fireEvent.click(screen.getByRole('button', { name: 'Modifica titolo' }));
+    await screen.findByRole('button', { name: /^Informatica/ });
+    fireEvent.click(screen.getByRole('button', { name: /Modifica titolo/ }));
 
     const input = screen.getByLabelText('Modifica titolo');
     fireEvent.change(input, { target: { value: 'Informatica v2' } });
@@ -259,119 +297,108 @@ describe('ProgramsView — edit program title', () => {
         {},
       );
     });
-    // Edit form dismissed — input no longer visible
     await waitFor(() => {
       expect(screen.queryByLabelText('Modifica titolo')).toBeNull();
     });
   });
 });
 
-// ─── M1-E new tests ──────────────────────────────────────────────────────────
-
-describe('ProgramsView — lesson content rendering', () => {
-  it('shows lesson content when a lesson is clicked', async () => {
+describe('ProgramsView — Esporta ZIP action', () => {
+  it('calls exportZip when Esporta ZIP icon is clicked', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM]);
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON_1]);
-    mockFetchLessonContent.mockResolvedValue('# Lezione\nContenuto della lezione.');
-
+    mockExportZip.mockResolvedValue(undefined);
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'uda-01-reti' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'lezione-001.md' }));
-
-    await waitFor(() => {
-      expect(mockFetchLessonContent).toHaveBeenCalledWith(LESSON_1.storageRef, {});
-    });
+    await screen.findByRole('button', { name: /^Informatica/ });
+    fireEvent.click(screen.getByRole('button', { name: /Esporta ZIP/ }));
+    await waitFor(() => expect(mockExportZip).toHaveBeenCalledWith(PROGRAM, {}, {}));
   });
 
-  it('shows error when lesson content cannot be loaded', async () => {
-    mockListPrograms.mockResolvedValue([PROGRAM]);
-    mockListUdas.mockResolvedValue([UDA]);
-    mockListLessons.mockResolvedValue([LESSON_1]);
-    mockFetchLessonContent.mockRejectedValue(new Error('Network error'));
-
-    render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'uda-01-reti' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'lezione-001.md' }));
-
-    expect(await screen.findByText(/Impossibile caricare il contenuto della lezione/)).toBeTruthy();
-  });
-});
-
-describe('ProgramsView — Esporta ZIP button', () => {
-  it('shows Esporta ZIP button when program has activeImportId', async () => {
-    mockListPrograms.mockResolvedValue([PROGRAM]);
-    mockListUdas.mockResolvedValue([UDA]);
-    render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
-    expect(await screen.findByRole('button', { name: 'Esporta ZIP' })).toBeTruthy();
-  });
-
-  it('does not show Esporta ZIP button when program has no activeImportId', async () => {
+  it('disables Esporta ZIP when program has no activeImportId', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM_NO_IMPORT]);
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Vuoto' }));
-    await screen.findByText(/Nessun import attivo/);
-    expect(screen.queryByRole('button', { name: 'Esporta ZIP' })).toBeNull();
+    await screen.findByRole('button', { name: /^Vuoto/ });
+    expect(screen.getByRole('button', { name: /Esporta ZIP/ })).toHaveProperty('disabled', true);
   });
 });
 
-describe('ProgramsView — Programma svolto buttons', () => {
-  it('shows Programma svolto (MD) and (PDF) buttons when program has activeImportId', async () => {
-    mockListPrograms.mockResolvedValue([PROGRAM]);
-    mockListUdas.mockResolvedValue([UDA]);
-    render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
-    expect(await screen.findByRole('button', { name: 'Programma svolto (MD)' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Programma svolto (PDF)' })).toBeTruthy();
-  });
-});
-
-describe('ProgramsView — Import ZIP', () => {
-  it('import button not visible when no program is selected', async () => {
-    mockListPrograms.mockResolvedValue([]);
-    render(<ProgramsView />);
-    await screen.findByText(/Nessun programma/);
-    expect(screen.queryByRole('button', { name: /importa zip/i })).toBeNull();
-  });
-
-  it('shows import ZIP section when a program is selected', async () => {
+describe('ProgramsView — Programma svolto actions', () => {
+  it('calls generateMarkdown/downloadMarkdown when MD icon is clicked', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM]);
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON_1]);
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
-    expect(await screen.findByRole('button', { name: /importa zip/i })).toBeTruthy();
-    expect(screen.getByLabelText(/importa zip didattico/i)).toBeTruthy();
+    await screen.findByRole('button', { name: /^Informatica/ });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Programma svolto \(MD\)/ })).toHaveProperty(
+        'disabled',
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Programma svolto \(MD\)/ }));
+    await waitFor(() => expect(mockDownloadMarkdown).toHaveBeenCalled());
   });
 
-  it('import button is disabled without file selected', async () => {
+  it('calls downloadPdf when PDF icon is clicked', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM]);
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON_1]);
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
-    const btn = await screen.findByRole('button', { name: /importa zip/i });
-    expect(btn).toHaveProperty('disabled', true);
+    await screen.findByRole('button', { name: /^Informatica/ });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Programma svolto \(PDF\)/ })).toHaveProperty(
+        'disabled',
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Programma svolto \(PDF\)/ }));
+    await waitFor(() => expect(mockDownloadPdf).toHaveBeenCalled());
+  });
+});
+
+describe('ProgramsView — Import ZIP guided modal', () => {
+  it('opens the guided modal when Importa ZIP icon is clicked', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+    fireEvent.click(screen.getByRole('button', { name: /Importa ZIP/ }));
+
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    expect(screen.getByText(/uda-NN-slug/)).toBeTruthy();
+    expect(screen.getByLabelText('File ZIP')).toBeTruthy();
   });
 
-  it('calls importRepository with correct programId when ZIP is selected and imported', async () => {
+  it('import button in modal is disabled without a file selected', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+    fireEvent.click(screen.getByRole('button', { name: /Importa ZIP/ }));
+    const dialog = await screen.findByRole('dialog');
+    const importBtn = within(dialog).getByRole('button', { name: 'Importa ZIP' });
+    expect(importBtn).toHaveProperty('disabled', true);
+  });
+
+  it('calls the import pipeline with the correct programId when a ZIP is selected and imported', async () => {
     const updatedProgram = { ...PROGRAM, activeImportId: 'imp-new' };
     mockListPrograms.mockResolvedValueOnce([PROGRAM]).mockResolvedValue([updatedProgram]);
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON_1]);
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
+    await screen.findByRole('button', { name: /^Informatica/ });
+    fireEvent.click(screen.getByRole('button', { name: /Importa ZIP/ }));
+    const dialog = await screen.findByRole('dialog');
 
-    const fileInput = await screen.findByLabelText(/importa zip didattico/i);
+    const fileInput = within(dialog).getByLabelText('File ZIP');
     const fakeFile = new File(['zip content'], 'repo.zip', { type: 'application/zip' });
     fireEvent.change(fileInput, { target: { files: [fakeFile] } });
 
-    const btn = screen.getByRole('button', { name: /importa zip/i });
-    expect(btn).toHaveProperty('disabled', false);
-    fireEvent.click(btn);
+    const importBtn = within(dialog).getByRole('button', { name: 'Importa ZIP' });
+    expect(importBtn).toHaveProperty('disabled', false);
+    fireEvent.click(importBtn);
 
     await waitFor(() => expect(mockImportRepository).toHaveBeenCalledTimes(1));
     const [input] = mockImportRepository.mock.calls[0];
@@ -383,19 +410,20 @@ describe('ProgramsView — Import ZIP', () => {
   it('shows loading state during import', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM]);
     mockListUdas.mockResolvedValue([UDA]);
-    mockListLessons.mockResolvedValue([LESSON_1]);
     mockImportRepository.mockReturnValue(new Promise(() => {}));
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
+    await screen.findByRole('button', { name: /^Informatica/ });
+    fireEvent.click(screen.getByRole('button', { name: /Importa ZIP/ }));
+    const dialog = await screen.findByRole('dialog');
 
-    const fileInput = await screen.findByLabelText(/importa zip didattico/i);
+    const fileInput = within(dialog).getByLabelText('File ZIP');
     fireEvent.change(fileInput, {
       target: { files: [new File(['zip'], 'r.zip', { type: 'application/zip' })] },
     });
-    fireEvent.click(screen.getByRole('button', { name: /importa zip/i }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Importa ZIP' }));
 
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /importazione/i })).toHaveProperty(
+      expect(within(dialog).getByRole('button', { name: /Importazione/i })).toHaveProperty(
         'disabled',
         true,
       ),
@@ -408,13 +436,15 @@ describe('ProgramsView — Import ZIP', () => {
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON_1]);
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
+    await screen.findByRole('button', { name: /^Informatica/ });
+    fireEvent.click(screen.getByRole('button', { name: /Importa ZIP/ }));
+    const dialog = await screen.findByRole('dialog');
 
-    const fileInput = await screen.findByLabelText(/importa zip didattico/i);
+    const fileInput = within(dialog).getByLabelText('File ZIP');
     fireEvent.change(fileInput, {
       target: { files: [new File(['zip'], 'r.zip', { type: 'application/zip' })] },
     });
-    fireEvent.click(screen.getByRole('button', { name: /importa zip/i }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Importa ZIP' }));
 
     await waitFor(() => expect(screen.getByText(/import completato/i)).toBeTruthy());
     expect(screen.getByText(/2 UDA/i)).toBeTruthy();
@@ -425,7 +455,6 @@ describe('ProgramsView — Import ZIP', () => {
   it('shows error when importRepository returns validation_failed', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM]);
     mockListUdas.mockResolvedValue([UDA]);
-    mockListLessons.mockResolvedValue([LESSON_1]);
     mockImportRepository.mockResolvedValue({
       status: 'validation_failed',
       validationIssues: [
@@ -439,13 +468,15 @@ describe('ProgramsView — Import ZIP', () => {
       ],
     });
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
+    await screen.findByRole('button', { name: /^Informatica/ });
+    fireEvent.click(screen.getByRole('button', { name: /Importa ZIP/ }));
+    const dialog = await screen.findByRole('dialog');
 
-    const fileInput = await screen.findByLabelText(/importa zip didattico/i);
+    const fileInput = within(dialog).getByLabelText('File ZIP');
     fireEvent.change(fileInput, {
       target: { files: [new File(['zip'], 'r.zip', { type: 'application/zip' })] },
     });
-    fireEvent.click(screen.getByRole('button', { name: /importa zip/i }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Importa ZIP' }));
 
     await waitFor(() => screen.getByRole('alert'));
     expect(screen.getByRole('alert').textContent).toMatch(/validazione fallita/i);
@@ -454,18 +485,43 @@ describe('ProgramsView — Import ZIP', () => {
   it('shows error when importRepository throws', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM]);
     mockListUdas.mockResolvedValue([UDA]);
-    mockListLessons.mockResolvedValue([LESSON_1]);
     mockImportRepository.mockRejectedValue(new Error('Storage non raggiungibile'));
     render(<ProgramsView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
+    await screen.findByRole('button', { name: /^Informatica/ });
+    fireEvent.click(screen.getByRole('button', { name: /Importa ZIP/ }));
+    const dialog = await screen.findByRole('dialog');
 
-    const fileInput = await screen.findByLabelText(/importa zip didattico/i);
+    const fileInput = within(dialog).getByLabelText('File ZIP');
     fireEvent.change(fileInput, {
       target: { files: [new File(['zip'], 'r.zip', { type: 'application/zip' })] },
     });
-    fireEvent.click(screen.getByRole('button', { name: /importa zip/i }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Importa ZIP' }));
 
     await waitFor(() => screen.getByRole('alert'));
     expect(screen.getByRole('alert').textContent).toMatch(/storage non raggiungibile/i);
+  });
+
+  it('closes the modal when Chiudi/Annulla is clicked', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+    fireEvent.click(screen.getByRole('button', { name: /Importa ZIP/ }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('ProgramsView — ReadinessView no longer shown as a separate card', () => {
+  it('does not render the readiness dashboard region in Corsi', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1, LESSON_2]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+    await waitFor(() => expect(screen.getByText(/UDA: 1/)).toBeTruthy());
+    expect(screen.queryByRole('region', { name: 'Dashboard di prontezza' })).toBeNull();
+    expect(screen.queryByText('Prontezza repository')).toBeNull();
   });
 });
