@@ -18,6 +18,7 @@ import { loadSelectedQuestions } from '../repository/verifications/loadSelectedQ
 import { downloadStudentPdf } from '../repository/verifications/verificationPdf.js';
 import { db, storage } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
+import { QuestionPicker } from './QuestionPicker.js';
 import styles from './VerificationsView.module.css';
 
 function StatusBadge({ status }: { status: 'draft' | 'active' | 'closed' }) {
@@ -160,18 +161,6 @@ export function VerificationsView() {
     } finally {
       setCreating(false);
     }
-  }
-
-  function handleToggleQuestion(entryId: string) {
-    setSelectedQuestionIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(entryId)) {
-        next.delete(entryId);
-      } else {
-        next.add(entryId);
-      }
-      return next;
-    });
   }
 
   async function handleSaveQuestionRefs() {
@@ -612,33 +601,11 @@ export function VerificationsView() {
                   <p className="state-empty">Nessuna domanda disponibile per questo programma.</p>
                 )}
                 {questionIndex !== null && questionIndex.length > 0 && (
-                  <>
-                    <ul className={styles.questionList}>
-                      {questionIndex.map((entry) => (
-                        <li key={entry.id} className={styles.questionRow}>
-                          <input
-                            type="checkbox"
-                            id={`q-${entry.id}`}
-                            checked={selectedQuestionIds.has(entry.id)}
-                            onChange={() => handleToggleQuestion(entry.id)}
-                            aria-label={`Seleziona domanda ${entry.questionLocalId}`}
-                          />
-                          <label htmlFor={`q-${entry.id}`}>
-                            <span>
-                              {entry.udaDir} / {entry.lessonFilename}
-                            </span>
-                          </label>
-                          <span className={styles.questionMeta}>
-                            tipo: {entry.tipo} | diff: {entry.difficolta} | peso: {entry.peso} |
-                            max: {entry.maxPoints}pt
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                    <p className={styles.selectedCount}>
-                      {selectedQuestionIds.size} domanda/e selezionata/e
-                    </p>
-                  </>
+                  <QuestionPicker
+                    entries={questionIndex}
+                    selectedIds={selectedQuestionIds}
+                    onChange={setSelectedQuestionIds}
+                  />
                 )}
               </div>
 
