@@ -18,6 +18,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: 0.875rem 1rem;
+  box-shadow: var(--shadow-sm);
 }
 
 .createRow {
@@ -63,8 +64,17 @@
 }
 
 /* ── Table ────────────────────────────────────────────────────────── */
+.tableWrap {
+  overflow-x: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
 .table {
   width: 100%;
+  min-width: 480px;
   border-collapse: collapse;
   font-size: 0.9375rem;
 }
@@ -85,7 +95,7 @@
 }
 
 .confirmRow {
-  background: #fff8f0;
+  background: var(--color-warning-bg);
 }
 
 .td {

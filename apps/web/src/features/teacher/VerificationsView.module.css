@@ -47,15 +47,15 @@
 }
 
 .badgeActive {
-  background: #d1fae5;
-  color: #065f46;
-  border: 1px solid #6ee7b7;
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid var(--color-success-border);
 }
 
 .badgeClosed {
-  background: #f3f4f6;
-  color: #6b7280;
-  border: 1px solid #d1d5db;
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
 }
 
 /* ── Verification table ──────────────────────────────────────────── */
@@ -64,6 +64,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .table {
@@ -138,16 +139,16 @@
 
 .iconBtnDanger {
   color: var(--color-error);
-  border-color: #fca5a5;
+  border-color: var(--color-error-border);
 }
 
 .iconBtnDanger:hover:not(:disabled) {
-  background-color: var(--color-error-bg, #fef2f2);
+  background-color: var(--color-error-bg);
 }
 
 /* ── Inline confirm row (close / delete) ──────────────────────────── */
 .confirmRowInline {
-  background: #fffbeb;
+  background: var(--color-warning-bg);
 }
 
 .confirmBox {
@@ -157,7 +158,7 @@
 }
 
 .confirmBoxDanger {
-  color: #7f1d1d;
+  color: var(--color-error);
 }
 
 /* ── Create form ──────────────────────────────────────────────────── */
@@ -169,6 +170,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .createTitle {
@@ -195,6 +197,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .detailHeader {
@@ -218,8 +221,8 @@
 /* ── Confirmation panel ──────────────────────────────────────────── */
 .confirmPanel {
   padding: 1rem;
-  background: #fffbeb;
-  border: 1px solid #fcd34d;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
   border-radius: var(--radius);
   display: flex;
   flex-direction: column;
@@ -229,7 +232,7 @@
 .confirmMsg {
   font-size: 0.9rem;
   font-weight: 500;
-  color: #92400e;
+  color: var(--color-warning);
 }
 
 .confirmRow {
