@@ -84,4 +84,4 @@ Il Docente possiede progetto e billing Firebase. Firestore, Storage e Functions 
 
 ## Prossimo passo
 
-Completare **H-01** e **H-02**: creare i progetti Firebase `dev` e `prod`, abilitare billing Blaze e configurare le risorse nella regione prevista (`europe-west8`). Poi **H-03**: budget e avvisi di spesa. Dopo queste azioni umane, un agente esegue il primo deploy su `dev`.
+**UX/Product Polish** — il deploy DEV è attivo (https://schoolforge-dev.web.app, DEV SMOKE PASS). La fase successiva migliora usabilità e coerenza visiva senza aggiungere macro-feature. Vedi [documentazione/ux-product-roadmap.md](documentazione/ux-product-roadmap.md) per la roadmap UX-01–UX-06.
