@@ -349,6 +349,59 @@ describe('VerificationsView', () => {
     expect(ref).not.toHaveProperty('questionIndex');
   });
 
+  it('activation uses the correct questionRefs after filtering and selecting all filtered', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByLabelText('Filtra per tipo'));
+
+    // Narrow to only the 'aperta' question (qi-2) and select all filtered.
+    fireEvent.change(screen.getByLabelText('Filtra per tipo'), { target: { value: 'aperta' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Seleziona tutte le domande filtrate' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
+    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
+
+    await waitFor(() => expect(mockUpdateVerificationConfig).toHaveBeenCalled());
+    const [, configArg] = mockUpdateVerificationConfig.mock.calls[0];
+    expect(configArg.questionRefs).toHaveLength(1);
+    expect(configArg.questionRefs[0].questionIndexEntryId).toBe('qi-2');
+  });
+
+  it('removing a question from the picker summary updates the activation payload', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
+
+    fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByLabelText(/seleziona domanda q2/i));
+    expect(screen.getByLabelText('Domande selezionate (contatore)').textContent).toMatch(
+      /2 selezionate/,
+    );
+    expect(screen.getByLabelText('Punti totali selezionati').textContent).toMatch(/6 punti totali/);
+
+    fireEvent.click(screen.getByLabelText('Rimuovi domanda q1 dal riepilogo'));
+    expect(screen.getByLabelText('Domande selezionate (contatore)').textContent).toMatch(
+      /1 selezionate/,
+    );
+    expect(screen.getByLabelText('Punti totali selezionati').textContent).toMatch(/4 punti totali/);
+
+    fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
+    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
+
+    await waitFor(() => expect(mockUpdateVerificationConfig).toHaveBeenCalled());
+    const [, configArg] = mockUpdateVerificationConfig.mock.calls[0];
+    expect(configArg.questionRefs).toHaveLength(1);
+    expect(configArg.questionRefs[0].questionIndexEntryId).toBe('qi-2');
+  });
+
   it('draft title/class edit calls updateVerificationConfig', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
