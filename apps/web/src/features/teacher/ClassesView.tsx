@@ -162,101 +162,103 @@ export function ClassesView() {
       {classes.length === 0 ? (
         <p className="state-empty">Nessuna classe. Aggiungine una sopra.</p>
       ) : (
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th className={styles.th}>Nome</th>
-              <th className={styles.th}>Descrizione</th>
-              <th className={styles.th} aria-label="Azioni"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {classes.map((c) =>
-              editId === c.id ? (
-                <tr key={c.id}>
-                  <td colSpan={3} className={styles.td}>
-                    <form
-                      aria-label="Modifica classe"
-                      className={styles.editForm}
-                      onSubmit={(e) => void handleSave(e)}
-                    >
-                      <input
-                        id={`edit-name-${c.id}`}
-                        type="text"
-                        className={styles.input}
-                        value={editName}
-                        aria-label="Nome classe"
-                        onChange={(e) => setEditName(e.target.value)}
-                      />
-                      <input
-                        id={`edit-desc-${c.id}`}
-                        type="text"
-                        className={styles.input}
-                        value={editDesc}
-                        aria-label="Descrizione classe"
-                        onChange={(e) => setEditDesc(e.target.value)}
-                      />
-                      <button type="submit" disabled={saving || !editName.trim()}>
-                        {saving ? 'Salvataggio…' : 'Salva'}
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th className={styles.th}>Nome</th>
+                <th className={styles.th}>Descrizione</th>
+                <th className={styles.th} aria-label="Azioni"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {classes.map((c) =>
+                editId === c.id ? (
+                  <tr key={c.id}>
+                    <td colSpan={3} className={styles.td}>
+                      <form
+                        aria-label="Modifica classe"
+                        className={styles.editForm}
+                        onSubmit={(e) => void handleSave(e)}
+                      >
+                        <input
+                          id={`edit-name-${c.id}`}
+                          type="text"
+                          className={styles.input}
+                          value={editName}
+                          aria-label="Nome classe"
+                          onChange={(e) => setEditName(e.target.value)}
+                        />
+                        <input
+                          id={`edit-desc-${c.id}`}
+                          type="text"
+                          className={styles.input}
+                          value={editDesc}
+                          aria-label="Descrizione classe"
+                          onChange={(e) => setEditDesc(e.target.value)}
+                        />
+                        <button type="submit" disabled={saving || !editName.trim()}>
+                          {saving ? 'Salvataggio…' : 'Salva'}
+                        </button>
+                        <button type="button" onClick={handleCancelEdit}>
+                          Annulla
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                ) : deleteConfirmId === c.id ? (
+                  <tr key={c.id} className={styles.confirmRow}>
+                    <td colSpan={3} className={styles.td}>
+                      <span className={styles.confirmText}>
+                        Eliminare <strong>{c.name}</strong>? L&apos;operazione è irreversibile.
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.deleteConfirmBtn}
+                        disabled={deleting}
+                        onClick={() => void handleDelete(c.id)}
+                      >
+                        {deleting ? 'Eliminazione…' : 'Elimina'}
                       </button>
-                      <button type="button" onClick={handleCancelEdit}>
+                      <button type="button" onClick={() => setDeleteConfirmId(null)}>
                         Annulla
                       </button>
-                    </form>
-                  </td>
-                </tr>
-              ) : deleteConfirmId === c.id ? (
-                <tr key={c.id} className={styles.confirmRow}>
-                  <td colSpan={3} className={styles.td}>
-                    <span className={styles.confirmText}>
-                      Eliminare <strong>{c.name}</strong>? L&apos;operazione è irreversibile.
-                    </span>
-                    <button
-                      type="button"
-                      className={styles.deleteConfirmBtn}
-                      disabled={deleting}
-                      onClick={() => void handleDelete(c.id)}
-                    >
-                      {deleting ? 'Eliminazione…' : 'Elimina'}
-                    </button>
-                    <button type="button" onClick={() => setDeleteConfirmId(null)}>
-                      Annulla
-                    </button>
-                  </td>
-                </tr>
-              ) : (
-                <tr key={c.id} className={styles.row}>
-                  <td className={styles.td}>
-                    <span className={styles.className}>{c.name}</span>
-                  </td>
-                  <td className={styles.td}>
-                    <span className={styles.classDesc}>{c.description ?? '—'}</span>
-                  </td>
-                  <td className={styles.tdActions}>
-                    <button
-                      type="button"
-                      className={styles.actionBtn}
-                      onClick={() => handleStartEdit(c)}
-                    >
-                      Modifica
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.deleteBtn}
-                      aria-label={`Elimina classe ${c.name}`}
-                      onClick={() => {
-                        setDeleteConfirmId(c.id);
-                        setEditId(null);
-                      }}
-                    >
-                      Elimina
-                    </button>
-                  </td>
-                </tr>
-              ),
-            )}
-          </tbody>
-        </table>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={c.id} className={styles.row}>
+                    <td className={styles.td}>
+                      <span className={styles.className}>{c.name}</span>
+                    </td>
+                    <td className={styles.td}>
+                      <span className={styles.classDesc}>{c.description ?? '—'}</span>
+                    </td>
+                    <td className={styles.tdActions}>
+                      <button
+                        type="button"
+                        className={styles.actionBtn}
+                        onClick={() => handleStartEdit(c)}
+                      >
+                        Modifica
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.deleteBtn}
+                        aria-label={`Elimina classe ${c.name}`}
+                        onClick={() => {
+                          setDeleteConfirmId(c.id);
+                          setEditId(null);
+                        }}
+                      >
+                        Elimina
+                      </button>
+                    </td>
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );
