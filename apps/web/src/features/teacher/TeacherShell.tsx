@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
 import { ProgramsView } from './ProgramsView.js';
 import { TemplateKitView } from './TemplateKitView.js';
@@ -6,54 +6,84 @@ import { VerificationsView } from './VerificationsView.js';
 import { ClassesView } from './ClassesView.js';
 import styles from './TeacherShell.module.css';
 
-type Section = 'repository' | 'programmi' | 'verifiche' | 'impostazioni';
+type Section = 'template' | 'corsi' | 'verifiche' | 'classi';
 
-const SECTIONS: { id: Section; label: string }[] = [
-  { id: 'repository', label: 'Repository didattico' },
-  { id: 'programmi', label: 'Programmi / UDA / Lezioni' },
-  { id: 'verifiche', label: 'Verifiche cartacee' },
-  { id: 'impostazioni', label: 'Impostazioni' },
+const SECTIONS: { id: Section; label: string; icon: string }[] = [
+  { id: 'template', label: 'Template', icon: '📄' },
+  { id: 'corsi', label: 'Corsi', icon: '📚' },
+  { id: 'verifiche', label: 'Verifiche', icon: '📝' },
+  { id: 'classi', label: 'Classi', icon: '🏫' },
 ];
 
 export function TeacherShell() {
   const { user, signOut } = useAuth();
-  const [activeSection, setActiveSection] = useState<Section>('repository');
+  const [activeSection, setActiveSection] = useState<Section>('template');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  const activeLabel = SECTIONS.find((s) => s.id === activeSection)?.label ?? '';
+  const displayName = user?.displayName ?? user?.email ?? 'Docente';
+  const initials = displayName.charAt(0).toUpperCase();
 
   return (
     <div className={styles.layout}>
       <header className={styles.header}>
         <span className={styles.logo}>SchoolForge</span>
-        <span className={styles.userEmail}>{user?.displayName ?? user?.email}</span>
-        <button type="button" className={styles.logoutBtn} onClick={() => void signOut()}>
-          Esci
-        </button>
+        <div className={styles.userMenu} ref={menuRef}>
+          <button
+            type="button"
+            className={styles.avatarBtn}
+            aria-label={`Account: ${displayName}`}
+            aria-expanded={menuOpen}
+            aria-haspopup="true"
+            onClick={() => setMenuOpen((o) => !o)}
+          >
+            <span className={styles.avatar}>{initials}</span>
+          </button>
+          {menuOpen && (
+            <div className={styles.dropdown} role="menu">
+              <span className={styles.dropdownEmail}>{user?.email}</span>
+              <button
+                type="button"
+                role="menuitem"
+                className={styles.dropdownSignOut}
+                onClick={() => {
+                  setMenuOpen(false);
+                  void signOut();
+                }}
+              >
+                Esci
+              </button>
+            </div>
+          )}
+        </div>
       </header>
 
       <nav aria-label="Sezioni docente" className={styles.nav}>
-        {SECTIONS.map(({ id, label }) => (
+        {SECTIONS.map(({ id, label, icon }) => (
           <button
             key={id}
             type="button"
             className={styles.navBtn}
             onClick={() => setActiveSection(id)}
             aria-current={activeSection === id ? 'page' : undefined}
+            title={label}
           >
-            {label}
+            <span className={styles.navIcon} aria-hidden="true">
+              {icon}
+            </span>
+            <span className={styles.navLabel}>{label}</span>
           </button>
         ))}
       </nav>
 
       <main className={styles.main}>
-        <h1 className={styles.sectionTitle}>{activeLabel}</h1>
-        {activeSection === 'repository' ? (
+        {activeSection === 'template' ? (
           <TemplateKitView />
-        ) : activeSection === 'programmi' ? (
+        ) : activeSection === 'corsi' ? (
           <ProgramsView />
         ) : activeSection === 'verifiche' ? (
           <VerificationsView />
-        ) : activeSection === 'impostazioni' ? (
+        ) : activeSection === 'classi' ? (
           <ClassesView />
         ) : null}
       </main>

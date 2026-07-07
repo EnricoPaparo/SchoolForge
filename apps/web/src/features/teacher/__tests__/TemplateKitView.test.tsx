@@ -30,12 +30,12 @@ describe('TemplateKitView', () => {
     vi.clearAllMocks();
   });
 
-  it('renders download buttons for each template', () => {
+  it('renders download buttons for each template with aria-label', () => {
     render(<TemplateKitView />);
-    expect(screen.getByRole('button', { name: /Scarica Programma/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Scarica UDA/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Scarica Lezione/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Scarica Pool domande/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Scarica template Programma/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Scarica template UDA/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Scarica template Lezione/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Scarica template Pool domande/ })).toBeTruthy();
   });
 
   it('renders Scarica kit completo (ZIP) button', () => {
@@ -45,7 +45,7 @@ describe('TemplateKitView', () => {
 
   it('clicking a download button calls downloadTemplate with the correct filename', () => {
     render(<TemplateKitView />);
-    fireEvent.click(screen.getByRole('button', { name: /Scarica Programma/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Scarica template Programma/ }));
     expect(downloadTemplate).toHaveBeenCalledWith('programma-template.md');
   });
 });

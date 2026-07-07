@@ -6,12 +6,14 @@ vi.mock('../../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
 const mockGetDocs = vi.fn();
 const mockSetDoc = vi.fn();
 const mockUpdateDoc = vi.fn();
+const mockDeleteDoc = vi.fn();
 const mockDoc = vi.fn();
 const mockCollection = vi.fn();
 const mockServerTimestamp = vi.fn(() => ({ _type: 'serverTimestamp' }));
 
 vi.mock('firebase/firestore', () => ({
   collection: (...args: unknown[]) => mockCollection(...args),
+  deleteDoc: (...args: unknown[]) => mockDeleteDoc(...args),
   doc: (...args: unknown[]) => mockDoc(...args),
   getDocs: (...args: unknown[]) => mockGetDocs(...args),
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
@@ -19,7 +21,7 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: () => mockServerTimestamp(),
 }));
 
-import { listClasses, createClass, updateClass } from '../classesService.js';
+import { listClasses, createClass, updateClass, deleteClass } from '../classesService.js';
 import type { Firestore } from 'firebase/firestore';
 
 const fakeDb = {} as Firestore;
@@ -35,6 +37,7 @@ beforeEach(() => {
   mockCollection.mockReturnValue({ id: 'classes' });
   mockSetDoc.mockResolvedValue(undefined);
   mockUpdateDoc.mockResolvedValue(undefined);
+  mockDeleteDoc.mockResolvedValue(undefined);
 });
 
 describe('listClasses', () => {
@@ -88,5 +91,19 @@ describe('updateClass', () => {
     const [, auditData] = mockSetDoc.mock.calls[0];
     expect(auditData.action).toBe('class.updated');
     expect(auditData.targetId).toBe('class-id');
+  });
+});
+
+describe('deleteClass', () => {
+  it('calls deleteDoc and writes audit event', async () => {
+    await deleteClass('class-id', OWNER_UID, fakeDb);
+
+    expect(mockDeleteDoc).toHaveBeenCalledTimes(1);
+    expect(mockSetDoc).toHaveBeenCalledTimes(1);
+    const [, auditData] = mockSetDoc.mock.calls[0];
+    expect(auditData.action).toBe('class.deleted');
+    expect(auditData.actorUid).toBe(OWNER_UID);
+    expect(auditData.targetId).toBe('class-id');
+    expect(auditData.outcome).toBe('success');
   });
 });

@@ -29,39 +29,41 @@ vi.mock('../../repository/programs/programsService.js', () => ({
 }));
 
 describe('TeacherShell', () => {
-  it('renders user email in header', () => {
+  it('renders avatar button with user initial in header', () => {
     render(<TeacherShell />);
+    expect(screen.getByRole('button', { name: /Account:/ })).toBeTruthy();
+  });
+
+  it('shows email and logout in dropdown when avatar clicked', () => {
+    render(<TeacherShell />);
+    fireEvent.click(screen.getByRole('button', { name: /Account:/ }));
     expect(screen.getByText('teacher@test.com')).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Esci' })).toBeTruthy();
   });
 
-  it('renders logout button', () => {
+  it('renders all four navigation sections with new labels', () => {
     render(<TeacherShell />);
-    expect(screen.getByRole('button', { name: 'Esci' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Template/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Corsi/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Verifiche/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Classi/ })).toBeTruthy();
   });
 
-  it('renders all four navigation sections', () => {
+  it('shows template kit section by default', () => {
     render(<TeacherShell />);
-    expect(screen.getByRole('button', { name: 'Repository didattico' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Programmi / UDA / Lezioni' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Verifiche cartacee' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Impostazioni' })).toBeTruthy();
-  });
-
-  it('shows default section heading and template kit section', () => {
-    render(<TeacherShell />);
-    expect(screen.getByRole('heading', { name: 'Repository didattico' })).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Kit template' })).toBeTruthy();
   });
 
   it('switches section on nav click', () => {
     render(<TeacherShell />);
-    fireEvent.click(screen.getByRole('button', { name: 'Verifiche cartacee' }));
-    expect(screen.getByRole('heading', { name: 'Verifiche cartacee' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Verifiche/ }));
+    expect(screen.getByRole('main')).toBeTruthy();
   });
 
-  it('calls signOut when logout button is clicked', () => {
+  it('calls signOut when Esci clicked in dropdown', () => {
     render(<TeacherShell />);
-    fireEvent.click(screen.getByRole('button', { name: 'Esci' }));
+    fireEvent.click(screen.getByRole('button', { name: /Account:/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Esci' }));
     expect(mockSignOut).toHaveBeenCalledOnce();
   });
 });

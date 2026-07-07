@@ -3,6 +3,12 @@
   max-width: 560px;
 }
 
+.heading {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
 .intro {
   color: var(--color-text-muted);
   font-size: 0.9375rem;
@@ -38,8 +44,16 @@
 
 .downloadBtn {
   font-size: 0.8125rem;
-  padding: 0.3125rem 0.75rem;
+  padding: 0.3125rem 0.875rem;
   flex-shrink: 0;
+  min-width: 80px;
+  text-align: center;
+}
+
+.zipRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .zipBtn {
@@ -59,7 +73,7 @@
 }
 
 .errorMsg {
-  margin-top: 0.625rem;
   color: var(--color-error);
   font-size: 0.875rem;
+  margin: 0;
 }

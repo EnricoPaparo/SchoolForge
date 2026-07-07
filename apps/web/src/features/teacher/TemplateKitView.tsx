@@ -20,9 +20,9 @@ export function TemplateKitView() {
 
   return (
     <section aria-label="Kit template" className={styles.section}>
-      <h3>Kit template</h3>
+      <h2 className={styles.heading}>Template didattici</h2>
       <p className={styles.intro}>
-        Scarica i file template per preparare il tuo repository didattico.
+        Scarica i file template, compilali e importali come ZIP nella sezione Corsi.
       </p>
 
       <ul className={styles.templateList}>
@@ -32,27 +32,30 @@ export function TemplateKitView() {
             <button
               type="button"
               className={styles.downloadBtn}
+              aria-label={`Scarica template ${t.name}`}
               onClick={() => downloadTemplate(t.filename)}
             >
-              Scarica {t.name}
+              Scarica
             </button>
           </li>
         ))}
       </ul>
 
-      <button
-        type="button"
-        className={styles.zipBtn}
-        onClick={() => void handleDownloadZip()}
-        disabled={zipping}
-      >
-        {zipping ? 'Generazione ZIP…' : 'Scarica kit completo (ZIP)'}
-      </button>
-      {zipError && (
-        <p role="alert" className={styles.errorMsg}>
-          {zipError}
-        </p>
-      )}
+      <div className={styles.zipRow}>
+        <button
+          type="button"
+          className={styles.zipBtn}
+          onClick={() => void handleDownloadZip()}
+          disabled={zipping}
+        >
+          {zipping ? 'Generazione ZIP…' : 'Scarica kit completo (ZIP)'}
+        </button>
+        {zipError && (
+          <p role="alert" className={styles.errorMsg}>
+            {zipError}
+          </p>
+        )}
+      </div>
     </section>
   );
 }

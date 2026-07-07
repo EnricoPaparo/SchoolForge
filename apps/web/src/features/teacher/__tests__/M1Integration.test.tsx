@@ -266,12 +266,12 @@ describe('M1 Integration — TemplateKitView shows download buttons in TeacherSh
     // TeacherShell starts on "repository" section which shows TemplateKitView
     render(<TeacherShell />);
     // Kit template section heading
-    expect(await screen.findByText('Kit template')).toBeTruthy();
+    expect(await screen.findByText('Template didattici')).toBeTruthy();
     // Individual template download buttons from the mocked TEMPLATES
-    expect(screen.getByRole('button', { name: 'Scarica Programma' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Scarica UDA' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Scarica Lezione' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Scarica Pool domande' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Scarica template Programma/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Scarica template UDA/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Scarica template Lezione/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Scarica template Pool domande/ })).toBeTruthy();
     // Kit ZIP button
     expect(screen.getByRole('button', { name: 'Scarica kit completo (ZIP)' })).toBeTruthy();
   });

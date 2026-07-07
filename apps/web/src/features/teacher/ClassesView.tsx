@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import {
   createClass,
+  deleteClass,
   listClasses,
   updateClass,
   type ClassItem,
@@ -25,6 +26,9 @@ export function ClassesView() {
   const [editDesc, setEditDesc] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   useEffect(() => {
     void loadClasses();
   }, []);
@@ -43,6 +47,7 @@ export function ClassesView() {
     setEditId(c.id);
     setEditName(c.name);
     setEditDesc(c.description ?? '');
+    setDeleteConfirmId(null);
   }
 
   function handleCancelEdit() {
@@ -86,6 +91,17 @@ export function ClassesView() {
     }
   }
 
+  async function handleDelete(classId: string) {
+    setDeleting(true);
+    try {
+      await deleteClass(classId, ownerUid, db);
+      setClasses((prev) => prev?.filter((c) => c.id !== classId) ?? null);
+      setDeleteConfirmId(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (loadError)
     return (
       <p role="alert" className="text-error">
@@ -101,85 +117,147 @@ export function ClassesView() {
 
   return (
     <section aria-label="Classi" className={styles.container}>
-      <h2 className={styles.sectionTitle}>Classi</h2>
+      <h2 className={styles.heading}>Classi</h2>
 
-      {classes.length === 0 && <p className="state-empty">Nessuna classe. Creane una.</p>}
-
-      {classes.length > 0 && (
-        <ul className={styles.classList}>
-          {classes.map((c) =>
-            editId === c.id ? (
-              <li key={c.id}>
-                <form
-                  aria-label="Modifica classe"
-                  className={styles.editForm}
-                  onSubmit={(e) => void handleSave(e)}
-                >
-                  <div className={styles.editFormRow}>
-                    <label htmlFor={`edit-name-${c.id}`}>Nome</label>
-                    <input
-                      id={`edit-name-${c.id}`}
-                      type="text"
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                    />
-                  </div>
-                  <div className={styles.editFormRow}>
-                    <label htmlFor={`edit-desc-${c.id}`}>Descrizione</label>
-                    <input
-                      id={`edit-desc-${c.id}`}
-                      type="text"
-                      value={editDesc}
-                      onChange={(e) => setEditDesc(e.target.value)}
-                    />
-                  </div>
-                  <div className={styles.editFormRow}>
-                    <button type="submit" disabled={saving || !editName.trim()}>
-                      {saving ? 'Salvataggio…' : 'Salva'}
-                    </button>
-                    <button type="button" onClick={handleCancelEdit}>
-                      Annulla
-                    </button>
-                  </div>
-                </form>
-              </li>
-            ) : (
-              <li key={c.id} className={styles.classRow}>
-                <span className={styles.className}>{c.name}</span>
-                {c.description && <span className={styles.classDesc}>{c.description}</span>}
-                <button type="button" onClick={() => handleStartEdit(c)}>
-                  Modifica
-                </button>
-              </li>
-            ),
-          )}
-        </ul>
-      )}
-
+      {/* Create form — in alto */}
       <form
         aria-label="Nuova classe"
         className={styles.createForm}
         onSubmit={(e) => void handleCreate(e)}
       >
-        <span className={styles.createLabel}>Crea nuova classe</span>
-        <label htmlFor="new-class-name">Nome</label>
-        <input
-          id="new-class-name"
-          type="text"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-        />
-        <label htmlFor="new-class-desc">Descrizione (opzionale)</label>
-        <input
-          id="new-class-desc"
-          type="text"
-          value={newDesc}
-          onChange={(e) => setNewDesc(e.target.value)}
-        />
-        <button type="submit" disabled={creating || !newName.trim()}>
-          {creating ? 'Creazione…' : 'Crea classe'}
-        </button>
+        <div className={styles.createRow}>
+          <div className={styles.createField}>
+            <label htmlFor="new-class-name" className={styles.fieldLabel}>
+              Nome
+            </label>
+            <input
+              id="new-class-name"
+              type="text"
+              className={styles.input}
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="es. 3A Informatica"
+            />
+          </div>
+          <div className={styles.createField}>
+            <label htmlFor="new-class-desc" className={styles.fieldLabel}>
+              Descrizione
+            </label>
+            <input
+              id="new-class-desc"
+              type="text"
+              className={styles.input}
+              value={newDesc}
+              onChange={(e) => setNewDesc(e.target.value)}
+              placeholder="opzionale"
+            />
+          </div>
+          <button type="submit" className={styles.addBtn} disabled={creating || !newName.trim()}>
+            {creating ? 'Creazione…' : '+ Aggiungi'}
+          </button>
+        </div>
       </form>
+
+      {/* Classes table */}
+      {classes.length === 0 ? (
+        <p className="state-empty">Nessuna classe. Aggiungine una sopra.</p>
+      ) : (
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th className={styles.th}>Nome</th>
+              <th className={styles.th}>Descrizione</th>
+              <th className={styles.th} aria-label="Azioni"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {classes.map((c) =>
+              editId === c.id ? (
+                <tr key={c.id}>
+                  <td colSpan={3} className={styles.td}>
+                    <form
+                      aria-label="Modifica classe"
+                      className={styles.editForm}
+                      onSubmit={(e) => void handleSave(e)}
+                    >
+                      <input
+                        id={`edit-name-${c.id}`}
+                        type="text"
+                        className={styles.input}
+                        value={editName}
+                        aria-label="Nome classe"
+                        onChange={(e) => setEditName(e.target.value)}
+                      />
+                      <input
+                        id={`edit-desc-${c.id}`}
+                        type="text"
+                        className={styles.input}
+                        value={editDesc}
+                        aria-label="Descrizione classe"
+                        onChange={(e) => setEditDesc(e.target.value)}
+                      />
+                      <button type="submit" disabled={saving || !editName.trim()}>
+                        {saving ? 'Salvataggio…' : 'Salva'}
+                      </button>
+                      <button type="button" onClick={handleCancelEdit}>
+                        Annulla
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ) : deleteConfirmId === c.id ? (
+                <tr key={c.id} className={styles.confirmRow}>
+                  <td colSpan={3} className={styles.td}>
+                    <span className={styles.confirmText}>
+                      Eliminare <strong>{c.name}</strong>? L&apos;operazione è irreversibile.
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.deleteConfirmBtn}
+                      disabled={deleting}
+                      onClick={() => void handleDelete(c.id)}
+                    >
+                      {deleting ? 'Eliminazione…' : 'Elimina'}
+                    </button>
+                    <button type="button" onClick={() => setDeleteConfirmId(null)}>
+                      Annulla
+                    </button>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={c.id} className={styles.row}>
+                  <td className={styles.td}>
+                    <span className={styles.className}>{c.name}</span>
+                  </td>
+                  <td className={styles.td}>
+                    <span className={styles.classDesc}>{c.description ?? '—'}</span>
+                  </td>
+                  <td className={styles.tdActions}>
+                    <button
+                      type="button"
+                      className={styles.actionBtn}
+                      onClick={() => handleStartEdit(c)}
+                    >
+                      Modifica
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.deleteBtn}
+                      aria-label={`Elimina classe ${c.name}`}
+                      onClick={() => {
+                        setDeleteConfirmId(c.id);
+                        setEditId(null);
+                      }}
+                    >
+                      Elimina
+                    </button>
+                  </td>
+                </tr>
+              ),
+            )}
+          </tbody>
+        </table>
+      )}
     </section>
   );
 }
