@@ -1,16 +1,18 @@
 import { useRef, useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
 import { ProgramsView } from './ProgramsView.js';
+import { LessonsView } from './LessonsView.js';
 import { TemplateKitView } from './TemplateKitView.js';
 import { VerificationsView } from './VerificationsView.js';
 import { ClassesView } from './ClassesView.js';
 import styles from './TeacherShell.module.css';
 
-type Section = 'template' | 'corsi' | 'verifiche' | 'classi';
+type Section = 'template' | 'corsi' | 'lezioni' | 'verifiche' | 'classi';
 
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
   { id: 'template', label: 'Template', icon: '📄' },
   { id: 'corsi', label: 'Corsi', icon: '📚' },
+  { id: 'lezioni', label: 'Lezioni', icon: '📖' },
   { id: 'verifiche', label: 'Verifiche', icon: '📝' },
   { id: 'classi', label: 'Classi', icon: '🏫' },
 ];
@@ -81,6 +83,8 @@ export function TeacherShell() {
           <TemplateKitView />
         ) : activeSection === 'corsi' ? (
           <ProgramsView />
+        ) : activeSection === 'lezioni' ? (
+          <LessonsView />
         ) : activeSection === 'verifiche' ? (
           <VerificationsView />
         ) : activeSection === 'classi' ? (

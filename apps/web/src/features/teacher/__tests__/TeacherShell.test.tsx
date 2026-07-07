@@ -41,10 +41,11 @@ describe('TeacherShell', () => {
     expect(screen.getByRole('menuitem', { name: 'Esci' })).toBeTruthy();
   });
 
-  it('renders all four navigation sections with new labels', () => {
+  it('renders all five navigation sections with new labels', () => {
     render(<TeacherShell />);
     expect(screen.getByRole('button', { name: /Template/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Corsi/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Lezioni/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Verifiche/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Classi/ })).toBeTruthy();
   });
@@ -58,6 +59,12 @@ describe('TeacherShell', () => {
     render(<TeacherShell />);
     fireEvent.click(screen.getByRole('button', { name: /Verifiche/ }));
     expect(screen.getByRole('main')).toBeTruthy();
+  });
+
+  it('shows the Lezioni section on nav click', async () => {
+    render(<TeacherShell />);
+    fireEvent.click(screen.getByRole('button', { name: /Lezioni/ }));
+    expect(await screen.findByRole('region', { name: 'Lezioni' })).toBeTruthy();
   });
 
   it('calls signOut when Esci clicked in dropdown', () => {
