@@ -1,0 +1,264 @@
+# Guida operativa — MVP docente cartaceo
+
+**Stato:** funzionante in locale con emulatori Firebase (M1 + M2 completati)
+**Aggiornato al:** 2026-06-26 (commit `4c1a05c`)
+
+---
+
+## Prerequisiti
+
+| Strumento | Versione | Note |
+|---|---|---|
+| Node.js | 20 LTS | Runtime |
+| pnpm | 9.x | `npm install -g pnpm` |
+| Firebase CLI | latest | `npm install -g firebase-tools` |
+| Git | qualunque | |
+
+Verifica:
+
+```bash
+node --version   # v20.x
+pnpm --version   # 9.x
+firebase --version
+```
+
+---
+
+## Installazione
+
+```bash
+git clone <repo>
+cd SchoolForge
+pnpm install
+```
+
+---
+
+## Configurazione variabili d'ambiente
+
+Crea `apps/web/.env.local` con le credenziali degli emulatori locali:
+
+```env
+VITE_FIREBASE_API_KEY=demo-key
+VITE_FIREBASE_AUTH_DOMAIN=demo-schoolforge.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=demo-schoolforge
+VITE_FIREBASE_STORAGE_BUCKET=demo-schoolforge.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
+VITE_FIREBASE_APP_ID=1:123456789:web:abcdef
+VITE_USE_EMULATORS=true
+```
+
+> Per un deploy reale su Firebase usa le credenziali del progetto Firebase (senza `VITE_USE_EMULATORS`).
+
+---
+
+## Avvio emulatori Firebase
+
+```bash
+npx firebase emulators:start --project demo-schoolforge --only auth,firestore,storage
+```
+
+Porte in ascolto:
+
+| Servizio | Porta |
+|---|---|
+| Auth | 9099 |
+| Firestore | 8080 |
+| Storage | 9199 |
+| Emulator UI | 4000 |
+
+Tieni questa shell aperta per tutta la sessione di lavoro.
+
+---
+
+## Avvio app web
+
+In un secondo terminale:
+
+```bash
+cd apps/web
+pnpm dev
+```
+
+Apri <http://localhost:5173> nel browser.
+
+---
+
+## Flusso operativo MVP
+
+### 1. Login docente
+
+Al primo avvio non esiste un account: creane uno tramite l'Emulator UI Auth (<http://localhost:4000/auth>) oppure lascia che la pagina di login lo crei in automatico se hai un utente già configurato.
+
+Con un utente creato nell'emulatore, inserisci email e password nella schermata di login.
+
+> **Primo avvio:** apparirà la schermata "Inizializza SchoolForge". Clicca **Diventa proprietario** per associare l'account al portale docente. Questa operazione va fatta una sola volta.
+
+### 2. Creazione programma
+
+Naviga in **Programmi / UDA / Lezioni** dalla barra laterale.
+
+Nel modulo in basso a sinistra:
+1. Inserisci il titolo del programma (es. *Reti Informatiche*).
+2. Clicca **Crea programma**.
+
+Il programma appare nella lista. Cliccaci sopra per selezionarlo.
+
+### 3. Preparazione dello ZIP didattico
+
+Lo ZIP deve rispettare la struttura:
+
+```
+uda-01-<slug>/
+  uda-01-<slug>.md          ← obbligatorio: front matter YAML + contenuto
+  lezione-001-<slug>.md     ← obbligatorio
+  lezione-001-<slug>.pool.md  ← opzionale: pool domande
+  lezione-002-<slug>.md
+  lezione-002-<slug>.pool.md
+uda-02-<slug>/
+  ...
+```
+
+**Front matter obbligatorio per il file UDA** (es. `uda-01-reti/uda-01-reti.md`):
+
+```yaml
+---
+titolo: Titolo della UDA
+competenze:
+  - Competenza A
+obiettivi:
+  - Obiettivo 1
+---
+
+# Contenuto Markdown...
+```
+
+**Formato pool domande** (es. `lezione-001-http.pool.md`):
+
+```yaml
+---
+schema: schoolforge-pool/v1
+questions:
+  - id: q1
+    tipo: aperta
+    difficolta: 1
+    peso: 2
+    testo: 'Testo della domanda.'
+    soluzione: 'Risposta attesa (non inclusa nel PDF studente).'
+  - id: q2
+    tipo: chiusa_singola
+    difficolta: 1
+    peso: 3
+    testo: 'Domanda a scelta singola?'
+    opzioni:
+      - id: a
+        testo: 'Opzione A'
+      - id: b
+        testo: 'Opzione B'
+    soluzione:
+      - a
+---
+```
+
+I template scaricabili sono disponibili nella sezione **Repository didattico** dell'app.
+
+> **Artefatti OS automaticamente filtrati:** `__MACOSX/`, `.DS_Store`, file nascosti (`.`), file vuoti.
+> **Wrapper strippato automaticamente:** se lo ZIP contiene una singola cartella radice (es. `corso-reti/uda-01-reti/...`), il prefisso viene rimosso.
+
+### 4. Import ZIP
+
+Con il programma selezionato, nel pannello di destra:
+
+1. Clicca **Scegli file** nella sezione *Importa ZIP didattico*.
+2. Seleziona il file `.zip`.
+3. Clicca **Importa ZIP**.
+
+Attendi il messaggio di conferma: *Import completato: N UDA, N lezioni, N domande.*
+
+In caso di errore di validazione, il messaggio indica il file e il campo specifico da correggere.
+
+La **Dashboard prontezza** mostra lo stato del repository:
+- ✓ *Generazione verifiche*: ci sono domande eleggibili nel questionIndex.
+- ✓ *Lezioni importate*, *UDA*, *Pool validi*.
+- ⚠ *Lezioni svolte*: nessuna lezione marcata come svolta (normale all'inizio).
+
+### 5. Creazione classe
+
+Naviga in **Impostazioni** dalla barra laterale (contiene la gestione classi).
+
+1. Inserisci il nome della classe nel campo *Nome* (es. *3A Informatica*).
+2. Aggiungi opzionalmente una descrizione.
+3. Clicca **Crea classe**.
+
+### 6. Creazione verifica
+
+Naviga in **Verifiche cartacee**.
+
+Nel modulo *Crea nuova verifica*:
+1. Inserisci il **Titolo** (es. *Verifica Reti — Modulo 1*).
+2. Seleziona il **Programma** dal menu a discesa.
+3. Seleziona opzionalmente la **Classe**.
+4. Clicca **Crea verifica**.
+
+La verifica appare nella lista laterale con stato **BOZZA**.
+
+### 7. Selezione domande
+
+Clicca sulla verifica nella lista per aprire il pannello di dettaglio.
+
+La sezione *Selezione domande* mostra tutte le domande eleggibili dal questionIndex del programma (tipo, difficoltà, peso, punti massimi).
+
+Seleziona le domande tramite i checkbox. Il contatore mostra quante domande sono state selezionate.
+
+> Sono necessarie almeno **1 domanda** per poter attivare la verifica.
+
+### 8. Attivazione
+
+Con almeno una domanda selezionata:
+
+1. Clicca **Attiva verifica**.
+2. Leggi il messaggio di conferma (la configurazione diventa immutabile).
+3. Clicca **Conferma attivazione**.
+
+La verifica passa allo stato **ATTIVA**. Appare il pulsante **Scarica PDF**.
+
+### 9. Download PDF studente
+
+Clicca **Scarica PDF**. Il browser scarica il file `<titolo-verifica>_studente.pdf`.
+
+Il PDF contiene:
+- Titolo verifica
+- Classe (se presente)
+- Campi Nome e Cognome, Data
+- Domande numerate con punteggio massimo `[N pt]`
+- Per domande chiuse: opzioni con ○
+- Per domande aperte: righe vuote per la risposta
+- Totale punteggio in calce
+
+Il PDF **non contiene** soluzioni, risposte corrette o marcatori di risposta.
+
+---
+
+## Limiti noti prima del deploy in produzione
+
+| Limite | Impatto | Fix richiesto |
+|---|---|---|
+| Dati negli emulatori sono temporanei | Persi al riavvio degli emulatori | Deploy su Firebase reale (H-01/H-02) |
+| Nessun dominio pubblico | Solo `localhost:5173` | Firebase Hosting deploy |
+| Security Rules non verificate su progetto reale | Possibili differenze vs emulatori | Test su `dev` Firebase reale |
+| Portale studenti (M3) non implementato | Nessun tentativo digitale | Milestone M3 |
+| Correzione risultati (M4) non implementata | Nessun punteggio registrato | Milestone M4 |
+| La voce "Classi" è sotto "Impostazioni" nella navigazione | UX non intuitiva | UX fix futuro |
+| Bundle size grande (jsPDF ~390 kB gzip 128 kB) | Prima apertura lenta | Lazy import già presente; accettabile per V1 |
+
+---
+
+## Comandi di verifica
+
+```bash
+pnpm format:check   # Prettier
+pnpm lint           # ESLint
+pnpm typecheck      # TypeScript
+pnpm test           # Vitest (197 test)
+pnpm build          # Build produzione
+```
