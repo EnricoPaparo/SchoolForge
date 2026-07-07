@@ -1,4 +1,12 @@
-import { collection, doc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import type { ClassDoc } from '../../../types/firestore.js';
 
@@ -51,6 +59,18 @@ export async function updateClass(
   await setDoc(doc(collection(db, 'auditEvents')), {
     actorUid: ownerUid,
     action: 'class.updated',
+    targetId: classId,
+    outcome: 'success',
+    reason: null,
+    timestamp: serverTimestamp(),
+  });
+}
+
+export async function deleteClass(classId: string, ownerUid: string, db: Firestore): Promise<void> {
+  await deleteDoc(doc(db, 'classes', classId));
+  await setDoc(doc(collection(db, 'auditEvents')), {
+    actorUid: ownerUid,
+    action: 'class.deleted',
     targetId: classId,
     outcome: 'success',
     reason: null,

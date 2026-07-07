@@ -8,6 +8,7 @@ import { ClassesView } from '../ClassesView.js';
 const mockListClasses = vi.fn();
 const mockCreateClass = vi.fn();
 const mockUpdateClass = vi.fn();
+const mockDeleteClass = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {} }));
 vi.mock('../../../lib/auth.js', () => ({
@@ -17,6 +18,7 @@ vi.mock('../../repository/classes/classesService.js', () => ({
   listClasses: (...args: unknown[]) => mockListClasses(...args),
   createClass: (...args: unknown[]) => mockCreateClass(...args),
   updateClass: (...args: unknown[]) => mockUpdateClass(...args),
+  deleteClass: (...args: unknown[]) => mockDeleteClass(...args),
 }));
 
 describe('ClassesView', () => {
@@ -64,12 +66,11 @@ describe('ClassesView', () => {
     render(<ClassesView />);
     await waitFor(() => screen.getByLabelText('Nome'));
 
-    // Use the id-targeted input for new class name
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     fireEvent.change(document.getElementById('new-class-name')!, {
       target: { value: 'Nuova Classe' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /crea classe/i }));
+    fireEvent.click(screen.getByRole('button', { name: /aggiungi/i }));
 
     await waitFor(() =>
       expect(mockCreateClass).toHaveBeenCalledWith('Nuova Classe', null, 'owner-uid', {}),
@@ -92,6 +93,28 @@ describe('ClassesView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /modifica/i }));
     expect(screen.getByRole('form', { name: /modifica classe/i })).toBeTruthy();
+  });
+
+  it('shows confirm row on delete click and calls deleteClass on confirm', async () => {
+    mockListClasses.mockResolvedValue([
+      {
+        id: 'c1',
+        ownerUid: 'owner-uid',
+        name: 'Classe 3A',
+        description: null,
+        createdAt: null,
+        updatedAt: null,
+      },
+    ]);
+    mockDeleteClass.mockResolvedValue(undefined);
+    render(<ClassesView />);
+    await waitFor(() => screen.getByText('Classe 3A'));
+
+    fireEvent.click(screen.getByRole('button', { name: /elimina classe Classe 3A/i }));
+    expect(screen.getByText(/eliminare/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /^elimina$/i }));
+    await waitFor(() => expect(mockDeleteClass).toHaveBeenCalledWith('c1', 'owner-uid', {}));
   });
 
   it('calls updateClass on save', async () => {

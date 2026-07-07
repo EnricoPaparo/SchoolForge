@@ -2,85 +2,160 @@
 .container {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  max-width: 640px;
+  gap: 1.25rem;
+  max-width: 720px;
 }
 
-.sectionTitle {
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--color-text-muted);
-  margin-bottom: 0.75rem;
-}
-
-/* ── Class list ──────────────────────────────────────────────────── */
-.classList {
-  list-style: none;
-  padding: 0;
+.heading {
+  font-size: 1.125rem;
+  font-weight: 600;
   margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
 }
 
-.classRow {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.625rem 1rem;
+/* ── Create form ──────────────────────────────────────────────────── */
+.createForm {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
+  padding: 0.875rem 1rem;
+}
+
+.createRow {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.createField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 140px;
+}
+
+.fieldLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.input {
+  padding: 0.4375rem 0.625rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  width: 100%;
+}
+
+.addBtn {
+  padding: 0.4375rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+
+/* ── Table ────────────────────────────────────────────────────────── */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  border-bottom: 2px solid var(--color-border);
+}
+
+.row:hover {
+  background: var(--color-surface-subtle);
+}
+
+.confirmRow {
+  background: #fff8f0;
+}
+
+.td {
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.tdActions {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+  white-space: nowrap;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .className {
-  flex: 1;
-  font-size: 0.9375rem;
   font-weight: 600;
+  color: var(--color-text);
 }
 
 .classDesc {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   color: var(--color-text-muted);
-  flex: 2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+/* ── Row actions ──────────────────────────────────────────────────── */
+.actionBtn {
+  font-size: 0.8125rem;
+  padding: 0.3125rem 0.625rem;
+}
+
+.deleteBtn {
+  font-size: 0.8125rem;
+  padding: 0.3125rem 0.625rem;
+  color: var(--color-error);
+  border-color: var(--color-error);
+  background: transparent;
+}
+
+.deleteBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-error) 8%, transparent);
+}
+
+.deleteConfirmBtn {
+  font-size: 0.8125rem;
+  padding: 0.3125rem 0.75rem;
+  color: #fff;
+  background: var(--color-error);
+  border-color: var(--color-error);
+  margin-right: 0.5rem;
+}
+
+.deleteConfirmBtn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+/* ── Confirm row ──────────────────────────────────────────────────── */
+.confirmText {
+  font-size: 0.875rem;
+  color: var(--color-text);
+  margin-right: 1rem;
 }
 
 /* ── Inline edit form ─────────────────────────────────────────────── */
 .editForm {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-}
-
-.editFormRow {
-  display: flex;
   gap: 0.5rem;
   align-items: center;
   flex-wrap: wrap;
-}
-
-/* ── Create form ──────────────────────────────────────────────────── */
-.createForm {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-}
-
-.createLabel {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-  font-weight: 500;
 }

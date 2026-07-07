@@ -49,6 +49,6 @@ describe('App — owner authenticated', () => {
       data: () => ({ ownerUid: OWNER_UID }),
     });
     render(<App />);
-    expect(await screen.findByRole('heading', { name: 'Repository didattico' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /Template/ })).toBeTruthy();
   });
 });
