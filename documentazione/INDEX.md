@@ -2,8 +2,10 @@
 
 ## Stato MVP
 
-**M1 + M2 completati.** Il flusso docente cartaceo è funzionante in locale con emulatori Firebase.
-Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente e [evidenze/smoke-mvp-docente-cartaceo.md](evidenze/smoke-mvp-docente-cartaceo.md) per la checklist smoke test.
+**M1 + M2 completati. Deploy DEV attivo: https://schoolforge-dev.web.app**
+
+Il flusso docente cartaceo è funzionante sia in locale (emulatori Firebase) che su Firebase DEV.
+Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente locale e [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) per lo smoke test DEV.
 
 ## Per iniziare
 
@@ -46,7 +48,8 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 ## Evidenze
 
 - [evidenze/G2-M1.md](evidenze/G2-M1.md) — gate G2: evidenze milestone M1.
-- [evidenze/smoke-mvp-docente-cartaceo.md](evidenze/smoke-mvp-docente-cartaceo.md) — smoke test MVP docente cartaceo (M1+M2).
+- [evidenze/smoke-mvp-docente-cartaceo.md](evidenze/smoke-mvp-docente-cartaceo.md) — smoke test MVP docente cartaceo (M1+M2, emulatori locali).
+- [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) — smoke test deploy DEV su Firebase reale. **DEV SMOKE PASS.**
 
 ## Diagrammi
 
