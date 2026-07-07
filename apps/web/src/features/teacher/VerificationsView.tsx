@@ -1,8 +1,9 @@
-import { type FormEvent, useEffect, useState } from 'react';
+import { Fragment, type FormEvent, useEffect, useState } from 'react';
 import {
   activateVerification,
   closeVerification,
   createVerification,
+  deleteClosedVerification,
   listVerifications,
   updateVerificationConfig,
   type VerificationItem,
@@ -46,7 +47,7 @@ export function VerificationsView() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // ── Detail state ────────────────────────────────────────────────
+  // ── Detail state (draft configuration only) ─────────────────────
   const [selectedVer, setSelectedVer] = useState<VerificationItem | null>(null);
   const [questionIndex, setQuestionIndex] = useState<QuestionIndexEntry[] | null>(null);
   const [questionIndexError, setQuestionIndexError] = useState<string | null>(null);
@@ -57,18 +58,22 @@ export function VerificationsView() {
   const [editDraftClassId, setEditDraftClassId] = useState('');
   const [savingDraft, setSavingDraft] = useState(false);
 
-  // ── Activation / close state ────────────────────────────────────
+  // ── Activation state (draft detail flow) ────────────────────────
   const [showActivateConfirm, setShowActivateConfirm] = useState(false);
   const [activating, setActivating] = useState(false);
   const [activateError, setActivateError] = useState<string | null>(null);
 
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  // ── Row actions: PDF / close / delete ────────────────────────────
+  const [pdfLoadingId, setPdfLoadingId] = useState<string | null>(null);
+  const [pdfErrors, setPdfErrors] = useState<Record<string, string | null>>({});
+
+  const [closeConfirmId, setCloseConfirmId] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
 
-  // ── PDF state ───────────────────────────────────────────────────
-  const [pdfLoading, setPdfLoading] = useState(false);
-  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     void loadAll();
@@ -93,16 +98,14 @@ export function VerificationsView() {
   async function handleSelectVer(v: VerificationItem) {
     setSelectedVer(v);
     setShowActivateConfirm(false);
-    setShowCloseConfirm(false);
     setActivateError(null);
-    setCloseError(null);
     setQuestionIndex(null);
     setQuestionIndexError(null);
     setSelectedQuestionIds(new Set(v.config.questionRefs.map((r) => r.questionIndexEntryId)));
     setEditDraftTitle(v.config.title);
     setEditDraftClassId(v.config.classId ?? '');
 
-    if (v.config.programId && v.config.importId) {
+    if (v.status === 'draft' && v.config.programId && v.config.importId) {
       try {
         const entries = await listQuestionIndex(v.config.programId, v.config.importId, db);
         setQuestionIndex(entries);
@@ -221,45 +224,75 @@ export function VerificationsView() {
     }
   }
 
-  async function handleDownloadPdf() {
-    if (!selectedVer || selectedVer.status !== 'active') return;
-    setPdfLoading(true);
-    setPdfError(null);
+  async function handleDownloadPdf(v: VerificationItem) {
+    if (v.status !== 'active') return;
+    setPdfLoadingId(v.id);
+    setPdfErrors((prev) => ({ ...prev, [v.id]: null }));
     try {
-      const snapshot = selectedVer.teacherSnapshot;
+      const snapshot = v.teacherSnapshot;
       if (!snapshot) {
-        setPdfError('Snapshot della verifica non disponibile. Riattiva o ricrea la verifica.');
+        setPdfErrors((prev) => ({
+          ...prev,
+          [v.id]: 'Snapshot della verifica non disponibile. Riattiva o ricrea la verifica.',
+        }));
         return;
       }
-      const refs = snapshot.questionRefs;
-      const result = await loadSelectedQuestions(refs, storage);
+      const result = await loadSelectedQuestions(snapshot.questionRefs, storage);
       if (!result.ok) {
-        setPdfError(result.error);
+        setPdfErrors((prev) => ({ ...prev, [v.id]: result.error }));
         return;
       }
       const classNameResolved =
         classes.find((c) => c.id === snapshot.classId)?.name ?? snapshot.className ?? null;
       await downloadStudentPdf(snapshot, result.questions, classNameResolved);
     } finally {
-      setPdfLoading(false);
+      setPdfLoadingId(null);
     }
   }
 
-  async function handleConfirmClose() {
-    if (!selectedVer) return;
+  function handleStartClose(id: string) {
+    setCloseConfirmId(id);
+    setCloseError(null);
+    setDeleteConfirmId(null);
+  }
+
+  async function handleConfirmClose(id: string) {
     setClosing(true);
     setCloseError(null);
     try {
-      await closeVerification(selectedVer.id, ownerUid, db);
-      setShowCloseConfirm(false);
+      await closeVerification(id, ownerUid, db);
+      setCloseConfirmId(null);
       const updated = await listVerifications(ownerUid, db);
       setVerifications(updated);
-      const refreshed = updated.find((v) => v.id === selectedVer.id);
-      if (refreshed) setSelectedVer(refreshed);
+      if (selectedVer?.id === id) {
+        const refreshed = updated.find((v) => v.id === id);
+        if (refreshed) setSelectedVer(refreshed);
+      }
     } catch (err) {
       setCloseError(err instanceof Error ? err.message : 'Errore durante la chiusura.');
     } finally {
       setClosing(false);
+    }
+  }
+
+  function handleStartDelete(id: string) {
+    setDeleteConfirmId(id);
+    setDeleteError(null);
+    setCloseConfirmId(null);
+  }
+
+  async function handleConfirmDelete(id: string) {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteClosedVerification(id, ownerUid, db);
+      setVerifications((prev) => prev?.filter((v) => v.id !== id) ?? null);
+      setDeleteConfirmId(null);
+      if (selectedVer?.id === id) setSelectedVer(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Errore durante l'eliminazione.");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -280,29 +313,187 @@ export function VerificationsView() {
 
   return (
     <section aria-label="Verifiche" className={styles.container}>
-      {/* ── Verification list ── */}
-      <div>
-        {verifications.length === 0 ? (
-          <p className="state-empty">Nessuna verifica. Creane una.</p>
-        ) : (
-          <ul className={styles.verList}>
-            {verifications.map((v) => (
-              <li
-                key={v.id}
-                className={styles.verRow}
-                onClick={() => void handleSelectVer(v)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => e.key === 'Enter' && void handleSelectVer(v)}
-                aria-pressed={selectedVer?.id === v.id}
-              >
-                <span className={styles.verTitle}>{v.config.title}</span>
-                <StatusBadge status={v.status} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {/* ── Verification table ── */}
+      {verifications.length === 0 ? (
+        <p className="state-empty">Nessuna verifica. Creane una.</p>
+      ) : (
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th className={styles.th}>Titolo</th>
+                <th className={styles.th}>Classe</th>
+                <th className={styles.th}>Corso</th>
+                <th className={styles.th}>Stato</th>
+                <th className={styles.th}>Domande</th>
+                <th className={styles.th} aria-label="Azioni"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {verifications.map((v) => {
+                const programTitle =
+                  programs.find((p) => p.id === v.config.programId)?.title ?? v.config.programId;
+                const className = v.config.classId
+                  ? (classes.find((c) => c.id === v.config.classId)?.name ?? v.config.classId)
+                  : '—';
+                const questionCount =
+                  v.status === 'draft'
+                    ? v.config.questionRefs.length
+                    : (v.teacherSnapshot?.questionRefs.length ?? v.config.questionRefs.length);
+
+                if (closeConfirmId === v.id) {
+                  return (
+                    <tr key={v.id} className={styles.confirmRowInline}>
+                      <td colSpan={6} className={styles.td}>
+                        <div
+                          role="region"
+                          aria-label="Conferma chiusura"
+                          className={styles.confirmBox}
+                        >
+                          <p className={styles.confirmMsg}>
+                            Chiudere <strong>{v.config.title}</strong>? Questa operazione non è
+                            reversibile.
+                          </p>
+                          {closeError && (
+                            <p role="alert" className="text-error">
+                              {closeError}
+                            </p>
+                          )}
+                          <div className={styles.confirmRow}>
+                            <button
+                              type="button"
+                              disabled={closing}
+                              onClick={() => void handleConfirmClose(v.id)}
+                            >
+                              {closing ? 'Chiusura…' : 'Conferma chiusura'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCloseConfirmId(null)}
+                              disabled={closing}
+                            >
+                              Annulla
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                if (deleteConfirmId === v.id) {
+                  return (
+                    <tr key={v.id} className={styles.confirmRowInline}>
+                      <td colSpan={6} className={styles.td}>
+                        <div
+                          role="region"
+                          aria-label="Conferma eliminazione"
+                          className={`${styles.confirmBox} ${styles.confirmBoxDanger}`}
+                        >
+                          <p className={styles.confirmMsg}>
+                            Eliminare definitivamente <strong>{v.config.title}</strong>?
+                            L&apos;operazione è irreversibile e non può essere annullata.
+                          </p>
+                          {deleteError && (
+                            <p role="alert" className="text-error">
+                              {deleteError}
+                            </p>
+                          )}
+                          <div className={styles.confirmRow}>
+                            <button
+                              type="button"
+                              disabled={deleting}
+                              onClick={() => void handleConfirmDelete(v.id)}
+                            >
+                              {deleting ? 'Eliminazione…' : 'Elimina definitivamente'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmId(null)}
+                              disabled={deleting}
+                            >
+                              Annulla
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return (
+                  <Fragment key={v.id}>
+                    <tr className={styles.row}>
+                      <td className={styles.td}>
+                        <button
+                          type="button"
+                          className={styles.verTitleBtn}
+                          aria-pressed={selectedVer?.id === v.id}
+                          aria-label={`Apri dettaglio verifica ${v.config.title}`}
+                          onClick={() => void handleSelectVer(v)}
+                        >
+                          {v.config.title}
+                        </button>
+                      </td>
+                      <td className={`${styles.td} ${styles.metaCell}`}>{className}</td>
+                      <td className={`${styles.td} ${styles.metaCell}`}>{programTitle}</td>
+                      <td className={styles.td}>
+                        <StatusBadge status={v.status} />
+                      </td>
+                      <td className={`${styles.td} ${styles.metaCell}`}>{questionCount}</td>
+                      <td className={styles.tdActions}>
+                        {v.status === 'active' && (
+                          <button
+                            type="button"
+                            className={styles.iconBtn}
+                            title="Scarica PDF"
+                            aria-label={`Scarica PDF — ${v.config.title}`}
+                            disabled={pdfLoadingId === v.id}
+                            onClick={() => void handleDownloadPdf(v)}
+                          >
+                            {pdfLoadingId === v.id ? '…' : '⬇️'}
+                          </button>
+                        )}
+                        {v.status === 'active' && (
+                          <button
+                            type="button"
+                            className={styles.iconBtn}
+                            title="Chiudi verifica"
+                            aria-label={`Chiudi verifica — ${v.config.title}`}
+                            onClick={() => handleStartClose(v.id)}
+                          >
+                            🔒
+                          </button>
+                        )}
+                        {v.status === 'closed' && (
+                          <button
+                            type="button"
+                            className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                            title="Elimina verifica"
+                            aria-label={`Elimina verifica — ${v.config.title}`}
+                            onClick={() => handleStartDelete(v.id)}
+                          >
+                            🗑️
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {pdfErrors[v.id] && (
+                      <tr>
+                        <td colSpan={6} className={styles.td}>
+                          <p role="alert" className="text-error">
+                            {pdfErrors[v.id]}
+                          </p>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* ── Create form ── */}
       <form
@@ -365,27 +556,12 @@ export function VerificationsView() {
         </button>
       </form>
 
-      {/* ── Detail panel ── */}
+      {/* ── Detail panel — draft configuration only; active/closed show a compact summary ── */}
       {selectedVer && (
         <div className={styles.detail} aria-label="Dettaglio verifica">
           <div className={styles.detailHeader}>
             <h2 className={styles.detailTitle}>{selectedVer.config.title}</h2>
             <StatusBadge status={selectedVer.status} />
-          </div>
-
-          <div>
-            <p className={styles.detailMeta}>
-              Programma:{' '}
-              {programs.find((p) => p.id === selectedVer.config.programId)?.title ??
-                selectedVer.config.programId}
-            </p>
-            {selectedVer.config.classId && (
-              <p className={styles.detailMeta}>
-                Classe:{' '}
-                {classes.find((c) => c.id === selectedVer.config.classId)?.name ??
-                  selectedVer.config.classId}
-              </p>
-            )}
           </div>
 
           {/* ── Draft: edit title/class ── */}
@@ -513,76 +689,24 @@ export function VerificationsView() {
             </>
           )}
 
-          {/* ── Active: read-only + close ── */}
-          {selectedVer.status === 'active' && (
-            <>
-              <p className={styles.detailMeta}>
-                Domande configurate: {selectedVer.config.questionRefs.length}
-              </p>
-              <div className={styles.actionBar}>
-                <button
-                  type="button"
-                  disabled={pdfLoading}
-                  onClick={() => void handleDownloadPdf()}
-                  aria-label="Scarica PDF"
-                >
-                  {pdfLoading ? 'Generazione PDF…' : 'Scarica PDF'}
-                </button>
-              </div>
-              {pdfError && (
-                <p role="alert" className="text-error">
-                  {pdfError}
-                </p>
-              )}
-              {!showCloseConfirm ? (
-                <div className={styles.actionBar}>
-                  <button
-                    type="button"
-                    onClick={() => setShowCloseConfirm(true)}
-                    aria-label="Chiudi verifica"
-                  >
-                    Chiudi verifica
-                  </button>
-                </div>
-              ) : (
-                <div className={styles.confirmPanel} role="region" aria-label="Conferma chiusura">
-                  <p className={styles.confirmMsg}>
-                    Chiudere la verifica? Questa operazione non è reversibile.
-                  </p>
-                  {closeError && (
-                    <p role="alert" className="text-error">
-                      {closeError}
-                    </p>
-                  )}
-                  <div className={styles.confirmRow}>
-                    <button
-                      type="button"
-                      disabled={closing}
-                      onClick={() => void handleConfirmClose()}
-                    >
-                      {closing ? 'Chiusura…' : 'Conferma chiusura'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowCloseConfirm(false)}
-                      disabled={closing}
-                    >
-                      Annulla
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* ── Closed: read-only, no actions ── */}
-          {selectedVer.status === 'closed' && (
+          {/* ── Active / closed: compact read-only summary — actions live in the table row ── */}
+          {selectedVer.status !== 'draft' && (
             <p className={styles.detailMeta}>
-              Verifica chiusa. Domande configurate: {selectedVer.config.questionRefs.length}.
+              Programma: {programTitle(selectedVer, programs)}
+              {selectedVer.config.classId &&
+                ` · Classe: ${classes.find((c) => c.id === selectedVer.config.classId)?.name ?? selectedVer.config.classId}`}
+              {' · Domande configurate: '}
+              {(selectedVer.teacherSnapshot?.questionRefs.length ??
+                selectedVer.config.questionRefs.length) ||
+                0}
             </p>
           )}
         </div>
       )}
     </section>
   );
+}
+
+function programTitle(v: VerificationItem, programs: ProgramItem[]): string {
+  return programs.find((p) => p.id === v.config.programId)?.title ?? v.config.programId;
 }

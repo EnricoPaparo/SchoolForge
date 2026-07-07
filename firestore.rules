@@ -39,7 +39,9 @@ service cloud.firestore {
     }
 
     match /verifications/{docId} {
-      allow read, delete: if isOwner();
+      allow read: if isOwner();
+      // Delete allowed only for closed verifications — draft and active are immutable/protected.
+      allow delete: if isOwner() && resource.data.status == 'closed';
       allow create: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
       // Draft: any owner update allowed.
       // Active: only close allowed; only status/closedAt/updatedAt may change.

@@ -58,35 +58,106 @@
   border: 1px solid #d1d5db;
 }
 
-/* ── Verification list ───────────────────────────────────────────── */
-.verList {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.verRow {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
+/* ── Verification table ──────────────────────────────────────────── */
+.tableWrap {
+  overflow-x: auto;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  cursor: pointer;
+  border-radius: var(--radius-lg);
 }
 
-.verRow:hover {
-  border-color: var(--color-primary);
+.table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 0.875rem;
 }
 
-.verTitle {
-  flex: 1;
+.th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  border-bottom: 2px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.row:hover {
+  background: var(--color-surface-subtle);
+}
+
+.td {
+  padding: 0.5625rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.tdActions {
+  padding: 0.4375rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+  white-space: nowrap;
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.verTitleBtn {
+  background: none;
+  border: none;
+  padding: 0;
   font-size: 0.9375rem;
   font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.verTitleBtn:hover {
+  text-decoration: underline;
+  background: none;
+}
+
+.verTitleBtn[aria-pressed='true'] {
+  text-decoration: underline;
+}
+
+.metaCell {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+
+.iconBtn {
+  padding: 0.3125rem 0.5rem;
+  font-size: 0.9375rem;
+  line-height: 1;
+}
+
+.iconBtnDanger {
+  color: var(--color-error);
+  border-color: #fca5a5;
+}
+
+.iconBtnDanger:hover:not(:disabled) {
+  background-color: var(--color-error-bg, #fef2f2);
+}
+
+/* ── Inline confirm row (close / delete) ──────────────────────────── */
+.confirmRowInline {
+  background: #fffbeb;
+}
+
+.confirmBox {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.confirmBoxDanger {
+  color: #7f1d1d;
 }
 
 /* ── Create form ──────────────────────────────────────────────────── */

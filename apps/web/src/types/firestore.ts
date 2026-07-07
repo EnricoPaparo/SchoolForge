@@ -18,7 +18,8 @@ export type AuditAction =
   | 'verification.created'
   | 'verification.updated'
   | 'verification.activated'
-  | 'verification.closed';
+  | 'verification.closed'
+  | 'verification.deleted';
 
 export interface AuditEvent {
   actorUid: string;
