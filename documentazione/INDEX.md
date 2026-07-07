@@ -7,6 +7,8 @@
 Il flusso docente cartaceo è funzionante sia in locale (emulatori Firebase) che su Firebase DEV.
 Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente locale e [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) per lo smoke test DEV.
 
+**Prossima fase:** UX/Product Polish — vedi [ux-product-roadmap.md](ux-product-roadmap.md) per la roadmap (UX-01 → UX-06).
+
 ## Per iniziare
 
 SchoolForge è un repository didattico Markdown-first per un solo docente. Se è la prima volta, parti dal [brief](brief.md) per capire problema, visione e perimetro, poi consulta il [glossario](glossario.md) per il vocabolario condiviso (verifica, tentativo, pool, canale cartaceo/digitale, lock nome+cognome). Tutta la documentazione è in italiano e la baseline è la versione 4.1.
@@ -44,6 +46,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [piano-implementazione.md](piano-implementazione.md) | Pacchetti e gate. | Per sapere cosa implementare. |
 | [ux-patterns.md](ux-patterns.md) | Pattern di stato della SPA. | Per la UI docente e portale. |
 | [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) | Guida operativa MVP in locale. | Per avviare e usare l'MVP oggi. |
+| [ux-product-roadmap.md](ux-product-roadmap.md) | Roadmap UX/Product Polish (UX-01–06). | Per pianificare e implementare il polish UI. |
 
 ## Evidenze
 
