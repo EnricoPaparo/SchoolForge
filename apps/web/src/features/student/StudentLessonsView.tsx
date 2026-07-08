@@ -45,7 +45,11 @@ export function StudentLessonsView() {
       if (result.status === 'no-class') {
         setState({ status: 'no-class' });
       } else {
-        setState({ status: 'ok', programs: result.programs, lessonsByProgram: result.lessonsByProgram });
+        setState({
+          status: 'ok',
+          programs: result.programs,
+          lessonsByProgram: result.lessonsByProgram,
+        });
       }
     } catch {
       setState({ status: 'error' });
@@ -153,7 +157,10 @@ export function StudentLessonsView() {
                 </button>
 
                 {expanded && (
-                  <div id={`student-lezioni-program-panel-${program.id}`} className={styles.udaPanel}>
+                  <div
+                    id={`student-lezioni-program-panel-${program.id}`}
+                    className={styles.udaPanel}
+                  >
                     {lessons.length === 0 ? (
                       <p className="state-empty">Nessuna lezione disponibile.</p>
                     ) : (
@@ -182,7 +189,10 @@ export function StudentLessonsView() {
                               </button>
 
                               {udaExpanded && (
-                                <div id={`student-lezioni-uda-panel-${udaKey}`} className={styles.lessonPanel}>
+                                <div
+                                  id={`student-lezioni-uda-panel-${udaKey}`}
+                                  className={styles.lessonPanel}
+                                >
                                   <ul className={styles.lessonList}>
                                     {udaLessons.map((lesson) => (
                                       <li key={lesson.id}>
@@ -215,7 +225,9 @@ export function StudentLessonsView() {
 
       <div className={styles.content}>
         {selectedLesson === null ? (
-          <p className="state-empty">Seleziona una lezione dalla lista per leggerne il contenuto.</p>
+          <p className="state-empty">
+            Seleziona una lezione dalla lista per leggerne il contenuto.
+          </p>
         ) : (
           <>
             <h3 className={styles.contentTitle}>{selectedLesson.filename}</h3>

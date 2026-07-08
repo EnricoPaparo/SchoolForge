@@ -109,7 +109,9 @@ describe('loadStudentLessons — lesson sorting', () => {
     mockGetDocs.mockImplementation((q: { __collRef: { __collection: string } }) => {
       if (q.__collRef.__collection === 'programs') {
         return Promise.resolve(
-          docsFor('programs', [{ id: 'p1', data: { title: 'Informatica', classIds: ['class-a'] } }]),
+          docsFor('programs', [
+            { id: 'p1', data: { title: 'Informatica', classIds: ['class-a'] } },
+          ]),
         );
       }
       return Promise.resolve(
@@ -172,7 +174,9 @@ describe('loadStudentLessons — lesson sorting', () => {
     mockGetDocs.mockImplementation((q: { __collRef: { __collection: string } }) => {
       if (q.__collRef.__collection === 'programs') {
         return Promise.resolve(
-          docsFor('programs', [{ id: 'p1', data: { title: 'Informatica', classIds: ['class-a'] } }]),
+          docsFor('programs', [
+            { id: 'p1', data: { title: 'Informatica', classIds: ['class-a'] } },
+          ]),
         );
       }
       return Promise.resolve(

@@ -139,7 +139,9 @@ describe('Firestore rules — programs/{docId} student read (M3L-C)', () => {
     });
 
     await assertSucceeds(
-      getDocs(query(collection(studentDb(), 'programs'), where('classIds', 'array-contains', 'class-a'))),
+      getDocs(
+        query(collection(studentDb(), 'programs'), where('classIds', 'array-contains', 'class-a')),
+      ),
     );
   });
 
@@ -348,11 +350,7 @@ describe('Firestore rules — publicLessons student read (M3L-C)', () => {
     });
 
     await assertFails(
-      setDoc(
-        doc(studentDb(), 'publicLessons/l1'),
-        { filename: 'hacked.md' },
-        { merge: true },
-      ),
+      setDoc(doc(studentDb(), 'publicLessons/l1'), { filename: 'hacked.md' }, { merge: true }),
     );
   });
 });

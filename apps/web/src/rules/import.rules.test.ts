@@ -83,7 +83,10 @@ async function seedStudentAccess(studentPortalEnabled: boolean) {
   });
 }
 
-async function seedStudent(status: 'pending' | 'approved' | 'blocked', classId: string | null = null) {
+async function seedStudent(
+  status: 'pending' | 'approved' | 'blocked',
+  classId: string | null = null,
+) {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'students', OTHER_UID), {
       uid: OTHER_UID,
