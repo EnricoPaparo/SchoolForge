@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import {
   createProgram,
+  deleteProgram,
   getImportMeta,
   listLessons,
   listPrograms,
@@ -69,6 +70,11 @@ export function ProgramsView() {
 
   const [newTitle, setNewTitle] = useState('');
   const [creating, setCreating] = useState(false);
+
+  // ── Delete program state ────────────────────────────────────────
+  const [deleteConfirmProgramId, setDeleteConfirmProgramId] = useState<string | null>(null);
+  const [deletingProgram, setDeletingProgram] = useState(false);
+  const [deleteProgramError, setDeleteProgramError] = useState<string | null>(null);
 
   // ── Import ZIP modal state ─────────────────────────────────────
   const [importModalProgramId, setImportModalProgramId] = useState<string | null>(null);
@@ -210,6 +216,35 @@ export function ProgramsView() {
       setEditingProgramId(null);
     } finally {
       setSavingTitle(false);
+    }
+  }
+
+  function startDeleteProgram(program: ProgramItem) {
+    setDeleteConfirmProgramId(program.id);
+    setDeleteProgramError(null);
+  }
+
+  function cancelDeleteProgram() {
+    setDeleteConfirmProgramId(null);
+    setDeleteProgramError(null);
+  }
+
+  async function handleConfirmDeleteProgram(program: ProgramItem) {
+    setDeletingProgram(true);
+    setDeleteProgramError(null);
+    try {
+      await deleteProgram(program.id, ownerUid, db, storage);
+      setPrograms((prev) => prev?.filter((p) => p.id !== program.id) ?? null);
+      setCourseState((prev) => {
+        const next = { ...prev };
+        delete next[program.id];
+        return next;
+      });
+      setDeleteConfirmProgramId(null);
+    } catch (err) {
+      setDeleteProgramError(err instanceof Error ? err.message : 'Impossibile eliminare il corso.');
+    } finally {
+      setDeletingProgram(false);
     }
   }
 
@@ -433,8 +468,52 @@ export function ProgramsView() {
                     >
                       ℹ️
                     </button>
+                    <button
+                      type="button"
+                      className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                      title="Elimina corso"
+                      aria-label={`Elimina corso — ${program.title}`}
+                      onClick={() => startDeleteProgram(program)}
+                    >
+                      🗑️
+                    </button>
                   </div>
                 </div>
+
+                {deleteConfirmProgramId === program.id && (
+                  <div
+                    className={styles.deleteConfirmBox}
+                    role="region"
+                    aria-label={`Conferma eliminazione corso ${program.title}`}
+                  >
+                    <p className={styles.deleteConfirmMsg}>
+                      Saranno eliminati import, UDA, lezioni, pool e file caricati. Operazione
+                      irreversibile.
+                    </p>
+                    {deleteProgramError && (
+                      <p role="alert" className="text-error">
+                        {deleteProgramError}
+                      </p>
+                    )}
+                    <div className={styles.deleteConfirmActions}>
+                      <button
+                        type="button"
+                        className={styles.deleteConfirmBtn}
+                        disabled={deletingProgram}
+                        onClick={() => void handleConfirmDeleteProgram(program)}
+                      >
+                        {deletingProgram ? 'Eliminazione…' : 'Elimina definitivamente'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelDeleteProgram}
+                        disabled={deletingProgram}
+                      >
+                        Annulla
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {editingProgramId === program.id && (
                   <form

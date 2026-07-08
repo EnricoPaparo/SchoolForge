@@ -52,7 +52,8 @@ export function QuestionPicker({ entries, selectedIds, onChange }: Props) {
       if (tipoFilter && e.tipo !== tipoFilter) return false;
       if (difficoltaFilter && String(e.difficolta) !== difficoltaFilter) return false;
       if (q) {
-        const haystack = `${e.udaDir} ${e.lessonFilename} ${e.questionLocalId}`.toLowerCase();
+        const haystack =
+          `${e.questionPreview} ${e.udaDir} ${e.lessonFilename} ${e.questionLocalId}`.toLowerCase();
         if (!haystack.includes(q)) return false;
       }
       return true;
@@ -106,7 +107,7 @@ export function QuestionPicker({ entries, selectedIds, onChange }: Props) {
             id="qp-search"
             type="text"
             className={styles.filterInput}
-            placeholder="UDA, lezione o ID domanda…"
+            placeholder="Cerca nel testo domanda, UDA o lezione"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             aria-label="Cerca domande"

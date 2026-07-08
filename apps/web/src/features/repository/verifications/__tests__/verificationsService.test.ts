@@ -182,11 +182,14 @@ describe('activateVerification', () => {
       config: VALID_CONFIG,
     };
 
+    let capturedUpdate: Record<string, unknown> | undefined;
     mockRunTransaction.mockImplementation(
       async (_db: unknown, fn: (tx: unknown) => Promise<void>) => {
         const mockTx = {
           get: vi.fn().mockResolvedValue({ exists: () => true, data: () => draftDoc }),
-          update: vi.fn(),
+          update: vi.fn((_ref: unknown, data: Record<string, unknown>) => {
+            capturedUpdate = data;
+          }),
         };
         await fn(mockTx);
         return mockTx.update.mock.calls[0];
@@ -209,6 +212,13 @@ describe('activateVerification', () => {
 
     const [, auditData] = mockSetDoc.mock.calls[0];
     expect(auditData.action).toBe('verification.activated');
+
+    // Top-level activatedAt (shown in the verification list) must be set,
+    // in addition to teacherSnapshot.activatedAt.
+    expect(capturedUpdate?.activatedAt).toBeDefined();
+    expect(
+      (capturedUpdate?.teacherSnapshot as { activatedAt?: unknown } | undefined)?.activatedAt,
+    ).toBeDefined();
   });
 
   it('throws if status is not draft', async () => {

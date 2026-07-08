@@ -120,6 +120,24 @@ describe('QuestionPicker — filters', () => {
     expect(within(list).getByText('#q1')).toBeTruthy();
   });
 
+  it('filters by free-text search matching only questionPreview (not UDA, lesson or id)', () => {
+    renderPicker();
+    // "ISO/OSI" only appears in qi-1's questionPreview text, not in its UDA
+    // dir, lesson filename or questionLocalId.
+    fireEvent.change(screen.getByLabelText('Cerca domande'), { target: { value: 'ISO/OSI' } });
+    const list = questionList();
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(list).getByText('#q1')).toBeTruthy();
+  });
+
+  it('shows the updated search placeholder', () => {
+    renderPicker();
+    expect(screen.getByLabelText('Cerca domande')).toHaveProperty(
+      'placeholder',
+      'Cerca nel testo domanda, UDA o lezione',
+    );
+  });
+
   it('shows an empty state when no question matches the filters', () => {
     renderPicker();
     fireEvent.change(screen.getByLabelText('Cerca domande'), {
