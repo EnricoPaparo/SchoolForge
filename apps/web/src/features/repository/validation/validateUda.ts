@@ -1,6 +1,7 @@
 import { parse as parseYaml } from 'yaml';
 import type { LessonResult, RawFile, UdaResult, ValidationIssue } from './types.js';
 import { validateLesson } from './validateLesson.js';
+import { extractDescription, splitFrontMatter } from './frontMatter.js';
 
 const UDA_FILENAME_RE = /^uda-\d{2}-.+\.md$/;
 
@@ -10,12 +11,7 @@ interface UdaFrontMatter {
   obiettivi?: unknown;
 }
 
-function extractFrontMatter(content: string): string | null {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
-  return match ? match[1] : null;
-}
-
-function isNonEmptyStringArray(value: unknown): boolean {
+function isNonEmptyStringArray(value: unknown): value is string[] {
   return (
     Array.isArray(value) &&
     value.length > 0 &&
@@ -49,7 +45,9 @@ export function validateUda(
     });
   }
 
-  const fmRaw = extractFrontMatter(udaFile.content);
+  const { frontMatterRaw: fmRaw, body } = splitFrontMatter(udaFile.content);
+  let fm: UdaFrontMatter = {};
+
   if (!fmRaw) {
     udaIssues.push({
       level: 'uda',
@@ -59,7 +57,6 @@ export function validateUda(
       message: 'UDA file is missing YAML front matter (expected --- ... --- block)',
     });
   } else {
-    let fm: UdaFrontMatter = {};
     try {
       fm = (parseYaml(fmRaw) as UdaFrontMatter) ?? {};
     } catch (e) {
@@ -124,5 +121,10 @@ export function validateUda(
     valid: udaIssues.every((i) => i.level !== 'uda'),
     lessons,
     issues: udaIssues,
+    metadata: {
+      descrizione: extractDescription(body),
+      competenze: isNonEmptyStringArray(fm.competenze) ? fm.competenze : [],
+      obiettivi: isNonEmptyStringArray(fm.obiettivi) ? fm.obiettivi : [],
+    },
   };
 }

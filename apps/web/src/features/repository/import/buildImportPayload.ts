@@ -50,6 +50,9 @@ export function buildImportPayload(params: {
         filename: uda.filename,
         storageBasePath,
         lessonCount: uda.lessons.length,
+        descrizione: uda.metadata.descrizione,
+        competenze: uda.metadata.competenze,
+        obiettivi: uda.metadata.obiettivi,
       },
     });
 
@@ -125,6 +128,7 @@ export function buildImportPayload(params: {
       lessonCount: lessons.length,
       questionCount: questionIndex.length,
       poolIssues,
+      programmaMeta: validation.programma,
     },
     udas,
     lessons,

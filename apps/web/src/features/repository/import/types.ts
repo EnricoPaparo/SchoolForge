@@ -1,4 +1,4 @@
-import type { RawFile, ValidationIssue } from '../validation/types.js';
+import type { ProgrammaMetadata, RawFile, ValidationIssue } from '../validation/types.js';
 
 export interface ImportRepositoryInput {
   ownerUid: string;
@@ -35,6 +35,9 @@ export interface UdaPayload {
     filename: string;
     storageBasePath: string;
     lessonCount: number;
+    descrizione: string | null;
+    competenze: string[];
+    obiettivi: string[];
   };
 }
 
@@ -89,6 +92,8 @@ export interface ImportMetaPayload {
     code: string;
     message: string;
   }>;
+  /** Parsed from the optional root-level programma.md. Null when the file is absent. */
+  programmaMeta: ProgrammaMetadata | null;
 }
 
 export interface ImportPayload {

@@ -109,15 +109,34 @@ Il programma appare nella lista. Cliccaci sopra per selezionarlo.
 Lo ZIP deve rispettare la struttura:
 
 ```
-uda-01-<slug>/
-  uda-01-<slug>.md          ← obbligatorio: front matter YAML + contenuto
+programma.md                 ← opzionale: metadati didattici del programma
+uda-01-<slug>/                ← ogni UDA è una cartella
+  uda-01-<slug>.md          ← obbligatorio: front matter YAML + contenuto (un file per cartella)
   lezione-001-<slug>.md     ← obbligatorio
-  lezione-001-<slug>.pool.md  ← opzionale: pool domande
+  lezione-001-<slug>.pool.md  ← opzionale: pool domande della lezione
   lezione-002-<slug>.md
   lezione-002-<slug>.pool.md
 uda-02-<slug>/
   ...
 ```
+
+`programma.md` è **opzionale** e va messo nella radice dello ZIP (non dentro una cartella UDA). Un kit di esempio completo e importabile è scaricabile dalla sezione **Template** dell'app (bottone "Scarica kit completo").
+
+**Front matter opzionale per `programma.md`** (nella radice dello ZIP):
+
+```yaml
+---
+titolo: Nome del programma
+anno_scolastico: '2025/2026'
+classe: 3A
+materia: Informatica
+docente: Nome Cognome
+---
+
+Descrizione sintetica del programma annuale.
+```
+
+Se presente, questi metadati (anno scolastico, docente, materia, classe, descrizione) compaiono nel pannello **Info corso**. Se assente, l'import funziona comunque: il pannello info mostra solo UDA/lezioni/domande.
 
 **Front matter obbligatorio per il file UDA** (es. `uda-01-reti/uda-01-reti.md`):
 
@@ -132,6 +151,8 @@ obiettivi:
 
 # Contenuto Markdown...
 ```
+
+Il testo dopo il front matter (`# Contenuto Markdown...`) è usato anche come breve descrizione dell'UDA nel pannello **Info UDA**, insieme a competenze e obiettivi. Se un campo manca, il pannello mostra "Non indicato" — non vengono mai mostrati dettagli tecnici (import id, percorsi di storage).
 
 **Formato pool domande** (es. `lezione-001-http.pool.md`):
 

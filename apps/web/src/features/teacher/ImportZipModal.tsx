@@ -95,7 +95,10 @@ export function ImportZipModal({
         <p className={styles.help}>
           Lo ZIP deve contenere cartelle <code>uda-NN-slug/</code>, ciascuna con un file UDA (front
           matter + contenuto) e una o più lezioni <code>lezione-NNN-slug.md</code>. Per ogni lezione
-          è possibile allegare un pool domande opzionale <code>lezione-NNN-slug.pool.md</code>.
+          è possibile allegare un pool domande opzionale <code>lezione-NNN-slug.pool.md</code>. Un
+          file <code>programma.md</code> nella radice dello ZIP è opzionale: se presente, i suoi
+          metadati (anno scolastico, docente, materia, classe) compaiono nel pannello info del
+          corso.
         </p>
 
         <div className={styles.fileRow}>

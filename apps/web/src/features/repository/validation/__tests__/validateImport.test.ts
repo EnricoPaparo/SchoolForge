@@ -87,6 +87,61 @@ describe('validateImport — valid program (one UDA, one lesson with pool, one w
   });
 });
 
+describe('validateImport — programma.md is optional', () => {
+  it('is still valid and has programma: null when programma.md is absent', () => {
+    const result = validateImport('Informatica', [UDA_FILE, LESSON_WITHOUT_POOL]);
+    expect(result.valid).toBe(true);
+    expect(result.programma).toBeNull();
+  });
+
+  it('parses front matter + description when programma.md is present at the root', () => {
+    const programmaFile: RawFile = {
+      path: 'programma.md',
+      content: `---
+titolo: Reti Informatiche
+anno_scolastico: '2025/2026'
+classe: 3A
+materia: Informatica
+docente: Mario Rossi
+---
+
+# Reti Informatiche
+
+Programma annuale di reti informatiche.
+`,
+    };
+    const result = validateImport('Informatica', [programmaFile, UDA_FILE, LESSON_WITHOUT_POOL]);
+    expect(result.valid).toBe(true);
+    expect(result.programma).toEqual({
+      annoScolastico: '2025/2026',
+      docente: 'Mario Rossi',
+      materia: 'Informatica',
+      classe: '3A',
+      descrizione: 'Programma annuale di reti informatiche.',
+    });
+  });
+
+  it('never blocks the import when programma.md front matter is malformed', () => {
+    const badProgrammaFile: RawFile = { path: 'programma.md', content: '---\n: : bad yaml\n---' };
+    const result = validateImport('Informatica', [badProgrammaFile, UDA_FILE, LESSON_WITHOUT_POOL]);
+    expect(result.valid).toBe(true);
+    expect(result.programma).toEqual({
+      annoScolastico: null,
+      docente: null,
+      materia: null,
+      classe: null,
+      descrizione: null,
+    });
+  });
+
+  it('does not treat programma.md as a UDA directory (root files are never grouped)', () => {
+    const programmaFile: RawFile = { path: 'programma.md', content: '# Solo un titolo' };
+    const result = validateImport('Informatica', [programmaFile, UDA_FILE, LESSON_WITHOUT_POOL]);
+    expect(result.udas).toHaveLength(1);
+    expect(result.udas[0].dir).toBe('uda-01-reti');
+  });
+});
+
 describe('validateImport — valid program with multiple UDAs', () => {
   it('returns two UDAs both valid', () => {
     const result = validateImport('Informatica', [

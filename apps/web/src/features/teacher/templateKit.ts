@@ -38,20 +38,95 @@ export function downloadTemplate(filename: string): void {
   a.click();
 }
 
-export async function downloadKitZip(): Promise<void> {
+const KIT_ROOT = 'programma-esempio';
+
+/**
+ * Builds the example program kit: a small but fully importable repository
+ * (programma.md + one UDA with one lesson and a pool) with obvious
+ * placeholder content — never real didactic material. Wrapped in a single
+ * "programma-esempio/" folder, the same shape a teacher gets zipping their
+ * own program folder — readZipFile strips that wrapper on import.
+ */
+export function buildKitZip(): JSZip {
   const zip = new JSZip();
-  await Promise.all(
-    TEMPLATES.map(async (t) => {
-      const res = await fetch(t.url);
-      const text = await res.text();
-      zip.file(t.filename, text);
-    }),
+
+  zip.file(
+    `${KIT_ROOT}/programma.md`,
+    `---
+titolo: 'Titolo del programma'
+anno_scolastico: 'Anno scolastico'
+classe: 'Classe'
+materia: 'Materia'
+docente: 'Nome Cognome docente'
+---
+
+# Titolo del programma
+
+Descrizione del programma.
+`,
   );
+
+  zip.file(
+    `${KIT_ROOT}/uda-01-titolo-uda/uda-01-titolo-uda.md`,
+    `---
+titolo: 'Titolo UDA'
+competenze:
+  - 'Competenza 1'
+obiettivi:
+  - 'Obiettivo 1'
+---
+
+# Titolo UDA
+
+Descrizione UDA.
+`,
+  );
+
+  zip.file(
+    `${KIT_ROOT}/uda-01-titolo-uda/lezione-001-titolo-lezione.md`,
+    `# Titolo della lezione
+
+Testo della lezione.
+`,
+  );
+
+  zip.file(
+    `${KIT_ROOT}/uda-01-titolo-uda/lezione-001-titolo-lezione.pool.md`,
+    `---
+schema: schoolforge-pool/v1
+questions:
+  - id: q1
+    tipo: aperta
+    difficolta: 1
+    peso: 1
+    testo: 'Testo della domanda'
+    soluzione: 'Testo della soluzione'
+  - id: q2
+    tipo: chiusa_singola
+    difficolta: 1
+    peso: 1
+    testo: 'Testo della domanda'
+    opzioni:
+      - id: a
+        testo: 'Opzione A'
+      - id: b
+        testo: 'Opzione B'
+    soluzione:
+      - a
+---
+`,
+  );
+
+  return zip;
+}
+
+export async function downloadKitZip(): Promise<void> {
+  const zip = buildKitZip();
   const blob = await zip.generateAsync({ type: 'blob' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'schoolforge-kit.zip';
+  a.download = 'programma-esempio.zip';
   a.click();
   URL.revokeObjectURL(url);
 }

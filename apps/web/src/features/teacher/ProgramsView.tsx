@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import {
   createProgram,
+  getImportMeta,
   listLessons,
   listPrograms,
   listUdas,
@@ -10,6 +11,7 @@ import {
   type ProgramItem,
   type UdaItem,
 } from '../repository/programs/programsService.js';
+import type { ProgrammaMeta } from '../../types/firestore.js';
 import { importRepository } from '../repository/import/importRepository.js';
 import { readZipFile } from '../repository/import/readZipFile.js';
 import { db, storage } from '../../lib/firebase.js';
@@ -22,6 +24,7 @@ import styles from './ProgramsView.module.css';
 type CourseState = {
   udas: UdaItem[] | null;
   lessons: LessonItem[] | null;
+  programmaMeta?: ProgrammaMeta | null;
   loadError?: string;
   exporting?: boolean;
   exportError?: string | null;
@@ -44,6 +47,7 @@ export function ProgramsView() {
   const [savingTitle, setSavingTitle] = useState(false);
 
   const [infoOpenProgramId, setInfoOpenProgramId] = useState<string | null>(null);
+  const [infoOpenUdaKey, setInfoOpenUdaKey] = useState<string | null>(null);
 
   const [newTitle, setNewTitle] = useState('');
   const [creating, setCreating] = useState(false);
@@ -87,11 +91,12 @@ export function ProgramsView() {
     const importId = program.activeImportId;
     updateCourseState(program.id, { udas: null, lessons: null, loadError: undefined });
     try {
-      const [udas, lessons] = await Promise.all([
+      const [udas, lessons, programmaMeta] = await Promise.all([
         listUdas(program.id, importId, db),
         listLessons(program.id, importId, db),
+        getImportMeta(program.id, importId, db),
       ]);
-      updateCourseState(program.id, { udas, lessons });
+      updateCourseState(program.id, { udas, lessons, programmaMeta });
     } catch {
       updateCourseState(program.id, {
         udas: [],
@@ -125,6 +130,10 @@ export function ProgramsView() {
 
   function toggleInfo(programId: string) {
     setInfoOpenProgramId((prev) => (prev === programId ? null : programId));
+  }
+
+  function toggleUdaInfo(udaKey: string) {
+    setInfoOpenUdaKey((prev) => (prev === udaKey ? null : udaKey));
   }
 
   async function handleToggleLesson(program: ProgramItem, lesson: LessonItem) {
@@ -449,8 +458,8 @@ export function ProgramsView() {
                     aria-label={`Informazioni corso ${program.title}`}
                   >
                     <dl className={styles.infoList}>
-                      <dt>Import attivo</dt>
-                      <dd>{program.activeImportId ?? 'Nessuno'}</dd>
+                      <dt>Import</dt>
+                      <dd>{program.activeImportId ? 'Attivo' : 'Nessuno'}</dd>
                       <dt>UDA totali</dt>
                       <dd>{udaCount}</dd>
                       <dt>Lezioni svolte</dt>
@@ -459,6 +468,20 @@ export function ProgramsView() {
                       </dd>
                       <dt>Domande disponibili</dt>
                       <dd>{questionsTotal}</dd>
+                      {cs?.programmaMeta && (
+                        <>
+                          <dt>Anno scolastico</dt>
+                          <dd>{cs.programmaMeta.annoScolastico ?? 'Non indicato'}</dd>
+                          <dt>Docente</dt>
+                          <dd>{cs.programmaMeta.docente ?? 'Non indicato'}</dd>
+                          <dt>Materia</dt>
+                          <dd>{cs.programmaMeta.materia ?? 'Non indicato'}</dd>
+                          <dt>Classe</dt>
+                          <dd>{cs.programmaMeta.classe ?? 'Non indicato'}</dd>
+                          <dt>Descrizione</dt>
+                          <dd>{cs.programmaMeta.descrizione ?? 'Non indicato'}</dd>
+                        </>
+                      )}
                     </dl>
                   </div>
                 )}
@@ -481,26 +504,65 @@ export function ProgramsView() {
                           const udaLessons = (cs.lessons ?? []).filter((l) => l.udaDir === uda.dir);
                           const udaDone = udaLessons.filter((l) => l.completed).length;
 
+                          const udaInfoOpen = infoOpenUdaKey === udaKey;
+
                           return (
                             <li key={uda.id} className={styles.udaItem}>
-                              <button
-                                type="button"
-                                className={styles.udaToggle}
-                                aria-expanded={udaExpanded}
-                                aria-controls={`uda-panel-${uda.id}`}
-                                onClick={() => toggleUda(program.id, uda.dir)}
-                              >
-                                <span
-                                  className={`${styles.caret}${udaExpanded ? ` ${styles.caretOpen}` : ''}`}
-                                  aria-hidden="true"
+                              <div className={styles.udaHeader}>
+                                <button
+                                  type="button"
+                                  className={styles.udaToggle}
+                                  aria-expanded={udaExpanded}
+                                  aria-controls={`uda-panel-${uda.id}`}
+                                  onClick={() => toggleUda(program.id, uda.dir)}
                                 >
-                                  ▶
-                                </span>
-                                <span className={styles.udaDir}>{uda.dir}</span>
-                                <span className={styles.udaCounters}>
-                                  Lezioni: {udaDone}/{udaLessons.length} svolte
-                                </span>
-                              </button>
+                                  <span
+                                    className={`${styles.caret}${udaExpanded ? ` ${styles.caretOpen}` : ''}`}
+                                    aria-hidden="true"
+                                  >
+                                    ▶
+                                  </span>
+                                  <span className={styles.udaDir}>{uda.dir}</span>
+                                  <span className={styles.udaCounters}>
+                                    Lezioni: {udaDone}/{udaLessons.length} svolte
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className={styles.iconBtn}
+                                  title="Info UDA"
+                                  aria-label={`Info UDA — ${uda.dir}`}
+                                  aria-expanded={udaInfoOpen}
+                                  onClick={() => toggleUdaInfo(udaKey)}
+                                >
+                                  ℹ️
+                                </button>
+                              </div>
+
+                              {udaInfoOpen && (
+                                <div
+                                  className={styles.infoPanel}
+                                  role="region"
+                                  aria-label={`Informazioni UDA ${uda.dir}`}
+                                >
+                                  <dl className={styles.infoList}>
+                                    <dt>Descrizione</dt>
+                                    <dd>{uda.descrizione ?? 'Non indicato'}</dd>
+                                    <dt>Competenze</dt>
+                                    <dd>
+                                      {uda.competenze.length > 0
+                                        ? uda.competenze.join(', ')
+                                        : 'Non indicato'}
+                                    </dd>
+                                    <dt>Obiettivi</dt>
+                                    <dd>
+                                      {uda.obiettivi.length > 0
+                                        ? uda.obiettivi.join(', ')
+                                        : 'Non indicato'}
+                                    </dd>
+                                  </dl>
+                                </div>
+                              )}
 
                               {udaExpanded && (
                                 <div id={`uda-panel-${uda.id}`} className={styles.lessonPanel}>
