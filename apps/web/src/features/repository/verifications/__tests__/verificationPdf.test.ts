@@ -128,6 +128,16 @@ describe('downloadStudentPdf — student fields', () => {
     const endXs = new Set(fieldLines.map((c) => c.args[2]));
     expect(endXs.size).toBe(1);
   });
+
+  it('does not draw full-width separators around Nome e Cognome and Data', async () => {
+    await downloadStudentPdf(SNAPSHOT, [], null);
+
+    const fullWidthLines = calls.filter(
+      (c) => c.method === 'line' && c.args[0] === 20 && c.args[2] === 190,
+    );
+
+    expect(fullWidthLines).toHaveLength(1);
+  });
 });
 
 describe('downloadStudentPdf — aperta questions', () => {
@@ -203,6 +213,17 @@ describe('downloadTeacherSolutionsPdf', () => {
     const textCalls = calls.filter((c) => c.method === 'text');
     expect(textCalls.some((c) => String(c.args[0]) === 'Verifica Reti')).toBe(true);
     expect(textCalls.some((c) => String(c.args[0]) === 'Classe: Classe 3A')).toBe(true);
+  });
+
+  it('places classe on the same line as the verification title when it fits', async () => {
+    await downloadStudentPdf(SNAPSHOT, [APERTA], 'Classe 3A');
+    const textCalls = calls.filter((c) => c.method === 'text');
+    const titleCall = textCalls.find((c) => String(c.args[0]) === 'Verifica Reti');
+    const classCall = textCalls.find((c) => String(c.args[0]) === 'Classe: Classe 3A');
+
+    expect(titleCall).toBeTruthy();
+    expect(classCall).toBeTruthy();
+    expect(classCall?.args[2]).toBe(titleCall?.args[2]);
   });
 
   it('shows the textual solution for aperta questions', async () => {
