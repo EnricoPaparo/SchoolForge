@@ -193,7 +193,7 @@ describe('LessonsView — selecting a lesson', () => {
     ).toBeTruthy();
   });
 
-  it('calls downloadLessonPdf with the lesson filename, content and UDA context when "Scarica PDF" is clicked', async () => {
+  it('calls downloadLessonPdf with the lesson filename, content and "programma - UDA" context when "Scarica PDF" is clicked', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM]);
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON_1]);
@@ -210,7 +210,7 @@ describe('LessonsView — selecting a lesson', () => {
       expect(mockDownloadLessonPdf).toHaveBeenCalledWith(
         'lezione-001.md',
         '# Lezione\nContenuto della lezione.',
-        'uda-01-reti',
+        'Informatica - uda-01-reti',
       );
     });
   });

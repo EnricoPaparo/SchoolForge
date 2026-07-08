@@ -276,6 +276,53 @@ describe('buildImportPayload — questionIndex', () => {
   });
 });
 
+describe('buildImportPayload — lesson IDs across UDAs', () => {
+  it('does not collide when two UDAs each have a lesson with the same filename', () => {
+    const files: RawFile[] = [
+      {
+        path: 'uda-01-intro/uda-01-intro.md',
+        content: `---
+titolo: Introduzione
+competenze:
+  - Competenza A
+obiettivi:
+  - Obiettivo 1
+---
+`,
+      },
+      { path: 'uda-01-intro/lezione-001-titolo.md', content: '# Lezione 1.1' },
+      {
+        path: 'uda-02-avanzato/uda-02-avanzato.md',
+        content: `---
+titolo: Avanzato
+competenze:
+  - Competenza B
+obiettivi:
+  - Obiettivo 2
+---
+`,
+      },
+      { path: 'uda-02-avanzato/lezione-001-titolo.md', content: '# Lezione 2.1' },
+    ];
+    const validation = validateImport('Informatica', files);
+    expect(validation.valid).toBe(true);
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    expect(payload.lessons).toHaveLength(2);
+    const ids = payload.lessons.map((l) => l.id);
+    expect(new Set(ids).size).toBe(2);
+    const udaDirs = payload.lessons.map((l) => l.data.udaDir).sort();
+    expect(udaDirs).toEqual(['uda-01-intro', 'uda-02-avanzato']);
+  });
+});
+
 describe('buildImportPayload — lesson poolStatus', () => {
   it('lesson with valid pool has poolStatus valid and questionCount > 0', () => {
     const files = buildAllFiles();

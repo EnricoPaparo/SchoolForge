@@ -49,6 +49,15 @@ describe('listQuestionIndex', () => {
     expect(result[0].questionPreview).toBe('Descrivi il protocollo HTTP.');
   });
 
+  it('defaults questionPreview to an empty string when absent (legacy entry, pre-preview import)', async () => {
+    mockGetDocs.mockResolvedValue({
+      docs: [doc('qi-legacy', { questionPreview: undefined })],
+    });
+
+    const result = await listQuestionIndex('prog-1', 'imp-1', fakeDb);
+    expect(result[0].questionPreview).toBe('');
+  });
+
   it('never exposes the full question text, answers, correctAnswer or solution', async () => {
     mockGetDocs.mockResolvedValue({
       docs: [

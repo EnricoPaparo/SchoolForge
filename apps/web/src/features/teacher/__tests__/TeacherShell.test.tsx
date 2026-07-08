@@ -82,4 +82,37 @@ describe('TeacherShell', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Esci' }));
     expect(mockSignOut).toHaveBeenCalledOnce();
   });
+
+  it('closes the account dropdown when clicking outside', () => {
+    render(<TeacherShell />);
+    fireEvent.click(screen.getByRole('button', { name: /Account:/ }));
+    expect(screen.getByText('teacher@test.com')).toBeTruthy();
+
+    fireEvent.mouseDown(document.body);
+
+    expect(screen.queryByText('teacher@test.com')).toBeNull();
+  });
+
+  it('closes the account dropdown on Escape key', () => {
+    render(<TeacherShell />);
+    fireEvent.click(screen.getByRole('button', { name: /Account:/ }));
+    expect(screen.getByText('teacher@test.com')).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByText('teacher@test.com')).toBeNull();
+  });
+
+  it('keeps the dropdown open when clicking inside it', () => {
+    render(<TeacherShell />);
+    fireEvent.click(screen.getByRole('button', { name: /Account:/ }));
+    fireEvent.mouseDown(screen.getByText('teacher@test.com'));
+    expect(screen.getByText('teacher@test.com')).toBeTruthy();
+  });
+
+  it('renders the SchoolForge wordmark logo in the header', () => {
+    render(<TeacherShell />);
+    const logo = screen.getByRole('img', { name: 'SchoolForge' });
+    expect(logo).toBeTruthy();
+  });
 });

@@ -101,10 +101,13 @@
   border-bottom: 1px solid var(--color-border);
   vertical-align: middle;
   white-space: nowrap;
+  min-width: 4.75rem;
+}
+
+.actionsWrapper {
   display: flex;
   gap: 0.25rem;
   align-items: center;
-  min-width: 4.75rem;
 }
 
 .verTitleBtn {
@@ -191,6 +194,61 @@
 
 @media (max-width: 640px) {
   .createForm button[type='submit'] {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ── Draft edit form (title/class + Salva bozza) ──────────────────── */
+.draftEditForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.draftEditForm label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex: 1;
+  min-width: 160px;
+}
+
+.draftEditForm input,
+.draftEditForm select {
+  padding: 0.4375rem 0.625rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.draftEditForm button[type='submit'] {
+  margin-left: 0.25rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .draftEditForm {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .draftEditForm label {
+    min-width: 0;
+  }
+
+  .draftEditForm button[type='submit'] {
+    margin-left: 0;
+    margin-top: 0.25rem;
     width: 100%;
     justify-content: center;
   }

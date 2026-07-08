@@ -119,6 +119,9 @@
   border-bottom: 1px solid var(--color-border);
   vertical-align: middle;
   white-space: nowrap;
+}
+
+.actionsWrapper {
   display: flex;
   gap: 0.5rem;
   align-items: center;

@@ -490,40 +490,42 @@ export function VerificationsView() {
                       </td>
                       <td className={`${styles.td} ${styles.metaCell}`}>{questionCount}</td>
                       <td className={styles.tdActions}>
-                        {v.status === 'active' && (
-                          <button
-                            type="button"
-                            className={styles.iconBtn}
-                            title="Scarica PDF"
-                            aria-label={`Scarica PDF — ${v.config.title}`}
-                            disabled={pdfLoadingId === v.id}
-                            onClick={() => void handleDownloadPdf(v)}
-                          >
-                            {pdfLoadingId === v.id ? '…' : '⬇️'}
-                          </button>
-                        )}
-                        {v.status === 'active' && (
-                          <button
-                            type="button"
-                            className={styles.iconBtn}
-                            title="Chiudi verifica"
-                            aria-label={`Chiudi verifica — ${v.config.title}`}
-                            onClick={() => handleStartClose(v.id)}
-                          >
-                            🔒
-                          </button>
-                        )}
-                        {(v.status === 'draft' || v.status === 'closed') && (
-                          <button
-                            type="button"
-                            className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
-                            title="Elimina verifica"
-                            aria-label={`Elimina verifica — ${v.config.title}`}
-                            onClick={() => handleStartDelete(v.id)}
-                          >
-                            🗑️
-                          </button>
-                        )}
+                        <div className={styles.actionsWrapper}>
+                          {v.status === 'active' && (
+                            <button
+                              type="button"
+                              className={styles.iconBtn}
+                              title="Scarica PDF"
+                              aria-label={`Scarica PDF — ${v.config.title}`}
+                              disabled={pdfLoadingId === v.id}
+                              onClick={() => void handleDownloadPdf(v)}
+                            >
+                              {pdfLoadingId === v.id ? '…' : '⬇️'}
+                            </button>
+                          )}
+                          {v.status === 'active' && (
+                            <button
+                              type="button"
+                              className={styles.iconBtn}
+                              title="Chiudi verifica"
+                              aria-label={`Chiudi verifica — ${v.config.title}`}
+                              onClick={() => handleStartClose(v.id)}
+                            >
+                              🔒
+                            </button>
+                          )}
+                          {(v.status === 'draft' || v.status === 'closed') && (
+                            <button
+                              type="button"
+                              className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                              title="Elimina verifica"
+                              aria-label={`Elimina verifica — ${v.config.title}`}
+                              onClick={() => handleStartDelete(v.id)}
+                            >
+                              🗑️
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                     {pdfErrors[v.id] && (

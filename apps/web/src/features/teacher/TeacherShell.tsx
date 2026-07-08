@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
 import { ProgramsView } from './ProgramsView.js';
 import { LessonsView } from './LessonsView.js';
 import { TemplateKitView } from './TemplateKitView.js';
 import { VerificationsView } from './VerificationsView.js';
 import { ClassesView } from './ClassesView.js';
+import logoScritta from '../../assets/logo-scritta-schoolforge.png';
 import styles from './TeacherShell.module.css';
 
 type Section = 'lezioni' | 'corsi' | 'verifiche' | 'classi' | 'template';
@@ -26,10 +27,30 @@ export function TeacherShell() {
   const displayName = user?.displayName ?? user?.email ?? 'Docente';
   const initials = displayName.charAt(0).toUpperCase();
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handlePointerDown(e: MouseEvent | TouchEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMenuOpen(false);
+    }
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [menuOpen]);
+
   return (
     <div className={styles.layout}>
       <header className={styles.header}>
-        <span className={styles.logo}>SchoolForge</span>
+        <img src={logoScritta} alt="SchoolForge" className={styles.logo} />
         <div className={styles.userMenu} ref={menuRef}>
           <button
             type="button"

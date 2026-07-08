@@ -39,6 +39,45 @@ describe('listUdas — deterministic ordering', () => {
   });
 });
 
+describe('listUdas — legacy document normalization', () => {
+  it('defaults descrizione/competenze/obiettivi when absent on the raw Firestore doc', async () => {
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        { id: 'uda-legacy', data: () => ({ dir: 'uda-01-legacy', filename: 'uda-01-legacy.md' }) },
+      ],
+    });
+
+    const [uda] = await listUdas('prog-1', 'imp-1', fakeDb);
+
+    expect(uda.descrizione).toBeNull();
+    expect(uda.competenze).toEqual([]);
+    expect(uda.obiettivi).toEqual([]);
+  });
+
+  it('preserves descrizione/competenze/obiettivi when present on the raw Firestore doc', async () => {
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        {
+          id: 'uda-1',
+          data: () => ({
+            dir: 'uda-01-reti',
+            filename: 'uda-01-reti.md',
+            descrizione: 'Reti informatiche di base',
+            competenze: ['Competenza A'],
+            obiettivi: ['Obiettivo 1'],
+          }),
+        },
+      ],
+    });
+
+    const [uda] = await listUdas('prog-1', 'imp-1', fakeDb);
+
+    expect(uda.descrizione).toBe('Reti informatiche di base');
+    expect(uda.competenze).toEqual(['Competenza A']);
+    expect(uda.obiettivi).toEqual(['Obiettivo 1']);
+  });
+});
+
 describe('listLessons — deterministic ordering', () => {
   it('sorts lessons alphabetically by path so numbering decides the order', async () => {
     mockGetDocs.mockResolvedValue({

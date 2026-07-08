@@ -232,24 +232,26 @@ export function ClassesView() {
                       <span className={styles.classDesc}>{c.description ?? '—'}</span>
                     </td>
                     <td className={styles.tdActions}>
-                      <button
-                        type="button"
-                        className={styles.actionBtn}
-                        onClick={() => handleStartEdit(c)}
-                      >
-                        Modifica
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.deleteBtn}
-                        aria-label={`Elimina classe ${c.name}`}
-                        onClick={() => {
-                          setDeleteConfirmId(c.id);
-                          setEditId(null);
-                        }}
-                      >
-                        Elimina
-                      </button>
+                      <div className={styles.actionsWrapper}>
+                        <button
+                          type="button"
+                          className={styles.actionBtn}
+                          onClick={() => handleStartEdit(c)}
+                        >
+                          Modifica
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.deleteBtn}
+                          aria-label={`Elimina classe ${c.name}`}
+                          onClick={() => {
+                            setDeleteConfirmId(c.id);
+                            setEditId(null);
+                          }}
+                        >
+                          Elimina
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ),
