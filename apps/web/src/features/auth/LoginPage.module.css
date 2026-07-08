@@ -4,16 +4,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: var(--color-surface-subtle);
   padding: 1rem;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(37, 99, 235, 0.1), transparent 55%),
+    radial-gradient(circle at 88% 82%, rgba(234, 88, 12, 0.1), transparent 55%),
+    var(--color-surface-subtle);
 }
 
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-  padding: 2.25rem 2rem 2rem;
+  box-shadow:
+    0 20px 40px -16px rgba(15, 23, 42, 0.16),
+    0 4px 12px rgba(15, 23, 42, 0.06);
+  padding: 2.75rem 2.25rem 2.25rem;
   width: 100%;
   max-width: 380px;
 }
@@ -22,7 +27,7 @@
   display: block;
   width: min(100%, 286px);
   height: auto;
-  margin: 0 auto 2rem;
+  margin: 0 auto 2.25rem;
   object-fit: contain;
 }
 
@@ -55,7 +60,6 @@
 
 .submitBtn {
   width: 100%;
-  justify-content: center;
   padding: 0.5625rem 1rem;
   font-size: 0.9375rem;
   margin-top: 0.25rem;
