@@ -3,18 +3,6 @@
   max-width: 560px;
 }
 
-.heading {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-}
-
-.intro {
-  color: var(--color-text-muted);
-  font-size: 0.9375rem;
-  margin-bottom: 1.5rem;
-}
-
 .templateList {
   list-style: none;
   padding: 0;

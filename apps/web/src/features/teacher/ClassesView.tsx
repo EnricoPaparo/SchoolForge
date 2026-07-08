@@ -117,8 +117,6 @@ export function ClassesView() {
 
   return (
     <section aria-label="Classi" className={styles.container}>
-      <h2 className={styles.heading}>Classi</h2>
-
       {/* Create form — in alto */}
       <form
         aria-label="Nuova classe"

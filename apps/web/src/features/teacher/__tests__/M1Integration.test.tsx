@@ -257,10 +257,11 @@ describe('M1 Integration — Readiness no longer a separate card in Corsi', () =
 
 describe('M1 Integration — TemplateKitView shows download buttons in TeacherShell', () => {
   it('renders template download buttons in the repository section', async () => {
-    // TeacherShell starts on "template" section which shows TemplateKitView
+    mockListPrograms.mockResolvedValue([]);
     render(<TeacherShell />);
-    // Kit template section heading
-    expect(await screen.findByText('Template didattici')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Template' }));
+    // Kit template region
+    expect(await screen.findByRole('region', { name: 'Kit template' })).toBeTruthy();
     // Individual template download buttons from the mocked TEMPLATES
     expect(screen.getByRole('button', { name: /Scarica template Programma/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Scarica template UDA/ })).toBeTruthy();

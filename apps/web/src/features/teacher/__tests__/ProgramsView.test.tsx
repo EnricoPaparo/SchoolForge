@@ -148,23 +148,24 @@ describe('ProgramsView — course list as accordion', () => {
     expect(vuoto.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('shows import status badge and counters in the course header', async () => {
+  it('shows counters in the course header without an import status badge', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM]);
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON_1, LESSON_2]);
     render(<ProgramsView />);
     await screen.findByRole('button', { name: /^Informatica/ });
-    expect(await screen.findByText('Importato')).toBeTruthy();
+    expect(screen.queryByText('Importato')).toBeNull();
     expect(await screen.findByText(/UDA: 1/)).toBeTruthy();
     expect(await screen.findByText(/Lezioni: 1\/2 svolte/)).toBeTruthy();
     expect(await screen.findByText(/Domande: 4 disponibili/)).toBeTruthy();
   });
 
-  it('shows "Nessun import" badge for a program without an active import', async () => {
+  it('shows a clear "no import" empty state for a program without an active import', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM_NO_IMPORT]);
     render(<ProgramsView />);
     await screen.findByRole('button', { name: /^Vuoto/ });
-    expect(await screen.findByText('Nessun import')).toBeTruthy();
+    expect(screen.queryByText('Nessun import')).toBeNull();
+    expect(await screen.findByText('Nessun import attivo')).toBeTruthy();
   });
 });
 
@@ -192,7 +193,7 @@ describe('ProgramsView — expanding a course with no active import', () => {
     mockListPrograms.mockResolvedValue([PROGRAM_NO_IMPORT]);
     render(<ProgramsView />);
     await expandCourse(/^Vuoto/);
-    expect(await screen.findByText(/Nessun import attivo/)).toBeTruthy();
+    expect(await screen.findByText('Nessun import attivo per questo programma.')).toBeTruthy();
   });
 });
 

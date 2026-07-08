@@ -7,19 +7,19 @@ import { VerificationsView } from './VerificationsView.js';
 import { ClassesView } from './ClassesView.js';
 import styles from './TeacherShell.module.css';
 
-type Section = 'template' | 'corsi' | 'lezioni' | 'verifiche' | 'classi';
+type Section = 'lezioni' | 'corsi' | 'verifiche' | 'classi' | 'template';
 
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
-  { id: 'template', label: 'Template', icon: '📄' },
-  { id: 'corsi', label: 'Corsi', icon: '📚' },
   { id: 'lezioni', label: 'Lezioni', icon: '📖' },
+  { id: 'corsi', label: 'Corsi', icon: '📚' },
   { id: 'verifiche', label: 'Verifiche', icon: '📝' },
   { id: 'classi', label: 'Classi', icon: '🏫' },
+  { id: 'template', label: 'Template', icon: '📄' },
 ];
 
 export function TeacherShell() {
   const { user, signOut } = useAuth();
-  const [activeSection, setActiveSection] = useState<Section>('template');
+  const [activeSection, setActiveSection] = useState<Section>('lezioni');
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
