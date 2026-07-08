@@ -69,7 +69,9 @@ describe('ClassesView', () => {
     fireEvent.change(document.getElementById('new-class-name')!, {
       target: { value: 'Nuova Classe' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /aggiungi/i }));
+    const addButton = screen.getByRole('button', { name: /aggiungi/i });
+    expect(addButton.classList.contains('btn-success')).toBe(true);
+    fireEvent.click(addButton);
 
     await waitFor(() =>
       expect(mockCreateClass).toHaveBeenCalledWith('Nuova Classe', null, 'owner-uid', {}),
@@ -109,10 +111,14 @@ describe('ClassesView', () => {
     render(<ClassesView />);
     await waitFor(() => screen.getByText('Classe 3A'));
 
-    fireEvent.click(screen.getByRole('button', { name: /elimina classe Classe 3A/i }));
+    const deleteButton = screen.getByRole('button', { name: /elimina classe Classe 3A/i });
+    expect(deleteButton.classList.contains('btn-danger')).toBe(true);
+    fireEvent.click(deleteButton);
     expect(screen.getByText(/eliminare/i)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: /^elimina$/i }));
+    const confirmDeleteButton = screen.getByRole('button', { name: /^elimina$/i });
+    expect(confirmDeleteButton.classList.contains('btn-danger')).toBe(true);
+    fireEvent.click(confirmDeleteButton);
     await waitFor(() => expect(mockDeleteClass).toHaveBeenCalledWith('c1', 'owner-uid', {}));
   });
 
@@ -135,7 +141,9 @@ describe('ClassesView', () => {
 
     const nameInput = screen.getByDisplayValue('Classe 3A');
     fireEvent.change(nameInput, { target: { value: 'Classe 3A modificata' } });
-    fireEvent.click(screen.getByRole('button', { name: /salva/i }));
+    const saveButton = screen.getByRole('button', { name: /salva/i });
+    expect(saveButton.classList.contains('btn-success')).toBe(true);
+    fireEvent.click(saveButton);
 
     await waitFor(() =>
       expect(mockUpdateClass).toHaveBeenCalledWith(

@@ -363,7 +363,11 @@ export function VerificationsView() {
           </p>
         )}
 
-        <button type="submit" disabled={creating || !newTitle.trim() || !newProgramId}>
+        <button
+          type="submit"
+          className="btn-success"
+          disabled={creating || !newTitle.trim() || !newProgramId}
+        >
           {creating ? 'Creazione…' : 'Crea verifica'}
         </button>
       </form>
@@ -417,6 +421,7 @@ export function VerificationsView() {
                           <div className={styles.confirmRow}>
                             <button
                               type="button"
+                              className="btn-success"
                               disabled={closing}
                               onClick={() => void handleConfirmClose(v.id)}
                             >
@@ -457,6 +462,7 @@ export function VerificationsView() {
                           <div className={styles.confirmRow}>
                             <button
                               type="button"
+                              className="btn-danger"
                               disabled={deleting}
                               onClick={() => void handleConfirmDelete(v.id)}
                             >
@@ -530,7 +536,7 @@ export function VerificationsView() {
                           {(v.status === 'draft' || v.status === 'closed') && (
                             <button
                               type="button"
-                              className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                              className={`${styles.iconBtn} btn-danger`}
                               title="Elimina verifica"
                               aria-label={`Elimina verifica — ${v.config.title}`}
                               onClick={() => handleStartDelete(v.id)}
@@ -589,7 +595,11 @@ export function VerificationsView() {
                   </option>
                 ))}
               </select>
-              <button type="submit" disabled={savingDraft || !editDraftTitle.trim()}>
+              <button
+                type="submit"
+                className="btn-success"
+                disabled={savingDraft || !editDraftTitle.trim()}
+              >
                 {savingDraft ? 'Salvataggio…' : 'Salva bozza'}
               </button>
             </form>
@@ -627,6 +637,7 @@ export function VerificationsView() {
                 <div className={styles.actionBar}>
                   <button
                     type="button"
+                    className="btn-success"
                     disabled={!canActivate}
                     onClick={() => setShowActivateConfirm(true)}
                     aria-label="Attiva verifica"
@@ -651,6 +662,7 @@ export function VerificationsView() {
                   <div className={styles.confirmRow}>
                     <button
                       type="button"
+                      className="btn-success"
                       disabled={activating}
                       onClick={() => void handleConfirmActivate()}
                     >

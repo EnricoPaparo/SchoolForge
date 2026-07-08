@@ -359,7 +359,11 @@ export function ProgramsView() {
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
         />
-        <button type="submit" className={styles.createBtn} disabled={creating || !newTitle.trim()}>
+        <button
+          type="submit"
+          className={`${styles.createBtn} btn-success`}
+          disabled={creating || !newTitle.trim()}
+        >
           {creating ? 'Creazione…' : 'Crea programma'}
         </button>
       </form>
@@ -470,7 +474,7 @@ export function ProgramsView() {
                     </button>
                     <button
                       type="button"
-                      className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                      className={`${styles.iconBtn} btn-danger`}
                       title="Elimina corso"
                       aria-label={`Elimina corso — ${program.title}`}
                       onClick={() => startDeleteProgram(program)}
@@ -498,7 +502,7 @@ export function ProgramsView() {
                     <div className={styles.deleteConfirmActions}>
                       <button
                         type="button"
-                        className={styles.deleteConfirmBtn}
+                        className={`${styles.deleteConfirmBtn} btn-danger`}
                         disabled={deletingProgram}
                         onClick={() => void handleConfirmDeleteProgram(program)}
                       >
@@ -528,7 +532,11 @@ export function ProgramsView() {
                         onChange={(e) => setEditTitleValue(e.target.value)}
                       />
                     </label>
-                    <button type="submit" disabled={savingTitle || !editTitleValue.trim()}>
+                    <button
+                      type="submit"
+                      className="btn-success"
+                      disabled={savingTitle || !editTitleValue.trim()}
+                    >
                       Salva
                     </button>
                     <button type="button" onClick={() => setEditingProgramId(null)}>

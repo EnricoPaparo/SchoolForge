@@ -12,9 +12,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0 1.5rem;
-  height: 52px;
-  background-image: linear-gradient(135deg, var(--color-primary), var(--color-accent-violet));
+  padding: 0.625rem 1.5rem;
+  min-height: 58px;
+  background:
+    linear-gradient(135deg, rgba(4, 18, 38, 0.92), rgba(10, 42, 84, 0.9)),
+    linear-gradient(90deg, var(--color-brand-blue), var(--color-brand-orange));
   color: #fff;
   flex-shrink: 0;
   box-shadow: var(--shadow-sm);
@@ -22,12 +24,10 @@
 
 .logo {
   flex-shrink: 0;
-  height: 26px;
+  height: 34px;
+  max-width: min(260px, calc(100vw - 6rem));
   width: auto;
   object-fit: contain;
-  background: #fff;
-  border-radius: var(--radius);
-  padding: 0.25rem 0.5rem;
 }
 
 /* ── User menu / dropdown ──────────────────────────────────────── */
@@ -177,6 +177,11 @@
 
   .header {
     padding: 0 1rem;
+    min-height: 54px;
+  }
+
+  .logo {
+    height: 30px;
   }
 }
 

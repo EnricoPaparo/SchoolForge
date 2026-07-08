@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from 'react';
+import logoScritta from '../../assets/logo-scritta-schoolforge.png';
 import { useAuth } from '../../lib/auth.js';
 import styles from './LoginPage.module.css';
 
@@ -25,8 +26,7 @@ export function LoginPage() {
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        <h1 className={styles.title}>SchoolForge</h1>
-        <p className={styles.subtitle}>Accedi al portale docente</p>
+        <img src={logoScritta} alt="SchoolForge" className={styles.logo} />
         <form className={styles.form} onSubmit={(e) => void handleSubmit(e)}>
           <div className={styles.fieldGroup}>
             <label className={styles.label} htmlFor="login-email">
@@ -59,7 +59,7 @@ export function LoginPage() {
               {error}
             </p>
           )}
-          <button type="submit" className={styles.submitBtn} disabled={submitting}>
+          <button type="submit" className={`${styles.submitBtn} btn-success`} disabled={submitting}>
             {submitting ? 'Accesso…' : 'Accedi'}
           </button>
         </form>
