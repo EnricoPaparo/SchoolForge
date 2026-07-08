@@ -115,9 +115,13 @@ interface Student {
 // portale è attivo. UDA e lezioni ereditano la visibilità dal programma —
 // non hanno un proprio campo classi. Programmi creati prima di questo campo
 // sono letti con classIds: [] (programsService.listPrograms normalizza in
-// lettura; nessuna migrazione distruttiva). Il filtro effettivo lato
-// StudentShell non è ancora implementato (vedi piano-implementazione.md,
-// M3L-C/M3L-D).
+// lettura; nessuna migrazione distruttiva). Il filtro per classe lato
+// StudentShell (sezione Lezioni) è implementato da M3L-C: uno studente
+// approvato con classId valorizzato legge, tramite studentLessonsService,
+// solo i programmi la cui classIds include la propria classe — sia lato
+// client (query where('classIds', 'array-contains', classId)) sia lato
+// Security Rules (isClassmateOf()). La sezione Verifiche studente (M3L-D)
+// resta fuori scope.
 interface Program {
   id: string;
   ownerUid: string;
@@ -156,16 +160,22 @@ interface Lesson {
 // sotto lo stesso importId isolato (vedi BR-REP-03). Non contiene alcun
 // riferimento al pool. Leggibile SOLO da uno studente approvato
 // (students/{uid}.status == 'approved') con il portale attivo
-// (settings/studentAccess.studentPortalEnabled == true) — l'autenticazione
-// Google da sola non è sufficiente (§3.4a, §6).
+// (settings/studentAccess.studentPortalEnabled == true) E il cui classId
+// è incluso nella classIds del programma padre (M3L-C, letto via get() sul
+// programma) — l'autenticazione Google da sola non è sufficiente, e nemmeno
+// l'approvazione da sola: senza una classe compatibile la lettura è negata
+// (§3.4a, §6).
 interface PublicLesson {
   id: string;
-  udaId: string;
+  ownerUid: string;
   programId: string;
-  title: string;
-  order: number;
-  contentPath: string;         // percorso Storage del solo file lezione .md, mai del pool
-  validationStatus: 'valid' | 'invalid' | 'pending';
+  importId: string;
+  udaId: string;
+  udaDir: string;               // usata dallo StudentShell per raggruppare le lezioni per UDA
+  path: string;
+  filename: string;
+  contentPath: string;          // percorso Storage del solo file lezione .md, mai del pool
+  createdAt: Timestamp;
 }
 
 // questionIndex/{questionId} — leggibile SOLO dall'owner, mai dallo studente
@@ -393,7 +403,7 @@ All'apertura del link, il Portale calcola `SHA-256(verificationToken)` con Web C
 | Operazione | Lettura Firestore/Storage |
 |---|---|
 | Risoluzione ruolo | `get settings/ownerPublic`; confronto client-side `uid === ownerUid` per instradare TeacherShell/StudentShell (non sostituisce le Security Rules; risolve solo il ruolo, non l'autorizzazione — vedi §3.4a) |
-| Lezioni | Query `publicLessons` filtrata su `programId`/`udaId` correnti; lettura del file `.md` e degli asset da Cloud Storage (Storage Rules: lettura consentita solo a uno studente approvato con portale attivo, mai per `.pool.md`) |
+| Lezioni | `get students/{uid}` per il proprio `classId` (assente/null → nessuna lezione mostrata); query `programs` con `where('classIds', 'array-contains', classId)`; per ciascun programma trovato, query `publicLessons` con `where('programId', '==', id)`; lettura del file `.md` da Cloud Storage tramite `contentPath` (Storage Rules: lettura consentita solo a uno studente approvato con portale attivo, mai per `.pool.md`). Filtro per classe implementato in M3L-C, sia lato query client sia lato Security Rules (`isClassmateOf()`, §6). |
 | Elenco verifiche visibili | Query `verifications/{id}/publishedProjection` per le verifiche note al client, concessa solo quando il padre è `state == "attiva" && visibility == "public"` **e** lo studente è approvato con portale attivo; il documento padre `verifications/{id}` non è mai leggibile dallo studente |
 | Download PDF studente | Lettura `verifications/{id}/publishedProjection`; genera il PDF nel browser con `VerificaPdfRenderer mode="student"` |
 
@@ -408,7 +418,7 @@ Un utente Google non-owner è un **richiedente/studente potenziale**, non uno st
 
 Questa milestone consegna solo lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applicano; **non** consegna una UI docente per creare/approvare/bloccare uno studente, né l'assegnazione di una classe. Fino a quella milestone successiva, `students/{uid}` va popolato manualmente dal docente (o da un futuro strumento di amministrazione) perché uno studente veda qualunque contenuto.
 
-`classId` su `Student` e `classIds` su `Program` (quest'ultimo implementato in M3L-A4, §6) filtreranno ulteriormente cosa uno studente approvato vede: un programma senza classi assegnate, o una verifica senza `classId` (non ancora implementato), non sarebbero visibili a nessuno studente anche se altrimenti pubblici. Lo schema e la UI docente per assegnare le classi ai programmi sono implementati da M3L-A4; il filtro effettivo lato StudentShell (Security Rules e query filtrate per classe) resta specifica per una milestone successiva (M3L-C/M3L-D).
+`classId` su `Student` e `classIds` su `Program` filtrano ulteriormente cosa uno studente approvato vede: un programma senza classi assegnate, o una verifica senza `classId` (non ancora implementato), non sono visibili a nessuno studente anche se altrimenti pubblici. Lo schema e la UI docente per assegnare le classi ai programmi sono implementati da M3L-A4. Il filtro per classe sulla sezione **Lezioni** (query client + Security Rules) è implementato da M3L-C. Il filtro per classe sulla sezione **Verifiche** resta specifico di una milestone successiva (M3L-D) e non è ancora implementato.
 
 ### 3.5 Correzione ed export (Modulo 4, dipende da M3-full)
 
@@ -557,8 +567,9 @@ Le Security Rules Firestore devono garantire, per la baseline corrente (M1+M2+M3
 | `settings/ownerPublic` | Lettura + scrittura | Solo lettura (`ownerUid`, per routing UI) | Solo lettura (`ownerUid`, per routing UI) | — |
 | `settings/studentAccess` | Lettura + scrittura | — (letto dalle Rules via `get()`, mai dal client studente) | — | — |
 | `students/{uid}` | Lettura + scrittura | — (nessuna UI/Rule di autolettura in questa milestone) | — | — |
-| `programs`, `udas`, `lessons`, `questionIndex` | Lettura + scrittura sull'import attivo/preparato | — | — | — |
-| `publicLessons` | Lettura + scrittura (stesso flusso di import) | Solo lettura | — | — |
+| `programs` (documento top-level) | Lettura + scrittura sull'import attivo/preparato | Solo lettura, solo se `classIds` include il proprio `classId` (M3L-C; assente/vuoto → nessuno studente) | — | — |
+| `programs/*/imports/**` (`udas`, `lessons`, `questionIndex`, dati tecnici) | Lettura + scrittura sull'import attivo/preparato | — (mai, indipendentemente dalla classe) | — | — |
+| `publicLessons` | Lettura + scrittura (stesso flusso di import) | Solo lettura, solo se il programma padre ha `classIds` compatibile con il proprio `classId` (M3L-C) | — | — |
 | `verifications` | Lettura + scrittura solo per bozza e transizioni consentite; scrittura di `visibility` su verifica `attiva` | — (documento padre mai leggibile dallo studente, vedi `publishedProjection`) | — | — |
 | `verifications/*/publishedSnapshot` | Lettura | — | — | — |
 | `verifications/*/publishedProjection` | Lettura | Lettura solo quando `state == "attiva" && visibility == "public"` | — | — |

@@ -213,7 +213,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 | M3L-A3 | UI docente di gestione studenti: creare/approvare/bloccare `students/{uid}`, assegnare `classId`. | M3L-A2 | — | Il docente approva uno studente dall'interfaccia senza scrivere Firestore a mano; audit dell'approvazione. |
 | M3L-A4 | `classIds` sui programmi (`programs/{id}.classIds: string[]`) e UI Corsi per assegnare un programma a zero, una o più classi. Le UDA e lezioni ereditano la visibilità dal programma (nessun campo classi proprio). | M3L-A3 | — | Programmi legacy senza `classIds` normalizzati a `[]` in lettura (nessuna migrazione distruttiva); `setProgramClassIds` deduplica; un programma senza classi non è visibile a nessuno studente; Security Rules invariate (owner-write già sufficiente). |
 | M3L-B | StudentShell: routing `/student/*`, login Google, risoluzione ruolo (`uid == ownerUid` → TeacherShell, altrimenti StudentShell), layout mobile-first. | M3L-A2 | M3L-C/M3L-D | Docente va a TeacherShell; utente Google non-owner va a StudentShell (il routing del ruolo non richiede l'approvazione: solo le letture di contenuto la richiedono); nessun accesso anonimo. |
-| M3L-C | Sezione Lezioni studente: elenco e rendering read-only da `publicLessons`, riuso del renderer Markdown sanitizzato del docente. **Non implementata da questa PR.** | M3L-B, M3L-A4 | M3L-D | Lo studente approvato vede le lezioni pubblicate dei soli programmi la cui `classIds` include la propria classe; nessun pool, soluzione, percorso tecnico o `questionIndex` raggiungibile; uno studente non approvato non vede nulla. |
+| M3L-C | Sezione Lezioni studente: elenco ad albero Programma→UDA→Lezioni e rendering read-only da `publicLessons`, filtrato per `classId` dello studente, riuso del renderer Markdown sanitizzato del docente. | M3L-B, M3L-A4 | M3L-D | Lo studente approvato vede le lezioni pubblicate dei soli programmi la cui `classIds` include la propria classe; nessun pool, soluzione, percorso tecnico o `questionIndex` raggiungibile; uno studente non approvato, senza classe, o con classe incompatibile non vede nulla; Security Rules estese con lettura studente su `programs`/`publicLessons` gated per classe. |
 | M3L-D | Sezione Verifiche studente: elenco filtrato `attiva`+`public`, azione "Scarica PDF studente" con `VerificaPdfRenderer mode="student"` dalla `publishedProjection`. **Non implementata da questa PR.** | M3L-B, M3L-A4 | M3L-C | Solo verifiche `attiva`+`public` con `classId` coincidente (quando introdotto) sono visibili a uno studente approvato; nessuna consegna o risposta online; PDF senza soluzioni. |
 | M3L-E | E2E e test negativi M3-lite, review sicurezza ruolo/proiezioni/approvazione, evidenze G4-lite. | M3L-C/M3L-D | — | Evidenze G4-lite; nessuna soluzione o dato tecnico ottenibile dal client studente; nessuna lettura concessa a uno studente non approvato. |
 
@@ -547,15 +547,18 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | Test minimi | Docente va a TeacherShell; utente Google non-owner va a StudentShell (il routing del ruolo non richiede approvazione); nessun accesso anonimo |
 | Evidenza richiesta | E2E login Google; test dei due percorsi di routing |
 
-#### M3L-C — Sezione Lezioni studente (non implementata da questa PR)
+#### M3L-C — Sezione Lezioni studente
 
 | Campo | Valore |
 |---|---|
-| Prerequisiti | M3L-B, M3L-A3 |
-| File da creare | `apps/web/src/features/student/lessons/`, riuso renderer Markdown |
-| File da modificare | — |
-| Test minimi | Lo studente approvato vede le lezioni pubblicate della propria classe (quando il filtro classe sarà introdotto); nessun pool/soluzione/percorso tecnico/`questionIndex` raggiungibile; uno studente non approvato non vede nulla |
-| Evidenza richiesta | Test lettura `publicLessons`; rendering senza pool verificato |
+| Prerequisiti | M3L-B, M3L-A4 |
+| File da creare | `apps/web/src/features/repository/programs/studentLessonsService.ts` (query classe→programmi→publicLessons), `apps/web/src/features/student/StudentLessonsView.tsx` + CSS module |
+| File da modificare | `firestore.rules` (lettura studente su `programs`/`publicLessons` gated per classe), `StudentShell.tsx` (sostituito il placeholder Lezioni) |
+| Come funziona | Il servizio legge `students/{uid}` per il proprio `classId` (assente/null → stato "nessuna classe assegnata"); interroga `programs` con `where('classIds', 'array-contains', classId)`; per ciascun programma trovato interroga `publicLessons` con `where('programId', '==', id)` (una query per programma, non una `in` combinata, per restare compatibile con la validazione Firestore delle `list` query sulle Security Rules). Programmi ordinati per titolo, lezioni per `udaDir` poi `filename`; l'UDA è raggruppata lato client per `udaDir` (nessuna lettura della sotto-collezione tecnica `udas`). Il contenuto della lezione è letto da Storage tramite `contentPath` con `fetchLessonContent`/`getBytes` già esistente, e renderizzato con `MarkdownRenderer` (riuso diretto dei due moduli stateless già usati lato docente). |
+| Security Rules | Aggiunte due funzioni (`myStudentClassId()`, `isClassmateOf(classIds)`); `programs/{docId}` ora permette lettura allo studente approvato+portale attivo il cui `classId` è incluso in `classIds` (mai la sotto-collezione `imports/**`, resta owner-only); `publicLessons` ora richiede anche la compatibilità di classe tramite `get()` sul programma padre (prima bastava essere uno studente approvato — gap chiuso da questa PR). Un programma senza `classIds` o con array vuoto resta non leggibile da nessuno studente. |
+| Test minimi | Studente senza `classId` vede il messaggio "nessuna classe assegnata"; studente con `classId` vede solo le lezioni dei programmi la cui `classIds` include quella classe; un programma senza `classIds` non compare; ordinamento stabile; click su una lezione carica e mostra il Markdown; errore di caricamento contenuto mostrato in modo leggibile; StudentShell non mostra alcuna azione docente; test Security Rules mirati per approvato+classe compatibile/incompatibile/assente, pending/blocked/non registrato, programma senza classi. |
+| Evidenza richiesta | Test `studentLessonsService`/`StudentLessonsView`/`StudentShell` mirati; test Emulator Security Rules mirati (`m3l-student-lessons.rules.test.ts`) |
+| Fuori scope (rinviato) | Sezione Verifiche studente (M3L-D); consegne/risposte online; PDF lezione lato studente; Cloud Functions |
 
 #### M3L-D — Sezione Verifiche studente (non implementata da questa PR)
 

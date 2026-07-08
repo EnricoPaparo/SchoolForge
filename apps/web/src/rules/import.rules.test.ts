@@ -83,7 +83,7 @@ async function seedStudentAccess(studentPortalEnabled: boolean) {
   });
 }
 
-async function seedStudent(status: 'pending' | 'approved' | 'blocked') {
+async function seedStudent(status: 'pending' | 'approved' | 'blocked', classId: string | null = null) {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'students', OTHER_UID), {
       uid: OTHER_UID,
@@ -91,8 +91,18 @@ async function seedStudent(status: 'pending' | 'approved' | 'blocked') {
       email: 'student@example.com',
       displayName: null,
       status,
-      classId: null,
+      classId,
     });
+  });
+}
+
+// M3L-C: importRepository itself doesn't set classIds (a program is not
+// assigned to any class at import time — that's a separate teacher action,
+// see programsService.setProgramClassIds), so tests that need a
+// class-compatible student must assign the program to a class explicitly.
+async function seedProgramClassIds(programId: string, classIds: string[]) {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'programs', programId), { classIds }, { merge: true });
   });
 }
 
@@ -567,7 +577,7 @@ describe('importRepository — publicLessons projection', () => {
     }
   });
 
-  it('an approved student can read publicLessons of the configured owner when the portal is enabled', async () => {
+  it('an approved student in the program’s class can read publicLessons when the portal is enabled', async () => {
     await seedOwner();
     const db = ownerDb();
     const storage = ownerStorage();
@@ -579,13 +589,36 @@ describe('importRepository — publicLessons projection', () => {
     if (result.status !== 'committed') throw new Error('expected committed');
 
     await seedStudentAccess(true);
-    await seedStudent('approved');
+    await seedStudent('approved', 'class-a');
+    await seedProgramClassIds(result.programId, ['class-a']);
 
     const publicLessonsSnap = await getDocs(collection(ownerDb(), 'publicLessons'));
     const someLessonId = publicLessonsSnap.docs[0]!.id;
 
     const studentDb = otherDb();
     await assertSucceeds(getDoc(doc(studentDb, 'publicLessons', someLessonId)));
+  });
+
+  it('denies an approved student when the program is not assigned to their class', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    await seedStudentAccess(true);
+    // Approved, but the freshly-imported program carries no classIds at all
+    // (importRepository doesn't assign a class) — never visible by omission.
+    await seedStudent('approved', 'class-a');
+
+    const publicLessonsSnap = await getDocs(collection(ownerDb(), 'publicLessons'));
+    const someLessonId = publicLessonsSnap.docs[0]!.id;
+
+    await assertFails(getDoc(doc(otherDb(), 'publicLessons', someLessonId)));
   });
 
   it('denies a Google non-owner with no students/{uid} document, even with the portal enabled', async () => {

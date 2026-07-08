@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
 import logoScritta from '../../assets/logo-scritta-schoolforge.png';
+import { StudentLessonsView } from './StudentLessonsView.js';
 import styles from './StudentShell.module.css';
 
 type Section = 'lezioni' | 'verifiche';
@@ -99,7 +100,7 @@ export function StudentShell() {
 
       <main className={styles.main}>
         {activeSection === 'lezioni' ? (
-          <p className={styles.placeholder}>Lezioni disponibili — in arrivo</p>
+          <StudentLessonsView />
         ) : (
           <p className={styles.placeholder}>Verifiche pubblicate — in arrivo</p>
         )}

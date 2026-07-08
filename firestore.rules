@@ -40,6 +40,28 @@ service cloud.firestore {
            == 'approved';
     }
 
+    // Only meaningful after isApprovedStudent() has confirmed
+    // students/{uid} exists — callers must short-circuit on that first.
+    // .get('classId', null) tolerates a legacy/partial document missing
+    // the field, defaulting to "no class" rather than an evaluation error.
+    function myStudentClassId() {
+      return get(/databases/$(database)/documents/students/$(request.auth.uid))
+        .data.get('classId', null);
+    }
+
+    // True only for an approved student (with the portal active) whose own
+    // classId is one of the given classIds. `classIds` is always passed in
+    // by the caller from resource/cross-doc data via .get('classIds', []),
+    // so a program/lesson with no classIds field at all (legacy) or an
+    // empty array both safely deny — never "visible to everyone" by
+    // omission. A student with no classId of their own is denied too,
+    // even if they are otherwise approved.
+    function isClassmateOf(classIds) {
+      return isApprovedStudent()
+        && myStudentClassId() != null
+        && classIds.hasAny([myStudentClassId()]);
+    }
+
     // --- settings/owner ---
     // First authenticated user to write becomes the owner (no existing doc).
     // Subsequent updates/deletes require ownerUid match.
@@ -117,8 +139,19 @@ service cloud.firestore {
       allow create: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
     }
 
+    // --- programs/{docId} (M3-lite student read, M3L-C) ---
+    // Owner: full read/write, as always. An approved student may also read
+    // the top-level program document — never its imports/** subcollection
+    // (technical lessons, questionIndex, pool: still owner-only via the
+    // second match below) — but only when the program's own classIds
+    // includes the student's classId. A program with no classIds, or an
+    // empty one, is never readable by any student. This is the query the
+    // student client runs to discover which programs it may see:
+    // where('classIds', 'array-contains', myClassId) — the rule mirrors
+    // that exact condition so Firestore can validate the list request.
     match /programs/{docId} {
       allow read, write: if isOwner();
+      allow read: if isClassmateOf(resource.data.get('classIds', []));
     }
     match /programs/{programId}/{sub=**} {
       allow read, write: if isOwner();
@@ -129,17 +162,31 @@ service cloud.firestore {
     // contains poolStatus/poolStorageRef/questionCount or any pool-derived
     // field — see PublicLessonDoc. Owner: full read/write (written by the
     // import flow). Any other user: read-only, and only if they are an
-    // approved student (isApprovedStudent()) AND the document actually
-    // belongs to the configured owner (defense in depth — in the current
-    // single-docente system every publicLessons doc already has
-    // ownerUid == the one owner, but the rule verifies it explicitly
-    // rather than trusting the stored field alone). Merely being
-    // Google-authenticated is never enough on its own.
+    // approved student in the same class as the lesson's program
+    // (isClassmateOf(), checked against the parent program's classIds via
+    // get() — a lesson is never visible on its own, only through a program
+    // the student's class is actually assigned to). Being an approved
+    // student with the portal active is NOT enough by itself: without this
+    // class check, any approved student could read every lesson of every
+    // class, not just their own.
+    //
+    // Deliberately does NOT also check resource.data.ownerUid here (unlike
+    // some other rules in this file): for a `list` query, Firestore can only
+    // validate a condition against a field the query itself constrains
+    // (here, only `programId` is), otherwise it cannot prove the query safe
+    // and denies the whole request — the same reason the array-contains
+    // "programs" rule above checks only classIds and nothing else. In this
+    // single-docente system ownerUid is already implied by the program
+    // lookup (a program only ever belongs to the one owner), so omitting it
+    // costs nothing in practice.
     match /publicLessons/{lessonId} {
       allow read: if isOwner()
-        || (isApprovedStudent()
-            && resource.data.ownerUid
-               == get(/databases/$(database)/documents/settings/ownerPublic).data.ownerUid);
+        || (
+          exists(/databases/$(database)/documents/programs/$(resource.data.programId))
+          && isClassmateOf(
+               get(/databases/$(database)/documents/programs/$(resource.data.programId))
+                 .data.get('classIds', []))
+        );
       allow write: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
     }
 
