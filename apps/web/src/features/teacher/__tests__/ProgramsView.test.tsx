@@ -628,13 +628,21 @@ describe('ProgramsView — delete program', () => {
     render(<ProgramsView />);
     await screen.findByRole('button', { name: /^Informatica/ });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Elimina corso — Informatica' }));
+    const deleteTrigger = screen.getByRole('button', { name: 'Elimina corso — Informatica' });
+    expect(deleteTrigger.classList.contains('btn-danger')).toBe(false);
+
+    fireEvent.click(deleteTrigger);
 
     expect(
       screen.getByText(
         'Saranno eliminati import, UDA, lezioni, pool e file caricati. Operazione irreversibile.',
       ),
     ).toBeTruthy();
+    expect(
+      screen
+        .getByRole('button', { name: 'Elimina definitivamente' })
+        .classList.contains('btn-danger'),
+    ).toBe(true);
     expect(mockDeleteProgram).not.toHaveBeenCalled();
   });
 
