@@ -12,6 +12,7 @@ export type AuditAction =
   | 'import.committed'
   | 'program.created'
   | 'program.updated'
+  | 'program.deleted'
   | 'lesson.completed'
   | 'class.created'
   | 'class.updated'

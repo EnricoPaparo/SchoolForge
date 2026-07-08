@@ -16,6 +16,7 @@ const mockListUdas = vi.fn();
 const mockListLessons = vi.fn();
 const mockGetImportMeta = vi.fn();
 const mockSetLessonCompleted = vi.fn();
+const mockDeleteProgram = vi.fn();
 
 vi.mock('../../../features/repository/programs/programsService.js', () => ({
   listPrograms: (...args: unknown[]) => mockListPrograms(...args),
@@ -25,6 +26,7 @@ vi.mock('../../../features/repository/programs/programsService.js', () => ({
   listLessons: (...args: unknown[]) => mockListLessons(...args),
   getImportMeta: (...args: unknown[]) => mockGetImportMeta(...args),
   setLessonCompleted: (...args: unknown[]) => mockSetLessonCompleted(...args),
+  deleteProgram: (...args: unknown[]) => mockDeleteProgram(...args),
 }));
 
 const mockExportZip = vi.fn();
@@ -616,6 +618,78 @@ describe('ProgramsView — Import ZIP guided modal', () => {
     await screen.findByRole('dialog');
     fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('ProgramsView — delete program', () => {
+  it('shows a confirmation with the exact required wording before deleting', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina corso — Informatica' }));
+
+    expect(
+      screen.getByText(
+        'Saranno eliminati import, UDA, lezioni, pool e file caricati. Operazione irreversibile.',
+      ),
+    ).toBeTruthy();
+    expect(mockDeleteProgram).not.toHaveBeenCalled();
+  });
+
+  it('cancels deletion without calling the service', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina corso — Informatica' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+
+    expect(mockDeleteProgram).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText(
+        'Saranno eliminati import, UDA, lezioni, pool e file caricati. Operazione irreversibile.',
+      ),
+    ).toBeNull();
+  });
+
+  it('deletes the program and removes it from the list on confirm', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockDeleteProgram.mockResolvedValue(undefined);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina corso — Informatica' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina definitivamente' }));
+
+    await waitFor(() =>
+      expect(mockDeleteProgram).toHaveBeenCalledWith('prog-1', 'owner-uid', {}, {}),
+    );
+    await waitFor(() => expect(screen.queryByText('Informatica')).toBeNull());
+  });
+
+  it('shows the blocked-deletion error and keeps the program when linked verifications exist', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockDeleteProgram.mockRejectedValue(
+      new Error(
+        'Impossibile eliminare il corso: esistono verifiche associate. Elimina prima le verifiche collegate.',
+      ),
+    );
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina corso — Informatica' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina definitivamente' }));
+
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'Impossibile eliminare il corso: esistono verifiche associate. Elimina prima le verifiche collegate.',
+    );
+    expect(screen.getByText('Informatica')).toBeTruthy();
   });
 });
 

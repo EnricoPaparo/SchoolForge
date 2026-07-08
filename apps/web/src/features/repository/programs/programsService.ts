@@ -1,19 +1,24 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
   serverTimestamp,
   setDoc,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
-import type { Firestore } from 'firebase/firestore';
+import type { DocumentReference, Firestore } from 'firebase/firestore';
+import { deleteObject, listAll, ref } from 'firebase/storage';
+import type { FirebaseStorage } from 'firebase/storage';
 import type {
   ImportDoc,
   LessonDoc,
   ProgramDoc,
   ProgrammaMeta,
   UdaDoc,
+  VerificationDoc,
 } from '../../../types/firestore.js';
 
 export type ProgramItem = { id: string } & ProgramDoc;
@@ -129,6 +134,84 @@ export async function setLessonCompleted(
     targetId: lessonId,
     outcome: 'success',
     reason: completed ? 'marked as completed' : 'marked as not completed',
+    timestamp: serverTimestamp(),
+  });
+}
+
+export const PROGRAM_DELETE_BLOCKED_MESSAGE =
+  'Impossibile eliminare il corso: esistono verifiche associate. Elimina prima le verifiche collegate.';
+
+const BATCH_DELETE_CHUNK_SIZE = 400;
+
+async function deleteDocsInBatches(db: Firestore, refs: DocumentReference[]): Promise<void> {
+  for (let i = 0; i < refs.length; i += BATCH_DELETE_CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    refs.slice(i, i + BATCH_DELETE_CHUNK_SIZE).forEach((docRef) => batch.delete(docRef));
+    await batch.commit();
+  }
+}
+
+/** Recursively deletes every file under a Storage path prefix. */
+async function deleteStoragePrefix(storage: FirebaseStorage, path: string): Promise<void> {
+  const listing = await listAll(ref(storage, path));
+  await Promise.all(listing.items.map((item) => deleteObject(item)));
+  await Promise.all(
+    listing.prefixes.map((prefix) => deleteStoragePrefix(storage, prefix.fullPath)),
+  );
+}
+
+/**
+ * Deletes a program and everything stored under it: every import (including
+ * orphaned ones left behind by past reimports, not just the active one) with
+ * its UDA/lesson/questionIndex docs, and the corresponding Storage files.
+ *
+ * Blocked when any verification references this program via
+ * `config.programId` — verifications are never deleted automatically; the
+ * teacher must remove them first.
+ */
+export async function deleteProgram(
+  programId: string,
+  ownerUid: string,
+  db: Firestore,
+  storage: FirebaseStorage,
+): Promise<void> {
+  const verificationsSnap = await getDocs(collection(db, 'verifications'));
+  const hasLinkedVerification = verificationsSnap.docs.some(
+    (d) => (d.data() as VerificationDoc).config.programId === programId,
+  );
+  if (hasLinkedVerification) {
+    throw new Error(PROGRAM_DELETE_BLOCKED_MESSAGE);
+  }
+
+  const importsSnap = await getDocs(collection(db, 'programs', programId, 'imports'));
+
+  for (const importDoc of importsSnap.docs) {
+    const importId = importDoc.id;
+    const importBasePath = `programs/${programId}/imports/${importId}`;
+    const [udasSnap, lessonsSnap, questionIndexSnap] = await Promise.all([
+      getDocs(collection(db, importBasePath, 'udas')),
+      getDocs(collection(db, importBasePath, 'lessons')),
+      getDocs(collection(db, importBasePath, 'questionIndex')),
+    ]);
+
+    await deleteDocsInBatches(db, [
+      ...udasSnap.docs.map((d) => d.ref),
+      ...lessonsSnap.docs.map((d) => d.ref),
+      ...questionIndexSnap.docs.map((d) => d.ref),
+      doc(db, importBasePath),
+    ]);
+
+    await deleteStoragePrefix(storage, `repository/${ownerUid}/imports/${importId}`);
+  }
+
+  await deleteDoc(doc(db, 'programs', programId));
+
+  await setDoc(doc(collection(db, 'auditEvents')), {
+    actorUid: ownerUid,
+    action: 'program.deleted',
+    targetId: programId,
+    outcome: 'success',
+    reason: null,
     timestamp: serverTimestamp(),
   });
 }

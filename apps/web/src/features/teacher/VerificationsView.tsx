@@ -21,6 +21,13 @@ import { useAuth } from '../../lib/auth.js';
 import { QuestionPicker } from './QuestionPicker.js';
 import styles from './VerificationsView.module.css';
 
+/** Formats a Firestore Timestamp-like value as a compact it-IT date+time string, or "—" if absent. */
+function formatTimestamp(ts: unknown): string {
+  if (!ts || typeof ts !== 'object' || !('seconds' in ts)) return '—';
+  const date = new Date((ts as { seconds: number }).seconds * 1000);
+  return date.toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' });
+}
+
 function StatusBadge({ status }: { status: 'draft' | 'active' | 'closed' }) {
   const labels = { draft: 'bozza', active: 'attiva', closed: 'chiusa' };
   const cls = {
@@ -482,6 +489,12 @@ export function VerificationsView() {
                         >
                           {v.config.title}
                         </button>
+                        {v.status !== 'draft' && (
+                          <span className={styles.verTimestamps}>
+                            Attivata: {formatTimestamp(v.activatedAt)}
+                            {v.status === 'closed' && <> · Chiusa: {formatTimestamp(v.closedAt)}</>}
+                          </span>
+                        )}
                       </td>
                       <td className={`${styles.td} ${styles.metaCell}`}>{className}</td>
                       <td className={`${styles.td} ${styles.metaCell}`}>{programTitle}</td>

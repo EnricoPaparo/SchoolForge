@@ -203,6 +203,50 @@ describe('VerificationsView', () => {
     expect(within(table).getAllByText('Matematica').length).toBeGreaterThanOrEqual(1);
   });
 
+  it('shows activatedAt/closedAt timestamps under the title for active and closed verifications', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer({
+        id: 'ver-2',
+        status: 'active',
+        activatedAt: { seconds: 1751970000, nanoseconds: 0 },
+        config: { ...makeDraftVer().config, title: 'Verifica Geometria' },
+      }),
+      makeDraftVer({
+        id: 'ver-3',
+        status: 'closed',
+        activatedAt: { seconds: 1751970000, nanoseconds: 0 },
+        closedAt: { seconds: 1752060000, nanoseconds: 0 },
+        config: { ...makeDraftVer().config, title: 'Verifica Trigonometria' },
+      }),
+    ]);
+    render(<VerificationsView />);
+
+    const table = await screen.findByRole('table');
+    expect(within(table).getAllByText(/Attivata:/)).toHaveLength(2);
+    expect(within(table).getByText(/Chiusa:/)).toBeTruthy();
+  });
+
+  it('does not show activation/closure timestamps for a draft verification', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+
+    const table = await screen.findByRole('table');
+    expect(within(table).queryByText(/Attivata:/)).toBeNull();
+  });
+
+  it('falls back to "—" when an active verification is missing activatedAt (legacy doc)', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer({ id: 'ver-2', status: 'active', activatedAt: null }),
+    ]);
+    render(<VerificationsView />);
+
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText('Attivata: —')).toBeTruthy();
+  });
+
   it('every verification row has the same number of table cells regardless of status (stable actions column)', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([

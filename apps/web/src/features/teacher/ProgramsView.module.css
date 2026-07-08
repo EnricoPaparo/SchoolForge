@@ -132,6 +132,44 @@
   line-height: 1;
 }
 
+.iconBtnDanger {
+  color: var(--color-error);
+  border-color: var(--color-error-border);
+}
+
+.iconBtnDanger:hover:not(:disabled) {
+  background-color: var(--color-error-bg);
+}
+
+.deleteConfirmBox {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.875rem 1rem;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-error-bg);
+}
+
+.deleteConfirmMsg {
+  font-size: 0.875rem;
+  color: var(--color-text);
+}
+
+.deleteConfirmActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.deleteConfirmBtn {
+  color: #fff;
+  background: var(--color-error);
+  border-color: var(--color-error);
+}
+
+.deleteConfirmBtn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
 @media (max-width: 640px) {
   .courseHeader {
     flex-direction: column;

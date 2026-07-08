@@ -105,7 +105,7 @@ export function ImportZipModal({
 
         <p className={styles.replaceNotice}>
           {hasActiveImport
-            ? 'Questo corso ha già un import attivo: importare un nuovo ZIP lo sostituirà completamente (UDA, lezioni e domande del vecchio import non saranno più disponibili). Non viene fatto alcun accodamento o merge automatico.'
+            ? 'Questo import sostituirà il contenuto attivo del corso. Le verifiche future useranno il nuovo contenuto.'
             : "Un nuovo import sostituisce sempre l'eventuale import attivo del corso: non viene fatto accodamento o merge automatico. Un Corso corrisponde a un programma — per gestire due programmi diversi crea due Corsi separati."}
         </p>
 
