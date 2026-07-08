@@ -66,7 +66,6 @@ describe('ClassesView', () => {
     render(<ClassesView />);
     await waitFor(() => screen.getByLabelText('Nome'));
 
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     fireEvent.change(document.getElementById('new-class-name')!, {
       target: { value: 'Nuova Classe' },
     });
