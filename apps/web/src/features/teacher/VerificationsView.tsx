@@ -3,7 +3,7 @@ import {
   activateVerification,
   closeVerification,
   createVerification,
-  deleteClosedVerification,
+  deleteVerification,
   listVerifications,
   updateVerificationConfig,
   type VerificationItem,
@@ -274,7 +274,7 @@ export function VerificationsView() {
     setDeleting(true);
     setDeleteError(null);
     try {
-      await deleteClosedVerification(id, ownerUid, db);
+      await deleteVerification(id, ownerUid, db);
       setVerifications((prev) => prev?.filter((v) => v.id !== id) ?? null);
       setDeleteConfirmId(null);
       if (selectedVer?.id === id) setSelectedVer(null);
@@ -302,6 +302,65 @@ export function VerificationsView() {
 
   return (
     <section aria-label="Verifiche" className={styles.container}>
+      {/* ── Create form ── */}
+      <form
+        aria-label="Nuova verifica"
+        className={styles.createForm}
+        onSubmit={(e) => void handleCreate(e)}
+      >
+        <div className={styles.formRow}>
+          <label htmlFor="new-ver-title">Titolo</label>
+          <input
+            id="new-ver-title"
+            type="text"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+          />
+        </div>
+
+        <div className={styles.formRow}>
+          <label htmlFor="new-ver-program">Programma</label>
+          <select
+            id="new-ver-program"
+            value={newProgramId}
+            onChange={(e) => setNewProgramId(e.target.value)}
+          >
+            <option value="">— Seleziona programma —</option>
+            {programs.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.title}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className={styles.formRow}>
+          <label htmlFor="new-ver-class">Classe (opzionale)</label>
+          <select
+            id="new-ver-class"
+            value={newClassId}
+            onChange={(e) => setNewClassId(e.target.value)}
+          >
+            <option value="">— Nessuna classe —</option>
+            {classes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {createError && (
+          <p role="alert" className="text-error">
+            {createError}
+          </p>
+        )}
+
+        <button type="submit" disabled={creating || !newTitle.trim() || !newProgramId}>
+          {creating ? 'Creazione…' : 'Crea verifica'}
+        </button>
+      </form>
+
       {/* ── Verification table ── */}
       {verifications.length === 0 ? (
         <p className="state-empty">Nessuna verifica. Creane una.</p>
@@ -454,7 +513,7 @@ export function VerificationsView() {
                             🔒
                           </button>
                         )}
-                        {v.status === 'closed' && (
+                        {(v.status === 'draft' || v.status === 'closed') && (
                           <button
                             type="button"
                             className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
@@ -483,67 +542,6 @@ export function VerificationsView() {
           </table>
         </div>
       )}
-
-      {/* ── Create form ── */}
-      <form
-        aria-label="Nuova verifica"
-        className={styles.createForm}
-        onSubmit={(e) => void handleCreate(e)}
-      >
-        <span className={styles.createTitle}>Crea nuova verifica</span>
-
-        <div className={styles.formRow}>
-          <label htmlFor="new-ver-title">Titolo</label>
-          <input
-            id="new-ver-title"
-            type="text"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-          />
-        </div>
-
-        <div className={styles.formRow}>
-          <label htmlFor="new-ver-program">Programma</label>
-          <select
-            id="new-ver-program"
-            value={newProgramId}
-            onChange={(e) => setNewProgramId(e.target.value)}
-          >
-            <option value="">— Seleziona programma —</option>
-            {programs.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className={styles.formRow}>
-          <label htmlFor="new-ver-class">Classe (opzionale)</label>
-          <select
-            id="new-ver-class"
-            value={newClassId}
-            onChange={(e) => setNewClassId(e.target.value)}
-          >
-            <option value="">— Nessuna classe —</option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {createError && (
-          <p role="alert" className="text-error">
-            {createError}
-          </p>
-        )}
-
-        <button type="submit" disabled={creating || !newTitle.trim() || !newProgramId}>
-          {creating ? 'Creazione…' : 'Crea verifica'}
-        </button>
-      </form>
 
       {/* ── Detail panel — draft configuration only; active/closed show a compact summary ── */}
       {selectedVer && (

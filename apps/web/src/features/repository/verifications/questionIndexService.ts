@@ -3,8 +3,9 @@ import type { Firestore } from 'firebase/firestore';
 import type { QuestionIndexEntry as QuestionIndexDoc } from '../../../types/firestore.js';
 
 /**
- * Metadata-only view of a question index entry.
- * NEVER includes questionText, answers, correctAnswer or solution.
+ * Metadata + safe preview view of a question index entry.
+ * NEVER includes the full questionText, answers, correctAnswer or solution —
+ * questionPreview is a short (max 100 char) normalized snippet only.
  */
 export type QuestionIndexEntry = {
   /** Firestore document id — stable key for VerificationQuestionRef */
@@ -17,7 +18,8 @@ export type QuestionIndexEntry = {
   difficolta: 1 | 2 | 3;
   peso: 1 | 2 | 3;
   maxPoints: number;
-  // NEVER expose: questionText, answers, correctAnswer, solution
+  questionPreview: string;
+  // NEVER expose: full questionText, answers, correctAnswer, solution
 };
 
 export async function listQuestionIndex(
@@ -28,9 +30,9 @@ export async function listQuestionIndex(
   const snap = await getDocs(
     collection(db, 'programs', programId, 'imports', importId, 'questionIndex'),
   );
-  return snap.docs.map((d) => {
+  const entries = snap.docs.map((d) => {
     const data = d.data() as QuestionIndexDoc;
-    // Explicitly select only metadata fields — never expose question content
+    // Explicitly select only metadata + preview fields — never expose full question content
     return {
       id: d.id,
       udaDir: data.udaDir,
@@ -41,6 +43,15 @@ export async function listQuestionIndex(
       difficolta: data.difficolta,
       peso: data.peso,
       maxPoints: data.maxPoints,
+      questionPreview: data.questionPreview,
     };
   });
+  // Deterministic order: UDA, then lesson, then question — so the picker
+  // doesn't reshuffle between loads (Firestore doesn't guarantee doc order).
+  return entries.sort(
+    (a, b) =>
+      a.udaDir.localeCompare(b.udaDir) ||
+      a.lessonFilename.localeCompare(b.lessonFilename) ||
+      a.questionLocalId.localeCompare(b.questionLocalId),
+  );
 }

@@ -94,6 +94,8 @@ export interface QuestionIndexEntry {
   difficolta: 1 | 2 | 3;
   peso: 1 | 2 | 3;
   maxPoints: number;
+  /** First 100 chars of the normalized question text — never the full text, solution, or answers. */
+  questionPreview: string;
 }
 
 /** Serialized form of a validation issue (Firestore-safe, no class instances). */

@@ -30,7 +30,7 @@ import {
   validateForActivation,
   activateVerification,
   closeVerification,
-  deleteClosedVerification,
+  deleteVerification,
 } from '../verificationsService.js';
 import type { Firestore } from 'firebase/firestore';
 import type { VerificationConfig, VerificationDoc } from '../../../../types/firestore.js';
@@ -282,14 +282,14 @@ describe('closeVerification', () => {
   });
 });
 
-// ─── deleteClosedVerification ─────────────────────────────────────────────────
+// ─── deleteVerification ────────────────────────────────────────────────────────
 
-describe('deleteClosedVerification', () => {
+describe('deleteVerification', () => {
   it('deletes the document and writes an audit event when status is closed', async () => {
     const closedDoc: Partial<VerificationDoc> = { status: 'closed', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => closedDoc });
 
-    await deleteClosedVerification('ver-id', OWNER_UID, fakeDb);
+    await deleteVerification('ver-id', OWNER_UID, fakeDb);
 
     expect(mockDeleteDoc).toHaveBeenCalledTimes(1);
     expect(mockSetDoc).toHaveBeenCalledTimes(1); // audit event only
@@ -299,22 +299,23 @@ describe('deleteClosedVerification', () => {
     expect(auditData.targetId).toBe('ver-id');
   });
 
-  it('rejects when status is draft, without calling deleteDoc', async () => {
+  it('deletes the document and writes an audit event when status is draft', async () => {
     const draftDoc: Partial<VerificationDoc> = { status: 'draft', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => draftDoc });
 
-    await expect(deleteClosedVerification('ver-id', OWNER_UID, fakeDb)).rejects.toThrow(
-      'Verifica non eliminabile: non è chiusa',
-    );
-    expect(mockDeleteDoc).not.toHaveBeenCalled();
+    await deleteVerification('ver-id', OWNER_UID, fakeDb);
+
+    expect(mockDeleteDoc).toHaveBeenCalledTimes(1);
+    const [, auditData] = mockSetDoc.mock.calls[0];
+    expect(auditData.action).toBe('verification.deleted');
   });
 
   it('rejects when status is active, without calling deleteDoc', async () => {
     const activeDoc: Partial<VerificationDoc> = { status: 'active', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => activeDoc });
 
-    await expect(deleteClosedVerification('ver-id', OWNER_UID, fakeDb)).rejects.toThrow(
-      'Verifica non eliminabile: non è chiusa',
+    await expect(deleteVerification('ver-id', OWNER_UID, fakeDb)).rejects.toThrow(
+      'Verifica non eliminabile: deve essere in bozza o chiusa',
     );
     expect(mockDeleteDoc).not.toHaveBeenCalled();
   });
