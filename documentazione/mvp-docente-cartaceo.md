@@ -120,7 +120,7 @@ uda-02-<slug>/
   ...
 ```
 
-`programma.md` è **opzionale** e va messo nella radice dello ZIP (non dentro una cartella UDA). Un kit di esempio completo e importabile è scaricabile dalla sezione **Template** dell'app (bottone "Scarica kit completo").
+`programma.md` è **opzionale** e va messo nella radice dello ZIP (non dentro una cartella UDA). Un kit di esempio completo e importabile è scaricabile dalla sezione **Template** dell'app (bottone "Scarica kit completo"): contiene 2 UDA con metadati compilati (competenze, obiettivi), 2 lezioni per UDA, un pool valido per una lezione di ciascuna UDA (l'altra lezione resta senza pool) e tutti e tre i tipi di domanda (aperta, chiusa singola, chiusa multipla) — utile per verificare rapidamente l'intero flusso di import senza preparare contenuti reali.
 
 **Front matter opzionale per `programma.md`** (nella radice dello ZIP):
 

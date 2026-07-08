@@ -10,6 +10,7 @@ export type ImportZipResult = {
 
 type Props = {
   programTitle: string;
+  hasActiveImport: boolean;
   file: File | null;
   importing: boolean;
   error: string | null;
@@ -29,6 +30,7 @@ function focusableElements(container: HTMLElement): HTMLElement[] {
 
 export function ImportZipModal({
   programTitle,
+  hasActiveImport,
   file,
   importing,
   error,
@@ -99,6 +101,12 @@ export function ImportZipModal({
           file <code>programma.md</code> nella radice dello ZIP è opzionale: se presente, i suoi
           metadati (anno scolastico, docente, materia, classe) compaiono nel pannello info del
           corso.
+        </p>
+
+        <p className={styles.replaceNotice}>
+          {hasActiveImport
+            ? 'Questo corso ha già un import attivo: importare un nuovo ZIP lo sostituirà completamente (UDA, lezioni e domande del vecchio import non saranno più disponibili). Non viene fatto alcun accodamento o merge automatico.'
+            : "Un nuovo import sostituisce sempre l'eventuale import attivo del corso: non viene fatto accodamento o merge automatico. Un Corso corrisponde a un programma — per gestire due programmi diversi crea due Corsi separati."}
         </p>
 
         <div className={styles.fileRow}>

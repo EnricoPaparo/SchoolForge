@@ -262,4 +262,11 @@ describe('QuestionPicker — question preview', () => {
     expect(within(list).getByText('Quale protocollo usa il three-way handshake?')).toBeTruthy();
     expect(within(list).getByText('Seleziona le funzioni tipiche di un firewall.')).toBeTruthy();
   });
+
+  it('shows a clean fallback instead of crashing when questionPreview is missing (legacy import)', () => {
+    const legacyEntries: QuestionIndexEntry[] = [{ ...ENTRIES[0], questionPreview: '' }];
+    const onChange = vi.fn();
+    render(<QuestionPicker entries={legacyEntries} selectedIds={new Set()} onChange={onChange} />);
+    expect(screen.getByText('Anteprima non disponibile')).toBeTruthy();
+  });
 });

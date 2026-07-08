@@ -63,11 +63,16 @@ describe('buildKitZip', () => {
       'programma-esempio/programma.md',
       'programma-esempio/uda-01-titolo-uda/lezione-001-titolo-lezione.md',
       'programma-esempio/uda-01-titolo-uda/lezione-001-titolo-lezione.pool.md',
+      'programma-esempio/uda-01-titolo-uda/lezione-002-titolo-lezione.md',
       'programma-esempio/uda-01-titolo-uda/uda-01-titolo-uda.md',
+      'programma-esempio/uda-02-titolo-uda/lezione-001-titolo-lezione.md',
+      'programma-esempio/uda-02-titolo-uda/lezione-001-titolo-lezione.pool.md',
+      'programma-esempio/uda-02-titolo-uda/lezione-002-titolo-lezione.md',
+      'programma-esempio/uda-02-titolo-uda/uda-02-titolo-uda.md',
     ]);
   });
 
-  it('produces a ZIP that imports successfully with one UDA, one lesson and a valid pool', async () => {
+  it('produces a ZIP that imports successfully with 2 UDA, 2 lessons each and a valid pool per UDA', async () => {
     const zip = buildKitZip();
     const blob = await zip.generateAsync({ type: 'blob' });
     const file = new File([blob], 'programma-esempio.zip', { type: 'application/zip' });
@@ -76,9 +81,41 @@ describe('buildKitZip', () => {
     const validation = validateImport('Programma di esempio', files);
 
     expect(validation.valid).toBe(true);
-    expect(validation.udas).toHaveLength(1);
-    expect(validation.udas[0].lessons).toHaveLength(1);
-    expect(validation.udas[0].lessons[0].poolStatus).toBe('valid');
+    expect(validation.udas).toHaveLength(2);
+    for (const uda of validation.udas) {
+      expect(uda.lessons).toHaveLength(2);
+      const poolStatuses = uda.lessons.map((l) => l.poolStatus).sort();
+      expect(poolStatuses).toEqual(['absent', 'valid']);
+    }
+  });
+
+  it('covers all three question types (aperta, chiusa_singola, chiusa_multipla) across the pools', async () => {
+    const zip = buildKitZip();
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const file = new File([blob], 'programma-esempio.zip', { type: 'application/zip' });
+
+    const files = await readZipFile(file);
+    const validation = validateImport('Programma di esempio', files);
+
+    const pools = files.filter((f) => f.path.endsWith('.pool.md')).map((f) => f.content);
+    expect(pools.some((p) => p.includes('tipo: aperta'))).toBe(true);
+    expect(pools.some((p) => p.includes('tipo: chiusa_singola'))).toBe(true);
+    expect(pools.some((p) => p.includes('tipo: chiusa_multipla'))).toBe(true);
+    expect(validation.valid).toBe(true);
+  });
+
+  it('fills in UDA metadata (competenze, obiettivi) for every UDA', async () => {
+    const zip = buildKitZip();
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const file = new File([blob], 'programma-esempio.zip', { type: 'application/zip' });
+
+    const files = await readZipFile(file);
+    const validation = validateImport('Programma di esempio', files);
+
+    for (const uda of validation.udas) {
+      expect(uda.metadata.competenze.length).toBeGreaterThan(0);
+      expect(uda.metadata.obiettivi.length).toBeGreaterThan(0);
+    }
   });
 
   it('exposes the parsed programma.md metadata used to populate the info panel', async () => {

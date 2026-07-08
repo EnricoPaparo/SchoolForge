@@ -29,6 +29,7 @@ export function LessonsView() {
   const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
   const [expandedUdas, setExpandedUdas] = useState<Set<string>>(new Set());
 
+  const [selectedProgram, setSelectedProgram] = useState<ProgramItem | null>(null);
   const [selectedLesson, setSelectedLesson] = useState<LessonItem | null>(null);
   const [lessonContent, setLessonContent] = useState<string | null>(null);
   const [lessonContentLoading, setLessonContentLoading] = useState(false);
@@ -90,7 +91,8 @@ export function LessonsView() {
     });
   }
 
-  async function selectLesson(lesson: LessonItem) {
+  async function selectLesson(program: ProgramItem, lesson: LessonItem) {
+    setSelectedProgram(program);
     setSelectedLesson(lesson);
     setLessonContent(null);
     setLessonContentError(null);
@@ -111,7 +113,11 @@ export function LessonsView() {
     setPdfError(null);
     setPdfDownloading(true);
     try {
-      await downloadLessonPdf(selectedLesson.filename, lessonContent, selectedLesson.udaDir);
+      const contextParts = [selectedProgram?.title, selectedLesson.udaDir].filter(
+        (part): part is string => Boolean(part?.trim()),
+      );
+      const context = contextParts.length > 0 ? contextParts.join(' - ') : null;
+      await downloadLessonPdf(selectedLesson.filename, lessonContent, context);
     } catch {
       setPdfError('Impossibile generare il PDF della lezione.');
     } finally {
@@ -226,7 +232,7 @@ export function LessonsView() {
                                             className={styles.lessonBtn}
                                             aria-pressed={selectedLesson?.id === lesson.id}
                                             aria-label={`Apri lezione ${lesson.filename}`}
-                                            onClick={() => void selectLesson(lesson)}
+                                            onClick={() => void selectLesson(program, lesson)}
                                           >
                                             {lesson.filename}
                                           </button>

@@ -14,12 +14,30 @@ import {
 import type { ProgrammaMeta } from '../../types/firestore.js';
 import { importRepository } from '../repository/import/importRepository.js';
 import { readZipFile } from '../repository/import/readZipFile.js';
+import type { ValidationIssue } from '../repository/validation/types.js';
 import { db, storage } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import { exportZip } from './exportZip.js';
 import { downloadMarkdown, downloadPdf, generateMarkdown } from './programmaSvolto.js';
 import { ImportZipModal, type ImportZipResult } from './ImportZipModal.js';
 import styles from './ProgramsView.module.css';
+
+/**
+ * Translates the first validation issue into a clean Italian message for the
+ * import modal. Falls back to the raw issue message/path for codes without a
+ * dedicated translation, keeping compatibility with older validation issues.
+ */
+function describeImportValidationError(issues: ValidationIssue[]): string {
+  const first = issues[0];
+  if (!first) return 'Validazione fallita: struttura ZIP non valida.';
+  if (first.code === 'NO_UDAS') {
+    return 'Validazione fallita: lo ZIP non contiene nessuna UDA valida. Verifica che ci sia almeno una cartella "uda-NN-slug/" con un file UDA conforme.';
+  }
+  if (first.code === 'MISSING_UDA_FILE') {
+    return `Validazione fallita: struttura ZIP non conforme — la cartella "${first.path}" non contiene un file UDA valido (es. "uda-01-slug.md").`;
+  }
+  return `Validazione fallita: ${first.message} (${first.path})`;
+}
 
 type CourseState = {
   udas: UdaItem[] | null;
@@ -210,7 +228,7 @@ export function ProgramsView() {
     const cs = courseState[program.id];
     if (!program.activeImportId || !cs?.udas) return;
     const allLessons = await listLessons(program.id, program.activeImportId, db);
-    const content = generateMarkdown(program, cs.udas, allLessons);
+    const content = generateMarkdown(program, cs.udas, allLessons, cs.programmaMeta);
     downloadMarkdown(content, `programma-svolto-${program.title.replace(/\s+/g, '_')}.md`);
   }
 
@@ -220,7 +238,7 @@ export function ProgramsView() {
     updateCourseState(program.id, { pdfDownloading: true });
     try {
       const allLessons = await listLessons(program.id, program.activeImportId, db);
-      const content = generateMarkdown(program, cs.udas, allLessons);
+      const content = generateMarkdown(program, cs.udas, allLessons, cs.programmaMeta);
       await downloadPdf(content, `programma-svolto-${program.title.replace(/\s+/g, '_')}`);
     } finally {
       updateCourseState(program.id, { pdfDownloading: false });
@@ -256,12 +274,7 @@ export function ProgramsView() {
         { db, storage },
       );
       if (result.status === 'validation_failed') {
-        const first = result.validationIssues[0];
-        setImportError(
-          first
-            ? `Validazione fallita: ${first.message} (${first.path})`
-            : 'Validazione fallita: struttura ZIP non valida.',
-        );
+        setImportError(describeImportValidationError(result.validationIssues));
         return;
       }
       const counts: ImportZipResult = {
@@ -609,6 +622,7 @@ export function ProgramsView() {
       {modalProgram && (
         <ImportZipModal
           programTitle={modalProgram.title}
+          hasActiveImport={modalProgram.activeImportId != null}
           file={importFile}
           importing={importing}
           error={importError}

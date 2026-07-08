@@ -244,7 +244,13 @@ export function QuestionPicker({ entries, selectedIds, onChange }: Props) {
               <label htmlFor={`qp-check-${entry.id}`} className={styles.rowContent}>
                 <span className={styles.rowPreviewLine}>
                   <span className={styles.rowLocalId}>#{entry.questionLocalId}</span>
-                  <span className={styles.rowPreview}>{entry.questionPreview}</span>
+                  <span className={styles.rowPreview}>
+                    {entry.questionPreview.trim() ? (
+                      entry.questionPreview
+                    ) : (
+                      <span className={styles.rowPreviewMissing}>Anteprima non disponibile</span>
+                    )}
+                  </span>
                 </span>
                 <span className={styles.rowMeta}>
                   {entry.udaDir} / {entry.lessonFilename} · {TIPO_LABELS[entry.tipo]} · diff{' '}

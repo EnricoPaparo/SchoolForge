@@ -72,7 +72,16 @@ export async function listUdas(
   db: Firestore,
 ): Promise<UdaItem[]> {
   const snap = await getDocs(collection(db, 'programs', programId, 'imports', importId, 'udas'));
-  const items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as UdaDoc) }));
+  const items = snap.docs.map((d) => {
+    const raw = d.data() as Partial<UdaDoc>;
+    return {
+      id: d.id,
+      ...raw,
+      descrizione: raw.descrizione ?? null,
+      competenze: raw.competenze ?? [],
+      obiettivi: raw.obiettivi ?? [],
+    } as UdaItem;
+  });
   return items.sort((a, b) => a.dir.localeCompare(b.dir));
 }
 

@@ -90,6 +90,62 @@ describe('generateMarkdown', () => {
   });
 });
 
+describe('generateMarkdown — metadata presence rules', () => {
+  it('never prints a descrizione section when programmaMeta is absent', () => {
+    const md = generateMarkdown(PROGRAM, [UDA], [LESSON_COMPLETED]);
+    expect(md).not.toContain('Non indicato');
+  });
+
+  it('prints the program descrizione only when present', () => {
+    const md = generateMarkdown(PROGRAM, [UDA], [LESSON_COMPLETED], {
+      annoScolastico: null,
+      docente: null,
+      materia: null,
+      classe: null,
+      descrizione: 'Descrizione del programma annuale.',
+    });
+    expect(md).toContain('Descrizione del programma annuale.');
+  });
+
+  it('omits the descrizione section when programmaMeta.descrizione is null', () => {
+    const md = generateMarkdown(PROGRAM, [UDA], [LESSON_COMPLETED], {
+      annoScolastico: '2025/2026',
+      docente: null,
+      materia: null,
+      classe: null,
+      descrizione: null,
+    });
+    expect(md).not.toContain('Non indicato');
+  });
+
+  it('prints Competenze/Obiettivi only when the UDA has them', () => {
+    const udaWithMeta: UdaItem = {
+      ...UDA,
+      competenze: ['Competenza A'],
+      obiettivi: ['Obiettivo 1'],
+    };
+    const md = generateMarkdown(PROGRAM, [udaWithMeta], [LESSON_COMPLETED]);
+    expect(md).toContain('Competenze:');
+    expect(md).toContain('Competenza A');
+    expect(md).toContain('Obiettivi:');
+    expect(md).toContain('Obiettivo 1');
+  });
+
+  it('omits Competenze/Obiettivi sections when the UDA has none (fallback to minimal output)', () => {
+    const md = generateMarkdown(PROGRAM, [UDA], [LESSON_COMPLETED]);
+    expect(md).not.toContain('Competenze:');
+    expect(md).not.toContain('Obiettivi:');
+    expect(md).not.toContain('Non indicato');
+  });
+
+  it('omits Obiettivi when only competenze is present', () => {
+    const udaCompetenzeOnly: UdaItem = { ...UDA, competenze: ['Competenza A'], obiettivi: [] };
+    const md = generateMarkdown(PROGRAM, [udaCompetenzeOnly], [LESSON_COMPLETED]);
+    expect(md).toContain('Competenze:');
+    expect(md).not.toContain('Obiettivi:');
+  });
+});
+
 describe('downloadMarkdown', () => {
   it('calls URL.createObjectURL and creates an anchor element', () => {
     const createObjectURL = vi.fn().mockReturnValue('blob:mock-url');

@@ -43,7 +43,8 @@ export async function listQuestionIndex(
       difficolta: data.difficolta,
       peso: data.peso,
       maxPoints: data.maxPoints,
-      questionPreview: data.questionPreview,
+      // Absent on questionIndex entries created before the preview field existed.
+      questionPreview: data.questionPreview ?? '',
     };
   });
   // Deterministic order: UDA, then lesson, then question — so the picker

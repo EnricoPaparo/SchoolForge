@@ -57,7 +57,9 @@ export function buildImportPayload(params: {
     });
 
     for (const lesson of uda.lessons) {
-      const lessonId = toDocId(lesson.filename.replace(/\.md$/, ''));
+      // Scoped by udaId: lesson numbering restarts per UDA, so two UDAs can
+      // legitimately share a lesson filename (e.g. both have a "lezione-001-...").
+      const lessonId = `${udaId}_${toDocId(lesson.filename.replace(/\.md$/, ''))}`;
       const storageRef = `repository/${ownerUid}/imports/${importId}/${lesson.path}`;
       const poolPath = lesson.path.replace(/\.md$/, '.pool.md');
       const poolStorageRef =
@@ -73,7 +75,7 @@ export function buildImportPayload(params: {
           const parsed = parsePool(poolContent, poolPath);
           if (parsed.ok) {
             for (const q of parsed.pool.questions) {
-              const entryId = `${udaId}_${lessonId}_${toDocId(q.id)}`;
+              const entryId = `${lessonId}_${toDocId(q.id)}`;
               questionIndex.push({
                 id: entryId,
                 data: {

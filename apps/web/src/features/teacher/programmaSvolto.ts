@@ -1,18 +1,30 @@
 import type { LessonItem, ProgramItem, UdaItem } from '../repository/programs/programsService.js';
+import type { ProgrammaMeta } from '../../types/firestore.js';
 
 /**
  * Generates a Markdown document of completed lessons, grouped by UDA.
+ *
+ * Metadata sections (program descrizione, UDA competenze/obiettivi) are only
+ * printed when actually present — never a "Non indicato" placeholder — so
+ * imports without didactic metadata keep producing the original minimal
+ * output (title, UDA heading, completed lessons).
  */
 export function generateMarkdown(
   program: ProgramItem,
   udas: UdaItem[],
   lessons: LessonItem[],
+  programmaMeta?: ProgrammaMeta | null,
 ): string {
   const completed = lessons.filter((l) => l.completed === true);
 
   const lines: string[] = [];
   lines.push(`# Programma svolto — ${program.title}`);
   lines.push('');
+
+  if (programmaMeta?.descrizione) {
+    lines.push(programmaMeta.descrizione);
+    lines.push('');
+  }
 
   if (completed.length === 0) {
     lines.push('_Nessuna lezione segnata come svolta._');
@@ -37,6 +49,25 @@ export function generateMarkdown(
 
     lines.push(`## ${dir}`);
     lines.push('');
+
+    const uda = udas.find((u) => u.dir === dir);
+    const hasCompetenze = (uda?.competenze?.length ?? 0) > 0;
+    const hasObiettivi = (uda?.obiettivi?.length ?? 0) > 0;
+
+    if (hasCompetenze) {
+      lines.push('Competenze:');
+      for (const c of uda!.competenze) lines.push(`- ${c}`);
+      lines.push('');
+    }
+    if (hasObiettivi) {
+      lines.push('Obiettivi:');
+      for (const o of uda!.obiettivi) lines.push(`- ${o}`);
+      lines.push('');
+    }
+    if (hasCompetenze || hasObiettivi) {
+      lines.push('Lezioni svolte:');
+    }
+
     for (const lesson of groupLessons) {
       const date =
         lesson.completedAt != null
