@@ -9,6 +9,7 @@ import {
 } from '../repository/programs/programsService.js';
 import { db, storage } from '../../lib/firebase.js';
 import { fetchLessonContent } from './lessonContent.js';
+import { downloadLessonPdf } from './lessonPdf.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import styles from './LessonsView.module.css';
 
@@ -29,10 +30,11 @@ export function LessonsView() {
   const [expandedUdas, setExpandedUdas] = useState<Set<string>>(new Set());
 
   const [selectedLesson, setSelectedLesson] = useState<LessonItem | null>(null);
-  const [selectedProgramTitle, setSelectedProgramTitle] = useState<string | null>(null);
   const [lessonContent, setLessonContent] = useState<string | null>(null);
   const [lessonContentLoading, setLessonContentLoading] = useState(false);
   const [lessonContentError, setLessonContentError] = useState<string | null>(null);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   useEffect(() => {
     void loadPrograms();
@@ -88,11 +90,11 @@ export function LessonsView() {
     });
   }
 
-  async function selectLesson(program: ProgramItem, lesson: LessonItem) {
+  async function selectLesson(lesson: LessonItem) {
     setSelectedLesson(lesson);
-    setSelectedProgramTitle(program.title);
     setLessonContent(null);
     setLessonContentError(null);
+    setPdfError(null);
     setLessonContentLoading(true);
     try {
       const content = await fetchLessonContent(lesson.storageRef, storage);
@@ -101,6 +103,19 @@ export function LessonsView() {
       setLessonContentError('Impossibile caricare il contenuto della lezione.');
     } finally {
       setLessonContentLoading(false);
+    }
+  }
+
+  async function handleDownloadLessonPdf() {
+    if (!selectedLesson || lessonContent == null) return;
+    setPdfError(null);
+    setPdfDownloading(true);
+    try {
+      await downloadLessonPdf(selectedLesson.filename, lessonContent, selectedLesson.udaDir);
+    } catch {
+      setPdfError('Impossibile generare il PDF della lezione.');
+    } finally {
+      setPdfDownloading(false);
     }
   }
 
@@ -211,7 +226,7 @@ export function LessonsView() {
                                             className={styles.lessonBtn}
                                             aria-pressed={selectedLesson?.id === lesson.id}
                                             aria-label={`Apri lezione ${lesson.filename}`}
-                                            onClick={() => void selectLesson(program, lesson)}
+                                            onClick={() => void selectLesson(lesson)}
                                           >
                                             {lesson.filename}
                                           </button>
@@ -243,10 +258,23 @@ export function LessonsView() {
           <>
             <div className={styles.contentHeader}>
               <h3 className={styles.contentTitle}>{selectedLesson.filename}</h3>
-              {selectedProgramTitle && (
-                <span className={styles.contentSubtitle}>{selectedProgramTitle}</span>
-              )}
+              <button
+                type="button"
+                className={styles.pdfBtn}
+                title="Scarica PDF"
+                aria-label={`Scarica PDF — ${selectedLesson.filename}`}
+                disabled={lessonContent == null || pdfDownloading}
+                onClick={() => void handleDownloadLessonPdf()}
+              >
+                {pdfDownloading ? '…' : '🖨️'}
+              </button>
             </div>
+
+            {pdfError && (
+              <p role="alert" className={`text-error ${styles.pdfError}`}>
+                {pdfError}
+              </p>
+            )}
 
             {lessonContentLoading && (
               <p aria-busy="true" className="state-loading">

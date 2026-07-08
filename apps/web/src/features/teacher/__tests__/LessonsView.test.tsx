@@ -21,6 +21,11 @@ vi.mock('../lessonContent.js', () => ({
   fetchLessonContent: (...args: unknown[]) => mockFetchLessonContent(...args),
 }));
 
+const mockDownloadLessonPdf = vi.fn();
+vi.mock('../lessonPdf.js', () => ({
+  downloadLessonPdf: (...args: unknown[]) => mockDownloadLessonPdf(...args),
+}));
+
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
@@ -168,6 +173,63 @@ describe('LessonsView — selecting a lesson', () => {
 
     expect(await screen.findByRole('heading', { name: 'Lezione' })).toBeTruthy();
     expect(screen.getByText('Contenuto della lezione.')).toBeTruthy();
+  });
+
+  it('shows a header with only the lesson filename — no program name — plus a PDF download button', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    mockFetchLessonContent.mockResolvedValue('Contenuto.');
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+    await expandUda(/uda-01-reti/);
+    fireEvent.click(await screen.findByRole('button', { name: /lezione-001\.md/ }));
+
+    // The heading's accessible name is exactly the lesson filename — the
+    // program name ("Informatica") is not repeated in it.
+    expect(await screen.findByRole('heading', { name: 'lezione-001.md' })).toBeTruthy();
+    expect(
+      await screen.findByRole('button', { name: /Scarica PDF — lezione-001\.md/ }),
+    ).toBeTruthy();
+  });
+
+  it('calls downloadLessonPdf with the lesson filename, content and UDA context when "Scarica PDF" is clicked', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    mockFetchLessonContent.mockResolvedValue('# Lezione\nContenuto della lezione.');
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+    await expandUda(/uda-01-reti/);
+    fireEvent.click(await screen.findByRole('button', { name: /lezione-001\.md/ }));
+    await screen.findByText('Contenuto della lezione.');
+
+    fireEvent.click(screen.getByRole('button', { name: /Scarica PDF/ }));
+
+    await waitFor(() => {
+      expect(mockDownloadLessonPdf).toHaveBeenCalledWith(
+        'lezione-001.md',
+        '# Lezione\nContenuto della lezione.',
+        'uda-01-reti',
+      );
+    });
+  });
+
+  it('shows a readable error when downloadLessonPdf fails', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    mockFetchLessonContent.mockResolvedValue('Contenuto.');
+    mockDownloadLessonPdf.mockRejectedValue(new Error('boom'));
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+    await expandUda(/uda-01-reti/);
+    fireEvent.click(await screen.findByRole('button', { name: /lezione-001\.md/ }));
+    await screen.findByText('Contenuto.');
+
+    fireEvent.click(screen.getByRole('button', { name: /Scarica PDF/ }));
+
+    expect(await screen.findByText(/Impossibile generare il PDF/)).toBeTruthy();
   });
 
   it('highlights the selected lesson', async () => {
