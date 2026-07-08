@@ -7,6 +7,58 @@ import {
   getAnswerAreaKind,
 } from './verificationPdfLayout.js';
 
+type PdfTitleDoc = {
+  setFontSize: (size: number) => void;
+  setFont: (fontName: string, fontStyle?: string) => void;
+  getTextWidth: (text: string) => number;
+  text: (text: string, x: number, y: number, options?: { align?: 'center' }) => void;
+};
+
+function writeCenteredTitleWithClass(params: {
+  doc: PdfTitleDoc;
+  title: string;
+  className: string | null;
+  y: number;
+  pageWidth: number;
+  contentWidth: number;
+}) {
+  const { doc, title, className, y, pageWidth, contentWidth } = params;
+  const classLabel = className ? `Classe: ${className}` : null;
+
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+
+  if (!classLabel) {
+    doc.text(title, pageWidth / 2, y, { align: 'center' });
+    return;
+  }
+
+  const gap = 4;
+  const titleWidth = doc.getTextWidth(title);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  const classWidth = doc.getTextWidth(classLabel);
+  const totalWidth = titleWidth + gap + classWidth;
+
+  if (totalWidth > contentWidth) {
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text(title, pageWidth / 2, y, { align: 'center' });
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(classLabel, pageWidth / 2, y + 5, { align: 'center' });
+    return;
+  }
+
+  const startX = (pageWidth - totalWidth) / 2;
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text(title, startX, y);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text(classLabel, startX + titleWidth + gap, y);
+}
+
 /**
  * Generates and downloads a student-facing verification PDF.
  * Contains: title, class, name/date fields, questions with max points.
@@ -52,15 +104,15 @@ export async function downloadStudentPdf(
   };
 
   // ── Header ────────────────────────────────────────────────────────────────
-  write(snapshot.title, 16, true, true);
-  gap(3);
-  if (className) {
-    write(`Classe: ${className}`, 11, false, true);
-    gap(2);
-  }
-  gap(5);
-  hRule();
-  gap(7);
+  writeCenteredTitleWithClass({
+    doc,
+    title: snapshot.title,
+    className,
+    y,
+    pageWidth: pageW,
+    contentWidth: contentW,
+  });
+  gap(className ? 11 : 10);
 
   // ── Student fields ────────────────────────────────────────────────────────
   // Both fields are drawn (label + a ruled line to a shared right edge), never
@@ -78,8 +130,6 @@ export async function downloadStudentPdf(
   drawFieldLine('Nome e Cognome:');
   gap(9);
   drawFieldLine('Data:');
-  gap(10);
-  hRule();
   gap(9);
 
   // ── Questions ─────────────────────────────────────────────────────────────
@@ -180,12 +230,14 @@ export async function downloadTeacherSolutionsPdf(
   // ── Header ────────────────────────────────────────────────────────────────
   write('COPIA DOCENTE — SOLUZIONI', 12, true, true);
   gap(5);
-  write(snapshot.title, 16, true, true);
-  gap(3);
-  if (className) {
-    write(`Classe: ${className}`, 11, false, true);
-    gap(2);
-  }
+  writeCenteredTitleWithClass({
+    doc,
+    title: snapshot.title,
+    className,
+    y,
+    pageWidth: pageW,
+    contentWidth: contentW,
+  });
   gap(5);
   hRule();
   gap(9);
