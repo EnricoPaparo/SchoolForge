@@ -117,7 +117,8 @@ describe('StudentsView — table', () => {
     await waitFor(() => screen.getByText('Pia Pending'));
 
     expect(screen.getByText('pending@test.com')).toBeTruthy();
-    expect(document.querySelector('.badge-warning')?.textContent).toBe('In attesa');
+    const pendingRow = screen.getByText('Pia Pending').closest('tr')!;
+    expect(within(pendingRow).getByText('In attesa')).toBeTruthy();
     expect(screen.getByText('Approvato')).toBeTruthy();
     expect(screen.getByText('Bloccato')).toBeTruthy();
   });
@@ -188,30 +189,55 @@ describe('StudentsView — search', () => {
 });
 
 describe('StudentsView — toggles', () => {
-  it('calls setStudentPortalEnabled when the portal toggle is clicked', async () => {
+  it('renders both toggles as accessible switches with a clear on/off state', async () => {
     mockListStudents.mockResolvedValue([]);
     render(<StudentsView ownerUid={OWNER_UID} />);
     await waitFor(() => screen.getByText(/Portale studenti/i));
 
-    const [portalCheckbox] = screen.getAllByRole('checkbox');
-    fireEvent.click(portalCheckbox);
+    const switches = screen.getAllByRole('switch');
+    expect(switches).toHaveLength(2);
+    expect(switches[0].getAttribute('aria-checked')).toBe('false');
+    expect(switches[1].getAttribute('aria-checked')).toBe('false');
+    expect(screen.getAllByText('Disattivato')).toHaveLength(2);
+  });
+
+  it('calls setStudentPortalEnabled when the portal switch is clicked', async () => {
+    mockListStudents.mockResolvedValue([]);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    await waitFor(() => screen.getByText(/Portale studenti/i));
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Portale studenti' }));
 
     await waitFor(() =>
       expect(mockSetStudentPortalEnabled).toHaveBeenCalledWith(true, OWNER_UID, {}),
     );
   });
 
-  it('calls setNewStudentRequestsEnabled when the requests toggle is clicked', async () => {
+  it('calls setNewStudentRequestsEnabled when the requests switch is clicked', async () => {
     mockListStudents.mockResolvedValue([]);
     render(<StudentsView ownerUid={OWNER_UID} />);
     await waitFor(() => screen.getByText(/Nuove richieste/i));
 
-    const checkboxes = screen.getAllByRole('checkbox');
-    fireEvent.click(checkboxes[1]);
+    fireEvent.click(screen.getByRole('switch', { name: 'Nuove richieste' }));
 
     await waitFor(() =>
       expect(mockSetNewStudentRequestsEnabled).toHaveBeenCalledWith(true, OWNER_UID, {}),
     );
+  });
+
+  it('shows "Attivo" once the portal switch reflects an enabled setting', async () => {
+    mockListStudents.mockResolvedValue([]);
+    mockGetStudentAccessSettings.mockResolvedValue({
+      studentPortalEnabled: true,
+      newStudentRequestsEnabled: false,
+    });
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    await waitFor(() => screen.getByText(/Portale studenti/i));
+
+    expect(
+      screen.getByRole('switch', { name: 'Portale studenti' }).getAttribute('aria-checked'),
+    ).toBe('true');
+    expect(screen.getByText('Attivo')).toBeTruthy();
   });
 });
 
@@ -260,10 +286,23 @@ describe('StudentsView — row actions', () => {
 
     const row = screen.getByText('Pia Pending').closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'Rimuovi' }));
-    expect(screen.getByText(/rimuovere questo studente/i)).toBeTruthy();
+    expect(screen.getByText(/rimuovere/i)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Conferma' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Conferma rimozione' }));
     await waitFor(() => expect(mockRemoveStudent).toHaveBeenCalledWith('u-pending', OWNER_UID, {}));
+  });
+
+  it('cancels the removal confirmation without calling removeStudent', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    await waitFor(() => screen.getByText('Pia Pending'));
+
+    const row = screen.getByText('Pia Pending').closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'Rimuovi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla rimozione' }));
+
+    expect(mockRemoveStudent).not.toHaveBeenCalled();
+    expect(within(row).getByRole('button', { name: 'Rimuovi' })).toBeTruthy();
   });
 
   it('assigns a class to a student', async () => {

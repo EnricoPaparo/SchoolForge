@@ -27,18 +27,19 @@ type GateState =
  * never implies approval, and TeacherShell is never reachable by a non-owner
  * regardless of any of this.
  *
- * State priority for a non-owner (matches the Security Rules gate exactly,
- * see firestore.rules isApprovedStudent()):
- *   1. settings/studentAccess.studentPortalEnabled === false -> 'portalDisabled'
- *      (checked before even looking at students/{uid} — when the portal is
- *      off, nobody's individual status is shown).
- *   2. students/{uid} exists:
- *        approved -> 'student' (StudentShell)
- *        pending  -> 'pending'
- *        blocked  -> 'blocked'
- *   3. students/{uid} missing:
+ * State priority for a non-owner. `studentPortalEnabled` and
+ * `newStudentRequestsEnabled` are independent switches — one gates content
+ * access for an already-approved student, the other gates whether an
+ * unknown candidate may even file a request. Neither implies the other:
+ *   1. students/{uid} exists:
+ *        pending  -> 'pending' (shown regardless of studentPortalEnabled)
+ *        blocked  -> 'blocked' (shown regardless of studentPortalEnabled)
+ *        approved -> studentPortalEnabled === true  -> 'student' (StudentShell)
+ *                    studentPortalEnabled === false -> 'portalDisabled'
+ *   2. students/{uid} missing:
  *        newStudentRequestsEnabled === true  -> create it (status 'pending'),
- *                                                then 'pending'
+ *                                                then 'pending' — independent
+ *                                                of studentPortalEnabled
  *        newStudentRequestsEnabled === false -> 'requestsClosed' (no write)
  */
 export function RoleGate({ children }: { children: ReactNode }) {
@@ -81,18 +82,13 @@ export function RoleGate({ children }: { children: ReactNode }) {
         const access = await getStudentAccessSettings(db);
         if (!active) return;
 
-        if (!access.studentPortalEnabled) {
-          setState('portalDisabled');
-          return;
-        }
-
         const studentDoc = await getOwnStudentDoc(user.uid, db);
         if (!active) return;
 
         if (studentDoc) {
-          if (studentDoc.status === 'approved') setState('student');
-          else if (studentDoc.status === 'blocked') setState('blocked');
-          else setState('pending');
+          if (studentDoc.status === 'blocked') setState('blocked');
+          else if (studentDoc.status === 'pending') setState('pending');
+          else setState(access.studentPortalEnabled ? 'student' : 'portalDisabled');
           return;
         }
 

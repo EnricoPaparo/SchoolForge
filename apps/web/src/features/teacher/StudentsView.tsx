@@ -49,6 +49,72 @@ interface Props {
   onStudentsChanged?: () => void;
 }
 
+function IconButton({
+  icon,
+  label,
+  variant,
+  disabled,
+  onClick,
+}: {
+  icon: string;
+  label: string;
+  variant?: 'success' | 'danger';
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  const variantClass = variant === 'success' ? styles.iconBtnSuccess : '';
+  const dangerClass = variant === 'danger' ? styles.iconBtnDanger : '';
+  return (
+    <button
+      type="button"
+      className={`${styles.iconBtn} ${variantClass} ${dangerClass}`}
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <span aria-hidden="true">{icon}</span>
+    </button>
+  );
+}
+
+function ToggleCard({
+  title,
+  description,
+  checked,
+  disabled,
+  onToggle,
+}: {
+  title: string;
+  description: string;
+  checked: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className={styles.toggleCard}>
+      <div className={styles.toggleCardHeader}>
+        <span className={styles.toggleTitle}>{title}</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          aria-label={title}
+          className={`${styles.switch} ${checked ? styles.switchOn : ''}`}
+          disabled={disabled}
+          onClick={onToggle}
+        >
+          <span className={styles.switchThumb} />
+        </button>
+      </div>
+      <p className={styles.toggleDesc}>{description}</p>
+      <span className={`badge ${checked ? 'badge-ok' : 'badge-warning'}`}>
+        {checked ? 'Attivo' : 'Disattivato'}
+      </span>
+    </div>
+  );
+}
+
 export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
   const [students, setStudents] = useState<StudentItem[] | null>(null);
   const [classes, setClasses] = useState<ClassItem[] | null>(null);
@@ -169,35 +235,21 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
 
   return (
     <section aria-label="Studenti" className={styles.container}>
-      <div className={styles.togglesCard}>
-        <label className={styles.toggleRow}>
-          <input
-            type="checkbox"
-            checked={access.studentPortalEnabled}
-            disabled={togglingPortal}
-            onChange={() => void handleTogglePortal()}
-          />
-          <span className={styles.toggleLabel}>
-            <strong>Portale studenti</strong>
-            <span className={styles.toggleDesc}>
-              Consente agli studenti approvati di leggere lezioni e verifiche pubblicate.
-            </span>
-          </span>
-        </label>
-        <label className={styles.toggleRow}>
-          <input
-            type="checkbox"
-            checked={access.newStudentRequestsEnabled}
-            disabled={togglingRequests}
-            onChange={() => void handleToggleRequests()}
-          />
-          <span className={styles.toggleLabel}>
-            <strong>Nuove richieste</strong>
-            <span className={styles.toggleDesc}>
-              Consente a un account Google sconosciuto di creare una richiesta di accesso in attesa.
-            </span>
-          </span>
-        </label>
+      <div className={styles.togglesGrid}>
+        <ToggleCard
+          title="Portale studenti"
+          description="Consente agli studenti approvati di leggere lezioni e verifiche pubblicate."
+          checked={access.studentPortalEnabled}
+          disabled={togglingPortal}
+          onToggle={() => void handleTogglePortal()}
+        />
+        <ToggleCard
+          title="Nuove richieste"
+          description="Consente a un account Google sconosciuto di creare una richiesta di accesso in attesa."
+          checked={access.newStudentRequestsEnabled}
+          disabled={togglingRequests}
+          onToggle={() => void handleToggleRequests()}
+        />
       </div>
 
       {actionError && (
@@ -277,71 +329,62 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
                   <td className={styles.tdActions}>
                     {deleteConfirmId === s.id ? (
                       <div className={styles.confirmActions}>
-                        <span className={styles.confirmText}>Rimuovere questo studente?</span>
-                        <button
-                          type="button"
-                          className={`${styles.actionBtn} btn-danger`}
+                        <span className={styles.confirmText}>Rimuovere?</span>
+                        <IconButton
+                          icon="✔️"
+                          label="Conferma rimozione"
+                          variant="danger"
                           disabled={actionLoadingId === s.id}
                           onClick={() =>
                             void runAction(s.id, () => removeStudent(s.id, ownerUid, db))
                           }
-                        >
-                          {actionLoadingId === s.id ? 'Rimozione…' : 'Conferma'}
-                        </button>
-                        <button
-                          type="button"
-                          className={styles.actionBtn}
+                        />
+                        <IconButton
+                          icon="✖️"
+                          label="Annulla rimozione"
                           onClick={() => setDeleteConfirmId(null)}
-                        >
-                          Annulla
-                        </button>
+                        />
                       </div>
                     ) : (
                       <div className={styles.actionsWrapper}>
                         {s.status !== 'approved' && (
-                          <button
-                            type="button"
-                            className={`${styles.actionBtn} btn-success`}
+                          <IconButton
+                            icon="✅"
+                            label="Approva"
+                            variant="success"
                             disabled={actionLoadingId === s.id}
                             onClick={() =>
                               void runAction(s.id, () => approveStudent(s.id, ownerUid, db))
                             }
-                          >
-                            Approva
-                          </button>
+                          />
                         )}
                         {s.status !== 'blocked' && (
-                          <button
-                            type="button"
-                            className={`${styles.actionBtn} btn-danger`}
+                          <IconButton
+                            icon="⛔"
+                            label="Blocca"
+                            variant="danger"
                             disabled={actionLoadingId === s.id}
                             onClick={() =>
                               void runAction(s.id, () => blockStudent(s.id, ownerUid, db))
                             }
-                          >
-                            Blocca
-                          </button>
+                          />
                         )}
                         {s.status !== 'pending' && (
-                          <button
-                            type="button"
-                            className={styles.actionBtn}
+                          <IconButton
+                            icon="↩️"
+                            label="Rimetti in attesa"
                             disabled={actionLoadingId === s.id}
                             onClick={() =>
                               void runAction(s.id, () => resetStudentToPending(s.id, ownerUid, db))
                             }
-                          >
-                            Rimetti in attesa
-                          </button>
+                          />
                         )}
-                        <button
-                          type="button"
-                          className={styles.actionBtn}
+                        <IconButton
+                          icon="🗑️"
+                          label="Rimuovi"
                           disabled={actionLoadingId === s.id}
                           onClick={() => setDeleteConfirmId(s.id)}
-                        >
-                          Rimuovi
-                        </button>
+                        />
                       </div>
                     )}
                   </td>
