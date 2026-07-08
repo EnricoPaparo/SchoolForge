@@ -5,6 +5,7 @@ import {
   createVerification,
   deleteVerification,
   listVerifications,
+  setVerificationVisibility,
   updateVerificationConfig,
   type VerificationItem,
 } from '../repository/verifications/verificationsService.js';
@@ -73,6 +74,13 @@ function StatusBadge({ status }: { status: 'draft' | 'active' | 'closed' }) {
   return <span className={`${styles.badge} ${cls[status]}`}>{labels[status]}</span>;
 }
 
+/** Shown only for `active` verifications — visibility is meaningless for draft/closed. */
+function VisibilityBadge({ visibility }: { visibility: 'hidden' | 'public' }) {
+  const label = visibility === 'public' ? 'pubblica allo studente' : 'nascosta allo studente';
+  const cls = visibility === 'public' ? styles.badgeActive : styles.badgeDraft;
+  return <span className={`${styles.badge} ${cls}`}>{label}</span>;
+}
+
 export function VerificationsView() {
   const { user } = useAuth();
   const ownerUid = user?.uid ?? '';
@@ -112,6 +120,9 @@ export function VerificationsView() {
 
   const [solutionsPdfLoadingId, setSolutionsPdfLoadingId] = useState<string | null>(null);
   const [solutionsPdfErrors, setSolutionsPdfErrors] = useState<Record<string, string | null>>({});
+
+  const [visibilityLoadingId, setVisibilityLoadingId] = useState<string | null>(null);
+  const [visibilityErrors, setVisibilityErrors] = useState<Record<string, string | null>>({});
 
   const [closeConfirmId, setCloseConfirmId] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
@@ -245,7 +256,7 @@ export function VerificationsView() {
     try {
       await handleSaveQuestionRefs();
       const classItem = classes.find((c) => c.id === selectedVer.config.classId) ?? null;
-      await activateVerification(selectedVer.id, classItem, ownerUid, db);
+      await activateVerification(selectedVer.id, classItem, ownerUid, db, storage);
       setShowActivateConfirm(false);
       const updated = await listVerifications(ownerUid, db);
       setVerifications(updated);
@@ -307,6 +318,27 @@ export function VerificationsView() {
       await downloadTeacherSolutionsPdf(snapshot, result.questions, classNameResolved);
     } finally {
       setSolutionsPdfLoadingId(null);
+    }
+  }
+
+  async function handleToggleVisibility(v: VerificationItem) {
+    if (v.status !== 'active') return;
+    const nextVisibility: VerificationItem['visibility'] =
+      v.visibility === 'public' ? 'hidden' : 'public';
+    setVisibilityLoadingId(v.id);
+    setVisibilityErrors((prev) => ({ ...prev, [v.id]: null }));
+    try {
+      await setVerificationVisibility(v.id, nextVisibility, ownerUid, db);
+      const updated = { ...v, visibility: nextVisibility };
+      setVerifications((prev) => prev?.map((item) => (item.id === v.id ? updated : item)) ?? null);
+      if (selectedVer?.id === v.id) setSelectedVer(updated);
+    } catch (err) {
+      setVisibilityErrors((prev) => ({
+        ...prev,
+        [v.id]: err instanceof Error ? err.message : 'Impossibile aggiornare la visibilità.',
+      }));
+    } finally {
+      setVisibilityLoadingId(null);
     }
   }
 
@@ -571,6 +603,7 @@ export function VerificationsView() {
                       <td className={`${styles.td} ${styles.metaCell}`}>{programTitle}</td>
                       <td className={styles.td}>
                         <StatusBadge status={v.status} />
+                        {v.status === 'active' && <VisibilityBadge visibility={v.visibility} />}
                       </td>
                       <td className={`${styles.td} ${styles.metaCell}`}>{questionCount}</td>
                       <td className={styles.tdActions}>
@@ -597,6 +630,26 @@ export function VerificationsView() {
                               onClick={() => void handleDownloadSolutionsPdf(v)}
                             >
                               {solutionsPdfLoadingId === v.id ? '…' : '🔑'}
+                            </button>
+                          )}
+                          {v.status === 'active' && (
+                            <button
+                              type="button"
+                              className={styles.iconBtn}
+                              title={
+                                v.visibility === 'public'
+                                  ? 'Nascondi allo studente'
+                                  : 'Pubblica allo studente'
+                              }
+                              aria-label={`${v.visibility === 'public' ? 'Nascondi' : 'Pubblica'} allo studente — ${v.config.title}`}
+                              disabled={visibilityLoadingId === v.id}
+                              onClick={() => void handleToggleVisibility(v)}
+                            >
+                              {visibilityLoadingId === v.id
+                                ? '…'
+                                : v.visibility === 'public'
+                                  ? '🙈'
+                                  : '👁️'}
                             </button>
                           )}
                           {v.status === 'active' && (
@@ -638,6 +691,15 @@ export function VerificationsView() {
                         <td colSpan={6} className={styles.td}>
                           <p role="alert" className="text-error">
                             {solutionsPdfErrors[v.id]}
+                          </p>
+                        </td>
+                      </tr>
+                    )}
+                    {visibilityErrors[v.id] && (
+                      <tr>
+                        <td colSpan={6} className={styles.td}>
+                          <p role="alert" className="text-error">
+                            {visibilityErrors[v.id]}
                           </p>
                         </td>
                       </tr>

@@ -53,6 +53,23 @@ service cloud.firestore {
       allow read, write: if isOwner();
     }
 
+    // --- publicLessons (M3-lite) ---
+    // Read-only projection of a lesson for the student portal. Never
+    // contains poolStatus/poolStorageRef/questionCount or any pool-derived
+    // field — see PublicLessonDoc. Owner: full read/write (written by the
+    // import flow). Any other authenticated user: read-only, and only for
+    // documents that actually belong to the configured owner (defense in
+    // depth — in the current single-docente system every publicLessons doc
+    // already has ownerUid == the one owner, but the rule verifies it
+    // explicitly rather than trusting the stored field alone).
+    match /publicLessons/{lessonId} {
+      allow read: if isOwner()
+        || (isAuthenticated()
+            && resource.data.ownerUid
+               == get(/databases/$(database)/documents/settings/ownerPublic).data.ownerUid);
+      allow write: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
+    }
+
     match /verifications/{docId} {
       allow read: if isOwner();
       // Delete allowed for draft (discard) and closed (tidy up) — active is
@@ -62,6 +79,8 @@ service cloud.firestore {
       allow create: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
       // Draft: any owner update allowed.
       // Active: only close allowed; only status/closedAt/updatedAt may change.
+      // Active: only visibility toggled (M3-lite publish/hide); only
+      // visibility/updatedAt may change, status must stay 'active'.
       // Closed: no updates allowed.
       allow update: if isOwner() && resource.data.status == 'draft';
       allow update: if isOwner()
@@ -69,13 +88,35 @@ service cloud.firestore {
         && request.resource.data.status == 'closed'
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['status', 'closedAt', 'updatedAt']);
+      allow update: if isOwner()
+        && resource.data.status == 'active'
+        && request.resource.data.status == 'active'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['visibility', 'updatedAt']);
     }
     match /verifications/{verificationId}/{sub=**} {
       // read: owner only; write on sub-collections handled per-path in later milestones.
       // Note: {sub=**} can match the document itself (zero segments), so write is intentionally
       // omitted here — update semantics on /verifications/{docId} are enforced above.
       allow read: if isOwner();
-      // TODO M2: publicVerificationLinks readable when verification is active
+    }
+
+    // --- verifications/{id}/publishedProjection (M3-lite) ---
+    // Solution-free projection written at activation. Deliberately does NOT
+    // duplicate status/visibility in this document — authorization reads
+    // them straight from the parent verification via get(), so this
+    // projection can never drift from the parent's real state. The parent
+    // /verifications/{docId} itself stays owner-only always, even when
+    // active+public: it holds config.questionRefs (poolStorageRef,
+    // questionLocalId), which a student must never see.
+    match /verifications/{verificationId}/publishedProjection/{docId} {
+      allow read: if isOwner()
+        || (isAuthenticated()
+            && get(/databases/$(database)/documents/verifications/$(verificationId)).data.status
+               == 'active'
+            && get(/databases/$(database)/documents/verifications/$(verificationId)).data.visibility
+               == 'public');
+      allow write: if isOwner();
     }
 
     match /auditEvents/{docId} {

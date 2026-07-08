@@ -1,4 +1,13 @@
-import { collection, doc, runTransaction, serverTimestamp, writeBatch } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  runTransaction,
+  serverTimestamp,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
 import type { FirebaseStorage } from 'firebase/storage';
@@ -45,11 +54,19 @@ export async function importRepository(
   });
 
   // ── Step 4: Upload files to Storage ─────────────────────────────────────────
+  // Every object is tagged with customMetadata.kind so the Storage Rules can
+  // whitelist student (M3-lite) reads without inspecting the file name —
+  // string methods like .matches()/.size() aren't reliably available across
+  // Storage Rules runtimes. Only 'lesson' is ever readable by a student;
+  // '.pool.md' files are always tagged 'pool' and stay owner-only.
   const encoder = new TextEncoder();
   await Promise.all(
     files.map((file) => {
       const storagePath = `repository/${ownerUid}/imports/${importId}/${file.path}`;
-      return uploadBytes(ref(st, storagePath), encoder.encode(file.content));
+      const kind = file.path.endsWith('.pool.md') ? 'pool' : 'lesson';
+      return uploadBytes(ref(st, storagePath), encoder.encode(file.content), {
+        customMetadata: { kind },
+      });
     }),
   );
 
@@ -76,8 +93,16 @@ export async function importRepository(
 
   await batch.commit();
 
-  // ── Step 6: Atomic commit — update activeImportId + audit ───────────────────
+  // ── Step 6: Atomic commit — update activeImportId, publicLessons + audit ────
+  // publicLessons are committed in the SAME transaction as activeImportId
+  // (not in the step-5 batch) so a student never observes a partial or
+  // superseded import: either the whole switch happens, or none of it does.
   const programRef = doc(db, 'programs', programId);
+
+  const stalePublicLessonsSnap = await getDocs(
+    query(collection(db, 'publicLessons'), where('programId', '==', programId)),
+  );
+  const stalePublicLessonRefs = stalePublicLessonsSnap.docs.map((d) => d.ref);
 
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(programRef);
@@ -93,6 +118,16 @@ export async function importRepository(
       tx.update(programRef, {
         activeImportId: importId,
         updatedAt: serverTimestamp(),
+      });
+    }
+
+    for (const staleRef of stalePublicLessonRefs) {
+      tx.delete(staleRef);
+    }
+    for (const publicLesson of payload.publicLessons) {
+      tx.set(doc(db, 'publicLessons', publicLesson.id), {
+        ...publicLesson.data,
+        createdAt: serverTimestamp(),
       });
     }
 

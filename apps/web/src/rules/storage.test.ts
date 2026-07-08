@@ -8,7 +8,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { ref, uploadBytes } from 'firebase/storage';
+import { getBytes, ref, uploadBytes } from 'firebase/storage';
 import { afterAll, beforeAll, describe, it } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -57,6 +57,102 @@ describe('Storage — other authenticated user denied on owner path', () => {
     const st = testEnv.authenticatedContext(OTHER_UID).storage();
     await assertFails(
       uploadBytes(ref(st, `repository/${OWNER_UID}/imports/prog-1/lesson.md`), PAYLOAD),
+    );
+  });
+});
+
+// ─── repository/{ownerUid}/ — student read (M3-lite) ─────────────────────────
+
+describe('Storage — student (other authenticated user) read access', () => {
+  it('allows a student to read a file tagged kind=lesson', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(
+        ref(ctx.storage(), `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.md`),
+        PAYLOAD,
+        { customMetadata: { kind: 'lesson' } },
+      );
+    });
+    const st = testEnv.authenticatedContext(OTHER_UID).storage();
+    await assertSucceeds(
+      getBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.md`)),
+    );
+  });
+
+  it('allows a student to read an asset file tagged kind=lesson', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(
+        ref(ctx.storage(), `repository/${OWNER_UID}/imports/imp-1/uda-01/assets/diagram.png`),
+        PAYLOAD,
+        { customMetadata: { kind: 'lesson' } },
+      );
+    });
+    const st = testEnv.authenticatedContext(OTHER_UID).storage();
+    await assertSucceeds(
+      getBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/assets/diagram.png`)),
+    );
+  });
+
+  it('denies a student from reading a file tagged kind=pool (a .pool.md file)', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(
+        ref(ctx.storage(), `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.pool.md`),
+        PAYLOAD,
+        { customMetadata: { kind: 'pool' } },
+      );
+    });
+    const st = testEnv.authenticatedContext(OTHER_UID).storage();
+    await assertFails(
+      getBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.pool.md`)),
+    );
+  });
+
+  it('denies a student from reading a file with no kind metadata (fail-safe default)', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(
+        ref(ctx.storage(), `repository/${OWNER_UID}/imports/imp-1/uda-01/untagged.md`),
+        PAYLOAD,
+      );
+    });
+    const st = testEnv.authenticatedContext(OTHER_UID).storage();
+    await assertFails(
+      getBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/untagged.md`)),
+    );
+  });
+
+  it('denies a student from writing under the owner path', async () => {
+    const st = testEnv.authenticatedContext(OTHER_UID).storage();
+    await assertFails(
+      uploadBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.md`), PAYLOAD, {
+        customMetadata: { kind: 'lesson' },
+      }),
+    );
+  });
+
+  it('denies an unauthenticated user from reading a file tagged kind=lesson', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(
+        ref(ctx.storage(), `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.md`),
+        PAYLOAD,
+        { customMetadata: { kind: 'lesson' } },
+      );
+    });
+    const st = testEnv.unauthenticatedContext().storage();
+    await assertFails(
+      getBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.md`)),
+    );
+  });
+
+  it('allows the owner to still read a file tagged kind=pool', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(
+        ref(ctx.storage(), `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.pool.md`),
+        PAYLOAD,
+        { customMetadata: { kind: 'pool' } },
+      );
+    });
+    const st = testEnv.authenticatedContext(OWNER_UID).storage();
+    await assertSucceeds(
+      getBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.pool.md`)),
     );
   });
 });

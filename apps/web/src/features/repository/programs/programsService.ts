@@ -4,9 +4,11 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 import type { DocumentReference, Firestore } from 'firebase/firestore';
@@ -203,6 +205,16 @@ export async function deleteProgram(
 
     await deleteStoragePrefix(storage, `repository/${ownerUid}/imports/${importId}`);
   }
+
+  // Never leave a student-visible publicLessons projection pointing at a
+  // program that no longer exists.
+  const publicLessonsSnap = await getDocs(
+    query(collection(db, 'publicLessons'), where('programId', '==', programId)),
+  );
+  await deleteDocsInBatches(
+    db,
+    publicLessonsSnap.docs.map((d) => d.ref),
+  );
 
   await deleteDoc(doc(db, 'programs', programId));
 

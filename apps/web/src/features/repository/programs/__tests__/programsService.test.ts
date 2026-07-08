@@ -16,6 +16,10 @@ vi.mock('firebase/firestore', () => ({
   doc: (...args: unknown[]) => mockDoc(...args),
   getDoc: vi.fn(),
   getDocs: (...args: unknown[]) => mockGetDocs(...args),
+  // Path-echoing stubs: query() passes the collection ref through unchanged
+  // so setupGetDocs can keep branching on collRef.__path.
+  query: (collRef: unknown) => collRef,
+  where: () => ({}),
   serverTimestamp: vi.fn(),
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
   updateDoc: vi.fn(),
@@ -147,6 +151,7 @@ describe('deleteProgram', () => {
     udas?: { ref: unknown }[];
     lessons?: { ref: unknown }[];
     questionIndex?: { ref: unknown }[];
+    publicLessons?: { ref: unknown }[];
   }) {
     mockGetDocs.mockImplementation((collRef: { __path: string }) => {
       if (collRef.__path === 'verifications') {
@@ -163,6 +168,9 @@ describe('deleteProgram', () => {
       }
       if (collRef.__path === 'programs/prog-1/imports/imp-1/questionIndex') {
         return Promise.resolve({ docs: overrides.questionIndex ?? [] });
+      }
+      if (collRef.__path === 'publicLessons') {
+        return Promise.resolve({ docs: overrides.publicLessons ?? [] });
       }
       return Promise.resolve({ docs: [] });
     });
@@ -264,5 +272,19 @@ describe('deleteProgram', () => {
     expect(mockWriteBatch).not.toHaveBeenCalled();
     expect(mockListAll).not.toHaveBeenCalled();
     expect(mockDeleteDoc).toHaveBeenCalledWith({ __path: 'programs/prog-1' });
+  });
+
+  it('deletes publicLessons projections associated with the program (M3-lite cleanup)', async () => {
+    const publicLessonRef = { id: 'public-lesson-ref' };
+    setupGetDocs({
+      verifications: [],
+      imports: [],
+      publicLessons: [{ ref: publicLessonRef }],
+    });
+    setupStorage();
+
+    await deleteProgram('prog-1', 'owner-uid', fakeDb, fakeStorage);
+
+    expect(mockBatchDelete).toHaveBeenCalledWith(publicLessonRef);
   });
 });

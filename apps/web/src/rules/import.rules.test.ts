@@ -8,7 +8,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { ref, uploadBytes, getBytes } from 'firebase/storage';
 import type { FirebaseStorage } from 'firebase/storage';
@@ -52,7 +52,11 @@ afterAll(async () => {
 
 async function seedOwner() {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), 'settings/owner'), { ownerUid: OWNER_UID });
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'settings/owner'), { ownerUid: OWNER_UID });
+    // Real bootstrap (OwnerSetup) writes both docs in the same batch — tests
+    // that exercise publicLessons student-read access need ownerPublic too.
+    await setDoc(doc(db, 'settings/ownerPublic'), { ownerUid: OWNER_UID });
   });
 }
 
@@ -70,6 +74,10 @@ function otherDb() {
 
 function otherStorage() {
   return testEnv.authenticatedContext(OTHER_UID).storage() as unknown as FirebaseStorage;
+}
+
+function anonDb() {
+  return testEnv.unauthenticatedContext().firestore() as unknown as Firestore;
 }
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -474,6 +482,198 @@ describe('importRepository — owner isolation', () => {
       uploadBytes(
         ref(st, `repository/${OWNER_UID}/imports/imp-x/file.md`),
         new Uint8Array([1, 2, 3]),
+      ),
+    );
+  });
+});
+
+// ─── publicLessons (M3-lite student projection) ──────────────────────────────
+
+describe('importRepository — publicLessons projection', () => {
+  it('creates one publicLessons doc per lesson, matching the technical lessons count', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    const publicLessonsSnap = await getDocs(
+      query(collection(db, 'publicLessons'), where('programId', '==', result.programId)),
+    );
+    expect(publicLessonsSnap.size).toBe(result.lessonCount);
+  });
+
+  it('publicLessons never carry poolStatus, poolStorageRef, questionCount or a .pool.md path', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    const publicLessonsSnap = await getDocs(
+      query(collection(db, 'publicLessons'), where('programId', '==', result.programId)),
+    );
+    for (const d of publicLessonsSnap.docs) {
+      const data = d.data();
+      expect(data).not.toHaveProperty('poolStatus');
+      expect(data).not.toHaveProperty('poolStorageRef');
+      expect(data).not.toHaveProperty('questionCount');
+      expect(JSON.stringify(data)).not.toContain('.pool.md');
+      expect(data.contentPath).toMatch(/\.md$/);
+    }
+  });
+
+  it('a non-owner authenticated user (student) can read publicLessons of the configured owner', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    const publicLessonsSnap = await getDocs(collection(ownerDb(), 'publicLessons'));
+    const someLessonId = publicLessonsSnap.docs[0]!.id;
+
+    const studentDb = otherDb();
+    await assertSucceeds(getDoc(doc(studentDb, 'publicLessons', someLessonId)));
+  });
+
+  it('an unauthenticated user cannot read publicLessons', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    const publicLessonsSnap = await getDocs(collection(ownerDb(), 'publicLessons'));
+    const someLessonId = publicLessonsSnap.docs[0]!.id;
+
+    await assertFails(getDoc(doc(anonDb(), 'publicLessons', someLessonId)));
+  });
+
+  it('a student cannot write to publicLessons', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    const publicLessonsSnap = await getDocs(collection(ownerDb(), 'publicLessons'));
+    const someLessonId = publicLessonsSnap.docs[0]!.id;
+
+    const studentDb = otherDb();
+    await assertFails(
+      setDoc(doc(studentDb, 'publicLessons', someLessonId), { title: 'Hacked' }, { merge: true }),
+    );
+  });
+
+  it('a student cannot read the technical lessons subcollection', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    const lessonsSnap = await getDocs(
+      collection(db, 'programs', result.programId, 'imports', result.importId, 'lessons'),
+    );
+    const someLessonId = lessonsSnap.docs[0]!.id;
+
+    const studentDb = otherDb();
+    await assertFails(
+      getDoc(
+        doc(
+          studentDb,
+          'programs',
+          result.programId,
+          'imports',
+          result.importId,
+          'lessons',
+          someLessonId,
+        ),
+      ),
+    );
+  });
+
+  it('re-importing the same program deletes the stale publicLessons from the previous import', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const r1 = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (r1.status !== 'committed') throw new Error('expected committed');
+
+    const firstImportPublicLessons = await getDocs(
+      query(collection(db, 'publicLessons'), where('importId', '==', r1.importId)),
+    );
+    expect(firstImportPublicLessons.size).toBe(r1.lessonCount);
+
+    const r2 = await importRepository(
+      {
+        ownerUid: OWNER_UID,
+        programmaTitle: 'Informatica v2',
+        programId: r1.programId,
+        files: VALID_FILES,
+      },
+      { db, storage },
+    );
+    if (r2.status !== 'committed') throw new Error('expected committed');
+
+    const staleAfterReimport = await getDocs(
+      query(collection(db, 'publicLessons'), where('importId', '==', r1.importId)),
+    );
+    expect(staleAfterReimport.size).toBe(0);
+
+    const currentPublicLessons = await getDocs(
+      query(collection(db, 'publicLessons'), where('importId', '==', r2.importId)),
+    );
+    expect(currentPublicLessons.size).toBe(r2.lessonCount);
+  });
+
+  it('a student can read the lesson file from Storage after a real import, but not the pool', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    const studentSt = otherStorage();
+    await assertSucceeds(
+      getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
+    );
+    await assertFails(
+      getBytes(
+        ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${VALID_POOL.path}`),
       ),
     );
   });

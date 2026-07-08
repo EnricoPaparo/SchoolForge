@@ -6,6 +6,20 @@ service firebase.storage {
     // repository/{ownerUid}/... — only the matching owner can read/write
     match /repository/{ownerUid}/{allPaths=**} {
       allow read, write: if request.auth != null && request.auth.uid == ownerUid;
+
+      // Student (M3-lite): read-only, lesson files and their assets only —
+      // never a .pool.md file. Discriminated via customMetadata.kind
+      // (written by the import flow) rather than by inspecting the file
+      // name: string methods like .matches()/.size() aren't reliably
+      // available across every Storage Rules runtime. Whitelist, not
+      // blacklist — a file with no kind, or any kind other than 'lesson'
+      // (including 'pool'), is denied by default. Only the real owner can
+      // ever write under repository/{ownerUid}/** (see the rule above), so
+      // any object that exists here necessarily belongs to the single
+      // configured docente; there is no anonymous access.
+      allow read: if request.auth != null
+        && request.auth.uid != ownerUid
+        && resource.metadata.kind == 'lesson';
     }
 
     // Default deny

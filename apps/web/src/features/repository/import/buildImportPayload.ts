@@ -36,6 +36,7 @@ export function buildImportPayload(params: {
   const udas: ImportPayload['udas'] = [];
   const lessons: ImportPayload['lessons'] = [];
   const questionIndex: ImportPayload['questionIndex'] = [];
+  const publicLessons: ImportPayload['publicLessons'] = [];
 
   for (const uda of validation.udas) {
     const udaId = toDocId(uda.dir);
@@ -114,6 +115,23 @@ export function buildImportPayload(params: {
           poolStorageRef,
         },
       });
+
+      // Public projection (M3-lite): only what's needed to display the
+      // lesson to a student. Never poolStatus/poolStorageRef/questionCount —
+      // those are teacher-only technical details.
+      publicLessons.push({
+        id: lessonId,
+        data: {
+          ownerUid,
+          programId,
+          importId,
+          udaId,
+          udaDir: uda.dir,
+          path: lesson.path,
+          filename: lesson.filename,
+          contentPath: storageRef,
+        },
+      });
     }
   }
 
@@ -135,6 +153,7 @@ export function buildImportPayload(params: {
     udas,
     lessons,
     questionIndex,
+    publicLessons,
   };
 }
 
