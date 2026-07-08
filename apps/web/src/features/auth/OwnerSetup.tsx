@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import styles from './OwnerSetup.module.css';
@@ -16,10 +16,16 @@ export function OwnerSetup({ onComplete }: Props) {
     if (!user) return;
     setStatus('loading');
     try {
-      await setDoc(doc(db, 'settings', 'owner'), {
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'settings', 'owner'), {
         ownerUid: user.uid,
         createdAt: serverTimestamp(),
       });
+      // Public projection used only for client-side role resolution
+      // (TeacherShell vs. StudentShell) — see RoleGate. It never authorizes
+      // anything on its own: Security Rules keep checking isOwner() directly.
+      batch.set(doc(db, 'settings', 'ownerPublic'), { ownerUid: user.uid });
+      await batch.commit();
       onComplete();
     } catch {
       setStatus('blocked');

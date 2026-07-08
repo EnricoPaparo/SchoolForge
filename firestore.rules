@@ -25,6 +25,21 @@ service cloud.firestore {
       allow update, delete: if isOwner();
     }
 
+    // --- settings/ownerPublic (M3-lite) ---
+    // Holds only `ownerUid`, readable by any authenticated user so the client
+    // can resolve TeacherShell vs. StudentShell without exposing settings/owner
+    // (classes, feature flags). Never authorizes anything on its own — every
+    // protected resource above still checks isOwner() independently.
+    // Created together with settings/owner during the same bootstrap claim.
+    match /settings/ownerPublic {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+                    && request.resource.data.keys().hasOnly(['ownerUid'])
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && !exists(/databases/$(database)/documents/settings/owner);
+      allow update, delete: if isOwner();
+    }
+
     // --- Teacher-owned collections ---
     match /classes/{classId} {
       allow read, update, delete: if isOwner();
