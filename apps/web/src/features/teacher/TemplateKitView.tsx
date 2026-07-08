@@ -20,11 +20,6 @@ export function TemplateKitView() {
 
   return (
     <section aria-label="Kit template" className={styles.section}>
-      <h2 className={styles.heading}>Template didattici</h2>
-      <p className={styles.intro}>
-        Scarica i file template, compilali e importali come ZIP nella sezione Corsi.
-      </p>
-
       <ul className={styles.templateList}>
         {TEMPLATES.map((t) => (
           <li key={t.filename} className={styles.templateItem}>

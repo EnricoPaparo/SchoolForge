@@ -103,12 +103,16 @@
 /* ── Nav ───────────────────────────────────────────────────────── */
 .nav {
   display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 0;
+  min-height: 46px;
   background-color: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   padding: 0 0.5rem;
   flex-shrink: 0;
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .navBtn {
@@ -124,6 +128,7 @@
   font-weight: 500;
   color: var(--color-text-muted);
   white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
   transition:
     color 0.15s,

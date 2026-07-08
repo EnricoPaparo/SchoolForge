@@ -292,10 +292,6 @@ export function ProgramsView() {
 
   return (
     <section aria-label="Corsi" className={styles.container}>
-      <div className={styles.headerRow}>
-        <h2 className={styles.headerTitle}>Corsi</h2>
-      </div>
-
       <form className={styles.createForm} onSubmit={(e) => void handleCreate(e)}>
         <label className={styles.createLabel} htmlFor="new-program-title">
           Titolo nuovo programma
@@ -343,15 +339,12 @@ export function ProgramsView() {
                       ▶
                     </span>
                     <span className={styles.courseTitle}>{program.title}</span>
-                    <span
-                      className={`badge ${program.activeImportId ? 'badge-ok' : 'badge-warning'}`}
-                    >
-                      {program.activeImportId ? 'Importato' : 'Nessun import'}
-                    </span>
                     <span className={styles.courseCounters}>
-                      {dataLoading
-                        ? 'Caricamento dati…'
-                        : `UDA: ${udaCount} · Lezioni: ${lessonsDone}/${lessonsTotal} svolte · Domande: ${questionsTotal} disponibili`}
+                      {!program.activeImportId
+                        ? 'Nessun import attivo'
+                        : dataLoading
+                          ? 'Caricamento dati…'
+                          : `UDA: ${udaCount} · Lezioni: ${lessonsDone}/${lessonsTotal} svolte · Domande: ${questionsTotal} disponibili`}
                     </span>
                   </button>
 

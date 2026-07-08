@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(cleanup);
@@ -50,9 +50,18 @@ describe('TeacherShell', () => {
     expect(screen.getByRole('button', { name: /Classi/ })).toBeTruthy();
   });
 
-  it('shows template kit section by default', () => {
+  it('orders navigation sections as Lezioni, Corsi, Verifiche, Classi, Template', () => {
     render(<TeacherShell />);
-    expect(screen.getByRole('region', { name: 'Kit template' })).toBeTruthy();
+    const nav = screen.getByRole('navigation', { name: 'Sezioni docente' });
+    const labels = within(nav)
+      .getAllByRole('button')
+      .map((btn) => btn.textContent?.replace(/[^\p{L}]/gu, '') ?? '');
+    expect(labels).toEqual(['Lezioni', 'Corsi', 'Verifiche', 'Classi', 'Template']);
+  });
+
+  it('shows Lezioni section by default', async () => {
+    render(<TeacherShell />);
+    expect(await screen.findByRole('region', { name: 'Lezioni' })).toBeTruthy();
   });
 
   it('switches section on nav click', () => {

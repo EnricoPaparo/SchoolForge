@@ -6,12 +6,6 @@
   max-width: 720px;
 }
 
-.heading {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin: 0;
-}
-
 /* ── Create form ──────────────────────────────────────────────────── */
 .createForm {
   background: var(--color-surface);
@@ -34,6 +28,22 @@
   gap: 0.25rem;
   flex: 1;
   min-width: 140px;
+}
+
+@media (max-width: 640px) {
+  .createRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .createField {
+    min-width: 0;
+  }
+
+  .addBtn {
+    width: 100%;
+    align-self: stretch;
+  }
 }
 
 .fieldLabel {

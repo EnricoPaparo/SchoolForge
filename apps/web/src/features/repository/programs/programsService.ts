@@ -58,7 +58,8 @@ export async function listUdas(
   db: Firestore,
 ): Promise<UdaItem[]> {
   const snap = await getDocs(collection(db, 'programs', programId, 'imports', importId, 'udas'));
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as UdaDoc) }));
+  const items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as UdaDoc) }));
+  return items.sort((a, b) => a.dir.localeCompare(b.dir));
 }
 
 export async function listLessons(
@@ -67,7 +68,8 @@ export async function listLessons(
   db: Firestore,
 ): Promise<LessonItem[]> {
   const snap = await getDocs(collection(db, 'programs', programId, 'imports', importId, 'lessons'));
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as LessonDoc) }));
+  const items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as LessonDoc) }));
+  return items.sort((a, b) => a.path.localeCompare(b.path));
 }
 
 export async function setLessonCompleted(
