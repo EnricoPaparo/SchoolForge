@@ -40,6 +40,15 @@ export interface ProgramDoc {
   updatedAt: Timestamp;
 }
 
+/** Didactic metadata parsed from an optional root-level programma.md. */
+export interface ProgrammaMeta {
+  annoScolastico: string | null;
+  docente: string | null;
+  materia: string | null;
+  classe: string | null;
+  descrizione: string | null;
+}
+
 /** Stored at programs/{programId}/imports/{importId} */
 export interface ImportDoc {
   ownerUid: string;
@@ -53,6 +62,8 @@ export interface ImportDoc {
   questionCount: number;
   /** Pool/question-level issues (do not block structural import) */
   poolIssues: StoredValidationIssue[];
+  /** Parsed from the optional root-level programma.md. Null when the file was absent. */
+  programmaMeta: ProgrammaMeta | null;
 }
 
 /** Stored at programs/{programId}/imports/{importId}/udas/{udaId} */
@@ -63,6 +74,10 @@ export interface UdaDoc {
   filename: string;
   storageBasePath: string;
   lessonCount: number;
+  /** Didactic metadata parsed from the UDA's own front matter/body — never technical details. */
+  descrizione: string | null;
+  competenze: string[];
+  obiettivi: string[];
 }
 
 /** Stored at programs/{programId}/imports/{importId}/lessons/{lessonId} */

@@ -46,6 +46,9 @@ function makeUda(): UdaItem {
     filename: 'uda-01-test.md',
     storageBasePath: 'gs://bucket/uda-01',
     lessonCount: 1,
+    descrizione: null,
+    competenze: [],
+    obiettivi: [],
   };
 }
 

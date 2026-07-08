@@ -22,6 +22,7 @@ vi.mock('../../../lib/auth.js', () => ({
 const mockListPrograms = vi.fn();
 const mockListUdas = vi.fn();
 const mockListLessons = vi.fn();
+const mockGetImportMeta = vi.fn();
 const mockSetLessonCompleted = vi.fn();
 const mockCreateProgram = vi.fn();
 const mockUpdateProgramTitle = vi.fn();
@@ -30,6 +31,7 @@ vi.mock('../../../features/repository/programs/programsService.js', () => ({
   listPrograms: (...args: unknown[]) => mockListPrograms(...args),
   listUdas: (...args: unknown[]) => mockListUdas(...args),
   listLessons: (...args: unknown[]) => mockListLessons(...args),
+  getImportMeta: (...args: unknown[]) => mockGetImportMeta(...args),
   setLessonCompleted: (...args: unknown[]) => mockSetLessonCompleted(...args),
   createProgram: (...args: unknown[]) => mockCreateProgram(...args),
   updateProgramTitle: (...args: unknown[]) => mockUpdateProgramTitle(...args),
@@ -118,7 +120,9 @@ async function expandCourse(name: RegExp) {
 }
 
 async function expandUda(name: RegExp) {
-  fireEvent.click(await screen.findByRole('button', { name }));
+  // Anchored so it matches only the UDA toggle button (whose accessible name
+  // starts with the dir), not the "Info UDA — <dir>" button added in UX-08.
+  fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^${name.source}`) }));
 }
 
 // ─── 1. ProgramsView renders program list ────────────────────────────────────
@@ -145,7 +149,7 @@ describe('M1 Integration — UDA load on course expand', () => {
     await waitFor(() => {
       expect(mockListUdas).toHaveBeenCalledWith('prog-1', 'imp-1', {});
     });
-    expect(await screen.findByRole('button', { name: /uda-01-reti/ })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /^uda-01-reti/ })).toBeTruthy();
   });
 });
 

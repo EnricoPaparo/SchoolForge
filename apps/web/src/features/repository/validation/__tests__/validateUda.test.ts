@@ -92,6 +92,39 @@ describe('validateUda — valid UDA, one lesson with valid pool, one without poo
     expect(result.lessons[0].poolStatus).toBe('valid');
     expect(result.lessons[1].poolStatus).toBe('absent');
   });
+
+  it('extracts competenze/obiettivi metadata from front matter for the info panel', () => {
+    const poolFiles = new Map([[VALID_POOL.path, VALID_POOL]]);
+    const result = validateUda(VALID_UDA_FILE, [VALID_LESSON, LESSON_WITHOUT_POOL], poolFiles);
+
+    expect(result.metadata.competenze).toEqual([
+      'Comprendere il modello ISO/OSI',
+      'Distinguere protocolli di livello applicativo',
+    ]);
+    expect(result.metadata.obiettivi).toEqual(['Spiegare il funzionamento di HTTP e HTTPS']);
+  });
+
+  it('extracts a descrizione from the first non-heading body line', () => {
+    const udaWithDescription: RawFile = {
+      path: 'uda-01-reti/uda-01-reti.md',
+      content: `---
+titolo: Reti di computer
+competenze:
+  - Comprendere il modello ISO/OSI
+obiettivi:
+  - Spiegare il funzionamento di HTTP
+---
+
+# Reti di computer
+
+Introduzione alle reti informatiche e ai protocolli di comunicazione.
+`,
+    };
+    const result = validateUda(udaWithDescription, [VALID_LESSON], new Map());
+    expect(result.metadata.descrizione).toBe(
+      'Introduzione alle reti informatiche e ai protocolli di comunicazione.',
+    );
+  });
 });
 
 describe('validateUda — valid UDA with invalid pool', () => {
@@ -132,6 +165,12 @@ describe('validateUda — missing required front matter fields', () => {
     const codes = result.issues.map((i) => i.field);
     expect(codes).toContain('competenze');
     expect(codes).toContain('obiettivi');
+  });
+
+  it('falls back to empty arrays for metadata.competenze/obiettivi rather than throwing', () => {
+    const result = validateUda(MISSING_FIELDS_UDA, [VALID_LESSON], new Map());
+    expect(result.metadata.competenze).toEqual([]);
+    expect(result.metadata.obiettivi).toEqual([]);
   });
 });
 

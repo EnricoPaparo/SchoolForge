@@ -23,6 +23,9 @@ const UDA: UdaItem = {
   filename: 'uda-01-reti.md',
   storageBasePath: 'repository/owner-uid/imports/imp-1/uda-01-reti',
   lessonCount: 2,
+  descrizione: null,
+  competenze: [],
+  obiettivi: [],
 };
 
 const LESSON_COMPLETED: LessonItem = {

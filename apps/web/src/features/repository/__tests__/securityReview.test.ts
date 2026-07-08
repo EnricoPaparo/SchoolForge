@@ -137,6 +137,9 @@ describe('Security: generateMarkdown excludes non-completed lessons', () => {
       filename: 'uda-01.md',
       storageBasePath: 'repository/owner-uid/imports/imp-1/uda-01',
       lessonCount: 2,
+      descrizione: null,
+      competenze: [],
+      obiettivi: [],
     };
 
     const completedLesson = { ...NORMAL_LESSON, completed: true, filename: 'lezione-001.md' };
@@ -163,6 +166,9 @@ describe('Security: generateMarkdown excludes non-completed lessons', () => {
       filename: 'uda-01.md',
       storageBasePath: 'repository/owner-uid/imports/imp-1/uda-01',
       lessonCount: 1,
+      descrizione: null,
+      competenze: [],
+      obiettivi: [],
     };
     const incompleteLesson = { ...NORMAL_LESSON, completed: false, filename: 'lezione-001.md' };
     const md = generateMarkdown(PROGRAM as never, [UDA], [incompleteLesson]);

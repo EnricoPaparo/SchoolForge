@@ -1,12 +1,49 @@
-import type { ImportValidationResult, RawFile, ValidationIssue } from './types.js';
+import { parse as parseYaml } from 'yaml';
+import type {
+  ImportValidationResult,
+  ProgrammaMetadata,
+  RawFile,
+  ValidationIssue,
+} from './types.js';
 import { validateUda } from './validateUda.js';
+import { extractDescription, splitFrontMatter } from './frontMatter.js';
 
 const LESSON_FILENAME_RE = /^lezione-\d{3}-.+\.md$/;
 const POOL_FILENAME_RE = /^lezione-\d{3}-.+\.pool\.md$/;
 const UDA_FILENAME_RE = /^uda-\d{2}-.+\.md$/;
+const PROGRAMMA_FILENAME = 'programma.md';
 
 function basename(path: string): string {
   return path.split('/').pop() ?? path;
+}
+
+function toStringOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Parses the optional programma.md: front matter (anno_scolastico, docente,
+ * materia, classe) plus a short description from the body. Best-effort —
+ * malformed or missing front matter never blocks the import, it just yields
+ * null fields.
+ */
+function parseProgrammaMetadata(content: string): ProgrammaMetadata {
+  const { frontMatterRaw, body } = splitFrontMatter(content);
+  let fm: Record<string, unknown> = {};
+  if (frontMatterRaw) {
+    try {
+      fm = (parseYaml(frontMatterRaw) as Record<string, unknown>) ?? {};
+    } catch {
+      fm = {};
+    }
+  }
+  return {
+    annoScolastico: toStringOrNull(fm.anno_scolastico),
+    docente: toStringOrNull(fm.docente),
+    materia: toStringOrNull(fm.materia),
+    classe: toStringOrNull(fm.classe),
+    descrizione: extractDescription(body),
+  };
 }
 
 /**
@@ -93,9 +130,15 @@ export function validateImport(programmaTitle: string, files: RawFile[]): Import
 
   const structuralIssues = allIssues.filter((i) => i.level !== 'pool' && i.level !== 'question');
 
+  // programma.md is optional — a root-level file (no directory component),
+  // never required, parsed best-effort and never blocks the import.
+  const programmaFile = files.find((f) => f.path === PROGRAMMA_FILENAME);
+  const programma = programmaFile ? parseProgrammaMetadata(programmaFile.content) : null;
+
   return {
     valid: structuralIssues.length === 0,
     issues: allIssues,
     udas: udaResults,
+    programma,
   };
 }

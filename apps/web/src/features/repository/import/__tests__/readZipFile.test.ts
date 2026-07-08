@@ -37,6 +37,33 @@ describe('readZipFile', () => {
     ]);
   });
 
+  it('strips a wrapping folder that also contains a root-level file (e.g. programma.md)', async () => {
+    const file = await makeZip({
+      'programma-esempio/programma.md': '---\ntitolo: X\n---\n',
+      'programma-esempio/uda-01-reti/uda-01-reti.md': '# Reti',
+      'programma-esempio/uda-01-reti/lezione-001-http.md': '# HTTP',
+    });
+    const result = await readZipFile(file);
+    const paths = result.map((r) => r.path).sort();
+    expect(paths).toEqual([
+      'programma.md',
+      'uda-01-reti/lezione-001-http.md',
+      'uda-01-reti/uda-01-reti.md',
+    ]);
+  });
+
+  it('does not strip when the ZIP is a single UDA folder with no program-level wrapper', async () => {
+    // All paths would become root files if stripped — this must be treated as
+    // "no wrapper", identical to the flat case, not silently dropped.
+    const file = await makeZip({
+      'uda-01-reti/uda-01-reti.md': '# Reti',
+      'uda-01-reti/lezione-001-http.md': '# HTTP',
+    });
+    const result = await readZipFile(file);
+    const paths = result.map((r) => r.path).sort();
+    expect(paths).toEqual(['uda-01-reti/lezione-001-http.md', 'uda-01-reti/uda-01-reti.md']);
+  });
+
   it('excludes __MACOSX entries', async () => {
     const file = await makeZip({
       'uda-01-reti/lezione-001.md': '# HTTP',

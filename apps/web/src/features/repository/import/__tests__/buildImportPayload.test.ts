@@ -371,6 +371,76 @@ describe('buildImportPayload — storage paths', () => {
   });
 });
 
+describe('buildImportPayload — UDA metadata (info panel)', () => {
+  it('carries descrizione/competenze/obiettivi through to the UDA payload', () => {
+    const files = buildAllFiles();
+    const validation = validateImport('Informatica', files);
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    expect(payload.udas).toHaveLength(1);
+    expect(payload.udas[0].data.competenze).toEqual(['Comprendere ISO/OSI']);
+    expect(payload.udas[0].data.obiettivi).toEqual(['Descrivere HTTP']);
+  });
+});
+
+describe('buildImportPayload — programma.md metadata (optional)', () => {
+  it('importMeta.programmaMeta is null when programma.md is absent', () => {
+    const files = buildAllFiles();
+    const validation = validateImport('Informatica', files);
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    expect(payload.importMeta.programmaMeta).toBeNull();
+  });
+
+  it('importMeta.programmaMeta is populated when programma.md is present', () => {
+    const programmaFile: RawFile = {
+      path: 'programma.md',
+      content: `---
+titolo: Informatica
+anno_scolastico: '2025/2026'
+classe: 3A
+materia: Informatica
+docente: Mario Rossi
+---
+
+Programma annuale di informatica.
+`,
+    };
+    const files = buildAllFiles(programmaFile);
+    const validation = validateImport('Informatica', files);
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    expect(payload.importMeta.programmaMeta).toEqual({
+      annoScolastico: '2025/2026',
+      docente: 'Mario Rossi',
+      materia: 'Informatica',
+      classe: '3A',
+      descrizione: 'Programma annuale di informatica.',
+    });
+  });
+});
+
 describe('buildQuestionPreview', () => {
   it('collapses whitespace/newlines and trims the result', () => {
     expect(buildQuestionPreview('  Spiega   il\n  protocollo   HTTP.  ')).toBe(

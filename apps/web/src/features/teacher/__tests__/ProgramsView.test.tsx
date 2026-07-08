@@ -14,6 +14,7 @@ const mockCreateProgram = vi.fn();
 const mockUpdateProgramTitle = vi.fn();
 const mockListUdas = vi.fn();
 const mockListLessons = vi.fn();
+const mockGetImportMeta = vi.fn();
 const mockSetLessonCompleted = vi.fn();
 
 vi.mock('../../../features/repository/programs/programsService.js', () => ({
@@ -22,6 +23,7 @@ vi.mock('../../../features/repository/programs/programsService.js', () => ({
   updateProgramTitle: (...args: unknown[]) => mockUpdateProgramTitle(...args),
   listUdas: (...args: unknown[]) => mockListUdas(...args),
   listLessons: (...args: unknown[]) => mockListLessons(...args),
+  getImportMeta: (...args: unknown[]) => mockGetImportMeta(...args),
   setLessonCompleted: (...args: unknown[]) => mockSetLessonCompleted(...args),
 }));
 
@@ -84,6 +86,19 @@ const UDA = {
   filename: 'uda-01-reti.md',
   storageBasePath: 'repository/owner-uid/imports/imp-1/uda-01-reti',
   lessonCount: 2,
+  descrizione: 'Introduzione alle reti informatiche.',
+  competenze: ['Comprendere il modello ISO/OSI'],
+  obiettivi: ['Spiegare il funzionamento di HTTP'],
+};
+
+const UDA_NO_METADATA = {
+  ...UDA,
+  id: 'uda-2',
+  dir: 'uda-02-web',
+  filename: 'uda-02-web.md',
+  descrizione: null,
+  competenze: [],
+  obiettivi: [],
 };
 
 const LESSON_1 = {
@@ -107,7 +122,9 @@ async function expandCourse(name: RegExp) {
 }
 
 async function expandUda(name: RegExp) {
-  fireEvent.click(await screen.findByRole('button', { name }));
+  // Anchored so it matches only the UDA toggle button (whose accessible name
+  // starts with the dir), not the "Info UDA — <dir>" button added in UX-08.
+  fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^${name.source}`) }));
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -204,7 +221,95 @@ describe('ProgramsView — expanding a course shows UDA', () => {
     mockListLessons.mockResolvedValue([]);
     render(<ProgramsView />);
     await expandCourse(/^Informatica/);
-    expect(await screen.findByRole('button', { name: /uda-01-reti/ })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /^uda-01-reti/ })).toBeTruthy();
+  });
+});
+
+describe('ProgramsView — UDA info panel', () => {
+  it('shows descrizione, competenze and obiettivi parsed from the UDA file', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([]);
+    render(<ProgramsView />);
+    await expandCourse(/^Informatica/);
+    await screen.findByRole('button', { name: /^uda-01-reti/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Info UDA — uda-01-reti' }));
+
+    const region = await screen.findByRole('region', { name: 'Informazioni UDA uda-01-reti' });
+    expect(within(region).getByText('Introduzione alle reti informatiche.')).toBeTruthy();
+    expect(within(region).getByText('Comprendere il modello ISO/OSI')).toBeTruthy();
+    expect(within(region).getByText('Spiegare il funzionamento di HTTP')).toBeTruthy();
+  });
+
+  it('shows "Non indicato" when descrizione/competenze/obiettivi are missing', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA_NO_METADATA]);
+    mockListLessons.mockResolvedValue([]);
+    render(<ProgramsView />);
+    await expandCourse(/^Informatica/);
+    await screen.findByRole('button', { name: /^uda-02-web/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Info UDA — uda-02-web' }));
+
+    const region = await screen.findByRole('region', { name: 'Informazioni UDA uda-02-web' });
+    expect(within(region).getAllByText('Non indicato')).toHaveLength(3);
+  });
+
+  it('never shows technical details like storage path or importId', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([]);
+    render(<ProgramsView />);
+    await expandCourse(/^Informatica/);
+    await screen.findByRole('button', { name: /^uda-01-reti/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Info UDA — uda-01-reti' }));
+
+    const region = await screen.findByRole('region', { name: 'Informazioni UDA uda-01-reti' });
+    expect(within(region).queryByText(/repository\/owner-uid/)).toBeNull();
+    expect(within(region).queryByText('imp-1')).toBeNull();
+  });
+});
+
+describe('ProgramsView — program info panel (programma.md metadata)', () => {
+  it('shows programma.md metadata when present, without the raw import id', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([]);
+    mockGetImportMeta.mockResolvedValue({
+      annoScolastico: '2025/2026',
+      docente: 'Mario Rossi',
+      materia: 'Informatica',
+      classe: '3A',
+      descrizione: 'Programma annuale di informatica.',
+    });
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+
+    fireEvent.click(screen.getByRole('button', { name: /Info corso/ }));
+
+    const region = await screen.findByRole('region', { name: 'Informazioni corso Informatica' });
+    expect(within(region).getByText('2025/2026')).toBeTruthy();
+    expect(within(region).getByText('Mario Rossi')).toBeTruthy();
+    expect(within(region).getByText('Programma annuale di informatica.')).toBeTruthy();
+    // The raw import id is a technical detail — never shown to the teacher.
+    expect(within(region).queryByText('imp-1')).toBeNull();
+  });
+
+  it('omits the programma.md section entirely when the file was not provided', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([]);
+    mockGetImportMeta.mockResolvedValue(null);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+
+    fireEvent.click(screen.getByRole('button', { name: /Info corso/ }));
+
+    const region = await screen.findByRole('region', { name: 'Informazioni corso Informatica' });
+    expect(within(region).queryByText('Docente')).toBeNull();
+    expect(within(region).queryByText('Anno scolastico')).toBeNull();
   });
 });
 

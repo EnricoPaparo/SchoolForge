@@ -1,6 +1,20 @@
-import { collection, doc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
-import type { LessonDoc, ProgramDoc, UdaDoc } from '../../../types/firestore.js';
+import type {
+  ImportDoc,
+  LessonDoc,
+  ProgramDoc,
+  ProgrammaMeta,
+  UdaDoc,
+} from '../../../types/firestore.js';
 
 export type ProgramItem = { id: string } & ProgramDoc;
 export type UdaItem = { id: string } & UdaDoc;
@@ -70,6 +84,22 @@ export async function listLessons(
   const snap = await getDocs(collection(db, 'programs', programId, 'imports', importId, 'lessons'));
   const items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as LessonDoc) }));
   return items.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * Reads the didactic metadata parsed from the optional root-level programma.md
+ * of an import. Returns null when the import has no metadata doc, or when
+ * programma.md was absent at import time.
+ */
+export async function getImportMeta(
+  programId: string,
+  importId: string,
+  db: Firestore,
+): Promise<ProgrammaMeta | null> {
+  const snap = await getDoc(doc(db, 'programs', programId, 'imports', importId));
+  if (!snap.exists()) return null;
+  const data = snap.data() as ImportDoc;
+  return data.programmaMeta ?? null;
 }
 
 export async function setLessonCompleted(

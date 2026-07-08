@@ -22,9 +22,12 @@ function isHidden(path: string): boolean {
  * "zip a folder" OS pattern), that folder prefix is stripped so the resulting
  * paths look like "UDA-dir/filename.md".
  *
- * The wrapper is only stripped when the stripped paths still have at least one
+ * The wrapper is only stripped when at least one stripped path still has a
  * directory component — this prevents stripping the UDA directory itself when
- * the ZIP contains a single UDA.
+ * the ZIP contains a single UDA (all stripped paths would become root files),
+ * while still stripping a real program-level wrapper that mixes a root-level
+ * file (e.g. programma.md, which naturally has no "/" once stripped) with one
+ * or more UDA subdirectories.
  *
  * Filters out OS artefacts: __MACOSX/, .DS_Store, hidden files (leading dot),
  * empty paths, and empty content.
@@ -35,15 +38,15 @@ export async function readZipFile(file: File): Promise<RawFile[]> {
   const rawPaths = Object.keys(zip.files).filter((p) => !zip.files[p].dir && !isExcluded(p));
 
   // Detect single wrapping folder: all paths share one top-level segment AND
-  // stripping it leaves paths that still have at least one more "/" — i.e. we
-  // are removing a true outer wrapper, not the UDA directory itself.
+  // stripping it leaves at least one path with a further "/" — i.e. we are
+  // removing a true outer wrapper, not the UDA directory itself.
   const firstSegments = new Set(rawPaths.map((p) => p.split('/')[0]));
   const candidatePrefix = firstSegments.size === 1 ? `${[...firstSegments][0]}/` : '';
   const strippedPaths = candidatePrefix
     ? rawPaths.map((p) => p.slice(candidatePrefix.length))
     : rawPaths;
   const prefix =
-    candidatePrefix && strippedPaths.every((p) => p.includes('/')) ? candidatePrefix : '';
+    candidatePrefix && strippedPaths.some((p) => p.includes('/')) ? candidatePrefix : '';
 
   const results: RawFile[] = [];
 

@@ -35,6 +35,13 @@ export interface LessonResult {
   issues: ValidationIssue[];
 }
 
+/** Didactic metadata for a UDA, shown to the teacher in the info panel — never technical details. */
+export interface UdaMetadata {
+  descrizione: string | null;
+  competenze: string[];
+  obiettivi: string[];
+}
+
 export interface UdaResult {
   /** Top-level directory path */
   dir: string;
@@ -44,9 +51,21 @@ export interface UdaResult {
   lessons: LessonResult[];
   /** UDA-level issues only (not lesson/pool issues) */
   issues: ValidationIssue[];
+  metadata: UdaMetadata;
+}
+
+/** Didactic metadata parsed from an optional root-level programma.md. */
+export interface ProgrammaMetadata {
+  annoScolastico: string | null;
+  docente: string | null;
+  materia: string | null;
+  classe: string | null;
+  descrizione: string | null;
 }
 
 export interface ImportValidationResult extends ValidationResult {
   /** valid = true when no programma/uda/lezione issues; pool/question issues do not block */
   udas: UdaResult[];
+  /** Parsed from the optional root-level programma.md. Null when the file is absent. */
+  programma: ProgrammaMetadata | null;
 }
