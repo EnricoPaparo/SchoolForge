@@ -15,17 +15,52 @@ import {
 import { listClasses, type ClassItem } from '../repository/classes/classesService.js';
 import { listPrograms, type ProgramItem } from '../repository/programs/programsService.js';
 import { loadSelectedQuestions } from '../repository/verifications/loadSelectedQuestions.js';
-import { downloadStudentPdf } from '../repository/verifications/verificationPdf.js';
+import { loadSelectedQuestionsWithSolutions } from '../repository/verifications/loadSelectedQuestionsWithSolutions.js';
+import {
+  downloadStudentPdf,
+  downloadTeacherSolutionsPdf,
+} from '../repository/verifications/verificationPdf.js';
 import { db, storage } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import { QuestionPicker } from './QuestionPicker.js';
 import styles from './VerificationsView.module.css';
 
+/** Extracts the epoch seconds from a Firestore Timestamp-like value, or null if absent. */
+function timestampSeconds(ts: unknown): number | null {
+  if (!ts || typeof ts !== 'object' || !('seconds' in ts)) return null;
+  return (ts as { seconds: number }).seconds;
+}
+
 /** Formats a Firestore Timestamp-like value as a compact it-IT date+time string, or "—" if absent. */
 function formatTimestamp(ts: unknown): string {
-  if (!ts || typeof ts !== 'object' || !('seconds' in ts)) return '—';
-  const date = new Date((ts as { seconds: number }).seconds * 1000);
-  return date.toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' });
+  const seconds = timestampSeconds(ts);
+  if (seconds === null) return '—';
+  return new Date(seconds * 1000).toLocaleString('it-IT', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+}
+
+/**
+ * Most-recent-activation-first ordering: activatedAt, falling back to
+ * closedAt, then updatedAt, when a verification lacks the primary date.
+ * Drafts with no relevant date at all sink to the bottom.
+ */
+function verificationSortKey(v: VerificationItem): number | null {
+  return (
+    timestampSeconds(v.activatedAt) ?? timestampSeconds(v.closedAt) ?? timestampSeconds(v.updatedAt)
+  );
+}
+
+function sortVerificationsByActivation(list: VerificationItem[]): VerificationItem[] {
+  return [...list].sort((a, b) => {
+    const keyA = verificationSortKey(a);
+    const keyB = verificationSortKey(b);
+    if (keyA === null && keyB === null) return 0;
+    if (keyA === null) return 1;
+    if (keyB === null) return -1;
+    return keyB - keyA;
+  });
 }
 
 function StatusBadge({ status }: { status: 'draft' | 'active' | 'closed' }) {
@@ -74,6 +109,9 @@ export function VerificationsView() {
   // ── Row actions: PDF / close / delete ────────────────────────────
   const [pdfLoadingId, setPdfLoadingId] = useState<string | null>(null);
   const [pdfErrors, setPdfErrors] = useState<Record<string, string | null>>({});
+
+  const [solutionsPdfLoadingId, setSolutionsPdfLoadingId] = useState<string | null>(null);
+  const [solutionsPdfErrors, setSolutionsPdfErrors] = useState<Record<string, string | null>>({});
 
   const [closeConfirmId, setCloseConfirmId] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
@@ -246,6 +284,32 @@ export function VerificationsView() {
     }
   }
 
+  async function handleDownloadSolutionsPdf(v: VerificationItem) {
+    if (v.status !== 'active' && v.status !== 'closed') return;
+    setSolutionsPdfLoadingId(v.id);
+    setSolutionsPdfErrors((prev) => ({ ...prev, [v.id]: null }));
+    try {
+      const snapshot = v.teacherSnapshot;
+      if (!snapshot) {
+        setSolutionsPdfErrors((prev) => ({
+          ...prev,
+          [v.id]: 'Snapshot della verifica non disponibile. Riattiva o ricrea la verifica.',
+        }));
+        return;
+      }
+      const result = await loadSelectedQuestionsWithSolutions(snapshot.questionRefs, storage);
+      if (!result.ok) {
+        setSolutionsPdfErrors((prev) => ({ ...prev, [v.id]: result.error }));
+        return;
+      }
+      const classNameResolved =
+        classes.find((c) => c.id === snapshot.classId)?.name ?? snapshot.className ?? null;
+      await downloadTeacherSolutionsPdf(snapshot, result.questions, classNameResolved);
+    } finally {
+      setSolutionsPdfLoadingId(null);
+    }
+  }
+
   function handleStartClose(id: string) {
     setCloseConfirmId(id);
     setCloseError(null);
@@ -306,6 +370,7 @@ export function VerificationsView() {
     );
 
   const canActivate = selectedQuestionIds.size >= 1;
+  const sortedVerifications = sortVerificationsByActivation(verifications);
 
   return (
     <section aria-label="Verifiche" className={styles.container}>
@@ -389,7 +454,7 @@ export function VerificationsView() {
               </tr>
             </thead>
             <tbody>
-              {verifications.map((v) => {
+              {sortedVerifications.map((v) => {
                 const programTitle =
                   programs.find((p) => p.id === v.config.programId)?.title ?? v.config.programId;
                 const className = v.config.classId
@@ -514,12 +579,24 @@ export function VerificationsView() {
                             <button
                               type="button"
                               className={styles.iconBtn}
-                              title="Scarica PDF"
-                              aria-label={`Scarica PDF — ${v.config.title}`}
+                              title="Scarica PDF studenti"
+                              aria-label={`Scarica PDF studenti — ${v.config.title}`}
                               disabled={pdfLoadingId === v.id}
                               onClick={() => void handleDownloadPdf(v)}
                             >
                               {pdfLoadingId === v.id ? '…' : '⬇️'}
+                            </button>
+                          )}
+                          {(v.status === 'active' || v.status === 'closed') && (
+                            <button
+                              type="button"
+                              className={styles.iconBtn}
+                              title="Scarica PDF soluzioni"
+                              aria-label={`Scarica PDF soluzioni — ${v.config.title}`}
+                              disabled={solutionsPdfLoadingId === v.id}
+                              onClick={() => void handleDownloadSolutionsPdf(v)}
+                            >
+                              {solutionsPdfLoadingId === v.id ? '…' : '🔑'}
                             </button>
                           )}
                           {v.status === 'active' && (
@@ -536,7 +613,7 @@ export function VerificationsView() {
                           {(v.status === 'draft' || v.status === 'closed') && (
                             <button
                               type="button"
-                              className={`${styles.iconBtn} btn-danger`}
+                              className={styles.iconBtn}
                               title="Elimina verifica"
                               aria-label={`Elimina verifica — ${v.config.title}`}
                               onClick={() => handleStartDelete(v.id)}
@@ -552,6 +629,15 @@ export function VerificationsView() {
                         <td colSpan={6} className={styles.td}>
                           <p role="alert" className="text-error">
                             {pdfErrors[v.id]}
+                          </p>
+                        </td>
+                      </tr>
+                    )}
+                    {solutionsPdfErrors[v.id] && (
+                      <tr>
+                        <td colSpan={6} className={styles.td}>
+                          <p role="alert" className="text-error">
+                            {solutionsPdfErrors[v.id]}
                           </p>
                         </td>
                       </tr>

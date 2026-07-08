@@ -17,13 +17,20 @@ const mockListClasses = vi.fn();
 
 const mockLoadSelectedQuestions = vi.fn();
 const mockDownloadStudentPdf = vi.fn();
+const mockLoadSelectedQuestionsWithSolutions = vi.fn();
+const mockDownloadTeacherSolutionsPdf = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
 vi.mock('../../repository/verifications/loadSelectedQuestions.js', () => ({
   loadSelectedQuestions: (...args: unknown[]) => mockLoadSelectedQuestions(...args),
 }));
+vi.mock('../../repository/verifications/loadSelectedQuestionsWithSolutions.js', () => ({
+  loadSelectedQuestionsWithSolutions: (...args: unknown[]) =>
+    mockLoadSelectedQuestionsWithSolutions(...args),
+}));
 vi.mock('../../repository/verifications/verificationPdf.js', () => ({
   downloadStudentPdf: (...args: unknown[]) => mockDownloadStudentPdf(...args),
+  downloadTeacherSolutionsPdf: (...args: unknown[]) => mockDownloadTeacherSolutionsPdf(...args),
 }));
 vi.mock('../../../lib/auth.js', () => ({
   useAuth: () => ({ user: { uid: 'owner-uid' } }),
@@ -133,6 +140,8 @@ function setupDefaults() {
   mockDeleteVerification.mockResolvedValue(undefined);
   mockLoadSelectedQuestions.mockResolvedValue({ ok: true, questions: [] });
   mockDownloadStudentPdf.mockResolvedValue(undefined);
+  mockLoadSelectedQuestionsWithSolutions.mockResolvedValue({ ok: true, questions: [] });
+  mockDownloadTeacherSolutionsPdf.mockResolvedValue(undefined);
 }
 
 describe('VerificationsView', () => {
@@ -556,12 +565,13 @@ describe('VerificationsView', () => {
       },
     });
 
-  it('shows Scarica PDF and Chiudi verifica row actions only for active verifications', async () => {
+  it('shows Scarica PDF studenti, Scarica PDF soluzioni and Chiudi verifica row actions only for active verifications', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([activeVerWithSnapshot()]);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
-    expect(screen.getByRole('button', { name: /scarica pdf/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /scarica pdf studenti/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /scarica pdf soluzioni/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /chiudi verifica/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /elimina verifica/i })).toBeNull();
   });
@@ -571,19 +581,40 @@ describe('VerificationsView', () => {
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
-    expect(screen.queryByRole('button', { name: /scarica pdf/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /scarica pdf studenti/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /scarica pdf soluzioni/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /chiudi verifica/i })).toBeNull();
     expect(screen.getByRole('button', { name: /elimina verifica/i })).toBeTruthy();
   });
 
-  it('closed verification shows only the Elimina row action', async () => {
+  it('closed verification shows only Elimina and Scarica PDF soluzioni (never PDF studenti or Chiudi)', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([closedVer()]);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
-    expect(screen.queryByRole('button', { name: /scarica pdf/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /scarica pdf studenti/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /scarica pdf soluzioni/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /chiudi verifica/i })).toBeNull();
     expect(screen.getByRole('button', { name: /elimina verifica/i })).toBeTruthy();
+  });
+
+  it('the row delete icon button is neutral (not styled with the danger class)', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    const deleteIconBtn = screen.getByRole('button', { name: /elimina verifica/i });
+    expect(deleteIconBtn.classList.contains('btn-danger')).toBe(false);
+  });
+
+  it('the "Elimina definitivamente" destructive confirm button stays red (btn-danger)', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByRole('button', { name: /elimina verifica/i }));
+    const confirmBtn = await screen.findByRole('button', { name: 'Elimina definitivamente' });
+    expect(confirmBtn.classList.contains('btn-danger')).toBe(true);
   });
 
   it('detail panel for a non-draft verification is a compact read-only summary', async () => {
@@ -597,13 +628,14 @@ describe('VerificationsView', () => {
     expect(screen.queryByRole('button', { name: /attiva verifica/i })).toBeNull();
     // PDF/Chiudi are row actions now, not duplicated inside the detail panel.
     const detail = screen.getByLabelText('Dettaglio verifica');
-    expect(within(detail).queryByRole('button', { name: /scarica pdf/i })).toBeNull();
+    expect(within(detail).queryByRole('button', { name: /scarica pdf studenti/i })).toBeNull();
+    expect(within(detail).queryByRole('button', { name: /scarica pdf soluzioni/i })).toBeNull();
     expect(within(detail).queryByRole('button', { name: /chiudi verifica/i })).toBeNull();
   });
 
   // ─── PDF download (row action) ─────────────────────────────────────────────
 
-  it('clicking Scarica PDF calls loadSelectedQuestions and downloadStudentPdf', async () => {
+  it('clicking Scarica PDF studenti calls loadSelectedQuestions and downloadStudentPdf', async () => {
     setupDefaults();
     const teacherSnapshot = activeVerWithSnapshot().teacherSnapshot;
     const activeVer = activeVerWithSnapshot();
@@ -611,8 +643,8 @@ describe('VerificationsView', () => {
     const fakeQuestion = { ref: sampleQuestionRef, testo: 'Domanda?', tipo: 'aperta' as const };
     mockLoadSelectedQuestions.mockResolvedValue({ ok: true, questions: [fakeQuestion] });
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf/i }));
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
 
     await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
     expect(mockLoadSelectedQuestions).toHaveBeenCalledWith([sampleQuestionRef], {});
@@ -632,8 +664,8 @@ describe('VerificationsView', () => {
     });
     mockListVerifications.mockResolvedValue([activeVerNoSnapshot]);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf/i }));
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
 
     await waitFor(() => screen.getByRole('alert'));
     expect(screen.getByRole('alert').textContent).toMatch(
@@ -648,8 +680,91 @@ describe('VerificationsView', () => {
     mockListVerifications.mockResolvedValue([activeVerWithSnapshot()]);
     mockLoadSelectedQuestions.mockResolvedValue({ ok: false, error: 'Pool non trovato: gs://...' });
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf/i }));
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+
+    await waitFor(() => screen.getByRole('alert'));
+    expect(screen.getByRole('alert').textContent).toMatch(/pool non trovato/i);
+  });
+
+  // ─── Solutions PDF download (row action) ────────────────────────────────────
+
+  it('clicking Scarica PDF soluzioni calls loadSelectedQuestionsWithSolutions and downloadTeacherSolutionsPdf', async () => {
+    setupDefaults();
+    const teacherSnapshot = activeVerWithSnapshot().teacherSnapshot;
+    mockListVerifications.mockResolvedValue([activeVerWithSnapshot()]);
+    const fakeQuestion = {
+      ref: sampleQuestionRef,
+      testo: 'Domanda?',
+      tipo: 'aperta' as const,
+      soluzione: 'Risposta attesa.',
+    };
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue({
+      ok: true,
+      questions: [fakeQuestion],
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+
+    await waitFor(() => expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalled());
+    expect(mockLoadSelectedQuestionsWithSolutions).toHaveBeenCalledWith([sampleQuestionRef], {});
+    expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalledWith(
+      teacherSnapshot,
+      [fakeQuestion],
+      'Classe 3A',
+    );
+    // Never calls the student-PDF path for this action.
+    expect(mockLoadSelectedQuestions).not.toHaveBeenCalled();
+    expect(mockDownloadStudentPdf).not.toHaveBeenCalled();
+  });
+
+  it('allows downloading the solutions PDF for a closed verification', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([closedVer()]);
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue({
+      ok: true,
+      questions: [
+        { ref: sampleQuestionRef, testo: 'Domanda?', tipo: 'aperta' as const, soluzione: 'R.' },
+      ],
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+
+    await waitFor(() => expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalled());
+  });
+
+  it('shows error and does not download when the active verification has no teacherSnapshot', async () => {
+    setupDefaults();
+    const activeVerNoSnapshot = makeDraftVer({
+      status: 'active',
+      config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] },
+      teacherSnapshot: null,
+    });
+    mockListVerifications.mockResolvedValue([activeVerNoSnapshot]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+
+    await waitFor(() => screen.getByRole('alert'));
+    expect(screen.getByRole('alert').textContent).toMatch(
+      /snapshot della verifica non disponibile/i,
+    );
+    expect(mockLoadSelectedQuestionsWithSolutions).not.toHaveBeenCalled();
+    expect(mockDownloadTeacherSolutionsPdf).not.toHaveBeenCalled();
+  });
+
+  it('shows an error message when loadSelectedQuestionsWithSolutions fails', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerWithSnapshot()]);
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue({
+      ok: false,
+      error: 'Pool non trovato: gs://...',
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
 
     await waitFor(() => screen.getByRole('alert'));
     expect(screen.getByRole('alert').textContent).toMatch(/pool non trovato/i);
@@ -758,5 +873,77 @@ describe('VerificationsView', () => {
     await waitFor(() => expect(within(region).getByRole('alert')).toBeTruthy());
     expect(within(region).getByRole('alert').textContent).toMatch(/non è chiusa/i);
     expect(screen.getByText('Verifica Algebra')).toBeTruthy();
+  });
+});
+
+describe('VerificationsView — sort order', () => {
+  function titlesInOrder() {
+    return screen
+      .getAllByRole('button', { name: /^Apri dettaglio verifica/ })
+      .map((btn) => btn.textContent);
+  }
+
+  it('orders active verifications by activatedAt descending (most recent first)', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer({
+        id: 'ver-older',
+        status: 'active',
+        activatedAt: { seconds: 1000, nanoseconds: 0 },
+        config: { ...makeDraftVer().config, title: 'Verifica Vecchia' },
+      }),
+      makeDraftVer({
+        id: 'ver-newer',
+        status: 'active',
+        activatedAt: { seconds: 2000, nanoseconds: 0 },
+        config: { ...makeDraftVer().config, title: 'Verifica Recente' },
+      }),
+    ]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Recente'));
+    expect(titlesInOrder()).toEqual(['Verifica Recente', 'Verifica Vecchia']);
+  });
+
+  it('puts drafts without any relevant date at the bottom', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer({
+        id: 'ver-draft',
+        config: { ...makeDraftVer().config, title: 'Verifica Bozza' },
+      }),
+      makeDraftVer({
+        id: 'ver-active',
+        status: 'active',
+        activatedAt: { seconds: 1000, nanoseconds: 0 },
+        config: { ...makeDraftVer().config, title: 'Verifica Attiva' },
+      }),
+    ]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Attiva'));
+    expect(titlesInOrder()).toEqual(['Verifica Attiva', 'Verifica Bozza']);
+  });
+
+  it('falls back to closedAt, then updatedAt, when activatedAt is missing', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer({
+        id: 'ver-updated-only',
+        updatedAt: { seconds: 500, nanoseconds: 0 },
+        config: { ...makeDraftVer().config, title: 'Verifica Solo Aggiornata' },
+      }),
+      makeDraftVer({
+        id: 'ver-closed',
+        status: 'closed',
+        activatedAt: null,
+        closedAt: { seconds: 800, nanoseconds: 0 },
+        config: { ...makeDraftVer().config, title: 'Verifica Chiusa Senza Attivazione' },
+      }),
+    ]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Chiusa Senza Attivazione'));
+    expect(titlesInOrder()).toEqual([
+      'Verifica Chiusa Senza Attivazione',
+      'Verifica Solo Aggiornata',
+    ]);
   });
 });

@@ -66,6 +66,7 @@ L'MVP docente cartaceo è tecnicamente completo e funzionante. L'interfaccia è 
 - Drag & drop per ordinare le domande in verifica.
 - Anteprima PDF inline prima del download.
 - Filtri avanzati nel question picker (per lezione, difficoltà, tipo).
+- **Diagrammi Markdown (Mermaid/PlantUML).** Oggi eventuali blocchi diagramma nel Markdown delle lezioni (es. ` ```mermaid `) vengono trattati come testo/codice puro dal `MarkdownRenderer` — non c'è alcun rendering grafico. Non implementato in questa fase per evitare nuove dipendenze non necessarie. Prima implementazione consigliata quando servirà: rendering Mermaid nella sola consultazione lezione (`LessonsView`/`MarkdownRenderer`), lato client, con libreria caricata solo on-demand (dynamic import) per non appesantire il bundle iniziale; il supporto nel PDF (lezione singola/programma svolto) è un passo successivo, da valutare separatamente una volta stabile il rendering a schermo.
 
 ---
 
