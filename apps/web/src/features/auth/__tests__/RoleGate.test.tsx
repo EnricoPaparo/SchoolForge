@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(cleanup);
 import { RoleGate } from '../RoleGate.js';
@@ -7,13 +7,10 @@ import { RoleGate } from '../RoleGate.js';
 const OWNER_UID = 'owner-uid';
 const STUDENT_UID = 'student-uid';
 
-const mockGetDoc = vi.fn();
-const mockBatchSet = vi.fn();
-const mockBatchCommit = vi.fn();
 const mockSignOut = vi.fn();
 
 // Configurable auth stub — overridden per test via reassignment before render.
-let currentUser: { uid: string; email: string; displayName: null } | null = null;
+let currentUser: { uid: string; email: string | null; displayName: string | null } | null = null;
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {} }));
 
@@ -24,9 +21,29 @@ vi.mock('../../../lib/auth.js', () => ({
   }),
 }));
 
+// Firestore documents, keyed by "collection/id" path, configurable per test.
+let firestoreDocs: Record<string, unknown> = {};
+let firestoreErrors: Set<string> = new Set();
+const mockSetDoc = vi.fn();
+const mockBatchSet = vi.fn();
+const mockBatchCommit = vi.fn();
+
+function pathFor(_db: unknown, a: string, b?: string): string {
+  return b === undefined ? a : `${a}/${b}`;
+}
+
 vi.mock('firebase/firestore', () => ({
-  doc: vi.fn(() => ({})),
-  getDoc: (...args: unknown[]) => mockGetDoc(...args),
+  doc: (db: unknown, a: string, b?: string) => ({ path: pathFor(db, a, b) }),
+  collection: (_db: unknown, name: string) => ({ path: name }),
+  getDoc: (ref: { path: string }) => {
+    if (firestoreErrors.has(ref.path)) return Promise.reject(new Error('boom'));
+    const data = firestoreDocs[ref.path];
+    return Promise.resolve({
+      exists: () => data !== undefined,
+      data: () => data,
+    });
+  },
+  setDoc: (...args: unknown[]) => mockSetDoc(...args),
   serverTimestamp: vi.fn(() => null),
   writeBatch: () => ({
     set: mockBatchSet,
@@ -36,15 +53,38 @@ vi.mock('firebase/firestore', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  firestoreDocs = {};
+  firestoreErrors = new Set();
   currentUser = { uid: OWNER_UID, email: 'teacher@test.com', displayName: null };
+  mockSetDoc.mockResolvedValue(undefined);
 });
+
+function seedOwnerPublic() {
+  firestoreDocs['settings/ownerPublic'] = { ownerUid: OWNER_UID };
+}
+
+function seedStudentAccess(studentPortalEnabled: boolean, newStudentRequestsEnabled = false) {
+  firestoreDocs['settings/studentAccess'] = { studentPortalEnabled, newStudentRequestsEnabled };
+}
+
+function seedStudentDoc(status: 'pending' | 'approved' | 'blocked') {
+  firestoreDocs[`students/${STUDENT_UID}`] = {
+    uid: STUDENT_UID,
+    ownerUid: OWNER_UID,
+    email: 'student@test.com',
+    displayName: null,
+    status,
+    classId: null,
+  };
+}
+
+function asStudent() {
+  currentUser = { uid: STUDENT_UID, email: 'student@test.com', displayName: null };
+}
 
 describe('RoleGate — owner access', () => {
   it('renders children (TeacherShell slot) when uid matches ownerUid', async () => {
-    mockGetDoc.mockResolvedValue({
-      exists: () => true,
-      data: () => ({ ownerUid: OWNER_UID }),
-    });
+    seedOwnerPublic();
     render(
       <RoleGate>
         <div>Area docente</div>
@@ -54,13 +94,13 @@ describe('RoleGate — owner access', () => {
   });
 });
 
-describe('RoleGate — student access', () => {
-  it('renders StudentShell when an authenticated user is not the owner', async () => {
-    currentUser = { uid: STUDENT_UID, email: 'student@test.com', displayName: null };
-    mockGetDoc.mockResolvedValue({
-      exists: () => true,
-      data: () => ({ ownerUid: OWNER_UID }),
-    });
+describe('RoleGate — approved student', () => {
+  it('renders StudentShell when approved and the portal is enabled', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    seedStudentDoc('approved');
+    asStudent();
+
     render(
       <RoleGate>
         <div>Area docente</div>
@@ -70,12 +110,12 @@ describe('RoleGate — student access', () => {
     expect(screen.queryByText('Area docente')).toBeNull();
   });
 
-  it('never reads or renders teacher-only content for a student', async () => {
-    currentUser = { uid: STUDENT_UID, email: 'student@test.com', displayName: null };
-    mockGetDoc.mockResolvedValue({
-      exists: () => true,
-      data: () => ({ ownerUid: OWNER_UID }),
-    });
+  it('never renders teacher-only content for an approved student', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    seedStudentDoc('approved');
+    asStudent();
+
     render(
       <RoleGate>
         <div>Area docente</div>
@@ -87,19 +127,118 @@ describe('RoleGate — student access', () => {
   });
 });
 
-describe('RoleGate — setup flow (no owner configured)', () => {
-  it('shows setup page when ownerPublic does not exist yet', async () => {
-    mockGetDoc.mockResolvedValue({ exists: () => false, data: () => undefined });
+describe('RoleGate — portal disabled', () => {
+  it('shows the disabled screen for an approved student when the portal is off', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(false);
+    seedStudentDoc('approved');
+    asStudent();
+
     render(
       <RoleGate>
         <div>Area docente</div>
       </RoleGate>,
     );
-    expect(await screen.findByRole('heading', { name: /Inizializza SchoolForge/i })).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', {
+        name: /Portale studenti temporaneamente disabilitato/i,
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText('Area docente')).toBeNull();
   });
 
-  it('shows setup page when getDoc fails', async () => {
-    mockGetDoc.mockRejectedValue({ code: 'permission-denied' });
+  it('shows the disabled screen even when settings/studentAccess does not exist', async () => {
+    seedOwnerPublic();
+    // seedStudentAccess() never called — safe default is "disabled".
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    expect(
+      await screen.findByRole('heading', {
+        name: /Portale studenti temporaneamente disabilitato/i,
+      }),
+    ).toBeTruthy();
+  });
+});
+
+describe('RoleGate — pending student', () => {
+  it('shows the pending screen when the student status is pending', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    seedStudentDoc('pending');
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    expect(await screen.findByRole('heading', { name: /Richiesta inviata/i })).toBeTruthy();
+    expect(screen.queryByText('Area docente')).toBeNull();
+  });
+});
+
+describe('RoleGate — blocked student', () => {
+  it('shows the blocked screen when the student status is blocked', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    seedStudentDoc('blocked');
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    expect(await screen.findByRole('heading', { name: /Accesso studente bloccato/i })).toBeTruthy();
+    expect(screen.queryByText('Area docente')).toBeNull();
+  });
+});
+
+describe('RoleGate — no students/{uid} document yet', () => {
+  it('shows requests-closed and does not create a document when requests are disabled', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true, false);
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    expect(
+      await screen.findByRole('heading', { name: /Nuove richieste studenti chiuse/i }),
+    ).toBeTruthy();
+    expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+
+  it('creates a pending request and shows the pending screen when requests are enabled', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true, true);
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    expect(await screen.findByRole('heading', { name: /Richiesta inviata/i })).toBeTruthy();
+    expect(mockSetDoc).toHaveBeenCalledTimes(1);
+    const [ref, data] = mockSetDoc.mock.calls[0];
+    expect(ref.path).toBe(`students/${STUDENT_UID}`);
+    expect(data.status).toBe('pending');
+    expect(data.classId).toBeNull();
+    expect(data.uid).toBe(STUDENT_UID);
+    expect(data.ownerUid).toBe(OWNER_UID);
+  });
+});
+
+describe('RoleGate — setup flow (no owner configured)', () => {
+  it('shows setup page when ownerPublic does not exist yet', async () => {
     render(
       <RoleGate>
         <div>Area docente</div>
@@ -109,7 +248,6 @@ describe('RoleGate — setup flow (no owner configured)', () => {
   });
 
   it('renders children after successful ownership claim', async () => {
-    mockGetDoc.mockResolvedValue({ exists: () => false, data: () => undefined });
     mockBatchCommit.mockResolvedValue(undefined);
     render(
       <RoleGate>
@@ -123,7 +261,6 @@ describe('RoleGate — setup flow (no owner configured)', () => {
 
 describe('RoleGate — non-owner blocked during claim attempt', () => {
   it('shows blocked message when the claim batch fails (owner already exists)', async () => {
-    mockGetDoc.mockRejectedValue({ code: 'permission-denied' });
     mockBatchCommit.mockRejectedValue({ code: 'permission-denied' });
     render(
       <RoleGate>
@@ -135,9 +272,32 @@ describe('RoleGate — non-owner blocked during claim attempt', () => {
   });
 });
 
+describe('RoleGate — resolution error', () => {
+  it('shows a readable error screen instead of an infinite loading state', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    // students/{uid} read fails unexpectedly (not "permission denied due to
+    // missing doc" — a genuine transient error) — getOwnStudentDoc doesn't
+    // swallow this, so it must surface as a readable screen, not a crash
+    // or an infinite spinner.
+    firestoreErrors.add(`students/${STUDENT_UID}`);
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    expect(
+      await screen.findByRole('heading', { name: /Impossibile verificare l.accesso/i }),
+    ).toBeTruthy();
+    expect(screen.queryByText('Area docente')).toBeNull();
+  });
+});
+
 describe('RoleGate — loading state', () => {
   it('shows loading indicator while resolving role', () => {
-    mockGetDoc.mockReturnValue(new Promise(() => {})); // never resolves
+    seedOwnerPublic();
     render(
       <RoleGate>
         <div>Area docente</div>

@@ -8,7 +8,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
 
@@ -160,7 +160,7 @@ describe('Firestore rules — settings/studentAccess', () => {
     await assertSucceeds(getDoc(doc(ownerDb(), 'settings/studentAccess')));
   });
 
-  it('a non-owner (student) cannot read settings/studentAccess directly', async () => {
+  it('a non-owner (student) can read settings/studentAccess (needed by RoleGate)', async () => {
     await seedOwnerOnly();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'settings/studentAccess'), {
@@ -170,7 +170,12 @@ describe('Firestore rules — settings/studentAccess', () => {
       });
     });
 
-    await assertFails(getDoc(doc(studentDb(), 'settings/studentAccess')));
+    // Deliberate deviation from "students never read this directly": RoleGate
+    // must show a disabled/pending/requests-closed screen to a candidate
+    // student without waiting on an owner-only read, and neither flag
+    // authorizes any content on its own — isApprovedStudent() re-reads this
+    // document itself via get() for the real authorization decision.
+    await assertSucceeds(getDoc(doc(studentDb(), 'settings/studentAccess')));
   });
 
   it('a non-owner (student) cannot write settings/studentAccess', async () => {
@@ -233,7 +238,7 @@ describe('Firestore rules — students/{uid} approval roster', () => {
     );
   });
 
-  it('a student cannot read their own students/{uid} document', async () => {
+  it('a student can read their own students/{uid} document (needed by RoleGate)', async () => {
     await seedOwnerOnly();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'students', OTHER_UID), {
@@ -246,7 +251,24 @@ describe('Firestore rules — students/{uid} approval roster', () => {
       });
     });
 
-    await assertFails(getDoc(doc(studentDb(), 'students', OTHER_UID)));
+    await assertSucceeds(getDoc(doc(studentDb(), 'students', OTHER_UID)));
+  });
+
+  it('a student cannot read another student’s students/{uid} document', async () => {
+    const ANOTHER_UID = 'another-uid';
+    await seedOwnerOnly();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'students', ANOTHER_UID), {
+        uid: ANOTHER_UID,
+        ownerUid: OWNER_UID,
+        email: 'other-student@example.com',
+        displayName: null,
+        status: 'approved',
+        classId: null,
+      });
+    });
+
+    await assertFails(getDoc(doc(studentDb(), 'students', ANOTHER_UID)));
   });
 
   it('a student cannot self-approve by writing their own students/{uid} document', async () => {
@@ -278,6 +300,159 @@ describe('Firestore rules — students/{uid} approval roster', () => {
     });
 
     await assertFails(getDoc(doc(anonDb(), 'students', OTHER_UID)));
+  });
+});
+
+// ─── students/{uid} self-request (M3L-A3, newStudentRequestsEnabled) ─────────
+
+function pendingRequestPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    uid: OTHER_UID,
+    ownerUid: OWNER_UID,
+    email: 'student@example.com',
+    displayName: 'Studente Test',
+    status: 'pending',
+    classId: null,
+    createdAt: null,
+    updatedAt: null,
+    lastLoginAt: null,
+    ...overrides,
+  };
+}
+
+async function seedRequestsToggle(enabled: boolean) {
+  await seedOwnerOnly();
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'settings/studentAccess'), {
+      ownerUid: OWNER_UID,
+      studentPortalEnabled: false,
+      newStudentRequestsEnabled: enabled,
+    });
+  });
+}
+
+describe('Firestore rules — students/{uid} self-request (newStudentRequestsEnabled)', () => {
+  it('a Google non-owner can create their own pending request when requests are enabled', async () => {
+    await seedRequestsToggle(true);
+
+    await assertSucceeds(setDoc(doc(studentDb(), 'students', OTHER_UID), pendingRequestPayload()));
+  });
+
+  it('denies the self-request when newStudentRequestsEnabled is false', async () => {
+    await seedRequestsToggle(false);
+
+    await assertFails(setDoc(doc(studentDb(), 'students', OTHER_UID), pendingRequestPayload()));
+  });
+
+  it('denies the self-request when settings/studentAccess does not exist at all', async () => {
+    await seedOwnerOnly();
+    // seedRequestsToggle() never called — default-safe: no document means
+    // requests are treated as closed.
+
+    await assertFails(setDoc(doc(studentDb(), 'students', OTHER_UID), pendingRequestPayload()));
+  });
+
+  it('denies creating a request at a different uid than the caller', async () => {
+    await seedRequestsToggle(true);
+
+    await assertFails(
+      setDoc(
+        doc(studentDb(), 'students', 'someone-else-uid'),
+        pendingRequestPayload({ uid: 'someone-else-uid' }),
+      ),
+    );
+  });
+
+  it('denies the self-request when the uid field does not match the caller', async () => {
+    await seedRequestsToggle(true);
+
+    await assertFails(
+      setDoc(
+        doc(studentDb(), 'students', OTHER_UID),
+        pendingRequestPayload({ uid: 'someone-else-uid' }),
+      ),
+    );
+  });
+
+  it('denies the self-request when ownerUid does not match settings/ownerPublic', async () => {
+    await seedRequestsToggle(true);
+
+    await assertFails(
+      setDoc(
+        doc(studentDb(), 'students', OTHER_UID),
+        pendingRequestPayload({ ownerUid: 'not-the-real-owner' }),
+      ),
+    );
+  });
+
+  it('denies the self-request when status is not pending', async () => {
+    await seedRequestsToggle(true);
+
+    await assertFails(
+      setDoc(
+        doc(studentDb(), 'students', OTHER_UID),
+        pendingRequestPayload({ status: 'approved' }),
+      ),
+    );
+  });
+
+  it('denies the self-request when classId is not null', async () => {
+    await seedRequestsToggle(true);
+
+    await assertFails(
+      setDoc(
+        doc(studentDb(), 'students', OTHER_UID),
+        pendingRequestPayload({ classId: 'class-1' }),
+      ),
+    );
+  });
+
+  it('denies the self-request when an extra field is present', async () => {
+    await seedRequestsToggle(true);
+
+    await assertFails(
+      setDoc(
+        doc(studentDb(), 'students', OTHER_UID),
+        pendingRequestPayload({ notAllowed: 'anything' }),
+      ),
+    );
+  });
+
+  it('denies an unauthenticated user from creating a request, even when requests are enabled', async () => {
+    await seedRequestsToggle(true);
+
+    await assertFails(setDoc(doc(anonDb(), 'students', OTHER_UID), pendingRequestPayload()));
+  });
+
+  it('denies a second write to an already-created request (create only fires once)', async () => {
+    await seedRequestsToggle(true);
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'students', OTHER_UID), pendingRequestPayload());
+    });
+
+    // The document now exists, so this becomes an `update`, which is
+    // owner-only — even though the payload is a harmless no-op resend.
+    await assertFails(setDoc(doc(studentDb(), 'students', OTHER_UID), pendingRequestPayload()));
+  });
+
+  it('a student can never update their own document after creation', async () => {
+    await seedRequestsToggle(true);
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'students', OTHER_UID), pendingRequestPayload());
+    });
+
+    await assertFails(
+      setDoc(doc(studentDb(), 'students', OTHER_UID), { status: 'approved' }, { merge: true }),
+    );
+  });
+
+  it('a student can never delete their own document', async () => {
+    await seedRequestsToggle(true);
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'students', OTHER_UID), pendingRequestPayload());
+    });
+
+    await assertFails(deleteDoc(doc(studentDb(), 'students', OTHER_UID)));
   });
 });
 

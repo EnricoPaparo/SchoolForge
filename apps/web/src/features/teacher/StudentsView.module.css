@@ -1,0 +1,152 @@
+/* ── StudentsView layout ────────────────────────────────────────── */
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* ── Toggles card ─────────────────────────────────────────────────── */
+.togglesCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.875rem 1rem;
+  box-shadow: var(--shadow-sm);
+  max-width: 640px;
+}
+
+.toggleRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  cursor: pointer;
+}
+
+.toggleRow input[type='checkbox'] {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+
+.toggleLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.toggleDesc {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+/* ── Search / filter row ──────────────────────────────────────────── */
+.filterRow {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 220px;
+}
+
+.statusSelect {
+  width: auto;
+  min-width: 160px;
+}
+
+/* ── Table ────────────────────────────────────────────────────────── */
+.tableWrap {
+  overflow-x: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.table {
+  width: 100%;
+  min-width: 780px;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  border-bottom: 2px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.row:hover {
+  background: var(--color-surface-subtle);
+}
+
+.td {
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.tdActions {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.actionsWrapper {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.classSelect {
+  width: auto;
+  min-width: 140px;
+  font-size: 0.875rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.actionBtn {
+  font-size: 0.8125rem;
+  padding: 0.3125rem 0.625rem;
+  white-space: nowrap;
+}
+
+.confirmActions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.confirmText {
+  font-size: 0.875rem;
+  color: var(--color-text);
+}
+
+.pendingHint {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 640px) {
+  .filterRow {
+    flex-direction: column;
+  }
+
+  .statusSelect {
+    width: 100%;
+  }
+}
