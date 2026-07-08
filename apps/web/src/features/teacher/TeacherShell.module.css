@@ -14,8 +14,9 @@
   gap: 1rem;
   padding: 0.625rem 1.5rem;
   min-height: 58px;
-  background: linear-gradient(135deg, var(--color-primary-light), var(--color-surface));
-  border-bottom: 1px solid var(--color-border);
+  background: linear-gradient(120deg, #e6f0ff 0%, #ffffff 50%, #fff2e6 100%);
+  border-bottom: 3px solid transparent;
+  border-image: linear-gradient(90deg, var(--color-brand-blue), var(--color-brand-orange)) 1;
   color: var(--color-text);
   flex-shrink: 0;
   box-shadow: var(--shadow-sm);
@@ -38,7 +39,6 @@
 .avatarBtn {
   display: flex;
   align-items: center;
-  justify-content: center;
   width: 34px;
   height: 34px;
   border-radius: 50%;
@@ -149,7 +149,9 @@
 
 .navBtn[aria-current='page'] {
   color: var(--color-primary);
+  background: var(--color-primary-light);
   border-bottom-color: var(--color-primary);
+  border-radius: var(--radius) var(--radius) 0 0;
   font-weight: 600;
 }
 
