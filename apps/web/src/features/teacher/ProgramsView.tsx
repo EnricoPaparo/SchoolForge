@@ -474,7 +474,7 @@ export function ProgramsView() {
                     </button>
                     <button
                       type="button"
-                      className={`${styles.iconBtn} btn-danger`}
+                      className={styles.iconBtn}
                       title="Elimina corso"
                       aria-label={`Elimina corso — ${program.title}`}
                       onClick={() => startDeleteProgram(program)}
