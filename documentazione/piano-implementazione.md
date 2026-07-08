@@ -140,9 +140,10 @@ flowchart TD
     M3LA --> M3LA2["M3L-A2 Modello approvazione studente\n(pending/approved/blocked, toggle portale)"]
     M3LA2 --> M3LA3["M3L-A3 UI gestione studenti\n(approvazione, classi) — prossima PR"]
     M3LA2 --> M3LB["M3L-B StudentShell e routing"]
-    M3LA3 --> M3LC["M3L-C Sezione Lezioni studente"]
+    M3LA3 --> M3LA4["M3L-A4 classIds sui programmi\n(UI Corsi → assegna classi)"]
+    M3LA4 --> M3LC["M3L-C Sezione Lezioni studente"]
     M3LB --> M3LC
-    M3LA3 --> M3LD["M3L-D Sezione Verifiche studente"]
+    M3LA4 --> M3LD["M3L-D Sezione Verifiche studente"]
     M3LB --> M3LD
     M3LC --> M3LE["M3L-E Integrazione M3-lite"]
     M3LD --> M3LE
@@ -209,10 +210,11 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 |---|---|---|---|---|
 | M3L-A | Modello dati e Security Rules: campo `visibility` su `verifications`, proiezione `publicLessons` scritta nello stesso flusso di import, documento `settings/ownerPublic` per il routing. Nessuna Cloud Function. | G3 | — | Owner mantiene accesso completo; test Emulator sulle regole owner/proiezioni. Nota: la prima versione trattava "Google autenticato non-owner" come sufficiente per leggere le proiezioni; corretto in M3L-A2. |
 | M3L-A2 | Modello di approvazione studente: `settings/studentAccess` (`studentPortalEnabled`, `newStudentRequestsEnabled`), `students/{uid}` (`status: pending/approved/blocked`, `classId`), Security Rules Firestore e Storage che negano ogni lettura studente finché non è `approved` + portale attivo. Nessuna Cloud Function (Storage usa `firestore.get()`/`firestore.exists()` cross-service). | M3L-A | — | Google non-owner senza `students/{uid}`, `pending` o `blocked` non legge `publicLessons`/`publishedProjection`/file lezione; `approved` legge solo se `studentPortalEnabled == true`; owner non impattato; test Emulator per ogni combinazione. |
-| M3L-A3 | UI docente di gestione studenti: creare/approvare/bloccare `students/{uid}`, assegnare `classId`. **Non ancora assegnata** — prossima PR dopo questa. | M3L-A2 | — | Il docente approva uno studente dall'interfaccia senza scrivere Firestore a mano; audit dell'approvazione. |
+| M3L-A3 | UI docente di gestione studenti: creare/approvare/bloccare `students/{uid}`, assegnare `classId`. | M3L-A2 | — | Il docente approva uno studente dall'interfaccia senza scrivere Firestore a mano; audit dell'approvazione. |
+| M3L-A4 | `classIds` sui programmi (`programs/{id}.classIds: string[]`) e UI Corsi per assegnare un programma a zero, una o più classi. Le UDA e lezioni ereditano la visibilità dal programma (nessun campo classi proprio). | M3L-A3 | — | Programmi legacy senza `classIds` normalizzati a `[]` in lettura (nessuna migrazione distruttiva); `setProgramClassIds` deduplica; un programma senza classi non è visibile a nessuno studente; Security Rules invariate (owner-write già sufficiente). |
 | M3L-B | StudentShell: routing `/student/*`, login Google, risoluzione ruolo (`uid == ownerUid` → TeacherShell, altrimenti StudentShell), layout mobile-first. | M3L-A2 | M3L-C/M3L-D | Docente va a TeacherShell; utente Google non-owner va a StudentShell (il routing del ruolo non richiede l'approvazione: solo le letture di contenuto la richiedono); nessun accesso anonimo. |
-| M3L-C | Sezione Lezioni studente: elenco e rendering read-only da `publicLessons`, riuso del renderer Markdown sanitizzato del docente. **Non implementata da questa PR.** | M3L-B, M3L-A3 | M3L-D | Lo studente approvato vede tutte le lezioni pubblicate della propria classe (quando il filtro classe sarà introdotto); nessun pool, soluzione, percorso tecnico o `questionIndex` raggiungibile; uno studente non approvato non vede nulla. |
-| M3L-D | Sezione Verifiche studente: elenco filtrato `attiva`+`public`, azione "Scarica PDF studente" con `VerificaPdfRenderer mode="student"` dalla `publishedProjection`. **Non implementata da questa PR.** | M3L-B, M3L-A3 | M3L-C | Solo verifiche `attiva`+`public` con `classId` coincidente (quando introdotto) sono visibili a uno studente approvato; nessuna consegna o risposta online; PDF senza soluzioni. |
+| M3L-C | Sezione Lezioni studente: elenco e rendering read-only da `publicLessons`, riuso del renderer Markdown sanitizzato del docente. **Non implementata da questa PR.** | M3L-B, M3L-A4 | M3L-D | Lo studente approvato vede le lezioni pubblicate dei soli programmi la cui `classIds` include la propria classe; nessun pool, soluzione, percorso tecnico o `questionIndex` raggiungibile; uno studente non approvato non vede nulla. |
+| M3L-D | Sezione Verifiche studente: elenco filtrato `attiva`+`public`, azione "Scarica PDF studente" con `VerificaPdfRenderer mode="student"` dalla `publishedProjection`. **Non implementata da questa PR.** | M3L-B, M3L-A4 | M3L-C | Solo verifiche `attiva`+`public` con `classId` coincidente (quando introdotto) sono visibili a uno studente approvato; nessuna consegna o risposta online; PDF senza soluzioni. |
 | M3L-E | E2E e test negativi M3-lite, review sicurezza ruolo/proiezioni/approvazione, evidenze G4-lite. | M3L-C/M3L-D | — | Evidenze G4-lite; nessuna soluzione o dato tecnico ottenibile dal client studente; nessuna lettura concessa a uno studente non approvato. |
 
 ---
@@ -514,7 +516,7 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | Evidenza richiesta | Test Emulator per ogni combinazione stato/toggle, Firestore e Storage |
 | Fuori scope (rinviato a M3L-A3) | UI docente per creare/approvare/bloccare uno studente; assegnazione `classId`; filtro lezioni/verifiche per classe |
 
-#### M3L-A3 — UI gestione studenti (non ancora assegnata)
+#### M3L-A3 — UI gestione studenti
 
 | Campo | Valore |
 |---|---|
@@ -523,6 +525,17 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | File da modificare | — |
 | Test minimi | Il docente approva/blocca uno studente dall'interfaccia; il toggle del portale è visibile e funzionante; audit dell'approvazione |
 | Evidenza richiesta | Test UI gestione studenti; E2E approvazione → lettura contenuti concessa |
+
+#### M3L-A4 — classIds sui programmi e UI Corsi
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M3L-A3 |
+| File da creare | — |
+| File da modificare | `src/types/firestore.ts` (`ProgramDoc.classIds`), `programsService.ts` (`listPrograms` normalizza i legacy a `[]`, `createProgram` inizializza `[]`, nuova `setProgramClassIds`), `ProgramsView.tsx` (bottone "Classi", pannello checklist, indicatore riga) |
+| Test minimi | Programmi legacy senza `classIds` normalizzati a `[]`; `setProgramClassIds` deduplica e salva; UI mostra "Classi: X, Y" o "Non visibile agli studenti"; UI gestisce l'assenza di classi con un messaggio chiaro; selezione/deselezione salvata solo al click esplicito su Salva |
+| Evidenza richiesta | Test `programsService`/`ProgramsView` mirati; nessuna modifica a `firestore.rules`/`storage.rules` (owner-write sui programmi già sufficiente) |
+| Fuori scope (rinviato a M3L-C/M3L-D) | Filtro effettivo delle lezioni/verifiche per classe nella StudentShell; UDA/lezioni non ricevono un proprio campo classi, ereditano quello del programma |
 
 #### M3L-B — StudentShell e routing
 

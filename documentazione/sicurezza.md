@@ -65,13 +65,12 @@ Le Security Rules esatte vengono scritte e testate con Emulator Suite obbligator
 - `classId` su `students/{uid}` è riservato al filtro futuro lezioni/verifiche per classe (non implementato da questa milestone, vedi §3.2).
 - La gestione dell'approvazione (UI docente per creare/approvare/bloccare uno studente) non è ancora costruita: questa milestone consegna solo schema, Security Rules e test. Vedi piano-implementazione.md, M3L-A3.
 
-### 3.2 Classi studente e classi programma (specifica futura, non implementata)
+### 3.2 Classi studente e classi programma
 
-- `students/{uid}.classId` identificherà la classe dello studente approvato.
-- Le classi assegnate a un programma (`programs/{id}`) e il `classId` di una verifica determineranno quali lezioni e verifiche uno studente approvato può effettivamente vedere, oltre al gate approved+portale già descritto in §3.1.
-- **Un programma senza classi assegnate non sarà visibile a nessuno studente**, anche se le sue `publicLessons` esistono e il portale è attivo.
-- **Una verifica senza `classId` non sarà visibile a nessuno studente**, anche se `status == "attiva"` e `visibility == "public"`.
-- Questa sezione descrive un'estensione pianificata ma non implementata da questa milestone: né lo schema (`programs`/`verifications` non hanno ancora un campo classi-collegate per lo studente) né le Security Rules applicano oggi questo filtro. Verrà introdotta in una milestone successiva (vedi piano-implementazione.md, M3L-B).
+- `students/{uid}.classId` identifica la classe dello studente approvato (assegnata dal docente in M3L-A3).
+- `programs/{id}.classIds: string[]` (M3L-A4) elenca le classi a cui un programma è assegnato. **Un programma senza classi assegnate (campo assente o array vuoto) non è visibile a nessuno studente**, anche se le sue `publicLessons` esistono e il portale è attivo. UDA e lezioni non hanno un proprio campo classi: ereditano la visibilità dal programma. I programmi creati prima dell'introduzione di questo campo sono letti con `classIds: []` (normalizzazione in lettura, `programsService.listPrograms`; nessuna migrazione distruttiva) — il default è quindi sempre "non visibile", mai "visibile a tutti" per omissione.
+- Il `classId` di una verifica (non ancora implementato) determinerà allo stesso modo quali verifiche uno studente approvato vede: **una verifica senza `classId` non sarà visibile a nessuno studente**, anche se `status == "attiva"` e `visibility == "public"`.
+- **Il filtro effettivo non è ancora applicato**: né le Security Rules né le query della StudentShell (non ancora costruita, M3L-C/M3L-D) confrontano oggi `classIds`/`classId` con la classe dello studente. M3L-A4 consegna solo lo schema e la UI docente per assegnare le classi ai programmi (sezione Corsi); il confronto classe-studente↔classe-contenuto resta specifica per una milestone successiva. Le Security Rules non sono state modificate da M3L-A4: la scrittura di `programs/{id}.classIds` resta owner-only, coperta dalla regola esistente su `programs/{docId}`; nessuna nuova lettura studente è stata aperta.
 
 Le regole seguenti restano specifica di un eventuale **M3-full** (link pubblico, tentativi, gateway) e non si applicano a M3-lite:
 

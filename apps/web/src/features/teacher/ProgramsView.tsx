@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   createProgram,
   deleteProgram,
@@ -7,11 +7,13 @@ import {
   listPrograms,
   listUdas,
   setLessonCompleted,
+  setProgramClassIds,
   updateProgramTitle,
   type LessonItem,
   type ProgramItem,
   type UdaItem,
 } from '../repository/programs/programsService.js';
+import { listClasses, type ClassItem } from '../repository/classes/classesService.js';
 import type { ProgrammaMeta } from '../../types/firestore.js';
 import { importRepository } from '../repository/import/importRepository.js';
 import { readZipFile } from '../repository/import/readZipFile.js';
@@ -68,6 +70,13 @@ export function ProgramsView() {
   const [infoOpenProgramId, setInfoOpenProgramId] = useState<string | null>(null);
   const [infoOpenUdaKey, setInfoOpenUdaKey] = useState<string | null>(null);
 
+  // ── Classes assignment (M3-lite: student visibility) ──────────────
+  const [allClasses, setAllClasses] = useState<ClassItem[] | null>(null);
+  const [classesOpenProgramId, setClassesOpenProgramId] = useState<string | null>(null);
+  const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
+  const [savingClasses, setSavingClasses] = useState(false);
+  const [classesSaveError, setClassesSaveError] = useState<string | null>(null);
+
   const [newTitle, setNewTitle] = useState('');
   const [creating, setCreating] = useState(false);
 
@@ -85,7 +94,22 @@ export function ProgramsView() {
 
   useEffect(() => {
     void loadPrograms();
+    void loadClasses();
   }, []);
+
+  async function loadClasses() {
+    try {
+      setAllClasses(await listClasses(ownerUid, db));
+    } catch {
+      setAllClasses([]);
+    }
+  }
+
+  const classNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of allClasses ?? []) map.set(c.id, c.name);
+    return map;
+  }, [allClasses]);
 
   function updateCourseState(programId: string, patch: Partial<CourseState>) {
     setCourseState((prev) => ({
@@ -154,6 +178,39 @@ export function ProgramsView() {
 
   function toggleInfo(programId: string) {
     setInfoOpenProgramId((prev) => (prev === programId ? null : programId));
+  }
+
+  function toggleClassesPanel(program: ProgramItem) {
+    setClassesSaveError(null);
+    setClassesOpenProgramId((prev) => {
+      if (prev === program.id) return null;
+      setSelectedClassIds(program.classIds ?? []);
+      return program.id;
+    });
+  }
+
+  function toggleSelectedClass(classId: string) {
+    setSelectedClassIds((prev) =>
+      prev.includes(classId) ? prev.filter((id) => id !== classId) : [...prev, classId],
+    );
+  }
+
+  async function handleSaveClasses(program: ProgramItem) {
+    setSavingClasses(true);
+    setClassesSaveError(null);
+    try {
+      await setProgramClassIds(program.id, selectedClassIds, ownerUid, db);
+      setPrograms(
+        (prev) =>
+          prev?.map((p) => (p.id === program.id ? { ...p, classIds: [...selectedClassIds] } : p)) ??
+          null,
+      );
+      setClassesOpenProgramId(null);
+    } catch {
+      setClassesSaveError('Impossibile salvare le classi.');
+    } finally {
+      setSavingClasses(false);
+    }
   }
 
   function toggleUdaInfo(udaKey: string) {
@@ -382,6 +439,9 @@ export function ProgramsView() {
               cs?.lessons?.reduce((sum, l) => sum + (l.questionCount ?? 0), 0) ?? 0;
             const dataLoading =
               program.activeImportId != null && (cs?.udas == null || cs?.lessons == null);
+            const assignedClassNames = (program.classIds ?? [])
+              .map((id) => classNameById.get(id))
+              .filter((name): name is string => Boolean(name));
 
             return (
               <li key={program.id} className={styles.courseItem}>
@@ -406,6 +466,13 @@ export function ProgramsView() {
                         : dataLoading
                           ? 'Caricamento dati…'
                           : `UDA: ${udaCount} · Lezioni: ${lessonsDone}/${lessonsTotal} svolte · Domande: ${questionsTotal} disponibili`}
+                    </span>
+                    <span
+                      className={`badge ${assignedClassNames.length > 0 ? 'badge-ok' : 'badge-warning'} ${styles.classesIndicator}`}
+                    >
+                      {assignedClassNames.length > 0
+                        ? `Classi: ${assignedClassNames.join(', ')}`
+                        : 'Non visibile agli studenti'}
                     </span>
                   </button>
 
@@ -461,6 +528,16 @@ export function ProgramsView() {
                       onClick={() => void handleDownloadProgrammaSvoltoPdf(program)}
                     >
                       {cs?.pdfDownloading ? '…' : '🖨️'}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      title="Classi"
+                      aria-label={`Classi — ${program.title}`}
+                      aria-expanded={classesOpenProgramId === program.id}
+                      onClick={() => toggleClassesPanel(program)}
+                    >
+                      🏫
                     </button>
                     <button
                       type="button"
@@ -543,6 +620,66 @@ export function ProgramsView() {
                       Annulla
                     </button>
                   </form>
+                )}
+
+                {classesOpenProgramId === program.id && (
+                  <div
+                    className={styles.classesPanel}
+                    role="region"
+                    aria-label={`Classi — ${program.title}`}
+                  >
+                    {allClasses === null ? (
+                      <p aria-busy="true" className="state-loading">
+                        Caricamento classi…
+                      </p>
+                    ) : allClasses.length === 0 ? (
+                      <p className="state-empty">
+                        Nessuna classe creata. Vai alla sezione Classi per crearne una.
+                      </p>
+                    ) : (
+                      <>
+                        <p className={styles.classesPanelHint}>
+                          Un programma senza classi selezionate non è visibile a nessuno studente.
+                        </p>
+                        <ul className={styles.classesChecklist}>
+                          {allClasses.map((c) => (
+                            <li key={c.id}>
+                              <label className={styles.classesChecklistItem}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedClassIds.includes(c.id)}
+                                  onChange={() => toggleSelectedClass(c.id)}
+                                />
+                                <span>{c.name}</span>
+                              </label>
+                            </li>
+                          ))}
+                        </ul>
+                        {classesSaveError && (
+                          <p role="alert" className="text-error">
+                            {classesSaveError}
+                          </p>
+                        )}
+                        <div className={styles.classesPanelActions}>
+                          <button
+                            type="button"
+                            className="btn-success"
+                            disabled={savingClasses}
+                            onClick={() => void handleSaveClasses(program)}
+                          >
+                            {savingClasses ? 'Salvataggio…' : 'Salva'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={savingClasses}
+                            onClick={() => setClassesOpenProgramId(null)}
+                          >
+                            Annulla
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
 
                 {cs?.exportError && (

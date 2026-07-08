@@ -17,6 +17,7 @@ const mockListLessons = vi.fn();
 const mockGetImportMeta = vi.fn();
 const mockSetLessonCompleted = vi.fn();
 const mockDeleteProgram = vi.fn();
+const mockSetProgramClassIds = vi.fn();
 
 vi.mock('../../../features/repository/programs/programsService.js', () => ({
   listPrograms: (...args: unknown[]) => mockListPrograms(...args),
@@ -27,6 +28,12 @@ vi.mock('../../../features/repository/programs/programsService.js', () => ({
   getImportMeta: (...args: unknown[]) => mockGetImportMeta(...args),
   setLessonCompleted: (...args: unknown[]) => mockSetLessonCompleted(...args),
   deleteProgram: (...args: unknown[]) => mockDeleteProgram(...args),
+  setProgramClassIds: (...args: unknown[]) => mockSetProgramClassIds(...args),
+}));
+
+const mockListClasses = vi.fn();
+vi.mock('../../repository/classes/classesService.js', () => ({
+  listClasses: (...args: unknown[]) => mockListClasses(...args),
 }));
 
 const mockExportZip = vi.fn();
@@ -65,6 +72,8 @@ beforeEach(() => {
     lessonCount: 5,
     questionCount: 10,
   });
+  mockListClasses.mockResolvedValue([]);
+  mockSetProgramClassIds.mockResolvedValue(undefined);
 });
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -711,5 +720,111 @@ describe('ProgramsView — ReadinessView no longer shown as a separate card', ()
     await waitFor(() => expect(screen.getByText(/UDA: 1/)).toBeTruthy());
     expect(screen.queryByRole('region', { name: 'Dashboard di prontezza' })).toBeNull();
     expect(screen.queryByText('Prontezza repository')).toBeNull();
+  });
+});
+
+// ─── Class assignment (M3-lite student visibility) ────────────────────────────
+
+const CLASS_A = { id: 'class-a', ownerUid: 'owner-uid', name: '3A Informatica', description: null };
+const CLASS_B = { id: 'class-b', ownerUid: 'owner-uid', name: '4B Informatica', description: null };
+
+describe('ProgramsView — classes indicator', () => {
+  it('shows "Non visibile agli studenti" when the program has no classIds', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+    expect(await screen.findByText('Non visibile agli studenti')).toBeTruthy();
+  });
+
+  it('shows "Non visibile agli studenti" when classIds is an empty array', async () => {
+    mockListPrograms.mockResolvedValue([{ ...PROGRAM, classIds: [] }]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+    expect(await screen.findByText('Non visibile agli studenti')).toBeTruthy();
+  });
+
+  it('shows the assigned class names when classIds match known classes', async () => {
+    mockListPrograms.mockResolvedValue([{ ...PROGRAM, classIds: ['class-a', 'class-b'] }]);
+    mockListClasses.mockResolvedValue([CLASS_A, CLASS_B]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+    expect(await screen.findByText('Classi: 3A Informatica, 4B Informatica')).toBeTruthy();
+  });
+});
+
+describe('ProgramsView — classes assignment panel', () => {
+  it('shows a clear message when no classes exist yet', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListClasses.mockResolvedValue([]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Classi — Informatica' }));
+
+    expect(
+      await screen.findByText('Nessuna classe creata. Vai alla sezione Classi per crearne una.'),
+    ).toBeTruthy();
+  });
+
+  it('opens a checklist of existing classes with none checked when the program has no classIds', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListClasses.mockResolvedValue([CLASS_A, CLASS_B]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Classi — Informatica' }));
+
+    const checkboxA = (await screen.findByLabelText('3A Informatica')) as HTMLInputElement;
+    const checkboxB = screen.getByLabelText('4B Informatica') as HTMLInputElement;
+    expect(checkboxA.checked).toBe(false);
+    expect(checkboxB.checked).toBe(false);
+  });
+
+  it('pre-checks classes already assigned to the program', async () => {
+    mockListPrograms.mockResolvedValue([{ ...PROGRAM, classIds: ['class-a'] }]);
+    mockListClasses.mockResolvedValue([CLASS_A, CLASS_B]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Classi — Informatica' }));
+
+    const checkboxA = (await screen.findByLabelText('3A Informatica')) as HTMLInputElement;
+    const checkboxB = screen.getByLabelText('4B Informatica') as HTMLInputElement;
+    expect(checkboxA.checked).toBe(true);
+    expect(checkboxB.checked).toBe(false);
+  });
+
+  it('lets the teacher select/deselect classes and saves the resulting list explicitly', async () => {
+    mockListPrograms.mockResolvedValue([{ ...PROGRAM, classIds: ['class-a'] }]);
+    mockListClasses.mockResolvedValue([CLASS_A, CLASS_B]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Classi — Informatica' }));
+    fireEvent.click(await screen.findByLabelText('3A Informatica')); // deselect
+    fireEvent.click(screen.getByLabelText('4B Informatica')); // select
+
+    // Not saved until the explicit Save action.
+    expect(mockSetProgramClassIds).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    await waitFor(() =>
+      expect(mockSetProgramClassIds).toHaveBeenCalledWith('prog-1', ['class-b'], 'owner-uid', {}),
+    );
+  });
+
+  it('closes the panel without saving on Annulla', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListClasses.mockResolvedValue([CLASS_A]);
+    render(<ProgramsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Classi — Informatica' }));
+    fireEvent.click(await screen.findByLabelText('3A Informatica'));
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+
+    expect(mockSetProgramClassIds).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('3A Informatica')).toBeNull();
   });
 });

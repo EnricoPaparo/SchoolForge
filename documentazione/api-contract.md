@@ -110,12 +110,21 @@ interface Student {
 }
 
 // programs/{programId}
+// classIds (M3L-A4): un programma senza classi assegnate (assente o []) non
+// è visibile a nessuno studente, anche se le sue publicLessons esistono e il
+// portale è attivo. UDA e lezioni ereditano la visibilità dal programma —
+// non hanno un proprio campo classi. Programmi creati prima di questo campo
+// sono letti con classIds: [] (programsService.listPrograms normalizza in
+// lettura; nessuna migrazione distruttiva). Il filtro effettivo lato
+// StudentShell non è ancora implementato (vedi piano-implementazione.md,
+// M3L-C/M3L-D).
 interface Program {
   id: string;
   ownerUid: string;
   title: string;
   order: number;
   activeImportId: string | null;  // unico import visibile al programma
+  classIds: string[];
   createdAt: Timestamp;
 }
 
@@ -399,7 +408,7 @@ Un utente Google non-owner è un **richiedente/studente potenziale**, non uno st
 
 Questa milestone consegna solo lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applicano; **non** consegna una UI docente per creare/approvare/bloccare uno studente, né l'assegnazione di una classe. Fino a quella milestone successiva, `students/{uid}` va popolato manualmente dal docente (o da un futuro strumento di amministrazione) perché uno studente veda qualunque contenuto.
 
-`classId` su `Student` e un futuro collegamento classe↔programma/verifica filtreranno ulteriormente cosa uno studente approvato vede (un programma senza classi assegnate, o una verifica senza `classId`, non sarebbero visibili a nessuno studente anche se altrimenti pubblici) — non implementato da questa milestone.
+`classId` su `Student` e `classIds` su `Program` (quest'ultimo implementato in M3L-A4, §6) filtreranno ulteriormente cosa uno studente approvato vede: un programma senza classi assegnate, o una verifica senza `classId` (non ancora implementato), non sarebbero visibili a nessuno studente anche se altrimenti pubblici. Lo schema e la UI docente per assegnare le classi ai programmi sono implementati da M3L-A4; il filtro effettivo lato StudentShell (Security Rules e query filtrate per classe) resta specifica per una milestone successiva (M3L-C/M3L-D).
 
 ### 3.5 Correzione ed export (Modulo 4, dipende da M3-full)
 

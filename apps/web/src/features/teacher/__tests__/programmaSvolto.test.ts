@@ -11,6 +11,7 @@ const PROGRAM: ProgramItem = {
   ownerUid: 'owner-uid',
   title: 'Informatica',
   activeImportId: 'imp-1',
+  classIds: [],
   createdAt: null as never,
   updatedAt: null as never,
 };
