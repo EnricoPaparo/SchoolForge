@@ -16,7 +16,7 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 |---|---|---|
 | Unit | Vitest | Parser `lesson-contract`, selezione domande, punteggi, stati verifica, renderer export (PDF/MD/CSV), funzioni pure. |
 | Contract | Fixture Markdown e payload Firestore | Contratto pool v1, errori strutturati, tipi TypeScript di `api-contract.md`. |
-| Integration | Firebase Emulator Suite | Security Rules (owner vs studente autenticato, `publicLessons`, `visibility`), commit `activeImportId`, transazioni Firestore, snapshot pubblicato. Un eventuale gateway `startDigitalAttempt`/`continueDigitalAttempt`, participant lock e reset restano specifica di M3-full. |
+| Integration | Firebase Emulator Suite | Security Rules (owner vs studente approvato/pending/blocked, `publicLessons`, `visibility`, `settings/studentAccess`, `students/{uid}`), commit `activeImportId`, transazioni Firestore, snapshot pubblicato. Un eventuale gateway `startDigitalAttempt`/`continueDigitalAttempt`, participant lock e reset restano specifica di M3-full. |
 | E2E | Playwright | Flussi docente + Portale attraverso browser (include generazione PDF e download). |
 | Manuale | Checklist gate | UX, accessibilità, PDF nel browser, backup/restore e costi. |
 
@@ -38,14 +38,26 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 ### 3a. Fixture M3-lite (Portale studente)
 
 - login Google del Docente proprietario (`uid == ownerUid`) → StudentShell non montata, TeacherShell montata;
-- login Google di un utente qualsiasi diverso da `ownerUid` → StudentShell montata, TeacherShell non raggiungibile;
+- login Google di un utente qualsiasi diverso da `ownerUid` → StudentShell montata, TeacherShell non raggiungibile (ma questo risolve solo il ruolo UI, non l'autorizzazione a leggere contenuti — vedi 3b);
 - tentativo di accesso non autenticato → nessuna sezione applicativa raggiungibile;
-- lezione pubblicata nell'`activeImportId` corrente → visibile e renderizzata in sola lettura nella sezione Lezioni dello studente;
+- lezione pubblicata nell'`activeImportId` corrente → visibile e renderizzata in sola lettura nella sezione Lezioni di uno studente approvato con portale attivo (M3L-C, non ancora implementata);
 - lettura diretta di `lessons` (documento tecnico), `questionIndex` o `verifications/*/publishedSnapshot` da parte dello studente → negata dalle Security Rules;
-- verifica `bozza`, `chiusa`, `archiviata` oppure `attiva`+`hidden` → assente dalla sezione Verifiche dello studente;
-- verifica `attiva`+`public` → presente nella sezione Verifiche dello studente, con solo l'azione "Scarica PDF studente";
+- verifica `bozza`, `chiusa`, `archiviata` oppure `attiva`+`hidden` → assente dalla sezione Verifiche di uno studente approvato;
+- verifica `attiva`+`public` → presente nella sezione Verifiche di uno studente approvato con portale attivo, con solo l'azione "Scarica PDF studente";
 - download del PDF studente in M3-lite → generato nel browser dalla `publishedProjection`, senza soluzioni, senza creare alcun record Firestore;
 - il docente commuta `visibility` di una verifica `attiva` da `hidden` a `public` e viceversa, più volte, senza alterarne configurazione o snapshot.
+
+### 3b. Fixture M3L-A2 (modello di approvazione studente)
+
+- Google non-owner senza documento `students/{uid}` → nessuna lettura di `publicLessons`/`publishedProjection`/file lezione, con `settings/studentAccess.studentPortalEnabled` sia `true` sia assente;
+- studente con `students/{uid}.status == "pending"` → stesso esito di negazione, anche con portale attivo;
+- studente con `students/{uid}.status == "blocked"` → stesso esito di negazione, anche con portale attivo;
+- studente con `status == "approved"` ma `settings/studentAccess.studentPortalEnabled == false` (o documento assente) → negazione;
+- studente con `status == "approved"` e `studentPortalEnabled == true` → lettura concessa su `publicLessons`, `publishedProjection` (quando la verifica è anche `attiva`+`public`) e sui soli file lezione in Storage, mai `.pool.md`;
+- owner → accesso invariato indipendentemente da `settings/studentAccess`/`students/{uid}` (non è mai soggetto al gate studente);
+- utente non autenticato → negazione sempre, indipendentemente da `studentPortalEnabled`.
+
+Non fanno parte di questa milestone (rinviate a M3L-A3/M3L-C/M3L-D): UI per creare/approvare/bloccare uno studente; filtro lezioni/verifiche per `classId`; un programma senza classi assegnate o una verifica senza `classId` non visibili a nessuno studente.
 
 Le fixture seguenti restano specifica di un eventuale M3-full e non si applicano a M3-lite:
 
@@ -64,7 +76,7 @@ Le fixture seguenti restano specifica di un eventuale M3-full e non si applicano
 | G1 | Auth owner/non-owner; Security Rules default-deny; Emulator. | Verifica budget ed export Firestore manuale dalle impostazioni. |
 | G2 | Parser pool valido/invalido; upload isolato e commit `activeImportId`; rendering sanitizzato; export ZIP; programma svolto MD e PDF; kit e dashboard prontezza. | Import di cartella didattica reale; nessun pool esposto nel rendering. |
 | G3 | Stati verifica; PDF generato nel browser; canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`); nessun PDF in Storage. | Download PDF dal browser su mobile e desktop. |
-| G4-lite | Login Google risolve TeacherShell/StudentShell; nessun accesso anonimo; studente legge solo `publicLessons` e verifiche `attiva`+`public`; pool/soluzioni/`questionIndex`/documenti tecnici mai raggiungibili dallo studente; PDF studente senza soluzioni; nessuna Cloud Function. | Login Google reale (account personale e, se disponibile, Workspace for Education) su mobile e desktop; nessun menu docente visibile allo studente. |
+| G4-lite | Login Google risolve TeacherShell/StudentShell; un Google-autenticato non-owner legge `publicLessons`/verifiche `attiva`+`public` solo se `students/{uid}.status == "approved"` e `settings/studentAccess.studentPortalEnabled == true` (mai per la sola autenticazione; `pending`/`blocked`/assente negano sempre); nessun accesso anonimo; pool/soluzioni/`questionIndex`/documenti tecnici mai raggiungibili dallo studente; PDF studente senza soluzioni; nessuna Cloud Function. | Login Google reale (account personale e, se disponibile, Workspace for Education) su mobile e desktop; nessun menu docente visibile allo studente. |
 | G4 (M3-full, specifica rinviata) | Gateway: participant lock nome+cognome, cookie, nessun write Firestore dal portale, snapshot senza soluzioni, log accesso; bozza/ripresa/consegna; reset auditato; consegna immutabile. | Mobile, tastiera, fullscreen/warning; nessuna soluzione visibile a studente. |
 | G5 | Percentuale e rettifiche; eliminazione dati; export PDF/MD/CSV da snapshot; consegna modificata lezione. | Revisione documento export nei tre formati; caricamento manuale Drive. |
 | G6/G7 (V2) | Contesto AI chiuso; audit; bulk approval; opt-in automatico; C-03 gate. | Revisione didattica e policy. |
@@ -75,7 +87,7 @@ Le fixture seguenti restano specifica di un eventuale M3-full e non si applicano
 
 1. Un utente Firebase diverso dall'owner non legge o scrive dati docente (`lessons`, `questionIndex`, `publishedSnapshot`, `corrections`, `correctionEvents`, `auditEvents`, `settings/owner`).
 2. Un utente non autenticato non raggiunge alcuna sezione applicativa, docente o studente.
-3. Uno studente autenticato (Google, non-owner) non legge mai pool, soluzioni, `questionIndex` o percorsi tecnici; ottiene solo `publicLessons` e `verifications`/`publishedProjection` quando `state == 'attiva' && visibility == 'public'`.
+3. Uno studente autenticato (Google, non-owner) non legge mai pool, soluzioni, `questionIndex` o percorsi tecnici; ottiene solo `publicLessons` e `verifications`/`publishedProjection` quando `state == 'attiva' && visibility == 'public'` **e** è approvato con portale attivo (vedi #11).
 4. Uno studente non vede verifiche `bozza`, `chiusa`, `archiviata` o `attiva`+`hidden`.
 5. Il download del PDF studente in M3-lite non espone mai soluzioni, indipendentemente dal pool sorgente.
 6. Un pool invalido non entra nella selezione domande.
@@ -83,6 +95,7 @@ Le fixture seguenti restano specifica di un eventuale M3-full e non si applicano
 8. Un import fallito non cambia l'`activeImportId` né la proiezione `publicLessons`; la modifica di un Markdown sorgente non altera una verifica pubblicata.
 9. PDF e documenti export non esistono in Storage o Firestore dopo la generazione, in nessun canale.
 10. AI non riceve soluzioni di altre domande, non usa web e non modifica punteggi senza approvazione o C-03.
+11. Un Google-autenticato non-owner non legge alcun contenuto studente (`publicLessons`, `publishedProjection`, file lezione) per la sola autenticazione: senza `students/{uid}` (trattato come `pending`), con `status` `pending`/`blocked`, o con `settings/studentAccess.studentPortalEnabled != true`, ogni lettura è negata — indipendentemente da `state`/`visibility` della verifica o dall'esistenza della `publicLessons`.
 
 I test seguenti restano specifica di un eventuale M3-full e non si applicano a M3-lite:
 

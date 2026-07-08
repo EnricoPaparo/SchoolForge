@@ -61,20 +61,47 @@ const BASE_CONFIG = {
 
 /**
  * Seeds settings/owner, settings/ownerPublic, the verification and
- * (optionally) its publishedProjection in a single admin-context callback.
- * Splitting this across multiple separate `withSecurityRulesDisabled` calls
- * within one test intermittently trips the JS SDK's "Firestore has already
- * been started" guard against re-configuring an already-connected instance
- * — a single callback avoids re-touching the same admin Firestore handle.
+ * (optionally) its publishedProjection, settings/studentAccess and
+ * students/{OTHER_UID} in a single admin-context callback. Splitting this
+ * across multiple separate `withSecurityRulesDisabled` calls within one
+ * test intermittently trips the JS SDK's "Firestore has already been
+ * started" guard against re-configuring an already-connected instance — a
+ * single callback avoids re-touching the same admin Firestore handle.
+ *
+ * `studentPortalEnabled`/`studentStatus` are both omitted by default, which
+ * exercises the safe default of the approved-student model (M3-lite): no
+ * settings/studentAccess and no students/{uid} => every student read denied,
+ * regardless of the verification's own status/visibility.
  */
 async function seedVerification(
   overrides: Record<string, unknown>,
-  options: { withProjection?: boolean } = {},
+  options: {
+    withProjection?: boolean;
+    studentPortalEnabled?: boolean;
+    studentStatus?: 'pending' | 'approved' | 'blocked';
+  } = {},
 ) {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     await setDoc(doc(db, 'settings/owner'), { ownerUid: OWNER_UID });
     await setDoc(doc(db, 'settings/ownerPublic'), { ownerUid: OWNER_UID });
+    if (options.studentPortalEnabled !== undefined) {
+      await setDoc(doc(db, 'settings/studentAccess'), {
+        ownerUid: OWNER_UID,
+        studentPortalEnabled: options.studentPortalEnabled,
+        newStudentRequestsEnabled: false,
+      });
+    }
+    if (options.studentStatus !== undefined) {
+      await setDoc(doc(db, 'students', OTHER_UID), {
+        uid: OTHER_UID,
+        ownerUid: OWNER_UID,
+        email: 'student@example.com',
+        displayName: null,
+        status: options.studentStatus,
+        classId: null,
+      });
+    }
     await setDoc(doc(db, 'verifications/v1'), {
       ownerUid: OWNER_UID,
       status: 'draft',
@@ -96,6 +123,163 @@ async function seedVerification(
     }
   });
 }
+
+// ─── settings/studentAccess and students/{uid} (M3-lite approval model) ──────
+
+async function seedOwnerOnly() {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'settings/owner'), { ownerUid: OWNER_UID });
+    await setDoc(doc(db, 'settings/ownerPublic'), { ownerUid: OWNER_UID });
+  });
+}
+
+describe('Firestore rules — settings/studentAccess', () => {
+  it('owner can write settings/studentAccess', async () => {
+    await seedOwnerOnly();
+
+    await assertSucceeds(
+      setDoc(doc(ownerDb(), 'settings/studentAccess'), {
+        ownerUid: OWNER_UID,
+        studentPortalEnabled: true,
+        newStudentRequestsEnabled: false,
+      }),
+    );
+  });
+
+  it('owner can read settings/studentAccess', async () => {
+    await seedOwnerOnly();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'settings/studentAccess'), {
+        ownerUid: OWNER_UID,
+        studentPortalEnabled: true,
+        newStudentRequestsEnabled: false,
+      });
+    });
+
+    await assertSucceeds(getDoc(doc(ownerDb(), 'settings/studentAccess')));
+  });
+
+  it('a non-owner (student) cannot read settings/studentAccess directly', async () => {
+    await seedOwnerOnly();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'settings/studentAccess'), {
+        ownerUid: OWNER_UID,
+        studentPortalEnabled: true,
+        newStudentRequestsEnabled: false,
+      });
+    });
+
+    await assertFails(getDoc(doc(studentDb(), 'settings/studentAccess')));
+  });
+
+  it('a non-owner (student) cannot write settings/studentAccess', async () => {
+    await seedOwnerOnly();
+
+    await assertFails(
+      setDoc(doc(studentDb(), 'settings/studentAccess'), {
+        ownerUid: OWNER_UID,
+        studentPortalEnabled: true,
+        newStudentRequestsEnabled: true,
+      }),
+    );
+  });
+
+  it('an unauthenticated user cannot read settings/studentAccess', async () => {
+    await seedOwnerOnly();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'settings/studentAccess'), {
+        ownerUid: OWNER_UID,
+        studentPortalEnabled: true,
+        newStudentRequestsEnabled: false,
+      });
+    });
+
+    await assertFails(getDoc(doc(anonDb(), 'settings/studentAccess')));
+  });
+});
+
+describe('Firestore rules — students/{uid} approval roster', () => {
+  it('owner can create a students/{uid} document', async () => {
+    await seedOwnerOnly();
+
+    await assertSucceeds(
+      setDoc(doc(ownerDb(), 'students', OTHER_UID), {
+        uid: OTHER_UID,
+        ownerUid: OWNER_UID,
+        email: 'student@example.com',
+        displayName: null,
+        status: 'pending',
+        classId: null,
+      }),
+    );
+  });
+
+  it('owner can approve a pending student (update status)', async () => {
+    await seedOwnerOnly();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'students', OTHER_UID), {
+        uid: OTHER_UID,
+        ownerUid: OWNER_UID,
+        email: 'student@example.com',
+        displayName: null,
+        status: 'pending',
+        classId: null,
+      });
+    });
+
+    await assertSucceeds(
+      setDoc(doc(ownerDb(), 'students', OTHER_UID), { status: 'approved' }, { merge: true }),
+    );
+  });
+
+  it('a student cannot read their own students/{uid} document', async () => {
+    await seedOwnerOnly();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'students', OTHER_UID), {
+        uid: OTHER_UID,
+        ownerUid: OWNER_UID,
+        email: 'student@example.com',
+        displayName: null,
+        status: 'approved',
+        classId: null,
+      });
+    });
+
+    await assertFails(getDoc(doc(studentDb(), 'students', OTHER_UID)));
+  });
+
+  it('a student cannot self-approve by writing their own students/{uid} document', async () => {
+    await seedOwnerOnly();
+
+    await assertFails(
+      setDoc(doc(studentDb(), 'students', OTHER_UID), {
+        uid: OTHER_UID,
+        ownerUid: OWNER_UID,
+        email: 'student@example.com',
+        displayName: null,
+        status: 'approved',
+        classId: null,
+      }),
+    );
+  });
+
+  it('an unauthenticated user cannot read a students/{uid} document', async () => {
+    await seedOwnerOnly();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'students', OTHER_UID), {
+        uid: OTHER_UID,
+        ownerUid: OWNER_UID,
+        email: 'student@example.com',
+        displayName: null,
+        status: 'approved',
+        classId: null,
+      });
+    });
+
+    await assertFails(getDoc(doc(anonDb(), 'students', OTHER_UID)));
+  });
+});
 
 // ─── visibility toggle ───────────────────────────────────────────────────────
 
@@ -182,38 +366,92 @@ describe('Firestore rules — verifications/{id}/publishedProjection', () => {
     await assertSucceeds(getDoc(doc(ownerDb(), 'verifications/v1/publishedProjection/data')));
   });
 
-  it('a student can read publishedProjection when the verification is active + public', async () => {
-    await seedVerification({ status: 'active', visibility: 'public' }, { withProjection: true });
+  it('an approved student can read publishedProjection when active + public and the portal is enabled', async () => {
+    await seedVerification(
+      { status: 'active', visibility: 'public' },
+      { withProjection: true, studentPortalEnabled: true, studentStatus: 'approved' },
+    );
 
     await assertSucceeds(getDoc(doc(studentDb(), 'verifications/v1/publishedProjection/data')));
   });
 
-  it('a student cannot read publishedProjection when active but hidden', async () => {
-    await seedVerification({ status: 'active', visibility: 'hidden' }, { withProjection: true });
+  it('denies a Google non-owner with no students/{uid} document, even active + public + portal enabled', async () => {
+    await seedVerification(
+      { status: 'active', visibility: 'public' },
+      { withProjection: true, studentPortalEnabled: true },
+    );
 
     await assertFails(getDoc(doc(studentDb(), 'verifications/v1/publishedProjection/data')));
   });
 
-  it('a student cannot read publishedProjection when the verification is draft', async () => {
-    await seedVerification({ status: 'draft', visibility: 'public' }, { withProjection: true });
+  it('denies a pending student, even active + public + portal enabled', async () => {
+    await seedVerification(
+      { status: 'active', visibility: 'public' },
+      { withProjection: true, studentPortalEnabled: true, studentStatus: 'pending' },
+    );
 
     await assertFails(getDoc(doc(studentDb(), 'verifications/v1/publishedProjection/data')));
   });
 
-  it('a student cannot read publishedProjection when the verification is closed', async () => {
-    await seedVerification({ status: 'closed', visibility: 'public' }, { withProjection: true });
+  it('denies a blocked student, even active + public + portal enabled', async () => {
+    await seedVerification(
+      { status: 'active', visibility: 'public' },
+      { withProjection: true, studentPortalEnabled: true, studentStatus: 'blocked' },
+    );
 
     await assertFails(getDoc(doc(studentDb(), 'verifications/v1/publishedProjection/data')));
   });
 
-  it('an unauthenticated user can never read publishedProjection, even active + public', async () => {
-    await seedVerification({ status: 'active', visibility: 'public' }, { withProjection: true });
+  it('denies an approved student when the student portal is disabled', async () => {
+    await seedVerification(
+      { status: 'active', visibility: 'public' },
+      { withProjection: true, studentPortalEnabled: false, studentStatus: 'approved' },
+    );
+
+    await assertFails(getDoc(doc(studentDb(), 'verifications/v1/publishedProjection/data')));
+  });
+
+  it('a student cannot read publishedProjection when active but hidden, even if approved', async () => {
+    await seedVerification(
+      { status: 'active', visibility: 'hidden' },
+      { withProjection: true, studentPortalEnabled: true, studentStatus: 'approved' },
+    );
+
+    await assertFails(getDoc(doc(studentDb(), 'verifications/v1/publishedProjection/data')));
+  });
+
+  it('a student cannot read publishedProjection when the verification is draft, even if approved', async () => {
+    await seedVerification(
+      { status: 'draft', visibility: 'public' },
+      { withProjection: true, studentPortalEnabled: true, studentStatus: 'approved' },
+    );
+
+    await assertFails(getDoc(doc(studentDb(), 'verifications/v1/publishedProjection/data')));
+  });
+
+  it('a student cannot read publishedProjection when the verification is closed, even if approved', async () => {
+    await seedVerification(
+      { status: 'closed', visibility: 'public' },
+      { withProjection: true, studentPortalEnabled: true, studentStatus: 'approved' },
+    );
+
+    await assertFails(getDoc(doc(studentDb(), 'verifications/v1/publishedProjection/data')));
+  });
+
+  it('an unauthenticated user can never read publishedProjection, even active + public + portal enabled', async () => {
+    await seedVerification(
+      { status: 'active', visibility: 'public' },
+      { withProjection: true, studentPortalEnabled: true, studentStatus: 'approved' },
+    );
 
     await assertFails(getDoc(doc(anonDb(), 'verifications/v1/publishedProjection/data')));
   });
 
-  it('a student can never write publishedProjection, even when active + public', async () => {
-    await seedVerification({ status: 'active', visibility: 'public' }, { withProjection: true });
+  it('an approved student can never write publishedProjection, even when active + public', async () => {
+    await seedVerification(
+      { status: 'active', visibility: 'public' },
+      { withProjection: true, studentPortalEnabled: true, studentStatus: 'approved' },
+    );
 
     await assertFails(
       setDoc(
@@ -224,8 +462,11 @@ describe('Firestore rules — verifications/{id}/publishedProjection', () => {
     );
   });
 
-  it('a student can never read the parent verification document, even active + public', async () => {
-    await seedVerification({ status: 'active', visibility: 'public' });
+  it('an approved student can never read the parent verification document, even active + public', async () => {
+    await seedVerification(
+      { status: 'active', visibility: 'public' },
+      { studentPortalEnabled: true, studentStatus: 'approved' },
+    );
 
     await assertFails(getDoc(doc(studentDb(), 'verifications/v1')));
   });

@@ -83,6 +83,32 @@ interface OwnerPublicSettings {
   ownerUid: string;
 }
 
+// settings/studentAccess — interruttori globali del Portale studente (M3-lite)
+// Lettura e scrittura solo owner; le Security Rules lo leggono internamente
+// via get()/firestore.get(), mai il client studente direttamente. Assente
+// = portale considerato disattivato (nessuna lettura studente concessa).
+interface StudentAccessSettings {
+  ownerUid: string;
+  studentPortalEnabled: boolean;      // deve essere true per QUALUNQUE lettura studente
+  newStudentRequestsEnabled: boolean; // riservato a un futuro flusso di richiesta autonoma; non usato da questa milestone
+}
+
+// students/{uid} — registro di approvazione (M3-lite)
+// uid == uid Firebase Auth dello studente. Un utente Google non-owner senza
+// documento qui è trattato come 'pending' ai fini dell'autorizzazione.
+// Lettura e scrittura solo owner: non esiste ancora una UI docente per
+// popolarlo (arriva in una milestone successiva).
+interface Student {
+  uid: string;
+  ownerUid: string;
+  email: string;         // identità Google verificata da Firebase, non autodichiarata
+  displayName: string | null;
+  status: 'pending' | 'approved' | 'blocked';
+  classId: string | null; // riservato al filtro futuro per classe, non ancora applicato da alcuna Rule
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
 // programs/{programId}
 interface Program {
   id: string;
@@ -119,7 +145,10 @@ interface Lesson {
 // publicLessons/{lessonId} — proiezione read-only (M3-lite)
 // Scritta dal client docente nello stesso flusso che scrive `lessons`,
 // sotto lo stesso importId isolato (vedi BR-REP-03). Non contiene alcun
-// riferimento al pool. Leggibile da qualunque utente autenticato non-owner.
+// riferimento al pool. Leggibile SOLO da uno studente approvato
+// (students/{uid}.status == 'approved') con il portale attivo
+// (settings/studentAccess.studentPortalEnabled == true) — l'autenticazione
+// Google da sola non è sufficiente (§3.4a, §6).
 interface PublicLesson {
   id: string;
   udaId: string;
@@ -164,10 +193,12 @@ interface Verification {
   createdAt: Timestamp;
 }
 
-// Lo studente (M3-lite) legge solo i campi non sensibili di Verification
-// (id, title, state, visibility) quando state === 'attiva' && visibility === 'public'.
-// I campi sources, config e publicTokenHash non sono mai necessari al client
-// studente e restano protetti dalle Security Rules per ogni altro caso.
+// Il documento Verification non è MAI leggibile dallo studente, nemmeno
+// quando state === 'attiva' && visibility === 'public': contiene
+// sources/config/publicTokenHash, tecnici e mai necessari al client
+// studente. Lo studente legge invece verifications/{id}/publishedProjection
+// (titolo, domande senza soluzioni), e solo se approvato con portale attivo
+// (§3.4a, §6) oltre alla condizione state/visibility.
 
 // publicVerificationLinks/{SHA-256(verificationToken)} — M3-full, specifica rinviata.
 // Non introdotto da M3-lite, che non usa link pubblici né token: l'accesso
@@ -352,12 +383,23 @@ All'apertura del link, il Portale calcola `SHA-256(verificationToken)` con Web C
 
 | Operazione | Lettura Firestore/Storage |
 |---|---|
-| Risoluzione ruolo | `get settings/ownerPublic`; confronto client-side `uid === ownerUid` per instradare TeacherShell/StudentShell (non sostituisce le Security Rules) |
-| Lezioni | Query `publicLessons` filtrata su `programId`/`udaId` correnti; lettura del file `.md` e degli asset da Cloud Storage (Storage Rules: lettura consentita, mai per `.pool.md`) |
-| Elenco verifiche visibili | Query `verifications` filtrata su `state == "attiva" && visibility == "public"` (indice composito) |
+| Risoluzione ruolo | `get settings/ownerPublic`; confronto client-side `uid === ownerUid` per instradare TeacherShell/StudentShell (non sostituisce le Security Rules; risolve solo il ruolo, non l'autorizzazione — vedi §3.4a) |
+| Lezioni | Query `publicLessons` filtrata su `programId`/`udaId` correnti; lettura del file `.md` e degli asset da Cloud Storage (Storage Rules: lettura consentita solo a uno studente approvato con portale attivo, mai per `.pool.md`) |
+| Elenco verifiche visibili | Query `verifications/{id}/publishedProjection` per le verifiche note al client, concessa solo quando il padre è `state == "attiva" && visibility == "public"` **e** lo studente è approvato con portale attivo; il documento padre `verifications/{id}` non è mai leggibile dallo studente |
 | Download PDF studente | Lettura `verifications/{id}/publishedProjection`; genera il PDF nel browser con `VerificaPdfRenderer mode="student"` |
 
 Nessuna di queste operazioni scrive su Firestore o Storage, crea un record, o richiama una Cloud Function. Le Security Rules negano allo studente ogni lettura di `lessons`, `questionIndex`, `publishedSnapshot`, `corrections`, `correctionEvents`, `auditEvents` e `settings/owner` (eccetto `settings/ownerPublic`).
+
+### 3.4a Approvazione studente — chi può leggere il Portale (M3-lite)
+
+Un utente Google non-owner è un **richiedente/studente potenziale**, non uno studente autorizzato: l'autenticazione da sola non concede alcuna lettura. Ogni operazione della tabella §3.4 richiede, in aggiunta alle condizioni già indicate, entrambe queste condizioni verificate dalle Security Rules (non solo lato client):
+
+- `get settings/studentAccess` → `studentPortalEnabled == true` (interruttore globale; assente = portale disattivato);
+- `get students/{request.auth.uid}` → `status == "approved"` (assente, `pending` o `blocked` negano tutti allo stesso modo).
+
+Questa milestone consegna solo lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applicano; **non** consegna una UI docente per creare/approvare/bloccare uno studente, né l'assegnazione di una classe. Fino a quella milestone successiva, `students/{uid}` va popolato manualmente dal docente (o da un futuro strumento di amministrazione) perché uno studente veda qualunque contenuto.
+
+`classId` su `Student` e un futuro collegamento classe↔programma/verifica filtreranno ulteriormente cosa uno studente approvato vede (un programma senza classi assegnate, o una verifica senza `classId`, non sarebbero visibili a nessuno studente anche se altrimenti pubblici) — non implementato da questa milestone.
 
 ### 3.5 Correzione ed export (Modulo 4, dipende da M3-full)
 
@@ -500,19 +542,23 @@ Tutte richiedono Firebase ID token con `ownerUid` verificato server-side.
 
 Le Security Rules Firestore devono garantire, per la baseline corrente (M1+M2+M3-lite):
 
-| Percorso | Docente (`ownerUid`) | Studente (autenticato, non-owner) | Non autenticato |
-|---|---|---|---|
-| `settings/owner` | Lettura + scrittura | — | — |
-| `settings/ownerPublic` | Lettura + scrittura | Solo lettura (`ownerUid`, per routing UI) | — |
-| `programs`, `udas`, `lessons`, `questionIndex` | Lettura + scrittura sull'import attivo/preparato | — | — |
-| `publicLessons` | Lettura + scrittura (stesso flusso di import) | Solo lettura | — |
-| `verifications` | Lettura + scrittura solo per bozza e transizioni consentite; scrittura di `visibility` su verifica `attiva` | Solo lettura dei campi non sensibili quando `state == "attiva" && visibility == "public"` | — |
-| `verifications/*/publishedSnapshot` | Lettura | — | — |
-| `verifications/*/publishedProjection` | Lettura | Lettura solo quando `state == "attiva" && visibility == "public"` | — |
-| `corrections`, `correctionEvents` | Lettura + scrittura | — | — |
-| `auditEvents` | Lettura + sola creazione append-only con schema ammesso | — | — |
+| Percorso | Docente (`ownerUid`) | Studente approvato (`students/{uid}.status == "approved"` + `studentPortalEnabled == true`) | Google autenticato non approvato | Non autenticato |
+|---|---|---|---|---|
+| `settings/owner` | Lettura + scrittura | — | — | — |
+| `settings/ownerPublic` | Lettura + scrittura | Solo lettura (`ownerUid`, per routing UI) | Solo lettura (`ownerUid`, per routing UI) | — |
+| `settings/studentAccess` | Lettura + scrittura | — (letto dalle Rules via `get()`, mai dal client studente) | — | — |
+| `students/{uid}` | Lettura + scrittura | — (nessuna UI/Rule di autolettura in questa milestone) | — | — |
+| `programs`, `udas`, `lessons`, `questionIndex` | Lettura + scrittura sull'import attivo/preparato | — | — | — |
+| `publicLessons` | Lettura + scrittura (stesso flusso di import) | Solo lettura | — | — |
+| `verifications` | Lettura + scrittura solo per bozza e transizioni consentite; scrittura di `visibility` su verifica `attiva` | — (documento padre mai leggibile dallo studente, vedi `publishedProjection`) | — | — |
+| `verifications/*/publishedSnapshot` | Lettura | — | — | — |
+| `verifications/*/publishedProjection` | Lettura | Lettura solo quando `state == "attiva" && visibility == "public"` | — | — |
+| `corrections`, `correctionEvents` | Lettura + scrittura | — | — | — |
+| `auditEvents` | Lettura + sola creazione append-only con schema ammesso | — | — | — |
 
-Le Security Rules esatte vengono scritte e testate con Emulator Suite obbligatoria, incluso il gate M3-lite.
+Un Google-autenticato non approvato (nessun documento `students/{uid}`, oppure `pending`/`blocked`, oppure `studentPortalEnabled == false`) non ha alcuna riga con permesso diverso da "—" nella colonna dedicata: è trattato come un non-owner qualunque, con l'unica eccezione di `settings/ownerPublic` (necessaria solo per il routing UI, non per l'autorizzazione).
+
+Le Security Rules esatte vengono scritte e testate con Emulator Suite obbligatoria, incluso il gate M3-lite e il gate di approvazione studente (§3.4a).
 
 > I percorsi seguenti (`publicVerificationLinks`, `verifications/*/participantLocks`, `deliveryAttempts` e sottocollezioni) restano specifica di un eventuale M3-full e non esistono nella baseline corrente:
 >

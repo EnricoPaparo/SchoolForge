@@ -139,6 +139,44 @@ export interface PublicLessonDoc {
   createdAt: Timestamp | FieldValue;
 }
 
+// ─── M3-lite — Approved-student access model ─────────────────────────────────
+
+/**
+ * Stored at settings/studentAccess. Global switches gating the student
+ * portal. `studentPortalEnabled` must be true for ANY student read
+ * (publicLessons, publishedProjection, Storage lesson files) to succeed,
+ * regardless of individual approval status. `newStudentRequestsEnabled` is
+ * reserved for a future self-request flow — not implemented by this PR;
+ * the teacher must create students/{uid} documents manually until then.
+ */
+export interface StudentAccessSettings {
+  ownerUid: string;
+  studentPortalEnabled: boolean;
+  newStudentRequestsEnabled: boolean;
+}
+
+export type StudentStatus = 'pending' | 'approved' | 'blocked';
+
+/**
+ * Stored at students/{uid}, where {uid} is the student's Firebase Auth uid.
+ * A Google-authenticated non-owner is only a *candidate* student until the
+ * teacher approves them here — authentication alone never grants portal
+ * reads. A missing document is treated as `pending` for authorization
+ * purposes (Security Rules default-deny when it doesn't exist).
+ * `classId` is reserved for future class-based lesson/verification
+ * filtering — not implemented by this PR.
+ */
+export interface StudentDoc {
+  uid: string;
+  ownerUid: string;
+  email: string;
+  displayName: string | null;
+  status: StudentStatus;
+  classId: string | null;
+  createdAt: Timestamp | FieldValue;
+  updatedAt: Timestamp | FieldValue;
+}
+
 /** Serialized form of a validation issue (Firestore-safe, no class instances). */
 export interface StoredValidationIssue {
   level: string;

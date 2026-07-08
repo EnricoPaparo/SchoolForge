@@ -3,6 +3,26 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
+    // Cross-service read of the approval roster (M3-lite). A
+    // Google-authenticated non-owner is only a *candidate* student until
+    // the teacher approves them in Firestore students/{uid} — being
+    // authenticated here is never sufficient on its own. Missing
+    // settings/studentAccess, a missing students/{uid} document, or a
+    // status other than 'approved' all deny by default.
+    function studentPortalEnabled() {
+      return firestore.exists(/databases/(default)/documents/settings/studentAccess)
+        && firestore.get(/databases/(default)/documents/settings/studentAccess)
+             .data.studentPortalEnabled == true;
+    }
+
+    function isApprovedStudent() {
+      return request.auth != null
+        && studentPortalEnabled()
+        && firestore.exists(/databases/(default)/documents/students/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/students/$(request.auth.uid))
+             .data.status == 'approved';
+    }
+
     // repository/{ownerUid}/... — only the matching owner can read/write
     match /repository/{ownerUid}/{allPaths=**} {
       allow read, write: if request.auth != null && request.auth.uid == ownerUid;
@@ -16,10 +36,13 @@ service firebase.storage {
       // (including 'pool'), is denied by default. Only the real owner can
       // ever write under repository/{ownerUid}/** (see the rule above), so
       // any object that exists here necessarily belongs to the single
-      // configured docente; there is no anonymous access.
+      // configured docente; there is no anonymous access. On top of the
+      // kind check, the reader must also be an approved student — merely
+      // being a different Google-authenticated uid grants nothing.
       allow read: if request.auth != null
         && request.auth.uid != ownerUid
-        && resource.metadata.kind == 'lesson';
+        && resource.metadata.kind == 'lesson'
+        && isApprovedStudent();
     }
 
     // Default deny
