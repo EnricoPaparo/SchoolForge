@@ -57,6 +57,26 @@ export interface LessonPayload {
   };
 }
 
+/**
+ * Public, read-only projection of a lesson for the student portal (M3-lite).
+ * Deliberately excludes poolStatus, poolStorageRef, questionCount, or any
+ * other pool-derived field — those live only in LessonPayload.
+ */
+export interface PublicLessonPayload {
+  id: string;
+  data: {
+    ownerUid: string;
+    programId: string;
+    importId: string;
+    udaId: string;
+    udaDir: string;
+    path: string;
+    filename: string;
+    /** Storage path of the lesson's own .md file — never a .pool.md path. */
+    contentPath: string;
+  };
+}
+
 export interface QuestionIndexPayload {
   id: string;
   data: {
@@ -101,4 +121,5 @@ export interface ImportPayload {
   udas: UdaPayload[];
   lessons: LessonPayload[];
   questionIndex: QuestionIndexPayload[];
+  publicLessons: PublicLessonPayload[];
 }

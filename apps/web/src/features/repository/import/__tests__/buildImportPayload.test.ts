@@ -488,6 +488,104 @@ Programma annuale di informatica.
   });
 });
 
+describe('buildImportPayload — publicLessons (M3-lite student projection)', () => {
+  it('produces one publicLessons entry per lesson, matching lesson count', () => {
+    const files = buildAllFiles();
+    const validation = validateImport('Informatica', files);
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    expect(payload.publicLessons).toHaveLength(payload.lessons.length);
+  });
+
+  it('shares the same id as the corresponding technical lesson entry', () => {
+    const files = buildAllFiles();
+    const validation = validateImport('Informatica', files);
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    const lessonIds = payload.lessons.map((l) => l.id).sort();
+    const publicLessonIds = payload.publicLessons.map((p) => p.id).sort();
+    expect(publicLessonIds).toEqual(lessonIds);
+  });
+
+  it('carries ownerUid, programId, importId, udaId and a lesson-only contentPath', () => {
+    const files = buildAllFiles();
+    const validation = validateImport('Informatica', files);
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    const publicLesson = payload.publicLessons.find(
+      (p) => p.data.filename === 'lezione-001-http.md',
+    );
+    expect(publicLesson).toBeDefined();
+    expect(publicLesson?.data.ownerUid).toBe(OWNER_UID);
+    expect(publicLesson?.data.programId).toBe(PROGRAM_ID);
+    expect(publicLesson?.data.importId).toBe(IMPORT_ID);
+    expect(publicLesson?.data.udaId).toBe(
+      payload.lessons.find((l) => l.data.filename === 'lezione-001-http.md')?.udaId,
+    );
+    expect(publicLesson?.data.contentPath).toMatch(/lezione-001-http\.md$/);
+    expect(publicLesson?.data.contentPath).not.toMatch(/\.pool\.md$/);
+  });
+
+  it('never includes poolStatus, poolStorageRef, questionCount or any pool-derived field', () => {
+    const files = buildAllFiles();
+    const validation = validateImport('Informatica', files);
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    for (const publicLesson of payload.publicLessons) {
+      expect(publicLesson.data).not.toHaveProperty('poolStatus');
+      expect(publicLesson.data).not.toHaveProperty('poolStorageRef');
+      expect(publicLesson.data).not.toHaveProperty('questionCount');
+      expect(JSON.stringify(publicLesson.data)).not.toContain('.pool.md');
+    }
+  });
+
+  it('produces a publicLessons entry even for a lesson with an invalid pool', () => {
+    const files = buildAllFiles();
+    const validation = validateImport('Informatica', files);
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    const publicLesson = payload.publicLessons.find(
+      (p) => p.data.filename === 'lezione-002-https.md',
+    );
+    expect(publicLesson).toBeDefined();
+  });
+});
+
 describe('buildQuestionPreview', () => {
   it('collapses whitespace/newlines and trims the result', () => {
     expect(buildQuestionPreview('  Spiega   il\n  protocollo   HTTP.  ')).toBe(

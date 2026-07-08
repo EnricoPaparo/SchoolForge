@@ -8,7 +8,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { ref, uploadBytes, getBytes } from 'firebase/storage';
 import type { FirebaseStorage } from 'firebase/storage';
@@ -27,7 +27,14 @@ let testEnv: RulesTestEnvironment;
 
 beforeAll(async () => {
   testEnv = await initializeTestEnvironment({
-    projectId: 'demo-schoolforge-import',
+    // Must match the emulator suite's --project flag (see package.json
+    // test:rules): Storage Rules' cross-service firestore.get()/exists()
+    // (used by isApprovedStudent() in storage.rules) resolve documents
+    // against the emulator's single configured default project, regardless
+    // of the projectId this specific RulesTestEnvironment declares. A
+    // mismatched projectId here would make every cross-service Firestore
+    // lookup 404, silently denying every approved-student Storage read.
+    projectId: 'demo-schoolforge',
     firestore: {
       rules: readFileSync(FIRESTORE_RULES, 'utf8'),
       host: '127.0.0.1',
@@ -52,7 +59,40 @@ afterAll(async () => {
 
 async function seedOwner() {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), 'settings/owner'), { ownerUid: OWNER_UID });
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'settings/owner'), { ownerUid: OWNER_UID });
+    // Real bootstrap (OwnerSetup) writes both docs in the same batch — tests
+    // that exercise publicLessons student-read access need ownerPublic too.
+    await setDoc(doc(db, 'settings/ownerPublic'), { ownerUid: OWNER_UID });
+  });
+}
+
+// Approved-student model (M3-lite): a Google-authenticated non-owner is only
+// a candidate student until both of these are true — the portal is globally
+// enabled AND their own students/{uid} document says 'approved'. Neither
+// helper is called by seedOwner() itself, so any test that doesn't call them
+// exercises the safe default (no settings/studentAccess, no students/{uid} =>
+// every student read denied).
+async function seedStudentAccess(studentPortalEnabled: boolean) {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'settings/studentAccess'), {
+      ownerUid: OWNER_UID,
+      studentPortalEnabled,
+      newStudentRequestsEnabled: false,
+    });
+  });
+}
+
+async function seedStudent(status: 'pending' | 'approved' | 'blocked') {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'students', OTHER_UID), {
+      uid: OTHER_UID,
+      ownerUid: OWNER_UID,
+      email: 'student@example.com',
+      displayName: null,
+      status,
+      classId: null,
+    });
   });
 }
 
@@ -70,6 +110,10 @@ function otherDb() {
 
 function otherStorage() {
   return testEnv.authenticatedContext(OTHER_UID).storage() as unknown as FirebaseStorage;
+}
+
+function anonDb() {
+  return testEnv.unauthenticatedContext().firestore() as unknown as Firestore;
 }
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -475,6 +519,326 @@ describe('importRepository — owner isolation', () => {
         ref(st, `repository/${OWNER_UID}/imports/imp-x/file.md`),
         new Uint8Array([1, 2, 3]),
       ),
+    );
+  });
+});
+
+// ─── publicLessons (M3-lite student projection) ──────────────────────────────
+
+describe('importRepository — publicLessons projection', () => {
+  it('creates one publicLessons doc per lesson, matching the technical lessons count', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    const publicLessonsSnap = await getDocs(
+      query(collection(db, 'publicLessons'), where('programId', '==', result.programId)),
+    );
+    expect(publicLessonsSnap.size).toBe(result.lessonCount);
+  });
+
+  it('publicLessons never carry poolStatus, poolStorageRef, questionCount or a .pool.md path', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    const publicLessonsSnap = await getDocs(
+      query(collection(db, 'publicLessons'), where('programId', '==', result.programId)),
+    );
+    for (const d of publicLessonsSnap.docs) {
+      const data = d.data();
+      expect(data).not.toHaveProperty('poolStatus');
+      expect(data).not.toHaveProperty('poolStorageRef');
+      expect(data).not.toHaveProperty('questionCount');
+      expect(JSON.stringify(data)).not.toContain('.pool.md');
+      expect(data.contentPath).toMatch(/\.md$/);
+    }
+  });
+
+  it('an approved student can read publicLessons of the configured owner when the portal is enabled', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    await seedStudentAccess(true);
+    await seedStudent('approved');
+
+    const publicLessonsSnap = await getDocs(collection(ownerDb(), 'publicLessons'));
+    const someLessonId = publicLessonsSnap.docs[0]!.id;
+
+    const studentDb = otherDb();
+    await assertSucceeds(getDoc(doc(studentDb, 'publicLessons', someLessonId)));
+  });
+
+  it('denies a Google non-owner with no students/{uid} document, even with the portal enabled', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    await seedStudentAccess(true);
+    // No students/{uid} document created — being Google-authenticated is
+    // never sufficient on its own.
+
+    const publicLessonsSnap = await getDocs(collection(ownerDb(), 'publicLessons'));
+    const someLessonId = publicLessonsSnap.docs[0]!.id;
+
+    await assertFails(getDoc(doc(otherDb(), 'publicLessons', someLessonId)));
+  });
+
+  it('denies a pending student from reading publicLessons', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    await seedStudentAccess(true);
+    await seedStudent('pending');
+
+    const publicLessonsSnap = await getDocs(collection(ownerDb(), 'publicLessons'));
+    const someLessonId = publicLessonsSnap.docs[0]!.id;
+
+    await assertFails(getDoc(doc(otherDb(), 'publicLessons', someLessonId)));
+  });
+
+  it('denies a blocked student from reading publicLessons', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    await seedStudentAccess(true);
+    await seedStudent('blocked');
+
+    const publicLessonsSnap = await getDocs(collection(ownerDb(), 'publicLessons'));
+    const someLessonId = publicLessonsSnap.docs[0]!.id;
+
+    await assertFails(getDoc(doc(otherDb(), 'publicLessons', someLessonId)));
+  });
+
+  it('denies an approved student from reading publicLessons when the portal is disabled', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    await seedStudentAccess(false);
+    await seedStudent('approved');
+
+    const publicLessonsSnap = await getDocs(collection(ownerDb(), 'publicLessons'));
+    const someLessonId = publicLessonsSnap.docs[0]!.id;
+
+    await assertFails(getDoc(doc(otherDb(), 'publicLessons', someLessonId)));
+  });
+
+  it('an unauthenticated user cannot read publicLessons', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    const publicLessonsSnap = await getDocs(collection(ownerDb(), 'publicLessons'));
+    const someLessonId = publicLessonsSnap.docs[0]!.id;
+
+    await assertFails(getDoc(doc(anonDb(), 'publicLessons', someLessonId)));
+  });
+
+  it('a student cannot write to publicLessons', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    const publicLessonsSnap = await getDocs(collection(ownerDb(), 'publicLessons'));
+    const someLessonId = publicLessonsSnap.docs[0]!.id;
+
+    const studentDb = otherDb();
+    await assertFails(
+      setDoc(doc(studentDb, 'publicLessons', someLessonId), { title: 'Hacked' }, { merge: true }),
+    );
+  });
+
+  it('a student cannot read the technical lessons subcollection', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    const lessonsSnap = await getDocs(
+      collection(db, 'programs', result.programId, 'imports', result.importId, 'lessons'),
+    );
+    const someLessonId = lessonsSnap.docs[0]!.id;
+
+    const studentDb = otherDb();
+    await assertFails(
+      getDoc(
+        doc(
+          studentDb,
+          'programs',
+          result.programId,
+          'imports',
+          result.importId,
+          'lessons',
+          someLessonId,
+        ),
+      ),
+    );
+  });
+
+  it('re-importing the same program deletes the stale publicLessons from the previous import', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const r1 = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (r1.status !== 'committed') throw new Error('expected committed');
+
+    const firstImportPublicLessons = await getDocs(
+      query(collection(db, 'publicLessons'), where('importId', '==', r1.importId)),
+    );
+    expect(firstImportPublicLessons.size).toBe(r1.lessonCount);
+
+    const r2 = await importRepository(
+      {
+        ownerUid: OWNER_UID,
+        programmaTitle: 'Informatica v2',
+        programId: r1.programId,
+        files: VALID_FILES,
+      },
+      { db, storage },
+    );
+    if (r2.status !== 'committed') throw new Error('expected committed');
+
+    const staleAfterReimport = await getDocs(
+      query(collection(db, 'publicLessons'), where('importId', '==', r1.importId)),
+    );
+    expect(staleAfterReimport.size).toBe(0);
+
+    const currentPublicLessons = await getDocs(
+      query(collection(db, 'publicLessons'), where('importId', '==', r2.importId)),
+    );
+    expect(currentPublicLessons.size).toBe(r2.lessonCount);
+  });
+
+  it('an approved student can read the lesson file from Storage after a real import, but never the pool', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    await seedStudentAccess(true);
+    await seedStudent('approved');
+
+    const studentSt = otherStorage();
+    await assertSucceeds(
+      getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
+    );
+    await assertFails(
+      getBytes(
+        ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${VALID_POOL.path}`),
+      ),
+    );
+  });
+
+  it('denies a non-approved student (no students/{uid} document) from reading the lesson file via Storage', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    await seedStudentAccess(true);
+    // No students/{uid} document — merely being a different Google-
+    // authenticated uid is never enough.
+
+    const studentSt = otherStorage();
+    await assertFails(
+      getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
+    );
+  });
+
+  it('denies an approved student from reading the lesson file via Storage when the portal is disabled', async () => {
+    await seedOwner();
+    const db = ownerDb();
+    const storage = ownerStorage();
+
+    const result = await importRepository(
+      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
+      { db, storage },
+    );
+    if (result.status !== 'committed') throw new Error('expected committed');
+
+    await seedStudentAccess(false);
+    await seedStudent('approved');
+
+    const studentSt = otherStorage();
+    await assertFails(
+      getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
     );
   });
 });

@@ -19,6 +19,7 @@ export type AuditAction =
   | 'verification.created'
   | 'verification.updated'
   | 'verification.activated'
+  | 'verification.visibilityChanged'
   | 'verification.closed'
   | 'verification.deleted';
 
@@ -114,6 +115,68 @@ export interface QuestionIndexEntry {
   questionPreview: string;
 }
 
+/**
+ * Stored at publicLessons/{lessonId} (M3-lite) — read-only projection of a
+ * lesson for the student portal. Written in the same commit transaction that
+ * updates `activeImportId`, and re-created from scratch on every re-import
+ * (stale entries from a previous import are deleted first), so a student
+ * never sees a partial or superseded import.
+ *
+ * Deliberately excludes everything technical or pool-related: no
+ * poolStatus, poolStorageRef, questionCount, or questionIndex reference.
+ * `contentPath` only ever points at the lesson's own `.md` file, never at a
+ * `.pool.md` file.
+ */
+export interface PublicLessonDoc {
+  ownerUid: string;
+  programId: string;
+  importId: string;
+  udaId: string;
+  udaDir: string;
+  path: string;
+  filename: string;
+  contentPath: string;
+  createdAt: Timestamp | FieldValue;
+}
+
+// ─── M3-lite — Approved-student access model ─────────────────────────────────
+
+/**
+ * Stored at settings/studentAccess. Global switches gating the student
+ * portal. `studentPortalEnabled` must be true for ANY student read
+ * (publicLessons, publishedProjection, Storage lesson files) to succeed,
+ * regardless of individual approval status. `newStudentRequestsEnabled` is
+ * reserved for a future self-request flow — not implemented by this PR;
+ * the teacher must create students/{uid} documents manually until then.
+ */
+export interface StudentAccessSettings {
+  ownerUid: string;
+  studentPortalEnabled: boolean;
+  newStudentRequestsEnabled: boolean;
+}
+
+export type StudentStatus = 'pending' | 'approved' | 'blocked';
+
+/**
+ * Stored at students/{uid}, where {uid} is the student's Firebase Auth uid.
+ * A Google-authenticated non-owner is only a *candidate* student until the
+ * teacher approves them here — authentication alone never grants portal
+ * reads. A missing document is treated as `pending` for authorization
+ * purposes (Security Rules default-deny when it doesn't exist).
+ * `classId` is reserved for future class-based lesson/verification
+ * filtering — not implemented by this PR.
+ */
+export interface StudentDoc {
+  uid: string;
+  ownerUid: string;
+  email: string;
+  displayName: string | null;
+  status: StudentStatus;
+  classId: string | null;
+  createdAt: Timestamp | FieldValue;
+  updatedAt: Timestamp | FieldValue;
+}
+
 /** Serialized form of a validation issue (Firestore-safe, no class instances). */
 export interface StoredValidationIssue {
   level: string;
@@ -134,6 +197,13 @@ export type ClassDoc = {
 };
 
 export type VerificationStatus = 'draft' | 'active' | 'closed';
+
+/**
+ * Independent from `status` (M3-lite). Defaults to `hidden` on activation;
+ * the teacher toggles it while the verification stays `active`. Only
+ * `active` + `public` verifications are ever visible to a student.
+ */
+export type VerificationVisibility = 'hidden' | 'public';
 
 export type VerificationQuestionRef = {
   /** Firestore document id of the questionIndex entry (stable, unique per question) */
@@ -174,10 +244,46 @@ export type VerificationTeacherSnapshot = {
 export type VerificationDoc = {
   ownerUid: string;
   status: VerificationStatus;
+  /**
+   * Absent on verifications created before M3-lite — always read through
+   * `normalizeVisibility()`, which treats a missing value as `hidden`.
+   */
+  visibility?: VerificationVisibility;
   config: VerificationConfig;
   teacherSnapshot: VerificationTeacherSnapshot | null; // set at activation
   createdAt: Timestamp | FieldValue;
   updatedAt: Timestamp | FieldValue;
   activatedAt: Timestamp | FieldValue | null;
   closedAt: Timestamp | FieldValue | null;
+};
+
+/**
+ * Safe per-question data for the student-facing published projection.
+ * Never includes soluzione, poolStorageRef, questionLocalId or
+ * questionIndexEntryId — only what's needed to render the student PDF.
+ */
+export type PublicVerificationQuestion = {
+  order: number;
+  tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
+  maxPoints: number;
+  testo: string;
+  /** Present only for chiusa_singola / chiusa_multipla. id + testo only — no solution marker. */
+  opzioni?: { id: string; testo: string }[];
+};
+
+/**
+ * Stored at verifications/{verificationId}/publishedProjection/data.
+ * Written atomically with `teacherSnapshot` at activation. Deliberately does
+ * NOT duplicate `status`/`visibility` — Security Rules authorize reads of
+ * this doc via a get() on the parent verification, so this projection can
+ * never drift from the parent's actual state. Owner: full read/write.
+ * Any other authenticated user: read-only, and only while the parent is
+ * `active` + `public`.
+ */
+export type PublishedProjectionDoc = {
+  ownerUid: string;
+  title: string;
+  className: string | null;
+  questions: PublicVerificationQuestion[];
+  activatedAt: Timestamp | FieldValue;
 };

@@ -9,6 +9,7 @@ const mockListVerifications = vi.fn();
 const mockCreateVerification = vi.fn();
 const mockUpdateVerificationConfig = vi.fn();
 const mockActivateVerification = vi.fn();
+const mockSetVerificationVisibility = vi.fn();
 const mockCloseVerification = vi.fn();
 const mockDeleteVerification = vi.fn();
 const mockListQuestionIndex = vi.fn();
@@ -40,6 +41,7 @@ vi.mock('../../repository/verifications/verificationsService.js', () => ({
   createVerification: (...args: unknown[]) => mockCreateVerification(...args),
   updateVerificationConfig: (...args: unknown[]) => mockUpdateVerificationConfig(...args),
   activateVerification: (...args: unknown[]) => mockActivateVerification(...args),
+  setVerificationVisibility: (...args: unknown[]) => mockSetVerificationVisibility(...args),
   closeVerification: (...args: unknown[]) => mockCloseVerification(...args),
   deleteVerification: (...args: unknown[]) => mockDeleteVerification(...args),
 }));
@@ -430,8 +432,64 @@ describe('VerificationsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
 
     await waitFor(() =>
-      expect(mockActivateVerification).toHaveBeenCalledWith('ver-1', sampleClass, 'owner-uid', {}),
+      expect(mockActivateVerification).toHaveBeenCalledWith(
+        'ver-1',
+        sampleClass,
+        'owner-uid',
+        {},
+        {},
+      ),
     );
+  });
+
+  it('publishes a hidden active verification to the student on toggle click', async () => {
+    setupDefaults();
+    const activeVer = makeDraftVer({ status: 'active', visibility: 'hidden' });
+    mockListVerifications.mockResolvedValue([activeVer]);
+    mockSetVerificationVisibility.mockResolvedValue(undefined);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+
+    fireEvent.click(screen.getByRole('button', { name: /pubblica allo studente/i }));
+
+    await waitFor(() =>
+      expect(mockSetVerificationVisibility).toHaveBeenCalledWith(
+        'ver-1',
+        'public',
+        'owner-uid',
+        {},
+      ),
+    );
+  });
+
+  it('hides a public active verification from the student on toggle click', async () => {
+    setupDefaults();
+    const activeVer = makeDraftVer({ status: 'active', visibility: 'public' });
+    mockListVerifications.mockResolvedValue([activeVer]);
+    mockSetVerificationVisibility.mockResolvedValue(undefined);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+
+    fireEvent.click(screen.getByRole('button', { name: /nascondi allo studente/i }));
+
+    await waitFor(() =>
+      expect(mockSetVerificationVisibility).toHaveBeenCalledWith(
+        'ver-1',
+        'hidden',
+        'owner-uid',
+        {},
+      ),
+    );
+  });
+
+  it('does not show the visibility toggle for a draft verification', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer({ status: 'draft' })]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+
+    expect(screen.queryByRole('button', { name: /pubblica allo studente/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /nascondi allo studente/i })).toBeNull();
   });
 
   it('saves questionRefs with questionIndexEntryId and no question content', async () => {

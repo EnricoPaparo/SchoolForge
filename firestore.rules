@@ -15,6 +15,25 @@ service cloud.firestore {
            == get(/databases/$(database)/documents/settings/owner).data.ownerUid;
     }
 
+    function studentPortalEnabled() {
+      return exists(/databases/$(database)/documents/settings/studentAccess)
+        && get(/databases/$(database)/documents/settings/studentAccess).data.studentPortalEnabled
+           == true;
+    }
+
+    // A Google-authenticated non-owner is only a *candidate* student until
+    // the teacher explicitly approves them here — being authenticated is
+    // NEVER sufficient on its own to read student-facing content. Missing
+    // settings/studentAccess, a missing students/{uid} document, or a
+    // status other than 'approved' (pending/blocked) all deny by default.
+    function isApprovedStudent() {
+      return isAuthenticated()
+        && studentPortalEnabled()
+        && exists(/databases/$(database)/documents/students/$(request.auth.uid))
+        && get(/databases/$(database)/documents/students/$(request.auth.uid)).data.status
+           == 'approved';
+    }
+
     // --- settings/owner ---
     // First authenticated user to write becomes the owner (no existing doc).
     // Subsequent updates/deletes require ownerUid match.
@@ -40,6 +59,25 @@ service cloud.firestore {
       allow update, delete: if isOwner();
     }
 
+    // --- settings/studentAccess (M3-lite) ---
+    // Global switches gating every student read (see isApprovedStudent()).
+    // Owner-only read/write: students never read this document directly —
+    // get() inside isApprovedStudent() bypasses the caller's own
+    // permissions on the target path. Absent document => portal disabled.
+    match /settings/studentAccess {
+      allow read, write: if isOwner();
+    }
+
+    // --- students/{uid} (M3-lite approval roster) ---
+    // uid == the student's own Firebase Auth uid. No document exists until
+    // the teacher creates one — a Google-authenticated non-owner with no
+    // document here is treated as 'pending' for authorization purposes.
+    // A dedicated teacher UI to manage this collection is out of scope for
+    // this PR; only the data model and owner-only read/write are wired up.
+    match /students/{uid} {
+      allow read, write: if isOwner();
+    }
+
     // --- Teacher-owned collections ---
     match /classes/{classId} {
       allow read, update, delete: if isOwner();
@@ -53,6 +91,25 @@ service cloud.firestore {
       allow read, write: if isOwner();
     }
 
+    // --- publicLessons (M3-lite) ---
+    // Read-only projection of a lesson for the student portal. Never
+    // contains poolStatus/poolStorageRef/questionCount or any pool-derived
+    // field — see PublicLessonDoc. Owner: full read/write (written by the
+    // import flow). Any other user: read-only, and only if they are an
+    // approved student (isApprovedStudent()) AND the document actually
+    // belongs to the configured owner (defense in depth — in the current
+    // single-docente system every publicLessons doc already has
+    // ownerUid == the one owner, but the rule verifies it explicitly
+    // rather than trusting the stored field alone). Merely being
+    // Google-authenticated is never enough on its own.
+    match /publicLessons/{lessonId} {
+      allow read: if isOwner()
+        || (isApprovedStudent()
+            && resource.data.ownerUid
+               == get(/databases/$(database)/documents/settings/ownerPublic).data.ownerUid);
+      allow write: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
+    }
+
     match /verifications/{docId} {
       allow read: if isOwner();
       // Delete allowed for draft (discard) and closed (tidy up) — active is
@@ -62,6 +119,8 @@ service cloud.firestore {
       allow create: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
       // Draft: any owner update allowed.
       // Active: only close allowed; only status/closedAt/updatedAt may change.
+      // Active: only visibility toggled (M3-lite publish/hide); only
+      // visibility/updatedAt may change, status must stay 'active'.
       // Closed: no updates allowed.
       allow update: if isOwner() && resource.data.status == 'draft';
       allow update: if isOwner()
@@ -69,13 +128,37 @@ service cloud.firestore {
         && request.resource.data.status == 'closed'
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['status', 'closedAt', 'updatedAt']);
+      allow update: if isOwner()
+        && resource.data.status == 'active'
+        && request.resource.data.status == 'active'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['visibility', 'updatedAt']);
     }
     match /verifications/{verificationId}/{sub=**} {
       // read: owner only; write on sub-collections handled per-path in later milestones.
       // Note: {sub=**} can match the document itself (zero segments), so write is intentionally
       // omitted here — update semantics on /verifications/{docId} are enforced above.
       allow read: if isOwner();
-      // TODO M2: publicVerificationLinks readable when verification is active
+    }
+
+    // --- verifications/{id}/publishedProjection (M3-lite) ---
+    // Solution-free projection written at activation. Deliberately does NOT
+    // duplicate status/visibility in this document — authorization reads
+    // them straight from the parent verification via get(), so this
+    // projection can never drift from the parent's real state. The parent
+    // /verifications/{docId} itself stays owner-only always, even when
+    // active+public: it holds config.questionRefs (poolStorageRef,
+    // questionLocalId), which a student must never see. A student must
+    // also be approved (isApprovedStudent()) — active+public alone is not
+    // enough, being merely Google-authenticated grants nothing.
+    match /verifications/{verificationId}/publishedProjection/{docId} {
+      allow read: if isOwner()
+        || (isApprovedStudent()
+            && get(/databases/$(database)/documents/verifications/$(verificationId)).data.status
+               == 'active'
+            && get(/databases/$(database)/documents/verifications/$(verificationId)).data.visibility
+               == 'public');
+      allow write: if isOwner();
     }
 
     match /auditEvents/{docId} {

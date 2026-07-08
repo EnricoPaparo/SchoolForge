@@ -23,19 +23,31 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: () => mockServerTimestamp(),
 }));
 
+// loadSelectedQuestions hits Storage directly — mocked out here so
+// activateVerification tests stay pure unit tests. Its own behaviour
+// (pool parsing, "never includes soluzione") is covered by
+// loadSelectedQuestions.test.ts.
+const mockLoadSelectedQuestions = vi.fn();
+vi.mock('../loadSelectedQuestions.js', () => ({
+  loadSelectedQuestions: (...args: unknown[]) => mockLoadSelectedQuestions(...args),
+}));
+
 import {
   listVerifications,
   createVerification,
   updateVerificationConfig,
   validateForActivation,
   activateVerification,
+  setVerificationVisibility,
   closeVerification,
   deleteVerification,
 } from '../verificationsService.js';
 import type { Firestore } from 'firebase/firestore';
+import type { FirebaseStorage } from 'firebase/storage';
 import type { VerificationConfig, VerificationDoc } from '../../../../types/firestore.js';
 
 const fakeDb = {} as Firestore;
+const fakeStorage = {} as FirebaseStorage;
 const OWNER_UID = 'owner-uid';
 const OTHER_UID = 'other-uid';
 const fakeDocRef = { id: 'new-ver-id' };
@@ -93,6 +105,32 @@ describe('listVerifications', () => {
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('v1');
   });
+
+  it('normalizes a missing visibility field (pre-M3-lite document) to "hidden"', async () => {
+    const legacyDoc: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
+      status: 'active',
+      config: VALID_CONFIG,
+      // no `visibility` field at all — simulates a document written before M3-lite
+    };
+    mockGetDocs.mockResolvedValue({ docs: [{ id: 'v1', data: () => legacyDoc }] });
+
+    const result = await listVerifications(OWNER_UID, fakeDb);
+    expect(result[0].visibility).toBe('hidden');
+  });
+
+  it('preserves an explicit visibility field', async () => {
+    const doc: Partial<VerificationDoc> = {
+      ownerUid: OWNER_UID,
+      status: 'active',
+      visibility: 'public',
+      config: VALID_CONFIG,
+    };
+    mockGetDocs.mockResolvedValue({ docs: [{ id: 'v1', data: () => doc }] });
+
+    const result = await listVerifications(OWNER_UID, fakeDb);
+    expect(result[0].visibility).toBe('public');
+  });
 });
 
 // ─── createVerification ───────────────────────────────────────────────────────
@@ -110,6 +148,7 @@ describe('createVerification', () => {
 
     const [, verData] = mockSetDoc.mock.calls[0];
     expect(verData.status).toBe('draft');
+    expect(verData.visibility).toBe('hidden');
     expect(verData.config.questionRefs).toEqual([]);
     expect(verData.teacherSnapshot).toBeNull();
     expect(verData.activatedAt).toBeNull();
@@ -176,25 +215,52 @@ describe('validateForActivation', () => {
 // ─── activateVerification ─────────────────────────────────────────────────────
 
 describe('activateVerification', () => {
-  it('calls runTransaction and sets status=active with teacherSnapshot', async () => {
+  const LOADED_QUESTIONS_OK = {
+    ok: true as const,
+    questions: [
+      {
+        ref: VALID_CONFIG.questionRefs[0],
+        testo: 'Domanda 1?',
+        tipo: 'chiusa_singola' as const,
+        opzioni: [
+          { id: 'a', testo: 'Opzione A' },
+          { id: 'b', testo: 'Opzione B' },
+        ],
+      },
+    ],
+  };
+
+  function setupTransactionCapture(existingDoc: Partial<VerificationDoc>) {
+    let capturedUpdate: Record<string, unknown> | undefined;
+    let capturedProjection: Record<string, unknown> | undefined;
+    mockRunTransaction.mockImplementation(
+      async (_db: unknown, fn: (tx: unknown) => Promise<void>) => {
+        const mockTx = {
+          get: vi.fn().mockResolvedValue({ exists: () => true, data: () => existingDoc }),
+          update: vi.fn((_ref: unknown, data: Record<string, unknown>) => {
+            capturedUpdate = data;
+          }),
+          set: vi.fn((_ref: unknown, data: Record<string, unknown>) => {
+            capturedProjection = data;
+          }),
+        };
+        await fn(mockTx);
+      },
+    );
+    return {
+      getUpdate: () => capturedUpdate,
+      getProjection: () => capturedProjection,
+    };
+  }
+
+  it('calls runTransaction and sets status=active, visibility=hidden, with teacherSnapshot', async () => {
     const draftDoc: Partial<VerificationDoc> = {
       status: 'draft',
       config: VALID_CONFIG,
     };
-
-    let capturedUpdate: Record<string, unknown> | undefined;
-    mockRunTransaction.mockImplementation(
-      async (_db: unknown, fn: (tx: unknown) => Promise<void>) => {
-        const mockTx = {
-          get: vi.fn().mockResolvedValue({ exists: () => true, data: () => draftDoc }),
-          update: vi.fn((_ref: unknown, data: Record<string, unknown>) => {
-            capturedUpdate = data;
-          }),
-        };
-        await fn(mockTx);
-        return mockTx.update.mock.calls[0];
-      },
-    );
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(draftDoc);
 
     const classItem = {
       id: 'class-1',
@@ -205,7 +271,7 @@ describe('activateVerification', () => {
       updatedAt: {} as never,
     };
 
-    await activateVerification('ver-id', classItem, OWNER_UID, fakeDb);
+    await activateVerification('ver-id', classItem, OWNER_UID, fakeDb, fakeStorage);
 
     expect(mockRunTransaction).toHaveBeenCalledTimes(1);
     expect(mockSetDoc).toHaveBeenCalledTimes(1); // audit event
@@ -213,6 +279,9 @@ describe('activateVerification', () => {
     const [, auditData] = mockSetDoc.mock.calls[0];
     expect(auditData.action).toBe('verification.activated');
 
+    const capturedUpdate = capture.getUpdate();
+    expect(capturedUpdate?.status).toBe('active');
+    expect(capturedUpdate?.visibility).toBe('hidden');
     // Top-level activatedAt (shown in the verification list) must be set,
     // in addition to teacherSnapshot.activatedAt.
     expect(capturedUpdate?.activatedAt).toBeDefined();
@@ -221,25 +290,43 @@ describe('activateVerification', () => {
     ).toBeDefined();
   });
 
-  it('throws if status is not draft', async () => {
+  it('writes a solution-free publishedProjection alongside teacherSnapshot', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: VALID_CONFIG,
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(draftDoc);
+
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    const projection = capture.getProjection();
+    expect(projection?.title).toBe(VALID_CONFIG.title);
+    expect(projection?.questions).toHaveLength(1);
+    const question = (projection?.questions as Record<string, unknown>[])[0];
+    expect(question.testo).toBe('Domanda 1?');
+    expect(question.opzioni).toEqual(LOADED_QUESTIONS_OK.questions[0].opzioni);
+    // Never leak pool/technical references into the student-facing projection.
+    expect(question).not.toHaveProperty('soluzione');
+    expect(question).not.toHaveProperty('poolStorageRef');
+    expect(question).not.toHaveProperty('questionLocalId');
+    expect(question).not.toHaveProperty('questionIndexEntryId');
+    expect(JSON.stringify(projection)).not.toContain('poolStorageRef');
+  });
+
+  it('throws if status is not draft (checked before touching Storage or the transaction)', async () => {
     const activeDoc: Partial<VerificationDoc> = {
       status: 'active',
       config: VALID_CONFIG,
     };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => activeDoc });
 
-    mockRunTransaction.mockImplementation(
-      async (_db: unknown, fn: (tx: unknown) => Promise<void>) => {
-        const mockTx = {
-          get: vi.fn().mockResolvedValue({ exists: () => true, data: () => activeDoc }),
-          update: vi.fn(),
-        };
-        await fn(mockTx);
-      },
-    );
-
-    await expect(activateVerification('ver-id', null, OWNER_UID, fakeDb)).rejects.toThrow(
-      'Verifica non attivabile: non è in bozza',
-    );
+    await expect(
+      activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage),
+    ).rejects.toThrow('Verifica non attivabile: non è in bozza');
+    expect(mockLoadSelectedQuestions).not.toHaveBeenCalled();
+    expect(mockRunTransaction).not.toHaveBeenCalled();
   });
 
   it('throws if validateForActivation fails', async () => {
@@ -247,19 +334,64 @@ describe('activateVerification', () => {
       status: 'draft',
       config: { ...VALID_CONFIG, questionRefs: [] }, // invalid: no questions
     };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
 
-    mockRunTransaction.mockImplementation(
-      async (_db: unknown, fn: (tx: unknown) => Promise<void>) => {
-        const mockTx = {
-          get: vi.fn().mockResolvedValue({ exists: () => true, data: () => draftDoc }),
-          update: vi.fn(),
-        };
-        await fn(mockTx);
-      },
+    await expect(
+      activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage),
+    ).rejects.toThrow('Verifica non valida:');
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+  });
+
+  it('throws when the pool cannot be loaded from Storage', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: VALID_CONFIG,
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestions.mockResolvedValue({ ok: false, error: 'Pool non trovato' });
+
+    await expect(
+      activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage),
+    ).rejects.toThrow('Impossibile generare la proiezione pubblica');
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+  });
+});
+
+// ─── setVerificationVisibility ──────────────────────────────────────────────
+
+describe('setVerificationVisibility', () => {
+  it('updates only visibility and updatedAt on an active verification', async () => {
+    const activeDoc: Partial<VerificationDoc> = { status: 'active', config: VALID_CONFIG };
+    mockGetDoc.mockResolvedValue({ data: () => activeDoc });
+
+    await setVerificationVisibility('ver-id', 'public', OWNER_UID, fakeDb);
+
+    expect(mockSetDoc).toHaveBeenCalledTimes(2); // update + audit
+    const [, updateData, options] = mockSetDoc.mock.calls[0];
+    expect(updateData.visibility).toBe('public');
+    expect(Object.keys(updateData).sort()).toEqual(['updatedAt', 'visibility']);
+    expect(options).toEqual({ merge: true });
+
+    const [, auditData] = mockSetDoc.mock.calls[1];
+    expect(auditData.action).toBe('verification.visibilityChanged');
+    expect(auditData.actorUid).toBe(OWNER_UID);
+  });
+
+  it('throws when the verification is a draft', async () => {
+    const draftDoc: Partial<VerificationDoc> = { status: 'draft', config: VALID_CONFIG };
+    mockGetDoc.mockResolvedValue({ data: () => draftDoc });
+
+    await expect(setVerificationVisibility('ver-id', 'public', OWNER_UID, fakeDb)).rejects.toThrow(
+      'Visibilità modificabile solo su una verifica attiva',
     );
+  });
 
-    await expect(activateVerification('ver-id', null, OWNER_UID, fakeDb)).rejects.toThrow(
-      'Verifica non valida:',
+  it('throws when the verification is closed', async () => {
+    const closedDoc: Partial<VerificationDoc> = { status: 'closed', config: VALID_CONFIG };
+    mockGetDoc.mockResolvedValue({ data: () => closedDoc });
+
+    await expect(setVerificationVisibility('ver-id', 'hidden', OWNER_UID, fakeDb)).rejects.toThrow(
+      'Visibilità modificabile solo su una verifica attiva',
     );
   });
 });
