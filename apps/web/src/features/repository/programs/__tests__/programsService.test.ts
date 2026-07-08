@@ -7,6 +7,7 @@ const mockCollection = vi.fn();
 const mockDoc = vi.fn();
 const mockDeleteDoc = vi.fn();
 const mockSetDoc = vi.fn();
+const mockUpdateDoc = vi.fn();
 const mockBatchDelete = vi.fn();
 const mockBatchCommit = vi.fn();
 const mockWriteBatch = vi.fn();
@@ -22,7 +23,7 @@ vi.mock('firebase/firestore', () => ({
   where: () => ({}),
   serverTimestamp: vi.fn(),
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
-  updateDoc: vi.fn(),
+  updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
   deleteDoc: (...args: unknown[]) => mockDeleteDoc(...args),
   writeBatch: (...args: unknown[]) => mockWriteBatch(...args),
 }));
@@ -38,9 +39,12 @@ vi.mock('firebase/storage', () => ({
 }));
 
 import {
+  createProgram,
   deleteProgram,
   listLessons,
+  listPrograms,
   listUdas,
+  setProgramClassIds,
   PROGRAM_DELETE_BLOCKED_MESSAGE,
 } from '../programsService.js';
 import type { Firestore } from 'firebase/firestore';
@@ -60,6 +64,80 @@ beforeEach(() => {
   mockDoc.mockImplementation(pathStub);
   mockBatchCommit.mockResolvedValue(undefined);
   mockWriteBatch.mockReturnValue({ delete: mockBatchDelete, commit: mockBatchCommit });
+  mockUpdateDoc.mockResolvedValue(undefined);
+  mockSetDoc.mockResolvedValue(undefined);
+});
+
+describe('listPrograms — legacy classIds normalization', () => {
+  it('defaults classIds to [] when absent on the raw Firestore doc', async () => {
+    mockGetDocs.mockResolvedValue({
+      docs: [{ id: 'p1', data: () => ({ ownerUid: 'owner-uid', title: 'Programma legacy' }) }],
+    });
+
+    const [program] = await listPrograms(fakeDb);
+    expect(program.classIds).toEqual([]);
+  });
+
+  it('preserves classIds when present on the raw Firestore doc', async () => {
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        {
+          id: 'p1',
+          data: () => ({ ownerUid: 'owner-uid', title: 'Programma', classIds: ['class-1'] }),
+        },
+      ],
+    });
+
+    const [program] = await listPrograms(fakeDb);
+    expect(program.classIds).toEqual(['class-1']);
+  });
+});
+
+describe('createProgram', () => {
+  it('initializes classIds to []', async () => {
+    mockDoc.mockReturnValueOnce({ id: 'new-program-id' });
+
+    const id = await createProgram('Nuovo programma', 'owner-uid', fakeDb);
+
+    expect(id).toBe('new-program-id');
+    const [, data] = mockSetDoc.mock.calls[0];
+    expect(data.classIds).toEqual([]);
+  });
+});
+
+describe('setProgramClassIds', () => {
+  it('dedupes classIds and writes them with updatedAt', async () => {
+    await setProgramClassIds('prog-1', ['class-1', 'class-2', 'class-1'], 'owner-uid', fakeDb);
+
+    expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+    const [ref, data] = mockUpdateDoc.mock.calls[0];
+    expect(ref).toEqual({ __path: 'programs/prog-1' });
+    expect(data.classIds).toEqual(['class-1', 'class-2']);
+    expect(data).toHaveProperty('updatedAt');
+  });
+
+  it('saves an empty array when no class is selected', async () => {
+    await setProgramClassIds('prog-1', [], 'owner-uid', fakeDb);
+
+    const [, data] = mockUpdateDoc.mock.calls[0];
+    expect(data.classIds).toEqual([]);
+  });
+
+  it('writes a program.classesUpdated audit event', async () => {
+    await setProgramClassIds('prog-1', ['class-1'], 'owner-uid', fakeDb);
+
+    const auditCall = mockSetDoc.mock.calls.find(
+      ([, data]) => (data as { action?: string }).action === 'program.classesUpdated',
+    );
+    expect(auditCall).toBeDefined();
+    const [, auditData] = auditCall!;
+    expect(auditData).toMatchObject({
+      actorUid: 'owner-uid',
+      action: 'program.classesUpdated',
+      targetId: 'prog-1',
+      outcome: 'success',
+    });
+  });
 });
 
 describe('listUdas — deterministic ordering', () => {

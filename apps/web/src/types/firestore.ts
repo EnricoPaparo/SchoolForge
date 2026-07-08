@@ -27,7 +27,8 @@ export type AuditAction =
   | 'student.blocked'
   | 'student.reset'
   | 'student.removed'
-  | 'student.classAssigned';
+  | 'student.classAssigned'
+  | 'program.classesUpdated';
 
 export interface AuditEvent {
   actorUid: string;
@@ -40,10 +41,20 @@ export interface AuditEvent {
 
 // ─── M1-B — Repository import ────────────────────────────────────────────────
 
+/**
+ * `classIds` determines student visibility (M3-lite): a program with no
+ * classes assigned (missing or empty array) is never visible to any
+ * student, even if its `publicLessons` exist and the portal is active.
+ * UDA/lezioni inherit visibility from the program — they never carry
+ * their own class assignment. Programs created before this field existed
+ * are read back with `classIds: []` (see programsService.listPrograms) —
+ * never treated as "visible to everyone" by omission.
+ */
 export interface ProgramDoc {
   ownerUid: string;
   title: string;
   activeImportId: string | null;
+  classIds: string[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

@@ -17,6 +17,7 @@ const baseProgram: ProgramItem = {
   ownerUid: 'uid1',
   title: 'Test',
   activeImportId: 'imp1',
+  classIds: [],
   createdAt: null as never,
   updatedAt: null as never,
 };

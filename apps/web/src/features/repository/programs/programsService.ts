@@ -27,9 +27,18 @@ export type ProgramItem = { id: string } & ProgramDoc;
 export type UdaItem = { id: string } & UdaDoc;
 export type LessonItem = { id: string } & LessonDoc;
 
+/**
+ * Programs created before `classIds` existed are read back with
+ * `classIds: []` — the safe default (not visible to any student) rather
+ * than an undefined field that could be mistaken for "visible to all".
+ * No migration is run; this normalization happens on every read.
+ */
 export async function listPrograms(db: Firestore): Promise<ProgramItem[]> {
   const snap = await getDocs(collection(db, 'programs'));
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as ProgramDoc) }));
+  return snap.docs.map((d) => {
+    const data = d.data() as ProgramDoc;
+    return { id: d.id, ...data, classIds: data.classIds ?? [] };
+  });
 }
 
 export async function createProgram(
@@ -42,6 +51,7 @@ export async function createProgram(
     ownerUid,
     title,
     activeImportId: null,
+    classIds: [],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -54,6 +64,32 @@ export async function createProgram(
     timestamp: serverTimestamp(),
   });
   return ref.id;
+}
+
+/**
+ * Sets the full list of classes a program is assigned to. An empty array
+ * means the program (and everything under it) is not visible to any
+ * student — this is a valid, intentional state, not an error.
+ */
+export async function setProgramClassIds(
+  programId: string,
+  classIds: string[],
+  ownerUid: string,
+  db: Firestore,
+): Promise<void> {
+  const deduped = [...new Set(classIds)];
+  await updateDoc(doc(db, 'programs', programId), {
+    classIds: deduped,
+    updatedAt: serverTimestamp(),
+  });
+  await setDoc(doc(collection(db, 'auditEvents')), {
+    actorUid: ownerUid,
+    action: 'program.classesUpdated',
+    targetId: programId,
+    outcome: 'success',
+    reason: deduped.length > 0 ? deduped.join(',') : 'nessuna classe',
+    timestamp: serverTimestamp(),
+  });
 }
 
 export async function updateProgramTitle(
