@@ -17,28 +17,48 @@
 
 ---
 
+## Autenticazione e ruoli (M3-lite)
+
+| Termine | Significato |
+|---|---|
+| M3-lite | Fase decisa del Modulo 3: Portale studente autenticato con Google, in sola lettura (Lezioni + Verifiche, solo download PDF studente). Nessuna Cloud Function, nessun account custom, nessuna consegna online. |
+| M3-full | Fase successiva a M3-lite, specifica rinviata e non pianificata in dettaglio: verifiche online con tentativi, consegna, lock e un eventuale gateway server-side. |
+| TeacherShell | Sezione autenticata dell'applicazione (`/teacher/*`) montata quando `uid == ownerUid`; gestisce contenuti, verifiche, classi e impostazioni. |
+| StudentShell | Sezione autenticata dell'applicazione (`/student/*`, M3-lite) montata per qualunque utente Google autenticato diverso da `ownerUid`; sola lettura, due sole sezioni: Lezioni e Verifiche. |
+| Google Workspace for Education | Suite di account Google per istituti scolastici. Da M3-lite gli studenti possono autenticarsi con un account personale o con un account Workspace for Education, senza distinzione. |
+| `ownerUid` | UID Firebase Authentication dell'unico docente autorizzato. Confrontato con `uid` dell'utente autenticato per risolvere il ruolo (docente vs studente). |
+| `settings/ownerPublic` | Documento Firestore leggibile da qualunque utente autenticato, contenente solo `ownerUid`; usato per instradare il client su TeacherShell/StudentShell. Non sostituisce le Security Rules delle risorse protette. |
+| Proiezione read-only | Documento pubblico dedicato (es. `publicLessons`, `publishedProjection`) privo di pool, soluzioni e percorsi tecnici, creato dal docente nello stesso flusso di scrittura del documento tecnico corrispondente, per essere letto in sicurezza dallo studente. |
+
 ## Verifiche e Portale
 
 | Termine | Significato |
 |---|---|
-| Verifica | Configurazione con fonti, classi, quantità, tipi, difficoltà, minimi e varianti. È un link aperto o chiuso: nessuna lista di destinatari preassegnati. |
-| Verifica aperta / chiusa | Stato gestito dal docente: finché è aperta, chiunque abbia il link può accedere; chiusa, non accetta nuovi tentativi. |
+| Verifica | Configurazione con fonti, classi, quantità, tipi, difficoltà, minimi e varianti. |
+| Stato della verifica (`status`) | `bozza`, `attiva`, `chiusa`, `archiviata`. Solo la bozza è modificabile; l'attivazione congela configurazione e contenuti. |
+| Visibilità (`visibility`) | Campo indipendente dallo stato: `hidden` o `public`. All'attivazione parte da `hidden`; il docente la pubblica/nasconde più volte mentre la verifica resta `attiva`. Solo `attiva`+`public` è visibile allo studente (M3-lite). |
 | Configurazione in bozza | Fonti, minimi, varianti e canali sono modificabili solo nello stato `bozza`. Per cambiare una verifica pubblicata si duplica una nuova bozza. |
-| Snapshot pubblicato | Copia privata e immutabile di fonti, regole, candidati e soluzioni creata all'attivazione; rende riproducibile la verifica anche se le lezioni cambiano. |
-| Snapshot immutabile del tentativo | Copia privata delle domande effettivamente assegnate a uno studente; è immutabile dal momento dell'avvio. |
-| Tentativo | Accesso digitale associato a una verifica e a una coppia nome+cognome normalizzata. Il canale cartaceo non genera tentativi. |
-| Tentativo di Accesso | Evento registrato all'avvio di un tentativo digitale: nome dichiarato (`Cognome Nome`), indirizzo IP, timestamp e user-agent. Dà visibilità di audit al docente; non prova l'identità. |
-| Report Accessi | Vista per-verifica disponibile al docente con i tentativi di accesso digitali (nome dichiarato, IP, timestamp). |
-| Participant lock | Documento Firestore creato dalla Cloud Function per `verifica + nome+cognome normalizzati`; impedisce un secondo avvio digitale con la stessa coppia. È un limite operativo, non una prova d'identità. Il docente può rilasciarlo solo annullando un tentativo in corso con audit. |
-| Canale cartaceo | Canale puramente fisico: il PDF è generato e scaricato nel browser. Non crea record di tentativo né log di accesso; al più incrementa un contatore atomico `downloadCount`. Il sistema non invia email. |
+| Snapshot pubblicato | Copia privata e immutabile di fonti, regole, candidati e soluzioni creata all'attivazione; rende riproducibile la verifica anche se le lezioni cambiano. Mai esposta allo studente. |
+| Canale cartaceo | Canale puramente fisico: il PDF è generato e scaricato nel browser dal docente. Non crea record di tentativo né log di accesso; al più incrementa un contatore atomico `downloadCount`. Il sistema non invia email. |
 | downloadCount | Contatore atomico opzionale sul documento della verifica, incrementato a ogni download cartaceo; non contiene dati personali. |
-| Canale digitale | Lo studente svolge la verifica nel Portale; avvio, ripresa, bozza e consegna passano dal gateway Cloud Functions. Il browser non scrive direttamente in Firestore. |
-| Snapshot digitale | Copia privata delle domande (con soluzioni) create dalla Cloud Function al tentativo digitale; mai esposta al client portale. |
-| Consegna definitiva | Tentativo digitale inviato; domande e risposte non sono più modificabili. |
-| Bozza | Risposte temporanee riprendibili nello stesso browser con token di sessione. |
-| Token di sessione | Cookie HttpOnly/Secure/SameSite generato da `startDigitalAttempt` e verificato da `continueDigitalAttempt`; consente la ripresa del tentativo nello stesso browser. |
-| Portale Verifiche | Sezione pubblica dell'applicazione (`/exam/:token`) per canale cartaceo e digitale; senza account studente. |
-| Export verifiche | Documento generato on-demand nel browser (PDF, Markdown o CSV) da tutte le consegne digitali definitive. |
+| Portale studente (M3-lite) | StudentShell: sezioni Lezioni e Verifiche, sola lettura. Lo studente scarica solo il PDF studente delle verifiche `attiva`+`public`, con lo stesso renderer del canale cartaceo. Nessuna consegna online. |
+| Export verifiche | Documento generato on-demand nel browser (PDF, Markdown o CSV) da tutte le consegne digitali definitive. Dipende da M3-full. |
+
+### M3-full — specifica rinviata
+
+| Termine | Significato |
+|---|---|
+| Verifica aperta / chiusa (M3-full) | Stato del link pubblico: finché è aperta, chiunque abbia il link potrebbe accedere; chiusa, non accetterebbe nuovi tentativi. Non è il modello di accesso di M3-lite. |
+| Snapshot immutabile del tentativo | Copia privata delle domande effettivamente assegnate a uno studente; sarebbe immutabile dal momento dell'avvio. |
+| Tentativo | Accesso digitale associato a una verifica e a una coppia nome+cognome normalizzata. Il canale cartaceo e M3-lite non generano tentativi. |
+| Tentativo di Accesso | Evento registrato all'avvio di un tentativo digitale: nome dichiarato (`Cognome Nome`), indirizzo IP, timestamp e user-agent. Darebbe visibilità di audit al docente; non proverebbe l'identità. |
+| Report Accessi | Vista per-verifica disponibile al docente con i tentativi di accesso digitali (nome dichiarato, IP, timestamp). |
+| Participant lock | Documento Firestore creato dalla Cloud Function per `verifica + nome+cognome normalizzati`; impedirebbe un secondo avvio digitale con la stessa coppia. Non è una prova d'identità. |
+| Canale digitale (M3-full) | Lo studente svolgerebbe la verifica nel Portale; avvio, ripresa, bozza e consegna passerebbero dal gateway Cloud Functions. Il browser non scriverebbe direttamente in Firestore. |
+| Snapshot digitale | Copia privata delle domande (con soluzioni) creata dalla Cloud Function al tentativo digitale; mai esposta al client. |
+| Consegna definitiva | Tentativo digitale inviato; domande e risposte non sarebbero più modificabili. |
+| Bozza (M3-full) | Risposte temporanee riprendibili nello stesso browser con token di sessione. |
+| Token di sessione | Cookie HttpOnly/Secure/SameSite generato da `startDigitalAttempt` e verificato da `continueDigitalAttempt`; consentirebbe la ripresa del tentativo nello stesso browser. |
 
 ---
 
@@ -65,7 +85,7 @@
 | Import isolato | Insieme di Markdown, asset e indici preparato sotto un `importId` prima di diventare visibile. |
 | `activeImportId` | Puntatore sul Programma che rende visibile un solo import completo; il suo commit Firestore evita una pubblicazione parziale tra Storage e indici. |
 | Cloud Storage | File Markdown e asset sotto `repository/imports`; non contiene PDF o export didattici persistenti. |
-| Cloud Functions v2 | Backend usato per il gateway M3 `startDigitalAttempt`/`continueDigitalAttempt` e AI (M5). |
+| Cloud Functions v2 | Non usato da M3-lite. Backend riservato ad AI (M5/V2) e a un eventuale gateway M3-full `startDigitalAttempt`/`continueDigitalAttempt` (specifica rinviata). |
 | Security Rules | Regole Firestore e Storage che garantiscono autorizzazione e default-deny; sono il perimetro di sicurezza principale nei Moduli 1–4. |
 | `@react-pdf/renderer` | Libreria browser per la generazione di PDF on-demand nel client; nessun server coinvolto. |
 | `lesson-contract` | Package TypeScript interno del monorepo (`packages/lesson-contract`, non pubblicato su npm); schemi Zod, parser e validatore del contratto pool v1, condiviso tra SPA e Cloud Functions via workspace reference. |
@@ -80,4 +100,4 @@
 
 ## Fuori scope intenzionale
 
-Google Workspace obbligatorio, account studenti, invio email agli studenti, MailGateway, Google Forms, Google Drive API, LMS, registro elettronico, PDF persistenti, editor Markdown integrato, generazione AI di domande e multi-docente non sono termini del dominio V1.
+Google Workspace obbligatorio per il Docente, account SchoolForge dedicato per lo studente (registrazione, credenziali proprie), invio email agli studenti, MailGateway, Google Forms, Google Drive API, LMS, registro elettronico, PDF persistenti, editor Markdown integrato, generazione AI di domande e multi-docente non sono termini del dominio corrente. In M3-lite sono inoltre fuori scope: consegna e risposte online, tentativi, lock di partecipazione, allowlist di dominio Google, mapping classi/studenti e Cloud Functions.

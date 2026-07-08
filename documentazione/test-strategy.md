@@ -1,6 +1,6 @@
 # SchoolForge — Strategia di test
 
-**Versione:** 2.2
+**Versione:** 3.0
 
 ---
 
@@ -16,7 +16,7 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 |---|---|---|
 | Unit | Vitest | Parser `lesson-contract`, selezione domande, punteggi, stati verifica, renderer export (PDF/MD/CSV), funzioni pure. |
 | Contract | Fixture Markdown e payload Firestore | Contratto pool v1, errori strutturati, tipi TypeScript di `api-contract.md`. |
-| Integration | Firebase Emulator Suite | Security Rules, commit `activeImportId`, transazioni Firestore, gateway `startDigitalAttempt`/`continueDigitalAttempt`, participant lock, reset e snapshot pubblicato. |
+| Integration | Firebase Emulator Suite | Security Rules (owner vs studente autenticato, `publicLessons`, `visibility`), commit `activeImportId`, transazioni Firestore, snapshot pubblicato. Un eventuale gateway `startDigitalAttempt`/`continueDigitalAttempt`, participant lock e reset restano specifica di M3-full. |
 | E2E | Playwright | Flussi docente + Portale attraverso browser (include generazione PDF e download). |
 | Manuale | Checklist gate | UX, accessibilità, PDF nel browser, backup/restore e costi. |
 
@@ -28,17 +28,32 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 - pool con id duplicato, difficoltà invalida, opzione/soluzione incoerente;
 - verifica con minimi impossibili e fonti insufficienti;
 - download cartaceo (PDF nel browser) che non crea record di tentativo né accessLog; al più incrementa `downloadCount`;
+- re-import di una lezione con pool modificato (aggiornamento `questionIndex` e della proiezione `publicLessons`);
+- import fallito con pool invalido o upload interrotto (l'`activeImportId`, il contenuto visibile e la proiezione pubblica restano invariati);
+- snapshot pubblicato prima e dopo modifica della lezione sorgente;
+- correzione parziale, rettifica ed eliminazione (M3-full);
+- export con consegne definitive, bozza, annullata ed eliminata in tutti e tre i formati (M3-full);
+- output AI valido, incompleto e non autorizzato (M5/V2).
+
+### 3a. Fixture M3-lite (Portale studente)
+
+- login Google del Docente proprietario (`uid == ownerUid`) → StudentShell non montata, TeacherShell montata;
+- login Google di un utente qualsiasi diverso da `ownerUid` → StudentShell montata, TeacherShell non raggiungibile;
+- tentativo di accesso non autenticato → nessuna sezione applicativa raggiungibile;
+- lezione pubblicata nell'`activeImportId` corrente → visibile e renderizzata in sola lettura nella sezione Lezioni dello studente;
+- lettura diretta di `lessons` (documento tecnico), `questionIndex` o `verifications/*/publishedSnapshot` da parte dello studente → negata dalle Security Rules;
+- verifica `bozza`, `chiusa`, `archiviata` oppure `attiva`+`hidden` → assente dalla sezione Verifiche dello studente;
+- verifica `attiva`+`public` → presente nella sezione Verifiche dello studente, con solo l'azione "Scarica PDF studente";
+- download del PDF studente in M3-lite → generato nel browser dalla `publishedProjection`, senza soluzioni, senza creare alcun record Firestore;
+- il docente commuta `visibility` di una verifica `attiva` da `hidden` a `public` e viceversa, più volte, senza alterarne configurazione o snapshot.
+
+Le fixture seguenti restano specifica di un eventuale M3-full e non si applicano a M3-lite:
+
 - tentativo digitale: avvio, bozza, ripresa dopo refresh, consegna;
 - secondo avvio digitale con lo stesso nome+cognome sulla stessa verifica (rifiutato: `PARTICIPANT_ALREADY_USED`);
-- re-import di una lezione con pool modificato (aggiornamento `questionIndex`);
-- import fallito con pool invalido o upload interrotto (l'`activeImportId` e il contenuto visibile restano invariati);
-- snapshot pubblicato prima e dopo modifica della lezione sorgente;
 - tentativo digitale con cookie assente, scaduto e revocato (rifiutati dal gateway);
 - lookup pubblico: `get` con hash del token valido ammesso, `list` dei link e accesso al documento verifica privato rifiutati;
-- reset docente di tentativo `in_progress` con motivazione e audit; reset di consegna rifiutato;
-- correzione parziale, rettifica ed eliminazione;
-- export con consegne definitive, bozza, annullata ed eliminata in tutti e tre i formati;
-- output AI valido, incompleto e non autorizzato (M5/V2).
+- reset docente di tentativo `in_progress` con motivazione e audit; reset di consegna rifiutato.
 
 ---
 
@@ -49,7 +64,8 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 | G1 | Auth owner/non-owner; Security Rules default-deny; Emulator. | Verifica budget ed export Firestore manuale dalle impostazioni. |
 | G2 | Parser pool valido/invalido; upload isolato e commit `activeImportId`; rendering sanitizzato; export ZIP; programma svolto MD e PDF; kit e dashboard prontezza. | Import di cartella didattica reale; nessun pool esposto nel rendering. |
 | G3 | Stati verifica; PDF generato nel browser; canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`); nessun PDF in Storage. | Download PDF dal browser su mobile e desktop. |
-| G4 | Gateway: participant lock nome+cognome, cookie, nessun write Firestore dal portale, snapshot senza soluzioni, log accesso; bozza/ripresa/consegna; reset auditato; consegna immutabile. | Mobile, tastiera, fullscreen/warning; nessuna soluzione visibile a studente. |
+| G4-lite | Login Google risolve TeacherShell/StudentShell; nessun accesso anonimo; studente legge solo `publicLessons` e verifiche `attiva`+`public`; pool/soluzioni/`questionIndex`/documenti tecnici mai raggiungibili dallo studente; PDF studente senza soluzioni; nessuna Cloud Function. | Login Google reale (account personale e, se disponibile, Workspace for Education) su mobile e desktop; nessun menu docente visibile allo studente. |
+| G4 (M3-full, specifica rinviata) | Gateway: participant lock nome+cognome, cookie, nessun write Firestore dal portale, snapshot senza soluzioni, log accesso; bozza/ripresa/consegna; reset auditato; consegna immutabile. | Mobile, tastiera, fullscreen/warning; nessuna soluzione visibile a studente. |
 | G5 | Percentuale e rettifiche; eliminazione dati; export PDF/MD/CSV da snapshot; consegna modificata lezione. | Revisione documento export nei tre formati; caricamento manuale Drive. |
 | G6/G7 (V2) | Contesto AI chiuso; audit; bulk approval; opt-in automatico; C-03 gate. | Revisione didattica e policy. |
 
@@ -57,18 +73,24 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 
 ## 5. Test negativi non negoziabili
 
-1. Un utente Firebase diverso dall'owner non legge o scrive dati docente.
-2. Un client portale non legge né scrive direttamente tentativi, risposte o snapshot; le soluzioni non compaiono in alcuna risposta del gateway.
-3. Il Portale può ottenere solo `publicVerificationLinks/{hash(token)}` con `get`; non può elencare link né leggere la verifica privata.
-4. Un pool invalido non entra nella selezione domande.
-5. Una configurazione non valida non viene attivata.
-6. Un secondo avvio digitale con lo stesso nome+cognome normalizzati sulla stessa verifica è rifiutato con `PARTICIPANT_ALREADY_USED`; ogni accesso resta tracciato nel Report Accessi.
-7. Refresh del Portale non cambia lo snapshot né le risposte in bozza.
-8. Dopo consegna digitale, risposte e snapshot non sono modificabili.
-9. Un import fallito non cambia l'`activeImportId`; la modifica di un Markdown sorgente non altera verifica pubblicata, export e correzione di una consegna già svolta.
-10. Cookie assente, scaduto o revocato non permette ripresa, bozza né consegna; il reset può annullare solo un tentativo in corso e richiede audit.
-11. PDF e documenti export non esistono in Storage o Firestore dopo la generazione.
-12. AI non riceve soluzioni di altre domande, non usa web e non modifica punteggi senza approvazione o C-03.
+1. Un utente Firebase diverso dall'owner non legge o scrive dati docente (`lessons`, `questionIndex`, `publishedSnapshot`, `corrections`, `correctionEvents`, `auditEvents`, `settings/owner`).
+2. Un utente non autenticato non raggiunge alcuna sezione applicativa, docente o studente.
+3. Uno studente autenticato (Google, non-owner) non legge mai pool, soluzioni, `questionIndex` o percorsi tecnici; ottiene solo `publicLessons` e `verifications`/`publishedProjection` quando `state == 'attiva' && visibility == 'public'`.
+4. Uno studente non vede verifiche `bozza`, `chiusa`, `archiviata` o `attiva`+`hidden`.
+5. Il download del PDF studente in M3-lite non espone mai soluzioni, indipendentemente dal pool sorgente.
+6. Un pool invalido non entra nella selezione domande.
+7. Una configurazione non valida non viene attivata.
+8. Un import fallito non cambia l'`activeImportId` né la proiezione `publicLessons`; la modifica di un Markdown sorgente non altera una verifica pubblicata.
+9. PDF e documenti export non esistono in Storage o Firestore dopo la generazione, in nessun canale.
+10. AI non riceve soluzioni di altre domande, non usa web e non modifica punteggi senza approvazione o C-03.
+
+I test seguenti restano specifica di un eventuale M3-full e non si applicano a M3-lite:
+
+11. Un client portale non legge né scrive direttamente tentativi, risposte o snapshot; le soluzioni non compaiono in alcuna risposta del gateway.
+12. Il Portale può ottenere solo `publicVerificationLinks/{hash(token)}` con `get`; non può elencare link né leggere la verifica privata.
+13. Un secondo avvio digitale con lo stesso nome+cognome normalizzati sulla stessa verifica è rifiutato con `PARTICIPANT_ALREADY_USED`; ogni accesso resta tracciato nel Report Accessi.
+14. Refresh del Portale non cambia lo snapshot né le risposte in bozza; dopo consegna digitale, risposte e snapshot non sono modificabili.
+15. Cookie assente, scaduto o revocato non permette ripresa, bozza né consegna; il reset può annullare solo un tentativo in corso e richiede audit.
 
 ---
 

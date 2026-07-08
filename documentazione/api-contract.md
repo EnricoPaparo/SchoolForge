@@ -1,6 +1,6 @@
 # SchoolForge — Contratto API
 
-**Versione:** 2.2
+**Versione:** 3.0
 **Stato:** contratto pre-implementazione
 **Autorità:** `analisi-requisiti.md` e `architettura.md`
 
@@ -15,10 +15,10 @@ I tipi e gli artefatti di questo contratto risiedono nei seguenti percorsi:
 | `src/types/firestore.ts` | Tutte le interfacce dei documenti Firestore (sezione 2). |
 | `src/types/functions.ts` | Tipi di request/response delle Cloud Functions. |
 | `packages/lesson-contract/src/index.ts` | Schemi Zod del contratto pool v1 (package interno del workspace, non pubblicato su npm). |
-| `functions/src/index.ts` | Entry point delle Cloud Functions. |
-| `functions/src/startDigitalAttempt.ts` | Funzione M3 `startDigitalAttempt`. |
-| `functions/src/continueDigitalAttempt.ts` | Funzione M3 per ripresa, bozza e consegna del tentativo. |
-| `src/components/pdf/VerificaPdfRenderer.tsx` | Renderer PDF unificato (`mode="teacher" \| "student"`). |
+| `functions/src/index.ts` | Entry point delle Cloud Functions (solo M5/V2 nella baseline corrente). |
+| `src/components/pdf/VerificaPdfRenderer.tsx` | Renderer PDF unificato (`mode="teacher" \| "student"`); riusato dal canale cartaceo e dal Portale studente M3-lite. |
+| `src/features/student/` | StudentShell M3-lite: routing, lettura `publicLessons`, lettura verifiche `attiva`+`public`, download PDF studente. |
+| `functions/src/startDigitalAttempt.ts`, `functions/src/continueDigitalAttempt.ts` | M3-full, specifica rinviata: non presenti nella baseline corrente. |
 
 > Nota: nel contesto della SPA, `src/contracts/lesson.ts` riesporta gli schemi da `packages/lesson-contract/src/index.ts` per semplificare gli import del client.
 
@@ -28,18 +28,19 @@ I tipi e gli artefatti di questo contratto risiedono nei seguenti percorsi:
 
 ### 1.1 Scritture client dirette
 
-Le operazioni del docente nei Moduli 1–4 usano Firebase SDK direttamente dal client con Firestore Security Rules. Repository, bozze e pubblicazione, correzione ed export non richiedono una Function; il portale pubblico usa invece il gateway M3 per ogni accesso a un tentativo digitale.
+Le operazioni del docente nei Moduli 1–4 usano Firebase SDK direttamente dal client con Firestore Security Rules. Repository, bozze e pubblicazione, correzione ed export non richiedono una Function. Il Portale studente **M3-lite** è a sola lettura e usa lo stesso Firebase SDK client con Security Rules dedicate: non richiede alcuna Cloud Function (vedi §3.5).
 
-Il client docente è autenticato tramite Firebase Authentication; le Security Rules verificano `request.auth.uid == ownerUid` per ogni scrittura sensibile.
+Il client docente è autenticato tramite Firebase Authentication; le Security Rules verificano `request.auth.uid == ownerUid` per ogni scrittura sensibile. Il client studente (M3-lite) è autenticato con lo stesso Firebase Authentication, provider Google; le Security Rules verificano che l'utente sia autenticato e non sia l'owner per concedere le sole letture read-only descritte in §6.
 
 ### 1.2 Cloud Functions
 
-Le Cloud Functions sono usate solo per due categorie di operazioni:
+M3-lite non introduce Cloud Functions. Nella baseline corrente le Cloud Functions sono usate solo per il modulo AI:
 
 | Funzione | Modulo | Motivo |
 |---|---|---|
-| `startDigitalAttempt`, `continueDigitalAttempt` | M3 | Emettono e verificano la sessione server-side con cookie HttpOnly/Secure; il browser non scrive tentativi direttamente. |
-| `proposeCorrection`, `approveCorrection`, `bulkApproveCorrections`, `enableAutomaticCorrection` | M5 | Richiedono chiave API AI in Secret Manager. |
+| `proposeCorrection`, `approveCorrection`, `bulkApproveCorrections`, `enableAutomaticCorrection` | M5 (V2) | Richiedono chiave API AI in Secret Manager. |
+
+Un eventuale **M3-full** (specifica rinviata, §4) aggiungerebbe `startDigitalAttempt` e `continueDigitalAttempt` per emettere e verificare una sessione server-side con cookie HttpOnly/Secure, perché il browser non potrebbe scrivere tentativi direttamente. Non fanno parte della baseline corrente.
 
 ### 1.3 Convenzioni risposta
 
@@ -64,7 +65,7 @@ Le operazioni irreversibili richiedono `confirmation: true` nel payload: attivaz
 I tipi seguenti definiscono la struttura dei documenti Firestore. Sono il contratto vincolante per l'implementazione.
 
 ```typescript
-// settings/owner
+// settings/owner — leggibile e scrivibile solo dall'owner
 interface OwnerSettings {
   ownerUid: string;
   classes: string[];           // lista classi configurate dal docente
@@ -72,6 +73,14 @@ interface OwnerSettings {
     aiEnabled: boolean;
     aiAutoEnabled: boolean;
   };
+}
+
+// settings/ownerPublic — leggibile da qualunque utente autenticato (M3-lite)
+// Usato SOLO per instradare il client su TeacherShell/StudentShell.
+// Non autorizza nulla di per sé: l'autorizzazione reale resta nelle Security
+// Rules di ciascun percorso protetto.
+interface OwnerPublicSettings {
+  ownerUid: string;
 }
 
 // programs/{programId}
@@ -94,7 +103,7 @@ interface Uda {
   validationStatus: 'valid' | 'invalid' | 'pending';
 }
 
-// lessons/{lessonId}
+// lessons/{lessonId} — documento tecnico, leggibile SOLO dall'owner
 interface Lesson {
   id: string;
   udaId: string;
@@ -107,7 +116,21 @@ interface Lesson {
   order: number;
 }
 
-// questionIndex/{questionId}
+// publicLessons/{lessonId} — proiezione read-only (M3-lite)
+// Scritta dal client docente nello stesso flusso che scrive `lessons`,
+// sotto lo stesso importId isolato (vedi BR-REP-03). Non contiene alcun
+// riferimento al pool. Leggibile da qualunque utente autenticato non-owner.
+interface PublicLesson {
+  id: string;
+  udaId: string;
+  programId: string;
+  title: string;
+  order: number;
+  contentPath: string;         // percorso Storage del solo file lezione .md, mai del pool
+  validationStatus: 'valid' | 'invalid' | 'pending';
+}
+
+// questionIndex/{questionId} — leggibile SOLO dall'owner, mai dallo studente
 interface QuestionIndex {
   lessonId: string;
   udaId: string;
@@ -124,8 +147,9 @@ interface Verification {
   id: string;
   ownerUid: string;
   title: string;
-  state: 'bozza' | 'attiva' | 'chiusa' | 'archiviata';  // 'attiva' = link aperto
-  publicTokenHash: string | null;  // presente solo se attiva
+  state: 'bozza' | 'attiva' | 'chiusa' | 'archiviata';
+  visibility: 'hidden' | 'public';  // indipendente da state (M3-lite); default 'hidden' all'attivazione
+  publicTokenHash: string | null;   // M3-full, specifica rinviata: non usato da M3-lite
   sources: string[];               // lessonId[] o udaId[]
   config: {                        // modificabile solo nello stato 'bozza'
     totalQuestions: number;
@@ -140,7 +164,14 @@ interface Verification {
   createdAt: Timestamp;
 }
 
-// publicVerificationLinks/{SHA-256(verificationToken)} — unico documento pubblico di lookup
+// Lo studente (M3-lite) legge solo i campi non sensibili di Verification
+// (id, title, state, visibility) quando state === 'attiva' && visibility === 'public'.
+// I campi sources, config e publicTokenHash non sono mai necessari al client
+// studente e restano protetti dalle Security Rules per ogni altro caso.
+
+// publicVerificationLinks/{SHA-256(verificationToken)} — M3-full, specifica rinviata.
+// Non introdotto da M3-lite, che non usa link pubblici né token: l'accesso
+// dello studente è risolto da Firebase Authentication (ADR-06b).
 interface PublicVerificationLink {
   verificationId: string;
   title: string;
@@ -150,14 +181,18 @@ interface PublicVerificationLink {
 }
 
 // verifications/{verificationId}/publishedSnapshot/items — creato all'attivazione, privato
+// Mai leggibile dallo studente, né in M3-lite né in un eventuale M3-full.
 interface PublishedSnapshotItem extends SnapshotItem {
   candidate: true;
 }
 
 // verifications/{verificationId}/publishedProjection/items — senza soluzioni
+// Riusata da M3-lite per il download del PDF studente quando la verifica
+// è attiva+public (oltre che dal canale cartaceo, M2).
 interface PublishedProjectionMeta {
   title: string;
   state: 'attiva';
+  visibility: 'hidden' | 'public';
   channels: ('cartaceo' | 'digitale')[];
   variant: 'tutte_uguali' | 'tutte_diverse';
 }
@@ -173,6 +208,13 @@ interface PublishedProjectionItem {
   opzioni: { id: string; testo: string }[] | null;
   lessonSource: string;
 }
+
+// ---------------------------------------------------------------------------
+// M3-full — specifica rinviata. I tipi seguenti (DeliveryAttempt, AccessLogEntry,
+// SnapshotItem, Answer) descrivono un'eventuale consegna online successiva a
+// M3-lite; non sono introdotti dalla baseline corrente, che non produce
+// tentativi né consegne.
+// ---------------------------------------------------------------------------
 
 // deliveryAttempts/{attemptId} — solo canale digitale (il canale cartaceo non crea tentativi)
 interface DeliveryAttempt {
@@ -223,7 +265,8 @@ interface Answer {
   updatedAt: Timestamp;
 }
 
-// corrections/{attemptId}
+// corrections/{attemptId} e correctionEvents — Modulo 4, dipende da M3-full
+// (operano sull'attemptId di una consegna digitale; non popolati da M3-lite)
 interface Correction {
   attemptId: string;
   verificationId: string;
@@ -276,16 +319,21 @@ interface AuditEvent {
 
 Il parser `lesson-contract` (package interno `packages/lesson-contract/src/index.ts`, riesportato da `src/contracts/lesson.ts`) esegue la validazione nel client prima di qualsiasi scrittura. Se il client riceve errori, la UI li mostra senza scrivere su Firestore o Storage. Se un upload fallisce prima del commit, l'import precedente rimane l'unico visibile.
 
+L'import scrive, nella stessa transazione di commit, sia il documento tecnico `lessons/{id}` sia la proiezione pubblica `publicLessons/{id}` (M3-lite, §3.5): entrambi puntano allo stesso `activeImportId` e diventano visibili insieme.
+
 ### 3.2 Verifiche
 
 | Operazione | Scrittura Firestore |
 |---|---|
 | Crea/modifica bozza | `verifications.set()` — solo stato `bozza` |
-| Attiva verifica | Transazione: valida config contro `questionIndex`, crea `publishedSnapshot` privato, proiezione senza soluzioni e `publicVerificationLinks/{publicTokenHash}`, genera `publicTokenHash`, passa a `attiva` |
-| Chiudi / archivia | Transazione con `confirmation: true` nel client, aggiorna stato, disabilita/rimuove `publicVerificationLinks/{publicTokenHash}` e scrive `auditEvents` |
+| Attiva verifica | Transazione: valida config contro `questionIndex`, crea `publishedSnapshot` privato e proiezione senza soluzioni, imposta `state: "attiva"` e `visibility: "hidden"` |
+| Pubblica / nascondi verifica (M3-lite) | Aggiorna solo `visibility` (`"hidden" ↔ "public"`) su una verifica `attiva`; nessun'altra scrittura consentita da questa operazione |
+| Chiudi / archivia | Transazione con `confirmation: true` nel client, aggiorna stato e scrive `auditEvents` |
 | Download PDF docente | Solo lettura Firestore + `questionIndex`; genera nel browser |
 
-Una verifica `attiva`, `chiusa` o `archiviata` non è modificabile. Per cambiare fonti o configurazione il docente duplica una nuova bozza. Il canale cartaceo richiede `variant: "tutte_uguali"` e usa la proiezione pubblicata.
+Una verifica `attiva`, `chiusa` o `archiviata` non è modificabile nella sua configurazione. Per cambiare fonti o configurazione il docente duplica una nuova bozza. Il campo `visibility` è l'unica eccezione: è modificabile più volte finché la verifica resta `attiva`. Il canale cartaceo e M3-lite richiedono `variant: "tutte_uguali"` e usano la proiezione pubblicata.
+
+`publicVerificationLinks/{publicTokenHash}` e `publicTokenHash` restano specifica di un eventuale M3-full (§4); M3-lite non li crea né li usa.
 
 ### 3.3 Canale cartaceo
 
@@ -298,7 +346,22 @@ Il canale cartaceo è puramente fisico: cliccando "Stampa/Scarica PDF" il docume
 
 All'apertura del link, il Portale calcola `SHA-256(verificationToken)` con Web Crypto e fa un solo `get` a `publicVerificationLinks/{hash}`; il documento restituisce l'identificatore della verifica e i soli metadati pubblici necessari per leggere `publishedProjection`. Non sono ammessi query o `list` sul percorso pubblico.
 
-### 3.4 Correzione ed export
+> Questo meccanismo di lookup via token appartiene a un eventuale M3-full. M3-lite non ne ha bisogno: l'identità è già risolta da Firebase Authentication, quindi lo studente legge `verifications`/`publishedProjection` direttamente, filtrati dalle Security Rules su `state`/`visibility` (§3.5).
+
+### 3.4 Portale studente — M3-lite
+
+| Operazione | Lettura Firestore/Storage |
+|---|---|
+| Risoluzione ruolo | `get settings/ownerPublic`; confronto client-side `uid === ownerUid` per instradare TeacherShell/StudentShell (non sostituisce le Security Rules) |
+| Lezioni | Query `publicLessons` filtrata su `programId`/`udaId` correnti; lettura del file `.md` e degli asset da Cloud Storage (Storage Rules: lettura consentita, mai per `.pool.md`) |
+| Elenco verifiche visibili | Query `verifications` filtrata su `state == "attiva" && visibility == "public"` (indice composito) |
+| Download PDF studente | Lettura `verifications/{id}/publishedProjection`; genera il PDF nel browser con `VerificaPdfRenderer mode="student"` |
+
+Nessuna di queste operazioni scrive su Firestore o Storage, crea un record, o richiama una Cloud Function. Le Security Rules negano allo studente ogni lettura di `lessons`, `questionIndex`, `publishedSnapshot`, `corrections`, `correctionEvents`, `auditEvents` e `settings/owner` (eccetto `settings/ownerPublic`).
+
+### 3.5 Correzione ed export (Modulo 4, dipende da M3-full)
+
+> Le operazioni seguenti richiedono le consegne digitali di un eventuale M3-full (specifica rinviata, §4); non sono utilizzabili con M3-lite, che non produce consegne.
 
 | Operazione | Scrittura Firestore |
 |---|---|
@@ -312,9 +375,11 @@ All'apertura del link, il Portale calcola `SHA-256(verificationToken)` con Web C
 
 ---
 
-## 4. Gateway M3: tentativo digitale
+## 4. Gateway M3-full: tentativo digitale (specifica rinviata)
 
-I soli endpoint M3 sono `startDigitalAttempt` e `continueDigitalAttempt`. Entrambi scrivono tramite Admin SDK: il portale non riceve né usa credenziali Firestore per `deliveryAttempts`, risposte o snapshot.
+> Questa sezione descrive l'eventuale gateway Cloud Functions di un **M3-full**, fase successiva a M3-lite e non pianificata in dettaglio. Nessuno degli endpoint seguenti esiste nella baseline corrente; M3-lite non li richiede.
+
+I soli endpoint di un eventuale M3-full sarebbero `startDigitalAttempt` e `continueDigitalAttempt`. Entrambi scriverebbero tramite Admin SDK: il portale non riceverebbe né userebbe credenziali Firestore per `deliveryAttempts`, risposte o snapshot.
 
 ### Request
 
@@ -433,24 +498,31 @@ Tutte richiedono Firebase ID token con `ownerUid` verificato server-side.
 
 ## 6. Proiezioni Security Rules
 
-Le Security Rules Firestore devono garantire:
+Le Security Rules Firestore devono garantire, per la baseline corrente (M1+M2+M3-lite):
 
-| Percorso | Docente (`ownerUid`) | Client portale | Nessuno |
+| Percorso | Docente (`ownerUid`) | Studente (autenticato, non-owner) | Non autenticato |
 |---|---|---|---|
-| `settings/owner` | Lettura + scrittura | — | Scrittura |
-| `programs`, `udas`, `lessons`, `questionIndex` | Lettura + scrittura sull'import attivo/preparato | — | Scrittura |
-| `publicVerificationLinks/{publicTokenHash}` | Lettura + scrittura | Solo `get` sul documento esatto, mai `list` | Scrittura |
-| `verifications` | Lettura + scrittura solo per bozza e transizioni consentite | — | Lettura completa |
-| `verifications/*/publishedSnapshot` | Lettura | — | Scrittura diretta |
-| `verifications/*/publishedProjection` | Lettura | Lettura solo quando attiva | Scrittura diretta |
-| `verifications/*/participantLocks` | Lettura; modifica solo nella transazione di reset ammessa | — | Lettura/scrittura diretta |
-| `deliveryAttempts` | Lettura; reset ammesso solo su `in_progress` | — | Lettura/scrittura diretta |
-| `deliveryAttempts/*/accessLog` | Lettura (Report Accessi) | — | Lettura/scrittura diretta |
-| `deliveryAttempts/*/snapshot/items` | Lettura completa | — | Lettura/scrittura diretta |
+| `settings/owner` | Lettura + scrittura | — | — |
+| `settings/ownerPublic` | Lettura + scrittura | Solo lettura (`ownerUid`, per routing UI) | — |
+| `programs`, `udas`, `lessons`, `questionIndex` | Lettura + scrittura sull'import attivo/preparato | — | — |
+| `publicLessons` | Lettura + scrittura (stesso flusso di import) | Solo lettura | — |
+| `verifications` | Lettura + scrittura solo per bozza e transizioni consentite; scrittura di `visibility` su verifica `attiva` | Solo lettura dei campi non sensibili quando `state == "attiva" && visibility == "public"` | — |
+| `verifications/*/publishedSnapshot` | Lettura | — | — |
+| `verifications/*/publishedProjection` | Lettura | Lettura solo quando `state == "attiva" && visibility == "public"` | — |
 | `corrections`, `correctionEvents` | Lettura + scrittura | — | — |
-| `auditEvents` | Lettura + sola creazione append-only con schema ammesso | — | Aggiornamento/cancellazione/scrittura diretta |
+| `auditEvents` | Lettura + sola creazione append-only con schema ammesso | — | — |
 
-Le Security Rules esatte vengono scritte e testate in F-04 con Emulator Suite obbligatoria.
+Le Security Rules esatte vengono scritte e testate con Emulator Suite obbligatoria, incluso il gate M3-lite.
+
+> I percorsi seguenti (`publicVerificationLinks`, `verifications/*/participantLocks`, `deliveryAttempts` e sottocollezioni) restano specifica di un eventuale M3-full e non esistono nella baseline corrente:
+>
+> | Percorso | Docente (`ownerUid`) | Client portale M3-full | Nessuno |
+> |---|---|---|---|
+> | `publicVerificationLinks/{publicTokenHash}` | Lettura + scrittura | Solo `get` sul documento esatto, mai `list` | Scrittura |
+> | `verifications/*/participantLocks` | Lettura; modifica solo nella transazione di reset ammessa | — | Lettura/scrittura diretta |
+> | `deliveryAttempts` | Lettura; reset ammesso solo su `in_progress` | — | Lettura/scrittura diretta |
+> | `deliveryAttempts/*/accessLog` | Lettura (Report Accessi) | — | Lettura/scrittura diretta |
+> | `deliveryAttempts/*/snapshot/items` | Lettura completa | — | Lettura/scrittura diretta |
 
 ---
 
@@ -458,11 +530,18 @@ Le Security Rules esatte vengono scritte e testate in F-04 con Emulator Suite ob
 
 | Condizione | Messaggio utente | Azione suggerita |
 |---|---|---|
+| Login con account non autorizzato/non Google | "Accedi con il tuo account Google per continuare." | Rieffettuare il login con Google |
+| Nessuna verifica visibile (M3-lite) | "Non ci sono verifiche disponibili al momento." | Attendere che il docente pubblichi una verifica |
+| Configurazione non attivabile | "Impossibile attivare: [motivo specifico]." | Correggere la configurazione |
+| Pool insufficiente | "Non ci sono abbastanza domande per questa configurazione." | Aggiungere domande al pool |
+
+Le condizioni seguenti restano specifica di un eventuale M3-full (link pubblico, tentativi, sessione):
+
+| Condizione | Messaggio utente | Azione suggerita |
+|---|---|---|
 | Nome e cognome già usati | "Per questa verifica risulta già avviato un tentativo con questi dati. Contatta il docente se è un errore." | Contattare il docente |
 | Verifica non attiva | "Il link non è attivo o la verifica è chiusa." | Contattare il docente |
-| Configurazione non attivabile | "Impossibile attivare: [motivo specifico]." | Correggere la configurazione |
 | Rate limit | "Troppo richieste. Attendere qualche minuto." | Riprovare |
-| Pool insufficiente | "Non ci sono abbastanza domande per questa configurazione." | Aggiungere domande al pool |
 | Sessione digitale scaduta o revocata | "La sessione non è più valida. Contatta il docente per un eventuale reset del tentativo." | Contattare il docente |
 
 ---

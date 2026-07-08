@@ -35,15 +35,14 @@ Questo documento fissa le versioni degli strumenti, la struttura del monorepo, i
 ```text
 SchoolForge/
 ├─ apps/
-│  └─ web/                       # SPA unica (React + Vite) — /teacher/* e /exam/:token
+│  └─ web/                       # SPA unica (React + Vite) — /teacher/* e /student/* (M3-lite)
 ├─ packages/
 │  └─ lesson-contract/           # package interno (NON pubblicato su npm)
 │     └─ src/index.ts            # schemi Zod e parser pool v1
 ├─ functions/                    # Cloud Functions v2 (TypeScript)
 │  └─ src/
-│     ├─ index.ts                # entry point
-│     ├─ startDigitalAttempt.ts  # avvio digitale M3
-│     └─ continueDigitalAttempt.ts # ripresa, bozza e consegna M3
+│     └─ index.ts                # entry point (solo AI, M5/V2, nella baseline corrente)
+│                                 # startDigitalAttempt.ts / continueDigitalAttempt.ts: M3-full, specifica rinviata, non presenti
 ├─ firestore.rules
 ├─ storage.rules
 ├─ firestore.indexes.json
@@ -90,7 +89,7 @@ Le variabili esposte al client devono avere prefisso `VITE_`:
 
 ### 5.2 Cloud Functions
 
-La chiave API del provider AI è richiesta **solo in V2 (M5)** ed è gestita tramite Firebase Functions config / Secret Manager, mai esposta al client né committata su Git. Nei Moduli 1–4 non sono necessari segreti applicativi: il gateway M3 usa un token di sessione opaco, hashato in Firestore e consegnato esclusivamente come cookie HttpOnly.
+La chiave API del provider AI è richiesta **solo in V2 (M5)** ed è gestita tramite Firebase Functions config / Secret Manager, mai esposta al client né committata su Git. Nei Moduli 1, 2 e 3-lite non sono necessari segreti applicativi né Cloud Functions. Un eventuale gateway M3-full (specifica rinviata) userebbe un token di sessione opaco, hashato in Firestore e consegnato esclusivamente come cookie HttpOnly.
 
 ---
 

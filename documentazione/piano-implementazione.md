@@ -18,10 +18,13 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 |---|---|---|
 | M1 — Repository didattico | Programmi, UDA, Markdown/pool, import validato, rendering, export ZIP, programma svolto (PDF + Markdown). | Sì |
 | M2 — Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente, canale cartaceo fisico senza record (al più `downloadCount`). | Sì |
-| M3 — Portale digitale | Tentativi anonimi, snapshot via Cloud Function, lock nome+cognome, token sessione, log nome+IP, bozze, consegna, deterrenza. | Sì |
-| M4 — Correzione ed export | Punteggi, percentuali, rettifiche, eliminazione e `Esporta verifiche` in PDF/Markdown/CSV. | Sì |
+| M3-lite — Portale studente (Google, read-only) | Login Google, risoluzione ruolo docente/studente, StudentShell con Lezioni e Verifiche in sola lettura, download PDF studente per verifiche `attiva`+`public`. Nessuna Cloud Function. | Sì |
+| M3-full — Portale digitale (specifica rinviata) | Tentativi, snapshot via Cloud Function, lock nome+cognome, token sessione, log nome+IP, bozze, consegna, deterrenza. Non pianificato in dettaglio; segue M3-lite. | Sì |
+| M4 — Correzione ed export | Punteggi, percentuali, rettifiche, eliminazione e `Esporta verifiche` in PDF/Markdown/CSV. Dipende da M3-full. | Sì |
 
 **M5 — Correzione AI** è fuori scope V1 ed è pianificato per la V2. Vedi la sezione "V2 — Roadmap futura" in fondo. M5 non fa parte del perimetro né delle dipendenze della V1.
+
+Il Modulo 3 (Portale digitale) è diviso in **M3-lite** (deciso, prossimo passo dopo M2) e **M3-full** (specifica rinviata a una fase successiva, non pianificata in dettaglio). M3-lite non richiede Cloud Functions e non dipende da M3-full.
 
 ---
 
@@ -64,7 +67,7 @@ Un pacchetto può partire solo se:
 2. Verificare il DoR e dichiarare subito un blocco reale.
 3. Implementare solo lo scope assegnato.
 4. Eseguire i test dichiarati e aggiungere test per regressioni introdotte.
-5. Confrontare il diff con i vincoli: no account studenti, no email, no PDF persistenti, no AI in V1 (M5 è V2), no ampliamento LMS, nessuna Cloud Function oltre al gateway M3 `startDigitalAttempt`/`continueDigitalAttempt`; il limite digitale usa verifica più nome/cognome normalizzati.
+5. Confrontare il diff con i vincoli: no account studente custom, no email, no PDF persistenti, no AI in V1 (M5 è V2), no ampliamento LMS, nessuna Cloud Function in M3-lite; un eventuale gateway M3-full (`startDigitalAttempt`/`continueDigitalAttempt`, specifica rinviata) resterebbe l'unica eccezione motivata al di fuori di M5.
 6. Consegnare handoff con file, test, evidenze, rischi e dipendenze sbloccate.
 
 ### 3.3 Definition of Done (DoD)
@@ -95,13 +98,14 @@ Un pacchetto è abbastanza piccolo da essere verificato in una review e abbastan
 | G0 — Baseline | Brief, requisiti, architettura e piano coerenti. | Review documentale e C-01 formalizzata. | Bootstrap del repository. |
 | G1 — Fondazioni Firebase | H-01/H-02/H-03 completate; CI ed Emulator Suite disponibili. | Progetti separati, budget, export Firestore manuale disponibile, Security Rules default-deny. | M1 con dati sintetici. |
 | G2 — Repository didattico | M1 integrato. | Import valido/invalido, rendering senza pool, ZIP e programma svolto. | M2. |
-| G3 — Verifiche e cartaceo | M2 integrato. | PDF browser, canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`), nessun PDF persistito. | M3. |
-| G4 — Portale digitale | M3 integrato. | Lock nome+cognome concorrente, log nome+IP, snapshot, bozza/ripresa, consegna immutabile, nessuna soluzione esposta. | M4. |
-| G5 — Correzione ed export | M4 integrato e H-04 completata. | Punteggi, rettifiche, eliminazione, export PDF/Markdown/CSV da snapshot. | Uso manuale completo — fine V1. |
+| G3 — Verifiche e cartaceo | M2 integrato. | PDF browser, canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`), nessun PDF persistito. | M3-lite. |
+| G4-lite — Portale studente (M3-lite) | M3-lite integrato. | Login Google risolve TeacherShell/StudentShell; studente legge solo lezioni pubblicate e verifiche `attiva`+`public`; PDF studente senza soluzioni; nessuna Cloud Function introdotta. | M3-full (se pianificato) o direttamente M4 con evidenza di rinvio esplicito di M3-full. |
+| G4 — Portale digitale (M3-full, specifica rinviata) | G4-lite superato; M3-full integrato, se e quando pianificato. | Lock nome+cognome concorrente, log nome+IP, snapshot, bozza/ripresa, consegna immutabile, nessuna soluzione esposta. | M4. |
+| G5 — Correzione ed export | M4 integrato, G4 (M3-full) superato e H-04 completata. | Punteggi, rettifiche, eliminazione, export PDF/Markdown/CSV da snapshot. | Uso manuale completo — fine V1. |
 | G6 — AI assistita (V2) | M5-A..C integrati e H-05 completata. | Contesto chiuso, audit, proposte assistite per risposta, approvazione massiva. | AI assistita. |
 | G7 — AI automatica (V2) | G6 e H-06 completati. | Opt-in per verifica, audit e rollback. | Correzione automatica. |
 
-C-02 e C-03 riguardano la V2 e non bloccano M1–M4.
+C-02 e C-03 riguardano la V2 e non bloccano M1–M4. M4 (Correzione ed export) resta bloccato finché M3-full non è pianificato e completato: il progetto può fermarsi utilmente a G4-lite (fine V1 "read-only") se M3-full viene rinviato oltre la V1.
 
 ---
 
@@ -132,12 +136,19 @@ flowchart TD
     M2B --> M2D
     M2C --> M2D
     M2D --> G3
-    G3 --> M3A["M3-A Gateway digitale Functions"]
-    M3A --> M3B["M3-B UI Portale"]
-    M3A --> M3C["M3-C Bozza e consegna"]
-    M3B --> M3D["M3-D Integrazione Portale"]
-    M3C --> M3D
-    M3D --> G4
+    G3 --> M3LA["M3L-A Ruolo, proiezioni read-only, visibility"]
+    M3LA --> M3LB["M3L-B StudentShell e routing"]
+    M3LB --> M3LC["M3L-C Sezione Lezioni studente"]
+    M3LB --> M3LD["M3L-D Sezione Verifiche studente"]
+    M3LC --> M3LE["M3L-E Integrazione M3-lite"]
+    M3LD --> M3LE
+    M3LE --> G4LITE["G4-lite"]
+    G4LITE -. "se pianificato" .-> M3FA["M3F-A Gateway digitale Functions (M3-full)"]
+    M3FA --> M3FB["M3F-B UI consegna online"]
+    M3FA --> M3FC["M3F-C Bozza e consegna"]
+    M3FB --> M3FD["M3F-D Integrazione M3-full"]
+    M3FC --> M3FD
+    M3FD --> G4
     G4 --> M4A["M4-A Correzione e audit"]
     G4 --> M4B["M4-B Modello export"]
     M4A --> M4C["M4-C UI correzione"]
@@ -188,18 +199,32 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 ---
 
-## 9. M3 — Portale digitale
+## 9. M3-lite — Portale studente (Google, read-only)
 
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
-| M3-A | Gateway digitale Cloud Functions: `startDigitalAttempt` e `continueDigitalAttempt` per ripresa, bozza e consegna; transazione Firestore, participant lock, snapshot con soluzioni private e cookie HttpOnly/Secure. | G3 | — | Lock concorrente creato; refresh non seleziona nuove domande; salvataggi/consegna autorizzati lato server; soluzioni non nel response body. |
-| M3-B | UI Portale mobile-first: raccolta dati, scelta canale, sequenza domande, proiezione senza soluzioni. | M3-A, contratto endpoint | M3-C | Nessun menu/dato interno; uso da tastiera e mobile verificato. |
-| M3-C | Bozze, autosave, consegna immutabile e reset docente auditato; fullscreen/tab warning/copia-incolla UI. | M3-A | M3-B | Risposte riprendono nello stesso browser; consegna non modificabile; reset rilascia solo un tentativo in corso. |
-| M3-D | E2E e test negativi: lock nome+cognome, rate limit, soluzioni non accessibili. | M3-B/M3-C | — | Evidenze G4; nessuna soluzione ottenibile dal client. |
+| M3L-A | Modello dati e Security Rules: campo `visibility` su `verifications`, proiezione `publicLessons` scritta nello stesso flusso di import, documento `settings/ownerPublic` per il routing. Nessuna Cloud Function. | G3 | — | Studente autenticato non-owner legge solo le proiezioni pubbliche; owner mantiene accesso completo; test Emulator per entrambi i ruoli. |
+| M3L-B | StudentShell: routing `/student/*`, login Google, risoluzione ruolo (`uid == ownerUid` → TeacherShell, altrimenti StudentShell), layout mobile-first. | M3L-A | M3L-C/M3L-D | Docente va a TeacherShell; utente Google non-owner va a StudentShell; nessun accesso anonimo. |
+| M3L-C | Sezione Lezioni studente: elenco e rendering read-only da `publicLessons`, riuso del renderer Markdown sanitizzato del docente. | M3L-B | M3L-D | Lo studente vede tutte le lezioni pubblicate; nessun pool, soluzione, percorso tecnico o `questionIndex` raggiungibile. |
+| M3L-D | Sezione Verifiche studente: elenco filtrato `attiva`+`public`, azione "Scarica PDF studente" con `VerificaPdfRenderer mode="student"` dalla `publishedProjection`. | M3L-B | M3L-C | Solo verifiche `attiva`+`public` sono visibili; nessuna consegna o risposta online; PDF senza soluzioni. |
+| M3L-E | E2E e test negativi M3-lite, review sicurezza ruolo/proiezioni, evidenze G4-lite. | M3L-C/M3L-D | — | Evidenze G4-lite; nessuna soluzione o dato tecnico ottenibile dal client studente. |
 
 ---
 
-## 10. M4 — Correzione ed export
+## 10. M3-full — Portale digitale (specifica rinviata)
+
+> Questa sezione descrive pacchetti di un'eventuale fase successiva a M3-lite, non pianificata in dettaglio. Non è assegnabile finché la decisione su M3-full non sarà presa; è mantenuta come specifica di riferimento.
+
+| ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
+|---|---|---|---|---|
+| M3F-A | Gateway digitale Cloud Functions: `startDigitalAttempt` e `continueDigitalAttempt` per ripresa, bozza e consegna; transazione Firestore, participant lock, snapshot con soluzioni private e cookie HttpOnly/Secure. | G4-lite | — | Lock concorrente creato; refresh non seleziona nuove domande; salvataggi/consegna autorizzati lato server; soluzioni non nel response body. |
+| M3F-B | UI consegna online mobile-first: raccolta dati, scelta canale, sequenza domande, proiezione senza soluzioni. | M3F-A, contratto endpoint | M3F-C | Nessun menu/dato interno; uso da tastiera e mobile verificato. |
+| M3F-C | Bozze, autosave, consegna immutabile e reset docente auditato; fullscreen/tab warning/copia-incolla UI. | M3F-A | M3F-B | Risposte riprendono nello stesso browser; consegna non modificabile; reset rilascia solo un tentativo in corso. |
+| M3F-D | E2E e test negativi: lock nome+cognome, rate limit, soluzioni non accessibili. | M3F-B/M3F-C | — | Evidenze G4; nessuna soluzione ottenibile dal client. |
+
+---
+
+## 11. M4 — Correzione ed export
 
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
@@ -222,8 +247,8 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 | Stage | Trigger | Blocca | Contenuto |
 |---|---|---|---|
 | Verifica | Ogni push/PR | Merge | Format, lint, typecheck, unit test e build. |
-| Integrazione | PR verso `main` | Merge | Firebase Emulator Suite: Auth, Firestore, Storage e Functions (solo M3+). |
-| E2E | Prima dei gate G2–G7 | Gate | Browser test sui flussi del modulo e casi negativi. |
+| Integrazione | PR verso `main` | Merge | Firebase Emulator Suite: Auth, Firestore, Storage; Functions solo da M5 (V2) o da un eventuale M3-full. |
+| E2E | Prima dei gate G2–G7 (inclusi G4-lite e G4) | Gate | Browser test sui flussi del modulo e casi negativi. |
 | Deploy `dev` | Merge su `main` | — | Deploy controllato senza dati reali. |
 | Deploy `prod` | Gate approvato + azione manuale Docente | Go-live | Backup verificato, release notes e smoke test. |
 
@@ -231,8 +256,8 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 - Sviluppo e test usano Emulator Suite e fixture sintetiche.
 - Nessuna VM, Cloud SQL, container sempre acceso, coda dedicata o servizio enterprise senza decisione documentata.
-- Le sole Cloud Functions nella V1 sono il gateway M3 `startDigitalAttempt` e `continueDigitalAttempt`; qualsiasi Function aggiuntiva proposta da un agente deve essere giustificata e approvata.
-- PDF e documenti generati nel browser, mai su server.
+- M3-lite non introduce alcuna Cloud Function. Un eventuale gateway M3-full (`startDigitalAttempt`/`continueDigitalAttempt`, specifica rinviata) resta l'unica eccezione motivata al di fuori del modulo AI (M5); qualsiasi Function aggiuntiva proposta da un agente deve essere giustificata e approvata.
+- PDF e documenti generati nel browser, mai su server, in nessun canale.
 - Il Docente controlla budget/avvisi prima del primo deploy `prod`.
 - In V2, ogni pacchetto che aggiunge una chiamata a provider esterno (AI) dichiara volume atteso e costo variabile.
 
@@ -276,11 +301,11 @@ Ogni pacchetto concluso produce:
 
 1. Ogni modulo rilascia una capacità usabile senza anticipare AI o scope LMS.
 2. Nessun agente lavora su un pacchetto senza DoR o ignora un gate umano.
-3. Verifiche e consegne digitali rispettano il lock nome+cognome, il log nome+IP, lo snapshot e l'assenza di PDF persistenti.
-4. `Esporta verifiche` è costruito da tutte le consegne definitive e non dalle lezioni correnti.
+3. M3-lite rispetta la risoluzione del ruolo (docente vs studente Google), le proiezioni read-only e l'assenza di PDF persistenti; un eventuale M3-full rispetterà lock nome+cognome, log nome+IP e snapshot.
+4. `Esporta verifiche` è costruito da tutte le consegne definitive e non dalle lezioni correnti (dipende da M3-full).
 5. Test automatici, E2E e review crescono insieme al prodotto.
-6. Firebase resta configurato con costo minimo; nessuna Cloud Function aggiuntiva senza approvazione.
-7. Il progetto può fermarsi dopo G2, G3, G4 o G5 mantenendo un prodotto utile.
+6. Firebase resta configurato con costo minimo; nessuna Cloud Function aggiuntiva senza approvazione; M3-lite non ne richiede.
+7. Il progetto può fermarsi dopo G2, G3, G4-lite, G4, o G5 mantenendo un prodotto utile.
 
 ---
 
@@ -458,44 +483,98 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | Test minimi | PDF browser e log accessi verificati |
 | Evidenza richiesta | Evidenze G3 |
 
-### M3 — Portale digitale
+### M3-lite — Portale studente (Google, read-only)
 
-#### M3-A — Gateway digitale Functions
+#### M3L-A — Ruolo, proiezioni read-only, visibility
 
 | Campo | Valore |
 |---|---|
 | Prerequisiti | G3 |
+| File da creare | `firestore.rules` (regole owner/studente, `publicLessons`, `settings/ownerPublic`, `visibility` su `verifications`), `src/types/firestore.ts` (campi nuovi) |
+| File da modificare | flusso di import (scrive anche `publicLessons`), flusso di attivazione verifica (`visibility: "hidden"` iniziale) |
+| Test minimi | Studente autenticato non-owner legge solo le proiezioni pubbliche; owner mantiene accesso completo; `visibility` commutabile solo dal docente su verifica `attiva` |
+| Evidenza richiesta | Test Emulator ruoli owner/studente; matrice percorsi/ruoli aggiornata |
+
+#### M3L-B — StudentShell e routing
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M3L-A |
+| File da creare | `apps/web/src/routes/student/`, login Google, risoluzione ruolo |
+| File da modificare | router SPA |
+| Test minimi | Docente va a TeacherShell; utente Google non-owner va a StudentShell; nessun accesso anonimo |
+| Evidenza richiesta | E2E login Google; test dei due percorsi di routing |
+
+#### M3L-C — Sezione Lezioni studente
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M3L-B |
+| File da creare | `apps/web/src/features/student/lessons/`, riuso renderer Markdown |
+| File da modificare | — |
+| Test minimi | Lo studente vede tutte le lezioni pubblicate; nessun pool/soluzione/percorso tecnico/`questionIndex` raggiungibile |
+| Evidenza richiesta | Test lettura `publicLessons`; rendering senza pool verificato |
+
+#### M3L-D — Sezione Verifiche studente
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M3L-B |
+| File da creare | `apps/web/src/features/student/verifications/`, azione download PDF studente |
+| File da modificare | — |
+| Test minimi | Solo verifiche `attiva`+`public` visibili; nessuna consegna/risposta online; PDF senza soluzioni |
+| Evidenza richiesta | Test filtro `state`/`visibility`; PDF studente generato e verificato |
+
+#### M3L-E — Integrazione M3-lite
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M3L-C/M3L-D |
+| File da creare | `*.e2e.ts` M3-lite, test negativi |
+| File da modificare | — |
+| Test minimi | Nessun dato tecnico/soluzione ottenibile dal client studente; nessuna Cloud Function introdotta |
+| Evidenza richiesta | Evidenze G4-lite |
+
+### M3-full — Portale digitale (specifica rinviata)
+
+> Pacchetti di un'eventuale fase successiva, non pianificata in dettaglio. Non assegnabili finché la decisione su M3-full non sarà presa.
+
+#### M3F-A — Gateway digitale Functions
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | G4-lite |
 | File da creare | `functions/src/startDigitalAttempt.ts`, `functions/src/continueDigitalAttempt.ts`, `functions/src/index.ts`, `src/types/functions.ts` |
 | File da modificare | `firestore.rules` (nega il Portale su tentativi/risposte/snapshot; owner reset controllato) |
 | Test minimi | Participant lock e snapshot creati; refresh via cookie non seleziona nuove domande; bozza/consegna passano dal gateway; soluzioni assenti dal body; secondo avvio con stesso nome+cognome → `PARTICIPANT_ALREADY_USED`; cookie invalido rifiutato |
 | Evidenza richiesta | Test integrazione delle due Function; log accesso e audit registrati |
 
-#### M3-B — UI Portale
+#### M3F-B — UI consegna online
 
 | Campo | Valore |
 |---|---|
-| Prerequisiti | M3-A, contratto endpoint |
-| File da creare | `apps/web/src/routes/exam/`, UI mobile-first |
+| Prerequisiti | M3F-A, contratto endpoint |
+| File da creare | UI mobile-first di svolgimento e consegna |
 | File da modificare | router SPA |
 | Test minimi | Nessun menu/dato interno; uso da tastiera e mobile |
 | Evidenza richiesta | E2E mobile; nessuna soluzione nel client |
 
-#### M3-C — Bozza e consegna
+#### M3F-C — Bozza e consegna
 
 | Campo | Valore |
 |---|---|
-| Prerequisiti | M3-A |
+| Prerequisiti | M3F-A |
 | File da creare | autosave tramite gateway, consegna immutabile, reset docente, fullscreen/tab warning |
 | File da modificare | client Functions e UI docente del reset |
 | Test minimi | Risposte riprendono nello stesso browser; consegna non modificabile; reset solo di tentativo in corso con motivazione e audit |
 | Evidenza richiesta | E2E ripresa e consegna |
 
-#### M3-D — Integrazione Portale
+#### M3F-D — Integrazione M3-full
 
 | Campo | Valore |
 |---|---|
-| Prerequisiti | M3-B/M3-C |
-| File da creare | `*.e2e.ts` M3, test negativi |
+| Prerequisiti | M3F-B/M3F-C |
+| File da creare | `*.e2e.ts` M3-full, test negativi |
 | File da modificare | — |
 | Test minimi | Participant lock, rate limit, soluzioni non accessibili, secondo avvio rifiutato |
 | Evidenza richiesta | Evidenze G4 |
