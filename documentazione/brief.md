@@ -155,11 +155,11 @@ La V1 non prevede:
 
 ### Studenti
 
-Gli studenti non hanno un account SchoolForge.
+Gli studenti non hanno un account SchoolForge: non esiste registrazione interna, profilo studente o credenziale specifica dell'applicazione.
 
-Gli studenti accedono esclusivamente alla sezione Portale dell'applicazione tramite il link aperto di una verifica.
+Da **M3-lite**, gli studenti accedono al Portale con Firebase Authentication, provider Google. Funziona sia con un account Google personale sia con un account Google Workspace for Education, senza requisiti di dominio in questa fase. Il sistema non invia email e non richiede alcuna registrazione: chi effettua il login con Google e non è il Docente proprietario (`ownerUid`) entra automaticamente come studente, in sola lettura.
 
-Gli studenti non si registrano al sistema. Al momento dell'accesso lo studente dichiara nome e cognome: sono dati auto-dichiarati, non verificati, né una credenziale né una prova dell'identità. Nel canale digitale la coppia nome+cognome normalizzata consente un solo tentativo per verifica; non viene mai usata l'email. Il sistema registra nome dichiarato, indirizzo IP, timestamp e user-agent come audit trail consultabile dal docente nel Report Accessi.
+M3-lite è deliberatamente limitato: lo studente consulta le lezioni pubblicate e scarica il PDF delle verifiche visibili, senza consegna online. La descrizione storica con nome e cognome autodichiarati, lock di partecipazione e link pubblico anonimo resta valida solo come specifica di un'eventuale fase successiva **M3-full** (verifiche online con tentativi e consegna) — vedi sezione "Distribuzione e Canali di Erogazione" e "Roadmap". M3-lite non usa dati autodichiarati né accesso anonimo: ogni accesso studente è un login Google verificato da Firebase Authentication.
 
 ---
 
@@ -169,9 +169,9 @@ Gli studenti non si registrano al sistema. Al momento dell'accesso lo studente d
 
 Il Docente deve poter accedere all'applicazione mediante un'identità autenticata.
 
-SchoolForge usa Firebase Authentication ma non richiede Google Workspace for Education. Il metodo di autenticazione del Docente è configurabile nell'ambiente Firebase, purché garantisca l'accesso esclusivo al Docente proprietario nella V1.
+SchoolForge usa Firebase Authentication ma non richiede Google Workspace for Education per il Docente. Il metodo di autenticazione del Docente è configurabile nell'ambiente Firebase, purché garantisca l'accesso esclusivo al Docente proprietario nella V1.
 
-Gli studenti non devono disporre di account Google, account SchoolForge o preregistrazione.
+Gli studenti non hanno un account SchoolForge né una preregistrazione. Da M3-lite devono però disporre di un account Google (personale o Google Workspace for Education) per accedere in lettura al Portale: l'identità Google è il solo meccanismo di accesso studente, non richiede email dal sistema né dati autodichiarati.
 
 ### Firebase e dati applicativi
 
@@ -401,36 +401,49 @@ Il docente può scaricare la verifica in qualsiasi momento, senza inserire dati 
 
 ## Distribuzione e Canali di Erogazione
 
-Ogni verifica è accessibile tramite un link generato dal sistema. La verifica non ha una lista di destinatari preassegnati: è semplicemente **aperta** o **chiusa** dal docente. Chiunque disponga del link può accedere finché la verifica è aperta. Il docente gestisce fisicamente la distribuzione del link (e degli eventuali token) in classe.
-
-Il docente distribuisce il link tramite i canali che preferisce (bacheca scolastica, chat di classe).
-
-Se uno studente arriva tardi, il docente può consegnare una copia cartacea. Nel canale digitale, una coppia nome+cognome già usata non può avviare una seconda prova per la stessa verifica; non è prevista la riapertura di un tentativo già inviato. Il docente può invece annullare un tentativo ancora in corso, dopo conferma e motivazione: il sistema registra l'audit, revoca la sessione e libera il lock.
-
-Lo studente apre il link e sceglie il canale:
+Questa sezione descrive due fasi distinte del canale digitale: **M3-lite** (deciso e in arrivo) e **M3-full** (specifica futura, non ancora decisa nei dettagli). Il canale cartaceo (Canale A) è invariato e già implementato in M2.
 
 ### Canale A — Cartaceo
 
-Il canale cartaceo è puramente fisico. Il docente (o lo studente dal link aperto) clicca "Stampa/Scarica PDF": il PDF viene generato direttamente nel browser e scaricato, senza passare per il server. Il canale cartaceo **non** crea alcun record di tentativo (`deliveryAttempt`) e **non** registra alcun accesso. Se utile, un semplice contatore atomico `downloadCount` sul documento della verifica può essere incrementato a ogni download. Non c'è alcun lock: il canale cartaceo non limita i download.
+Il canale cartaceo è puramente fisico. Il docente clicca "Stampa/Scarica PDF": il PDF viene generato direttamente nel browser e scaricato, senza passare per il server. Il canale cartaceo **non** crea alcun record di tentativo (`deliveryAttempt`) e **non** registra alcun accesso. Se utile, un semplice contatore atomico `downloadCount` sul documento della verifica può essere incrementato a ogni download. Non c'è alcun lock: il canale cartaceo non limita i download.
 
 Lo studente svolge la verifica su carta o con qualsiasi strumento esterno. La consegna avviene fisicamente al docente. Il sistema non è coinvolto nella correzione cartacea.
 
-### Canale B — Digitale (Portale Verifiche)
+### Canale B — Digitale, M3-lite (read-only, deciso)
+
+M3-lite non introduce un link pubblico né un token: lo studente accede all'intera applicazione con login Google (account personale o Google Workspace for Education) e viene riconosciuto come studente perché il suo `uid` non corrisponde a `ownerUid`. Dentro il Portale studente (StudentShell) lo studente vede:
+
+1. **Lezioni** — tutte le lezioni pubblicate/read-only del repository, senza pool, soluzioni o dati tecnici.
+2. **Verifiche** — solo le verifiche che il docente ha reso `attiva` **e** `public` (la visibilità è un campo indipendente dallo stato: attivare una verifica non la rende automaticamente visibile). Per ciascuna, lo studente può solo scaricare il PDF studente (stesso renderer già usato dal canale cartaceo, senza soluzioni).
+
+M3-lite non prevede consegna online, risposte online, tentativi, lock di partecipazione né Cloud Function: è un'estensione in sola lettura dei dati già pubblicati dal docente, protetta da Firebase Authentication e Security Rules.
+
+### Canale C — Digitale con consegna online, M3-full (specifica rinviata)
+
+La descrizione seguente resta la specifica di un'eventuale fase successiva **M3-full**, non ancora pianificata in dettaglio: verifiche online con tentativo, consegna e correzione strutturata. Non fa parte di M3-lite e non è decisa la sua persistenza rispetto al modello di accesso Google.
 
 Lo studente inserisce nome, cognome e, facoltativamente, classe. Chiunque abbia il link può avviare un tentativo digitale finché la verifica è aperta, purché la stessa coppia nome+cognome normalizzata non abbia già avviato una prova per quella verifica. Il sistema crea il tentativo tramite una Cloud Function che riserva questa coppia, genera il token di sessione, registra il log di accesso (nome, IP, timestamp, user-agent) e salva lo snapshot delle domande senza esporre soluzioni. Ripresa, salvataggio bozza e consegna passano dalla stessa piccola superficie server-side, perché il cookie HttpOnly non è autorizzabile dalle Security Rules. Lo studente svolge la verifica direttamente nel portale. Il lock limita il tentativo ma non prova l'identità.
 
-Le risposte vengono salvate strutturate nel database operativo e sono disponibili per la correzione nel sistema.
+Le risposte vengono salvate strutturate nel database operativo e sono disponibili per la correzione nel sistema (Modulo 4, che dipende da M3-full).
 
 ---
 
-## Portale Verifiche
+## Portale studente
 
-Il Portale Verifiche è una sezione dell'applicazione accessibile tramite URL pubblico dedicato (`/exam/:token`).
+### M3-lite (deciso)
 
-Requisiti:
+Il Portale studente è una sezione autenticata dell'applicazione (StudentShell), raggiungibile solo dopo login Google. Requisiti:
 
 * design moderno, responsivo, mobile-first;
-* schermata di accesso essenziale: dati studente e scelta del canale;
+* due sole sezioni: Lezioni e Verifiche;
+* nessun menu docente, nessun import/export repository, nessuna modifica contenuti, nessuna gestione classi/configurazioni;
+* Lezioni: elenco e lettura delle lezioni pubblicate, identico al rendering docente ma senza pool, soluzioni, percorsi tecnici o dati sensibili;
+* Verifiche: elenco delle sole verifiche `attiva` + `public`, con azione "Scarica PDF studente"; nessuna consegna, nessuna risposta online, nessun PDF con soluzioni.
+
+### M3-full (specifica rinviata)
+
+I requisiti seguenti restano la specifica di un'eventuale fase di consegna online successiva a M3-lite, non ancora pianificata in dettaglio:
+
 * schermata di svolgimento in fullscreen con tutte le domande in sequenza verticale;
 * ogni domanda mostra: tipo, difficoltà, peso, punteggio massimo e campo risposta;
 * header sticky con nome studente e bottone "Consegna" sempre visibile;
@@ -546,9 +559,11 @@ Generazione Verifiche e PDF: verifica come configurazione, classi configurabili,
 
 ---
 
-### Modulo 3
+### Modulo 3 — diviso in M3-lite e M3-full
 
-Portale Verifiche digitale: svolgimento online, snapshot tramite Cloud Function, bozze, consegna strutturata su Cloud Firestore.
+**M3-lite** (deciso, prossimo passo dopo l'MVP docente cartaceo M1+M2): Portale studente autenticato con Google (account personale o Google Workspace for Education), in sola lettura. Sezioni Lezioni e Verifiche; solo verifiche `attiva`+`public` sono visibili; solo download del PDF studente. Nessuna Cloud Function, nessun account studente custom, nessuna email, nessuna consegna o risposta online.
+
+**M3-full** (specifica rinviata, fase successiva a M3-lite): svolgimento online, tentativi, snapshot con soluzioni private, bozze, consegna strutturata, eventuale gateway server-side. Il Modulo 4 dipende dalle consegne prodotte da M3-full, non da M3-lite.
 
 ---
 
@@ -652,9 +667,10 @@ Non fanno parte del progetto:
 * social learning;
 * PDF conservati dal sistema;
 * correzione di prove cartacee nel sistema;
-* portale studenti con account e autenticazione propria;
+* account SchoolForge dedicato per lo studente (registrazione, credenziali proprie, profilo custom) — lo studente si autentica solo con Google, da M3-lite;
 * contenuti provenienti dal web come fonte didattica primaria;
-* invio di email agli studenti.
+* invio di email agli studenti;
+* consegna e risposte online (M3-full, rinviato oltre M3-lite).
 
 ---
 

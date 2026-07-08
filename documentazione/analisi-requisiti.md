@@ -1,7 +1,7 @@
 # SchoolForge — Analisi dei requisiti
 
-**Versione:** 4.2
-**Data:** 24 giugno 2026
+**Versione:** 5.0
+**Data:** 8 luglio 2026
 **Stato:** baseline funzionale approvata
 **Input vincolante:** `documentazione/brief.md`
 **Output successivo:** piano di implementazione
@@ -26,7 +26,7 @@ In caso di conflitto prevalgono: obblighi di legge applicabili, decisioni esplic
 
 | ID | Decisione | Conseguenza nei requisiti |
 |---|---|---|
-| D-01 | Lo studente dichiara nome e cognome (auto-dichiarati, non verificati); il sistema registra nome+IP+timestamp+user-agent come audit trail. | Nessuna autenticazione né email nel Portale; il canale digitale blocca un solo tentativo per verifica e nome+cognome normalizzati. |
+| D-01 (M3-full, specifica rinviata) | Lo studente dichiarerebbe nome e cognome (auto-dichiarati, non verificati); il sistema registrerebbe nome+IP+timestamp+user-agent come audit trail. | Superata per M3-lite da D-11/D-12 (Google Auth, nessuna dichiarazione). Resterebbe specifica di un eventuale canale di consegna online M3-full: un solo tentativo per verifica e nome+cognome normalizzati. |
 | D-02 | Il docente non dipende da Google Workspace for Education. | Firebase Authentication gestisce l'accesso docente; Google Workspace non è richiesto. |
 | D-03 | Non serve ricreare una verifica passata dopo modifiche alle lezioni. | Non è richiesto versionare l'intero repository: un solo `activeImportId` è visibile. La configurazione è modificabile solo in bozza; snapshot pubblicato e tentativo digitale conservano le domande effettivamente assegnate. |
 | D-04 | La generazione AI di domande è eliminata. | I pool Markdown sono l'unica fonte delle domande. L'AI rimane solo nel Modulo 5 (correzione), fuori scope V1 / pianificato per V2. |
@@ -34,6 +34,10 @@ In caso di conflitto prevalgono: obblighi di legge applicabili, decisioni esplic
 | D-06 | PDF, export e programma svolto sono generati nel browser. | Nessuna Cloud Function per la generazione di documenti; `@react-pdf/renderer` nel client. |
 | D-07 | Le classi sono una lista configurabile dal docente. | La lista è usata nelle impostazioni verifica e come menu a tendina nel portale studente. |
 | D-08 | C-01 formalizzata. | Firebase; dati applicativi in Milano `europe-west8`; backup Storage nativo + export Firestore manuale on-demand; RPO best-effort; RTO non garantito in V1; Docente responsabile operativo. |
+| D-10 | Il Modulo 3 è diviso in M3-lite e M3-full. | M3-lite (portale studente Google, read-only) precede M3-full (verifiche online con tentativi e consegna, specifica rinviata). Il Modulo 4 dipende da M3-full. |
+| D-11 | Gli studenti si autenticano con Google da M3-lite; nessun account custom. | Firebase Authentication, provider Google, supporta account personali e Google Workspace for Education. Nessuna registrazione, nessuna email dal sistema. Sostituisce nome+cognome autodichiarati e link pubblico anonimo come meccanismo di accesso di M3-lite. |
+| D-12 | Risoluzione del ruolo tramite `ownerUid`. | Un utente Google con `uid == ownerUid` è il docente (TeacherShell); ogni altro utente Google autenticato è studente (StudentShell), in sola lettura. Nessun accesso anonimo in M3-lite. |
+| D-13 | Visibilità delle verifiche separata dallo stato. | Ogni verifica ha `status` (`bozza`/`attiva`/`chiusa`/`archiviata`) e `visibility` (`hidden`/`public`) indipendenti. Solo `attiva`+`public` è visibile allo studente. |
 
 ## 2. Visione, obiettivi e perimetro
 
@@ -44,7 +48,7 @@ SchoolForge è un repository didattico personale, Markdown-first e knowledge-fir
 1. Conservare la conoscenza didattica in un formato autonomo, esportabile e leggibile senza SchoolForge.
 2. Evitare duplicazioni tra lezioni, questionari, verifiche e correzioni.
 3. Generare verifiche coerenti con fonti, tipi, difficoltà e pesi scelti dal docente.
-4. Consentire un canale cartaceo con download PDF diretto e un canale digitale strutturato, senza account studenti.
+4. Consentire un canale cartaceo con download PDF diretto e, da M3-lite, un Portale studente in sola lettura autenticato con Google, senza account SchoolForge dedicato per lo studente.
 5. Mantenere il docente responsabile di attivazione, correzione e decisioni valutative.
 6. Rendere l'AI opzionale, confinata e incapace di bloccare i flussi manuali.
 
@@ -54,31 +58,47 @@ SchoolForge è un repository didattico personale, Markdown-first e knowledge-fir
 |---|---|
 | Repository didattico | Programmi, UDA, lezioni, pool, asset, rendering, export ZIP e programma svolto. |
 | Verifiche | Configurazione, classi, selezione da pool, punteggi, varianti, attivazione e PDF on-demand nel browser. |
-| Portale Verifiche | Download PDF diretto allo studente (canale cartaceo) oppure svolgimento digitale senza account. |
-| Correzione ed export | Consultazione consegne digitali, punteggi manuali, percentuale, rettifiche tracciate ed export in PDF/Markdown/CSV. |
+| Portale Verifiche — canale cartaceo | Download PDF diretto allo studente, senza account né tracciamento. |
+| Portale studente — M3-lite | Studente autenticato con Google (personale o Workspace for Education), in sola lettura: sezioni Lezioni e Verifiche, download del solo PDF studente per le verifiche `attiva`+`public`. Nessuna consegna online. |
+| Portale digitale — M3-full (specifica rinviata) | Svolgimento digitale con tentativi, snapshot e consegna strutturata. Non pianificato in dettaglio; segue M3-lite. |
+| Correzione ed export | Consultazione consegne digitali (prodotte da M3-full), punteggi manuali, percentuale, rettifiche tracciate ed export in PDF/Markdown/CSV. |
 | AI successiva (V2) | Proposte di correzione per risposta, approvazione massiva e correzione automatica con opt-in e regole configurabili. Fuori scope V1. |
 
 ### 2.3 Fuori scope vincolante
 
-Registro elettronico, presenze, compiti, chat, forum, videolezioni, LMS, social learning, multi-docente, multi-istituto, editor Markdown integrato, account studenti, correzione di prove cartacee, PDF archiviati, invio email agli studenti, fonti web per l'AI e generazione AI delle domande non devono apparire come dipendenze o funzionalità dei moduli previsti.
+Registro elettronico, presenze, compiti, chat, forum, videolezioni, LMS, social learning, multi-docente, multi-istituto, editor Markdown integrato, account SchoolForge dedicato per lo studente (registrazione, credenziali proprie, profilo custom), correzione di prove cartacee, PDF archiviati, invio email agli studenti, fonti web per l'AI e generazione AI delle domande non devono apparire come dipendenze o funzionalità dei moduli previsti. In M3-lite restano inoltre fuori scope: consegna e risposte online, tentativi, lock di partecipazione, Cloud Functions, allowlist di dominio Google, mapping classi/studenti.
 
 ## 3. Utenti, ruoli e identità
 
 | Ruolo | Descrizione | Permessi |
 |---|---|---|
-| Docente proprietario | Unico utente applicativo della V1. | Gestisce contenuti, classi, verifiche, consegne, correzioni, export e impostazioni AI. |
-| Studente | Utente anonimo del solo link di una verifica. | Dichiara dati minimi, scarica il PDF oppure svolge e consegna nel Portale. |
+| Docente proprietario | Unico utente applicativo con `uid == ownerUid`. | Gestisce contenuti, classi, verifiche, consegne (M3-full), correzioni, export e impostazioni AI. |
+| Studente autenticato (M3-lite) | Ogni utente Google autenticato che non è il Docente proprietario. | Sola lettura: consulta le lezioni pubblicate e scarica il PDF studente delle verifiche `attiva`+`public`. Nessuna scrittura, nessuna consegna. |
 | Servizi esterni (V2) | Dal Modulo 5 (V2), il provider AI. | Riceve solo i dati strettamente necessari alla correzione. |
+
+Il ruolo "Studente" della baseline precedente (utente anonimo del solo link di una verifica, con nome e cognome autodichiarati) resta descritto in §10.2 come specifica di un eventuale M3-full; non è il modello di accesso di M3-lite.
 
 **FR-AUTH-01.** Il pannello del Docente deve usare Firebase Authentication con un provider configurato nell'ambiente. Il provider deve restituire un identificatore stabile e deve consentire di limitare l'accesso al solo Docente proprietario della V1, senza richiedere Google Workspace for Education.
 
 **FR-AUTH-02.** La V1 non prevede registrazione, invito, delega o ruolo per altri docenti.
 
-**BR-AUTH-01.** Il Portale Verifiche non autentica lo studente. Nome, cognome e classe sono dichiarazioni dell'utente e non sono attribuiti a un'identità verificata. Non è richiesta email.
+**FR-AUTH-03 (M3-lite).** Il Portale studente deve usare Firebase Authentication con provider Google. Deve funzionare sia con account Google personali sia con account Google Workspace for Education, senza restrizioni di dominio in questa fase. Non è previsto alcun provider aggiuntivo per lo studente in M3-lite.
 
-**BR-AUTH-02.** All'avvio di una prova digitale il sistema normalizza nome e cognome con trim, Unicode NFC, compressione degli spazi interni e confronto case-insensitive; la coppia è bloccata per la verifica in corso. Firestore conserva come identificatore del lock `SHA-256(nomeNormalizzato + U+001F + cognomeNormalizzato)`. Il sistema registra inoltre nome dichiarato (formato `Cognome Nome`), indirizzo IP, timestamp e user-agent in un log di accesso. È un audit trail consultabile dal docente, non una prova d'identità.
+**FR-AUTH-04 (M3-lite).** Al login, il sistema risolve il ruolo confrontando `request.auth.uid` con `ownerUid`: se coincide, l'utente accede al portale docente (TeacherShell); altrimenti accede al portale studente (StudentShell) in sola lettura. Non esiste un terzo stato: ogni utente Google autenticato non-owner è uno studente.
 
-**NFR-AUTH-01.** Soluzioni, opzioni corrette, dati di correzione e funzioni del Docente non devono essere esposti dal Portale o da URL studente.
+**FR-AUTH-05 (M3-lite).** Un utente non autenticato non accede a nessuna sezione applicativa, docente o studente. M3-lite non prevede accesso anonimo.
+
+**BR-AUTH-01 (M3-lite).** Il Portale studente non richiede né raccoglie nome, cognome, classe o altri dati autodichiarati: l'identità è quella dell'account Google usato per il login. Il sistema non invia email e non crea un profilo studente persistito oltre a quanto Firebase Authentication già gestisce.
+
+**BR-AUTH-02 (M3-lite).** Le estensioni del meccanismo di ruolo — allowlist di dominio Google, mapping esplicito studente↔classe, gestione di più docenti — sono facoltative e rinviate a una fase successiva; non sono richieste per M3-lite.
+
+**NFR-AUTH-01.** Soluzioni, pool di domande, dati di correzione, verifiche non `attiva`+`public`, percorsi tecnici di Storage/Firestore e funzioni del Docente non devono mai essere esposti al Portale studente né a un utente non autenticato.
+
+> Le regole seguenti restano la specifica di un eventuale **M3-full** con consegna online e non si applicano a M3-lite: vedi §10.2.
+>
+> **BR-AUTH-03 (M3-full, specifica rinviata).** Il canale di consegna online non autentica lo studente con un'identità verificata: nome, cognome e classe sarebbero dichiarazioni dell'utente. Non è richiesta email.
+>
+> **BR-AUTH-04 (M3-full, specifica rinviata).** All'avvio di una prova digitale il sistema normalizzerebbe nome e cognome con trim, Unicode NFC, compressione degli spazi interni e confronto case-insensitive; la coppia sarebbe bloccata per la verifica in corso. Firestore conserverebbe come identificatore del lock `SHA-256(nomeNormalizzato + U+001F + cognomeNormalizzato)`. Il sistema registrerebbe inoltre nome dichiarato (formato `Cognome Nome`), indirizzo IP, timestamp e user-agent in un log di accesso: un audit trail consultabile dal docente, non una prova d'identità.
 
 ## 4. Modello di dominio
 
@@ -90,10 +110,10 @@ Registro elettronico, presenze, compiti, chat, forum, videolezioni, LMS, social 
 | Pool | Insieme strutturato di domande di una lezione, non visualizzato nel rendering della lezione. |
 | Classe | Voce della lista configurata dal docente nelle impostazioni; usata nelle verifiche e nel portale. |
 | Verifica | Configurazione che seleziona fonti, classi e regole di estrazione; non è un PDF conservato. |
-| Istanza digitale | Snapshot della verifica effettivamente assegnato a un tentativo digitale, con le sole informazioni necessarie a svolgimento, correzione ed export. |
-| Tentativo | Accesso digitale di uno studente a una verifica; registra nome dichiarato, IP, timestamp e user-agent ed è associato a un lock per nome+cognome normalizzati. Il canale cartaceo non genera tentativi. |
-| Consegna | Risposte inviate in modo definitivo nel canale digitale. |
-| Correzione | Punteggi, commenti, percentuale e relative rettifiche. |
+| Istanza digitale (M3-full, specifica rinviata) | Snapshot della verifica assegnato a un eventuale tentativo digitale, con le sole informazioni necessarie a svolgimento, correzione ed export. |
+| Tentativo (M3-full, specifica rinviata) | Accesso digitale di uno studente a una verifica; registrerebbe nome dichiarato, IP, timestamp e user-agent ed sarebbe associato a un lock per nome+cognome normalizzati. Né il canale cartaceo né M3-lite generano tentativi. |
+| Consegna (M3-full, specifica rinviata) | Risposte inviate in modo definitivo in un eventuale canale digitale. |
+| Correzione (Modulo 4, dipende da M3-full) | Punteggi, commenti, percentuale e relative rettifiche. |
 
 **BR-DOM-01.** I riferimenti tecnici devono usare identificatori stabili, non titoli o nomi file. Rinominare un contenuto non può creare riferimenti orfani.
 
@@ -199,7 +219,9 @@ questions:
 
 **FR-VER-01.** Il docente crea una verifica con: titolo, una o più UDA e/o lezioni sorgenti, numero totale di domande, tipi ammessi, difficoltà ammesse e minimo per ciascuna difficoltà scelta, modalità variante e canale o canali abilitati, e classi associate (opzionale).
 
-**BR-VER-01.** Una verifica percorre gli stati `bozza`, `attiva` (aperta), `chiusa`, `archiviata`. Solo la bozza è modificabile. L'attivazione crea il `publishedSnapshot`, congela configurazione, fonti, regole di selezione e selezione comune; la chiusura impedisce nuovi tentativi; l'archiviazione la nasconde dalle normali viste operative senza eliminare consegne o snapshot necessari. Per riusare una prova il docente duplica la bozza in una nuova verifica.
+**BR-VER-01.** Una verifica percorre gli stati `bozza`, `attiva` (aperta), `chiusa`, `archiviata`. Solo la bozza è modificabile. L'attivazione crea il `publishedSnapshot`, congela configurazione, fonti, regole di selezione e selezione comune; la chiusura impedisce nuovi tentativi (M3-full); l'archiviazione la nasconde dalle normali viste operative senza eliminare consegne o snapshot necessari. Per riusare una prova il docente duplica la bozza in una nuova verifica.
+
+**BR-VER-05 (M3-lite).** Ogni verifica ha, indipendentemente dallo stato, un campo `visibility` con valori `hidden` o `public`. Quando il docente attiva una verifica, `visibility` viene impostata a `hidden` di default: l'attivazione da sola non la rende visibile allo studente. Il docente può pubblicare (`hidden → public`) o nascondere (`public → hidden`) una verifica `attiva` più volte, senza modificarne configurazione o contenuto. Solo una verifica con `status = attiva` **e** `visibility = public` compare nel Portale studente; in tutti gli altri casi (bozza, chiusa, archiviata, oppure attiva ma `hidden`) è invisibile allo studente.
 
 **BR-VER-02.** Non sono richiesti calendario, durata configurabile, cronometro o chiusura automatica nella V1.
 
@@ -235,11 +257,33 @@ questions:
 
 **AC-PAP-01.** Più richieste per la stessa verifica producono ciascuna un download; nessun record di tentativo né voce di log di accesso viene creato.
 
-**AC-PAP-02.** Il download cartaceo è indipendente dal canale digitale: avviare un tentativo digitale resta possibile e usa il proprio lock nome+cognome.
+**AC-PAP-02.** Il download cartaceo è indipendente dal Portale studente M3-lite: uno studente può scaricare il PDF cartaceo dal docente e, separatamente, consultare la stessa verifica (se `attiva`+`public`) nel Portale studente, senza che le due azioni si condizionino a vicenda. (M3-full, specifica rinviata: sarebbe indipendente anche da un eventuale tentativo digitale con il proprio lock nome+cognome.)
 
-## 10. Portale Verifiche digitale — Modulo 3
+## 10. Portale studente — Moduli 3-lite e 3-full
 
-### 10.1 Avvio e tentativo
+Il Modulo 3 è diviso in **M3-lite** (§10.1, deciso e in arrivo) e **M3-full** (§10.2, specifica rinviata a una fase successiva). M3-lite non dipende da M3-full ed è realizzabile senza Cloud Functions.
+
+### 10.1 M3-lite — Portale studente Google, sola lettura (deciso)
+
+**FR-STU-01.** Il Portale studente (StudentShell) è raggiungibile solo dopo login Google riuscito. Espone esclusivamente due sezioni: **Lezioni** e **Verifiche**. Non mostra menu docente, import/export repository, gestione classi/impostazioni o alcuna funzione di scrittura.
+
+**FR-STU-02.** Nella sezione Lezioni, lo studente vede l'elenco e il rendering di tutte le lezioni pubblicate (appartenenti all'`activeImportId` corrente), con lo stesso rendering Markdown sanitizzato del docente. Il pool associato, le soluzioni, i percorsi tecnici di Cloud Storage e i campi `questionIndex` non sono mai inclusi nella proiezione letta dallo studente.
+
+**FR-STU-03.** Nella sezione Verifiche, lo studente vede solo le verifiche con `status = attiva` e `visibility = public` (BR-VER-05). Per ciascuna può esclusivamente scaricare il PDF studente, generato nel browser dalla proiezione pubblica già usata dal canale cartaceo (nessuna soluzione, nessun dato di correzione). Non esiste azione di consegna, risposta online o salvataggio bozza in M3-lite.
+
+**BR-STU-01.** Il Portale studente non legge mai i documenti tecnici riservati al docente (inclusi pool, `questionIndex`, snapshot pubblicati con soluzioni). Se un dato deve essere leggibile dallo studente, il sistema espone una proiezione pubblica/read-only dedicata, priva di soluzioni, pool e percorsi tecnici sensibili.
+
+**BR-STU-02.** M3-lite non introduce Cloud Functions: le letture dello studente avvengono tramite Firestore/Storage Security Rules che distinguono `ownerUid` (docente) da qualunque altro utente autenticato (studente). Nessun accesso anonimo è ammesso.
+
+**AC-STU-01.** Un utente Google con `uid == ownerUid` che effettua login accede al portale docente (TeacherShell); qualunque altro utente Google autenticato accede al portale studente (StudentShell).
+
+**AC-STU-02.** Uno studente autenticato vede tutte le lezioni pubblicate in sola lettura e nessuna delle verifiche in stato `bozza`, `chiusa`, `archiviata` o `attiva`+`hidden`; vede e può scaricare il PDF studente delle sole verifiche `attiva`+`public`.
+
+**AC-STU-03.** Il PDF scaricato dallo studente in M3-lite non contiene mai soluzioni, opzioni corrette o dati di correzione, indipendentemente dal contenuto del pool sorgente.
+
+### 10.2 M3-full — Svolgimento e consegna online (specifica rinviata)
+
+> Questa sezione descrive la specifica di un'eventuale fase successiva a M3-lite. Non è pianificata in dettaglio, non blocca M3-lite e potrebbe rivalutare l'uso di un gateway server-side, cookie di sessione o lock, eventualmente in combinazione con l'identità Google già introdotta da M3-lite.
 
 **FR-POR-01.** La verifica è un link aperto: non esiste una lista di destinatari preassegnati. Finché la verifica è aperta, chiunque disponga del link può accedere; il docente gestisce fisicamente la distribuzione del link in classe. Il link di una verifica attiva mostra esclusivamente i dati essenziali e la scelta del canale. Per il canale digitale lo studente inserisce nome, cognome e classe facoltativa; la stessa coppia nome+cognome normalizzata può avviare un solo tentativo per verifica.
 
@@ -248,8 +292,6 @@ questions:
 **BR-POR-01.** Da quando un tentativo digitale è avviato, nome e cognome normalizzati sono bruciati anche se la consegna non viene completata: un secondo avvio digitale con la stessa coppia per la stessa verifica è rifiutato. Il lock limita il tentativo ma non certifica l'identità.
 
 **FR-POR-07.** Il docente può resettare un tentativo solo nello stato `in_corso`, con conferma e motivazione obbligatoria. Il reset marca il tentativo `annullato`, invalida il cookie di sessione, rilascia il participant lock e registra audit; non riapre una consegna `consegnato`.
-
-### 10.2 Svolgimento, salvataggio e consegna
 
 **FR-POR-03.** Il Portale mostra le domande in sequenza verticale. Ogni domanda espone tipo, difficoltà, peso, punteggio massimo e un controllo di risposta coerente con il tipo.
 
@@ -261,8 +303,6 @@ questions:
 
 **BR-POR-03.** Il Portale non contiene menu, link esterni, soluzioni, risultati, voti o storico dello studente.
 
-### 10.3 Deterrenza realistica
-
 **FR-POR-06.** Il Portale deve richiedere fullscreen, mostrare un avviso persistente in caso di uscita dal fullscreen o cambio scheda e disabilitare copia-incolla nella propria UI.
 
 **BR-POR-04.** Fullscreen, rilevamento tab e blocco copia-incolla sono deterrenti, non sicurezza. L'uscita dal tab non annulla il tentativo.
@@ -272,6 +312,8 @@ questions:
 **AC-POR-02.** Dopo la consegna, il docente può consultare testo domanda, soluzione, risposta, dati dichiarati e timestamp; lo studente non può modificare né rivedere la consegna nel Portale.
 
 ## 11. Correzione manuale e percentuali — Modulo 4
+
+> Questo modulo opera sulle consegne digitali prodotte da **M3-full** (§10.2, specifica rinviata). Non ha dipendenze da M3-lite, che non produce consegne.
 
 **FR-COR-01.** Il docente può filtrare le consegne digitali per verifica, stato di correzione, nome dichiarato, classe e data.
 
@@ -367,7 +409,7 @@ questions:
 
 **NFR-OPS-01.** Devono essere osservabili errori di importazione, rendering, generazione PDF, consegna e AI, senza inviare dati personali non necessari alla telemetria.
 
-**NFR-COST-01.** L'architettura privilegia servizi managed e scale-to-zero. Cloud Functions usate solo per sessione digitale (M3) e AI (M5/V2). Prima del go-live il Docente configura budget e avvisi di spesa.
+**NFR-COST-01.** L'architettura privilegia servizi managed e scale-to-zero. M3-lite non introduce Cloud Functions: usa solo Security Rules e letture client. Le Cloud Functions restano riservate a un'eventuale sessione digitale M3-full e all'AI (M5/V2). Prima del go-live il Docente configura budget e avvisi di spesa.
 
 ## 14. Roadmap e dipendenze
 
@@ -375,8 +417,9 @@ questions:
 |---|---|---|---|
 | 1. Repository didattico | Programmi, UDA, lezioni, pool, rendering, ZIP, programma svolto (PDF + Markdown). | Accesso docente e validatore pool. | Funziona senza Portale, AI o correzione. |
 | 2. Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente e studente (canale cartaceo fisico senza record). | Modulo 1. | Vincoli validati, PDF non archiviato, canale cartaceo senza record. |
-| 3. Portale digitale | Istanza, snapshot via Function, lock nome+cognome, log nome+IP, bozza, ripresa, consegna e deterrenza. | Modulo 2. | Una consegna strutturata è consultabile dal docente. |
-| 4. Correzione manuale ed export | Punteggi, percentuale, rettifiche, eliminazione consegna ed export PDF/Markdown/CSV. | Modulo 3. | Percentuali, audit ed export da snapshot verificabili. |
+| 3-lite. Portale studente (Google, read-only) | Login Google, risoluzione ruolo docente/studente, StudentShell con Lezioni e Verifiche in sola lettura, download PDF studente per verifiche `attiva`+`public`. | Modulo 2. | Studente Google non-owner consulta lezioni pubblicate e scarica PDF senza soluzioni; nessuna Cloud Function. |
+| 3-full. Portale digitale (specifica rinviata) | Istanza, snapshot via Function, lock nome+cognome, log nome+IP, bozza, ripresa, consegna e deterrenza. | Modulo 3-lite. | Una consegna strutturata è consultabile dal docente. |
+| 4. Correzione manuale ed export | Punteggi, percentuale, rettifiche, eliminazione consegna ed export PDF/Markdown/CSV. | Modulo 3-full. | Percentuali, audit ed export da snapshot verificabili. |
 | 5. Correzione AI (V2) | Proposte di correzione per risposta, approvazione massiva e correzione automatica opt-in con regole configurabili. Fuori scope V1. | Modulo 4 (in V2). | I flussi manuali restano operativi senza AI. |
 
 **BR-REL-01.** Nessun modulo successivo può diventare prerequisito del precedente.
@@ -410,11 +453,13 @@ La futura architettura e l'implementazione sono conformi solo se dimostrano con 
 1. Markdown e asset restano esportabili e leggibili senza SchoolForge;
 2. un pool invalido non compromette la lezione ma non può generare domande;
 3. l'import incompleto non diventa visibile; la configurazione è modificabile solo in bozza e snapshot pubblicato/tentativo digitale restano immutabili;
-4. lo studente dichiara nome e cognome non verificati; ogni accesso è tracciato con nome+IP+timestamp+user-agent e il tentativo digitale usa un lock concorrente per verifica e nome+cognome normalizzati;
-5. il PDF cartaceo è generato nel browser senza persistenza e senza creare record di tentativo o di accesso; il download docente non altera alcuno stato;
-6. un tentativo digitale riprende nello stesso browser con le stesse domande e diventa immutabile alla consegna; nessun client portale scrive direttamente tentativi o risposte e il docente può annullare soltanto un tentativo in corso, con audit;
-7. soluzioni e opzioni corrette non sono mai esposte al Portale;
-8. percentuali e rettifiche sono calcolabili e tracciabili senza gestire voti;
-9. l'AI non genera domande, non usa il web, non è necessaria ai flussi manuali;
-10. `Esporta verifiche` include tutte e sole le consegne digitali definitive e usa gli snapshot svolti;
-11. C-01 è applicata; C-02 e C-03 riguardano solo il Modulo 5 (V2) e non bloccano la V1.
+4. il ruolo utente è risolto correttamente: `uid == ownerUid` accede come docente, ogni altro utente Google autenticato accede come studente in sola lettura, nessun accesso anonimo è ammesso in M3-lite;
+5. lo studente vede tutte le lezioni pubblicate in sola lettura, senza mai ricevere pool, soluzioni, percorsi tecnici o `questionIndex`;
+6. lo studente vede e può scaricare il PDF studente delle sole verifiche `attiva`+`public`; nessuna verifica `bozza`, `chiusa`, `archiviata` o `attiva`+`hidden` è raggiungibile dal Portale studente; nessuna consegna o risposta online esiste in M3-lite;
+7. il PDF cartaceo e il PDF studente di M3-lite sono generati nel browser senza persistenza e senza creare record di tentativo o di accesso; il download docente non altera alcuno stato;
+8. (M3-full, specifica rinviata) un tentativo digitale riprenderebbe nello stesso browser con le stesse domande e diventerebbe immutabile alla consegna; nessun client portale scriverebbe direttamente tentativi o risposte e il docente potrebbe annullare soltanto un tentativo in corso, con audit;
+9. soluzioni e opzioni corrette non sono mai esposte al Portale, in nessun canale;
+10. percentuali e rettifiche sono calcolabili e tracciabili senza gestire voti (Modulo 4, dipende da M3-full);
+11. l'AI non genera domande, non usa il web, non è necessaria ai flussi manuali;
+12. `Esporta verifiche` include tutte e sole le consegne digitali definitive e usa gli snapshot svolti (Modulo 4, dipende da M3-full);
+13. C-01 è applicata; C-02 e C-03 riguardano solo il Modulo 5 (V2) e non bloccano la V1.
