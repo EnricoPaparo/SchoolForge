@@ -21,7 +21,13 @@ export type AuditAction =
   | 'verification.activated'
   | 'verification.visibilityChanged'
   | 'verification.closed'
-  | 'verification.deleted';
+  | 'verification.deleted'
+  | 'studentAccess.updated'
+  | 'student.approved'
+  | 'student.blocked'
+  | 'student.reset'
+  | 'student.removed'
+  | 'student.classAssigned';
 
 export interface AuditEvent {
   actorUid: string;
@@ -145,14 +151,17 @@ export interface PublicLessonDoc {
  * Stored at settings/studentAccess. Global switches gating the student
  * portal. `studentPortalEnabled` must be true for ANY student read
  * (publicLessons, publishedProjection, Storage lesson files) to succeed,
- * regardless of individual approval status. `newStudentRequestsEnabled` is
- * reserved for a future self-request flow — not implemented by this PR;
- * the teacher must create students/{uid} documents manually until then.
+ * regardless of individual approval status. `newStudentRequestsEnabled`
+ * controls whether an unknown Google-authenticated non-owner may create
+ * their own `students/{uid}` request (status `pending`) — see
+ * studentsService.requestStudentAccess and RoleGate.
  */
 export interface StudentAccessSettings {
   ownerUid: string;
   studentPortalEnabled: boolean;
   newStudentRequestsEnabled: boolean;
+  updatedAt: Timestamp | FieldValue;
+  updatedBy: string;
 }
 
 export type StudentStatus = 'pending' | 'approved' | 'blocked';
@@ -163,8 +172,11 @@ export type StudentStatus = 'pending' | 'approved' | 'blocked';
  * teacher approves them here — authentication alone never grants portal
  * reads. A missing document is treated as `pending` for authorization
  * purposes (Security Rules default-deny when it doesn't exist).
- * `classId` is reserved for future class-based lesson/verification
- * filtering — not implemented by this PR.
+ * `classId` is set by the teacher (M3L-A3); class-based lesson/verification
+ * filtering itself is not implemented by this PR. `lastLoginAt` is set once
+ * at the initial self-request — it is not refreshed on subsequent logins
+ * (that would require a write rule or Cloud Function this PR intentionally
+ * does not introduce).
  */
 export interface StudentDoc {
   uid: string;
@@ -175,6 +187,7 @@ export interface StudentDoc {
   classId: string | null;
   createdAt: Timestamp | FieldValue;
   updatedAt: Timestamp | FieldValue;
+  lastLoginAt: Timestamp | FieldValue;
 }
 
 /** Serialized form of a validation issue (Firestore-safe, no class instances). */

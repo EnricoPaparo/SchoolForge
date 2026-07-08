@@ -21,6 +21,12 @@ service cloud.firestore {
            == true;
     }
 
+    function newStudentRequestsEnabled() {
+      return exists(/databases/$(database)/documents/settings/studentAccess)
+        && get(/databases/$(database)/documents/settings/studentAccess).data.newStudentRequestsEnabled
+           == true;
+    }
+
     // A Google-authenticated non-owner is only a *candidate* student until
     // the teacher explicitly approves them here — being authenticated is
     // NEVER sufficient on its own to read student-facing content. Missing
@@ -61,21 +67,48 @@ service cloud.firestore {
 
     // --- settings/studentAccess (M3-lite) ---
     // Global switches gating every student read (see isApprovedStudent()).
-    // Owner-only read/write: students never read this document directly —
-    // get() inside isApprovedStudent() bypasses the caller's own
-    // permissions on the target path. Absent document => portal disabled.
+    // Readable by any authenticated user — same pattern as
+    // settings/ownerPublic above: RoleGate needs studentPortalEnabled and
+    // newStudentRequestsEnabled to decide which screen to show a candidate
+    // student (disabled / pending / requests-closed), and neither flag is
+    // sensitive or authorizes anything on its own. The actual content gate
+    // (isApprovedStudent()) re-reads this document itself via get(), so a
+    // client can never bypass authorization by trusting its own read.
+    // Write stays owner-only.
     match /settings/studentAccess {
-      allow read, write: if isOwner();
+      allow read: if isAuthenticated();
+      allow write: if isOwner();
     }
 
     // --- students/{uid} (M3-lite approval roster) ---
-    // uid == the student's own Firebase Auth uid. No document exists until
-    // the teacher creates one — a Google-authenticated non-owner with no
-    // document here is treated as 'pending' for authorization purposes.
-    // A dedicated teacher UI to manage this collection is out of scope for
-    // this PR; only the data model and owner-only read/write are wired up.
+    // uid == the student's own Firebase Auth uid. A Google-authenticated
+    // non-owner with no document here is treated as 'pending' for
+    // authorization purposes. The teacher has full read/write. A student
+    // may read only their own document (needed by RoleGate to show
+    // pending/blocked/approved screens) and may create it exactly once,
+    // as an unmodified 'pending' request, only while
+    // newStudentRequestsEnabled is true — never approve/block/unblock
+    // themselves, change classId, or read anyone else's document. Once
+    // the document exists, every subsequent write is an `update`, which
+    // only the owner can perform — so a student can never modify their
+    // own status/classId/ownerUid after the initial request.
     match /students/{uid} {
-      allow read, write: if isOwner();
+      allow read: if isOwner() || (isAuthenticated() && request.auth.uid == uid);
+      allow update, delete: if isOwner();
+      allow create: if (isOwner() && request.resource.data.ownerUid == request.auth.uid)
+        || (
+          isAuthenticated()
+          && request.auth.uid == uid
+          && newStudentRequestsEnabled()
+          && request.resource.data.uid == uid
+          && request.resource.data.ownerUid
+             == get(/databases/$(database)/documents/settings/ownerPublic).data.ownerUid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.classId == null
+          && request.resource.data.keys().hasOnly(
+               ['uid', 'ownerUid', 'email', 'displayName', 'status', 'classId', 'createdAt',
+                'updatedAt', 'lastLoginAt'])
+        );
     }
 
     // --- Teacher-owned collections ---
