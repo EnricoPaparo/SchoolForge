@@ -13,6 +13,8 @@ vi.mock('./lib/firebase.js', () => ({
   storage: {},
 }));
 
+const STUDENT_UID = 'student-uid';
+
 // Configurable auth stub — overridden per describe block via vi.mock factory caching.
 let _mockUser: { uid: string; email: string; displayName: null } | null = null;
 
@@ -21,7 +23,9 @@ vi.mock('firebase/auth', () => ({
     cb(_mockUser);
     return () => {};
   },
+  GoogleAuthProvider: vi.fn(),
   signInWithEmailAndPassword: vi.fn(),
+  signInWithPopup: vi.fn(),
   signOut: vi.fn(),
 }));
 
@@ -31,6 +35,7 @@ vi.mock('firebase/firestore', () => ({
   getDoc: (...args: unknown[]) => mockGetDoc(...args),
   setDoc: vi.fn(),
   serverTimestamp: vi.fn(),
+  writeBatch: () => ({ set: vi.fn(), commit: vi.fn() }),
 }));
 
 describe('App — unauthenticated', () => {
@@ -40,6 +45,12 @@ describe('App — unauthenticated', () => {
     expect(await screen.findByRole('img', { name: 'SchoolForge' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'SchoolForge' })).toBeNull();
     expect(screen.queryByText('Accedi al portale docente')).toBeNull();
+  });
+
+  it('offers a Google sign-in button on the login screen', async () => {
+    _mockUser = null;
+    render(<App />);
+    expect(await screen.findByRole('button', { name: /Accedi con Google/i })).toBeTruthy();
   });
 });
 
@@ -52,5 +63,18 @@ describe('App — owner authenticated', () => {
     });
     render(<App />);
     expect(await screen.findByRole('button', { name: /Template/ })).toBeTruthy();
+  });
+});
+
+describe('App — student authenticated (M3-lite)', () => {
+  it('renders StudentShell, not the teacher shell, for a non-owner Google user', async () => {
+    _mockUser = { uid: STUDENT_UID, email: 'student@test.com', displayName: null };
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ownerUid: OWNER_UID }),
+    });
+    render(<App />);
+    expect(await screen.findByRole('navigation', { name: /Sezioni studente/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Template/ })).toBeNull();
   });
 });

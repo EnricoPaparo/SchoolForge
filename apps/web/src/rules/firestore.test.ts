@@ -43,6 +43,12 @@ async function seedOwner() {
   });
 }
 
+async function seedOwnerPublic() {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'settings/ownerPublic'), { ownerUid: OWNER_UID });
+  });
+}
+
 // ─── settings/owner ──────────────────────────────────────────────────────────
 
 describe('settings/owner — create (first-time setup)', () => {
@@ -79,6 +85,80 @@ describe('settings/owner — read', () => {
     await seedOwner();
     const ctx = testEnv.unauthenticatedContext();
     await assertFails(getDoc(doc(ctx.firestore(), 'settings/owner')));
+  });
+});
+
+// ─── settings/ownerPublic (M3-lite role resolution) ─────────────────────────
+
+describe('settings/ownerPublic — create (first-time setup)', () => {
+  it('allows authenticated user to create ownerPublic with their own uid when no owner exists', async () => {
+    const ctx = testEnv.authenticatedContext(OWNER_UID);
+    await assertSucceeds(
+      setDoc(doc(ctx.firestore(), 'settings/ownerPublic'), { ownerUid: OWNER_UID }),
+    );
+  });
+
+  it('denies creating ownerPublic with a different uid than the caller', async () => {
+    const ctx = testEnv.authenticatedContext(OWNER_UID);
+    await assertFails(
+      setDoc(doc(ctx.firestore(), 'settings/ownerPublic'), { ownerUid: OTHER_UID }),
+    );
+  });
+
+  it('denies creating ownerPublic once settings/owner already exists', async () => {
+    await seedOwner();
+    const ctx = testEnv.authenticatedContext(OTHER_UID);
+    await assertFails(
+      setDoc(doc(ctx.firestore(), 'settings/ownerPublic'), { ownerUid: OTHER_UID }),
+    );
+  });
+
+  it('denies unauthenticated create of ownerPublic', async () => {
+    const ctx = testEnv.unauthenticatedContext();
+    await assertFails(
+      setDoc(doc(ctx.firestore(), 'settings/ownerPublic'), { ownerUid: OWNER_UID }),
+    );
+  });
+
+  it('denies extra fields on ownerPublic', async () => {
+    const ctx = testEnv.authenticatedContext(OWNER_UID);
+    await assertFails(
+      setDoc(doc(ctx.firestore(), 'settings/ownerPublic'), {
+        ownerUid: OWNER_UID,
+        email: 'owner@test.com',
+      }),
+    );
+  });
+});
+
+describe('settings/ownerPublic — read', () => {
+  it('allows the owner to read ownerPublic', async () => {
+    await seedOwnerPublic();
+    const ctx = testEnv.authenticatedContext(OWNER_UID);
+    await assertSucceeds(getDoc(doc(ctx.firestore(), 'settings/ownerPublic')));
+  });
+
+  it('allows any other authenticated user (student) to read ownerPublic', async () => {
+    await seedOwnerPublic();
+    const ctx = testEnv.authenticatedContext(OTHER_UID);
+    await assertSucceeds(getDoc(doc(ctx.firestore(), 'settings/ownerPublic')));
+  });
+
+  it('denies unauthenticated read of ownerPublic', async () => {
+    await seedOwnerPublic();
+    const ctx = testEnv.unauthenticatedContext();
+    await assertFails(getDoc(doc(ctx.firestore(), 'settings/ownerPublic')));
+  });
+});
+
+describe('settings/ownerPublic — update', () => {
+  it('denies a non-owner from updating ownerPublic', async () => {
+    await seedOwner();
+    await seedOwnerPublic();
+    const ctx = testEnv.authenticatedContext(OTHER_UID);
+    await assertFails(
+      setDoc(doc(ctx.firestore(), 'settings/ownerPublic'), { ownerUid: OTHER_UID }),
+    );
   });
 });
 
