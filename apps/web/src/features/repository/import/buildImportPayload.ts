@@ -2,6 +2,18 @@ import { parsePool } from '@schoolforge/lesson-contract';
 import type { ImportValidationResult, RawFile } from '../validation/types.js';
 import type { ImportPayload } from './types.js';
 
+const QUESTION_PREVIEW_MAX_LENGTH = 100;
+
+/**
+ * Builds a safe preview snippet for the question index: whitespace-normalized,
+ * truncated to at most 100 chars. Never derive this from soluzione, answers,
+ * or explanations — only from the question's own testo.
+ */
+export function buildQuestionPreview(testo: string): string {
+  const normalized = testo.replace(/\s+/g, ' ').trim();
+  return normalized.slice(0, QUESTION_PREVIEW_MAX_LENGTH);
+}
+
 /**
  * Pure function: maps a validated import result to Firestore document payloads.
  * No Firebase SDK calls — safe to unit-test without emulators.
@@ -73,6 +85,7 @@ export function buildImportPayload(params: {
                   difficolta: q.difficolta,
                   peso: q.peso,
                   maxPoints: q.maxPoints,
+                  questionPreview: buildQuestionPreview(q.testo),
                 },
               });
               questionCount++;

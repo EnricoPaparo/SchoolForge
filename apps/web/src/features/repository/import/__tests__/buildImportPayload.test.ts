@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { validateImport } from '../../validation/index.js';
-import { buildImportPayload } from '../buildImportPayload.js';
+import { buildImportPayload, buildQuestionPreview } from '../buildImportPayload.js';
 import type { RawFile } from '../../validation/types.js';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -213,6 +213,32 @@ describe('buildImportPayload — questionIndex', () => {
       expect(entry.data).toHaveProperty('maxPoints');
       expect(entry.data).not.toHaveProperty('testo');
       expect(entry.data).not.toHaveProperty('soluzione');
+      expect(entry.data).not.toHaveProperty('correctAnswer');
+      expect(entry.data).not.toHaveProperty('answers');
+      expect(entry.data).not.toHaveProperty('spiegazione');
+    }
+  });
+
+  it('question entries carry a questionPreview derived from testo, truncated to 100 chars', () => {
+    const files = buildAllFiles();
+    const validation = validateImport('Informatica', files);
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    const q001 = payload.questionIndex.find((q) => q.data.questionLocalId === 'q-001');
+    expect(q001?.data.questionPreview).toBe('Spiega HTTP.');
+
+    const q002 = payload.questionIndex.find((q) => q.data.questionLocalId === 'q-002');
+    expect(q002?.data.questionPreview).toBe('Quale porta usa HTTP?');
+
+    for (const entry of payload.questionIndex) {
+      expect(entry.data.questionPreview.length).toBeLessThanOrEqual(100);
     }
   });
 
@@ -342,5 +368,24 @@ describe('buildImportPayload — storage paths', () => {
     expect(
       payload.importMeta.poolIssues.every((i) => i.level === 'pool' || i.level === 'question'),
     ).toBe(true);
+  });
+});
+
+describe('buildQuestionPreview', () => {
+  it('collapses whitespace/newlines and trims the result', () => {
+    expect(buildQuestionPreview('  Spiega   il\n  protocollo   HTTP.  ')).toBe(
+      'Spiega il protocollo HTTP.',
+    );
+  });
+
+  it('truncates to at most 100 characters', () => {
+    const long = 'A'.repeat(150);
+    const preview = buildQuestionPreview(long);
+    expect(preview.length).toBe(100);
+    expect(preview).toBe('A'.repeat(100));
+  });
+
+  it('returns short text unchanged (aside from whitespace normalization)', () => {
+    expect(buildQuestionPreview('Quale porta usa HTTP?')).toBe('Quale porta usa HTTP?');
   });
 });

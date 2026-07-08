@@ -104,6 +104,7 @@
   display: flex;
   gap: 0.25rem;
   align-items: center;
+  min-width: 4.75rem;
 }
 
 .verTitleBtn {
@@ -188,6 +189,13 @@
   gap: 0.25rem;
 }
 
+@media (max-width: 640px) {
+  .createForm button[type='submit'] {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 /* ── Detail panel ────────────────────────────────────────────────── */
 .detail {
   display: flex;
@@ -246,4 +254,16 @@
   gap: 0.625rem;
   flex-wrap: wrap;
   align-items: center;
+}
+
+@media (max-width: 640px) {
+  .actionBar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .actionBar button {
+    width: 100%;
+    justify-content: center;
+  }
 }

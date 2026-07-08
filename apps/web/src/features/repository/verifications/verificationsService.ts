@@ -179,20 +179,20 @@ export async function closeVerification(
 }
 
 /**
- * Deletes a verification. Only allowed when the verification is `closed` —
- * draft and active verifications are rejected client-side before ever
- * reaching Firestore (the security rules enforce the same constraint
- * server-side as defense in depth).
+ * Deletes a verification. Allowed for `draft` (discard an unfinished
+ * configuration) and `closed` (tidy up an old exam) — never for `active`,
+ * which is an immutable snapshot that can only be closed. The security
+ * rules enforce the same constraint server-side as defense in depth.
  */
-export async function deleteClosedVerification(
+export async function deleteVerification(
   verificationId: string,
   ownerUid: string,
   db: Firestore,
 ): Promise<void> {
   const snap = await getDoc(doc(db, 'verifications', verificationId));
   const data = snap.data() as VerificationDoc | undefined;
-  if (!data || data.status !== 'closed') {
-    throw new Error('Verifica non eliminabile: non è chiusa');
+  if (!data || (data.status !== 'draft' && data.status !== 'closed')) {
+    throw new Error('Verifica non eliminabile: deve essere in bozza o chiusa');
   }
   await deleteDoc(doc(db, 'verifications', verificationId));
   await setDoc(doc(collection(db, 'auditEvents')), {

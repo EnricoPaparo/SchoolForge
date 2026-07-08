@@ -16,6 +16,7 @@ const ENTRIES: QuestionIndexEntry[] = [
     difficolta: 1,
     peso: 2,
     maxPoints: 2,
+    questionPreview: 'Descrivi il modello ISO/OSI.',
   },
   {
     id: 'qi-2',
@@ -27,6 +28,7 @@ const ENTRIES: QuestionIndexEntry[] = [
     difficolta: 2,
     peso: 3,
     maxPoints: 3,
+    questionPreview: 'Quale protocollo usa il three-way handshake?',
   },
   {
     id: 'qi-3',
@@ -38,6 +40,7 @@ const ENTRIES: QuestionIndexEntry[] = [
     difficolta: 3,
     peso: 3,
     maxPoints: 5,
+    questionPreview: 'Seleziona le funzioni tipiche di un firewall.',
   },
 ];
 
@@ -236,5 +239,27 @@ describe('QuestionPicker — content safety', () => {
     expect(rendered).not.toMatch(/correctAnswer/i);
     expect(rendered).not.toMatch(/solution/i);
     expect(rendered).not.toMatch(/answers/i);
+  });
+});
+
+describe('QuestionPicker — question preview', () => {
+  it('shows id, preview text, tipo, difficoltà, peso/punti and UDA/lezione for each row', () => {
+    renderPicker();
+    const list = questionList();
+    const row = within(list).getByText('#q1').closest('li');
+    expect(row).toBeTruthy();
+    const rowScope = within(row as HTMLElement);
+    expect(rowScope.getByText('#q1')).toBeTruthy();
+    expect(rowScope.getByText('Descrivi il modello ISO/OSI.')).toBeTruthy();
+    expect(
+      rowScope.getByText(/uda-01-reti \/ lezione-001-intro\.md · aperta · diff 1 · peso 2 · 2pt/),
+    ).toBeTruthy();
+  });
+
+  it('shows a different preview per question row', () => {
+    renderPicker();
+    const list = questionList();
+    expect(within(list).getByText('Quale protocollo usa il three-way handshake?')).toBeTruthy();
+    expect(within(list).getByText('Seleziona le funzioni tipiche di un firewall.')).toBeTruthy();
   });
 });

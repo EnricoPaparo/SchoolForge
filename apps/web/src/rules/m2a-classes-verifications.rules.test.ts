@@ -360,12 +360,12 @@ describe('Firestore rules — /verifications/{verificationId} delete', () => {
     await assertSucceeds(deleteDoc(doc(ownerDb(), 'verifications/v1')));
   });
 
-  it('owner cannot delete a draft verification', async () => {
+  it('owner can delete a draft verification', async () => {
     await seedOwner();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'verifications/v1'), DRAFT_DOC);
     });
-    await assertFails(deleteDoc(doc(ownerDb(), 'verifications/v1')));
+    await assertSucceeds(deleteDoc(doc(ownerDb(), 'verifications/v1')));
   });
 
   it('owner cannot delete an active verification', async () => {
@@ -384,10 +384,26 @@ describe('Firestore rules — /verifications/{verificationId} delete', () => {
     await assertFails(deleteDoc(doc(otherDb(), 'verifications/v1')));
   });
 
+  it('non-owner cannot delete a draft verification', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), DRAFT_DOC);
+    });
+    await assertFails(deleteDoc(doc(otherDb(), 'verifications/v1')));
+  });
+
   it('unauthenticated user cannot delete a closed verification', async () => {
     await seedOwner();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'verifications/v1'), CLOSED_DOC);
+    });
+    await assertFails(deleteDoc(doc(anonDb(), 'verifications/v1')));
+  });
+
+  it('unauthenticated user cannot delete a draft verification', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), DRAFT_DOC);
     });
     await assertFails(deleteDoc(doc(anonDb(), 'verifications/v1')));
   });

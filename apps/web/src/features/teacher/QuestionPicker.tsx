@@ -241,14 +241,16 @@ export function QuestionPicker({ entries, selectedIds, onChange }: Props) {
                 onChange={() => toggle(entry.id)}
                 aria-label={`Seleziona domanda ${entry.questionLocalId}`}
               />
-              <span className={styles.rowLocalId}>#{entry.questionLocalId}</span>
-              <label htmlFor={`qp-check-${entry.id}`}>
-                {entry.udaDir} / {entry.lessonFilename}
+              <label htmlFor={`qp-check-${entry.id}`} className={styles.rowContent}>
+                <span className={styles.rowPreviewLine}>
+                  <span className={styles.rowLocalId}>#{entry.questionLocalId}</span>
+                  <span className={styles.rowPreview}>{entry.questionPreview}</span>
+                </span>
+                <span className={styles.rowMeta}>
+                  {entry.udaDir} / {entry.lessonFilename} · {TIPO_LABELS[entry.tipo]} · diff{' '}
+                  {entry.difficolta} · peso {entry.peso} · {entry.maxPoints}pt
+                </span>
               </label>
-              <span className={styles.rowMeta}>
-                {TIPO_LABELS[entry.tipo]} · diff {entry.difficolta} · peso {entry.peso} ·{' '}
-                {entry.maxPoints}pt
-              </span>
             </li>
           ))}
         </ul>

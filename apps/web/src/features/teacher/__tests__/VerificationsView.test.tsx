@@ -10,7 +10,7 @@ const mockCreateVerification = vi.fn();
 const mockUpdateVerificationConfig = vi.fn();
 const mockActivateVerification = vi.fn();
 const mockCloseVerification = vi.fn();
-const mockDeleteClosedVerification = vi.fn();
+const mockDeleteVerification = vi.fn();
 const mockListQuestionIndex = vi.fn();
 const mockListPrograms = vi.fn();
 const mockListClasses = vi.fn();
@@ -34,7 +34,7 @@ vi.mock('../../repository/verifications/verificationsService.js', () => ({
   updateVerificationConfig: (...args: unknown[]) => mockUpdateVerificationConfig(...args),
   activateVerification: (...args: unknown[]) => mockActivateVerification(...args),
   closeVerification: (...args: unknown[]) => mockCloseVerification(...args),
-  deleteClosedVerification: (...args: unknown[]) => mockDeleteClosedVerification(...args),
+  deleteVerification: (...args: unknown[]) => mockDeleteVerification(...args),
 }));
 vi.mock('../../repository/verifications/questionIndexService.js', () => ({
   listQuestionIndex: (...args: unknown[]) => mockListQuestionIndex(...args),
@@ -93,6 +93,7 @@ const sampleQuestionIndexEntries = [
     difficolta: 2 as const,
     peso: 1 as const,
     maxPoints: 2,
+    questionPreview: 'Quale livello gestisce il routing?',
   },
   {
     id: 'qi-2',
@@ -104,6 +105,7 @@ const sampleQuestionIndexEntries = [
     difficolta: 3 as const,
     peso: 2 as const,
     maxPoints: 4,
+    questionPreview: 'Descrivi il modello OSI.',
   },
 ];
 
@@ -128,7 +130,7 @@ function setupDefaults() {
   mockUpdateVerificationConfig.mockResolvedValue(undefined);
   mockActivateVerification.mockResolvedValue(undefined);
   mockCloseVerification.mockResolvedValue(undefined);
-  mockDeleteClosedVerification.mockResolvedValue(undefined);
+  mockDeleteVerification.mockResolvedValue(undefined);
   mockLoadSelectedQuestions.mockResolvedValue({ ok: true, questions: [] });
   mockDownloadStudentPdf.mockResolvedValue(undefined);
 }
@@ -199,6 +201,59 @@ describe('VerificationsView', () => {
     // Classe / Corso columns resolved from ids
     expect(within(table).getAllByText('Classe 3A').length).toBeGreaterThanOrEqual(1);
     expect(within(table).getAllByText('Matematica').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('every verification row has the same number of table cells regardless of status (stable actions column)', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer(),
+      makeDraftVer({
+        id: 'ver-2',
+        status: 'active',
+        config: { ...makeDraftVer().config, title: 'Verifica Geometria' },
+        teacherSnapshot: {
+          title: 'Verifica Geometria',
+          classId: 'cls-1',
+          className: 'Classe 3A',
+          programId: 'prog-1',
+          importId: 'imp-1',
+          questionRefs: [sampleQuestionRef],
+          activatedAt: null,
+        },
+      }),
+      makeDraftVer({
+        id: 'ver-3',
+        status: 'closed',
+        config: { ...makeDraftVer().config, title: 'Verifica Trigonometria' },
+        teacherSnapshot: {
+          title: 'Verifica Trigonometria',
+          classId: 'cls-1',
+          className: 'Classe 3A',
+          programId: 'prog-1',
+          importId: 'imp-1',
+          questionRefs: [],
+          activatedAt: null,
+        },
+      }),
+    ]);
+    render(<VerificationsView />);
+
+    const table = await screen.findByRole('table');
+    const [, ...bodyRows] = within(table).getAllByRole('row'); // drop header row
+    const cellCounts = bodyRows.map((row) => within(row).getAllByRole('cell').length);
+    expect(bodyRows).toHaveLength(3);
+    expect(new Set(cellCounts).size).toBe(1);
+  });
+
+  it('renders the create-verification form before the verification table', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('table'));
+
+    const form = screen.getByRole('form', { name: 'Nuova verifica' });
+    const table = screen.getByRole('table');
+    expect(form.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('creates draft verification', async () => {
@@ -467,14 +522,14 @@ describe('VerificationsView', () => {
     expect(screen.queryByRole('button', { name: /elimina verifica/i })).toBeNull();
   });
 
-  it('draft verification shows neither PDF, Chiudi nor Elimina row actions', async () => {
+  it('draft verification shows only the Elimina row action, never PDF or Chiudi', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
     expect(screen.queryByRole('button', { name: /scarica pdf/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /chiudi verifica/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /elimina verifica/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /elimina verifica/i })).toBeTruthy();
   });
 
   it('closed verification shows only the Elimina row action', async () => {
@@ -588,7 +643,7 @@ describe('VerificationsView', () => {
     expect(mockCloseVerification).not.toHaveBeenCalled();
   });
 
-  // ─── Delete (row action, closed only) ───────────────────────────────────────
+  // ─── Delete (row action, draft or closed) ────────────────────────────────────
 
   it('delete confirm panel requires explicit confirmation before calling the service', async () => {
     setupDefaults();
@@ -599,10 +654,10 @@ describe('VerificationsView', () => {
 
     const region = await screen.findByRole('region', { name: /conferma eliminazione/i });
     expect(within(region).getByText(/irreversibile/i)).toBeTruthy();
-    expect(mockDeleteClosedVerification).not.toHaveBeenCalled();
+    expect(mockDeleteVerification).not.toHaveBeenCalled();
   });
 
-  it('calls deleteClosedVerification when delete is confirmed', async () => {
+  it('calls deleteVerification when a closed verification delete is confirmed', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValueOnce([closedVer()]).mockResolvedValue([]);
     render(<VerificationsView />);
@@ -612,7 +667,22 @@ describe('VerificationsView', () => {
     fireEvent.click(within(region).getByRole('button', { name: /elimina definitivamente/i }));
 
     await waitFor(() =>
-      expect(mockDeleteClosedVerification).toHaveBeenCalledWith('ver-1', 'owner-uid', {}),
+      expect(mockDeleteVerification).toHaveBeenCalledWith('ver-1', 'owner-uid', {}),
+    );
+    await waitFor(() => expect(screen.queryByText('Verifica Algebra')).toBeNull());
+  });
+
+  it('calls deleteVerification when a draft verification delete is confirmed', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValueOnce([makeDraftVer()]).mockResolvedValue([]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /elimina verifica/i }));
+    fireEvent.click(screen.getByRole('button', { name: /elimina verifica/i }));
+    const region = await screen.findByRole('region', { name: /conferma eliminazione/i });
+    fireEvent.click(within(region).getByRole('button', { name: /elimina definitivamente/i }));
+
+    await waitFor(() =>
+      expect(mockDeleteVerification).toHaveBeenCalledWith('ver-1', 'owner-uid', {}),
     );
     await waitFor(() => expect(screen.queryByText('Verifica Algebra')).toBeNull());
   });
@@ -627,16 +697,14 @@ describe('VerificationsView', () => {
     fireEvent.click(within(region).getByRole('button', { name: /annulla/i }));
 
     expect(screen.queryByRole('region', { name: /conferma eliminazione/i })).toBeNull();
-    expect(mockDeleteClosedVerification).not.toHaveBeenCalled();
+    expect(mockDeleteVerification).not.toHaveBeenCalled();
     expect(screen.getByText('Verifica Algebra')).toBeTruthy();
   });
 
-  it('shows a readable error when deleteClosedVerification fails', async () => {
+  it('shows a readable error when deleteVerification fails', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([closedVer()]);
-    mockDeleteClosedVerification.mockRejectedValue(
-      new Error('Verifica non eliminabile: non è chiusa'),
-    );
+    mockDeleteVerification.mockRejectedValue(new Error('Verifica non eliminabile: non è chiusa'));
     render(<VerificationsView />);
     await waitFor(() => screen.getByRole('button', { name: /elimina verifica/i }));
     fireEvent.click(screen.getByRole('button', { name: /elimina verifica/i }));
