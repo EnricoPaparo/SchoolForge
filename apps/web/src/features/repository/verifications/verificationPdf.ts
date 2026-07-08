@@ -1,5 +1,10 @@
 import type { VerificationTeacherSnapshot } from '../../../types/firestore.js';
 import type { LoadedQuestion } from './loadSelectedQuestions.js';
+import {
+  computeFieldLineLayout,
+  computeOptionBoxLayouts,
+  getAnswerAreaKind,
+} from './verificationPdfLayout.js';
 
 /**
  * Generates and downloads a student-facing verification PDF.
@@ -57,9 +62,21 @@ export async function downloadStudentPdf(
   gap(7);
 
   // ── Student fields ────────────────────────────────────────────────────────
-  write('Nome e Cognome: _________________________________________', 11);
-  gap(7);
-  write('Data: ____________________', 11);
+  // Both fields are drawn (label + a ruled line to a shared right edge), never
+  // as text with underscores — this keeps the two lines perfectly aligned
+  // regardless of how long each label is.
+  const drawFieldLine = (label: string) => {
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    const labelWidth = doc.getTextWidth(label);
+    const layout = computeFieldLineLayout({ margin, pageWidth: pageW, y, labelWidth });
+    doc.text(label, layout.labelX, layout.labelY);
+    doc.line(layout.lineStartX, layout.lineY, layout.lineEndX, layout.lineY);
+  };
+
+  drawFieldLine('Nome e Cognome:');
+  gap(9);
+  drawFieldLine('Data:');
   gap(10);
   hRule();
   gap(9);
@@ -75,22 +92,28 @@ export async function downloadStudentPdf(
     write(`${i + 1}.  ${q.testo}  [${q.ref.maxPoints} pt]`, 11);
     gap(3);
 
-    if (q.tipo === 'chiusa_singola' || q.tipo === 'chiusa_multipla') {
-      for (const opt of q.opzioni ?? []) {
-        write(`      ○  ${opt.testo}`, 10);
-        gap(1);
-      }
-    } else {
-      // aperta: ruled answer lines
-      for (let l = 0; l < 3; l++) {
-        gap(7);
-        if (y < 272) {
-          doc.setDrawColor(190);
-          doc.line(margin, y, pageW - margin, y);
-          doc.setDrawColor(0);
-        }
-      }
+    if (getAnswerAreaKind(q.tipo) === 'options') {
+      const opts = q.opzioni ?? [];
+      const rowHeightMm = 6;
+      if (y + opts.length * rowHeightMm > 272) newPage();
+
+      const boxLayouts = computeOptionBoxLayouts({
+        count: opts.length,
+        margin,
+        startY: y + rowHeightMm,
+        rowHeightMm,
+      });
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      opts.forEach((opt, idx) => {
+        const box = boxLayouts[idx];
+        doc.rect(box.boxX, box.boxY, box.boxSize, box.boxSize);
+        doc.text(opt.testo, box.textX, box.boxY + box.boxSize - 0.3);
+      });
+      gap(opts.length * rowHeightMm + 2);
     }
+    // aperta: no answer lines or reserved space — the student writes on a separate sheet.
     gap(9);
   });
 
