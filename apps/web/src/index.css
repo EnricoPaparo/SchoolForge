@@ -11,6 +11,8 @@
   --color-primary-hover: #60a5fa;
   --color-primary-light: rgba(59, 130, 246, 0.16);
   --color-accent-violet: #a78bfa;
+  --color-brand-blue: #0f6fda;
+  --color-brand-orange: #f97316;
 
   --color-surface: #1a2436;
   --color-surface-subtle: #101828;
@@ -53,6 +55,8 @@
     --color-primary-hover: #1d4ed8;
     --color-primary-light: #eff6ff;
     --color-accent-violet: #7c3aed;
+    --color-brand-blue: #0f6fda;
+    --color-brand-orange: #ea580c;
 
     --color-surface: #ffffff;
     --color-surface-subtle: #f8fafc;
@@ -219,11 +223,26 @@ button.btn-primary:hover:not(:disabled) {
 button.btn-danger {
   color: var(--color-error);
   border-color: var(--color-error-border);
+  background-color: var(--color-error-bg);
 }
 
 button.btn-danger:hover:not(:disabled) {
-  background-color: var(--color-error-bg);
+  color: #fff;
+  background-color: var(--color-error);
   border-color: var(--color-error);
+}
+
+/* Success button variant */
+button.btn-success {
+  color: #062318;
+  background-color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+button.btn-success:hover:not(:disabled) {
+  color: #03150e;
+  background-color: color-mix(in srgb, var(--color-success) 86%, #ffffff);
+  border-color: color-mix(in srgb, var(--color-success) 86%, #ffffff);
 }
 
 /* ── Base inputs ───────────────────────────────────────────────── */

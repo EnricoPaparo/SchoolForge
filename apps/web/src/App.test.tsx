@@ -34,10 +34,12 @@ vi.mock('firebase/firestore', () => ({
 }));
 
 describe('App — unauthenticated', () => {
-  it('renders login page with SchoolForge when unauthenticated', async () => {
+  it('renders the login wordmark and removes legacy login copy when unauthenticated', async () => {
     _mockUser = null;
     render(<App />);
-    expect(await screen.findByText('SchoolForge')).toBeTruthy();
+    expect(await screen.findByRole('img', { name: 'SchoolForge' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'SchoolForge' })).toBeNull();
+    expect(screen.queryByText('Accedi al portale docente')).toBeNull();
   });
 });
 

@@ -149,15 +149,6 @@
   line-height: 1;
 }
 
-.iconBtnDanger {
-  color: var(--color-error);
-  border-color: var(--color-error-border);
-}
-
-.iconBtnDanger:hover:not(:disabled) {
-  background-color: var(--color-error-bg);
-}
-
 /* ── Inline confirm row (close / delete) ──────────────────────────── */
 .confirmRowInline {
   background: var(--color-warning-bg);

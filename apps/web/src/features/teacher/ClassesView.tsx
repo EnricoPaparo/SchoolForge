@@ -150,7 +150,11 @@ export function ClassesView() {
               placeholder="opzionale"
             />
           </div>
-          <button type="submit" className={styles.addBtn} disabled={creating || !newName.trim()}>
+          <button
+            type="submit"
+            className={`${styles.addBtn} btn-success`}
+            disabled={creating || !newName.trim()}
+          >
             {creating ? 'Creazione…' : '+ Aggiungi'}
           </button>
         </div>
@@ -195,7 +199,11 @@ export function ClassesView() {
                           aria-label="Descrizione classe"
                           onChange={(e) => setEditDesc(e.target.value)}
                         />
-                        <button type="submit" disabled={saving || !editName.trim()}>
+                        <button
+                          type="submit"
+                          className="btn-success"
+                          disabled={saving || !editName.trim()}
+                        >
                           {saving ? 'Salvataggio…' : 'Salva'}
                         </button>
                         <button type="button" onClick={handleCancelEdit}>
@@ -212,7 +220,7 @@ export function ClassesView() {
                       </span>
                       <button
                         type="button"
-                        className={styles.deleteConfirmBtn}
+                        className={`${styles.deleteConfirmBtn} btn-danger`}
                         disabled={deleting}
                         onClick={() => void handleDelete(c.id)}
                       >
@@ -242,7 +250,7 @@ export function ClassesView() {
                         </button>
                         <button
                           type="button"
-                          className={styles.deleteBtn}
+                          className={`${styles.deleteBtn} btn-danger`}
                           aria-label={`Elimina classe ${c.name}`}
                           onClick={() => {
                             setDeleteConfirmId(c.id);

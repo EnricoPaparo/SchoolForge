@@ -146,26 +146,13 @@
 .deleteBtn {
   font-size: 0.8125rem;
   padding: 0.3125rem 0.625rem;
-  color: var(--color-error);
-  border-color: var(--color-error);
-  background: transparent;
-}
-
-.deleteBtn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-error) 8%, transparent);
 }
 
 .deleteConfirmBtn {
   font-size: 0.8125rem;
   padding: 0.3125rem 0.75rem;
-  color: #fff;
-  background: var(--color-error);
-  border-color: var(--color-error);
+  font-weight: 600;
   margin-right: 0.5rem;
-}
-
-.deleteConfirmBtn:hover:not(:disabled) {
-  opacity: 0.85;
 }
 
 /* ── Confirm row ──────────────────────────────────────────────────── */

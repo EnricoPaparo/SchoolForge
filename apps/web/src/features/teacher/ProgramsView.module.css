@@ -30,12 +30,6 @@
   justify-content: center;
   font-size: 0.8125rem;
   padding: 0.4375rem 0.875rem;
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-}
-
-.createBtn:hover:not(:disabled) {
-  background-color: var(--color-primary-light);
 }
 
 @media (max-width: 640px) {
@@ -132,15 +126,6 @@
   line-height: 1;
 }
 
-.iconBtnDanger {
-  color: var(--color-error);
-  border-color: var(--color-error-border);
-}
-
-.iconBtnDanger:hover:not(:disabled) {
-  background-color: var(--color-error-bg);
-}
-
 .deleteConfirmBox {
   display: flex;
   flex-direction: column;
@@ -161,13 +146,7 @@
 }
 
 .deleteConfirmBtn {
-  color: #fff;
-  background: var(--color-error);
-  border-color: var(--color-error);
-}
-
-.deleteConfirmBtn:hover:not(:disabled) {
-  opacity: 0.85;
+  font-weight: 600;
 }
 
 @media (max-width: 640px) {
