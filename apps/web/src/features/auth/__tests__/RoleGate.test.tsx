@@ -127,7 +127,7 @@ describe('RoleGate — approved student', () => {
   });
 });
 
-describe('RoleGate — portal disabled', () => {
+describe('RoleGate — portal disabled (only gates an approved student)', () => {
   it('shows the disabled screen for an approved student when the portal is off', async () => {
     seedOwnerPublic();
     seedStudentAccess(false);
@@ -147,9 +147,10 @@ describe('RoleGate — portal disabled', () => {
     expect(screen.queryByText('Area docente')).toBeNull();
   });
 
-  it('shows the disabled screen even when settings/studentAccess does not exist', async () => {
+  it('shows the disabled screen for an approved student when settings/studentAccess does not exist', async () => {
     seedOwnerPublic();
     // seedStudentAccess() never called — safe default is "disabled".
+    seedStudentDoc('approved');
     asStudent();
 
     render(
@@ -165,8 +166,8 @@ describe('RoleGate — portal disabled', () => {
   });
 });
 
-describe('RoleGate — pending student', () => {
-  it('shows the pending screen when the student status is pending', async () => {
+describe('RoleGate — pending student (shown regardless of the portal toggle)', () => {
+  it('shows the pending screen when the student status is pending and the portal is on', async () => {
     seedOwnerPublic();
     seedStudentAccess(true);
     seedStudentDoc('pending');
@@ -180,10 +181,24 @@ describe('RoleGate — pending student', () => {
     expect(await screen.findByRole('heading', { name: /Richiesta inviata/i })).toBeTruthy();
     expect(screen.queryByText('Area docente')).toBeNull();
   });
+
+  it('shows the pending screen when the student status is pending and the portal is off', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(false);
+    seedStudentDoc('pending');
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    expect(await screen.findByRole('heading', { name: /Richiesta inviata/i })).toBeTruthy();
+  });
 });
 
-describe('RoleGate — blocked student', () => {
-  it('shows the blocked screen when the student status is blocked', async () => {
+describe('RoleGate — blocked student (shown regardless of the portal toggle)', () => {
+  it('shows the blocked screen when the student status is blocked and the portal is on', async () => {
     seedOwnerPublic();
     seedStudentAccess(true);
     seedStudentDoc('blocked');
@@ -197,10 +212,24 @@ describe('RoleGate — blocked student', () => {
     expect(await screen.findByRole('heading', { name: /Accesso studente bloccato/i })).toBeTruthy();
     expect(screen.queryByText('Area docente')).toBeNull();
   });
+
+  it('shows the blocked screen when the student status is blocked and the portal is off', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(false);
+    seedStudentDoc('blocked');
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    expect(await screen.findByRole('heading', { name: /Accesso studente bloccato/i })).toBeTruthy();
+  });
 });
 
-describe('RoleGate — no students/{uid} document yet', () => {
-  it('shows requests-closed and does not create a document when requests are disabled', async () => {
+describe('RoleGate — no students/{uid} document yet (independent of the portal toggle)', () => {
+  it('shows requests-closed and does not create a document when requests are disabled, portal on', async () => {
     seedOwnerPublic();
     seedStudentAccess(true, false);
     asStudent();
@@ -216,7 +245,23 @@ describe('RoleGate — no students/{uid} document yet', () => {
     expect(mockSetDoc).not.toHaveBeenCalled();
   });
 
-  it('creates a pending request and shows the pending screen when requests are enabled', async () => {
+  it('shows requests-closed and does not create a document when requests are disabled, portal off', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(false, false);
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    expect(
+      await screen.findByRole('heading', { name: /Nuove richieste studenti chiuse/i }),
+    ).toBeTruthy();
+    expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+
+  it('creates a pending request and shows the pending screen when requests are enabled, portal on', async () => {
     seedOwnerPublic();
     seedStudentAccess(true, true);
     asStudent();
@@ -234,6 +279,26 @@ describe('RoleGate — no students/{uid} document yet', () => {
     expect(data.classId).toBeNull();
     expect(data.uid).toBe(STUDENT_UID);
     expect(data.ownerUid).toBe(OWNER_UID);
+  });
+
+  it('creates a pending request and shows the pending screen when requests are enabled, portal off (bug fix)', async () => {
+    // Regression test: "Portale studenti" OFF must never block an unknown
+    // candidate from filing a request when "Nuove richieste" is ON — the
+    // two toggles are independent.
+    seedOwnerPublic();
+    seedStudentAccess(false, true);
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    expect(await screen.findByRole('heading', { name: /Richiesta inviata/i })).toBeTruthy();
+    expect(mockSetDoc).toHaveBeenCalledTimes(1);
+    const [ref, data] = mockSetDoc.mock.calls[0];
+    expect(ref.path).toBe(`students/${STUDENT_UID}`);
+    expect(data.status).toBe('pending');
   });
 });
 

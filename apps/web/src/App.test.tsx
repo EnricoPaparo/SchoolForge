@@ -92,14 +92,35 @@ describe('App — student authenticated (M3-lite)', () => {
     expect(screen.queryByRole('button', { name: /Template/ })).toBeNull();
   });
 
-  it('shows the portal-disabled screen for a non-owner when the portal is off', async () => {
+  it('shows the portal-disabled screen for an approved non-owner when the portal is off', async () => {
     _mockUser = { uid: STUDENT_UID, email: 'student@test.com', displayName: null };
-    firestoreDocs = { 'settings/ownerPublic': { ownerUid: OWNER_UID } };
+    firestoreDocs = {
+      'settings/ownerPublic': { ownerUid: OWNER_UID },
+      'settings/studentAccess': { studentPortalEnabled: false, newStudentRequestsEnabled: false },
+      [`students/${STUDENT_UID}`]: {
+        uid: STUDENT_UID,
+        ownerUid: OWNER_UID,
+        email: 'student@test.com',
+        displayName: null,
+        status: 'approved',
+        classId: null,
+      },
+    };
     render(<App />);
     expect(
       await screen.findByRole('heading', {
         name: /Portale studenti temporaneamente disabilitato/i,
       }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Template/ })).toBeNull();
+  });
+
+  it('shows requests-closed for an unknown non-owner when there is no students/{uid} document', async () => {
+    _mockUser = { uid: STUDENT_UID, email: 'student@test.com', displayName: null };
+    firestoreDocs = { 'settings/ownerPublic': { ownerUid: OWNER_UID } };
+    render(<App />);
+    expect(
+      await screen.findByRole('heading', { name: /Nuove richieste studenti chiuse/i }),
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Template/ })).toBeNull();
   });

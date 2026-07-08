@@ -5,41 +5,86 @@
   gap: 1.25rem;
 }
 
-/* ── Toggles card ─────────────────────────────────────────────────── */
-.togglesCard {
+/* ── Toggle cards ─────────────────────────────────────────────────── */
+.togglesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.875rem;
+  max-width: 720px;
+}
+
+.toggleCard {
   display: flex;
   flex-direction: column;
-  gap: 0.875rem;
+  gap: 0.5rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: 0.875rem 1rem;
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.125rem;
   box-shadow: var(--shadow-sm);
-  max-width: 640px;
 }
 
-.toggleRow {
+.toggleCardHeader {
   display: flex;
-  align-items: flex-start;
-  gap: 0.625rem;
-  cursor: pointer;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
-.toggleRow input[type='checkbox'] {
-  margin-top: 0.2rem;
-  flex-shrink: 0;
-}
-
-.toggleLabel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
+.toggleTitle {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .toggleDesc {
   font-size: 0.8125rem;
   color: var(--color-text-muted);
   font-weight: 400;
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* Switch control (role="switch" button) */
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 1.375rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface-subtle);
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.switchOn {
+  background-color: var(--color-success-btn);
+  border-color: var(--color-success-btn);
+}
+
+.switchThumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 50%;
+  background-color: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s;
+}
+
+.switchOn .switchThumb {
+  transform: translateX(1.125rem);
 }
 
 /* ── Search / filter row ──────────────────────────────────────────── */
@@ -106,9 +151,9 @@
 
 .actionsWrapper {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.3rem;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .classSelect {
@@ -118,21 +163,56 @@
   padding: 0.25rem 0.5rem;
 }
 
-.actionBtn {
-  font-size: 0.8125rem;
-  padding: 0.3125rem 0.625rem;
-  white-space: nowrap;
+/* Compact icon-only action buttons — keep the row height stable. */
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  padding: 0;
+  font-size: 0.9375rem;
+  line-height: 1;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background-color 0.12s,
+    border-color 0.12s;
+}
+
+.iconBtn:hover:not(:disabled) {
+  background: var(--color-surface-subtle);
+}
+
+.iconBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.iconBtnSuccess {
+  border-color: var(--color-success-border);
+  background-color: var(--color-success-bg);
+}
+
+.iconBtnDanger {
+  border-color: var(--color-error-border);
+  background-color: var(--color-error-bg);
 }
 
 .confirmActions {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.4rem;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .confirmText {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--color-text);
 }
 
@@ -148,5 +228,11 @@
 
   .statusSelect {
     width: 100%;
+  }
+
+  .actionsWrapper,
+  .confirmActions {
+    flex-wrap: wrap;
+    white-space: normal;
   }
 }
