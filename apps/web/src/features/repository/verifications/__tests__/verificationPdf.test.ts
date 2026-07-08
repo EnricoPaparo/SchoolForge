@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VerificationTeacherSnapshot } from '../../../../types/firestore.js';
 import type { LoadedQuestion } from '../loadSelectedQuestions.js';
+import type { LoadedQuestionWithSolution } from '../loadSelectedQuestionsWithSolutions.js';
 
 type Call = { method: string; args: unknown[] };
 
@@ -45,7 +46,7 @@ vi.mock('jspdf', () => {
   return { jsPDF: FakeJsPDF };
 });
 
-const { downloadStudentPdf } = await import('../verificationPdf.js');
+const { downloadStudentPdf, downloadTeacherSolutionsPdf } = await import('../verificationPdf.js');
 
 const SNAPSHOT = {
   title: 'Verifica Reti',
@@ -162,5 +163,87 @@ describe('downloadStudentPdf — closed questions', () => {
     expect(textCalls.some((c) => String(c.args[0]).includes('○'))).toBe(false);
     expect(textCalls.some((c) => String(c.args[0]) === 'Rete')).toBe(true);
     expect(textCalls.some((c) => String(c.args[0]) === 'Trasporto')).toBe(true);
+  });
+
+  it('never includes soluzione, correctAnswer or answers text anywhere in the student PDF', async () => {
+    await downloadStudentPdf(SNAPSHOT, [APERTA, CHIUSA], null);
+    const rendered = calls
+      .filter((c) => c.method === 'text')
+      .map((c) => String(c.args[0]))
+      .join('\n');
+    expect(rendered).not.toMatch(/soluzione/i);
+    expect(rendered).not.toMatch(/corretta/i);
+  });
+});
+
+const APERTA_WITH_SOLUTION: LoadedQuestionWithSolution = {
+  ref: APERTA.ref,
+  testo: APERTA.testo,
+  tipo: 'aperta',
+  soluzione: 'Il modello OSI ha 7 livelli.',
+};
+
+const CHIUSA_WITH_SOLUTION: LoadedQuestionWithSolution = {
+  ref: CHIUSA.ref,
+  testo: CHIUSA.testo,
+  tipo: 'chiusa_singola',
+  opzioni: CHIUSA.opzioni,
+  soluzione: ['a'],
+};
+
+describe('downloadTeacherSolutionsPdf', () => {
+  it('includes the "COPIA DOCENTE — SOLUZIONI" header', async () => {
+    await downloadTeacherSolutionsPdf(SNAPSHOT, [APERTA_WITH_SOLUTION], null);
+    const textCalls = calls.filter((c) => c.method === 'text');
+    expect(textCalls.some((c) => String(c.args[0]) === 'COPIA DOCENTE — SOLUZIONI')).toBe(true);
+  });
+
+  it('shows the title and classe when present', async () => {
+    await downloadTeacherSolutionsPdf(SNAPSHOT, [APERTA_WITH_SOLUTION], 'Classe 3A');
+    const textCalls = calls.filter((c) => c.method === 'text');
+    expect(textCalls.some((c) => String(c.args[0]) === 'Verifica Reti')).toBe(true);
+    expect(textCalls.some((c) => String(c.args[0]) === 'Classe: Classe 3A')).toBe(true);
+  });
+
+  it('shows the textual solution for aperta questions', async () => {
+    await downloadTeacherSolutionsPdf(SNAPSHOT, [APERTA_WITH_SOLUTION], null);
+    const textCalls = calls.filter((c) => c.method === 'text');
+    expect(textCalls.some((c) => String(c.args[0]).includes('Il modello OSI ha 7 livelli.'))).toBe(
+      true,
+    );
+  });
+
+  it('highlights the correct option and does not mark the incorrect one', async () => {
+    await downloadTeacherSolutionsPdf(SNAPSHOT, [CHIUSA_WITH_SOLUTION], null);
+    const textCalls = calls.filter((c) => c.method === 'text').map((c) => String(c.args[0]));
+    expect(textCalls.some((t) => t.includes('Rete') && t.includes('(corretta)'))).toBe(true);
+    expect(textCalls.some((t) => t.includes('Trasporto') && t.includes('(corretta)'))).toBe(false);
+  });
+
+  it('highlights every correct option for chiusa_multipla', async () => {
+    const multipla: LoadedQuestionWithSolution = {
+      ref: { ...CHIUSA.ref, tipo: 'chiusa_multipla' },
+      testo: 'Quali livelli sono di trasporto?',
+      tipo: 'chiusa_multipla',
+      opzioni: [
+        { id: 'a', testo: 'Rete' },
+        { id: 'b', testo: 'Trasporto' },
+        { id: 'c', testo: 'Applicazione' },
+      ],
+      soluzione: ['b', 'c'],
+    };
+    await downloadTeacherSolutionsPdf(SNAPSHOT, [multipla], null);
+    const textCalls = calls.filter((c) => c.method === 'text').map((c) => String(c.args[0]));
+    expect(textCalls.some((t) => t.includes('Trasporto') && t.includes('(corretta)'))).toBe(true);
+    expect(textCalls.some((t) => t.includes('Applicazione') && t.includes('(corretta)'))).toBe(
+      true,
+    );
+    expect(textCalls.some((t) => t.includes('Rete') && t.includes('(corretta)'))).toBe(false);
+  });
+
+  it('uses the <titolo>_soluzioni_docente.pdf filename', async () => {
+    await downloadTeacherSolutionsPdf(SNAPSHOT, [APERTA_WITH_SOLUTION], null);
+    const saveCall = calls.find((c) => c.method === 'save');
+    expect(saveCall?.args[0]).toBe('Verifica_Reti_soluzioni_docente.pdf');
   });
 });
