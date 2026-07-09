@@ -170,11 +170,10 @@ async function renderStudentPdf(
   drawFieldLine('Data:', options.fieldPrefill?.data);
   gap(9);
 
-  // A light divider between the student fields and the first question — kept
-  // visually lighter than the header/footer rules (which use the default,
-  // darker color) so it doesn't compete with them.
-  hRule(200);
-  gap(6);
+  // Blank vertical space between the student fields and the first question.
+  // No divider line here: this area should read like a paper form, not a
+  // section separator.
+  gap(8);
 
   // ── Questions ─────────────────────────────────────────────────────────────
   let totalPts = 0;

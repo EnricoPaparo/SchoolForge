@@ -130,16 +130,16 @@ describe('downloadStudentPdf — student fields', () => {
     expect(endXs.size).toBe(1);
   });
 
-  it('draws exactly one full-width divider between the Data field and the questions, plus the footer rule', async () => {
+  it('does not draw a full-width divider between the Data field and the questions', async () => {
     await downloadStudentPdf(SNAPSHOT, [], null);
 
     const fullWidthLines = calls.filter(
       (c) => c.method === 'line' && c.args[0] === 20 && c.args[2] === 190,
     );
 
-    // One divider right after the student fields (before any question) and
-    // one footer rule before "Punteggio" — never one per field individually.
-    expect(fullWidthLines).toHaveLength(2);
+    // Only the footer rule before "Punteggio": between Data and the first
+    // question there is blank vertical space, not a section divider.
+    expect(fullWidthLines).toHaveLength(1);
   });
 
   it('never draws a value on the field lines — the teacher preview is always blank', async () => {
@@ -189,8 +189,8 @@ describe('downloadStudentPdf — aperta questions', () => {
     const lineCallsNoQuestions = calls.filter((c) => c.method === 'line').length;
 
     // An aperta question contributes zero extra `line` calls compared to a PDF
-    // with no questions at all — the only lines are the header rule, the two
-    // student-field lines, and the footer rule.
+    // with no questions at all — the only lines are the two student-field
+    // lines and the footer rule.
     expect(lineCallsForAperta).toBe(lineCallsNoQuestions);
   });
 
