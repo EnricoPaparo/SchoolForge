@@ -33,6 +33,7 @@ export interface UdaPayload {
     importId: string;
     dir: string;
     filename: string;
+    order: number;
     storageBasePath: string;
     lessonCount: number;
     descrizione: string | null;
@@ -50,13 +51,17 @@ export interface LessonPayload {
     udaDir: string;
     path: string;
     filename: string;
+    order: number;
     poolStatus: 'absent' | 'valid' | 'invalid';
     questionCount: number;
     storageRef: string;
     poolStorageRef: string | null;
     /** Parsed from the lesson's own optional front matter — see LessonMetadata. */
     titolo: string | null;
+    sottotitolo: string | null;
     difficolta: string | null;
+    concettiChiave: string[];
+    obiettivi: string[];
   };
 }
 
@@ -79,7 +84,11 @@ export interface PublicLessonPayload {
     contentPath: string;
     /** Didactic, never technical — safe for the student projection. */
     titolo: string | null;
+    sottotitolo: string | null;
     difficolta: string | null;
+    concettiChiave: string[];
+    obiettivi: string[];
+    order: number;
   };
 }
 

@@ -121,6 +121,7 @@ describe('buildImportPayload — structure', () => {
     expect(payload.udas).toHaveLength(1);
     expect(payload.udas[0].data.dir).toBe('uda-01-reti');
     expect(payload.udas[0].data.lessonCount).toBe(3);
+    expect(payload.udas[0].data.order).toBe(0);
   });
 
   it('produces three lesson entries', () => {
@@ -471,13 +472,21 @@ describe('buildImportPayload — lesson front matter (titolo/difficolta)', () =>
 
     const lesson = payload.lessons.find((l) => l.data.path === LESSON_WITH_FRONT_MATTER.path);
     expect(lesson?.data.titolo).toBe('FTP');
+    expect(lesson?.data.sottotitolo).toBe('Trasferimento file');
     expect(lesson?.data.difficolta).toBe('intermedia');
+    expect(lesson?.data.concettiChiave).toEqual(['Client/server']);
+    expect(lesson?.data.obiettivi).toEqual(['Descrivere il protocollo FTP']);
+    expect(lesson?.data.order).toBe(3);
 
     const publicLesson = payload.publicLessons.find(
       (l) => l.data.path === LESSON_WITH_FRONT_MATTER.path,
     );
     expect(publicLesson?.data.titolo).toBe('FTP');
+    expect(publicLesson?.data.sottotitolo).toBe('Trasferimento file');
     expect(publicLesson?.data.difficolta).toBe('intermedia');
+    expect(publicLesson?.data.concettiChiave).toEqual(['Client/server']);
+    expect(publicLesson?.data.obiettivi).toEqual(['Descrivere il protocollo FTP']);
+    expect(publicLesson?.data.order).toBe(3);
   });
 
   it('a lesson with no front matter carries null titolo/difficolta — does not block import', () => {

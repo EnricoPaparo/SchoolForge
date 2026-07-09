@@ -27,6 +27,10 @@ export type ProgramItem = { id: string } & ProgramDoc;
 export type UdaItem = { id: string } & UdaDoc;
 export type LessonItem = { id: string } & LessonDoc;
 
+function orderOrLegacy(value: number | undefined): number {
+  return value ?? Number.MAX_SAFE_INTEGER;
+}
+
 /**
  * Programs created before `classIds` existed are read back with
  * `classIds: []` — the safe default (not visible to any student) rather
@@ -120,12 +124,15 @@ export async function listUdas(
     return {
       id: d.id,
       ...raw,
+      order: raw.order ?? Number.MAX_SAFE_INTEGER,
       descrizione: raw.descrizione ?? null,
       competenze: raw.competenze ?? [],
       obiettivi: raw.obiettivi ?? [],
     } as UdaItem;
   });
-  return items.sort((a, b) => a.dir.localeCompare(b.dir));
+  return items.sort(
+    (a, b) => orderOrLegacy(a.order) - orderOrLegacy(b.order) || a.dir.localeCompare(b.dir),
+  );
 }
 
 export async function listLessons(
@@ -134,8 +141,24 @@ export async function listLessons(
   db: Firestore,
 ): Promise<LessonItem[]> {
   const snap = await getDocs(collection(db, 'programs', programId, 'imports', importId, 'lessons'));
-  const items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as LessonDoc) }));
-  return items.sort((a, b) => a.path.localeCompare(b.path));
+  const items = snap.docs.map((d) => {
+    const raw = d.data() as Partial<LessonDoc>;
+    return {
+      id: d.id,
+      ...raw,
+      order: raw.order,
+      sottotitolo: raw.sottotitolo ?? null,
+      difficolta: raw.difficolta ?? null,
+      concettiChiave: raw.concettiChiave ?? [],
+      obiettivi: raw.obiettivi ?? [],
+    } as LessonItem;
+  });
+  return items.sort(
+    (a, b) =>
+      a.udaDir.localeCompare(b.udaDir) ||
+      orderOrLegacy(a.order) - orderOrLegacy(b.order) ||
+      a.filename.localeCompare(b.filename),
+  );
 }
 
 /**

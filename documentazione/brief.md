@@ -95,7 +95,7 @@ Il sistema deve essere un consumatore della conoscenza.
 
 La perdita del sistema non deve comportare la perdita dei contenuti.
 
-In V1 il docente produce i file Markdown esternamente (con strumenti AI come Claude o GPT, o manualmente). SchoolForge importa e valida il contenuto. Un editor integrato è pianificato per V2.
+Nella baseline implementata il docente può produrre i file Markdown esternamente e importarli come ZIP. La prossima estensione pianificata è un Repository Editor minimale: creazione, modifica, eliminazione e riordino di UDA/lezioni da portale, mantenendo Markdown-first ed export portabile.
 
 ---
 
@@ -272,9 +272,7 @@ Le lezioni sono composte da due file Markdown:
 * `lezione-XXX-titolo.md` — contenuto didattico puro: testo, immagini, obiettivi, domande di autoverifica.
 * `lezione-XXX-titolo.pool.md` — pool delle domande di verifica associate a quella lezione, non esposte nella fruizione della lezione.
 
-Le lezioni vengono create e modificate esternamente al sistema.
-
-In V1 il docente produce i file Markdown esternamente (con strumenti AI come Claude o GPT, o manualmente). SchoolForge importa e valida il contenuto. Un editor integrato è pianificato per V2.
+Le lezioni possono essere create e modificate esternamente al sistema tramite Markdown e import ZIP. Con la fase RE — Repository Editor, il docente potrà anche crearle e modificarle direttamente dal portale, senza trasformarle in un formato proprietario.
 
 Il sistema deve permettere:
 
@@ -283,7 +281,7 @@ Il sistema deve permettere:
 * sostituzione file;
 * eliminazione file.
 
-Per ridurre il tempo di avvio senza introdurre un editor, il Modulo 1 include un kit di template per Programma/UDA/Lezione/Pool e una dashboard di prontezza: struttura valida, lezioni senza pool, pool non validi e numero di domande eleggibili. Non genera contenuti né modifica i Markdown.
+Per ridurre il tempo di avvio, il Modulo 1 include un kit di template per Programma/UDA/Lezione/Pool e una dashboard di prontezza: struttura valida, lezioni senza pool, pool non validi e numero di domande eleggibili. Non genera contenuti. La modifica dei Markdown da portale è pianificata separatamente nella fase RE.
 
 Il file pool è opzionale. Se non esiste, la lezione è valida e consultabile ma non contribuisce alla generazione delle verifiche.
 
@@ -567,6 +565,12 @@ Generazione Verifiche e PDF: verifica come configurazione, classi configurabili,
 
 ---
 
+### RE — Repository Editor
+
+Estensione del repository didattico: editor minimale per creare, modificare, eliminare e riordinare UDA e lezioni, inclusi front matter e corpo Markdown. Non introduce AI, consegne online, correzione o CMS visuale complesso. Serve a rendere SchoolForge utile nel lavoro quotidiano dopo l'import iniziale.
+
+---
+
 ### Modulo 4
 
 Correzione manuale e percentuali: correzione consegne digitali, punteggi, percentuali, rettifiche tracciate, popup Registro Correzioni (con export PDF/CSV) ed export globale in PDF, Markdown e CSV.
@@ -665,6 +669,7 @@ Non fanno parte del progetto:
 * videolezioni;
 * LMS completo;
 * social learning;
+* editor visuale/WYSIWYG complesso;
 * PDF conservati dal sistema;
 * correzione di prove cartacee nel sistema;
 * account SchoolForge dedicato per lo studente (registrazione, credenziali proprie, profilo custom) — lo studente si autentica solo con Google, da M3-lite;

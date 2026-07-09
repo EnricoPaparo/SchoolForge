@@ -95,9 +95,10 @@
 | DoR / DoD | Condizioni minime per iniziare / dichiarare completato un pacchetto. |
 | RPO | Perdita dati massima: in V1 best-effort, affidata all'export manuale Firestore dal docente e alla ridondanza nativa di Cloud Storage; nessun target numerico garantito. |
 | RTO | Tempo di ripristino; in SchoolForge è best-effort, senza target numerico. |
+| Repository Editor (RE) | Prossima fase pianificata: editor minimale Markdown-first per creare, modificare, eliminare e riordinare UDA e lezioni da portale, senza CMS visuale complesso, AI o consegna online. |
 
 ---
 
 ## Fuori scope intenzionale
 
-Google Workspace obbligatorio per il Docente, account SchoolForge dedicato per lo studente (registrazione, credenziali proprie), invio email agli studenti, MailGateway, Google Forms, Google Drive API, LMS, registro elettronico, PDF persistenti, editor Markdown integrato, generazione AI di domande e multi-docente non sono termini del dominio corrente. In M3-lite sono inoltre fuori scope: consegna e risposte online, tentativi, lock di partecipazione, allowlist di dominio Google, mapping classi/studenti e Cloud Functions.
+Google Workspace obbligatorio per il Docente, account SchoolForge dedicato per lo studente (registrazione, credenziali proprie), invio email agli studenti, MailGateway, Google Forms, Google Drive API, LMS, registro elettronico, PDF persistenti, editor visuale/WYSIWYG complesso, generazione AI di domande e multi-docente non sono termini del dominio corrente. In M3-lite sono inoltre fuori scope: consegna e risposte online, tentativi, lock di partecipazione, allowlist di dominio Google e Cloud Functions.

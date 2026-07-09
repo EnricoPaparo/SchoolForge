@@ -7,7 +7,7 @@
 Il flusso docente cartaceo e il portale studente in sola lettura sono funzionanti sia in locale (emulatori Firebase) che su Firebase DEV. M3-full (consegna online), M4 (correzione) e M5 (AI) non sono implementati.
 Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente locale e [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) per lo smoke test DEV.
 
-**Prossima fase:** UX/Product Polish — vedi [ux-product-roadmap.md](ux-product-roadmap.md) per la roadmap (UX-01 → UX-06).
+**Prossima fase:** Repository Editor — vedi [repository-editor-roadmap.md](repository-editor-roadmap.md) per la roadmap RE-00 → RE-07.
 
 ## Per iniziare
 
@@ -47,6 +47,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [ux-patterns.md](ux-patterns.md) | Pattern di stato della SPA. | Per la UI docente e portale. |
 | [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) | Guida operativa MVP in locale. | Per avviare e usare l'MVP oggi. |
 | [ux-product-roadmap.md](ux-product-roadmap.md) | Roadmap UX/Product Polish (UX-01–06). | Per pianificare e implementare il polish UI. |
+| [repository-editor-roadmap.md](repository-editor-roadmap.md) | Roadmap Repository Editor (RE-00–RE-07). | Per pianificare il prossimo sviluppo: editor UDA/lezioni minimale. |
 
 ## Evidenze
 

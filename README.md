@@ -18,11 +18,12 @@ Il flusso completo è operativo e testato (suite automatica estesa + smoke test 
 | PDF studente senza soluzioni (generato nel browser) | ✅ funzionante |
 | Dashboard prontezza repository | ✅ funzionante |
 | Portale studente Google, read-only (M3-lite) | ✅ funzionante — login Google, StudentShell, Lezioni e Verifiche filtrate per classe, approvazione studenti, PDF verifica studente |
+| Repository Editor (RE) | ❌ pianificato come prossima fase — editor minimale per creare/modificare/eliminare/riordinare UDA e lezioni |
 | Portale digitale con consegna online (M3-full) | ❌ non implementato — specifica rinviata, fase successiva a M3-lite |
 | Correzione e export risultati (M4) | ❌ non implementato — dipende da M3-full |
 | Correzione AI (M5) | ❌ fuori scope V1 |
 
-**Prossimo passo:** vedi la sezione "Prossimo passo" più sotto (UX/Product Polish sul deploy DEV già attivo).
+**Prossimo passo:** vedi la sezione "Prossimo passo" più sotto (Repository Editor).
 Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartaceo.md) per la guida operativa.
 
 ## Principi non negoziabili
@@ -55,17 +56,19 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 | [Decisioni](documentazione/decisioni.md) | Registro piatto di tutte le decisioni (D/ADR/C). |
 | [Glossario](documentazione/glossario.md) | Vocabolario condiviso. |
 | [Diagrammi](documentazione/diagrammi) | Flussi e componenti. |
+| [Repository Editor](documentazione/repository-editor-roadmap.md) | Roadmap del prossimo sviluppo: editor minimale UDA/lezioni Markdown-first. |
 
 ## Moduli di delivery
 
 1. **M1 — Repository didattico** ✅: programmi, UDA, lezioni, pool, rendering, export ZIP, programma svolto (PDF + Markdown).
 2. **M2 — Verifiche e cartaceo** ✅: configurazione, classi, selezione domande, attivazione, PDF studente browser-side.
 3. **M3-lite — Portale studente (Google, read-only)** ✅: login Google (personale o Workspace for Education), risoluzione ruolo docente/studente, StudentShell con sezioni Lezioni e Verifiche filtrate per classe, approvazione studenti, download del solo PDF studente per le verifiche `active`+`public`. Nessuna Cloud Function, nessun account custom, nessuna consegna online.
-4. **M3-full — Portale digitale** ❌ *(specifica rinviata, fase successiva a M3-lite)*: snapshot via Cloud Function, lock nome+cognome, token sessione, log nome+IP, bozza, consegna strutturata.
-5. **M4 — Correzione ed export** ❌ *(dipende da M3-full)*: punteggi, percentuali, rettifiche, export PDF/Markdown/CSV.
-6. **M5 — Correzione AI** *(fuori scope V1 / pianificato per V2)*: proposte assistite, approvazione massiva, correzione automatica opt-in.
+4. **RE — Repository Editor** ❌ *(prossima fase pianificata)*: creare/modificare/eliminare/riordinare UDA e lezioni, inclusi front matter e corpo Markdown, senza AI e senza CMS complesso.
+5. **M3-full — Portale digitale** ❌ *(specifica rinviata, fase successiva a M3-lite)*: snapshot via Cloud Function, lock nome+cognome, token sessione, log nome+IP, bozza, consegna strutturata.
+6. **M4 — Correzione ed export** ❌ *(dipende da M3-full)*: punteggi, percentuali, rettifiche, export PDF/Markdown/CSV.
+7. **M5 — Correzione AI** *(fuori scope V1 / pianificato per V2)*: proposte assistite, approvazione massiva, correzione automatica opt-in.
 
-La V1 comprende i moduli M1, M2 e M3-lite, tutti implementati; M3-full e M4 restano pianificati per una fase successiva. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2.
+La V1 comprende i moduli M1, M2 e M3-lite, tutti implementati. La prossima fase utile è RE (Repository Editor), perché rende meno macchinoso l'uso quotidiano rispetto al solo import ZIP. M3-full e M4 restano pianificati per una fase successiva. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2.
 
 ## Architettura in sintesi
 
@@ -91,4 +94,4 @@ Il Docente possiede progetto e billing Firebase. Firestore, Storage e Functions 
 
 ## Prossimo passo
 
-**UX/Product Polish** — il deploy DEV è attivo (https://schoolforge-dev.web.app, DEV SMOKE PASS). La fase successiva migliora usabilità e coerenza visiva senza aggiungere macro-feature. Vedi [documentazione/ux-product-roadmap.md](documentazione/ux-product-roadmap.md) per la roadmap UX-01–UX-06.
+**Repository Editor (RE)** — il deploy DEV è attivo e M3-lite è stabile. La fase successiva riduce la dipendenza dall'import ZIP: il docente deve poter creare, modificare, eliminare e riordinare UDA e lezioni direttamente dal portale, inclusi front matter e corpo Markdown. Vedi [documentazione/repository-editor-roadmap.md](documentazione/repository-editor-roadmap.md).

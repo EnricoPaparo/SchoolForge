@@ -38,7 +38,7 @@ export function buildImportPayload(params: {
   const questionIndex: ImportPayload['questionIndex'] = [];
   const publicLessons: ImportPayload['publicLessons'] = [];
 
-  for (const uda of validation.udas) {
+  for (const [udaIndex, uda] of validation.udas.entries()) {
     const udaId = toDocId(uda.dir);
     const storageBasePath = `repository/${ownerUid}/imports/${importId}/${uda.dir}`;
 
@@ -49,6 +49,7 @@ export function buildImportPayload(params: {
         importId,
         dir: uda.dir,
         filename: uda.filename,
+        order: udaIndex,
         storageBasePath,
         lessonCount: uda.lessons.length,
         descrizione: uda.metadata.descrizione,
@@ -57,7 +58,7 @@ export function buildImportPayload(params: {
       },
     });
 
-    for (const lesson of uda.lessons) {
+    for (const [lessonIndex, lesson] of uda.lessons.entries()) {
       // Scoped by udaId: lesson numbering restarts per UDA, so two UDAs can
       // legitimately share a lesson filename (e.g. both have a "lezione-001-...").
       const lessonId = `${udaId}_${toDocId(lesson.filename.replace(/\.md$/, ''))}`;
@@ -109,12 +110,16 @@ export function buildImportPayload(params: {
           udaDir: uda.dir,
           path: lesson.path,
           filename: lesson.filename,
+          order: lessonIndex,
           poolStatus: lesson.poolStatus,
           questionCount,
           storageRef,
           poolStorageRef,
           titolo: lesson.metadata.titolo,
+          sottotitolo: lesson.metadata.sottotitolo,
           difficolta: lesson.metadata.difficolta,
+          concettiChiave: lesson.metadata.concettiChiave,
+          obiettivi: lesson.metadata.obiettivi,
         },
       });
 
@@ -134,7 +139,11 @@ export function buildImportPayload(params: {
           filename: lesson.filename,
           contentPath: storageRef,
           titolo: lesson.metadata.titolo,
+          sottotitolo: lesson.metadata.sottotitolo,
           difficolta: lesson.metadata.difficolta,
+          concettiChiave: lesson.metadata.concettiChiave,
+          obiettivi: lesson.metadata.obiettivi,
+          order: lessonIndex,
         },
       });
     }
