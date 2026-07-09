@@ -254,6 +254,52 @@
   gap: 0.5rem;
 }
 
+/* Lesson body editor (RE-02) */
+.bodyEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.bodyEditorTabs {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.bodyEditorTab {
+  font-size: 0.8125rem;
+  padding: 0.3125rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.bodyEditorTab[aria-selected='true'] {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.bodyEditorTextarea {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.bodyEditorPreview {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  min-height: 200px;
+}
+
+.bodyEditorActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .contentDifficulty {
   display: inline-block;
   margin-bottom: 0.875rem;

@@ -1,13 +1,15 @@
 import { collection, doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
-import type { Firestore } from 'firebase/firestore';
+import type { DocumentReference, Firestore } from 'firebase/firestore';
 import { getBytes, ref, uploadBytes } from 'firebase/storage';
 import type { FirebaseStorage } from 'firebase/storage';
 import { parse as parseYaml } from 'yaml';
 import {
+  composeMarkdownWithFrontMatter,
   replaceFrontMatter,
   splitFrontMatter,
   type EditableFrontMatter,
 } from '../validation/frontMatter.js';
+import { parseLessonMetadata } from '../validation/lessonMetadata.js';
 import type { LessonMetadata, UdaMetadata } from '../validation/types.js';
 import type { LessonDoc, UdaDoc } from '../../../types/firestore.js';
 
@@ -41,6 +43,17 @@ function readRawFrontMatter(content: string): EditableFrontMatter {
   }
 }
 
+/** Maps parsed lesson metadata to the YAML front matter keys used on disk. */
+function lessonFrontMatterFields(metadata: LessonMetadata): EditableFrontMatter {
+  return {
+    titolo: metadata.titolo,
+    sottotitolo: metadata.sottotitolo,
+    difficolta: metadata.difficolta,
+    concetti_chiave: metadata.concettiChiave,
+    obiettivi: metadata.obiettivi,
+  };
+}
+
 async function writeAuditEvent(
   db: Firestore,
   ownerUid: string,
@@ -55,6 +68,34 @@ async function writeAuditEvent(
     reason: null,
     timestamp: serverTimestamp(),
   });
+}
+
+type LessonDocPatch = Pick<
+  LessonDoc,
+  'titolo' | 'sottotitolo' | 'difficolta' | 'concettiChiave' | 'obiettivi'
+>;
+
+/**
+ * Updates the technical lesson document and, if a projection already exists
+ * for it, the matching `publicLessons` entry (same document id — see
+ * `buildImportPayload`). Shared by every save path that ends up with a
+ * didactic metadata patch to persist, whether the teacher edited the
+ * metadata directly (`updateLessonMetadata`) or only the body
+ * (`updateLessonMarkdownBody`, where the patch is just a resync of whatever
+ * front matter the save recomposed).
+ */
+async function syncLessonMetadataDocs(
+  db: Firestore,
+  lessonRef: DocumentReference,
+  lessonId: string,
+  docPatch: LessonDocPatch,
+): Promise<void> {
+  await updateDoc(lessonRef, docPatch);
+  const publicLessonRef = doc(db, 'publicLessons', lessonId);
+  const publicLessonSnap = await getDoc(publicLessonRef);
+  if (publicLessonSnap.exists()) {
+    await updateDoc(publicLessonRef, docPatch);
+  }
 }
 
 /**
@@ -136,13 +177,7 @@ export async function updateLessonMetadata(params: {
   if (!snap.exists()) throw new Error('Lezione non trovata.');
   const lesson = snap.data() as LessonDoc;
 
-  const frontMatterPatch: EditableFrontMatter = {
-    titolo: fields.titolo,
-    sottotitolo: fields.sottotitolo,
-    difficolta: fields.difficolta,
-    concetti_chiave: fields.concettiChiave,
-    obiettivi: fields.obiettivi,
-  };
+  const frontMatterPatch = lessonFrontMatterFields(fields);
 
   try {
     const currentContent = await fetchStorageText(lesson.storageRef, storage);
@@ -159,27 +194,58 @@ export async function updateLessonMetadata(params: {
     throw new Error('Impossibile aggiornare il file della lezione su Storage.');
   }
 
-  const docPatch = {
-    titolo: fields.titolo,
-    sottotitolo: fields.sottotitolo,
-    difficolta: fields.difficolta,
-    concettiChiave: fields.concettiChiave,
-    obiettivi: fields.obiettivi,
-  };
-
   try {
-    await updateDoc(lessonRef, docPatch);
-    // publicLessons shares the same document id as the technical lesson doc
-    // (see buildImportPayload) — kept in sync only if a projection already
-    // exists for it (e.g. absent for a legacy import predating publicLessons).
-    const publicLessonRef = doc(db, 'publicLessons', lessonId);
-    const publicLessonSnap = await getDoc(publicLessonRef);
-    if (publicLessonSnap.exists()) {
-      await updateDoc(publicLessonRef, docPatch);
-    }
+    await syncLessonMetadataDocs(db, lessonRef, lessonId, fields);
   } catch {
     throw new Error(
       'Il file della lezione è stato aggiornato su Storage ma i metadati non sono stati sincronizzati su Firestore. Riprova a salvare.',
+    );
+  }
+
+  await writeAuditEvent(db, ownerUid, 'lesson.updated', lessonId);
+}
+
+/**
+ * Rewrites a lesson's body while preserving its existing front matter as-is
+ * (RE-02 — no metadata editing here, see `updateLessonMetadata` for that).
+ * The current front matter is read from Storage, recomposed on top of the
+ * new body via `composeMarkdownWithFrontMatter`, and written back; the
+ * Firestore technical document and `publicLessons` projection are then
+ * resynced with the same (unchanged, just recomputed) metadata, so a future
+ * normalization of the YAML block never leaves Firestore out of step with
+ * what Storage actually contains. Same Storage-first error-reporting
+ * reasoning as `updateUdaMetadata`/`updateLessonMetadata`.
+ */
+export async function updateLessonMarkdownBody(params: {
+  programId: string;
+  importId: string;
+  lessonId: string;
+  body: string;
+  ownerUid: string;
+  db: Firestore;
+  storage: FirebaseStorage;
+}): Promise<void> {
+  const { programId, importId, lessonId, body, ownerUid, db, storage } = params;
+  const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
+  const snap = await getDoc(lessonRef);
+  if (!snap.exists()) throw new Error('Lezione non trovata.');
+  const lesson = snap.data() as LessonDoc;
+
+  let metadata: LessonMetadata;
+  try {
+    const currentContent = await fetchStorageText(lesson.storageRef, storage);
+    metadata = parseLessonMetadata(currentContent).metadata;
+    const nextContent = composeMarkdownWithFrontMatter(lessonFrontMatterFields(metadata), body);
+    await writeStorageText(lesson.storageRef, nextContent, storage);
+  } catch {
+    throw new Error('Impossibile aggiornare il file della lezione su Storage.');
+  }
+
+  try {
+    await syncLessonMetadataDocs(db, lessonRef, lessonId, metadata);
+  } catch {
+    throw new Error(
+      'Il contenuto della lezione è stato aggiornato su Storage ma i metadati non sono stati sincronizzati su Firestore. Riprova a salvare.',
     );
   }
 

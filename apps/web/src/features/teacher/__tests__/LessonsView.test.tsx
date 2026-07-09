@@ -30,6 +30,13 @@ vi.mock('../lessonPdf.js', () => ({
   downloadLessonPdf: (...args: unknown[]) => mockDownloadLessonPdf(...args),
 }));
 
+const mockUpdateLessonMetadata = vi.fn();
+const mockUpdateLessonMarkdownBody = vi.fn();
+vi.mock('../../repository/editor/repositoryEditorService.js', () => ({
+  updateLessonMetadata: (...args: unknown[]) => mockUpdateLessonMetadata(...args),
+  updateLessonMarkdownBody: (...args: unknown[]) => mockUpdateLessonMarkdownBody(...args),
+}));
+
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
@@ -273,5 +280,90 @@ describe('LessonsView — no lesson selected', () => {
     render(<LessonsView />);
     await screen.findByRole('button', { name: /^Informatica/ });
     expect(screen.getByText(/Seleziona una lezione/)).toBeTruthy();
+  });
+});
+
+describe('LessonsView — lesson body editor (RE-02)', () => {
+  async function openLessonAndEditor() {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    mockFetchLessonContent.mockResolvedValue('# Lezione\nContenuto originale.');
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+    await expandUda(/uda-01-reti/);
+    fireEvent.click(await screen.findByRole('button', { name: /lezione-001\.md/ }));
+    await screen.findByText('Contenuto originale.');
+    fireEvent.click(await screen.findByRole('button', { name: /Modifica contenuto/ }));
+  }
+
+  it('opens with the current body prefilled in the editor tab', async () => {
+    await openLessonAndEditor();
+    const textarea = screen.getByRole('textbox', {
+      name: /Corpo Markdown — lezione-001\.md/,
+    }) as HTMLTextAreaElement;
+    expect(textarea.value).toBe('# Lezione\nContenuto originale.');
+  });
+
+  it('switches to the Anteprima tab and renders the sanitized draft', async () => {
+    await openLessonAndEditor();
+    const textarea = screen.getByRole('textbox', { name: /Corpo Markdown/ });
+    fireEvent.change(textarea, { target: { value: '# Bozza\nTesto in modifica.' } });
+    fireEvent.click(screen.getByRole('tab', { name: 'Anteprima' }));
+
+    expect(await screen.findByRole('heading', { name: 'Bozza' })).toBeTruthy();
+    expect(screen.getByText('Testo in modifica.')).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: /Corpo Markdown/ })).toBeNull();
+  });
+
+  it('discards unsaved changes when Annulla is clicked', async () => {
+    await openLessonAndEditor();
+    const textarea = screen.getByRole('textbox', { name: /Corpo Markdown/ });
+    fireEvent.change(textarea, { target: { value: 'Testo modificato non salvato.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+
+    expect(screen.getByText('Contenuto originale.')).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: /Corpo Markdown/ })).toBeNull();
+    expect(mockUpdateLessonMarkdownBody).not.toHaveBeenCalled();
+  });
+
+  it('saves the new body via updateLessonMarkdownBody and shows the updated content', async () => {
+    mockUpdateLessonMarkdownBody.mockResolvedValue(undefined);
+    await openLessonAndEditor();
+    const textarea = screen.getByRole('textbox', { name: /Corpo Markdown/ });
+    fireEvent.change(textarea, { target: { value: 'Contenuto aggiornato dal docente.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    await waitFor(() => {
+      expect(mockUpdateLessonMarkdownBody).toHaveBeenCalledWith({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        lessonId: 'lesson-1',
+        body: 'Contenuto aggiornato dal docente.',
+        ownerUid: 'owner-uid',
+        db: {},
+        storage: {},
+      });
+    });
+    expect(await screen.findByText('Contenuto aggiornato dal docente.')).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: /Corpo Markdown/ })).toBeNull();
+  });
+
+  it('shows a clear error and keeps the draft editable when the save fails', async () => {
+    mockUpdateLessonMarkdownBody.mockRejectedValue(
+      new Error('Impossibile aggiornare il file della lezione su Storage.'),
+    );
+    await openLessonAndEditor();
+    const textarea = screen.getByRole('textbox', { name: /Corpo Markdown/ });
+    fireEvent.change(textarea, { target: { value: 'Testo che non verrà salvato.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    expect(
+      await screen.findByText('Impossibile aggiornare il file della lezione su Storage.'),
+    ).toBeTruthy();
+    const draftTextarea = screen.getByRole('textbox', {
+      name: /Corpo Markdown/,
+    }) as HTMLTextAreaElement;
+    expect(draftTextarea.value).toBe('Testo che non verrà salvato.');
   });
 });
