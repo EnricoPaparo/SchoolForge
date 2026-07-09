@@ -13,7 +13,10 @@ import {
   parseLessonMetadata,
 } from '../repository/validation/lessonMetadata.js';
 import type { LessonMetadata } from '../repository/validation/types.js';
-import { updateLessonMetadata } from '../repository/editor/repositoryEditorService.js';
+import {
+  updateLessonMarkdownBody,
+  updateLessonMetadata,
+} from '../repository/editor/repositoryEditorService.js';
 import { useAuth } from '../../lib/auth.js';
 import { db, storage } from '../../lib/firebase.js';
 import { fetchLessonContent } from './lessonContent.js';
@@ -65,6 +68,13 @@ export function LessonsView() {
   const [editObiettivi, setEditObiettivi] = useState('');
   const [savingLessonMetadata, setSavingLessonMetadata] = useState(false);
   const [lessonMetadataSaveError, setLessonMetadataSaveError] = useState<string | null>(null);
+
+  // ── Lesson body editor (RE-02) ──────────────────────────────────
+  const [editingLessonBody, setEditingLessonBody] = useState(false);
+  const [bodyDraft, setBodyDraft] = useState('');
+  const [bodyEditorTab, setBodyEditorTab] = useState<'editor' | 'preview'>('editor');
+  const [savingLessonBody, setSavingLessonBody] = useState(false);
+  const [lessonBodySaveError, setLessonBodySaveError] = useState<string | null>(null);
 
   useEffect(() => {
     void loadPrograms();
@@ -129,6 +139,8 @@ export function LessonsView() {
     setPdfError(null);
     setEditingLessonMetadata(false);
     setLessonMetadataSaveError(null);
+    setEditingLessonBody(false);
+    setLessonBodySaveError(null);
     setLessonContentLoading(true);
     try {
       const raw = await fetchLessonContent(lesson.storageRef, storage);
@@ -144,6 +156,7 @@ export function LessonsView() {
 
   function toggleLessonMetadataEdit() {
     setLessonMetadataSaveError(null);
+    setEditingLessonBody(false);
     setEditingLessonMetadata((prev) => {
       if (prev) return false;
       setEditTitolo(lessonMetadata.titolo ?? '');
@@ -195,6 +208,42 @@ export function LessonsView() {
       );
     } finally {
       setSavingLessonMetadata(false);
+    }
+  }
+
+  function toggleLessonBodyEdit() {
+    setLessonBodySaveError(null);
+    setEditingLessonMetadata(false);
+    setEditingLessonBody((prev) => {
+      if (prev) return false;
+      setBodyDraft(lessonContent ?? '');
+      setBodyEditorTab('editor');
+      return true;
+    });
+  }
+
+  async function handleSaveLessonBody() {
+    if (!selectedProgram?.activeImportId || !selectedLesson) return;
+    setSavingLessonBody(true);
+    setLessonBodySaveError(null);
+    try {
+      await updateLessonMarkdownBody({
+        programId: selectedProgram.id,
+        importId: selectedProgram.activeImportId,
+        lessonId: selectedLesson.id,
+        body: bodyDraft,
+        ownerUid,
+        db,
+        storage,
+      });
+      setLessonContent(bodyDraft);
+      setEditingLessonBody(false);
+    } catch (err) {
+      setLessonBodySaveError(
+        err instanceof Error ? err.message : 'Impossibile salvare il contenuto della lezione.',
+      );
+    } finally {
+      setSavingLessonBody(false);
     }
   }
 
@@ -371,6 +420,17 @@ export function LessonsView() {
               <button
                 type="button"
                 className={styles.pdfBtn}
+                title="Modifica contenuto"
+                aria-label={`Modifica contenuto — ${selectedLesson.filename}`}
+                aria-expanded={editingLessonBody}
+                disabled={lessonContent == null}
+                onClick={toggleLessonBodyEdit}
+              >
+                📝
+              </button>
+              <button
+                type="button"
+                className={styles.pdfBtn}
                 title="Modifica metadata"
                 aria-label={`Modifica metadata — ${selectedLesson.filename}`}
                 aria-expanded={editingLessonMetadata}
@@ -513,8 +573,75 @@ export function LessonsView() {
                 {lessonContentError}
               </p>
             )}
-            {lessonContent !== null && !lessonContentLoading && (
-              <MarkdownRenderer markdown={lessonContent} />
+
+            {editingLessonBody ? (
+              <div
+                className={styles.bodyEditor}
+                role="region"
+                aria-label={`Modifica contenuto — ${selectedLesson.filename}`}
+              >
+                <div className={styles.bodyEditorTabs} role="tablist">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={bodyEditorTab === 'editor'}
+                    className={styles.bodyEditorTab}
+                    onClick={() => setBodyEditorTab('editor')}
+                  >
+                    Editor
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={bodyEditorTab === 'preview'}
+                    className={styles.bodyEditorTab}
+                    onClick={() => setBodyEditorTab('preview')}
+                  >
+                    Anteprima
+                  </button>
+                </div>
+
+                {bodyEditorTab === 'editor' ? (
+                  <textarea
+                    className={styles.bodyEditorTextarea}
+                    value={bodyDraft}
+                    onChange={(e) => setBodyDraft(e.target.value)}
+                    aria-label={`Corpo Markdown — ${selectedLesson.filename}`}
+                    rows={18}
+                  />
+                ) : (
+                  <div className={styles.bodyEditorPreview}>
+                    <MarkdownRenderer markdown={bodyDraft} />
+                  </div>
+                )}
+
+                {lessonBodySaveError && (
+                  <p role="alert" className="text-error">
+                    {lessonBodySaveError}
+                  </p>
+                )}
+
+                <div className={styles.bodyEditorActions}>
+                  <button
+                    type="button"
+                    className="btn-success"
+                    disabled={savingLessonBody}
+                    onClick={() => void handleSaveLessonBody()}
+                  >
+                    {savingLessonBody ? 'Salvataggio…' : 'Salva'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingLessonBody}
+                    onClick={() => setEditingLessonBody(false)}
+                  >
+                    Annulla
+                  </button>
+                </div>
+              </div>
+            ) : (
+              lessonContent !== null &&
+              !lessonContentLoading && <MarkdownRenderer markdown={lessonContent} />
             )}
           </>
         )}

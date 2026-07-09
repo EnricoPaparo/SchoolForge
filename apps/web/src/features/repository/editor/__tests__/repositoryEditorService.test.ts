@@ -35,7 +35,11 @@ vi.mock('firebase/storage', () => ({
   uploadBytes: (...args: unknown[]) => mockUploadBytes(...args),
 }));
 
-import { updateLessonMetadata, updateUdaMetadata } from '../repositoryEditorService.js';
+import {
+  updateLessonMarkdownBody,
+  updateLessonMetadata,
+  updateUdaMetadata,
+} from '../repositoryEditorService.js';
 import type { Firestore } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
 import type { LessonDoc, UdaDoc } from '../../../../types/firestore.js';
@@ -263,5 +267,175 @@ describe('updateLessonMetadata', () => {
       }),
     ).rejects.toThrow('Lezione non trovata.');
     expect(mockGetBytes).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateLessonMarkdownBody', () => {
+  const LESSON_DOC: Partial<LessonDoc> = {
+    ownerUid: OWNER_UID,
+    udaDir: 'uda-01-reti',
+    filename: 'lezione-001-http.md',
+    storageRef: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-001-http.md',
+    order: 0,
+    poolStatus: 'absent',
+  };
+
+  it('throws when the lesson document does not exist, without touching Storage', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => false });
+
+    await expect(
+      updateLessonMarkdownBody({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        lessonId: 'lesson-1',
+        body: 'Nuovo corpo.',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow('Lezione non trovata.');
+    expect(mockGetBytes).not.toHaveBeenCalled();
+  });
+
+  it('preserves existing front matter, replaces only the body, and resyncs Firestore + publicLessons', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC })
+      .mockResolvedValueOnce({ exists: () => true });
+    const currentContent = `---
+titolo: "HTTP"
+concetti_chiave:
+  - client
+  - server
+---
+
+Vecchio corpo della lezione.`;
+    mockGetBytes.mockResolvedValueOnce(encode(currentContent));
+
+    await updateLessonMarkdownBody({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonId: 'lesson-1',
+      body: 'Nuovo corpo della lezione, riscritto dal docente.',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    const next = writtenContent();
+    expect(next).toContain('titolo: HTTP');
+    expect(next).toContain('client');
+    expect(next).toContain('server');
+    expect(next).toContain('Nuovo corpo della lezione, riscritto dal docente.');
+    expect(next).not.toContain('Vecchio corpo');
+
+    const expectedPatch = {
+      titolo: 'HTTP',
+      sottotitolo: null,
+      difficolta: null,
+      concettiChiave: ['client', 'server'],
+      obiettivi: [],
+    };
+    expect(mockUpdateDoc).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1/imports/imp-1/lessons/lesson-1' },
+      expectedPatch,
+    );
+    expect(mockUpdateDoc).toHaveBeenCalledWith({ __path: 'publicLessons/lesson-1' }, expectedPatch);
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'auditEvents/auto-id' },
+      expect.objectContaining({ action: 'lesson.updated', targetId: 'lesson-1' }),
+    );
+  });
+
+  it('preserves unknown front matter keys when saving the body', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC })
+      .mockResolvedValueOnce({ exists: () => true });
+    const currentContent = `---
+titolo: "HTTP"
+fonte: "libro di testo"
+concetti_chiave:
+  - client
+---
+
+Vecchio corpo.`;
+    mockGetBytes.mockResolvedValueOnce(encode(currentContent));
+
+    await updateLessonMarkdownBody({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonId: 'lesson-1',
+      body: 'Nuovo corpo.',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    const next = writtenContent();
+    expect(next).toContain('titolo: HTTP');
+    expect(next).toContain('fonte: libro di testo');
+    expect(next).toContain('client');
+    expect(next).toContain('Nuovo corpo.');
+    expect(next).not.toContain('Vecchio corpo');
+  });
+
+  it('keeps a lesson with no front matter free of one after saving the body', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC })
+      .mockResolvedValueOnce({ exists: () => false });
+    mockGetBytes.mockResolvedValueOnce(encode('Corpo senza front matter.'));
+
+    await updateLessonMarkdownBody({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonId: 'lesson-1',
+      body: 'Corpo aggiornato, ancora senza front matter.',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    const next = writtenContent();
+    expect(next).not.toContain('---');
+    expect(next).toBe('Corpo aggiornato, ancora senza front matter.');
+    expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws a Storage-specific error and never touches Firestore when the Storage write fails', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
+    mockGetBytes.mockRejectedValueOnce(new Error('network down'));
+
+    await expect(
+      updateLessonMarkdownBody({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        lessonId: 'lesson-1',
+        body: 'Nuovo corpo.',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow('Impossibile aggiornare il file della lezione su Storage.');
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+    expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+
+  it('throws a distinct error when Storage succeeds but the Firestore resync fails', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
+    mockGetBytes.mockResolvedValueOnce(encode('---\ntitolo: "HTTP"\n---\n\nCorpo.'));
+    mockUpdateDoc.mockRejectedValueOnce(new Error('permission-denied'));
+
+    await expect(
+      updateLessonMarkdownBody({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        lessonId: 'lesson-1',
+        body: 'Nuovo corpo.',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow(/aggiornato su Storage ma i metadati non sono stati sincronizzati/);
+    expect(mockUploadBytes).toHaveBeenCalled();
+    expect(mockSetDoc).not.toHaveBeenCalled();
   });
 });
