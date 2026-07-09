@@ -9,7 +9,6 @@ import {
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import { doc, setDoc } from 'firebase/firestore';
-import type { Firestore } from 'firebase/firestore';
 import { getBytes, ref, uploadBytes } from 'firebase/storage';
 import type { FirebaseStorage } from 'firebase/storage';
 import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
