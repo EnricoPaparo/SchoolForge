@@ -54,6 +54,9 @@ export interface LessonPayload {
     questionCount: number;
     storageRef: string;
     poolStorageRef: string | null;
+    /** Parsed from the lesson's own optional front matter — see LessonMetadata. */
+    titolo: string | null;
+    difficolta: string | null;
   };
 }
 
@@ -74,6 +77,9 @@ export interface PublicLessonPayload {
     filename: string;
     /** Storage path of the lesson's own .md file — never a .pool.md path. */
     contentPath: string;
+    /** Didactic, never technical — safe for the student projection. */
+    titolo: string | null;
+    difficolta: string | null;
   };
 }
 

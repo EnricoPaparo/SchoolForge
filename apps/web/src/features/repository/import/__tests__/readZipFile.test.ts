@@ -129,4 +129,14 @@ describe('readZipFile', () => {
     const paths = result.map((r) => r.path).sort();
     expect(paths).toEqual(['uda-01-reti/lezione-001.md', 'uda-01-reti/uda-01-reti.md']);
   });
+
+  it('decodes lesson Markdown content as UTF-8, preserving accented and multi-byte characters', async () => {
+    const content =
+      '---\ntitolo: "Città e civiltà"\n---\n\n# Città e civiltà\n\nTesto con caratteri à, è, ù, ñ, ö e un\'emoji 📚.';
+    const file = await makeZip({
+      'uda-01-reti/lezione-001-http.md': content,
+    });
+    const result = await readZipFile(file);
+    expect(result[0].content).toBe(content);
+  });
 });

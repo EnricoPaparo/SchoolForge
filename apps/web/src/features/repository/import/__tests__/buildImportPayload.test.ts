@@ -68,6 +68,23 @@ const LESSON_NO_POOL: RawFile = {
   content: '# DNS',
 };
 
+const LESSON_WITH_FRONT_MATTER: RawFile = {
+  path: 'uda-01-reti/lezione-004-ftp.md',
+  content: `---
+titolo: "FTP"
+difficolta: "intermedia"
+sottotitolo: "Trasferimento file"
+concetti_chiave:
+  - "Client/server"
+obiettivi:
+  - "Descrivere il protocollo FTP"
+---
+
+# FTP
+
+Contenuto della lezione.`,
+};
+
 const OWNER_UID = 'test-owner';
 const PROGRAM_ID = 'prog-01';
 const IMPORT_ID = 'imp-01';
@@ -434,6 +451,50 @@ describe('buildImportPayload — UDA metadata (info panel)', () => {
     expect(payload.udas).toHaveLength(1);
     expect(payload.udas[0].data.competenze).toEqual(['Comprendere ISO/OSI']);
     expect(payload.udas[0].data.obiettivi).toEqual(['Descrivere HTTP']);
+  });
+});
+
+describe('buildImportPayload — lesson front matter (titolo/difficolta)', () => {
+  it('a lesson with front matter remains importable and carries titolo/difficolta to both payloads', () => {
+    const files = buildAllFiles(LESSON_WITH_FRONT_MATTER);
+    const validation = validateImport('Informatica', files);
+    expect(validation.valid).toBe(true);
+
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    const lesson = payload.lessons.find((l) => l.data.path === LESSON_WITH_FRONT_MATTER.path);
+    expect(lesson?.data.titolo).toBe('FTP');
+    expect(lesson?.data.difficolta).toBe('intermedia');
+
+    const publicLesson = payload.publicLessons.find(
+      (l) => l.data.path === LESSON_WITH_FRONT_MATTER.path,
+    );
+    expect(publicLesson?.data.titolo).toBe('FTP');
+    expect(publicLesson?.data.difficolta).toBe('intermedia');
+  });
+
+  it('a lesson with no front matter carries null titolo/difficolta — does not block import', () => {
+    const files = buildAllFiles();
+    const validation = validateImport('Informatica', files);
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    const lesson = payload.lessons.find((l) => l.data.path === LESSON_NO_POOL.path);
+    expect(lesson?.data.titolo).toBeNull();
+    expect(lesson?.data.difficolta).toBeNull();
   });
 });
 

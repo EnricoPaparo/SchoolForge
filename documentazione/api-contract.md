@@ -176,6 +176,15 @@ interface PublicLesson {
   filename: string;
   contentPath: string;          // percorso Storage del solo file lezione .md, mai del pool
   createdAt: Timestamp;
+  // Parsati dal front matter YAML opzionale della lezione (titolo/sottotitolo/
+  // difficolta/concetti_chiave/obiettivi — tutti opzionali). Solo titolo e
+  // difficolta sono persistiti qui (serve per la riga in Corsi senza dover
+  // leggere il contenuto di ogni lezione); sottotitolo/concetti_chiave/
+  // obiettivi vengono invece riletti dal file .md al volo quando la lezione
+  // è aperta, insieme al corpo Markdown già "pulito" dal blocco front matter.
+  // Assenti sulle lezioni importate prima di questo campo → letti come null.
+  titolo: string | null;
+  difficolta: string | null;
 }
 
 // questionIndex/{questionId} — leggibile SOLO dall'owner, mai dallo studente

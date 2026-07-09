@@ -14,6 +14,7 @@ import {
   type UdaItem,
 } from '../repository/programs/programsService.js';
 import { listClasses, type ClassItem } from '../repository/classes/classesService.js';
+import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
 import type { ProgrammaMeta } from '../../types/firestore.js';
 import { importRepository } from '../repository/import/importRepository.js';
 import { readZipFile } from '../repository/import/readZipFile.js';
@@ -807,25 +808,41 @@ export function ProgramsView() {
                                     <p className="state-empty">Nessuna lezione.</p>
                                   ) : (
                                     <ul className={styles.lessonList}>
-                                      {udaLessons.map((lesson) => (
-                                        <li
-                                          key={lesson.id}
-                                          className={`${styles.lessonRow}${lesson.completed ? ` ${styles.lessonCompleted}` : ''}`}
-                                        >
-                                          <input
-                                            type="checkbox"
-                                            id={`lesson-check-${lesson.id}`}
-                                            checked={lesson.completed ?? false}
-                                            onChange={() =>
-                                              void handleToggleLesson(program, lesson)
-                                            }
-                                            aria-label={`Segna ${lesson.filename} come svolta`}
-                                          />
-                                          <span className={styles.lessonFilename}>
-                                            {lesson.filename}
-                                          </span>
-                                        </li>
-                                      ))}
+                                      {udaLessons.map((lesson) => {
+                                        const { number, title } = resolveLessonTitle(
+                                          lesson.filename,
+                                          lesson.titolo,
+                                        );
+                                        return (
+                                          <li
+                                            key={lesson.id}
+                                            className={`${styles.lessonRow}${lesson.completed ? ` ${styles.lessonCompleted}` : ''}`}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              id={`lesson-check-${lesson.id}`}
+                                              checked={lesson.completed ?? false}
+                                              onChange={() =>
+                                                void handleToggleLesson(program, lesson)
+                                              }
+                                              aria-label={`Segna ${lesson.filename} come svolta`}
+                                            />
+                                            <span className={styles.lessonFilename}>
+                                              {number && (
+                                                <span className={styles.lessonNumber}>
+                                                  {number}
+                                                </span>
+                                              )}
+                                              {title}
+                                              {lesson.difficolta && (
+                                                <span className={styles.lessonDifficulty}>
+                                                  {lesson.difficolta}
+                                                </span>
+                                              )}
+                                            </span>
+                                          </li>
+                                        );
+                                      })}
                                     </ul>
                                   )}
                                 </div>

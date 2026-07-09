@@ -113,6 +113,13 @@ export interface LessonDoc {
   /** Set by the teacher in M1-D to mark a lesson as completed. */
   completed?: boolean;
   completedAt?: Timestamp | null;
+  /**
+   * Parsed from the lesson's own optional YAML front matter at import time
+   * (never required — see LessonMetadata). Absent on lessons imported
+   * before this field existed; read back as `null`, never as "no title".
+   */
+  titolo?: string | null;
+  difficolta?: string | null;
 }
 
 /** Stored at programs/{programId}/imports/{importId}/questionIndex/{entryId} */
@@ -154,6 +161,13 @@ export interface PublicLessonDoc {
   filename: string;
   contentPath: string;
   createdAt: Timestamp | FieldValue;
+  /**
+   * Didactic metadata parsed from the lesson's own front matter — never
+   * technical, safe to expose to the student like filename/path already
+   * are. Absent on lessons imported before this field existed.
+   */
+  titolo?: string | null;
+  difficolta?: string | null;
 }
 
 // ─── M3-lite — Approved-student access model ─────────────────────────────────

@@ -90,7 +90,17 @@ Descrizione UDA 1.
 
   zip.file(
     `${KIT_ROOT}/uda-01-titolo-uda/lezione-001-titolo-lezione.md`,
-    `# Titolo della lezione 1.1
+    `---
+titolo: 'Titolo della lezione 1.1'
+sottotitolo: 'Sottotitolo opzionale'
+difficolta: 'base'
+concetti_chiave:
+  - 'Concetto 1'
+obiettivi:
+  - 'Obiettivo 1'
+---
+
+# Titolo della lezione 1.1
 
 Testo della lezione.
 `,

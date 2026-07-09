@@ -332,8 +332,10 @@ describe('ProgramsView — expanding a UDA shows lessons', () => {
     render(<ProgramsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    expect(await screen.findByText('lezione-001.md')).toBeTruthy();
-    expect(screen.getByText('lezione-002.md')).toBeTruthy();
+    // No front matter on either lesson: the row falls back to a
+    // cleaned-up filename, not the raw "lezione-001.md".
+    expect(await screen.findByText('Lezione 001')).toBeTruthy();
+    expect(screen.getByText('Lezione 002')).toBeTruthy();
   });
 
   it('shows completed checkbox state correctly', async () => {
@@ -343,7 +345,7 @@ describe('ProgramsView — expanding a UDA shows lessons', () => {
     render(<ProgramsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    await screen.findByText('lezione-001.md');
+    await screen.findByText('Lezione 001');
     const checkboxes = screen.getAllByRole('checkbox');
     expect((checkboxes[0] as HTMLInputElement).checked).toBe(false);
     expect((checkboxes[1] as HTMLInputElement).checked).toBe(true);
@@ -356,10 +358,10 @@ describe('ProgramsView — expanding a UDA shows lessons', () => {
     render(<ProgramsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    const filename = await screen.findByText('lezione-001.md');
-    fireEvent.click(filename);
-    // Lesson filename is plain text, not a button — no markdown/prose viewer appears.
-    expect(screen.queryByRole('button', { name: 'lezione-001.md' })).toBeNull();
+    const lessonLabel = await screen.findByText('Lezione 001');
+    fireEvent.click(lessonLabel);
+    // Lesson label is plain text, not a button — no markdown/prose viewer appears.
+    expect(screen.queryByRole('button', { name: 'Lezione 001' })).toBeNull();
     expect(document.querySelector('.prose')).toBeNull();
   });
 });
@@ -373,7 +375,7 @@ describe('ProgramsView — toggle lesson completed', () => {
     render(<ProgramsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    await screen.findByText('lezione-001.md');
+    await screen.findByText('Lezione 001');
 
     const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
     expect(checkbox.checked).toBe(false);

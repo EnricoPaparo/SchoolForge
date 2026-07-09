@@ -113,12 +113,15 @@ export function buildImportPayload(params: {
           questionCount,
           storageRef,
           poolStorageRef,
+          titolo: lesson.metadata.titolo,
+          difficolta: lesson.metadata.difficolta,
         },
       });
 
       // Public projection (M3-lite): only what's needed to display the
       // lesson to a student. Never poolStatus/poolStorageRef/questionCount —
-      // those are teacher-only technical details.
+      // those are teacher-only technical details. titolo/difficolta are
+      // didactic front matter, safe to expose like filename/path already are.
       publicLessons.push({
         id: lessonId,
         data: {
@@ -130,6 +133,8 @@ export function buildImportPayload(params: {
           path: lesson.path,
           filename: lesson.filename,
           contentPath: storageRef,
+          titolo: lesson.metadata.titolo,
+          difficolta: lesson.metadata.difficolta,
         },
       });
     }

@@ -25,6 +25,20 @@ export interface RawFile {
 
 export type PoolStatus = 'absent' | 'valid' | 'invalid';
 
+/**
+ * Didactic metadata parsed from a lesson's own optional YAML front matter.
+ * Every field is optional — missing or malformed front matter never raises
+ * a validation issue, it just yields this same empty shape (see
+ * lessonMetadata.ts). Never technical: no durata_minuti, no pool/question data.
+ */
+export interface LessonMetadata {
+  titolo: string | null;
+  sottotitolo: string | null;
+  difficolta: string | null;
+  concettiChiave: string[];
+  obiettivi: string[];
+}
+
 export interface LessonResult {
   /** Full path relative to import root */
   path: string;
@@ -33,6 +47,7 @@ export interface LessonResult {
   valid: boolean;
   poolStatus: PoolStatus;
   issues: ValidationIssue[];
+  metadata: LessonMetadata;
 }
 
 /** Didactic metadata for a UDA, shown to the teacher in the info panel — never technical details. */

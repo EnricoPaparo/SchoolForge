@@ -6,6 +6,12 @@ import {
   type StudentLesson,
   type StudentProgram,
 } from '../repository/programs/studentLessonsService.js';
+import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
+import {
+  EMPTY_LESSON_METADATA,
+  parseLessonMetadata,
+} from '../repository/validation/lessonMetadata.js';
+import type { LessonMetadata } from '../repository/validation/types.js';
 import { fetchLessonContent } from '../teacher/lessonContent.js';
 import { MarkdownRenderer } from '../teacher/MarkdownRenderer.js';
 import styles from './StudentLessonsView.module.css';
@@ -29,6 +35,7 @@ export function StudentLessonsView() {
   const [expandedUdas, setExpandedUdas] = useState<Set<string>>(new Set());
   const [selectedLesson, setSelectedLesson] = useState<StudentLesson | null>(null);
   const [lessonContent, setLessonContent] = useState<string | null>(null);
+  const [lessonMetadata, setLessonMetadata] = useState<LessonMetadata>(EMPTY_LESSON_METADATA);
   const [lessonContentLoading, setLessonContentLoading] = useState(false);
   const [lessonContentError, setLessonContentError] = useState<string | null>(null);
 
@@ -78,11 +85,14 @@ export function StudentLessonsView() {
   async function selectLesson(lesson: StudentLesson) {
     setSelectedLesson(lesson);
     setLessonContent(null);
+    setLessonMetadata(EMPTY_LESSON_METADATA);
     setLessonContentError(null);
     setLessonContentLoading(true);
     try {
-      const content = await fetchLessonContent(lesson.contentPath, storage);
-      setLessonContent(content);
+      const raw = await fetchLessonContent(lesson.contentPath, storage);
+      const { metadata, body } = parseLessonMetadata(raw);
+      setLessonMetadata(metadata);
+      setLessonContent(body);
     } catch {
       setLessonContentError('Impossibile caricare il contenuto della lezione.');
     } finally {
@@ -194,19 +204,25 @@ export function StudentLessonsView() {
                                   className={styles.lessonPanel}
                                 >
                                   <ul className={styles.lessonList}>
-                                    {udaLessons.map((lesson) => (
-                                      <li key={lesson.id}>
-                                        <button
-                                          type="button"
-                                          className={styles.lessonBtn}
-                                          aria-pressed={selectedLesson?.id === lesson.id}
-                                          aria-label={`Apri lezione ${lesson.filename}`}
-                                          onClick={() => void selectLesson(lesson)}
-                                        >
-                                          {lesson.filename}
-                                        </button>
-                                      </li>
-                                    ))}
+                                    {udaLessons.map((lesson) => {
+                                      const { title } = resolveLessonTitle(
+                                        lesson.filename,
+                                        lesson.titolo,
+                                      );
+                                      return (
+                                        <li key={lesson.id}>
+                                          <button
+                                            type="button"
+                                            className={styles.lessonBtn}
+                                            aria-pressed={selectedLesson?.id === lesson.id}
+                                            aria-label={`Apri lezione ${lesson.filename}`}
+                                            onClick={() => void selectLesson(lesson)}
+                                          >
+                                            {title}
+                                          </button>
+                                        </li>
+                                      );
+                                    })}
                                   </ul>
                                 </div>
                               )}
@@ -228,7 +244,46 @@ export function StudentLessonsView() {
           <p className={styles.noLessonHint}>Seleziona una lezione dalla lista.</p>
         ) : (
           <>
-            <h3 className={styles.contentTitle}>{selectedLesson.filename}</h3>
+            <div className={styles.contentHeaderBlock}>
+              <h3 className={styles.contentTitle}>
+                {resolveLessonTitle(selectedLesson.filename, lessonMetadata.titolo).title}
+              </h3>
+              {lessonMetadata.sottotitolo && (
+                <p className={styles.contentSubtitle}>{lessonMetadata.sottotitolo}</p>
+              )}
+            </div>
+
+            {lessonMetadata.difficolta && (
+              <span className={styles.contentDifficulty}>{lessonMetadata.difficolta}</span>
+            )}
+
+            {(lessonMetadata.concettiChiave.length > 0 || lessonMetadata.obiettivi.length > 0) && (
+              <div className={styles.metaBlock}>
+                {lessonMetadata.concettiChiave.length > 0 && (
+                  <div className={styles.metaGroup}>
+                    <span className={styles.metaLabel}>Concetti chiave</span>
+                    <ul className={styles.chipList}>
+                      {lessonMetadata.concettiChiave.map((concetto) => (
+                        <li key={concetto} className={styles.chip}>
+                          {concetto}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {lessonMetadata.obiettivi.length > 0 && (
+                  <div className={styles.metaGroup}>
+                    <span className={styles.metaLabel}>Obiettivi</span>
+                    <ul className={styles.metaList}>
+                      {lessonMetadata.obiettivi.map((obiettivo) => (
+                        <li key={obiettivo}>{obiettivo}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
             {lessonContentLoading && (
               <p aria-busy="true" className="state-loading">
                 Caricamento contenuto…

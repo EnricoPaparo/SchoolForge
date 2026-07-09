@@ -7,6 +7,12 @@ import {
   type ProgramItem,
   type UdaItem,
 } from '../repository/programs/programsService.js';
+import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
+import {
+  EMPTY_LESSON_METADATA,
+  parseLessonMetadata,
+} from '../repository/validation/lessonMetadata.js';
+import type { LessonMetadata } from '../repository/validation/types.js';
 import { db, storage } from '../../lib/firebase.js';
 import { fetchLessonContent } from './lessonContent.js';
 import { downloadLessonPdf } from './lessonPdf.js';
@@ -32,6 +38,7 @@ export function LessonsView() {
   const [selectedProgram, setSelectedProgram] = useState<ProgramItem | null>(null);
   const [selectedLesson, setSelectedLesson] = useState<LessonItem | null>(null);
   const [lessonContent, setLessonContent] = useState<string | null>(null);
+  const [lessonMetadata, setLessonMetadata] = useState<LessonMetadata>(EMPTY_LESSON_METADATA);
   const [lessonContentLoading, setLessonContentLoading] = useState(false);
   const [lessonContentError, setLessonContentError] = useState<string | null>(null);
   const [pdfDownloading, setPdfDownloading] = useState(false);
@@ -95,12 +102,15 @@ export function LessonsView() {
     setSelectedProgram(program);
     setSelectedLesson(lesson);
     setLessonContent(null);
+    setLessonMetadata(EMPTY_LESSON_METADATA);
     setLessonContentError(null);
     setPdfError(null);
     setLessonContentLoading(true);
     try {
-      const content = await fetchLessonContent(lesson.storageRef, storage);
-      setLessonContent(content);
+      const raw = await fetchLessonContent(lesson.storageRef, storage);
+      const { metadata, body } = parseLessonMetadata(raw);
+      setLessonMetadata(metadata);
+      setLessonContent(body);
     } catch {
       setLessonContentError('Impossibile caricare il contenuto della lezione.');
     } finally {
@@ -117,7 +127,8 @@ export function LessonsView() {
         (part): part is string => Boolean(part?.trim()),
       );
       const context = contextParts.length > 0 ? contextParts.join(' - ') : null;
-      await downloadLessonPdf(selectedLesson.filename, lessonContent, context);
+      const { title } = resolveLessonTitle(selectedLesson.filename, lessonMetadata.titolo);
+      await downloadLessonPdf(title, lessonContent, context, lessonMetadata);
     } catch {
       setPdfError('Impossibile generare il PDF della lezione.');
     } finally {
@@ -225,19 +236,25 @@ export function LessonsView() {
                                     <p className="state-empty">Nessuna lezione.</p>
                                   ) : (
                                     <ul className={styles.lessonList}>
-                                      {udaLessons.map((lesson) => (
-                                        <li key={lesson.id}>
-                                          <button
-                                            type="button"
-                                            className={styles.lessonBtn}
-                                            aria-pressed={selectedLesson?.id === lesson.id}
-                                            aria-label={`Apri lezione ${lesson.filename}`}
-                                            onClick={() => void selectLesson(program, lesson)}
-                                          >
-                                            {lesson.filename}
-                                          </button>
-                                        </li>
-                                      ))}
+                                      {udaLessons.map((lesson) => {
+                                        const { title } = resolveLessonTitle(
+                                          lesson.filename,
+                                          lesson.titolo,
+                                        );
+                                        return (
+                                          <li key={lesson.id}>
+                                            <button
+                                              type="button"
+                                              className={styles.lessonBtn}
+                                              aria-pressed={selectedLesson?.id === lesson.id}
+                                              aria-label={`Apri lezione ${lesson.filename}`}
+                                              onClick={() => void selectLesson(program, lesson)}
+                                            >
+                                              {title}
+                                            </button>
+                                          </li>
+                                        );
+                                      })}
                                     </ul>
                                   )}
                                 </div>
@@ -263,7 +280,14 @@ export function LessonsView() {
         ) : (
           <>
             <div className={styles.contentHeader}>
-              <h3 className={styles.contentTitle}>{selectedLesson.filename}</h3>
+              <div className={styles.titleBlock}>
+                <h3 className={styles.contentTitle}>
+                  {resolveLessonTitle(selectedLesson.filename, lessonMetadata.titolo).title}
+                </h3>
+                {lessonMetadata.sottotitolo && (
+                  <p className={styles.contentSubtitle}>{lessonMetadata.sottotitolo}</p>
+                )}
+              </div>
               <button
                 type="button"
                 className={styles.pdfBtn}
@@ -275,6 +299,37 @@ export function LessonsView() {
                 {pdfDownloading ? '…' : '🖨️'}
               </button>
             </div>
+
+            {lessonMetadata.difficolta && (
+              <span className={styles.contentDifficulty}>{lessonMetadata.difficolta}</span>
+            )}
+
+            {(lessonMetadata.concettiChiave.length > 0 || lessonMetadata.obiettivi.length > 0) && (
+              <div className={styles.metaBlock}>
+                {lessonMetadata.concettiChiave.length > 0 && (
+                  <div className={styles.metaGroup}>
+                    <span className={styles.metaLabel}>Concetti chiave</span>
+                    <ul className={styles.chipList}>
+                      {lessonMetadata.concettiChiave.map((concetto) => (
+                        <li key={concetto} className={styles.chip}>
+                          {concetto}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {lessonMetadata.obiettivi.length > 0 && (
+                  <div className={styles.metaGroup}>
+                    <span className={styles.metaLabel}>Obiettivi</span>
+                    <ul className={styles.metaList}>
+                      {lessonMetadata.obiettivi.map((obiettivo) => (
+                        <li key={obiettivo}>{obiettivo}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
 
             {pdfError && (
               <p role="alert" className={`text-error ${styles.pdfError}`}>

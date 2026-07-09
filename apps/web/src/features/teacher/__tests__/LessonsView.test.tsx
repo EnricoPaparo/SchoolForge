@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LessonsView } from '../LessonsView.js';
+import { EMPTY_LESSON_METADATA } from '../../repository/validation/lessonMetadata.js';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -175,7 +176,7 @@ describe('LessonsView — selecting a lesson', () => {
     expect(screen.getByText('Contenuto della lezione.')).toBeTruthy();
   });
 
-  it('shows a header with only the lesson filename — no program name — plus a PDF download button', async () => {
+  it('shows a header with a readable title (no front matter → cleaned-up filename) — no program name — plus a PDF download button', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM]);
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON_1]);
@@ -185,15 +186,17 @@ describe('LessonsView — selecting a lesson', () => {
     await expandUda(/uda-01-reti/);
     fireEvent.click(await screen.findByRole('button', { name: /lezione-001\.md/ }));
 
-    // The heading's accessible name is exactly the lesson filename — the
-    // program name ("Informatica") is not repeated in it.
-    expect(await screen.findByRole('heading', { name: 'lezione-001.md' })).toBeTruthy();
+    // No front matter on this lesson: the heading falls back to a
+    // cleaned-up filename, not the raw "lezione-001.md" — the program name
+    // ("Informatica") is never repeated in it either way. The PDF button's
+    // accessible name still references the raw filename (aria-label).
+    expect(await screen.findByRole('heading', { name: 'Lezione 001' })).toBeTruthy();
     expect(
       await screen.findByRole('button', { name: /Scarica PDF — lezione-001\.md/ }),
     ).toBeTruthy();
   });
 
-  it('calls downloadLessonPdf with the lesson filename, content and "programma - UDA" context when "Scarica PDF" is clicked', async () => {
+  it('calls downloadLessonPdf with the resolved title, content and "programma - UDA" context when "Scarica PDF" is clicked', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM]);
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON_1]);
@@ -208,9 +211,10 @@ describe('LessonsView — selecting a lesson', () => {
 
     await waitFor(() => {
       expect(mockDownloadLessonPdf).toHaveBeenCalledWith(
-        'lezione-001.md',
+        'Lezione 001',
         '# Lezione\nContenuto della lezione.',
         'Informatica - uda-01-reti',
+        EMPTY_LESSON_METADATA,
       );
     });
   });
