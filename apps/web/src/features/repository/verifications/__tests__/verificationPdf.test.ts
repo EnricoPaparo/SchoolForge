@@ -130,14 +130,51 @@ describe('downloadStudentPdf — student fields', () => {
     expect(endXs.size).toBe(1);
   });
 
-  it('does not draw full-width separators around Nome e Cognome and Data', async () => {
+  it('does not draw a full-width divider between the Data field and the questions', async () => {
     await downloadStudentPdf(SNAPSHOT, [], null);
 
     const fullWidthLines = calls.filter(
       (c) => c.method === 'line' && c.args[0] === 20 && c.args[2] === 190,
     );
 
+    // Only the footer rule before "Punteggio": between Data and the first
+    // question there is blank vertical space, not a section divider.
     expect(fullWidthLines).toHaveLength(1);
+  });
+
+  it('never draws a value on the field lines — the teacher preview is always blank', async () => {
+    await downloadStudentPdf(SNAPSHOT, [APERTA], 'Classe 3A');
+
+    const textCalls = calls.filter((c) => c.method === 'text').map((c) => String(c.args[0]));
+    expect(textCalls.some((t) => /^\d{2}\/\d{2}\/\d{4}$/.test(t))).toBe(false);
+  });
+});
+
+describe('downloadStudentPdf — filename (docente preview, no student name)', () => {
+  it('saves as aaaammgg-classe-titoloverifica.pdf', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 9));
+    try {
+      await downloadStudentPdf({ ...SNAPSHOT, title: 'Verifica Reti' }, [APERTA], 'Classe 3A');
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const saveCall = calls.find((c) => c.method === 'save');
+    expect(String(saveCall?.args[0])).toBe('20260709-Classe-3A-Verifica-Reti.pdf');
+  });
+
+  it('falls back to senza-classe when the verification has no class', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 9));
+    try {
+      await downloadStudentPdf({ ...SNAPSHOT, title: 'Verifica Reti' }, [APERTA], null);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const saveCall = calls.find((c) => c.method === 'save');
+    expect(String(saveCall?.args[0])).toBe('20260709-senza-classe-Verifica-Reti.pdf');
   });
 });
 
@@ -152,8 +189,8 @@ describe('downloadStudentPdf — aperta questions', () => {
     const lineCallsNoQuestions = calls.filter((c) => c.method === 'line').length;
 
     // An aperta question contributes zero extra `line` calls compared to a PDF
-    // with no questions at all — the only lines are the header rule, the two
-    // student-field lines, and the footer rule.
+    // with no questions at all — the only lines are the two student-field
+    // lines and the footer rule.
     expect(lineCallsForAperta).toBe(lineCallsNoQuestions);
   });
 
@@ -246,11 +283,84 @@ describe('downloadStudentPdfFromProjection', () => {
     expect(rendered).not.toMatch(/corretta/i);
   });
 
-  it('saves the PDF with the "_studente" filename suffix', async () => {
-    await downloadStudentPdfFromProjection(PROJECTION);
+  it('saves the PDF as aaaammgg-classe-titoloverifica-Nome-Cognome.pdf when a student identity is given', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 9));
+    try {
+      await downloadStudentPdfFromProjection(PROJECTION, {
+        displayName: 'Mario Rossi',
+        email: null,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
 
     const saveCall = calls.find((c) => c.method === 'save');
-    expect(String(saveCall?.args[0])).toBe('Verifica_Reti_studente.pdf');
+    expect(String(saveCall?.args[0])).toBe('20260709-Classe-3A-Verifica-Reti-Mario-Rossi.pdf');
+  });
+
+  it('falls back to email when displayName is absent, for both filename and prefill', async () => {
+    await downloadStudentPdfFromProjection(PROJECTION, {
+      displayName: null,
+      email: 'mario.rossi@gmail.com',
+    });
+
+    const saveCall = calls.find((c) => c.method === 'save');
+    expect(String(saveCall?.args[0])).toContain('mario.rossi@gmail.com');
+
+    const textCalls = calls.filter((c) => c.method === 'text');
+    expect(textCalls.some((c) => String(c.args[0]) === 'mario.rossi@gmail.com')).toBe(true);
+  });
+
+  it('saves a plain aaaammgg-classe-titoloverifica.pdf (no name segment) when no student identity is given', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 9));
+    try {
+      await downloadStudentPdfFromProjection(PROJECTION);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const saveCall = calls.find((c) => c.method === 'save');
+    expect(String(saveCall?.args[0])).toBe('20260709-Classe-3A-Verifica-Reti.pdf');
+  });
+
+  it('pre-fills Nome e Cognome with displayName, drawn on the field line', async () => {
+    await downloadStudentPdfFromProjection(PROJECTION, {
+      displayName: 'Mario Rossi',
+      email: 'mario.rossi@gmail.com',
+    });
+
+    const textCalls = calls.filter((c) => c.method === 'text');
+    expect(textCalls.some((c) => String(c.args[0]) === 'Mario Rossi')).toBe(true);
+    // email must not appear when displayName is present
+    expect(textCalls.some((c) => String(c.args[0]) === 'mario.rossi@gmail.com')).toBe(false);
+  });
+
+  it("pre-fills Data with today's date in it-IT format (dd/mm/yyyy)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 9));
+    try {
+      await downloadStudentPdfFromProjection(PROJECTION, {
+        displayName: 'Mario Rossi',
+        email: null,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const textCalls = calls.filter((c) => c.method === 'text');
+    expect(textCalls.some((c) => String(c.args[0]) === '09/07/2026')).toBe(true);
+  });
+
+  it('never pre-fills fields or a student name when no identity is passed (teacher-preview-equivalent)', async () => {
+    await downloadStudentPdfFromProjection(PROJECTION);
+
+    const textCalls = calls.filter((c) => c.method === 'text').map((c) => String(c.args[0]));
+    // Only the labels are drawn — no filled-in name or date value anywhere.
+    expect(textCalls).toContain('Nome e Cognome:');
+    expect(textCalls).toContain('Data:');
+    expect(textCalls.some((t) => /^\d{2}\/\d{2}\/\d{4}$/.test(t))).toBe(false);
   });
 
   it('handles a verification with no class (className: null) the same way as downloadStudentPdf', async () => {

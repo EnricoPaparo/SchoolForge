@@ -59,7 +59,10 @@ export function StudentVerificationsView() {
     setPdfErrors((prev) => ({ ...prev, [item.id]: '' }));
     setPdfLoadingId(item.id);
     try {
-      await downloadStudentPdfFromProjection(item);
+      await downloadStudentPdfFromProjection(item, {
+        displayName: user?.displayName ?? null,
+        email: user?.email ?? null,
+      });
     } catch {
       setPdfErrors((prev) => ({
         ...prev,

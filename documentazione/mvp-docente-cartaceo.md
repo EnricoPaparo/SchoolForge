@@ -295,6 +295,16 @@ Il PDF **non contiene** soluzioni, risposte corrette o marcatori di risposta.
 
 ---
 
+## Nota operativa: lezione visibile in lista ma contenuto non caricabile (studente)
+
+Uno studente approvato con classe compatibile può vedere una lezione nell'elenco ma ricevere "Contenuto non disponibile per la tua classe" (o l'errore generico) al click. **Non è quasi mai un problema di permessi troppo stretti**: dalla milestone M3L-C ogni file lezione su Storage è taggato all'upload con `customMetadata.programId`, necessario alle Security Rules per verificare la classe. Un file caricato **prima** di M3L-C non ha questo metadata ed è negato di default a ogni studente — per design, non per bug (vedi `sicurezza.md` §3.2 e `api-contract.md` §6).
+
+**Fix**: il docente deve reimportare lo ZIP del programma interessato (stesso file, o una versione aggiornata) dalla sezione **Corsi**. L'import rigenera tutti i file Storage con il metadata corretto; non esiste un backfill automatico sui file già esistenti. Questo vale anche per import fatti prima della PR frontmatter lezioni: reimportare aggiorna anche `titolo`/`difficolta` in Firestore se il file `.md` è stato aggiornato con un front matter.
+
+Se il problema persiste **dopo** un reimport, non è più il caso legacy: verificare che lo studente sia `approved`, che `students/{uid}.classId` coincida con una delle `classIds` del programma, e che `settings/studentAccess.studentPortalEnabled` sia `true`.
+
+---
+
 ## Comandi di verifica
 
 ```bash
