@@ -1,4 +1,8 @@
-import type { VerificationTeacherSnapshot } from '../../../types/firestore.js';
+import type {
+  PublicVerificationQuestion,
+  PublishedProjectionDoc,
+  VerificationTeacherSnapshot,
+} from '../../../types/firestore.js';
 import type { LoadedQuestion } from './loadSelectedQuestions.js';
 import type { LoadedQuestionWithSolution } from './loadSelectedQuestionsWithSolutions.js';
 import {
@@ -6,6 +10,19 @@ import {
   computeOptionBoxLayouts,
   getAnswerAreaKind,
 } from './verificationPdfLayout.js';
+
+/**
+ * Minimal, solution-free question shape the student PDF layout actually
+ * needs. `PublicVerificationQuestion` (the student portal's published
+ * projection) already matches this shape exactly; `LoadedQuestion` (the
+ * teacher's own preview flow, sourced from Storage pool files) is mapped
+ * into it below — this is what lets both callers share one drawing
+ * implementation without either one depending on the other's data source.
+ */
+type StudentPdfQuestion = Pick<
+  PublicVerificationQuestion,
+  'tipo' | 'maxPoints' | 'testo' | 'opzioni'
+>;
 
 type PdfTitleDoc = {
   setFontSize: (size: number) => void;
@@ -60,13 +77,18 @@ function writeCenteredTitleWithClass(params: {
 }
 
 /**
- * Generates and downloads a student-facing verification PDF.
- * Contains: title, class, name/date fields, questions with max points.
- * Does NOT contain solutions, correct answers, or answer markings.
+ * Draws and downloads the actual student-facing PDF layout: title, class,
+ * name/date fields, questions with max points. Does NOT contain solutions,
+ * correct answers, or answer markings. Shared by `downloadStudentPdf`
+ * (teacher preview, sourced from Storage pool files) and
+ * `downloadStudentPdfFromProjection` (real student download, sourced only
+ * from the safe `publishedProjection` — never Storage/pool) so the two
+ * flows can never drift into rendering different PDFs for the same
+ * verification.
  */
-export async function downloadStudentPdf(
-  snapshot: VerificationTeacherSnapshot,
-  questions: LoadedQuestion[],
+async function renderStudentPdf(
+  title: string,
+  questions: StudentPdfQuestion[],
   className: string | null,
 ): Promise<void> {
   const { jsPDF } = await import('jspdf');
@@ -106,7 +128,7 @@ export async function downloadStudentPdf(
   // ── Header ────────────────────────────────────────────────────────────────
   writeCenteredTitleWithClass({
     doc,
-    title: snapshot.title,
+    title,
     className,
     y,
     pageWidth: pageW,
@@ -136,11 +158,11 @@ export async function downloadStudentPdf(
   let totalPts = 0;
 
   questions.forEach((q, i) => {
-    totalPts += q.ref.maxPoints;
+    totalPts += q.maxPoints;
 
     if (y > 255) newPage();
 
-    write(`${i + 1}.  ${q.testo}  [${q.ref.maxPoints} pt]`, 11);
+    write(`${i + 1}.  ${q.testo}  [${q.maxPoints} pt]`, 11);
     gap(3);
 
     if (getAnswerAreaKind(q.tipo) === 'options') {
@@ -174,11 +196,47 @@ export async function downloadStudentPdf(
   gap(8);
   write(`Punteggio: ________ / ${totalPts}`, 11, true);
 
-  const safeName = snapshot.title
+  const safeName = title
     .replace(/[^\w\s-]/g, '')
     .trim()
     .replace(/\s+/g, '_');
   doc.save(`${safeName}_studente.pdf`);
+}
+
+/**
+ * Generates and downloads a student-facing verification PDF — the teacher's
+ * own preview of what a student will see, sourced from Storage pool files
+ * via `loadSelectedQuestions` (owner-only; never usable by a real student).
+ * Contains: title, class, name/date fields, questions with max points.
+ * Does NOT contain solutions, correct answers, or answer markings.
+ */
+export async function downloadStudentPdf(
+  snapshot: VerificationTeacherSnapshot,
+  questions: LoadedQuestion[],
+  className: string | null,
+): Promise<void> {
+  await renderStudentPdf(
+    snapshot.title,
+    questions.map((q) => ({
+      tipo: q.tipo,
+      maxPoints: q.ref.maxPoints,
+      testo: q.testo,
+      opzioni: q.opzioni,
+    })),
+    className,
+  );
+}
+
+/**
+ * Generates and downloads the real student-facing verification PDF (M3L-D),
+ * sourced only from the safe `publishedProjection` the student is actually
+ * allowed to read — never Storage, never a pool file, never `questionRefs`.
+ * Renders identically to `downloadStudentPdf` (same shared layout code).
+ */
+export async function downloadStudentPdfFromProjection(
+  projection: Pick<PublishedProjectionDoc, 'title' | 'className' | 'questions'>,
+): Promise<void> {
+  await renderStudentPdf(projection.title, projection.questions, projection.className);
 }
 
 /**

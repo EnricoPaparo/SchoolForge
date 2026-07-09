@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
 import logoScritta from '../../assets/logo-scritta-schoolforge.png';
 import { StudentLessonsView } from './StudentLessonsView.js';
+import { StudentVerificationsView } from './StudentVerificationsView.js';
 import styles from './StudentShell.module.css';
 
 type Section = 'lezioni' | 'verifiche';
@@ -99,11 +100,7 @@ export function StudentShell() {
       </nav>
 
       <main className={styles.main}>
-        {activeSection === 'lezioni' ? (
-          <StudentLessonsView />
-        ) : (
-          <p className={styles.placeholder}>Verifiche pubblicate — in arrivo</p>
-        )}
+        {activeSection === 'lezioni' ? <StudentLessonsView /> : <StudentVerificationsView />}
       </main>
     </div>
   );

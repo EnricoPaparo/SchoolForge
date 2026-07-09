@@ -236,27 +236,36 @@ interface PublishedSnapshotItem extends SnapshotItem {
   candidate: true;
 }
 
-// verifications/{verificationId}/publishedProjection/items — senza soluzioni
-// Riusata da M3-lite per il download del PDF studente quando la verifica
-// è attiva+public (oltre che dal canale cartaceo, M2).
-interface PublishedProjectionMeta {
+// verifications/{verificationId}/publishedProjection/data — solution-free,
+// scritta all'attivazione (M2/M3-lite). Riusata per il download PDF
+// studente quando la verifica è active+public (M3L-D) e dal canale
+// cartaceo (M2). `classId` e `visibility` sono duplicati qui dal genitore
+// (eccezione deliberata: normalmente questo schema non duplica dati) — una
+// query collectionGroup su questa sotto-collezione, necessaria perché il
+// documento padre `verifications/{id}` non è mai leggibile dallo studente,
+// è validabile da Firestore solo se i campi controllati dalle Security
+// Rules sono anche i campi su cui la query filtra; un `get()` verso il
+// padre (per leggere `status`) non è validabile in questo contesto. Per lo
+// stesso motivo `visibility` sostituisce anche `status` qui:
+// `setVerificationVisibility` la mirrora, `closeVerification` la forza a
+// `'hidden'`. Non contiene mai `soluzione`, `poolStorageRef`,
+// `questionLocalId` o `questionIndexEntryId`.
+interface PublishedProjectionDoc {
+  ownerUid: string;
   title: string;
-  state: 'attiva';
+  className: string | null;
+  classId: string | null;      // M3L-D — null = verifica mai assegnata a una classe, mai visibile
   visibility: 'hidden' | 'public';
-  channels: ('cartaceo' | 'digitale')[];
-  variant: 'tutte_uguali' | 'tutte_diverse';
+  questions: PublicVerificationQuestion[];
+  activatedAt: Timestamp;
 }
 
-interface PublishedProjectionItem {
-  questionId: string;
+interface PublicVerificationQuestion {
   order: number;
-  tipo: string;
-  difficolta: 1 | 2 | 3;
-  peso: 1 | 2 | 3;
+  tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
   maxPoints: number;
   testo: string;
-  opzioni: { id: string; testo: string }[] | null;
-  lessonSource: string;
+  opzioni?: { id: string; testo: string }[];  // solo chiusa_singola/chiusa_multipla — id + testo, mai la soluzione
 }
 
 // ---------------------------------------------------------------------------
@@ -404,8 +413,8 @@ All'apertura del link, il Portale calcola `SHA-256(verificationToken)` con Web C
 |---|---|
 | Risoluzione ruolo | `get settings/ownerPublic`; confronto client-side `uid === ownerUid` per instradare TeacherShell/StudentShell (non sostituisce le Security Rules; risolve solo il ruolo, non l'autorizzazione — vedi §3.4a) |
 | Lezioni | `get students/{uid}` per il proprio `classId` (assente/null → nessuna lezione mostrata); query `programs` con `where('classIds', 'array-contains', classId)`; per ciascun programma trovato, query `publicLessons` con `where('programId', '==', id)`; lettura del file `.md` da Cloud Storage tramite `contentPath` (Storage Rules: mai per `.pool.md`; lettura consentita solo a uno studente approvato con portale attivo E il cui `classId` è compatibile con le `classIds` del programma indicato da `customMetadata.programId` — vedi sotto). Filtro per classe implementato in M3L-C, sia lato query client sia lato Security Rules, in modo identico su Firestore (`isClassmateOf()`) e su Storage (`isClassmateOfProgram()`, §6). |
-| Elenco verifiche visibili | Query `verifications/{id}/publishedProjection` per le verifiche note al client, concessa solo quando il padre è `state == "attiva" && visibility == "public"` **e** lo studente è approvato con portale attivo; il documento padre `verifications/{id}` non è mai leggibile dallo studente |
-| Download PDF studente | Lettura `verifications/{id}/publishedProjection`; genera il PDF nel browser con `VerificaPdfRenderer mode="student"` |
+| Verifiche | `get students/{uid}` per il proprio `classId` (assente/null → nessuna verifica mostrata); un'unica query `collectionGroup('publishedProjection')` filtrata su `where('classId','==',classId)` **e** `where('visibility','==','public')` (entrambi i filtri sono obbligatori — vedi §6); il documento padre `verifications/{id}` non è mai letto (contiene `config.questionRefs`/`teacherSnapshot`). Filtro per classe implementato in M3L-D. |
+| Download PDF studente | Nessuna lettura aggiuntiva: usa i dati già ottenuti dalla query precedente; genera il PDF nel browser con `downloadStudentPdfFromProjection` (stesso layout di disegno di `downloadStudentPdf`, mai da Storage/pool) |
 
 Nessuna di queste operazioni scrive su Firestore o Storage, crea un record, o richiama una Cloud Function. Le Security Rules negano allo studente ogni lettura di `lessons`, `questionIndex`, `publishedSnapshot`, `corrections`, `correctionEvents`, `auditEvents` e `settings/owner` (eccetto `settings/ownerPublic`).
 
@@ -418,7 +427,7 @@ Un utente Google non-owner è un **richiedente/studente potenziale**, non uno st
 
 Questa milestone consegna solo lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applicano; **non** consegna una UI docente per creare/approvare/bloccare uno studente, né l'assegnazione di una classe. Fino a quella milestone successiva, `students/{uid}` va popolato manualmente dal docente (o da un futuro strumento di amministrazione) perché uno studente veda qualunque contenuto.
 
-`classId` su `Student` e `classIds` su `Program` filtrano ulteriormente cosa uno studente approvato vede: un programma senza classi assegnate, o una verifica senza `classId` (non ancora implementato), non sono visibili a nessuno studente anche se altrimenti pubblici. Lo schema e la UI docente per assegnare le classi ai programmi sono implementati da M3L-A4. Il filtro per classe sulla sezione **Lezioni** (query client + Security Rules) è implementato da M3L-C. Il filtro per classe sulla sezione **Verifiche** resta specifico di una milestone successiva (M3L-D) e non è ancora implementato.
+`classId` su `Student`, `classIds` su `Program` e `classId` su `PublishedProjectionDoc` filtrano ulteriormente cosa uno studente approvato vede: un programma senza classi assegnate, o una verifica senza `classId`, non sono visibili a nessuno studente anche se altrimenti pubblici. Lo schema e la UI docente per assegnare le classi ai programmi sono implementati da M3L-A4. Il filtro per classe è implementato sia sulla sezione **Lezioni** (query client + Security Rules, `isClassmateOf()`, M3L-C) sia sulla sezione **Verifiche** (query `collectionGroup` + Security Rules, M3L-D) — nessuna consegna, risposta online o punteggio è prevista per M3-lite in nessuna delle due sezioni.
 
 ### 3.5 Correzione ed export (Modulo 4, dipende da M3-full)
 
@@ -572,13 +581,15 @@ Le Security Rules Firestore devono garantire, per la baseline corrente (M1+M2+M3
 | `publicLessons` | Lettura + scrittura (stesso flusso di import) | Solo lettura, solo se il programma padre ha `classIds` compatibile con il proprio `classId` (M3L-C) | — | — |
 | `verifications` | Lettura + scrittura solo per bozza e transizioni consentite; scrittura di `visibility` su verifica `attiva` | — (documento padre mai leggibile dallo studente, vedi `publishedProjection`) | — | — |
 | `verifications/*/publishedSnapshot` | Lettura | — | — | — |
-| `verifications/*/publishedProjection` | Lettura | Lettura solo quando `state == "attiva" && visibility == "public"` | — | — |
+| `verifications/*/publishedProjection` | Lettura + scrittura | Lettura solo quando `visibility == "public"` (che vale solo mentre il padre è `active` — vedi §3.4a) **e** `classId` è compatibile col proprio `classId` (M3L-D; assente/`null` → nessuno studente) | — | — |
 | `corrections`, `correctionEvents` | Lettura + scrittura | — | — | — |
 | `auditEvents` | Lettura + sola creazione append-only con schema ammesso | — | — | — |
 
 Un Google-autenticato non approvato (nessun documento `students/{uid}`, oppure `pending`/`blocked`, oppure `studentPortalEnabled == false`) non ha alcuna riga con permesso diverso da "—" nella colonna dedicata: è trattato come un non-owner qualunque, con l'unica eccezione di `settings/ownerPublic` (necessaria solo per il routing UI, non per l'autorizzazione).
 
 **Storage Rules (M3L-C)**: lo stesso filtro per classe di `publicLessons` è applicato indipendentemente ai file in `repository/{ownerUid}/imports/{importId}/**`. Ogni file caricato da `importRepository` è taggato con `customMetadata: { kind: "lesson" | "pool", programId, ownerUid, importId }`. Uno studente approvato con portale attivo può leggere un file solo se `kind == "lesson"` (mai `"pool"`), `programId` è valorizzato nei metadata, e il programma corrispondente (letto live da Firestore, non dai metadata) ha `classIds` compatibile col proprio `classId` — `classIds` non è mai duplicato nei metadata Storage proprio perché può cambiare dopo l'upload. Un file senza `programId` nei metadata (caricato prima di questa milestone) è negato di default a ogni studente finché il programma non viene reimportato: non esiste un backfill automatico dei metadata sui file già esistenti.
+
+**Verifiche studente (M3L-D)**: lo studente scopre le verifiche della propria classe con un'unica query `collectionGroup('publishedProjection')` — il documento padre `verifications/{id}` non è mai letto. `classId` e `visibility` sono duplicati sulla proiezione apposta per questo: Firestore valida una `list`/`collectionGroup` solo se ogni campo su cui la regola autorizza è anche un campo su cui la query filtra (un `get()` verso il padre, necessario per leggere `status`, non è validabile in questo contesto perché il segmento di percorso del padre non è vincolato dalla query) — per questo `visibility` sostituisce anche `status` nella proiezione, mantenuta sincronizzata da `setVerificationVisibility`/`closeVerification`. Il blocco Security Rules usa inoltre un prefisso ricorsivo (`{path=**}/publishedProjection/{docId}`, non `verifications/{verificationId}/publishedProjection/{docId}`): un match a profondità fissa non viene registrato da Firestore come idoneo per una `collectionGroup()` `list`, anche quando la condizione è banale (confermato empiricamente in questo progetto). `firestore.indexes.json` definisce l'indice `COLLECTION_GROUP` necessario su `classId`+`visibility`.
 
 Le Security Rules esatte vengono scritte e testate con Emulator Suite obbligatoria, incluso il gate M3-lite e il gate di approvazione studente (§3.4a).
 

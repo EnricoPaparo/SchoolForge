@@ -297,17 +297,37 @@ export type PublicVerificationQuestion = {
 
 /**
  * Stored at verifications/{verificationId}/publishedProjection/data.
- * Written atomically with `teacherSnapshot` at activation. Deliberately does
- * NOT duplicate `status`/`visibility` — Security Rules authorize reads of
- * this doc via a get() on the parent verification, so this projection can
- * never drift from the parent's actual state. Owner: full read/write.
- * Any other authenticated user: read-only, and only while the parent is
- * `active` + `public`.
+ * Written atomically with `teacherSnapshot` at activation. Owner: full
+ * read/write. Any other authenticated user: read-only, and only while
+ * `visibility == 'public'` and (M3L-D) `classId` matches the student's own
+ * class.
+ *
+ * `classId` and `visibility` ARE deliberately duplicated here from the
+ * parent verification (an exception to this codebase's usual anti-drift
+ * rule, e.g. `publicLessons` never copies a program's `classIds`) — a
+ * student discovers matching verifications via a single `collectionGroup`
+ * query on `publishedProjection` filtered by `classId` AND `visibility`
+ * (the parent `verifications/{id}` document is never readable by a
+ * student, so there is no other way to run that discovery query).
+ * Empirically, Firestore's Security Rules can only validate a
+ * `list`/collectionGroup request when every field the rule authorizes on is
+ * also a field the query filters on — a cross-document `get()` back to the
+ * parent (which works fine for a single-document `get`) fails `list`
+ * validation here because the parent path segment isn't constrained by the
+ * query. `visibility` therefore also stands in for `status`: it is kept
+ * `'hidden'` on activation, mirrored on every `setVerificationVisibility`
+ * toggle, and forced back to `'hidden'` on `closeVerification` — a closed
+ * verification must never remain publicly readable via a stale mirror.
+ * `classId: null` (verification never assigned to a class) is never visible
+ * to any student, same as `ProgramDoc.classIds` — never "visible to
+ * everyone" by omission.
  */
 export type PublishedProjectionDoc = {
   ownerUid: string;
   title: string;
   className: string | null;
+  visibility: VerificationVisibility;
+  classId: string | null;
   questions: PublicVerificationQuestion[];
   activatedAt: Timestamp | FieldValue;
 };
