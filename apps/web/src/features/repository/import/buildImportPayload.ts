@@ -172,6 +172,6 @@ export function buildImportPayload(params: {
 }
 
 /** Converts a path/filename fragment into a safe Firestore document ID. */
-function toDocId(value: string): string {
+export function toDocId(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
