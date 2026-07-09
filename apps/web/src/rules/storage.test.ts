@@ -24,10 +24,10 @@ let testEnv: RulesTestEnvironment;
 beforeAll(async () => {
   testEnv = await initializeTestEnvironment({
     // Must match the emulator suite's --project flag (see package.json
-    // test:rules): Storage Rules' cross-service firestore.get()/exists()
-    // (isApprovedStudent() in storage.rules) resolve documents against the
-    // emulator's single configured default project, regardless of the
-    // projectId a RulesTestEnvironment declares for itself.
+    // test:rules). storage.rules itself no longer reads Firestore at all
+    // (see the "no class gate" model below) — Firestore is still spun up
+    // here only so tests can seed students/programs and prove that Storage
+    // reads succeed *regardless* of that Firestore state.
     projectId: 'demo-schoolforge',
     firestore: {
       rules: readFileSync(FIRESTORE_RULES_PATH, 'utf8'),
@@ -127,7 +127,7 @@ describe('Storage — other authenticated user denied on owner path', () => {
 
 // ─── repository/{ownerUid}/ — student read (M3-lite) ─────────────────────────
 
-describe('Storage — student (other authenticated user) read access — approved-student gate (M3-lite)', () => {
+describe('Storage — student (other authenticated user) read access — Markdown-only, no class/approval gate at Storage level (M3-lite)', () => {
   async function seedLessonFile(programId?: string) {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await uploadBytes(

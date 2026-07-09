@@ -1,7 +1,7 @@
 # Guida operativa — MVP docente cartaceo
 
-**Stato:** funzionante in locale con emulatori Firebase (M1 + M2 completati)
-**Aggiornato al:** 2026-06-26 (commit `4c1a05c`)
+**Stato:** M1 + M2 + M3-lite completati; funzionante sia in locale con emulatori Firebase sia su Firebase DEV (https://schoolforge-dev.web.app). Questa guida descrive il flusso docente in locale; per il portale studente vedi la sezione dedicata più sotto e la checklist manuale in `documentazione/evidenze/`.
+**Aggiornato al:** 2026-07-09
 
 ---
 
@@ -232,6 +232,17 @@ Naviga in **Impostazioni** dalla barra laterale (contiene la gestione classi).
 2. Aggiungi opzionalmente una descrizione.
 3. Clicca **Crea classe**.
 
+### 5b. Assegnazione del programma a una o più classi
+
+Un programma **senza classi assegnate non è mai visibile a nessuno studente**, anche se le sue lezioni sono importate e il portale studente è attivo — questo è il default sicuro, non un bug da segnalare.
+
+In **Corsi**, sulla riga del programma:
+1. Clicca il bottone **Classi**.
+2. Seleziona una o più classi dal pannello.
+3. Clicca **Salva**.
+
+Solo dopo questo passo gli studenti approvati e assegnati a una di quelle classi vedranno le lezioni del programma nel portale studente (§ "Portale studente" più sotto).
+
 ### 6. Creazione verifica
 
 Naviga in **Verifiche cartacee**.
@@ -264,20 +275,57 @@ Con almeno una domanda selezionata:
 
 La verifica passa allo stato **ATTIVA**. Appare il pulsante **Scarica PDF**.
 
-### 9. Download PDF studente
+### 8b. Pubblicazione / nascondimento della verifica
 
-Clicca **Scarica PDF**. Il browser scarica il file `<titolo-verifica>_studente.pdf`.
+Una verifica **attiva** ha anche uno stato di visibilità, indipendente dallo stato bozza/attiva/chiusa: **pubblica** o **nascosta**. Solo una verifica attiva **e** pubblica è visibile nel portale studente (§ "Portale studente" più sotto) — attivarla non la pubblica automaticamente.
 
-Il PDF contiene:
-- Titolo verifica
-- Classe (se presente)
-- Campi Nome e Cognome, Data
-- Domande numerate con punteggio massimo `[N pt]`
-- Per domande chiuse: opzioni con ○
-- Per domande aperte: righe vuote per la risposta
-- Totale punteggio in calce
+Nella riga della verifica (o nel pannello di dettaglio):
+1. Clicca l'icona 👁️/🙈 per alternare **Pubblica allo studente** / **Nascondi allo studente**.
+2. Lo stato compare come badge "pubblica" o "nascosta" nella colonna Stato.
 
-Il PDF **non contiene** soluzioni, risposte corrette o marcatori di risposta.
+Chiudere la verifica (§ "Eliminazione..." più sotto per lo stato chiusa) forza automaticamente lo stato a nascosta: una verifica chiusa non resta mai visibile allo studente per inerzia.
+
+### 9. Download PDF docente (anteprima) e PDF studente
+
+Dal pannello di una verifica **attiva**, sono disponibili tre PDF, tutti generati nel browser senza persistenza:
+
+| Bottone | Contenuto | Nome file |
+|---|---|---|
+| Scarica PDF (⬇️) | Anteprima di ciò che vedrà lo studente: titolo, classe, campi Nome e Cognome/Data **vuoti**, domande numerate `[N pt]`, opzioni ○ per le chiuse, righe vuote per le aperte, punteggio totale in calce. Nessuna soluzione. | `aaaammgg-classe-titoloverifica.pdf` |
+| Scarica PDF soluzioni (🔑, anche su verifica chiusa) | Come sopra, più le soluzioni: risposta testuale per le aperte, opzione(i) corretta(e) evidenziate per le chiuse. Solo per il docente. | `<titolo>_soluzioni_docente.pdf` |
+| Scarica PDF studente (dal portale studente) | Identico all'anteprima docente, ma con Nome e Cognome/Data **precompilati** dall'identità Google dello studente al momento del download (mai salvati). | `aaaammgg-classe-titoloverifica-NomeStudente-CognomeStudente.pdf` |
+
+`aaaammgg` è la data di generazione del PDF (non una data salvata); `classe` è il nome della classe della verifica o `senza-classe` se assente; titolo e nome studente sono sanitizzati per il filesystem.
+
+---
+
+## Gestione studenti (M3-lite)
+
+In **Impostazioni → Studenti** (o sezione equivalente nella barra laterale) il docente gestisce chi può accedere al portale studente:
+
+1. **Interruttori globali**: `Portale studente attivo` (deve essere acceso perché uno studente legga qualunque contenuto, indipendentemente dall'approvazione) e `Richieste di accesso studente` (se acceso, un utente Google non ancora registrato può auto-registrarsi come `pending` al primo login; se spento, solo il docente crea `students/{uid}`).
+2. **Stati studente**: `pending` (in attesa, nessun contenuto visibile), `approved` (contenuto visibile solo se ha anche una classe compatibile), `blocked` (nessun contenuto, reversibile).
+3. **Approvazione/blocco**: dalla riga dello studente, il docente clicca **Approva** o **Blocca**. Un `blocked` può essere riportato a `pending` con **Sblocca**.
+4. **Assegnazione classe**: dal menu a discesa sulla riga dello studente, il docente seleziona la classe. Uno studente `approved` senza classe non vede alcuna lezione o verifica, anche se il portale è attivo.
+
+## Eliminazione di verifiche e programmi
+
+- Una verifica in stato **bozza** o **chiusa** può essere eliminata definitivamente dal docente (bottone 🗑️, con conferma). Una verifica **attiva** non può essere eliminata direttamente: va prima chiusa.
+- Un programma **non può essere eliminato** se esistono verifiche (di qualunque stato) che lo referenziano (`config.programId`): l'app mostra il messaggio "Impossibile eliminare il corso: esistono verifiche associate. Elimina prima le verifiche collegate." Elimina o riassegna prima le verifiche, poi il programma.
+
+---
+
+## Portale studente (M3-lite)
+
+Il portale studente è raggiungibile con lo stesso URL dell'app: il ruolo (docente/studente) è risolto confrontando l'`uid` autenticato con l'`ownerUid` del docente.
+
+1. **Login studente**: lo studente clicca **Accedi con Google** (nessuna email/password, nessuna registrazione con dati autodichiarati). L'identità (nome, email) è quella già verificata da Google.
+2. **Richiesta di accesso o creazione manuale**: se `newStudentRequestsEnabled` è attivo, il primo login crea automaticamente un `students/{uid}` in stato `pending`; lo studente vede una schermata di attesa. In alternativa il docente può creare la voce studente manualmente. In entrambi i casi nessun contenuto è visibile finché il docente non approva.
+3. **Approvazione e classe**: il docente approva e assegna una classe (vedi "Gestione studenti" sopra). Senza entrambe le condizioni lo studente vede solo un messaggio di attesa/bloccato o "nessuna classe assegnata" — mai un errore tecnico.
+4. **Sezione Lezioni**: lo studente vede solo i programmi la cui `classIds` include la propria classe (§5b), e per ciascuno le lezioni pubblicate. Cliccando una lezione ne viene mostrato il contenuto Markdown (titolo, sottotitolo, difficoltà, concetti chiave, obiettivi se presenti nel front matter — mai il pool domande).
+5. **Sezione Verifiche**: lo studente vede solo le verifiche **attive e pubblicate** (§8b) della propria classe. Ogni verifica ha un bottone **Scarica PDF** che genera il PDF studente con Nome e Cognome/Data precompilati (§9) — mai soluzioni, mai una consegna online, mai un punteggio.
+
+Verifiche online, consegna digitale, correzione automatica e correzione AI **non sono implementate** in M3-lite: restano specifica di un eventuale M3-full/M4/M5, rinviata.
 
 ---
 
@@ -285,23 +333,19 @@ Il PDF **non contiene** soluzioni, risposte corrette o marcatori di risposta.
 
 | Limite | Impatto | Fix richiesto |
 |---|---|---|
-| Dati negli emulatori sono temporanei | Persi al riavvio degli emulatori | Deploy su Firebase reale (H-01/H-02) |
-| Nessun dominio pubblico | Solo `localhost:5173` | Firebase Hosting deploy |
-| Security Rules non verificate su progetto reale | Possibili differenze vs emulatori | Test su `dev` Firebase reale |
-| Portale studenti (M3) non implementato | Nessun tentativo digitale | Milestone M3 |
-| Correzione risultati (M4) non implementata | Nessun punteggio registrato | Milestone M4 |
+| Dati negli emulatori sono temporanei | Persi al riavvio degli emulatori | Solo per lo sviluppo locale — il deploy DEV su Firebase reale è già attivo |
+| Security Rules verificate su emulatore e su DEV reale, non su un progetto PROD dedicato | Possibili differenze residue non ancora osservate | Ripetere la checklist manuale (vedi `documentazione/evidenze/`) al deploy PROD |
+| Portale digitale (M3-full), consegna online, correzione (M4), correzione AI (M5) non implementati | Nessun tentativo/punteggio/correzione digitale | Specifica rinviata, fasi successive |
 | La voce "Classi" è sotto "Impostazioni" nella navigazione | UX non intuitiva | UX fix futuro |
 | Bundle size grande (jsPDF ~390 kB gzip 128 kB) | Prima apertura lenta | Lazy import già presente; accettabile per V1 |
 
 ---
 
-## Nota operativa: lezione visibile in lista ma contenuto non caricabile (studente)
+## Nota operativa: contenuto lezione non caricabile (studente)
 
-Uno studente approvato con classe compatibile può vedere una lezione nell'elenco ma ricevere "Contenuto non disponibile per la tua classe" (o l'errore generico) al click. **Non è quasi mai un problema di permessi troppo stretti**: dalla milestone M3L-C ogni file lezione su Storage è taggato all'upload con `customMetadata.programId`, necessario alle Security Rules per verificare la classe. Un file caricato **prima** di M3L-C non ha questo metadata ed è negato di default a ogni studente — per design, non per bug (vedi `sicurezza.md` §3.2 e `api-contract.md` §6).
+Se uno studente vede una lezione nell'elenco ma riceve un errore al click, **non è più (dal deploy DEV) un problema di permessi legati alla classe**: le Storage Rules non verificano più classe/approvazione/metadata per i file lezione (`.md`), solo autenticazione e nome file — vedi `sicurezza.md` §3.2a e `api-contract.md` §6 per il modello attuale. La discovery (quali lezioni compaiono in elenco) resta invece interamente gated da Firestore, quindi una lezione non compare affatto se lo studente non è approvato o non ha la classe compatibile — non genera l'errore di questa nota.
 
-**Fix**: il docente deve reimportare lo ZIP del programma interessato (stesso file, o una versione aggiornata) dalla sezione **Corsi**. L'import rigenera tutti i file Storage con il metadata corretto; non esiste un backfill automatico sui file già esistenti. Questo vale anche per import fatti prima della PR frontmatter lezioni: reimportare aggiorna anche `titolo`/`difficolta` in Firestore se il file `.md` è stato aggiornato con un front matter.
-
-Se il problema persiste **dopo** un reimport, non è più il caso legacy: verificare che lo studente sia `approved`, che `students/{uid}.classId` coincida con una delle `classIds` del programma, e che `settings/studentAccess.studentPortalEnabled` sia `true`.
+Se l'errore compare comunque dopo che la lezione è visibile in elenco, è quasi sempre un problema transitorio (rete, sessione Google scaduta): far ricaricare la pagina o rifare login allo studente. Se persiste, verificare la console del browser per l'errore esatto prima di ipotizzare un problema di Security Rules.
 
 ---
 
@@ -311,6 +355,6 @@ Se il problema persiste **dopo** un reimport, non è più il caso legacy: verifi
 pnpm format:check   # Prettier
 pnpm lint           # ESLint
 pnpm typecheck      # TypeScript
-pnpm test           # Vitest (197 test)
+pnpm test           # Vitest (suite unitaria/componenti completa)
 pnpm build          # Build produzione
 ```

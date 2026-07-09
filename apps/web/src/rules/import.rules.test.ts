@@ -812,7 +812,7 @@ describe('importRepository — publicLessons projection', () => {
     expect(currentPublicLessons.size).toBe(r2.lessonCount);
   });
 
-  it('uploads lesson files to Storage tagged with customMetadata.programId (M3L-C)', async () => {
+  it('uploads lesson files to Storage tagged with customMetadata.programId (written for diagnostics only — no longer read by any Security Rule)', async () => {
     await seedOwner();
     const db = ownerDb();
     const storage = ownerStorage();

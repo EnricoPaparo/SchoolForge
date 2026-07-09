@@ -93,22 +93,13 @@ export function StudentLessonsView() {
       const { metadata, body } = parseLessonMetadata(raw);
       setLessonMetadata(metadata);
       setLessonContent(body);
-    } catch (error) {
-      // A Storage permission-denied here almost always means the file was
-      // uploaded before the class-gate metadata existed (customMetadata.
-      // programId, see storage.rules) — reimporting the ZIP is the fix, not
-      // a broader access rule (see documentazione/mvp-docente-cartaceo.md).
-      // Any other error (network, etc.) gets the generic message instead.
-      const isPermissionDenied =
-        typeof error === 'object' &&
-        error !== null &&
-        'code' in error &&
-        (error as { code?: unknown }).code === 'storage/unauthorized';
-      setLessonContentError(
-        isPermissionDenied
-          ? 'Contenuto non disponibile per la tua classe. Se pensi sia un errore, chiedi al docente di ripubblicare questo corso.'
-          : 'Impossibile caricare il contenuto della lezione.',
-      );
+    } catch {
+      // storage.rules grants any authenticated non-owner a read on a `.md`
+      // lesson file (see storage.rules) — class/approval are gated upstream,
+      // in Firestore discovery of programs/publicLessons. A failure here is
+      // therefore almost always transient (network, expired session), not a
+      // permission issue tied to this specific lesson.
+      setLessonContentError('Impossibile caricare il contenuto della lezione.');
     } finally {
       setLessonContentLoading(false);
     }
