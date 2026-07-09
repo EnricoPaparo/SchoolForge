@@ -28,9 +28,10 @@ let testEnv: RulesTestEnvironment;
 beforeAll(async () => {
   testEnv = await initializeTestEnvironment({
     // Must match the emulator suite's --project flag (see package.json
-    // test:rules): Storage Rules' cross-service firestore.get()/exists()
-    // resolve documents against the emulator's single configured default
-    // project, regardless of the projectId this environment declares.
+    // test:rules). storage.rules no longer reads Firestore at all — this
+    // file still spins up Firestore only so seed() can populate
+    // students/programs and prove Storage reads succeed regardless of that
+    // state (the class gate lives entirely in Firestore discovery rules).
     projectId: 'demo-schoolforge',
     firestore: {
       rules: readFileSync(FIRESTORE_RULES, 'utf8'),
@@ -129,7 +130,7 @@ async function seed(options: {
   });
 }
 
-describe('Storage rules — lesson file class gate (M3L-C)', () => {
+describe('Storage rules — lesson file read (no class gate at Storage level; class gating happens at Firestore discovery, M3L-C)', () => {
   it('owner can always read the lesson and pool files, regardless of classIds', async () => {
     await seed({ programClassIds: [] });
 
@@ -237,7 +238,7 @@ describe('Storage rules — lesson file class gate (M3L-C)', () => {
     await assertSucceeds(getBytes(ref(studentStorage(), LESSON_PATH)));
   });
 
-  it('allows an approved assigned student to read a legacy lesson file with no metadata', async () => {
+  it('allows the read even when the lesson file has no customMetadata at all — metadata is never checked', async () => {
     await seed({
       studentStatus: 'approved',
       studentClassId: 'class-a',

@@ -4,9 +4,9 @@ Repository didattico personale Markdown-first per un solo docente. Le lezioni e 
 
 ## Stato
 
-**MVP docente cartaceo — implementato, funzionante in locale con emulatori Firebase.**
+**MVP docente cartaceo + Portale studente M3-lite — implementati, funzionanti sia in locale con emulatori Firebase sia su Firebase DEV (https://schoolforge-dev.web.app).**
 
-Il flusso completo è operativo e testato (197 test automatici + smoke test manuale):
+Il flusso completo è operativo e testato (suite automatica estesa + smoke test manuale + checklist DEV):
 
 | Capacità | Stato |
 |---|---|

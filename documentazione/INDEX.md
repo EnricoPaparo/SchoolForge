@@ -53,6 +53,8 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 - [evidenze/G2-M1.md](evidenze/G2-M1.md) — gate G2: evidenze milestone M1.
 - [evidenze/smoke-mvp-docente-cartaceo.md](evidenze/smoke-mvp-docente-cartaceo.md) — smoke test MVP docente cartaceo (M1+M2, emulatori locali).
 - [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) — smoke test deploy DEV su Firebase reale. **DEV SMOKE PASS.**
+- [evidenze/g4-lite-checklist-manuale.md](evidenze/g4-lite-checklist-manuale.md) — checklist manuale dei 6 criteri minimi della gate G4-lite (M3-lite).
+- [evidenze/checklist-dev-post-hardening.md](evidenze/checklist-dev-post-hardening.md) — checklist manuale DEV completa (docente + studente) post-hardening delle Storage Rules.
 
 ## Diagrammi
 

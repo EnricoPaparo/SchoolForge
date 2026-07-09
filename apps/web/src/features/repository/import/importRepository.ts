@@ -54,22 +54,18 @@ export async function importRepository(
   });
 
   // ── Step 4: Upload files to Storage ─────────────────────────────────────────
-  // Every object is tagged with customMetadata.kind so the Storage Rules can
-  // whitelist student (M3-lite) reads without inspecting the file name —
-  // string methods like .matches()/.size() aren't reliably available across
-  // Storage Rules runtimes. Only 'lesson' is ever readable by a student;
-  // '.pool.md' files are always tagged 'pool' and stay owner-only.
-  //
-  // programId is also tagged (M3L-C) so the Storage Rules can look up the
-  // live program document and gate the read on classIds — classIds itself
-  // is deliberately NOT copied into the metadata, since it can change after
-  // upload whenever the teacher (re)assigns classes to the program; only
-  // the (effectively immutable) programId is safe to freeze at upload time.
-  // ownerUid/importId are included too since they're already known here and
-  // may be useful for future debugging/cleanup tooling, though the Storage
-  // Rules gate only reads programId today. A file uploaded before this field
-  // existed has no programId metadata and is denied by default until the
-  // program is reimported (see storage.rules).
+  // customMetadata is written here but is no longer read by any Security
+  // Rule (see storage.rules): the current storage.rules grants a student
+  // read on any authenticated non-owner request for a `.md` (non-`.pool.md`)
+  // file, discriminated by the file name itself, not by metadata — an
+  // earlier version keyed authorization off customMetadata.kind/programId
+  // via cross-service firestore.get() calls, which was removed after DEV
+  // deploy because production Storage Rules were stricter than the emulator
+  // about those reads (non-reproducible 403s). The real class/approval gate
+  // is entirely upstream, in Firestore discovery of programs/publicLessons
+  // (see studentLessonsService.ts and firestore.rules). kind/programId/
+  // ownerUid/importId are kept here only as potentially useful metadata for
+  // future debugging/cleanup tooling.
   const encoder = new TextEncoder();
   await Promise.all(
     files.map((file) => {
