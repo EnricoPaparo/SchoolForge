@@ -111,9 +111,15 @@ describe('StudentVerificationsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /Scarica PDF — Verifica Reti/ }));
 
     await waitFor(() => expect(mockDownloadStudentPdfFromProjection).toHaveBeenCalledOnce());
-    const [arg] = mockDownloadStudentPdfFromProjection.mock.calls[0] as [Record<string, unknown>];
+    const [arg, student] = mockDownloadStudentPdfFromProjection.mock.calls[0] as [
+      Record<string, unknown>,
+      { displayName: string | null; email: string | null },
+    ];
     expect(arg).not.toHaveProperty('soluzione');
     expect(JSON.stringify(arg)).not.toContain('poolStorageRef');
+    // The signed-in Google identity is passed through for the PDF's
+    // Nome e Cognome/Data prefill and filename — never persisted anywhere.
+    expect(student).toEqual({ displayName: null, email: 's@test.com' });
   });
 
   it('shows a readable error when PDF generation fails', async () => {

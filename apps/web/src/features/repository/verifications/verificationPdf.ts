@@ -10,6 +10,7 @@ import {
   computeOptionBoxLayouts,
   getAnswerAreaKind,
 } from './verificationPdfLayout.js';
+import { buildVerificationPdfFilename } from './verificationPdfNaming.js';
 
 /**
  * Minimal, solution-free question shape the student PDF layout actually
@@ -85,11 +86,22 @@ function writeCenteredTitleWithClass(params: {
  * from the safe `publishedProjection` — never Storage/pool) so the two
  * flows can never drift into rendering different PDFs for the same
  * verification.
+ *
+ * `fieldPrefill`/`filenameStudentName` are only ever set by the real
+ * student download — the teacher preview always renders empty fields and
+ * the docente filename (no student name segment). Nothing here is ever
+ * persisted to Firestore/Storage: it's drawn once, client-side, into the
+ * downloaded file only.
  */
 async function renderStudentPdf(
   title: string,
   questions: StudentPdfQuestion[],
   className: string | null,
+  options: {
+    fieldPrefill?: { nomeCognome: string; data: string } | null;
+    filenameStudentName?: string | null;
+    date?: Date;
+  } = {},
 ): Promise<void> {
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -139,20 +151,30 @@ async function renderStudentPdf(
   // ── Student fields ────────────────────────────────────────────────────────
   // Both fields are drawn (label + a ruled line to a shared right edge), never
   // as text with underscores — this keeps the two lines perfectly aligned
-  // regardless of how long each label is.
-  const drawFieldLine = (label: string) => {
+  // regardless of how long each label is. `value`, when given (student
+  // download only), is drawn sitting on the ruled line, like a filled-in form.
+  const drawFieldLine = (label: string, value?: string | null) => {
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
     const labelWidth = doc.getTextWidth(label);
     const layout = computeFieldLineLayout({ margin, pageWidth: pageW, y, labelWidth });
     doc.text(label, layout.labelX, layout.labelY);
     doc.line(layout.lineStartX, layout.lineY, layout.lineEndX, layout.lineY);
+    if (value) {
+      doc.text(value, layout.lineStartX + 1, layout.labelY);
+    }
   };
 
-  drawFieldLine('Nome e Cognome:');
+  drawFieldLine('Nome e Cognome:', options.fieldPrefill?.nomeCognome);
   gap(9);
-  drawFieldLine('Data:');
+  drawFieldLine('Data:', options.fieldPrefill?.data);
   gap(9);
+
+  // A light divider between the student fields and the first question — kept
+  // visually lighter than the header/footer rules (which use the default,
+  // darker color) so it doesn't compete with them.
+  hRule(200);
+  gap(6);
 
   // ── Questions ─────────────────────────────────────────────────────────────
   let totalPts = 0;
@@ -196,11 +218,14 @@ async function renderStudentPdf(
   gap(8);
   write(`Punteggio: ________ / ${totalPts}`, 11, true);
 
-  const safeName = title
-    .replace(/[^\w\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '_');
-  doc.save(`${safeName}_studente.pdf`);
+  doc.save(
+    buildVerificationPdfFilename({
+      title,
+      className,
+      studentName: options.filenameStudentName,
+      date: options.date,
+    }),
+  );
 }
 
 /**
@@ -208,7 +233,9 @@ async function renderStudentPdf(
  * own preview of what a student will see, sourced from Storage pool files
  * via `loadSelectedQuestions` (owner-only; never usable by a real student).
  * Contains: title, class, name/date fields, questions with max points.
- * Does NOT contain solutions, correct answers, or answer markings.
+ * Does NOT contain solutions, correct answers, or answer markings. Fields
+ * are always empty and the filename never carries a student name — this is
+ * a preview, not a real student's copy.
  */
 export async function downloadStudentPdf(
   snapshot: VerificationTeacherSnapshot,
@@ -231,12 +258,36 @@ export async function downloadStudentPdf(
  * Generates and downloads the real student-facing verification PDF (M3L-D),
  * sourced only from the safe `publishedProjection` the student is actually
  * allowed to read — never Storage, never a pool file, never `questionRefs`.
- * Renders identically to `downloadStudentPdf` (same shared layout code).
+ * Renders identically to `downloadStudentPdf` (same shared layout code),
+ * except the "Nome e Cognome"/"Data" fields are pre-filled and the filename
+ * carries the student's name — both derived only from the already-known
+ * Google identity and the current date, never written to Firestore/Storage.
+ *
+ * `student` is optional so existing callers/tests that don't pass it still
+ * get the exact teacher-preview-equivalent behavior (empty fields, no name
+ * in the filename) — in practice the real StudentVerificationsView always
+ * passes the signed-in user's identity.
  */
 export async function downloadStudentPdfFromProjection(
   projection: Pick<PublishedProjectionDoc, 'title' | 'className' | 'questions'>,
+  student?: { displayName: string | null; email: string | null } | null,
 ): Promise<void> {
-  await renderStudentPdf(projection.title, projection.questions, projection.className);
+  const studentName = student?.displayName?.trim() || student?.email?.trim() || null;
+  const now = new Date();
+  await renderStudentPdf(projection.title, projection.questions, projection.className, {
+    fieldPrefill: studentName
+      ? {
+          nomeCognome: studentName,
+          data: now.toLocaleDateString('it-IT', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+          }),
+        }
+      : null,
+    filenameStudentName: studentName,
+    date: now,
+  });
 }
 
 /**

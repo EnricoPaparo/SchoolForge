@@ -158,6 +158,32 @@ describe('StudentLessonsView', () => {
     );
   });
 
+  it('shows an actionable message pointing to a reimport when Storage denies the read (legacy file missing programId metadata)', async () => {
+    mockLoadStudentLessons.mockResolvedValue({
+      status: 'ok',
+      programs: [PROGRAM_A],
+      lessonsByProgram: { [PROGRAM_A.id]: [LESSON_1] },
+    });
+    const unauthorized = Object.assign(
+      new Error('Firebase Storage: User does not have permission'),
+      {
+        code: 'storage/unauthorized',
+      },
+    );
+    mockFetchLessonContent.mockRejectedValue(unauthorized);
+
+    render(<StudentLessonsView />);
+    await waitFor(() => screen.getByText('Informatica'));
+    fireEvent.click(screen.getByText('Informatica'));
+    fireEvent.click(screen.getByText('uda-01-reti'));
+    fireEvent.click(screen.getByRole('button', { name: /Apri lezione lezione-001.md/ }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.getByText(/ripubblicare questo corso/)).toBeTruthy();
+    // Never the generic, non-actionable message for this specific failure mode.
+    expect(screen.queryByText('Impossibile caricare il contenuto della lezione.')).toBeNull();
+  });
+
   it('never renders docente-only actions (no import, no PDF, no template controls)', async () => {
     mockLoadStudentLessons.mockResolvedValue({
       status: 'ok',
