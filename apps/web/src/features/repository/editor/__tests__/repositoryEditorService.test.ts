@@ -346,6 +346,38 @@ Vecchio corpo della lezione.`;
     );
   });
 
+  it('preserves unknown front matter keys when saving the body', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC })
+      .mockResolvedValueOnce({ exists: () => true });
+    const currentContent = `---
+titolo: "HTTP"
+fonte: "libro di testo"
+concetti_chiave:
+  - client
+---
+
+Vecchio corpo.`;
+    mockGetBytes.mockResolvedValueOnce(encode(currentContent));
+
+    await updateLessonMarkdownBody({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonId: 'lesson-1',
+      body: 'Nuovo corpo.',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    const next = writtenContent();
+    expect(next).toContain('titolo: HTTP');
+    expect(next).toContain('fonte: libro di testo');
+    expect(next).toContain('client');
+    expect(next).toContain('Nuovo corpo.');
+    expect(next).not.toContain('Vecchio corpo');
+  });
+
   it('keeps a lesson with no front matter free of one after saving the body', async () => {
     mockGetDoc
       .mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC })

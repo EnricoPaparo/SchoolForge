@@ -234,8 +234,8 @@ export async function updateLessonMarkdownBody(params: {
   let metadata: LessonMetadata;
   try {
     const currentContent = await fetchStorageText(lesson.storageRef, storage);
-    metadata = parseLessonMetadata(currentContent).metadata;
-    const nextContent = composeMarkdownWithFrontMatter(lessonFrontMatterFields(metadata), body);
+    const nextContent = composeMarkdownWithFrontMatter(readRawFrontMatter(currentContent), body);
+    metadata = parseLessonMetadata(nextContent).metadata;
     await writeStorageText(lesson.storageRef, nextContent, storage);
   } catch {
     throw new Error('Impossibile aggiornare il file della lezione su Storage.');
