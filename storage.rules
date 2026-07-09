@@ -7,17 +7,16 @@ service firebase.storage {
     // Google-authenticated non-owner is only a *candidate* student until
     // the teacher approves them in Firestore students/{uid} — being
     // authenticated here is never sufficient on its own. Missing
-    // settings/studentAccess, a missing students/{uid} document, or a
-    // status other than 'approved' all deny by default.
-    function studentPortalEnabled() {
-      return firestore.exists(/databases/(default)/documents/settings/studentAccess)
-        && firestore.get(/databases/(default)/documents/settings/studentAccess)
-             .data.studentPortalEnabled == true;
-    }
+    // a missing students/{uid} document, or a status other than 'approved'
+    // all deny by default.
+    //
+    // Storage Rules can read at most two Firestore documents in one
+    // evaluation. Lesson reads already need students/{uid} and
+    // programs/{programId}; therefore settings/studentAccess is enforced in
+    // Firestore discovery rules (programs/publicLessons), not repeated here.
 
     function isApprovedStudent() {
       return request.auth != null
-        && studentPortalEnabled()
         && firestore.exists(/databases/(default)/documents/students/$(request.auth.uid))
         && firestore.get(/databases/(default)/documents/students/$(request.auth.uid))
              .data.status == 'approved';

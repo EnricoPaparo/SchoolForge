@@ -878,7 +878,7 @@ describe('importRepository — publicLessons projection', () => {
     );
   });
 
-  it('denies an approved student from reading the lesson file via Storage when the portal is disabled', async () => {
+  it('allows Storage read for an approved class-compatible student even when portal discovery is disabled upstream', async () => {
     await seedOwner();
     const db = ownerDb();
     const storage = ownerStorage();
@@ -894,7 +894,12 @@ describe('importRepository — publicLessons projection', () => {
     await seedProgramClassIds(result.programId, ['class-a']);
 
     const studentSt = otherStorage();
-    await assertFails(
+    // Firestore rules block discovery (programs/publicLessons) when the
+    // portal is disabled. Storage deliberately does not repeat
+    // settings/studentAccess, because production Storage Rules allow at most
+    // two Firestore reads per evaluation: students/{uid} and
+    // programs/{programId}.
+    await assertSucceeds(
       getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
     );
   });

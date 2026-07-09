@@ -223,7 +223,7 @@ describe('Storage rules — lesson file class gate (M3L-C)', () => {
     await assertFails(getBytes(ref(studentStorage(), LESSON_PATH)));
   });
 
-  it('an approved student with a compatible classId is denied when the student portal is disabled', async () => {
+  it('allows a compatible approved student at Storage level even when the portal is disabled upstream', async () => {
     await seed({
       portalEnabled: false,
       studentStatus: 'approved',
@@ -231,7 +231,12 @@ describe('Storage rules — lesson file class gate (M3L-C)', () => {
       programClassIds: ['class-a'],
     });
 
-    await assertFails(getBytes(ref(studentStorage(), LESSON_PATH)));
+    // Firestore rules block discovery (programs/publicLessons) when the
+    // portal is disabled. Storage deliberately does not repeat that third
+    // cross-service document read, because production Storage Rules allow at
+    // most two Firestore reads per evaluation: students/{uid} and
+    // programs/{programId}.
+    await assertSucceeds(getBytes(ref(studentStorage(), LESSON_PATH)));
   });
 
   it('denies a class-compatible approved student when the lesson file has no programId metadata (legacy upload)', async () => {
