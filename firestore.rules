@@ -187,7 +187,8 @@ service cloud.firestore {
                get(/databases/$(database)/documents/programs/$(resource.data.programId))
                  .data.get('classIds', []))
         );
-      allow write: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
+      allow create, update: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
+      allow delete: if isOwner();
     }
 
     match /verifications/{docId} {

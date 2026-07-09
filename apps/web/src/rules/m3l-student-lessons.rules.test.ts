@@ -8,7 +8,16 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  setDoc,
+  where,
+} from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
 
@@ -243,6 +252,12 @@ describe('Firestore rules — publicLessons student read (M3L-C)', () => {
     await assertSucceeds(getDoc(doc(ownerDb(), 'publicLessons/l1')));
   });
 
+  it('owner can delete publicLessons during program cleanup', async () => {
+    await seed({ programClassIds: [] });
+
+    await assertSucceeds(deleteDoc(doc(ownerDb(), 'publicLessons/l1')));
+  });
+
   it('an approved student with a compatible classId can read publicLessons', async () => {
     await seed({
       studentStatus: 'approved',
@@ -352,5 +367,15 @@ describe('Firestore rules — publicLessons student read (M3L-C)', () => {
     await assertFails(
       setDoc(doc(studentDb(), 'publicLessons/l1'), { filename: 'hacked.md' }, { merge: true }),
     );
+  });
+
+  it('an approved student cannot delete publicLessons, even with a compatible classId', async () => {
+    await seed({
+      studentStatus: 'approved',
+      studentClassId: 'class-a',
+      programClassIds: ['class-a'],
+    });
+
+    await assertFails(deleteDoc(doc(studentDb(), 'publicLessons/l1')));
   });
 });
