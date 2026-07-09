@@ -177,7 +177,7 @@ describe('Storage — student (other authenticated user) read access — approve
       );
     });
     const st = testEnv.authenticatedContext(OTHER_UID).storage();
-    await assertSucceeds(
+    await assertFails(
       getBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/assets/diagram.png`)),
     );
   });

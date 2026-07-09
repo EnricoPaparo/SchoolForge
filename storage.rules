@@ -3,67 +3,37 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // Cross-service read of the approval roster (M3-lite). A
-    // Google-authenticated non-owner is only a *candidate* student until
-    // the teacher approves them in Firestore students/{uid} — being
-    // authenticated here is never sufficient on its own. Missing
-    // a missing students/{uid} document, or a status other than 'approved'
-    // all deny by default.
+    // Student lesson content is the second hop of the M3-lite flow.
+    // Firestore rules already gate discovery of programs/publicLessons by:
+    // - student portal toggle;
+    // - approved student status;
+    // - assigned classId;
+    // - program.classIds compatibility.
     //
-    // Storage Rules can read at most two Firestore documents in one
-    // evaluation. Lesson reads already need students/{uid} and
-    // programs/{programId}; therefore settings/studentAccess is enforced in
-    // Firestore discovery rules (programs/publicLessons), not repeated here.
-
-    // True only for an approved student (portal active) whose own classId
-    // is one of the classIds of the given program — mirrors
-    // isClassmateOf()/isApprovedStudent() in firestore.rules so the same
-    // "who can see this lesson" decision is enforced independently on both
-    // Firestore and Storage. A program with no classIds field at all
-    // (legacy) or an empty array both safely deny via
-    // .data.get('classIds', []) — never "visible to everyone" by omission.
-    // A student with no classId of their own is denied too, even if
-    // otherwise approved.
-    function isClassmateOfProgram(programId) {
+    // Production Storage Rules are stricter than our emulator tests around
+    // cross-service Firestore reads. Keep Storage to one Firestore read:
+    // students/{uid}. It verifies that the caller is still an approved
+    // student with an assigned class, then serves only lesson Markdown files
+    // exposed through publicLessons.contentPath. Pool files stay denied.
+    function isApprovedAssignedStudent() {
       let student = firestore.get(/databases/(default)/documents/students/$(request.auth.uid));
-      let program = firestore.get(/databases/(default)/documents/programs/$(programId));
       return student.data.status == 'approved'
-        && student.data.get('classId', null) != null
-        && program.data.get('classIds', []).hasAny([student.data.get('classId', null)]);
+        && student.data.get('classId', null) != null;
     }
 
-    // repository/{ownerUid}/... — only the matching owner can read/write
-    match /repository/{ownerUid}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == ownerUid;
-
-      // Student (M3-lite): read-only, lesson files and their assets only —
-      // never a .pool.md file. Discriminated via customMetadata.kind
-      // (written by the import flow) rather than by inspecting the file
-      // name: string methods like .matches()/.size() aren't reliably
-      // available across every Storage Rules runtime. Whitelist, not
-      // blacklist — a file with no kind, or any kind other than 'lesson'
-      // (including 'pool'), is denied by default. Only the real owner can
-      // ever write under repository/{ownerUid}/** (see the rule above), so
-      // any object that exists here necessarily belongs to the single
-      // configured docente; there is no anonymous access.
-      //
-      // On top of the kind check (M3L-C), the reader must also be an
-      // approved student whose classId matches the classIds of the
-      // customMetadata.programId that tagged this file at upload time —
-      // merely being approved is NOT enough by itself: without this check
-      // any approved student could read lesson files of every class, not
-      // just their own (the same gap already closed on Firestore's
-      // publicLessons rule). A file with no programId metadata (legacy
-      // uploads from before this field existed) is denied by default —
-      // reimporting the program re-uploads it with the metadata. classIds
-      // itself is never copied into Storage metadata (it can change after
-      // upload when the teacher (re)assigns classes) — the program is
-      // always read live from Firestore instead.
+    // Student read path for imported lesson Markdown:
+    // repository/{ownerUid}/imports/{importId}/{udaDir}/{fileName}
+    match /repository/{ownerUid}/imports/{importId}/{udaDir}/{fileName} {
       allow read: if request.auth != null
         && request.auth.uid != ownerUid
-        && resource.metadata.kind == 'lesson'
-        && resource.metadata.get('programId', null) != null
-        && isClassmateOfProgram(resource.metadata.get('programId', null));
+        && isApprovedAssignedStudent()
+        && fileName.matches('.*\\.md')
+        && !fileName.matches('.*\\.pool\\.md');
+    }
+
+    // Owner keeps full control over repository files and pools.
+    match /repository/{ownerUid}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == ownerUid;
     }
 
     // Default deny

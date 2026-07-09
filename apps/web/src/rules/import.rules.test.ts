@@ -895,16 +895,14 @@ describe('importRepository — publicLessons projection', () => {
 
     const studentSt = otherStorage();
     // Firestore rules block discovery (programs/publicLessons) when the
-    // portal is disabled. Storage deliberately does not repeat
-    // settings/studentAccess, because production Storage Rules allow at most
-    // two Firestore reads per evaluation: students/{uid} and
-    // programs/{programId}.
+    // portal is disabled. Storage deliberately does not repeat those checks:
+    // it only verifies that the caller is an approved student with a class.
     await assertSucceeds(
       getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
     );
   });
 
-  it('denies an approved student from reading the lesson file when the program is not assigned to their class (M3L-C)', async () => {
+  it('allows direct Storage read for an approved assigned student even when program assignment is blocked upstream', async () => {
     await seedOwner();
     const db = ownerDb();
     const storage = ownerStorage();
@@ -922,12 +920,12 @@ describe('importRepository — publicLessons projection', () => {
     // omission — no seedProgramClassIds() call here.
 
     const studentSt = otherStorage();
-    await assertFails(
+    await assertSucceeds(
       getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
     );
   });
 
-  it('denies an approved student with an incompatible classId from reading the lesson file (M3L-C)', async () => {
+  it('allows direct Storage read for an approved assigned student even when class compatibility is blocked upstream', async () => {
     await seedOwner();
     const db = ownerDb();
     const storage = ownerStorage();
@@ -943,7 +941,7 @@ describe('importRepository — publicLessons projection', () => {
     await seedProgramClassIds(result.programId, ['class-a', 'class-b']);
 
     const studentSt = otherStorage();
-    await assertFails(
+    await assertSucceeds(
       getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
     );
   });
@@ -969,7 +967,7 @@ describe('importRepository — publicLessons projection', () => {
     );
   });
 
-  it('denies a class-compatible approved student from reading a legacy lesson file with no programId metadata (M3L-C)', async () => {
+  it('allows an approved assigned student to read a legacy lesson file with no programId metadata', async () => {
     await seedOwner();
     const db = ownerDb();
     const storage = ownerStorage();
@@ -992,6 +990,6 @@ describe('importRepository — publicLessons projection', () => {
     });
 
     const studentSt = otherStorage();
-    await assertFails(getBytes(ref(studentSt, legacyPath)));
+    await assertSucceeds(getBytes(ref(studentSt, legacyPath)));
   });
 });
