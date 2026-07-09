@@ -7,6 +7,7 @@ const UDA_FILENAME_RE = /^uda-\d{2}-.+\.md$/;
 
 interface UdaFrontMatter {
   titolo?: unknown;
+  descrizione?: unknown;
   competenze?: unknown;
   obiettivi?: unknown;
 }
@@ -122,7 +123,13 @@ export function validateUda(
     lessons,
     issues: udaIssues,
     metadata: {
-      descrizione: extractDescription(body),
+      // `descrizione` front matter is optional and RE-01+: UDA files imported
+      // before it existed have no such key, so they keep falling back to the
+      // body's first paragraph, exactly as before.
+      descrizione:
+        typeof fm.descrizione === 'string' && fm.descrizione.trim().length > 0
+          ? fm.descrizione.trim()
+          : extractDescription(body),
       competenze: isNonEmptyStringArray(fm.competenze) ? fm.competenze : [],
       obiettivi: isNonEmptyStringArray(fm.obiettivi) ? fm.obiettivi : [],
     },

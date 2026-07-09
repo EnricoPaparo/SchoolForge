@@ -13,11 +13,20 @@ import {
   parseLessonMetadata,
 } from '../repository/validation/lessonMetadata.js';
 import type { LessonMetadata } from '../repository/validation/types.js';
+import { updateLessonMetadata } from '../repository/editor/repositoryEditorService.js';
+import { useAuth } from '../../lib/auth.js';
 import { db, storage } from '../../lib/firebase.js';
 import { fetchLessonContent } from './lessonContent.js';
 import { downloadLessonPdf } from './lessonPdf.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import styles from './LessonsView.module.css';
+
+function linesToArray(value: string): string[] {
+  return value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
 
 const IMPORT_HINT = 'Importa prima uno ZIP da Corsi per vedere le lezioni.';
 
@@ -28,6 +37,9 @@ type CourseTreeState = {
 };
 
 export function LessonsView() {
+  const { user } = useAuth();
+  const ownerUid = user?.uid ?? '';
+
   const [programs, setPrograms] = useState<ProgramItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -43,6 +55,16 @@ export function LessonsView() {
   const [lessonContentError, setLessonContentError] = useState<string | null>(null);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
+
+  // ── Lesson metadata editor (RE-01) ──────────────────────────────
+  const [editingLessonMetadata, setEditingLessonMetadata] = useState(false);
+  const [editTitolo, setEditTitolo] = useState('');
+  const [editSottotitolo, setEditSottotitolo] = useState('');
+  const [editDifficolta, setEditDifficolta] = useState('');
+  const [editConcettiChiave, setEditConcettiChiave] = useState('');
+  const [editObiettivi, setEditObiettivi] = useState('');
+  const [savingLessonMetadata, setSavingLessonMetadata] = useState(false);
+  const [lessonMetadataSaveError, setLessonMetadataSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     void loadPrograms();
@@ -105,6 +127,8 @@ export function LessonsView() {
     setLessonMetadata(EMPTY_LESSON_METADATA);
     setLessonContentError(null);
     setPdfError(null);
+    setEditingLessonMetadata(false);
+    setLessonMetadataSaveError(null);
     setLessonContentLoading(true);
     try {
       const raw = await fetchLessonContent(lesson.storageRef, storage);
@@ -115,6 +139,62 @@ export function LessonsView() {
       setLessonContentError('Impossibile caricare il contenuto della lezione.');
     } finally {
       setLessonContentLoading(false);
+    }
+  }
+
+  function toggleLessonMetadataEdit() {
+    setLessonMetadataSaveError(null);
+    setEditingLessonMetadata((prev) => {
+      if (prev) return false;
+      setEditTitolo(lessonMetadata.titolo ?? '');
+      setEditSottotitolo(lessonMetadata.sottotitolo ?? '');
+      setEditDifficolta(lessonMetadata.difficolta ?? '');
+      setEditConcettiChiave(lessonMetadata.concettiChiave.join('\n'));
+      setEditObiettivi(lessonMetadata.obiettivi.join('\n'));
+      return true;
+    });
+  }
+
+  async function handleSaveLessonMetadata() {
+    if (!selectedProgram?.activeImportId || !selectedLesson) return;
+    const fields: LessonMetadata = {
+      titolo: editTitolo.trim() || null,
+      sottotitolo: editSottotitolo.trim() || null,
+      difficolta: editDifficolta.trim() || null,
+      concettiChiave: linesToArray(editConcettiChiave),
+      obiettivi: linesToArray(editObiettivi),
+    };
+    setSavingLessonMetadata(true);
+    setLessonMetadataSaveError(null);
+    try {
+      await updateLessonMetadata({
+        programId: selectedProgram.id,
+        importId: selectedProgram.activeImportId,
+        lessonId: selectedLesson.id,
+        fields,
+        ownerUid,
+        db,
+        storage,
+      });
+      setLessonMetadata(fields);
+      setCourseTree((prev) => {
+        const cur = prev[selectedProgram.id];
+        if (!cur?.lessons) return prev;
+        return {
+          ...prev,
+          [selectedProgram.id]: {
+            ...cur,
+            lessons: cur.lessons.map((l) => (l.id === selectedLesson.id ? { ...l, ...fields } : l)),
+          },
+        };
+      });
+      setEditingLessonMetadata(false);
+    } catch (err) {
+      setLessonMetadataSaveError(
+        err instanceof Error ? err.message : 'Impossibile salvare i metadata della lezione.',
+      );
+    } finally {
+      setSavingLessonMetadata(false);
     }
   }
 
@@ -291,6 +371,17 @@ export function LessonsView() {
               <button
                 type="button"
                 className={styles.pdfBtn}
+                title="Modifica metadata"
+                aria-label={`Modifica metadata — ${selectedLesson.filename}`}
+                aria-expanded={editingLessonMetadata}
+                disabled={lessonContent == null}
+                onClick={toggleLessonMetadataEdit}
+              >
+                ✏️
+              </button>
+              <button
+                type="button"
+                className={styles.pdfBtn}
                 title="Scarica PDF"
                 aria-label={`Scarica PDF — ${selectedLesson.filename}`}
                 disabled={lessonContent == null || pdfDownloading}
@@ -299,6 +390,81 @@ export function LessonsView() {
                 {pdfDownloading ? '…' : '🖨️'}
               </button>
             </div>
+
+            {editingLessonMetadata && (
+              <form
+                className={styles.metadataEditForm}
+                role="region"
+                aria-label={`Modifica metadata — ${selectedLesson.filename}`}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleSaveLessonMetadata();
+                }}
+              >
+                <label htmlFor="lesson-edit-titolo">
+                  Titolo
+                  <input
+                    id="lesson-edit-titolo"
+                    type="text"
+                    value={editTitolo}
+                    onChange={(e) => setEditTitolo(e.target.value)}
+                  />
+                </label>
+                <label htmlFor="lesson-edit-sottotitolo">
+                  Sottotitolo
+                  <input
+                    id="lesson-edit-sottotitolo"
+                    type="text"
+                    value={editSottotitolo}
+                    onChange={(e) => setEditSottotitolo(e.target.value)}
+                  />
+                </label>
+                <label htmlFor="lesson-edit-difficolta">
+                  Difficoltà
+                  <input
+                    id="lesson-edit-difficolta"
+                    type="text"
+                    value={editDifficolta}
+                    onChange={(e) => setEditDifficolta(e.target.value)}
+                  />
+                </label>
+                <label htmlFor="lesson-edit-concetti">
+                  Concetti chiave (uno per riga)
+                  <textarea
+                    id="lesson-edit-concetti"
+                    rows={3}
+                    value={editConcettiChiave}
+                    onChange={(e) => setEditConcettiChiave(e.target.value)}
+                  />
+                </label>
+                <label htmlFor="lesson-edit-obiettivi">
+                  Obiettivi (uno per riga)
+                  <textarea
+                    id="lesson-edit-obiettivi"
+                    rows={3}
+                    value={editObiettivi}
+                    onChange={(e) => setEditObiettivi(e.target.value)}
+                  />
+                </label>
+                {lessonMetadataSaveError && (
+                  <p role="alert" className="text-error">
+                    {lessonMetadataSaveError}
+                  </p>
+                )}
+                <div className={styles.metadataEditActions}>
+                  <button type="submit" className="btn-success" disabled={savingLessonMetadata}>
+                    {savingLessonMetadata ? 'Salvataggio…' : 'Salva'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingLessonMetadata}
+                    onClick={() => setEditingLessonMetadata(false)}
+                  >
+                    Annulla
+                  </button>
+                </div>
+              </form>
+            )}
 
             {lessonMetadata.difficolta && (
               <span className={styles.contentDifficulty}>{lessonMetadata.difficolta}</span>

@@ -15,6 +15,7 @@ import {
 } from '../repository/programs/programsService.js';
 import { listClasses, type ClassItem } from '../repository/classes/classesService.js';
 import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
+import { updateUdaMetadata } from '../repository/editor/repositoryEditorService.js';
 import type { ProgrammaMeta } from '../../types/firestore.js';
 import { importRepository } from '../repository/import/importRepository.js';
 import { readZipFile } from '../repository/import/readZipFile.js';
@@ -70,6 +71,14 @@ export function ProgramsView() {
 
   const [infoOpenProgramId, setInfoOpenProgramId] = useState<string | null>(null);
   const [infoOpenUdaKey, setInfoOpenUdaKey] = useState<string | null>(null);
+
+  // ── UDA metadata editor (RE-01) ─────────────────────────────────
+  const [editingUdaKey, setEditingUdaKey] = useState<string | null>(null);
+  const [udaDescrizione, setUdaDescrizione] = useState('');
+  const [udaCompetenze, setUdaCompetenze] = useState('');
+  const [udaObiettivi, setUdaObiettivi] = useState('');
+  const [savingUdaMetadata, setSavingUdaMetadata] = useState(false);
+  const [udaMetadataSaveError, setUdaMetadataSaveError] = useState<string | null>(null);
 
   // ── Classes assignment (M3-lite: student visibility) ──────────────
   const [allClasses, setAllClasses] = useState<ClassItem[] | null>(null);
@@ -216,6 +225,64 @@ export function ProgramsView() {
 
   function toggleUdaInfo(udaKey: string) {
     setInfoOpenUdaKey((prev) => (prev === udaKey ? null : udaKey));
+  }
+
+  function linesToArray(value: string): string[] {
+    return value
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }
+
+  function toggleUdaEdit(uda: UdaItem, udaKey: string) {
+    setUdaMetadataSaveError(null);
+    setEditingUdaKey((prev) => {
+      if (prev === udaKey) return null;
+      setUdaDescrizione(uda.descrizione ?? '');
+      setUdaCompetenze(uda.competenze.join('\n'));
+      setUdaObiettivi(uda.obiettivi.join('\n'));
+      return udaKey;
+    });
+  }
+
+  async function handleSaveUdaMetadata(program: ProgramItem, uda: UdaItem) {
+    if (!program.activeImportId) return;
+    const fields = {
+      descrizione: udaDescrizione.trim() || null,
+      competenze: linesToArray(udaCompetenze),
+      obiettivi: linesToArray(udaObiettivi),
+    };
+    setSavingUdaMetadata(true);
+    setUdaMetadataSaveError(null);
+    try {
+      await updateUdaMetadata({
+        programId: program.id,
+        importId: program.activeImportId,
+        udaId: uda.id,
+        fields,
+        ownerUid,
+        db,
+        storage,
+      });
+      setCourseState((prev) => {
+        const cur = prev[program.id];
+        if (!cur?.udas) return prev;
+        return {
+          ...prev,
+          [program.id]: {
+            ...cur,
+            udas: cur.udas.map((u) => (u.id === uda.id ? { ...u, ...fields } : u)),
+          },
+        };
+      });
+      setEditingUdaKey(null);
+    } catch (err) {
+      setUdaMetadataSaveError(
+        err instanceof Error ? err.message : 'Impossibile salvare i metadata della UDA.',
+      );
+    } finally {
+      setSavingUdaMetadata(false);
+    }
   }
 
   async function handleToggleLesson(program: ProgramItem, lesson: LessonItem) {
@@ -768,6 +835,16 @@ export function ProgramsView() {
                                 <button
                                   type="button"
                                   className={styles.iconBtn}
+                                  title="Modifica metadata UDA"
+                                  aria-label={`Modifica metadata UDA — ${uda.dir}`}
+                                  aria-expanded={editingUdaKey === udaKey}
+                                  onClick={() => toggleUdaEdit(uda, udaKey)}
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  type="button"
+                                  className={styles.iconBtn}
                                   title="Info UDA"
                                   aria-label={`Info UDA — ${uda.dir}`}
                                   aria-expanded={udaInfoOpen}
@@ -776,6 +853,67 @@ export function ProgramsView() {
                                   ℹ️
                                 </button>
                               </div>
+
+                              {editingUdaKey === udaKey && (
+                                <form
+                                  className={styles.udaEditForm}
+                                  role="region"
+                                  aria-label={`Modifica metadata UDA ${uda.dir}`}
+                                  onSubmit={(e) => {
+                                    e.preventDefault();
+                                    void handleSaveUdaMetadata(program, uda);
+                                  }}
+                                >
+                                  <label htmlFor={`uda-descrizione-${uda.id}`}>
+                                    Descrizione
+                                    <textarea
+                                      id={`uda-descrizione-${uda.id}`}
+                                      rows={2}
+                                      value={udaDescrizione}
+                                      onChange={(e) => setUdaDescrizione(e.target.value)}
+                                    />
+                                  </label>
+                                  <label htmlFor={`uda-competenze-${uda.id}`}>
+                                    Competenze (una per riga)
+                                    <textarea
+                                      id={`uda-competenze-${uda.id}`}
+                                      rows={3}
+                                      value={udaCompetenze}
+                                      onChange={(e) => setUdaCompetenze(e.target.value)}
+                                    />
+                                  </label>
+                                  <label htmlFor={`uda-obiettivi-${uda.id}`}>
+                                    Obiettivi (uno per riga)
+                                    <textarea
+                                      id={`uda-obiettivi-${uda.id}`}
+                                      rows={3}
+                                      value={udaObiettivi}
+                                      onChange={(e) => setUdaObiettivi(e.target.value)}
+                                    />
+                                  </label>
+                                  {udaMetadataSaveError && (
+                                    <p role="alert" className="text-error">
+                                      {udaMetadataSaveError}
+                                    </p>
+                                  )}
+                                  <div className={styles.udaEditActions}>
+                                    <button
+                                      type="submit"
+                                      className="btn-success"
+                                      disabled={savingUdaMetadata}
+                                    >
+                                      {savingUdaMetadata ? 'Salvataggio…' : 'Salva'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={savingUdaMetadata}
+                                      onClick={() => setEditingUdaKey(null)}
+                                    >
+                                      Annulla
+                                    </button>
+                                  </div>
+                                </form>
+                              )}
 
                               {udaInfoOpen && (
                                 <div

@@ -6,6 +6,9 @@ import { EMPTY_LESSON_METADATA } from '../../repository/validation/lessonMetadat
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
+vi.mock('../../../lib/auth.js', () => ({
+  useAuth: () => ({ user: { uid: 'owner-uid', email: 'teacher@test.com' } }),
+}));
 
 const mockListPrograms = vi.fn();
 const mockListUdas = vi.fn();
