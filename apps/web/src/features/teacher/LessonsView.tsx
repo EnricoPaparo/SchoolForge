@@ -14,6 +14,7 @@ import {
 } from '../repository/validation/lessonMetadata.js';
 import type { LessonMetadata } from '../repository/validation/types.js';
 import {
+  createLesson,
   updateLessonMarkdownBody,
   updateLessonMetadata,
 } from '../repository/editor/repositoryEditorService.js';
@@ -76,6 +77,17 @@ export function LessonsView() {
   const [savingLessonBody, setSavingLessonBody] = useState(false);
   const [lessonBodySaveError, setLessonBodySaveError] = useState<string | null>(null);
 
+  // ── New lesson creation (RE-03A) ────────────────────────────────
+  const [creatingLessonUdaKey, setCreatingLessonUdaKey] = useState<string | null>(null);
+  const [newLessonTitolo, setNewLessonTitolo] = useState('');
+  const [newLessonSottotitolo, setNewLessonSottotitolo] = useState('');
+  const [newLessonDifficolta, setNewLessonDifficolta] = useState('');
+  const [newLessonConcettiChiave, setNewLessonConcettiChiave] = useState('');
+  const [newLessonObiettivi, setNewLessonObiettivi] = useState('');
+  const [newLessonBody, setNewLessonBody] = useState('');
+  const [savingNewLesson, setSavingNewLesson] = useState(false);
+  const [createLessonError, setCreateLessonError] = useState<string | null>(null);
+
   useEffect(() => {
     void loadPrograms();
   }, []);
@@ -128,6 +140,85 @@ export function LessonsView() {
       else next.add(key);
       return next;
     });
+  }
+
+  function toggleCreateLesson(program: ProgramItem, udaKey: string) {
+    setCreateLessonError(null);
+    setCreatingLessonUdaKey((prev) => {
+      if (prev === udaKey) return null;
+      setNewLessonTitolo('');
+      setNewLessonSottotitolo('');
+      setNewLessonDifficolta('');
+      setNewLessonConcettiChiave('');
+      setNewLessonObiettivi('');
+      setNewLessonBody('');
+      return udaKey;
+    });
+    setExpandedUdas((prev) => (prev.has(udaKey) ? prev : new Set(prev).add(udaKey)));
+    if (program.activeImportId && !courseTree[program.id]) {
+      void loadCourseTree(program);
+    }
+  }
+
+  async function handleCreateLesson(program: ProgramItem, uda: UdaItem) {
+    if (!program.activeImportId) return;
+    const titolo = newLessonTitolo.trim();
+    if (!titolo) {
+      setCreateLessonError('Il titolo della lezione è obbligatorio.');
+      return;
+    }
+    setSavingNewLesson(true);
+    setCreateLessonError(null);
+    const fields = {
+      titolo,
+      sottotitolo: newLessonSottotitolo.trim() || null,
+      difficolta: newLessonDifficolta.trim() || null,
+      concettiChiave: linesToArray(newLessonConcettiChiave),
+      obiettivi: linesToArray(newLessonObiettivi),
+      body: newLessonBody,
+    };
+    try {
+      const { lessonId, filename } = await createLesson({
+        programId: program.id,
+        importId: program.activeImportId,
+        udaId: uda.id,
+        udaDir: uda.dir,
+        ownerUid,
+        fields,
+        db,
+        storage,
+      });
+      const newLesson: LessonItem = {
+        id: lessonId,
+        ownerUid,
+        importId: program.activeImportId,
+        udaDir: uda.dir,
+        path: `${uda.dir}/${filename}`,
+        filename,
+        poolStatus: 'absent',
+        questionCount: 0,
+        storageRef: `repository/${ownerUid}/imports/${program.activeImportId}/${uda.dir}/${filename}`,
+        poolStorageRef: null,
+        titolo: fields.titolo,
+        sottotitolo: fields.sottotitolo,
+        difficolta: fields.difficolta,
+        concettiChiave: fields.concettiChiave,
+        obiettivi: fields.obiettivi,
+      };
+      setCourseTree((prev) => {
+        const cur = prev[program.id];
+        if (!cur) return prev;
+        const lessons = [...(cur.lessons ?? []), newLesson].sort(
+          (a, b) => a.udaDir.localeCompare(b.udaDir) || a.filename.localeCompare(b.filename),
+        );
+        return { ...prev, [program.id]: { ...cur, lessons } };
+      });
+      setCreatingLessonUdaKey(null);
+    } catch (err) {
+      setCreateLessonError(err instanceof Error ? err.message : 'Impossibile creare la lezione.');
+    } finally {
+      setSavingNewLesson(false);
+    }
   }
 
   async function selectLesson(program: ProgramItem, lesson: LessonItem) {
@@ -338,23 +429,37 @@ export function LessonsView() {
                             (l) => l.udaDir === uda.dir,
                           );
 
+                          const udaCreating = creatingLessonUdaKey === udaKey;
+
                           return (
                             <li key={uda.id}>
-                              <button
-                                type="button"
-                                className={styles.udaToggle}
-                                aria-expanded={udaExpanded}
-                                aria-controls={`lezioni-uda-panel-${uda.id}`}
-                                onClick={() => toggleUda(program.id, uda.dir)}
-                              >
-                                <span
-                                  className={`${styles.caret}${udaExpanded ? ` ${styles.caretOpen}` : ''}`}
-                                  aria-hidden="true"
+                              <div className={styles.udaRow}>
+                                <button
+                                  type="button"
+                                  className={styles.udaToggle}
+                                  aria-expanded={udaExpanded}
+                                  aria-controls={`lezioni-uda-panel-${uda.id}`}
+                                  onClick={() => toggleUda(program.id, uda.dir)}
                                 >
-                                  ▶
-                                </span>
-                                <span className={styles.udaDir}>{uda.dir}</span>
-                              </button>
+                                  <span
+                                    className={`${styles.caret}${udaExpanded ? ` ${styles.caretOpen}` : ''}`}
+                                    aria-hidden="true"
+                                  >
+                                    ▶
+                                  </span>
+                                  <span className={styles.udaDir}>{uda.dir}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className={styles.udaAddBtn}
+                                  title="Nuova lezione"
+                                  aria-label={`Nuova lezione — ${uda.dir}`}
+                                  aria-expanded={udaCreating}
+                                  onClick={() => toggleCreateLesson(program, udaKey)}
+                                >
+                                  ＋
+                                </button>
+                              </div>
 
                               {udaExpanded && (
                                 <div
@@ -385,6 +490,97 @@ export function LessonsView() {
                                         );
                                       })}
                                     </ul>
+                                  )}
+
+                                  {udaCreating && (
+                                    <form
+                                      className={styles.newLessonForm}
+                                      role="region"
+                                      aria-label={`Nuova lezione — ${uda.dir}`}
+                                      onSubmit={(e) => {
+                                        e.preventDefault();
+                                        void handleCreateLesson(program, uda);
+                                      }}
+                                    >
+                                      <label htmlFor={`new-lesson-titolo-${uda.id}`}>
+                                        Titolo
+                                        <input
+                                          id={`new-lesson-titolo-${uda.id}`}
+                                          type="text"
+                                          value={newLessonTitolo}
+                                          onChange={(e) => setNewLessonTitolo(e.target.value)}
+                                          required
+                                        />
+                                      </label>
+                                      <label htmlFor={`new-lesson-sottotitolo-${uda.id}`}>
+                                        Sottotitolo
+                                        <input
+                                          id={`new-lesson-sottotitolo-${uda.id}`}
+                                          type="text"
+                                          value={newLessonSottotitolo}
+                                          onChange={(e) => setNewLessonSottotitolo(e.target.value)}
+                                        />
+                                      </label>
+                                      <label htmlFor={`new-lesson-difficolta-${uda.id}`}>
+                                        Difficoltà
+                                        <input
+                                          id={`new-lesson-difficolta-${uda.id}`}
+                                          type="text"
+                                          value={newLessonDifficolta}
+                                          onChange={(e) => setNewLessonDifficolta(e.target.value)}
+                                        />
+                                      </label>
+                                      <label htmlFor={`new-lesson-concetti-${uda.id}`}>
+                                        Concetti chiave (uno per riga)
+                                        <textarea
+                                          id={`new-lesson-concetti-${uda.id}`}
+                                          rows={2}
+                                          value={newLessonConcettiChiave}
+                                          onChange={(e) =>
+                                            setNewLessonConcettiChiave(e.target.value)
+                                          }
+                                        />
+                                      </label>
+                                      <label htmlFor={`new-lesson-obiettivi-${uda.id}`}>
+                                        Obiettivi (uno per riga)
+                                        <textarea
+                                          id={`new-lesson-obiettivi-${uda.id}`}
+                                          rows={2}
+                                          value={newLessonObiettivi}
+                                          onChange={(e) => setNewLessonObiettivi(e.target.value)}
+                                        />
+                                      </label>
+                                      <label htmlFor={`new-lesson-body-${uda.id}`}>
+                                        Corpo Markdown iniziale (opzionale)
+                                        <textarea
+                                          id={`new-lesson-body-${uda.id}`}
+                                          rows={4}
+                                          value={newLessonBody}
+                                          onChange={(e) => setNewLessonBody(e.target.value)}
+                                        />
+                                      </label>
+                                      {createLessonError && (
+                                        <p role="alert" className="text-error">
+                                          {createLessonError}
+                                        </p>
+                                      )}
+                                      <div className={styles.newLessonActions}>
+                                        <button
+                                          type="submit"
+                                          className="btn-success"
+                                          disabled={savingNewLesson || !newLessonTitolo.trim()}
+                                        >
+                                          {savingNewLesson ? 'Creazione…' : 'Crea lezione'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={savingNewLesson}
+                                          onClick={() => setCreatingLessonUdaKey(null)}
+                                        >
+                                          Annulla
+                                        </button>
+                                      </div>
+                                    </form>
                                   )}
                                 </div>
                               )}

@@ -32,9 +32,11 @@ vi.mock('../lessonPdf.js', () => ({
 
 const mockUpdateLessonMetadata = vi.fn();
 const mockUpdateLessonMarkdownBody = vi.fn();
+const mockCreateLesson = vi.fn();
 vi.mock('../../repository/editor/repositoryEditorService.js', () => ({
   updateLessonMetadata: (...args: unknown[]) => mockUpdateLessonMetadata(...args),
   updateLessonMarkdownBody: (...args: unknown[]) => mockUpdateLessonMarkdownBody(...args),
+  createLesson: (...args: unknown[]) => mockCreateLesson(...args),
 }));
 
 afterEach(cleanup);
@@ -84,7 +86,13 @@ async function expandCourse(name: RegExp) {
 }
 
 async function expandUda(name: RegExp) {
-  fireEvent.click(await screen.findByRole('button', { name }));
+  // The UDA toggle's accessible name is just its dir (e.g. "uda-01-reti"),
+  // which the "Nuova lezione — uda-01-reti" button's aria-label also
+  // contains — disambiguate by excluding it explicitly rather than relying
+  // on match order.
+  const buttons = await screen.findAllByRole('button', { name });
+  const toggle = buttons.find((b) => !b.getAttribute('aria-label')?.startsWith('Nuova lezione'));
+  fireEvent.click(toggle ?? buttons[0]);
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -140,7 +148,7 @@ describe('LessonsView — expanding a course shows UDA', () => {
     mockListLessons.mockResolvedValue([LESSON_1]);
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
-    expect(await screen.findByRole('button', { name: /uda-01-reti/ })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'uda-01-reti' })).toBeTruthy();
   });
 });
 
@@ -365,5 +373,99 @@ describe('LessonsView — lesson body editor (RE-02)', () => {
       name: /Corpo Markdown/,
     }) as HTMLTextAreaElement;
     expect(draftTextarea.value).toBe('Testo che non verrà salvato.');
+  });
+});
+
+describe('LessonsView — new lesson creation (RE-03A)', () => {
+  async function openCreateLessonForm() {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+    fireEvent.click(await screen.findByRole('button', { name: /Nuova lezione — uda-01-reti/ }));
+  }
+
+  it('opens the form, auto-expanding the UDA so the existing lessons stay visible', async () => {
+    await openCreateLessonForm();
+    expect(screen.getByLabelText('Titolo')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /lezione-001\.md/ })).toBeTruthy();
+  });
+
+  it('disables Crea lezione until a title is entered', async () => {
+    await openCreateLessonForm();
+    expect(screen.getByRole('button', { name: 'Crea lezione' }).hasAttribute('disabled')).toBe(
+      true,
+    );
+    fireEvent.change(screen.getByLabelText('Titolo'), { target: { value: 'DNS' } });
+    expect(screen.getByRole('button', { name: 'Crea lezione' }).hasAttribute('disabled')).toBe(
+      false,
+    );
+  });
+
+  it('calls createLesson with the entered fields and shows the new lesson in the sidebar without a refetch', async () => {
+    mockCreateLesson.mockResolvedValue({
+      lessonId: 'uda-1_lezione-002-dns',
+      filename: 'lezione-002-dns.md',
+    });
+    await openCreateLessonForm();
+
+    fireEvent.change(screen.getByLabelText('Titolo'), { target: { value: 'DNS' } });
+    fireEvent.change(screen.getByLabelText('Sottotitolo'), {
+      target: { value: 'Risoluzione dei nomi' },
+    });
+    fireEvent.change(screen.getByLabelText('Concetti chiave (uno per riga)'), {
+      target: { value: 'resolver\nrecord' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Crea lezione' }));
+
+    await waitFor(() => {
+      expect(mockCreateLesson).toHaveBeenCalledWith({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-1',
+        udaDir: 'uda-01-reti',
+        ownerUid: 'owner-uid',
+        fields: {
+          titolo: 'DNS',
+          sottotitolo: 'Risoluzione dei nomi',
+          difficolta: null,
+          concettiChiave: ['resolver', 'record'],
+          obiettivi: [],
+          body: '',
+        },
+        db: {},
+        storage: {},
+      });
+    });
+
+    expect(await screen.findByRole('button', { name: /lezione-002-dns\.md/ })).toBeTruthy();
+    // Only the initial listLessons call from expanding the course — the new
+    // lesson is spliced into local state, no refetch.
+    expect(mockListLessons).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText('Titolo')).toBeNull();
+  });
+
+  it('shows a clear error without closing the form when creation fails', async () => {
+    mockCreateLesson.mockRejectedValue(
+      new Error('Impossibile creare il file della lezione su Storage.'),
+    );
+    await openCreateLessonForm();
+    fireEvent.change(screen.getByLabelText('Titolo'), { target: { value: 'DNS' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crea lezione' }));
+
+    expect(
+      await screen.findByText('Impossibile creare il file della lezione su Storage.'),
+    ).toBeTruthy();
+    expect(screen.getByLabelText('Titolo')).toBeTruthy();
+  });
+
+  it('shows an inline error and never calls createLesson when the title is blank', async () => {
+    await openCreateLessonForm();
+    fireEvent.change(screen.getByLabelText('Titolo'), { target: { value: '   ' } });
+    // Bypass the disabled submit button to exercise the service-level guard too.
+    fireEvent.submit(screen.getByLabelText('Titolo').closest('form')!);
+
+    expect(mockCreateLesson).not.toHaveBeenCalled();
   });
 });

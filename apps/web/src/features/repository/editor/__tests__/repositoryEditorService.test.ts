@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
 
 const mockGetDoc = vi.fn();
+const mockGetDocs = vi.fn();
 const mockSetDoc = vi.fn();
 const mockUpdateDoc = vi.fn();
 const mockServerTimestamp = vi.fn(() => ({ _type: 'serverTimestamp' }));
@@ -15,14 +16,19 @@ vi.mock('firebase/firestore', () => ({
   collection: (_db: unknown, ...segments: string[]) => ({ __path: segments.join('/') }),
   doc: (...args: unknown[]) => {
     const [first, ...rest] = args;
-    if (isCollectionRef(first) && rest.length === 0) {
-      return { __path: `${first.__path}/auto-id` };
+    if (isCollectionRef(first)) {
+      if (rest.length === 0) return { __path: `${first.__path}/auto-id` };
+      return { __path: `${first.__path}/${rest.join('/')}` };
     }
     return { __path: rest.filter((s): s is string => typeof s === 'string').join('/') };
   },
   getDoc: (...args: unknown[]) => mockGetDoc(...args),
+  getDocs: (...args: unknown[]) => mockGetDocs(...args),
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
   updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
+  query: (collRef: unknown) => collRef,
+  where: () => ({}),
+  increment: (n: number) => ({ __increment: n }),
   serverTimestamp: () => mockServerTimestamp(),
 }));
 
@@ -36,6 +42,7 @@ vi.mock('firebase/storage', () => ({
 }));
 
 import {
+  createLesson,
   updateLessonMarkdownBody,
   updateLessonMetadata,
   updateUdaMetadata,
@@ -62,6 +69,7 @@ beforeEach(() => {
   mockSetDoc.mockResolvedValue(undefined);
   mockUpdateDoc.mockResolvedValue(undefined);
   mockUploadBytes.mockResolvedValue(undefined);
+  mockGetDocs.mockResolvedValue({ docs: [] });
 });
 
 describe('updateUdaMetadata', () => {
@@ -437,5 +445,170 @@ Vecchio corpo.`;
     ).rejects.toThrow(/aggiornato su Storage ma i metadati non sono stati sincronizzati/);
     expect(mockUploadBytes).toHaveBeenCalled();
     expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe('createLesson', () => {
+  const BASE_FIELDS = {
+    titolo: 'HTTP',
+    sottotitolo: null,
+    difficolta: null,
+    concettiChiave: [],
+    obiettivi: [],
+    body: '',
+  };
+
+  it('throws without touching Storage or Firestore when the title is empty', async () => {
+    await expect(
+      createLesson({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-01',
+        udaDir: 'uda-01-reti',
+        ownerUid: OWNER_UID,
+        fields: { ...BASE_FIELDS, titolo: '   ' },
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow('Il titolo della lezione è obbligatorio.');
+    expect(mockGetDocs).not.toHaveBeenCalled();
+    expect(mockUploadBytes).not.toHaveBeenCalled();
+  });
+
+  it('numbers the first lesson of a UDA as 001 with order 0', async () => {
+    mockGetDocs.mockResolvedValueOnce({ docs: [] });
+
+    const result = await createLesson({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-01',
+      udaDir: 'uda-01-reti',
+      ownerUid: OWNER_UID,
+      fields: { ...BASE_FIELDS, titolo: "Introduzione all'HTTP" },
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    expect(result.filename).toBe('lezione-001-introduzione-all-http.md');
+    expect(result.lessonId).toBe('uda-01_lezione-001-introduzione-all-http');
+
+    const next = writtenContent();
+    expect(next).toContain("titolo: Introduzione all'HTTP");
+
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1/imports/imp-1/lessons/uda-01_lezione-001-introduzione-all-http' },
+      expect.objectContaining({
+        udaDir: 'uda-01-reti',
+        filename: 'lezione-001-introduzione-all-http.md',
+        order: 0,
+        poolStatus: 'absent',
+        questionCount: 0,
+        poolStorageRef: null,
+        storageRef:
+          'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-001-introduzione-all-http.md',
+      }),
+    );
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'publicLessons/uda-01_lezione-001-introduzione-all-http' },
+      expect.objectContaining({
+        programId: 'prog-1',
+        udaId: 'uda-01',
+        order: 0,
+        titolo: "Introduzione all'HTTP",
+      }),
+    );
+    expect(mockUpdateDoc).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1/imports/imp-1/udas/uda-01' },
+      { lessonCount: { __increment: 1 } },
+    );
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'auditEvents/auto-id' },
+      expect.objectContaining({ action: 'lesson.created', targetId: result.lessonId }),
+    );
+  });
+
+  it('numbers past the highest existing lesson number and order in that UDA, ignoring other UDAs', async () => {
+    mockGetDocs.mockResolvedValueOnce({
+      docs: [
+        { data: () => ({ udaDir: 'uda-01-reti', filename: 'lezione-002-tcp.md', order: 1 }) },
+        { data: () => ({ udaDir: 'uda-01-reti', filename: 'lezione-005-udp.md', order: 4 }) },
+      ],
+    });
+
+    const result = await createLesson({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-01',
+      udaDir: 'uda-01-reti',
+      ownerUid: OWNER_UID,
+      fields: { ...BASE_FIELDS, titolo: 'DNS' },
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    expect(result.filename).toBe('lezione-006-dns.md');
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1/imports/imp-1/lessons/uda-01_lezione-006-dns' },
+      expect.objectContaining({ order: 5 }),
+    );
+  });
+
+  it('accepts an empty initial body and still writes a structurally valid file', async () => {
+    mockGetDocs.mockResolvedValueOnce({ docs: [] });
+
+    await createLesson({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-01',
+      udaDir: 'uda-01-reti',
+      ownerUid: OWNER_UID,
+      fields: { ...BASE_FIELDS },
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    const next = writtenContent();
+    expect(next).toBe('---\ntitolo: HTTP\n---');
+  });
+
+  it('throws a Storage-specific error and never touches Firestore when the Storage write fails', async () => {
+    mockGetDocs.mockResolvedValueOnce({ docs: [] });
+    mockUploadBytes.mockRejectedValueOnce(new Error('network down'));
+
+    await expect(
+      createLesson({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-01',
+        udaDir: 'uda-01-reti',
+        ownerUid: OWNER_UID,
+        fields: BASE_FIELDS,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow('Impossibile creare il file della lezione su Storage.');
+    expect(mockSetDoc).not.toHaveBeenCalled();
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+
+  it('throws a distinct error when Storage succeeds but the Firestore writes fail', async () => {
+    mockGetDocs.mockResolvedValueOnce({ docs: [] });
+    mockSetDoc.mockRejectedValueOnce(new Error('permission-denied'));
+
+    await expect(
+      createLesson({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-01',
+        udaDir: 'uda-01-reti',
+        ownerUid: OWNER_UID,
+        fields: BASE_FIELDS,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow(
+      'Il file della lezione è stato creato su Storage ma non è stato possibile salvare i metadati su Firestore. Riprova.',
+    );
+    expect(mockUploadBytes).toHaveBeenCalled();
   });
 });
