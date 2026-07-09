@@ -96,15 +96,15 @@ interface StudentAccessSettings {
 // students/{uid} — registro di approvazione (M3-lite)
 // uid == uid Firebase Auth dello studente. Un utente Google non-owner senza
 // documento qui è trattato come 'pending' ai fini dell'autorizzazione.
-// Lettura e scrittura solo owner: non esiste ancora una UI docente per
-// popolarlo (arriva in una milestone successiva).
+// Lettura e scrittura solo owner; popolato dalla UI docente di gestione
+// studenti (StudentsView, M3L-A3): approvazione/blocco e assegnazione classe.
 interface Student {
   uid: string;
   ownerUid: string;
   email: string;         // identità Google verificata da Firebase, non autodichiarata
   displayName: string | null;
   status: 'pending' | 'approved' | 'blocked';
-  classId: string | null; // riservato al filtro futuro per classe, non ancora applicato da alcuna Rule
+  classId: string | null; // filtra Lezioni (M3L-C) e Verifiche (M3L-D) per classe, applicato dalle Security Rules
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -121,7 +121,7 @@ interface Student {
 // solo i programmi la cui classIds include la propria classe — sia lato
 // client (query where('classIds', 'array-contains', classId)) sia lato
 // Security Rules (isClassmateOf()). La sezione Verifiche studente (M3L-D)
-// resta fuori scope.
+// è implementata allo stesso modo, con filtro su publishedProjection (§3.4).
 interface Program {
   id: string;
   ownerUid: string;
@@ -425,7 +425,7 @@ Un utente Google non-owner è un **richiedente/studente potenziale**, non uno st
 - `get settings/studentAccess` → `studentPortalEnabled == true` (interruttore globale; assente = portale disattivato);
 - `get students/{request.auth.uid}` → `status == "approved"` (assente, `pending` o `blocked` negano tutti allo stesso modo).
 
-Questa milestone consegna solo lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applicano; **non** consegna una UI docente per creare/approvare/bloccare uno studente, né l'assegnazione di una classe. Fino a quella milestone successiva, `students/{uid}` va popolato manualmente dal docente (o da un futuro strumento di amministrazione) perché uno studente veda qualunque contenuto.
+Lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applicano sono affiancati dalla UI docente di gestione studenti (`StudentsView`, M3L-A3): il docente crea/approva/blocca uno studente e gli assegna una classe direttamente dall'interfaccia, senza scrivere Firestore a mano.
 
 `classId` su `Student`, `classIds` su `Program` e `classId` su `PublishedProjectionDoc` filtrano ulteriormente cosa uno studente approvato vede: un programma senza classi assegnate, o una verifica senza `classId`, non sono visibili a nessuno studente anche se altrimenti pubblici. Lo schema e la UI docente per assegnare le classi ai programmi sono implementati da M3L-A4. Il filtro per classe è implementato sia sulla sezione **Lezioni** (query client + Security Rules, `isClassmateOf()`, M3L-C) sia sulla sezione **Verifiche** (query `collectionGroup` + Security Rules, M3L-D) — nessuna consegna, risposta online o punteggio è prevista per M3-lite in nessuna delle due sezioni.
 
