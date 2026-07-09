@@ -6,6 +6,7 @@ import { StudentShell } from '../StudentShell.js';
 
 const mockSignOut = vi.fn();
 const mockLoadStudentLessons = vi.fn();
+const mockLoadStudentVerifications = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ app: {}, auth: {}, db: {}, storage: {} }));
 vi.mock('../../../lib/auth.js', () => ({
@@ -17,8 +18,12 @@ vi.mock('../../../lib/auth.js', () => ({
 vi.mock('../../repository/programs/studentLessonsService.js', () => ({
   loadStudentLessons: (...args: unknown[]) => mockLoadStudentLessons(...args),
 }));
+vi.mock('../../repository/verifications/studentVerificationsService.js', () => ({
+  loadStudentVerifications: (...args: unknown[]) => mockLoadStudentVerifications(...args),
+}));
 
 mockLoadStudentLessons.mockResolvedValue({ status: 'no-class' });
+mockLoadStudentVerifications.mockResolvedValue({ status: 'no-class' });
 
 describe('StudentShell', () => {
   it('renders exactly the Lezioni and Verifiche sections, nothing else', () => {
@@ -42,15 +47,16 @@ describe('StudentShell', () => {
     await waitFor(() => expect(screen.getByText(/Nessuna classe assegnata/)).toBeTruthy());
   });
 
-  it('shows the Verifiche placeholder on nav click', () => {
+  it('shows the Verifiche section content on nav click', async () => {
     render(<StudentShell />);
     fireEvent.click(screen.getByRole('button', { name: /Verifiche/ }));
-    expect(screen.getByText('Verifiche pubblicate — in arrivo')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/Nessuna classe assegnata/)).toBeTruthy());
   });
 
-  it('renders no real lesson or verification data (placeholder only)', () => {
+  it('renders no verification data when no class is assigned (empty state only)', async () => {
     render(<StudentShell />);
     fireEvent.click(screen.getByRole('button', { name: /Verifiche/ }));
+    await waitFor(() => expect(screen.getByText(/Nessuna classe assegnata/)).toBeTruthy());
     expect(screen.queryByRole('list')).toBeNull();
     expect(screen.queryByRole('table')).toBeNull();
   });

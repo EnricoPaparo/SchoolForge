@@ -221,23 +221,45 @@ service cloud.firestore {
       allow read: if isOwner();
     }
 
-    // --- verifications/{id}/publishedProjection (M3-lite) ---
-    // Solution-free projection written at activation. Deliberately does NOT
-    // duplicate status/visibility in this document — authorization reads
-    // them straight from the parent verification via get(), so this
-    // projection can never drift from the parent's real state. The parent
-    // /verifications/{docId} itself stays owner-only always, even when
-    // active+public: it holds config.questionRefs (poolStorageRef,
-    // questionLocalId), which a student must never see. A student must
-    // also be approved (isApprovedStudent()) — active+public alone is not
-    // enough, being merely Google-authenticated grants nothing.
-    match /verifications/{verificationId}/publishedProjection/{docId} {
+    // --- verifications/{id}/publishedProjection (M3-lite, class gate M3L-D) ---
+    // Solution-free projection written at activation. `classId` and
+    // `visibility` ARE deliberately duplicated here from the parent
+    // verification (see PublishedProjectionDoc for the full rationale) —
+    // proven necessary, not just convenient: a student discovers matching
+    // verifications via a single collectionGroup('publishedProjection')
+    // query (the parent /verifications/{docId} is never readable — it holds
+    // config.questionRefs/teacherSnapshot, which a student must never see).
+    // Empirically, TWO things are required for Firestore to authorize that
+    // collectionGroup `list`, neither obvious from the single-document `get`
+    // case that worked before M3L-D:
+    //   1. every field the rule authorizes on must also be a field the
+    //      query itself filters on (a cross-document get() back to the
+    //      parent, e.g. to check `status`, does not validate here — the
+    //      parent path segment isn't constrained by the query);
+    //   2. the match block itself must use a recursive-wildcard prefix
+    //      ({path=**}) rather than a fixed-depth one
+    //      (verifications/{verificationId}) — Firestore does not register
+    //      a fixed-depth match as eligible for a bare collectionGroup()
+    //      list at all (it still works fine for get()/writes on a known
+    //      path, and for list within one already-known parent — just not
+    //      for collectionGroup). Confirmed empirically: even
+    //      `allow read: if true` failed list validation under the
+    //      fixed-depth pattern, and succeeded once switched to {path=**}.
+    // `visibility` therefore also stands in for `status` here:
+    // setVerificationVisibility mirrors it, and closeVerification forces it
+    // back to 'hidden' — see verificationsService.ts. isClassmateOf()
+    // already requires isApprovedStudent() internally — a verification
+    // with no classId (resource.data.get('classId', null) == null) is
+    // never visible to any student, never "visible to everyone" by
+    // omission, mirroring programs.classIds (M3L-C). The student's own
+    // discovery query must mirror this exact rule shape:
+    // where('classId','==',myClassId) AND where('visibility','==','public')
+    // — see studentVerificationsService.ts.
+    match /{path=**}/publishedProjection/{docId} {
       allow read: if isOwner()
-        || (isApprovedStudent()
-            && get(/databases/$(database)/documents/verifications/$(verificationId)).data.status
-               == 'active'
-            && get(/databases/$(database)/documents/verifications/$(verificationId)).data.visibility
-               == 'public');
+        || (resource.data.get('visibility', 'hidden') == 'public'
+            && resource.data.get('classId', null) != null
+            && isClassmateOf([resource.data.get('classId', null)]));
       allow write: if isOwner();
     }
 

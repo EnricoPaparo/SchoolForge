@@ -79,6 +79,8 @@ async function seedVerification(
     withProjection?: boolean;
     studentPortalEnabled?: boolean;
     studentStatus?: 'pending' | 'approved' | 'blocked';
+    studentClassId?: string | null;
+    projectionClassId?: string | null;
   } = {},
 ) {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -99,7 +101,7 @@ async function seedVerification(
         email: 'student@example.com',
         displayName: null,
         status: options.studentStatus,
-        classId: null,
+        classId: options.studentClassId ?? null,
       });
     }
     await setDoc(doc(db, 'verifications/v1'), {
@@ -113,10 +115,19 @@ async function seedVerification(
       ...overrides,
     });
     if (options.withProjection) {
+      // Mirrors the real write paths (activateVerification/
+      // setVerificationVisibility/closeVerification): the projection's own
+      // `visibility` can only ever be 'public' while the parent is 'active'
+      // AND toggled public — draft and closed always force it to 'hidden'.
+      const parentStatus = (overrides.status as string | undefined) ?? 'draft';
+      const parentVisibility = (overrides.visibility as string | undefined) ?? 'hidden';
+      const projectionVisibility = parentStatus === 'active' ? parentVisibility : 'hidden';
       await setDoc(doc(db, 'verifications/v1/publishedProjection/data'), {
         ownerUid: OWNER_UID,
         title: 'Verifica 1',
         className: null,
+        classId: options.projectionClassId ?? null,
+        visibility: projectionVisibility,
         questions: [{ order: 0, tipo: 'aperta', maxPoints: 3, testo: 'Domanda?' }],
         activatedAt: null,
       });
@@ -541,13 +552,49 @@ describe('Firestore rules — verifications/{id}/publishedProjection', () => {
     await assertSucceeds(getDoc(doc(ownerDb(), 'verifications/v1/publishedProjection/data')));
   });
 
-  it('an approved student can read publishedProjection when active + public and the portal is enabled', async () => {
+  it('an approved student in the verification’s class can read publishedProjection when active + public and the portal is enabled', async () => {
     await seedVerification(
       { status: 'active', visibility: 'public' },
-      { withProjection: true, studentPortalEnabled: true, studentStatus: 'approved' },
+      {
+        withProjection: true,
+        studentPortalEnabled: true,
+        studentStatus: 'approved',
+        studentClassId: 'class-a',
+        projectionClassId: 'class-a',
+      },
     );
 
     await assertSucceeds(getDoc(doc(studentDb(), 'verifications/v1/publishedProjection/data')));
+  });
+
+  it('denies an approved student when the verification has no classId assigned (M3L-D)', async () => {
+    await seedVerification(
+      { status: 'active', visibility: 'public' },
+      {
+        withProjection: true,
+        studentPortalEnabled: true,
+        studentStatus: 'approved',
+        studentClassId: 'class-a',
+        // projectionClassId omitted -> null, same as BASE_CONFIG.classId
+      },
+    );
+
+    await assertFails(getDoc(doc(studentDb(), 'verifications/v1/publishedProjection/data')));
+  });
+
+  it('denies an approved student with an incompatible classId (M3L-D)', async () => {
+    await seedVerification(
+      { status: 'active', visibility: 'public' },
+      {
+        withProjection: true,
+        studentPortalEnabled: true,
+        studentStatus: 'approved',
+        studentClassId: 'class-z',
+        projectionClassId: 'class-a',
+      },
+    );
+
+    await assertFails(getDoc(doc(studentDb(), 'verifications/v1/publishedProjection/data')));
   });
 
   it('denies a Google non-owner with no students/{uid} document, even active + public + portal enabled', async () => {

@@ -46,7 +46,8 @@ vi.mock('jspdf', () => {
   return { jsPDF: FakeJsPDF };
 });
 
-const { downloadStudentPdf, downloadTeacherSolutionsPdf } = await import('../verificationPdf.js');
+const { downloadStudentPdf, downloadStudentPdfFromProjection, downloadTeacherSolutionsPdf } =
+  await import('../verificationPdf.js');
 
 const SNAPSHOT = {
   title: 'Verifica Reti',
@@ -183,6 +184,83 @@ describe('downloadStudentPdf — closed questions', () => {
       .join('\n');
     expect(rendered).not.toMatch(/soluzione/i);
     expect(rendered).not.toMatch(/corretta/i);
+  });
+});
+
+// ─── downloadStudentPdfFromProjection (M3L-D, real student download) ────────
+
+const PROJECTION = {
+  title: 'Verifica Reti',
+  className: 'Classe 3A',
+  questions: [
+    { order: 0, tipo: 'aperta' as const, maxPoints: 2, testo: 'Descrivi il modello OSI.' },
+    {
+      order: 1,
+      tipo: 'chiusa_singola' as const,
+      maxPoints: 1,
+      testo: 'Quale livello gestisce il routing?',
+      opzioni: [
+        { id: 'a', testo: 'Rete' },
+        { id: 'b', testo: 'Trasporto' },
+      ],
+    },
+  ],
+};
+
+describe('downloadStudentPdfFromProjection', () => {
+  it('renders the same student fields (Nome e Cognome / Data) as downloadStudentPdf', async () => {
+    await downloadStudentPdfFromProjection(PROJECTION);
+
+    const textCalls = calls.filter((c) => c.method === 'text');
+    expect(textCalls.some((c) => String(c.args[0]) === 'Nome e Cognome:')).toBe(true);
+    expect(textCalls.some((c) => String(c.args[0]) === 'Data:')).toBe(true);
+  });
+
+  it('renders the title and class from the projection, never a poolStorageRef or questionRefs field', async () => {
+    await downloadStudentPdfFromProjection(PROJECTION);
+
+    const rendered = calls
+      .filter((c) => c.method === 'text')
+      .map((c) => String(c.args[0]))
+      .join('\n');
+    expect(rendered).toContain('Verifica Reti');
+    expect(rendered).toContain('Classe: Classe 3A');
+    expect(rendered).not.toContain('poolStorageRef');
+  });
+
+  it('renders a checkbox rect per option, matching downloadStudentPdf for an equivalent question', async () => {
+    await downloadStudentPdfFromProjection(PROJECTION);
+
+    const rectCalls = calls.filter((c) => c.method === 'rect');
+    expect(rectCalls).toHaveLength(2);
+  });
+
+  it('never includes soluzione, correctAnswer or answers text anywhere', async () => {
+    await downloadStudentPdfFromProjection(PROJECTION);
+
+    const rendered = calls
+      .filter((c) => c.method === 'text')
+      .map((c) => String(c.args[0]))
+      .join('\n');
+    expect(rendered).not.toMatch(/soluzione/i);
+    expect(rendered).not.toMatch(/corretta/i);
+  });
+
+  it('saves the PDF with the "_studente" filename suffix', async () => {
+    await downloadStudentPdfFromProjection(PROJECTION);
+
+    const saveCall = calls.find((c) => c.method === 'save');
+    expect(String(saveCall?.args[0])).toBe('Verifica_Reti_studente.pdf');
+  });
+
+  it('handles a verification with no class (className: null) the same way as downloadStudentPdf', async () => {
+    await downloadStudentPdfFromProjection({ ...PROJECTION, className: null });
+
+    const rendered = calls
+      .filter((c) => c.method === 'text')
+      .map((c) => String(c.args[0]))
+      .join('\n');
+    expect(rendered).not.toContain('Classe:');
   });
 });
 

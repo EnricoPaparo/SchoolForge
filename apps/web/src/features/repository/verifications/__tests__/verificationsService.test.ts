@@ -303,6 +303,7 @@ describe('activateVerification', () => {
 
     const projection = capture.getProjection();
     expect(projection?.title).toBe(VALID_CONFIG.title);
+    expect(projection?.classId).toBe(VALID_CONFIG.classId);
     expect(projection?.questions).toHaveLength(1);
     const question = (projection?.questions as Record<string, unknown>[])[0];
     expect(question.testo).toBe('Domanda 1?');
@@ -313,6 +314,20 @@ describe('activateVerification', () => {
     expect(question).not.toHaveProperty('questionLocalId');
     expect(question).not.toHaveProperty('questionIndexEntryId');
     expect(JSON.stringify(projection)).not.toContain('poolStorageRef');
+  });
+
+  it('writes classId: null into publishedProjection when the verification has no class (M3L-D)', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: { ...VALID_CONFIG, classId: null },
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(draftDoc);
+
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    expect(capture.getProjection()?.classId).toBeNull();
   });
 
   it('throws if status is not draft (checked before touching Storage or the transaction)', async () => {
@@ -366,15 +381,26 @@ describe('setVerificationVisibility', () => {
 
     await setVerificationVisibility('ver-id', 'public', OWNER_UID, fakeDb);
 
-    expect(mockSetDoc).toHaveBeenCalledTimes(2); // update + audit
+    expect(mockSetDoc).toHaveBeenCalledTimes(3); // parent update + projection mirror + audit
     const [, updateData, options] = mockSetDoc.mock.calls[0];
     expect(updateData.visibility).toBe('public');
     expect(Object.keys(updateData).sort()).toEqual(['updatedAt', 'visibility']);
     expect(options).toEqual({ merge: true });
 
-    const [, auditData] = mockSetDoc.mock.calls[1];
+    const [, auditData] = mockSetDoc.mock.calls[2];
     expect(auditData.action).toBe('verification.visibilityChanged');
     expect(auditData.actorUid).toBe(OWNER_UID);
+  });
+
+  it('mirrors the new visibility onto publishedProjection/data (M3L-D)', async () => {
+    const activeDoc: Partial<VerificationDoc> = { status: 'active', config: VALID_CONFIG };
+    mockGetDoc.mockResolvedValue({ data: () => activeDoc });
+
+    await setVerificationVisibility('ver-id', 'public', OWNER_UID, fakeDb);
+
+    const [, projectionData, projectionOptions] = mockSetDoc.mock.calls[1];
+    expect(projectionData).toEqual({ visibility: 'public' });
+    expect(projectionOptions).toEqual({ merge: true });
   });
 
   it('throws when the verification is a draft', async () => {
@@ -405,13 +431,24 @@ describe('closeVerification', () => {
 
     await closeVerification('ver-id', OWNER_UID, fakeDb);
 
-    expect(mockSetDoc).toHaveBeenCalledTimes(2); // update + audit
+    expect(mockSetDoc).toHaveBeenCalledTimes(3); // parent update + projection mirror + audit
     const [, closedData] = mockSetDoc.mock.calls[0];
     expect(closedData.status).toBe('closed');
     expect(closedData.closedAt).toBeDefined();
 
-    const [, auditData] = mockSetDoc.mock.calls[1];
+    const [, auditData] = mockSetDoc.mock.calls[2];
     expect(auditData.action).toBe('verification.closed');
+  });
+
+  it('forces publishedProjection/data.visibility back to hidden on close (M3L-D)', async () => {
+    const activeDoc: Partial<VerificationDoc> = { status: 'active', config: VALID_CONFIG };
+    mockGetDoc.mockResolvedValue({ data: () => activeDoc });
+
+    await closeVerification('ver-id', OWNER_UID, fakeDb);
+
+    const [, projectionData, projectionOptions] = mockSetDoc.mock.calls[1];
+    expect(projectionData).toEqual({ visibility: 'hidden' });
+    expect(projectionOptions).toEqual({ merge: true });
   });
 
   it('throws if not active', async () => {

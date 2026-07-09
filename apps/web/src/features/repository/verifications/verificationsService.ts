@@ -119,9 +119,11 @@ export function validateForActivation(config: VerificationConfig): {
 /**
  * Activates a draft verification. Alongside the existing owner-only
  * `teacherSnapshot`, this also builds and writes `publishedProjection/data`
- * — the safe, solution-free projection a student (M3-lite) will eventually
- * read to render the student PDF. It never includes poolStorageRef,
- * questionLocalId, questionIndexEntryId or soluzione.
+ * — the safe, solution-free projection a student (M3-lite) reads to list the
+ * verification and render the student PDF (M3L-D). It never includes
+ * poolStorageRef, questionLocalId, questionIndexEntryId or soluzione.
+ * `classId` is copied from `config.classId` as-is (including `null`) — a
+ * verification never assigned to a class stays invisible to every student.
  *
  * The question text/options are fetched from Storage (loadSelectedQuestions)
  * BEFORE opening the transaction — Storage reads don't belong inside a
@@ -203,6 +205,8 @@ export async function activateVerification(
       ownerUid,
       title: data.config.title,
       className,
+      classId: data.config.classId,
+      visibility: 'hidden',
       questions: publicQuestions,
       activatedAt: serverTimestamp(),
     });
@@ -220,8 +224,13 @@ export async function activateVerification(
 /**
  * Toggles `visibility` on an `active` verification — publishing or hiding
  * it from the student portal (M3-lite). Touches only `visibility` and
- * `updatedAt`; never config, teacherSnapshot, status or any other field.
- * The Security Rules enforce the same restriction server-side.
+ * `updatedAt` on the parent document; never config, teacherSnapshot, status
+ * or any other field. The Security Rules enforce the same restriction
+ * server-side.
+ *
+ * Also mirrors the new value onto `publishedProjection/data.visibility`
+ * (M3L-D) — required so the student's `collectionGroup` discovery query has
+ * a query-filterable field to authorize on; see `PublishedProjectionDoc`.
  */
 export async function setVerificationVisibility(
   verificationId: string,
@@ -239,6 +248,11 @@ export async function setVerificationVisibility(
     { visibility, updatedAt: serverTimestamp() },
     { merge: true },
   );
+  await setDoc(
+    doc(db, 'verifications', verificationId, 'publishedProjection', 'data'),
+    { visibility },
+    { merge: true },
+  );
   await setDoc(doc(collection(db, 'auditEvents')), {
     actorUid: ownerUid,
     action: 'verification.visibilityChanged',
@@ -249,6 +263,13 @@ export async function setVerificationVisibility(
   });
 }
 
+/**
+ * Closes an active verification. Also forces
+ * `publishedProjection/data.visibility` back to `'hidden'` (M3L-D) — a
+ * closed verification must never remain readable by a student via a stale
+ * `'public'` mirror, since the Security Rules list-query gate checks only
+ * this mirrored field, not the parent's `status`.
+ */
 export async function closeVerification(
   verificationId: string,
   ownerUid: string,
@@ -262,6 +283,11 @@ export async function closeVerification(
   await setDoc(
     doc(db, 'verifications', verificationId),
     { status: 'closed', closedAt: serverTimestamp(), updatedAt: serverTimestamp() },
+    { merge: true },
+  );
+  await setDoc(
+    doc(db, 'verifications', verificationId, 'publishedProjection', 'data'),
+    { visibility: 'hidden' },
     { merge: true },
   );
   await setDoc(doc(collection(db, 'auditEvents')), {
