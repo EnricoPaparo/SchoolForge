@@ -23,6 +23,32 @@ service firebase.storage {
              .data.status == 'approved';
     }
 
+    // Only meaningful after isApprovedStudent() has confirmed
+    // students/{uid} exists. .data.get('classId', null) tolerates a
+    // legacy/partial document missing the field, defaulting to "no class"
+    // rather than an evaluation error.
+    function myStudentClassId() {
+      return firestore.get(/databases/(default)/documents/students/$(request.auth.uid))
+        .data.get('classId', null);
+    }
+
+    // True only for an approved student (portal active) whose own classId
+    // is one of the classIds of the given program — mirrors
+    // isClassmateOf()/isApprovedStudent() in firestore.rules so the same
+    // "who can see this lesson" decision is enforced independently on both
+    // Firestore and Storage. A program with no classIds field at all
+    // (legacy) or an empty array both safely deny via
+    // .data.get('classIds', []) — never "visible to everyone" by omission.
+    // A student with no classId of their own is denied too, even if
+    // otherwise approved.
+    function isClassmateOfProgram(programId) {
+      return isApprovedStudent()
+        && myStudentClassId() != null
+        && firestore.exists(/databases/(default)/documents/programs/$(programId))
+        && firestore.get(/databases/(default)/documents/programs/$(programId))
+             .data.get('classIds', []).hasAny([myStudentClassId()]);
+    }
+
     // repository/{ownerUid}/... — only the matching owner can read/write
     match /repository/{ownerUid}/{allPaths=**} {
       allow read, write: if request.auth != null && request.auth.uid == ownerUid;
@@ -36,13 +62,25 @@ service firebase.storage {
       // (including 'pool'), is denied by default. Only the real owner can
       // ever write under repository/{ownerUid}/** (see the rule above), so
       // any object that exists here necessarily belongs to the single
-      // configured docente; there is no anonymous access. On top of the
-      // kind check, the reader must also be an approved student — merely
-      // being a different Google-authenticated uid grants nothing.
+      // configured docente; there is no anonymous access.
+      //
+      // On top of the kind check (M3L-C), the reader must also be an
+      // approved student whose classId matches the classIds of the
+      // customMetadata.programId that tagged this file at upload time —
+      // merely being approved is NOT enough by itself: without this check
+      // any approved student could read lesson files of every class, not
+      // just their own (the same gap already closed on Firestore's
+      // publicLessons rule). A file with no programId metadata (legacy
+      // uploads from before this field existed) is denied by default —
+      // reimporting the program re-uploads it with the metadata. classIds
+      // itself is never copied into Storage metadata (it can change after
+      // upload when the teacher (re)assigns classes) — the program is
+      // always read live from Firestore instead.
       allow read: if request.auth != null
         && request.auth.uid != ownerUid
         && resource.metadata.kind == 'lesson'
-        && isApprovedStudent();
+        && resource.metadata.get('programId', null) != null
+        && isClassmateOfProgram(resource.metadata.get('programId', null));
     }
 
     // Default deny

@@ -66,7 +66,10 @@ async function seedStudentAccess(studentPortalEnabled: boolean) {
   });
 }
 
-async function seedStudent(status: 'pending' | 'approved' | 'blocked') {
+async function seedStudent(
+  status: 'pending' | 'approved' | 'blocked',
+  classId: string | null = null,
+) {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'students', OTHER_UID), {
       uid: OTHER_UID,
@@ -74,7 +77,29 @@ async function seedStudent(status: 'pending' | 'approved' | 'blocked') {
       email: 'student@example.com',
       displayName: null,
       status,
-      classId: null,
+      classId,
+    });
+  });
+}
+
+// M3L-C: the Storage read gate now also requires the lesson file's
+// customMetadata.programId to point at a program whose classIds includes
+// the student's own classId (mirrors the same gate on Firestore's
+// publicLessons) — see m3l-storage-lesson-class-gate.rules.test.ts for the
+// full class-gate matrix. This file's own "allows" tests need a
+// class-compatible program seeded to keep exercising the base
+// approved-student gate in isolation.
+const PROGRAM_ID = 'prog-1';
+
+async function seedProgram(classIds: string[]) {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'programs', PROGRAM_ID), {
+      ownerUid: OWNER_UID,
+      title: 'Informatica',
+      activeImportId: 'imp-1',
+      classIds,
+      createdAt: null,
+      updatedAt: null,
     });
   });
 }
@@ -109,12 +134,12 @@ describe('Storage — other authenticated user denied on owner path', () => {
 // ─── repository/{ownerUid}/ — student read (M3-lite) ─────────────────────────
 
 describe('Storage — student (other authenticated user) read access — approved-student gate (M3-lite)', () => {
-  async function seedLessonFile() {
+  async function seedLessonFile(programId?: string) {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await uploadBytes(
         ref(ctx.storage(), `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.md`),
         PAYLOAD,
-        { customMetadata: { kind: 'lesson' } },
+        { customMetadata: programId ? { kind: 'lesson', programId } : { kind: 'lesson' } },
       );
     });
   }
@@ -129,24 +154,26 @@ describe('Storage — student (other authenticated user) read access — approve
     });
   }
 
-  it('allows an approved student to read a file tagged kind=lesson when the portal is enabled', async () => {
+  it('allows an approved student in the program’s class to read a file tagged kind=lesson when the portal is enabled', async () => {
     await seedStudentAccess(true);
-    await seedStudent('approved');
-    await seedLessonFile();
+    await seedStudent('approved', 'class-a');
+    await seedProgram(['class-a']);
+    await seedLessonFile(PROGRAM_ID);
     const st = testEnv.authenticatedContext(OTHER_UID).storage();
     await assertSucceeds(
       getBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.md`)),
     );
   });
 
-  it('allows an approved student to read an asset file tagged kind=lesson', async () => {
+  it('allows an approved student in the program’s class to read an asset file tagged kind=lesson', async () => {
     await seedStudentAccess(true);
-    await seedStudent('approved');
+    await seedStudent('approved', 'class-a');
+    await seedProgram(['class-a']);
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await uploadBytes(
         ref(ctx.storage(), `repository/${OWNER_UID}/imports/imp-1/uda-01/assets/diagram.png`),
         PAYLOAD,
-        { customMetadata: { kind: 'lesson' } },
+        { customMetadata: { kind: 'lesson', programId: PROGRAM_ID } },
       );
     });
     const st = testEnv.authenticatedContext(OTHER_UID).storage();

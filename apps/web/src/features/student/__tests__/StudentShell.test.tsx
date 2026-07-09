@@ -1,10 +1,11 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(cleanup);
 import { StudentShell } from '../StudentShell.js';
 
 const mockSignOut = vi.fn();
+const mockLoadStudentLessons = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ app: {}, auth: {}, db: {}, storage: {} }));
 vi.mock('../../../lib/auth.js', () => ({
@@ -13,6 +14,11 @@ vi.mock('../../../lib/auth.js', () => ({
     signOut: mockSignOut,
   }),
 }));
+vi.mock('../../repository/programs/studentLessonsService.js', () => ({
+  loadStudentLessons: (...args: unknown[]) => mockLoadStudentLessons(...args),
+}));
+
+mockLoadStudentLessons.mockResolvedValue({ status: 'no-class' });
 
 describe('StudentShell', () => {
   it('renders exactly the Lezioni and Verifiche sections, nothing else', () => {
@@ -31,9 +37,9 @@ describe('StudentShell', () => {
     }
   });
 
-  it('shows the Lezioni placeholder by default', () => {
+  it('shows the Lezioni section content by default', async () => {
     render(<StudentShell />);
-    expect(screen.getByText('Lezioni disponibili — in arrivo')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/Nessuna classe assegnata/)).toBeTruthy());
   });
 
   it('shows the Verifiche placeholder on nav click', () => {
