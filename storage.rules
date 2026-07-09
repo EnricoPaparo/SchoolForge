@@ -15,22 +15,6 @@ service firebase.storage {
     // programs/{programId}; therefore settings/studentAccess is enforced in
     // Firestore discovery rules (programs/publicLessons), not repeated here.
 
-    function isApprovedStudent() {
-      return request.auth != null
-        && firestore.exists(/databases/(default)/documents/students/$(request.auth.uid))
-        && firestore.get(/databases/(default)/documents/students/$(request.auth.uid))
-             .data.status == 'approved';
-    }
-
-    // Only meaningful after isApprovedStudent() has confirmed
-    // students/{uid} exists. .data.get('classId', null) tolerates a
-    // legacy/partial document missing the field, defaulting to "no class"
-    // rather than an evaluation error.
-    function myStudentClassId() {
-      return firestore.get(/databases/(default)/documents/students/$(request.auth.uid))
-        .data.get('classId', null);
-    }
-
     // True only for an approved student (portal active) whose own classId
     // is one of the classIds of the given program — mirrors
     // isClassmateOf()/isApprovedStudent() in firestore.rules so the same
@@ -41,11 +25,11 @@ service firebase.storage {
     // A student with no classId of their own is denied too, even if
     // otherwise approved.
     function isClassmateOfProgram(programId) {
-      return isApprovedStudent()
-        && myStudentClassId() != null
-        && firestore.exists(/databases/(default)/documents/programs/$(programId))
-        && firestore.get(/databases/(default)/documents/programs/$(programId))
-             .data.get('classIds', []).hasAny([myStudentClassId()]);
+      let student = firestore.get(/databases/(default)/documents/students/$(request.auth.uid));
+      let program = firestore.get(/databases/(default)/documents/programs/$(programId));
+      return student.data.status == 'approved'
+        && student.data.get('classId', null) != null
+        && program.data.get('classIds', []).hasAny([student.data.get('classId', null)]);
     }
 
     // repository/{ownerUid}/... — only the matching owner can read/write
