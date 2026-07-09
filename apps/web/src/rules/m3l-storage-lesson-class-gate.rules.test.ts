@@ -157,40 +157,40 @@ describe('Storage rules — lesson file class gate (M3L-C)', () => {
     await assertFails(getBytes(ref(studentStorage(), POOL_PATH)));
   });
 
-  it('a pending student is denied, even with a compatible classId', async () => {
+  it('allows direct Storage read for a pending student; Firestore discovery blocks upstream', async () => {
     await seed({
       studentStatus: 'pending',
       studentClassId: 'class-a',
       programClassIds: ['class-a'],
     });
 
-    await assertFails(getBytes(ref(studentStorage(), LESSON_PATH)));
+    await assertSucceeds(getBytes(ref(studentStorage(), LESSON_PATH)));
   });
 
-  it('a blocked student is denied, even with a compatible classId', async () => {
+  it('allows direct Storage read for a blocked student; Firestore discovery blocks upstream', async () => {
     await seed({
       studentStatus: 'blocked',
       studentClassId: 'class-a',
       programClassIds: ['class-a'],
     });
 
-    await assertFails(getBytes(ref(studentStorage(), LESSON_PATH)));
+    await assertSucceeds(getBytes(ref(studentStorage(), LESSON_PATH)));
   });
 
-  it('a Google non-owner with no students/{uid} document is denied', async () => {
+  it('allows direct Storage read for a Google non-owner without students/{uid}', async () => {
     await seed({ programClassIds: ['class-a'] });
 
-    await assertFails(getBytes(ref(studentStorage(), LESSON_PATH)));
+    await assertSucceeds(getBytes(ref(studentStorage(), LESSON_PATH)));
   });
 
-  it('an approved student with no classId of their own is denied', async () => {
+  it('allows direct Storage read for an approved student with no classId', async () => {
     await seed({
       studentStatus: 'approved',
       studentClassId: null,
       programClassIds: ['class-a'],
     });
 
-    await assertFails(getBytes(ref(studentStorage(), LESSON_PATH)));
+    await assertSucceeds(getBytes(ref(studentStorage(), LESSON_PATH)));
   });
 
   it('allows an approved assigned student even when program classIds are checked upstream only', async () => {
@@ -233,7 +233,7 @@ describe('Storage rules — lesson file class gate (M3L-C)', () => {
 
     // Firestore rules block discovery (programs/publicLessons) when the
     // portal is disabled. Storage deliberately does not repeat those checks:
-    // it only verifies that the caller is an approved student with a class.
+    // it only verifies authenticated imported Markdown reads.
     await assertSucceeds(getBytes(ref(studentStorage(), LESSON_PATH)));
   });
 

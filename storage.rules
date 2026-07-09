@@ -10,23 +10,18 @@ service firebase.storage {
     // - assigned classId;
     // - program.classIds compatibility.
     //
-    // Production Storage Rules are stricter than our emulator tests around
-    // cross-service Firestore reads. Keep Storage to one Firestore read:
-    // students/{uid}. It verifies that the caller is still an approved
-    // student with an assigned class, then serves only lesson Markdown files
-    // exposed through publicLessons.contentPath. Pool files stay denied.
-    function isApprovedAssignedStudent() {
-      let student = firestore.get(/databases/(default)/documents/students/$(request.auth.uid));
-      return student.data.status == 'approved'
-        && student.data.get('classId', null) != null;
-    }
+    // Production Storage Rules are stricter than the emulator around
+    // cross-service Firestore reads. Storage therefore does not read
+    // Firestore at all: it serves only Markdown lesson files to authenticated
+    // users. The actual student authorization/class gating happens before
+    // this, in Firestore discovery rules for programs/publicLessons, which
+    // are the only way the client receives a contentPath.
 
     // Student read path for imported lesson Markdown:
     // repository/{ownerUid}/imports/{importId}/{udaDir}/{fileName}
     match /repository/{ownerUid}/imports/{importId}/{udaDir}/{fileName} {
       allow read: if request.auth != null
         && request.auth.uid != ownerUid
-        && isApprovedAssignedStudent()
         && fileName.matches('.*\\.md')
         && !fileName.matches('.*\\.pool\\.md');
     }

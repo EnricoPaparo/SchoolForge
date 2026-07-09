@@ -856,7 +856,7 @@ describe('importRepository — publicLessons projection', () => {
     );
   });
 
-  it('denies a non-approved student (no students/{uid} document) from reading the lesson file via Storage', async () => {
+  it('allows direct Storage read for an authenticated non-owner when Firestore discovery would be denied', async () => {
     await seedOwner();
     const db = ownerDb();
     const storage = ownerStorage();
@@ -869,11 +869,8 @@ describe('importRepository — publicLessons projection', () => {
 
     await seedStudentAccess(true);
     await seedProgramClassIds(result.programId, ['class-a']);
-    // No students/{uid} document — merely being a different Google-
-    // authenticated uid is never enough.
-
     const studentSt = otherStorage();
-    await assertFails(
+    await assertSucceeds(
       getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
     );
   });
@@ -896,7 +893,7 @@ describe('importRepository — publicLessons projection', () => {
     const studentSt = otherStorage();
     // Firestore rules block discovery (programs/publicLessons) when the
     // portal is disabled. Storage deliberately does not repeat those checks:
-    // it only verifies that the caller is an approved student with a class.
+    // it only verifies authenticated imported Markdown reads.
     await assertSucceeds(
       getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
     );
@@ -946,7 +943,7 @@ describe('importRepository — publicLessons projection', () => {
     );
   });
 
-  it('denies an approved student with no classId of their own from reading the lesson file (M3L-C)', async () => {
+  it('allows direct Storage read for an approved student with no classId when discovery is blocked upstream', async () => {
     await seedOwner();
     const db = ownerDb();
     const storage = ownerStorage();
@@ -962,7 +959,7 @@ describe('importRepository — publicLessons projection', () => {
     await seedProgramClassIds(result.programId, ['class-a']);
 
     const studentSt = otherStorage();
-    await assertFails(
+    await assertSucceeds(
       getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
     );
   });

@@ -51,11 +51,10 @@ afterAll(async () => {
   await testEnv.cleanup();
 });
 
-// Approved-student model (M3-lite): a Google-authenticated non-owner is only
-// a candidate student until the portal is globally enabled AND their own
-// students/{uid} document says 'approved'. Neither is seeded unless a test
-// calls these helpers, so the default (no settings/studentAccess, no
-// students/{uid}) exercises the safe default: every student read denied.
+// Student discovery remains gated in Firestore (portal enabled, approved
+// student, assigned class, compatible program). Storage is the second hop:
+// once a lesson Markdown contentPath is known, it only verifies authenticated
+// read of imported .md files and keeps pool/assets/write/anon denied.
 async function seedStudentAccess(studentPortalEnabled: boolean) {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'settings/studentAccess'), {
@@ -82,13 +81,8 @@ async function seedStudent(
   });
 }
 
-// M3L-C: the Storage read gate now also requires the lesson file's
-// customMetadata.programId to point at a program whose classIds includes
-// the student's own classId (mirrors the same gate on Firestore's
-// publicLessons) — see m3l-storage-lesson-class-gate.rules.test.ts for the
-// full class-gate matrix. This file's own "allows" tests need a
-// class-compatible program seeded to keep exercising the base
-// approved-student gate in isolation.
+// M3L-C: class compatibility is enforced by Firestore discovery rules for
+// programs/publicLessons. Storage does not repeat cross-service reads.
 const PROGRAM_ID = 'prog-1';
 
 async function seedProgram(classIds: string[]) {
@@ -165,7 +159,7 @@ describe('Storage — student (other authenticated user) read access — approve
     );
   });
 
-  it('allows an approved student in the program’s class to read an asset file tagged kind=lesson', async () => {
+  it('denies assets even for an approved student in the program class', async () => {
     await seedStudentAccess(true);
     await seedStudent('approved', 'class-a');
     await seedProgram(['class-a']);
@@ -182,54 +176,50 @@ describe('Storage — student (other authenticated user) read access — approve
     );
   });
 
-  it('denies a Google non-owner with no students/{uid} document, even with the portal enabled', async () => {
+  it('allows authenticated Markdown read without a students/{uid} document', async () => {
     await seedStudentAccess(true);
-    // No students/{uid} document — being Google-authenticated is never
-    // sufficient on its own.
     await seedLessonFile();
     const st = testEnv.authenticatedContext(OTHER_UID).storage();
-    await assertFails(
+    await assertSucceeds(
       getBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.md`)),
     );
   });
 
-  it('denies a pending student', async () => {
+  it('allows authenticated Markdown read for a pending student account', async () => {
     await seedStudentAccess(true);
     await seedStudent('pending');
     await seedLessonFile();
     const st = testEnv.authenticatedContext(OTHER_UID).storage();
-    await assertFails(
+    await assertSucceeds(
       getBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.md`)),
     );
   });
 
-  it('denies a blocked student', async () => {
+  it('allows authenticated Markdown read for a blocked student account', async () => {
     await seedStudentAccess(true);
     await seedStudent('blocked');
     await seedLessonFile();
     const st = testEnv.authenticatedContext(OTHER_UID).storage();
-    await assertFails(
+    await assertSucceeds(
       getBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.md`)),
     );
   });
 
-  it('denies an approved student when the student portal is disabled', async () => {
+  it('allows authenticated Markdown read when the student portal is disabled upstream', async () => {
     await seedStudentAccess(false);
     await seedStudent('approved');
     await seedLessonFile();
     const st = testEnv.authenticatedContext(OTHER_UID).storage();
-    await assertFails(
+    await assertSucceeds(
       getBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.md`)),
     );
   });
 
-  it('denies an approved student when settings/studentAccess does not exist at all', async () => {
+  it('allows authenticated Markdown read when settings/studentAccess does not exist', async () => {
     await seedStudent('approved');
-    // seedStudentAccess() never called — default-safe: no portal doc means
-    // the portal is treated as disabled.
     await seedLessonFile();
     const st = testEnv.authenticatedContext(OTHER_UID).storage();
-    await assertFails(
+    await assertSucceeds(
       getBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/lezione-001.md`)),
     );
   });
@@ -244,7 +234,7 @@ describe('Storage — student (other authenticated user) read access — approve
     );
   });
 
-  it('denies an approved student from reading a file with no kind metadata (fail-safe default)', async () => {
+  it('allows legacy Markdown read even when custom metadata is missing', async () => {
     await seedStudentAccess(true);
     await seedStudent('approved');
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -254,7 +244,7 @@ describe('Storage — student (other authenticated user) read access — approve
       );
     });
     const st = testEnv.authenticatedContext(OTHER_UID).storage();
-    await assertFails(
+    await assertSucceeds(
       getBytes(ref(st, `repository/${OWNER_UID}/imports/imp-1/uda-01/untagged.md`)),
     );
   });
