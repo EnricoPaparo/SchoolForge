@@ -225,9 +225,7 @@ export function StudentLessonsView() {
 
       <div className={styles.content}>
         {selectedLesson === null ? (
-          <p className="state-empty">
-            Seleziona una lezione dalla lista per leggerne il contenuto.
-          </p>
+          <p className={styles.noLessonHint}>Seleziona una lezione dalla lista.</p>
         ) : (
           <>
             <h3 className={styles.contentTitle}>{selectedLesson.filename}</h3>
