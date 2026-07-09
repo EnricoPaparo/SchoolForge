@@ -64,7 +64,7 @@ Le Security Rules esatte vengono scritte e testate con Emulator Suite obbligator
 - Ogni lettura studente (`publicLessons`, `verifications/*/publishedProjection`, file lezione in Cloud Storage) richiede **entrambe** le condizioni: `studentPortalEnabled == true` e `students/{request.auth.uid}.status == "approved"`. Nessuna delle due condizioni da sola è sufficiente; l'assenza di `settings/studentAccess` equivale a portale disattivato.
 - Le Storage Rules leggono `students/{uid}` e `settings/studentAccess` tramite le funzioni cross-service `firestore.get()`/`firestore.exists()` (supportate nativamente da Cloud Storage Security Rules), non tramite una Cloud Function: il modello resta client-first, coerente con ADR-03.
 - `classId` su `students/{uid}` determina il filtro per classe su lezioni (M3L-C) e verifiche (M3L-D) — vedi §3.2.
-- La gestione dell'approvazione (UI docente per creare/approvare/bloccare uno studente) non è ancora costruita: questa milestone consegna solo schema, Security Rules e test. Vedi piano-implementazione.md, M3L-A3.
+- La gestione dell'approvazione (UI docente per creare/approvare/bloccare uno studente, assegnazione della classe) è costruita in `StudentsView` (M3L-A3): il docente non scrive Firestore a mano.
 
 ### 3.2 Classi studente e classi programma
 
@@ -136,7 +136,7 @@ Questa sezione andrà rivista quando M3-full sarà pianificato in dettaglio, val
 
 ## 6. Dati, privacy ed export
 
-- Da M3-lite, l'identità dello studente è l'account Google usato per il login: SchoolForge non richiede alcun dato autodichiarato per accedere in lettura al Portale. Il modello di approvazione (§3.1) introduce `students/{uid}` con `email` e `displayName`, ma questi non sono autodichiarati dallo studente: sono gli stessi valori già verificati da Firebase Authentication per l'account Google usato per il login, e servono solo al docente per riconoscere chi sta approvando. `classId` è riservato al filtro futuro per classe (§3.2), non ancora popolato da alcun flusso applicativo.
+- Da M3-lite, l'identità dello studente è l'account Google usato per il login: SchoolForge non richiede alcun dato autodichiarato per accedere in lettura al Portale. Il modello di approvazione (§3.1) introduce `students/{uid}` con `email` e `displayName`, ma questi non sono autodichiarati dallo studente: sono gli stessi valori già verificati da Firebase Authentication per l'account Google usato per il login, e servono solo al docente per riconoscere chi sta approvando. `classId` popola il filtro per classe (§3.2) tramite l'assegnazione del docente in `StudentsView` (M3L-A3).
 - Log e telemetria non contengono risposte, dati personali completi o punteggi non necessari.
 - Il docente può eliminare una consegna digitale (M3-full): dati personali e correzioni sono rimossi; resta audit non identificativo.
 - `Esporta verifiche` è disponibile solo al docente e generato on-demand nel browser; dipende da consegne M3-full.

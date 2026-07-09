@@ -17,12 +17,12 @@ Il flusso completo è operativo e testato (197 test automatici + smoke test manu
 | Verifiche: creazione draft, selezione domande, attivazione | ✅ funzionante |
 | PDF studente senza soluzioni (generato nel browser) | ✅ funzionante |
 | Dashboard prontezza repository | ✅ funzionante |
-| Portale studente Google, read-only (M3-lite) | ❌ non implementato — prossimo modulo, deciso |
-| Portale digitale con consegna online (M3-full) | ❌ non implementato — specifica rinviata a dopo M3-lite |
+| Portale studente Google, read-only (M3-lite) | ✅ funzionante — login Google, StudentShell, Lezioni e Verifiche filtrate per classe, approvazione studenti, PDF verifica studente |
+| Portale digitale con consegna online (M3-full) | ❌ non implementato — specifica rinviata, fase successiva a M3-lite |
 | Correzione e export risultati (M4) | ❌ non implementato — dipende da M3-full |
 | Correzione AI (M5) | ❌ fuori scope V1 |
 
-**Prossimo passo:** deploy controllato su ambiente `dev` Firebase reale (richiede H-01/H-02 — azione del Docente); a seguire, M3-lite (portale studente autenticato Google, in sola lettura).
+**Prossimo passo:** vedi la sezione "Prossimo passo" più sotto (UX/Product Polish sul deploy DEV già attivo).
 Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartaceo.md) per la guida operativa.
 
 ## Principi non negoziabili
@@ -60,19 +60,19 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 
 1. **M1 — Repository didattico** ✅: programmi, UDA, lezioni, pool, rendering, export ZIP, programma svolto (PDF + Markdown).
 2. **M2 — Verifiche e cartaceo** ✅: configurazione, classi, selezione domande, attivazione, PDF studente browser-side.
-3. **M3-lite — Portale studente (Google, read-only)** ❌ *(prossimo modulo, deciso)*: login Google (personale o Workspace for Education), risoluzione ruolo docente/studente, sezioni Lezioni e Verifiche in sola lettura, download del solo PDF studente per le verifiche `attiva`+`public`. Nessuna Cloud Function, nessun account custom, nessuna consegna online.
+3. **M3-lite — Portale studente (Google, read-only)** ✅: login Google (personale o Workspace for Education), risoluzione ruolo docente/studente, StudentShell con sezioni Lezioni e Verifiche filtrate per classe, approvazione studenti, download del solo PDF studente per le verifiche `active`+`public`. Nessuna Cloud Function, nessun account custom, nessuna consegna online.
 4. **M3-full — Portale digitale** ❌ *(specifica rinviata, fase successiva a M3-lite)*: snapshot via Cloud Function, lock nome+cognome, token sessione, log nome+IP, bozza, consegna strutturata.
 5. **M4 — Correzione ed export** ❌ *(dipende da M3-full)*: punteggi, percentuali, rettifiche, export PDF/Markdown/CSV.
 6. **M5 — Correzione AI** *(fuori scope V1 / pianificato per V2)*: proposte assistite, approvazione massiva, correzione automatica opt-in.
 
-La V1 comprende i moduli M1, M2 e M3-lite come prossimo passo deciso; M3-full e M4 restano pianificati per una fase successiva. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2.
+La V1 comprende i moduli M1, M2 e M3-lite, tutti implementati; M3-full e M4 restano pianificati per una fase successiva. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2.
 
 ## Architettura in sintesi
 
 ```
 SPA unica (Firebase Hosting)
 ├── /teacher/*  — docente autenticato (ownerUid), scrittura diretta Firestore + Storage
-└── /student/*  — studente autenticato Google, sola lettura [M3-lite, non implementato]
+└── /student/*  — studente autenticato Google, sola lettura [M3-lite, implementato]
                   Lezioni (read-only) + Verifiche (attiva+public, solo download PDF studente)
 
 Canale cartaceo: PDF generato nel browser dal docente (già implementato in M2).

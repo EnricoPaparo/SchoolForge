@@ -2,9 +2,9 @@
 
 ## Stato MVP
 
-**M1 + M2 completati. Deploy DEV attivo: https://schoolforge-dev.web.app**
+**M1 + M2 + M3-lite (portale studente Google, read-only) completati. Deploy DEV attivo: https://schoolforge-dev.web.app**
 
-Il flusso docente cartaceo è funzionante sia in locale (emulatori Firebase) che su Firebase DEV.
+Il flusso docente cartaceo e il portale studente in sola lettura sono funzionanti sia in locale (emulatori Firebase) che su Firebase DEV. M3-full (consegna online), M4 (correzione) e M5 (AI) non sono implementati.
 Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente locale e [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) per lo smoke test DEV.
 
 **Prossima fase:** UX/Product Polish — vedi [ux-product-roadmap.md](ux-product-roadmap.md) per la roadmap (UX-01 → UX-06).
