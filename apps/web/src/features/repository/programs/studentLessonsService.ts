@@ -51,8 +51,24 @@ export async function loadStudentLessons(
         query(collection(db, 'publicLessons'), where('programId', '==', program.id)),
       );
       lessonsByProgram[program.id] = lessonsSnap.docs
-        .map((d) => ({ id: d.id, ...(d.data() as PublicLessonDoc) }))
-        .sort((a, b) => a.udaDir.localeCompare(b.udaDir) || a.filename.localeCompare(b.filename));
+        .map((d) => {
+          const raw = d.data() as Partial<PublicLessonDoc>;
+          return {
+            id: d.id,
+            ...raw,
+            order: raw.order ?? Number.MAX_SAFE_INTEGER,
+            sottotitolo: raw.sottotitolo ?? null,
+            difficolta: raw.difficolta ?? null,
+            concettiChiave: raw.concettiChiave ?? [],
+            obiettivi: raw.obiettivi ?? [],
+          } as StudentLesson;
+        })
+        .sort(
+          (a, b) =>
+            a.udaDir.localeCompare(b.udaDir) ||
+            (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) ||
+            a.filename.localeCompare(b.filename),
+        );
     }),
   );
 

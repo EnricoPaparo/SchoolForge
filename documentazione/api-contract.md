@@ -136,23 +136,37 @@ interface Program {
 interface Uda {
   id: string;
   programId: string;
-  title: string;
-  storagePath: string;         // percorso in Cloud Storage
-  order: number;
-  validationStatus: 'valid' | 'invalid' | 'pending';
+  importId: string;
+  dir: string;
+  filename: string;
+  order?: number;              // RE: ordinamento stabile; assente sui dati legacy
+  storageBasePath: string;     // prefisso in Cloud Storage
+  lessonCount: number;
+  descrizione: string | null;
+  competenze: string[];
+  obiettivi: string[];
 }
 
 // lessons/{lessonId} — documento tecnico, leggibile SOLO dall'owner
 interface Lesson {
   id: string;
   udaId: string;
-  programId: string;
-  title: string;
-  storagePath: string;
-  poolPath: string | null;     // null se pool assente
-  poolStatus: 'valid' | 'invalid' | 'absent';
-  poolErrors: string[];
-  order: number;
+  importId: string;
+  udaDir: string;
+  path: string;
+  filename: string;
+  order?: number;              // RE: ordinamento stabile dentro la UDA; assente sui dati legacy
+  storageRef: string;
+  poolStorageRef: string | null;
+  poolStatus: 'absent' | 'valid' | 'invalid';
+  questionCount: number;
+  completed?: boolean;
+  completedAt?: Timestamp | null;
+  titolo?: string | null;
+  sottotitolo?: string | null;
+  difficolta?: string | null;
+  concettiChiave?: string[];
+  obiettivi?: string[];
 }
 
 // publicLessons/{lessonId} — proiezione read-only (M3-lite)
@@ -174,17 +188,21 @@ interface PublicLesson {
   udaDir: string;               // usata dallo StudentShell per raggruppare le lezioni per UDA
   path: string;
   filename: string;
+  order?: number;              // RE: ordinamento stabile dentro la UDA; assente sui dati legacy
   contentPath: string;          // percorso Storage del solo file lezione .md, mai del pool
   createdAt: Timestamp;
   // Parsati dal front matter YAML opzionale della lezione (titolo/sottotitolo/
-  // difficolta/concetti_chiave/obiettivi — tutti opzionali). Solo titolo e
-  // difficolta sono persistiti qui (serve per la riga in Corsi senza dover
-  // leggere il contenuto di ogni lezione); sottotitolo/concetti_chiave/
-  // obiettivi vengono invece riletti dal file .md al volo quando la lezione
+  // difficolta/concetti_chiave/obiettivi — tutti opzionali).
+  // tutti questi campi sono persistiti nella proiezione per mostrare
+  // elenco/preview senza dover leggere il contenuto di ogni lezione;
+  // il corpo Markdown resta invece letto dal file .md quando la lezione
   // è aperta, insieme al corpo Markdown già "pulito" dal blocco front matter.
-  // Assenti sulle lezioni importate prima di questo campo → letti come null.
+  // Assenti sulle lezioni importate prima di questo campo: letti come null/[].
   titolo: string | null;
+  sottotitolo?: string | null;
   difficolta: string | null;
+  concettiChiave?: string[];
+  obiettivi?: string[];
 }
 
 // questionIndex/{questionId} — leggibile SOLO dall'owner, mai dallo studente

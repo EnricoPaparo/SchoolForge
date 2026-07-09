@@ -40,7 +40,7 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 - login Google del Docente proprietario (`uid == ownerUid`) → StudentShell non montata, TeacherShell montata;
 - login Google di un utente qualsiasi diverso da `ownerUid` → StudentShell montata, TeacherShell non raggiungibile (ma questo risolve solo il ruolo UI, non l'autorizzazione a leggere contenuti — vedi 3b);
 - tentativo di accesso non autenticato → nessuna sezione applicativa raggiungibile;
-- lezione pubblicata nell'`activeImportId` corrente → visibile e renderizzata in sola lettura nella sezione Lezioni di uno studente approvato con portale attivo (M3L-C, non ancora implementata);
+- lezione pubblicata nell'`activeImportId` corrente → visibile e renderizzata in sola lettura nella sezione Lezioni di uno studente approvato con portale attivo e classe compatibile;
 - lettura diretta di `lessons` (documento tecnico), `questionIndex` o `verifications/*/publishedSnapshot` da parte dello studente → negata dalle Security Rules;
 - verifica `bozza`, `chiusa`, `archiviata` oppure `attiva`+`hidden` → assente dalla sezione Verifiche di uno studente approvato;
 - verifica `attiva`+`public` → presente nella sezione Verifiche di uno studente approvato con portale attivo, con solo l'azione "Scarica PDF studente";
@@ -49,15 +49,15 @@ I test dimostrano i requisiti della baseline; non servono solo a far passare la 
 
 ### 3b. Fixture M3L-A2 (modello di approvazione studente)
 
-- Google non-owner senza documento `students/{uid}` → nessuna lettura di `publicLessons`/`publishedProjection`/file lezione, con `settings/studentAccess.studentPortalEnabled` sia `true` sia assente;
+- Google non-owner senza documento `students/{uid}` → nessuna discovery Firestore di `publicLessons`/`publishedProjection`, con `settings/studentAccess.studentPortalEnabled` sia `true` sia assente;
 - studente con `students/{uid}.status == "pending"` → stesso esito di negazione, anche con portale attivo;
 - studente con `students/{uid}.status == "blocked"` → stesso esito di negazione, anche con portale attivo;
 - studente con `status == "approved"` ma `settings/studentAccess.studentPortalEnabled == false` (o documento assente) → negazione;
-- studente con `status == "approved"` e `studentPortalEnabled == true` → lettura concessa su `publicLessons`, `publishedProjection` (quando la verifica è anche `attiva`+`public`) e sui soli file lezione in Storage, mai `.pool.md`;
+- studente con `status == "approved"` e `studentPortalEnabled == true` → discovery concessa su `publicLessons`, `publishedProjection` (quando la verifica è anche `attiva`+`public`) e lettura dei soli file lezione Markdown in Storage, mai `.pool.md`;
 - owner → accesso invariato indipendentemente da `settings/studentAccess`/`students/{uid}` (non è mai soggetto al gate studente);
 - utente non autenticato → negazione sempre, indipendentemente da `studentPortalEnabled`.
 
-Non fanno parte di questa milestone (rinviate a M3L-A3/M3L-C/M3L-D): UI per creare/approvare/bloccare uno studente; filtro lezioni/verifiche per `classId`; un programma senza classi assegnate o una verifica senza `classId` non visibili a nessuno studente.
+La UI per creare/approvare/bloccare studenti, il filtro per `classId` e la regola "programma/verifica senza classe non visibile a nessuno studente" sono implementati in M3-lite e restano coperti dai test rules e dalla checklist manuale DEV.
 
 Le fixture seguenti restano specifica di un eventuale M3-full e non si applicano a M3-lite:
 

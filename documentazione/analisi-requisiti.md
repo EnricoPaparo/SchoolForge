@@ -61,12 +61,13 @@ SchoolForge è un repository didattico personale, Markdown-first e knowledge-fir
 | Portale Verifiche — canale cartaceo | Download PDF diretto allo studente, senza account né tracciamento. |
 | Portale studente — M3-lite | Studente autenticato con Google (personale o Workspace for Education), in sola lettura: sezioni Lezioni e Verifiche, download del solo PDF studente per le verifiche `attiva`+`public`. Nessuna consegna online. |
 | Portale digitale — M3-full (specifica rinviata) | Svolgimento digitale con tentativi, snapshot e consegna strutturata. Non pianificato in dettaglio; segue M3-lite. |
+| Repository Editor (RE) | Estensione del repository didattico: creazione, modifica, eliminazione e riordino di UDA/lezioni, inclusi front matter e corpo Markdown, senza AI né CMS complesso. |
 | Correzione ed export | Consultazione consegne digitali (prodotte da M3-full), punteggi manuali, percentuale, rettifiche tracciate ed export in PDF/Markdown/CSV. |
 | AI successiva (V2) | Proposte di correzione per risposta, approvazione massiva e correzione automatica con opt-in e regole configurabili. Fuori scope V1. |
 
 ### 2.3 Fuori scope vincolante
 
-Registro elettronico, presenze, compiti, chat, forum, videolezioni, LMS, social learning, multi-docente, multi-istituto, editor Markdown integrato, account SchoolForge dedicato per lo studente (registrazione, credenziali proprie, profilo custom), correzione di prove cartacee, PDF archiviati, invio email agli studenti, fonti web per l'AI e generazione AI delle domande non devono apparire come dipendenze o funzionalità dei moduli previsti. In M3-lite restano inoltre fuori scope: consegna e risposte online, tentativi, lock di partecipazione, Cloud Functions, allowlist di dominio Google, mapping classi/studenti.
+Registro elettronico, presenze, compiti, chat, forum, videolezioni, LMS, social learning, multi-docente, multi-istituto, editor visuale/WYSIWYG complesso, account SchoolForge dedicato per lo studente (registrazione, credenziali proprie, profilo custom), correzione di prove cartacee, PDF archiviati, invio email agli studenti, fonti web per l'AI e generazione AI delle domande non devono apparire come dipendenze o funzionalità dei moduli previsti. In M3-lite restano inoltre fuori scope: consegna e risposte online, tentativi, lock di partecipazione, Cloud Functions e allowlist di dominio Google.
 
 ## 3. Utenti, ruoli e identità
 
@@ -123,7 +124,7 @@ Il ruolo "Studente" della baseline precedente (utente anonimo del solo link di u
 
 ## 5. Repository didattico e programma svolto — Modulo 1
 
-In V1 il docente produce i file Markdown esternamente (con strumenti AI come Claude o GPT, o manualmente). SchoolForge importa e valida il contenuto. Un editor integrato è pianificato per V2.
+Nella baseline implementata il docente può produrre i file Markdown esternamente e importarli come ZIP. La prossima estensione pianificata è RE — Repository Editor: editing minimale da portale di UDA e lezioni, mantenendo Markdown-first, export ZIP portabile e nessuna AI.
 
 **FR-REP-01.** Il docente deve poter creare e gestire Programmi, importare UDA, lezioni, pool e asset mediante upload di file singoli o cartelle.
 
@@ -138,6 +139,12 @@ In V1 il docente produce i file Markdown esternamente (con strumenti AI come Cla
 **FR-REP-06.** Il docente deve poter selezionare UDA e lezioni svolte e scaricare il programma svolto in due formati: Markdown e PDF. Entrambi i file vengono generati on-demand nel browser e non sono conservati dal sistema.
 
 **FR-REP-07.** Il docente deve disporre di un kit scaricabile con template Programma/UDA/Lezione/Pool e di una dashboard di prontezza che mostra validità strutturale, lezioni senza pool, pool non validi e numero di domande eleggibili. Il kit e la dashboard non generano contenuti né modificano Markdown.
+
+**FR-REP-08 (RE).** Il docente deve poter creare, modificare, eliminare e riordinare UDA e lezioni da interfaccia, inclusi front matter e corpo Markdown della lezione, senza editor visuale complesso.
+
+**FR-REP-09 (RE).** Ogni modifica da Repository Editor deve mantenere coerenti Storage, Firestore, `publicLessons` e export ZIP. Un salvataggio fallito non deve lasciare la UI in uno stato ambiguo.
+
+**FR-REP-10 (RE).** L'eliminazione di UDA o lezioni deve essere bloccata quando esistono verifiche collegate; la UI deve indicare quali verifiche impediscono l'operazione.
 
 **BR-REP-01.** Il sistema non modifica semanticamente il Markdown importato. I metadati operativi sono conservati separatamente dai file originali.
 
@@ -155,7 +162,7 @@ In V1 il docente produce i file Markdown esternamente (con strumenti AI come Cla
 
 **BR-MD-01.** Il file UDA deve chiamarsi `uda-XX-titolo.md` e dichiarare nel front matter YAML almeno `titolo`, `competenze` e `obiettivi`. `competenze` e `obiettivi` sono liste di stringhe non vuote.
 
-**BR-MD-02.** Una lezione deve chiamarsi `lezione-XXX-titolo.md`. Il contenuto Markdown è libero; il sistema non richiede un editor né impone una struttura didattica aggiuntiva.
+**BR-MD-02.** Una lezione importata deve chiamarsi `lezione-XXX-titolo.md`. Con RE, il filename resta un identificatore tecnico stabile: titolo visuale, sottotitolo, difficoltà, concetti chiave e obiettivi vengono letti dal front matter quando presenti.
 
 ### 6.2 Formato del pool
 
@@ -418,6 +425,7 @@ Il Modulo 3 è diviso in **M3-lite** (§10.1, deciso e in arrivo) e **M3-full** 
 | 1. Repository didattico | Programmi, UDA, lezioni, pool, rendering, ZIP, programma svolto (PDF + Markdown). | Accesso docente e validatore pool. | Funziona senza Portale, AI o correzione. |
 | 2. Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente e studente (canale cartaceo fisico senza record). | Modulo 1. | Vincoli validati, PDF non archiviato, canale cartaceo senza record. |
 | 3-lite. Portale studente (Google, read-only) | Login Google, risoluzione ruolo docente/studente, StudentShell con Lezioni e Verifiche in sola lettura, download PDF studente per verifiche `attiva`+`public`. | Modulo 2. | Studente Google non-owner consulta lezioni pubblicate e scarica PDF senza soluzioni; nessuna Cloud Function. |
+| RE. Repository Editor | Creazione/modifica/eliminazione/riordino UDA e lezioni, inclusi front matter e corpo Markdown. | Modulo 3-lite. | Il docente corregge materiale quotidiano senza reimport ZIP; export resta portabile. |
 | 3-full. Portale digitale (specifica rinviata) | Istanza, snapshot via Function, lock nome+cognome, log nome+IP, bozza, ripresa, consegna e deterrenza. | Modulo 3-lite. | Una consegna strutturata è consultabile dal docente. |
 | 4. Correzione manuale ed export | Punteggi, percentuale, rettifiche, eliminazione consegna ed export PDF/Markdown/CSV. | Modulo 3-full. | Percentuali, audit ed export da snapshot verificabili. |
 | 5. Correzione AI (V2) | Proposte di correzione per risposta, approvazione massiva e correzione automatica opt-in con regole configurabili. Fuori scope V1. | Modulo 4 (in V2). | I flussi manuali restano operativi senza AI. |

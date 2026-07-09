@@ -13,7 +13,15 @@ export type AuditAction =
   | 'program.created'
   | 'program.updated'
   | 'program.deleted'
+  | 'uda.created'
+  | 'uda.updated'
+  | 'uda.deleted'
+  | 'uda.reordered'
+  | 'lesson.created'
   | 'lesson.completed'
+  | 'lesson.updated'
+  | 'lesson.deleted'
+  | 'lesson.reordered'
   | 'class.created'
   | 'class.updated'
   | 'verification.created'
@@ -91,6 +99,8 @@ export interface UdaDoc {
   importId: string;
   dir: string;
   filename: string;
+  /** Stable display order inside the program/import. Import assigns this from folder order. */
+  order?: number;
   storageBasePath: string;
   lessonCount: number;
   /** Didactic metadata parsed from the UDA's own front matter/body — never technical details. */
@@ -106,6 +116,8 @@ export interface LessonDoc {
   udaDir: string;
   path: string;
   filename: string;
+  /** Stable display order inside the UDA. Import assigns this from filename order. */
+  order?: number;
   poolStatus: 'absent' | 'valid' | 'invalid';
   questionCount: number;
   storageRef: string;
@@ -119,7 +131,10 @@ export interface LessonDoc {
    * before this field existed; read back as `null`, never as "no title".
    */
   titolo?: string | null;
+  sottotitolo?: string | null;
   difficolta?: string | null;
+  concettiChiave?: string[];
+  obiettivi?: string[];
 }
 
 /** Stored at programs/{programId}/imports/{importId}/questionIndex/{entryId} */
@@ -167,7 +182,11 @@ export interface PublicLessonDoc {
    * are. Absent on lessons imported before this field existed.
    */
   titolo?: string | null;
+  sottotitolo?: string | null;
   difficolta?: string | null;
+  concettiChiave?: string[];
+  obiettivi?: string[];
+  order?: number;
 }
 
 // ─── M3-lite — Approved-student access model ─────────────────────────────────

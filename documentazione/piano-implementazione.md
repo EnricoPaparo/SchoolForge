@@ -19,12 +19,13 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 | M1 — Repository didattico | Programmi, UDA, Markdown/pool, import validato, rendering, export ZIP, programma svolto (PDF + Markdown). | Sì |
 | M2 — Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente, canale cartaceo fisico senza record (al più `downloadCount`). | Sì |
 | M3-lite — Portale studente (Google, read-only) | Login Google, risoluzione ruolo docente/studente, StudentShell con Lezioni e Verifiche in sola lettura, download PDF studente per verifiche `attiva`+`public`. Nessuna Cloud Function. | Sì |
+| RE — Repository Editor | Editor minimale per creare, modificare, eliminare e riordinare UDA/lezioni, inclusi front matter e corpo Markdown. Nessuna AI, nessuna Cloud Function. | Sì |
 | M3-full — Portale digitale (specifica rinviata) | Tentativi, snapshot via Cloud Function, lock nome+cognome, token sessione, log nome+IP, bozze, consegna, deterrenza. Non pianificato in dettaglio; segue M3-lite. | Sì |
 | M4 — Correzione ed export | Punteggi, percentuali, rettifiche, eliminazione e `Esporta verifiche` in PDF/Markdown/CSV. Dipende da M3-full. | Sì |
 
 **M5 — Correzione AI** è fuori scope V1 ed è pianificato per la V2. Vedi la sezione "V2 — Roadmap futura" in fondo. M5 non fa parte del perimetro né delle dipendenze della V1.
 
-Il Modulo 3 (Portale digitale) è diviso in **M3-lite** (deciso, prossimo passo dopo M2) e **M3-full** (specifica rinviata a una fase successiva, non pianificata in dettaglio). M3-lite non richiede Cloud Functions e non dipende da M3-full.
+Il Modulo 3 (Portale digitale) è diviso in **M3-lite** (deciso e completato dopo M2) e **M3-full** (specifica rinviata a una fase successiva, non pianificata in dettaglio). M3-lite non richiede Cloud Functions e non dipende da M3-full. Dopo M3-lite, la fase utile pianificata è **RE — Repository Editor**, perché migliora il lavoro quotidiano del docente senza introdurre consegne online, correzione o AI.
 
 ---
 
@@ -99,7 +100,8 @@ Un pacchetto è abbastanza piccolo da essere verificato in una review e abbastan
 | G1 — Fondazioni Firebase | H-01/H-02/H-03 completate; CI ed Emulator Suite disponibili. | Progetti separati, budget, export Firestore manuale disponibile, Security Rules default-deny. | M1 con dati sintetici. |
 | G2 — Repository didattico | M1 integrato. | Import valido/invalido, rendering senza pool, ZIP e programma svolto. | M2. |
 | G3 — Verifiche e cartaceo | M2 integrato. | PDF browser, canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`), nessun PDF persistito. | M3-lite. |
-| G4-lite — Portale studente (M3-lite) | M3-lite integrato. | Login Google risolve TeacherShell/StudentShell; un Google-autenticato non-owner legge lezioni pubblicate e verifiche `attiva`+`public` solo se `students/{uid}.status == "approved"` e `settings/studentAccess.studentPortalEnabled == true` (mai per la sola autenticazione); PDF studente senza soluzioni; nessuna Cloud Function introdotta. | M3-full (se pianificato) o direttamente M4 con evidenza di rinvio esplicito di M3-full. |
+| G4-lite — Portale studente (M3-lite) | M3-lite integrato. | Login Google risolve TeacherShell/StudentShell; un Google-autenticato non-owner scopre lezioni pubblicate e verifiche `attiva`+`public` solo se `students/{uid}.status == "approved"` e `settings/studentAccess.studentPortalEnabled == true` (mai per la sola autenticazione); PDF studente senza soluzioni; nessuna Cloud Function introdotta. | RE, M3-full (se pianificato), o uso operativo stabile. |
+| GRE — Repository Editor | RE integrato. | Il docente crea/modifica/elimina/riordina UDA e lezioni, modifica front matter e corpo Markdown, vede anteprima, export ZIP resta portabile, publicLessons resta coerente, eliminazioni bloccate se ci sono verifiche collegate. | M3-full, polish ulteriore o uso operativo stabile. |
 | G4 — Portale digitale (M3-full, specifica rinviata) | G4-lite superato; M3-full integrato, se e quando pianificato. | Lock nome+cognome concorrente, log nome+IP, snapshot, bozza/ripresa, consegna immutabile, nessuna soluzione esposta. | M4. |
 | G5 — Correzione ed export | M4 integrato, G4 (M3-full) superato e H-04 completata. | Punteggi, rettifiche, eliminazione, export PDF/Markdown/CSV da snapshot. | Uso manuale completo — fine V1. |
 | G6 — AI assistita (V2) | M5-A..C integrati e H-05 completata. | Contesto chiuso, audit, proposte assistite per risposta, approvazione massiva. | AI assistita. |
@@ -148,6 +150,14 @@ flowchart TD
     M3LC --> M3LE["M3L-E Integrazione M3-lite"]
     M3LD --> M3LE
     M3LE --> G4LITE["G4-lite"]
+    G4LITE --> RE0["RE-00 Contratto Repository Editor"]
+    RE0 --> RE1["RE-01 Metadata UDA/lezione"]
+    RE1 --> RE2["RE-02 Corpo lezione + anteprima"]
+    RE2 --> RE3["RE-03 Creazione UDA/lezioni"]
+    RE3 --> RE4["RE-04 Riordino"]
+    RE4 --> RE5["RE-05 Eliminazione protetta"]
+    RE5 --> RE6["RE-06 Export ZIP coerente"]
+    RE6 --> REG["GRE"]
     G4LITE -. "se pianificato" .-> M3FA["M3F-A Gateway digitale Functions (M3-full)"]
     M3FA --> M3FB["M3F-B UI consegna online"]
     M3FA --> M3FC["M3F-C Bozza e consegna"]
@@ -209,7 +219,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
 | M3L-A | Modello dati e Security Rules: campo `visibility` su `verifications`, proiezione `publicLessons` scritta nello stesso flusso di import, documento `settings/ownerPublic` per il routing. Nessuna Cloud Function. | G3 | — | Owner mantiene accesso completo; test Emulator sulle regole owner/proiezioni. Nota: la prima versione trattava "Google autenticato non-owner" come sufficiente per leggere le proiezioni; corretto in M3L-A2. |
-| M3L-A2 | Modello di approvazione studente: `settings/studentAccess` (`studentPortalEnabled`, `newStudentRequestsEnabled`), `students/{uid}` (`status: pending/approved/blocked`, `classId`), Security Rules Firestore e Storage che negano ogni lettura studente finché non è `approved` + portale attivo. Nessuna Cloud Function (Storage usa `firestore.get()`/`firestore.exists()` cross-service). | M3L-A | — | Google non-owner senza `students/{uid}`, `pending` o `blocked` non legge `publicLessons`/`publishedProjection`/file lezione; `approved` legge solo se `studentPortalEnabled == true`; owner non impattato; test Emulator per ogni combinazione. |
+| M3L-A2 | Modello di approvazione studente: `settings/studentAccess` (`studentPortalEnabled`, `newStudentRequestsEnabled`), `students/{uid}` (`status: pending/approved/blocked`, `classId`), Security Rules Firestore che negano ogni discovery studente finché non è `approved` + portale attivo. Nessuna Cloud Function. Storage non ripete il gate Firestore e serve solo Markdown autenticati su path già scoperti. | M3L-A | — | Google non-owner senza `students/{uid}`, `pending` o `blocked` non scopre `publicLessons`/`publishedProjection`; `approved` scopre contenuti solo se `studentPortalEnabled == true`; owner non impattato; test Emulator per ogni combinazione. |
 | M3L-A3 | UI docente di gestione studenti: creare/approvare/bloccare `students/{uid}`, assegnare `classId`. | M3L-A2 | — | Il docente approva uno studente dall'interfaccia senza scrivere Firestore a mano; audit dell'approvazione. |
 | M3L-A4 | `classIds` sui programmi (`programs/{id}.classIds: string[]`) e UI Corsi per assegnare un programma a zero, una o più classi. Le UDA e lezioni ereditano la visibilità dal programma (nessun campo classi proprio). | M3L-A3 | — | Programmi legacy senza `classIds` normalizzati a `[]` in lettura (nessuna migrazione distruttiva); `setProgramClassIds` deduplica; un programma senza classi non è visibile a nessuno studente; Security Rules invariate (owner-write già sufficiente). |
 | M3L-B | StudentShell: routing `/student/*`, login Google, risoluzione ruolo (`uid == ownerUid` → TeacherShell, altrimenti StudentShell), layout mobile-first. | M3L-A2 | M3L-C/M3L-D | Docente va a TeacherShell; utente Google non-owner va a StudentShell (il routing del ruolo non richiede l'approvazione: solo le letture di contenuto la richiedono); nessun accesso anonimo. |
@@ -219,7 +229,33 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 ---
 
-## 10. M3-full — Portale digitale (specifica rinviata)
+## 10. RE — Repository Editor
+
+> Questa è la prossima fase prodotto dopo M3-lite. Non sostituisce M3-full e non anticipa correzione o AI: estende il Modulo 1 rendendo modificabile da portale il repository didattico già importato. La roadmap dettagliata è in `repository-editor-roadmap.md`.
+
+| ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
+|---|---|---|---|---|
+| RE-00 | Contratto Repository Editor: tipi, campi `order`, metadata modificabili, responsabilità di aggiornamento Storage/Firestore/`publicLessons`, regole di blocco eliminazione. Nessuna UI completa. | G4-lite | — | Contratti aggiornati; test minimi se cambia codice; piano RE-01 chiaro. |
+| RE-01 | Editor metadata UDA/lezione: modifica front matter UDA e lezione senza ancora editare il corpo Markdown. | RE-00 | — | Metadata persistiti e mostrati correttamente in docente/studente dove applicabile. |
+| RE-02 | Editor corpo lezione con anteprima Markdown sanitizzata. | RE-01 | — | Storage aggiornato; rendering docente e studente leggono il nuovo contenuto; errore salvataggio gestito. |
+| RE-03 | Creazione UDA e lezioni da UI, con front matter minimo valido e filename tecnico stabile generato automaticamente. | RE-02 | — | Nuove UDA/lezioni visibili nel docente; se il programma è assegnato a classi, `publicLessons` è coerente. |
+| RE-04 | Riordino UDA e lezioni tramite `order`, senza rinominare file solo per cambiare ordine. | RE-03 | — | Ordine persistito, stabile su refresh, mobile-friendly. |
+| RE-05 | Eliminazione protetta di UDA/lezioni. Blocca se esistono verifiche collegate; mostra elenco verifiche bloccanti. | RE-04 | — | Eliminazione sicura; nessuna verifica resta con riferimenti rotti. |
+| RE-06 | Export ZIP coerente con modifiche da editor. | RE-05 | — | ZIP esportato resta Markdown-first e leggibile fuori da SchoolForge. |
+| RE-07 | Hardening RE: test integrazione, checklist manuale DEV, aggiornamento documentazione operativa. | RE-06 | — | GRE approvabile; nessuna regressione su import, lezioni studente, verifiche cartacee. |
+
+### 10.1 Vincoli RE
+
+- Non implementare editor WYSIWYG avanzato.
+- Non implementare editor pool nella prima iterazione.
+- Non introdurre AI o Cloud Functions.
+- Non usare rinomina file come meccanismo primario di ordinamento.
+- Non eliminare UDA/lezioni se esistono verifiche collegate.
+- Mantenere export ZIP e Markdown portabili.
+
+---
+
+## 11. M3-full — Portale digitale (specifica rinviata)
 
 > Questa sezione descrive pacchetti di un'eventuale fase successiva a M3-lite, non pianificata in dettaglio. Non è assegnabile finché la decisione su M3-full non sarà presa; è mantenuta come specifica di riferimento.
 
@@ -232,7 +268,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 ---
 
-## 11. M4 — Correzione ed export
+## 12. M4 — Correzione ed export
 
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
@@ -248,7 +284,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 ---
 
-## 12. Qualità, CI/CD e costi
+## 13. Qualità, CI/CD e costi
 
 ### 12.1 Pipeline minima
 
@@ -279,7 +315,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 ---
 
-## 13. Handoff, dashboard e criteri finali
+## 14. Handoff, dashboard e criteri finali
 
 ### 13.1 Handoff obbligatorio
 
@@ -511,8 +547,8 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 |---|---|
 | Prerequisiti | M3L-A |
 | File da creare | `apps/web/src/features/repository/students/access.ts` (helper `canReadStudentContent`), test rules dedicati |
-| File da modificare | `firestore.rules` (`settings/studentAccess`, `students/{uid}`, gate `isApprovedStudent()` su `publicLessons`/`publishedProjection`), `storage.rules` (stesso gate via `firestore.get()`/`firestore.exists()`), `src/types/firestore.ts` (`StudentAccessSettings`, `StudentDoc`) |
-| Test minimi | Google non-owner senza `students/{uid}` non legge nulla; `pending`/`blocked` non leggono nulla; `approved` legge solo se `studentPortalEnabled == true`; stesso criterio per `publicLessons`, `publishedProjection` e file lezione Storage; pool sempre negato; anonimo sempre negato; owner non impattato |
+| File da modificare | `firestore.rules` (`settings/studentAccess`, `students/{uid}`, gate `isApprovedStudent()` su `publicLessons`/`publishedProjection`), `storage.rules` (niente letture cross-service Firestore; solo Markdown autenticati su path importati), `src/types/firestore.ts` (`StudentAccessSettings`, `StudentDoc`) |
+| Test minimi | Google non-owner senza `students/{uid}` non scopre contenuti Firestore; `pending`/`blocked` non scoprono contenuti; `approved` scopre solo se `studentPortalEnabled == true`; pool sempre negato in Storage; anonimo sempre negato; owner non impattato |
 | Evidenza richiesta | Test Emulator per ogni combinazione stato/toggle, Firestore e Storage |
 | Fuori scope (rinviato a M3L-A3) | UI docente per creare/approvare/bloccare uno studente; assegnazione `classId`; filtro lezioni/verifiche per classe |
 
