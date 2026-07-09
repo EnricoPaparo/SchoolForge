@@ -200,15 +200,27 @@ describe('listLessons — deterministic ordering', () => {
       docs: [
         {
           id: 'l3',
-          data: () => ({ udaDir: 'uda-01-intro', path: 'uda-01-intro/lezione-003.md' }),
+          data: () => ({
+            udaDir: 'uda-01-intro',
+            path: 'uda-01-intro/lezione-003.md',
+            filename: 'lezione-003.md',
+          }),
         },
         {
           id: 'l1',
-          data: () => ({ udaDir: 'uda-01-intro', path: 'uda-01-intro/lezione-001.md' }),
+          data: () => ({
+            udaDir: 'uda-01-intro',
+            path: 'uda-01-intro/lezione-001.md',
+            filename: 'lezione-001.md',
+          }),
         },
         {
           id: 'l2',
-          data: () => ({ udaDir: 'uda-01-intro', path: 'uda-01-intro/lezione-002.md' }),
+          data: () => ({
+            udaDir: 'uda-01-intro',
+            path: 'uda-01-intro/lezione-002.md',
+            filename: 'lezione-002.md',
+          }),
         },
       ],
     });
