@@ -195,32 +195,23 @@ describe('listUdas — legacy document normalization', () => {
 });
 
 describe('listLessons — deterministic ordering', () => {
-  it('sorts lessons alphabetically by path so numbering decides the order', async () => {
+  it('sorts lessons alphabetically by path so numbering decides the order — legacy docs with no filename', async () => {
+    // Deliberately omits `filename` (a required LessonDoc field for current
+    // imports) to exercise the legacy fallback: pre-RE-00/RE-01 documents may
+    // only carry `path`, and sorting must not crash on it.
     mockGetDocs.mockResolvedValue({
       docs: [
         {
           id: 'l3',
-          data: () => ({
-            udaDir: 'uda-01-intro',
-            path: 'uda-01-intro/lezione-003.md',
-            filename: 'lezione-003.md',
-          }),
+          data: () => ({ udaDir: 'uda-01-intro', path: 'uda-01-intro/lezione-003.md' }),
         },
         {
           id: 'l1',
-          data: () => ({
-            udaDir: 'uda-01-intro',
-            path: 'uda-01-intro/lezione-001.md',
-            filename: 'lezione-001.md',
-          }),
+          data: () => ({ udaDir: 'uda-01-intro', path: 'uda-01-intro/lezione-001.md' }),
         },
         {
           id: 'l2',
-          data: () => ({
-            udaDir: 'uda-01-intro',
-            path: 'uda-01-intro/lezione-002.md',
-            filename: 'lezione-002.md',
-          }),
+          data: () => ({ udaDir: 'uda-01-intro', path: 'uda-01-intro/lezione-002.md' }),
         },
       ],
     });
@@ -231,6 +222,42 @@ describe('listLessons — deterministic ordering', () => {
       'uda-01-intro/lezione-002.md',
       'uda-01-intro/lezione-003.md',
     ]);
+    // The fallback derives filename from path's last segment, not just an
+    // empty placeholder — verified explicitly so the fallback logic itself
+    // stays covered, not just "it doesn't crash".
+    expect(result.map((l) => l.filename)).toEqual([
+      'lezione-001.md',
+      'lezione-002.md',
+      'lezione-003.md',
+    ]);
+  });
+
+  it('sorts by udaDir, then order, then filename when filename is present', async () => {
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        {
+          id: 'l-b',
+          data: () => ({
+            udaDir: 'uda-01-intro',
+            path: 'uda-01-intro/lezione-b.md',
+            filename: 'lezione-b.md',
+            order: 1,
+          }),
+        },
+        {
+          id: 'l-a',
+          data: () => ({
+            udaDir: 'uda-01-intro',
+            path: 'uda-01-intro/lezione-a.md',
+            filename: 'lezione-a.md',
+            order: 0,
+          }),
+        },
+      ],
+    });
+
+    const result = await listLessons('prog-1', 'imp-1', fakeDb);
+    expect(result.map((l) => l.filename)).toEqual(['lezione-a.md', 'lezione-b.md']);
   });
 });
 

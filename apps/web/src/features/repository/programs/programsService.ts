@@ -135,6 +135,16 @@ export async function listUdas(
   );
 }
 
+/**
+ * `filename` is a required LessonDoc field for imports written by the
+ * current importer, but legacy documents pre-dating that guarantee may only
+ * carry `path` — fall back to its last segment, and finally to an empty
+ * string, so sorting never dereferences an undefined value.
+ */
+function filenameOrLegacy(raw: Partial<LessonDoc>): string {
+  return raw.filename ?? raw.path?.split('/').pop() ?? '';
+}
+
 export async function listLessons(
   programId: string,
   importId: string,
@@ -147,6 +157,7 @@ export async function listLessons(
       id: d.id,
       ...raw,
       order: raw.order,
+      filename: filenameOrLegacy(raw),
       sottotitolo: raw.sottotitolo ?? null,
       difficolta: raw.difficolta ?? null,
       concettiChiave: raw.concettiChiave ?? [],
