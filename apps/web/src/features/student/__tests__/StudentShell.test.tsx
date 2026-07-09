@@ -53,6 +53,35 @@ describe('StudentShell', () => {
     await waitFor(() => expect(screen.getByText(/Nessuna classe assegnata/)).toBeTruthy());
   });
 
+  it('integration: an approved student with a class sees real lesson content wired through Lezioni', async () => {
+    mockLoadStudentLessons.mockResolvedValueOnce({
+      status: 'ok',
+      programs: [{ id: 'prog-a', title: 'Informatica', classIds: ['class-a'] }],
+      lessonsByProgram: { 'prog-a': [] },
+    });
+    render(<StudentShell />);
+    await waitFor(() => expect(screen.getByText('Informatica')).toBeTruthy());
+  });
+
+  it('integration: an approved student with a class sees real verification content wired through Verifiche', async () => {
+    mockLoadStudentVerifications.mockResolvedValueOnce({
+      status: 'ok',
+      verifications: [
+        {
+          id: 'ver-1',
+          title: 'Verifica Reti',
+          className: 'Classe A',
+          activatedAt: null,
+          questionCount: 2,
+          questions: [],
+        },
+      ],
+    });
+    render(<StudentShell />);
+    fireEvent.click(screen.getByRole('button', { name: /Verifiche/ }));
+    await waitFor(() => expect(screen.getByText('Verifica Reti')).toBeTruthy());
+  });
+
   it('renders no verification data when no class is assigned (empty state only)', async () => {
     render(<StudentShell />);
     fireEvent.click(screen.getByRole('button', { name: /Verifiche/ }));
