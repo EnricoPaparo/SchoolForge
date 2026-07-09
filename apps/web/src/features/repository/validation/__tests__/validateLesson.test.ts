@@ -39,6 +39,27 @@ const WRONG_FILENAME_LESSON: RawFile = {
   content: '# HTTP',
 };
 
+const LESSON_WITH_FRONT_MATTER: RawFile = {
+  path: 'uda-01-reti/lezione-002-tcp.md',
+  content: `---
+titolo: "TCP"
+difficolta: "intermedia"
+---
+
+# TCP
+
+Contenuto.`,
+};
+
+const LESSON_WITH_INVALID_FRONT_MATTER: RawFile = {
+  path: 'uda-01-reti/lezione-003-udp.md',
+  content: `---
+titolo: "unterminated
+---
+
+Contenuto.`,
+};
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe('validateLesson — valid lesson, no pool', () => {
@@ -95,5 +116,29 @@ describe('validateLesson — invalid lesson filename', () => {
     const poolIssues = result.issues.filter((i) => i.level === 'pool' || i.level === 'question');
     expect(lessonIssues.length).toBeGreaterThan(0);
     expect(poolIssues.length).toBeGreaterThan(0);
+  });
+});
+
+describe('validateLesson — front matter (optional, never blocking)', () => {
+  it('a lesson with no front matter is valid and has empty metadata', () => {
+    const result = validateLesson(VALID_LESSON);
+    expect(result.valid).toBe(true);
+    expect(result.issues).toHaveLength(0);
+    expect(result.metadata.titolo).toBeNull();
+  });
+
+  it('a lesson with valid front matter is valid and exposes the parsed metadata', () => {
+    const result = validateLesson(LESSON_WITH_FRONT_MATTER);
+    expect(result.valid).toBe(true);
+    expect(result.issues).toHaveLength(0);
+    expect(result.metadata.titolo).toBe('TCP');
+    expect(result.metadata.difficolta).toBe('intermedia');
+  });
+
+  it('a lesson with malformed front matter YAML stays valid — no issue is raised, metadata falls back to empty', () => {
+    const result = validateLesson(LESSON_WITH_INVALID_FRONT_MATTER);
+    expect(result.valid).toBe(true);
+    expect(result.issues).toHaveLength(0);
+    expect(result.metadata.titolo).toBeNull();
   });
 });

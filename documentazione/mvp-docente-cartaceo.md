@@ -154,6 +154,27 @@ obiettivi:
 
 Il testo dopo il front matter (`# Contenuto Markdown...`) è usato anche come breve descrizione dell'UDA nel pannello **Info UDA**, insieme a competenze e obiettivi. Se un campo manca, il pannello mostra "Non indicato" — non vengono mai mostrati dettagli tecnici (import id, percorsi di storage).
 
+**Front matter opzionale per il file lezione** (es. `lezione-001-http.md`):
+
+```yaml
+---
+titolo: 'HTTP'
+sottotitolo: 'Il protocollo del web'
+difficolta: 'base'
+concetti_chiave:
+  - 'Client/server'
+  - 'Richiesta/risposta'
+obiettivi:
+  - 'Descrivere il ciclo richiesta/risposta'
+---
+
+# HTTP
+
+Contenuto della lezione in Markdown.
+```
+
+Tutti i campi sono opzionali (`titolo` è raccomandato). Se presenti, `titolo`/`difficolta` compaiono anche nella riga della lezione in **Corsi** (con la numerazione dal filename come prefisso); l'intestazione completa (titolo, sottotitolo, difficoltà, concetti chiave, obiettivi) compare nella sezione **Lezioni** quando la lezione è aperta, sia lato docente che lato studente, e nell'intestazione del PDF lezione. Il filename resta sempre l'ordinamento — il front matter cambia solo cosa viene mostrato. Se il front matter è assente o non è YAML valido, l'import e la visualizzazione funzionano comunque: il titolo mostrato ricade sul filename pulito (es. `lezione-001-http.md` → "Http"), senza numerazione se il filename non segue lo schema `lezione-NNN-...`.
+
 **Formato pool domande** (es. `lezione-001-http.pool.md`):
 
 ```yaml

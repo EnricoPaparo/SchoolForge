@@ -177,15 +177,81 @@
   overflow-x: hidden;
 }
 
+.contentHeaderBlock {
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
 .contentTitle {
   font-size: 1.0625rem;
   font-weight: 700;
-  margin-bottom: 1rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--color-border);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.contentSubtitle {
+  margin-top: 0.1875rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.contentDifficulty {
+  display: inline-block;
+  margin-bottom: 0.875rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.125rem 0.5rem;
+}
+
+.metaBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin-bottom: 1.125rem;
+}
+
+.metaGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+}
+
+.metaLabel {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.chipList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.chip {
+  font-size: 0.8125rem;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border-radius: 999px;
+  padding: 0.125rem 0.625rem;
+}
+
+.metaList {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.875rem;
 }
 
 /* Compact, low-emphasis placeholder shown before a lesson is selected. */

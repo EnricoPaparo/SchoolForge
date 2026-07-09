@@ -163,8 +163,10 @@ describe('M1 Integration — Lesson load on UDA expand', () => {
     render(<ProgramsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    expect(await screen.findByText('lezione-001.md')).toBeTruthy();
-    expect(screen.getByText('lezione-002.md')).toBeTruthy();
+    // No front matter on either lesson: rows fall back to a cleaned-up
+    // filename, not the raw "lezione-001.md".
+    expect(await screen.findByText('Lezione 001')).toBeTruthy();
+    expect(screen.getByText('Lezione 002')).toBeTruthy();
     expect(mockListLessons).toHaveBeenCalled();
   });
 });
@@ -179,8 +181,8 @@ describe('M1 Integration — Lessons in Corsi stay structural (no Markdown viewe
     render(<ProgramsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    await screen.findByText('lezione-001.md');
-    expect(screen.queryByRole('button', { name: 'lezione-001.md' })).toBeNull();
+    await screen.findByText('Lezione 001');
+    expect(screen.queryByRole('button', { name: 'Lezione 001' })).toBeNull();
     expect(document.querySelector('.prose')).toBeNull();
   });
 });
@@ -196,7 +198,7 @@ describe('M1 Integration — Toggle lesson completed', () => {
     render(<ProgramsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    await screen.findByText('lezione-002.md');
+    await screen.findByText('Lezione 002');
 
     const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
     expect(checkbox.checked).toBe(false);

@@ -1,11 +1,15 @@
 import { parsePool } from '@schoolforge/lesson-contract';
 import type { LessonResult, RawFile, ValidationIssue } from './types.js';
+import { parseLessonMetadata } from './lessonMetadata.js';
 
 const LESSON_FILENAME_RE = /^lezione-\d{3}-.+\.md$/;
 
 export function validateLesson(lessonFile: RawFile, poolFile?: RawFile): LessonResult {
   const filename = lessonFile.path.split('/').pop() ?? lessonFile.path;
   const issues: ValidationIssue[] = [];
+  // Front matter is optional for lessons (unlike UDA): missing or invalid
+  // YAML never raises an issue, it just yields empty metadata.
+  const { metadata } = parseLessonMetadata(lessonFile.content);
 
   if (!LESSON_FILENAME_RE.test(filename)) {
     issues.push({
@@ -43,5 +47,6 @@ export function validateLesson(lessonFile: RawFile, poolFile?: RawFile): LessonR
     valid: issues.every((i) => i.level !== 'lezione'),
     poolStatus,
     issues,
+    metadata,
   };
 }
