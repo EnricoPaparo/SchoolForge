@@ -207,7 +207,7 @@ describe('VerificationsView', () => {
     expect(within(table).getByText('Verifica Geometria')).toBeTruthy();
     expect(within(table).getByText('Verifica Trigonometria')).toBeTruthy();
     expect(within(table).getByText('bozza')).toBeTruthy();
-    expect(within(table).getByText('attiva')).toBeTruthy();
+    expect(within(table).getByText('nascosta')).toBeTruthy();
     expect(within(table).getByText('chiusa')).toBeTruthy();
     // Classe / Corso columns resolved from ids
     expect(within(table).getAllByText('Classe 3A').length).toBeGreaterThanOrEqual(1);

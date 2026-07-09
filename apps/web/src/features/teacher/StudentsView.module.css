@@ -71,6 +71,23 @@
   border-color: var(--color-success-btn);
 }
 
+/*
+ * Overrides the global button:hover/:active rules (index.css), which
+ * otherwise win on specificity and flash the switch back to its
+ * off-state surface color — visible as a white/gray toggle on hover, and
+ * stuck that way on touch devices until :hover clears on tap-elsewhere.
+ */
+.switchOn:hover:not(:disabled),
+.switchOn:active:not(:disabled) {
+  background-color: var(--color-success-btn);
+  border-color: var(--color-success-btn);
+}
+
+.switchOn:focus-visible {
+  background-color: var(--color-success-btn);
+  border-color: var(--color-success-btn);
+}
+
 .switchThumb {
   position: absolute;
   top: 1px;

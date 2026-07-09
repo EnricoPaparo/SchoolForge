@@ -64,21 +64,29 @@ function sortVerificationsByActivation(list: VerificationItem[]): VerificationIt
   });
 }
 
-function StatusBadge({ status }: { status: 'draft' | 'active' | 'closed' }) {
-  const labels = { draft: 'bozza', active: 'attiva', closed: 'chiusa' };
-  const cls = {
-    draft: styles.badgeDraft,
-    active: styles.badgeActive,
-    closed: styles.badgeClosed,
-  };
+/**
+ * A single, non-redundant status label. For `active` verifications, the
+ * status itself ("attiva") is redundant with visibility, so it's replaced
+ * outright by "Pubblica"/"Nascosta" instead of showing both.
+ */
+function StatusBadge({
+  status,
+  visibility,
+}: {
+  status: 'draft' | 'active' | 'closed';
+  visibility: 'hidden' | 'public';
+}) {
+  if (status === 'active') {
+    const isPublic = visibility === 'public';
+    return (
+      <span className={`${styles.badge} ${isPublic ? styles.badgeActive : styles.badgeDraft}`}>
+        {isPublic ? 'pubblica' : 'nascosta'}
+      </span>
+    );
+  }
+  const labels = { draft: 'bozza', closed: 'chiusa' } as const;
+  const cls = { draft: styles.badgeDraft, closed: styles.badgeClosed } as const;
   return <span className={`${styles.badge} ${cls[status]}`}>{labels[status]}</span>;
-}
-
-/** Shown only for `active` verifications — visibility is meaningless for draft/closed. */
-function VisibilityBadge({ visibility }: { visibility: 'hidden' | 'public' }) {
-  const label = visibility === 'public' ? 'pubblica allo studente' : 'nascosta allo studente';
-  const cls = visibility === 'public' ? styles.badgeActive : styles.badgeDraft;
-  return <span className={`${styles.badge} ${cls}`}>{label}</span>;
 }
 
 export function VerificationsView() {
@@ -602,8 +610,7 @@ export function VerificationsView() {
                       <td className={`${styles.td} ${styles.metaCell}`}>{className}</td>
                       <td className={`${styles.td} ${styles.metaCell}`}>{programTitle}</td>
                       <td className={styles.td}>
-                        <StatusBadge status={v.status} />
-                        {v.status === 'active' && <VisibilityBadge visibility={v.visibility} />}
+                        <StatusBadge status={v.status} visibility={v.visibility} />
                       </td>
                       <td className={`${styles.td} ${styles.metaCell}`}>{questionCount}</td>
                       <td className={styles.tdActions}>
@@ -717,7 +724,7 @@ export function VerificationsView() {
         <div className={styles.detail} aria-label="Dettaglio verifica">
           <div className={styles.detailHeader}>
             <h2 className={styles.detailTitle}>{selectedVer.config.title}</h2>
-            <StatusBadge status={selectedVer.status} />
+            <StatusBadge status={selectedVer.status} visibility={selectedVer.visibility} />
           </div>
 
           {/* ── Draft: edit title/class ── */}
