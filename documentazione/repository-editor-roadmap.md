@@ -1,6 +1,6 @@
 # SchoolForge — Roadmap Repository Editor
 
-**Stato:** proposta operativa approvata come prossima fase dopo M3-lite  
+**Stato:** implementato e stabile per uso DEV/manuale (RE-00 → RE-07 completate)  
 **Nome fase:** RE — Repository Editor  
 **Obiettivo:** ridurre la dipendenza dall'import ZIP e rendere SchoolForge usabile ogni giorno dal docente per creare, correggere e riorganizzare materiale didattico.
 
@@ -131,6 +131,8 @@ Motivo: editare pool significa toccare validazione domande, `questionIndex`, ver
 | RE-05 | Eliminazione protetta | Elimina UDA/lezioni solo se non bloccate da verifiche collegate. | Messaggi chiari sui blocchi. |
 | RE-06 | Export ZIP coerente | Export del repository aggiornato dopo modifiche da editor. | Verifica portabilità fuori da SchoolForge. |
 | RE-07 | Hardening editor | Test integrazione, checklist manuale DEV, documentazione operativa. | Gate di stabilità prima di nuove feature. |
+
+**Tutte le fasi RE-00 → RE-07 sono implementate e mergiate su `main`.** Il Repository Editor è considerato stabile per uso DEV/manuale: il docente può creare, modificare, riordinare ed eliminare (con blocco protetto) UDA e lezioni direttamente dal portale, ed esportare uno ZIP coerente e reimportabile. La checklist operativa DEV di RE-07 è in [`documentazione/evidenze/repository-editor-checklist-manuale.md`](evidenze/repository-editor-checklist-manuale.md). Non sono previste nuove feature del Repository Editor oltre questo perimetro senza una decisione di prodotto esplicita (pool editor, versioning/storico, asset manager, editor visuale avanzato restano fuori scope, vedi §3 "Escluso").
 
 ---
 

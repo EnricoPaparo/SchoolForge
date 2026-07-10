@@ -154,6 +154,13 @@ Questa sezione andrà rivista quando M3-full sarà pianificato in dettaglio, val
 - Gli import incompleti non sono visibili e possono essere rimossi da lifecycle o comando docente; non costituiscono una cronologia utente.
 - L'attivazione copia fonti, regole, candidati e soluzioni nel `publishedSnapshot`, con `visibility` iniziale `hidden`. Da `attiva` in poi configurazione e fonti non sono più modificabili; solo `visibility` resta modificabile dal docente.
 
+### 5.2 Repository Editor (RE) — limiti del modello client-side
+
+- Creazione, modifica, riordino ed export sono operazioni Firestore/Storage già coperte dalle regole owner-only esistenti (`programs/{programId}/{sub=**}`, `publicLessons/{lessonId}`): nessuna nuova Security Rule introdotta da RE-01 → RE-06.
+- **Il blocco eliminazione (RE-05) è enforced solo lato client**, in `findRepositoryDeleteBlockers`/`repositoryEditorGuards.ts`: prima di eliminare una UDA/lezione, il client legge tutte le `verifications` e verifica che nessuna referenzi quella UDA/lezione (o le sue domande/pool) tramite `config.questionRefs`. Le Security Rules non replicano questo controllo — un client compromesso o una scrittura diretta all'API Firestore potrebbe eliminare una UDA/lezione ancora referenziata da una verifica, lasciando quest'ultima con riferimenti rotti. Accettabile nel modello a singolo docente/proprietario di V1 (nessun'altra identità ha mai scrittura su questi percorsi); da rivalutare se un giorno più identità scrivessero sullo stesso repository.
+- Il riordino (RE-04) non tocca mai `dir`/`filename`/percorsi Storage: solo `order` su Firestore, in un `writeBatch` atomico per evitare uno scambio a metà.
+- L'export ZIP (RE-06) legge `listUdas`/`listLessons` (già filtrati/ordinati dalle Security Rules e dall'app) e non introduce percorsi di lettura aggiuntivi; l'ordine fisico dell'archivio è responsabilità esclusiva del client (`buildExportZip`), non delle Security Rules.
+
 ---
 
 ## 6. Dati, privacy ed export
@@ -203,6 +210,7 @@ Questa sezione andrà rivista quando M3-full sarà pianificato in dettaglio, val
 | G2 | Sanitizzazione Markdown verificata; Storage privato; import isolato e commit di `activeImportId` (fallimento non cambia il contenuto visibile); ZIP portabile. |
 | G3 | PDF generato nel browser senza persistenza; canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`); nessun PDF in Storage. |
 | G4-lite | Login Google risolve correttamente TeacherShell/StudentShell; nessun accesso anonimo; un utente Google non-owner legge contenuti solo se `students/{uid}.status == "approved"` e `settings/studentAccess.studentPortalEnabled == true` (mai per la sola autenticazione); studente `pending`/`blocked` o senza documento `students/{uid}` non legge nulla; pool, soluzioni, `questionIndex` e documenti tecnici mai raggiungibili dallo studente; PDF studente senza soluzioni; nessuna Cloud Function introdotta. |
+| GRE (Repository Editor) | Creazione/modifica/riordino/eliminazione di UDA/lezioni non introducono nuove Security Rule (owner-only preesistente); eliminazione bloccata lato client se esiste una verifica collegata (§5.2, limite noto: solo client-side); riordino non rinomina mai file Storage; export ZIP resta Markdown-first, portabile e con `order` coerente al reimport. |
 | G4 (M3-full, specifica rinviata) | Gateway `startDigitalAttempt`/`continueDigitalAttempt` con participant lock nome+cognome e cookie HttpOnly/Secure; nessun write Firestore dal portale; log nome+IP; soluzioni non nel response; bozza/consegna immutabile; reset controllato e auditato. |
 | G5 | Correzione, audit, eliminazione ed export solo docente; export non persistito; richiede G4 (M3-full). |
 | G6/G7 (V2) | C-02 risolta / C-03; AI senza web; audit completo; opt-in; rollback verificato. |

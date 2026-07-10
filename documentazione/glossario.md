@@ -95,7 +95,7 @@
 | DoR / DoD | Condizioni minime per iniziare / dichiarare completato un pacchetto. |
 | RPO | Perdita dati massima: in V1 best-effort, affidata all'export manuale Firestore dal docente e alla ridondanza nativa di Cloud Storage; nessun target numerico garantito. |
 | RTO | Tempo di ripristino; in SchoolForge è best-effort, senza target numerico. |
-| Repository Editor (RE) | Prossima fase pianificata: editor minimale Markdown-first per creare, modificare, eliminare e riordinare UDA e lezioni da portale, senza CMS visuale complesso, AI o consegna online. |
+| Repository Editor (RE) | Implementato (RE-00 → RE-07): editor minimale Markdown-first per creare, modificare, eliminare e riordinare UDA e lezioni da portale, senza CMS visuale complesso, AI o consegna online. |
 
 ---
 
