@@ -2,7 +2,7 @@
 
 **Versione:** 1.0
 **Ambito:** l'intera V1 — M1 (Repository didattico), M2 (Verifiche e cartaceo), M3-lite (Portale studente), RE (Repository Editor). M3-full, M4 e M5 non fanno parte di questo ambito (specifica rinviata/fuori scope).
-**Scopo:** sintesi di chiusura dopo RE-00 → RE-07. Non duplica le checklist di area già esistenti (elencate in §1): le referenzia. Aggiunge un giro rapido sulle 6 aree UI principali richieste per la stabilizzazione V1 (§2) e il backlog residuo emerso dall'audit di questa sessione (§3–§4).
+**Scopo:** sintesi di chiusura dopo RE-00 → RE-07. Non duplica le checklist di area già esistenti (elencate in §1): le referenzia. Aggiunge un giro rapido sulle 6 aree UI principali richieste per la stabilizzazione V1 (§2), le incoerenze corrette (§3) e i residui ancora noti (§4).
 **Metodo:** come le checklist di area che referenzia, è un audit di codice/documentazione eseguito in questa sessione (nessun browser interattivo collegato a un progetto Firebase reale). §2 resta un template da eseguire manualmente; §3–§4 sono invece esito diretto di questa sessione, non da eseguire.
 
 ## 1. Checklist di area già esistenti (referenziate, non duplicate)
@@ -39,11 +39,10 @@ Nessun bug di codice trovato nelle 6 aree UI (review statica: nessun `TODO`/`FIX
 
 Nessun'altra incoerenza "RE ancora futura/pianificata" trovata oltre a queste (le occorrenze verificate ma **non** modificate — `decisioni.md` D-14, la riga "Autorizza" di G4-lite in `piano-implementazione.md` — descrivono correttamente una decisione/gate storici, non lo stato attuale di RE).
 
-## 4. Backlog residuo (non implementato in questa sessione)
+## 4. Residui ancora noti
 
-Nessun problema bloccante trovato. Un solo elemento di pulizia a basso rischio, segnalato ma non toccato per restare entro "nessuna modifica invasiva":
+Nessun problema bloccante trovato. Il codice morto del vecchio login email/password (`AuthContextValue.signIn` e `signInWithEmailAndPassword`) è stato rimosso nella PR #79.
 
-- **Codice morto in `apps/web/src/lib/auth.tsx`**: `AuthContextValue.signIn` (email/password, `signInWithEmailAndPassword`) è definito ed esposto dal context ma nessun componente lo chiama — `LoginPage.tsx` usa solo `signInWithGoogle`. Probabile residuo di un flusso di login precedente a M3-lite (quando l'autenticazione è stata unificata su Google per docente e studente). Rimuoverlo è sicuro (nessun consumatore) ma tocca la shape pubblica di `AuthContextValue`, quindi non è stato incluso come "fix piccolo e sicuro" in questa sessione — da valutare in un pacchetto di pulizia dedicato, non urgente.
 - Le checklist manuali con browser reale (§1: G4-lite, Repository Editor) restano da eseguire da un umano con un progetto Firebase reale — nessun agente in questa sessione ha avuto un browser interattivo collegato a un progetto Firebase con login Google reale.
 - Limite già noto e accettato, non nuovo: l'export ZIP non riscrive `programma.md`/`programmaMeta` (annotato in RE-06/RE-07, non ripetuto qui).
 
