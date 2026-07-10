@@ -790,6 +790,157 @@ questions:
     });
   });
 
+  describe('question editor — informational note', () => {
+    beforeEach(() => {
+      mockListPrograms.mockResolvedValue([PROGRAM]);
+      mockListUdas.mockResolvedValue([UDA]);
+      mockListLessons.mockResolvedValue([LESSON_VALID]);
+      mockLoadPool.mockResolvedValue({ status: 'valid', pool: VALID_POOL });
+      mockSavePool.mockResolvedValue(undefined);
+    });
+
+    async function openLesson() {
+      render(<DomandeView />);
+      await expandCourse();
+      await expandUda();
+      fireEvent.click(await screen.findByRole('button', { name: /Introduzione alle reti/ }));
+      await screen.findByText('2 domande');
+    }
+
+    it('is not shown outside the question editor', async () => {
+      await openLesson();
+      expect(screen.queryByText(/Le modifiche ai pool valgono per le verifiche/)).toBeNull();
+    });
+
+    it('is shown while creating a new question', async () => {
+      await openLesson();
+      fireEvent.click(screen.getByRole('button', { name: /Nuova domanda/ }));
+      await screen.findByText(/Le modifiche ai pool valgono per le verifiche create da ora in poi/);
+    });
+
+    it('is shown while editing an existing question', async () => {
+      await openLesson();
+      const editBtns = await screen.findAllByRole('button', { name: /Modifica domanda/ });
+      fireEvent.click(editBtns[0]);
+      await screen.findByText(/Le modifiche ai pool valgono per le verifiche create da ora in poi/);
+    });
+  });
+
+  describe('question editor — UX validation messages', () => {
+    beforeEach(() => {
+      mockListPrograms.mockResolvedValue([PROGRAM]);
+      mockListUdas.mockResolvedValue([UDA]);
+      mockListLessons.mockResolvedValue([LESSON_VALID]);
+      mockLoadPool.mockResolvedValue({ status: 'valid', pool: VALID_POOL });
+      mockSavePool.mockResolvedValue(undefined);
+    });
+
+    async function openNewQuestionForm() {
+      render(<DomandeView />);
+      await expandCourse();
+      await expandUda();
+      fireEvent.click(await screen.findByRole('button', { name: /Introduzione alle reti/ }));
+      await screen.findByText('2 domande');
+      fireEvent.click(screen.getByRole('button', { name: /Nuova domanda/ }));
+      await screen.findByRole('heading', { name: 'Nuova domanda' });
+    }
+
+    it('shows "Inserisci un ID domanda." when ID is empty', async () => {
+      await openNewQuestionForm();
+      fireEvent.change(screen.getByLabelText('Testo domanda'), { target: { value: 'Testo.' } });
+      fireEvent.change(screen.getByLabelText('Soluzione'), { target: { value: 'Risposta.' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+      await screen.findByText('Inserisci un ID domanda.');
+      expect(mockSavePool).not.toHaveBeenCalled();
+    });
+
+    it('shows "Inserisci il testo della domanda." when testo is empty', async () => {
+      await openNewQuestionForm();
+      fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q3' } });
+      fireEvent.change(screen.getByLabelText('Soluzione'), { target: { value: 'Risposta.' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+      await screen.findByText('Inserisci il testo della domanda.');
+      expect(mockSavePool).not.toHaveBeenCalled();
+    });
+
+    it('shows "Inserisci la soluzione." when aperta soluzione is empty', async () => {
+      await openNewQuestionForm();
+      fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q3' } });
+      fireEvent.change(screen.getByLabelText('Testo domanda'), { target: { value: 'Testo.' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+      await screen.findByText('Inserisci la soluzione.');
+      expect(mockSavePool).not.toHaveBeenCalled();
+    });
+
+    it('shows "Inserisci almeno due risposte." when a chiusa question has fewer than two filled answers', async () => {
+      await openNewQuestionForm();
+      fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q3' } });
+      fireEvent.change(screen.getByLabelText('Tipo domanda'), {
+        target: { value: 'chiusa_singola' },
+      });
+      fireEvent.change(screen.getByLabelText('Testo domanda'), { target: { value: 'Testo.' } });
+      fireEvent.change(screen.getByLabelText('Risposta A'), {
+        target: { value: 'Unica risposta' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+      await screen.findByText('Inserisci almeno due risposte.');
+      expect(mockSavePool).not.toHaveBeenCalled();
+    });
+
+    it('shows "Seleziona almeno una risposta corretta." when no chiusa answer is selected', async () => {
+      await openNewQuestionForm();
+      fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q3' } });
+      fireEvent.change(screen.getByLabelText('Tipo domanda'), {
+        target: { value: 'chiusa_singola' },
+      });
+      fireEvent.change(screen.getByLabelText('Testo domanda'), { target: { value: 'Testo.' } });
+      fireEvent.change(screen.getByLabelText('Risposta A'), { target: { value: 'A' } });
+      fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
+      fireEvent.change(screen.getByLabelText('Risposta B'), { target: { value: 'B' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+      await screen.findByText('Seleziona almeno una risposta corretta.');
+      expect(mockSavePool).not.toHaveBeenCalled();
+    });
+
+    it('shows "Lascia almeno una risposta non corretta." when every chiusa_multipla answer is selected', async () => {
+      await openNewQuestionForm();
+      fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q3' } });
+      fireEvent.change(screen.getByLabelText('Tipo domanda'), {
+        target: { value: 'chiusa_multipla' },
+      });
+      fireEvent.change(screen.getByLabelText('Testo domanda'), { target: { value: 'Testo.' } });
+      fireEvent.change(screen.getByLabelText('Risposta A'), { target: { value: 'A' } });
+      fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
+      fireEvent.change(screen.getByLabelText('Risposta B'), { target: { value: 'B' } });
+
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText(/Seleziona come risposta corretta a/));
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText(/Seleziona come risposta corretta b/));
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+      await screen.findByText('Lascia almeno una risposta non corretta.');
+      expect(mockSavePool).not.toHaveBeenCalled();
+    });
+
+    it('allows saving a chiusa_singola question that passes UX validation', async () => {
+      await openNewQuestionForm();
+      fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q3' } });
+      fireEvent.change(screen.getByLabelText('Tipo domanda'), {
+        target: { value: 'chiusa_singola' },
+      });
+      fireEvent.change(screen.getByLabelText('Testo domanda'), { target: { value: 'Testo.' } });
+      fireEvent.change(screen.getByLabelText('Risposta A'), { target: { value: 'A' } });
+      fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
+      fireEvent.change(screen.getByLabelText('Risposta B'), { target: { value: 'B' } });
+      fireEvent.click(screen.getByLabelText(/Seleziona come risposta corretta a/));
+      fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+      await waitFor(() => expect(mockSavePool).toHaveBeenCalledOnce());
+    });
+  });
+
   describe('sidebar collapse', () => {
     it('can collapse and re-expand the sidebar', async () => {
       mockListPrograms.mockResolvedValue([PROGRAM]);

@@ -86,6 +86,21 @@ function initDraft(q: PoolQuestion | null): QuestionDraft {
   };
 }
 
+/** Filters out blank option rows and resolves which of the remaining ones are selected as soluzione. */
+function computeFilledOpzioni(d: QuestionDraft): {
+  opzioni: { id: string; testo: string }[];
+  selectedSolutionIds: string[];
+} {
+  const opzioni = d.opzioni
+    .map((o, index) => ({ id: optionIdFromIndex(index), testo: o.testo.trim() }))
+    .filter((o) => o.testo !== '');
+  const optionIds = new Set(opzioni.map((o) => o.id));
+  const selectedSolutionIds = d.soluzioneIds
+    .map((id) => id.trim())
+    .filter((id) => optionIds.has(id));
+  return { opzioni, selectedSolutionIds };
+}
+
 /** Converts a draft to a raw object suitable for pool insertion (validated downstream). */
 function draftToRaw(d: QuestionDraft): Record<string, unknown> {
   const base = {
@@ -98,16 +113,33 @@ function draftToRaw(d: QuestionDraft): Record<string, unknown> {
   if (d.tipo === 'aperta') {
     return { ...base, soluzione: d.soluzione };
   }
-  const opzioni = d.opzioni
-    .map((o, index) => ({ id: optionIdFromIndex(index), testo: o.testo.trim() }))
-    .filter((o) => o.testo !== '');
-  const optionIds = new Set(opzioni.map((o) => o.id));
-  const selectedSolutionIds = d.soluzioneIds
-    .map((id) => id.trim())
-    .filter((id) => optionIds.has(id));
+  const { opzioni, selectedSolutionIds } = computeFilledOpzioni(d);
   const soluzione =
     d.tipo === 'chiusa_singola' ? [selectedSolutionIds[0] ?? ''] : selectedSolutionIds;
   return { ...base, opzioni, soluzione };
+}
+
+/**
+ * UX-level checks run before the serializePool/parsePool round-trip, so the teacher gets a
+ * specific, actionable message instead of a raw schema-validation error. parsePool remains the
+ * final source of truth — these checks mirror a subset of its rules in plain language.
+ */
+function validateDraft(d: QuestionDraft): string | null {
+  if (d.id.trim() === '') return 'Inserisci un ID domanda.';
+  if (d.testo.trim() === '') return 'Inserisci il testo della domanda.';
+
+  if (d.tipo === 'aperta') {
+    if (d.soluzione.trim() === '') return 'Inserisci la soluzione.';
+    return null;
+  }
+
+  const { opzioni, selectedSolutionIds } = computeFilledOpzioni(d);
+  if (opzioni.length < 2) return 'Inserisci almeno due risposte.';
+  if (selectedSolutionIds.length === 0) return 'Seleziona almeno una risposta corretta.';
+  if (d.tipo === 'chiusa_multipla' && selectedSolutionIds.length === opzioni.length) {
+    return 'Lascia almeno una risposta non corretta.';
+  }
+  return null;
 }
 
 // ── Shared state types ─────────────────────────────────────────────────────────
@@ -359,6 +391,11 @@ function QuestionEditorForm({
       <h3 className={styles.questionFormTitle}>
         {isNew ? 'Nuova domanda' : `Modifica domanda — ${initial.id}`}
       </h3>
+
+      <p className={styles.formInfoNote}>
+        Le modifiche ai pool valgono per le verifiche create da ora in poi. Le verifiche già
+        attivate usano uno snapshot.
+      </p>
 
       <div className={styles.questionForm}>
         {/* Row: id + tipo */}
@@ -810,6 +847,12 @@ export function DomandeView() {
 
   async function handleSaveQuestion(draft: QuestionDraft) {
     if (!selectedProgram?.activeImportId || !selectedLesson || poolState.status !== 'valid') return;
+
+    const uxError = validateDraft(draft);
+    if (uxError) {
+      setQuestionSaveError(uxError);
+      return;
+    }
 
     const existing = poolState.pool.questions;
     const raw = draftToRaw(draft);
