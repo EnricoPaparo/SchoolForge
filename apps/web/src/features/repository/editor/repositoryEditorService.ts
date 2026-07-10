@@ -9,6 +9,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import type { DocumentReference, Firestore } from 'firebase/firestore';
 import { getBytes, ref, uploadBytes } from 'firebase/storage';
@@ -91,6 +92,12 @@ function udaOrderFromDir(dir: string | undefined): number | null {
   return match ? Number(match[1]) - 1 : null;
 }
 
+/** Same reasoning as `udaOrderFromDir`, for a lesson's `lezione-XXX` filename prefix. */
+function lessonOrderFromFilename(filename: string | undefined): number | null {
+  const match = /^lezione-(\d+)-/.exec(filename ?? '');
+  return match ? Number(match[1]) - 1 : null;
+}
+
 /**
  * Maps a UDA's titolo (not part of `UdaMetadata` — see `validateUda`,
  * `descrizione`/`competenze`/`obiettivi` are the only metadata fields) plus
@@ -108,7 +115,13 @@ function udaFrontMatterFields(titolo: string, metadata: UdaMetadata): EditableFr
 async function writeAuditEvent(
   db: Firestore,
   ownerUid: string,
-  action: 'uda.updated' | 'uda.created' | 'lesson.updated' | 'lesson.created',
+  action:
+    | 'uda.updated'
+    | 'uda.created'
+    | 'uda.reordered'
+    | 'lesson.updated'
+    | 'lesson.created'
+    | 'lesson.reordered',
   targetId: string,
 ): Promise<void> {
   await setDoc(doc(collection(db, 'auditEvents')), {
@@ -494,4 +507,118 @@ export async function createUda(params: {
   await writeAuditEvent(db, ownerUid, 'uda.created', udaId);
 
   return { udaId, dir, order };
+}
+
+/**
+ * Swaps the `order` of two UDAs (RE-04 — adjacent-move reorder only, no
+ * drag & drop, no renumbering of the rest of the list). Never touches
+ * Storage or `dir`/`filename`: reordering is a pure Firestore concern. Both
+ * `order` values are read fresh from Firestore (never trusted from the
+ * caller) and fall back to the `uda-XX` dir prefix via `udaOrderFromDir`
+ * when a UDA has never had an explicit `order` — the same fallback
+ * `listUdas` uses to sort it in the first place, so a legacy UDA "graduates"
+ * to an explicit `order` on its first move instead of jumping unpredictably.
+ * The two writes are batched: either both `order` values land or neither
+ * does, so a mid-swap failure can never leave the pair half-swapped.
+ */
+export async function reorderUda(params: {
+  programId: string;
+  importId: string;
+  udaId: string;
+  neighborUdaId: string;
+  ownerUid: string;
+  db: Firestore;
+}): Promise<{ order: number; neighborOrder: number }> {
+  const { programId, importId, udaId, neighborUdaId, ownerUid, db } = params;
+  const udaRef = doc(db, 'programs', programId, 'imports', importId, 'udas', udaId);
+  const neighborRef = doc(db, 'programs', programId, 'imports', importId, 'udas', neighborUdaId);
+  const [udaSnap, neighborSnap] = await Promise.all([getDoc(udaRef), getDoc(neighborRef)]);
+  if (!udaSnap.exists()) throw new Error('UDA non trovata.');
+  if (!neighborSnap.exists()) throw new Error('UDA vicina non trovata.');
+  const uda = udaSnap.data() as UdaDoc;
+  const neighbor = neighborSnap.data() as UdaDoc;
+
+  const order = neighbor.order ?? udaOrderFromDir(neighbor.dir) ?? 0;
+  const neighborOrder = uda.order ?? udaOrderFromDir(uda.dir) ?? 0;
+
+  try {
+    const batch = writeBatch(db);
+    batch.update(udaRef, { order });
+    batch.update(neighborRef, { order: neighborOrder });
+    await batch.commit();
+  } catch {
+    throw new Error('Impossibile salvare il nuovo ordine delle UDA. Riprova.');
+  }
+
+  await writeAuditEvent(db, ownerUid, 'uda.reordered', udaId);
+
+  return { order, neighborOrder };
+}
+
+/**
+ * Swaps the `order` of two lessons within the same UDA (RE-04 — same
+ * adjacent-move-only, Storage-untouched reasoning as `reorderUda`). Rejects
+ * a cross-UDA swap: the UI only ever offers a neighbor from the same
+ * lesson list, so this is a defensive guard, not a normal path. When a
+ * `publicLessons` projection exists for either lesson (same document id as
+ * the technical lesson doc — see `buildImportPayload`), its `order` is
+ * updated in the same batch, so the student-facing list never drifts from
+ * the teacher-facing one.
+ */
+export async function reorderLesson(params: {
+  programId: string;
+  importId: string;
+  lessonId: string;
+  neighborLessonId: string;
+  ownerUid: string;
+  db: Firestore;
+}): Promise<{ order: number; neighborOrder: number }> {
+  const { programId, importId, lessonId, neighborLessonId, ownerUid, db } = params;
+  const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
+  const neighborRef = doc(
+    db,
+    'programs',
+    programId,
+    'imports',
+    importId,
+    'lessons',
+    neighborLessonId,
+  );
+  const [lessonSnap, neighborSnap] = await Promise.all([getDoc(lessonRef), getDoc(neighborRef)]);
+  if (!lessonSnap.exists()) throw new Error('Lezione non trovata.');
+  if (!neighborSnap.exists()) throw new Error('Lezione vicina non trovata.');
+  const lesson = lessonSnap.data() as LessonDoc;
+  const neighbor = neighborSnap.data() as LessonDoc;
+
+  if (lesson.udaDir !== neighbor.udaDir) {
+    throw new Error('Le lezioni non appartengono alla stessa UDA.');
+  }
+
+  const order = neighbor.order ?? lessonOrderFromFilename(neighbor.filename) ?? 0;
+  const neighborOrder = lesson.order ?? lessonOrderFromFilename(lesson.filename) ?? 0;
+
+  try {
+    const batch = writeBatch(db);
+    batch.update(lessonRef, { order });
+    batch.update(neighborRef, { order: neighborOrder });
+
+    const publicLessonRef = doc(db, 'publicLessons', lessonId);
+    const neighborPublicLessonRef = doc(db, 'publicLessons', neighborLessonId);
+    const [publicLessonSnap, neighborPublicLessonSnap] = await Promise.all([
+      getDoc(publicLessonRef),
+      getDoc(neighborPublicLessonRef),
+    ]);
+    if (publicLessonSnap.exists()) batch.update(publicLessonRef, { order });
+    if (neighborPublicLessonSnap.exists()) {
+      batch.update(neighborPublicLessonRef, { order: neighborOrder });
+    }
+
+    await batch.commit();
+  } catch {
+    throw new Error('Impossibile salvare il nuovo ordine delle lezioni. Riprova.');
+  }
+
+  await writeAuditEvent(db, ownerUid, 'lesson.reordered', lessonId);
+
+  return { order, neighborOrder };
 }

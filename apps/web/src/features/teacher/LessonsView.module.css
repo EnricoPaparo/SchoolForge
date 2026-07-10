@@ -160,6 +160,37 @@
   background-color: var(--color-primary-light);
 }
 
+/* Reorder controls (RE-04) */
+.reorderControls {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.125rem;
+}
+
+.reorderBtn {
+  flex-shrink: 0;
+  padding: 0 0.3125rem;
+  font-size: 0.6875rem;
+  line-height: 1.6;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.reorderBtn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background-color: var(--color-primary-light);
+}
+
+.reorderBtn:disabled {
+  opacity: 0.35;
+}
+
+.reorderError {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+}
+
 .udaDir {
   display: flex;
   align-items: center;
@@ -234,8 +265,14 @@
   gap: 0.1875rem;
 }
 
+.lessonRow {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+
 .lessonBtn {
-  width: 100%;
+  flex: 1;
   text-align: left;
   justify-content: flex-start;
   gap: 0.4375rem;

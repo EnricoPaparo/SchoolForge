@@ -27,13 +27,24 @@ export type ProgramItem = { id: string } & ProgramDoc;
 export type UdaItem = { id: string } & UdaDoc;
 export type LessonItem = { id: string } & LessonDoc;
 
-function orderOrLegacy(value: number | undefined): number {
-  return value ?? Number.MAX_SAFE_INTEGER;
-}
-
 function udaOrderOrLegacy(uda: Pick<UdaDoc, 'dir' | 'order'>): number {
   if (uda.order !== undefined) return uda.order;
   const match = /^uda-(\d+)-/.exec(uda.dir);
+  return match ? Number(match[1]) - 1 : Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * Same reasoning as `udaOrderOrLegacy`: a lesson written before `order`
+ * existed (or one whose `order` update failed to land) falls back to its
+ * `lezione-XXX` numeric prefix rather than an undifferentiated
+ * `MAX_SAFE_INTEGER` — otherwise every legacy lesson in a UDA would tie and
+ * fall back to filename string sort, which happens to match import order
+ * today but would silently stop matching after a RE-04 reorder of some
+ * lessons but not others.
+ */
+function lessonOrderOrLegacy(lesson: Pick<LessonDoc, 'filename' | 'order'>): number {
+  if (lesson.order !== undefined) return lesson.order;
+  const match = /^lezione-(\d+)-/.exec(lesson.filename);
   return match ? Number(match[1]) - 1 : Number.MAX_SAFE_INTEGER;
 }
 
@@ -173,7 +184,7 @@ export async function listLessons(
   return items.sort(
     (a, b) =>
       a.udaDir.localeCompare(b.udaDir) ||
-      orderOrLegacy(a.order) - orderOrLegacy(b.order) ||
+      lessonOrderOrLegacy(a) - lessonOrderOrLegacy(b) ||
       a.filename.localeCompare(b.filename),
   );
 }

@@ -274,6 +274,53 @@ describe('listLessons — deterministic ordering', () => {
     const result = await listLessons('prog-1', 'imp-1', fakeDb);
     expect(result.map((l) => l.filename)).toEqual(['lezione-a.md', 'lezione-b.md']);
   });
+
+  it('sorts legacy lessons (no order) by the numeric lezione-XXX prefix, not by string comparison', async () => {
+    // "lezione-002" would sort after "lezione-010" alphabetically as a
+    // string (a "1" comes before "2" as a character), but not numerically —
+    // the legacy fallback must compare the parsed number, matching
+    // udaOrderOrLegacy's reasoning for UDA dirs.
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        {
+          id: 'l-10',
+          data: () => ({ udaDir: 'uda-01-intro', filename: 'lezione-010-finale.md' }),
+        },
+        {
+          id: 'l-2',
+          data: () => ({ udaDir: 'uda-01-intro', filename: 'lezione-002-basi.md' }),
+        },
+      ],
+    });
+
+    const result = await listLessons('prog-1', 'imp-1', fakeDb);
+    expect(result.map((l) => l.filename)).toEqual(['lezione-002-basi.md', 'lezione-010-finale.md']);
+  });
+
+  it('keeps a newly ordered lesson after legacy lesson prefixes instead of moving it first', async () => {
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        {
+          id: 'l-new',
+          data: () => ({
+            udaDir: 'uda-01-intro',
+            filename: 'lezione-010-finale.md',
+            order: 9,
+          }),
+        },
+        {
+          id: 'l-old',
+          data: () => ({ udaDir: 'uda-01-intro', filename: 'lezione-009-legacy.md' }),
+        },
+      ],
+    });
+
+    const result = await listLessons('prog-1', 'imp-1', fakeDb);
+    expect(result.map((l) => l.filename)).toEqual([
+      'lezione-009-legacy.md',
+      'lezione-010-finale.md',
+    ]);
+  });
 });
 
 describe('deleteProgram', () => {
