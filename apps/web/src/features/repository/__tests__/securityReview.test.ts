@@ -27,7 +27,7 @@ vi.mock('../programs/programsService.js', () => ({
 
 // Mock firebase/storage so exportZip can be imported without real Firebase
 vi.mock('firebase/storage', () => ({
-  getDownloadURL: vi.fn(),
+  getBytes: vi.fn(),
   ref: vi.fn(),
 }));
 
@@ -91,21 +91,12 @@ describe('Security: pool files excluded from ZIP', () => {
     mockListUdas.mockResolvedValue([]);
     mockListLessons.mockResolvedValue([NORMAL_LESSON, POOL_LESSON]);
 
-    // fetchContent inside exportZip uses getDownloadURL + fetch.
-    // We intercept at the fetch level — since jszip is mocked and we only care
-    // that the .pool.md storageRef is never passed to the file() call.
-    // We track calls to zip.file() to verify .pool.md is absent.
-
-    // Patch global fetch so fetchContent doesn't throw
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve('lesson content'),
-    });
-    globalThis.fetch = mockFetch;
-
-    const { ref, getDownloadURL } = await import('firebase/storage');
+    // fetchContent inside exportZip uses getBytes — since jszip is mocked and
+    // we only care that the .pool.md storageRef is never passed to the
+    // file() call, we track calls to zip.file() to verify .pool.md is absent.
+    const { ref, getBytes } = await import('firebase/storage');
     vi.mocked(ref).mockReturnValue({} as ReturnType<typeof ref>);
-    vi.mocked(getDownloadURL).mockResolvedValue('https://storage.example.com/file');
+    vi.mocked(getBytes).mockResolvedValue(new TextEncoder().encode('lesson content').buffer);
 
     // Create a fake anchor element for the download trigger
     const mockAnchor = { href: '', download: '', click: vi.fn() };

@@ -130,6 +130,25 @@ describe('readZipFile', () => {
     expect(paths).toEqual(['uda-01-reti/lezione-001.md', 'uda-01-reti/uda-01-reti.md']);
   });
 
+  it('preserves the archive physical entry order (RE-06 — required for order-faithful reimport)', async () => {
+    // buildImportPayload derives a freshly-imported UDA/lesson's `order` from
+    // its position in this array (see buildImportPayload.ts) — decompression
+    // must never reorder entries relative to how they were added to the ZIP.
+    const file = await makeZip({
+      'uda-02-b/uda-02-b.md': '# B',
+      'uda-02-b/lezione-001-intro.md': '# B intro',
+      'uda-01-a/uda-01-a.md': '# A',
+      'uda-01-a/lezione-001-intro.md': '# A intro',
+    });
+    const result = await readZipFile(file);
+    expect(result.map((r) => r.path)).toEqual([
+      'uda-02-b/uda-02-b.md',
+      'uda-02-b/lezione-001-intro.md',
+      'uda-01-a/uda-01-a.md',
+      'uda-01-a/lezione-001-intro.md',
+    ]);
+  });
+
   it('decodes lesson Markdown content as UTF-8, preserving accented and multi-byte characters', async () => {
     const content =
       '---\ntitolo: "Città e civiltà"\n---\n\n# Città e civiltà\n\nTesto con caratteri à, è, ù, ñ, ö e un\'emoji 📚.';
