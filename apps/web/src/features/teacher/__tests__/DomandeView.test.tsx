@@ -40,13 +40,6 @@ vi.mock('../../../features/repository/pools/poolEditorService.js', () => {
   };
 });
 
-// We need parsePool and serializePool to work for the YAML editor tests.
-// Use real implementations from the package.
-vi.mock('@schoolforge/lesson-contract', async (importOriginal) => {
-  const real = await importOriginal<typeof import('@schoolforge/lesson-contract')>();
-  return { ...real };
-});
-
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
