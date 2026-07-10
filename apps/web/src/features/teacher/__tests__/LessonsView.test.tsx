@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LessonsView } from '../LessonsView.js';
 import { EMPTY_LESSON_METADATA } from '../../repository/validation/lessonMetadata.js';
+import { RepositoryDeleteBlockedError } from '../../repository/editor/repositoryEditorService.js';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -36,14 +37,30 @@ const mockCreateLesson = vi.fn();
 const mockCreateUda = vi.fn();
 const mockReorderUda = vi.fn();
 const mockReorderLesson = vi.fn();
-vi.mock('../../repository/editor/repositoryEditorService.js', () => ({
-  updateLessonMetadata: (...args: unknown[]) => mockUpdateLessonMetadata(...args),
-  updateLessonMarkdownBody: (...args: unknown[]) => mockUpdateLessonMarkdownBody(...args),
-  createLesson: (...args: unknown[]) => mockCreateLesson(...args),
-  createUda: (...args: unknown[]) => mockCreateUda(...args),
-  reorderUda: (...args: unknown[]) => mockReorderUda(...args),
-  reorderLesson: (...args: unknown[]) => mockReorderLesson(...args),
-}));
+const mockDeleteUda = vi.fn();
+const mockDeleteLesson = vi.fn();
+vi.mock('../../repository/editor/repositoryEditorService.js', () => {
+  class RepositoryDeleteBlockedError extends Error {
+    blockers: { verificationId: string; title: string; status: 'draft' | 'active' | 'closed' }[];
+    constructor(
+      blockers: { verificationId: string; title: string; status: 'draft' | 'active' | 'closed' }[],
+    ) {
+      super('Impossibile eliminare: esistono verifiche collegate.');
+      this.blockers = blockers;
+    }
+  }
+  return {
+    updateLessonMetadata: (...args: unknown[]) => mockUpdateLessonMetadata(...args),
+    updateLessonMarkdownBody: (...args: unknown[]) => mockUpdateLessonMarkdownBody(...args),
+    createLesson: (...args: unknown[]) => mockCreateLesson(...args),
+    createUda: (...args: unknown[]) => mockCreateUda(...args),
+    reorderUda: (...args: unknown[]) => mockReorderUda(...args),
+    reorderLesson: (...args: unknown[]) => mockReorderLesson(...args),
+    deleteUda: (...args: unknown[]) => mockDeleteUda(...args),
+    deleteLesson: (...args: unknown[]) => mockDeleteLesson(...args),
+    RepositoryDeleteBlockedError,
+  };
+});
 
 afterEach(cleanup);
 beforeEach(() => {
@@ -851,6 +868,215 @@ describe('LessonsView — lesson reorder (RE-04)', () => {
 
     expect(
       await screen.findByText('Impossibile salvare il nuovo ordine delle lezioni. Riprova.'),
+    ).toBeTruthy();
+  });
+});
+
+describe('LessonsView — UDA deletion (RE-05)', () => {
+  async function expandInformatica() {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA, UDA_2]);
+    mockListLessons.mockResolvedValue([LESSON_1, LESSON_2]);
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+  }
+
+  it('requires explicit confirmation before deleting a UDA', async () => {
+    await expandInformatica();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Elimina UDA — uda-01-reti' }));
+
+    expect(
+      await screen.findByRole('region', { name: 'Conferma eliminazione UDA uda-01-reti' }),
+    ).toBeTruthy();
+    expect(mockDeleteUda).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina definitivamente' }));
+
+    await waitFor(() => expect(mockDeleteUda).toHaveBeenCalledTimes(1));
+    expect(mockDeleteUda).toHaveBeenCalledWith({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-1',
+      ownerUid: 'owner-uid',
+      db: {},
+      storage: {},
+    });
+  });
+
+  it('cancels without deleting when Annulla is clicked', async () => {
+    await expandInformatica();
+    fireEvent.click(await screen.findByRole('button', { name: 'Elimina UDA — uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+
+    expect(
+      screen.queryByRole('region', { name: 'Conferma eliminazione UDA uda-01-reti' }),
+    ).toBeNull();
+    expect(mockDeleteUda).not.toHaveBeenCalled();
+  });
+
+  it('removes the UDA and its lessons from the sidebar after a successful delete', async () => {
+    mockDeleteUda.mockResolvedValue(undefined);
+    await expandInformatica();
+    fireEvent.click(await screen.findByRole('button', { name: 'Elimina UDA — uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina definitivamente' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'uda-01-reti' })).toBeNull();
+    });
+    expect(screen.getByRole('button', { name: 'uda-02-sicurezza' })).toBeTruthy();
+  });
+
+  it('clears the content panel when the deleted UDA held the selected lesson', async () => {
+    mockFetchLessonContent.mockResolvedValue('# Lezione');
+    mockDeleteUda.mockResolvedValue(undefined);
+    await expandInformatica();
+    await expandUda(/uda-01-reti/);
+    fireEvent.click(await screen.findByRole('button', { name: /Apri lezione lezione-001\.md/ }));
+    await waitFor(() => expect(mockFetchLessonContent).toHaveBeenCalled());
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Elimina UDA — uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina definitivamente' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Seleziona una lezione dalla lista per leggerne il contenuto.'),
+      ).toBeTruthy();
+    });
+  });
+
+  it('shows the list of blocking verifications when deletion is blocked, without removing the UDA', async () => {
+    mockDeleteUda.mockRejectedValue(
+      new RepositoryDeleteBlockedError([
+        { verificationId: 'v1', title: 'Verifica reti', status: 'active' },
+      ]),
+    );
+    await expandInformatica();
+    fireEvent.click(await screen.findByRole('button', { name: 'Elimina UDA — uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina definitivamente' }));
+
+    expect(await screen.findByText('Verifica reti (attiva)')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy();
+  });
+
+  it('shows a plain error message when deletion fails for a non-blocking reason', async () => {
+    mockDeleteUda.mockRejectedValue(
+      new Error('Impossibile eliminare i file della UDA su Storage.'),
+    );
+    await expandInformatica();
+    fireEvent.click(await screen.findByRole('button', { name: 'Elimina UDA — uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina definitivamente' }));
+
+    expect(
+      await screen.findByText('Impossibile eliminare i file della UDA su Storage.'),
+    ).toBeTruthy();
+  });
+});
+
+describe('LessonsView — lesson deletion (RE-05)', () => {
+  async function expandUdaLessons() {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1, LESSON_2]);
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+    await expandUda(/uda-01-reti/);
+  }
+
+  it('requires explicit confirmation before deleting a lesson', async () => {
+    await expandUdaLessons();
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Elimina lezione — lezione-001.md' }),
+    );
+    expect(mockDeleteLesson).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina definitivamente' }));
+
+    await waitFor(() => expect(mockDeleteLesson).toHaveBeenCalledTimes(1));
+    expect(mockDeleteLesson).toHaveBeenCalledWith({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-1',
+      lessonId: 'lesson-1',
+      ownerUid: 'owner-uid',
+      db: {},
+      storage: {},
+    });
+  });
+
+  it('cancels without deleting when Annulla is clicked', async () => {
+    await expandUdaLessons();
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Elimina lezione — lezione-001.md' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+
+    expect(
+      screen.queryByRole('region', { name: 'Conferma eliminazione lezione lezione-001.md' }),
+    ).toBeNull();
+    expect(mockDeleteLesson).not.toHaveBeenCalled();
+  });
+
+  it('removes the lesson from the sidebar after a successful delete', async () => {
+    mockDeleteLesson.mockResolvedValue(undefined);
+    await expandUdaLessons();
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Elimina lezione — lezione-001.md' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina definitivamente' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Apri lezione lezione-001\.md/ })).toBeNull();
+    });
+    expect(screen.getByRole('button', { name: /Apri lezione lezione-002\.md/ })).toBeTruthy();
+  });
+
+  it('clears the content panel when the selected lesson is deleted', async () => {
+    mockFetchLessonContent.mockResolvedValue('# Lezione');
+    mockDeleteLesson.mockResolvedValue(undefined);
+    await expandUdaLessons();
+    fireEvent.click(await screen.findByRole('button', { name: /Apri lezione lezione-001\.md/ }));
+    await waitFor(() => expect(mockFetchLessonContent).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina lezione — lezione-001.md' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina definitivamente' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Seleziona una lezione dalla lista per leggerne il contenuto.'),
+      ).toBeTruthy();
+    });
+  });
+
+  it('shows the list of blocking verifications when deletion is blocked, without removing the lesson', async () => {
+    mockDeleteLesson.mockRejectedValue(
+      new RepositoryDeleteBlockedError([
+        { verificationId: 'v1', title: 'Verifica TCP', status: 'closed' },
+      ]),
+    );
+    await expandUdaLessons();
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Elimina lezione — lezione-001.md' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina definitivamente' }));
+
+    expect(await screen.findByText('Verifica TCP (chiusa)')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Apri lezione lezione-001\.md/ })).toBeTruthy();
+  });
+
+  it('shows a plain error message when deletion fails for a non-blocking reason', async () => {
+    mockDeleteLesson.mockRejectedValue(
+      new Error('Impossibile eliminare il file della lezione su Storage.'),
+    );
+    await expandUdaLessons();
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Elimina lezione — lezione-001.md' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina definitivamente' }));
+
+    expect(
+      await screen.findByText('Impossibile eliminare il file della lezione su Storage.'),
     ).toBeTruthy();
   });
 });

@@ -16,11 +16,15 @@ import type { LessonMetadata } from '../repository/validation/types.js';
 import {
   createLesson,
   createUda,
+  deleteLesson,
+  deleteUda,
   reorderLesson,
   reorderUda,
+  RepositoryDeleteBlockedError,
   updateLessonMarkdownBody,
   updateLessonMetadata,
 } from '../repository/editor/repositoryEditorService.js';
+import type { RepositoryDeleteBlocker } from '../repository/editor/repositoryEditorGuards.js';
 import { useAuth } from '../../lib/auth.js';
 import { db, storage } from '../../lib/firebase.js';
 import { fetchLessonContent } from './lessonContent.js';
@@ -36,6 +40,12 @@ function linesToArray(value: string): string[] {
 }
 
 const IMPORT_HINT = 'Importa prima uno ZIP da Corsi per vedere le lezioni.';
+
+const VERIFICATION_STATUS_LABELS: Record<RepositoryDeleteBlocker['status'], string> = {
+  draft: 'bozza',
+  active: 'attiva',
+  closed: 'chiusa',
+};
 
 function udaOrderOrLegacy(uda: UdaItem): number {
   if (uda.order !== undefined) return uda.order;
@@ -138,6 +148,29 @@ export function LessonsView() {
   const [lessonReorderError, setLessonReorderError] = useState<{
     lessonId: string;
     message: string;
+  } | null>(null);
+
+  // ── Protected UDA/lesson deletion (RE-05) ───────────────────────
+  const [deleteConfirmUdaId, setDeleteConfirmUdaId] = useState<string | null>(null);
+  const [deletingUdaId, setDeletingUdaId] = useState<string | null>(null);
+  const [udaDeleteError, setUdaDeleteError] = useState<{
+    udaId: string;
+    message: string;
+  } | null>(null);
+  const [udaDeleteBlockers, setUdaDeleteBlockers] = useState<{
+    udaId: string;
+    blockers: RepositoryDeleteBlocker[];
+  } | null>(null);
+
+  const [deleteConfirmLessonId, setDeleteConfirmLessonId] = useState<string | null>(null);
+  const [deletingLessonId, setDeletingLessonId] = useState<string | null>(null);
+  const [lessonDeleteError, setLessonDeleteError] = useState<{
+    lessonId: string;
+    message: string;
+  } | null>(null);
+  const [lessonDeleteBlockers, setLessonDeleteBlockers] = useState<{
+    lessonId: string;
+    blockers: RepositoryDeleteBlocker[];
   } | null>(null);
 
   useEffect(() => {
@@ -279,6 +312,119 @@ export function LessonsView() {
       });
     } finally {
       setBusyLessonIds(new Set());
+    }
+  }
+
+  function startDeleteUda(uda: UdaItem) {
+    setDeleteConfirmUdaId(uda.id);
+    setUdaDeleteError(null);
+    setUdaDeleteBlockers(null);
+  }
+
+  function cancelDeleteUda() {
+    setDeleteConfirmUdaId(null);
+    setUdaDeleteError(null);
+    setUdaDeleteBlockers(null);
+  }
+
+  async function handleConfirmDeleteUda(program: ProgramItem, uda: UdaItem) {
+    if (!program.activeImportId) return;
+    setDeletingUdaId(uda.id);
+    setUdaDeleteError(null);
+    setUdaDeleteBlockers(null);
+    try {
+      await deleteUda({
+        programId: program.id,
+        importId: program.activeImportId,
+        udaId: uda.id,
+        ownerUid,
+        db,
+        storage,
+      });
+      setCourseTree((prev) => {
+        const cur = prev[program.id];
+        if (!cur) return prev;
+        return {
+          ...prev,
+          [program.id]: {
+            ...cur,
+            udas: cur.udas?.filter((u) => u.id !== uda.id) ?? cur.udas,
+            lessons: cur.lessons?.filter((l) => l.udaDir !== uda.dir) ?? cur.lessons,
+          },
+        };
+      });
+      if (selectedLesson?.udaDir === uda.dir) {
+        setSelectedLesson(null);
+        setSelectedProgram(null);
+        setLessonContent(null);
+      }
+      setDeleteConfirmUdaId(null);
+    } catch (err) {
+      if (err instanceof RepositoryDeleteBlockedError) {
+        setUdaDeleteBlockers({ udaId: uda.id, blockers: err.blockers });
+      } else {
+        setUdaDeleteError({
+          udaId: uda.id,
+          message: err instanceof Error ? err.message : 'Impossibile eliminare la UDA.',
+        });
+      }
+    } finally {
+      setDeletingUdaId(null);
+    }
+  }
+
+  function startDeleteLesson(lesson: LessonItem) {
+    setDeleteConfirmLessonId(lesson.id);
+    setLessonDeleteError(null);
+    setLessonDeleteBlockers(null);
+  }
+
+  function cancelDeleteLesson() {
+    setDeleteConfirmLessonId(null);
+    setLessonDeleteError(null);
+    setLessonDeleteBlockers(null);
+  }
+
+  async function handleConfirmDeleteLesson(program: ProgramItem, uda: UdaItem, lesson: LessonItem) {
+    if (!program.activeImportId) return;
+    setDeletingLessonId(lesson.id);
+    setLessonDeleteError(null);
+    setLessonDeleteBlockers(null);
+    try {
+      await deleteLesson({
+        programId: program.id,
+        importId: program.activeImportId,
+        udaId: uda.id,
+        lessonId: lesson.id,
+        ownerUid,
+        db,
+        storage,
+      });
+      setCourseTree((prev) => {
+        const cur = prev[program.id];
+        if (!cur?.lessons) return prev;
+        return {
+          ...prev,
+          [program.id]: { ...cur, lessons: cur.lessons.filter((l) => l.id !== lesson.id) },
+        };
+      });
+      if (selectedLesson?.id === lesson.id) {
+        setSelectedLesson(null);
+        setSelectedProgram(null);
+        setLessonContent(null);
+      }
+      setDeleteConfirmLessonId(null);
+    } catch (err) {
+      if (err instanceof RepositoryDeleteBlockedError) {
+        setLessonDeleteBlockers({ lessonId: lesson.id, blockers: err.blockers });
+      } else {
+        setLessonDeleteError({
+          lessonId: lesson.id,
+          message: err instanceof Error ? err.message : 'Impossibile eliminare la lezione.',
+        });
+      }
+    } finally {
+      setDeletingLessonId(null);
     }
   }
 
@@ -725,12 +871,88 @@ export function LessonsView() {
                                 >
                                   ＋
                                 </button>
+                                {!reorderMode && (
+                                  <button
+                                    type="button"
+                                    className={styles.deleteBtn}
+                                    title="Elimina UDA"
+                                    aria-label={`Elimina UDA — ${uda.dir}`}
+                                    onClick={() => startDeleteUda(uda)}
+                                  >
+                                    🗑️
+                                  </button>
+                                )}
                               </div>
 
                               {udaReorderError?.udaId === uda.id && (
                                 <p role="alert" className={`text-error ${styles.reorderError}`}>
                                   {udaReorderError.message}
                                 </p>
+                              )}
+
+                              {deleteConfirmUdaId === uda.id && (
+                                <div
+                                  className={styles.deleteConfirmBox}
+                                  role="region"
+                                  aria-label={`Conferma eliminazione UDA ${uda.dir}`}
+                                >
+                                  {udaDeleteBlockers?.udaId === uda.id ? (
+                                    <>
+                                      <p className={styles.deleteConfirmMsg}>
+                                        Impossibile eliminare: esistono verifiche collegate a questa
+                                        UDA. Rimuovile o modificale prima di eliminare.
+                                      </p>
+                                      <ul className={styles.deleteBlockersList}>
+                                        {udaDeleteBlockers.blockers.map((blocker) => (
+                                          <li
+                                            key={blocker.verificationId}
+                                            title={blocker.verificationId}
+                                          >
+                                            {blocker.title} (
+                                            {VERIFICATION_STATUS_LABELS[blocker.status]})
+                                          </li>
+                                        ))}
+                                      </ul>
+                                      <div className={styles.deleteConfirmActions}>
+                                        <button type="button" onClick={cancelDeleteUda}>
+                                          Chiudi
+                                        </button>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <p className={styles.deleteConfirmMsg}>
+                                        Saranno eliminate tutte le lezioni della UDA, i relativi
+                                        file su Storage e i pool collegati. Operazione
+                                        irreversibile.
+                                      </p>
+                                      {udaDeleteError?.udaId === uda.id && (
+                                        <p role="alert" className="text-error">
+                                          {udaDeleteError.message}
+                                        </p>
+                                      )}
+                                      <div className={styles.deleteConfirmActions}>
+                                        <button
+                                          type="button"
+                                          className={`${styles.deleteConfirmBtn} btn-danger`}
+                                          disabled={deletingUdaId === uda.id}
+                                          onClick={() => void handleConfirmDeleteUda(program, uda)}
+                                        >
+                                          {deletingUdaId === uda.id
+                                            ? 'Eliminazione…'
+                                            : 'Elimina definitivamente'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={deletingUdaId === uda.id}
+                                          onClick={cancelDeleteUda}
+                                        >
+                                          Annulla
+                                        </button>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
                               )}
 
                               {udaExpanded && (
@@ -760,6 +982,17 @@ export function LessonsView() {
                                               >
                                                 {title}
                                               </button>
+                                              {!reorderMode && (
+                                                <button
+                                                  type="button"
+                                                  className={styles.deleteBtn}
+                                                  title="Elimina lezione"
+                                                  aria-label={`Elimina lezione — ${lesson.filename}`}
+                                                  onClick={() => startDeleteLesson(lesson)}
+                                                >
+                                                  🗑️
+                                                </button>
+                                              )}
                                               {reorderMode && (
                                                 <div
                                                   className={styles.reorderControls}
@@ -813,6 +1046,88 @@ export function LessonsView() {
                                               >
                                                 {lessonReorderError.message}
                                               </p>
+                                            )}
+
+                                            {deleteConfirmLessonId === lesson.id && (
+                                              <div
+                                                className={styles.deleteConfirmBox}
+                                                role="region"
+                                                aria-label={`Conferma eliminazione lezione ${lesson.filename}`}
+                                              >
+                                                {lessonDeleteBlockers?.lessonId === lesson.id ? (
+                                                  <>
+                                                    <p className={styles.deleteConfirmMsg}>
+                                                      Impossibile eliminare: esistono verifiche
+                                                      collegate a questa lezione. Rimuovile o
+                                                      modificale prima di eliminare.
+                                                    </p>
+                                                    <ul className={styles.deleteBlockersList}>
+                                                      {lessonDeleteBlockers.blockers.map(
+                                                        (blocker) => (
+                                                          <li
+                                                            key={blocker.verificationId}
+                                                            title={blocker.verificationId}
+                                                          >
+                                                            {blocker.title} (
+                                                            {
+                                                              VERIFICATION_STATUS_LABELS[
+                                                                blocker.status
+                                                              ]
+                                                            }
+                                                            )
+                                                          </li>
+                                                        ),
+                                                      )}
+                                                    </ul>
+                                                    <div className={styles.deleteConfirmActions}>
+                                                      <button
+                                                        type="button"
+                                                        onClick={cancelDeleteLesson}
+                                                      >
+                                                        Chiudi
+                                                      </button>
+                                                    </div>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <p className={styles.deleteConfirmMsg}>
+                                                      Saranno eliminati il file su Storage e
+                                                      l&apos;eventuale pool collegato. Operazione
+                                                      irreversibile.
+                                                    </p>
+                                                    {lessonDeleteError?.lessonId === lesson.id && (
+                                                      <p role="alert" className="text-error">
+                                                        {lessonDeleteError.message}
+                                                      </p>
+                                                    )}
+                                                    <div className={styles.deleteConfirmActions}>
+                                                      <button
+                                                        type="button"
+                                                        className={`${styles.deleteConfirmBtn} btn-danger`}
+                                                        disabled={deletingLessonId === lesson.id}
+                                                        onClick={() =>
+                                                          void handleConfirmDeleteLesson(
+                                                            program,
+                                                            uda,
+                                                            lesson,
+                                                          )
+                                                        }
+                                                      >
+                                                        {deletingLessonId === lesson.id
+                                                          ? 'Eliminazione…'
+                                                          : 'Elimina definitivamente'}
+                                                      </button>
+                                                      <button
+                                                        type="button"
+                                                        disabled={deletingLessonId === lesson.id}
+                                                        onClick={cancelDeleteLesson}
+                                                      >
+                                                        Annulla
+                                                      </button>
+                                                    </div>
+                                                  </>
+                                                )}
+                                              </div>
                                             )}
                                           </li>
                                         );

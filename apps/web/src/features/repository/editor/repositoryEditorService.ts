@@ -12,7 +12,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import type { DocumentReference, Firestore } from 'firebase/firestore';
-import { getBytes, ref, uploadBytes } from 'firebase/storage';
+import { deleteObject, getBytes, ref, uploadBytes } from 'firebase/storage';
 import type { FirebaseStorage } from 'firebase/storage';
 import { parse as parseYaml } from 'yaml';
 import {
@@ -24,7 +24,17 @@ import {
 import { parseLessonMetadata } from '../validation/lessonMetadata.js';
 import { toDocId } from '../import/buildImportPayload.js';
 import type { LessonMetadata, UdaMetadata } from '../validation/types.js';
-import type { LessonDoc, PublicLessonDoc, UdaDoc } from '../../../types/firestore.js';
+import type {
+  LessonDoc,
+  PublicLessonDoc,
+  UdaDoc,
+  VerificationDoc,
+} from '../../../types/firestore.js';
+import {
+  findRepositoryDeleteBlockers,
+  type RepositoryDeleteBlocker,
+  type VerificationForRepositoryGuard,
+} from './repositoryEditorGuards.js';
 
 async function fetchStorageText(storagePath: string, storage: FirebaseStorage): Promise<string> {
   const bytes = await getBytes(ref(storage, storagePath));
@@ -119,9 +129,11 @@ async function writeAuditEvent(
     | 'uda.updated'
     | 'uda.created'
     | 'uda.reordered'
+    | 'uda.deleted'
     | 'lesson.updated'
     | 'lesson.created'
-    | 'lesson.reordered',
+    | 'lesson.reordered'
+    | 'lesson.deleted',
   targetId: string,
 ): Promise<void> {
   await setDoc(doc(collection(db, 'auditEvents')), {
@@ -621,4 +633,212 @@ export async function reorderLesson(params: {
   await writeAuditEvent(db, ownerUid, 'lesson.reordered', lessonId);
 
   return { order, neighborOrder };
+}
+
+// ─── Protected deletion (RE-05) ───────────────────────────────────────────
+
+/**
+ * Thrown by `deleteUda`/`deleteLesson` instead of a plain `Error` when the
+ * target is referenced by at least one verification (draft, active or
+ * closed alike — see `findRepositoryDeleteBlockers`). Carries the full
+ * blocker list so the UI can show *which* verifications are in the way,
+ * not just a generic "can't delete" message. Nothing is deleted when this
+ * is thrown: Storage and Firestore are both left untouched.
+ */
+export class RepositoryDeleteBlockedError extends Error {
+  readonly blockers: RepositoryDeleteBlocker[];
+
+  constructor(blockers: RepositoryDeleteBlocker[]) {
+    super('Impossibile eliminare: esistono verifiche collegate.');
+    this.name = 'RepositoryDeleteBlockedError';
+    this.blockers = blockers;
+  }
+}
+
+async function fetchVerificationsForGuard(
+  db: Firestore,
+): Promise<VerificationForRepositoryGuard[]> {
+  const snap = await getDocs(collection(db, 'verifications'));
+  return snap.docs.map((d) => {
+    const data = d.data() as VerificationDoc;
+    return { id: d.id, status: data.status, config: data.config };
+  });
+}
+
+export async function getUdaDeleteBlockers(
+  programId: string,
+  importId: string,
+  udaDir: string,
+  db: Firestore,
+): Promise<RepositoryDeleteBlocker[]> {
+  const verifications = await fetchVerificationsForGuard(db);
+  return findRepositoryDeleteBlockers({ kind: 'uda', programId, importId, udaDir }, verifications);
+}
+
+export async function getLessonDeleteBlockers(
+  programId: string,
+  importId: string,
+  udaDir: string,
+  lessonFilename: string,
+  db: Firestore,
+): Promise<RepositoryDeleteBlocker[]> {
+  const verifications = await fetchVerificationsForGuard(db);
+  return findRepositoryDeleteBlockers(
+    { kind: 'lesson', programId, importId, udaDir, lessonFilename },
+    verifications,
+  );
+}
+
+/** Deletes a Storage object, tolerating one that's already gone. */
+async function deleteStorageObjectIfExists(storage: FirebaseStorage, path: string): Promise<void> {
+  try {
+    await deleteObject(ref(storage, path));
+  } catch (err) {
+    if ((err as { code?: string }).code !== 'storage/object-not-found') throw err;
+  }
+}
+
+const DELETE_BATCH_CHUNK_SIZE = 400;
+
+/** Firestore caps a single batch at 500 writes — chunk defensively below that. */
+async function deleteDocRefsInBatches(db: Firestore, refs: DocumentReference[]): Promise<void> {
+  for (let i = 0; i < refs.length; i += DELETE_BATCH_CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    refs.slice(i, i + DELETE_BATCH_CHUNK_SIZE).forEach((docRef) => batch.delete(docRef));
+    await batch.commit();
+  }
+}
+
+function questionIndexCollection(db: Firestore, programId: string, importId: string) {
+  return collection(db, 'programs', programId, 'imports', importId, 'questionIndex');
+}
+
+/**
+ * Deletes a lesson: its Markdown file and pool file (if any) on Storage,
+ * its technical Firestore document, matching `questionIndex` entries, the
+ * `publicLessons` projection, and decrements the parent UDA's
+ * `lessonCount`. Blocked — nothing deleted, Storage and Firestore both left
+ * untouched — when at least one verification references this lesson (see
+ * `getLessonDeleteBlockers`); the teacher must remove/edit those
+ * verifications first (repository-editor-roadmap.md §4.3).
+ */
+export async function deleteLesson(params: {
+  programId: string;
+  importId: string;
+  udaId: string;
+  lessonId: string;
+  ownerUid: string;
+  db: Firestore;
+  storage: FirebaseStorage;
+}): Promise<void> {
+  const { programId, importId, udaId, lessonId, ownerUid, db, storage } = params;
+  const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
+  const snap = await getDoc(lessonRef);
+  if (!snap.exists()) throw new Error('Lezione non trovata.');
+  const lesson = snap.data() as LessonDoc;
+
+  const blockers = await getLessonDeleteBlockers(
+    programId,
+    importId,
+    lesson.udaDir,
+    lesson.filename,
+    db,
+  );
+  if (blockers.length > 0) throw new RepositoryDeleteBlockedError(blockers);
+
+  const questionIndexSnap = await getDocs(
+    query(
+      questionIndexCollection(db, programId, importId),
+      where('udaDir', '==', lesson.udaDir),
+      where('lessonFilename', '==', lesson.filename),
+    ),
+  );
+
+  try {
+    await deleteStorageObjectIfExists(storage, lesson.storageRef);
+    if (lesson.poolStorageRef) {
+      await deleteStorageObjectIfExists(storage, lesson.poolStorageRef);
+    }
+  } catch {
+    throw new Error('Impossibile eliminare il file della lezione su Storage.');
+  }
+
+  try {
+    await deleteDocRefsInBatches(db, [
+      lessonRef,
+      doc(db, 'publicLessons', lessonId),
+      ...questionIndexSnap.docs.map((d) => d.ref),
+    ]);
+    await updateDoc(doc(db, 'programs', programId, 'imports', importId, 'udas', udaId), {
+      lessonCount: increment(-1),
+    });
+  } catch {
+    throw new Error(
+      'Il file della lezione è stato eliminato da Storage ma non è stato possibile rimuovere tutti i dati da Firestore. Riprova.',
+    );
+  }
+
+  await writeAuditEvent(db, ownerUid, 'lesson.deleted', lessonId);
+}
+
+/**
+ * Deletes a UDA and every lesson inside it: all Markdown/pool files on
+ * Storage, all technical Firestore documents (lessons, questionIndex
+ * entries, publicLessons projections), and the UDA's own document. Blocked
+ * — nothing deleted — when at least one verification references this UDA
+ * or any lesson/question inside it (see `getUdaDeleteBlockers`), same
+ * reasoning as `deleteLesson`.
+ */
+export async function deleteUda(params: {
+  programId: string;
+  importId: string;
+  udaId: string;
+  ownerUid: string;
+  db: Firestore;
+  storage: FirebaseStorage;
+}): Promise<void> {
+  const { programId, importId, udaId, ownerUid, db, storage } = params;
+  const udaRef = doc(db, 'programs', programId, 'imports', importId, 'udas', udaId);
+  const udaSnap = await getDoc(udaRef);
+  if (!udaSnap.exists()) throw new Error('UDA non trovata.');
+  const uda = udaSnap.data() as UdaDoc;
+
+  const blockers = await getUdaDeleteBlockers(programId, importId, uda.dir, db);
+  if (blockers.length > 0) throw new RepositoryDeleteBlockedError(blockers);
+
+  const lessonsRef = collection(db, 'programs', programId, 'imports', importId, 'lessons');
+  const [lessonsSnap, questionIndexSnap] = await Promise.all([
+    getDocs(query(lessonsRef, where('udaDir', '==', uda.dir))),
+    getDocs(
+      query(questionIndexCollection(db, programId, importId), where('udaDir', '==', uda.dir)),
+    ),
+  ]);
+  const lessons = lessonsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as LessonDoc) }));
+
+  try {
+    await Promise.all([
+      deleteStorageObjectIfExists(storage, `${uda.storageBasePath}/${uda.filename}`),
+      ...lessons.map((lesson) => deleteStorageObjectIfExists(storage, lesson.storageRef)),
+      ...lessons
+        .filter((lesson) => lesson.poolStorageRef)
+        .map((lesson) => deleteStorageObjectIfExists(storage, lesson.poolStorageRef as string)),
+    ]);
+  } catch {
+    throw new Error('Impossibile eliminare i file della UDA su Storage.');
+  }
+
+  try {
+    await deleteDocRefsInBatches(db, [
+      ...lessonsSnap.docs.map((d) => d.ref),
+      ...questionIndexSnap.docs.map((d) => d.ref),
+      ...lessons.map((lesson) => doc(db, 'publicLessons', lesson.id)),
+      udaRef,
+    ]);
+  } catch {
+    throw new Error(
+      'I file della UDA sono stati eliminati da Storage ma non è stato possibile rimuovere tutti i dati da Firestore. Riprova.',
+    );
+  }
+
+  await writeAuditEvent(db, ownerUid, 'uda.deleted', udaId);
 }

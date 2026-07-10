@@ -7,6 +7,7 @@ const mockGetDocs = vi.fn();
 const mockSetDoc = vi.fn();
 const mockUpdateDoc = vi.fn();
 const mockBatchUpdate = vi.fn();
+const mockBatchDelete = vi.fn();
 const mockBatchCommit = vi.fn();
 const mockWriteBatch = vi.fn();
 const mockServerTimestamp = vi.fn(() => ({ _type: 'serverTimestamp' }));
@@ -38,25 +39,32 @@ vi.mock('firebase/firestore', () => ({
 
 const mockGetBytes = vi.fn();
 const mockUploadBytes = vi.fn();
+const mockDeleteObject = vi.fn();
 
 vi.mock('firebase/storage', () => ({
   ref: (_storage: unknown, path: string) => ({ __storagePath: path }),
   getBytes: (...args: unknown[]) => mockGetBytes(...args),
   uploadBytes: (...args: unknown[]) => mockUploadBytes(...args),
+  deleteObject: (...args: unknown[]) => mockDeleteObject(...args),
 }));
 
 import {
   createLesson,
   createUda,
+  deleteLesson,
+  deleteUda,
+  getLessonDeleteBlockers,
+  getUdaDeleteBlockers,
   reorderLesson,
   reorderUda,
+  RepositoryDeleteBlockedError,
   updateLessonMarkdownBody,
   updateLessonMetadata,
   updateUdaMetadata,
 } from '../repositoryEditorService.js';
 import type { Firestore } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
-import type { LessonDoc, UdaDoc } from '../../../../types/firestore.js';
+import type { LessonDoc, UdaDoc, VerificationDoc } from '../../../../types/firestore.js';
 
 const fakeDb = {} as Firestore;
 const fakeStorage = {} as FirebaseStorage;
@@ -76,9 +84,14 @@ beforeEach(() => {
   mockSetDoc.mockResolvedValue(undefined);
   mockUpdateDoc.mockResolvedValue(undefined);
   mockUploadBytes.mockResolvedValue(undefined);
+  mockDeleteObject.mockResolvedValue(undefined);
   mockGetDocs.mockResolvedValue({ docs: [] });
   mockBatchCommit.mockResolvedValue(undefined);
-  mockWriteBatch.mockReturnValue({ update: mockBatchUpdate, commit: mockBatchCommit });
+  mockWriteBatch.mockReturnValue({
+    update: mockBatchUpdate,
+    delete: mockBatchDelete,
+    commit: mockBatchCommit,
+  });
 });
 
 describe('updateUdaMetadata', () => {
@@ -1120,6 +1133,373 @@ describe('reorderLesson', () => {
         db: fakeDb,
       }),
     ).rejects.toThrow('Impossibile salvare il nuovo ordine delle lezioni. Riprova.');
+    expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Protected deletion (RE-05) ────────────────────────────────────────────
+
+function verificationDoc(
+  id: string,
+  overrides: Partial<VerificationDoc['config']> = {},
+): { id: string; data: () => VerificationDoc } {
+  return {
+    id,
+    data: () =>
+      ({
+        ownerUid: OWNER_UID,
+        status: 'draft',
+        config: {
+          title: `Verifica ${id}`,
+          classId: null,
+          programId: 'prog-1',
+          importId: 'imp-1',
+          questionRefs: [
+            {
+              questionIndexEntryId: `${id}-q1`,
+              questionLocalId: 'q1',
+              udaDir: 'uda-01-reti',
+              lessonFilename: 'lezione-001-http.md',
+              poolStorageRef:
+                'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-001-http.pool.md',
+              tipo: 'aperta',
+              difficolta: 1,
+              peso: 1,
+              maxPoints: 1,
+            },
+          ],
+          questionsPerStudent: null,
+          ...overrides,
+        },
+        teacherSnapshot: null,
+        createdAt: null,
+        updatedAt: null,
+        activatedAt: null,
+        closedAt: null,
+      }) as unknown as VerificationDoc,
+  };
+}
+
+describe('getUdaDeleteBlockers / getLessonDeleteBlockers', () => {
+  it('maps verification documents into blockers for a matching UDA', async () => {
+    mockGetDocs.mockResolvedValueOnce({ docs: [verificationDoc('v1')] });
+
+    const blockers = await getUdaDeleteBlockers('prog-1', 'imp-1', 'uda-01-reti', fakeDb);
+
+    expect(blockers).toEqual([{ verificationId: 'v1', title: 'Verifica v1', status: 'draft' }]);
+  });
+
+  it('returns no blockers for a UDA no verification references', async () => {
+    mockGetDocs.mockResolvedValueOnce({ docs: [verificationDoc('v1')] });
+
+    const blockers = await getUdaDeleteBlockers('prog-1', 'imp-1', 'uda-02-sicurezza', fakeDb);
+
+    expect(blockers).toEqual([]);
+  });
+
+  it('maps verification documents into blockers for a matching lesson only', async () => {
+    mockGetDocs.mockResolvedValueOnce({ docs: [verificationDoc('v1')] });
+
+    const blockers = await getLessonDeleteBlockers(
+      'prog-1',
+      'imp-1',
+      'uda-01-reti',
+      'lezione-002-tcp.md',
+      fakeDb,
+    );
+
+    expect(blockers).toEqual([]);
+  });
+});
+
+describe('deleteLesson', () => {
+  // filename matches verificationDoc()'s default questionRef so the
+  // "blocked" test below actually triggers the guard.
+  const LESSON_DOC: Partial<LessonDoc> = {
+    udaDir: 'uda-01-reti',
+    filename: 'lezione-001-http.md',
+    storageRef: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-001-http.md',
+    poolStorageRef: null,
+    order: 1,
+  };
+
+  it('throws when the lesson does not exist, without checking blockers', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => false });
+
+    await expect(
+      deleteLesson({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-01',
+        lessonId: 'lesson-1',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow('Lezione non trovata.');
+    expect(mockGetDocs).not.toHaveBeenCalled();
+  });
+
+  it('blocks deletion and touches neither Storage nor Firestore when a verification references the lesson', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
+    mockGetDocs.mockResolvedValueOnce({ docs: [verificationDoc('v1')] }); // verifications
+
+    const error = await deleteLesson({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-01',
+      lessonId: 'lesson-1',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(RepositoryDeleteBlockedError);
+    expect((error as InstanceType<typeof RepositoryDeleteBlockedError>).blockers).toEqual([
+      { verificationId: 'v1', title: 'Verifica v1', status: 'draft' },
+    ]);
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+    expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+
+  it('deletes Storage files, Firestore docs, decrements lessonCount and writes an audit event when free', async () => {
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ ...LESSON_DOC, poolStorageRef: 'repository/.../lezione-002-tcp.pool.md' }),
+    });
+    mockGetDocs
+      .mockResolvedValueOnce({ docs: [] }) // verifications — none blocking
+      .mockResolvedValueOnce({ docs: [{ ref: { __path: 'questionIndex/q1' } }] }); // questionIndex
+
+    await deleteLesson({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-01',
+      lessonId: 'lesson-1',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    expect(mockDeleteObject).toHaveBeenCalledWith({
+      __storagePath: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-001-http.md',
+    });
+    expect(mockDeleteObject).toHaveBeenCalledWith({
+      __storagePath: 'repository/.../lezione-002-tcp.pool.md',
+    });
+    expect(mockBatchDelete).toHaveBeenCalledWith({
+      __path: 'programs/prog-1/imports/imp-1/lessons/lesson-1',
+    });
+    expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'publicLessons/lesson-1' });
+    expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'questionIndex/q1' });
+    expect(mockUpdateDoc).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1/imports/imp-1/udas/uda-01' },
+      { lessonCount: { __increment: -1 } },
+    );
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'auditEvents/auto-id' },
+      expect.objectContaining({ action: 'lesson.deleted', targetId: 'lesson-1' }),
+    );
+  });
+
+  it('tolerates a Storage file that is already gone', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
+    mockGetDocs.mockResolvedValueOnce({ docs: [] }).mockResolvedValueOnce({ docs: [] });
+    mockDeleteObject.mockRejectedValueOnce({ code: 'storage/object-not-found' });
+
+    await expect(
+      deleteLesson({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-01',
+        lessonId: 'lesson-1',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('throws a Storage-specific error and never touches Firestore when a real Storage failure occurs', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
+    mockGetDocs.mockResolvedValueOnce({ docs: [] });
+    mockDeleteObject.mockRejectedValueOnce(new Error('permission-denied'));
+
+    await expect(
+      deleteLesson({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-01',
+        lessonId: 'lesson-1',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow('Impossibile eliminare il file della lezione su Storage.');
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+    expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+
+  it('throws a distinct error when Storage succeeded but the Firestore cleanup failed', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
+    mockGetDocs.mockResolvedValueOnce({ docs: [] }).mockResolvedValueOnce({ docs: [] });
+    mockBatchCommit.mockRejectedValueOnce(new Error('permission-denied'));
+
+    await expect(
+      deleteLesson({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-01',
+        lessonId: 'lesson-1',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow(/eliminato da Storage ma non è stato possibile rimuovere/);
+    expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe('deleteUda', () => {
+  const UDA_DOC: Partial<UdaDoc> = {
+    dir: 'uda-01-reti',
+    filename: 'uda-01-reti.md',
+    storageBasePath: 'repository/owner-uid/imports/imp-1/uda-01-reti',
+    order: 0,
+  };
+
+  const LESSON_1 = {
+    udaDir: 'uda-01-reti',
+    filename: 'lezione-001-http.md',
+    storageRef: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-001-http.md',
+    poolStorageRef: null,
+  };
+  const LESSON_2 = {
+    udaDir: 'uda-01-reti',
+    filename: 'lezione-002-tcp.md',
+    storageRef: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-002-tcp.md',
+    poolStorageRef: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-002-tcp.pool.md',
+  };
+
+  it('throws when the UDA does not exist, without checking blockers', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => false });
+
+    await expect(
+      deleteUda({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-01',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow('UDA non trovata.');
+    expect(mockGetDocs).not.toHaveBeenCalled();
+  });
+
+  it('blocks deletion and touches neither Storage nor Firestore when a verification references any lesson inside', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => UDA_DOC });
+    mockGetDocs.mockResolvedValueOnce({ docs: [verificationDoc('v1')] }); // verifications
+
+    const error = await deleteUda({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-01',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(RepositoryDeleteBlockedError);
+    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+  });
+
+  it('deletes every lesson, the UDA file/doc, questionIndex entries and writes an audit event when free', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => UDA_DOC });
+    mockGetDocs
+      .mockResolvedValueOnce({ docs: [] }) // verifications — none blocking
+      .mockResolvedValueOnce({
+        docs: [
+          { id: 'lesson-1', ref: { __path: 'lessons/lesson-1' }, data: () => LESSON_1 },
+          { id: 'lesson-2', ref: { __path: 'lessons/lesson-2' }, data: () => LESSON_2 },
+        ],
+      }) // lessons
+      .mockResolvedValueOnce({ docs: [{ ref: { __path: 'questionIndex/q1' } }] }); // questionIndex
+
+    await deleteUda({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-01',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    expect(mockDeleteObject).toHaveBeenCalledWith({
+      __storagePath: 'repository/owner-uid/imports/imp-1/uda-01-reti/uda-01-reti.md',
+    });
+    expect(mockDeleteObject).toHaveBeenCalledWith({ __storagePath: LESSON_1.storageRef });
+    expect(mockDeleteObject).toHaveBeenCalledWith({ __storagePath: LESSON_2.storageRef });
+    expect(mockDeleteObject).toHaveBeenCalledWith({
+      __storagePath: LESSON_2.poolStorageRef,
+    });
+    expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'lessons/lesson-1' });
+    expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'lessons/lesson-2' });
+    expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'questionIndex/q1' });
+    expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'publicLessons/lesson-1' });
+    expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'publicLessons/lesson-2' });
+    expect(mockBatchDelete).toHaveBeenCalledWith({
+      __path: 'programs/prog-1/imports/imp-1/udas/uda-01',
+    });
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'auditEvents/auto-id' },
+      expect.objectContaining({ action: 'uda.deleted', targetId: 'uda-01' }),
+    );
+  });
+
+  it('throws a Storage-specific error and never touches Firestore when a real Storage failure occurs', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => UDA_DOC });
+    mockGetDocs
+      .mockResolvedValueOnce({ docs: [] })
+      .mockResolvedValueOnce({ docs: [] })
+      .mockResolvedValueOnce({ docs: [] });
+    mockDeleteObject.mockRejectedValueOnce(new Error('permission-denied'));
+
+    await expect(
+      deleteUda({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-01',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow('Impossibile eliminare i file della UDA su Storage.');
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+    expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+
+  it('throws a distinct error when Storage succeeded but the Firestore cleanup failed', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => UDA_DOC });
+    mockGetDocs
+      .mockResolvedValueOnce({ docs: [] })
+      .mockResolvedValueOnce({ docs: [] })
+      .mockResolvedValueOnce({ docs: [] });
+    mockBatchCommit.mockRejectedValueOnce(new Error('permission-denied'));
+
+    await expect(
+      deleteUda({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-01',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow(/eliminati da Storage ma non è stato possibile rimuovere/);
     expect(mockSetDoc).not.toHaveBeenCalled();
   });
 });
