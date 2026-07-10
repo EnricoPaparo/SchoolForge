@@ -7,6 +7,12 @@ type Call = { method: string; args: unknown[] };
 
 let calls: Call[] = [];
 
+/**
+ * Override `splitTextToSize` behavior for a single test. Set before the call
+ * and reset to null in a finally block. When null the fake returns [text] (no split).
+ */
+let splitOverride: ((text: string, maxW: number) => string[]) | null = null;
+
 vi.mock('jspdf', () => {
   class FakeJsPDF {
     internal = { pageSize: { getWidth: () => 210 } };
@@ -20,7 +26,9 @@ vi.mock('jspdf', () => {
     setDrawColor(...args: unknown[]) {
       calls.push({ method: 'setDrawColor', args });
     }
-    splitTextToSize(text: string) {
+    splitTextToSize(text: string, maxW: number) {
+      calls.push({ method: 'splitTextToSize', args: [text, maxW] });
+      if (splitOverride) return splitOverride(text, maxW);
       return [text];
     }
     getTextWidth(text: string) {
@@ -97,6 +105,7 @@ const CHIUSA: LoadedQuestion = {
 
 beforeEach(() => {
   calls = [];
+  splitOverride = null;
 });
 
 describe('downloadStudentPdf — student fields', () => {
@@ -221,6 +230,40 @@ describe('downloadStudentPdf — closed questions', () => {
       .join('\n');
     expect(rendered).not.toMatch(/soluzione/i);
     expect(rendered).not.toMatch(/corretta/i);
+  });
+
+  it('calls splitTextToSize for each option text to enable wrapping', async () => {
+    await downloadStudentPdf(SNAPSHOT, [CHIUSA], null);
+
+    const splitCalls = calls.filter((c) => c.method === 'splitTextToSize');
+    const optionSplits = splitCalls.filter(
+      (c) => c.args[0] === 'Rete' || c.args[0] === 'Trasporto',
+    );
+    expect(optionSplits).toHaveLength(2);
+    // maxW should be less than the full content width (170mm) because indent + box + gap are subtracted
+    expect(optionSplits[0].args[1] as number).toBeLessThan(170);
+  });
+
+  it('draws one rect per option even when option text wraps to multiple lines', async () => {
+    splitOverride = (text) => {
+      if (text === 'Rete') return ['Rete'];
+      if (text === 'Trasporto') return ['Traspor-', 'to'];
+      return [text];
+    };
+    try {
+      await downloadStudentPdf(SNAPSHOT, [CHIUSA], null);
+    } finally {
+      splitOverride = null;
+    }
+
+    // Still one rect per option
+    const rectCalls = calls.filter((c) => c.method === 'rect');
+    expect(rectCalls).toHaveLength(2);
+
+    // The multi-line option produces two separate text calls
+    const textCalls = calls.filter((c) => c.method === 'text').map((c) => String(c.args[0]));
+    expect(textCalls.filter((t) => t === 'Traspor-').length).toBe(1);
+    expect(textCalls.filter((t) => t === 'to').length).toBe(1);
   });
 });
 
