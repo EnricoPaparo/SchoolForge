@@ -15,6 +15,7 @@ import {
 import type { LessonMetadata } from '../repository/validation/types.js';
 import {
   createLesson,
+  createUda,
   updateLessonMarkdownBody,
   updateLessonMetadata,
 } from '../repository/editor/repositoryEditorService.js';
@@ -88,6 +89,15 @@ export function LessonsView() {
   const [savingNewLesson, setSavingNewLesson] = useState(false);
   const [createLessonError, setCreateLessonError] = useState<string | null>(null);
 
+  // ── New UDA creation (RE-03B) ────────────────────────────────────
+  const [creatingUdaProgramId, setCreatingUdaProgramId] = useState<string | null>(null);
+  const [newUdaTitolo, setNewUdaTitolo] = useState('');
+  const [newUdaDescrizione, setNewUdaDescrizione] = useState('');
+  const [newUdaCompetenze, setNewUdaCompetenze] = useState('');
+  const [newUdaObiettivi, setNewUdaObiettivi] = useState('');
+  const [savingNewUda, setSavingNewUda] = useState(false);
+  const [createUdaError, setCreateUdaError] = useState<string | null>(null);
+
   useEffect(() => {
     void loadPrograms();
   }, []);
@@ -142,8 +152,76 @@ export function LessonsView() {
     });
   }
 
+  function toggleCreateUda(program: ProgramItem) {
+    setCreateUdaError(null);
+    setCreatingLessonUdaKey(null);
+    setCreatingUdaProgramId((prev) => {
+      if (prev === program.id) return null;
+      setNewUdaTitolo('');
+      setNewUdaDescrizione('');
+      setNewUdaCompetenze('');
+      setNewUdaObiettivi('');
+      return program.id;
+    });
+    setExpandedCourses((prev) => (prev.has(program.id) ? prev : new Set(prev).add(program.id)));
+    if (program.activeImportId && !courseTree[program.id]) {
+      void loadCourseTree(program);
+    }
+  }
+
+  async function handleCreateUda(program: ProgramItem) {
+    if (!program.activeImportId) return;
+    const titolo = newUdaTitolo.trim();
+    if (!titolo) {
+      setCreateUdaError('Il titolo della UDA è obbligatorio.');
+      return;
+    }
+    setSavingNewUda(true);
+    setCreateUdaError(null);
+    const fields = {
+      titolo,
+      descrizione: newUdaDescrizione.trim() || null,
+      competenze: linesToArray(newUdaCompetenze),
+      obiettivi: linesToArray(newUdaObiettivi),
+    };
+    try {
+      const { udaId, dir } = await createUda({
+        programId: program.id,
+        importId: program.activeImportId,
+        ownerUid,
+        fields,
+        db,
+        storage,
+      });
+      const newUda: UdaItem = {
+        id: udaId,
+        ownerUid,
+        importId: program.activeImportId,
+        dir,
+        filename: `${dir}.md`,
+        storageBasePath: `repository/${ownerUid}/imports/${program.activeImportId}/${dir}`,
+        lessonCount: 0,
+        descrizione: fields.descrizione,
+        competenze: fields.competenze,
+        obiettivi: fields.obiettivi,
+      };
+      setCourseTree((prev) => {
+        const cur = prev[program.id];
+        if (!cur) return prev;
+        const udas = [...(cur.udas ?? []), newUda].sort((a, b) => a.dir.localeCompare(b.dir));
+        return { ...prev, [program.id]: { ...cur, udas } };
+      });
+      setCreatingUdaProgramId(null);
+    } catch (err) {
+      setCreateUdaError(err instanceof Error ? err.message : 'Impossibile creare la UDA.');
+    } finally {
+      setSavingNewUda(false);
+    }
+  }
+
   function toggleCreateLesson(program: ProgramItem, udaKey: string) {
     setCreateLessonError(null);
+    setCreatingUdaProgramId(null);
     setCreatingLessonUdaKey((prev) => {
       if (prev === udaKey) return null;
       setNewLessonTitolo('');
@@ -391,24 +469,38 @@ export function LessonsView() {
 
             return (
               <li key={program.id} className={styles.courseItem}>
-                <button
-                  type="button"
-                  className={styles.courseToggle}
-                  aria-expanded={expanded}
-                  aria-controls={`lezioni-course-panel-${program.id}`}
-                  onClick={() => toggleCourse(program)}
-                >
-                  <span
-                    className={`${styles.caret}${expanded ? ` ${styles.caretOpen}` : ''}`}
-                    aria-hidden="true"
+                <div className={styles.courseRow}>
+                  <button
+                    type="button"
+                    className={styles.courseToggle}
+                    aria-expanded={expanded}
+                    aria-controls={`lezioni-course-panel-${program.id}`}
+                    onClick={() => toggleCourse(program)}
                   >
-                    ▶
-                  </span>
-                  <span className={styles.courseTitle}>{program.title}</span>
-                  {!program.activeImportId && (
-                    <span className="badge badge-warning">Nessun import</span>
+                    <span
+                      className={`${styles.caret}${expanded ? ` ${styles.caretOpen}` : ''}`}
+                      aria-hidden="true"
+                    >
+                      ▶
+                    </span>
+                    <span className={styles.courseTitle}>{program.title}</span>
+                    {!program.activeImportId && (
+                      <span className="badge badge-warning">Nessun import</span>
+                    )}
+                  </button>
+                  {program.activeImportId && (
+                    <button
+                      type="button"
+                      className={styles.udaAddBtn}
+                      title="Nuova UDA"
+                      aria-label={`Nuova UDA — ${program.title}`}
+                      aria-expanded={creatingUdaProgramId === program.id}
+                      onClick={() => toggleCreateUda(program)}
+                    >
+                      ＋
+                    </button>
                   )}
-                </button>
+                </div>
 
                 {expanded && (
                   <div id={`lezioni-course-panel-${program.id}`} className={styles.udaPanel}>
@@ -588,6 +680,77 @@ export function LessonsView() {
                           );
                         })}
                       </ul>
+                    )}
+
+                    {creatingUdaProgramId === program.id && (
+                      <form
+                        className={styles.newLessonForm}
+                        role="region"
+                        aria-label={`Nuova UDA — ${program.title}`}
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void handleCreateUda(program);
+                        }}
+                      >
+                        <label htmlFor={`new-uda-titolo-${program.id}`}>
+                          Titolo
+                          <input
+                            id={`new-uda-titolo-${program.id}`}
+                            type="text"
+                            value={newUdaTitolo}
+                            onChange={(e) => setNewUdaTitolo(e.target.value)}
+                            required
+                          />
+                        </label>
+                        <label htmlFor={`new-uda-descrizione-${program.id}`}>
+                          Descrizione
+                          <textarea
+                            id={`new-uda-descrizione-${program.id}`}
+                            rows={2}
+                            value={newUdaDescrizione}
+                            onChange={(e) => setNewUdaDescrizione(e.target.value)}
+                          />
+                        </label>
+                        <label htmlFor={`new-uda-competenze-${program.id}`}>
+                          Competenze (una per riga)
+                          <textarea
+                            id={`new-uda-competenze-${program.id}`}
+                            rows={2}
+                            value={newUdaCompetenze}
+                            onChange={(e) => setNewUdaCompetenze(e.target.value)}
+                          />
+                        </label>
+                        <label htmlFor={`new-uda-obiettivi-${program.id}`}>
+                          Obiettivi (uno per riga)
+                          <textarea
+                            id={`new-uda-obiettivi-${program.id}`}
+                            rows={2}
+                            value={newUdaObiettivi}
+                            onChange={(e) => setNewUdaObiettivi(e.target.value)}
+                          />
+                        </label>
+                        {createUdaError && (
+                          <p role="alert" className="text-error">
+                            {createUdaError}
+                          </p>
+                        )}
+                        <div className={styles.newLessonActions}>
+                          <button
+                            type="submit"
+                            className="btn-success"
+                            disabled={savingNewUda || !newUdaTitolo.trim()}
+                          >
+                            {savingNewUda ? 'Creazione…' : 'Crea UDA'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={savingNewUda}
+                            onClick={() => setCreatingUdaProgramId(null)}
+                          >
+                            Annulla
+                          </button>
+                        </div>
+                      </form>
                     )}
                   </div>
                 )}

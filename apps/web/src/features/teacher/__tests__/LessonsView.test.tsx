@@ -33,10 +33,12 @@ vi.mock('../lessonPdf.js', () => ({
 const mockUpdateLessonMetadata = vi.fn();
 const mockUpdateLessonMarkdownBody = vi.fn();
 const mockCreateLesson = vi.fn();
+const mockCreateUda = vi.fn();
 vi.mock('../../repository/editor/repositoryEditorService.js', () => ({
   updateLessonMetadata: (...args: unknown[]) => mockUpdateLessonMetadata(...args),
   updateLessonMarkdownBody: (...args: unknown[]) => mockUpdateLessonMarkdownBody(...args),
   createLesson: (...args: unknown[]) => mockCreateLesson(...args),
+  createUda: (...args: unknown[]) => mockCreateUda(...args),
 }));
 
 afterEach(cleanup);
@@ -467,5 +469,92 @@ describe('LessonsView — new lesson creation (RE-03A)', () => {
     fireEvent.submit(screen.getByLabelText('Titolo').closest('form')!);
 
     expect(mockCreateLesson).not.toHaveBeenCalled();
+  });
+});
+
+describe('LessonsView — new UDA creation (RE-03B)', () => {
+  async function openCreateUdaForm() {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    render(<LessonsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+    fireEvent.click(await screen.findByRole('button', { name: /Nuova UDA — Informatica/ }));
+  }
+
+  it('opens the form, auto-expanding the course so the existing UDA stays visible', async () => {
+    await openCreateUdaForm();
+    expect(screen.getByLabelText('Titolo')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'uda-01-reti' })).toBeTruthy();
+  });
+
+  it('disables Crea UDA until a title is entered', async () => {
+    await openCreateUdaForm();
+    expect(screen.getByRole('button', { name: 'Crea UDA' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.change(screen.getByLabelText('Titolo'), { target: { value: 'Sicurezza' } });
+    expect(screen.getByRole('button', { name: 'Crea UDA' }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('calls createUda with the entered fields and shows the new UDA in the sidebar without a refetch', async () => {
+    mockCreateUda.mockResolvedValue({ udaId: 'uda-02-sicurezza', dir: 'uda-02-sicurezza' });
+    await openCreateUdaForm();
+
+    fireEvent.change(screen.getByLabelText('Titolo'), { target: { value: 'Sicurezza' } });
+    fireEvent.change(screen.getByLabelText('Descrizione'), {
+      target: { value: 'Basi della sicurezza informatica' },
+    });
+    fireEvent.change(screen.getByLabelText('Competenze (una per riga)'), {
+      target: { value: 'crittografia\nautenticazione' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Crea UDA' }));
+
+    await waitFor(() => {
+      expect(mockCreateUda).toHaveBeenCalledWith({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        ownerUid: 'owner-uid',
+        fields: {
+          titolo: 'Sicurezza',
+          descrizione: 'Basi della sicurezza informatica',
+          competenze: ['crittografia', 'autenticazione'],
+          obiettivi: [],
+        },
+        db: {},
+        storage: {},
+      });
+    });
+
+    expect(await screen.findByRole('button', { name: 'uda-02-sicurezza' })).toBeTruthy();
+    // Only the initial listUdas call from expanding the course — the new
+    // UDA is spliced into local state, no refetch.
+    expect(mockListUdas).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText('Titolo')).toBeNull();
+  });
+
+  it('closes the "Nuova lezione" form for a UDA when "Nuova UDA" is opened, and vice versa', async () => {
+    await openCreateUdaForm();
+    fireEvent.click(await screen.findByRole('button', { name: /Nuova lezione — uda-01-reti/ }));
+
+    expect(screen.getAllByLabelText('Titolo')).toHaveLength(1);
+  });
+
+  it('shows a clear error without closing the form when creation fails', async () => {
+    mockCreateUda.mockRejectedValue(new Error('Impossibile creare il file della UDA su Storage.'));
+    await openCreateUdaForm();
+    fireEvent.change(screen.getByLabelText('Titolo'), { target: { value: 'Sicurezza' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crea UDA' }));
+
+    expect(
+      await screen.findByText('Impossibile creare il file della UDA su Storage.'),
+    ).toBeTruthy();
+    expect(screen.getByLabelText('Titolo')).toBeTruthy();
+  });
+
+  it('shows an inline error and never calls createUda when the title is blank', async () => {
+    await openCreateUdaForm();
+    fireEvent.change(screen.getByLabelText('Titolo'), { target: { value: '   ' } });
+    fireEvent.submit(screen.getByLabelText('Titolo').closest('form')!);
+
+    expect(mockCreateUda).not.toHaveBeenCalled();
   });
 });
