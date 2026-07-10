@@ -57,6 +57,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 - [evidenze/g4-lite-checklist-manuale.md](evidenze/g4-lite-checklist-manuale.md) — checklist manuale dei 6 criteri minimi della gate G4-lite (M3-lite).
 - [evidenze/checklist-dev-post-hardening.md](evidenze/checklist-dev-post-hardening.md) — checklist manuale DEV completa (docente + studente) post-hardening delle Storage Rules.
 - [evidenze/repository-editor-checklist-manuale.md](evidenze/repository-editor-checklist-manuale.md) — checklist manuale DEV del Repository Editor (RE-07): creazione, modifica, riordino, eliminazione protetta, export/reimport ZIP, vista studente.
+- [evidenze/v1-checklist-finale.md](evidenze/v1-checklist-finale.md) — checklist finale di stabilizzazione V1: sintesi delle checklist di area, giro rapido sulle 6 aree UI principali, incoerenze documentali corrette e backlog residuo.
 
 ## Diagrammi
 

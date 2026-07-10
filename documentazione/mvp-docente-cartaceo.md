@@ -88,9 +88,7 @@ Apri <http://localhost:5173> nel browser.
 
 ### 1. Login docente
 
-Al primo avvio non esiste un account: creane uno tramite l'Emulator UI Auth (<http://localhost:4000/auth>) oppure lascia che la pagina di login lo crei in automatico se hai un utente già configurato.
-
-Con un utente creato nell'emulatore, inserisci email e password nella schermata di login.
+La pagina di login mostra un solo bottone, **Accedi con Google** (`signInWithPopup` con `GoogleAuthProvider` — non ci sono più campi email/password nella UI). Contro l'Emulator Auth, il popup apre il selettore di account fittizio dell'emulatore invece di un vero login Google: scegli "Aggiungi nuovo account" per crearne uno al volo, oppure riusa un account già creato in una sessione precedente (visibile anche in <http://localhost:4000/auth>).
 
 > **Primo avvio:** apparirà la schermata "Inizializza SchoolForge". Clicca **Diventa proprietario** per associare l'account al portale docente. Questa operazione va fatta una sola volta.
 
@@ -336,7 +334,6 @@ Verifiche online, consegna digitale, correzione automatica e correzione AI **non
 | Dati negli emulatori sono temporanei | Persi al riavvio degli emulatori | Solo per lo sviluppo locale — il deploy DEV su Firebase reale è già attivo |
 | Security Rules verificate su emulatore e su DEV reale, non su un progetto PROD dedicato | Possibili differenze residue non ancora osservate | Ripetere la checklist manuale (vedi `documentazione/evidenze/`) al deploy PROD |
 | Portale digitale (M3-full), consegna online, correzione (M4), correzione AI (M5) non implementati | Nessun tentativo/punteggio/correzione digitale | Specifica rinviata, fasi successive |
-| La voce "Classi" è sotto "Impostazioni" nella navigazione | UX non intuitiva | UX fix futuro |
 | Bundle size grande (jsPDF ~390 kB gzip 128 kB) | Prima apertura lenta | Lazy import già presente; accettabile per V1 |
 
 ---
