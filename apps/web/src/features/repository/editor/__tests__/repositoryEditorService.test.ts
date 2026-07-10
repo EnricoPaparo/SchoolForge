@@ -1071,6 +1071,31 @@ describe('reorderLesson', () => {
     expect(result).toEqual({ order: 0, neighborOrder: 1 });
   });
 
+  it('derives the swap from lezione-XXX.md filenames without a slug', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ udaDir: 'uda-01-reti', filename: 'lezione-002.md' }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ udaDir: 'uda-01-reti', filename: 'lezione-003.md' }),
+      })
+      .mockResolvedValueOnce({ exists: () => false })
+      .mockResolvedValueOnce({ exists: () => false });
+
+    const result = await reorderLesson({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonId: 'lesson-2',
+      neighborLessonId: 'lesson-3',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+    });
+
+    expect(result).toEqual({ order: 2, neighborOrder: 1 });
+  });
+
   it('throws a single clear error when the batch commit fails', async () => {
     mockGetDoc
       .mockResolvedValueOnce({

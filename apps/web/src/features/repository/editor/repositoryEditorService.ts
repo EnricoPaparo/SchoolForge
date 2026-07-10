@@ -88,13 +88,13 @@ function lessonFrontMatterFields(metadata: LessonMetadata): EditableFrontMatter 
 }
 
 function udaOrderFromDir(dir: string | undefined): number | null {
-  const match = /^uda-(\d+)-/.exec(dir ?? '');
+  const match = /^uda-(\d+)(?:-|$)/.exec(dir ?? '');
   return match ? Number(match[1]) - 1 : null;
 }
 
 /** Same reasoning as `udaOrderFromDir`, for a lesson's `lezione-XXX` filename prefix. */
 function lessonOrderFromFilename(filename: string | undefined): number | null {
-  const match = /^lezione-(\d+)-/.exec(filename ?? '');
+  const match = /^lezione-(\d+)(?:-|\.md$)/.exec(filename ?? '');
   return match ? Number(match[1]) - 1 : null;
 }
 

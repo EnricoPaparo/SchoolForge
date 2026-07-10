@@ -297,6 +297,18 @@ describe('listLessons — deterministic ordering', () => {
     expect(result.map((l) => l.filename)).toEqual(['lezione-002-basi.md', 'lezione-010-finale.md']);
   });
 
+  it('sorts legacy lessons without a slug by the numeric lezione-XXX prefix', async () => {
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        { id: 'l-10', data: () => ({ udaDir: 'uda-01-intro', filename: 'lezione-010.md' }) },
+        { id: 'l-2', data: () => ({ udaDir: 'uda-01-intro', filename: 'lezione-002.md' }) },
+      ],
+    });
+
+    const result = await listLessons('prog-1', 'imp-1', fakeDb);
+    expect(result.map((l) => l.filename)).toEqual(['lezione-002.md', 'lezione-010.md']);
+  });
+
   it('keeps a newly ordered lesson after legacy lesson prefixes instead of moving it first', async () => {
     mockGetDocs.mockResolvedValue({
       docs: [
