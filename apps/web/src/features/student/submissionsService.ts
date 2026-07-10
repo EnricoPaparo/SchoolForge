@@ -92,10 +92,7 @@ export type StartSubmissionInput = {
  * we use `setDoc` without merge — a second call would overwrite, but the Rules
  * deny it. Callers should check `loadSubmission` first when idempotency matters.
  */
-export async function startSubmission(
-  input: StartSubmissionInput,
-  db: Firestore,
-): Promise<void> {
+export async function startSubmission(input: StartSubmissionInput, db: Firestore): Promise<void> {
   const { verificationId, studentUid, ownerUid, verificationTitle, className } = input;
   const id = submissionId(verificationId, studentUid);
   const payload: SubmissionDoc = {
