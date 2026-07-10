@@ -296,60 +296,71 @@ interface PublicVerificationQuestion {
 }
 
 // ---------------------------------------------------------------------------
-// M3-full — specifica rinviata. I tipi seguenti (DeliveryAttempt, AccessLogEntry,
-// SnapshotItem, Answer) descrivono un'eventuale consegna online successiva a
-// M3-lite; non sono introdotti dalla baseline corrente, che non produce
-// tentativi né consegne.
+// M3-full — Verifiche online e consegne studenti (specifica in m3-full-roadmap.md)
+// I tipi seguenti definiscono il contratto Firestore per la consegna online.
+// Non sono introdotti da M3-lite. Implementazione a partire da M3F-01.
 // ---------------------------------------------------------------------------
 
-// deliveryAttempts/{attemptId} — solo canale digitale (il canale cartaceo non crea tentativi)
-interface DeliveryAttempt {
-  id: string;
+// submissions/{submissionId} — consegna studente online
+// Un documento per (studentUid, verificationId). Creato all'avvio; aggiornato
+// a ogni salvataggio bozza; bloccato immutabile alla consegna (status == 'submitted').
+// submissionId è deterministico: `${verificationId}_${studentUid}`. Non usare UUID
+// arbitrari: le Security Rules non possono fare query per garantire unicità.
+// Il docente (ownerUid) può leggere tutte le submission delle proprie verifiche;
+// lo studente legge/scrive la propria submission solo finché è draft. Dopo
+// submitted legge solo submissionReceipts/{submissionId}.
+// Nessuno cancella submission in M3-full (M4 aggiungerà l'archiviazione).
+interface SubmissionDoc {
+  submissionId: string;            // == Firestore doc id deterministico: `${verificationId}_${studentUid}`
   verificationId: string;
-  declaredData: {
-    name: string;
-    surname: string;
-    class?: string;
-  };
-  declaredName: string;            // "Cognome Nome" auto-dichiarato, non verificato
-  declaredIp: string;              // IP di provenienza al momento dell'accesso
-  userAgent: string;               // user-agent del browser dello studente
-  state: 'in_progress' | 'submitted' | 'cancelled';
-  resumeTokenHash: string | null;  // hash del cookie di ripresa
-  resumeTokenExpiry: Timestamp | null;
-  createdAt: Timestamp;
+  studentUid: string;
+  ownerUid: string;
+  status: 'draft' | 'submitted';
+  // risposte sparse: solo le domande toccate; key = order.toString() (1-based)
+  answers: Record<string, AnswerValue>;
+  // marcatori UX opzionali (non persistono post-consegna)
+  flagged: Record<string, boolean>;
+  // log eventi attenzione (deterrenza leggera — non invalida automaticamente)
+  attentionEvents: AttentionEvent[];
+  deliveryCode: string | null;     // null finché status != 'submitted'; es. "SF-2026-A3B7"
+  // snapshot leggibile nella schermata di conferma
+  verificationTitle: string;
+  className: string | null;
+  startedAt: Timestamp;
+  lastSavedAt: Timestamp;
   submittedAt: Timestamp | null;
 }
 
-// deliveryAttempts/{id}/accessLog/{logId} — subcollection
-interface AccessLogEntry {
-  declaredName: string;            // "Cognome Nome"
-  declaredIp: string;
-  userAgent: string;
-  timestamp: Timestamp;
+type AnswerValue =
+  | { tipo: 'aperta'; testo: string }
+  | { tipo: 'chiusa_singola'; selectedId: string | null }
+  | { tipo: 'chiusa_multipla'; selectedIds: string[] };
+
+interface AttentionEvent {
+  type: 'fullscreen_exit' | 'tab_blur' | 'window_blur' | 'visibility_hidden';
+  ts: number; // ms epoch
 }
 
-// deliveryAttempts/{id}/snapshot/items — subcollection
-interface SnapshotItem {
-  questionId: string;
-  order: number;
-  tipo: string;
-  difficolta: 1 | 2 | 3;
-  peso: 1 | 2 | 3;
-  maxPoints: number;               // difficolta * peso (1–9)
-  testo: string;
-  opzioni: { id: string; testo: string }[] | null;
-  soluzione: string | string[];    // privato; mai esposto al client portale
-  lessonSource: string;
+// submissionReceipts/{submissionId} — ricevuta post-consegna leggibile dallo studente.
+// Dopo status='submitted', lo studente non legge più la SubmissionDoc completa
+// con le risposte: vede solo questo documento minimale. Il docente legge comunque
+// la submission completa per il monitor e, in futuro, per M4.
+interface SubmissionReceiptDoc {
+  submissionId: string;            // stesso id deterministico della submission
+  verificationId: string;
+  studentUid: string;
+  ownerUid: string;
+  verificationTitle: string;
+  className: string | null;
+  deliveryCode: string;
+  submittedAt: Timestamp;
 }
 
-// deliveryAttempts/{id}/answers — subcollection
-interface Answer {
-  itemId: string;
-  value: string | string[] | null;
-  state: 'draft' | 'submitted';
-  updatedAt: Timestamp;
-}
+// Campo aggiunto a verifications/{verificationId} in M3-full
+// onlineEnabled: boolean — true = la verifica accetta submission online.
+// Deve essere true (insieme a status=='active' e visibility=='public') perché
+// uno studente possa avviare o aggiornare una submission. La chiusura
+// (status='closed') blocca implicitamente l'online via Security Rules.
 
 // corrections/{attemptId} e correctionEvents — Modulo 4, dipende da M3-full
 // (operano sull'attemptId di una consegna digitale; non popolati da M3-lite)

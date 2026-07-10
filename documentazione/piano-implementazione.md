@@ -20,12 +20,12 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 | M2 — Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente, canale cartaceo fisico senza record (al più `downloadCount`). | Sì |
 | M3-lite — Portale studente (Google, read-only) | Login Google, risoluzione ruolo docente/studente, StudentShell con Lezioni e Verifiche in sola lettura, download PDF studente per verifiche `attiva`+`public`. Nessuna Cloud Function. | Sì |
 | RE — Repository Editor | Editor minimale per creare, modificare, eliminare e riordinare UDA/lezioni, inclusi front matter e corpo Markdown. Nessuna AI, nessuna Cloud Function. | Sì |
-| M3-full — Portale digitale (specifica rinviata) | Tentativi, snapshot via Cloud Function, lock nome+cognome, token sessione, log nome+IP, bozze, consegna, deterrenza. Non pianificato in dettaglio; segue M3-lite. | Sì |
+| M3-full — Verifiche online e consegne studenti | Avvio online, salvataggio bozza, consegna immutabile, codice consegna, modalità verifica (deterrenza leggera), monitor consegne docente. Nessuna Cloud Function. Specifica in `m3-full-roadmap.md`. | Sì |
 | M4 — Correzione ed export | Punteggi, percentuali, rettifiche, eliminazione e `Esporta verifiche` in PDF/Markdown/CSV. Dipende da M3-full. | Sì |
 
 **M5 — Correzione AI** è fuori scope V1 ed è pianificato per la V2. Vedi la sezione "V2 — Roadmap futura" in fondo. M5 non fa parte del perimetro né delle dipendenze della V1.
 
-Il Modulo 3 (Portale digitale) è diviso in **M3-lite** (deciso e completato dopo M2) e **M3-full** (specifica rinviata a una fase successiva, non pianificata in dettaglio). M3-lite non richiede Cloud Functions e non dipende da M3-full. Dopo M3-lite è stata completata **RE — Repository Editor** (RE-00 → RE-07), perché migliora il lavoro quotidiano del docente senza introdurre consegne online, correzione o AI.
+Il Modulo 3 (Portale digitale) è diviso in **M3-lite** (deciso e completato dopo M2) e **M3-full** (specifica definita in `m3-full-roadmap.md`, implementazione da avviare). M3-lite non richiede Cloud Functions e non dipende da M3-full. Dopo M3-lite è stata completata **RE — Repository Editor** (RE-00 → RE-07), perché migliora il lavoro quotidiano del docente senza introdurre consegne online, correzione o AI.
 
 ---
 
@@ -102,8 +102,8 @@ Un pacchetto è abbastanza piccolo da essere verificato in una review e abbastan
 | G3 — Verifiche e cartaceo | M2 integrato. | PDF browser, canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`), nessun PDF persistito. | M3-lite. |
 | G4-lite — Portale studente (M3-lite) | M3-lite integrato. | Login Google risolve TeacherShell/StudentShell; un Google-autenticato non-owner scopre lezioni pubblicate e verifiche `attiva`+`public` solo se `students/{uid}.status == "approved"` e `settings/studentAccess.studentPortalEnabled == true` (mai per la sola autenticazione); PDF studente senza soluzioni; nessuna Cloud Function introdotta. | RE, M3-full (se pianificato), o uso operativo stabile. |
 | GRE — Repository Editor | RE integrato. | Il docente crea/modifica/elimina/riordina UDA e lezioni, modifica front matter e corpo Markdown, vede anteprima, export ZIP resta portabile, publicLessons resta coerente, eliminazioni bloccate se ci sono verifiche collegate. | M3-full, polish ulteriore o uso operativo stabile. |
-| G4 — Portale digitale (M3-full, specifica rinviata) | G4-lite superato; M3-full integrato, se e quando pianificato. | Lock nome+cognome concorrente, log nome+IP, snapshot, bozza/ripresa, consegna immutabile, nessuna soluzione esposta. | M4. |
-| G5 — Correzione ed export | M4 integrato, G4 (M3-full) superato e H-04 completata. | Punteggi, rettifiche, eliminazione, export PDF/Markdown/CSV da snapshot. | Uso manuale completo — fine V1. |
+| G5 — Portale digitale (M3-full) | G4-lite e GRE superati; M3-full integrato. | Flusso avvio→bozza→consegna; immutabilità post-consegna; unicità submission; verifica chiusa blocca bozze; monitor docente real-time; modalità verifica attiva. Vedi gate G5 in `m3-full-roadmap.md §8`. | M4. |
+| G6 — Correzione ed export | M4 integrato, G5 (M3-full) superato e H-04 completata. | Punteggi, rettifiche, eliminazione, export PDF/Markdown/CSV da snapshot. | Uso manuale completo — fine V1. |
 | G6 — AI assistita (V2) | M5-A..C integrati e H-05 completata. | Contesto chiuso, audit, proposte assistite per risposta, approvazione massiva. | AI assistita. |
 | G7 — AI automatica (V2) | G6 e H-06 completati. | Opt-in per verifica, audit e rollback. | Correzione automatica. |
 

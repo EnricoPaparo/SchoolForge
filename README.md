@@ -19,11 +19,11 @@ Il flusso completo è operativo e testato (suite automatica estesa + smoke test 
 | Dashboard prontezza repository | ✅ funzionante |
 | Portale studente Google, read-only (M3-lite) | ✅ funzionante — login Google, StudentShell, Lezioni e Verifiche filtrate per classe, approvazione studenti, PDF verifica studente |
 | Repository Editor (RE) | ✅ funzionante — crea/modifica/riordina/elimina (con blocco protetto) UDA e lezioni, export ZIP coerente e reimportabile |
-| Portale digitale con consegna online (M3-full) | ❌ non implementato — specifica rinviata, fase successiva a M3-lite |
+| Portale digitale con consegna online (M3-full) | 📐 specifica definita — implementazione da avviare (roadmap M3F-00→M3F-06) |
 | Correzione e export risultati (M4) | ❌ non implementato — dipende da M3-full |
 | Correzione AI (M5) | ❌ fuori scope V1 |
 
-**Stato:** il Repository Editor (RE-00 → RE-07) è completo e stabile per uso DEV/manuale; vedi la sezione "Prossimo passo" più sotto.
+**Stato:** il Repository Editor (RE-00 → RE-07) è completo e stabile per uso DEV/manuale. La specifica M3-full (verifiche online, consegne, monitor docente) è definita in `documentazione/m3-full-roadmap.md`; vedi la sezione "Prossimo passo" più sotto.
 Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartaceo.md) per la guida operativa.
 
 ## Principi non negoziabili
@@ -34,7 +34,7 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 - Il PDF cartaceo e il PDF studente di M3-lite sono scaricati direttamente nel browser, senza persistenza.
 - PDF, export e programma svolto sono generati on-demand nel browser e non conservati dal sistema.
 - Il ruolo utente è risolto confrontando `uid` con `ownerUid`: docente se coincide, studente in sola lettura altrimenti. Nessun accesso anonimo in M3-lite.
-- M3-lite non usa Cloud Functions: legge solo proiezioni pubbliche read-only entro Security Rules. Un eventuale gateway Cloud Functions per consegna online (avvio, ripresa, bozza, consegna autorizzati lato server) resta specifica rinviata a M3-full.
+- M3-lite non usa Cloud Functions: legge solo proiezioni pubbliche read-only entro Security Rules. M3-full (verifiche online) usa scritture client dirette con Security Rules; non introduce Cloud Functions.
 - L'AI (V2) è opzionale, non genera domande e non usa fonti web.
 - Firebase è la piattaforma; costi e componenti restano minimi, con scale-to-zero e avvisi budget.
 
@@ -57,6 +57,7 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 | [Glossario](documentazione/glossario.md) | Vocabolario condiviso. |
 | [Diagrammi](documentazione/diagrammi) | Flussi e componenti. |
 | [Repository Editor](documentazione/repository-editor-roadmap.md) | Roadmap del Repository Editor (RE-00–RE-07, implementato): editor minimale UDA/lezioni Markdown-first. |
+| [M3-full](documentazione/m3-full-roadmap.md) | Specifica M3-full (verifiche online, consegne, monitor): modello dati, Security Rules, UX, roadmap M3F-00→M3F-06. |
 
 ## Moduli di delivery
 
@@ -64,26 +65,25 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 2. **M2 — Verifiche e cartaceo** ✅: configurazione, classi, selezione domande, attivazione, PDF studente browser-side.
 3. **M3-lite — Portale studente (Google, read-only)** ✅: login Google (personale o Workspace for Education), risoluzione ruolo docente/studente, StudentShell con sezioni Lezioni e Verifiche filtrate per classe, approvazione studenti, download del solo PDF studente per le verifiche `active`+`public`. Nessuna Cloud Function, nessun account custom, nessuna consegna online.
 4. **RE — Repository Editor** ✅: creare/modificare/eliminare/riordinare UDA e lezioni, inclusi front matter e corpo Markdown, senza AI e senza CMS complesso; export ZIP coerente e reimportabile.
-5. **M3-full — Portale digitale** ❌ *(specifica rinviata, fase successiva a M3-lite)*: snapshot via Cloud Function, lock nome+cognome, token sessione, log nome+IP, bozza, consegna strutturata.
+5. **M3-full — Verifiche online e consegne studenti** 📐 *(specifica definita — da implementare)*: avvio online, bozza, consegna immutabile, codice consegna, modalità verifica (deterrenza leggera), monitor consegne docente. Vedi [m3-full-roadmap.md](documentazione/m3-full-roadmap.md).
 6. **M4 — Correzione ed export** ❌ *(dipende da M3-full)*: punteggi, percentuali, rettifiche, export PDF/Markdown/CSV.
 7. **M5 — Correzione AI** *(fuori scope V1 / pianificato per V2)*: proposte assistite, approvazione massiva, correzione automatica opt-in.
 
-La V1 comprende i moduli M1, M2, M3-lite e RE (Repository Editor), tutti implementati. M3-full e M4 restano pianificati per una fase successiva. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2.
+V1 comprende M1, M2, M3-lite e RE (tutti implementati). M3-full ha la specifica pronta; M4 dipende da M3-full. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2.
 
 ## Architettura in sintesi
 
 ```
 SPA unica (Firebase Hosting)
 ├── /teacher/*  — docente autenticato (ownerUid), scrittura diretta Firestore + Storage
-└── /student/*  — studente autenticato Google, sola lettura [M3-lite, implementato]
-                  Lezioni (read-only) + Verifiche (attiva+public, solo download PDF studente)
+└── /student/*  — studente autenticato Google
+                  M3-lite: lezioni e verifiche read-only, PDF studente browser-side
+                  M3-full [da implementare]: avvio online, bozza, consegna immutabile
 
-Canale cartaceo: PDF generato nel browser dal docente (già implementato in M2).
+Canale cartaceo: PDF generato nel browser dal docente (M2, implementato).
+Consegna online: scritture client dirette con Security Rules (M3-full, no Cloud Functions).
 
-Cloud Functions: nessuna in M3-lite.
-Riservate a AI (M5/V2) ed eventuale gateway M3-full [specifica rinviata]:
-├── startDigitalAttempt
-└── continueDigitalAttempt
+Cloud Functions: riservate a AI (M5/V2).
 
 PDF generati nel browser (@react-pdf/renderer) — nessun server coinvolto, nessuna persistenza
 ```
