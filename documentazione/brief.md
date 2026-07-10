@@ -95,7 +95,7 @@ Il sistema deve essere un consumatore della conoscenza.
 
 La perdita del sistema non deve comportare la perdita dei contenuti.
 
-Nella baseline implementata il docente può produrre i file Markdown esternamente e importarli come ZIP. La prossima estensione pianificata è un Repository Editor minimale: creazione, modifica, eliminazione e riordino di UDA/lezioni da portale, mantenendo Markdown-first ed export portabile.
+Il docente può produrre i file Markdown esternamente e importarli come ZIP. Il Repository Editor (implementato) estende questo flusso con creazione, modifica, eliminazione e riordino di UDA/lezioni da portale, mantenendo Markdown-first ed export portabile.
 
 ---
 
@@ -272,7 +272,7 @@ Le lezioni sono composte da due file Markdown:
 * `lezione-XXX-titolo.md` — contenuto didattico puro: testo, immagini, obiettivi, domande di autoverifica.
 * `lezione-XXX-titolo.pool.md` — pool delle domande di verifica associate a quella lezione, non esposte nella fruizione della lezione.
 
-Le lezioni possono essere create e modificate esternamente al sistema tramite Markdown e import ZIP. Con la fase RE — Repository Editor, il docente potrà anche crearle e modificarle direttamente dal portale, senza trasformarle in un formato proprietario.
+Le lezioni possono essere create e modificate esternamente al sistema tramite Markdown e import ZIP. Con il Repository Editor (RE, implementato) il docente può anche crearle e modificarle direttamente dal portale, senza trasformarle in un formato proprietario.
 
 Il sistema deve permettere:
 

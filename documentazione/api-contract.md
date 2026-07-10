@@ -405,6 +405,21 @@ interface AuditEvent {
 
 Il parser `lesson-contract` (package interno `packages/lesson-contract/src/index.ts`, riesportato da `src/contracts/lesson.ts`) esegue la validazione nel client prima di qualsiasi scrittura. Se il client riceve errori, la UI li mostra senza scrivere su Firestore o Storage. Se un upload fallisce prima del commit, l'import precedente rimane l'unico visibile.
 
+### 3.1a Repository Editor (RE-01 → RE-06) — modifiche dirette senza reimport
+
+Implementato in `apps/web/src/features/repository/editor/repositoryEditorService.ts` (crea/modifica/riordina/elimina) e `apps/web/src/features/teacher/exportZip.ts` (export). Sempre Storage-poi-Firestore: se la scrittura Storage fallisce, Firestore non viene toccato; se Storage riesce ma Firestore fallisce, un errore distinto avvisa il docente di riprovare invece di lasciare la UI in uno stato ambiguo (vedi `repository-editor-roadmap.md` §7).
+
+| Operazione | Scrittura Firestore | Storage |
+|---|---|---|
+| Crea UDA / crea lezione | `udas`/`lessons` (+ `publicLessons` per la lezione) con `order` = massimo esistente + 1; `filename` tecnico generato da slug del titolo, mai da un contatore riusabile | Scrivi il nuovo file `.md` con front matter minimo valido |
+| Modifica metadata UDA/lezione | Aggiorna solo i campi didattici (mai `order`/`filename`/`storageRef`); sincronizza `publicLessons` se la proiezione esiste | Riscrive il front matter del file esistente, corpo invariato |
+| Modifica corpo Markdown lezione | Ricalcola e sincronizza i metadata Firestore/`publicLessons` dal front matter ricomposto | Riscrive l'intero file con lo stesso front matter e il nuovo corpo |
+| Riordina UDA/lezione | Scambia `order` con il vicino in un unico `writeBatch` atomico (mai un `order` arbitrario, solo swap adiacente) | Nessuna — `dir`/`filename`/percorsi Storage non vengono mai rinominati per riordinare |
+| Elimina UDA/lezione | Bloccata (nessuna scrittura) se `findRepositoryDeleteBlockers` trova una verifica collegata (vedi §5.2 di `sicurezza.md`); altrimenti elimina `udas`/`lessons`/`questionIndex`/`publicLessons` collegati | Elimina il/i file `.md` e l'eventuale pool; tollera un file già assente |
+| Export ZIP | Legge `listUdas`/`listLessons` (già ordinati per `order`) e li scrive nell'archivio in un unico passaggio sequenziale, cosicché l'ordine fisico dello ZIP coincida con `order` — un reimport deriva l'`order` proprio da quella posizione fisica (vedi `buildImportPayload.ts`) | Solo lettura (`getBytes`); nessuna scrittura |
+
+Riordino ed eliminazione non toccano mai Storage per il riordino, e l'eliminazione non modifica mai automaticamente le verifiche esistenti — il docente deve prima rimuoverle o modificarle.
+
 L'import scrive, nella stessa transazione di commit, sia il documento tecnico `lessons/{id}` sia la proiezione pubblica `publicLessons/{id}` (M3-lite, §3.5): entrambi puntano allo stesso `activeImportId` e diventano visibili insieme.
 
 ### 3.2 Verifiche

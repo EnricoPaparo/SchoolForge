@@ -2,12 +2,12 @@
 
 ## Stato MVP
 
-**M1 + M2 + M3-lite (portale studente Google, read-only) completati. Deploy DEV attivo: https://schoolforge-dev.web.app**
+**M1 + M2 + M3-lite (portale studente Google, read-only) + RE (Repository Editor) completati. Deploy DEV attivo: https://schoolforge-dev.web.app**
 
-Il flusso docente cartaceo e il portale studente in sola lettura sono funzionanti sia in locale (emulatori Firebase) che su Firebase DEV. M3-full (consegna online), M4 (correzione) e M5 (AI) non sono implementati.
+Il flusso docente cartaceo, il portale studente in sola lettura e il Repository Editor sono funzionanti sia in locale (emulatori Firebase) che su Firebase DEV. M3-full (consegna online), M4 (correzione) e M5 (AI) non sono implementati.
 Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente locale e [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) per lo smoke test DEV.
 
-**Prossima fase:** Repository Editor — vedi [repository-editor-roadmap.md](repository-editor-roadmap.md) per la roadmap RE-00 → RE-07.
+**Repository Editor (RE-00 → RE-07) completato** — vedi [repository-editor-roadmap.md](repository-editor-roadmap.md) per la roadmap e [evidenze/repository-editor-checklist-manuale.md](evidenze/repository-editor-checklist-manuale.md) per la checklist manuale DEV. Nessuna fase RE obbligatoria successiva; i prossimi sviluppi pianificati ma non ancora dettagliati sono M3-full e M4.
 
 ## Per iniziare
 
@@ -47,7 +47,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [ux-patterns.md](ux-patterns.md) | Pattern di stato della SPA. | Per la UI docente e portale. |
 | [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) | Guida operativa MVP in locale. | Per avviare e usare l'MVP oggi. |
 | [ux-product-roadmap.md](ux-product-roadmap.md) | Roadmap UX/Product Polish (UX-01–06). | Per pianificare e implementare il polish UI. |
-| [repository-editor-roadmap.md](repository-editor-roadmap.md) | Roadmap Repository Editor (RE-00–RE-07). | Per pianificare il prossimo sviluppo: editor UDA/lezioni minimale. |
+| [repository-editor-roadmap.md](repository-editor-roadmap.md) | Roadmap Repository Editor (RE-00–RE-07, implementato). | Per consultare decisioni tecniche e scope dell'editor UDA/lezioni. |
 
 ## Evidenze
 
@@ -56,6 +56,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 - [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) — smoke test deploy DEV su Firebase reale. **DEV SMOKE PASS.**
 - [evidenze/g4-lite-checklist-manuale.md](evidenze/g4-lite-checklist-manuale.md) — checklist manuale dei 6 criteri minimi della gate G4-lite (M3-lite).
 - [evidenze/checklist-dev-post-hardening.md](evidenze/checklist-dev-post-hardening.md) — checklist manuale DEV completa (docente + studente) post-hardening delle Storage Rules.
+- [evidenze/repository-editor-checklist-manuale.md](evidenze/repository-editor-checklist-manuale.md) — checklist manuale DEV del Repository Editor (RE-07): creazione, modifica, riordino, eliminazione protetta, export/reimport ZIP, vista studente.
 
 ## Diagrammi
 

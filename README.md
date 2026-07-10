@@ -4,7 +4,7 @@ Repository didattico personale Markdown-first per un solo docente. Le lezioni e 
 
 ## Stato
 
-**MVP docente cartaceo + Portale studente M3-lite — implementati, funzionanti sia in locale con emulatori Firebase sia su Firebase DEV (https://schoolforge-dev.web.app).**
+**MVP docente cartaceo + Portale studente M3-lite + Repository Editor — implementati, funzionanti sia in locale con emulatori Firebase sia su Firebase DEV (https://schoolforge-dev.web.app).**
 
 Il flusso completo è operativo e testato (suite automatica estesa + smoke test manuale + checklist DEV):
 
@@ -18,12 +18,12 @@ Il flusso completo è operativo e testato (suite automatica estesa + smoke test 
 | PDF studente senza soluzioni (generato nel browser) | ✅ funzionante |
 | Dashboard prontezza repository | ✅ funzionante |
 | Portale studente Google, read-only (M3-lite) | ✅ funzionante — login Google, StudentShell, Lezioni e Verifiche filtrate per classe, approvazione studenti, PDF verifica studente |
-| Repository Editor (RE) | ❌ pianificato come prossima fase — editor minimale per creare/modificare/eliminare/riordinare UDA e lezioni |
+| Repository Editor (RE) | ✅ funzionante — crea/modifica/riordina/elimina (con blocco protetto) UDA e lezioni, export ZIP coerente e reimportabile |
 | Portale digitale con consegna online (M3-full) | ❌ non implementato — specifica rinviata, fase successiva a M3-lite |
 | Correzione e export risultati (M4) | ❌ non implementato — dipende da M3-full |
 | Correzione AI (M5) | ❌ fuori scope V1 |
 
-**Prossimo passo:** vedi la sezione "Prossimo passo" più sotto (Repository Editor).
+**Stato:** il Repository Editor (RE-00 → RE-07) è completo e stabile per uso DEV/manuale; vedi la sezione "Prossimo passo" più sotto.
 Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartaceo.md) per la guida operativa.
 
 ## Principi non negoziabili
@@ -56,19 +56,19 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 | [Decisioni](documentazione/decisioni.md) | Registro piatto di tutte le decisioni (D/ADR/C). |
 | [Glossario](documentazione/glossario.md) | Vocabolario condiviso. |
 | [Diagrammi](documentazione/diagrammi) | Flussi e componenti. |
-| [Repository Editor](documentazione/repository-editor-roadmap.md) | Roadmap del prossimo sviluppo: editor minimale UDA/lezioni Markdown-first. |
+| [Repository Editor](documentazione/repository-editor-roadmap.md) | Roadmap del Repository Editor (RE-00–RE-07, implementato): editor minimale UDA/lezioni Markdown-first. |
 
 ## Moduli di delivery
 
 1. **M1 — Repository didattico** ✅: programmi, UDA, lezioni, pool, rendering, export ZIP, programma svolto (PDF + Markdown).
 2. **M2 — Verifiche e cartaceo** ✅: configurazione, classi, selezione domande, attivazione, PDF studente browser-side.
 3. **M3-lite — Portale studente (Google, read-only)** ✅: login Google (personale o Workspace for Education), risoluzione ruolo docente/studente, StudentShell con sezioni Lezioni e Verifiche filtrate per classe, approvazione studenti, download del solo PDF studente per le verifiche `active`+`public`. Nessuna Cloud Function, nessun account custom, nessuna consegna online.
-4. **RE — Repository Editor** ❌ *(prossima fase pianificata)*: creare/modificare/eliminare/riordinare UDA e lezioni, inclusi front matter e corpo Markdown, senza AI e senza CMS complesso.
+4. **RE — Repository Editor** ✅: creare/modificare/eliminare/riordinare UDA e lezioni, inclusi front matter e corpo Markdown, senza AI e senza CMS complesso; export ZIP coerente e reimportabile.
 5. **M3-full — Portale digitale** ❌ *(specifica rinviata, fase successiva a M3-lite)*: snapshot via Cloud Function, lock nome+cognome, token sessione, log nome+IP, bozza, consegna strutturata.
 6. **M4 — Correzione ed export** ❌ *(dipende da M3-full)*: punteggi, percentuali, rettifiche, export PDF/Markdown/CSV.
 7. **M5 — Correzione AI** *(fuori scope V1 / pianificato per V2)*: proposte assistite, approvazione massiva, correzione automatica opt-in.
 
-La V1 comprende i moduli M1, M2 e M3-lite, tutti implementati. La prossima fase utile è RE (Repository Editor), perché rende meno macchinoso l'uso quotidiano rispetto al solo import ZIP. M3-full e M4 restano pianificati per una fase successiva. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2.
+La V1 comprende i moduli M1, M2, M3-lite e RE (Repository Editor), tutti implementati. M3-full e M4 restano pianificati per una fase successiva. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2.
 
 ## Architettura in sintesi
 
@@ -94,4 +94,4 @@ Il Docente possiede progetto e billing Firebase. Firestore, Storage e Functions 
 
 ## Prossimo passo
 
-**Repository Editor (RE)** — il deploy DEV è attivo e M3-lite è stabile. La fase successiva riduce la dipendenza dall'import ZIP: il docente deve poter creare, modificare, eliminare e riordinare UDA e lezioni direttamente dal portale, inclusi front matter e corpo Markdown. Vedi [documentazione/repository-editor-roadmap.md](documentazione/repository-editor-roadmap.md).
+**Repository Editor (RE) — completato.** Il docente crea, modifica, elimina (con blocco se esistono verifiche collegate) e riordina UDA e lezioni direttamente dal portale, inclusi front matter e corpo Markdown; l'export ZIP resta coerente e reimportabile. Non ci sono fasi RE obbligatorie ulteriori. Gli sviluppi futuri non ancora pianificati in dettaglio sono M3-full (portale digitale con consegna online) e M4 (correzione ed export), entrambi dipendenti da M3-full. Vedi [documentazione/repository-editor-roadmap.md](documentazione/repository-editor-roadmap.md) e la checklist manuale [documentazione/evidenze/repository-editor-checklist-manuale.md](documentazione/evidenze/repository-editor-checklist-manuale.md).

@@ -25,7 +25,7 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 
 **M5 — Correzione AI** è fuori scope V1 ed è pianificato per la V2. Vedi la sezione "V2 — Roadmap futura" in fondo. M5 non fa parte del perimetro né delle dipendenze della V1.
 
-Il Modulo 3 (Portale digitale) è diviso in **M3-lite** (deciso e completato dopo M2) e **M3-full** (specifica rinviata a una fase successiva, non pianificata in dettaglio). M3-lite non richiede Cloud Functions e non dipende da M3-full. Dopo M3-lite, la fase utile pianificata è **RE — Repository Editor**, perché migliora il lavoro quotidiano del docente senza introdurre consegne online, correzione o AI.
+Il Modulo 3 (Portale digitale) è diviso in **M3-lite** (deciso e completato dopo M2) e **M3-full** (specifica rinviata a una fase successiva, non pianificata in dettaglio). M3-lite non richiede Cloud Functions e non dipende da M3-full. Dopo M3-lite è stata completata **RE — Repository Editor** (RE-00 → RE-07), perché migliora il lavoro quotidiano del docente senza introdurre consegne online, correzione o AI.
 
 ---
 
@@ -231,7 +231,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 ## 10. RE — Repository Editor
 
-> Questa è la prossima fase prodotto dopo M3-lite. Non sostituisce M3-full e non anticipa correzione o AI: estende il Modulo 1 rendendo modificabile da portale il repository didattico già importato. La roadmap dettagliata è in `repository-editor-roadmap.md`.
+> Fase prodotto completata dopo M3-lite (RE-00 → RE-07, tutte implementate e mergiate su `main`). Non sostituisce M3-full e non anticipa correzione o AI: estende il Modulo 1 rendendo modificabile da portale il repository didattico già importato. La roadmap dettagliata è in `repository-editor-roadmap.md`; la checklist manuale DEV di RE-07 è in `documentazione/evidenze/repository-editor-checklist-manuale.md`.
 
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
@@ -243,6 +243,8 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 | RE-05 | Eliminazione protetta di UDA/lezioni. Blocca se esistono verifiche collegate; mostra elenco verifiche bloccanti. | RE-04 | — | Eliminazione sicura; nessuna verifica resta con riferimenti rotti. |
 | RE-06 | Export ZIP coerente con modifiche da editor. | RE-05 | — | ZIP esportato resta Markdown-first e leggibile fuori da SchoolForge. |
 | RE-07 | Hardening RE: test integrazione, checklist manuale DEV, aggiornamento documentazione operativa. | RE-06 | — | GRE approvabile; nessuna regressione su import, lezioni studente, verifiche cartacee. |
+
+**RE-00 → RE-07 implementate.** Gate GRE (§4) considerato superato: il docente crea/modifica/elimina/riordina UDA e lezioni, l'eliminazione è bloccata se esistono verifiche collegate, l'export ZIP resta portabile e coerente con l'`order` corrente. Checklist manuale DEV in `documentazione/evidenze/repository-editor-checklist-manuale.md`.
 
 ### 10.1 Vincoli RE
 

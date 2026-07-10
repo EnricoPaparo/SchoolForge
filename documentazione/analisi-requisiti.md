@@ -124,7 +124,7 @@ Il ruolo "Studente" della baseline precedente (utente anonimo del solo link di u
 
 ## 5. Repository didattico e programma svolto — Modulo 1
 
-Nella baseline implementata il docente può produrre i file Markdown esternamente e importarli come ZIP. La prossima estensione pianificata è RE — Repository Editor: editing minimale da portale di UDA e lezioni, mantenendo Markdown-first, export ZIP portabile e nessuna AI.
+Il docente può produrre i file Markdown esternamente e importarli come ZIP. RE — Repository Editor estende questo flusso con l'editing minimale da portale di UDA e lezioni (implementato, RE-00 → RE-07), mantenendo Markdown-first, export ZIP portabile e nessuna AI.
 
 **FR-REP-01.** Il docente deve poter creare e gestire Programmi, importare UDA, lezioni, pool e asset mediante upload di file singoli o cartelle.
 
