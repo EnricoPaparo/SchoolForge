@@ -14,7 +14,10 @@
   gap: 1rem;
   padding: 0.625rem 1.5rem;
   min-height: 58px;
-  background: linear-gradient(120deg, #e6f0ff 0%, #ffffff 50%, #fff2e6 100%);
+  /* Kept intentionally light (soft blue/violet/cyan) rather than following the
+     dark body palette: the SchoolForge wordmark logo has dark navy/orange
+     ink and needs a bright backdrop to stay legible and stand out. */
+  background: linear-gradient(120deg, #dbe6ff 0%, #eef1fb 45%, #e3d9ff 75%, #d7f3ff 100%);
   border-bottom: 3px solid transparent;
   border-image: linear-gradient(90deg, var(--color-brand-blue), var(--color-brand-orange)) 1;
   color: var(--color-text);
