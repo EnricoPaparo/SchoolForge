@@ -1080,3 +1080,34 @@ describe('LessonsView — lesson deletion (RE-05)', () => {
     ).toBeTruthy();
   });
 });
+
+describe('LessonsView — sidebar collapse toggle', () => {
+  it('shows a sidebar toggle button when programs are loaded', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    render(<LessonsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+    expect(screen.getByRole('button', { name: 'Comprimi sidebar' })).toBeTruthy();
+  });
+
+  it('hides the course list when sidebar is collapsed and shows expand button', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    render(<LessonsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comprimi sidebar' }));
+
+    expect(screen.queryByRole('button', { name: /^Informatica/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Espandi sidebar' })).toBeTruthy();
+  });
+
+  it('restores the course list when sidebar is re-expanded', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    render(<LessonsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comprimi sidebar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Espandi sidebar' }));
+
+    expect(await screen.findByRole('button', { name: /^Informatica/ })).toBeTruthy();
+  });
+});

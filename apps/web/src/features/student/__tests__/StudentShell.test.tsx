@@ -7,13 +7,12 @@ import { StudentShell } from '../StudentShell.js';
 const mockSignOut = vi.fn();
 const mockLoadStudentLessons = vi.fn();
 const mockLoadStudentVerifications = vi.fn();
+let mockUser: { uid: string; email: string; displayName: string | null; photoURL?: string | null } =
+  { uid: 'student-uid', email: 'student@test.com', displayName: null };
 
 vi.mock('../../../lib/firebase.js', () => ({ app: {}, auth: {}, db: {}, storage: {} }));
 vi.mock('../../../lib/auth.js', () => ({
-  useAuth: () => ({
-    user: { uid: 'student-uid', email: 'student@test.com', displayName: null },
-    signOut: mockSignOut,
-  }),
+  useAuth: () => ({ user: mockUser, signOut: mockSignOut }),
 }));
 vi.mock('../../repository/programs/studentLessonsService.js', () => ({
   loadStudentLessons: (...args: unknown[]) => mockLoadStudentLessons(...args),
@@ -112,5 +111,21 @@ describe('StudentShell', () => {
   it('renders the SchoolForge wordmark logo in the header', () => {
     render(<StudentShell />);
     expect(screen.getByRole('img', { name: 'SchoolForge' })).toBeTruthy();
+  });
+
+  it('shows displayName above email in dropdown when displayName is present', () => {
+    mockUser = { uid: 'student-uid', email: 'student@test.com', displayName: 'Lucia Bianchi' };
+    render(<StudentShell />);
+    fireEvent.click(screen.getByRole('button', { name: /Account:/ }));
+    expect(screen.getByText('Lucia Bianchi')).toBeTruthy();
+    expect(screen.getByText('student@test.com')).toBeTruthy();
+  });
+
+  it('shows only email in dropdown when displayName is null', () => {
+    mockUser = { uid: 'student-uid', email: 'student@test.com', displayName: null };
+    render(<StudentShell />);
+    fireEvent.click(screen.getByRole('button', { name: /Account:/ }));
+    expect(screen.queryByText('null')).toBeNull();
+    expect(screen.getByText('student@test.com')).toBeTruthy();
   });
 });

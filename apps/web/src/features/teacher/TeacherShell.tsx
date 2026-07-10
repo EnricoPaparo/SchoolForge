@@ -83,7 +83,23 @@ export function TeacherShell() {
           </button>
           {menuOpen && (
             <div className={styles.dropdown} role="menu">
-              <span className={styles.dropdownEmail}>{user?.email}</span>
+              <div className={styles.dropdownIdentity}>
+                {user?.photoURL && (
+                  <img
+                    src={user.photoURL}
+                    alt=""
+                    aria-hidden="true"
+                    className={styles.dropdownAvatar}
+                    referrerPolicy="no-referrer"
+                  />
+                )}
+                <div className={styles.dropdownIdentityText}>
+                  {user?.displayName && (
+                    <span className={styles.dropdownName}>{user.displayName}</span>
+                  )}
+                  <span className={styles.dropdownEmail}>{user?.email}</span>
+                </div>
+              </div>
               <button
                 type="button"
                 role="menuitem"

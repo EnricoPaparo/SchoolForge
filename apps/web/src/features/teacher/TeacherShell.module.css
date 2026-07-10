@@ -79,11 +79,42 @@
   overflow: hidden;
 }
 
-.dropdownEmail {
+.dropdownIdentity {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
   padding: 0.625rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+  min-width: 0;
+}
+
+.dropdownAvatar {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.dropdownIdentityText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.dropdownName {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dropdownEmail {
   font-size: 0.8125rem;
   color: var(--color-text-muted);
-  border-bottom: 1px solid var(--color-border);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

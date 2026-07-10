@@ -5,6 +5,8 @@ afterEach(cleanup);
 import { TeacherShell } from '../TeacherShell.js';
 
 const mockSignOut = vi.fn();
+let mockUser: { uid: string; email: string; displayName: string | null; photoURL?: string | null } =
+  { uid: 'owner-uid', email: 'teacher@test.com', displayName: null };
 
 vi.mock('../../../lib/firebase.js', () => ({ app: {}, auth: {}, db: {}, storage: {} }));
 vi.mock('../templateKit.js', () => ({
@@ -13,10 +15,7 @@ vi.mock('../templateKit.js', () => ({
   downloadKitZip: vi.fn(),
 }));
 vi.mock('../../../lib/auth.js', () => ({
-  useAuth: () => ({
-    user: { uid: 'owner-uid', email: 'teacher@test.com', displayName: null },
-    signOut: mockSignOut,
-  }),
+  useAuth: () => ({ user: mockUser, signOut: mockSignOut }),
 }));
 vi.mock('../../repository/verifications/verificationsService.js', () => ({
   listVerifications: vi.fn().mockResolvedValue([]),
@@ -143,5 +142,34 @@ describe('TeacherShell', () => {
 
     render(<TeacherShell />);
     expect(await screen.findByLabelText('3 in attesa')).toBeTruthy();
+  });
+
+  it('shows displayName above email in dropdown when displayName is present', () => {
+    mockUser = { uid: 'owner-uid', email: 'teacher@test.com', displayName: 'Mario Rossi' };
+    render(<TeacherShell />);
+    fireEvent.click(screen.getByRole('button', { name: /Account:/ }));
+    expect(screen.getByText('Mario Rossi')).toBeTruthy();
+    expect(screen.getByText('teacher@test.com')).toBeTruthy();
+  });
+
+  it('shows only email in dropdown when displayName is null', () => {
+    mockUser = { uid: 'owner-uid', email: 'teacher@test.com', displayName: null };
+    render(<TeacherShell />);
+    fireEvent.click(screen.getByRole('button', { name: /Account:/ }));
+    expect(screen.queryByText('null')).toBeNull();
+    expect(screen.getByText('teacher@test.com')).toBeTruthy();
+  });
+
+  it('shows Google avatar img in dropdown when photoURL is present', () => {
+    mockUser = {
+      uid: 'owner-uid',
+      email: 'teacher@test.com',
+      displayName: 'Mario Rossi',
+      photoURL: 'https://example.com/avatar.jpg',
+    };
+    const { container } = render(<TeacherShell />);
+    fireEvent.click(screen.getByRole('button', { name: /Account:/ }));
+    const avatarImg = container.querySelector('img[src="https://example.com/avatar.jpg"]');
+    expect(avatarImg).toBeTruthy();
   });
 });
