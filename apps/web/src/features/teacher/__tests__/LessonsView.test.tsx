@@ -146,7 +146,7 @@ async function expandUda(name: RegExp) {
 }
 
 function enableReorderMode() {
-  fireEvent.click(screen.getByRole('button', { name: 'Riordina' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Attiva riordino' }));
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -652,7 +652,7 @@ describe('LessonsView — UDA reorder (RE-04)', () => {
     enableReorderMode();
 
     expect(await screen.findByRole('button', { name: 'Sposta giù — uda-01-reti' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Fine riordino' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Termina riordino' })).toBeTruthy();
   });
 
   it('disables "Sposta su" on the first UDA and "Sposta giù" on the last', async () => {

@@ -595,9 +595,11 @@ export function LessonsView() {
             type="button"
             className={`${styles.reorderModeBtn}${reorderMode ? ` ${styles.reorderModeBtnActive}` : ''}`}
             aria-pressed={reorderMode}
+            aria-label={reorderMode ? 'Termina riordino' : 'Attiva riordino'}
+            title={reorderMode ? 'Termina riordino' : 'Riordina UDA e lezioni'}
             onClick={() => setReorderMode((prev) => !prev)}
           >
-            {reorderMode ? 'Fine riordino' : 'Riordina'}
+            ↕
           </button>
         </div>
 
