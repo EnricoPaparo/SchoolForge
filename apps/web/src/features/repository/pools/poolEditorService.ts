@@ -22,7 +22,7 @@ import type { LessonDoc, QuestionIndexEntry, VerificationDoc } from '../../../ty
 export type LoadPoolResult =
   | { status: 'absent' }
   | { status: 'valid'; pool: ParsedPool }
-  | { status: 'invalid'; errors: PoolValidationError[] };
+  | { status: 'invalid'; errors: PoolValidationError[]; rawContent: string };
 
 export interface PoolDeleteBlocker {
   verificationId: string;
@@ -96,8 +96,9 @@ async function deleteDocRefsInBatches(db: Firestore, refs: DocumentReference[]):
  * - `{ status: 'absent' }` when the lesson has no pool (poolStatus === 'absent'
  *   or Storage file is missing).
  * - `{ status: 'valid', pool }` when the file exists and parses cleanly.
- * - `{ status: 'invalid', errors }` when the file exists but has validation
- *   errors (preserves the original errors so the UI can show them).
+ * - `{ status: 'invalid', errors, rawContent }` when the file exists but has
+ *   validation errors. `rawContent` preserves the original file so the editor
+ *   can repair it without replacing it with a blank template.
  */
 export async function loadPool(params: {
   programId: string;
@@ -130,7 +131,7 @@ export async function loadPool(params: {
 
   const result = parsePool(content, lesson.poolStorageRef);
   if (!result.ok) {
-    return { status: 'invalid', errors: result.errors };
+    return { status: 'invalid', errors: result.errors, rawContent: content };
   }
   return { status: 'valid', pool: result.pool };
 }

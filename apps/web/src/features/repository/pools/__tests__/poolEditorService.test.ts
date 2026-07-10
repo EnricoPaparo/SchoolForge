@@ -189,7 +189,7 @@ describe('loadPool', () => {
     }
   });
 
-  it('returns invalid with errors when pool file fails validation', async () => {
+  it('returns invalid with errors and rawContent when pool file fails validation', async () => {
     mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
     const badPool = `---\nschema: schoolforge-pool/v1\nquestions:\n  - id: q1\n    tipo: INVALID\n    difficolta: 2\n    peso: 2\n    testo: x\n    soluzione: x\n---`;
     mockGetBytes.mockResolvedValueOnce(encode(badPool));
@@ -204,6 +204,7 @@ describe('loadPool', () => {
     expect(result.status).toBe('invalid');
     if (result.status === 'invalid') {
       expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.rawContent).toBe(badPool);
     }
   });
 });

@@ -8,14 +8,16 @@ import { TemplateKitView } from './TemplateKitView.js';
 import { VerificationsView } from './VerificationsView.js';
 import { ClassesView } from './ClassesView.js';
 import { StudentsView } from './StudentsView.js';
+import { DomandeView } from './DomandeView.js';
 import logoScritta from '../../assets/logo-scritta-schoolforge.png';
 import styles from './TeacherShell.module.css';
 
-type Section = 'lezioni' | 'corsi' | 'verifiche' | 'classi' | 'studenti' | 'template';
+type Section = 'lezioni' | 'corsi' | 'verifiche' | 'classi' | 'studenti' | 'template' | 'domande';
 
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
   { id: 'lezioni', label: 'Lezioni', icon: '📖' },
   { id: 'corsi', label: 'Corsi', icon: '📚' },
+  { id: 'domande', label: 'Domande', icon: '❓' },
   { id: 'verifiche', label: 'Verifiche', icon: '📝' },
   { id: 'classi', label: 'Classi', icon: '🏫' },
   { id: 'studenti', label: 'Studenti', icon: '🎓' },
@@ -150,6 +152,8 @@ export function TeacherShell() {
           <VerificationsView />
         ) : activeSection === 'classi' ? (
           <ClassesView />
+        ) : activeSection === 'domande' ? (
+          <DomandeView />
         ) : activeSection === 'studenti' ? (
           <StudentsView ownerUid={ownerUid} onStudentsChanged={refreshPendingStudentsCount} />
         ) : null}
