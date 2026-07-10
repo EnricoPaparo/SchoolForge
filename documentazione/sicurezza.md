@@ -32,14 +32,17 @@ Il modello precedente (studente non autenticato, nome+cognome autodichiarati, lo
 | AI (V2) | Dati non autorizzati o prompt injection | C-02 risolta, contesto chiuso, nessun web/tool, feature flag, audit. |
 | Segreti AI (V2) | Esposizione in Git/client/log | Secret Manager (solo M5/V2), accesso minimo, rotazione. |
 
-Le minacce seguenti restano specifica di un eventuale **M3-full** (consegna online) e non si applicano a M3-lite, che non ha link pubblici né tentativi:
+Le minacce seguenti si applicano a **M3-full** (specifica in `m3-full-roadmap.md`):
 
-| Asset | Minaccia | Controllo richiesto (specifica rinviata) |
+| Asset | Minaccia | Controllo in M3-full |
 |---|---|---|
-| Verifica pubblica | Enumerazione o accesso a soluzioni | Token casuale non enumerabile; lookup `get` su hash del token, mai `list`; proiezione pubblica senza soluzioni; rate limit. |
-| Tentativo digitale | Forgery o riuso del token sessione | Gateway server-side; cookie Secure/HttpOnly/SameSite verificato a ogni lettura, bozza e consegna. |
-| Tentativo digitale | Doppio avvio della stessa persona dichiarata | Participant lock per verifica e nome+cognome normalizzati, creato dalla Cloud Function in transazione. |
-| Accountability accessi | Abuso del link, accessi non riconosciuti | Log nome dichiarato + IP + user-agent + timestamp; Report Accessi consultabile dal docente. |
+| Submission studente | Scrittura da studente non approvato | Security Rules: `isApprovedStudent()` richiesta per create/update su `submissions`. |
+| Submission studente | Doppia submission (stesso studente, stessa verifica) | Security Rules: create negata se esiste già un documento con `(studentUid, verificationId)` — unicità garantita da path deterministico o `!exists()`. |
+| Submission studente | Modifica post-consegna | Security Rules: update negato se `resource.data.status == 'submitted'`. |
+| Submission studente | Consegna su verifica chiusa o non online | Security Rules: create/update negati se `verificationIsOnlineAndActive()` restituisce false (get() cross-doc sulla verifica). |
+| Risposte studente | Lettura da altri studenti o soggetti non autorizzati | Security Rules: lettura `submissions/{id}` concessa solo se `resource.data.studentUid == request.auth.uid` (studente) o `isOwner()` (docente). |
+| `publishedProjection` | Esposizione soluzioni nel questionario online | `publishedProjection` non contiene mai `soluzione`, `poolStorageRef`, `questionLocalId`; lo studente online legge lo stesso documento già protetto in M3-lite. |
+| Monitor docente | Lettura submission di un altro docente | Security Rules: lettura owner su `submissions` concessa solo se `resource.data.ownerUid == ownerUid()`. |
 
 ---
 

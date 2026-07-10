@@ -7,7 +7,9 @@
 Il flusso docente cartaceo, il portale studente in sola lettura e il Repository Editor sono funzionanti sia in locale (emulatori Firebase) che su Firebase DEV. M3-full (consegna online), M4 (correzione) e M5 (AI) non sono implementati.
 Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente locale e [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) per lo smoke test DEV.
 
-**Repository Editor (RE-00 → RE-07) completato** — vedi [repository-editor-roadmap.md](repository-editor-roadmap.md) per la roadmap e [evidenze/repository-editor-checklist-manuale.md](evidenze/repository-editor-checklist-manuale.md) per la checklist manuale DEV. Nessuna fase RE obbligatoria successiva; i prossimi sviluppi pianificati ma non ancora dettagliati sono M3-full e M4.
+**Repository Editor (RE-00 → RE-07) completato** — vedi [repository-editor-roadmap.md](repository-editor-roadmap.md) per la roadmap e [evidenze/repository-editor-checklist-manuale.md](evidenze/repository-editor-checklist-manuale.md) per la checklist manuale DEV. Nessuna fase RE obbligatoria successiva.
+
+**M3-full (verifiche online e consegne studenti) è in fase di design** — vedi [m3-full-roadmap.md](m3-full-roadmap.md) per la specifica: modello dati, Security Rules, stati/transizioni, UX docente/studente, roadmap M3F-00 → M3F-06 e gate G5. M4 (correzione/restituzione) dipende da M3-full.
 
 ## Per iniziare
 
@@ -48,6 +50,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) | Guida operativa MVP in locale. | Per avviare e usare l'MVP oggi. |
 | [ux-product-roadmap.md](ux-product-roadmap.md) | Roadmap UX/Product Polish (UX-01–06). | Per pianificare e implementare il polish UI. |
 | [repository-editor-roadmap.md](repository-editor-roadmap.md) | Roadmap Repository Editor (RE-00–RE-07, implementato). | Per consultare decisioni tecniche e scope dell'editor UDA/lezioni. |
+| [m3-full-roadmap.md](m3-full-roadmap.md) | Specifica M3-full: verifiche online, consegne studenti, monitor docente. Roadmap M3F-00–M3F-06. | Per progettare e implementare M3-full. |
 
 ## Evidenze
 
