@@ -70,5 +70,5 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 - [er-model.md](diagrammi/er-model.md) — modello dati Firestore.
 - [component-frontend.md](diagrammi/component-frontend.md) — architettura frontend della SPA.
 - [sequence-import-lezione.md](diagrammi/sequence-import-lezione.md) — sequenza di import didattico.
-- [sequence-pubblicazione-verifica.md](diagrammi/sequence-pubblicazione-verifica.md) — canale cartaceo, Portale studente M3-lite e canale digitale M3-full (specifica rinviata).
+- [sequence-pubblicazione-verifica.md](diagrammi/sequence-pubblicazione-verifica.md) — canale cartaceo, Portale studente M3-lite e note storiche sul canale digitale; la specifica M3-full corrente è in [m3-full-roadmap.md](m3-full-roadmap.md).
 - [sequence-correzione-ai.md](diagrammi/sequence-correzione-ai.md) — correzione AI (Modulo 5, V2).

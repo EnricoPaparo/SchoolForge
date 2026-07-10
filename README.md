@@ -20,7 +20,7 @@ Il flusso completo è operativo e testato (suite automatica estesa + smoke test 
 | Portale studente Google, read-only (M3-lite) | ✅ funzionante — login Google, StudentShell, Lezioni e Verifiche filtrate per classe, approvazione studenti, PDF verifica studente |
 | Repository Editor (RE) | ✅ funzionante — crea/modifica/riordina/elimina (con blocco protetto) UDA e lezioni, export ZIP coerente e reimportabile |
 | Question Editor (QE) — sezione "Domande" | 📐 specifica definita — implementazione da avviare (roadmap QE-00→QE-05) |
-| Portale digitale con consegna online (M3-full) | 📐 specifica definita — implementazione da avviare (roadmap M3F-00→M3F-06) |
+| Portale digitale con consegna online (M3-full) | 🚧 implementazione avviata a livello contratti/service — UI e rules operative da completare (roadmap M3F-00→M3F-06) |
 | Correzione e export risultati (M4) | ❌ non implementato — dipende da M3-full |
 | Correzione AI (M5) | ❌ fuori scope V1 |
 
