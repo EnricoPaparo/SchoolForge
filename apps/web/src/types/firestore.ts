@@ -391,6 +391,11 @@ export type AnswerValue =
  */
 export type AttentionEventType =
   | 'fullscreen_exit'
+  | 'copy_attempt'
+  | 'cut_attempt'
+  | 'paste_attempt'
+  | 'context_menu_attempt'
+  | 'drag_attempt'
   | 'tab_blur'
   | 'window_blur'
   | 'visibility_hidden';
@@ -403,7 +408,7 @@ export type AttentionEvent = {
 /**
  * Stored at `submissions/{verificationId}_{studentUid}`.
  *
- * The doc id is deterministc: `${verificationId}_${studentUid}`. This
+ * The doc id is deterministic: `${verificationId}_${studentUid}`. This
  * guarantees one-submission-per-(student, verification) without requiring
  * a query in Security Rules, which Firestore does not support.
  *
@@ -418,9 +423,9 @@ export type AttentionEvent = {
  * The student can read/write only while `status == 'draft'`; after submission
  * they read only the corresponding SubmissionReceiptDoc.
  *
- * `flagged` and `attentionEvents` are not persisted when `status` is set to
- * `'submitted'` — they are cleared by the client in the final batch write
- * because the receipt (shown post-submission) must not expose exam content.
+ * `flagged` and `attentionEvents` may remain on the submitted document for the
+ * teacher monitor and future correction flow. They are not exposed to students
+ * after submission because students read only the matching SubmissionReceiptDoc.
  */
 export type SubmissionDoc = {
   submissionId: string; // == Firestore doc id: `${verificationId}_${studentUid}`

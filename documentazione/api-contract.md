@@ -318,7 +318,7 @@ interface SubmissionDoc {
   status: 'draft' | 'submitted';
   // risposte sparse: solo le domande toccate; key = order.toString() (1-based)
   answers: Record<string, AnswerValue>;
-  // marcatori UX opzionali (non persistono post-consegna)
+  // marcatori UX opzionali: restano per docente/M4 ma non sono visibili allo studente dopo la consegna
   flagged: Record<string, boolean>;
   // log eventi attenzione (deterrenza leggera — non invalida automaticamente)
   attentionEvents: AttentionEvent[];
@@ -337,7 +337,16 @@ type AnswerValue =
   | { tipo: 'chiusa_multipla'; selectedIds: string[] };
 
 interface AttentionEvent {
-  type: 'fullscreen_exit' | 'tab_blur' | 'window_blur' | 'visibility_hidden';
+  type:
+    | 'fullscreen_exit'
+    | 'copy_attempt'
+    | 'cut_attempt'
+    | 'paste_attempt'
+    | 'context_menu_attempt'
+    | 'drag_attempt'
+    | 'tab_blur'
+    | 'window_blur'
+    | 'visibility_hidden';
   ts: number; // ms epoch
 }
 
