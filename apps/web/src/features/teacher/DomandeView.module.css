@@ -132,8 +132,8 @@
 }
 
 .btnDanger {
-  background: var(--color-error);
-  border-color: var(--color-error);
+  background: var(--color-error-btn);
+  border-color: var(--color-error-btn);
   color: #fff;
 }
 
