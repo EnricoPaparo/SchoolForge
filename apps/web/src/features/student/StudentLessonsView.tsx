@@ -14,6 +14,7 @@ import {
 import type { LessonMetadata } from '../repository/validation/types.js';
 import { fetchLessonContent } from '../teacher/lessonContent.js';
 import { MarkdownRenderer } from '../teacher/MarkdownRenderer.js';
+import { IconChevronLeft, IconChevronRight } from '../../components/icons.js';
 import styles from './StudentLessonsView.module.css';
 
 type LoadState =
@@ -160,7 +161,7 @@ export function StudentLessonsView() {
             title={sidebarCollapsed ? 'Espandi sidebar' : 'Comprimi sidebar'}
             onClick={() => setSidebarCollapsed((v) => !v)}
           >
-            {sidebarCollapsed ? '›' : '‹'}
+            {sidebarCollapsed ? <IconChevronRight /> : <IconChevronLeft />}
           </button>
         </div>
 
