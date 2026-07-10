@@ -45,7 +45,7 @@ type PoolState =
   | { status: 'loading' }
   | { status: 'absent' }
   | { status: 'valid'; pool: ParsedPool }
-  | { status: 'invalid'; errors: PoolValidationError[] }
+  | { status: 'invalid'; errors: PoolValidationError[]; rawContent: string }
   | { status: 'error'; message: string };
 
 function PoolStatusBadge({ lesson }: { lesson: LessonItem }) {
@@ -224,8 +224,12 @@ export function DomandeView() {
         setPoolState({ status: 'valid', pool: result.pool });
         setYamlDraft(serializePool(result.pool));
       } else if (result.status === 'invalid') {
-        setPoolState({ status: 'invalid', errors: result.errors });
-        setYamlDraft(POOL_TEMPLATE);
+        setPoolState({
+          status: 'invalid',
+          errors: result.errors,
+          rawContent: result.rawContent,
+        });
+        setYamlDraft(result.rawContent);
       } else {
         setPoolState({ status: 'absent' });
         setYamlDraft(POOL_TEMPLATE);

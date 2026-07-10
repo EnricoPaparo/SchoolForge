@@ -147,6 +147,18 @@ const VALIDATION_ERRORS = [
   },
 ];
 
+const INVALID_POOL_RAW = `---
+schema: schoolforge-pool/v1
+questions:
+  - id: q-bad
+    tipo: INVALID
+    difficolta: 2
+    peso: 1
+    testo: Domanda da riparare.
+    soluzione: Risposta.
+---
+`;
+
 async function expandCourse() {
   fireEvent.click(await screen.findByRole('button', { name: /Informatica/i }));
 }
@@ -331,7 +343,11 @@ describe('DomandeView', () => {
       mockListPrograms.mockResolvedValue([PROGRAM]);
       mockListUdas.mockResolvedValue([UDA]);
       mockListLessons.mockResolvedValue([LESSON_INVALID]);
-      mockLoadPool.mockResolvedValue({ status: 'invalid', errors: VALIDATION_ERRORS });
+      mockLoadPool.mockResolvedValue({
+        status: 'invalid',
+        errors: VALIDATION_ERRORS,
+        rawContent: INVALID_POOL_RAW,
+      });
     });
 
     it('shows validation errors', async () => {
@@ -350,6 +366,16 @@ describe('DomandeView', () => {
       fireEvent.click(await screen.findByRole('button', { name: /Sicurezza/ }));
       fireEvent.click(await screen.findByRole('button', { name: 'Modifica YAML' }));
       await screen.findByLabelText('YAML del pool');
+    });
+
+    it('preserves the invalid raw YAML in the editor so it can be repaired', async () => {
+      render(<DomandeView />);
+      await expandCourse();
+      await expandUda();
+      fireEvent.click(await screen.findByRole('button', { name: /Sicurezza/ }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Modifica YAML' }));
+      const textarea = (await screen.findByLabelText('YAML del pool')) as HTMLTextAreaElement;
+      expect(textarea.value).toBe(INVALID_POOL_RAW);
     });
   });
 
