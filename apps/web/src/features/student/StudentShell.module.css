@@ -14,10 +14,10 @@
   gap: 1rem;
   padding: 0.625rem 1.5rem;
   min-height: 58px;
-  /* Kept intentionally light (soft blue/violet/cyan) rather than following the
-     dark body palette: the SchoolForge wordmark logo has dark navy/orange
-     ink and needs a bright backdrop to stay legible and stand out. */
-  background: linear-gradient(120deg, #dbe6ff 0%, #eef1fb 45%, #e3d9ff 75%, #d7f3ff 100%);
+  background:
+    radial-gradient(circle at 14% 0%, rgba(56, 189, 248, 0.34), transparent 34%),
+    radial-gradient(circle at 84% 12%, rgba(251, 146, 60, 0.24), transparent 32%),
+    linear-gradient(120deg, #12243a 0%, #24305f 48%, #3a255f 100%);
   border-bottom: 3px solid transparent;
   border-image: linear-gradient(90deg, var(--color-brand-blue), var(--color-brand-orange)) 1;
   color: var(--color-text);
@@ -31,6 +31,9 @@
   max-width: min(260px, calc(100vw - 6rem));
   width: auto;
   object-fit: contain;
+  filter:
+    drop-shadow(0 0 10px rgba(255, 255, 255, 0.5))
+    drop-shadow(0 2px 5px rgba(0, 0, 0, 0.35));
 }
 
 /* ── User menu / dropdown ──────────────────────────────────────── */
