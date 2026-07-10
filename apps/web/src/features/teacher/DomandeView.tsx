@@ -56,6 +56,10 @@ type QuestionDraft = {
   soluzioneIds: string[];
 };
 
+function optionIdFromIndex(index: number): string {
+  return String.fromCharCode(97 + index);
+}
+
 function initDraft(q: PoolQuestion | null): QuestionDraft {
   if (!q) {
     return {
@@ -65,7 +69,7 @@ function initDraft(q: PoolQuestion | null): QuestionDraft {
       peso: '1',
       testo: '',
       soluzione: '',
-      opzioni: [{ id: 'a', testo: '' }],
+      opzioni: [{ id: optionIdFromIndex(0), testo: '' }],
       soluzioneIds: [],
     };
   }
@@ -95,8 +99,8 @@ function draftToRaw(d: QuestionDraft): Record<string, unknown> {
     return { ...base, soluzione: d.soluzione };
   }
   const opzioni = d.opzioni
-    .map((o) => ({ id: o.id.trim(), testo: o.testo.trim() }))
-    .filter((o) => o.id !== '' || o.testo !== '');
+    .map((o, index) => ({ id: optionIdFromIndex(index), testo: o.testo.trim() }))
+    .filter((o) => o.testo !== '');
   const optionIds = new Set(opzioni.map((o) => o.id));
   const selectedSolutionIds = d.soluzioneIds
     .map((id) => id.trim())
@@ -289,7 +293,7 @@ function QuestionEditorForm({
       // Ensure at least one opzione when switching to a chiusa type
       opzioni:
         (tipo === 'chiusa_singola' || tipo === 'chiusa_multipla') && prev.opzioni.length === 0
-          ? [{ id: 'a', testo: '' }]
+          ? [{ id: optionIdFromIndex(0), testo: '' }]
           : prev.opzioni,
       // Reset soluzione selections — they may no longer match the new type's constraints
       soluzioneIds: [],
@@ -298,34 +302,36 @@ function QuestionEditorForm({
 
   function addOpzione() {
     setDraft((prev) => {
-      const nextId = String.fromCharCode(
-        97 + prev.opzioni.length, // 'a', 'b', 'c', ...
-      );
+      const nextId = optionIdFromIndex(prev.opzioni.length);
       return { ...prev, opzioni: [...prev.opzioni, { id: nextId, testo: '' }] };
     });
   }
 
   function removeOpzione(index: number) {
     setDraft((prev) => {
-      const removed = prev.opzioni[index];
+      const nextOpzioni = prev.opzioni.filter((_, i) => i !== index);
+      const nextSoluzioneIds = nextOpzioni
+        .map((option, nextIndex) => ({
+          oldId: option.id,
+          newId: optionIdFromIndex(nextIndex),
+        }))
+        .filter((option) => prev.soluzioneIds.includes(option.oldId))
+        .map((option) => option.newId);
       return {
         ...prev,
-        opzioni: prev.opzioni.filter((_, i) => i !== index),
-        soluzioneIds: prev.soluzioneIds.filter((id) => id !== removed?.id),
+        opzioni: nextOpzioni.map((option, nextIndex) => ({
+          ...option,
+          id: optionIdFromIndex(nextIndex),
+        })),
+        soluzioneIds: nextSoluzioneIds,
       };
     });
   }
 
-  function updateOpzione(index: number, field: 'id' | 'testo', value: string) {
+  function updateOpzioneText(index: number, value: string) {
     setDraft((prev) => {
-      const oldId = prev.opzioni[index]?.id ?? '';
-      const newOpzioni = prev.opzioni.map((o, i) => (i === index ? { ...o, [field]: value } : o));
-      // If id changed, update soluzioneIds references
-      const newSoluzioneIds =
-        field === 'id'
-          ? prev.soluzioneIds.map((sid) => (sid === oldId ? value : sid))
-          : prev.soluzioneIds;
-      return { ...prev, opzioni: newOpzioni, soluzioneIds: newSoluzioneIds };
+      const newOpzioni = prev.opzioni.map((o, i) => (i === index ? { ...o, testo: value } : o));
+      return { ...prev, opzioni: newOpzioni };
     });
   }
 
@@ -456,55 +462,53 @@ function QuestionEditorForm({
               </span>
             </div>
 
-            {draft.opzioni.map((o, i) => (
-              <div key={i} className={styles.opzioneRow}>
-                {/* Soluzione selector */}
-                {draft.tipo === 'chiusa_singola' ? (
-                  <input
-                    type="radio"
-                    name={`sol-${initial?.id ?? 'new'}`}
-                    checked={draft.soluzioneIds[0] === o.id}
-                    onChange={() => toggleSoluzione(o.id)}
-                    aria-label={`Seleziona come risposta corretta ${o.id}`}
-                    className={styles.opzioneRadio}
-                  />
-                ) : (
-                  <input
-                    type="checkbox"
-                    checked={draft.soluzioneIds.includes(o.id)}
-                    onChange={() => toggleSoluzione(o.id)}
-                    aria-label={`Seleziona come risposta corretta ${o.id}`}
-                    className={styles.opzioneCheckbox}
-                  />
-                )}
+            {draft.opzioni.map((o, i) => {
+              const optionId = optionIdFromIndex(i);
+              return (
+                <div key={i} className={styles.opzioneRow}>
+                  {/* Soluzione selector */}
+                  {draft.tipo === 'chiusa_singola' ? (
+                    <input
+                      type="radio"
+                      name={`sol-${initial?.id ?? 'new'}`}
+                      checked={draft.soluzioneIds[0] === optionId}
+                      onChange={() => toggleSoluzione(optionId)}
+                      aria-label={`Seleziona come risposta corretta ${optionId}`}
+                      className={styles.opzioneRadio}
+                    />
+                  ) : (
+                    <input
+                      type="checkbox"
+                      checked={draft.soluzioneIds.includes(optionId)}
+                      onChange={() => toggleSoluzione(optionId)}
+                      aria-label={`Seleziona come risposta corretta ${optionId}`}
+                      className={styles.opzioneCheckbox}
+                    />
+                  )}
 
-                <input
-                  type="text"
-                  className={`${styles.formInput} ${styles.opzioneIdInput}`}
-                  value={o.id}
-                  onChange={(e) => updateOpzione(i, 'id', e.target.value)}
-                  placeholder="id"
-                  aria-label={`ID opzione ${i + 1}`}
-                />
-                <input
-                  type="text"
-                  className={`${styles.formInput} ${styles.opzioneTestoInput}`}
-                  value={o.testo}
-                  onChange={(e) => updateOpzione(i, 'testo', e.target.value)}
-                  placeholder="testo opzione"
-                  aria-label={`Testo opzione ${i + 1}`}
-                />
-                <button
-                  type="button"
-                  className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
-                  onClick={() => removeOpzione(i)}
-                  aria-label={`Rimuovi opzione ${o.id || i + 1}`}
-                  disabled={draft.opzioni.length <= 1}
-                >
-                  <IconTrash size={11} />
-                </button>
-              </div>
-            ))}
+                  <span className={styles.opzioneLetter} aria-hidden="true">
+                    {optionId.toUpperCase()}
+                  </span>
+                  <input
+                    type="text"
+                    className={`${styles.formInput} ${styles.opzioneTestoInput}`}
+                    value={o.testo}
+                    onChange={(e) => updateOpzioneText(i, e.target.value)}
+                    placeholder={`Risposta ${optionId.toUpperCase()}`}
+                    aria-label={`Risposta ${optionId.toUpperCase()}`}
+                  />
+                  <button
+                    type="button"
+                    className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                    onClick={() => removeOpzione(i)}
+                    aria-label={`Rimuovi risposta ${optionId}`}
+                    disabled={draft.opzioni.length <= 1}
+                  >
+                    <IconTrash size={11} />
+                  </button>
+                </div>
+              );
+            })}
 
             <button
               type="button"
