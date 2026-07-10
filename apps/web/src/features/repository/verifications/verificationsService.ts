@@ -7,6 +7,7 @@ import {
   runTransaction,
   serverTimestamp,
   setDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
@@ -44,11 +45,13 @@ export async function createVerification(
   db: Firestore,
 ): Promise<string> {
   const ref = doc(collection(db, 'verifications'));
+  const auditRef = doc(collection(db, 'auditEvents'));
   const fullConfig: VerificationConfig = {
     ...config,
     questionRefs: [],
   };
-  await setDoc(ref, {
+  const batch = writeBatch(db);
+  batch.set(ref, {
     ownerUid,
     status: 'draft',
     visibility: 'hidden',
@@ -59,7 +62,7 @@ export async function createVerification(
     activatedAt: null,
     closedAt: null,
   });
-  await setDoc(doc(collection(db, 'auditEvents')), {
+  batch.set(auditRef, {
     actorUid: ownerUid,
     action: 'verification.created',
     targetId: ref.id,
@@ -67,6 +70,7 @@ export async function createVerification(
     reason: null,
     timestamp: serverTimestamp(),
   });
+  await batch.commit();
   return ref.id;
 }
 
