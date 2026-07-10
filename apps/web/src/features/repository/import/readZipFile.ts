@@ -48,17 +48,24 @@ export async function readZipFile(file: File): Promise<RawFile[]> {
   const prefix =
     candidatePrefix && strippedPaths.some((p) => p.includes('/')) ? candidatePrefix : '';
 
-  const results: RawFile[] = [];
-
-  await Promise.all(
-    rawPaths.map(async (rawPath) => {
+  // Content is decompressed concurrently for speed, but the resulting array
+  // must keep `rawPaths` order (the ZIP's own physical/central-directory
+  // order — see `exportZip.ts`, which writes UDA/lesson entries in `order`
+  // sequence): pushing into a shared array from inside each async callback
+  // would let decompression timing decide the final order instead, silently
+  // scrambling a teacher's RE-04 reorder on reimport. `Promise.all` always
+  // preserves input order in its resolved array regardless of resolution
+  // timing, so mapping to a (possibly null) result and filtering afterwards
+  // keeps this order-safe.
+  const results = await Promise.all(
+    rawPaths.map(async (rawPath): Promise<RawFile | null> => {
       const path = prefix ? rawPath.slice(prefix.length) : rawPath;
-      if (!path || isHidden(path)) return;
+      if (!path || isHidden(path)) return null;
       const content = await zip.files[rawPath].async('string');
-      if (!content) return;
-      results.push({ path, content });
+      if (!content) return null;
+      return { path, content };
     }),
   );
 
-  return results;
+  return results.filter((r): r is RawFile => r !== null);
 }
