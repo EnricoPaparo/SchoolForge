@@ -12,3 +12,4 @@ export type {
 } from './types.js';
 
 export { parsePool } from './parser.js';
+export { serializePool } from './serializer.js';
