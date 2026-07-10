@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DomandeView } from '../DomandeView.js';
 
@@ -514,6 +514,253 @@ questions:
         expect(screen.queryByText(/Eliminare il pool/)).toBeNull();
       });
       expect(mockDeletePool).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('question editor — add / edit / delete', () => {
+    beforeEach(() => {
+      mockListPrograms.mockResolvedValue([PROGRAM]);
+      mockListUdas.mockResolvedValue([UDA]);
+      mockListLessons.mockResolvedValue([LESSON_VALID]);
+      mockLoadPool.mockResolvedValue({ status: 'valid', pool: VALID_POOL });
+      mockSavePool.mockResolvedValue(undefined);
+    });
+
+    async function openLesson() {
+      render(<DomandeView />);
+      await expandCourse();
+      await expandUda();
+      fireEvent.click(await screen.findByRole('button', { name: /Introduzione alle reti/ }));
+      await screen.findByText('2 domande');
+    }
+
+    it('shows "Nuova domanda" button for valid pool', async () => {
+      await openLesson();
+      expect(screen.getByRole('button', { name: /Nuova domanda/ })).toBeTruthy();
+    });
+
+    it('opens the new-question form when "Nuova domanda" is clicked', async () => {
+      await openLesson();
+      fireEvent.click(screen.getByRole('button', { name: /Nuova domanda/ }));
+      await screen.findByText('Nuova domanda');
+      expect(screen.getByLabelText('ID domanda')).toBeTruthy();
+      expect(screen.getByLabelText('Testo domanda')).toBeTruthy();
+    });
+
+    it('closes the new-question form on Annulla', async () => {
+      await openLesson();
+      fireEvent.click(screen.getByRole('button', { name: /Nuova domanda/ }));
+      // The form renders an h3 with role "heading"
+      await screen.findByRole('heading', { name: 'Nuova domanda' });
+      fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('heading', { name: 'Nuova domanda' })).toBeNull(),
+      );
+    });
+
+    it('adds an aperta question and calls savePool', async () => {
+      await openLesson();
+      fireEvent.click(screen.getByRole('button', { name: /Nuova domanda/ }));
+      await screen.findByText('Nuova domanda');
+
+      fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q3' } });
+      fireEvent.change(screen.getByLabelText('Testo domanda'), {
+        target: { value: 'Che cosa è TCP?' },
+      });
+      fireEvent.change(screen.getByLabelText('Soluzione'), {
+        target: { value: 'Un protocollo di trasporto.' },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+      await waitFor(() => expect(mockSavePool).toHaveBeenCalledOnce());
+      const call = mockSavePool.mock.calls[0][0] as { pool: { questions: { id: string }[] } };
+      expect(call.pool.questions.some((q) => q.id === 'q3')).toBe(true);
+    });
+
+    it('shows error for duplicate question ID', async () => {
+      await openLesson();
+      fireEvent.click(screen.getByRole('button', { name: /Nuova domanda/ }));
+      await screen.findByText('Nuova domanda');
+
+      fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q1' } });
+      fireEvent.change(screen.getByLabelText('Testo domanda'), {
+        target: { value: 'Duplicato.' },
+      });
+      fireEvent.change(screen.getByLabelText('Soluzione'), { target: { value: 'x' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+      await screen.findByText(/già presente nel pool/);
+      expect(mockSavePool).not.toHaveBeenCalled();
+    });
+
+    it('adds a chiusa_singola question with radio soluzione and calls savePool', async () => {
+      await openLesson();
+      fireEvent.click(screen.getByRole('button', { name: /Nuova domanda/ }));
+      await screen.findByText('Nuova domanda');
+
+      fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q3' } });
+      fireEvent.change(screen.getByLabelText('Tipo domanda'), {
+        target: { value: 'chiusa_singola' },
+      });
+      fireEvent.change(screen.getByLabelText('Testo domanda'), {
+        target: { value: 'Quanti bit ha un byte?' },
+      });
+
+      // Fill first option id and testo
+      const idInputs = screen.getAllByLabelText(/ID opzione/);
+      const testoInputs = screen.getAllByLabelText(/Testo opzione/);
+      fireEvent.change(idInputs[0], { target: { value: 'a' } });
+      fireEvent.change(testoInputs[0], { target: { value: '4' } });
+
+      // Add second option
+      fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
+      const idInputs2 = screen.getAllByLabelText(/ID opzione/);
+      const testoInputs2 = screen.getAllByLabelText(/Testo opzione/);
+      fireEvent.change(idInputs2[1], { target: { value: 'b' } });
+      fireEvent.change(testoInputs2[1], { target: { value: '8' } });
+
+      // Select radio for option b
+      fireEvent.click(screen.getByLabelText(/Seleziona come risposta corretta b/));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+      await waitFor(() => expect(mockSavePool).toHaveBeenCalledOnce());
+      const call = mockSavePool.mock.calls[0][0] as {
+        pool: { questions: { id: string; soluzione: unknown }[] };
+      };
+      const saved = call.pool.questions.find((q) => q.id === 'q3');
+      expect(saved).toBeTruthy();
+      expect(saved?.soluzione).toEqual(['b']);
+    });
+
+    it('adds a chiusa_multipla question with checkbox soluzioni and calls savePool', async () => {
+      await openLesson();
+      fireEvent.click(screen.getByRole('button', { name: /Nuova domanda/ }));
+      await screen.findByRole('heading', { name: 'Nuova domanda' });
+
+      fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q3' } });
+      fireEvent.change(screen.getByLabelText('Tipo domanda'), {
+        target: { value: 'chiusa_multipla' },
+      });
+      fireEvent.change(screen.getByLabelText('Testo domanda'), {
+        target: { value: 'Quali sono protocolli di trasporto?' },
+      });
+
+      // Fill first option
+      const idInputs = screen.getAllByLabelText(/ID opzione/);
+      const testoInputs = screen.getAllByLabelText(/Testo opzione/);
+      fireEvent.change(idInputs[0], { target: { value: 'a' } });
+      fireEvent.change(testoInputs[0], { target: { value: 'TCP' } });
+
+      // Add second option
+      fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
+      const after2 = screen.getAllByLabelText(/ID opzione/);
+      const after2t = screen.getAllByLabelText(/Testo opzione/);
+      fireEvent.change(after2[1], { target: { value: 'b' } });
+      fireEvent.change(after2t[1], { target: { value: 'UDP' } });
+
+      // Add third option (must keep at least one non-solution option per parsePool rules)
+      fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
+      const after3 = screen.getAllByLabelText(/ID opzione/);
+      const after3t = screen.getAllByLabelText(/Testo opzione/);
+      fireEvent.change(after3[2], { target: { value: 'c' } });
+      fireEvent.change(after3t[2], { target: { value: 'HTTP' } });
+
+      // Select a and b as correct — controlled checkboxes need act() to flush React state
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText(/Seleziona come risposta corretta a/));
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText(/Seleziona come risposta corretta b/));
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+      await waitFor(() => expect(mockSavePool).toHaveBeenCalledOnce());
+      const call = mockSavePool.mock.calls[0][0] as {
+        pool: { questions: { id: string; soluzione: unknown }[] };
+      };
+      const saved = call.pool.questions.find((q) => q.id === 'q3');
+      expect(saved?.soluzione).toEqual(expect.arrayContaining(['a', 'b']));
+    });
+
+    it('opens edit form when edit button is clicked', async () => {
+      await openLesson();
+      const editBtns = await screen.findAllByRole('button', { name: /Modifica domanda/ });
+      fireEvent.click(editBtns[0]);
+      await screen.findByText(/Modifica domanda — q1/);
+    });
+
+    it('id input is disabled when editing existing question', async () => {
+      await openLesson();
+      const editBtns = await screen.findAllByRole('button', { name: /Modifica domanda/ });
+      fireEvent.click(editBtns[0]);
+      await screen.findByText(/Modifica domanda — q1/);
+      const idInput = screen.getByLabelText('ID domanda') as HTMLInputElement;
+      expect(idInput.disabled).toBe(true);
+    });
+
+    it('saves edited question and updates the list', async () => {
+      await openLesson();
+      const editBtns = await screen.findAllByRole('button', { name: /Modifica domanda/ });
+      fireEvent.click(editBtns[0]);
+      await screen.findByText(/Modifica domanda — q1/);
+
+      fireEvent.change(screen.getByLabelText('Testo domanda'), {
+        target: { value: 'Testo aggiornato.' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+      await waitFor(() => expect(mockSavePool).toHaveBeenCalledOnce());
+    });
+
+    it('shows savePool error for question save', async () => {
+      mockSavePool.mockRejectedValue(new Error('Storage error'));
+      await openLesson();
+      fireEvent.click(screen.getByRole('button', { name: /Nuova domanda/ }));
+      await screen.findByText('Nuova domanda');
+
+      fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q99' } });
+      fireEvent.change(screen.getByLabelText('Testo domanda'), { target: { value: 'Test.' } });
+      fireEvent.change(screen.getByLabelText('Soluzione'), { target: { value: 'Risposta.' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+      await screen.findByText('Storage error');
+    });
+
+    it('shows inline delete confirm when trash button clicked', async () => {
+      await openLesson();
+      const deleteBtns = await screen.findAllByRole('button', { name: /Elimina domanda/ });
+      fireEvent.click(deleteBtns[0]);
+      await screen.findByText('Eliminare questa domanda?');
+    });
+
+    it('calls savePool without deleted question on confirm', async () => {
+      await openLesson();
+      const deleteBtns = await screen.findAllByRole('button', { name: /Elimina domanda/ });
+      fireEvent.click(deleteBtns[0]);
+      await screen.findByText('Eliminare questa domanda?');
+      fireEvent.click(screen.getByRole('button', { name: 'Elimina' }));
+      await waitFor(() => expect(mockSavePool).toHaveBeenCalledOnce());
+      const call = mockSavePool.mock.calls[0][0] as { pool: { questions: { id: string }[] } };
+      expect(call.pool.questions.some((q) => q.id === 'q1')).toBe(false);
+    });
+
+    it('cancels per-question delete on Annulla', async () => {
+      await openLesson();
+      const deleteBtns = await screen.findAllByRole('button', { name: /Elimina domanda/ });
+      fireEvent.click(deleteBtns[0]);
+      await screen.findByText('Eliminare questa domanda?');
+      fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+      await waitFor(() => expect(screen.queryByText('Eliminare questa domanda?')).toBeNull());
+      expect(mockSavePool).not.toHaveBeenCalled();
+    });
+
+    it('shows error when savePool fails during question delete', async () => {
+      mockSavePool.mockRejectedValue(new Error('Delete error'));
+      await openLesson();
+      const deleteBtns = await screen.findAllByRole('button', { name: /Elimina domanda/ });
+      fireEvent.click(deleteBtns[0]);
+      await screen.findByText('Eliminare questa domanda?');
+      fireEvent.click(screen.getByRole('button', { name: 'Elimina' }));
+      await screen.findByText('Delete error');
     });
   });
 

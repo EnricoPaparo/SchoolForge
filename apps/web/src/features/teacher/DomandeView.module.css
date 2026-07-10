@@ -529,6 +529,189 @@
   font-size: 0.8125rem;
 }
 
+/* ── Pool meta actions ───────────────────────────────────────────────── */
+.poolMetaActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btnSm {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+}
+
+/* ── Question card actions (edit / delete buttons) ───────────────────── */
+.questionCardActions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ── Inline per-question delete confirm ──────────────────────────────── */
+.deleteConfirmInline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-top: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--color-error-bg);
+  border: 1px solid var(--color-error, #dc2626);
+  border-radius: var(--radius);
+}
+
+/* ── Question editor form card ───────────────────────────────────────── */
+.questionFormCard {
+  background: var(--color-surface);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius);
+  padding: 1rem 1.125rem;
+  min-width: 0;
+}
+
+.questionFormTitle {
+  margin: 0 0 0.875rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.questionForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* ── Form primitives ─────────────────────────────────────────────────── */
+.formRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.formLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text);
+  min-width: 0;
+}
+
+.formLabelBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.formInput {
+  padding: 0.3125rem 0.5rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+  min-width: 0;
+}
+
+.formInput:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.formSelect {
+  padding: 0.3125rem 0.5rem;
+  font-size: 0.8125rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+}
+
+.formSelect:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.formTextarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+  resize: vertical;
+}
+
+.formTextarea:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.formHint {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.formActions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding-top: 0.25rem;
+}
+
+/* ── Opzioni editor ──────────────────────────────────────────────────── */
+.opzioniSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.opzioniHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.opzioneRow {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.opzioneRadio,
+.opzioneCheckbox {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.opzioneIdInput {
+  width: 4rem;
+  flex-shrink: 0;
+}
+
+.opzioneTestoInput {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ── YAML editor ─────────────────────────────────────────────────────── */
 .yamlEditor {
   display: flex;
