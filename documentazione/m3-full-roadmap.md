@@ -61,7 +61,7 @@ interface SubmissionDoc {
   answers: Record<string, AnswerValue>;
   // key = order.toString() (1-based, corrisponde a PublicVerificationQuestion.order)
 
-  // marcatori UX (non persistono sul server se status == 'submitted')
+  // marcatori UX; restano sul documento per docente/M4 ma non sono visibili allo studente dopo la consegna
   flagged: Record<string, boolean>;  // key = order.toString()
 
   // eventi attenzione (deterrenza leggera)
@@ -88,6 +88,11 @@ type AnswerValue =
 interface AttentionEvent {
   type:
     | 'fullscreen_exit'
+    | 'copy_attempt'
+    | 'cut_attempt'
+    | 'paste_attempt'
+    | 'context_menu_attempt'
+    | 'drag_attempt'
     | 'tab_blur'
     | 'window_blur'
     | 'visibility_hidden';
@@ -354,7 +359,7 @@ All'avvio della schermata verifica:
 2. Listener su `fullscreenchange` → registra evento `fullscreen_exit`.
 3. Listener su `document.visibilitychange` (hidden) → registra `visibility_hidden`.
 4. Listener su `window.blur` → registra `tab_blur` o `window_blur`.
-5. `document.addEventListener('copy', e => e.preventDefault())` — stessa logica per `cut`, `paste`, `contextmenu`, `dragstart`.
+5. `document.addEventListener('copy', e => e.preventDefault())` — stessa logica per `cut`, `paste`, `contextmenu`, `dragstart`; registra rispettivamente `copy_attempt`, `cut_attempt`, `paste_attempt`, `context_menu_attempt`, `drag_attempt`.
 6. Gli eventi vengono accumulati in memoria e scritti periodicamente su Firestore insieme al salvataggio bozza automatico (o alla consegna).
 
 **Non implementato in M3-full:** blocco automatico della consegna, invalidazione submission, screenshot, screen recording detection, DevTools detection.

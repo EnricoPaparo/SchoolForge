@@ -306,6 +306,13 @@ export type VerificationDoc = {
    * `normalizeVisibility()`, which treats a missing value as `hidden`.
    */
   visibility?: VerificationVisibility;
+  /**
+   * M3-full: absent on verifications created before M3-full — always read
+   * through `normalizeOnlineEnabled()`, which treats a missing value as
+   * `false`. A verification is online-submittable only when
+   * `status == 'active'` AND `onlineEnabled == true`.
+   */
+  onlineEnabled?: boolean;
   config: VerificationConfig;
   teacherSnapshot: VerificationTeacherSnapshot | null; // set at activation
   createdAt: Timestamp | FieldValue;
@@ -363,4 +370,101 @@ export type PublishedProjectionDoc = {
   classId: string | null;
   questions: PublicVerificationQuestion[];
   activatedAt: Timestamp | FieldValue;
+};
+
+// ─── M3-full — Online submissions ────────────────────────────────────────────
+
+/**
+ * Answer value for a single question in a submission.
+ * Keyed by `order.toString()` (1-based, matching PublicVerificationQuestion.order).
+ */
+export type AnswerValue =
+  | { tipo: 'aperta'; testo: string }
+  | { tipo: 'chiusa_singola'; selectedId: string | null }
+  | { tipo: 'chiusa_multipla'; selectedIds: string[] };
+
+/**
+ * A single attention event recorded by the lightweight deterrence layer.
+ * Stored in `attentionEvents[]` on SubmissionDoc.
+ * `ts` is a client-side ms-epoch timestamp (not a Firestore Timestamp — kept
+ * as a number to allow atomic `arrayUnion` appends without server round-trips).
+ */
+export type AttentionEventType =
+  | 'fullscreen_exit'
+  | 'copy_attempt'
+  | 'cut_attempt'
+  | 'paste_attempt'
+  | 'context_menu_attempt'
+  | 'drag_attempt'
+  | 'tab_blur'
+  | 'window_blur'
+  | 'visibility_hidden';
+
+export type AttentionEvent = {
+  type: AttentionEventType;
+  ts: number; // client ms epoch
+};
+
+/**
+ * Stored at `submissions/{verificationId}_{studentUid}`.
+ *
+ * The doc id is deterministic: `${verificationId}_${studentUid}`. This
+ * guarantees one-submission-per-(student, verification) without requiring
+ * a query in Security Rules, which Firestore does not support.
+ *
+ * Lifecycle:
+ *   - Created at `status: 'draft'` when the student opens the online exam.
+ *   - Updated (still `draft`) on every autosave.
+ *   - Atomically set to `status: 'submitted'` on final delivery, together
+ *     with a matching SubmissionReceiptDoc (write batch).
+ *   - Immutable once `submitted`; Security Rules deny any further update.
+ *
+ * The owner (teacher) can read all submissions for their verifications.
+ * The student can read/write only while `status == 'draft'`; after submission
+ * they read only the corresponding SubmissionReceiptDoc.
+ *
+ * `flagged` and `attentionEvents` may remain on the submitted document for the
+ * teacher monitor and future correction flow. They are not exposed to students
+ * after submission because students read only the matching SubmissionReceiptDoc.
+ */
+export type SubmissionDoc = {
+  submissionId: string; // == Firestore doc id: `${verificationId}_${studentUid}`
+  verificationId: string;
+  studentUid: string;
+  ownerUid: string;
+  status: 'draft' | 'submitted';
+  /** Sparse map of answers; only questions the student has touched are present. */
+  answers: Record<string, AnswerValue>;
+  /** Per-question "flag for review" markers; key = order.toString(). */
+  flagged: Record<string, boolean>;
+  /** Lightweight deterrence log; capped at 200 entries by the client. */
+  attentionEvents: AttentionEvent[];
+  /** Null until status becomes 'submitted'. Human-readable, e.g. "SF-2026-A3B7". */
+  deliveryCode: string | null;
+  /** Snapshot copied at creation time for the post-submission confirmation screen. */
+  verificationTitle: string;
+  className: string | null;
+  startedAt: Timestamp;
+  lastSavedAt: Timestamp | FieldValue;
+  submittedAt: Timestamp | FieldValue | null;
+};
+
+/**
+ * Stored at `submissionReceipts/{verificationId}_{studentUid}`.
+ *
+ * Written atomically with the final `SubmissionDoc` update in the same write
+ * batch. Contains only the data the student needs to see on the confirmation
+ * screen — no questions, no answers. The student reads this document after
+ * submission; Security Rules deny them access to the full `SubmissionDoc`
+ * once `status == 'submitted'`.
+ */
+export type SubmissionReceiptDoc = {
+  submissionId: string; // == Firestore doc id (same as SubmissionDoc)
+  verificationId: string;
+  studentUid: string;
+  ownerUid: string;
+  verificationTitle: string;
+  className: string | null;
+  deliveryCode: string;
+  submittedAt: Timestamp | FieldValue;
 };
