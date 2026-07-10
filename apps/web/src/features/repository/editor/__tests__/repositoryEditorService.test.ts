@@ -43,6 +43,7 @@ vi.mock('firebase/storage', () => ({
 
 import {
   createLesson,
+  createUda,
   updateLessonMarkdownBody,
   updateLessonMetadata,
   updateUdaMetadata,
@@ -608,6 +609,160 @@ describe('createLesson', () => {
       }),
     ).rejects.toThrow(
       'Il file della lezione è stato creato su Storage ma non è stato possibile salvare i metadati su Firestore. Riprova.',
+    );
+    expect(mockUploadBytes).toHaveBeenCalled();
+  });
+});
+
+describe('createUda', () => {
+  const BASE_FIELDS = {
+    titolo: 'Reti',
+    descrizione: null,
+    competenze: [],
+    obiettivi: [],
+  };
+
+  it('throws without touching Storage or Firestore when the title is empty', async () => {
+    await expect(
+      createUda({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        ownerUid: OWNER_UID,
+        fields: { ...BASE_FIELDS, titolo: '   ' },
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow('Il titolo della UDA è obbligatorio.');
+    expect(mockGetDocs).not.toHaveBeenCalled();
+    expect(mockUploadBytes).not.toHaveBeenCalled();
+  });
+
+  it('numbers the first UDA of a program as 01 with order 0', async () => {
+    mockGetDocs.mockResolvedValueOnce({ docs: [] });
+
+    const result = await createUda({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      ownerUid: OWNER_UID,
+      fields: { ...BASE_FIELDS, titolo: 'Reti informatiche' },
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    expect(result.dir).toBe('uda-01-reti-informatiche');
+    expect(result.udaId).toBe('uda-01-reti-informatiche');
+
+    const next = writtenContent();
+    expect(next).toBe('---\ntitolo: Reti informatiche\n---');
+
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1/imports/imp-1/udas/uda-01-reti-informatiche' },
+      expect.objectContaining({
+        dir: 'uda-01-reti-informatiche',
+        filename: 'uda-01-reti-informatiche.md',
+        order: 0,
+        lessonCount: 0,
+        storageBasePath: 'repository/owner-uid/imports/imp-1/uda-01-reti-informatiche',
+        descrizione: null,
+        competenze: [],
+        obiettivi: [],
+      }),
+    );
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'auditEvents/auto-id' },
+      expect.objectContaining({ action: 'uda.created', targetId: result.udaId }),
+    );
+  });
+
+  it('numbers past the highest existing UDA number and order, ignoring gaps', async () => {
+    mockGetDocs.mockResolvedValueOnce({
+      docs: [
+        { data: () => ({ dir: 'uda-02-reti', order: 1 }) },
+        { data: () => ({ dir: 'uda-05-sicurezza', order: 4 }) },
+      ],
+    });
+
+    const result = await createUda({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      ownerUid: OWNER_UID,
+      fields: { ...BASE_FIELDS, titolo: 'Database' },
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    expect(result.dir).toBe('uda-06-database');
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1/imports/imp-1/udas/uda-06-database' },
+      expect.objectContaining({ order: 5 }),
+    );
+  });
+
+  it('writes descrizione/competenze/obiettivi to both Storage front matter and Firestore', async () => {
+    mockGetDocs.mockResolvedValueOnce({ docs: [] });
+
+    await createUda({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      ownerUid: OWNER_UID,
+      fields: {
+        titolo: 'Reti',
+        descrizione: 'Introduzione alle reti',
+        competenze: ['Comprendere il modello OSI'],
+        obiettivi: ['Distinguere client e server'],
+      },
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    const next = writtenContent();
+    expect(next).toContain('titolo: Reti');
+    expect(next).toContain('descrizione: Introduzione alle reti');
+    expect(next).toContain('Comprendere il modello OSI');
+    expect(next).toContain('Distinguere client e server');
+
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1/imports/imp-1/udas/uda-01-reti' },
+      expect.objectContaining({
+        descrizione: 'Introduzione alle reti',
+        competenze: ['Comprendere il modello OSI'],
+        obiettivi: ['Distinguere client e server'],
+      }),
+    );
+  });
+
+  it('throws a Storage-specific error and never touches Firestore when the Storage write fails', async () => {
+    mockGetDocs.mockResolvedValueOnce({ docs: [] });
+    mockUploadBytes.mockRejectedValueOnce(new Error('network down'));
+
+    await expect(
+      createUda({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        ownerUid: OWNER_UID,
+        fields: BASE_FIELDS,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow('Impossibile creare il file della UDA su Storage.');
+    expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+
+  it('throws a distinct error when Storage succeeds but the Firestore write fails', async () => {
+    mockGetDocs.mockResolvedValueOnce({ docs: [] });
+    mockSetDoc.mockRejectedValueOnce(new Error('permission-denied'));
+
+    await expect(
+      createUda({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        ownerUid: OWNER_UID,
+        fields: BASE_FIELDS,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow(
+      'Il file della UDA è stato creato su Storage ma non è stato possibile salvare i metadati su Firestore. Riprova.',
     );
     expect(mockUploadBytes).toHaveBeenCalled();
   });

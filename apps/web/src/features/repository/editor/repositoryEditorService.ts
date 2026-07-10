@@ -86,10 +86,24 @@ function lessonFrontMatterFields(metadata: LessonMetadata): EditableFrontMatter 
   };
 }
 
+/**
+ * Maps a UDA's titolo (not part of `UdaMetadata` — see `validateUda`,
+ * `descrizione`/`competenze`/`obiettivi` are the only metadata fields) plus
+ * its metadata to the YAML front matter keys used on disk.
+ */
+function udaFrontMatterFields(titolo: string, metadata: UdaMetadata): EditableFrontMatter {
+  return {
+    titolo,
+    descrizione: metadata.descrizione,
+    competenze: metadata.competenze,
+    obiettivi: metadata.obiettivi,
+  };
+}
+
 async function writeAuditEvent(
   db: Firestore,
   ownerUid: string,
-  action: 'uda.updated' | 'lesson.updated' | 'lesson.created',
+  action: 'uda.updated' | 'uda.created' | 'lesson.updated' | 'lesson.created',
   targetId: string,
 ): Promise<void> {
   await setDoc(doc(collection(db, 'auditEvents')), {
@@ -391,4 +405,85 @@ export async function createLesson(params: {
   await writeAuditEvent(db, ownerUid, 'lesson.created', lessonId);
 
   return { lessonId, filename };
+}
+
+export interface NewUdaFields {
+  titolo: string;
+  descrizione: string | null;
+  competenze: string[];
+  obiettivi: string[];
+}
+
+/**
+ * Creates a new UDA inside an existing program/import (RE-03B — no lessons
+ * created automatically, no deletion, no reordering). The UDA number
+ * (`uda-XX-slug`) and `order` are both derived from the highest values
+ * already present among the import's existing UDAs, so a legacy import
+ * with gaps or an out-of-order `order` never collides with the new one —
+ * same reasoning as `createLesson`. The UDA body is left empty:
+ * `descrizione` lives in front matter (RE-01+), and RE-03B never creates
+ * lessons for the new UDA, so there is nothing else to write. `lessonCount`
+ * starts at `0` and is incremented independently by `createLesson`.
+ */
+export async function createUda(params: {
+  programId: string;
+  importId: string;
+  ownerUid: string;
+  fields: NewUdaFields;
+  db: Firestore;
+  storage: FirebaseStorage;
+}): Promise<{ udaId: string; dir: string }> {
+  const { programId, importId, ownerUid, fields, db, storage } = params;
+  const titolo = fields.titolo.trim();
+  if (!titolo) throw new Error('Il titolo della UDA è obbligatorio.');
+
+  const udasRef = collection(db, 'programs', programId, 'imports', importId, 'udas');
+  const existingSnap = await getDocs(udasRef);
+  const existingUdas = existingSnap.docs.map((d) => d.data() as Partial<UdaDoc>);
+
+  const maxNumber = existingUdas.reduce((max, uda) => {
+    const match = /^uda-(\d+)-/.exec(uda.dir ?? '');
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  const maxOrder = existingUdas.reduce((max, uda) => Math.max(max, uda.order ?? -1), -1);
+
+  const dir = `uda-${String(maxNumber + 1).padStart(2, '0')}-${slugify(titolo)}`;
+  const filename = `${dir}.md`;
+  const storageBasePath = `repository/${ownerUid}/imports/${importId}/${dir}`;
+  const udaId = toDocId(dir);
+  const order = maxOrder + 1;
+
+  const metadata: UdaMetadata = {
+    descrizione: fields.descrizione,
+    competenze: fields.competenze,
+    obiettivi: fields.obiettivi,
+  };
+
+  try {
+    const content = composeMarkdownWithFrontMatter(udaFrontMatterFields(titolo, metadata), '');
+    await writeStorageText(`${storageBasePath}/${filename}`, content, storage);
+  } catch {
+    throw new Error('Impossibile creare il file della UDA su Storage.');
+  }
+
+  try {
+    await setDoc(doc(udasRef, udaId), {
+      ownerUid,
+      importId,
+      dir,
+      filename,
+      order,
+      storageBasePath,
+      lessonCount: 0,
+      ...metadata,
+    } satisfies UdaDoc);
+  } catch {
+    throw new Error(
+      'Il file della UDA è stato creato su Storage ma non è stato possibile salvare i metadati su Firestore. Riprova.',
+    );
+  }
+
+  await writeAuditEvent(db, ownerUid, 'uda.created', udaId);
+
+  return { udaId, dir };
 }
