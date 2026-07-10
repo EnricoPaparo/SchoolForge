@@ -584,6 +584,17 @@
   gap: 0.75rem;
 }
 
+.formInfoNote {
+  margin: 0 0 0.875rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+  background: var(--color-surface-subtle);
+  border-left: 3px solid var(--color-primary);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
 /* ── Form primitives ─────────────────────────────────────────────────── */
 .formRow {
   display: flex;
@@ -719,6 +730,25 @@
 .opzioneTestoInput {
   flex: 1;
   min-width: 0;
+}
+
+/* Mobile: keep the fixed-size controls compact so the answer textfield keeps the room it needs
+   and the row never forces horizontal scrolling. */
+@media (max-width: 480px) {
+  .opzioneRow {
+    gap: 0.3rem;
+  }
+
+  .opzioneLetter {
+    width: 1.5rem;
+    height: 1.5rem;
+    font-size: 0.6875rem;
+  }
+
+  .opzioneRow .iconBtn {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
 }
 
 /* ── YAML editor ─────────────────────────────────────────────────────── */
