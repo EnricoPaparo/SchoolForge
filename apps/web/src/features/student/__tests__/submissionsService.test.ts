@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type * as FirestoreModule from 'firebase/firestore';
 
 // ─── Firebase mocks ───────────────────────────────────────────────────────────
 
@@ -10,7 +11,7 @@ const mockBatchSet = vi.fn();
 const mockBatchCommit = vi.fn();
 
 vi.mock('firebase/firestore', async () => {
-  const actual = await vi.importActual<typeof import('firebase/firestore')>('firebase/firestore');
+  const actual = await vi.importActual<typeof FirestoreModule>('firebase/firestore');
   return {
     ...actual,
     getDoc: (...args: unknown[]) => mockGetDoc(...args),
