@@ -19,7 +19,13 @@ import {
 } from '../repository/pools/poolEditorService.js';
 import { useAuth } from '../../lib/auth.js';
 import { db, storage } from '../../lib/firebase.js';
-import { IconChevronLeft, IconChevronRight, IconTrash } from '../../components/icons.js';
+import {
+  IconChevronLeft,
+  IconChevronRight,
+  IconPencil,
+  IconPlus,
+  IconTrash,
+} from '../../components/icons.js';
 import styles from './DomandeView.module.css';
 
 const POOL_TEMPLATE = `---
@@ -34,6 +40,67 @@ const TIPO_LABELS: Record<string, string> = {
   chiusa_multipla: 'Chiusa (multipla)',
 };
 
+// ── Local draft type for the question editor form ─────────────────────────────
+
+type QuestionDraft = {
+  id: string;
+  tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
+  difficolta: '1' | '2' | '3';
+  peso: '1' | '2' | '3';
+  testo: string;
+  /** Used only when tipo === 'aperta'. */
+  soluzione: string;
+  /** Used only when tipo !== 'aperta'. */
+  opzioni: { id: string; testo: string }[];
+  /** Selected option ids. For chiusa_singola at most one; chiusa_multipla any. */
+  soluzioneIds: string[];
+};
+
+function initDraft(q: PoolQuestion | null): QuestionDraft {
+  if (!q) {
+    return {
+      id: '',
+      tipo: 'aperta',
+      difficolta: '1',
+      peso: '1',
+      testo: '',
+      soluzione: '',
+      opzioni: [{ id: 'a', testo: '' }],
+      soluzioneIds: [],
+    };
+  }
+  const isChiusa = q.tipo === 'chiusa_singola' || q.tipo === 'chiusa_multipla';
+  return {
+    id: q.id,
+    tipo: q.tipo,
+    difficolta: String(q.difficolta) as '1' | '2' | '3',
+    peso: String(q.peso) as '1' | '2' | '3',
+    testo: q.testo,
+    soluzione: q.tipo === 'aperta' ? q.soluzione : '',
+    opzioni: isChiusa ? q.opzioni.map((o) => ({ id: o.id, testo: o.testo })) : [],
+    soluzioneIds: isChiusa ? (Array.isArray(q.soluzione) ? q.soluzione : [q.soluzione]) : [],
+  };
+}
+
+/** Converts a draft to a raw object suitable for pool insertion (validated downstream). */
+function draftToRaw(d: QuestionDraft): Record<string, unknown> {
+  const base = {
+    id: d.id.trim(),
+    tipo: d.tipo,
+    difficolta: Number(d.difficolta),
+    peso: Number(d.peso),
+    testo: d.testo,
+  };
+  if (d.tipo === 'aperta') {
+    return { ...base, soluzione: d.soluzione };
+  }
+  const opzioni = d.opzioni.map((o) => ({ id: o.id.trim(), testo: o.testo }));
+  const soluzione = d.tipo === 'chiusa_singola' ? [d.soluzioneIds[0] ?? ''] : d.soluzioneIds;
+  return { ...base, opzioni, soluzione };
+}
+
+// ── Shared state types ─────────────────────────────────────────────────────────
+
 type CourseTreeState = {
   udas: UdaItem[] | null;
   lessons: LessonItem[] | null;
@@ -47,6 +114,8 @@ type PoolState =
   | { status: 'valid'; pool: ParsedPool }
   | { status: 'invalid'; errors: PoolValidationError[]; rawContent: string }
   | { status: 'error'; message: string };
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
 
 function PoolStatusBadge({ lesson }: { lesson: LessonItem }) {
   if (lesson.poolStatus === 'valid') {
@@ -70,9 +139,31 @@ function PoolStatusBadge({ lesson }: { lesson: LessonItem }) {
   );
 }
 
-function QuestionCard({ q, index }: { q: PoolQuestion; index: number }) {
+function QuestionCard({
+  q,
+  index,
+  onEdit,
+  onDeleteRequest,
+  deleteConfirm,
+  deleting,
+  deleteError,
+  onDeleteConfirm,
+  onDeleteCancel,
+  disabled,
+}: {
+  q: PoolQuestion;
+  index: number;
+  onEdit: () => void;
+  onDeleteRequest: () => void;
+  deleteConfirm: boolean;
+  deleting: boolean;
+  deleteError: string | null;
+  onDeleteConfirm: () => void;
+  onDeleteCancel: () => void;
+  disabled: boolean;
+}) {
   const hasOpzioni = q.tipo === 'chiusa_singola' || q.tipo === 'chiusa_multipla';
-  const soluzione =
+  const soluzioneDisplay =
     q.tipo === 'aperta'
       ? q.soluzione
       : Array.isArray(q.soluzione)
@@ -86,11 +177,35 @@ function QuestionCard({ q, index }: { q: PoolQuestion; index: number }) {
         <span className={styles.questionId}>{q.id}</span>
         <span className={styles.questionTipo}>{TIPO_LABELS[q.tipo] ?? q.tipo}</span>
         <span className={styles.questionMeta}>
-          Diff: {q.difficolta} · Peso: {q.peso} · Max: {q.maxPoints} pt
+          Diff:&nbsp;{q.difficolta} · Peso:&nbsp;{q.peso} · Max:&nbsp;{q.maxPoints}&nbsp;pt
         </span>
+        <div className={styles.questionCardActions}>
+          <button
+            type="button"
+            className={styles.iconBtn}
+            title="Modifica domanda"
+            aria-label={`Modifica domanda ${q.id}`}
+            onClick={onEdit}
+            disabled={disabled}
+          >
+            <IconPencil size={12} />
+          </button>
+          <button
+            type="button"
+            className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+            title="Elimina domanda"
+            aria-label={`Elimina domanda ${q.id}`}
+            onClick={onDeleteRequest}
+            disabled={disabled || deleting}
+          >
+            <IconTrash size={12} />
+          </button>
+        </div>
       </div>
+
       <p className={styles.questionTesto}>{q.testo}</p>
-      {hasOpzioni && (q.tipo === 'chiusa_singola' || q.tipo === 'chiusa_multipla') && (
+
+      {hasOpzioni && (
         <ul className={styles.opzioniList}>
           {q.opzioni.map((o) => {
             const isSol = Array.isArray(q.soluzione)
@@ -104,14 +219,322 @@ function QuestionCard({ q, index }: { q: PoolQuestion; index: number }) {
           })}
         </ul>
       )}
-      {soluzione !== null && (
+
+      {soluzioneDisplay && (
         <div className={styles.soluzioneBlock}>
-          <span className={styles.soluzioneLabel}>Soluzione:</span> {soluzione}
+          <span className={styles.soluzioneLabel}>Soluzione:</span> {soluzioneDisplay}
+        </div>
+      )}
+
+      {deleteConfirm && (
+        <div className={styles.deleteConfirmInline} role="alert">
+          <span className={styles.deleteConfirmMsg}>Eliminare questa domanda?</span>
+          <div className={styles.deleteConfirmActions}>
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnDanger} ${styles.btnSm}`}
+              onClick={onDeleteConfirm}
+              disabled={deleting}
+            >
+              {deleting ? 'Eliminazione…' : 'Elimina'}
+            </button>
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnSm}`}
+              onClick={onDeleteCancel}
+              disabled={deleting}
+            >
+              Annulla
+            </button>
+          </div>
+          {deleteError && <p className={styles.errorMsg}>{deleteError}</p>}
         </div>
       )}
     </div>
   );
 }
+
+function QuestionEditorForm({
+  initial,
+  existingIds,
+  onSave,
+  onCancel,
+  saving,
+  error,
+}: {
+  initial: PoolQuestion | null;
+  existingIds: string[];
+  onSave: (draft: QuestionDraft) => void;
+  onCancel: () => void;
+  saving: boolean;
+  error: string | null;
+}) {
+  const [draft, setDraft] = useState<QuestionDraft>(() => initDraft(initial));
+
+  function setField<K extends keyof QuestionDraft>(key: K, value: QuestionDraft[K]) {
+    setDraft((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function handleTipoChange(tipo: QuestionDraft['tipo']) {
+    setDraft((prev) => ({
+      ...prev,
+      tipo,
+      // Ensure at least one opzione when switching to a chiusa type
+      opzioni:
+        (tipo === 'chiusa_singola' || tipo === 'chiusa_multipla') && prev.opzioni.length === 0
+          ? [{ id: 'a', testo: '' }]
+          : prev.opzioni,
+      // Reset soluzione selections — they may no longer match the new type's constraints
+      soluzioneIds: [],
+    }));
+  }
+
+  function addOpzione() {
+    setDraft((prev) => {
+      const nextId = String.fromCharCode(
+        97 + prev.opzioni.length, // 'a', 'b', 'c', ...
+      );
+      return { ...prev, opzioni: [...prev.opzioni, { id: nextId, testo: '' }] };
+    });
+  }
+
+  function removeOpzione(index: number) {
+    setDraft((prev) => {
+      const removed = prev.opzioni[index];
+      return {
+        ...prev,
+        opzioni: prev.opzioni.filter((_, i) => i !== index),
+        soluzioneIds: prev.soluzioneIds.filter((id) => id !== removed?.id),
+      };
+    });
+  }
+
+  function updateOpzione(index: number, field: 'id' | 'testo', value: string) {
+    setDraft((prev) => {
+      const oldId = prev.opzioni[index]?.id ?? '';
+      const newOpzioni = prev.opzioni.map((o, i) => (i === index ? { ...o, [field]: value } : o));
+      // If id changed, update soluzioneIds references
+      const newSoluzioneIds =
+        field === 'id'
+          ? prev.soluzioneIds.map((sid) => (sid === oldId ? value : sid))
+          : prev.soluzioneIds;
+      return { ...prev, opzioni: newOpzioni, soluzioneIds: newSoluzioneIds };
+    });
+  }
+
+  function toggleSoluzione(optId: string) {
+    setDraft((prev) => {
+      if (prev.tipo === 'chiusa_singola') {
+        return { ...prev, soluzioneIds: [optId] };
+      }
+      // chiusa_multipla — toggle
+      const has = prev.soluzioneIds.includes(optId);
+      return {
+        ...prev,
+        soluzioneIds: has
+          ? prev.soluzioneIds.filter((id) => id !== optId)
+          : [...prev.soluzioneIds, optId],
+      };
+    });
+  }
+
+  const isChiusa = draft.tipo === 'chiusa_singola' || draft.tipo === 'chiusa_multipla';
+  const isNew = initial === null;
+
+  return (
+    <div className={styles.questionFormCard}>
+      <h3 className={styles.questionFormTitle}>
+        {isNew ? 'Nuova domanda' : `Modifica domanda — ${initial.id}`}
+      </h3>
+
+      <div className={styles.questionForm}>
+        {/* Row: id + tipo */}
+        <div className={styles.formRow}>
+          <label className={styles.formLabel}>
+            ID
+            <input
+              className={styles.formInput}
+              type="text"
+              value={draft.id}
+              onChange={(e) => setField('id', e.target.value)}
+              placeholder="es. q1"
+              disabled={!isNew} // id is immutable when editing
+              aria-label="ID domanda"
+            />
+          </label>
+
+          <label className={styles.formLabel}>
+            Tipo
+            <select
+              className={styles.formSelect}
+              value={draft.tipo}
+              onChange={(e) => handleTipoChange(e.target.value as QuestionDraft['tipo'])}
+              aria-label="Tipo domanda"
+            >
+              <option value="aperta">Aperta</option>
+              <option value="chiusa_singola">Chiusa (singola)</option>
+              <option value="chiusa_multipla">Chiusa (multipla)</option>
+            </select>
+          </label>
+
+          <label className={styles.formLabel}>
+            Difficoltà
+            <select
+              className={styles.formSelect}
+              value={draft.difficolta}
+              onChange={(e) =>
+                setField('difficolta', e.target.value as QuestionDraft['difficolta'])
+              }
+              aria-label="Difficoltà"
+            >
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </label>
+
+          <label className={styles.formLabel}>
+            Peso
+            <select
+              className={styles.formSelect}
+              value={draft.peso}
+              onChange={(e) => setField('peso', e.target.value as QuestionDraft['peso'])}
+              aria-label="Peso"
+            >
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </label>
+        </div>
+
+        {/* Testo */}
+        <label className={styles.formLabelBlock}>
+          Testo
+          <textarea
+            className={styles.formTextarea}
+            value={draft.testo}
+            onChange={(e) => setField('testo', e.target.value)}
+            rows={3}
+            aria-label="Testo domanda"
+          />
+        </label>
+
+        {/* Soluzione — aperta */}
+        {draft.tipo === 'aperta' && (
+          <label className={styles.formLabelBlock}>
+            Soluzione
+            <textarea
+              className={styles.formTextarea}
+              value={draft.soluzione}
+              onChange={(e) => setField('soluzione', e.target.value)}
+              rows={2}
+              aria-label="Soluzione"
+            />
+          </label>
+        )}
+
+        {/* Opzioni + soluzione — chiuse */}
+        {isChiusa && (
+          <div className={styles.opzioniSection}>
+            <div className={styles.opzioniHeader}>
+              <span className={styles.formLabel}>
+                Opzioni
+                {draft.tipo === 'chiusa_singola' && (
+                  <span className={styles.formHint}> — seleziona la risposta corretta</span>
+                )}
+                {draft.tipo === 'chiusa_multipla' && (
+                  <span className={styles.formHint}> — seleziona una o più risposte corrette</span>
+                )}
+              </span>
+            </div>
+
+            {draft.opzioni.map((o, i) => (
+              <div key={i} className={styles.opzioneRow}>
+                {/* Soluzione selector */}
+                {draft.tipo === 'chiusa_singola' ? (
+                  <input
+                    type="radio"
+                    name={`sol-${initial?.id ?? 'new'}`}
+                    checked={draft.soluzioneIds[0] === o.id}
+                    onChange={() => toggleSoluzione(o.id)}
+                    aria-label={`Seleziona come risposta corretta ${o.id}`}
+                    className={styles.opzioneRadio}
+                  />
+                ) : (
+                  <input
+                    type="checkbox"
+                    checked={draft.soluzioneIds.includes(o.id)}
+                    onChange={() => toggleSoluzione(o.id)}
+                    aria-label={`Seleziona come risposta corretta ${o.id}`}
+                    className={styles.opzioneCheckbox}
+                  />
+                )}
+
+                <input
+                  type="text"
+                  className={`${styles.formInput} ${styles.opzioneIdInput}`}
+                  value={o.id}
+                  onChange={(e) => updateOpzione(i, 'id', e.target.value)}
+                  placeholder="id"
+                  aria-label={`ID opzione ${i + 1}`}
+                />
+                <input
+                  type="text"
+                  className={`${styles.formInput} ${styles.opzioneTestoInput}`}
+                  value={o.testo}
+                  onChange={(e) => updateOpzione(i, 'testo', e.target.value)}
+                  placeholder="testo opzione"
+                  aria-label={`Testo opzione ${i + 1}`}
+                />
+                <button
+                  type="button"
+                  className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                  onClick={() => removeOpzione(i)}
+                  aria-label={`Rimuovi opzione ${o.id || i + 1}`}
+                  disabled={draft.opzioni.length <= 1}
+                >
+                  <IconTrash size={11} />
+                </button>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnSecondary} ${styles.btnSm}`}
+              onClick={addOpzione}
+            >
+              <IconPlus size={11} /> Aggiungi opzione
+            </button>
+          </div>
+        )}
+
+        {error && <p className={styles.errorMsg}>{error}</p>}
+
+        <div className={styles.formActions}>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnPrimary}`}
+            onClick={() => onSave(draft)}
+            disabled={saving}
+          >
+            {saving ? 'Salvataggio…' : 'Salva domanda'}
+          </button>
+          <button type="button" className={styles.btn} onClick={onCancel} disabled={saving}>
+            Annulla
+          </button>
+        </div>
+
+        {/* Notify about duplicates when editing existing id collision */}
+        {!isNew && existingIds.filter((id) => id === draft.id).length > 1 && (
+          <p className={styles.errorMsg}>ID duplicato nel pool.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main view ──────────────────────────────────────────────────────────────────
 
 export function DomandeView() {
   const { user } = useAuth();
@@ -137,11 +560,22 @@ export function DomandeView() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Delete flow
+  // Pool-level delete flow
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteBlockers, setDeleteBlockers] = useState<PoolDeleteBlocker[] | null>(null);
+
+  // Question editor
+  // 'new' = creating; a question id string = editing that question; null = no editor open
+  const [editingQuestionId, setEditingQuestionId] = useState<string | 'new' | null>(null);
+  const [questionSaving, setQuestionSaving] = useState(false);
+  const [questionSaveError, setQuestionSaveError] = useState<string | null>(null);
+
+  // Per-question delete confirmation
+  const [deleteConfirmQuestionId, setDeleteConfirmQuestionId] = useState<string | null>(null);
+  const [deletingQuestionId, setDeletingQuestionId] = useState<string | null>(null);
+  const [questionDeleteError, setQuestionDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     void loadPrograms();
@@ -205,6 +639,9 @@ export function DomandeView() {
     setDeleteConfirm(false);
     setDeleteError(null);
     setDeleteBlockers(null);
+    setEditingQuestionId(null);
+    setQuestionSaveError(null);
+    setDeleteConfirmQuestionId(null);
     setPoolState({ status: 'loading' });
 
     if (!program.activeImportId) {
@@ -251,6 +688,34 @@ export function DomandeView() {
     setEditorOpen(true);
   }
 
+  /** Shared helper: applies the new pool to state and courseTree after a successful savePool. */
+  function applyPoolUpdate(newPool: ParsedPool) {
+    setPoolState({ status: 'valid', pool: newPool });
+    setYamlDraft(serializePool(newPool));
+    setSelectedLesson((prev) =>
+      prev ? { ...prev, poolStatus: 'valid', questionCount: newPool.questions.length } : prev,
+    );
+    if (selectedProgram) {
+      setCourseTree((prev) => {
+        const cur = prev[selectedProgram.id];
+        if (!cur?.lessons) return prev;
+        return {
+          ...prev,
+          [selectedProgram.id]: {
+            ...cur,
+            lessons: cur.lessons.map((l) =>
+              l.id === selectedLesson?.id
+                ? { ...l, poolStatus: 'valid', questionCount: newPool.questions.length }
+                : l,
+            ),
+          },
+        };
+      });
+    }
+  }
+
+  // ── YAML editor save ────────────────────────────────────────────────────────
+
   async function handleSave() {
     if (!selectedProgram?.activeImportId || !selectedLesson) return;
     setYamlParseErrors([]);
@@ -273,35 +738,16 @@ export function DomandeView() {
         db,
         storage,
       });
-      const savedPool = parseResult.pool;
-      setPoolState({ status: 'valid', pool: savedPool });
-      setYamlDraft(serializePool(savedPool));
+      applyPoolUpdate(parseResult.pool);
       setEditorOpen(false);
-      // Update lesson in courseTree to reflect new poolStatus
-      setSelectedLesson((prev) =>
-        prev ? { ...prev, poolStatus: 'valid', questionCount: savedPool.questions.length } : prev,
-      );
-      setCourseTree((prev) => {
-        const cur = prev[selectedProgram.id];
-        if (!cur?.lessons) return prev;
-        return {
-          ...prev,
-          [selectedProgram.id]: {
-            ...cur,
-            lessons: cur.lessons.map((l) =>
-              l.id === selectedLesson.id
-                ? { ...l, poolStatus: 'valid', questionCount: savedPool.questions.length }
-                : l,
-            ),
-          },
-        };
-      });
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Errore durante il salvataggio.');
     } finally {
       setSaving(false);
     }
   }
+
+  // ── Pool-level delete ───────────────────────────────────────────────────────
 
   async function handleDelete() {
     if (!selectedProgram?.activeImportId || !selectedLesson) return;
@@ -349,9 +795,99 @@ export function DomandeView() {
     }
   }
 
+  // ── Single-question save ────────────────────────────────────────────────────
+
+  async function handleSaveQuestion(draft: QuestionDraft) {
+    if (!selectedProgram?.activeImportId || !selectedLesson || poolState.status !== 'valid') return;
+
+    const existing = poolState.pool.questions;
+    const raw = draftToRaw(draft);
+
+    let newQuestions: unknown[];
+    if (editingQuestionId === 'new') {
+      if (existing.some((q) => q.id === raw['id'])) {
+        setQuestionSaveError(`ID "${String(raw['id'])}" già presente nel pool.`);
+        return;
+      }
+      newQuestions = [...existing, raw];
+    } else {
+      newQuestions = existing.map((q) => (q.id === editingQuestionId ? raw : q));
+    }
+
+    const candidatePool = { schema: poolState.pool.schema, questions: newQuestions };
+    // Round-trip through serializePool/parsePool to validate the candidate pool.
+    const serialized = serializePool(candidatePool as ParsedPool);
+    const parseResult = parsePool(serialized, selectedLesson.filename);
+    if (!parseResult.ok) {
+      setQuestionSaveError(
+        parseResult.errors
+          .map((e) => `${e.questionId ? `[${e.questionId}] ` : ''}${e.field}: ${e.message}`)
+          .join(' | '),
+      );
+      return;
+    }
+
+    setQuestionSaving(true);
+    setQuestionSaveError(null);
+    try {
+      await savePool({
+        programId: selectedProgram.id,
+        importId: selectedProgram.activeImportId,
+        lessonId: selectedLesson.id,
+        pool: parseResult.pool,
+        ownerUid,
+        db,
+        storage,
+      });
+      applyPoolUpdate(parseResult.pool);
+      setEditingQuestionId(null);
+    } catch (err) {
+      setQuestionSaveError(err instanceof Error ? err.message : 'Errore durante il salvataggio.');
+    } finally {
+      setQuestionSaving(false);
+    }
+  }
+
+  // ── Single-question delete ──────────────────────────────────────────────────
+  //
+  // NOTA: questa operazione rimuove la domanda dal pool e salva l'intero pool
+  // aggiornato. Non verifica se la singola domanda sia referenziata in bozze di
+  // verifica — il blocco puntuale resta a livello pool (deletePool). In futuro,
+  // se si vuole bloccare la rimozione di singole domande già usate, occorre
+  // estendere il service layer con un guard per questionLocalId.
+
+  async function handleDeleteQuestion(questionId: string) {
+    if (!selectedProgram?.activeImportId || !selectedLesson || poolState.status !== 'valid') return;
+
+    const newQuestions = poolState.pool.questions.filter((q) => q.id !== questionId);
+    const candidatePool: ParsedPool = { schema: poolState.pool.schema, questions: newQuestions };
+
+    setDeletingQuestionId(questionId);
+    setQuestionDeleteError(null);
+    try {
+      await savePool({
+        programId: selectedProgram.id,
+        importId: selectedProgram.activeImportId,
+        lessonId: selectedLesson.id,
+        pool: candidatePool,
+        ownerUid,
+        db,
+        storage,
+      });
+      applyPoolUpdate(candidatePool);
+      setDeleteConfirmQuestionId(null);
+    } catch (err) {
+      setQuestionDeleteError(err instanceof Error ? err.message : "Errore durante l'eliminazione.");
+    } finally {
+      setDeletingQuestionId(null);
+    }
+  }
+
   const lessonTitle = selectedLesson
     ? resolveLessonTitle(selectedLesson.filename, selectedLesson.titolo)
     : null;
+
+  const anyQuestionEditorOpen = editingQuestionId !== null;
 
   return (
     <div className={`${styles.container} ${sidebarCollapsed ? styles.containerCollapsed : ''}`}>
@@ -549,7 +1085,7 @@ export function DomandeView() {
                 </div>
               </div>
 
-              {/* Delete confirmation */}
+              {/* Pool-level delete confirmation */}
               {deleteConfirm && (
                 <div className={styles.deleteConfirmBox} role="alert">
                   <p className={styles.deleteConfirmMsg}>
@@ -635,25 +1171,94 @@ export function DomandeView() {
                 </div>
               )}
 
-              {/* Pool valid — question list */}
+              {/* Pool valid — question list + editor */}
               {poolState.status === 'valid' && !editorOpen && (
                 <div className={styles.questionList}>
                   <div className={styles.poolMeta}>
                     <span className={styles.poolCount}>
                       {poolState.pool.questions.length} domande
                     </span>
-                    <button
-                      type="button"
-                      className={`${styles.btn} ${styles.btnSecondary}`}
-                      onClick={openEditor}
-                    >
-                      Modifica YAML
-                    </button>
+                    <div className={styles.poolMetaActions}>
+                      {!anyQuestionEditorOpen && (
+                        <button
+                          type="button"
+                          className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
+                          onClick={() => {
+                            setEditingQuestionId('new');
+                            setQuestionSaveError(null);
+                          }}
+                        >
+                          <IconPlus size={12} /> Nuova domanda
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className={`${styles.btn} ${styles.btnSecondary}`}
+                        onClick={openEditor}
+                        disabled={anyQuestionEditorOpen}
+                      >
+                        Modifica YAML
+                      </button>
+                    </div>
                   </div>
-                  {poolState.pool.questions.map((q, i) => (
-                    <QuestionCard key={q.id} q={q} index={i} />
-                  ))}
-                  {poolState.pool.questions.length === 0 && (
+
+                  {/* New question form at top */}
+                  {editingQuestionId === 'new' && (
+                    <QuestionEditorForm
+                      initial={null}
+                      existingIds={poolState.pool.questions.map((q) => q.id)}
+                      onSave={(draft) => void handleSaveQuestion(draft)}
+                      onCancel={() => {
+                        setEditingQuestionId(null);
+                        setQuestionSaveError(null);
+                      }}
+                      saving={questionSaving}
+                      error={questionSaveError}
+                    />
+                  )}
+
+                  {poolState.pool.questions.map((q, i) => {
+                    if (editingQuestionId === q.id) {
+                      return (
+                        <QuestionEditorForm
+                          key={q.id}
+                          initial={q}
+                          existingIds={poolState.pool.questions.map((qq) => qq.id)}
+                          onSave={(draft) => void handleSaveQuestion(draft)}
+                          onCancel={() => {
+                            setEditingQuestionId(null);
+                            setQuestionSaveError(null);
+                          }}
+                          saving={questionSaving}
+                          error={questionSaveError}
+                        />
+                      );
+                    }
+                    return (
+                      <QuestionCard
+                        key={q.id}
+                        q={q}
+                        index={i}
+                        onEdit={() => {
+                          setEditingQuestionId(q.id);
+                          setQuestionSaveError(null);
+                          setDeleteConfirmQuestionId(null);
+                        }}
+                        onDeleteRequest={() => {
+                          setDeleteConfirmQuestionId(q.id);
+                          setQuestionDeleteError(null);
+                        }}
+                        deleteConfirm={deleteConfirmQuestionId === q.id}
+                        deleting={deletingQuestionId === q.id}
+                        deleteError={deleteConfirmQuestionId === q.id ? questionDeleteError : null}
+                        onDeleteConfirm={() => void handleDeleteQuestion(q.id)}
+                        onDeleteCancel={() => setDeleteConfirmQuestionId(null)}
+                        disabled={anyQuestionEditorOpen}
+                      />
+                    );
+                  })}
+
+                  {poolState.pool.questions.length === 0 && editingQuestionId !== 'new' && (
                     <p className={styles.mutedMsg}>Il pool non contiene ancora domande.</p>
                   )}
                 </div>
