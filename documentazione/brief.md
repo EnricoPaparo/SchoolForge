@@ -281,7 +281,7 @@ Il sistema deve permettere:
 * sostituzione file;
 * eliminazione file.
 
-Per ridurre il tempo di avvio, il Modulo 1 include un kit di template per Programma/UDA/Lezione/Pool e una dashboard di prontezza: struttura valida, lezioni senza pool, pool non validi e numero di domande eleggibili. Non genera contenuti. La modifica dei Markdown da portale è pianificata separatamente nella fase RE.
+Per ridurre il tempo di avvio, il Modulo 1 include un kit di template per Programma/UDA/Lezione/Pool e una dashboard di prontezza: struttura valida, lezioni senza pool, pool non validi e numero di domande eleggibili. Non genera contenuti. La modifica dei Markdown da portale è gestita separatamente dal Repository Editor (RE, implementato).
 
 Il file pool è opzionale. Se non esiste, la lezione è valida e consultabile ma non contribuisce alla generazione delle verifiche.
 

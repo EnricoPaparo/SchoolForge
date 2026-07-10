@@ -1,7 +1,7 @@
 # SchoolForge — Contratto API
 
 **Versione:** 3.0
-**Stato:** contratto pre-implementazione
+**Stato:** in vigore — M1, M2, M3-lite e RE (Repository Editor) implementati; M3-full/M4/M5 restano specifica rinviata
 **Autorità:** `analisi-requisiti.md` e `architettura.md`
 
 ---

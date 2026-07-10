@@ -1,7 +1,7 @@
 # SchoolForge — Sicurezza e protezione dei dati
 
 **Versione:** 3.0
-**Stato:** requisiti da implementare nei pacchetti F-04 e successivi
+**Stato:** in vigore — controlli implementati da F-04 in avanti (M1, M2, M3-lite, RE); M3-full/M4/M5 restano specifica rinviata
 
 ---
 
