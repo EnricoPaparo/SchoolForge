@@ -17,6 +17,28 @@ export type LoadQuestionsResult =
   | { ok: true; questions: LoadedQuestion[] }
   | { ok: false; error: string };
 
+const POOL_READ_CONCURRENCY = 4;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await mapper(items[index]!);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
 /**
  * Loads the question text and options for each selected ref.
  * Fetches pool files from Firebase Storage, parses them, and returns
@@ -42,21 +64,35 @@ export async function loadSelectedQuestions(
 
   const resultMap = new Map<string, LoadedQuestion>();
 
-  for (const [poolRef, refs] of byPool) {
-    let content: string;
-    try {
-      const bytes = await getBytes(ref(storage, poolRef));
-      content = new TextDecoder().decode(bytes);
-    } catch {
-      return { ok: false, error: `Pool non trovato: ${poolRef}` };
-    }
+  const loadedPools = await mapWithConcurrency(
+    Array.from(byPool.entries()),
+    POOL_READ_CONCURRENCY,
+    async ([poolRef, refs]) => {
+      let content: string;
+      try {
+        const bytes = await getBytes(ref(storage, poolRef));
+        content = new TextDecoder().decode(bytes);
+      } catch {
+        return { ok: false as const, error: `Pool non trovato: ${poolRef}` };
+      }
 
-    const parsed = parsePool(content, poolRef);
-    if (!parsed.ok) {
-      return { ok: false, error: `Pool non valido: ${poolRef}` };
-    }
+      const parsed = parsePool(content, poolRef);
+      if (!parsed.ok) {
+        return { ok: false as const, error: `Pool non valido: ${poolRef}` };
+      }
 
-    const questionMap = new Map(parsed.pool.questions.map((q) => [q.id, q]));
+      return {
+        ok: true as const,
+        poolRef,
+        refs,
+        questionMap: new Map(parsed.pool.questions.map((q) => [q.id, q])),
+      };
+    },
+  );
+
+  for (const loaded of loadedPools) {
+    if (!loaded.ok) return { ok: false, error: loaded.error };
+    const { poolRef, refs, questionMap } = loaded;
 
     for (const r of refs) {
       const q = questionMap.get(r.questionLocalId);

@@ -1184,7 +1184,13 @@ describe('getUdaDeleteBlockers / getLessonDeleteBlockers', () => {
   it('maps verification documents into blockers for a matching UDA', async () => {
     mockGetDocs.mockResolvedValueOnce({ docs: [verificationDoc('v1')] });
 
-    const blockers = await getUdaDeleteBlockers('prog-1', 'imp-1', 'uda-01-reti', fakeDb);
+    const blockers = await getUdaDeleteBlockers(
+      OWNER_UID,
+      'prog-1',
+      'imp-1',
+      'uda-01-reti',
+      fakeDb,
+    );
 
     expect(blockers).toEqual([{ verificationId: 'v1', title: 'Verifica v1', status: 'draft' }]);
   });
@@ -1192,7 +1198,13 @@ describe('getUdaDeleteBlockers / getLessonDeleteBlockers', () => {
   it('returns no blockers for a UDA no verification references', async () => {
     mockGetDocs.mockResolvedValueOnce({ docs: [verificationDoc('v1')] });
 
-    const blockers = await getUdaDeleteBlockers('prog-1', 'imp-1', 'uda-02-sicurezza', fakeDb);
+    const blockers = await getUdaDeleteBlockers(
+      OWNER_UID,
+      'prog-1',
+      'imp-1',
+      'uda-02-sicurezza',
+      fakeDb,
+    );
 
     expect(blockers).toEqual([]);
   });
@@ -1201,6 +1213,7 @@ describe('getUdaDeleteBlockers / getLessonDeleteBlockers', () => {
     mockGetDocs.mockResolvedValueOnce({ docs: [verificationDoc('v1')] });
 
     const blockers = await getLessonDeleteBlockers(
+      OWNER_UID,
       'prog-1',
       'imp-1',
       'uda-01-reti',

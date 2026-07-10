@@ -11,6 +11,12 @@ const mockDoc = vi.fn();
 const mockCollection = vi.fn();
 const mockServerTimestamp = vi.fn(() => ({ _type: 'serverTimestamp' }));
 const mockRunTransaction = vi.fn();
+const mockBatchSet = vi.fn();
+const mockBatchCommit = vi.fn();
+const mockWriteBatch = vi.fn((_db?: unknown) => ({
+  set: mockBatchSet,
+  commit: mockBatchCommit,
+}));
 
 vi.mock('firebase/firestore', () => ({
   collection: (...args: unknown[]) => mockCollection(...args),
@@ -20,6 +26,7 @@ vi.mock('firebase/firestore', () => ({
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
   deleteDoc: (...args: unknown[]) => mockDeleteDoc(...args),
   runTransaction: (...args: unknown[]) => mockRunTransaction(...args),
+  writeBatch: (db: unknown) => mockWriteBatch(db),
   serverTimestamp: () => mockServerTimestamp(),
 }));
 
@@ -78,6 +85,7 @@ beforeEach(() => {
   mockCollection.mockReturnValue({ id: 'verifications' });
   mockSetDoc.mockResolvedValue(undefined);
   mockDeleteDoc.mockResolvedValue(undefined);
+  mockBatchCommit.mockResolvedValue(undefined);
 });
 
 // ─── listVerifications ────────────────────────────────────────────────────────
@@ -144,9 +152,11 @@ describe('createVerification', () => {
     );
 
     expect(id).toBe('new-ver-id');
-    expect(mockSetDoc).toHaveBeenCalledTimes(2);
+    expect(mockWriteBatch).toHaveBeenCalledWith(fakeDb);
+    expect(mockBatchSet).toHaveBeenCalledTimes(2);
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
 
-    const [, verData] = mockSetDoc.mock.calls[0];
+    const [, verData] = mockBatchSet.mock.calls[0];
     expect(verData.status).toBe('draft');
     expect(verData.visibility).toBe('hidden');
     expect(verData.config.questionRefs).toEqual([]);
@@ -154,7 +164,7 @@ describe('createVerification', () => {
     expect(verData.activatedAt).toBeNull();
     expect(verData.closedAt).toBeNull();
 
-    const [, auditData] = mockSetDoc.mock.calls[1];
+    const [, auditData] = mockBatchSet.mock.calls[1];
     expect(auditData.action).toBe('verification.created');
     expect(auditData.actorUid).toBe(OWNER_UID);
   });

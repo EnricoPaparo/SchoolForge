@@ -656,9 +656,12 @@ export class RepositoryDeleteBlockedError extends Error {
 }
 
 async function fetchVerificationsForGuard(
+  ownerUid: string,
   db: Firestore,
 ): Promise<VerificationForRepositoryGuard[]> {
-  const snap = await getDocs(collection(db, 'verifications'));
+  const snap = await getDocs(
+    query(collection(db, 'verifications'), where('ownerUid', '==', ownerUid)),
+  );
   return snap.docs.map((d) => {
     const data = d.data() as VerificationDoc;
     return { id: d.id, status: data.status, config: data.config };
@@ -666,23 +669,25 @@ async function fetchVerificationsForGuard(
 }
 
 export async function getUdaDeleteBlockers(
+  ownerUid: string,
   programId: string,
   importId: string,
   udaDir: string,
   db: Firestore,
 ): Promise<RepositoryDeleteBlocker[]> {
-  const verifications = await fetchVerificationsForGuard(db);
+  const verifications = await fetchVerificationsForGuard(ownerUid, db);
   return findRepositoryDeleteBlockers({ kind: 'uda', programId, importId, udaDir }, verifications);
 }
 
 export async function getLessonDeleteBlockers(
+  ownerUid: string,
   programId: string,
   importId: string,
   udaDir: string,
   lessonFilename: string,
   db: Firestore,
 ): Promise<RepositoryDeleteBlocker[]> {
-  const verifications = await fetchVerificationsForGuard(db);
+  const verifications = await fetchVerificationsForGuard(ownerUid, db);
   return findRepositoryDeleteBlockers(
     { kind: 'lesson', programId, importId, udaDir, lessonFilename },
     verifications,
@@ -699,6 +704,25 @@ async function deleteStorageObjectIfExists(storage: FirebaseStorage, path: strin
 }
 
 const DELETE_BATCH_CHUNK_SIZE = 400;
+const STORAGE_DELETE_CONCURRENCY = 4;
+
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  let cursor = 0;
+
+  async function consume() {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      await worker(items[index]!);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => consume()));
+}
 
 /** Firestore caps a single batch at 500 writes — chunk defensively below that. */
 async function deleteDocRefsInBatches(db: Firestore, refs: DocumentReference[]): Promise<void> {
@@ -738,6 +762,7 @@ export async function deleteLesson(params: {
   const lesson = snap.data() as LessonDoc;
 
   const blockers = await getLessonDeleteBlockers(
+    ownerUid,
     programId,
     importId,
     lesson.udaDir,
@@ -803,7 +828,7 @@ export async function deleteUda(params: {
   if (!udaSnap.exists()) throw new Error('UDA non trovata.');
   const uda = udaSnap.data() as UdaDoc;
 
-  const blockers = await getUdaDeleteBlockers(programId, importId, uda.dir, db);
+  const blockers = await getUdaDeleteBlockers(ownerUid, programId, importId, uda.dir, db);
   if (blockers.length > 0) throw new RepositoryDeleteBlockedError(blockers);
 
   const lessonsRef = collection(db, 'programs', programId, 'imports', importId, 'lessons');
@@ -816,13 +841,16 @@ export async function deleteUda(params: {
   const lessons = lessonsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as LessonDoc) }));
 
   try {
-    await Promise.all([
-      deleteStorageObjectIfExists(storage, `${uda.storageBasePath}/${uda.filename}`),
-      ...lessons.map((lesson) => deleteStorageObjectIfExists(storage, lesson.storageRef)),
+    const storagePaths = [
+      `${uda.storageBasePath}/${uda.filename}`,
+      ...lessons.map((lesson) => lesson.storageRef),
       ...lessons
-        .filter((lesson) => lesson.poolStorageRef)
-        .map((lesson) => deleteStorageObjectIfExists(storage, lesson.poolStorageRef as string)),
-    ]);
+        .map((lesson) => lesson.poolStorageRef)
+        .filter((path): path is string => Boolean(path)),
+    ];
+    await runWithConcurrency(storagePaths, STORAGE_DELETE_CONCURRENCY, (path) =>
+      deleteStorageObjectIfExists(storage, path),
+    );
   } catch {
     throw new Error('Impossibile eliminare i file della UDA su Storage.');
   }
