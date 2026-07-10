@@ -123,6 +123,14 @@ const LESSON_2 = {
   storageRef: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-002.md',
 };
 
+const LESSON_3 = {
+  ...LESSON_1,
+  id: 'lesson-3',
+  path: 'uda-01-reti/lezione-003.md',
+  filename: 'lezione-003.md',
+  storageRef: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-003.md',
+};
+
 async function expandCourse(name: RegExp) {
   fireEvent.click(await screen.findByRole('button', { name }));
 }
@@ -135,6 +143,10 @@ async function expandUda(name: RegExp) {
   const buttons = await screen.findAllByRole('button', { name });
   const toggle = buttons.find((b) => !b.getAttribute('aria-label')?.startsWith('Nuova lezione'));
   fireEvent.click(toggle ?? buttons[0]);
+}
+
+function enableReorderMode() {
+  fireEvent.click(screen.getByRole('button', { name: 'Riordina' }));
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -628,12 +640,28 @@ describe('LessonsView — new UDA creation (RE-03B)', () => {
 });
 
 describe('LessonsView — UDA reorder (RE-04)', () => {
+  it('keeps reorder controls hidden until reorder mode is enabled', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA_WITH_ORDER, UDA_2]);
+    mockListLessons.mockResolvedValue([]);
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+
+    expect(screen.queryByRole('button', { name: 'Sposta giù — uda-01-reti' })).toBeNull();
+
+    enableReorderMode();
+
+    expect(await screen.findByRole('button', { name: 'Sposta giù — uda-01-reti' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Fine riordino' })).toBeTruthy();
+  });
+
   it('disables "Sposta su" on the first UDA and "Sposta giù" on the last', async () => {
     mockListPrograms.mockResolvedValue([PROGRAM]);
     mockListUdas.mockResolvedValue([UDA_WITH_ORDER, UDA_2]);
     mockListLessons.mockResolvedValue([]);
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
+    enableReorderMode();
 
     expect(
       (await screen.findByRole('button', { name: 'Sposta su — uda-01-reti' })).hasAttribute(
@@ -660,6 +688,7 @@ describe('LessonsView — UDA reorder (RE-04)', () => {
     mockReorderUda.mockResolvedValue({ order: 1, neighborOrder: 0 });
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
+    enableReorderMode();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Sposta giù — uda-01-reti' }));
 
@@ -691,6 +720,7 @@ describe('LessonsView — UDA reorder (RE-04)', () => {
     );
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
+    enableReorderMode();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Sposta giù — uda-01-reti' }));
 
@@ -721,6 +751,7 @@ describe('LessonsView — UDA reorder (RE-04)', () => {
     );
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
+    enableReorderMode();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Sposta giù — uda-01-reti' }));
 
@@ -738,6 +769,7 @@ describe('LessonsView — lesson reorder (RE-04)', () => {
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
+    enableReorderMode();
   }
 
   it('disables "Sposta su" on the first lesson and "Sposta giù" on the last', async () => {
@@ -779,6 +811,34 @@ describe('LessonsView — lesson reorder (RE-04)', () => {
     const first = await screen.findByRole('button', { name: /Apri lezione lezione-002\.md/ });
     const second = screen.getByRole('button', { name: /Apri lezione lezione-001\.md/ });
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('moves the middle lesson in a three-lesson legacy UDA', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1, LESSON_2, LESSON_3]);
+    mockReorderLesson.mockResolvedValue({ order: 2, neighborOrder: 1 });
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+    await expandUda(/uda-01-reti/);
+    enableReorderMode();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sposta giù — lezione-002.md' }));
+
+    await waitFor(() => {
+      expect(mockReorderLesson).toHaveBeenCalledWith({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        lessonId: 'lesson-2',
+        neighborLessonId: 'lesson-3',
+        ownerUid: 'owner-uid',
+        db: {},
+      });
+    });
+
+    const second = await screen.findByRole('button', { name: /Apri lezione lezione-003\.md/ });
+    const third = screen.getByRole('button', { name: /Apri lezione lezione-002\.md/ });
+    expect(second.compareDocumentPosition(third) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows a clear error next to the lesson when reorder fails', async () => {

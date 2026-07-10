@@ -29,7 +29,7 @@ export type LessonItem = { id: string } & LessonDoc;
 
 function udaOrderOrLegacy(uda: Pick<UdaDoc, 'dir' | 'order'>): number {
   if (uda.order !== undefined) return uda.order;
-  const match = /^uda-(\d+)-/.exec(uda.dir);
+  const match = /^uda-(\d+)(?:-|$)/.exec(uda.dir);
   return match ? Number(match[1]) - 1 : Number.MAX_SAFE_INTEGER;
 }
 
@@ -44,7 +44,7 @@ function udaOrderOrLegacy(uda: Pick<UdaDoc, 'dir' | 'order'>): number {
  */
 function lessonOrderOrLegacy(lesson: Pick<LessonDoc, 'filename' | 'order'>): number {
   if (lesson.order !== undefined) return lesson.order;
-  const match = /^lezione-(\d+)-/.exec(lesson.filename);
+  const match = /^lezione-(\d+)(?:-|\.md$)/.exec(lesson.filename);
   return match ? Number(match[1]) - 1 : Number.MAX_SAFE_INTEGER;
 }
 

@@ -39,7 +39,7 @@ const IMPORT_HINT = 'Importa prima uno ZIP da Corsi per vedere le lezioni.';
 
 function udaOrderOrLegacy(uda: UdaItem): number {
   if (uda.order !== undefined) return uda.order;
-  const match = /^uda-(\d+)-/.exec(uda.dir);
+  const match = /^uda-(\d+)(?:-|$)/.exec(uda.dir);
   return match ? Number(match[1]) - 1 : Number.MAX_SAFE_INTEGER;
 }
 
@@ -51,7 +51,7 @@ function sortUdas(udas: UdaItem[]): UdaItem[] {
 
 function lessonOrderOrLegacy(lesson: LessonItem): number {
   if (lesson.order !== undefined) return lesson.order;
-  const match = /^lezione-(\d+)-/.exec(lesson.filename);
+  const match = /^lezione-(\d+)(?:-|\.md$)/.exec(lesson.filename);
   return match ? Number(match[1]) - 1 : Number.MAX_SAFE_INTEGER;
 }
 
@@ -76,6 +76,7 @@ export function LessonsView() {
 
   const [programs, setPrograms] = useState<ProgramItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [reorderMode, setReorderMode] = useState(false);
 
   const [courseTree, setCourseTree] = useState<Record<string, CourseTreeState>>({});
   const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
@@ -588,7 +589,17 @@ export function LessonsView() {
   return (
     <section aria-label="Lezioni" className={styles.container}>
       <aside className={styles.sidebar}>
-        <h2 className={styles.sidebarTitle}>Lezioni</h2>
+        <div className={styles.sidebarHeader}>
+          <h2 className={styles.sidebarTitle}>Lezioni</h2>
+          <button
+            type="button"
+            className={`${styles.reorderModeBtn}${reorderMode ? ` ${styles.reorderModeBtnActive}` : ''}`}
+            aria-pressed={reorderMode}
+            onClick={() => setReorderMode((prev) => !prev)}
+          >
+            {reorderMode ? 'Fine riordino' : 'Riordina'}
+          </button>
+        </div>
 
         <ul className={styles.courseList}>
           {programs.map((program) => {
@@ -670,36 +681,38 @@ export function LessonsView() {
                                   </span>
                                   <span className={styles.udaDir}>{uda.dir}</span>
                                 </button>
-                                <div
-                                  className={styles.reorderControls}
-                                  role="group"
-                                  aria-label={`Riordina ${uda.dir}`}
-                                >
-                                  <button
-                                    type="button"
-                                    className={styles.reorderBtn}
-                                    title="Sposta su"
-                                    aria-label={`Sposta su — ${uda.dir}`}
-                                    disabled={udaIndex === 0 || udaBusy}
-                                    onClick={() =>
-                                      void handleMoveUda(program, tree.udas!, udaIndex, -1)
-                                    }
+                                {reorderMode && (
+                                  <div
+                                    className={styles.reorderControls}
+                                    role="group"
+                                    aria-label={`Riordina ${uda.dir}`}
                                   >
-                                    ▲
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={styles.reorderBtn}
-                                    title="Sposta giù"
-                                    aria-label={`Sposta giù — ${uda.dir}`}
-                                    disabled={udaIndex === tree.udas!.length - 1 || udaBusy}
-                                    onClick={() =>
-                                      void handleMoveUda(program, tree.udas!, udaIndex, 1)
-                                    }
-                                  >
-                                    ▼
-                                  </button>
-                                </div>
+                                    <button
+                                      type="button"
+                                      className={styles.reorderBtn}
+                                      title="Sposta su"
+                                      aria-label={`Sposta su — ${uda.dir}`}
+                                      disabled={udaIndex === 0 || udaBusy}
+                                      onClick={() =>
+                                        void handleMoveUda(program, tree.udas!, udaIndex, -1)
+                                      }
+                                    >
+                                      ▲
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={styles.reorderBtn}
+                                      title="Sposta giù"
+                                      aria-label={`Sposta giù — ${uda.dir}`}
+                                      disabled={udaIndex === tree.udas!.length - 1 || udaBusy}
+                                      onClick={() =>
+                                        void handleMoveUda(program, tree.udas!, udaIndex, 1)
+                                      }
+                                    >
+                                      ▼
+                                    </button>
+                                  </div>
+                                )}
                                 <button
                                   type="button"
                                   className={styles.udaAddBtn}
@@ -745,49 +758,51 @@ export function LessonsView() {
                                               >
                                                 {title}
                                               </button>
-                                              <div
-                                                className={styles.reorderControls}
-                                                role="group"
-                                                aria-label={`Riordina ${lesson.filename}`}
-                                              >
-                                                <button
-                                                  type="button"
-                                                  className={styles.reorderBtn}
-                                                  title="Sposta su"
-                                                  aria-label={`Sposta su — ${lesson.filename}`}
-                                                  disabled={lessonIndex === 0 || lessonBusy}
-                                                  onClick={() =>
-                                                    void handleMoveLesson(
-                                                      program,
-                                                      udaLessons,
-                                                      lessonIndex,
-                                                      -1,
-                                                    )
-                                                  }
+                                              {reorderMode && (
+                                                <div
+                                                  className={styles.reorderControls}
+                                                  role="group"
+                                                  aria-label={`Riordina ${lesson.filename}`}
                                                 >
-                                                  ▲
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  className={styles.reorderBtn}
-                                                  title="Sposta giù"
-                                                  aria-label={`Sposta giù — ${lesson.filename}`}
-                                                  disabled={
-                                                    lessonIndex === udaLessons.length - 1 ||
-                                                    lessonBusy
-                                                  }
-                                                  onClick={() =>
-                                                    void handleMoveLesson(
-                                                      program,
-                                                      udaLessons,
-                                                      lessonIndex,
-                                                      1,
-                                                    )
-                                                  }
-                                                >
-                                                  ▼
-                                                </button>
-                                              </div>
+                                                  <button
+                                                    type="button"
+                                                    className={styles.reorderBtn}
+                                                    title="Sposta su"
+                                                    aria-label={`Sposta su — ${lesson.filename}`}
+                                                    disabled={lessonIndex === 0 || lessonBusy}
+                                                    onClick={() =>
+                                                      void handleMoveLesson(
+                                                        program,
+                                                        udaLessons,
+                                                        lessonIndex,
+                                                        -1,
+                                                      )
+                                                    }
+                                                  >
+                                                    ▲
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    className={styles.reorderBtn}
+                                                    title="Sposta giù"
+                                                    aria-label={`Sposta giù — ${lesson.filename}`}
+                                                    disabled={
+                                                      lessonIndex === udaLessons.length - 1 ||
+                                                      lessonBusy
+                                                    }
+                                                    onClick={() =>
+                                                      void handleMoveLesson(
+                                                        program,
+                                                        udaLessons,
+                                                        lessonIndex,
+                                                        1,
+                                                      )
+                                                    }
+                                                  >
+                                                    ▼
+                                                  </button>
+                                                </div>
+                                              )}
                                             </div>
                                             {lessonReorderError?.lessonId === lesson.id && (
                                               <p
