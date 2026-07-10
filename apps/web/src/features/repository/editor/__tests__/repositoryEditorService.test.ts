@@ -6,6 +6,9 @@ const mockGetDoc = vi.fn();
 const mockGetDocs = vi.fn();
 const mockSetDoc = vi.fn();
 const mockUpdateDoc = vi.fn();
+const mockBatchUpdate = vi.fn();
+const mockBatchCommit = vi.fn();
+const mockWriteBatch = vi.fn();
 const mockServerTimestamp = vi.fn(() => ({ _type: 'serverTimestamp' }));
 
 function isCollectionRef(value: unknown): value is { __path: string } {
@@ -29,6 +32,7 @@ vi.mock('firebase/firestore', () => ({
   query: (collRef: unknown) => collRef,
   where: () => ({}),
   increment: (n: number) => ({ __increment: n }),
+  writeBatch: (...args: unknown[]) => mockWriteBatch(...args),
   serverTimestamp: () => mockServerTimestamp(),
 }));
 
@@ -44,6 +48,8 @@ vi.mock('firebase/storage', () => ({
 import {
   createLesson,
   createUda,
+  reorderLesson,
+  reorderUda,
   updateLessonMarkdownBody,
   updateLessonMetadata,
   updateUdaMetadata,
@@ -71,6 +77,8 @@ beforeEach(() => {
   mockUpdateDoc.mockResolvedValue(undefined);
   mockUploadBytes.mockResolvedValue(undefined);
   mockGetDocs.mockResolvedValue({ docs: [] });
+  mockBatchCommit.mockResolvedValue(undefined);
+  mockWriteBatch.mockReturnValue({ update: mockBatchUpdate, commit: mockBatchCommit });
 });
 
 describe('updateUdaMetadata', () => {
@@ -789,5 +797,304 @@ describe('createUda', () => {
       'Il file della UDA è stato creato su Storage ma non è stato possibile salvare i metadati su Firestore. Riprova.',
     );
     expect(mockUploadBytes).toHaveBeenCalled();
+  });
+});
+
+describe('reorderUda', () => {
+  it('throws when the UDA does not exist', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => false });
+
+    await expect(
+      reorderUda({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-01',
+        neighborUdaId: 'uda-02',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+      }),
+    ).rejects.toThrow('UDA non trovata.');
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+  });
+
+  it('throws when the neighbor UDA does not exist', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ dir: 'uda-01-reti' }) })
+      .mockResolvedValueOnce({ exists: () => false });
+
+    await expect(
+      reorderUda({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-01',
+        neighborUdaId: 'uda-02',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+      }),
+    ).rejects.toThrow('UDA vicina non trovata.');
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+  });
+
+  it('swaps explicit order values in a single batch and writes an audit event', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ dir: 'uda-02-reti', order: 1 }) })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ dir: 'uda-01-intro', order: 0 }),
+      });
+
+    const result = await reorderUda({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-02',
+      neighborUdaId: 'uda-01',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+    });
+
+    expect(result).toEqual({ order: 0, neighborOrder: 1 });
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1/imports/imp-1/udas/uda-02' },
+      { order: 0 },
+    );
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1/imports/imp-1/udas/uda-01' },
+      { order: 1 },
+    );
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'auditEvents/auto-id' },
+      expect.objectContaining({ action: 'uda.reordered', targetId: 'uda-02' }),
+    );
+  });
+
+  it('derives the swap from the uda-XX dir prefix when order is missing on both sides', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ dir: 'uda-02-reti' }) })
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ dir: 'uda-01-intro' }) });
+
+    const result = await reorderUda({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-02',
+      neighborUdaId: 'uda-01',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+    });
+
+    // uda-02 -> legacy order 1, uda-01 -> legacy order 0; swapped.
+    expect(result).toEqual({ order: 0, neighborOrder: 1 });
+  });
+
+  it('throws a single clear error when the batch commit fails, never a Storage-specific one', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({ dir: 'uda-02-reti', order: 1 }) })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ dir: 'uda-01-intro', order: 0 }),
+      });
+    mockBatchCommit.mockRejectedValueOnce(new Error('permission-denied'));
+
+    await expect(
+      reorderUda({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-02',
+        neighborUdaId: 'uda-01',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+      }),
+    ).rejects.toThrow('Impossibile salvare il nuovo ordine delle UDA. Riprova.');
+    expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe('reorderLesson', () => {
+  it('throws when the lesson does not exist', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => false });
+
+    await expect(
+      reorderLesson({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        lessonId: 'lesson-1',
+        neighborLessonId: 'lesson-2',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+      }),
+    ).rejects.toThrow('Lezione non trovata.');
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+  });
+
+  it('throws when the neighbor lesson does not exist', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ udaDir: 'uda-01-reti', filename: 'lezione-002-tcp.md' }),
+      })
+      .mockResolvedValueOnce({ exists: () => false });
+
+    await expect(
+      reorderLesson({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        lessonId: 'lesson-1',
+        neighborLessonId: 'lesson-2',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+      }),
+    ).rejects.toThrow('Lezione vicina non trovata.');
+  });
+
+  it('rejects a swap between lessons of different UDAs', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ udaDir: 'uda-01-reti', filename: 'lezione-001-http.md', order: 0 }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ udaDir: 'uda-02-sicurezza', filename: 'lezione-001-intro.md', order: 0 }),
+      });
+
+    await expect(
+      reorderLesson({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        lessonId: 'lesson-1',
+        neighborLessonId: 'lesson-2',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+      }),
+    ).rejects.toThrow('Le lezioni non appartengono alla stessa UDA.');
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+  });
+
+  it('swaps order and updates publicLessons for both lessons when the projection exists', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ udaDir: 'uda-01-reti', filename: 'lezione-002-tcp.md', order: 1 }),
+      }) // lesson
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ udaDir: 'uda-01-reti', filename: 'lezione-001-http.md', order: 0 }),
+      }) // neighbor
+      .mockResolvedValueOnce({ exists: () => true }) // publicLessons/lesson-1
+      .mockResolvedValueOnce({ exists: () => true }); // publicLessons/lesson-2
+
+    const result = await reorderLesson({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonId: 'lesson-1',
+      neighborLessonId: 'lesson-2',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+    });
+
+    expect(result).toEqual({ order: 0, neighborOrder: 1 });
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1/imports/imp-1/lessons/lesson-1' },
+      { order: 0 },
+    );
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1/imports/imp-1/lessons/lesson-2' },
+      { order: 1 },
+    );
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      { __path: 'publicLessons/lesson-1' },
+      { order: 0 },
+    );
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      { __path: 'publicLessons/lesson-2' },
+      { order: 1 },
+    );
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'auditEvents/auto-id' },
+      expect.objectContaining({ action: 'lesson.reordered', targetId: 'lesson-1' }),
+    );
+  });
+
+  it('skips the publicLessons update when no projection exists for either lesson', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ udaDir: 'uda-01-reti', filename: 'lezione-002-tcp.md', order: 1 }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ udaDir: 'uda-01-reti', filename: 'lezione-001-http.md', order: 0 }),
+      })
+      .mockResolvedValueOnce({ exists: () => false })
+      .mockResolvedValueOnce({ exists: () => false });
+
+    await reorderLesson({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonId: 'lesson-1',
+      neighborLessonId: 'lesson-2',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+    });
+
+    expect(mockBatchUpdate).toHaveBeenCalledTimes(2);
+    expect(mockBatchUpdate).not.toHaveBeenCalledWith(
+      { __path: 'publicLessons/lesson-1' },
+      expect.anything(),
+    );
+  });
+
+  it('derives the swap from the lezione-XXX filename prefix when order is missing on both sides', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ udaDir: 'uda-01-reti', filename: 'lezione-002-tcp.md' }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ udaDir: 'uda-01-reti', filename: 'lezione-001-http.md' }),
+      })
+      .mockResolvedValueOnce({ exists: () => false })
+      .mockResolvedValueOnce({ exists: () => false });
+
+    const result = await reorderLesson({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonId: 'lesson-1',
+      neighborLessonId: 'lesson-2',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+    });
+
+    // lezione-002 -> legacy order 1, lezione-001 -> legacy order 0; swapped.
+    expect(result).toEqual({ order: 0, neighborOrder: 1 });
+  });
+
+  it('throws a single clear error when the batch commit fails', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ udaDir: 'uda-01-reti', filename: 'lezione-002-tcp.md', order: 1 }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ udaDir: 'uda-01-reti', filename: 'lezione-001-http.md', order: 0 }),
+      })
+      .mockResolvedValueOnce({ exists: () => false })
+      .mockResolvedValueOnce({ exists: () => false });
+    mockBatchCommit.mockRejectedValueOnce(new Error('permission-denied'));
+
+    await expect(
+      reorderLesson({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        lessonId: 'lesson-1',
+        neighborLessonId: 'lesson-2',
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+      }),
+    ).rejects.toThrow('Impossibile salvare il nuovo ordine delle lezioni. Riprova.');
+    expect(mockSetDoc).not.toHaveBeenCalled();
   });
 });

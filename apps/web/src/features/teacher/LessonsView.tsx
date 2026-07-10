@@ -16,6 +16,8 @@ import type { LessonMetadata } from '../repository/validation/types.js';
 import {
   createLesson,
   createUda,
+  reorderLesson,
+  reorderUda,
   updateLessonMarkdownBody,
   updateLessonMetadata,
 } from '../repository/editor/repositoryEditorService.js';
@@ -44,6 +46,21 @@ function udaOrderOrLegacy(uda: UdaItem): number {
 function sortUdas(udas: UdaItem[]): UdaItem[] {
   return [...udas].sort(
     (a, b) => udaOrderOrLegacy(a) - udaOrderOrLegacy(b) || a.dir.localeCompare(b.dir),
+  );
+}
+
+function lessonOrderOrLegacy(lesson: LessonItem): number {
+  if (lesson.order !== undefined) return lesson.order;
+  const match = /^lezione-(\d+)-/.exec(lesson.filename);
+  return match ? Number(match[1]) - 1 : Number.MAX_SAFE_INTEGER;
+}
+
+function sortLessons(lessons: LessonItem[]): LessonItem[] {
+  return [...lessons].sort(
+    (a, b) =>
+      a.udaDir.localeCompare(b.udaDir) ||
+      lessonOrderOrLegacy(a) - lessonOrderOrLegacy(b) ||
+      a.filename.localeCompare(b.filename),
   );
 }
 
@@ -110,6 +127,18 @@ export function LessonsView() {
   const [savingNewUda, setSavingNewUda] = useState(false);
   const [createUdaError, setCreateUdaError] = useState<string | null>(null);
 
+  // ── UDA/lesson reorder (RE-04) ───────────────────────────────────
+  const [busyUdaIds, setBusyUdaIds] = useState<Set<string>>(new Set());
+  const [udaReorderError, setUdaReorderError] = useState<{
+    udaId: string;
+    message: string;
+  } | null>(null);
+  const [busyLessonIds, setBusyLessonIds] = useState<Set<string>>(new Set());
+  const [lessonReorderError, setLessonReorderError] = useState<{
+    lessonId: string;
+    message: string;
+  } | null>(null);
+
   useEffect(() => {
     void loadPrograms();
   }, []);
@@ -162,6 +191,94 @@ export function LessonsView() {
       else next.add(key);
       return next;
     });
+  }
+
+  async function handleMoveUda(
+    program: ProgramItem,
+    udas: UdaItem[],
+    index: number,
+    direction: -1 | 1,
+  ) {
+    if (!program.activeImportId) return;
+    const neighborIndex = index + direction;
+    if (neighborIndex < 0 || neighborIndex >= udas.length) return;
+    const uda = udas[index];
+    const neighbor = udas[neighborIndex];
+    setUdaReorderError(null);
+    setBusyUdaIds(new Set([uda.id, neighbor.id]));
+    try {
+      const { order, neighborOrder } = await reorderUda({
+        programId: program.id,
+        importId: program.activeImportId,
+        udaId: uda.id,
+        neighborUdaId: neighbor.id,
+        ownerUid,
+        db,
+      });
+      setCourseTree((prev) => {
+        const cur = prev[program.id];
+        if (!cur?.udas) return prev;
+        const nextUdas = sortUdas(
+          cur.udas.map((u) => {
+            if (u.id === uda.id) return { ...u, order };
+            if (u.id === neighbor.id) return { ...u, order: neighborOrder };
+            return u;
+          }),
+        );
+        return { ...prev, [program.id]: { ...cur, udas: nextUdas } };
+      });
+    } catch (err) {
+      setUdaReorderError({
+        udaId: uda.id,
+        message: err instanceof Error ? err.message : 'Impossibile riordinare la UDA.',
+      });
+    } finally {
+      setBusyUdaIds(new Set());
+    }
+  }
+
+  async function handleMoveLesson(
+    program: ProgramItem,
+    lessonsInUda: LessonItem[],
+    index: number,
+    direction: -1 | 1,
+  ) {
+    if (!program.activeImportId) return;
+    const neighborIndex = index + direction;
+    if (neighborIndex < 0 || neighborIndex >= lessonsInUda.length) return;
+    const lesson = lessonsInUda[index];
+    const neighbor = lessonsInUda[neighborIndex];
+    setLessonReorderError(null);
+    setBusyLessonIds(new Set([lesson.id, neighbor.id]));
+    try {
+      const { order, neighborOrder } = await reorderLesson({
+        programId: program.id,
+        importId: program.activeImportId,
+        lessonId: lesson.id,
+        neighborLessonId: neighbor.id,
+        ownerUid,
+        db,
+      });
+      setCourseTree((prev) => {
+        const cur = prev[program.id];
+        if (!cur?.lessons) return prev;
+        const nextLessons = sortLessons(
+          cur.lessons.map((l) => {
+            if (l.id === lesson.id) return { ...l, order };
+            if (l.id === neighbor.id) return { ...l, order: neighborOrder };
+            return l;
+          }),
+        );
+        return { ...prev, [program.id]: { ...cur, lessons: nextLessons } };
+      });
+    } catch (err) {
+      setLessonReorderError({
+        lessonId: lesson.id,
+        message: err instanceof Error ? err.message : 'Impossibile riordinare la lezione.',
+      });
+    } finally {
+      setBusyLessonIds(new Set());
+    }
   }
 
   function toggleCreateUda(program: ProgramItem) {
@@ -299,9 +416,7 @@ export function LessonsView() {
       setCourseTree((prev) => {
         const cur = prev[program.id];
         if (!cur) return prev;
-        const lessons = [...(cur.lessons ?? []), newLesson].sort(
-          (a, b) => a.udaDir.localeCompare(b.udaDir) || a.filename.localeCompare(b.filename),
-        );
+        const lessons = sortLessons([...(cur.lessons ?? []), newLesson]);
         return { ...prev, [program.id]: { ...cur, lessons } };
       });
       setCreatingLessonUdaKey(null);
@@ -527,7 +642,7 @@ export function LessonsView() {
                       <p className="state-empty">Nessuna UDA.</p>
                     ) : (
                       <ul className={styles.udaList}>
-                        {tree.udas.map((uda) => {
+                        {tree.udas.map((uda, udaIndex) => {
                           const udaKey = `${program.id}:${uda.dir}`;
                           const udaExpanded = expandedUdas.has(udaKey);
                           const udaLessons = (tree.lessons ?? []).filter(
@@ -535,6 +650,7 @@ export function LessonsView() {
                           );
 
                           const udaCreating = creatingLessonUdaKey === udaKey;
+                          const udaBusy = busyUdaIds.has(uda.id);
 
                           return (
                             <li key={uda.id}>
@@ -554,6 +670,36 @@ export function LessonsView() {
                                   </span>
                                   <span className={styles.udaDir}>{uda.dir}</span>
                                 </button>
+                                <div
+                                  className={styles.reorderControls}
+                                  role="group"
+                                  aria-label={`Riordina ${uda.dir}`}
+                                >
+                                  <button
+                                    type="button"
+                                    className={styles.reorderBtn}
+                                    title="Sposta su"
+                                    aria-label={`Sposta su — ${uda.dir}`}
+                                    disabled={udaIndex === 0 || udaBusy}
+                                    onClick={() =>
+                                      void handleMoveUda(program, tree.udas!, udaIndex, -1)
+                                    }
+                                  >
+                                    ▲
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={styles.reorderBtn}
+                                    title="Sposta giù"
+                                    aria-label={`Sposta giù — ${uda.dir}`}
+                                    disabled={udaIndex === tree.udas!.length - 1 || udaBusy}
+                                    onClick={() =>
+                                      void handleMoveUda(program, tree.udas!, udaIndex, 1)
+                                    }
+                                  >
+                                    ▼
+                                  </button>
+                                </div>
                                 <button
                                   type="button"
                                   className={styles.udaAddBtn}
@@ -566,6 +712,12 @@ export function LessonsView() {
                                 </button>
                               </div>
 
+                              {udaReorderError?.udaId === uda.id && (
+                                <p role="alert" className={`text-error ${styles.reorderError}`}>
+                                  {udaReorderError.message}
+                                </p>
+                              )}
+
                               {udaExpanded && (
                                 <div
                                   id={`lezioni-uda-panel-${uda.id}`}
@@ -575,22 +727,76 @@ export function LessonsView() {
                                     <p className="state-empty">Nessuna lezione.</p>
                                   ) : (
                                     <ul className={styles.lessonList}>
-                                      {udaLessons.map((lesson) => {
+                                      {udaLessons.map((lesson, lessonIndex) => {
                                         const { title } = resolveLessonTitle(
                                           lesson.filename,
                                           lesson.titolo,
                                         );
+                                        const lessonBusy = busyLessonIds.has(lesson.id);
                                         return (
                                           <li key={lesson.id}>
-                                            <button
-                                              type="button"
-                                              className={styles.lessonBtn}
-                                              aria-pressed={selectedLesson?.id === lesson.id}
-                                              aria-label={`Apri lezione ${lesson.filename}`}
-                                              onClick={() => void selectLesson(program, lesson)}
-                                            >
-                                              {title}
-                                            </button>
+                                            <div className={styles.lessonRow}>
+                                              <button
+                                                type="button"
+                                                className={styles.lessonBtn}
+                                                aria-pressed={selectedLesson?.id === lesson.id}
+                                                aria-label={`Apri lezione ${lesson.filename}`}
+                                                onClick={() => void selectLesson(program, lesson)}
+                                              >
+                                                {title}
+                                              </button>
+                                              <div
+                                                className={styles.reorderControls}
+                                                role="group"
+                                                aria-label={`Riordina ${lesson.filename}`}
+                                              >
+                                                <button
+                                                  type="button"
+                                                  className={styles.reorderBtn}
+                                                  title="Sposta su"
+                                                  aria-label={`Sposta su — ${lesson.filename}`}
+                                                  disabled={lessonIndex === 0 || lessonBusy}
+                                                  onClick={() =>
+                                                    void handleMoveLesson(
+                                                      program,
+                                                      udaLessons,
+                                                      lessonIndex,
+                                                      -1,
+                                                    )
+                                                  }
+                                                >
+                                                  ▲
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  className={styles.reorderBtn}
+                                                  title="Sposta giù"
+                                                  aria-label={`Sposta giù — ${lesson.filename}`}
+                                                  disabled={
+                                                    lessonIndex === udaLessons.length - 1 ||
+                                                    lessonBusy
+                                                  }
+                                                  onClick={() =>
+                                                    void handleMoveLesson(
+                                                      program,
+                                                      udaLessons,
+                                                      lessonIndex,
+                                                      1,
+                                                    )
+                                                  }
+                                                >
+                                                  ▼
+                                                </button>
+                                              </div>
+                                            </div>
+                                            {lessonReorderError?.lessonId === lesson.id && (
+                                              <p
+                                                role="alert"
+                                                className={`text-error ${styles.reorderError}`}
+                                              >
+                                                {lessonReorderError.message}
+                                              </p>
+                                            )}
                                           </li>
                                         );
                                       })}

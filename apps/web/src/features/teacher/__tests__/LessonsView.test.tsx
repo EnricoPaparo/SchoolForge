@@ -34,11 +34,15 @@ const mockUpdateLessonMetadata = vi.fn();
 const mockUpdateLessonMarkdownBody = vi.fn();
 const mockCreateLesson = vi.fn();
 const mockCreateUda = vi.fn();
+const mockReorderUda = vi.fn();
+const mockReorderLesson = vi.fn();
 vi.mock('../../repository/editor/repositoryEditorService.js', () => ({
   updateLessonMetadata: (...args: unknown[]) => mockUpdateLessonMetadata(...args),
   updateLessonMarkdownBody: (...args: unknown[]) => mockUpdateLessonMarkdownBody(...args),
   createLesson: (...args: unknown[]) => mockCreateLesson(...args),
   createUda: (...args: unknown[]) => mockCreateUda(...args),
+  reorderUda: (...args: unknown[]) => mockReorderUda(...args),
+  reorderLesson: (...args: unknown[]) => mockReorderLesson(...args),
 }));
 
 afterEach(cleanup);
@@ -77,6 +81,26 @@ const UDA_09_LEGACY = {
   storageBasePath: 'repository/owner-uid/imports/imp-1/uda-09-legacy',
 };
 
+const UDA_2 = {
+  ...UDA,
+  id: 'uda-2',
+  dir: 'uda-02-sicurezza',
+  filename: 'uda-02-sicurezza.md',
+  storageBasePath: 'repository/owner-uid/imports/imp-1/uda-02-sicurezza',
+  order: 1,
+};
+
+const UDA_3 = {
+  ...UDA,
+  id: 'uda-3',
+  dir: 'uda-03-database',
+  filename: 'uda-03-database.md',
+  storageBasePath: 'repository/owner-uid/imports/imp-1/uda-03-database',
+  order: 2,
+};
+
+const UDA_WITH_ORDER = { ...UDA, order: 0 };
+
 const LESSON_1 = {
   id: 'lesson-1',
   ownerUid: 'owner-uid',
@@ -89,6 +113,14 @@ const LESSON_1 = {
   storageRef: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-001.md',
   poolStorageRef: null,
   completed: false,
+};
+
+const LESSON_2 = {
+  ...LESSON_1,
+  id: 'lesson-2',
+  path: 'uda-01-reti/lezione-002.md',
+  filename: 'lezione-002.md',
+  storageRef: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-002.md',
 };
 
 async function expandCourse(name: RegExp) {
@@ -170,7 +202,9 @@ describe('LessonsView — expanding a UDA shows lessons', () => {
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    expect(await screen.findByRole('button', { name: /lezione-001\.md/ })).toBeTruthy();
+    expect(
+      await screen.findByRole('button', { name: /Apri lezione lezione-001\.md/ }),
+    ).toBeTruthy();
   });
 });
 
@@ -183,7 +217,7 @@ describe('LessonsView — selecting a lesson', () => {
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    fireEvent.click(await screen.findByRole('button', { name: /lezione-001\.md/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Apri lezione lezione-001\.md/ }));
 
     await waitFor(() => {
       expect(mockFetchLessonContent).toHaveBeenCalledWith(LESSON_1.storageRef, {});
@@ -198,7 +232,7 @@ describe('LessonsView — selecting a lesson', () => {
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    fireEvent.click(await screen.findByRole('button', { name: /lezione-001\.md/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Apri lezione lezione-001\.md/ }));
 
     expect(await screen.findByRole('heading', { name: 'Lezione' })).toBeTruthy();
     expect(screen.getByText('Contenuto della lezione.')).toBeTruthy();
@@ -212,7 +246,7 @@ describe('LessonsView — selecting a lesson', () => {
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    fireEvent.click(await screen.findByRole('button', { name: /lezione-001\.md/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Apri lezione lezione-001\.md/ }));
 
     // No front matter on this lesson: the heading falls back to a
     // cleaned-up filename, not the raw "lezione-001.md" — the program name
@@ -232,7 +266,7 @@ describe('LessonsView — selecting a lesson', () => {
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    fireEvent.click(await screen.findByRole('button', { name: /lezione-001\.md/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Apri lezione lezione-001\.md/ }));
     await screen.findByText('Contenuto della lezione.');
 
     fireEvent.click(screen.getByRole('button', { name: /Scarica PDF/ }));
@@ -256,7 +290,7 @@ describe('LessonsView — selecting a lesson', () => {
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    fireEvent.click(await screen.findByRole('button', { name: /lezione-001\.md/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Apri lezione lezione-001\.md/ }));
     await screen.findByText('Contenuto.');
 
     fireEvent.click(screen.getByRole('button', { name: /Scarica PDF/ }));
@@ -272,7 +306,7 @@ describe('LessonsView — selecting a lesson', () => {
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    const lessonBtn = await screen.findByRole('button', { name: /lezione-001\.md/ });
+    const lessonBtn = await screen.findByRole('button', { name: /Apri lezione lezione-001\.md/ });
     expect(lessonBtn.getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(lessonBtn);
     await waitFor(() => expect(lessonBtn.getAttribute('aria-pressed')).toBe('true'));
@@ -286,7 +320,7 @@ describe('LessonsView — selecting a lesson', () => {
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    fireEvent.click(await screen.findByRole('button', { name: /lezione-001\.md/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Apri lezione lezione-001\.md/ }));
 
     expect(await screen.findByText(/Impossibile caricare il contenuto della lezione/)).toBeTruthy();
   });
@@ -310,7 +344,7 @@ describe('LessonsView — lesson body editor (RE-02)', () => {
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
-    fireEvent.click(await screen.findByRole('button', { name: /lezione-001\.md/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Apri lezione lezione-001\.md/ }));
     await screen.findByText('Contenuto originale.');
     fireEvent.click(await screen.findByRole('button', { name: /Modifica contenuto/ }));
   }
@@ -399,7 +433,9 @@ describe('LessonsView — new lesson creation (RE-03A)', () => {
   it('opens the form, auto-expanding the UDA so the existing lessons stay visible', async () => {
     await openCreateLessonForm();
     expect(screen.getByLabelText('Titolo')).toBeTruthy();
-    expect(await screen.findByRole('button', { name: /lezione-001\.md/ })).toBeTruthy();
+    expect(
+      await screen.findByRole('button', { name: /Apri lezione lezione-001\.md/ }),
+    ).toBeTruthy();
   });
 
   it('disables Crea lezione until a title is entered', async () => {
@@ -449,7 +485,9 @@ describe('LessonsView — new lesson creation (RE-03A)', () => {
       });
     });
 
-    expect(await screen.findByRole('button', { name: /lezione-002-dns\.md/ })).toBeTruthy();
+    expect(
+      await screen.findByRole('button', { name: /Apri lezione lezione-002-dns\.md/ }),
+    ).toBeTruthy();
     // Only the initial listLessons call from expanding the course — the new
     // lesson is spliced into local state, no refetch.
     expect(mockListLessons).toHaveBeenCalledTimes(1);
@@ -586,5 +624,173 @@ describe('LessonsView — new UDA creation (RE-03B)', () => {
     fireEvent.submit(screen.getByLabelText('Titolo').closest('form')!);
 
     expect(mockCreateUda).not.toHaveBeenCalled();
+  });
+});
+
+describe('LessonsView — UDA reorder (RE-04)', () => {
+  it('disables "Sposta su" on the first UDA and "Sposta giù" on the last', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA_WITH_ORDER, UDA_2]);
+    mockListLessons.mockResolvedValue([]);
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+
+    expect(
+      (await screen.findByRole('button', { name: 'Sposta su — uda-01-reti' })).hasAttribute(
+        'disabled',
+      ),
+    ).toBe(true);
+    expect(
+      screen.getByRole('button', { name: 'Sposta giù — uda-01-reti' }).hasAttribute('disabled'),
+    ).toBe(false);
+    expect(
+      screen.getByRole('button', { name: 'Sposta su — uda-02-sicurezza' }).hasAttribute('disabled'),
+    ).toBe(false);
+    expect(
+      screen
+        .getByRole('button', { name: 'Sposta giù — uda-02-sicurezza' })
+        .hasAttribute('disabled'),
+    ).toBe(true);
+  });
+
+  it('moves a UDA down, calling reorderUda with the correct neighbor and reordering the sidebar', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA_WITH_ORDER, UDA_2]);
+    mockListLessons.mockResolvedValue([]);
+    mockReorderUda.mockResolvedValue({ order: 1, neighborOrder: 0 });
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sposta giù — uda-01-reti' }));
+
+    await waitFor(() => {
+      expect(mockReorderUda).toHaveBeenCalledWith({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-1',
+        neighborUdaId: 'uda-2',
+        ownerUid: 'owner-uid',
+        db: {},
+      });
+    });
+
+    const first = await screen.findByRole('button', { name: 'uda-02-sicurezza' });
+    const second = screen.getByRole('button', { name: 'uda-01-reti' });
+    expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('disables only the controls of the two UDAs involved while a move is saving', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA_WITH_ORDER, UDA_2, UDA_3]);
+    mockListLessons.mockResolvedValue([]);
+    let resolveReorder!: (value: { order: number; neighborOrder: number }) => void;
+    mockReorderUda.mockReturnValue(
+      new Promise((resolve) => {
+        resolveReorder = resolve;
+      }),
+    );
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sposta giù — uda-01-reti' }));
+
+    expect(
+      screen.getByRole('button', { name: 'Sposta giù — uda-01-reti' }).hasAttribute('disabled'),
+    ).toBe(true);
+    expect(
+      screen.getByRole('button', { name: 'Sposta su — uda-02-sicurezza' }).hasAttribute('disabled'),
+    ).toBe(true);
+    expect(
+      screen.getByRole('button', { name: 'Sposta su — uda-03-database' }).hasAttribute('disabled'),
+    ).toBe(false);
+
+    resolveReorder({ order: 1, neighborOrder: 0 });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Sposta giù — uda-01-reti' }).hasAttribute('disabled'),
+      ).toBe(false),
+    );
+  });
+
+  it('shows a clear error next to the UDA when reorder fails', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA_WITH_ORDER, UDA_2]);
+    mockListLessons.mockResolvedValue([]);
+    mockReorderUda.mockRejectedValue(
+      new Error('Impossibile salvare il nuovo ordine delle UDA. Riprova.'),
+    );
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sposta giù — uda-01-reti' }));
+
+    expect(
+      await screen.findByText('Impossibile salvare il nuovo ordine delle UDA. Riprova.'),
+    ).toBeTruthy();
+  });
+});
+
+describe('LessonsView — lesson reorder (RE-04)', () => {
+  async function expandUdaLessons() {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1, LESSON_2]);
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+    await expandUda(/uda-01-reti/);
+  }
+
+  it('disables "Sposta su" on the first lesson and "Sposta giù" on the last', async () => {
+    await expandUdaLessons();
+
+    expect(
+      (await screen.findByRole('button', { name: 'Sposta su — lezione-001.md' })).hasAttribute(
+        'disabled',
+      ),
+    ).toBe(true);
+    expect(
+      screen.getByRole('button', { name: 'Sposta giù — lezione-001.md' }).hasAttribute('disabled'),
+    ).toBe(false);
+    expect(
+      screen.getByRole('button', { name: 'Sposta su — lezione-002.md' }).hasAttribute('disabled'),
+    ).toBe(false);
+    expect(
+      screen.getByRole('button', { name: 'Sposta giù — lezione-002.md' }).hasAttribute('disabled'),
+    ).toBe(true);
+  });
+
+  it('moves a lesson down within the same UDA, calling reorderLesson with the correct neighbor', async () => {
+    await expandUdaLessons();
+    mockReorderLesson.mockResolvedValue({ order: 1, neighborOrder: 0 });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sposta giù — lezione-001.md' }));
+
+    await waitFor(() => {
+      expect(mockReorderLesson).toHaveBeenCalledWith({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        lessonId: 'lesson-1',
+        neighborLessonId: 'lesson-2',
+        ownerUid: 'owner-uid',
+        db: {},
+      });
+    });
+
+    const first = await screen.findByRole('button', { name: /Apri lezione lezione-002\.md/ });
+    const second = screen.getByRole('button', { name: /Apri lezione lezione-001\.md/ });
+    expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows a clear error next to the lesson when reorder fails', async () => {
+    await expandUdaLessons();
+    mockReorderLesson.mockRejectedValue(
+      new Error('Impossibile salvare il nuovo ordine delle lezioni. Riprova.'),
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Sposta giù — lezione-001.md' }));
+
+    expect(
+      await screen.findByText('Impossibile salvare il nuovo ordine delle lezioni. Riprova.'),
+    ).toBeTruthy();
   });
 });
