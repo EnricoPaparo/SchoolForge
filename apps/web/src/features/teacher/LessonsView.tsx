@@ -35,6 +35,18 @@ function linesToArray(value: string): string[] {
 
 const IMPORT_HINT = 'Importa prima uno ZIP da Corsi per vedere le lezioni.';
 
+function udaOrderOrLegacy(uda: UdaItem): number {
+  if (uda.order !== undefined) return uda.order;
+  const match = /^uda-(\d+)-/.exec(uda.dir);
+  return match ? Number(match[1]) - 1 : Number.MAX_SAFE_INTEGER;
+}
+
+function sortUdas(udas: UdaItem[]): UdaItem[] {
+  return [...udas].sort(
+    (a, b) => udaOrderOrLegacy(a) - udaOrderOrLegacy(b) || a.dir.localeCompare(b.dir),
+  );
+}
+
 type CourseTreeState = {
   udas: UdaItem[] | null;
   lessons: LessonItem[] | null;
@@ -185,7 +197,7 @@ export function LessonsView() {
       obiettivi: linesToArray(newUdaObiettivi),
     };
     try {
-      const { udaId, dir } = await createUda({
+      const { udaId, dir, order } = await createUda({
         programId: program.id,
         importId: program.activeImportId,
         ownerUid,
@@ -199,6 +211,7 @@ export function LessonsView() {
         importId: program.activeImportId,
         dir,
         filename: `${dir}.md`,
+        order,
         storageBasePath: `repository/${ownerUid}/imports/${program.activeImportId}/${dir}`,
         lessonCount: 0,
         descrizione: fields.descrizione,
@@ -208,7 +221,7 @@ export function LessonsView() {
       setCourseTree((prev) => {
         const cur = prev[program.id];
         if (!cur) return prev;
-        const udas = [...(cur.udas ?? []), newUda].sort((a, b) => a.dir.localeCompare(b.dir));
+        const udas = sortUdas([...(cur.udas ?? []), newUda]);
         return { ...prev, [program.id]: { ...cur, udas } };
       });
       setCreatingUdaProgramId(null);
