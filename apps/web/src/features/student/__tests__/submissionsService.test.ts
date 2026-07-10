@@ -136,24 +136,28 @@ describe('startSubmission', () => {
   };
 
   it('writes to submissions/{id}', async () => {
+    mockGetDoc.mockResolvedValue({ exists: () => false });
     await startSubmission(input, fakeDb);
     const [ref] = mockSetDoc.mock.calls[0] as [{ __path: string }, unknown];
     expect(ref.__path).toBe('submissions/ver-1_uid-1');
   });
 
   it('sets status to draft', async () => {
+    mockGetDoc.mockResolvedValue({ exists: () => false });
     await startSubmission(input, fakeDb);
     const [, payload] = mockSetDoc.mock.calls[0] as [unknown, { status: string }];
     expect(payload.status).toBe('draft');
   });
 
   it('sets submissionId matching the document path', async () => {
+    mockGetDoc.mockResolvedValue({ exists: () => false });
     await startSubmission(input, fakeDb);
     const [, payload] = mockSetDoc.mock.calls[0] as [unknown, { submissionId: string }];
     expect(payload.submissionId).toBe('ver-1_uid-1');
   });
 
   it('initialises answers, flagged, attentionEvents as empty', async () => {
+    mockGetDoc.mockResolvedValue({ exists: () => false });
     await startSubmission(input, fakeDb);
     const [, payload] = mockSetDoc.mock.calls[0] as [
       unknown,
@@ -165,6 +169,7 @@ describe('startSubmission', () => {
   });
 
   it('sets deliveryCode to null and submittedAt to null', async () => {
+    mockGetDoc.mockResolvedValue({ exists: () => false });
     await startSubmission(input, fakeDb);
     const [, payload] = mockSetDoc.mock.calls[0] as [
       unknown,
@@ -175,9 +180,16 @@ describe('startSubmission', () => {
   });
 
   it('uses serverTimestamp for lastSavedAt', async () => {
+    mockGetDoc.mockResolvedValue({ exists: () => false });
     await startSubmission(input, fakeDb);
     const [, payload] = mockSetDoc.mock.calls[0] as [unknown, { lastSavedAt: unknown }];
     expect(payload.lastSavedAt).toEqual({ __serverTimestamp: true });
+  });
+
+  it('does not overwrite an existing submission draft', async () => {
+    mockGetDoc.mockResolvedValue({ exists: () => true });
+    await startSubmission(input, fakeDb);
+    expect(mockSetDoc).not.toHaveBeenCalled();
   });
 });
 

@@ -85,16 +85,19 @@ export type StartSubmissionInput = {
 
 /**
  * Creates a new draft submission, or no-ops if one already exists.
- * Uses `setDoc` with `{ merge: false }` semantics via explicit existence check
- * delegated to Security Rules: the Rules deny creation if a document with
- * the same id already exists (Firestore allows only create or update, not both
- * in a single Rules clause). To avoid a redundant read here and trust the Rules,
- * we use `setDoc` without merge — a second call would overwrite, but the Rules
- * deny it. Callers should check `loadSubmission` first when idempotency matters.
+ *
+ * This service is intentionally idempotent: opening the same online exam twice
+ * must never overwrite an existing draft with empty answers. Security Rules
+ * will still enforce the deterministic path and allowed writes in M3F-03, but
+ * the client service should be safe by default.
  */
 export async function startSubmission(input: StartSubmissionInput, db: Firestore): Promise<void> {
   const { verificationId, studentUid, ownerUid, verificationTitle, className } = input;
   const id = submissionId(verificationId, studentUid);
+  const ref = doc(db, 'submissions', id);
+  const existing = await getDoc(ref);
+  if (existing.exists()) return;
+
   const payload: SubmissionDoc = {
     submissionId: id,
     verificationId,
@@ -111,7 +114,7 @@ export async function startSubmission(input: StartSubmissionInput, db: Firestore
     lastSavedAt: serverTimestamp(),
     submittedAt: null,
   };
-  await setDoc(doc(db, 'submissions', id), payload);
+  await setDoc(ref, payload);
 }
 
 export type SaveDraftInput = {
