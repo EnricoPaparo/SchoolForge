@@ -37,10 +37,11 @@ Le minacce seguenti si applicano a **M3-full** (specifica in `m3-full-roadmap.md
 | Asset | Minaccia | Controllo in M3-full |
 |---|---|---|
 | Submission studente | Scrittura da studente non approvato | Security Rules: `isApprovedStudent()` richiesta per create/update su `submissions`. |
-| Submission studente | Doppia submission (stesso studente, stessa verifica) | Security Rules: create negata se esiste già un documento con `(studentUid, verificationId)` — unicità garantita da path deterministico o `!exists()`. |
+| Submission studente | Doppia submission (stesso studente, stessa verifica) | Security Rules: create consentita solo su path deterministico `submissions/{verificationId}_{uid}`; niente UUID arbitrari e niente query in Rules per cercare duplicati. |
 | Submission studente | Modifica post-consegna | Security Rules: update negato se `resource.data.status == 'submitted'`. |
 | Submission studente | Consegna su verifica chiusa o non online | Security Rules: create/update negati se `verificationIsOnlineAndActive()` restituisce false (get() cross-doc sulla verifica). |
-| Risposte studente | Lettura da altri studenti o soggetti non autorizzati | Security Rules: lettura `submissions/{id}` concessa solo se `resource.data.studentUid == request.auth.uid` (studente) o `isOwner()` (docente). |
+| Risposte studente | Lettura da altri studenti o soggetti non autorizzati | Security Rules: lettura `submissions/{id}` concessa solo al docente owner; allo studente solo finché `status == 'draft'`. |
+| Risposte studente | Lettura delle risposte dopo consegna | Dopo `submitted`, lo studente legge solo `submissionReceipts/{submissionId}` con titolo/classe/timestamp/codice consegna; non legge più la submission completa con `answers`. |
 | `publishedProjection` | Esposizione soluzioni nel questionario online | `publishedProjection` non contiene mai `soluzione`, `poolStorageRef`, `questionLocalId`; lo studente online legge lo stesso documento già protetto in M3-lite. |
 | Monitor docente | Lettura submission di un altro docente | Security Rules: lettura owner su `submissions` concessa solo se `resource.data.ownerUid == ownerUid()`. |
 

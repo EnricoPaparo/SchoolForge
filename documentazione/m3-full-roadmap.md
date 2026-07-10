@@ -16,7 +16,7 @@ M3-lite (login Google, portale read-only, download PDF) resta invariata e compat
 
 ---
 
-## 2. Decisioni di prodotto (formalizate)
+## 2. Decisioni di prodotto (formalizzate)
 
 | # | Decisione |
 |---|---|
@@ -44,10 +44,12 @@ M3-lite (login Google, portale read-only, download PDF) resta invariata e compat
 
 Documento unico per (studentUid, verificationId). Creato all'avvio online; aggiornato a ogni salvataggio bozza; bloccato immutabile alla consegna.
 
+**ID documento deterministico:** `submissionId = ${verificationId}_${studentUid}`. Questa scelta è vincolante: Firestore Security Rules non possono fare query per verificare l'unicità di `(studentUid, verificationId)` su un UUID arbitrario. L'unicità va quindi garantita dal path.
+
 ```typescript
 interface SubmissionDoc {
   // identità
-  submissionId: string;           // == Firestore doc id (generato dal client con uuid al primo avvio)
+  submissionId: string;           // == Firestore doc id deterministico: `${verificationId}_${studentUid}`
   verificationId: string;
   studentUid: string;
   ownerUid: string;
@@ -93,11 +95,11 @@ interface AttentionEvent {
 }
 ```
 
-**Path:** `submissions/{submissionId}`
+**Path:** `submissions/{verificationId}_${studentUid}`
 
-**Unicità (studentUid, verificationId):** garantita da Security Rules — lo studente può scrivere `submissions/{submissionId}` solo se non esiste già un documento con il proprio `studentUid` per quella `verificationId`, **oppure** se il documento con quel path è già il suo. Il `submissionId` è un uuid generato dal client al primo avvio e conservato in memoria/sessionStorage per la sessione; l'idempotenza è garantita dal client che usa sempre lo stesso id per la stessa sessione. Se lo studente riapre la pagina, il client ri-carica il documento esistente cercando per `(studentUid, verificationId)` — non ne crea uno nuovo.
+**Unicità (studentUid, verificationId):** garantita dal path deterministico. Lo studente può creare o aggiornare solo `submissions/{verificationId}_${request.auth.uid}` e i campi `verificationId`/`studentUid` devono corrispondere al path. Se riapre la pagina, il client legge direttamente quel documento: non serve query preliminare e non può creare un secondo tentativo con altro id.
 
-> **Alternativa considerata e scartata:** `submissions/{verificationId}/students/{studentUid}` offre un path naturale per il monitor docente, ma richiede collectionGroup index su più livelli oppure query denormalizzate. Il path flat `submissions/{submissionId}` con indici compositi su `(verificationId, ownerUid)` e `(studentUid, verificationId)` è più semplice da proteggere con Security Rules e più prevedibile nei costi.
+> **Alternativa considerata e scartata:** `submissions/{verificationId}/students/{studentUid}` offre un path naturale, ma complica le query del monitor docente e gli indici. Il path flat deterministico mantiene query semplici per il docente e Rules verificabili con confronti su path/campi, senza query impossibili in Security Rules.
 
 #### Indici Firestore aggiuntivi
 
@@ -124,6 +126,25 @@ interface AttentionEvent {
   ]
 }
 ```
+
+#### `submissionReceipts/{submissionId}`
+
+Documento minimale leggibile dallo studente dopo la consegna. Serve a rispettare il requisito "dopo consegna non vede più domande o risposte" anche a livello tecnico: la submission `submitted` contiene le risposte ed è leggibile dal docente, mentre lo studente legge solo la ricevuta.
+
+```typescript
+interface SubmissionReceiptDoc {
+  submissionId: string;       // stesso id deterministico della submission
+  verificationId: string;
+  studentUid: string;
+  ownerUid: string;
+  verificationTitle: string;
+  className: string | null;
+  deliveryCode: string;
+  submittedAt: Timestamp;
+}
+```
+
+La consegna finale deve essere una write batch client-side: update della submission a `submitted` + create/set della receipt. Le Security Rules di M3F-03 dovranno validare che lo studente possa creare solo la propria receipt, con id coerente e campi minimi consentiti.
 
 ### 3.2 Campi aggiunti a documenti esistenti
 
@@ -159,9 +180,9 @@ Il documento `publishedProjection` esiste già e contiene `questions: PublicVeri
 2. **Lo studente scrive solo le proprie submission.** `request.auth.uid == resource.data.studentUid` (o `request.resource.data.studentUid` alla creazione).
 3. **Immutabilità alla consegna.** Se `resource.data.status == 'submitted'`, qualunque update è negato — anche dal proprio studente.
 4. **Verifica deve essere online e aperta.** Prima di creare o aggiornare una submission, le Rules verificano che la verifica target sia `active` + `onlineEnabled == true`. Se la verifica è `closed`, le Rules negano la creazione e l'aggiornamento di bozze (non toccano le submission già `submitted`).
-5. **Unicità (studentUid, verificationId).** La creazione è consentita solo se non esiste già un documento `submissions` con lo stesso `studentUid` e `verificationId`. Implementata tramite `!exists()` sugli indici o tramite check nel documento (la via più sicura in Firestore è il check su path deterministico — vedi §3.1).
+5. **Unicità (studentUid, verificationId).** La creazione è consentita solo sul path deterministico `submissions/{verificationId}_{request.auth.uid}`. Non si usano UUID arbitrari né query in Rules per cercare duplicati.
 6. **Il docente legge tutte le submission della propria verifica.** `isOwner()` può leggere qualunque `submissions/{id}` dove `ownerUid == ownerUid`. Non può modificarle (M4 aggiungerà la correzione come campo separato).
-7. **Lo studente NON legge le proprie risposte dopo la consegna.** Non è un vincolo di Security Rules (le Rules potrebbero permettere la lettura) ma un vincolo di UI: dopo `status == 'submitted'` il client non mostra il form. Le Rules possono restare permissive sulla lettura del proprio documento — la schermata di conferma non espone domande o risposte.
+7. **Lo studente NON legge le proprie risposte dopo la consegna.** Firestore non supporta field masking nelle Rules, quindi M3-full usa `submissionReceipts/{submissionId}` per la schermata post-consegna. Lo studente può leggere la propria submission solo finché è `draft`; dopo `submitted` legge solo la receipt. Il docente continua a leggere la submission completa.
 8. **`attentionEvents` è scrivibile solo dallo studente, non dall'owner.** L'owner può solo leggere il campo aggregato nel monitor.
 
 ### 4.2 Sketch regole (pseudocodice, non definitivo)
@@ -169,12 +190,12 @@ Il documento `publishedProjection` esiste già e contiene `questions: PublicVeri
 ```
 match /submissions/{submissionId} {
   // Studente: può creare se autenticato, approvato, verifica active+onlineEnabled,
-  //           e non esiste già una sua submission per quella verifica
+  //           e il path corrisponde a `${verificationId}_${uid}`
   allow create: if isApprovedStudent()
     && request.resource.data.studentUid == request.auth.uid
+    && submissionId == request.resource.data.verificationId + '_' + request.auth.uid
     && request.resource.data.status == 'draft'
-    && verificationIsOnlineAndActive(request.resource.data.verificationId)
-    && !submissionAlreadyExists(request.auth.uid, request.resource.data.verificationId);
+    && verificationIsOnlineAndActive(request.resource.data.verificationId);
 
   // Studente: può aggiornare solo la propria bozza, non può ri-aprire submitted
   allow update: if isApprovedStudent()
@@ -185,9 +206,11 @@ match /submissions/{submissionId} {
         ? verificationIsOnlineAndActive(resource.data.verificationId)
         : true);  // se sta consegnando, la verifica deve ancora essere active
 
-  // Studente: può leggere solo la propria submission
+  // Studente: può leggere la propria submission solo finché è draft.
+  // Dopo submitted legge solo submissionReceipts/{submissionId}.
   allow read: if isApprovedStudent()
-    && resource.data.studentUid == request.auth.uid;
+    && resource.data.studentUid == request.auth.uid
+    && resource.data.status == 'draft';
 
   // Owner: può leggere tutte le submission delle proprie verifiche
   allow read: if isOwner()
@@ -195,6 +218,24 @@ match /submissions/{submissionId} {
 
   // Nessuno cancella submission (nemmeno il docente in M3-full — M4 aggiungerà l'archiviazione)
   allow delete: if false;
+}
+
+match /submissionReceipts/{submissionId} {
+  allow create: if isApprovedStudent()
+    && submissionId == request.resource.data.verificationId + '_' + request.auth.uid
+    && request.resource.data.studentUid == request.auth.uid
+    && request.resource.data.keys().hasOnly([
+      'submissionId', 'verificationId', 'studentUid', 'ownerUid',
+      'verificationTitle', 'className', 'deliveryCode', 'submittedAt'
+    ]);
+
+  allow read: if isApprovedStudent()
+    && resource.data.studentUid == request.auth.uid;
+
+  allow read: if isOwner()
+    && resource.data.ownerUid == ownerUid();
+
+  allow update, delete: if false;
 }
 ```
 
@@ -338,6 +379,7 @@ All'avvio della schermata verifica:
 |---|---|
 | Studente può avviare, salvare bozza e consegnare (flusso felice) | Smoke test manuale DEV |
 | Consegna immutabile: nessuna modifica dopo `submitted` | Test Security Rules (M3F-03) |
+| Studente dopo consegna legge solo la receipt, non la submission con risposte | Test Security Rules (M3F-03) |
 | Unicità submission: un solo tentativo per studente per verifica | Test Security Rules (M3F-03) |
 | Verifica chiusa blocca consegna bozze | Test Security Rules (M3F-03) |
 | Monitor docente aggiorna real-time | Test componente manuale |
@@ -381,7 +423,7 @@ M4 (correzione/restituzione) dipende da M3-full perché:
 |---|---|---|
 | **Costo letture Firestore — monitor docente real-time** | `onSnapshot` su `submissions` filtrando per `verificationId` mantiene un listener aperto: ogni aggiornamento di qualunque studente genera 1 read. Con 30 studenti e salvataggi frequenti può generare centinaia di read/ora. | Limitare il polling automatico (es. autosave ogni 30s, non su ogni keystroke). Considerare un salvataggio bozza debounced a 10s. Chiudere il listener quando il docente lascia il monitor. |
 | **Costo lettura cross-doc nelle Rules** | `get()` sulla verifica a ogni create/update submission = 1 read extra per operazione. | Accettabile: frequenza bassa (1 per studente per avvio + N salvataggi bozza). Alternativa: campo `verificationStatus` denormalizzato sulla submission e validato al create. |
-| **Contention scrittura su submission** | Improbabile (ogni studente scrive solo il proprio documento), ma possibile in caso di doppio tab. | Il client usa sempre lo stesso `submissionId` (da sessionStorage); Rules negano create se esiste già. |
+| **Contention scrittura su submission** | Improbabile (ogni studente scrive solo il proprio documento), ma possibile in caso di doppio tab. | Il path deterministico `verificationId_studentUid` forza entrambi i tab sullo stesso documento; le Rules negano ogni tentativo con id diverso. |
 | **Indici compositi** | I nuovi indici su `submissions` richiedono deploy in Firestore prima che le query funzionino in produzione. | Aggiungere a `firestore.indexes.json` in M3F-01; deployare prima dello smoke test DEV. |
 | **Storage** | M3-full non usa Cloud Storage: nessun costo aggiuntivo su Storage. | — |
 | **Dimensione documento submission** | `answers` e `attentionEvents` crescono nel tempo. Con 50 domande aperte (1000 char/risposta) + 100 eventi: ~60 KB per documento. Firestore limit è 1 MB. | Entro i limiti per qualunque scenario realistico. Limitare `attentionEvents` a max 200 voci (trimmare i più vecchi se superati). |

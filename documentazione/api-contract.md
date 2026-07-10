@@ -304,11 +304,14 @@ interface PublicVerificationQuestion {
 // submissions/{submissionId} — consegna studente online
 // Un documento per (studentUid, verificationId). Creato all'avvio; aggiornato
 // a ogni salvataggio bozza; bloccato immutabile alla consegna (status == 'submitted').
+// submissionId è deterministico: `${verificationId}_${studentUid}`. Non usare UUID
+// arbitrari: le Security Rules non possono fare query per garantire unicità.
 // Il docente (ownerUid) può leggere tutte le submission delle proprie verifiche;
-// lo studente legge e scrive solo la propria (resource.data.studentUid == uid).
+// lo studente legge/scrive la propria submission solo finché è draft. Dopo
+// submitted legge solo submissionReceipts/{submissionId}.
 // Nessuno cancella submission in M3-full (M4 aggiungerà l'archiviazione).
 interface SubmissionDoc {
-  submissionId: string;            // == Firestore doc id (uuid generato dal client al primo avvio)
+  submissionId: string;            // == Firestore doc id deterministico: `${verificationId}_${studentUid}`
   verificationId: string;
   studentUid: string;
   ownerUid: string;
@@ -336,6 +339,21 @@ type AnswerValue =
 interface AttentionEvent {
   type: 'fullscreen_exit' | 'tab_blur' | 'window_blur' | 'visibility_hidden';
   ts: number; // ms epoch
+}
+
+// submissionReceipts/{submissionId} — ricevuta post-consegna leggibile dallo studente.
+// Dopo status='submitted', lo studente non legge più la SubmissionDoc completa
+// con le risposte: vede solo questo documento minimale. Il docente legge comunque
+// la submission completa per il monitor e, in futuro, per M4.
+interface SubmissionReceiptDoc {
+  submissionId: string;            // stesso id deterministico della submission
+  verificationId: string;
+  studentUid: string;
+  ownerUid: string;
+  verificationTitle: string;
+  className: string | null;
+  deliveryCode: string;
+  submittedAt: Timestamp;
 }
 
 // Campo aggiunto a verifications/{verificationId} in M3-full
