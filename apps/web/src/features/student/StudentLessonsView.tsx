@@ -31,6 +31,7 @@ type LoadState =
 export function StudentLessonsView() {
   const { user } = useAuth();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [expandedPrograms, setExpandedPrograms] = useState<Set<string>>(new Set());
   const [expandedUdas, setExpandedUdas] = useState<Set<string>>(new Set());
   const [selectedLesson, setSelectedLesson] = useState<StudentLesson | null>(null);
@@ -143,105 +144,123 @@ export function StudentLessonsView() {
   }
 
   return (
-    <section aria-label="Lezioni" className={styles.container}>
-      <aside className={styles.sidebar}>
-        <h2 className={styles.sidebarTitle}>Lezioni</h2>
+    <section
+      aria-label="Lezioni"
+      className={`${styles.container}${sidebarCollapsed ? ` ${styles.containerCollapsed}` : ''}`}
+    >
+      <aside
+        className={`${styles.sidebar}${sidebarCollapsed ? ` ${styles.sidebarCollapsed}` : ''}`}
+      >
+        <div className={styles.sidebarHeader}>
+          {!sidebarCollapsed && <h2 className={styles.sidebarTitle}>Lezioni</h2>}
+          <button
+            type="button"
+            className={styles.sidebarToggleBtn}
+            aria-label={sidebarCollapsed ? 'Espandi sidebar' : 'Comprimi sidebar'}
+            title={sidebarCollapsed ? 'Espandi sidebar' : 'Comprimi sidebar'}
+            onClick={() => setSidebarCollapsed((v) => !v)}
+          >
+            {sidebarCollapsed ? '›' : '‹'}
+          </button>
+        </div>
 
-        <ul className={styles.programList}>
-          {programs.map((program) => {
-            const lessons = lessonsByProgram[program.id] ?? [];
-            const expanded = expandedPrograms.has(program.id);
-            const udaDirs = [...new Set(lessons.map((l) => l.udaDir))];
+        {!sidebarCollapsed && (
+          <ul className={styles.programList}>
+            {programs.map((program) => {
+              const lessons = lessonsByProgram[program.id] ?? [];
+              const expanded = expandedPrograms.has(program.id);
+              const udaDirs = [...new Set(lessons.map((l) => l.udaDir))];
 
-            return (
-              <li key={program.id} className={styles.programItem}>
-                <button
-                  type="button"
-                  className={styles.programToggle}
-                  aria-expanded={expanded}
-                  aria-controls={`student-lezioni-program-panel-${program.id}`}
-                  onClick={() => toggleProgram(program.id)}
-                >
-                  <span
-                    className={`${styles.caret}${expanded ? ` ${styles.caretOpen}` : ''}`}
-                    aria-hidden="true"
+              return (
+                <li key={program.id} className={styles.programItem}>
+                  <button
+                    type="button"
+                    className={styles.programToggle}
+                    aria-expanded={expanded}
+                    aria-controls={`student-lezioni-program-panel-${program.id}`}
+                    onClick={() => toggleProgram(program.id)}
                   >
-                    ▶
-                  </span>
-                  <span className={styles.programTitle}>{program.title}</span>
-                </button>
+                    <span
+                      className={`${styles.caret}${expanded ? ` ${styles.caretOpen}` : ''}`}
+                      aria-hidden="true"
+                    >
+                      ▶
+                    </span>
+                    <span className={styles.programTitle}>{program.title}</span>
+                  </button>
 
-                {expanded && (
-                  <div
-                    id={`student-lezioni-program-panel-${program.id}`}
-                    className={styles.udaPanel}
-                  >
-                    {lessons.length === 0 ? (
-                      <p className="state-empty">Nessuna lezione disponibile.</p>
-                    ) : (
-                      <ul className={styles.udaList}>
-                        {udaDirs.map((udaDir) => {
-                          const udaKey = `${program.id}:${udaDir}`;
-                          const udaExpanded = expandedUdas.has(udaKey);
-                          const udaLessons = lessons.filter((l) => l.udaDir === udaDir);
+                  {expanded && (
+                    <div
+                      id={`student-lezioni-program-panel-${program.id}`}
+                      className={styles.udaPanel}
+                    >
+                      {lessons.length === 0 ? (
+                        <p className="state-empty">Nessuna lezione disponibile.</p>
+                      ) : (
+                        <ul className={styles.udaList}>
+                          {udaDirs.map((udaDir) => {
+                            const udaKey = `${program.id}:${udaDir}`;
+                            const udaExpanded = expandedUdas.has(udaKey);
+                            const udaLessons = lessons.filter((l) => l.udaDir === udaDir);
 
-                          return (
-                            <li key={udaDir}>
-                              <button
-                                type="button"
-                                className={styles.udaToggle}
-                                aria-expanded={udaExpanded}
-                                aria-controls={`student-lezioni-uda-panel-${udaKey}`}
-                                onClick={() => toggleUda(program.id, udaDir)}
-                              >
-                                <span
-                                  className={`${styles.caret}${udaExpanded ? ` ${styles.caretOpen}` : ''}`}
-                                  aria-hidden="true"
+                            return (
+                              <li key={udaDir}>
+                                <button
+                                  type="button"
+                                  className={styles.udaToggle}
+                                  aria-expanded={udaExpanded}
+                                  aria-controls={`student-lezioni-uda-panel-${udaKey}`}
+                                  onClick={() => toggleUda(program.id, udaDir)}
                                 >
-                                  ▶
-                                </span>
-                                <span className={styles.udaDir}>{udaDir}</span>
-                              </button>
+                                  <span
+                                    className={`${styles.caret}${udaExpanded ? ` ${styles.caretOpen}` : ''}`}
+                                    aria-hidden="true"
+                                  >
+                                    ▶
+                                  </span>
+                                  <span className={styles.udaDir}>{udaDir}</span>
+                                </button>
 
-                              {udaExpanded && (
-                                <div
-                                  id={`student-lezioni-uda-panel-${udaKey}`}
-                                  className={styles.lessonPanel}
-                                >
-                                  <ul className={styles.lessonList}>
-                                    {udaLessons.map((lesson) => {
-                                      const { title } = resolveLessonTitle(
-                                        lesson.filename,
-                                        lesson.titolo,
-                                      );
-                                      return (
-                                        <li key={lesson.id}>
-                                          <button
-                                            type="button"
-                                            className={styles.lessonBtn}
-                                            aria-pressed={selectedLesson?.id === lesson.id}
-                                            aria-label={`Apri lezione ${lesson.filename}`}
-                                            onClick={() => void selectLesson(lesson)}
-                                          >
-                                            {title}
-                                          </button>
-                                        </li>
-                                      );
-                                    })}
-                                  </ul>
-                                </div>
-                              )}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+                                {udaExpanded && (
+                                  <div
+                                    id={`student-lezioni-uda-panel-${udaKey}`}
+                                    className={styles.lessonPanel}
+                                  >
+                                    <ul className={styles.lessonList}>
+                                      {udaLessons.map((lesson) => {
+                                        const { title } = resolveLessonTitle(
+                                          lesson.filename,
+                                          lesson.titolo,
+                                        );
+                                        return (
+                                          <li key={lesson.id}>
+                                            <button
+                                              type="button"
+                                              className={styles.lessonBtn}
+                                              aria-pressed={selectedLesson?.id === lesson.id}
+                                              aria-label={`Apri lezione ${lesson.filename}`}
+                                              onClick={() => void selectLesson(lesson)}
+                                            >
+                                              {title}
+                                            </button>
+                                          </li>
+                                        );
+                                      })}
+                                    </ul>
+                                  </div>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </aside>
 
       <div className={styles.content}>

@@ -87,6 +87,7 @@ export function LessonsView() {
   const [programs, setPrograms] = useState<ProgramItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reorderMode, setReorderMode] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const [courseTree, setCourseTree] = useState<Record<string, CourseTreeState>>({});
   const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
@@ -733,582 +734,607 @@ export function LessonsView() {
   }
 
   return (
-    <section aria-label="Lezioni" className={styles.container}>
-      <aside className={styles.sidebar}>
+    <section
+      aria-label="Lezioni"
+      className={`${styles.container}${sidebarCollapsed ? ` ${styles.containerCollapsed}` : ''}`}
+    >
+      <aside
+        className={`${styles.sidebar}${sidebarCollapsed ? ` ${styles.sidebarCollapsed}` : ''}`}
+      >
         <div className={styles.sidebarHeader}>
-          <h2 className={styles.sidebarTitle}>Lezioni</h2>
-          <button
-            type="button"
-            className={`${styles.reorderModeBtn}${reorderMode ? ` ${styles.reorderModeBtnActive}` : ''}`}
-            aria-pressed={reorderMode}
-            aria-label={reorderMode ? 'Termina riordino' : 'Attiva riordino'}
-            title={reorderMode ? 'Termina riordino' : 'Riordina UDA e lezioni'}
-            onClick={() => setReorderMode((prev) => !prev)}
-          >
-            ↕
-          </button>
+          {!sidebarCollapsed && <h2 className={styles.sidebarTitle}>Lezioni</h2>}
+          <div className={styles.sidebarHeaderActions}>
+            {!sidebarCollapsed && (
+              <button
+                type="button"
+                className={`${styles.reorderModeBtn}${reorderMode ? ` ${styles.reorderModeBtnActive}` : ''}`}
+                aria-pressed={reorderMode}
+                aria-label={reorderMode ? 'Termina riordino' : 'Attiva riordino'}
+                title={reorderMode ? 'Termina riordino' : 'Riordina UDA e lezioni'}
+                onClick={() => setReorderMode((prev) => !prev)}
+              >
+                ↕
+              </button>
+            )}
+            <button
+              type="button"
+              className={styles.sidebarToggleBtn}
+              aria-label={sidebarCollapsed ? 'Espandi sidebar' : 'Comprimi sidebar'}
+              title={sidebarCollapsed ? 'Espandi sidebar' : 'Comprimi sidebar'}
+              onClick={() => setSidebarCollapsed((v) => !v)}
+            >
+              {sidebarCollapsed ? '›' : '‹'}
+            </button>
+          </div>
         </div>
 
-        <ul className={styles.courseList}>
-          {programs.map((program) => {
-            const tree = courseTree[program.id];
-            const expanded = expandedCourses.has(program.id);
+        {!sidebarCollapsed && (
+          <ul className={styles.courseList}>
+            {programs.map((program) => {
+              const tree = courseTree[program.id];
+              const expanded = expandedCourses.has(program.id);
 
-            return (
-              <li key={program.id} className={styles.courseItem}>
-                <div className={styles.courseRow}>
-                  <button
-                    type="button"
-                    className={styles.courseToggle}
-                    aria-expanded={expanded}
-                    aria-controls={`lezioni-course-panel-${program.id}`}
-                    onClick={() => toggleCourse(program)}
-                  >
-                    <span
-                      className={`${styles.caret}${expanded ? ` ${styles.caretOpen}` : ''}`}
-                      aria-hidden="true"
-                    >
-                      ▶
-                    </span>
-                    <span className={styles.courseTitle}>{program.title}</span>
-                    {!program.activeImportId && (
-                      <span className="badge badge-warning">Nessun import</span>
-                    )}
-                  </button>
-                  {program.activeImportId && (
+              return (
+                <li key={program.id} className={styles.courseItem}>
+                  <div className={styles.courseRow}>
                     <button
                       type="button"
-                      className={styles.udaAddBtn}
-                      title="Nuova UDA"
-                      aria-label={`Nuova UDA — ${program.title}`}
-                      aria-expanded={creatingUdaProgramId === program.id}
-                      onClick={() => toggleCreateUda(program)}
+                      className={styles.courseToggle}
+                      aria-expanded={expanded}
+                      aria-controls={`lezioni-course-panel-${program.id}`}
+                      onClick={() => toggleCourse(program)}
                     >
-                      ＋
-                    </button>
-                  )}
-                </div>
-
-                {expanded && (
-                  <div id={`lezioni-course-panel-${program.id}`} className={styles.udaPanel}>
-                    {!program.activeImportId ? (
-                      <p className="state-empty">{IMPORT_HINT}</p>
-                    ) : tree?.udas == null ? (
-                      <p aria-busy="true" className="state-loading">
-                        Caricamento UDA…
-                      </p>
-                    ) : tree.udas.length === 0 ? (
-                      <p className="state-empty">Nessuna UDA.</p>
-                    ) : (
-                      <ul className={styles.udaList}>
-                        {tree.udas.map((uda, udaIndex) => {
-                          const udaKey = `${program.id}:${uda.dir}`;
-                          const udaExpanded = expandedUdas.has(udaKey);
-                          const udaLessons = (tree.lessons ?? []).filter(
-                            (l) => l.udaDir === uda.dir,
-                          );
-
-                          const udaCreating = creatingLessonUdaKey === udaKey;
-                          const udaBusy = busyUdaIds.has(uda.id);
-
-                          return (
-                            <li key={uda.id}>
-                              <div className={styles.udaRow}>
-                                <button
-                                  type="button"
-                                  className={styles.udaToggle}
-                                  aria-expanded={udaExpanded}
-                                  aria-controls={`lezioni-uda-panel-${uda.id}`}
-                                  onClick={() => toggleUda(program.id, uda.dir)}
-                                >
-                                  <span
-                                    className={`${styles.caret}${udaExpanded ? ` ${styles.caretOpen}` : ''}`}
-                                    aria-hidden="true"
-                                  >
-                                    ▶
-                                  </span>
-                                  <span className={styles.udaDir}>{uda.dir}</span>
-                                </button>
-                                {reorderMode && (
-                                  <div
-                                    className={styles.reorderControls}
-                                    role="group"
-                                    aria-label={`Riordina ${uda.dir}`}
-                                  >
-                                    <button
-                                      type="button"
-                                      className={styles.reorderBtn}
-                                      title="Sposta su"
-                                      aria-label={`Sposta su — ${uda.dir}`}
-                                      disabled={udaIndex === 0 || udaBusy}
-                                      onClick={() =>
-                                        void handleMoveUda(program, tree.udas!, udaIndex, -1)
-                                      }
-                                    >
-                                      ▲
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className={styles.reorderBtn}
-                                      title="Sposta giù"
-                                      aria-label={`Sposta giù — ${uda.dir}`}
-                                      disabled={udaIndex === tree.udas!.length - 1 || udaBusy}
-                                      onClick={() =>
-                                        void handleMoveUda(program, tree.udas!, udaIndex, 1)
-                                      }
-                                    >
-                                      ▼
-                                    </button>
-                                  </div>
-                                )}
-                                <button
-                                  type="button"
-                                  className={styles.udaAddBtn}
-                                  title="Nuova lezione"
-                                  aria-label={`Nuova lezione — ${uda.dir}`}
-                                  aria-expanded={udaCreating}
-                                  onClick={() => toggleCreateLesson(program, udaKey)}
-                                >
-                                  ＋
-                                </button>
-                                {!reorderMode && (
-                                  <button
-                                    type="button"
-                                    className={styles.deleteBtn}
-                                    title="Elimina UDA"
-                                    aria-label={`Elimina UDA — ${uda.dir}`}
-                                    onClick={() => startDeleteUda(uda)}
-                                  >
-                                    🗑️
-                                  </button>
-                                )}
-                              </div>
-
-                              {udaReorderError?.udaId === uda.id && (
-                                <p role="alert" className={`text-error ${styles.reorderError}`}>
-                                  {udaReorderError.message}
-                                </p>
-                              )}
-
-                              {deleteConfirmUdaId === uda.id && (
-                                <div
-                                  className={styles.deleteConfirmBox}
-                                  role="region"
-                                  aria-label={`Conferma eliminazione UDA ${uda.dir}`}
-                                >
-                                  {udaDeleteBlockers?.udaId === uda.id ? (
-                                    <>
-                                      <p className={styles.deleteConfirmMsg}>
-                                        Impossibile eliminare: esistono verifiche collegate a questa
-                                        UDA. Rimuovile o modificale prima di eliminare.
-                                      </p>
-                                      <ul className={styles.deleteBlockersList}>
-                                        {udaDeleteBlockers.blockers.map((blocker) => (
-                                          <li
-                                            key={blocker.verificationId}
-                                            title={blocker.verificationId}
-                                          >
-                                            {blocker.title} (
-                                            {VERIFICATION_STATUS_LABELS[blocker.status]})
-                                          </li>
-                                        ))}
-                                      </ul>
-                                      <div className={styles.deleteConfirmActions}>
-                                        <button type="button" onClick={cancelDeleteUda}>
-                                          Chiudi
-                                        </button>
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <p className={styles.deleteConfirmMsg}>
-                                        Saranno eliminate tutte le lezioni della UDA, i relativi
-                                        file su Storage e i pool collegati. Operazione
-                                        irreversibile.
-                                      </p>
-                                      {udaDeleteError?.udaId === uda.id && (
-                                        <p role="alert" className="text-error">
-                                          {udaDeleteError.message}
-                                        </p>
-                                      )}
-                                      <div className={styles.deleteConfirmActions}>
-                                        <button
-                                          type="button"
-                                          className={`${styles.deleteConfirmBtn} btn-danger`}
-                                          disabled={deletingUdaId === uda.id}
-                                          onClick={() => void handleConfirmDeleteUda(program, uda)}
-                                        >
-                                          {deletingUdaId === uda.id
-                                            ? 'Eliminazione…'
-                                            : 'Elimina definitivamente'}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          disabled={deletingUdaId === uda.id}
-                                          onClick={cancelDeleteUda}
-                                        >
-                                          Annulla
-                                        </button>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              )}
-
-                              {udaExpanded && (
-                                <div
-                                  id={`lezioni-uda-panel-${uda.id}`}
-                                  className={styles.lessonPanel}
-                                >
-                                  {udaLessons.length === 0 ? (
-                                    <p className="state-empty">Nessuna lezione.</p>
-                                  ) : (
-                                    <ul className={styles.lessonList}>
-                                      {udaLessons.map((lesson, lessonIndex) => {
-                                        const { title } = resolveLessonTitle(
-                                          lesson.filename,
-                                          lesson.titolo,
-                                        );
-                                        const lessonBusy = busyLessonIds.has(lesson.id);
-                                        return (
-                                          <li key={lesson.id}>
-                                            <div className={styles.lessonRow}>
-                                              <button
-                                                type="button"
-                                                className={styles.lessonBtn}
-                                                aria-pressed={selectedLesson?.id === lesson.id}
-                                                aria-label={`Apri lezione ${lesson.filename}`}
-                                                onClick={() => void selectLesson(program, lesson)}
-                                              >
-                                                {title}
-                                              </button>
-                                              {!reorderMode && (
-                                                <button
-                                                  type="button"
-                                                  className={styles.deleteBtn}
-                                                  title="Elimina lezione"
-                                                  aria-label={`Elimina lezione — ${lesson.filename}`}
-                                                  onClick={() => startDeleteLesson(lesson)}
-                                                >
-                                                  🗑️
-                                                </button>
-                                              )}
-                                              {reorderMode && (
-                                                <div
-                                                  className={styles.reorderControls}
-                                                  role="group"
-                                                  aria-label={`Riordina ${lesson.filename}`}
-                                                >
-                                                  <button
-                                                    type="button"
-                                                    className={styles.reorderBtn}
-                                                    title="Sposta su"
-                                                    aria-label={`Sposta su — ${lesson.filename}`}
-                                                    disabled={lessonIndex === 0 || lessonBusy}
-                                                    onClick={() =>
-                                                      void handleMoveLesson(
-                                                        program,
-                                                        udaLessons,
-                                                        lessonIndex,
-                                                        -1,
-                                                      )
-                                                    }
-                                                  >
-                                                    ▲
-                                                  </button>
-                                                  <button
-                                                    type="button"
-                                                    className={styles.reorderBtn}
-                                                    title="Sposta giù"
-                                                    aria-label={`Sposta giù — ${lesson.filename}`}
-                                                    disabled={
-                                                      lessonIndex === udaLessons.length - 1 ||
-                                                      lessonBusy
-                                                    }
-                                                    onClick={() =>
-                                                      void handleMoveLesson(
-                                                        program,
-                                                        udaLessons,
-                                                        lessonIndex,
-                                                        1,
-                                                      )
-                                                    }
-                                                  >
-                                                    ▼
-                                                  </button>
-                                                </div>
-                                              )}
-                                            </div>
-                                            {lessonReorderError?.lessonId === lesson.id && (
-                                              <p
-                                                role="alert"
-                                                className={`text-error ${styles.reorderError}`}
-                                              >
-                                                {lessonReorderError.message}
-                                              </p>
-                                            )}
-
-                                            {deleteConfirmLessonId === lesson.id && (
-                                              <div
-                                                className={styles.deleteConfirmBox}
-                                                role="region"
-                                                aria-label={`Conferma eliminazione lezione ${lesson.filename}`}
-                                              >
-                                                {lessonDeleteBlockers?.lessonId === lesson.id ? (
-                                                  <>
-                                                    <p className={styles.deleteConfirmMsg}>
-                                                      Impossibile eliminare: esistono verifiche
-                                                      collegate a questa lezione. Rimuovile o
-                                                      modificale prima di eliminare.
-                                                    </p>
-                                                    <ul className={styles.deleteBlockersList}>
-                                                      {lessonDeleteBlockers.blockers.map(
-                                                        (blocker) => (
-                                                          <li
-                                                            key={blocker.verificationId}
-                                                            title={blocker.verificationId}
-                                                          >
-                                                            {blocker.title} (
-                                                            {
-                                                              VERIFICATION_STATUS_LABELS[
-                                                                blocker.status
-                                                              ]
-                                                            }
-                                                            )
-                                                          </li>
-                                                        ),
-                                                      )}
-                                                    </ul>
-                                                    <div className={styles.deleteConfirmActions}>
-                                                      <button
-                                                        type="button"
-                                                        onClick={cancelDeleteLesson}
-                                                      >
-                                                        Chiudi
-                                                      </button>
-                                                    </div>
-                                                  </>
-                                                ) : (
-                                                  <>
-                                                    <p className={styles.deleteConfirmMsg}>
-                                                      Saranno eliminati il file su Storage e
-                                                      l&apos;eventuale pool collegato. Operazione
-                                                      irreversibile.
-                                                    </p>
-                                                    {lessonDeleteError?.lessonId === lesson.id && (
-                                                      <p role="alert" className="text-error">
-                                                        {lessonDeleteError.message}
-                                                      </p>
-                                                    )}
-                                                    <div className={styles.deleteConfirmActions}>
-                                                      <button
-                                                        type="button"
-                                                        className={`${styles.deleteConfirmBtn} btn-danger`}
-                                                        disabled={deletingLessonId === lesson.id}
-                                                        onClick={() =>
-                                                          void handleConfirmDeleteLesson(
-                                                            program,
-                                                            uda,
-                                                            lesson,
-                                                          )
-                                                        }
-                                                      >
-                                                        {deletingLessonId === lesson.id
-                                                          ? 'Eliminazione…'
-                                                          : 'Elimina definitivamente'}
-                                                      </button>
-                                                      <button
-                                                        type="button"
-                                                        disabled={deletingLessonId === lesson.id}
-                                                        onClick={cancelDeleteLesson}
-                                                      >
-                                                        Annulla
-                                                      </button>
-                                                    </div>
-                                                  </>
-                                                )}
-                                              </div>
-                                            )}
-                                          </li>
-                                        );
-                                      })}
-                                    </ul>
-                                  )}
-
-                                  {udaCreating && (
-                                    <form
-                                      className={styles.newLessonForm}
-                                      role="region"
-                                      aria-label={`Nuova lezione — ${uda.dir}`}
-                                      onSubmit={(e) => {
-                                        e.preventDefault();
-                                        void handleCreateLesson(program, uda);
-                                      }}
-                                    >
-                                      <label htmlFor={`new-lesson-titolo-${uda.id}`}>
-                                        Titolo
-                                        <input
-                                          id={`new-lesson-titolo-${uda.id}`}
-                                          type="text"
-                                          value={newLessonTitolo}
-                                          onChange={(e) => setNewLessonTitolo(e.target.value)}
-                                          required
-                                        />
-                                      </label>
-                                      <label htmlFor={`new-lesson-sottotitolo-${uda.id}`}>
-                                        Sottotitolo
-                                        <input
-                                          id={`new-lesson-sottotitolo-${uda.id}`}
-                                          type="text"
-                                          value={newLessonSottotitolo}
-                                          onChange={(e) => setNewLessonSottotitolo(e.target.value)}
-                                        />
-                                      </label>
-                                      <label htmlFor={`new-lesson-difficolta-${uda.id}`}>
-                                        Difficoltà
-                                        <input
-                                          id={`new-lesson-difficolta-${uda.id}`}
-                                          type="text"
-                                          value={newLessonDifficolta}
-                                          onChange={(e) => setNewLessonDifficolta(e.target.value)}
-                                        />
-                                      </label>
-                                      <label htmlFor={`new-lesson-concetti-${uda.id}`}>
-                                        Concetti chiave (uno per riga)
-                                        <textarea
-                                          id={`new-lesson-concetti-${uda.id}`}
-                                          rows={2}
-                                          value={newLessonConcettiChiave}
-                                          onChange={(e) =>
-                                            setNewLessonConcettiChiave(e.target.value)
-                                          }
-                                        />
-                                      </label>
-                                      <label htmlFor={`new-lesson-obiettivi-${uda.id}`}>
-                                        Obiettivi (uno per riga)
-                                        <textarea
-                                          id={`new-lesson-obiettivi-${uda.id}`}
-                                          rows={2}
-                                          value={newLessonObiettivi}
-                                          onChange={(e) => setNewLessonObiettivi(e.target.value)}
-                                        />
-                                      </label>
-                                      <label htmlFor={`new-lesson-body-${uda.id}`}>
-                                        Corpo Markdown iniziale (opzionale)
-                                        <textarea
-                                          id={`new-lesson-body-${uda.id}`}
-                                          rows={4}
-                                          value={newLessonBody}
-                                          onChange={(e) => setNewLessonBody(e.target.value)}
-                                        />
-                                      </label>
-                                      {createLessonError && (
-                                        <p role="alert" className="text-error">
-                                          {createLessonError}
-                                        </p>
-                                      )}
-                                      <div className={styles.newLessonActions}>
-                                        <button
-                                          type="submit"
-                                          className="btn-success"
-                                          disabled={savingNewLesson || !newLessonTitolo.trim()}
-                                        >
-                                          {savingNewLesson ? 'Creazione…' : 'Crea lezione'}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          disabled={savingNewLesson}
-                                          onClick={() => setCreatingLessonUdaKey(null)}
-                                        >
-                                          Annulla
-                                        </button>
-                                      </div>
-                                    </form>
-                                  )}
-                                </div>
-                              )}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-
-                    {creatingUdaProgramId === program.id && (
-                      <form
-                        className={styles.newLessonForm}
-                        role="region"
-                        aria-label={`Nuova UDA — ${program.title}`}
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          void handleCreateUda(program);
-                        }}
+                      <span
+                        className={`${styles.caret}${expanded ? ` ${styles.caretOpen}` : ''}`}
+                        aria-hidden="true"
                       >
-                        <label htmlFor={`new-uda-titolo-${program.id}`}>
-                          Titolo
-                          <input
-                            id={`new-uda-titolo-${program.id}`}
-                            type="text"
-                            value={newUdaTitolo}
-                            onChange={(e) => setNewUdaTitolo(e.target.value)}
-                            required
-                          />
-                        </label>
-                        <label htmlFor={`new-uda-descrizione-${program.id}`}>
-                          Descrizione
-                          <textarea
-                            id={`new-uda-descrizione-${program.id}`}
-                            rows={2}
-                            value={newUdaDescrizione}
-                            onChange={(e) => setNewUdaDescrizione(e.target.value)}
-                          />
-                        </label>
-                        <label htmlFor={`new-uda-competenze-${program.id}`}>
-                          Competenze (una per riga)
-                          <textarea
-                            id={`new-uda-competenze-${program.id}`}
-                            rows={2}
-                            value={newUdaCompetenze}
-                            onChange={(e) => setNewUdaCompetenze(e.target.value)}
-                          />
-                        </label>
-                        <label htmlFor={`new-uda-obiettivi-${program.id}`}>
-                          Obiettivi (uno per riga)
-                          <textarea
-                            id={`new-uda-obiettivi-${program.id}`}
-                            rows={2}
-                            value={newUdaObiettivi}
-                            onChange={(e) => setNewUdaObiettivi(e.target.value)}
-                          />
-                        </label>
-                        {createUdaError && (
-                          <p role="alert" className="text-error">
-                            {createUdaError}
-                          </p>
-                        )}
-                        <div className={styles.newLessonActions}>
-                          <button
-                            type="submit"
-                            className="btn-success"
-                            disabled={savingNewUda || !newUdaTitolo.trim()}
-                          >
-                            {savingNewUda ? 'Creazione…' : 'Crea UDA'}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={savingNewUda}
-                            onClick={() => setCreatingUdaProgramId(null)}
-                          >
-                            Annulla
-                          </button>
-                        </div>
-                      </form>
+                        ▶
+                      </span>
+                      <span className={styles.courseTitle}>{program.title}</span>
+                      {!program.activeImportId && (
+                        <span className="badge badge-warning">Nessun import</span>
+                      )}
+                    </button>
+                    {program.activeImportId && (
+                      <button
+                        type="button"
+                        className={styles.udaAddBtn}
+                        title="Nuova UDA"
+                        aria-label={`Nuova UDA — ${program.title}`}
+                        aria-expanded={creatingUdaProgramId === program.id}
+                        onClick={() => toggleCreateUda(program)}
+                      >
+                        ＋
+                      </button>
                     )}
                   </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+
+                  {expanded && (
+                    <div id={`lezioni-course-panel-${program.id}`} className={styles.udaPanel}>
+                      {!program.activeImportId ? (
+                        <p className="state-empty">{IMPORT_HINT}</p>
+                      ) : tree?.udas == null ? (
+                        <p aria-busy="true" className="state-loading">
+                          Caricamento UDA…
+                        </p>
+                      ) : tree.udas.length === 0 ? (
+                        <p className="state-empty">Nessuna UDA.</p>
+                      ) : (
+                        <ul className={styles.udaList}>
+                          {tree.udas.map((uda, udaIndex) => {
+                            const udaKey = `${program.id}:${uda.dir}`;
+                            const udaExpanded = expandedUdas.has(udaKey);
+                            const udaLessons = (tree.lessons ?? []).filter(
+                              (l) => l.udaDir === uda.dir,
+                            );
+
+                            const udaCreating = creatingLessonUdaKey === udaKey;
+                            const udaBusy = busyUdaIds.has(uda.id);
+
+                            return (
+                              <li key={uda.id}>
+                                <div className={styles.udaRow}>
+                                  <button
+                                    type="button"
+                                    className={styles.udaToggle}
+                                    aria-expanded={udaExpanded}
+                                    aria-controls={`lezioni-uda-panel-${uda.id}`}
+                                    onClick={() => toggleUda(program.id, uda.dir)}
+                                  >
+                                    <span
+                                      className={`${styles.caret}${udaExpanded ? ` ${styles.caretOpen}` : ''}`}
+                                      aria-hidden="true"
+                                    >
+                                      ▶
+                                    </span>
+                                    <span className={styles.udaDir}>{uda.dir}</span>
+                                  </button>
+                                  {reorderMode && (
+                                    <div
+                                      className={styles.reorderControls}
+                                      role="group"
+                                      aria-label={`Riordina ${uda.dir}`}
+                                    >
+                                      <button
+                                        type="button"
+                                        className={styles.reorderBtn}
+                                        title="Sposta su"
+                                        aria-label={`Sposta su — ${uda.dir}`}
+                                        disabled={udaIndex === 0 || udaBusy}
+                                        onClick={() =>
+                                          void handleMoveUda(program, tree.udas!, udaIndex, -1)
+                                        }
+                                      >
+                                        ▲
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className={styles.reorderBtn}
+                                        title="Sposta giù"
+                                        aria-label={`Sposta giù — ${uda.dir}`}
+                                        disabled={udaIndex === tree.udas!.length - 1 || udaBusy}
+                                        onClick={() =>
+                                          void handleMoveUda(program, tree.udas!, udaIndex, 1)
+                                        }
+                                      >
+                                        ▼
+                                      </button>
+                                    </div>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className={styles.udaAddBtn}
+                                    title="Nuova lezione"
+                                    aria-label={`Nuova lezione — ${uda.dir}`}
+                                    aria-expanded={udaCreating}
+                                    onClick={() => toggleCreateLesson(program, udaKey)}
+                                  >
+                                    ＋
+                                  </button>
+                                  {!reorderMode && (
+                                    <button
+                                      type="button"
+                                      className={styles.deleteBtn}
+                                      title="Elimina UDA"
+                                      aria-label={`Elimina UDA — ${uda.dir}`}
+                                      onClick={() => startDeleteUda(uda)}
+                                    >
+                                      🗑️
+                                    </button>
+                                  )}
+                                </div>
+
+                                {udaReorderError?.udaId === uda.id && (
+                                  <p role="alert" className={`text-error ${styles.reorderError}`}>
+                                    {udaReorderError.message}
+                                  </p>
+                                )}
+
+                                {deleteConfirmUdaId === uda.id && (
+                                  <div
+                                    className={styles.deleteConfirmBox}
+                                    role="region"
+                                    aria-label={`Conferma eliminazione UDA ${uda.dir}`}
+                                  >
+                                    {udaDeleteBlockers?.udaId === uda.id ? (
+                                      <>
+                                        <p className={styles.deleteConfirmMsg}>
+                                          Impossibile eliminare: esistono verifiche collegate a
+                                          questa UDA. Rimuovile o modificale prima di eliminare.
+                                        </p>
+                                        <ul className={styles.deleteBlockersList}>
+                                          {udaDeleteBlockers.blockers.map((blocker) => (
+                                            <li
+                                              key={blocker.verificationId}
+                                              title={blocker.verificationId}
+                                            >
+                                              {blocker.title} (
+                                              {VERIFICATION_STATUS_LABELS[blocker.status]})
+                                            </li>
+                                          ))}
+                                        </ul>
+                                        <div className={styles.deleteConfirmActions}>
+                                          <button type="button" onClick={cancelDeleteUda}>
+                                            Chiudi
+                                          </button>
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <p className={styles.deleteConfirmMsg}>
+                                          Saranno eliminate tutte le lezioni della UDA, i relativi
+                                          file su Storage e i pool collegati. Operazione
+                                          irreversibile.
+                                        </p>
+                                        {udaDeleteError?.udaId === uda.id && (
+                                          <p role="alert" className="text-error">
+                                            {udaDeleteError.message}
+                                          </p>
+                                        )}
+                                        <div className={styles.deleteConfirmActions}>
+                                          <button
+                                            type="button"
+                                            className={`${styles.deleteConfirmBtn} btn-danger`}
+                                            disabled={deletingUdaId === uda.id}
+                                            onClick={() =>
+                                              void handleConfirmDeleteUda(program, uda)
+                                            }
+                                          >
+                                            {deletingUdaId === uda.id
+                                              ? 'Eliminazione…'
+                                              : 'Elimina definitivamente'}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={deletingUdaId === uda.id}
+                                            onClick={cancelDeleteUda}
+                                          >
+                                            Annulla
+                                          </button>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+
+                                {udaExpanded && (
+                                  <div
+                                    id={`lezioni-uda-panel-${uda.id}`}
+                                    className={styles.lessonPanel}
+                                  >
+                                    {udaLessons.length === 0 ? (
+                                      <p className="state-empty">Nessuna lezione.</p>
+                                    ) : (
+                                      <ul className={styles.lessonList}>
+                                        {udaLessons.map((lesson, lessonIndex) => {
+                                          const { title } = resolveLessonTitle(
+                                            lesson.filename,
+                                            lesson.titolo,
+                                          );
+                                          const lessonBusy = busyLessonIds.has(lesson.id);
+                                          return (
+                                            <li key={lesson.id}>
+                                              <div className={styles.lessonRow}>
+                                                <button
+                                                  type="button"
+                                                  className={styles.lessonBtn}
+                                                  aria-pressed={selectedLesson?.id === lesson.id}
+                                                  aria-label={`Apri lezione ${lesson.filename}`}
+                                                  onClick={() => void selectLesson(program, lesson)}
+                                                >
+                                                  {title}
+                                                </button>
+                                                {!reorderMode && (
+                                                  <button
+                                                    type="button"
+                                                    className={styles.deleteBtn}
+                                                    title="Elimina lezione"
+                                                    aria-label={`Elimina lezione — ${lesson.filename}`}
+                                                    onClick={() => startDeleteLesson(lesson)}
+                                                  >
+                                                    🗑️
+                                                  </button>
+                                                )}
+                                                {reorderMode && (
+                                                  <div
+                                                    className={styles.reorderControls}
+                                                    role="group"
+                                                    aria-label={`Riordina ${lesson.filename}`}
+                                                  >
+                                                    <button
+                                                      type="button"
+                                                      className={styles.reorderBtn}
+                                                      title="Sposta su"
+                                                      aria-label={`Sposta su — ${lesson.filename}`}
+                                                      disabled={lessonIndex === 0 || lessonBusy}
+                                                      onClick={() =>
+                                                        void handleMoveLesson(
+                                                          program,
+                                                          udaLessons,
+                                                          lessonIndex,
+                                                          -1,
+                                                        )
+                                                      }
+                                                    >
+                                                      ▲
+                                                    </button>
+                                                    <button
+                                                      type="button"
+                                                      className={styles.reorderBtn}
+                                                      title="Sposta giù"
+                                                      aria-label={`Sposta giù — ${lesson.filename}`}
+                                                      disabled={
+                                                        lessonIndex === udaLessons.length - 1 ||
+                                                        lessonBusy
+                                                      }
+                                                      onClick={() =>
+                                                        void handleMoveLesson(
+                                                          program,
+                                                          udaLessons,
+                                                          lessonIndex,
+                                                          1,
+                                                        )
+                                                      }
+                                                    >
+                                                      ▼
+                                                    </button>
+                                                  </div>
+                                                )}
+                                              </div>
+                                              {lessonReorderError?.lessonId === lesson.id && (
+                                                <p
+                                                  role="alert"
+                                                  className={`text-error ${styles.reorderError}`}
+                                                >
+                                                  {lessonReorderError.message}
+                                                </p>
+                                              )}
+
+                                              {deleteConfirmLessonId === lesson.id && (
+                                                <div
+                                                  className={styles.deleteConfirmBox}
+                                                  role="region"
+                                                  aria-label={`Conferma eliminazione lezione ${lesson.filename}`}
+                                                >
+                                                  {lessonDeleteBlockers?.lessonId === lesson.id ? (
+                                                    <>
+                                                      <p className={styles.deleteConfirmMsg}>
+                                                        Impossibile eliminare: esistono verifiche
+                                                        collegate a questa lezione. Rimuovile o
+                                                        modificale prima di eliminare.
+                                                      </p>
+                                                      <ul className={styles.deleteBlockersList}>
+                                                        {lessonDeleteBlockers.blockers.map(
+                                                          (blocker) => (
+                                                            <li
+                                                              key={blocker.verificationId}
+                                                              title={blocker.verificationId}
+                                                            >
+                                                              {blocker.title} (
+                                                              {
+                                                                VERIFICATION_STATUS_LABELS[
+                                                                  blocker.status
+                                                                ]
+                                                              }
+                                                              )
+                                                            </li>
+                                                          ),
+                                                        )}
+                                                      </ul>
+                                                      <div className={styles.deleteConfirmActions}>
+                                                        <button
+                                                          type="button"
+                                                          onClick={cancelDeleteLesson}
+                                                        >
+                                                          Chiudi
+                                                        </button>
+                                                      </div>
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      <p className={styles.deleteConfirmMsg}>
+                                                        Saranno eliminati il file su Storage e
+                                                        l&apos;eventuale pool collegato. Operazione
+                                                        irreversibile.
+                                                      </p>
+                                                      {lessonDeleteError?.lessonId ===
+                                                        lesson.id && (
+                                                        <p role="alert" className="text-error">
+                                                          {lessonDeleteError.message}
+                                                        </p>
+                                                      )}
+                                                      <div className={styles.deleteConfirmActions}>
+                                                        <button
+                                                          type="button"
+                                                          className={`${styles.deleteConfirmBtn} btn-danger`}
+                                                          disabled={deletingLessonId === lesson.id}
+                                                          onClick={() =>
+                                                            void handleConfirmDeleteLesson(
+                                                              program,
+                                                              uda,
+                                                              lesson,
+                                                            )
+                                                          }
+                                                        >
+                                                          {deletingLessonId === lesson.id
+                                                            ? 'Eliminazione…'
+                                                            : 'Elimina definitivamente'}
+                                                        </button>
+                                                        <button
+                                                          type="button"
+                                                          disabled={deletingLessonId === lesson.id}
+                                                          onClick={cancelDeleteLesson}
+                                                        >
+                                                          Annulla
+                                                        </button>
+                                                      </div>
+                                                    </>
+                                                  )}
+                                                </div>
+                                              )}
+                                            </li>
+                                          );
+                                        })}
+                                      </ul>
+                                    )}
+
+                                    {udaCreating && (
+                                      <form
+                                        className={styles.newLessonForm}
+                                        role="region"
+                                        aria-label={`Nuova lezione — ${uda.dir}`}
+                                        onSubmit={(e) => {
+                                          e.preventDefault();
+                                          void handleCreateLesson(program, uda);
+                                        }}
+                                      >
+                                        <label htmlFor={`new-lesson-titolo-${uda.id}`}>
+                                          Titolo
+                                          <input
+                                            id={`new-lesson-titolo-${uda.id}`}
+                                            type="text"
+                                            value={newLessonTitolo}
+                                            onChange={(e) => setNewLessonTitolo(e.target.value)}
+                                            required
+                                          />
+                                        </label>
+                                        <label htmlFor={`new-lesson-sottotitolo-${uda.id}`}>
+                                          Sottotitolo
+                                          <input
+                                            id={`new-lesson-sottotitolo-${uda.id}`}
+                                            type="text"
+                                            value={newLessonSottotitolo}
+                                            onChange={(e) =>
+                                              setNewLessonSottotitolo(e.target.value)
+                                            }
+                                          />
+                                        </label>
+                                        <label htmlFor={`new-lesson-difficolta-${uda.id}`}>
+                                          Difficoltà
+                                          <input
+                                            id={`new-lesson-difficolta-${uda.id}`}
+                                            type="text"
+                                            value={newLessonDifficolta}
+                                            onChange={(e) => setNewLessonDifficolta(e.target.value)}
+                                          />
+                                        </label>
+                                        <label htmlFor={`new-lesson-concetti-${uda.id}`}>
+                                          Concetti chiave (uno per riga)
+                                          <textarea
+                                            id={`new-lesson-concetti-${uda.id}`}
+                                            rows={2}
+                                            value={newLessonConcettiChiave}
+                                            onChange={(e) =>
+                                              setNewLessonConcettiChiave(e.target.value)
+                                            }
+                                          />
+                                        </label>
+                                        <label htmlFor={`new-lesson-obiettivi-${uda.id}`}>
+                                          Obiettivi (uno per riga)
+                                          <textarea
+                                            id={`new-lesson-obiettivi-${uda.id}`}
+                                            rows={2}
+                                            value={newLessonObiettivi}
+                                            onChange={(e) => setNewLessonObiettivi(e.target.value)}
+                                          />
+                                        </label>
+                                        <label htmlFor={`new-lesson-body-${uda.id}`}>
+                                          Corpo Markdown iniziale (opzionale)
+                                          <textarea
+                                            id={`new-lesson-body-${uda.id}`}
+                                            rows={4}
+                                            value={newLessonBody}
+                                            onChange={(e) => setNewLessonBody(e.target.value)}
+                                          />
+                                        </label>
+                                        {createLessonError && (
+                                          <p role="alert" className="text-error">
+                                            {createLessonError}
+                                          </p>
+                                        )}
+                                        <div className={styles.newLessonActions}>
+                                          <button
+                                            type="submit"
+                                            className="btn-success"
+                                            disabled={savingNewLesson || !newLessonTitolo.trim()}
+                                          >
+                                            {savingNewLesson ? 'Creazione…' : 'Crea lezione'}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={savingNewLesson}
+                                            onClick={() => setCreatingLessonUdaKey(null)}
+                                          >
+                                            Annulla
+                                          </button>
+                                        </div>
+                                      </form>
+                                    )}
+                                  </div>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+
+                      {creatingUdaProgramId === program.id && (
+                        <form
+                          className={styles.newLessonForm}
+                          role="region"
+                          aria-label={`Nuova UDA — ${program.title}`}
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            void handleCreateUda(program);
+                          }}
+                        >
+                          <label htmlFor={`new-uda-titolo-${program.id}`}>
+                            Titolo
+                            <input
+                              id={`new-uda-titolo-${program.id}`}
+                              type="text"
+                              value={newUdaTitolo}
+                              onChange={(e) => setNewUdaTitolo(e.target.value)}
+                              required
+                            />
+                          </label>
+                          <label htmlFor={`new-uda-descrizione-${program.id}`}>
+                            Descrizione
+                            <textarea
+                              id={`new-uda-descrizione-${program.id}`}
+                              rows={2}
+                              value={newUdaDescrizione}
+                              onChange={(e) => setNewUdaDescrizione(e.target.value)}
+                            />
+                          </label>
+                          <label htmlFor={`new-uda-competenze-${program.id}`}>
+                            Competenze (una per riga)
+                            <textarea
+                              id={`new-uda-competenze-${program.id}`}
+                              rows={2}
+                              value={newUdaCompetenze}
+                              onChange={(e) => setNewUdaCompetenze(e.target.value)}
+                            />
+                          </label>
+                          <label htmlFor={`new-uda-obiettivi-${program.id}`}>
+                            Obiettivi (uno per riga)
+                            <textarea
+                              id={`new-uda-obiettivi-${program.id}`}
+                              rows={2}
+                              value={newUdaObiettivi}
+                              onChange={(e) => setNewUdaObiettivi(e.target.value)}
+                            />
+                          </label>
+                          {createUdaError && (
+                            <p role="alert" className="text-error">
+                              {createUdaError}
+                            </p>
+                          )}
+                          <div className={styles.newLessonActions}>
+                            <button
+                              type="submit"
+                              className="btn-success"
+                              disabled={savingNewUda || !newUdaTitolo.trim()}
+                            >
+                              {savingNewUda ? 'Creazione…' : 'Crea UDA'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={savingNewUda}
+                              onClick={() => setCreatingUdaProgramId(null)}
+                            >
+                              Annulla
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </aside>
 
       <div className={styles.content}>

@@ -177,3 +177,46 @@ describe('StudentLessonsView', () => {
     expect(screen.queryByRole('button', { name: /Importa/i })).toBeNull();
   });
 });
+
+describe('StudentLessonsView — sidebar collapse toggle', () => {
+  it('shows a sidebar toggle button when programs are loaded', async () => {
+    mockLoadStudentLessons.mockResolvedValue({
+      status: 'ok',
+      programs: [PROGRAM_A],
+      lessonsByProgram: { [PROGRAM_A.id]: [LESSON_1] },
+    });
+    render(<StudentLessonsView />);
+    await screen.findByText('Informatica');
+    expect(screen.getByRole('button', { name: 'Comprimi sidebar' })).toBeTruthy();
+  });
+
+  it('hides the program list when sidebar is collapsed', async () => {
+    mockLoadStudentLessons.mockResolvedValue({
+      status: 'ok',
+      programs: [PROGRAM_A],
+      lessonsByProgram: { [PROGRAM_A.id]: [LESSON_1] },
+    });
+    render(<StudentLessonsView />);
+    await screen.findByText('Informatica');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comprimi sidebar' }));
+
+    expect(screen.queryByText('Informatica')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Espandi sidebar' })).toBeTruthy();
+  });
+
+  it('restores the program list when re-expanded', async () => {
+    mockLoadStudentLessons.mockResolvedValue({
+      status: 'ok',
+      programs: [PROGRAM_A],
+      lessonsByProgram: { [PROGRAM_A.id]: [LESSON_1] },
+    });
+    render(<StudentLessonsView />);
+    await screen.findByText('Informatica');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comprimi sidebar' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Espandi sidebar' }));
+
+    expect(await screen.findByText('Informatica')).toBeTruthy();
+  });
+});
