@@ -698,6 +698,30 @@ describe('createUda', () => {
     );
   });
 
+  it('derives the next order from legacy UDA dirs when order is missing', async () => {
+    mockGetDocs.mockResolvedValueOnce({
+      docs: [
+        { data: () => ({ dir: 'uda-01-intro', filename: 'uda-01-intro.md' }) },
+        { data: () => ({ dir: 'uda-09-legacy', filename: 'uda-09-legacy.md' }) },
+      ],
+    });
+
+    const result = await createUda({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      ownerUid: OWNER_UID,
+      fields: { ...BASE_FIELDS, titolo: 'Finale' },
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    expect(result).toMatchObject({ dir: 'uda-10-finale', order: 9 });
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1/imports/imp-1/udas/uda-10-finale' },
+      expect.objectContaining({ order: 9 }),
+    );
+  });
+
   it('writes descrizione/competenze/obiettivi to both Storage front matter and Firestore', async () => {
     mockGetDocs.mockResolvedValueOnce({ docs: [] });
 

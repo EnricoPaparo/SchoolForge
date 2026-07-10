@@ -69,6 +69,14 @@ const UDA = {
   lessonCount: 1,
 };
 
+const UDA_09_LEGACY = {
+  ...UDA,
+  id: 'uda-9',
+  dir: 'uda-09-legacy',
+  filename: 'uda-09-legacy.md',
+  storageBasePath: 'repository/owner-uid/imports/imp-1/uda-09-legacy',
+};
+
 const LESSON_1 = {
   id: 'lesson-1',
   ownerUid: 'owner-uid',
@@ -496,7 +504,11 @@ describe('LessonsView — new UDA creation (RE-03B)', () => {
   });
 
   it('calls createUda with the entered fields and shows the new UDA in the sidebar without a refetch', async () => {
-    mockCreateUda.mockResolvedValue({ udaId: 'uda-02-sicurezza', dir: 'uda-02-sicurezza' });
+    mockCreateUda.mockResolvedValue({
+      udaId: 'uda-02-sicurezza',
+      dir: 'uda-02-sicurezza',
+      order: 1,
+    });
     await openCreateUdaForm();
 
     fireEvent.change(screen.getByLabelText('Titolo'), { target: { value: 'Sicurezza' } });
@@ -529,6 +541,24 @@ describe('LessonsView — new UDA creation (RE-03B)', () => {
     // UDA is spliced into local state, no refetch.
     expect(mockListUdas).toHaveBeenCalledTimes(1);
     expect(screen.queryByLabelText('Titolo')).toBeNull();
+  });
+
+  it('keeps a newly created uda-10 after legacy uda-09 in the visible sidebar', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA_09_LEGACY]);
+    mockListLessons.mockResolvedValue([]);
+    mockCreateUda.mockResolvedValue({ udaId: 'uda-10-finale', dir: 'uda-10-finale', order: 9 });
+
+    render(<LessonsView />);
+    await screen.findByRole('button', { name: /^Informatica/ });
+    fireEvent.click(await screen.findByRole('button', { name: /Nuova UDA — Informatica/ }));
+    await screen.findByRole('button', { name: 'uda-09-legacy' });
+    fireEvent.change(screen.getByLabelText('Titolo'), { target: { value: 'Finale' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crea UDA' }));
+
+    const legacy = await screen.findByRole('button', { name: 'uda-09-legacy' });
+    const created = await screen.findByRole('button', { name: 'uda-10-finale' });
+    expect(legacy.compareDocumentPosition(created) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('closes the "Nuova lezione" form for a UDA when "Nuova UDA" is opened, and vice versa', async () => {

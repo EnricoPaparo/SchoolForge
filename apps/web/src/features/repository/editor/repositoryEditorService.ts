@@ -86,6 +86,11 @@ function lessonFrontMatterFields(metadata: LessonMetadata): EditableFrontMatter 
   };
 }
 
+function udaOrderFromDir(dir: string | undefined): number | null {
+  const match = /^uda-(\d+)-/.exec(dir ?? '');
+  return match ? Number(match[1]) - 1 : null;
+}
+
 /**
  * Maps a UDA's titolo (not part of `UdaMetadata` — see `validateUda`,
  * `descrizione`/`competenze`/`obiettivi` are the only metadata fields) plus
@@ -432,7 +437,7 @@ export async function createUda(params: {
   fields: NewUdaFields;
   db: Firestore;
   storage: FirebaseStorage;
-}): Promise<{ udaId: string; dir: string }> {
+}): Promise<{ udaId: string; dir: string; order: number }> {
   const { programId, importId, ownerUid, fields, db, storage } = params;
   const titolo = fields.titolo.trim();
   if (!titolo) throw new Error('Il titolo della UDA è obbligatorio.');
@@ -445,7 +450,10 @@ export async function createUda(params: {
     const match = /^uda-(\d+)-/.exec(uda.dir ?? '');
     return match ? Math.max(max, Number(match[1])) : max;
   }, 0);
-  const maxOrder = existingUdas.reduce((max, uda) => Math.max(max, uda.order ?? -1), -1);
+  const maxOrder = existingUdas.reduce(
+    (max, uda) => Math.max(max, uda.order ?? udaOrderFromDir(uda.dir) ?? -1),
+    -1,
+  );
 
   const dir = `uda-${String(maxNumber + 1).padStart(2, '0')}-${slugify(titolo)}`;
   const filename = `${dir}.md`;
@@ -485,5 +493,5 @@ export async function createUda(params: {
 
   await writeAuditEvent(db, ownerUid, 'uda.created', udaId);
 
-  return { udaId, dir };
+  return { udaId, dir, order };
 }

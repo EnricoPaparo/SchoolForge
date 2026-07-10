@@ -31,6 +31,12 @@ function orderOrLegacy(value: number | undefined): number {
   return value ?? Number.MAX_SAFE_INTEGER;
 }
 
+function udaOrderOrLegacy(uda: Pick<UdaDoc, 'dir' | 'order'>): number {
+  if (uda.order !== undefined) return uda.order;
+  const match = /^uda-(\d+)-/.exec(uda.dir);
+  return match ? Number(match[1]) - 1 : Number.MAX_SAFE_INTEGER;
+}
+
 /**
  * Programs created before `classIds` existed are read back with
  * `classIds: []` — the safe default (not visible to any student) rather
@@ -124,14 +130,14 @@ export async function listUdas(
     return {
       id: d.id,
       ...raw,
-      order: raw.order ?? Number.MAX_SAFE_INTEGER,
+      order: raw.order,
       descrizione: raw.descrizione ?? null,
       competenze: raw.competenze ?? [],
       obiettivi: raw.obiettivi ?? [],
     } as UdaItem;
   });
   return items.sort(
-    (a, b) => orderOrLegacy(a.order) - orderOrLegacy(b.order) || a.dir.localeCompare(b.dir),
+    (a, b) => udaOrderOrLegacy(a) - udaOrderOrLegacy(b) || a.dir.localeCompare(b.dir),
   );
 }
 

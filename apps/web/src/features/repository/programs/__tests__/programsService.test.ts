@@ -141,7 +141,7 @@ describe('setProgramClassIds', () => {
 });
 
 describe('listUdas — deterministic ordering', () => {
-  it('sorts UDAs alphabetically by dir regardless of Firestore return order', async () => {
+  it('sorts legacy UDAs by the numeric uda-XX prefix regardless of Firestore return order', async () => {
     mockGetDocs.mockResolvedValue({
       docs: [
         { id: 'uda-c', data: () => ({ dir: 'uda-10-finale', filename: 'uda-10-finale.md' }) },
@@ -152,6 +152,21 @@ describe('listUdas — deterministic ordering', () => {
 
     const result = await listUdas('prog-1', 'imp-1', fakeDb);
     expect(result.map((u) => u.dir)).toEqual(['uda-01-intro', 'uda-02-reti', 'uda-10-finale']);
+  });
+
+  it('keeps newly ordered UDAs after legacy UDA prefixes instead of moving them first', async () => {
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        {
+          id: 'uda-new',
+          data: () => ({ dir: 'uda-10-finale', filename: 'uda-10-finale.md', order: 9 }),
+        },
+        { id: 'uda-old', data: () => ({ dir: 'uda-09-legacy', filename: 'uda-09-legacy.md' }) },
+      ],
+    });
+
+    const result = await listUdas('prog-1', 'imp-1', fakeDb);
+    expect(result.map((u) => u.dir)).toEqual(['uda-09-legacy', 'uda-10-finale']);
   });
 });
 
