@@ -606,18 +606,11 @@ questions:
         target: { value: 'Quanti bit ha un byte?' },
       });
 
-      // Fill first option id and testo
-      const idInputs = screen.getAllByLabelText(/ID opzione/);
-      const testoInputs = screen.getAllByLabelText(/Testo opzione/);
-      fireEvent.change(idInputs[0], { target: { value: 'a' } });
-      fireEvent.change(testoInputs[0], { target: { value: '4' } });
+      fireEvent.change(screen.getByLabelText('Risposta A'), { target: { value: '4' } });
 
       // Add second option
       fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
-      const idInputs2 = screen.getAllByLabelText(/ID opzione/);
-      const testoInputs2 = screen.getAllByLabelText(/Testo opzione/);
-      fireEvent.change(idInputs2[1], { target: { value: 'b' } });
-      fireEvent.change(testoInputs2[1], { target: { value: '8' } });
+      fireEvent.change(screen.getByLabelText('Risposta B'), { target: { value: '8' } });
 
       // Select radio for option b
       fireEvent.click(screen.getByLabelText(/Seleziona come risposta corretta b/));
@@ -645,25 +638,15 @@ questions:
         target: { value: 'Quali sono protocolli di trasporto?' },
       });
 
-      // Fill first option
-      const idInputs = screen.getAllByLabelText(/ID opzione/);
-      const testoInputs = screen.getAllByLabelText(/Testo opzione/);
-      fireEvent.change(idInputs[0], { target: { value: 'a' } });
-      fireEvent.change(testoInputs[0], { target: { value: 'TCP' } });
+      fireEvent.change(screen.getByLabelText('Risposta A'), { target: { value: 'TCP' } });
 
       // Add second option
       fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
-      const after2 = screen.getAllByLabelText(/ID opzione/);
-      const after2t = screen.getAllByLabelText(/Testo opzione/);
-      fireEvent.change(after2[1], { target: { value: 'b' } });
-      fireEvent.change(after2t[1], { target: { value: 'UDP' } });
+      fireEvent.change(screen.getByLabelText('Risposta B'), { target: { value: 'UDP' } });
 
       // Add third option (must keep at least one non-solution option per parsePool rules)
       fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
-      const after3 = screen.getAllByLabelText(/ID opzione/);
-      const after3t = screen.getAllByLabelText(/Testo opzione/);
-      fireEvent.change(after3[2], { target: { value: 'c' } });
-      fireEvent.change(after3t[2], { target: { value: 'HTTP' } });
+      fireEvent.change(screen.getByLabelText('Risposta C'), { target: { value: 'HTTP' } });
 
       // Select a and b as correct — controlled checkboxes need act() to flush React state
       await act(async () => {
@@ -695,30 +678,18 @@ questions:
         target: { value: 'Quali sono protocolli di trasporto?' },
       });
 
-      const firstIds = screen.getAllByLabelText(/ID opzione/);
-      const firstTexts = screen.getAllByLabelText(/Testo opzione/);
-      fireEvent.change(firstIds[0], { target: { value: 'a' } });
-      fireEvent.change(firstTexts[0], { target: { value: 'TCP' } });
+      fireEvent.change(screen.getByLabelText('Risposta A'), { target: { value: 'TCP' } });
 
       fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
-      const secondIds = screen.getAllByLabelText(/ID opzione/);
-      const secondTexts = screen.getAllByLabelText(/Testo opzione/);
-      fireEvent.change(secondIds[1], { target: { value: 'b' } });
-      fireEvent.change(secondTexts[1], { target: { value: 'UDP' } });
+      fireEvent.change(screen.getByLabelText('Risposta B'), { target: { value: 'UDP' } });
 
       fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
-      const thirdIds = screen.getAllByLabelText(/ID opzione/);
-      const thirdTexts = screen.getAllByLabelText(/Testo opzione/);
-      fireEvent.change(thirdIds[2], { target: { value: 'c' } });
-      fireEvent.change(thirdTexts[2], { target: { value: 'HTTP' } });
+      fireEvent.change(screen.getByLabelText('Risposta C'), { target: { value: 'HTTP' } });
 
       // User adds another row but leaves it empty. This must not be serialized
       // as an empty option, otherwise parsePool reports opzioni[n].testo.
       fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
-      const fourthIds = screen.getAllByLabelText(/ID opzione/);
-      const fourthTexts = screen.getAllByLabelText(/Testo opzione/);
-      fireEvent.change(fourthIds[3], { target: { value: '' } });
-      fireEvent.change(fourthTexts[3], { target: { value: '' } });
+      fireEvent.change(screen.getByLabelText('Risposta D'), { target: { value: '' } });
 
       await act(async () => {
         fireEvent.click(screen.getByLabelText(/Seleziona come risposta corretta a/));

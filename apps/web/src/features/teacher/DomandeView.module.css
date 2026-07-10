@@ -702,9 +702,18 @@
   accent-color: var(--color-primary);
 }
 
-.opzioneIdInput {
-  width: 4rem;
+.opzioneLetter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
   flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
 .opzioneTestoInput {
