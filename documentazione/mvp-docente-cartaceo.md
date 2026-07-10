@@ -224,7 +224,7 @@ La **Dashboard prontezza** mostra lo stato del repository:
 
 ### 5. Creazione classe
 
-Naviga in **Impostazioni** dalla barra laterale (contiene la gestione classi).
+Naviga in **Classi** dalla barra laterale.
 
 1. Inserisci il nome della classe nel campo *Nome* (es. *3A Informatica*).
 2. Aggiungi opzionalmente una descrizione.

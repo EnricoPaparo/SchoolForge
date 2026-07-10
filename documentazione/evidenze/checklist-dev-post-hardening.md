@@ -19,12 +19,12 @@
 | # | Verifica | Passi | Expected | Risultato |
 |---|---|---|---|---|
 | 1 | Login docente | Vai su https://schoolforge-dev.web.app, accedi con l'account owner | TeacherShell caricata (Corsi/Classi/Verifiche/Studenti/Template) | ⬜ da eseguire |
-| 2 | Creazione/modifica classi | In Impostazioni → Classi, crea una classe "Classe Test"; modifica il nome | Classe creata e visibile; modifica salvata | ⬜ da eseguire |
+| 2 | Creazione/modifica classi | In Classi, crea una classe "Classe Test"; modifica il nome | Classe creata e visibile; modifica salvata | ⬜ da eseguire |
 | 3 | Import programma | In Corsi, crea un programma e importa il kit ZIP di esempio | Messaggio "Import completato: N UDA, N lezioni, N domande"; UDA/lezioni visibili | ⬜ da eseguire |
 | 4 | Assegnazione programma a classe | Sulla riga del programma, bottone **Classi** → seleziona "Classe Test" → Salva | Il programma mostra "Classe Test" come classe assegnata | ⬜ da eseguire |
 | 5 | Apertura lezioni docente | In Lezioni, espandi il programma → UDA → clicca una lezione | Contenuto Markdown renderizzato, titolo leggibile (da front matter o filename pulito) | ⬜ da eseguire |
 | 6 | Login studente Google | Su un browser/profilo diverso, accedi con il secondo account Google | Se non ancora registrato: schermata di richiesta accesso o attesa approvazione; nessun contenuto docente visibile | ⬜ da eseguire |
-| 7 | Richiesta accesso studente | Se `newStudentRequestsEnabled` è attivo, verifica che il login crei automaticamente `students/{uid}` in `pending` | Lo studente compare in Impostazioni → Studenti con stato "In attesa" | ⬜ da eseguire |
+| 7 | Richiesta accesso studente | Se `newStudentRequestsEnabled` è attivo, verifica che il login crei automaticamente `students/{uid}` in `pending` | Lo studente compare in Studenti con stato "In attesa" | ⬜ da eseguire |
 | 8 | Approvazione/blocco studente | Dal docente, approva lo studente; poi bloccalo; poi riportalo a `pending`/riapprovalo | Ogni transizione di stato si riflette immediatamente lato studente al refresh (attesa → contenuti → bloccato → attesa) | ⬜ da eseguire |
 | 9 | Assegnazione classe studente | Dal docente, assegna "Classe Test" allo studente approvato | Lo studente smette di vedere "nessuna classe assegnata" | ⬜ da eseguire |
 | 10 | Visibilità lezioni solo per classe | Lato studente, apri Lezioni | Compaiono solo i programmi assegnati a "Classe Test" (punto 4); nessun altro programma | ⬜ da eseguire |
