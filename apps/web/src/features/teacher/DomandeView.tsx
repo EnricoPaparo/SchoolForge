@@ -94,8 +94,15 @@ function draftToRaw(d: QuestionDraft): Record<string, unknown> {
   if (d.tipo === 'aperta') {
     return { ...base, soluzione: d.soluzione };
   }
-  const opzioni = d.opzioni.map((o) => ({ id: o.id.trim(), testo: o.testo }));
-  const soluzione = d.tipo === 'chiusa_singola' ? [d.soluzioneIds[0] ?? ''] : d.soluzioneIds;
+  const opzioni = d.opzioni
+    .map((o) => ({ id: o.id.trim(), testo: o.testo.trim() }))
+    .filter((o) => o.id !== '' || o.testo !== '');
+  const optionIds = new Set(opzioni.map((o) => o.id));
+  const selectedSolutionIds = d.soluzioneIds
+    .map((id) => id.trim())
+    .filter((id) => optionIds.has(id));
+  const soluzione =
+    d.tipo === 'chiusa_singola' ? [selectedSolutionIds[0] ?? ''] : selectedSolutionIds;
   return { ...base, opzioni, soluzione };
 }
 

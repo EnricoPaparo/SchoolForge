@@ -682,6 +682,61 @@ questions:
       expect(saved?.soluzione).toEqual(expect.arrayContaining(['a', 'b']));
     });
 
+    it('ignores extra empty option rows when saving a chiusa_multipla question', async () => {
+      await openLesson();
+      fireEvent.click(screen.getByRole('button', { name: /Nuova domanda/ }));
+      await screen.findByRole('heading', { name: 'Nuova domanda' });
+
+      fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q3' } });
+      fireEvent.change(screen.getByLabelText('Tipo domanda'), {
+        target: { value: 'chiusa_multipla' },
+      });
+      fireEvent.change(screen.getByLabelText('Testo domanda'), {
+        target: { value: 'Quali sono protocolli di trasporto?' },
+      });
+
+      const firstIds = screen.getAllByLabelText(/ID opzione/);
+      const firstTexts = screen.getAllByLabelText(/Testo opzione/);
+      fireEvent.change(firstIds[0], { target: { value: 'a' } });
+      fireEvent.change(firstTexts[0], { target: { value: 'TCP' } });
+
+      fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
+      const secondIds = screen.getAllByLabelText(/ID opzione/);
+      const secondTexts = screen.getAllByLabelText(/Testo opzione/);
+      fireEvent.change(secondIds[1], { target: { value: 'b' } });
+      fireEvent.change(secondTexts[1], { target: { value: 'UDP' } });
+
+      fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
+      const thirdIds = screen.getAllByLabelText(/ID opzione/);
+      const thirdTexts = screen.getAllByLabelText(/Testo opzione/);
+      fireEvent.change(thirdIds[2], { target: { value: 'c' } });
+      fireEvent.change(thirdTexts[2], { target: { value: 'HTTP' } });
+
+      // User adds another row but leaves it empty. This must not be serialized
+      // as an empty option, otherwise parsePool reports opzioni[n].testo.
+      fireEvent.click(screen.getByRole('button', { name: /Aggiungi opzione/ }));
+      const fourthIds = screen.getAllByLabelText(/ID opzione/);
+      const fourthTexts = screen.getAllByLabelText(/Testo opzione/);
+      fireEvent.change(fourthIds[3], { target: { value: '' } });
+      fireEvent.change(fourthTexts[3], { target: { value: '' } });
+
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText(/Seleziona come risposta corretta a/));
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText(/Seleziona come risposta corretta b/));
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+      await waitFor(() => expect(mockSavePool).toHaveBeenCalledOnce());
+      const call = mockSavePool.mock.calls[0][0] as {
+        pool: { questions: { id: string; opzioni?: { id: string; testo: string }[] }[] };
+      };
+      const saved = call.pool.questions.find((q) => q.id === 'q3');
+      expect(saved?.opzioni).toHaveLength(3);
+      expect(saved?.opzioni?.map((o) => o.id)).toEqual(['a', 'b', 'c']);
+    });
+
     it('opens edit form when edit button is clicked', async () => {
       await openLesson();
       const editBtns = await screen.findAllByRole('button', { name: /Modifica domanda/ });
