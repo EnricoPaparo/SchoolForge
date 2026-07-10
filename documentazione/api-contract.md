@@ -1,7 +1,7 @@
 # SchoolForge — Contratto API
 
-**Versione:** 3.0
-**Stato:** in vigore — M1, M2, M3-lite e RE (Repository Editor) implementati; M3-full/M4/M5 restano specifica rinviata
+**Versione:** 3.1
+**Stato:** in vigore — M1, M2, M3-lite e RE (Repository Editor) implementati; QE (Question Editor, specifica QE-00 definita) da implementare; M3-full/M4/M5 restano specifica rinviata
 **Autorità:** `analisi-requisiti.md` e `architettura.md`
 
 ---
@@ -424,6 +424,20 @@ interface AuditEvent {
 | Export ZIP | Leggi struttura + download file Storage | — |
 
 Il parser `lesson-contract` (package interno `packages/lesson-contract/src/index.ts`, riesportato da `src/contracts/lesson.ts`) esegue la validazione nel client prima di qualsiasi scrittura. Se il client riceve errori, la UI li mostra senza scrivere su Firestore o Storage. Se un upload fallisce prima del commit, l'import precedente rimane l'unico visibile.
+
+### 3.1b Question Editor (QE-01 → QE-05, da implementare) — modifiche ai pool senza reimport
+
+> Specifica definita in `question-editor-roadmap.md`. Non ancora implementato. I tipi e i contratti seguenti descrivono le operazioni previste.
+
+Il service layer (`poolEditorService.ts`, da creare in QE-02) usa la stessa strategia Storage-poi-Firestore del Repository Editor. Non tocca mai `publishedSnapshot`, `publishedProjection` né verifiche attivate o chiuse.
+
+| Operazione | Scrittura Firestore | Storage |
+|---|---|---|
+| Crea domanda / modifica domanda / elimina domanda | Aggiorna/crea/elimina l'entry `questionIndex/{entryId}` corrispondente; aggiorna `lessons/{id}.questionCount` e `poolStatus` | Riscrive integralmente il file `.pool.md` serializzato con il nuovo YAML |
+| Crea pool (prima domanda) | Crea le entry `questionIndex`; imposta `lessons/{id}.poolStatus = 'valid'` e `questionCount` | Crea il file `.pool.md` |
+| Elimina pool | Elimina tutte le entry `questionIndex` del pool; imposta `lessons/{id}.poolStatus = 'absent'`, `questionCount = 0`; bloccata se esistono bozze che referenziano domande del pool | Elimina il file `.pool.md` |
+
+Il `questionIndex` continua a usare entryId deterministici `${lessonId}_${toDocId(q.id)}`. Modificare `id` di una domanda equivale a eliminare l'entry vecchia e creare quella nuova. Il formato YAML del file `.pool.md` rimane `schoolforge-pool/v1` invariato.
 
 ### 3.1a Repository Editor (RE-01 → RE-06) — modifiche dirette senza reimport
 
