@@ -1,0 +1,562 @@
+/* ── Domande — two-column layout ─────────────────────────────────── */
+.container {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.containerCollapsed {
+  grid-template-columns: auto 1fr;
+}
+
+@media (max-width: 680px) {
+  .container,
+  .containerCollapsed {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────── */
+.sidebar {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sidebarCollapsed {
+  padding: 0.5rem;
+  width: fit-content;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.sidebarHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.sidebarTitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────── */
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--color-text-muted);
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.iconBtn:hover:not(:disabled) {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.iconBtnDanger:hover:not(:disabled) {
+  background: var(--color-error-bg);
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btnPrimary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.btnPrimary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btnSecondary {
+  background: var(--color-surface-subtle);
+}
+
+.btnSecondary:hover:not(:disabled) {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btnDanger {
+  background: var(--color-error);
+  border-color: var(--color-error);
+  color: #fff;
+}
+
+.btnDanger:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+/* ── Tree ──────────────────────────────────────────────────────────── */
+.courseList,
+.udaList,
+.lessonList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.courseItem {
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.25rem;
+}
+
+.courseItem:last-child {
+  border-bottom: none;
+}
+
+.courseToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4375rem 0.375rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  text-align: left;
+  cursor: pointer;
+}
+
+.courseToggle:hover {
+  background: var(--color-surface-subtle);
+}
+
+.courseTitle {
+  flex: 1;
+  font-weight: 600;
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.caret {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  font-size: 0.65rem;
+  transition: transform 0.15s;
+}
+
+.caretOpen {
+  transform: rotate(90deg);
+}
+
+.udaPanel {
+  padding: 0.25rem 0 0.25rem 0.75rem;
+}
+
+.udaItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.udaToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.4375rem 0.5rem;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.udaToggle:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.udaTitle {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lessonRow {
+  padding-left: 0.875rem;
+}
+
+.lessonBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  width: 100%;
+  padding: 0.3125rem 0.5rem;
+  background: none;
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  border-radius: var(--radius);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  color: var(--color-text);
+  overflow: hidden;
+}
+
+.lessonBtn:hover {
+  background: var(--color-surface-subtle);
+  border-color: var(--color-border);
+  border-left-color: var(--color-primary);
+}
+
+.lessonBtn[aria-pressed='true'] {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary-light);
+  border-left-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.lessonTitle {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Pool status badges */
+.badgeValid {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  color: var(--color-success, #16a34a);
+}
+
+.badgeInvalid {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  color: var(--color-warning, #d97706);
+}
+
+.badgeAbsent {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  color: var(--color-text-muted);
+}
+
+/* ── Content panel ─────────────────────────────────────────────────── */
+.content {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.5rem;
+  min-height: 200px;
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .content {
+    padding: 1rem;
+  }
+}
+
+.contentHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.titleBlock {
+  flex: 1;
+  min-width: 0;
+}
+
+.contentTitle {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contentSubtitle {
+  margin-top: 0.1875rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.contentActions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* ── States ──────────────────────────────────────────────────────────── */
+.emptyState,
+.absentState,
+.invalidState {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.invalidTitle {
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.errorList {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.8125rem;
+  color: var(--color-error, #dc2626);
+}
+
+.errorMsg {
+  font-size: 0.8125rem;
+  color: var(--color-error, #dc2626);
+  margin: 0;
+}
+
+.mutedMsg {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  margin: 0.25rem 0;
+}
+
+/* ── Pool meta + question list ───────────────────────────────────────── */
+.poolMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.875rem;
+}
+
+.poolCount {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.questionList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.questionCard {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.875rem 1rem;
+  min-width: 0;
+}
+
+.questionHeader {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.questionNumber {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.questionId {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.0625rem 0.375rem;
+  color: var(--color-text-muted);
+}
+
+.questionTipo {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-primary);
+}
+
+.questionMeta {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-left: auto;
+}
+
+.questionTesto {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.opzioniList {
+  margin: 0 0 0.5rem;
+  padding-left: 1.25rem;
+  font-size: 0.8125rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+}
+
+.opzioneId {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.opzioneCorretta {
+  font-weight: 600;
+  color: var(--color-success, #16a34a);
+}
+
+.soluzioneBlock {
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+  padding: 0.375rem 0.625rem;
+  background: var(--color-surface);
+  border-left: 3px solid var(--color-primary);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.soluzioneLabel {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+/* ── Delete confirm / blockers ───────────────────────────────────────── */
+.deleteConfirmBox,
+.blockersBox {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-error-bg);
+  border: 1px solid var(--color-error, #dc2626);
+  border-radius: var(--radius);
+}
+
+.deleteConfirmMsg {
+  font-size: 0.8125rem;
+  margin: 0;
+}
+
+.deleteConfirmActions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.blockersList {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.8125rem;
+}
+
+/* ── YAML editor ─────────────────────────────────────────────────────── */
+.yamlEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.yamlHint {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.yamlTextarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: max(0.875rem, 16px);
+  line-height: 1.5;
+  resize: vertical;
+  overflow-x: auto;
+}
+
+.yamlActions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}

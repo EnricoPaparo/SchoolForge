@@ -59,13 +59,21 @@ describe('TeacherShell', () => {
     expect(screen.getByRole('button', { name: /Studenti/ })).toBeTruthy();
   });
 
-  it('orders navigation sections as Lezioni, Corsi, Verifiche, Classi, Studenti, Template', () => {
+  it('orders navigation sections as Lezioni, Corsi, Domande, Verifiche, Classi, Studenti, Template', () => {
     render(<TeacherShell />);
     const nav = screen.getByRole('navigation', { name: 'Sezioni docente' });
     const labels = within(nav)
       .getAllByRole('button')
       .map((btn) => btn.textContent?.replace(/[^\p{L}]/gu, '') ?? '');
-    expect(labels).toEqual(['Lezioni', 'Corsi', 'Verifiche', 'Classi', 'Studenti', 'Template']);
+    expect(labels).toEqual([
+      'Lezioni',
+      'Corsi',
+      'Domande',
+      'Verifiche',
+      'Classi',
+      'Studenti',
+      'Template',
+    ]);
   });
 
   it('shows Lezioni section by default', async () => {
