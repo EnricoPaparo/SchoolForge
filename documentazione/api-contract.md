@@ -1,7 +1,7 @@
 # SchoolForge — Contratto API
 
-**Versione:** 3.0
-**Stato:** in vigore — M1, M2, M3-lite e RE (Repository Editor) implementati; M3-full/M4/M5 restano specifica rinviata
+**Versione:** 3.1
+**Stato:** in vigore — M1, M2, M3-lite e RE (Repository Editor) implementati; QE (Question Editor, specifica QE-00 definita) da implementare; M3-full specificato e avviato a livello contratti/service; M4/M5 restano non implementati
 **Autorità:** `analisi-requisiti.md` e `architettura.md`
 
 ---
@@ -18,7 +18,7 @@ I tipi e gli artefatti di questo contratto risiedono nei seguenti percorsi:
 | `functions/src/index.ts` | Entry point delle Cloud Functions (solo M5/V2 nella baseline corrente). |
 | `src/components/pdf/VerificaPdfRenderer.tsx` | Renderer PDF unificato (`mode="teacher" \| "student"`); riusato dal canale cartaceo e dal Portale studente M3-lite. |
 | `src/features/student/` | StudentShell M3-lite: routing, lettura `publicLessons`, lettura verifiche `attiva`+`public`, download PDF studente. |
-| `functions/src/startDigitalAttempt.ts`, `functions/src/continueDigitalAttempt.ts` | M3-full, specifica rinviata: non presenti nella baseline corrente. |
+| `functions/src/startDigitalAttempt.ts`, `functions/src/continueDigitalAttempt.ts` | Legacy M3-full server-side: non pianificati nella specifica corrente. M3-full è client-only, vedi `m3-full-roadmap.md`. |
 
 > Nota: nel contesto della SPA, `src/contracts/lesson.ts` riesporta gli schemi da `packages/lesson-contract/src/index.ts` per semplificare gli import del client.
 
@@ -40,7 +40,7 @@ M3-lite non introduce Cloud Functions. Nella baseline corrente le Cloud Function
 |---|---|---|
 | `proposeCorrection`, `approveCorrection`, `bulkApproveCorrections`, `enableAutomaticCorrection` | M5 (V2) | Richiedono chiave API AI in Secret Manager. |
 
-Un eventuale **M3-full** (specifica rinviata, §4) aggiungerebbe `startDigitalAttempt` e `continueDigitalAttempt` per emettere e verificare una sessione server-side con cookie HttpOnly/Secure, perché il browser non potrebbe scrivere tentativi direttamente. Non fanno parte della baseline corrente.
+La specifica corrente di **M3-full** è client-only: usa Firebase SDK + Security Rules, `submissions/{id}` e `submissionReceipts/{id}`. Non introduce `startDigitalAttempt`/`continueDigitalAttempt`, cookie HttpOnly o Cloud Functions dedicate. Le uniche Cloud Functions previste restano quelle AI in M5/V2.
 
 ### 1.3 Convenzioni risposta
 
@@ -224,7 +224,7 @@ interface Verification {
   title: string;
   state: 'bozza' | 'attiva' | 'chiusa' | 'archiviata';
   visibility: 'hidden' | 'public';  // indipendente da state (M3-lite); default 'hidden' all'attivazione
-  publicTokenHash: string | null;   // M3-full, specifica rinviata: non usato da M3-lite
+  publicTokenHash: string | null;   // legacy gateway server-side: non usato da M3-lite né dalla specifica M3-full corrente
   sources: string[];               // lessonId[] o udaId[]
   config: {                        // modificabile solo nello stato 'bozza'
     totalQuestions: number;
@@ -246,7 +246,7 @@ interface Verification {
 // (titolo, domande senza soluzioni), e solo se approvato con portale attivo
 // (§3.4a, §6) oltre alla condizione state/visibility.
 
-// publicVerificationLinks/{SHA-256(verificationToken)} — M3-full, specifica rinviata.
+// publicVerificationLinks/{SHA-256(verificationToken)} — legacy gateway server-side, non pianificato nella specifica M3-full corrente.
 // Non introdotto da M3-lite, che non usa link pubblici né token: l'accesso
 // dello studente è risolto da Firebase Authentication (ADR-06b).
 interface PublicVerificationLink {
@@ -425,6 +425,20 @@ interface AuditEvent {
 
 Il parser `lesson-contract` (package interno `packages/lesson-contract/src/index.ts`, riesportato da `src/contracts/lesson.ts`) esegue la validazione nel client prima di qualsiasi scrittura. Se il client riceve errori, la UI li mostra senza scrivere su Firestore o Storage. Se un upload fallisce prima del commit, l'import precedente rimane l'unico visibile.
 
+### 3.1b Question Editor (QE-01 → QE-05, da implementare) — modifiche ai pool senza reimport
+
+> Specifica definita in `question-editor-roadmap.md`. Non ancora implementato. I tipi e i contratti seguenti descrivono le operazioni previste.
+
+Il service layer (`poolEditorService.ts`, da creare in QE-02) usa la stessa strategia Storage-poi-Firestore del Repository Editor. Non tocca mai `publishedSnapshot`, `publishedProjection` né verifiche attivate o chiuse.
+
+| Operazione | Scrittura Firestore | Storage |
+|---|---|---|
+| Crea domanda / modifica domanda / elimina domanda | Aggiorna/crea/elimina l'entry `questionIndex/{entryId}` corrispondente; aggiorna `lessons/{id}.questionCount` e `poolStatus` | Riscrive integralmente il file `.pool.md` serializzato con il nuovo YAML |
+| Crea pool (prima domanda) | Crea le entry `questionIndex`; imposta `lessons/{id}.poolStatus = 'valid'` e `questionCount` | Crea il file `.pool.md` |
+| Elimina pool | Elimina tutte le entry `questionIndex` del pool; imposta `lessons/{id}.poolStatus = 'absent'`, `questionCount = 0`; bloccata se esistono bozze che referenziano domande del pool | Elimina il file `.pool.md` |
+
+Il `questionIndex` continua a usare entryId deterministici `${lessonId}_${toDocId(q.id)}`. Modificare `id` di una domanda equivale a eliminare l'entry vecchia e creare quella nuova. Il formato YAML del file `.pool.md` rimane `schoolforge-pool/v1` invariato.
+
 ### 3.1a Repository Editor (RE-01 → RE-06) — modifiche dirette senza reimport
 
 Implementato in `apps/web/src/features/repository/editor/repositoryEditorService.ts` (crea/modifica/riordina/elimina) e `apps/web/src/features/teacher/exportZip.ts` (export). Sempre Storage-poi-Firestore: se la scrittura Storage fallisce, Firestore non viene toccato; se Storage riesce ma Firestore fallisce, un errore distinto avvisa il docente di riprovare invece di lasciare la UI in uno stato ambiguo (vedi `repository-editor-roadmap.md` §7).
@@ -493,7 +507,7 @@ Lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applic
 
 ### 3.5 Correzione ed export (Modulo 4, dipende da M3-full)
 
-> Le operazioni seguenti richiedono le consegne digitali di un eventuale M3-full (specifica rinviata, §4); non sono utilizzabili con M3-lite, che non produce consegne.
+> Le operazioni seguenti richiedono le consegne digitali di M3-full (`submissions/{id}`), quindi non sono utilizzabili con M3-lite, che non produce consegne.
 
 | Operazione | Scrittura Firestore |
 |---|---|
@@ -507,11 +521,11 @@ Lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applic
 
 ---
 
-## 4. Gateway M3-full: tentativo digitale (specifica rinviata)
+## 4. Gateway digitale server-side legacy (non pianificato)
 
-> Questa sezione descrive l'eventuale gateway Cloud Functions di un **M3-full**, fase successiva a M3-lite e non pianificata in dettaglio. Nessuno degli endpoint seguenti esiste nella baseline corrente; M3-lite non li richiede.
+> Questa sezione è mantenuta solo come traccia storica del vecchio modello server-side. È superata dalla specifica M3-full corrente in `m3-full-roadmap.md`, che è client-only e usa `submissions/{id}` + `submissionReceipts/{id}` con Security Rules. Nessuno degli endpoint seguenti è pianificato.
 
-I soli endpoint di un eventuale M3-full sarebbero `startDigitalAttempt` e `continueDigitalAttempt`. Entrambi scriverebbero tramite Admin SDK: il portale non riceverebbe né userebbe credenziali Firestore per `deliveryAttempts`, risposte o snapshot.
+Nel vecchio modello server-side, gli endpoint previsti sarebbero stati `startDigitalAttempt` e `continueDigitalAttempt`. Entrambi avrebbero scritto tramite Admin SDK: il portale non avrebbe ricevuto né usato credenziali Firestore per `deliveryAttempts`, risposte o snapshot. Questo modello è superato dalla specifica M3-full corrente client-only.
 
 ### Request
 

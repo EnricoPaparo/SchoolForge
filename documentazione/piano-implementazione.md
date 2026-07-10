@@ -20,12 +20,13 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 | M2 — Verifiche e cartaceo | Configurazione, classi, selezione da pool, PDF browser, download docente, canale cartaceo fisico senza record (al più `downloadCount`). | Sì |
 | M3-lite — Portale studente (Google, read-only) | Login Google, risoluzione ruolo docente/studente, StudentShell con Lezioni e Verifiche in sola lettura, download PDF studente per verifiche `attiva`+`public`. Nessuna Cloud Function. | Sì |
 | RE — Repository Editor | Editor minimale per creare, modificare, eliminare e riordinare UDA/lezioni, inclusi front matter e corpo Markdown. Nessuna AI, nessuna Cloud Function. | Sì |
+| QE — Question Editor | Editor pool domande Markdown-first (`.pool.md`): crea/modifica/elimina domande dal portale, aggiorna `questionIndex` su Firestore senza reimport ZIP. Nessuna AI, nessuna Cloud Function. Specifica in `question-editor-roadmap.md`. | Sì |
 | M3-full — Verifiche online e consegne studenti | Avvio online, salvataggio bozza, consegna immutabile, codice consegna, modalità verifica (deterrenza leggera), monitor consegne docente. Nessuna Cloud Function. Specifica in `m3-full-roadmap.md`. | Sì |
 | M4 — Correzione ed export | Punteggi, percentuali, rettifiche, eliminazione e `Esporta verifiche` in PDF/Markdown/CSV. Dipende da M3-full. | Sì |
 
 **M5 — Correzione AI** è fuori scope V1 ed è pianificato per la V2. Vedi la sezione "V2 — Roadmap futura" in fondo. M5 non fa parte del perimetro né delle dipendenze della V1.
 
-Il Modulo 3 (Portale digitale) è diviso in **M3-lite** (deciso e completato dopo M2) e **M3-full** (specifica definita in `m3-full-roadmap.md`, implementazione da avviare). M3-lite non richiede Cloud Functions e non dipende da M3-full. Dopo M3-lite è stata completata **RE — Repository Editor** (RE-00 → RE-07), perché migliora il lavoro quotidiano del docente senza introdurre consegne online, correzione o AI.
+Il Modulo 3 (Portale digitale) è diviso in **M3-lite** (deciso e completato dopo M2) e **M3-full** (specifica definita in `m3-full-roadmap.md`, implementazione avviata a livello contratti/service). M3-lite non richiede Cloud Functions e non dipende da M3-full. Dopo M3-lite è stata completata **RE — Repository Editor** (RE-00 → RE-07), perché migliora il lavoro quotidiano del docente senza introdurre consegne online, correzione o AI. Il **QE — Question Editor** (specifica definita in `question-editor-roadmap.md`, QE-00 completata) è il prossimo sviluppo pianificato: rende editabili i pool domande senza reimport ZIP e non dipende da M3-full.
 
 ---
 
@@ -68,7 +69,7 @@ Un pacchetto può partire solo se:
 2. Verificare il DoR e dichiarare subito un blocco reale.
 3. Implementare solo lo scope assegnato.
 4. Eseguire i test dichiarati e aggiungere test per regressioni introdotte.
-5. Confrontare il diff con i vincoli: no account studente custom, no email, no PDF persistenti, no AI in V1 (M5 è V2), no ampliamento LMS, nessuna Cloud Function in M3-lite; un eventuale gateway M3-full (`startDigitalAttempt`/`continueDigitalAttempt`, specifica rinviata) resterebbe l'unica eccezione motivata al di fuori di M5.
+5. Confrontare il diff con i vincoli: no account studente custom, no email, no PDF persistenti, no AI in V1 (M5 è V2), no ampliamento LMS, nessuna Cloud Function in M3-lite o nella specifica M3-full corrente; eventuali Cloud Functions fuori M5 richiedono nuova decisione esplicita.
 6. Consegnare handoff con file, test, evidenze, rischi e dipendenze sbloccate.
 
 ### 3.3 Definition of Done (DoD)
@@ -101,7 +102,8 @@ Un pacchetto è abbastanza piccolo da essere verificato in una review e abbastan
 | G2 — Repository didattico | M1 integrato. | Import valido/invalido, rendering senza pool, ZIP e programma svolto. | M2. |
 | G3 — Verifiche e cartaceo | M2 integrato. | PDF browser, canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`), nessun PDF persistito. | M3-lite. |
 | G4-lite — Portale studente (M3-lite) | M3-lite integrato. | Login Google risolve TeacherShell/StudentShell; un Google-autenticato non-owner scopre lezioni pubblicate e verifiche `attiva`+`public` solo se `students/{uid}.status == "approved"` e `settings/studentAccess.studentPortalEnabled == true` (mai per la sola autenticazione); PDF studente senza soluzioni; nessuna Cloud Function introdotta. | RE, M3-full (se pianificato), o uso operativo stabile. |
-| GRE — Repository Editor | RE integrato. | Il docente crea/modifica/elimina/riordina UDA e lezioni, modifica front matter e corpo Markdown, vede anteprima, export ZIP resta portabile, publicLessons resta coerente, eliminazioni bloccate se ci sono verifiche collegate. | M3-full, polish ulteriore o uso operativo stabile. |
+| GRE — Repository Editor | RE integrato. | Il docente crea/modifica/elimina/riordina UDA e lezioni, modifica front matter e corpo Markdown, vede anteprima, export ZIP resta portabile, publicLessons resta coerente, eliminazioni bloccate se ci sono verifiche collegate. | QE, M3-full, polish ulteriore o uso operativo stabile. |
+| GQE — Question Editor | QE integrato (QE-01→QE-05). | Il docente crea/modifica/elimina domande nel pool, `questionIndex` aggiornato atomicamente, picker verifiche riflette le modifiche, export ZIP include il pool aggiornato, nessuna regressione sui pool esistenti. | M3-full, polish ulteriore o uso operativo stabile. |
 | G5 — Portale digitale (M3-full) | G4-lite e GRE superati; M3-full integrato. | Flusso avvio→bozza→consegna; immutabilità post-consegna; unicità submission; verifica chiusa blocca bozze; monitor docente real-time; modalità verifica attiva. Vedi gate G5 in `m3-full-roadmap.md §8`. | M4. |
 | G6 — Correzione ed export | M4 integrato, G5 (M3-full) superato e H-04 completata. | Punteggi, rettifiche, eliminazione, export PDF/Markdown/CSV da snapshot. | Uso manuale completo — fine V1. |
 | G6 — AI assistita (V2) | M5-A..C integrati e H-05 completata. | Contesto chiuso, audit, proposte assistite per risposta, approvazione massiva. | AI assistita. |
@@ -257,16 +259,34 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 ---
 
-## 11. M3-full — Portale digitale (specifica rinviata)
+## 10b. QE — Question Editor (specifica definita — da implementare)
 
-> Questa sezione descrive pacchetti di un'eventuale fase successiva a M3-lite, non pianificata in dettaglio. Non è assegnabile finché la decisione su M3-full non sarà presa; è mantenuta come specifica di riferimento.
+> Fase prodotto successiva a RE, specifica completa in `question-editor-roadmap.md`. Rende editabili i pool domande dal portale senza reimport ZIP. Non dipende da M3-full e non introduce Cloud Functions o AI.
 
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
-| M3F-A | Gateway digitale Cloud Functions: `startDigitalAttempt` e `continueDigitalAttempt` per ripresa, bozza e consegna; transazione Firestore, participant lock, snapshot con soluzioni private e cookie HttpOnly/Secure. | G4-lite | — | Lock concorrente creato; refresh non seleziona nuove domande; salvataggi/consegna autorizzati lato server; soluzioni non nel response body. |
-| M3F-B | UI consegna online mobile-first: raccolta dati, scelta canale, sequenza domande, proiezione senza soluzioni. | M3F-A, contratto endpoint | M3F-C | Nessun menu/dato interno; uso da tastiera e mobile verificato. |
-| M3F-C | Bozze, autosave, consegna immutabile e reset docente auditato; fullscreen/tab warning/copia-incolla UI. | M3F-A | M3F-B | Risposte riprendono nello stesso browser; consegna non modificabile; reset rilascia solo un tentativo in corso. |
-| M3F-D | E2E e test negativi: lock nome+cognome, rate limit, soluzioni non accessibili. | M3F-B/M3F-C | — | Evidenze G4; nessuna soluzione ottenibile dal client. |
+| QE-00 | Specifica e roadmap Question Editor: obiettivo, fuori scope, modello dati, formato pool, relazione `questionIndex`/verifiche, UX alto livello, rischi, costi, roadmap QE-01→QE-05. Solo documentazione. | GRE | — | Questo documento. Completato. |
+| QE-01 | Serializzatore pool: `poolSerializer.ts` che converte `ParsedPool` → YAML front matter valido da riscrivere nel file `.pool.md`. Test unitari round-trip (parse→serialize→reparse). Nessuna UI, nessuna scrittura Firebase. | QE-00 | — | Round-trip senza perdita per i tre tipi di domanda; formato identico a quello prodotto dall'import. |
+| QE-02 | Service layer Domande: `poolEditorService.ts` con `loadPool` (legge `.pool.md` da Storage e parsifica), `savePool` (serialize→upload Storage→update `questionIndex`+`lessons/{id}`), `deletePool`. Guard per conflitti bozze prima di eliminare. Test integrazione con Emulator. | QE-01 | — | Scrittura atomica Storage-poi-Firestore; `questionIndex` coerente; `lessons.poolStatus`/`questionCount` aggiornati; errore distinto su fallimento Firestore post-Storage. |
+| QE-03 | UI sezione Domande: voce "Domande" nel menu docente; `DomandeView.tsx` con sidebar Corso→UDA→Lezione (indicatore pool presente/assente + conteggio); pannello lista domande con editMode; form crea/modifica domanda inline; eliminazione domanda/pool con conferma; messaggi blocco per conflitti bozze. | QE-02 | — | Il docente crea/modifica/elimina domande dal portale; studente non impattato; nessuna regressione su lezioni/verifiche. |
+| QE-04 | Integrazione picker verifiche e contatori: verifica che `listQuestionIndex` rifletta domande create/modificate dall'editor; contatori `questionCount`/`poolStatus` nella dashboard di prontezza aggiornati; test di regressione pick→activate. | QE-03 | — | Nuova domanda da editor appare nel picker; verifica attiva con vecchio snapshot non è modificata; dashboard prontezza corretta. |
+| QE-05 | Hardening QE: test E2E crea domanda→picker→attiva verifica→modifica domanda→verifica attiva invariata→chiudi; checklist manuale DEV; documentazione operativa aggiornata. | QE-04 | — | GQE approvabile; nessuna regressione su import ZIP, lezioni studente, verifiche cartacee/online. |
+
+---
+
+## 11. M3-full — Portale digitale (specifica definita)
+
+> Specifica completa in `m3-full-roadmap.md`. M3F-00/M3F-01/M3F-02 sono già stati avviati/completati a livello documentazione, tipi/indici e service layer client-only. Il vecchio modello gateway Cloud Functions non è più il perimetro corrente.
+
+| ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
+|---|---|---|---|---|
+| M3F-00 | Specifica M3-full: modello dati, stati, Security Rules desiderate, UX docente/studente, modalità verifica, gate G5. Solo documentazione. | G4-lite/GRE | — | `m3-full-roadmap.md` approvato. Completato. |
+| M3F-01 | Tipi Firestore e indici per `submissions`/`submissionReceipts`, più `onlineEnabled` retrocompatibile. | M3F-00 | — | Typecheck/build verdi; indici JSON presenti. Completato. |
+| M3F-02 | Service layer submission client-only: avvio bozza, salvataggio, consegna atomica con receipt, codice consegna. | M3F-01 | — | Test unitari service verdi; nessuna Cloud Function. Completato. |
+| M3F-03 | Security Rules per submission/receipt con test Emulator Suite: unicità path deterministico, immutabilità, gate active+onlineEnabled, receipt post-consegna. | M3F-02 | — | Test rules positivi/negativi verdi. |
+| M3F-04 | UI studente OnlineExamView + ConfirmationView + modalità verifica deterrente. | M3F-03 | — | Flusso avvio→bozza→consegna→receipt. |
+| M3F-05 | UI docente: toggle onlineEnabled, pubblicazione online, monitor consegne. | M3F-03 | M3F-04 | Monitor stati/consegne/eventi attenzione. |
+| M3F-06 | Integrazione, smoke DEV, checklist G5. | M3F-04/M3F-05 | — | Gate G5 approvabile. |
 
 ---
 
@@ -302,7 +322,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 - Sviluppo e test usano Emulator Suite e fixture sintetiche.
 - Nessuna VM, Cloud SQL, container sempre acceso, coda dedicata o servizio enterprise senza decisione documentata.
-- M3-lite non introduce alcuna Cloud Function. Un eventuale gateway M3-full (`startDigitalAttempt`/`continueDigitalAttempt`, specifica rinviata) resta l'unica eccezione motivata al di fuori del modulo AI (M5); qualsiasi Function aggiuntiva proposta da un agente deve essere giustificata e approvata.
+- M3-lite e la specifica M3-full corrente non introducono Cloud Functions. Qualsiasi Function aggiuntiva fuori M5 deve essere giustificata e approvata con nuova decisione esplicita.
 - PDF e documenti generati nel browser, mai su server, in nessun canale.
 - Il Docente controlla budget/avvisi prima del primo deploy `prod`.
 - In V2, ogni pacchetto che aggiunge una chiamata a provider esterno (AI) dichiara volume atteso e costo variabile.
@@ -622,49 +642,49 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | Test minimi | Nessun dato tecnico/soluzione ottenibile dal client studente; nessuna Cloud Function introdotta |
 | Evidenza richiesta | Evidenze G4-lite |
 
-### M3-full — Portale digitale (specifica rinviata)
+### M3-full — Portale digitale (specifica definita)
 
-> Pacchetti di un'eventuale fase successiva, non pianificata in dettaglio. Non assegnabili finché la decisione su M3-full non sarà presa.
+> Specifica corrente in `m3-full-roadmap.md`. M3-full è client-only: nessun gateway Cloud Functions, nessun cookie server-side, nessun `startDigitalAttempt`/`continueDigitalAttempt`. M3F-00/M3F-01/M3F-02 sono già completati.
 
-#### M3F-A — Gateway digitale Functions
-
-| Campo | Valore |
-|---|---|
-| Prerequisiti | G4-lite |
-| File da creare | `functions/src/startDigitalAttempt.ts`, `functions/src/continueDigitalAttempt.ts`, `functions/src/index.ts`, `src/types/functions.ts` |
-| File da modificare | `firestore.rules` (nega il Portale su tentativi/risposte/snapshot; owner reset controllato) |
-| Test minimi | Participant lock e snapshot creati; refresh via cookie non seleziona nuove domande; bozza/consegna passano dal gateway; soluzioni assenti dal body; secondo avvio con stesso nome+cognome → `PARTICIPANT_ALREADY_USED`; cookie invalido rifiutato |
-| Evidenza richiesta | Test integrazione delle due Function; log accesso e audit registrati |
-
-#### M3F-B — UI consegna online
+#### M3F-03 — Security Rules submission/receipt
 
 | Campo | Valore |
 |---|---|
-| Prerequisiti | M3F-A, contratto endpoint |
-| File da creare | UI mobile-first di svolgimento e consegna |
-| File da modificare | router SPA |
-| Test minimi | Nessun menu/dato interno; uso da tastiera e mobile |
-| Evidenza richiesta | E2E mobile; nessuna soluzione nel client |
+| Prerequisiti | M3F-02 |
+| File da creare | Test Emulator Suite mirati per `submissions` e `submissionReceipts` |
+| File da modificare | `firestore.rules` |
+| Test minimi | Path deterministico; create/update solo bozza propria; submitted immutabile; receipt leggibile dallo studente; submission submitted non leggibile dallo studente; owner legge submission proprie; verifica chiusa/non online blocca create/update |
+| Evidenza richiesta | Test Rules positivi/negativi verdi |
 
-#### M3F-C — Bozza e consegna
-
-| Campo | Valore |
-|---|---|
-| Prerequisiti | M3F-A |
-| File da creare | autosave tramite gateway, consegna immutabile, reset docente, fullscreen/tab warning |
-| File da modificare | client Functions e UI docente del reset |
-| Test minimi | Risposte riprendono nello stesso browser; consegna non modificabile; reset solo di tentativo in corso con motivazione e audit |
-| Evidenza richiesta | E2E ripresa e consegna |
-
-#### M3F-D — Integrazione M3-full
+#### M3F-04 — UI studente verifica online
 
 | Campo | Valore |
 |---|---|
-| Prerequisiti | M3F-B/M3F-C |
-| File da creare | `*.e2e.ts` M3-full, test negativi |
+| Prerequisiti | M3F-03 |
+| File da creare | `OnlineExamView`, `ConfirmationView`, componenti modalità verifica |
+| File da modificare | `StudentShell`/routing studente |
+| Test minimi | Avvio bozza, salva, indicatori compilate/vuote, alert consegna, receipt post-consegna, eventi attenzione registrati |
+| Evidenza richiesta | Test componente + smoke DEV |
+
+#### M3F-05 — UI docente monitor consegne
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M3F-03 |
+| File da creare | Monitor consegne nella vista verifica |
+| File da modificare | `VerificationsView`, service verifiche |
+| Test minimi | Toggle `onlineEnabled`; stati non iniziata/bozza/consegnata; timestamp; eventi attenzione; nessuna correzione M4 |
+| Evidenza richiesta | Test componente + smoke DEV |
+
+#### M3F-06 — Integrazione M3-full
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M3F-04/M3F-05 |
+| File da creare | Checklist/smoke M3-full |
 | File da modificare | — |
-| Test minimi | Participant lock, rate limit, soluzioni non accessibili, secondo avvio rifiutato |
-| Evidenza richiesta | Evidenze G4 |
+| Test minimi | Flusso avvio→bozza→consegna→monitor; immutabilità; verifica chiusa blocca bozze; soluzioni non accessibili |
+| Evidenza richiesta | Gate G5 approvabile |
 
 ### M4 — Correzione ed export
 

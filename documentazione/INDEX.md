@@ -9,6 +9,8 @@ Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente l
 
 **Repository Editor (RE-00 → RE-07) completato** — vedi [repository-editor-roadmap.md](repository-editor-roadmap.md) per la roadmap e [evidenze/repository-editor-checklist-manuale.md](evidenze/repository-editor-checklist-manuale.md) per la checklist manuale DEV. Nessuna fase RE obbligatoria successiva.
 
+**Question Editor (QE, sezione "Domande") — specifica definita** — vedi [question-editor-roadmap.md](question-editor-roadmap.md) per la roadmap QE-00 → QE-05: editor pool domande Markdown-first, serializzatore YAML, service layer (doppia scrittura Storage + Firestore), UI con sidebar Corso→UDA→Lezione e form domanda inline. Non dipende da M3-full; implementabile indipendentemente.
+
 **M3-full (verifiche online e consegne studenti) è in fase di design** — vedi [m3-full-roadmap.md](m3-full-roadmap.md) per la specifica: modello dati, Security Rules, stati/transizioni, UX docente/studente, roadmap M3F-00 → M3F-06 e gate G5. M4 (correzione/restituzione) dipende da M3-full.
 
 ## Per iniziare
@@ -50,6 +52,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) | Guida operativa MVP in locale. | Per avviare e usare l'MVP oggi. |
 | [ux-product-roadmap.md](ux-product-roadmap.md) | Roadmap UX/Product Polish (UX-01–06). | Per pianificare e implementare il polish UI. |
 | [repository-editor-roadmap.md](repository-editor-roadmap.md) | Roadmap Repository Editor (RE-00–RE-07, implementato). | Per consultare decisioni tecniche e scope dell'editor UDA/lezioni. |
+| [question-editor-roadmap.md](question-editor-roadmap.md) | Roadmap Question Editor (QE-00–QE-05): editor pool domande Markdown-first, senza reimport ZIP. | Per progettare e implementare la sezione "Domande". |
 | [m3-full-roadmap.md](m3-full-roadmap.md) | Specifica M3-full: verifiche online, consegne studenti, monitor docente. Roadmap M3F-00–M3F-06. | Per progettare e implementare M3-full. |
 
 ## Evidenze
@@ -67,5 +70,5 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 - [er-model.md](diagrammi/er-model.md) — modello dati Firestore.
 - [component-frontend.md](diagrammi/component-frontend.md) — architettura frontend della SPA.
 - [sequence-import-lezione.md](diagrammi/sequence-import-lezione.md) — sequenza di import didattico.
-- [sequence-pubblicazione-verifica.md](diagrammi/sequence-pubblicazione-verifica.md) — canale cartaceo, Portale studente M3-lite e canale digitale M3-full (specifica rinviata).
+- [sequence-pubblicazione-verifica.md](diagrammi/sequence-pubblicazione-verifica.md) — canale cartaceo, Portale studente M3-lite e note storiche sul canale digitale; la specifica M3-full corrente è in [m3-full-roadmap.md](m3-full-roadmap.md).
 - [sequence-correzione-ai.md](diagrammi/sequence-correzione-ai.md) — correzione AI (Modulo 5, V2).
