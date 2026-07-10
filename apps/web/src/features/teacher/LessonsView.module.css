@@ -4,8 +4,9 @@
   grid-template-columns: 300px 1fr;
   gap: 1.5rem;
   align-items: start;
+  width: 100%;
   min-width: 0;
-  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .containerCollapsed {
@@ -43,8 +44,9 @@
 
 .sidebarCollapsed {
   padding: 0.5rem;
+  width: fit-content;
   min-width: 0;
-  width: auto;
+  flex-shrink: 0;
 }
 
 .sidebarTitle {
@@ -71,7 +73,7 @@
   flex-shrink: 0;
 }
 
-.sidebarToggleBtn {
+.iconBtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -79,8 +81,6 @@
   width: 2rem;
   height: 2rem;
   padding: 0;
-  font-size: 1.125rem;
-  line-height: 1;
   background: var(--color-surface-subtle);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
@@ -88,46 +88,37 @@
   color: var(--color-text-muted);
   transition:
     background 0.12s,
-    color 0.12s;
+    color 0.12s,
+    border-color 0.12s;
 }
 
-.sidebarToggleBtn:hover:not(:disabled) {
+.iconBtn:hover:not(:disabled) {
   background: var(--color-primary-light);
   border-color: var(--color-primary);
   color: var(--color-primary);
+}
+
+.iconBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.iconBtnActive {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.iconBtnDanger:hover:not(:disabled) {
+  background: var(--color-error-bg);
+  border-color: var(--color-error);
+  color: var(--color-error);
 }
 
 @media (max-width: 680px) {
-  .sidebarToggleBtn {
+  .sidebarHeaderActions .iconBtn:last-child {
     display: none;
   }
-}
-
-.reorderModeBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 2rem;
-  height: 2rem;
-  padding: 0;
-  font-size: 1rem;
-  line-height: 1;
-  background: var(--color-surface-subtle);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-}
-
-.reorderModeBtn:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  background: var(--color-primary-light);
-}
-
-.reorderModeBtnActive {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-  background: var(--color-primary-light);
-  font-weight: 700;
 }
 
 .courseList {
@@ -233,21 +224,6 @@
   background-color: var(--color-primary-light);
 }
 
-.udaAddBtn {
-  flex-shrink: 0;
-  padding: 0 0.5rem;
-  font-size: 0.9375rem;
-  line-height: 1;
-  background: var(--color-surface-subtle);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-}
-
-.udaAddBtn:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  background-color: var(--color-primary-light);
-}
-
 /* Reorder controls (RE-04) */
 .reorderControls {
   display: flex;
@@ -255,44 +231,9 @@
   gap: 0.125rem;
 }
 
-.reorderBtn {
-  flex-shrink: 0;
-  padding: 0 0.3125rem;
-  font-size: 0.6875rem;
-  line-height: 1.6;
-  background: var(--color-surface-subtle);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-}
-
-.reorderBtn:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  background-color: var(--color-primary-light);
-}
-
-.reorderBtn:disabled {
-  opacity: 0.35;
-}
-
 .reorderError {
   margin: 0.25rem 0 0;
   font-size: 0.75rem;
-}
-
-/* Protected deletion (RE-05) */
-.deleteBtn {
-  flex-shrink: 0;
-  padding: 0 0.3125rem;
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  background: var(--color-surface-subtle);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-}
-
-.deleteBtn:hover:not(:disabled) {
-  border-color: var(--color-error);
-  background-color: var(--color-error-bg);
 }
 
 .deleteConfirmBox {

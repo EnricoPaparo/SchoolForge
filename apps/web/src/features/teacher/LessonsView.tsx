@@ -27,6 +27,16 @@ import {
 import type { RepositoryDeleteBlocker } from '../repository/editor/repositoryEditorGuards.js';
 import { useAuth } from '../../lib/auth.js';
 import { db, storage } from '../../lib/firebase.js';
+import {
+  IconArrowUpDown,
+  IconChevronDown,
+  IconChevronLeft,
+  IconChevronRight,
+  IconChevronUp,
+  IconPencil,
+  IconPlus,
+  IconTrash,
+} from '../../components/icons.js';
 import { fetchLessonContent } from './lessonContent.js';
 import { downloadLessonPdf } from './lessonPdf.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
@@ -86,6 +96,7 @@ export function LessonsView() {
 
   const [programs, setPrograms] = useState<ProgramItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
   const [reorderMode, setReorderMode] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -186,6 +197,19 @@ export function LessonsView() {
     } catch {
       setLoadError('Impossibile caricare i programmi.');
     }
+  }
+
+  function handleToggleEditMode() {
+    setEditMode((prev) => {
+      if (prev) {
+        setReorderMode(false);
+        setCreatingUdaProgramId(null);
+        setCreatingLessonUdaKey(null);
+        setDeleteConfirmUdaId(null);
+        setDeleteConfirmLessonId(null);
+      }
+      return !prev;
+    });
   }
 
   async function loadCourseTree(program: ProgramItem) {
@@ -745,25 +769,41 @@ export function LessonsView() {
           {!sidebarCollapsed && <h2 className={styles.sidebarTitle}>Lezioni</h2>}
           <div className={styles.sidebarHeaderActions}>
             {!sidebarCollapsed && (
-              <button
-                type="button"
-                className={`${styles.reorderModeBtn}${reorderMode ? ` ${styles.reorderModeBtnActive}` : ''}`}
-                aria-pressed={reorderMode}
-                aria-label={reorderMode ? 'Termina riordino' : 'Attiva riordino'}
-                title={reorderMode ? 'Termina riordino' : 'Riordina UDA e lezioni'}
-                onClick={() => setReorderMode((prev) => !prev)}
-              >
-                ↕
-              </button>
+              <>
+                {editMode && (
+                  <button
+                    type="button"
+                    className={`${styles.iconBtn}${reorderMode ? ` ${styles.iconBtnActive}` : ''}`}
+                    aria-pressed={reorderMode}
+                    aria-label={reorderMode ? 'Termina riordino' : 'Attiva riordino'}
+                    title={reorderMode ? 'Termina riordino' : 'Riordina UDA e lezioni'}
+                    onClick={() => setReorderMode((prev) => !prev)}
+                  >
+                    <IconArrowUpDown />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={`${styles.iconBtn}${editMode ? ` ${styles.iconBtnActive}` : ''}`}
+                  aria-pressed={editMode}
+                  aria-label={
+                    editMode ? 'Disattiva modifica struttura' : 'Attiva modifica struttura'
+                  }
+                  title={editMode ? 'Disattiva modifica struttura' : 'Attiva modifica struttura'}
+                  onClick={handleToggleEditMode}
+                >
+                  <IconPencil />
+                </button>
+              </>
             )}
             <button
               type="button"
-              className={styles.sidebarToggleBtn}
+              className={styles.iconBtn}
               aria-label={sidebarCollapsed ? 'Espandi sidebar' : 'Comprimi sidebar'}
               title={sidebarCollapsed ? 'Espandi sidebar' : 'Comprimi sidebar'}
               onClick={() => setSidebarCollapsed((v) => !v)}
             >
-              {sidebarCollapsed ? '›' : '‹'}
+              {sidebarCollapsed ? <IconChevronRight /> : <IconChevronLeft />}
             </button>
           </div>
         </div>
@@ -795,16 +835,16 @@ export function LessonsView() {
                         <span className="badge badge-warning">Nessun import</span>
                       )}
                     </button>
-                    {program.activeImportId && (
+                    {editMode && program.activeImportId && (
                       <button
                         type="button"
-                        className={styles.udaAddBtn}
+                        className={styles.iconBtn}
                         title="Nuova UDA"
                         aria-label={`Nuova UDA — ${program.title}`}
                         aria-expanded={creatingUdaProgramId === program.id}
                         onClick={() => toggleCreateUda(program)}
                       >
-                        ＋
+                        <IconPlus size={16} />
                       </button>
                     )}
                   </div>
@@ -849,7 +889,7 @@ export function LessonsView() {
                                     </span>
                                     <span className={styles.udaDir}>{uda.dir}</span>
                                   </button>
-                                  {reorderMode && (
+                                  {editMode && reorderMode && (
                                     <div
                                       className={styles.reorderControls}
                                       role="group"
@@ -857,7 +897,7 @@ export function LessonsView() {
                                     >
                                       <button
                                         type="button"
-                                        className={styles.reorderBtn}
+                                        className={styles.iconBtn}
                                         title="Sposta su"
                                         aria-label={`Sposta su — ${uda.dir}`}
                                         disabled={udaIndex === 0 || udaBusy}
@@ -865,11 +905,11 @@ export function LessonsView() {
                                           void handleMoveUda(program, tree.udas!, udaIndex, -1)
                                         }
                                       >
-                                        ▲
+                                        <IconChevronUp size={14} />
                                       </button>
                                       <button
                                         type="button"
-                                        className={styles.reorderBtn}
+                                        className={styles.iconBtn}
                                         title="Sposta giù"
                                         aria-label={`Sposta giù — ${uda.dir}`}
                                         disabled={udaIndex === tree.udas!.length - 1 || udaBusy}
@@ -877,29 +917,31 @@ export function LessonsView() {
                                           void handleMoveUda(program, tree.udas!, udaIndex, 1)
                                         }
                                       >
-                                        ▼
+                                        <IconChevronDown size={14} />
                                       </button>
                                     </div>
                                   )}
-                                  <button
-                                    type="button"
-                                    className={styles.udaAddBtn}
-                                    title="Nuova lezione"
-                                    aria-label={`Nuova lezione — ${uda.dir}`}
-                                    aria-expanded={udaCreating}
-                                    onClick={() => toggleCreateLesson(program, udaKey)}
-                                  >
-                                    ＋
-                                  </button>
-                                  {!reorderMode && (
+                                  {editMode && (
                                     <button
                                       type="button"
-                                      className={styles.deleteBtn}
+                                      className={styles.iconBtn}
+                                      title="Nuova lezione"
+                                      aria-label={`Nuova lezione — ${uda.dir}`}
+                                      aria-expanded={udaCreating}
+                                      onClick={() => toggleCreateLesson(program, udaKey)}
+                                    >
+                                      <IconPlus size={16} />
+                                    </button>
+                                  )}
+                                  {editMode && !reorderMode && (
+                                    <button
+                                      type="button"
+                                      className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
                                       title="Elimina UDA"
                                       aria-label={`Elimina UDA — ${uda.dir}`}
                                       onClick={() => startDeleteUda(uda)}
                                     >
-                                      🗑️
+                                      <IconTrash size={14} />
                                     </button>
                                   )}
                                 </div>
@@ -1004,18 +1046,18 @@ export function LessonsView() {
                                                 >
                                                   {title}
                                                 </button>
-                                                {!reorderMode && (
+                                                {editMode && !reorderMode && (
                                                   <button
                                                     type="button"
-                                                    className={styles.deleteBtn}
+                                                    className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
                                                     title="Elimina lezione"
                                                     aria-label={`Elimina lezione — ${lesson.filename}`}
                                                     onClick={() => startDeleteLesson(lesson)}
                                                   >
-                                                    🗑️
+                                                    <IconTrash size={14} />
                                                   </button>
                                                 )}
-                                                {reorderMode && (
+                                                {editMode && reorderMode && (
                                                   <div
                                                     className={styles.reorderControls}
                                                     role="group"
@@ -1023,7 +1065,7 @@ export function LessonsView() {
                                                   >
                                                     <button
                                                       type="button"
-                                                      className={styles.reorderBtn}
+                                                      className={styles.iconBtn}
                                                       title="Sposta su"
                                                       aria-label={`Sposta su — ${lesson.filename}`}
                                                       disabled={lessonIndex === 0 || lessonBusy}
@@ -1036,11 +1078,11 @@ export function LessonsView() {
                                                         )
                                                       }
                                                     >
-                                                      ▲
+                                                      <IconChevronUp size={14} />
                                                     </button>
                                                     <button
                                                       type="button"
-                                                      className={styles.reorderBtn}
+                                                      className={styles.iconBtn}
                                                       title="Sposta giù"
                                                       aria-label={`Sposta giù — ${lesson.filename}`}
                                                       disabled={
@@ -1056,7 +1098,7 @@ export function LessonsView() {
                                                         )
                                                       }
                                                     >
-                                                      ▼
+                                                      <IconChevronDown size={14} />
                                                     </button>
                                                   </div>
                                                 )}

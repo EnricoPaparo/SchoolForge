@@ -162,7 +162,12 @@ async function expandUda(name: RegExp) {
   fireEvent.click(toggle ?? buttons[0]);
 }
 
+function enableEditMode() {
+  fireEvent.click(screen.getByRole('button', { name: 'Attiva modifica struttura' }));
+}
+
 function enableReorderMode() {
+  enableEditMode();
   fireEvent.click(screen.getByRole('button', { name: 'Attiva riordino' }));
 }
 
@@ -456,6 +461,7 @@ describe('LessonsView — new lesson creation (RE-03A)', () => {
     mockListLessons.mockResolvedValue([LESSON_1]);
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
+    enableEditMode();
     fireEvent.click(await screen.findByRole('button', { name: /Nuova lezione — uda-01-reti/ }));
   }
 
@@ -554,6 +560,7 @@ describe('LessonsView — new UDA creation (RE-03B)', () => {
     mockListLessons.mockResolvedValue([LESSON_1]);
     render(<LessonsView />);
     await screen.findByRole('button', { name: /^Informatica/ });
+    enableEditMode();
     fireEvent.click(await screen.findByRole('button', { name: /Nuova UDA — Informatica/ }));
   }
 
@@ -618,6 +625,7 @@ describe('LessonsView — new UDA creation (RE-03B)', () => {
 
     render(<LessonsView />);
     await screen.findByRole('button', { name: /^Informatica/ });
+    enableEditMode();
     fireEvent.click(await screen.findByRole('button', { name: /Nuova UDA — Informatica/ }));
     await screen.findByRole('button', { name: 'uda-09-legacy' });
     fireEvent.change(screen.getByLabelText('Titolo'), { target: { value: 'Finale' } });
@@ -879,6 +887,7 @@ describe('LessonsView — UDA deletion (RE-05)', () => {
     mockListLessons.mockResolvedValue([LESSON_1, LESSON_2]);
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
+    enableEditMode();
   }
 
   it('requires explicit confirmation before deleting a UDA', async () => {
@@ -981,6 +990,7 @@ describe('LessonsView — lesson deletion (RE-05)', () => {
     render(<LessonsView />);
     await expandCourse(/^Informatica/);
     await expandUda(/uda-01-reti/);
+    enableEditMode();
   }
 
   it('requires explicit confirmation before deleting a lesson', async () => {
@@ -1078,6 +1088,56 @@ describe('LessonsView — lesson deletion (RE-05)', () => {
     expect(
       await screen.findByText('Impossibile eliminare il file della lezione su Storage.'),
     ).toBeTruthy();
+  });
+});
+
+describe('LessonsView — edit mode (structural controls)', () => {
+  it('hides create/delete/reorder buttons by default', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+    await expandUda(/uda-01-reti/);
+
+    expect(screen.queryByRole('button', { name: /Nuova UDA/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Nuova lezione/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Elimina UDA/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Elimina lezione/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Attiva riordino' })).toBeNull();
+  });
+
+  it('shows structural controls after enabling edit mode', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+    await expandUda(/uda-01-reti/);
+    enableEditMode();
+
+    expect(await screen.findByRole('button', { name: /Nuova UDA — Informatica/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Nuova lezione — uda-01-reti/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Elimina UDA — uda-01-reti' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Elimina lezione — lezione-001.md' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Attiva riordino' })).toBeTruthy();
+  });
+
+  it('hides structural controls and exits reorder mode when edit mode is disabled', async () => {
+    mockListPrograms.mockResolvedValue([PROGRAM]);
+    mockListUdas.mockResolvedValue([UDA, UDA_2]);
+    mockListLessons.mockResolvedValue([LESSON_1]);
+    render(<LessonsView />);
+    await expandCourse(/^Informatica/);
+    enableReorderMode();
+
+    expect(await screen.findByRole('button', { name: 'Termina riordino' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Disattiva modifica struttura' }));
+
+    expect(screen.queryByRole('button', { name: 'Termina riordino' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Attiva riordino' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Elimina UDA/ })).toBeNull();
   });
 });
 
