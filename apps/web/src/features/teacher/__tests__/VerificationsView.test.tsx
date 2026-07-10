@@ -645,12 +645,12 @@ describe('VerificationsView', () => {
     expect(screen.getByRole('button', { name: /elimina verifica/i })).toBeTruthy();
   });
 
-  it('closed verification shows only Elimina and Scarica PDF soluzioni (never PDF studenti or Chiudi)', async () => {
+  it('closed verification shows Scarica PDF studenti, Scarica PDF soluzioni and Elimina (never Chiudi)', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([closedVer()]);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
-    expect(screen.queryByRole('button', { name: /scarica pdf studenti/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /scarica pdf studenti/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /scarica pdf soluzioni/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /chiudi verifica/i })).toBeNull();
     expect(screen.getByRole('button', { name: /elimina verifica/i })).toBeTruthy();
@@ -791,6 +791,28 @@ describe('VerificationsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
 
     await waitFor(() => expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalled());
+  });
+
+  it('allows downloading the student PDF for a closed verification', async () => {
+    setupDefaults();
+    const cv = closedVer();
+    mockListVerifications.mockResolvedValue([cv]);
+    const fakeQuestion = { ref: sampleQuestionRef, testo: 'Domanda?', tipo: 'aperta' as const };
+    mockLoadSelectedQuestions.mockResolvedValue({ ok: true, questions: [fakeQuestion] });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+
+    await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
+    expect(mockLoadSelectedQuestions).toHaveBeenCalledWith([sampleQuestionRef], {});
+    expect(mockDownloadStudentPdf).toHaveBeenCalledWith(
+      cv.teacherSnapshot,
+      [fakeQuestion],
+      'Classe 3A',
+    );
+    // Never calls the solutions-PDF path for this action.
+    expect(mockLoadSelectedQuestionsWithSolutions).not.toHaveBeenCalled();
+    expect(mockDownloadTeacherSolutionsPdf).not.toHaveBeenCalled();
   });
 
   it('shows error and does not download when the active verification has no teacherSnapshot', async () => {

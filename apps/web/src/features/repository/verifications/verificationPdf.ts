@@ -5,11 +5,7 @@ import type {
 } from '../../../types/firestore.js';
 import type { LoadedQuestion } from './loadSelectedQuestions.js';
 import type { LoadedQuestionWithSolution } from './loadSelectedQuestionsWithSolutions.js';
-import {
-  computeFieldLineLayout,
-  computeOptionBoxLayouts,
-  getAnswerAreaKind,
-} from './verificationPdfLayout.js';
+import { computeFieldLineLayout, getAnswerAreaKind } from './verificationPdfLayout.js';
 import { buildVerificationPdfFilename } from './verificationPdfNaming.js';
 
 /**
@@ -188,24 +184,38 @@ async function renderStudentPdf(
 
     if (getAnswerAreaKind(q.tipo) === 'options') {
       const opts = q.opzioni ?? [];
-      const rowHeightMm = 6;
-      if (y + opts.length * rowHeightMm > 272) newPage();
+      const optFontSize = 10;
+      const optLineH = optFontSize * 0.38;
+      const boxSize = 3.5;
+      const indent = 6;
+      const boxX = margin + indent;
+      const textX = boxX + boxSize + 2;
+      const optTextWidth = contentW - indent - boxSize - 2;
 
-      const boxLayouts = computeOptionBoxLayouts({
-        count: opts.length,
-        margin,
-        startY: y + rowHeightMm,
-        rowHeightMm,
-      });
-
-      doc.setFontSize(10);
+      doc.setFontSize(optFontSize);
       doc.setFont('helvetica', 'normal');
-      opts.forEach((opt, idx) => {
-        const box = boxLayouts[idx];
-        doc.rect(box.boxX, box.boxY, box.boxSize, box.boxSize);
-        doc.text(opt.testo, box.textX, box.boxY + box.boxSize - 0.3);
+
+      // Pre-wrap all option texts so total height is known before committing y.
+      const wrappedOpts = opts.map((opt) => ({
+        testo: opt.testo,
+        lines: doc.splitTextToSize(opt.testo, optTextWidth) as string[],
+      }));
+
+      const rowGap = 2;
+      const totalH = wrappedOpts.reduce((h, wo) => {
+        return h + Math.max(boxSize + 1, wo.lines.length * optLineH) + rowGap;
+      }, 0);
+      if (y + totalH > 272) newPage();
+
+      wrappedOpts.forEach((wo) => {
+        const rowH = Math.max(boxSize + 1, wo.lines.length * optLineH);
+        if (y + rowH > 272) newPage();
+        doc.rect(boxX, y, boxSize, boxSize);
+        wo.lines.forEach((line, li) => {
+          doc.text(line, textX, y + boxSize - 0.3 + li * optLineH);
+        });
+        y += rowH + rowGap;
       });
-      gap(opts.length * rowHeightMm + 2);
     }
     // aperta: no answer lines or reserved space — the student writes on a separate sheet.
     gap(9);

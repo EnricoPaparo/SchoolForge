@@ -278,7 +278,7 @@ export function VerificationsView() {
   }
 
   async function handleDownloadPdf(v: VerificationItem) {
-    if (v.status !== 'active') return;
+    if (v.status !== 'active' && v.status !== 'closed') return;
     setPdfLoadingId(v.id);
     setPdfErrors((prev) => ({ ...prev, [v.id]: null }));
     try {
@@ -615,7 +615,7 @@ export function VerificationsView() {
                       <td className={`${styles.td} ${styles.metaCell}`}>{questionCount}</td>
                       <td className={styles.tdActions}>
                         <div className={styles.actionsWrapper}>
-                          {v.status === 'active' && (
+                          {(v.status === 'active' || v.status === 'closed') && (
                             <button
                               type="button"
                               className={styles.iconBtn}
