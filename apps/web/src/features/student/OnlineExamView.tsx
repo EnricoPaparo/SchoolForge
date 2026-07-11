@@ -9,7 +9,11 @@ import type {
   SubmissionReceiptDoc,
 } from '../../types/firestore.js';
 import { loadReceipt, saveDraft, submitSubmission } from './submissionsService.js';
-import { attachDeterrenceListeners, capAttentionEvents } from './examDeterrence.js';
+import {
+  attachDeterrenceListeners,
+  capAttentionEvents,
+  requestFullscreenBestEffort,
+} from './examDeterrence.js';
 import { countFilled, isAnswerFilled } from './examAnswers.js';
 import styles from './OnlineExamView.module.css';
 
@@ -68,6 +72,7 @@ export function OnlineExamView({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Refs mirror the state above so the 60s autosave interval (set up once)
@@ -193,7 +198,7 @@ export function OnlineExamView({
       bufferedEventsRef.current = [...bufferedEventsRef.current, { type, ts: Date.now() }];
       dirtyRef.current = true;
       revisionRef.current += 1;
-    });
+    }, setIsFullscreen);
     deterrenceCleanupRef.current = cleanup;
     return () => {
       cleanup();
@@ -323,6 +328,16 @@ export function OnlineExamView({
         </div>
 
         <div className={styles.examActions}>
+          {!isFullscreen && !sessionEnded && (
+            <button
+              type="button"
+              className={styles.fullscreenBtn}
+              onClick={requestFullscreenBestEffort}
+              disabled={submitting}
+            >
+              Torna a schermo intero
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void persistDraft()}

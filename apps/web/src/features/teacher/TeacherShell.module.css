@@ -218,12 +218,21 @@
 .main {
   flex: 1;
   overflow-y: auto;
+  /* Keep the internal content scroller functional while hiding the thick
+     track that otherwise appears beside the centered 1100px column. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   padding: 1.75rem 2rem;
   max-width: 1100px;
   width: 100%;
   min-width: 0;
   margin: 0 auto;
   box-sizing: border-box;
+}
+
+.main::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 @media (max-width: 640px) {

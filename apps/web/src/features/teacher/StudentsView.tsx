@@ -7,9 +7,9 @@ import {
   setExamMode,
   setNewStudentRequestsEnabled,
   setStudentPortalEnabled,
-  type SetExamModeInput,
   type StudentAccessSnapshot,
 } from '../repository/students/studentAccessService.js';
+import { listActiveOnlineVerificationClassIds } from '../repository/verifications/verificationsService.js';
 import {
   approveStudent,
   assignStudentClass,
@@ -19,7 +19,6 @@ import {
   resetStudentToPending,
   type StudentItem,
 } from '../repository/students/studentsService.js';
-import type { ExamModeScope } from '../repository/students/examMode.js';
 import type { StudentStatus } from '../../types/firestore.js';
 import styles from './StudentsView.module.css';
 
@@ -130,25 +129,21 @@ function examModeStatusLabel(
 }
 
 /**
- * Modalità verifica (M3F-07): unlike the two simple ToggleCards above, the
- * switch here never toggles instantly — enabling always opens the scope
- * dialog (default "classi selezionate", explicit alternative "tutte le
- * classi"), and disabling always asks for a lightweight confirmation.
- * Kept out of ToggleCard on purpose: that component's instant on/off would
- * let a click silently apply the *previous* dialog scope, which is exactly
- * the ambiguity a confirmation step exists to prevent.
+ * M3F-11A: activation is a direct manual action, but its class scope is
+ * derived from active+onlineEnabled verifications instead of asking the
+ * teacher to repeat the same selection in a dialog.
  */
 function ExamModeCard({
   examMode,
-  classes,
   classNameById,
+  eligibleClassIds,
   disabled,
   onRequestEnable,
   onRequestDisable,
 }: {
   examMode: StudentAccessSnapshot['examMode'];
-  classes: ClassItem[];
   classNameById: Map<string, string>;
+  eligibleClassIds: string[];
   disabled: boolean;
   onRequestEnable: () => void;
   onRequestDisable: () => void;
@@ -164,138 +159,27 @@ function ExamModeCard({
           aria-label="Modalità verifica"
           className={`${styles.switch} ${examMode.enabled ? styles.switchOn : ''}`}
           disabled={disabled}
+          title={
+            !examMode.enabled && eligibleClassIds.length === 0
+              ? 'Nessuna verifica online attiva con una classe assegnata.'
+              : undefined
+          }
           onClick={examMode.enabled ? onRequestDisable : onRequestEnable}
         >
           <span className={styles.switchThumb} />
         </button>
       </div>
       <p className={styles.toggleDesc}>
-        Nasconde temporaneamente le Lezioni agli studenti delle classi coinvolte. Le verifiche
-        online restano sempre disponibili.
+        Nasconde temporaneamente le Lezioni agli studenti delle classi coinvolte.
       </p>
       <span className={`badge ${examMode.enabled ? 'badge-warning' : 'badge-ok'}`}>
         {examModeStatusLabel(examMode, classNameById)}
       </span>
-      {classes.length === 0 && !examMode.enabled && (
-        <p className={styles.toggleDesc}>Crea almeno una classe per poter attivare la modalità.</p>
+      {!examMode.enabled && eligibleClassIds.length > 0 && (
+        <span className={styles.eligibleClasses}>
+          Classi coinvolte: {eligibleClassIds.map((id) => classNameById.get(id) ?? id).join(', ')}
+        </span>
       )}
-    </div>
-  );
-}
-
-type ExamModeDialogState = {
-  scope: ExamModeScope;
-  selectedClassIds: Set<string>;
-  globalConfirmed: boolean;
-};
-
-function ExamModeDialog({
-  classes,
-  state,
-  saving,
-  error,
-  onChange,
-  onCancel,
-  onConfirm,
-}: {
-  classes: ClassItem[];
-  state: ExamModeDialogState;
-  saving: boolean;
-  error: string | null;
-  onChange: (next: ExamModeDialogState) => void;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const canConfirm =
-    state.scope === 'classes' ? state.selectedClassIds.size > 0 : state.globalConfirmed;
-
-  function toggleClass(id: string) {
-    const next = new Set(state.selectedClassIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    onChange({ ...state, selectedClassIds: next });
-  }
-
-  return (
-    <div className={styles.examModeOverlay}>
-      <div
-        className={styles.examModeDialog}
-        role="alertdialog"
-        aria-label="Attiva modalità verifica"
-      >
-        <h3 className={styles.examModeDialogTitle}>Attiva modalità verifica</h3>
-
-        <div className={styles.examModeScopeChoice}>
-          <label className={styles.examModeScopeOption}>
-            <input
-              type="radio"
-              name="exam-mode-scope"
-              checked={state.scope === 'classes'}
-              onChange={() => onChange({ ...state, scope: 'classes' })}
-            />
-            Una o più classi
-          </label>
-          <label className={styles.examModeScopeOption}>
-            <input
-              type="radio"
-              name="exam-mode-scope"
-              checked={state.scope === 'all'}
-              onChange={() => onChange({ ...state, scope: 'all' })}
-            />
-            Tutte le classi
-          </label>
-        </div>
-
-        {state.scope === 'classes' ? (
-          classes.length === 0 ? (
-            <p className="state-empty">Nessuna classe disponibile.</p>
-          ) : (
-            <ul className={styles.examModeClassList}>
-              {classes.map((c) => (
-                <li key={c.id}>
-                  <label className={styles.examModeClassOption}>
-                    <input
-                      type="checkbox"
-                      checked={state.selectedClassIds.has(c.id)}
-                      onChange={() => toggleClass(c.id)}
-                    />
-                    {c.name}
-                  </label>
-                </li>
-              ))}
-            </ul>
-          )
-        ) : (
-          <label className={styles.examModeGlobalConfirm}>
-            <input
-              type="checkbox"
-              checked={state.globalConfirmed}
-              onChange={(e) => onChange({ ...state, globalConfirmed: e.target.checked })}
-            />
-            Confermo di voler bloccare le lezioni per TUTTE le classi.
-          </label>
-        )}
-
-        {error && (
-          <p role="alert" className="text-error">
-            {error}
-          </p>
-        )}
-
-        <div className={styles.examModeDialogActions}>
-          <button type="button" onClick={onCancel} disabled={saving}>
-            Annulla
-          </button>
-          <button
-            type="button"
-            className="btn-success"
-            disabled={saving || !canConfirm}
-            onClick={onConfirm}
-          >
-            {saving ? 'Attivazione…' : 'Attiva'}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -303,6 +187,7 @@ function ExamModeDialog({
 export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
   const [students, setStudents] = useState<StudentItem[] | null>(null);
   const [classes, setClasses] = useState<ClassItem[] | null>(null);
+  const [eligibleExamClassIds, setEligibleExamClassIds] = useState<string[] | null>(null);
   const [access, setAccess] = useState<StudentAccessSnapshot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -312,7 +197,6 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
   const [togglingPortal, setTogglingPortal] = useState(false);
   const [togglingRequests, setTogglingRequests] = useState(false);
 
-  const [examModeDialogState, setExamModeDialogState] = useState<ExamModeDialogState | null>(null);
   const [examModeSaving, setExamModeSaving] = useState(false);
   const [examModeError, setExamModeError] = useState<string | null>(null);
   const [examModeDisableConfirm, setExamModeDisableConfirm] = useState(false);
@@ -328,14 +212,16 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
   async function loadAll() {
     setLoadError(null);
     try {
-      const [studentsList, classesList, accessSettings] = await Promise.all([
+      const [studentsList, classesList, accessSettings, activeOnlineClassIds] = await Promise.all([
         listStudents(ownerUid, db),
         listClasses(ownerUid, db),
         getStudentAccessSettings(db),
+        listActiveOnlineVerificationClassIds(ownerUid, db),
       ]);
       setStudents(studentsList);
       setClasses(classesList);
       setAccess(accessSettings);
+      setEligibleExamClassIds(activeOnlineClassIds);
     } catch {
       setLoadError('Impossibile caricare gli studenti.');
     }
@@ -390,57 +276,29 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
     }
   }
 
-  function handleOpenExamModeDialog() {
+  async function handleEnableExamMode() {
+    if (!access || !eligibleExamClassIds || eligibleExamClassIds.length === 0) return;
     setExamModeError(null);
-    setExamModeDialogState({
-      scope: 'classes',
-      selectedClassIds: new Set(),
-      globalConfirmed: false,
-    });
-  }
-
-  function handleCloseExamModeDialog() {
-    setExamModeDialogState(null);
-    setExamModeError(null);
-  }
-
-  async function handleConfirmExamModeDialog() {
-    if (!examModeDialogState || !access) return;
-    const input: SetExamModeInput =
-      examModeDialogState.scope === 'all'
-        ? { enabled: true, scope: 'all' }
-        : { enabled: true, scope: 'classes', classIds: [...examModeDialogState.selectedClassIds] };
-
-    // Skip the write when the requested state already matches — using only
-    // the state already loaded in `access`, no extra read.
-    const alreadyCurrent =
-      access.examMode.enabled &&
-      access.examMode.scope === input.scope &&
-      (input.scope === 'all' ||
-        (input.scope === 'classes' &&
-          input.classIds.length === access.examMode.classIds.length &&
-          input.classIds.every((id) => access.examMode.classIds.includes(id))));
-    if (alreadyCurrent) {
-      handleCloseExamModeDialog();
-      return;
-    }
-
     setExamModeSaving(true);
-    setExamModeError(null);
     try {
-      await setExamMode(input, ownerUid, db);
+      await setExamMode(
+        { enabled: true, scope: 'classes', classIds: eligibleExamClassIds },
+        ownerUid,
+        db,
+      );
       setAccess((prev) =>
         prev
           ? {
               ...prev,
-              examMode:
-                input.scope === 'all'
-                  ? { enabled: true, scope: 'all', classIds: [], enabledAt: null }
-                  : { enabled: true, scope: 'classes', classIds: input.classIds, enabledAt: null },
+              examMode: {
+                enabled: true,
+                scope: 'classes',
+                classIds: eligibleExamClassIds,
+                enabledAt: null,
+              },
             }
           : prev,
       );
-      setExamModeDialogState(null);
     } catch (err) {
       setExamModeError(
         err instanceof Error ? err.message : 'Impossibile attivare la modalità verifica.',
@@ -501,7 +359,7 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
         {loadError}
       </p>
     );
-  if (students === null || access === null)
+  if (students === null || access === null || eligibleExamClassIds === null)
     return (
       <p aria-busy="true" className="state-loading">
         Caricamento…
@@ -527,10 +385,12 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
         />
         <ExamModeCard
           examMode={access.examMode}
-          classes={classes ?? []}
           classNameById={classNameById}
-          disabled={examModeSaving}
-          onRequestEnable={handleOpenExamModeDialog}
+          eligibleClassIds={eligibleExamClassIds}
+          disabled={
+            examModeSaving || (!access.examMode.enabled && eligibleExamClassIds.length === 0)
+          }
+          onRequestEnable={() => void handleEnableExamMode()}
           onRequestDisable={handleStartDisableExamMode}
         />
       </div>
@@ -542,16 +402,10 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
         </p>
       )}
 
-      {examModeDialogState && (
-        <ExamModeDialog
-          classes={classes ?? []}
-          state={examModeDialogState}
-          saving={examModeSaving}
-          error={examModeError}
-          onChange={setExamModeDialogState}
-          onCancel={handleCloseExamModeDialog}
-          onConfirm={() => void handleConfirmExamModeDialog()}
-        />
+      {examModeError && !examModeDisableConfirm && (
+        <p role="alert" className="text-error">
+          {examModeError}
+        </p>
       )}
 
       {examModeDisableConfirm && (

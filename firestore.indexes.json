@@ -25,6 +25,15 @@
         { "fieldPath": "ownerUid", "order": "ASCENDING" },
         { "fieldPath": "lastSavedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "verifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerUid", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "onlineEnabled", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

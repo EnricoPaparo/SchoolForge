@@ -27,8 +27,12 @@ const PREVENTABLE_EVENTS: { type: AttentionEventType; domEvent: string }[] = [
  * - fullscreen exit and page-hidden/window-blur are only observed.
  * - copy/cut/paste/contextmenu/dragstart are also prevented (`preventDefault`).
  */
-export function attachDeterrenceListeners(onEvent: (type: AttentionEventType) => void): () => void {
+export function attachDeterrenceListeners(
+  onEvent: (type: AttentionEventType) => void,
+  onFullscreenChange?: (active: boolean) => void,
+): () => void {
   function handleFullscreenChange() {
+    onFullscreenChange?.(Boolean(document.fullscreenElement));
     if (!document.fullscreenElement) onEvent('fullscreen_exit');
   }
   function handleVisibilityChange() {

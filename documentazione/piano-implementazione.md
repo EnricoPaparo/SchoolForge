@@ -723,6 +723,15 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 
 M3F-10 è completato; M3F-11 è definito operativamente in `m3-full-roadmap.md`.
 
+#### M3F-11A — Rifiniture UX pre-gate
+
+| Campo | Valore |
+|---|---|
+| Scope | Card Modalità verifica allineata agli altri toggle; attivazione manuale senza dialog con classi derivate da verifiche `active + onlineEnabled + classId`; pulsante "Torna a schermo intero" dopo uscita; scrollbar interna TeacherShell invisibile ma scorrimento invariato. |
+| Efficienza | Una query circoscritta alle sole verifiche online attive quando si apre Studenti; nessun listener, polling o automatismo aggiuntivo. Indice composito esplicito su `verifications(ownerUid,status,onlineEnabled)`. |
+| Test minimi | Scope classi deduplicato; toggle disabilitato senza classi idonee; nessuna dialog di attivazione; errore inline; callback fullscreen e richiesta di rientro; lint/typecheck/build. |
+| Deploy | Hosting + indici Firestore dopo merge e CI verde; nessuna modifica a Firestore/Storage Rules. |
+
 ### M4 — Correzione ed export
 
 #### M4-A — Correzione e audit
