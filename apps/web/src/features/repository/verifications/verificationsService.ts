@@ -17,6 +17,7 @@ import type { ClassItem } from '../classes/classesService.js';
 import type {
   VerificationConfig,
   VerificationDoc,
+  VerificationQuestionRef,
   VerificationTeacherQuestionSnapshot,
   VerificationTeacherSnapshot,
   VerificationVisibility,
@@ -178,6 +179,36 @@ function isValidSoluzione(soluzione: string | string[]): boolean {
 }
 
 /**
+ * Storage is read before the Firestore transaction. If another tab changes
+ * the draft selection in that gap, the already-loaded questions must never
+ * be frozen alongside a different set of refs. Compare every persisted ref
+ * field, including order, before committing the snapshot.
+ */
+function sameQuestionRefs(
+  expected: VerificationQuestionRef[],
+  current: VerificationQuestionRef[],
+): boolean {
+  return (
+    expected.length === current.length &&
+    expected.every((left, index) => {
+      const right = current[index];
+      return (
+        right !== undefined &&
+        left.questionIndexEntryId === right.questionIndexEntryId &&
+        left.questionLocalId === right.questionLocalId &&
+        left.udaDir === right.udaDir &&
+        left.lessonFilename === right.lessonFilename &&
+        left.poolStorageRef === right.poolStorageRef &&
+        left.tipo === right.tipo &&
+        left.difficolta === right.difficolta &&
+        left.peso === right.peso &&
+        left.maxPoints === right.maxPoints
+      );
+    })
+  );
+}
+
+/**
  * Activates a draft verification. Alongside the existing owner-only
  * `teacherSnapshot`, this also builds and writes `publishedProjection/data`
  * — the safe, solution-free projection a student (M3-lite) reads to list the
@@ -272,6 +303,11 @@ export async function activateVerification(
     const validation = validateForActivation(data.config);
     if (!validation.valid) {
       throw new Error(`Verifica non valida: ${validation.errors.join(', ')}`);
+    }
+    if (!sameQuestionRefs(preData.config.questionRefs, data.config.questionRefs)) {
+      throw new Error(
+        'La selezione delle domande è cambiata durante l’attivazione. Riprova per congelare la versione aggiornata.',
+      );
     }
     const className = classItem?.name ?? null;
     const teacherSnapshot: Omit<VerificationTeacherSnapshot, 'activatedAt'> & {

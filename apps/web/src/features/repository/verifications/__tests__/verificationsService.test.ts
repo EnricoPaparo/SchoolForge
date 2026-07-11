@@ -490,6 +490,33 @@ describe('activateVerification', () => {
     expect(mockRunTransaction).not.toHaveBeenCalled();
   });
 
+  it('rejects activation if questionRefs change after the Storage preflight', async () => {
+    const preflightDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: VALID_CONFIG,
+    };
+    const changedRef = {
+      ...VALID_CONFIG.questionRefs[0]!,
+      questionIndexEntryId: 'qi-changed',
+      questionLocalId: 'q-changed',
+    };
+    const transactionDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: { ...VALID_CONFIG, questionRefs: [changedRef] },
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => preflightDoc });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(transactionDoc);
+
+    await expect(
+      activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage),
+    ).rejects.toThrow(/selezione delle domande è cambiata/i);
+
+    expect(capture.getUpdate()).toBeUndefined();
+    expect(capture.getProjection()).toBeUndefined();
+    expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+
   it('reads each pool exactly once for both teacherSnapshot.questions and publishedProjection', async () => {
     const draftDoc: Partial<VerificationDoc> = {
       status: 'draft',
