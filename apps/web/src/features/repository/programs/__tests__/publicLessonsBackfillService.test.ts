@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockGetDocs = vi.fn();
+const mockGetDoc = vi.fn();
 const mockUpdateDoc = vi.fn();
+const mockSetDoc = vi.fn();
 const mockGetBytes = vi.fn();
 
 vi.mock('firebase/firestore', () => ({
@@ -10,7 +12,10 @@ vi.mock('firebase/firestore', () => ({
   query: (collRef: unknown, ...clauses: unknown[]) => ({ __collRef: collRef, __clauses: clauses }),
   where: (field: string, op: string, value: unknown) => ({ field, op, value }),
   getDocs: (...args: unknown[]) => mockGetDocs(...args),
+  getDoc: (...args: unknown[]) => mockGetDoc(...args),
   updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
+  setDoc: (...args: unknown[]) => mockSetDoc(...args),
+  serverTimestamp: () => ({ __type: 'serverTimestamp' }),
 }));
 
 vi.mock('firebase/storage', () => ({
@@ -18,7 +23,10 @@ vi.mock('firebase/storage', () => ({
   getBytes: (...args: unknown[]) => mockGetBytes(...args),
 }));
 
-import { backfillPublicLessonsContent } from '../publicLessonsBackfillService.js';
+import {
+  backfillPublicLessonsContent,
+  isPublicLessonsMigrationComplete,
+} from '../publicLessonsBackfillService.js';
 import type { Firestore } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
 
@@ -37,6 +45,7 @@ function docsFor(items: { id: string; data: Record<string, unknown> }[]) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockUpdateDoc.mockResolvedValue(undefined);
+  mockSetDoc.mockResolvedValue(undefined);
 });
 
 describe('backfillPublicLessonsContent', () => {
@@ -57,6 +66,10 @@ describe('backfillPublicLessonsContent', () => {
     expect(mockUpdateDoc).toHaveBeenCalledWith(
       { __path: 'publicLessons/l1' },
       { content: 'Corpo.' },
+    );
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'settings/publicLessonsMigration' },
+      expect.objectContaining({ publicLessonsContentVersion: 1 }),
     );
   });
 
@@ -97,6 +110,7 @@ describe('backfillPublicLessonsContent', () => {
 
     expect(summary.migrated).toBe(0);
     expect(summary.failed).toEqual([{ id: 'l1', reason: 'permission-denied' }]);
+    expect(mockSetDoc).not.toHaveBeenCalled();
   });
 
   it('records a failure when the fetched content exceeds the size limit', async () => {
@@ -160,5 +174,31 @@ describe('backfillPublicLessonsContent', () => {
 
     expect(summary).toEqual({ analyzed: 2, migrated: 1, skipped: 1, failed: [] });
     expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('isPublicLessonsMigrationComplete', () => {
+  it('returns false when the marker document does not exist', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => false });
+
+    expect(await isPublicLessonsMigrationComplete(fakeDb)).toBe(false);
+  });
+
+  it('returns true when the marker carries the current version', async () => {
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ publicLessonsContentVersion: 1 }),
+    });
+
+    expect(await isPublicLessonsMigrationComplete(fakeDb)).toBe(true);
+  });
+
+  it('returns false for an unrecognized version value', async () => {
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ publicLessonsContentVersion: 2 }),
+    });
+
+    expect(await isPublicLessonsMigrationComplete(fakeDb)).toBe(false);
   });
 });

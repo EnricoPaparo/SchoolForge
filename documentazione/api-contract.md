@@ -93,6 +93,22 @@ interface StudentAccessSettings {
   newStudentRequestsEnabled: boolean; // riservato a un futuro flusso di richiesta autonoma; non usato da questa milestone
 }
 
+// settings/publicLessonsMigration — marker backfill M3F-08
+// Owner-only in lettura e scrittura. Scritto esclusivamente da
+// publicLessonsBackfillService.backfillPublicLessonsContent, e solo al
+// termine di un'esecuzione con `failed.length === 0`. Assente, o con
+// `publicLessonsContentVersion` diverso dalla versione corrente: il backfill
+// non è (ancora) completo. LessonsView legge questo singolo documento
+// (isPublicLessonsMigrationComplete) invece di scandire ogni publicLessons
+// a ogni mount, per decidere se mostrare il trigger di sincronizzazione.
+// C'è una sola migrazione tracciata oggi, quindi il campo versione vale
+// sempre 1 una volta impostato; un'eventuale migrazione futura userebbe un
+// documento settings/ dedicato, non un secondo campo qui.
+interface PublicLessonsMigrationDoc {
+  publicLessonsContentVersion: 1;
+  completedAt: Timestamp;
+}
+
 // students/{uid} — registro di approvazione (M3-lite)
 // uid == uid Firebase Auth dello studente. Un utente Google non-owner senza
 // documento qui è trattato come 'pending' ai fini dell'autorizzazione.
@@ -669,6 +685,7 @@ Le Security Rules Firestore devono garantire, per la baseline corrente (M1+M2+M3
 | `settings/owner` | Lettura + scrittura | — | — | — |
 | `settings/ownerPublic` | Lettura + scrittura | Solo lettura (`ownerUid`, per routing UI) | Solo lettura (`ownerUid`, per routing UI) | — |
 | `settings/studentAccess` | Lettura + scrittura | — (letto dalle Rules via `get()`, mai dal client studente) | — | — |
+| `settings/publicLessonsMigration` (M3F-08) | Lettura + scrittura | — | — | — |
 | `students/{uid}` | Lettura + scrittura | — (nessuna UI/Rule di autolettura in questa milestone) | — | — |
 | `programs` (documento top-level) | Lettura + scrittura sull'import attivo/preparato | Solo lettura, solo se `classIds` include il proprio `classId` (M3L-C; assente/vuoto → nessuno studente) | — | — |
 | `programs/*/imports/**` (`udas`, `lessons`, `questionIndex`, dati tecnici) | Lettura + scrittura sull'import attivo/preparato | — (mai, indipendentemente dalla classe) | — | — |

@@ -162,6 +162,73 @@ describe('settings/ownerPublic — update', () => {
   });
 });
 
+// ─── settings/publicLessonsMigration (M3F-08 backfill marker) ────────────────
+
+describe('settings/publicLessonsMigration', () => {
+  it('allows the owner to write the marker', async () => {
+    await seedOwner();
+    const db = testEnv.authenticatedContext(OWNER_UID).firestore();
+    await assertSucceeds(
+      setDoc(doc(db, 'settings/publicLessonsMigration'), {
+        publicLessonsContentVersion: 1,
+        completedAt: new Date(),
+      }),
+    );
+  });
+
+  it('allows the owner to read the marker', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'settings/publicLessonsMigration'), {
+        publicLessonsContentVersion: 1,
+        completedAt: new Date(),
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER_UID).firestore();
+    await assertSucceeds(getDoc(doc(db, 'settings/publicLessonsMigration')));
+  });
+
+  it('denies a different authenticated user from reading the marker', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'settings/publicLessonsMigration'), {
+        publicLessonsContentVersion: 1,
+        completedAt: new Date(),
+      });
+    });
+    const other = testEnv.authenticatedContext(OTHER_UID);
+    await assertFails(getDoc(doc(other.firestore(), 'settings/publicLessonsMigration')));
+  });
+
+  it('denies a different authenticated user from writing the marker', async () => {
+    await seedOwner();
+    const other = testEnv.authenticatedContext(OTHER_UID);
+    await assertFails(
+      setDoc(doc(other.firestore(), 'settings/publicLessonsMigration'), {
+        publicLessonsContentVersion: 1,
+        completedAt: new Date(),
+      }),
+    );
+  });
+
+  it('denies an unauthenticated user from reading the marker', async () => {
+    await seedOwner();
+    const unauth = testEnv.unauthenticatedContext();
+    await assertFails(getDoc(doc(unauth.firestore(), 'settings/publicLessonsMigration')));
+  });
+
+  it('denies an unauthenticated user from writing the marker', async () => {
+    await seedOwner();
+    const unauth = testEnv.unauthenticatedContext();
+    await assertFails(
+      setDoc(doc(unauth.firestore(), 'settings/publicLessonsMigration'), {
+        publicLessonsContentVersion: 1,
+        completedAt: new Date(),
+      }),
+    );
+  });
+});
+
 // ─── programs (owner data) ───────────────────────────────────────────────────
 
 describe('programs', () => {

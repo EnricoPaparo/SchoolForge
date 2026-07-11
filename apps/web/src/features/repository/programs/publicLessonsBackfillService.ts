@@ -1,10 +1,20 @@
-import { collection, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
 import { getBytes, ref } from 'firebase/storage';
 import { parseLessonMetadata } from '../validation/lessonMetadata.js';
 import { assertLessonContentSize, normalizeLessonContent } from './lessonContentSize.js';
-import type { PublicLessonDoc } from '../../../types/firestore.js';
+import type { PublicLessonDoc, PublicLessonsMigrationDoc } from '../../../types/firestore.js';
 
 export interface BackfillFailure {
   id: string;
@@ -36,6 +46,28 @@ async function runWithConcurrency<T>(
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => consume()));
 }
 
+/** The only migration this marker tracks so far — see PublicLessonsMigrationDoc. */
+const PUBLIC_LESSONS_CONTENT_VERSION = 1;
+
+function migrationMarkerRef(db: Firestore) {
+  return doc(db, 'settings', 'publicLessonsMigration');
+}
+
+/**
+ * Owner-only cheap check: reads a single settings document instead of
+ * scanning every `publicLessons` doc, so `LessonsView` can decide whether to
+ * show the backfill trigger without a `getDocs` sweep on each mount. `true`
+ * means a previous `backfillPublicLessonsContent` run completed with zero
+ * failures — new write paths (import/createLesson/updateLessonMarkdownBody)
+ * already keep `content` in sync, so once this is true it stays true.
+ */
+export async function isPublicLessonsMigrationComplete(db: Firestore): Promise<boolean> {
+  const snap = await getDoc(migrationMarkerRef(db));
+  if (!snap.exists()) return false;
+  const data = snap.data() as Partial<PublicLessonsMigrationDoc>;
+  return data.publicLessonsContentVersion === PUBLIC_LESSONS_CONTENT_VERSION;
+}
+
 /**
  * Owner-only, idempotent backfill for `publicLessons` documents written
  * before M3F-08 (no `content`, or a corrupt non-string value). Reads the
@@ -45,6 +77,10 @@ async function runWithConcurrency<T>(
  * touches any other field. Already-migrated documents (valid `content`
  * already present) are counted as `skipped`, not touched, so rerunning this
  * after a partial failure never re-writes or duplicates anything.
+ *
+ * Sets `settings/publicLessonsMigration` only when the run ends with zero
+ * failures — a partial run leaves the marker untouched (or absent), so the
+ * trigger in `LessonsView` stays visible and the docente can rerun.
  */
 export async function backfillPublicLessonsContent(
   ownerUid: string,
@@ -89,6 +125,13 @@ export async function backfillPublicLessonsContent(
       });
     }
   });
+
+  if (summary.failed.length === 0) {
+    await setDoc(migrationMarkerRef(db), {
+      publicLessonsContentVersion: PUBLIC_LESSONS_CONTENT_VERSION,
+      completedAt: serverTimestamp(),
+    } satisfies PublicLessonsMigrationDoc);
+  }
 
   return summary;
 }

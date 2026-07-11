@@ -207,6 +207,24 @@ export interface PublicLessonDoc {
   content?: string;
 }
 
+/**
+ * Stored at settings/publicLessonsMigration (M3F-08). Owner-only marker so
+ * `LessonsView` can decide whether to show the backfill trigger without
+ * running a `getDocs` scan over every `publicLessons` document on each
+ * mount — the expensive check the task explicitly asked to avoid. Written
+ * only by `publicLessonsBackfillService.backfillPublicLessonsContent`, and
+ * only after a run whose `failed` array is empty: any failure leaves the
+ * document untouched (or absent), so the trigger stays visible and the
+ * backfill can be rerun. There is currently only one migration this marker
+ * tracks, so `publicLessonsContentVersion` is always `1` once set — a
+ * future unrelated migration would use a different settings document, not
+ * a second field here.
+ */
+export interface PublicLessonsMigrationDoc {
+  publicLessonsContentVersion: 1;
+  completedAt: Timestamp | FieldValue;
+}
+
 // ─── M3-lite — Approved-student access model ─────────────────────────────────
 
 /**
@@ -223,8 +241,8 @@ export interface PublicLessonDoc {
  * missing/malformed value as disabled. When active for a class it hides
  * that class's Lezioni section in the student UI and denies Firestore
  * discovery of `programs`/`publicLessons` for that class (Security Rules).
- * It does NOT yet deny the underlying Storage Markdown read — that is
- * M3F-08's job; see sicurezza.md for the interim risk note.
+ * Since M3F-08, Storage also denies the underlying Markdown read to any
+ * non-owner unconditionally, so Modalità verifica is effective end-to-end.
  */
 export interface StudentAccessSettings {
   ownerUid: string;

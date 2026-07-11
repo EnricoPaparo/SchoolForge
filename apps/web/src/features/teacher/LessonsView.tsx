@@ -40,13 +40,11 @@ import {
 import { fetchLessonContent } from './lessonContent.js';
 import { downloadLessonPdf } from './lessonPdf.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { normalizeLessonContent } from '../repository/programs/lessonContentSize.js';
 import {
   backfillPublicLessonsContent,
+  isPublicLessonsMigrationComplete,
   type BackfillSummary,
 } from '../repository/programs/publicLessonsBackfillService.js';
-import type { PublicLessonDoc } from '../../types/firestore.js';
 import styles from './LessonsView.module.css';
 
 function linesToArray(value: string): string[] {
@@ -193,33 +191,27 @@ export function LessonsView() {
   } | null>(null);
 
   // ── Legacy publicLessons.content backfill (M3F-08) ───────────────
-  // Discreet, owner-only: a one-time-per-mount Firestore-only count (no
-  // Storage reads) decides whether to show the trigger at all — it stays
-  // hidden once every publicLessons doc for this owner already carries a
-  // valid `content`. The actual migration (Storage reads included) only
-  // runs on explicit teacher confirmation, never automatically.
-  const [legacyLessonCount, setLegacyLessonCount] = useState<number | null>(null);
+  // Discreet, owner-only: visibility is decided by a single cheap read of
+  // settings/publicLessonsMigration (see isPublicLessonsMigrationComplete),
+  // never by scanning every publicLessons document on each mount — once the
+  // marker is set the trigger stays hidden for good, since every write path
+  // keeps `content` in sync from here on. The actual migration (Storage
+  // reads included) only runs on explicit teacher confirmation.
+  const [migrationComplete, setMigrationComplete] = useState<boolean | null>(null);
   const [backfillRunning, setBackfillRunning] = useState(false);
   const [backfillSummary, setBackfillSummary] = useState<BackfillSummary | null>(null);
   const [backfillError, setBackfillError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ownerUid) return;
-    void checkLegacyProjections(ownerUid);
+    void checkMigrationStatus();
   }, [ownerUid]);
 
-  async function checkLegacyProjections(uid: string) {
+  async function checkMigrationStatus() {
     try {
-      const snap = await getDocs(
-        query(collection(db, 'publicLessons'), where('ownerUid', '==', uid)),
-      );
-      const legacy = snap.docs.filter((d) => {
-        const data = d.data() as Partial<PublicLessonDoc>;
-        return normalizeLessonContent(data.content) === null;
-      });
-      setLegacyLessonCount(legacy.length);
+      setMigrationComplete(await isPublicLessonsMigrationComplete(db));
     } catch {
-      setLegacyLessonCount(null);
+      setMigrationComplete(null);
     }
   }
 
@@ -230,7 +222,7 @@ export function LessonsView() {
     try {
       const summary = await backfillPublicLessonsContent(ownerUid, db, storage);
       setBackfillSummary(summary);
-      setLegacyLessonCount(summary.skipped + summary.failed.length > 0 ? summary.failed.length : 0);
+      if (summary.failed.length === 0) setMigrationComplete(true);
     } catch {
       setBackfillError('Impossibile eseguire il backfill delle proiezioni.');
     } finally {
@@ -867,9 +859,9 @@ export function LessonsView() {
           </div>
         )}
 
-        {!sidebarCollapsed && legacyLessonCount !== null && legacyLessonCount > 0 && (
+        {!sidebarCollapsed && migrationComplete === false && (
           <div role="status" style={{ padding: '0.5rem', fontSize: '0.85em' }}>
-            <p>{legacyLessonCount} proiezione/i lezione senza contenuto sincronizzato (M3F-08).</p>
+            <p>Proiezioni lezione legacy da sincronizzare (M3F-08).</p>
             <button
               type="button"
               disabled={backfillRunning}
