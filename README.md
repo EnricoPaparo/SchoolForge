@@ -20,7 +20,7 @@ Il flusso completo è operativo e testato (suite automatica estesa + smoke test 
 | Portale studente Google, read-only (M3-lite) | ✅ funzionante — login Google, StudentShell, Lezioni e Verifiche filtrate per classe, approvazione studenti, PDF verifica studente |
 | Repository Editor (RE) | ✅ funzionante — crea/modifica/riordina/elimina (con blocco protetto) UDA e lezioni, export ZIP coerente e reimportabile |
 | Question Editor (QE) — sezione "Domande" | 📐 specifica definita — implementazione da avviare (roadmap QE-00→QE-05) |
-| Portale digitale con consegna online (M3-full) | 🚧 implementazione avviata a livello contratti/service — UI e rules operative da completare (roadmap M3F-00→M3F-06) |
+| Portale digitale con consegna online (M3-full) | 🚧 flusso base studente e monitor docente implementati (M3F-00→05); hardening sessione/modalità verifica e gate DEV pianificati in M3F-06→11 |
 | Correzione e export risultati (M4) | ❌ non implementato — dipende da M3-full |
 | Correzione AI (M5) | ❌ fuori scope V1 |
 
@@ -59,7 +59,7 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 | [Diagrammi](documentazione/diagrammi) | Flussi e componenti. |
 | [Repository Editor](documentazione/repository-editor-roadmap.md) | Roadmap del Repository Editor (RE-00–RE-07, implementato): editor minimale UDA/lezioni Markdown-first. |
 | [Question Editor](documentazione/question-editor-roadmap.md) | Roadmap QE-00–QE-05: editor pool domande Markdown-first, senza reimport ZIP. |
-| [M3-full](documentazione/m3-full-roadmap.md) | Specifica M3-full (verifiche online, consegne, monitor): modello dati, Security Rules, UX, roadmap M3F-00→M3F-06. |
+| [M3-full](documentazione/m3-full-roadmap.md) | Specifica M3-full (verifiche online, consegne, monitor e modalità verifica): modello dati, Security Rules, UX, roadmap M3F-00→M3F-11. |
 
 ## Moduli di delivery
 
@@ -68,7 +68,7 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 3. **M3-lite — Portale studente (Google, read-only)** ✅: login Google (personale o Workspace for Education), risoluzione ruolo docente/studente, StudentShell con sezioni Lezioni e Verifiche filtrate per classe, approvazione studenti, download del solo PDF studente per le verifiche `active`+`public`. Nessuna Cloud Function, nessun account custom, nessuna consegna online.
 4. **RE — Repository Editor** ✅: creare/modificare/eliminare/riordinare UDA e lezioni, inclusi front matter e corpo Markdown, senza AI e senza CMS complesso; export ZIP coerente e reimportabile.
 5. **QE — Question Editor (sezione "Domande")** 📐 *(specifica definita — da implementare)*: creare, modificare ed eliminare domande nei pool Markdown-first (`.pool.md`) direttamente dal portale, aggiornando `questionIndex` su Firestore senza reimport ZIP. Vedi [question-editor-roadmap.md](documentazione/question-editor-roadmap.md).
-6. **M3-full — Verifiche online e consegne studenti** 📐 *(specifica definita — da implementare)*: avvio online, bozza, consegna immutabile, codice consegna, modalità verifica (deterrenza leggera), monitor consegne docente. Vedi [m3-full-roadmap.md](documentazione/m3-full-roadmap.md).
+6. **M3-full — Verifiche online e consegne studenti** 🚧 *(M3F-00→05 implementati; hardening e gate da completare)*: avvio online, bozza, consegna immutabile, codice consegna e monitor docente sono presenti; sessione obbligatoria, modalità verifica per classe e protezione effettiva delle lezioni sono pianificate in M3F-06→11. Vedi [m3-full-roadmap.md](documentazione/m3-full-roadmap.md).
 7. **M4 — Correzione ed export** ❌ *(dipende da M3-full)*: punteggi, percentuali, rettifiche, export PDF/Markdown/CSV.
 8. **M5 — Correzione AI** *(fuori scope V1 / pianificato per V2)*: proposte assistite, approvazione massiva, correzione automatica opt-in.
 
@@ -81,7 +81,7 @@ SPA unica (Firebase Hosting)
 ├── /teacher/*  — docente autenticato (ownerUid), scrittura diretta Firestore + Storage
 └── /student/*  — studente autenticato Google
                   M3-lite: lezioni e verifiche read-only, PDF studente browser-side
-                  M3-full [da implementare]: avvio online, bozza, consegna immutabile
+                  M3-full [in implementazione]: avvio online, bozza, consegna immutabile
 
 Canale cartaceo: PDF generato nel browser dal docente (M2, implementato).
 Consegna online: scritture client dirette con Security Rules (M3-full, no Cloud Functions).

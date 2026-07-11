@@ -2,7 +2,7 @@
 
 **Versione:** 1.0
 **Data:** 10 luglio 2026
-**Stato:** in implementazione — M3F-00/M3F-01/M3F-02/M3F-03/M3F-04/M3F-05 completati (documentazione, tipi/indici, service layer client-only, Security Rules, UI studente flusso online, toggle onlineEnabled + monitor consegne docente); M3F-06 (integrazione, smoke test DEV) non ancora implementato.
+**Stato:** in implementazione — M3F-00/M3F-01/M3F-02/M3F-03/M3F-04/M3F-05 completati (documentazione, tipi/indici, service layer client-only, Security Rules, UI studente, toggle `onlineEnabled` e monitor docente). Il tratto finale M3F-06→M3F-11 consolida sessione obbligatoria, modalità verifica per classe, protezione effettiva delle lezioni, rifiniture docente, disciplina dei costi e gate DEV.
 **Dipendenze:** M1, M2, M3-lite (tutti completati)
 **Fuori scope in M3-full:** M4 (correzione/restituzione), M5 (AI), timer, anti-cheat aggressivo, tentativi multipli, allegati, voti.
 
@@ -33,6 +33,15 @@ M3-lite (login Google, portale read-only, download PDF) resta invariata e compat
 | D-M3F-11 | Il docente vede un monitor consegne per verifica: stato per studente, ultimo salvataggio, consegnata il, eventi attenzione. |
 | D-M3F-12 | Le domande online usano snapshot immutabile (`publishedProjection`) creato all'attivazione. |
 | D-M3F-13 | Se il docente chiude la verifica: nessuno può iniziare; chi ha bozza non può consegnare; chi ha già consegnato resta consegnato. |
+| D-M3F-14 | Una submission `draft` identifica una sessione d'esame in corso: dopo refresh, riapertura del browser o nuovo login, lo studente viene riportato direttamente nella verifica e non può navigare nelle altre sezioni. |
+| D-M3F-15 | Durante una sessione d'esame la shell studente non mostra navigazione o azioni di uscita dal questionario. Il fullscreen è deterrenza, mentre il blocco di navigazione è stato applicativo persistente. |
+| D-M3F-16 | Dopo una consegna riuscita il client esce dal fullscreen e mostra soltanto la ricevuta. Se la consegna fallisce, resta nella verifica e non esce dal fullscreen. |
+| D-M3F-17 | Il docente può attivare la Modalità verifica per tutte le classi o per classi selezionate. Il default operativo è per classe; il blocco globale è un'azione eccezionale con conferma. |
+| D-M3F-18 | La Modalità verifica nega realmente la lettura delle lezioni tramite Firestore Security Rules; nascondere il menu non è considerato una protezione. |
+| D-M3F-19 | Il Markdown canonico resta in Storage. Una proiezione studente del corpo lezione vive in `publicLessons`, è sincronizzata da import/editor ed è esclusa dagli indici; ciò permette alle Rules Firestore di applicare il blocco d'esame. |
+| D-M3F-20 | Il PDF studente è un canale separato: il docente può abilitarne o negarne il download senza modificare `onlineEnabled`. Il default e le transizioni devono restare fail-closed. |
+| D-M3F-21 | Gli eventi attenzione sono indicatori di deterrenza, non prove di comportamento scorretto. Il docente può consultarne timestamp e descrizione senza accedere alle risposte dal monitor. |
+| D-M3F-22 | L'autosave scrive solo quando la revisione locale cambia; la frequenza viene limitata per contenere scritture e aggiornamenti del listener docente. |
 
 ---
 
@@ -339,7 +348,8 @@ Layout a pagina singola:
 **Consegna:**
 1. Alert: "Hai compilato X/Y domande. Z domande sono vuote. Vuoi consegnare?" con pulsante Annulla e Conferma.
 2. Se Conferma: update `status: 'submitted'`, imposta `deliveryCode`, `submittedAt`.
-3. Redirect a schermata di conferma.
+3. Solo dopo il successo atomico della consegna: uscita dal fullscreen, rimozione dei listener di deterrenza e redirect alla schermata di conferma.
+4. Se la consegna fallisce: nessun redirect e nessuna uscita dal fullscreen; la prova resta modificabile e viene mostrato un errore recuperabile.
 
 ### 7.3 Schermata di conferma (ConfirmationView)
 
@@ -352,6 +362,15 @@ Mostra solo:
 
 Nessun link al form. Lo studente non vede più domande o risposte.
 
+### 7.3a Sessione obbligatoria e ripresa
+
+- Una submission propria in stato `draft` prevale sulla normale navigazione studente.
+- All'avvio della StudentShell viene effettuata una sola risoluzione deterministica della sessione attiva; se presente, viene montata direttamente `OnlineExamView` senza menu Lezioni/Verifiche.
+- Il solo `sessionStorage` non è fonte di verità: può accelerare il rendering, ma Firestore stabilisce se la sessione è realmente attiva.
+- Il pulsante "Torna alla lista" non esiste durante una bozza. Le sole uscite applicative sono consegna riuscita oppure blocco imposto dal docente/verifica non più valida.
+- La barra di navigazione, eventuali deep link e i caricamenti delle lezioni devono rispettare lo stesso stato; un redirect UI da solo non è sufficiente.
+- Dopo consegna riuscita, la sessione attiva viene chiusa atomicamente con submission e receipt oppure resa derivabile in modo non ambiguo dallo stato `submitted`.
+
 ### 7.4 Modalità verifica (deterrenza leggera)
 
 All'avvio della schermata verifica:
@@ -362,12 +381,63 @@ All'avvio della schermata verifica:
 4. Listener su `window.blur` → registra `tab_blur` o `window_blur`.
 5. `document.addEventListener('copy', e => e.preventDefault())` — stessa logica per `cut`, `paste`, `contextmenu`, `dragstart`; registra rispettivamente `copy_attempt`, `cut_attempt`, `paste_attempt`, `context_menu_attempt`, `drag_attempt`.
 6. Gli eventi vengono accumulati in memoria e scritti periodicamente su Firestore insieme al salvataggio bozza automatico (o alla consegna).
+7. L'uscita dal fullscreen prodotta dal codice dopo una consegna riuscita non viene registrata come evento sospetto.
+
+### 7.5 Navigatore e compilazione
+
+- Sotto l'header della prova compare una barra sticky compatta con un indicatore numerato per domanda: verde compilata, rosso/non compilata, giallo da rivedere.
+- L'indicatore porta alla domanda corrispondente e dispone di testo/attributi accessibili oltre al solo colore.
+- Per `chiusa_singola` le radio restano semanticamente standard; un'azione neutra "Cancella risposta" consente di tornare allo stato vuoto.
+- La consegna riepiloga sempre compilate, vuote e segnate da rivedere prima della conferma.
+
+### 7.6 Modalità verifica per classe
+
+Il pannello **Studenti** espone un terzo controllo accanto a Portale studenti e Nuove richieste:
+
+- stato inattivo;
+- attivo per tutte le classi;
+- attivo per una o più classi selezionate.
+
+Il modello minimo vive nel documento di configurazione studente esistente:
+
+```ts
+examMode: {
+  enabled: boolean;
+  scope: 'all' | 'classes';
+  classIds: string[];
+  enabledAt: Timestamp | null;
+}
+```
+
+Vincoli:
+
+- attivazione/disattivazione owner-only con evento audit;
+- conferma esplicita per il blocco globale;
+- banner docente molto visibile finché il blocco è attivo;
+- nessuna scadenza automatica implicita;
+- un solo listener leggero sul documento impostazioni per ogni StudentShell autenticata;
+- durante il blocco la sezione Lezioni scompare, il contenuto già caricato viene smontato e le Security Rules negano la lettura della proiezione lezione;
+- Verifiche e sessione in corso restano disponibili.
+
+### 7.7 Proiezione sicura delle lezioni
+
+Le Storage Rules non possono applicare in modo affidabile uno stato dinamico Firestore per classe. Perciò il corpo Markdown destinato agli studenti viene duplicato nella proiezione `publicLessons` già autorizzata per classe:
+
+- Storage resta la sorgente canonica ed esportabile;
+- `publicLessons.content` è una proiezione derivata, aggiornata da import e Repository Editor;
+- il campo `content` non viene indicizzato;
+- dimensione validata prima della pubblicazione e sempre inferiore al limite Firestore di 1 MiB per documento;
+- migrazione/backfill idempotente per i documenti esistenti;
+- il client studente non usa più il `contentPath` Storage per leggere il corpo della lezione;
+- le Rules verificano approvazione, portale attivo, classe compatibile e Modalità verifica non applicabile allo studente.
+
+Non si considera completata la Modalità verifica finché UI, migrazione e Rules di questa sezione non sono tutte operative.
 
 **Non implementato in M3-full:** blocco automatico della consegna, invalidazione submission, screenshot, screen recording detection, DevTools detection.
 
 ---
 
-## 8. Roadmap M3F-00 → M3F-06
+## 8. Roadmap M3F-00 → M3F-11
 
 | Pacchetto | Scope | File principali | Dipendenze | DoD essenziale |
 |---|---|---|---|---|
@@ -377,7 +447,12 @@ All'avvio della schermata verifica:
 | **M3F-03** | Security Rules submission | `firestore.rules` (aggiunta blocco `submissions`), test Rules con Emulator Suite | M3F-01 | Tutti i casi positivi e negativi da §4 coperti da test Rules. |
 | **M3F-04** | UI studente — OnlineExamView + ConfirmationView | `src/features/student/OnlineExamView.tsx`, `ConfirmationView.tsx`, CSS modules, test componente | M3F-02, M3F-03 | Flusso completo: avvio → bozza → consegna → schermata conferma. Modalità verifica attiva. |
 | **M3F-05** ✅ | UI docente — onlineEnabled toggle + Monitor consegne | `src/features/repository/verifications/verificationsService.ts` (`setVerificationOnlineEnabled`), `submissionsMonitorService.ts`, `src/features/teacher/VerificationsView.tsx` (toggle + monitor), `firestore.rules`, test componente/service/Rules | M3F-02, M3F-03 | Toggle onlineEnabled funzionante (batch atomico parent+projection); monitor mostra stati e aggiornamento real-time via un solo listener `onSnapshot` per verifica aperta. |
-| **M3F-06** | Integrazione, smoke test, aggiornamento evidenze | `documentazione/evidenze/m3f-checklist.md`, `documentazione/evidenze/smoke-m3f.md` | M3F-04, M3F-05 | Smoke test manuale su DEV completo; checklist gate G5 superata. |
+| **M3F-06** | Sessione studente obbligatoria e UX prova | Contratto sessione attiva, StudentShell/OnlineExamView, Rules e test mirati | M3F-04, M3F-05 | Una bozza forza il rientro nella prova; menu e ritorno lista assenti; navigatore domande; risposta singola cancellabile; fullscreen chiuso solo dopo consegna riuscita. |
+| **M3F-07** | Modalità verifica docente, globale/per classe | `settings/studentAccess`, vista Studenti, audit, listener studente, Rules e test mirati | M3F-06 | Toggle per classe/default e globale/conferma; stato evidente; lezioni nascoste e stato applicato immediatamente. Non fare deploy isolato prima di M3F-08. |
+| **M3F-08** | Protezione reale lezioni e migrazione | `publicLessons.content`, import/editor sync, field override indice, backfill idempotente, Rules | M3F-07 | Lettura diretta delle lezioni negata durante Modalità verifica; nessun fallback Storage studente; dati esistenti migrati; canonical Markdown invariato. |
+| **M3F-09** | Controlli docente e monitor | PDF consentito/negato, monitor sempre visibile sulla verifica selezionata, popup eventi, stabilità tabella | M3F-05 | Toggle PDF indipendente e fail-closed; un solo listener monitor; eventi consultabili; nessun layout shift della colonna stato. |
+| **M3F-10** | Hardening costi/concorrenza | autosave, revision guard, cleanup listener, documentazione costi | M3F-06, M3F-09 | Nessuna scrittura senza modifiche; intervallo/debounce esplicito; race coperte; listener chiusi; nessun polling aggiuntivo. |
+| **M3F-11** | Integrazione, migrazione DEV e gate finale | checklist/smoke M3F, deploy Rules+indici+Hosting | M3F-06→M3F-10 | Migrazione DEV verificata; smoke docente+2 studenti; sicurezza diretta testata; costi osservati; Gate G5 superata. |
 
 ### Gate G5 — M3-full
 
@@ -390,6 +465,11 @@ All'avvio della schermata verifica:
 | Verifica chiusa blocca consegna bozze | Test Security Rules (M3F-03) |
 | Monitor docente aggiorna real-time | Test componente manuale |
 | Modalità verifica: eventi registrati nel documento | Test componente |
+| Una bozza forza il rientro nella prova e impedisce la navigazione applicativa | Test componente + smoke DEV dopo refresh/logout/login |
+| La consegna riuscita esce dal fullscreen; un errore di consegna no | Test componente + smoke DEV |
+| Modalità verifica per classe/globale blocca davvero le letture delle lezioni | Test Rules negativo + chiamata diretta DEV |
+| Le lezioni esistenti sono migrate e restano leggibili fuori dalla Modalità verifica | Smoke DEV pre/post migrazione |
+| Listener e autosave rispettano i vincoli di costo | Test mirati + osservazione Firestore durante smoke |
 | Format check e typecheck verdi | CI |
 
 ---
@@ -433,3 +513,6 @@ M4 (correzione/restituzione) dipende da M3-full perché:
 | **Indici compositi** | I nuovi indici su `submissions` richiedono deploy in Firestore prima che le query funzionino in produzione. | Aggiungere a `firestore.indexes.json` in M3F-01; deployare prima dello smoke test DEV. |
 | **Storage** | M3-full non usa Cloud Storage: nessun costo aggiuntivo su Storage. | — |
 | **Dimensione documento submission** | `answers` e `attentionEvents` crescono nel tempo. Con 50 domande aperte (1000 char/risposta) + 100 eventi: ~60 KB per documento. Firestore limit è 1 MB. | Entro i limiti per qualunque scenario realistico. Limitare `attentionEvents` a max 200 voci (trimmare i più vecchi se superati). |
+| **Listener Modalità verifica** | Una lettura iniziale per StudentShell e una nuova lettura quando il docente cambia lo stato. | Un solo listener sul documento impostazioni, condiviso dalla shell; nessun listener per singola lezione. |
+| **Proiezione corpo lezioni** | Aumenta lo storage Firestore e richiede una scrittura una tantum per le lezioni esistenti. | Campo non indicizzato, limite dimensionale, backfill idempotente e a lotti; nessuna duplicazione ulteriore oltre `publicLessons`. |
+| **Autosave prova** | A 30 secondi, una prova di 60 minuti continuamente modificata può arrivare a 120 write/studente e altrettanti aggiornamenti del monitor aperto. | Scrivere solo su revisione cambiata; preferire debounce/intervallo 45–60 secondi e flush sugli eventi critici. |
