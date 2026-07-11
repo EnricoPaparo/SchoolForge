@@ -3,6 +3,9 @@ import type { FirebaseStorage } from 'firebase/storage';
 import { parsePool } from '@schoolforge/lesson-contract';
 import type { QuestionOption } from '@schoolforge/lesson-contract';
 import type { VerificationQuestionRef } from '../../../types/firestore.js';
+import { mapWithConcurrency } from './mapWithConcurrency.js';
+
+const POOL_READ_CONCURRENCY = 4;
 
 /**
  * Question data for the teacher-only solutions PDF. Unlike `LoadedQuestion`
@@ -29,6 +32,12 @@ export type LoadQuestionsWithSolutionsResult =
  * parses them at call time — solutions are never stored anywhere besides
  * the pool files themselves.
  *
+ * Distinct pool files are read with the same bounded concurrency (at most
+ * `POOL_READ_CONCURRENCY` Storage reads in flight) as `loadSelectedQuestions`
+ * — see PERF-09 / PERF-SEC-01B-2 — instead of one `getBytes` at a time.
+ * The number of Storage reads is unchanged (still one per distinct pool
+ * file); only the wall-clock time to fetch them drops.
+ *
  * Returns refs in the same order as the input array.
  */
 export async function loadSelectedQuestionsWithSolutions(
@@ -49,21 +58,40 @@ export async function loadSelectedQuestionsWithSolutions(
 
   const resultMap = new Map<string, LoadedQuestionWithSolution>();
 
-  for (const [poolRef, refs] of byPool) {
-    let content: string;
-    try {
-      const bytes = await getBytes(ref(storage, poolRef));
-      content = new TextDecoder().decode(bytes);
-    } catch {
-      return { ok: false, error: `Pool non trovato: ${poolRef}` };
-    }
+  // Reads distinct pool files with bounded concurrency (PERF-09 /
+  // PERF-SEC-01B-2) instead of one `getBytes` at a time — the pools are
+  // still deduplicated by `poolStorageRef` above, so a ref repeated across
+  // many questions is still fetched exactly once. Matches the same
+  // POOL_READ_CONCURRENCY=4 pattern as `loadSelectedQuestions.ts`.
+  const loadedPools = await mapWithConcurrency(
+    Array.from(byPool.entries()),
+    POOL_READ_CONCURRENCY,
+    async ([poolRef, refs]) => {
+      let content: string;
+      try {
+        const bytes = await getBytes(ref(storage, poolRef));
+        content = new TextDecoder().decode(bytes);
+      } catch {
+        return { ok: false as const, error: `Pool non trovato: ${poolRef}` };
+      }
 
-    const parsed = parsePool(content, poolRef);
-    if (!parsed.ok) {
-      return { ok: false, error: `Pool non valido: ${poolRef}` };
-    }
+      const parsed = parsePool(content, poolRef);
+      if (!parsed.ok) {
+        return { ok: false as const, error: `Pool non valido: ${poolRef}` };
+      }
 
-    const questionMap = new Map(parsed.pool.questions.map((q) => [q.id, q]));
+      return {
+        ok: true as const,
+        poolRef,
+        refs,
+        questionMap: new Map(parsed.pool.questions.map((q) => [q.id, q])),
+      };
+    },
+  );
+
+  for (const loaded of loadedPools) {
+    if (!loaded.ok) return { ok: false, error: loaded.error };
+    const { poolRef, refs, questionMap } = loaded;
 
     for (const r of refs) {
       const q = questionMap.get(r.questionLocalId);
@@ -71,7 +99,7 @@ export async function loadSelectedQuestionsWithSolutions(
         return { ok: false, error: `Domanda non trovata: ${r.questionLocalId} in ${poolRef}` };
       }
 
-      const loaded: LoadedQuestionWithSolution = {
+      const loadedQuestion: LoadedQuestionWithSolution = {
         ref: r,
         testo: q.testo,
         tipo: q.tipo,
@@ -80,7 +108,7 @@ export async function loadSelectedQuestionsWithSolutions(
           opzioni: q.opzioni.map((o) => ({ id: o.id, testo: o.testo })),
         }),
       };
-      resultMap.set(r.questionIndexEntryId, loaded);
+      resultMap.set(r.questionIndexEntryId, loadedQuestion);
     }
   }
 

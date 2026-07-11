@@ -4,12 +4,11 @@ import {
   getDoc,
   getDocs,
   query,
-  setDoc,
   updateDoc,
   where,
   writeBatch,
 } from 'firebase/firestore';
-import type { DocumentReference, Firestore } from 'firebase/firestore';
+import type { DocumentReference, Firestore, WriteBatch } from 'firebase/firestore';
 import { deleteObject, getBytes, ref, uploadBytes } from 'firebase/storage';
 import type { FirebaseStorage } from 'firebase/storage';
 import { parsePool, serializePool } from '@schoolforge/lesson-contract';
@@ -87,6 +86,39 @@ async function deleteDocRefsInBatches(db: Firestore, refs: DocumentReference[]):
   }
 }
 
+/**
+ * A single mutation to apply to a `WriteBatch` (set/update/delete), deferred
+ * so an arbitrary mix of mutation kinds can be chunked and committed
+ * uniformly — see `commitOpsInChunks`.
+ */
+type BatchOp = (batch: WriteBatch) => void;
+
+/**
+ * Commits an arbitrary list of `BatchOp`s in chunks of at most
+ * `BATCH_CHUNK_SIZE` (a prudent margin under Firestore's 500-mutation
+ * writeBatch limit), one `writeBatch` per chunk. Chunks are committed
+ * sequentially — not `Promise.all`'d — so a failure is deterministic (it
+ * always happens at a specific chunk boundary, never as a burst of
+ * concurrent in-flight batches) and so this never fires more concurrent
+ * writes than a single chunk's worth at a time.
+ *
+ * Residual risk: Firestore only guarantees atomicity *within* one batch.
+ * If a pool has more mutations than fit in a single chunk, a failure after
+ * chunk N-1 commits but before chunk N does leaves the first N-1 chunks'
+ * mutations durably applied and the rest not yet applied — there is no
+ * cross-chunk rollback. This is an explicit, documented trade-off (see
+ * `savePool`), not a regression: the previous one-`setDoc`-per-question
+ * loop had the same "partial completion on failure" property, just with
+ * far more round-trips before a failure could occur.
+ */
+async function commitOpsInChunks(db: Firestore, ops: BatchOp[]): Promise<void> {
+  for (let i = 0; i < ops.length; i += BATCH_CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    ops.slice(i, i + BATCH_CHUNK_SIZE).forEach((op) => op(batch));
+    await batch.commit();
+  }
+}
+
 // ── loadPool ──────────────────────────────────────────────────────────────────
 
 /**
@@ -145,6 +177,13 @@ export async function loadPool(params: {
  * - Updates `lessons/{lessonId}` with the new `poolStatus`, `questionCount`,
  *   and `poolStorageRef`.
  *
+ * All three kinds of Firestore mutation are committed via `commitOpsInChunks`
+ * (chunks of at most 400 mutations per `writeBatch`, committed sequentially)
+ * instead of one individually-awaited `setDoc` per question — see that
+ * function's doc comment for the residual cross-chunk atomicity trade-off.
+ * The number of documents written is unchanged; only the number of network
+ * round-trips drops.
+ *
  * Storage-poi-Firestore: if Storage fails, Firestore is never touched.
  * If Storage succeeds but Firestore fails, a distinct error is thrown so the
  * teacher knows to retry.
@@ -186,23 +225,34 @@ export async function savePool(params: {
     );
 
     const newEntryIds = new Set(pool.questions.map((q) => `${lessonId}_${toDocId(q.id)}`));
-
-    for (const q of pool.questions) {
-      const entryId = `${lessonId}_${toDocId(q.id)}`;
-      await setDoc(
-        doc(qiCollection, entryId),
-        buildQuestionIndexEntry(ownerUid, importId, lesson, poolStorageRef, q),
-      );
-    }
-
     const staleRefs = existingSnap.docs.filter((d) => !newEntryIds.has(d.id)).map((d) => d.ref);
-    await deleteDocRefsInBatches(db, staleRefs);
 
-    await updateDoc(lessonRef, {
-      poolStatus: 'valid',
-      questionCount: pool.questions.length,
-      poolStorageRef,
+    // All mutations for this save — upserts, stale deletes, and the final
+    // lesson-doc update — are collected up front (deterministic, no
+    // network I/O yet) and only then committed in chunks (PERF-04 /
+    // PERF-SEC-01B-2). This replaces one sequential, individually-awaited
+    // `setDoc` per question with a handful of batch round-trips: the
+    // number of Firestore writes is unchanged (still one write per
+    // question document, since each is a distinct document), but the
+    // number of network round-trips drops from N+2 to
+    // ceil((N + staleRefs.length + 1) / 400).
+    const ops: BatchOp[] = pool.questions.map((q) => {
+      const entryId = `${lessonId}_${toDocId(q.id)}`;
+      const entryData = buildQuestionIndexEntry(ownerUid, importId, lesson, poolStorageRef, q);
+      return (batch) => batch.set(doc(qiCollection, entryId), entryData);
     });
+    for (const staleRef of staleRefs) {
+      ops.push((batch) => batch.delete(staleRef));
+    }
+    ops.push((batch) =>
+      batch.update(lessonRef, {
+        poolStatus: 'valid',
+        questionCount: pool.questions.length,
+        poolStorageRef,
+      }),
+    );
+
+    await commitOpsInChunks(db, ops);
   } catch {
     throw new Error(
       'Il file pool è stato salvato su Storage ma non è stato possibile aggiornare i dati su Firestore. Riprova a salvare.',

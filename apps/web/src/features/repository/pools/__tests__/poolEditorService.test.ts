@@ -6,6 +6,8 @@ const mockGetDoc = vi.fn();
 const mockGetDocs = vi.fn();
 const mockSetDoc = vi.fn();
 const mockUpdateDoc = vi.fn();
+const mockBatchSet = vi.fn();
+const mockBatchUpdate = vi.fn();
 const mockBatchDelete = vi.fn();
 const mockBatchCommit = vi.fn();
 const mockWriteBatch = vi.fn();
@@ -102,6 +104,8 @@ beforeEach(() => {
   mockGetDocs.mockResolvedValue({ docs: [] });
   mockBatchCommit.mockResolvedValue(undefined);
   mockWriteBatch.mockReturnValue({
+    set: mockBatchSet,
+    update: mockBatchUpdate,
     delete: mockBatchDelete,
     commit: mockBatchCommit,
   });
@@ -284,7 +288,7 @@ describe('savePool', () => {
     expect(written).not.toContain('maxPoints');
   });
 
-  it('creates questionIndex entries for all questions', async () => {
+  it('creates questionIndex entries for all questions via a single writeBatch (no sequential setDoc)', async () => {
     mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
     mockGetDocs.mockResolvedValueOnce({ docs: [] });
 
@@ -298,15 +302,21 @@ describe('savePool', () => {
       storage: fakeStorage,
     });
 
-    expect(mockSetDoc).toHaveBeenCalledTimes(2);
-    const [, entry1] = mockSetDoc.mock.calls[0] as [unknown, Record<string, unknown>];
+    expect(mockSetDoc).not.toHaveBeenCalled();
+    expect(mockWriteBatch).toHaveBeenCalledTimes(1);
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+    // 2 questions -> 2 batch.set calls; the lesson doc is a separate batch.update.
+    expect(mockBatchSet).toHaveBeenCalledTimes(2);
+    expect(mockBatchUpdate).toHaveBeenCalledTimes(1);
+
+    const [, entry1] = mockBatchSet.mock.calls[0] as [unknown, Record<string, unknown>];
     expect(entry1['questionLocalId']).toBe('q1');
     expect(entry1['tipo']).toBe('aperta');
     expect(entry1['poolStorageRef']).toBe(POOL_STORAGE_REF);
     expect(typeof entry1['questionPreview']).toBe('string');
   });
 
-  it('deletes stale questionIndex entries no longer in the pool', async () => {
+  it('deletes stale questionIndex entries no longer in the pool, in the same batch', async () => {
     mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
     const staleDocRef = { __path: 'stale-entry', id: 'old-entry-id', ref: { __path: 'stale-ref' } };
     mockGetDocs.mockResolvedValueOnce({ docs: [staleDocRef] });
@@ -322,10 +332,16 @@ describe('savePool', () => {
     });
 
     expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'stale-ref' });
-    expect(mockBatchCommit).toHaveBeenCalled();
+    expect(mockBatchDelete).toHaveBeenCalledTimes(1);
+    // Both valid questions are still upserted — the stale entry is never
+    // one of them, so no valid question is ever accidentally deleted.
+    expect(mockBatchSet).toHaveBeenCalledTimes(2); // 2 questions
+    expect(mockBatchUpdate).toHaveBeenCalledTimes(1); // lesson update
+    expect(mockWriteBatch).toHaveBeenCalledTimes(1);
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
   });
 
-  it('updates lessonDoc poolStatus, questionCount, and poolStorageRef', async () => {
+  it('updates lessonDoc poolStatus, questionCount, and poolStorageRef in the same batch (batch.update, not updateDoc)', async () => {
     mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
     mockGetDocs.mockResolvedValueOnce({ docs: [] });
 
@@ -339,11 +355,63 @@ describe('savePool', () => {
       storage: fakeStorage,
     });
 
-    expect(mockUpdateDoc).toHaveBeenCalledOnce();
-    const [, patch] = mockUpdateDoc.mock.calls[0] as [unknown, Record<string, unknown>];
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+    expect(mockBatchUpdate).toHaveBeenCalledOnce();
+    const [, patch] = mockBatchUpdate.mock.calls[0] as [unknown, Record<string, unknown>];
     expect(patch['poolStatus']).toBe('valid');
     expect(patch['questionCount']).toBe(2);
     expect(patch['poolStorageRef']).toBe(POOL_STORAGE_REF);
+  });
+
+  it('chunks more than 400 mutations into multiple sequential batches, none exceeding 400', async () => {
+    mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
+    mockGetDocs.mockResolvedValueOnce({ docs: [] });
+
+    // 450 questions + 1 final lesson update = 451 mutations -> ceil(451/400) = 2 chunks.
+    const bigPool = {
+      schema: 'schoolforge-pool/v1' as const,
+      questions: Array.from({ length: 450 }, (_, i) => ({
+        id: `q${i}`,
+        tipo: 'aperta' as const,
+        difficolta: 2 as const,
+        peso: 1 as const,
+        maxPoints: 2,
+        testo: `Domanda ${i}`,
+        soluzione: `Risposta ${i}`,
+      })),
+    };
+
+    const commitOrder: number[] = [];
+    mockBatchCommit.mockImplementation(() => {
+      commitOrder.push(
+        mockBatchSet.mock.calls.length +
+          mockBatchDelete.mock.calls.length +
+          mockBatchUpdate.mock.calls.length,
+      );
+      return Promise.resolve(undefined);
+    });
+
+    await savePool({
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      lessonId: LESSON_ID,
+      pool: bigPool,
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    expect(mockWriteBatch).toHaveBeenCalledTimes(2);
+    expect(mockBatchCommit).toHaveBeenCalledTimes(2);
+    // Exactly 450 question upserts, none lost or duplicated, plus the
+    // trailing lesson update as a separate batch.update call.
+    expect(mockBatchSet).toHaveBeenCalledTimes(450);
+    expect(mockBatchUpdate).toHaveBeenCalledTimes(1);
+    // First commit happens after exactly 400 ops (the chunk boundary); the
+    // batches are committed sequentially, one chunk fully applied before
+    // the next chunk's mutations are even added to a batch.
+    expect(commitOrder[0]).toBe(400);
+    expect(commitOrder[1]).toBe(451);
   });
 
   it('does not touch Firestore when Storage upload fails', async () => {
@@ -363,6 +431,7 @@ describe('savePool', () => {
     ).rejects.toThrow('Impossibile scrivere il file pool su Storage.');
     expect(mockSetDoc).not.toHaveBeenCalled();
     expect(mockUpdateDoc).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
   });
 
   it('reports a distinct error when Firestore fails after Storage succeeds', async () => {

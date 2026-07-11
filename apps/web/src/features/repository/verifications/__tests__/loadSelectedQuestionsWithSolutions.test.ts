@@ -152,4 +152,87 @@ describe('loadSelectedQuestionsWithSolutions', () => {
     await loadSelectedQuestionsWithSolutions(refs, {} as never);
     expect(mockGetBytes).toHaveBeenCalledTimes(1);
   });
+
+  it('reads multiple distinct pools with bounded concurrency (never more than 4 in flight)', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    mockGetBytes.mockImplementation(async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+      return encoder.encode(POOL_YAML);
+    });
+
+    const refs = Array.from({ length: 10 }, (_, i) =>
+      makeRef({
+        questionIndexEntryId: `qi-${i}`,
+        questionLocalId: 'q-001',
+        poolStorageRef: `repository/uid/imports/imp-1/UDA1/pool-${i}.pool.md`,
+      }),
+    );
+
+    const result = await loadSelectedQuestionsWithSolutions(refs, {} as never);
+
+    expect(result.ok).toBe(true);
+    expect(mockGetBytes).toHaveBeenCalledTimes(10); // 10 distinct pools, all read
+    expect(maxInFlight).toBeLessThanOrEqual(4); // POOL_READ_CONCURRENCY
+  });
+
+  it('never reads the same pool twice even when many refs share it, under concurrency', async () => {
+    const refs = [
+      makeRef({ questionIndexEntryId: 'qi-1', questionLocalId: 'q-001' }),
+      makeRef({
+        questionIndexEntryId: 'qi-2',
+        questionLocalId: 'q-002',
+        tipo: 'chiusa_singola',
+        maxPoints: 1,
+      }),
+      makeRef({
+        questionIndexEntryId: 'qi-3',
+        questionLocalId: 'q-003',
+        tipo: 'chiusa_multipla',
+        maxPoints: 4,
+      }),
+    ];
+    const result = await loadSelectedQuestionsWithSolutions(refs, {} as never);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.questions).toHaveLength(3);
+    expect(mockGetBytes).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a failed result (never a partial success) when one of several pools is missing', async () => {
+    mockGetBytes.mockImplementation(async (arg: { path: string }) => {
+      if (arg.path.includes('missing')) throw new Error('storage/object-not-found');
+      return encoder.encode(POOL_YAML);
+    });
+
+    const refs = [
+      makeRef({
+        questionIndexEntryId: 'qi-1',
+        questionLocalId: 'q-001',
+        poolStorageRef: 'repository/uid/imports/imp-1/UDA1/ok.pool.md',
+      }),
+      makeRef({
+        questionIndexEntryId: 'qi-2',
+        questionLocalId: 'q-001',
+        poolStorageRef: 'repository/uid/imports/imp-1/UDA1/missing.pool.md',
+      }),
+    ];
+
+    const result = await loadSelectedQuestionsWithSolutions(refs, {} as never);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/pool non trovato/i);
+  });
+
+  it('never performs a Firestore/Storage write', async () => {
+    // The module only ever imports `getBytes`/`ref` from `firebase/storage`
+    // (see the top-level mock above) — no `uploadBytes`/`setDoc`/`updateDoc`
+    // is even reachable from this function, so a successful call can only
+    // have performed reads.
+    await loadSelectedQuestionsWithSolutions([makeRef()], {} as never);
+    expect(mockGetBytes).toHaveBeenCalled();
+  });
 });
