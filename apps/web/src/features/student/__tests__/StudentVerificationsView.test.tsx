@@ -91,6 +91,7 @@ const VERIFICATION_A = {
     { order: 0, tipo: 'aperta' as const, maxPoints: 2, testo: 'Descrivi il modello OSI.' },
     { order: 1, tipo: 'chiusa_singola' as const, maxPoints: 1, testo: 'Livello di routing?' },
   ],
+  studentPdfEnabled: true,
 };
 
 const VERIFICATION_ONLINE = {
@@ -101,6 +102,7 @@ const VERIFICATION_ONLINE = {
   questionCount: 1,
   questions: [{ order: 0, tipo: 'aperta' as const, maxPoints: 2, testo: 'Domanda?' }],
   onlineEnabled: true,
+  studentPdfEnabled: true,
   ownerUid: 'owner-uid',
 };
 
@@ -229,6 +231,32 @@ describe('StudentVerificationsView', () => {
     await waitFor(() =>
       expect(screen.getByText('Impossibile generare il PDF della verifica.')).toBeTruthy(),
     );
+  });
+
+  it('does not show "Scarica PDF" when studentPdfEnabled is false or absent (legacy)', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_B],
+    });
+    render(<StudentVerificationsView />);
+
+    await waitFor(() => screen.getByText('Verifica Basi di dati'));
+    expect(screen.queryByRole('button', { name: /Scarica PDF/ })).toBeNull();
+  });
+
+  it('shows "Scarica PDF" only when studentPdfEnabled is true, independent of onlineEnabled', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [
+        { ...VERIFICATION_A, id: 'ver-both', title: 'Entrambe', onlineEnabled: true },
+        { ...VERIFICATION_B, id: 'ver-neither', title: 'Nessuna', studentPdfEnabled: false },
+      ],
+    });
+    render(<StudentVerificationsView />);
+
+    await waitFor(() => screen.getByText('Entrambe'));
+    expect(screen.getByRole('button', { name: /Scarica PDF — Entrambe/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Scarica PDF — Nessuna/ })).toBeNull();
   });
 
   it('never renders docente-only actions (no scoring, no consegna, no correzione)', async () => {

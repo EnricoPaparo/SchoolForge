@@ -6,6 +6,7 @@ import type {
 } from '../../../types/firestore.js';
 import { getOwnStudentDoc } from '../students/studentsService.js';
 import { normalizeOnlineEnabled } from './onlineEnabled.js';
+import { normalizeStudentPdfEnabled } from './studentPdfEnabled.js';
 
 export type StudentVerificationItem = {
   id: string;
@@ -16,6 +17,12 @@ export type StudentVerificationItem = {
   questions: PublicVerificationQuestion[];
   /** Normalized: a projection written before M3F-04 has no field and reads as false. */
   onlineEnabled: boolean;
+  /**
+   * Normalized (M3F-09): a projection written before this field existed, or
+   * one whose teacher never enabled it, reads as `false` — "Scarica PDF" is
+   * hidden whenever this is `false`, never shown by omission.
+   */
+  studentPdfEnabled: boolean;
   /** Needed by submissionsService (M3F-04) — not sensitive, already read here. */
   ownerUid: string;
 };
@@ -79,6 +86,7 @@ export async function loadStudentVerifications(
         questionCount: data.questions.length,
         questions: data.questions,
         onlineEnabled: normalizeOnlineEnabled(data.onlineEnabled),
+        studentPdfEnabled: normalizeStudentPdfEnabled(data.studentPdfEnabled),
         ownerUid: data.ownerUid,
       };
     })

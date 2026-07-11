@@ -6,6 +6,7 @@ import {
   deleteVerification,
   listVerifications,
   setVerificationOnlineEnabled,
+  setVerificationStudentPdfEnabled,
   setVerificationVisibility,
   updateVerificationConfig,
   type VerificationItem,
@@ -30,6 +31,8 @@ import {
 import { db, storage } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import { QuestionPicker } from './QuestionPicker.js';
+import { AttentionEventsDialog } from './AttentionEventsDialog.js';
+import type { AttentionEvent } from '../../types/firestore.js';
 import styles from './VerificationsView.module.css';
 
 /** Extracts the epoch seconds from a Firestore Timestamp-like value, or null if absent. */
@@ -143,6 +146,11 @@ export function VerificationsView() {
   const [onlineDisableConfirmId, setOnlineDisableConfirmId] = useState<string | null>(null);
   const [onlineDisableError, setOnlineDisableError] = useState<string | null>(null);
 
+  const [pdfEnabledLoadingId, setPdfEnabledLoadingId] = useState<string | null>(null);
+  const [pdfEnabledErrors, setPdfEnabledErrors] = useState<Record<string, string | null>>({});
+  const [pdfDisableConfirmId, setPdfDisableConfirmId] = useState<string | null>(null);
+  const [pdfDisableError, setPdfDisableError] = useState<string | null>(null);
+
   const [closeConfirmId, setCloseConfirmId] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -151,24 +159,30 @@ export function VerificationsView() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // ── Consegne online monitor (M3F-05) ────────────────────────────
-  const [monitorOpenId, setMonitorOpenId] = useState<string | null>(null);
+  // ── Consegne online monitor (M3F-05, always-on-selection M3F-09) ────
   const [monitorStudents, setMonitorStudents] = useState<StudentItem[] | null>(null);
   const [monitorItems, setMonitorItems] = useState<SubmissionMonitorItem[] | null>(null);
   const [monitorError, setMonitorError] = useState<string | null>(null);
+  const [attentionDialog, setAttentionDialog] = useState<{
+    studentName: string;
+    events: AttentionEvent[];
+  } | null>(null);
 
   useEffect(() => {
     void loadAll();
   }, []);
 
-  // Opens exactly one `submissions` listener, only while the monitor panel
-  // is open for one specific verification — never globally, never for more
-  // than one verification at a time. Always closed via the effect cleanup
-  // when the panel is closed (monitorOpenId -> null), the verification
-  // changes, or the component unmounts.
+  // Opens exactly one `submissions` listener, only while a non-draft
+  // verification is selected — never globally, never for more than one
+  // verification at a time, and never at all for a `draft` (which cannot
+  // have submissions yet). Always closed via the effect cleanup when the
+  // selection changes (including to null/back to draft) or the component
+  // unmounts.
+  const selectedVerId = selectedVer?.id ?? null;
+  const selectedVerStatus = selectedVer?.status ?? null;
   useEffect(() => {
-    if (!monitorOpenId) return;
-    const v = verifications?.find((item) => item.id === monitorOpenId);
+    if (!selectedVerId || selectedVerStatus === 'draft') return;
+    const v = verifications?.find((item) => item.id === selectedVerId);
     if (!v) return;
 
     let cancelled = false;
@@ -205,7 +219,7 @@ export function VerificationsView() {
       cancelled = true;
       unsubscribe();
     };
-  }, [monitorOpenId]);
+  }, [selectedVerId, selectedVerStatus]);
 
   async function loadAll() {
     setLoadError(null);
@@ -229,10 +243,10 @@ export function VerificationsView() {
     setActivateError(null);
     setQuestionIndex(null);
     setQuestionIndexError(null);
-    setMonitorOpenId(null);
     setMonitorStudents(null);
     setMonitorItems(null);
     setMonitorError(null);
+    setAttentionDialog(null);
     setSelectedQuestionIds(new Set(v.config.questionRefs.map((r) => r.questionIndexEntryId)));
     setEditDraftTitle(v.config.title);
     setEditDraftClassId(v.config.classId ?? '');
@@ -441,6 +455,7 @@ export function VerificationsView() {
     setOnlineDisableError(null);
     setCloseConfirmId(null);
     setDeleteConfirmId(null);
+    setPdfDisableConfirmId(null);
   }
 
   async function handleConfirmDisableOnline(id: string) {
@@ -465,11 +480,67 @@ export function VerificationsView() {
     }
   }
 
+  /** Enabling never needs confirmation — it never publishes/activates anything on its own. */
+  async function handleEnableStudentPdf(v: VerificationItem) {
+    if (v.studentPdfEnabled) return;
+    setPdfEnabledLoadingId(v.id);
+    setPdfEnabledErrors((prev) => ({ ...prev, [v.id]: null }));
+    try {
+      await setVerificationStudentPdfEnabled(v.id, true, ownerUid, db);
+      const updated = { ...v, studentPdfEnabled: true };
+      setVerifications((prev) => prev?.map((item) => (item.id === v.id ? updated : item)) ?? null);
+      if (selectedVer?.id === v.id) setSelectedVer(updated);
+    } catch (err) {
+      setPdfEnabledErrors((prev) => ({
+        ...prev,
+        [v.id]: err instanceof Error ? err.message : 'Impossibile abilitare il PDF studente.',
+      }));
+    } finally {
+      setPdfEnabledLoadingId(null);
+    }
+  }
+
+  function handleStartDisableStudentPdf(id: string) {
+    setPdfDisableConfirmId(id);
+    setPdfDisableError(null);
+    setCloseConfirmId(null);
+    setDeleteConfirmId(null);
+    setOnlineDisableConfirmId(null);
+  }
+
+  async function handleConfirmDisableStudentPdf(id: string) {
+    setPdfEnabledLoadingId(id);
+    setPdfDisableError(null);
+    try {
+      await setVerificationStudentPdfEnabled(id, false, ownerUid, db);
+      setPdfDisableConfirmId(null);
+      setVerifications(
+        (prev) =>
+          prev?.map((item) => (item.id === id ? { ...item, studentPdfEnabled: false } : item)) ??
+          null,
+      );
+      if (selectedVer?.id === id) {
+        setSelectedVer((prev) => (prev ? { ...prev, studentPdfEnabled: false } : prev));
+      }
+    } catch (err) {
+      setPdfDisableError(
+        err instanceof Error ? err.message : 'Impossibile disabilitare il PDF studente.',
+      );
+    } finally {
+      setPdfEnabledLoadingId(null);
+    }
+  }
+
+  function handleOpenAttentionEvents(studentName: string, events: AttentionEvent[]) {
+    setAttentionDialog({ studentName, events });
+  }
+
   function handleStartClose(id: string) {
     setCloseConfirmId(id);
     setCloseError(null);
     setDeleteConfirmId(null);
     setOnlineDisableConfirmId(null);
+    setPdfDisableConfirmId(null);
   }
 
   async function handleConfirmClose(id: string) {
@@ -496,6 +567,7 @@ export function VerificationsView() {
     setDeleteError(null);
     setCloseConfirmId(null);
     setOnlineDisableConfirmId(null);
+    setPdfDisableConfirmId(null);
   }
 
   async function handleConfirmDelete(id: string) {
@@ -605,7 +677,7 @@ export function VerificationsView() {
                 <th className={styles.th}>Titolo</th>
                 <th className={styles.th}>Classe</th>
                 <th className={styles.th}>Corso</th>
-                <th className={styles.th}>Stato</th>
+                <th className={`${styles.th} ${styles.statusColumn}`}>Stato</th>
                 <th className={styles.th}>Domande</th>
                 <th className={styles.th} aria-label="Azioni"></th>
               </tr>
@@ -745,6 +817,47 @@ export function VerificationsView() {
                   );
                 }
 
+                if (pdfDisableConfirmId === v.id) {
+                  return (
+                    <tr key={v.id} className={styles.confirmRowInline}>
+                      <td colSpan={6} className={styles.td}>
+                        <div
+                          role="region"
+                          aria-label="Conferma disattivazione PDF studente"
+                          className={styles.confirmBox}
+                        >
+                          <p className={styles.confirmMsg}>
+                            Gli studenti non potranno più scaricare il PDF di{' '}
+                            <strong>{v.config.title}</strong>.
+                          </p>
+                          {pdfDisableError && (
+                            <p role="alert" className="text-error">
+                              {pdfDisableError}
+                            </p>
+                          )}
+                          <div className={styles.confirmRow}>
+                            <button
+                              type="button"
+                              className="btn-primary"
+                              disabled={pdfEnabledLoadingId === v.id}
+                              onClick={() => void handleConfirmDisableStudentPdf(v.id)}
+                            >
+                              {pdfEnabledLoadingId === v.id ? 'Disattivazione…' : 'Disattiva PDF'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPdfDisableConfirmId(null)}
+                              disabled={pdfEnabledLoadingId === v.id}
+                            >
+                              Annulla
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
                 return (
                   <Fragment key={v.id}>
                     <tr className={styles.row}>
@@ -853,21 +966,25 @@ export function VerificationsView() {
                                   : '👁️'}
                             </button>
                           )}
-                          {(v.status === 'active' || v.status === 'closed') && (
-                            <button
-                              type="button"
-                              className={styles.iconBtn}
-                              title="Consegne online"
-                              aria-label={`Consegne online — ${v.config.title}`}
-                              aria-pressed={monitorOpenId === v.id}
-                              onClick={() => {
-                                if (selectedVer?.id !== v.id) void handleSelectVer(v);
-                                setMonitorOpenId((prev) => (prev === v.id ? null : v.id));
-                              }}
-                            >
-                              📊
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            className={`${styles.iconBtn}${v.studentPdfEnabled ? ` ${styles.iconBtnActive}` : ''}`}
+                            title={
+                              v.studentPdfEnabled
+                                ? 'Disabilita PDF studente'
+                                : 'Abilita PDF studente'
+                            }
+                            aria-label={`${v.studentPdfEnabled ? 'Disabilita' : 'Abilita'} PDF studente — ${v.config.title}`}
+                            aria-pressed={v.studentPdfEnabled}
+                            disabled={pdfEnabledLoadingId === v.id}
+                            onClick={() =>
+                              v.studentPdfEnabled
+                                ? handleStartDisableStudentPdf(v.id)
+                                : void handleEnableStudentPdf(v)
+                            }
+                          >
+                            📄
+                          </button>
                           {v.status === 'active' && (
                             <button
                               type="button"
@@ -929,6 +1046,15 @@ export function VerificationsView() {
                         </td>
                       </tr>
                     )}
+                    {pdfEnabledErrors[v.id] && (
+                      <tr>
+                        <td colSpan={6} className={styles.td}>
+                          <p role="alert" className="text-error">
+                            {pdfEnabledErrors[v.id]}
+                          </p>
+                        </td>
+                      </tr>
+                    )}
                   </Fragment>
                 );
               })}
@@ -943,6 +1069,9 @@ export function VerificationsView() {
           <div className={styles.detailHeader}>
             <h2 className={styles.detailTitle}>{selectedVer.config.title}</h2>
             <StatusBadge status={selectedVer.status} visibility={selectedVer.visibility} />
+            <span className={styles.pdfStatusBadge} aria-live="polite">
+              PDF studente: {selectedVer.studentPdfEnabled ? 'abilitato' : 'disabilitato'}
+            </span>
           </div>
 
           {/* ── Draft: edit title/class ── */}
@@ -1067,75 +1196,108 @@ export function VerificationsView() {
             </p>
           )}
 
-          {/* ── Consegne online monitor (M3F-05) ── */}
-          {selectedVer.status !== 'draft' && monitorOpenId === selectedVer.id && (
-            <div role="region" aria-label="Consegne online" className={styles.monitorPanel}>
-              <h3 className={styles.createTitle}>Consegne online</h3>
-              {monitorError && (
-                <p role="alert" className="text-error">
-                  {monitorError}
-                </p>
-              )}
-              {!monitorError &&
-                (monitorStudents === null ||
-                  (monitorStudents.length > 0 && monitorItems === null)) && (
-                  <p aria-busy="true" className="state-loading">
-                    Caricamento consegne…
+          {/* ── Consegne online monitor (M3F-05) — always shown for the selected verification ── */}
+          <div role="region" aria-label="Consegne online" className={styles.monitorPanel}>
+            <h3 className={styles.createTitle}>Consegne online</h3>
+            {selectedVer.status === 'draft' && (
+              <p className="state-empty">
+                Il monitor consegne sarà disponibile dopo l&apos;attivazione della verifica.
+              </p>
+            )}
+            {selectedVer.status !== 'draft' && (
+              <>
+                {monitorError && (
+                  <p role="alert" className="text-error">
+                    {monitorError}
                   </p>
                 )}
-              {!monitorError && monitorStudents !== null && monitorStudents.length === 0 && (
-                <p className="state-empty">Nessuno studente approvato in questa classe.</p>
-              )}
-              {!monitorError &&
-                monitorStudents !== null &&
-                monitorStudents.length > 0 &&
-                monitorItems !== null && (
-                  <div className={styles.tableWrap}>
-                    <table className={styles.table}>
-                      <thead>
-                        <tr>
-                          <th className={styles.th}>Studente</th>
-                          <th className={styles.th}>Stato</th>
-                          <th className={styles.th}>Ultimo salvataggio</th>
-                          <th className={styles.th}>Consegnata il</th>
-                          <th className={styles.th}>Eventi</th>
-                          <th className={styles.th}>Codice</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {monitorStudents.map((s) => {
-                          const item = monitorItems?.find((m) => m.studentUid === s.id);
-                          const stateLabel = !item
-                            ? 'Non iniziata'
-                            : item.status === 'submitted'
-                              ? 'Consegnata'
-                              : 'In corso';
-                          return (
-                            <tr key={s.id} className={styles.row}>
-                              <td className={styles.td}>{s.displayName ?? s.email}</td>
-                              <td className={styles.td}>{stateLabel}</td>
-                              <td className={`${styles.td} ${styles.metaCell}`}>
-                                {item ? formatTimestamp(item.lastSavedAt) : '—'}
-                              </td>
-                              <td className={`${styles.td} ${styles.metaCell}`}>
-                                {item ? formatTimestamp(item.submittedAt) : '—'}
-                              </td>
-                              <td className={`${styles.td} ${styles.metaCell}`}>
-                                {item?.attentionEventsCount ?? 0}
-                              </td>
-                              <td className={`${styles.td} ${styles.metaCell}`}>
-                                {item?.deliveryCode ?? '—'}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                {!monitorError &&
+                  (monitorStudents === null ||
+                    (monitorStudents.length > 0 && monitorItems === null)) && (
+                    <p aria-busy="true" className="state-loading">
+                      Caricamento consegne…
+                    </p>
+                  )}
+                {!monitorError && monitorStudents !== null && monitorStudents.length === 0 && (
+                  <p className="state-empty">Nessuno studente approvato in questa classe.</p>
                 )}
-            </div>
-          )}
+                {!monitorError &&
+                  monitorStudents !== null &&
+                  monitorStudents.length > 0 &&
+                  monitorItems !== null && (
+                    <div className={styles.tableWrap}>
+                      <table className={styles.table}>
+                        <thead>
+                          <tr>
+                            <th className={styles.th}>Studente</th>
+                            <th className={styles.th}>Stato</th>
+                            <th className={styles.th}>Ultimo salvataggio</th>
+                            <th className={styles.th}>Consegnata il</th>
+                            <th className={styles.th}>Eventi</th>
+                            <th className={styles.th}>Codice</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {monitorStudents.map((s) => {
+                            const item = monitorItems?.find((m) => m.studentUid === s.id);
+                            const stateLabel = !item
+                              ? 'Non iniziata'
+                              : item.status === 'submitted'
+                                ? 'Consegnata'
+                                : 'In corso';
+                            const studentName = s.displayName ?? s.email;
+                            const eventsCount = item?.attentionEventsCount ?? 0;
+                            return (
+                              <tr key={s.id} className={styles.row}>
+                                <td className={styles.td}>{studentName}</td>
+                                <td className={styles.td}>{stateLabel}</td>
+                                <td className={`${styles.td} ${styles.metaCell}`}>
+                                  {item ? formatTimestamp(item.lastSavedAt) : '—'}
+                                </td>
+                                <td className={`${styles.td} ${styles.metaCell}`}>
+                                  {item ? formatTimestamp(item.submittedAt) : '—'}
+                                </td>
+                                <td className={`${styles.td} ${styles.metaCell}`}>
+                                  {eventsCount > 0 ? (
+                                    <button
+                                      type="button"
+                                      className={styles.eventsBtn}
+                                      aria-label={`Eventi di attenzione — ${studentName}`}
+                                      onClick={() =>
+                                        handleOpenAttentionEvents(
+                                          studentName,
+                                          item?.attentionEvents ?? [],
+                                        )
+                                      }
+                                    >
+                                      {eventsCount}
+                                    </button>
+                                  ) : (
+                                    eventsCount
+                                  )}
+                                </td>
+                                <td className={`${styles.td} ${styles.metaCell}`}>
+                                  {item?.deliveryCode ?? '—'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+              </>
+            )}
+          </div>
         </div>
+      )}
+
+      {attentionDialog && (
+        <AttentionEventsDialog
+          studentName={attentionDialog.studentName}
+          events={attentionDialog.events}
+          onClose={() => setAttentionDialog(null)}
+        />
       )}
     </section>
   );

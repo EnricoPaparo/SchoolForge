@@ -384,6 +384,26 @@ interface AttentionEvent {
   ts: number; // ms epoch
 }
 
+// Proiezione client-side (non un documento Firestore separato) letta dal
+// monitor consegne docente (submissionsMonitorService.watchSubmissions,
+// M3F-05, dettaglio eventi M3F-09): il listener onSnapshot riceve la
+// SubmissionDoc completa (Security Rules già autorizzano l'owner a leggerla
+// per intero), ma il service la riduce a questa forma compatta PRIMA che
+// arrivi alla UI — answers/flagged non vengono mai esposti oltre il service.
+// attentionEvents qui è una copia sanificata (solo type+ts, cioè
+// esattamente la stessa forma di AttentionEvent — mai answers/flagged) usata
+// dalla dialog "Eventi di attenzione" (AttentionEventsDialog): aprirla non
+// causa nuove letture, riusa solo i dati già arrivati dal listener.
+interface SubmissionMonitorItem {
+  studentUid: string;
+  status: 'draft' | 'submitted';
+  lastSavedAt: Timestamp;
+  submittedAt: Timestamp | null;
+  deliveryCode: string | null;
+  attentionEventsCount: number;
+  attentionEvents: { type: AttentionEvent['type']; ts: number }[];
+}
+
 // submissionReceipts/{submissionId} — ricevuta post-consegna leggibile dallo studente.
 // Dopo status='submitted', lo studente non legge più la SubmissionDoc completa
 // con le risposte: vede solo questo documento minimale. Il docente legge comunque
@@ -404,6 +424,23 @@ interface SubmissionReceiptDoc {
 // Deve essere true (insieme a status=='active' e visibility=='public') perché
 // uno studente possa avviare o aggiornare una submission. La chiusura
 // (status='closed') blocca implicitamente l'online via Security Rules.
+
+// Campo aggiunto a verifications/{verificationId} e mirrorato su
+// verifications/{verificationId}/publishedProjection/data in M3F-09
+// studentPdfEnabled: boolean — controlla ESCLUSIVAMENTE se lo studente può
+// scaricare il PDF della verifica (StudentVerificationsView "Scarica PDF").
+// Indipendente da onlineEnabled/visibility/status: non pubblica, non attiva
+// l'online, non riapre una verifica chiusa. Assente su documenti legacy —
+// letto sempre tramite normalizeStudentPdfEnabled(), che tratta un valore
+// mancante/non booleano come false (fail-closed). Il docente può alternarlo
+// mentre la verifica è draft, active o closed (setVerificationStudentPdfEnabled,
+// scrittura atomica: documento verifica + mirror publishedProjection se
+// esiste + audit event). Le Security Rules permettono, su active/closed,
+// SOLO la modifica di studentPdfEnabled/updatedAt — mai status, visibility,
+// config o ownerUid nella stessa scrittura. Una verifica hidden/draft/closed
+// non diventa visibile allo studente solo perché studentPdfEnabled è true:
+// resta comunque necessario status=='active' && visibility=='public' &&
+// classe assegnata compatibile (vedi PublishedProjectionDoc sopra).
 
 // corrections/{attemptId} e correctionEvents — Modulo 4, dipende da M3-full
 // (operano sull'attemptId di una consegna digitale; non popolati da M3-lite)

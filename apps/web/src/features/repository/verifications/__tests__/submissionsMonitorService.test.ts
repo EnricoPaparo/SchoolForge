@@ -42,7 +42,7 @@ describe('watchSubmissions', () => {
     expect(mockWhere).toHaveBeenCalledTimes(2);
   });
 
-  it('maps only the compact monitor fields, never answers/flagged', () => {
+  it('maps only the compact monitor fields plus a sanitized attentionEvents copy, never answers/flagged', () => {
     const submission: SubmissionDoc = {
       submissionId: 'ver-1_stud-1',
       verificationId: 'ver-1',
@@ -79,12 +79,47 @@ describe('watchSubmissions', () => {
         submittedAt: submission.submittedAt,
         deliveryCode: 'SF-2026-A1B2',
         attentionEventsCount: 2,
+        attentionEvents: [
+          { type: 'tab_blur', ts: 1 },
+          { type: 'copy_attempt', ts: 2 },
+        ],
       },
     ]);
     const mapped = onChange.mock.calls[0][0][0];
     expect(mapped).not.toHaveProperty('answers');
     expect(mapped).not.toHaveProperty('flagged');
-    expect(mapped).not.toHaveProperty('attentionEvents');
+    expect(mapped.attentionEvents).not.toBe(submission.attentionEvents);
+  });
+
+  it('returns an empty attentionEvents array when the submission has none', () => {
+    const submission: SubmissionDoc = {
+      submissionId: 'ver-1_stud-1',
+      verificationId: 'ver-1',
+      studentUid: 'stud-1',
+      ownerUid: 'owner-1',
+      status: 'draft',
+      answers: {},
+      flagged: {},
+      attentionEvents: [],
+      deliveryCode: null,
+      verificationTitle: 'Verifica 1',
+      className: 'Classe A',
+      startedAt: {} as never,
+      lastSavedAt: {} as never,
+      submittedAt: null,
+    };
+
+    const onChange = vi.fn();
+    mockOnSnapshot.mockImplementation((_q: unknown, next: (snap: unknown) => void) => {
+      next({ docs: [{ data: () => submission }] });
+      return mockUnsubscribe;
+    });
+
+    watchSubmissions('ver-1', 'owner-1', fakeDb, onChange, vi.fn());
+
+    const mapped = onChange.mock.calls[0][0][0];
+    expect(mapped.attentionEvents).toEqual([]);
+    expect(mapped.attentionEventsCount).toBe(0);
   });
 
   it('forwards listener errors via onError', () => {

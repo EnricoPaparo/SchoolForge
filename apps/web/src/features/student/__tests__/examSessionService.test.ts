@@ -29,6 +29,7 @@ const ITEM_A: StudentVerificationItem = {
   questionCount: 1,
   questions: [],
   onlineEnabled: true,
+  studentPdfEnabled: false,
   ownerUid: 'owner-uid',
 };
 
@@ -40,6 +41,7 @@ const ITEM_B: StudentVerificationItem = {
   questionCount: 1,
   questions: [],
   onlineEnabled: true,
+  studentPdfEnabled: false,
   ownerUid: 'owner-uid',
 };
 

@@ -94,6 +94,7 @@ describe('loadStudentVerifications — class filtering', () => {
         questionCount: 1,
         questions: [{ order: 0, tipo: 'aperta', maxPoints: 3, testo: 'Domanda?' }],
         onlineEnabled: false,
+        studentPdfEnabled: false,
         ownerUid: 'owner',
       },
     ]);
@@ -117,6 +118,45 @@ describe('loadStudentVerifications — class filtering', () => {
     const result = await loadStudentVerifications(STUDENT_UID, fakeDb);
     if (result.status !== 'ok') throw new Error('expected ok');
     expect(result.verifications[0]?.onlineEnabled).toBe(true);
+  });
+
+  it('normalizes studentPdfEnabled: true only when the projection field is literally true', async () => {
+    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        fakeDoc('ver-1', {
+          title: 'Verifica 1',
+          className: 'Classe A',
+          classId: 'class-a',
+          studentPdfEnabled: true,
+          questions: [],
+          activatedAt: { seconds: 100 },
+        }),
+      ],
+    });
+
+    const result = await loadStudentVerifications(STUDENT_UID, fakeDb);
+    if (result.status !== 'ok') throw new Error('expected ok');
+    expect(result.verifications[0]?.studentPdfEnabled).toBe(true);
+  });
+
+  it('a legacy projection with no studentPdfEnabled field normalizes to false', async () => {
+    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        fakeDoc('ver-1', {
+          title: 'Verifica 1',
+          className: 'Classe A',
+          classId: 'class-a',
+          questions: [],
+          activatedAt: { seconds: 100 },
+        }),
+      ],
+    });
+
+    const result = await loadStudentVerifications(STUDENT_UID, fakeDb);
+    if (result.status !== 'ok') throw new Error('expected ok');
+    expect(result.verifications[0]?.studentPdfEnabled).toBe(false);
   });
 
   it('carries ownerUid through (needed by submissionsService, M3F-04) but never questionRefs/soluzione', async () => {

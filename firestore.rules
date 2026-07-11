@@ -295,7 +295,10 @@ service cloud.firestore {
       // Active: only close allowed; only status/closedAt/updatedAt may change.
       // Active: only visibility toggled (M3-lite publish/hide); only
       // visibility/updatedAt may change, status must stay 'active'.
-      // Closed: no updates allowed.
+      // Active/closed: only studentPdfEnabled toggled (M3F-09) — see below.
+      // Closed: no other update allowed (studentPdfEnabled is the sole
+      // exception — a closed verification never reopens, but the teacher may
+      // still control student PDF access on it).
       allow update: if isOwner() && resource.data.status == 'draft';
       allow update: if isOwner()
         && resource.data.status == 'active'
@@ -321,6 +324,19 @@ service cloud.firestore {
         && request.resource.data.onlineEnabled is bool
         && (request.resource.data.onlineEnabled != true
             || resource.data.config.classId != null);
+      // M3F-09: studentPdfEnabled controls only the student PDF download,
+      // independent of status/visibility/onlineEnabled/config. Allowed on
+      // 'active' AND 'closed' (draft already covered by the any-owner-update
+      // rule above) — status itself must never change here, and this never
+      // reopens a closed verification or changes visibility: setting it
+      // true only matters once/if the verification is separately active +
+      // public + class-assigned (see publishedProjection below).
+      allow update: if isOwner()
+        && (resource.data.status == 'active' || resource.data.status == 'closed')
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['studentPdfEnabled', 'updatedAt'])
+        && request.resource.data.studentPdfEnabled is bool;
     }
     match /verifications/{verificationId}/{sub=**} {
       // read: owner only; write on sub-collections handled per-path in later milestones.
