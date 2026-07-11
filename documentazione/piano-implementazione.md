@@ -750,6 +750,27 @@ M3F-10 è completato; M3F-11 è definito operativamente in `m3-full-roadmap.md`.
 | Test minimi | Persistenza domande bozza; reload coerente; PDF bozza e soluzioni; attivazione congela lo snapshot; monitor non montato su draft; tabella eventi senza answers/flagged. Rules test solo se il contratto Firestore cambia. |
 | Deploy | Nessun deploy dall'agente; merge e deploy solo dopo CI verde e review. |
 
+#### PERF-SEC-01A — Audit prestazioni, costi Firebase e sicurezza (Completato)
+
+| Campo | Valore |
+|---|---|
+| Scope | Audit evidence-based dell'intero SchoolForge fino a M3F-11C: mappa accessi Firebase per flusso (query, filtri, limit, indici, listener, write, batch/transaction, letture Rules-dependent, Storage), stime di costo su tre scenari (uso personale, verifica online, uso ampliato), review statica di Firestore/Storage Rules, analisi bundle Vite reale. Nessuna ottimizzazione applicata: solo diagnosi, misure e priorità. |
+| Efficienza | Nessuna modifica a codice applicativo, Rules o dipendenze. Bundle misurato con `pnpm build` esistente, nessuna suite di test aggiuntiva eseguita oltre `format:check`. |
+| Test minimi | `pnpm format:check`, `pnpm build` (dimensioni bundle reali). Nessun `test:rules` (Rules non modificate). |
+| Deploy | Nessun deploy. PR draft documentale verso `main`. |
+| Evidenza | `documentazione/performance-security-audit.md` — finding classificati P0-P3 con file/riga, impatto, scenario, soluzione minimale, beneficio, rischio, verifica necessaria. |
+
+#### PERF-SEC-01B — Remediation dei finding approvati
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | PERF-SEC-01A |
+| Scope | Implementa esclusivamente i finding P0/P1/P2/P3 dell'audit che vengono esplicitamente approvati (vedi `performance-security-audit.md` §9 per l'ordine indicativo proposto). Nessuna ottimizzazione non derivata dal report. |
+| Test minimi | Verifica dedicata per ogni finding remediato, secondo la colonna "Verifica necessaria" del report; `test:rules` solo se un finding richiede una modifica a Rules (es. SEC-01). |
+| Deploy | Nessun deploy dall'agente; merge e deploy solo dopo CI verde e review. |
+
+**Gate prestazioni/sicurezza (PERF-SEC-01):** prerequisito aggiuntivo, insieme al Gate G5, prima della chiusura definitiva di M3-full — i finding P0/P1 dell'audit devono essere risolti o esplicitamente derogati con motivazione scritta; i finding P2/P3 possono essere rimandati a un ciclo successivo se documentato.
+
 ### M4 — Correzione ed export
 
 #### M4-A — Correzione e audit
