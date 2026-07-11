@@ -194,7 +194,7 @@ describe('downloadStudentPdf — aperta questions', () => {
     const lineCallsForAperta = calls.filter((c) => c.method === 'line').length;
 
     calls = [];
-    await downloadStudentPdf({ ...SNAPSHOT, questionRefs: [] }, [], null);
+    await downloadStudentPdf(SNAPSHOT, [], null);
     const lineCallsNoQuestions = calls.filter((c) => c.method === 'line').length;
 
     // An aperta question contributes zero extra `line` calls compared to a PDF

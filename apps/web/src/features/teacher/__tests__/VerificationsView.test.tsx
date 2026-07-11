@@ -608,6 +608,155 @@ describe('VerificationsView', () => {
     );
   });
 
+  it('Salva bozza persists title, class and the current question selection together, no snapshot created (M3F-11C)', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+
+    await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByRole('button', { name: /salva bozza/i }));
+
+    await waitFor(() => expect(mockUpdateVerificationConfig).toHaveBeenCalled());
+    const [id, configArg, ownerUid] = mockUpdateVerificationConfig.mock.calls[0];
+    expect(id).toBe('ver-1');
+    expect(ownerUid).toBe('owner-uid');
+    expect(configArg.title).toBe('Verifica Algebra');
+    expect(configArg.classId).toBe('cls-1');
+    expect(configArg.questionRefs).toHaveLength(1);
+    expect(configArg.questionRefs[0].questionIndexEntryId).toBe('qi-1');
+    // "Salva bozza" never activates the verification — no immutable snapshot.
+    expect(mockActivateVerification).not.toHaveBeenCalled();
+  });
+
+  it('reopening a draft restores the previously selected questions from config.questionRefs', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer({ config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] } }),
+    ]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+
+    await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
+    expect((screen.getByLabelText(/seleziona domanda q1/i) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('activation still freezes the immutable teacherSnapshot regardless of prior draft saves', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+
+    await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByRole('button', { name: /salva bozza/i }));
+    await waitFor(() => expect(mockUpdateVerificationConfig).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
+    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
+
+    await waitFor(() =>
+      expect(mockActivateVerification).toHaveBeenCalledWith(
+        'ver-1',
+        sampleClass,
+        'owner-uid',
+        {},
+        {},
+      ),
+    );
+  });
+
+  it('Salva bozza and Attiva verifica are adjacent, in this order, and neither is duplicated elsewhere', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+
+    await waitFor(() => screen.getByRole('button', { name: /salva bozza/i }));
+    const saveBtns = screen.getAllByRole('button', { name: /salva bozza/i });
+    const activateBtns = screen.getAllByRole('button', { name: /attiva verifica/i });
+    expect(saveBtns).toHaveLength(1);
+    expect(activateBtns).toHaveLength(1);
+
+    const container = saveBtns[0].closest('div');
+    expect(container?.contains(activateBtns[0])).toBe(true);
+    const buttonsInBar = Array.from(container?.querySelectorAll<HTMLButtonElement>('button') ?? []);
+    expect(buttonsInBar.indexOf(saveBtns[0] as HTMLButtonElement)).toBeLessThan(
+      buttonsInBar.indexOf(activateBtns[0] as HTMLButtonElement),
+    );
+  });
+
+  // ─── Draft PDF download (M3F-11C) ──────────────────────────────────────────
+
+  it('downloads the normal PDF from a draft using the current saved selection, no Firestore write', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer({ config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] } }),
+    ]);
+    const fakeQuestion = { ref: sampleQuestionRef, testo: 'Domanda?', tipo: 'aperta' as const };
+    mockLoadSelectedQuestions.mockResolvedValue({ ok: true, questions: [fakeQuestion] });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+
+    await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
+    expect(mockLoadSelectedQuestions).toHaveBeenCalledWith([sampleQuestionRef], {});
+    expect(mockDownloadStudentPdf).toHaveBeenCalledWith(
+      { title: 'Verifica Algebra' },
+      [fakeQuestion],
+      'Classe 3A',
+    );
+    expect(mockUpdateVerificationConfig).not.toHaveBeenCalled();
+    expect(mockActivateVerification).not.toHaveBeenCalled();
+  });
+
+  it('downloads the solutions PDF from a draft using the current saved selection, no Firestore write', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer({ config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] } }),
+    ]);
+    const fakeQuestion = {
+      ref: sampleQuestionRef,
+      testo: 'Domanda?',
+      tipo: 'aperta' as const,
+      soluzione: 'R.',
+    };
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue({
+      ok: true,
+      questions: [fakeQuestion],
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+
+    await waitFor(() => expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalled());
+    expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalledWith(
+      { title: 'Verifica Algebra' },
+      [fakeQuestion],
+      'Classe 3A',
+    );
+    expect(mockUpdateVerificationConfig).not.toHaveBeenCalled();
+  });
+
+  it('shows a clear error and does not generate a PDF when the draft has no questions', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]); // questionRefs: []
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+
+    await waitFor(() => screen.getByRole('alert'));
+    expect(screen.getByRole('alert').textContent).toMatch(/non ha domande selezionate/i);
+    expect(mockLoadSelectedQuestions).not.toHaveBeenCalled();
+    expect(mockDownloadStudentPdf).not.toHaveBeenCalled();
+  });
+
   // ─── Row actions: visibility by status ────────────────────────────────────
 
   const activeVerWithSnapshot = () =>
@@ -651,13 +800,13 @@ describe('VerificationsView', () => {
     expect(screen.queryByRole('button', { name: /elimina verifica/i })).toBeNull();
   });
 
-  it('draft verification shows the PDF-enabled toggle and Elimina, never download or Chiudi', async () => {
+  it('draft verification shows the PDF-enabled toggle, Elimina and PDF download actions (M3F-11C), never Chiudi', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
-    expect(screen.queryByRole('button', { name: /scarica pdf studenti/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /scarica pdf soluzioni/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /scarica pdf studenti/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /scarica pdf soluzioni/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /chiudi verifica/i })).toBeNull();
     expect(screen.getByRole('button', { name: /elimina verifica/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /abilita pdf studente/i })).toBeTruthy();
@@ -725,7 +874,7 @@ describe('VerificationsView', () => {
     await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
     expect(mockLoadSelectedQuestions).toHaveBeenCalledWith([sampleQuestionRef], {});
     expect(mockDownloadStudentPdf).toHaveBeenCalledWith(
-      teacherSnapshot,
+      { title: (teacherSnapshot as unknown as { title: string }).title },
       [fakeQuestion],
       'Classe 3A',
     );
@@ -786,7 +935,7 @@ describe('VerificationsView', () => {
     await waitFor(() => expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalled());
     expect(mockLoadSelectedQuestionsWithSolutions).toHaveBeenCalledWith([sampleQuestionRef], {});
     expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalledWith(
-      teacherSnapshot,
+      { title: (teacherSnapshot as unknown as { title: string }).title },
       [fakeQuestion],
       'Classe 3A',
     );
@@ -824,7 +973,7 @@ describe('VerificationsView', () => {
     await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
     expect(mockLoadSelectedQuestions).toHaveBeenCalledWith([sampleQuestionRef], {});
     expect(mockDownloadStudentPdf).toHaveBeenCalledWith(
-      cv.teacherSnapshot,
+      { title: (cv.teacherSnapshot as unknown as { title: string }).title },
       [fakeQuestion],
       'Classe 3A',
     );
@@ -1287,10 +1436,8 @@ describe('VerificationsView — consegne online monitor (M3F-05)', () => {
 
     fireEvent.click(screen.getByText(draftVer.config.title));
     await waitFor(() => expect(unsubscribe).toHaveBeenCalledTimes(1));
-    // Draft shows the empty-state message, no listener.
-    expect(
-      screen.getByText(/il monitor consegne sarà disponibile dopo l.attivazione/i),
-    ).toBeTruthy();
+    // Draft renders no monitor region at all (M3F-11C), no listener.
+    expect(screen.queryByRole('region', { name: /consegne online/i })).toBeNull();
     expect(mockWatchSubmissions).toHaveBeenCalledTimes(1);
   });
 
@@ -1324,7 +1471,7 @@ describe('VerificationsView — consegne online monitor (M3F-05)', () => {
     await waitFor(() => expect(mockWatchSubmissions).toHaveBeenCalledTimes(1));
   });
 
-  it('a selected draft verification shows the empty state and opens no listener', async () => {
+  it('a selected draft verification renders no monitor region at all and opens no listener (M3F-11C)', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
     render(<VerificationsView />);
@@ -1332,11 +1479,9 @@ describe('VerificationsView — consegne online monitor (M3F-05)', () => {
 
     fireEvent.click(screen.getByText('Verifica Algebra'));
 
-    await waitFor(() =>
-      expect(
-        screen.getByText(/il monitor consegne sarà disponibile dopo l.attivazione/i),
-      ).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByLabelText('Dettaglio verifica')).toBeTruthy());
+    expect(screen.queryByRole('region', { name: /consegne online/i })).toBeNull();
+    expect(screen.queryByText(/monitor consegne/i)).toBeNull();
     expect(mockWatchSubmissions).not.toHaveBeenCalled();
   });
 });
@@ -1430,18 +1575,17 @@ describe('VerificationsView — attention events dialog (M3F-09)', () => {
     fireEvent.click(screen.getByRole('button', { name: /eventi di attenzione — anna/i }));
 
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText(/eventi di attenzione — anna/i)).toBeTruthy();
-    expect(within(dialog).getByText('Totale eventi: 2')).toBeTruthy();
-    expect(within(dialog).getByText('Uscita dalla modalità schermo intero')).toBeTruthy();
-    expect(within(dialog).getByText('Tentativo di copia')).toBeTruthy();
+    expect(within(dialog).getByText('Eventi di attenzione (2)')).toBeTruthy();
+    expect(within(dialog).getByText('Anna')).toBeTruthy();
+    expect(within(dialog).getByText('Uscita schermo intero')).toBeTruthy();
+    expect(within(dialog).getByText('Copia')).toBeTruthy();
     expect(within(dialog).getByText(/segnalazioni di attenzione/i)).toBeTruthy();
     expect(mockWatchSubmissions.mock.calls.length).toBe(watchCallsBefore);
 
     // Chronological order: fullscreen_exit (ts 1000) before copy_attempt (ts 2000).
-    const items = within(dialog)
-      .getAllByText(/schermo intero|tentativo di copia/i)
-      .map((el) => el.textContent);
-    expect(items).toEqual(['Uscita dalla modalità schermo intero', 'Tentativo di copia']);
+    const rows = within(dialog).getAllByRole('row').slice(1); // skip header row
+    const eventCells = rows.map((row) => within(row).getAllByRole('cell')[1].textContent);
+    expect(eventCells).toEqual(['Uscita schermo intero', 'Copia']);
   });
 
   it('shows a readable fallback for an unrecognized event type', async () => {
@@ -1470,6 +1614,7 @@ describe('VerificationsView — attention events dialog (M3F-09)', () => {
     fireEvent.click(screen.getByRole('button', { name: /eventi di attenzione — anna/i }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/evento non riconosciuto/i)).toBeTruthy();
+    expect(within(dialog).getByText(/tipo non riconosciuto/i)).toBeTruthy();
   });
 
   it('closes the dialog with the close button, Escape, and a click on the backdrop', async () => {

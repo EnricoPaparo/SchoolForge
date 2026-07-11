@@ -321,12 +321,6 @@
   color: var(--color-text);
 }
 
-.draftEditForm button[type='submit'] {
-  margin-left: 0.25rem;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
 @media (max-width: 640px) {
   .draftEditForm {
     flex-direction: column;
@@ -335,12 +329,6 @@
 
   .draftEditForm label {
     min-width: 0;
-  }
-
-  .draftEditForm button[type='submit'] {
-    margin-left: 0;
-    margin-top: 0.25rem;
-    width: 100%;
   }
 }
 
@@ -419,4 +407,19 @@
   .actionBar button {
     width: 100%;
   }
+}
+
+/* ── Draft action bar (Salva bozza + Attiva verifica, M3F-11C) ──────
+   Buttons stay on one row whenever they fit — including on narrow
+   viewports — and only wrap onto a second row when the combined width
+   genuinely doesn't fit, instead of always stacking at a fixed
+   breakpoint like the generic .actionBar above. */
+.draftActionBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+}
+
+.draftActionBar button {
+  flex: 1 1 160px;
 }

@@ -4,25 +4,45 @@ import type { AttentionEvent, AttentionEventType } from '../../types/firestore.j
 import styles from './AttentionEventsDialog.module.css';
 
 /**
- * Human-readable label for each known `AttentionEventType` (see
- * `types/firestore.ts`). A type this codebase doesn't know about yet
- * (future event, or a stale build reading a newer document) falls back to
- * `describeUnknownEvent` below rather than crashing or rendering nothing.
+ * Short "Evento" column label for each known `AttentionEventType` (see
+ * `types/firestore.ts`).
  */
-const EVENT_LABELS: Record<AttentionEventType, string> = {
-  fullscreen_exit: 'Uscita dalla modalità schermo intero',
-  visibility_hidden: 'Scheda/finestra nascosta o ridotta a icona',
-  tab_blur: 'Passaggio ad un’altra scheda',
-  window_blur: 'Passaggio ad un’altra finestra',
-  copy_attempt: 'Tentativo di copia',
-  cut_attempt: 'Tentativo di taglio',
-  paste_attempt: 'Tentativo di incolla',
-  context_menu_attempt: 'Tentativo di apertura menu contestuale',
-  drag_attempt: 'Tentativo di trascinamento',
+const EVENT_SHORT_LABELS: Record<AttentionEventType, string> = {
+  fullscreen_exit: 'Uscita schermo intero',
+  visibility_hidden: 'Scheda/finestra nascosta',
+  tab_blur: 'Cambio scheda',
+  window_blur: 'Cambio finestra',
+  copy_attempt: 'Copia',
+  cut_attempt: 'Taglio',
+  paste_attempt: 'Incolla',
+  context_menu_attempt: 'Menu contestuale',
+  drag_attempt: 'Trascinamento',
 };
 
-function describeEvent(type: string): string {
-  return EVENT_LABELS[type as AttentionEventType] ?? `Evento non riconosciuto (${type})`;
+/**
+ * Longer "Dettaglio" column description for each known `AttentionEventType`.
+ * A type this codebase doesn't know about yet (future event, or a stale
+ * build reading a newer document) falls back to a generic message rather
+ * than crashing or rendering nothing.
+ */
+const EVENT_DETAILS: Record<AttentionEventType, string> = {
+  fullscreen_exit: 'Lo studente è uscito dalla modalità schermo intero.',
+  visibility_hidden: 'La scheda o finestra è stata nascosta o ridotta a icona.',
+  tab_blur: 'Lo studente è passato ad un’altra scheda del browser.',
+  window_blur: 'Lo studente è passato ad un’altra finestra.',
+  copy_attempt: 'Tentativo di copiare del testo dalla pagina.',
+  cut_attempt: 'Tentativo di tagliare del testo dalla pagina.',
+  paste_attempt: 'Tentativo di incollare del testo nella pagina.',
+  context_menu_attempt: 'Tentativo di apertura del menu contestuale (tasto destro).',
+  drag_attempt: 'Tentativo di trascinamento di un elemento della pagina.',
+};
+
+function shortEventLabel(type: string): string {
+  return EVENT_SHORT_LABELS[type as AttentionEventType] ?? 'Evento non riconosciuto';
+}
+
+function eventDetail(type: string): string {
+  return EVENT_DETAILS[type as AttentionEventType] ?? `Tipo non riconosciuto (${type}).`;
 }
 
 function formatEventTimestamp(ts: number): string {
@@ -104,9 +124,12 @@ export function AttentionEventsDialog({
         onKeyDown={handleKeyDown}
       >
         <div className={styles.header}>
-          <h2 id="attention-events-dialog-title" className={styles.title}>
-            Eventi di attenzione — {studentName}
-          </h2>
+          <div>
+            <h2 id="attention-events-dialog-title" className={styles.title}>
+              Eventi di attenzione ({sortedEvents.length})
+            </h2>
+            <p className={styles.subtitle}>{studentName}</p>
+          </div>
           <button
             type="button"
             className={styles.closeBtn}
@@ -122,19 +145,33 @@ export function AttentionEventsDialog({
           prova di un comportamento scorretto.
         </p>
 
-        <p className={styles.total}>Totale eventi: {sortedEvents.length}</p>
-
         {sortedEvents.length === 0 ? (
           <p className="state-empty">Nessun evento registrato.</p>
         ) : (
-          <ul className={styles.list}>
-            {sortedEvents.map((event, index) => (
-              <li key={`${event.type}-${event.ts}-${index}`} className={styles.item}>
-                <span className={styles.itemTime}>{formatEventTimestamp(event.ts)}</span>
-                <span className={styles.itemLabel}>{describeEvent(event.type)}</span>
-              </li>
-            ))}
-          </ul>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th className={styles.th}>Ora</th>
+                  <th className={styles.th}>Evento</th>
+                  <th className={styles.th}>Dettaglio</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedEvents.map((event, index) => (
+                  <tr key={`${event.type}-${event.ts}-${index}`}>
+                    <td className={`${styles.td} ${styles.tdTime}`}>
+                      {formatEventTimestamp(event.ts)}
+                    </td>
+                    <td className={`${styles.td} ${styles.tdEvent}`}>
+                      {shortEventLabel(event.type)}
+                    </td>
+                    <td className={styles.td}>{eventDetail(event.type)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
 
         <div className={styles.actions}>
