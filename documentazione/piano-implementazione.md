@@ -290,7 +290,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 | M3F-07 | Modalità verifica globale/per classe in Studenti, audit e listener studente. | M3F-06 | M3F-09 | Controllo owner-only; default per classe; blocco globale confermato. Completato — reso effettivo end-to-end da M3F-08. |
 | M3F-08 | Proiezione sicura corpo lezioni in `publicLessons`, sincronizzazione import/editor, migrazione e Rules. | M3F-07 | M3F-09 | Una chiamata diretta non legge lezioni durante il blocco; Storage resta canonico; backfill pronto e idempotente (dati DEV **non** migrati in questa PR — rimandato a M3F-11). Completato. |
 | M3F-09 | Rifiniture docente: permesso download PDF, monitor sempre visibile sulla verifica selezionata, dettaglio eventi, tabella stabile. | M3F-05 | M3F-07/M3F-08 | Toggle PDF indipendente; un solo listener; popup eventi senza risposte; nessun layout shift. Completato. |
-| M3F-10 | Hardening costi e concorrenza di autosave/listener. | M3F-06/M3F-09 | — | Scritture solo su revisione cambiata; debounce/intervallo esplicito; cleanup e race testati. |
+| M3F-10 | Hardening costi e concorrenza completato: autosave dirty-only ogni 60s, mutex sincrono save/consegna, attesa della write pendente, blocco definitivo dopo `submitted`, audit lifecycle listener/timer. | M3F-06/M3F-09 | — | Nessuna write su bozza invariata o post-consegna; revision guard preservata; consegna fallita riabilita editing/autosave; test race e cleanup verdi. Completato. |
 | M3F-11 | Integrazione, migrazione DEV, smoke con docente e due studenti, checklist G5. | M3F-06→M3F-10 | — | Gate G5 approvabile; nessun accesso lezioni durante blocco; osservazione costi completata. |
 
 ---
@@ -669,7 +669,7 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | File da creare | `OnlineExamView`, `ConfirmationView`, `examDeterrence.ts`, `examAnswers.ts`, componenti modalità verifica |
 | File da modificare | `StudentVerificationsView` (lista → avvio/ripresa/receipt), `studentVerificationsService`/`PublishedProjectionDoc` (mirror `onlineEnabled`), `firestore.rules` (preflight: get() sul path deterministico prima che il documento esista) |
 | Test minimi | Avvio bozza, salva, indicatori compilate/vuote, alert consegna, receipt post-consegna, eventi attenzione registrati |
-| Evidenza richiesta | Test componente + Rules verdi. Nessun router nuovo introdotto: `OnlineExamView`/`ConfirmationView` sono viste locali di `StudentVerificationsView`, come già avviene per le altre sezioni docente/studente (nessuna route URL). Autosave al massimo ogni 30s e solo quando la bozza è "dirty"; `attentionEvents` limitato a 200 per submission, applicato lato client (nessuna lettura Firestore aggiuntiva: la UI conosce già il conteggio della bozza caricata) e verificato anche lato Security Rules. |
+| Evidenza richiesta | Test componente + Rules verdi. Nessun router nuovo introdotto: `OnlineExamView`/`ConfirmationView` sono viste locali di `StudentVerificationsView`, come già avviene per le altre sezioni docente/studente (nessuna route URL). Da M3F-10 autosave al massimo ogni 60s e solo quando la bozza è "dirty"; `attentionEvents` limitato a 200 per submission, applicato lato client e verificato anche lato Security Rules. |
 
 #### M3F-05 — UI docente monitor consegne (Completato)
 
@@ -721,7 +721,7 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | Test minimi | Helper `normalizeStudentPdfEnabled` (5 test); `createVerification` inizializza il campo; `activateVerification` mirra `false`/`true` sulla proiezione; `setVerificationStudentPdfEnabled` atomico su draft/active/closed, non tocca altri campi, non-owner/verifica assente rifiutati; `submissionsMonitorService` include `attentionEvents` sanificato (mai `answers`/`flagged`); `VerificationsView` — selezione verifica apre/chiude il listener monitor correttamente (incl. passaggio a un'altra verifica draft), draft mostra stato vuoto senza listener, dialog eventi: ordine cronologico, etichette umane, fallback per tipo sconosciuto, chiusura con pulsante/Escape/backdrop, mai `answers`/`flagged`; `StudentVerificationsView` — combinazioni PDF/online (entrambe, solo PDF, solo online, nessuna), legacy senza campo non mostra il pulsante; Rules mirate (`m3f-09-student-pdf.rules.test.ts`): toggle draft/active/closed, modifica simultanea di config/status/visibility/ownerUid negata, valore non booleano negato, studente non può modificarlo, mirror `publishedProjection` coerente, verifica hidden/closed non diventa leggibile |
 | Evidenza richiesta | `pnpm test:rules` completo verde (11 file, 298 test — eseguito perché `firestore.rules` è stato modificato), test mirati verdi (997 test totali nella suite `vitest run`), typecheck, lint e build verdi. Nessun deploy. |
 
-I pacchetti M3F-10→M3F-11 sono definiti operativamente in `m3-full-roadmap.md`.
+M3F-10 è completato; M3F-11 è definito operativamente in `m3-full-roadmap.md`.
 
 ### M4 — Correzione ed export
 

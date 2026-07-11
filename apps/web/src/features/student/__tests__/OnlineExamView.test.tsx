@@ -183,22 +183,22 @@ describe('OnlineExamView — saving', () => {
     );
   });
 
-  it('autosaves only when dirty, at most once per 30s tick', async () => {
+  it('autosaves only when dirty, at most once per 60s tick', async () => {
     vi.useFakeTimers();
     try {
       renderView();
 
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(mockSaveDraft).not.toHaveBeenCalled();
 
       fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
         target: { value: 'Risposta.' },
       });
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(mockSaveDraft).toHaveBeenCalledOnce();
 
       // No further changes: the next tick must not save again.
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(mockSaveDraft).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
@@ -244,7 +244,7 @@ describe('OnlineExamView — saving', () => {
       fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
         target: { value: 'Prima risposta.' },
       });
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(mockSaveDraft).toHaveBeenCalledOnce();
 
       // A second change arrives while the first save is still in flight —
@@ -259,7 +259,7 @@ describe('OnlineExamView — saving', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       // Still dirty: the next tick must save again, carrying the latest answer.
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(60_000);
       expect(mockSaveDraft).toHaveBeenCalledTimes(2);
       const secondCall = mockSaveDraft.mock.calls[1] as [
         { answers: Record<string, { testo: string }> },
@@ -281,11 +281,36 @@ describe('OnlineExamView — saving', () => {
       renderView();
 
       capturedOnEvent?.('window_blur');
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(60_000);
 
       expect(mockSaveDraft).toHaveBeenCalledOnce();
       const [arg] = mockSaveDraft.mock.calls[0] as [{ newAttentionEvents: { type: string }[] }];
       expect(arg.newAttentionEvents).toEqual([{ type: 'window_blur', ts: expect.any(Number) }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never overlaps manual save and autosave while a write is in flight', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveSave: (() => void) | undefined;
+      mockSaveDraft.mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        }),
+      );
+      renderView();
+      fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
+        target: { value: 'Risposta.' },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Salva bozza' }));
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(mockSaveDraft).toHaveBeenCalledOnce();
+      resolveSave?.();
+      await vi.advanceTimersByTimeAsync(0);
     } finally {
       vi.useRealTimers();
     }
@@ -357,9 +382,76 @@ describe('OnlineExamView — delivery', () => {
     fireEvent.click(confirmBtn);
     fireEvent.click(confirmBtn);
 
-    expect(mockSubmitSubmission).toHaveBeenCalledOnce();
+    await waitFor(() => expect(mockSubmitSubmission).toHaveBeenCalledOnce());
     resolveSubmit?.();
     await waitFor(() => expect(mockLoadReceipt).toHaveBeenCalledOnce());
+  });
+
+  it('waits for an in-flight draft save, then submits the latest local revision', async () => {
+    let resolveSave: (() => void) | undefined;
+    mockSaveDraft.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveSave = resolve;
+      }),
+    );
+    mockSubmitSubmission.mockResolvedValue('SF-2026-AAAA');
+    mockLoadReceipt.mockResolvedValue({ deliveryCode: 'SF-2026-AAAA' });
+    renderView();
+
+    fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
+      target: { value: 'Prima versione.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva bozza' }));
+    fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
+      target: { value: 'Versione finale.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Consegna' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Conferma consegna' }));
+
+    expect(mockSubmitSubmission).not.toHaveBeenCalled();
+    resolveSave?.();
+    await waitFor(() => expect(mockSubmitSubmission).toHaveBeenCalledOnce());
+    const [payload] = mockSubmitSubmission.mock.calls[0] as [
+      { answers: Record<string, { testo: string }> },
+    ];
+    expect(payload.answers['0']).toEqual({ tipo: 'aperta', testo: 'Versione finale.' });
+  });
+
+  it('resumes editing and autosave eligibility when delivery itself fails', async () => {
+    mockSubmitSubmission.mockRejectedValue(new Error('network error'));
+    renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Consegna' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Conferma consegna' }));
+    await waitFor(() => expect(mockSubmitSubmission).toHaveBeenCalledOnce());
+
+    const textarea = screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement;
+    expect(textarea.disabled).toBe(false);
+    expect(
+      (screen.getByRole('button', { name: 'Salva bozza' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it('keeps the exam locked when delivery succeeded but receipt read-back fails', async () => {
+    mockSubmitSubmission.mockResolvedValue('SF-2026-AAAA');
+    mockLoadReceipt.mockRejectedValue(new Error('network error'));
+    renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Consegna' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Conferma consegna' }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Consegna registrata ma non è stato possibile/)).toBeTruthy(),
+    );
+    expect(
+      (screen.getByRole('button', { name: 'Consegna registrata' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect((screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled).toBe(
+      true,
+    );
+    expect(
+      (screen.getByRole('button', { name: 'Salva bozza' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 });
 
