@@ -3,6 +3,7 @@ import type { FirebaseStorage } from 'firebase/storage';
 import { parsePool } from '@schoolforge/lesson-contract';
 import type { QuestionOption } from '@schoolforge/lesson-contract';
 import type { VerificationQuestionRef } from '../../../types/firestore.js';
+import { mapWithConcurrency } from './mapWithConcurrency.js';
 
 /** Safe question data for PDF — never includes soluzione, correctAnswer or answers. */
 export type LoadedQuestion = {
@@ -18,26 +19,6 @@ export type LoadQuestionsResult =
   | { ok: false; error: string };
 
 const POOL_READ_CONCURRENCY = 4;
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  mapper: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  let cursor = 0;
-
-  async function worker() {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      results[index] = await mapper(items[index]!);
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
-  return results;
-}
 
 /**
  * Loads the question text and options for each selected ref.

@@ -154,7 +154,7 @@ Nessun finding P0 identificato.
 
 ### P1 — costo o blocco prestazionale importante
 
-**PERF-04 — `savePool` scrive una domanda alla volta in sequenza (N+1 scritture non batched)**
+**PERF-04 — `savePool` scrive una domanda alla volta in sequenza (N+1 scritture non batched) — ✅ RISOLTO da PERF-SEC-01B-2**
 - Evidenza: `apps/web/src/features/repository/pools/poolEditorService.ts:190-196` — `for (const q of pool.questions) { await setDoc(...) }`.
 - Impatto: per un pool con molte domande (decine-centinaia), ogni salvataggio del pool costa un round-trip di rete sequenziale per domanda — tempo di salvataggio proporzionale al numero di domande, non costante. Anche il costo in operazioni Firestore è 1 write per domanda (non evitabile per definizione, essendo N documenti distinti), ma la sequenzialità aggiunge latenza percepita.
 - Scenario che lo attiva: editor pool su una lezione con molte domande (es. 50+), ogni salvataggio del docente.
@@ -163,6 +163,7 @@ Nessun finding P0 identificato.
 - Rischio della modifica: basso — pattern già usato altrove nello stesso file (`deleteDocRefsInBatches`), stessa collezione, stesso owner.
 - File coinvolti: `poolEditorService.ts`.
 - Verifica necessaria: test service mirato che verifichi lo stesso risultato finale (stessi documenti scritti) con un batch invece di N `setDoc`.
+- **Stato**: risolto in PERF-SEC-01B-2 — `savePool` ora prepara deterministicamente tutte le mutazioni (upsert domande, delete stale, update finale del documento lezione) e le committa con `writeBatch` in chunk da massimo 400 mutazioni, sequenziali. Il numero di documenti scritti è invariato (una write per domanda, essendo documenti distinti); a diminuire sono i round-trip di rete: da N+2 a `ceil((N + stale + 1) / 400)`. Rischio residuo documentato: Firestore garantisce atomicità solo entro un singolo chunk, non tra chunk diversi — vedi `commitOpsInChunks` in `poolEditorService.ts`. Test service aggiornati in `poolEditorService.test.ts`, incluso un caso con 450 domande che verifica il chunking a 400.
 
 **PERF-05 — Incoerenza atomicità tra funzioni gemelle in `verificationsService.ts` (promosso a P1 — correttezza, non solo velocità) — ✅ RISOLTO da PERF-SEC-01B-1**
 - Evidenza: `setVerificationVisibility` (righe ~292-321) e `closeVerification` (righe ~438-466) usano 2 `setDoc` sequenziali non atomici (parent + proiezione mirror), mentre `setVerificationOnlineEnabled` (righe ~342-376) e `setVerificationStudentPdfEnabled` (righe ~399-429) usano correttamente un `writeBatch` atomico per lo stesso tipo di doppia scrittura.
@@ -243,7 +244,7 @@ Nessun finding P0 identificato.
 - File coinvolti: `studentsService.ts` e il chiamante che usa entrambe le funzioni.
 - Verifica necessaria: test service/vista mirato.
 
-**PERF-09 — `loadSelectedQuestionsWithSolutions` legge i pool in sequenza, a differenza della sua gemella `loadSelectedQuestions` (concorrenza 4)**
+**PERF-09 — `loadSelectedQuestionsWithSolutions` legge i pool in sequenza, a differenza della sua gemella `loadSelectedQuestions` (concorrenza 4) — ✅ RISOLTO da PERF-SEC-01B-2**
 - Evidenza: `loadSelectedQuestionsWithSolutions.ts:52-85` (`for...await getBytes`) vs `loadSelectedQuestions.ts:20-40,67-91` (pool di concorrenza 4).
 - Impatto: solo latenza (tempo di generazione del PDF soluzioni per il docente), nessun costo economico aggiuntivo (stesso numero di letture Storage, solo sequenziali invece che concorrenti). Percorso a basso traffico (solo docente, solo su richiesta esplicita).
 - Scenario che lo attiva: PDF soluzioni per una verifica le cui domande provengono da molti file pool distinti.
@@ -252,6 +253,7 @@ Nessun finding P0 identificato.
 - Rischio della modifica: basso — stesso pattern già collaudato nel file gemello.
 - File coinvolti: `loadSelectedQuestionsWithSolutions.ts`.
 - Verifica necessaria: test mirato esistente su questa funzione, confermare stesso risultato con concorrenza.
+- **Stato**: risolto in PERF-SEC-01B-2 — la funzione `mapWithConcurrency` (concorrenza 4) è stata estratta da `loadSelectedQuestions.ts` in un piccolo modulo condiviso (`mapWithConcurrency.ts`) e riusata da entrambi i loader. Il numero di letture Storage è invariato (un `getBytes` per pool distinto, deduplicato come prima); a diminuire è il tempo di attesa complessivo quando le domande coprono più pool. Test aggiunti per l'helper condiviso e per la concorrenza/deduplica/gestione errori di `loadSelectedQuestionsWithSolutions`.
 
 **PERF-10 — Nessun code-splitting per ruolo/vista sul bundle principale**
 - Evidenza: bundle unico da 1.19 MB (§3.1), nessun `React.lazy` trovato nel codice.
