@@ -472,19 +472,23 @@ describe('activateVerification', () => {
 // ─── setVerificationVisibility ──────────────────────────────────────────────
 
 describe('setVerificationVisibility', () => {
-  it('updates only visibility and updatedAt on an active verification', async () => {
+  it('atomically batches parent visibility/updatedAt + projection mirror + audit', async () => {
     const activeDoc: Partial<VerificationDoc> = { status: 'active', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => activeDoc });
 
     await setVerificationVisibility('ver-id', 'public', OWNER_UID, fakeDb);
 
-    expect(mockSetDoc).toHaveBeenCalledTimes(3); // parent update + projection mirror + audit
-    const [, updateData, options] = mockSetDoc.mock.calls[0];
+    expect(mockWriteBatch).toHaveBeenCalledWith(fakeDb);
+    expect(mockBatchSet).toHaveBeenCalledTimes(3); // parent + projection + audit, exactly
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+    expect(mockSetDoc).not.toHaveBeenCalled(); // no sequential setDoc anywhere
+
+    const [, updateData, options] = mockBatchSet.mock.calls[0];
     expect(updateData.visibility).toBe('public');
     expect(Object.keys(updateData).sort()).toEqual(['updatedAt', 'visibility']);
     expect(options).toEqual({ merge: true });
 
-    const [, auditData] = mockSetDoc.mock.calls[2];
+    const [, auditData] = mockBatchSet.mock.calls[2];
     expect(auditData.action).toBe('verification.visibilityChanged');
     expect(auditData.actorUid).toBe(OWNER_UID);
   });
@@ -495,27 +499,32 @@ describe('setVerificationVisibility', () => {
 
     await setVerificationVisibility('ver-id', 'public', OWNER_UID, fakeDb);
 
-    const [, projectionData, projectionOptions] = mockSetDoc.mock.calls[1];
+    const [, projectionData, projectionOptions] = mockBatchSet.mock.calls[1];
     expect(projectionData).toEqual({ visibility: 'public' });
     expect(projectionOptions).toEqual({ merge: true });
   });
 
-  it('throws when the verification is a draft', async () => {
+  it('throws when the verification is a draft, without opening a batch or committing', async () => {
     const draftDoc: Partial<VerificationDoc> = { status: 'draft', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => draftDoc });
 
     await expect(setVerificationVisibility('ver-id', 'public', OWNER_UID, fakeDb)).rejects.toThrow(
       'Visibilità modificabile solo su una verifica attiva',
     );
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+    expect(mockBatchSet).not.toHaveBeenCalled();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
   });
 
-  it('throws when the verification is closed', async () => {
+  it('throws when the verification is closed, without opening a batch or committing', async () => {
     const closedDoc: Partial<VerificationDoc> = { status: 'closed', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => closedDoc });
 
     await expect(setVerificationVisibility('ver-id', 'hidden', OWNER_UID, fakeDb)).rejects.toThrow(
       'Visibilità modificabile solo su una verifica attiva',
     );
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
   });
 });
 
@@ -677,18 +686,22 @@ describe('setVerificationStudentPdfEnabled', () => {
 // ─── closeVerification ────────────────────────────────────────────────────────
 
 describe('closeVerification', () => {
-  it('sets status=closed when active', async () => {
+  it('atomically batches parent status=closed/closedAt/updatedAt + projection hidden + audit', async () => {
     const activeDoc: Partial<VerificationDoc> = { status: 'active', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => activeDoc });
 
     await closeVerification('ver-id', OWNER_UID, fakeDb);
 
-    expect(mockSetDoc).toHaveBeenCalledTimes(3); // parent update + projection mirror + audit
-    const [, closedData] = mockSetDoc.mock.calls[0];
+    expect(mockWriteBatch).toHaveBeenCalledWith(fakeDb);
+    expect(mockBatchSet).toHaveBeenCalledTimes(3); // parent + projection + audit, exactly
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+    expect(mockSetDoc).not.toHaveBeenCalled(); // no sequential setDoc anywhere
+
+    const [, closedData] = mockBatchSet.mock.calls[0];
     expect(closedData.status).toBe('closed');
     expect(closedData.closedAt).toBeDefined();
 
-    const [, auditData] = mockSetDoc.mock.calls[2];
+    const [, auditData] = mockBatchSet.mock.calls[2];
     expect(auditData.action).toBe('verification.closed');
   });
 
@@ -698,18 +711,41 @@ describe('closeVerification', () => {
 
     await closeVerification('ver-id', OWNER_UID, fakeDb);
 
-    const [, projectionData, projectionOptions] = mockSetDoc.mock.calls[1];
+    const [, projectionData, projectionOptions] = mockBatchSet.mock.calls[1];
     expect(projectionData).toEqual({ visibility: 'hidden' });
     expect(projectionOptions).toEqual({ merge: true });
   });
 
-  it('throws if not active', async () => {
+  it('throws when the document does not exist, without opening a batch or committing', async () => {
+    mockGetDoc.mockResolvedValue({ data: () => undefined });
+
+    await expect(closeVerification('ver-id', OWNER_UID, fakeDb)).rejects.toThrow(
+      'Verifica non trovata',
+    );
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+  });
+
+  it('throws when draft, without opening a batch or committing', async () => {
     const draftDoc: Partial<VerificationDoc> = { status: 'draft', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => draftDoc });
 
     await expect(closeVerification('ver-id', OWNER_UID, fakeDb)).rejects.toThrow(
       'Verifica non chiudibile: non è attiva',
     );
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+  });
+
+  it('throws when already closed, without opening a batch or committing', async () => {
+    const closedDoc: Partial<VerificationDoc> = { status: 'closed', config: VALID_CONFIG };
+    mockGetDoc.mockResolvedValue({ data: () => closedDoc });
+
+    await expect(closeVerification('ver-id', OWNER_UID, fakeDb)).rejects.toThrow(
+      'Verifica non chiudibile: non è attiva',
+    );
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
   });
 });
 

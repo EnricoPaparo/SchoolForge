@@ -164,7 +164,7 @@ Nessun finding P0 identificato.
 - File coinvolti: `poolEditorService.ts`.
 - Verifica necessaria: test service mirato che verifichi lo stesso risultato finale (stessi documenti scritti) con un batch invece di N `setDoc`.
 
-**PERF-05 — Incoerenza atomicità tra funzioni gemelle in `verificationsService.ts` (promosso a P1 — correttezza, non solo velocità)**
+**PERF-05 — Incoerenza atomicità tra funzioni gemelle in `verificationsService.ts` (promosso a P1 — correttezza, non solo velocità) — ✅ RISOLTO da PERF-SEC-01B-1**
 - Evidenza: `setVerificationVisibility` (righe ~292-321) e `closeVerification` (righe ~438-466) usano 2 `setDoc` sequenziali non atomici (parent + proiezione mirror), mentre `setVerificationOnlineEnabled` (righe ~342-376) e `setVerificationStudentPdfEnabled` (righe ~399-429) usano correttamente un `writeBatch` atomico per lo stesso tipo di doppia scrittura.
 - Impatto: un crash o errore di rete tra le due `setDoc` sequenziali lascia `verifications/{id}` e `publishedProjection/data` temporaneamente fuori sincrono (es. verifica marcata `closed` ma la proiezione pubblica ancora visibile, o viceversa). Questa è una finestra di incoerenza **reale e confermata dal codice** (non solo teorica): la sequenza `await setDoc(A); await setDoc(B);` non ha alcuna garanzia atomica tra i due `setDoc`, e un fallimento di rete tra i due lascia lo stato osservabile inconsistente per un tempo indefinito (fino alla prossima mutazione riuscita su quella verifica). Riguarda la correttezza dei dati esposti allo studente (proiezione pubblica), non solo la latenza — da qui la promozione a P1 rispetto alla classificazione P2 iniziale.
 - Scenario che lo attiva: qualunque chiamata a `setVerificationVisibility`/`closeVerification` durante un errore di rete transitorio tra le due `setDoc`.
@@ -173,6 +173,7 @@ Nessun finding P0 identificato.
 - Rischio della modifica: basso — pattern già collaudato nello stesso file per lo stesso tipo di scrittura doppia.
 - File coinvolti: `verificationsService.ts`.
 - Verifica necessaria: test service mirato che verifichi l'atomicità (es. simulando un fallimento a metà, se il mock lo consente) o quantomeno che il risultato finale sia identico.
+- **Stato**: risolto in PERF-SEC-01B-1 — `setVerificationVisibility` e `closeVerification` ora usano un singolo `writeBatch` (parent + proiezione + audit), stesso pattern già usato da `setVerificationOnlineEnabled`/`setVerificationStudentPdfEnabled`. Test service aggiornati in `verificationsService.test.ts`.
 
 ### P2 — ottimizzazione utile e misurabile
 
