@@ -765,48 +765,54 @@ export function LessonsView() {
       <aside
         className={`${styles.sidebar}${sidebarCollapsed ? ` ${styles.sidebarCollapsed}` : ''}`}
       >
-        <div className={styles.sidebarHeader}>
-          {!sidebarCollapsed && <h2 className={styles.sidebarTitle}>Lezioni</h2>}
-          <div className={styles.sidebarHeaderActions}>
-            {!sidebarCollapsed && (
-              <>
-                {editMode && (
-                  <button
-                    type="button"
-                    className={`${styles.iconBtn}${reorderMode ? ` ${styles.iconBtnActive}` : ''}`}
-                    aria-pressed={reorderMode}
-                    aria-label={reorderMode ? 'Termina riordino' : 'Attiva riordino'}
-                    title={reorderMode ? 'Termina riordino' : 'Riordina UDA e lezioni'}
-                    onClick={() => setReorderMode((prev) => !prev)}
-                  >
-                    <IconArrowUpDown />
-                  </button>
-                )}
+        {sidebarCollapsed ? (
+          <button
+            type="button"
+            className={styles.iconBtn}
+            aria-label="Espandi sidebar"
+            title="Espandi sidebar"
+            onClick={() => setSidebarCollapsed(false)}
+          >
+            <IconChevronRight />
+          </button>
+        ) : (
+          <div className={styles.sidebarHeader}>
+            <h2 className={styles.sidebarTitle}>Lezioni</h2>
+            <div className={styles.sidebarHeaderActions}>
+              {editMode && (
                 <button
                   type="button"
-                  className={`${styles.iconBtn}${editMode ? ` ${styles.iconBtnActive}` : ''}`}
-                  aria-pressed={editMode}
-                  aria-label={
-                    editMode ? 'Disattiva modifica struttura' : 'Attiva modifica struttura'
-                  }
-                  title={editMode ? 'Disattiva modifica struttura' : 'Attiva modifica struttura'}
-                  onClick={handleToggleEditMode}
+                  className={`${styles.iconBtn}${reorderMode ? ` ${styles.iconBtnActive}` : ''}`}
+                  aria-pressed={reorderMode}
+                  aria-label={reorderMode ? 'Termina riordino' : 'Attiva riordino'}
+                  title={reorderMode ? 'Termina riordino' : 'Riordina UDA e lezioni'}
+                  onClick={() => setReorderMode((prev) => !prev)}
                 >
-                  <IconPencil />
+                  <IconArrowUpDown />
                 </button>
-              </>
-            )}
-            <button
-              type="button"
-              className={styles.iconBtn}
-              aria-label={sidebarCollapsed ? 'Espandi sidebar' : 'Comprimi sidebar'}
-              title={sidebarCollapsed ? 'Espandi sidebar' : 'Comprimi sidebar'}
-              onClick={() => setSidebarCollapsed((v) => !v)}
-            >
-              {sidebarCollapsed ? <IconChevronRight /> : <IconChevronLeft />}
-            </button>
+              )}
+              <button
+                type="button"
+                className={`${styles.iconBtn}${editMode ? ` ${styles.iconBtnActive}` : ''}`}
+                aria-pressed={editMode}
+                aria-label={editMode ? 'Disattiva modifica struttura' : 'Attiva modifica struttura'}
+                title={editMode ? 'Disattiva modifica struttura' : 'Attiva modifica struttura'}
+                onClick={handleToggleEditMode}
+              >
+                <IconPencil />
+              </button>
+              <button
+                type="button"
+                className={styles.iconBtn}
+                aria-label="Comprimi sidebar"
+                title="Comprimi sidebar"
+                onClick={() => setSidebarCollapsed(true)}
+              >
+                <IconChevronLeft />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {!sidebarCollapsed && (
           <ul className={styles.courseList}>

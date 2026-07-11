@@ -275,7 +275,7 @@ function QuestionCard({
           <div className={styles.deleteConfirmActions}>
             <button
               type="button"
-              className={`${styles.btn} ${styles.btnDanger} ${styles.btnSm}`}
+              className={`${styles.btn} ${styles.btnSm} btn-danger`}
               onClick={onDeleteConfirm}
               disabled={deleting}
             >
@@ -562,7 +562,7 @@ function QuestionEditorForm({
         <div className={styles.formActions}>
           <button
             type="button"
-            className={`${styles.btn} ${styles.btnPrimary}`}
+            className={`${styles.btn} btn-success`}
             onClick={() => onSave(draft)}
             disabled={saving}
           >
@@ -1149,7 +1149,7 @@ export function DomandeView() {
                   <div className={styles.deleteConfirmActions}>
                     <button
                       type="button"
-                      className={`${styles.btn} ${styles.btnDanger}`}
+                      className={`${styles.btn} btn-danger`}
                       onClick={() => void handleDelete()}
                       disabled={deleting}
                     >
@@ -1195,7 +1195,7 @@ export function DomandeView() {
                   <p>Nessun pool di domande per questa lezione.</p>
                   <button
                     type="button"
-                    className={`${styles.btn} ${styles.btnPrimary}`}
+                    className={`${styles.btn} btn-success`}
                     onClick={openEditor}
                   >
                     Crea pool
@@ -1217,7 +1217,7 @@ export function DomandeView() {
                   </ul>
                   <button
                     type="button"
-                    className={`${styles.btn} ${styles.btnPrimary}`}
+                    className={`${styles.btn} btn-primary`}
                     onClick={openEditor}
                   >
                     Modifica YAML
@@ -1236,7 +1236,7 @@ export function DomandeView() {
                       {!anyQuestionEditorOpen && (
                         <button
                           type="button"
-                          className={`${styles.btn} ${styles.btnPrimary} ${styles.btnSm}`}
+                          className={`${styles.btn} ${styles.btnSm} btn-primary`}
                           onClick={() => {
                             setEditingQuestionId('new');
                             setQuestionSaveError(null);
@@ -1347,7 +1347,7 @@ export function DomandeView() {
                   <div className={styles.yamlActions}>
                     <button
                       type="button"
-                      className={`${styles.btn} ${styles.btnPrimary}`}
+                      className={`${styles.btn} btn-success`}
                       onClick={() => void handleSave()}
                       disabled={saving}
                     >
