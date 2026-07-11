@@ -27,5 +27,11 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "publicLessons",
+      "fieldPath": "content",
+      "indexes": []
+    }
+  ]
 }

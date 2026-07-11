@@ -189,20 +189,37 @@ interface PublicLesson {
   path: string;
   filename: string;
   order?: number;              // RE: ordinamento stabile dentro la UDA; assente sui dati legacy
-  contentPath: string;          // percorso Storage del solo file lezione .md, mai del pool
+  contentPath: string;          // percorso Storage del file lezione .md canonico (letto solo dal docente/dal backfill owner-only), mai del pool
   createdAt: Timestamp;
   // Parsati dal front matter YAML opzionale della lezione (titolo/sottotitolo/
   // difficolta/concetti_chiave/obiettivi — tutti opzionali).
   // tutti questi campi sono persistiti nella proiezione per mostrare
-  // elenco/preview senza dover leggere il contenuto di ogni lezione;
-  // il corpo Markdown resta invece letto dal file .md quando la lezione
-  // è aperta, insieme al corpo Markdown già "pulito" dal blocco front matter.
+  // elenco/preview senza dover leggere il contenuto di ogni lezione.
   // Assenti sulle lezioni importate prima di questo campo: letti come null/[].
   titolo: string | null;
   sottotitolo?: string | null;
   difficolta: string | null;
   concettiChiave?: string[];
   obiettivi?: string[];
+  // M3F-08: corpo Markdown della lezione, già "pulito" dal blocco front
+  // matter — SOLO il corpo destinato allo studente, mai pool/soluzioni/
+  // questionIndex/poolPath/metadati tecnici. Fonte unica di lettura per il
+  // client studente: nessuna chiamata Storage, nessun fallback su
+  // `contentPath` (storage.rules nega comunque quella lettura a un non-owner
+  // — vedi sicurezza.md §3.2a). Limite conservativo: 700.000 byte UTF-8
+  // (`MAX_LESSON_CONTENT_BYTES` in `lessonContentSize.ts`), ben sotto il
+  // limite Firestore di 1 MiB per documento, per lasciare margine agli altri
+  // campi della proiezione; ogni write path valida la dimensione prima di
+  // scrivere e rifiuta con un errore esplicito se superata. Escluso dagli
+  // indici a campo singolo (`firestore.indexes.json` fieldOverrides) — non è
+  // mai oggetto di query, solo di lettura diretta per id. Assente sui
+  // documenti scritti prima di M3F-08 ("legacy"): normalizzato a `null` da
+  // `normalizeLessonContent()`, mai trattato come corpo vuoto valido — il
+  // client mostra "Contenuto temporaneamente non disponibile" senza mai
+  // tentare Storage. Storage resta la sorgente canonica (letta dal client
+  // docente e dal backfill owner-only) ed esportabile via ZIP; `content` è
+  // sempre una proiezione derivata, mai la fonte di verità.
+  content?: string;
 }
 
 // questionIndex/{questionId} — leggibile SOLO dall'owner, mai dallo studente
@@ -446,16 +463,16 @@ Implementato in `apps/web/src/features/repository/editor/repositoryEditorService
 
 | Operazione | Scrittura Firestore | Storage |
 |---|---|---|
-| Crea UDA / crea lezione | `udas`/`lessons` (+ `publicLessons` per la lezione) con `order` = massimo esistente + 1; `filename` tecnico generato da slug del titolo, mai da un contatore riusabile | Scrivi il nuovo file `.md` con front matter minimo valido |
-| Modifica metadata UDA/lezione | Aggiorna solo i campi didattici (mai `order`/`filename`/`storageRef`); sincronizza `publicLessons` se la proiezione esiste | Riscrive il front matter del file esistente, corpo invariato |
-| Modifica corpo Markdown lezione | Ricalcola e sincronizza i metadata Firestore/`publicLessons` dal front matter ricomposto | Riscrive l'intero file con lo stesso front matter e il nuovo corpo |
+| Crea UDA / crea lezione | `udas`/`lessons` (+ `publicLessons` per la lezione, `content` = corpo fornito dal docente, validato con `assertLessonContentSize`) con `order` = massimo esistente + 1; `filename` tecnico generato da slug del titolo, mai da un contatore riusabile | Scrivi il nuovo file `.md` con front matter minimo valido |
+| Modifica metadata UDA/lezione | Aggiorna solo i campi didattici (mai `order`/`filename`/`storageRef`/`content`); sincronizza `publicLessons` se la proiezione esiste — non tocca `content` | Riscrive il front matter del file esistente, corpo invariato |
+| Modifica corpo Markdown lezione | Ricalcola e sincronizza i metadata Firestore/`publicLessons` dal front matter ricomposto; sincronizza anche `publicLessons.content` con il nuovo corpo (validato con `assertLessonContentSize` prima della scrittura Storage) | Riscrive l'intero file con lo stesso front matter e il nuovo corpo |
 | Riordina UDA/lezione | Scambia `order` con il vicino in un unico `writeBatch` atomico (mai un `order` arbitrario, solo swap adiacente) | Nessuna — `dir`/`filename`/percorsi Storage non vengono mai rinominati per riordinare |
 | Elimina UDA/lezione | Bloccata (nessuna scrittura) se `findRepositoryDeleteBlockers` trova una verifica collegata (vedi §5.2 di `sicurezza.md`); altrimenti elimina `udas`/`lessons`/`questionIndex`/`publicLessons` collegati | Elimina il/i file `.md` e l'eventuale pool; tollera un file già assente |
 | Export ZIP | Legge `listUdas`/`listLessons` (già ordinati per `order`) e li scrive nell'archivio in un unico passaggio sequenziale, cosicché l'ordine fisico dello ZIP coincida con `order` — un reimport deriva l'`order` proprio da quella posizione fisica (vedi `buildImportPayload.ts`) | Solo lettura (`getBytes`); nessuna scrittura |
 
 Riordino ed eliminazione non toccano mai Storage per il riordino, e l'eliminazione non modifica mai automaticamente le verifiche esistenti — il docente deve prima rimuoverle o modificarle.
 
-L'import scrive, nella stessa transazione di commit, sia il documento tecnico `lessons/{id}` sia la proiezione pubblica `publicLessons/{id}` (M3-lite, §3.5): entrambi puntano allo stesso `activeImportId` e diventano visibili insieme.
+L'import scrive, nella stessa transazione di commit, sia il documento tecnico `lessons/{id}` sia la proiezione pubblica `publicLessons/{id}` (M3-lite, §3.5), quest'ultima già con `content` (corpo Markdown estratto da `parseLessonMetadata`, validato con `assertLessonContentSize` — M3F-08): entrambi puntano allo stesso `activeImportId` e diventano visibili insieme.
 
 ### 3.2 Verifiche
 
@@ -489,7 +506,7 @@ All'apertura del link, il Portale calcola `SHA-256(verificationToken)` con Web C
 | Operazione | Lettura Firestore/Storage |
 |---|---|
 | Risoluzione ruolo | `get settings/ownerPublic`; confronto client-side `uid === ownerUid` per instradare TeacherShell/StudentShell (non sostituisce le Security Rules; risolve solo il ruolo, non l'autorizzazione — vedi §3.4a) |
-| Lezioni | `get students/{uid}` per il proprio `classId` (assente/null → nessuna lezione mostrata); query `programs` con `where('classIds', 'array-contains', classId)`; per ciascun programma trovato, query `publicLessons` con `where('programId', '==', id)`; lettura del file `.md` da Cloud Storage tramite `contentPath` (Storage Rules: mai per `.pool.md`; lettura consentita a qualunque utente autenticato non-owner, senza rilettura di Firestore — vedi §6). Filtro per classe implementato in M3L-C **solo lato Firestore** (`isClassmateOf()` su `programs`/`publicLessons`, sia lato query client sia lato Security Rules): è l'unico gate reale, perché senza un `contentPath` valido ottenuto da questa catena il client non ha nulla da chiedere a Storage. |
+| Lezioni | `get students/{uid}` per il proprio `classId` (assente/null → nessuna lezione mostrata); query `programs` con `where('classIds', 'array-contains', classId)`; per ciascun programma trovato, query `publicLessons` con `where('programId', '==', id)`. Il corpo Markdown è letto **esclusivamente** da `publicLessons.content` (M3F-08) — nessuna chiamata a Cloud Storage dal client studente, nessun fallback su `contentPath`. Un documento senza `content` valido (`normalizeLessonContent()` → `null`, proiezione legacy) mostra "Contenuto temporaneamente non disponibile", senza retry. Filtro per classe implementato in M3L-C **solo lato Firestore** (`isClassmateOf()` su `programs`/`publicLessons`, sia lato query client sia lato Security Rules): è l'unico gate, e dal M3F-08 è anche l'unica strada per ottenere il corpo lezione — Storage nega comunque la lettura del Markdown a chiunque non sia l'owner, `contentPath` noto o meno (vedi §6). |
 | Verifiche | `get students/{uid}` per il proprio `classId` (assente/null → nessuna verifica mostrata); un'unica query `collectionGroup('publishedProjection')` filtrata su `where('classId','==',classId)` **e** `where('visibility','==','public')` (entrambi i filtri sono obbligatori — vedi §6); il documento padre `verifications/{id}` non è mai letto (contiene `config.questionRefs`/`teacherSnapshot`). Filtro per classe implementato in M3L-D. |
 | Download PDF studente | Nessuna lettura aggiuntiva: usa i dati già ottenuti dalla query precedente; genera il PDF nel browser con `downloadStudentPdfFromProjection` (stesso layout di disegno di `downloadStudentPdf`, mai da Storage/pool) |
 
@@ -664,7 +681,7 @@ Le Security Rules Firestore devono garantire, per la baseline corrente (M1+M2+M3
 
 Un Google-autenticato non approvato (nessun documento `students/{uid}`, oppure `pending`/`blocked`, oppure `studentPortalEnabled == false`) non ha alcuna riga con permesso diverso da "—" nella colonna dedicata: è trattato come un non-owner qualunque, con l'unica eccezione di `settings/ownerPublic` (necessaria solo per il routing UI, non per l'autorizzazione).
 
-**Storage Rules — modello attuale (dopo il deploy DEV)**: `storage.rules` non chiama mai `firestore.get()`/`firestore.exists()`. Il gate di classe/approvazione è **solo su Firestore** (discovery `programs`→`publicLessons`, sopra); Storage concede la lettura di un file `repository/{ownerUid}/imports/{importId}/{udaDir}/{fileName}` a qualunque utente autenticato non-owner quando `fileName` termina in `.md` e non in `.pool.md` — nessun controllo su classe, approvazione o `customMetadata`. Una prima versione (M3L-C) mirrava il filtro per classe anche su Storage tramite `customMetadata.programId` e letture cross-service; è stata rimossa perché le Storage Rules in produzione si sono rivelate più severe dell'emulatore su queste letture, causando `403` non riproducibili in locale. `importRepository` continua a scrivere `customMetadata: { kind, programId, ownerUid, importId }` all'upload, ma nessuna Security Rule lo legge più: resta solo per eventuale diagnostica. Limite residuo accettato: un `contentPath` esatto, se conosciuto o indovinato, è leggibile da qualunque utente autenticato anche senza superare la discovery Firestore — vedi `sicurezza.md` §3.2a per il dettaglio e la motivazione del compromesso.
+**Storage Rules — modello attuale (M3F-08)**: `storage.rules` non chiama mai `firestore.get()`/`firestore.exists()`, e non concede più alcuna lettura sotto `repository/{ownerUid}/**` a un non-owner — Markdown lezione e pool sono entrambi owner-only, senza eccezioni per estensione o `customMetadata`. Il gate di classe/approvazione resta **solo su Firestore** (discovery `programs`→`publicLessons`, sopra), ma dal M3F-08 è anche l'unica strada per ottenere il corpo lezione, perché il client studente non legge mai Storage. Fino a M3F-07 inclusa, un blocco aggiuntivo concedeva la lettura di un file `.md` (non `.pool.md`) a qualunque utente autenticato non-owner — il compromesso storico security-vs-reliability descritto sotto — rimosso da M3F-08. `importRepository` continua a scrivere `customMetadata: { kind, programId, ownerUid, importId }` all'upload, ma nessuna Security Rule lo legge: resta solo per eventuale diagnostica. **Limite residuo chiuso**: un `contentPath` esatto, anche se conosciuto o indovinato, non è più leggibile da nessuno tranne l'owner — vedi `sicurezza.md` §3.2a per il dettaglio e lo storico del compromesso.
 
 **Verifiche studente (M3L-D)**: lo studente scopre le verifiche della propria classe con un'unica query `collectionGroup('publishedProjection')` — il documento padre `verifications/{id}` non è mai letto. `classId` e `visibility` sono duplicati sulla proiezione apposta per questo: Firestore valida una `list`/`collectionGroup` solo se ogni campo su cui la regola autorizza è anche un campo su cui la query filtra (un `get()` verso il padre, necessario per leggere `status`, non è validabile in questo contesto perché il segmento di percorso del padre non è vincolato dalla query) — per questo `visibility` sostituisce anche `status` nella proiezione, mantenuta sincronizzata da `setVerificationVisibility`/`closeVerification`. Il blocco Security Rules usa inoltre un prefisso ricorsivo (`{path=**}/publishedProjection/{docId}`, non `verifications/{verificationId}/publishedProjection/{docId}`): un match a profondità fissa non viene registrato da Firestore come idoneo per una `collectionGroup()` `list`, anche quando la condizione è banale (confermato empiricamente in questo progetto). `firestore.indexes.json` definisce l'indice `COLLECTION_GROUP` necessario su `classId`+`visibility`.
 

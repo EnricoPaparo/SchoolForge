@@ -40,6 +40,13 @@ import {
 import { fetchLessonContent } from './lessonContent.js';
 import { downloadLessonPdf } from './lessonPdf.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { normalizeLessonContent } from '../repository/programs/lessonContentSize.js';
+import {
+  backfillPublicLessonsContent,
+  type BackfillSummary,
+} from '../repository/programs/publicLessonsBackfillService.js';
+import type { PublicLessonDoc } from '../../types/firestore.js';
 import styles from './LessonsView.module.css';
 
 function linesToArray(value: string): string[] {
@@ -184,6 +191,52 @@ export function LessonsView() {
     lessonId: string;
     blockers: RepositoryDeleteBlocker[];
   } | null>(null);
+
+  // ── Legacy publicLessons.content backfill (M3F-08) ───────────────
+  // Discreet, owner-only: a one-time-per-mount Firestore-only count (no
+  // Storage reads) decides whether to show the trigger at all — it stays
+  // hidden once every publicLessons doc for this owner already carries a
+  // valid `content`. The actual migration (Storage reads included) only
+  // runs on explicit teacher confirmation, never automatically.
+  const [legacyLessonCount, setLegacyLessonCount] = useState<number | null>(null);
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillSummary, setBackfillSummary] = useState<BackfillSummary | null>(null);
+  const [backfillError, setBackfillError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!ownerUid) return;
+    void checkLegacyProjections(ownerUid);
+  }, [ownerUid]);
+
+  async function checkLegacyProjections(uid: string) {
+    try {
+      const snap = await getDocs(
+        query(collection(db, 'publicLessons'), where('ownerUid', '==', uid)),
+      );
+      const legacy = snap.docs.filter((d) => {
+        const data = d.data() as Partial<PublicLessonDoc>;
+        return normalizeLessonContent(data.content) === null;
+      });
+      setLegacyLessonCount(legacy.length);
+    } catch {
+      setLegacyLessonCount(null);
+    }
+  }
+
+  async function handleRunBackfill() {
+    setBackfillRunning(true);
+    setBackfillError(null);
+    setBackfillSummary(null);
+    try {
+      const summary = await backfillPublicLessonsContent(ownerUid, db, storage);
+      setBackfillSummary(summary);
+      setLegacyLessonCount(summary.skipped + summary.failed.length > 0 ? summary.failed.length : 0);
+    } catch {
+      setBackfillError('Impossibile eseguire il backfill delle proiezioni.');
+    } finally {
+      setBackfillRunning(false);
+    }
+  }
 
   useEffect(() => {
     void loadPrograms();
@@ -811,6 +864,30 @@ export function LessonsView() {
                 <IconChevronLeft />
               </button>
             </div>
+          </div>
+        )}
+
+        {!sidebarCollapsed && legacyLessonCount !== null && legacyLessonCount > 0 && (
+          <div role="status" style={{ padding: '0.5rem', fontSize: '0.85em' }}>
+            <p>{legacyLessonCount} proiezione/i lezione senza contenuto sincronizzato (M3F-08).</p>
+            <button
+              type="button"
+              disabled={backfillRunning}
+              onClick={() => void handleRunBackfill()}
+            >
+              {backfillRunning ? 'Sincronizzazione in corso…' : 'Sincronizza proiezioni legacy'}
+            </button>
+            {backfillError && (
+              <p role="alert" className="text-error">
+                {backfillError}
+              </p>
+            )}
+            {backfillSummary && (
+              <p>
+                Analizzate: {backfillSummary.analyzed} · Migrate: {backfillSummary.migrated} · Già
+                sincronizzate: {backfillSummary.skipped} · Fallite: {backfillSummary.failed.length}
+              </p>
+            )}
           </div>
         )}
 

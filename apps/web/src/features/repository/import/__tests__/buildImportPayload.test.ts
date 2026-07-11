@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateImport } from '../../validation/index.js';
 import { buildImportPayload, buildQuestionPreview } from '../buildImportPayload.js';
+import { MAX_LESSON_CONTENT_BYTES } from '../../programs/lessonContentSize.js';
 import type { RawFile } from '../../validation/types.js';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -653,6 +654,66 @@ describe('buildImportPayload — publicLessons (M3-lite student projection)', ()
       (p) => p.data.filename === 'lezione-002-https.md',
     );
     expect(publicLesson).toBeDefined();
+  });
+});
+
+describe('buildImportPayload — publicLessons.content (M3F-08)', () => {
+  it('sets content to the lesson body, matching parseLessonMetadata splitting', () => {
+    const files = buildAllFiles(LESSON_WITH_FRONT_MATTER);
+    const validation = validateImport('Informatica', files);
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    const publicLesson = payload.publicLessons.find(
+      (p) => p.data.path === LESSON_WITH_FRONT_MATTER.path,
+    );
+    expect(publicLesson?.data.content).toBe('Contenuto della lezione.');
+    expect(publicLesson?.data.content).not.toContain('titolo:');
+  });
+
+  it('does not include the pool content, even for a lesson with a valid pool', () => {
+    const files = buildAllFiles();
+    const validation = validateImport('Informatica', files);
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    const publicLesson = payload.publicLessons.find(
+      (p) => p.data.filename === 'lezione-001-http.md',
+    );
+    expect(publicLesson?.data.content).not.toContain('schoolforge-pool');
+  });
+
+  it('throws a clear error when a lesson body exceeds the size limit', () => {
+    const oversizedLesson: RawFile = {
+      path: 'uda-01-reti/lezione-005-oversize.md',
+      content: `# Troppo grande\n\n${'a'.repeat(MAX_LESSON_CONTENT_BYTES + 1)}`,
+    };
+    const files = buildAllFiles(oversizedLesson);
+    const validation = validateImport('Informatica', files);
+    expect(validation.valid).toBe(true);
+
+    expect(() =>
+      buildImportPayload({
+        validation,
+        programmaTitle: 'Informatica',
+        ownerUid: OWNER_UID,
+        programId: PROGRAM_ID,
+        importId: IMPORT_ID,
+        files,
+      }),
+    ).toThrow(/supera il limite/);
   });
 });
 

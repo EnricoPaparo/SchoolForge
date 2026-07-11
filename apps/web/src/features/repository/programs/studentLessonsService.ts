@@ -2,9 +2,18 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import type { PublicLessonDoc, ProgramDoc } from '../../../types/firestore.js';
 import { getOwnStudentDoc } from '../students/studentsService.js';
+import { normalizeLessonContent } from './lessonContentSize.js';
 
 export type StudentProgram = Pick<ProgramDoc, 'title' | 'classIds'> & { id: string };
-export type StudentLesson = { id: string } & PublicLessonDoc;
+/**
+ * `content` is normalized to `string | null` (never `undefined`): a legacy
+ * `publicLessons` doc written before M3F-08 has no `content` field, and the
+ * student UI must treat that as "projection missing" explicitly, not as an
+ * absent-but-optional field it might accidentally skip checking.
+ */
+export type StudentLesson = { id: string } & Omit<PublicLessonDoc, 'content'> & {
+    content: string | null;
+  };
 
 export type StudentLessonsResult =
   | { status: 'no-class' }
@@ -61,6 +70,7 @@ export async function loadStudentLessons(
             difficolta: raw.difficolta ?? null,
             concettiChiave: raw.concettiChiave ?? [],
             obiettivi: raw.obiettivi ?? [],
+            content: normalizeLessonContent(raw.content),
           } as StudentLesson;
         })
         .sort(

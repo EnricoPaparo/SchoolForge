@@ -1,4 +1,6 @@
 import { parsePool } from '@schoolforge/lesson-contract';
+import { parseLessonMetadata } from '../validation/lessonMetadata.js';
+import { assertLessonContentSize } from '../programs/lessonContentSize.js';
 import type { ImportValidationResult, RawFile } from '../validation/types.js';
 import type { ImportPayload } from './types.js';
 
@@ -123,10 +125,19 @@ export function buildImportPayload(params: {
         },
       });
 
-      // Public projection (M3-lite): only what's needed to display the
-      // lesson to a student. Never poolStatus/poolStorageRef/questionCount —
-      // those are teacher-only technical details. titolo/difficolta are
-      // didactic front matter, safe to expose like filename/path already are.
+      // Public projection (M3-lite, body M3F-08): only what's needed to
+      // display the lesson to a student. Never poolStatus/poolStorageRef/
+      // questionCount — those are teacher-only technical details.
+      // titolo/difficolta are didactic front matter, safe to expose like
+      // filename/path already are. `content` is the body only (front matter
+      // already split out into the fields above) — the exact same parse
+      // `parseLessonMetadata` performs everywhere else in this codebase, so
+      // the projection matches character-for-character what a body edit
+      // would later recompute.
+      const rawFileContent = filesMap.get(lesson.path) ?? '';
+      const { body: lessonBody } = parseLessonMetadata(rawFileContent);
+      assertLessonContentSize(lessonBody, lesson.filename);
+
       publicLessons.push({
         id: lessonId,
         data: {
@@ -144,6 +155,7 @@ export function buildImportPayload(params: {
           concettiChiave: lesson.metadata.concettiChiave,
           obiettivi: lesson.metadata.obiettivi,
           order: lessonIndex,
+          content: lessonBody,
         },
       });
     }

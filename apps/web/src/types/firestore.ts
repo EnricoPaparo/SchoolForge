@@ -157,16 +157,31 @@ export interface QuestionIndexEntry {
 }
 
 /**
- * Stored at publicLessons/{lessonId} (M3-lite) — read-only projection of a
- * lesson for the student portal. Written in the same commit transaction that
- * updates `activeImportId`, and re-created from scratch on every re-import
- * (stale entries from a previous import are deleted first), so a student
- * never sees a partial or superseded import.
+ * Stored at publicLessons/{lessonId} (M3-lite, extended M3F-08) — read-only
+ * projection of a lesson for the student portal. Written in the same commit
+ * transaction that updates `activeImportId`, and re-created from scratch on
+ * every re-import (stale entries from a previous import are deleted first),
+ * so a student never sees a partial or superseded import.
  *
  * Deliberately excludes everything technical or pool-related: no
  * poolStatus, poolStorageRef, questionCount, or questionIndex reference.
  * `contentPath` only ever points at the lesson's own `.md` file, never at a
- * `.pool.md` file.
+ * `.pool.md` file — it is kept only as a diagnostic/teacher-tooling
+ * reference now (see below), not as something the student client reads.
+ *
+ * `content` (M3F-08): the lesson body Markdown itself — the exact text
+ * rendered to the student, already split from front matter (see
+ * `parseLessonMetadata`), never the pool, soluzioni, questionIndex or any
+ * technical/private metadata. This is now the ONLY source the student
+ * client reads (`StudentLessonsView`/`studentLessonsService` never call
+ * Storage) — `storage.rules` (M3F-08) denies a student direct Storage read
+ * even with a known `contentPath`. Every write path that creates/updates a
+ * lesson body must keep this field in sync with what Storage stores at
+ * `contentPath` (see `lessonContentSize.ts` for the size ceiling and
+ * `publicLessonsBackfillService.ts` for migrating pre-M3F-08 documents).
+ * Absent on a legacy document not yet migrated — always read through
+ * `normalizeLessonContent()`, which treats a missing/non-string value as
+ * "projection unavailable", never as an empty-but-valid body.
  */
 export interface PublicLessonDoc {
   ownerUid: string;
@@ -189,6 +204,7 @@ export interface PublicLessonDoc {
   concettiChiave?: string[];
   obiettivi?: string[];
   order?: number;
+  content?: string;
 }
 
 // ─── M3-lite — Approved-student access model ─────────────────────────────────
