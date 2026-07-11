@@ -2,11 +2,14 @@ import {
   collection,
   deleteDoc,
   doc,
+  getCountFromServer,
   getDoc,
   getDocs,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import type { StudentDoc } from '../../../types/firestore.js';
@@ -24,10 +27,24 @@ export async function listStudents(ownerUid: string, db: Firestore): Promise<Stu
     .filter((item) => item.ownerUid === ownerUid);
 }
 
-/** Simple, non-realtime count used for the "Studenti" nav badge. */
-export async function countPendingStudents(ownerUid: string, db: Firestore): Promise<number> {
-  const items = await listStudents(ownerUid, db);
-  return items.filter((s) => s.status === 'pending').length;
+/**
+ * Simple, non-realtime count used for the "Studenti" nav badge. Uses a
+ * server-side count aggregation (`getCountFromServer`) filtered on
+ * `status == 'pending'` instead of loading every student document just to
+ * count them (PERF-08 / PERF-SEC-01B-3) — this is called unconditionally on
+ * every `TeacherShell` mount, independent of whether the teacher ever opens
+ * the Studenti section, so it previously cost one full collection read per
+ * app load regardless of use. No `ownerUid` filter: SchoolForge is
+ * single-owner per deployment, so the `students` collection already only
+ * ever contains that owner's own students (see `performance-security-audit.md`
+ * PERF-01/PERF-02 — adding a redundant `ownerUid` filter would not reduce
+ * what's read).
+ */
+export async function countPendingStudents(_ownerUid: string, db: Firestore): Promise<number> {
+  const snap = await getCountFromServer(
+    query(collection(db, 'students'), where('status', '==', 'pending')),
+  );
+  return snap.data().count;
 }
 
 /** Self-read of the caller's own students/{uid} document — used by RoleGate. */

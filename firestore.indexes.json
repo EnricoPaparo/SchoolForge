@@ -34,6 +34,23 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "onlineEnabled", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "verifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "config.programId", "order": "ASCENDING" },
+        { "fieldPath": "config.importId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "verifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "config.programId", "order": "ASCENDING" },
+        { "fieldPath": "config.importId", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

@@ -285,7 +285,12 @@ export async function deletePool(params: {
   db: Firestore;
   storage: FirebaseStorage;
 }): Promise<void> {
-  const { programId, importId, lessonId, ownerUid, db, storage } = params;
+  // ownerUid is part of the public params contract (kept for call-site
+  // compatibility) but is no longer needed locally now that the
+  // verifications guard query below no longer filters by it (PERF-SEC-01B-3
+  // — see comment above; SchoolForge is single-owner per deployment, so an
+  // ownerUid filter here would not narrow the query further).
+  const { programId, importId, lessonId, db, storage } = params;
 
   const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
   const snap = await getDoc(lessonRef);
@@ -298,19 +303,25 @@ export async function deletePool(params: {
 
   const poolStorageRef = lesson.poolStorageRef;
 
-  // Guard: block if any draft verification references this pool's questions.
+  // Guard: block if any draft verification references this pool's
+  // questions. Narrowed server-side to draft verifications for this exact
+  // program+import (PERF-SEC-01B-3) instead of every verification the
+  // owner has ever created — `config.questionRefs.some(...)` still has to
+  // run client-side on the (much smaller) result, since it checks a
+  // sub-field inside an array of maps, which Firestore cannot filter on
+  // server-side without a schema change (see repositoryEditorService.ts's
+  // `fetchVerificationsForGuard` for the same pattern).
   const verificationsSnap = await getDocs(
-    query(collection(db, 'verifications'), where('ownerUid', '==', ownerUid)),
+    query(
+      collection(db, 'verifications'),
+      where('status', '==', 'draft'),
+      where('config.programId', '==', programId),
+      where('config.importId', '==', importId),
+    ),
   );
   const blockers: PoolDeleteBlocker[] = verificationsSnap.docs
     .map((d) => ({ id: d.id, ...(d.data() as VerificationDoc) }))
-    .filter(
-      (v) =>
-        v.status === 'draft' &&
-        v.config.programId === programId &&
-        v.config.importId === importId &&
-        v.config.questionRefs.some((r) => r.poolStorageRef === poolStorageRef),
-    )
+    .filter((v) => v.config.questionRefs.some((r) => r.poolStorageRef === poolStorageRef))
     .map((v) => ({ verificationId: v.id, title: v.config.title }));
 
   if (blockers.length > 0) throw new PoolDeleteBlockedError(blockers);

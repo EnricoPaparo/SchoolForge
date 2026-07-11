@@ -671,12 +671,29 @@ export class RepositoryDeleteBlockedError extends Error {
   }
 }
 
+/**
+ * Narrowed server-side to verifications for this exact program+import
+ * (PERF-SEC-01B-3), instead of every verification the owner has ever
+ * created. `findRepositoryDeleteBlockers` still needs to run client-side
+ * on the result: it checks whether `config.questionRefs` (an array of
+ * maps) contains an entry matching `udaDir`/`lessonFilename`, which
+ * Firestore cannot filter on server-side (array-contains only matches a
+ * whole element, not a sub-field) — narrowing by `programId`/`importId`
+ * first still shrinks the candidate set to just that import's
+ * verifications, which is the only part a simple equality query can do
+ * without a schema change.
+ */
 async function fetchVerificationsForGuard(
-  ownerUid: string,
+  programId: string,
+  importId: string,
   db: Firestore,
 ): Promise<VerificationForRepositoryGuard[]> {
   const snap = await getDocs(
-    query(collection(db, 'verifications'), where('ownerUid', '==', ownerUid)),
+    query(
+      collection(db, 'verifications'),
+      where('config.programId', '==', programId),
+      where('config.importId', '==', importId),
+    ),
   );
   return snap.docs.map((d) => {
     const data = d.data() as VerificationDoc;
@@ -691,7 +708,7 @@ export async function getUdaDeleteBlockers(
   udaDir: string,
   db: Firestore,
 ): Promise<RepositoryDeleteBlocker[]> {
-  const verifications = await fetchVerificationsForGuard(ownerUid, db);
+  const verifications = await fetchVerificationsForGuard(programId, importId, db);
   return findRepositoryDeleteBlockers({ kind: 'uda', programId, importId, udaDir }, verifications);
 }
 
@@ -703,7 +720,7 @@ export async function getLessonDeleteBlockers(
   lessonFilename: string,
   db: Firestore,
 ): Promise<RepositoryDeleteBlocker[]> {
-  const verifications = await fetchVerificationsForGuard(ownerUid, db);
+  const verifications = await fetchVerificationsForGuard(programId, importId, db);
   return findRepositoryDeleteBlockers(
     { kind: 'lesson', programId, importId, udaDir, lessonFilename },
     verifications,

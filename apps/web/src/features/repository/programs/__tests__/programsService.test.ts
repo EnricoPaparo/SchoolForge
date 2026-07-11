@@ -12,15 +12,21 @@ const mockBatchDelete = vi.fn();
 const mockBatchCommit = vi.fn();
 const mockWriteBatch = vi.fn();
 
+const mockWhere = vi.fn((...args: unknown[]) => ({ __where: args }));
+const mockLimit = vi.fn((...args: unknown[]) => ({ __limit: args }));
+
 vi.mock('firebase/firestore', () => ({
   collection: (...args: unknown[]) => mockCollection(...args),
   doc: (...args: unknown[]) => mockDoc(...args),
   getDoc: vi.fn(),
   getDocs: (...args: unknown[]) => mockGetDocs(...args),
-  // Path-echoing stubs: query() passes the collection ref through unchanged
-  // so setupGetDocs can keep branching on collRef.__path.
+  // Path-echoing stub: query() passes the collection ref through unchanged
+  // so setupGetDocs can keep branching on collRef.__path — the where/limit
+  // constraints themselves are asserted separately via mockWhere/mockLimit,
+  // since this stub doesn't simulate actual server-side filtering.
   query: (collRef: unknown) => collRef,
-  where: () => ({}),
+  where: (...args: unknown[]) => mockWhere(...args),
+  limit: (...args: unknown[]) => mockLimit(...args),
   serverTimestamp: vi.fn(),
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
   updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
@@ -346,7 +352,8 @@ describe('deleteProgram', () => {
   }) {
     mockGetDocs.mockImplementation((collRef: { __path: string }) => {
       if (collRef.__path === 'verifications') {
-        return Promise.resolve({ docs: overrides.verifications ?? [] });
+        const docs = overrides.verifications ?? [];
+        return Promise.resolve({ docs, empty: docs.length === 0 });
       }
       if (collRef.__path === 'programs/prog-1/imports') {
         return Promise.resolve({ docs: overrides.imports ?? [] });
@@ -386,7 +393,12 @@ describe('deleteProgram', () => {
     });
   }
 
-  it('throws and does not delete anything when a verification references the program', async () => {
+  it('throws and does not delete anything when a verification references the program (targeted query, no full scan)', async () => {
+    // Simulates the server-side filter: the guard query for prog-1 returns
+    // exactly the (single, limit(1)) matching document — a real Firestore
+    // `where('config.programId','==','prog-1').limit(1)` query never
+    // returns a doc for a different program in the first place, so the
+    // mock reflects that instead of re-filtering client-side.
     setupGetDocs({
       verifications: [{ data: () => ({ config: { programId: 'prog-1' } }) }],
     });
@@ -397,11 +409,19 @@ describe('deleteProgram', () => {
     expect(mockDeleteDoc).not.toHaveBeenCalled();
     expect(mockWriteBatch).not.toHaveBeenCalled();
     expect(mockListAll).not.toHaveBeenCalled();
+
+    // The guard query is targeted (config.programId equality + limit(1)),
+    // never an unfiltered full-collection scan.
+    expect(mockWhere).toHaveBeenCalledWith('config.programId', '==', 'prog-1');
+    expect(mockLimit).toHaveBeenCalledWith(1);
   });
 
-  it('does not block on verifications referencing a different program', async () => {
+  it('does not block when the guard query finds no linked verification (different program)', async () => {
+    // A real `where('config.programId','==','prog-1').limit(1)` query
+    // against verifications for a different program returns zero docs —
+    // simulated here directly, since the mock doesn't filter server-side.
     setupGetDocs({
-      verifications: [{ data: () => ({ config: { programId: 'other-program' } }) }],
+      verifications: [],
       imports: [],
     });
     setupStorage();

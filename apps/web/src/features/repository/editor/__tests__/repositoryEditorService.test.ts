@@ -10,6 +10,7 @@ const mockBatchUpdate = vi.fn();
 const mockBatchDelete = vi.fn();
 const mockBatchCommit = vi.fn();
 const mockWriteBatch = vi.fn();
+const mockWhere = vi.fn((...args: unknown[]) => ({ __where: args }));
 const mockServerTimestamp = vi.fn(() => ({ _type: 'serverTimestamp' }));
 
 function isCollectionRef(value: unknown): value is { __path: string } {
@@ -31,7 +32,7 @@ vi.mock('firebase/firestore', () => ({
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
   updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
   query: (collRef: unknown) => collRef,
-  where: () => ({}),
+  where: (...args: unknown[]) => mockWhere(...args),
   increment: (n: number) => ({ __increment: n }),
   writeBatch: (...args: unknown[]) => mockWriteBatch(...args),
   serverTimestamp: () => mockServerTimestamp(),
@@ -1307,6 +1308,16 @@ describe('getUdaDeleteBlockers / getLessonDeleteBlockers', () => {
     );
 
     expect(blockers).toEqual([]);
+  });
+
+  it('narrows the guard query to config.programId + config.importId, not an owner-wide scan (PERF-SEC-01B-3)', async () => {
+    mockGetDocs.mockResolvedValueOnce({ docs: [] });
+
+    await getUdaDeleteBlockers(OWNER_UID, 'prog-1', 'imp-1', 'uda-01-reti', fakeDb);
+
+    expect(mockWhere).toHaveBeenCalledWith('config.programId', '==', 'prog-1');
+    expect(mockWhere).toHaveBeenCalledWith('config.importId', '==', 'imp-1');
+    expect(mockWhere).not.toHaveBeenCalledWith('ownerUid', '==', OWNER_UID);
   });
 });
 

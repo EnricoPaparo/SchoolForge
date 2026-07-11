@@ -4,11 +4,14 @@ vi.mock('../../../../lib/firebase.js', () => ({ db: {} }));
 
 const mockGetDoc = vi.fn();
 const mockGetDocs = vi.fn();
+const mockGetCountFromServer = vi.fn();
 const mockSetDoc = vi.fn();
 const mockUpdateDoc = vi.fn();
 const mockDeleteDoc = vi.fn();
 const mockDoc = vi.fn();
 const mockCollection = vi.fn();
+const mockQuery = vi.fn((...args: unknown[]) => ({ args }));
+const mockWhere = vi.fn((...args: unknown[]) => ({ where: args }));
 const mockServerTimestamp = vi.fn(() => ({ _type: 'serverTimestamp' }));
 
 vi.mock('firebase/firestore', () => ({
@@ -17,6 +20,9 @@ vi.mock('firebase/firestore', () => ({
   doc: (...args: unknown[]) => mockDoc(...args),
   getDoc: (...args: unknown[]) => mockGetDoc(...args),
   getDocs: (...args: unknown[]) => mockGetDocs(...args),
+  getCountFromServer: (...args: unknown[]) => mockGetCountFromServer(...args),
+  query: (...args: unknown[]) => mockQuery(...args),
+  where: (...args: unknown[]) => mockWhere(...args),
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
   updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
   serverTimestamp: () => mockServerTimestamp(),
@@ -26,6 +32,7 @@ import {
   approveStudent,
   assignStudentClass,
   blockStudent,
+  countPendingStudents,
   getOwnStudentDoc,
   listStudents,
   removeStudent,
@@ -73,6 +80,24 @@ describe('listStudents', () => {
       expect(result.map((s) => s.id)).toEqual(['s1', 's3']);
       expect(result[1].status).toBe('pending');
     });
+  });
+});
+
+describe('countPendingStudents', () => {
+  it('uses a status == pending query with getCountFromServer, not getDocs/listStudents', async () => {
+    mockGetCountFromServer.mockResolvedValue({ data: () => ({ count: 3 }) });
+
+    const result = await countPendingStudents(OWNER_UID, fakeDb);
+
+    expect(result).toBe(3);
+    expect(mockGetCountFromServer).toHaveBeenCalledTimes(1);
+    expect(mockGetDocs).not.toHaveBeenCalled();
+    expect(mockWhere).toHaveBeenCalledWith('status', '==', 'pending');
+  });
+
+  it('propagates an error from getCountFromServer', async () => {
+    mockGetCountFromServer.mockRejectedValue(new Error('boom'));
+    await expect(countPendingStudents(OWNER_UID, fakeDb)).rejects.toThrow('boom');
   });
 });
 

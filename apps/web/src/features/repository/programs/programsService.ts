@@ -4,6 +4,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   query,
   serverTimestamp,
   setDoc,
@@ -20,7 +21,6 @@ import type {
   ProgramDoc,
   ProgrammaMeta,
   UdaDoc,
-  VerificationDoc,
 } from '../../../types/firestore.js';
 
 export type ProgramItem = { id: string } & ProgramDoc;
@@ -264,11 +264,17 @@ export async function deleteProgram(
   db: Firestore,
   storage: FirebaseStorage,
 ): Promise<void> {
-  const verificationsSnap = await getDocs(collection(db, 'verifications'));
-  const hasLinkedVerification = verificationsSnap.docs.some(
-    (d) => (d.data() as VerificationDoc).config.programId === programId,
+  // A targeted, server-side existence check (PERF-SEC-01B-3): only asks
+  // "does at least one verification reference this program?" via
+  // `where('config.programId', '==', programId)` + `limit(1)`, instead of
+  // reading the entire `verifications` collection just to `.some()` over it
+  // client-side. `config.programId` is a plain scalar field inside a map
+  // (not inside an array), so a single-field equality filter is enough —
+  // no composite index required.
+  const linkedVerificationSnap = await getDocs(
+    query(collection(db, 'verifications'), where('config.programId', '==', programId), limit(1)),
   );
-  if (hasLinkedVerification) {
+  if (!linkedVerificationSnap.empty) {
     throw new Error(PROGRAM_DELETE_BLOCKED_MESSAGE);
   }
 
