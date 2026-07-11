@@ -11,6 +11,7 @@ const mockBatchUpdate = vi.fn();
 const mockBatchDelete = vi.fn();
 const mockBatchCommit = vi.fn();
 const mockWriteBatch = vi.fn();
+const mockWhere = vi.fn((...args: unknown[]) => ({ __where: args }));
 
 function isCollectionRef(value: unknown): value is { __path: string } {
   return typeof value === 'object' && value !== null && '__path' in value;
@@ -31,7 +32,7 @@ vi.mock('firebase/firestore', () => ({
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
   updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
   query: (collRef: unknown) => collRef,
-  where: () => ({}),
+  where: (...args: unknown[]) => mockWhere(...args),
   writeBatch: (...args: unknown[]) => mockWriteBatch(...args),
 }));
 
@@ -558,31 +559,11 @@ describe('deletePool', () => {
   it('does not block deletion when only active/closed verifications reference the pool', async () => {
     mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
 
-    const activeVerification: Partial<VerificationDoc> = {
-      status: 'active',
-      config: {
-        title: 'Verifica attiva',
-        classId: null,
-        programId: PROGRAM_ID,
-        importId: IMPORT_ID,
-        questionRefs: [
-          {
-            questionIndexEntryId: 'entry-1',
-            questionLocalId: 'q1',
-            udaDir: 'uda-01-reti',
-            lessonFilename: 'lezione-001-http.md',
-            poolStorageRef: POOL_STORAGE_REF,
-            tipo: 'aperta',
-            difficolta: 2,
-            peso: 2,
-            maxPoints: 4,
-          },
-        ],
-      },
-    };
-    mockGetDocs
-      .mockResolvedValueOnce({ docs: [{ id: 'ver-1', data: () => activeVerification }] })
-      .mockResolvedValueOnce({ docs: [] });
+    // The guard query now filters `status == 'draft'` server-side (PERF-SEC-01B-3),
+    // so a real Firestore query never returns an active/closed verification
+    // here in the first place — simulated by an empty result, matching what
+    // the where('status','==','draft') clause would actually do.
+    mockGetDocs.mockResolvedValueOnce({ docs: [] }).mockResolvedValueOnce({ docs: [] });
 
     await deletePool({
       programId: PROGRAM_ID,
@@ -593,6 +574,25 @@ describe('deletePool', () => {
       storage: fakeStorage,
     });
     expect(mockDeleteObject).toHaveBeenCalledOnce();
+  });
+
+  it('narrows the guard query to status=draft + config.programId + config.importId, not an owner-wide scan', async () => {
+    mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
+    mockGetDocs.mockResolvedValueOnce({ docs: [] }).mockResolvedValueOnce({ docs: [] });
+
+    await deletePool({
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      lessonId: LESSON_ID,
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    expect(mockWhere).toHaveBeenCalledWith('status', '==', 'draft');
+    expect(mockWhere).toHaveBeenCalledWith('config.programId', '==', PROGRAM_ID);
+    expect(mockWhere).toHaveBeenCalledWith('config.importId', '==', IMPORT_ID);
+    expect(mockWhere).not.toHaveBeenCalledWith('ownerUid', '==', OWNER_UID);
   });
 
   it('deletes the Storage file', async () => {

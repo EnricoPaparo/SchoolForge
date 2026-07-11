@@ -187,6 +187,7 @@ Nessun finding P0 identificato.
 - Rischio della modifica: medio — richiede decidere la UX di "carica altro"/paginazione per lo storico verifiche, non è una sostituzione meccanica di una riga di query.
 - File coinvolti: `verificationsService.ts`, `VerificationsView.tsx`.
 - Verifica necessaria: test service mirato + verifica che la UX di accesso allo storico resti chiara (nessuna verifica "persa" dietro paginazione senza modo di raggiungerla).
+- **Decisione esplicita (PERF-SEC-01B-3): la paginazione NON viene implementata in questa fase.** Lo storico completo resta oggi caricato per intero perché la UI (ricerca, azioni riga, riapertura di una qualsiasi verifica passata) deve poter raggiungere qualunque verifica, non solo le più recenti. Ai volumi personali dichiarati (scenario A: ~20 verifiche/mese) il costo resta accettabile. Una paginazione corretta richiede una progettazione UX distinta e non banale: bozze sempre raggiungibili (mai nascoste dietro "carica altro"), verifiche recenti visibili senza azione aggiuntiva, storico più vecchio caricabile su richiesta, ordinamento coerente con quello attuale, e ricerca/eliminazione che continuino a funzionare su tutto lo storico e non solo sulla pagina caricata. Introdurla ora, senza quella progettazione, rischierebbe di nascondere verifiche o complicare la UX senza un beneficio misurato. **Soglia di rivalutazione proposta** (prudente, non un valore rigido): quando lo storico di un singolo docente raggiunge l'ordine di alcune centinaia di verifiche archiviate, o quando una misura reale da Firebase Console mostra un impatto concreto sulle quote/tempi di caricamento — a quel punto PERF-01 va ripreso con una progettazione UX dedicata, non implementato meccanicamente.
 
 **PERF-02 — Query di collezione intera senza `limit`/paginazione ripetute in più service (`listPrograms`, `listClasses`, `listStudents`, `listQuestionIndex`, blocchi cancellazione)**
 - Evidenza: `programsService.ts` (`listPrograms`, `listUdas`, `listLessons`), `classesService.ts:15-20` (`listClasses`), `studentsService.ts:17-25` (`listStudents`), `questionIndexService.ts:25-58` (`listQuestionIndex`), più i controlli di blocco cancellazione in `deleteProgram` (`programsService.ts:267`) e `deletePool` (`poolEditorService.ts:252-254`) che leggono l'intera collezione `verifications` solo per un controllo booleano.
@@ -201,6 +202,7 @@ Nessun finding P0 identificato.
 - Rischio della modifica: basso-medio, e solo dove applicata (vedi sopra).
 - File coinvolti: `verificationsService.ts` (già in PERF-01), `programsService.ts`/`poolEditorService.ts` (solo per i controlli di blocco cancellazione mirati).
 - Verifica necessaria: test service mirati solo per le funzioni effettivamente modificate.
+- **Stato**: **parzialmente risolto in PERF-SEC-01B-3** — i controlli di blocco cancellazione (`deleteProgram`, `deletePool`, `getUdaDeleteBlockers`/`getLessonDeleteBlockers`) ora usano query mirate (`where('config.programId','==',...)`, con `limit(1)` in `deleteProgram` dove basta sapere se esiste almeno un riferimento) invece di leggere l'intera collezione `verifications`. `listPrograms`/`listClasses`/`listStudents`/`listQuestionIndex` restano invariati — confermato che, ai volumi attuali, non sono collezioni strutturalmente crescenti che giustifichino un intervento (vedi PERF-01 per lo storico `verifications`, unico caso realmente da rivalutare in futuro).
 
 **PERF-03 — Import ZIP e swap `publicLessons` non gestiscono il limite di 500 mutazioni per batch/transazione**
 - Evidenza: `importRepository.ts:81-101` (batch unico per import metadata+UDA+lezioni+questionIndex, nessun chunking) e `importRepository.ts:114-150` (transazione unica per lo swap `publicLessons`, nessun chunking).
@@ -234,7 +236,7 @@ Nessun finding P0 identificato.
 - File coinvolti: `submissionsService.ts`.
 - Verifica necessaria: `pnpm build` senza warning di import misto; confronto dimensione bundle prima/dopo per confermare (o smentire) l'assenza di beneficio dimensionale diretto.
 
-**PERF-08 — `countPendingStudents` richiama `listStudents` invece di condividere il risultato già caricato**
+**PERF-08 — `countPendingStudents` richiama `listStudents` invece di condividere il risultato già caricato — ✅ RISOLTO da PERF-SEC-01B-3**
 - Evidenza: `studentsService.ts:28-31`.
 - Impatto: se una vista chiama sia `listStudents` sia `countPendingStudents` nello stesso ciclo di rendering, la collezione `students` viene letta due volte invece di una. Nello scenario A (150 studenti) il costo aggiuntivo è trascurabile.
 - Scenario che lo attiva: uso della card/badge "studenti in attesa" insieme alla lista studenti completa nella stessa vista.
@@ -243,6 +245,7 @@ Nessun finding P0 identificato.
 - Rischio della modifica: basso.
 - File coinvolti: `studentsService.ts` e il chiamante che usa entrambe le funzioni.
 - Verifica necessaria: test service/vista mirato.
+- **Stato**: risolto in PERF-SEC-01B-3, con evidenza più forte di quanto stimato inizialmente — confermato che `countPendingStudents` è chiamato **incondizionatamente a ogni mount di `TeacherShell`** (non solo quando si apre la sezione Studenti), quindi costava una lettura completa della collezione `students` a *ogni caricamento dell'app*, indipendentemente dall'uso. `StudentsView` esegue poi una **seconda** lettura completa separata quando la sezione viene aperta. Non si è "derivato il conteggio da `listStudents`" (le due chiamate restano architetturalmente separate: badge sempre montato in `TeacherShell`, tabella solo se si apre la sezione) — la soluzione implementata è invece sostituire `countPendingStudents` con `getCountFromServer(query(collection(db,'students'), where('status','==','pending')))`, che non carica alcun documento, solo un conteggio aggregato. Letture indicative: prima, 1 lettura per documento (N studenti); dopo, 1 operazione di conteggio server-side (fatturata come lettura minima secondo il modello aggregation query di Firestore, non N letture). `listStudents` per la tabella resta invariato (nessun filtro `status`/`ownerUid` server-side, coerente con l'analisi PERF-01/02: `students` non è oggi una collezione la cui crescita giustifica un intervento sistemico).
 
 **PERF-09 — `loadSelectedQuestionsWithSolutions` legge i pool in sequenza, a differenza della sua gemella `loadSelectedQuestions` (concorrenza 4) — ✅ RISOLTO da PERF-SEC-01B-2**
 - Evidenza: `loadSelectedQuestionsWithSolutions.ts:52-85` (`for...await getBytes`) vs `loadSelectedQuestions.ts:20-40,67-91` (pool di concorrenza 4).
@@ -326,6 +329,8 @@ Rimandabili senza pacchetto dedicato, a beneficio marginale ai volumi attuali: *
 **Giudizio sintetico**: architettura solida e coerente con gli obiettivi minimalisti dichiarati; nessun problema di sicurezza enforced mancante nelle Rules; SchoolForge è single-owner/single-tenant per scelta di design, non per limite non affrontato — un filtro `ownerUid` sulle query non produce risparmio nel sistema attuale. Il rischio reale non è "più docenti" ma la crescita non limitata nel tempo dello storico di un singolo docente (soprattutto `verifications`), mitigabile con paginazione mirata.
 
 **Finding (aggiornati dopo revisione)**: 0 P0, **2 P1** (PERF-04, PERF-05), **4 P2** (PERF-01, PERF-02, PERF-03, PERF-07), **4 P3** (PERF-06, PERF-08, PERF-09, PERF-10).
+
+**Stato remediation (aggiornato dopo PERF-SEC-01B-1/B-2/B-3)**: risolti PERF-05 (P1, atomicità), PERF-04 e PERF-09 (P1/P3, latenza), PERF-08 (P3, count aggregato) e parzialmente PERF-02 (P2, guard di cancellazione ora con query mirate). PERF-01 (P2) resta esplicitamente rimandato con soglia di rivalutazione documentata (vedi la sua voce sopra). PERF-03, PERF-06, PERF-07, PERF-10 non ancora affrontati.
 
 **Cambiamenti di classificazione rispetto alla prima versione**:
 - **PERF-01**: P1 → P2 — riscritto da "manca filtro `ownerUid`" a "manca un tetto/paginazione sullo storico"; ai volumi personali dichiarati non è un rischio importante immediato.
