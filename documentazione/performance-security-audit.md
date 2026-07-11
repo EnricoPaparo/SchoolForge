@@ -8,11 +8,13 @@
 
 SchoolForge è architetturalmente coerente con i suoi obiettivi dichiarati (nessuna Cloud Function, nessun polling, autosave dirty-only, listener singoli e puliti). La revisione statica delle Security Rules (`firestore.rules`, `storage.rules`) non ha trovato nessun gap non enforced rispetto al modello descritto in `sicurezza.md`: isolamento studente, immutabilità post-consegna, blocco enumerazione via `list`, campi privilegiati non modificabili dal client sono tutti verificati a livello di regola con citazione di riga. Il rischio di sicurezza reale più concreto individuato non è nelle Rules ma nel **client**: il cap di 200 attention events è enforced solo in JavaScript (`examDeterrence.ts`), non nelle Rules — un client modificato potrebbe scrivere array arbitrariamente grandi.
 
-Sul fronte costi/prestazioni, il pattern dominante è: **query di collezione senza `where`/`limit` lette per intero e filtrate lato client** (`listVerifications`, `listPrograms`, `listClasses`, `listStudents`, `listQuestionIndex`, i controlli di blocco cancellazione in `deleteProgram`/`deletePool`). Per l'uso personale dichiarato (scenario A: 1 docente, 5 classi, 150 studenti, 20 verifiche/mese) questo resta entro le quote gratuite con ampio margine — ogni collezione coinvolta ha nell'ordine delle decine-centinaia di documenti, non migliaia. Il pattern diventa un problema reale solo nello scenario C (più docenti/traffico pubblico) perché **`listVerifications` non filtra per `ownerUid` lato server**: legge l'intera collezione `verifications` di *tutti* i possibili proprietari a ogni caricamento della vista docente, quindi il costo di ogni singolo docente scala con il totale di verifiche di tutti i docenti, non con le proprie.
+**Nota architetturale (riallineata dopo revisione — vedi changelog in fondo al documento):** SchoolForge oggi è **single-owner/single-tenant per scelta di design**, non per limite non affrontato. `settings/owner` identifica un unico docente per deployment; `isOwner()` concede a quel docente l'accesso alle proprie collezioni; non esiste oggi un insieme di proprietari concorrenti nello stesso portale. Di conseguenza, aggiungere `where('ownerUid','==',ownerUid)` alle query `list*` **non riduce le letture nel sistema attuale** (l'intera collezione coincide già con i dati del singolo docente) — non è quindi un'ottimizzazione di costo per l'oggi, ma al più una preparazione a un eventuale multi-tenant futuro. Il rischio di costo reale è un altro: **la crescita non limitata dello storico di un singolo docente nel tempo** (più verifiche, più classi, più studenti archiviati anno dopo anno), poiché le query `list*` non hanno `limit()`/paginazione e leggono sempre l'intera collezione a ogni apertura, indipendentemente da quanti di quei documenti siano effettivamente rilevanti nella sessione corrente.
+
+Sul fronte costi/prestazioni, il pattern dominante è quindi: **query di collezione senza `limit`/paginazione, lette per intero a ogni apertura** (`listVerifications`, `listPrograms`, `listClasses`, `listStudents`, `listQuestionIndex`, i controlli di blocco cancellazione in `deleteProgram`/`deletePool`). Per l'uso personale dichiarato (scenario A: 1 docente, 5 classi, 150 studenti, 20 verifiche/mese) questo resta entro le quote gratuite con ampio margine — ogni collezione coinvolta ha nell'ordine delle decine-centinaia di documenti, non migliaia. Il rischio non è nel volume attuale ma nella **assenza di un tetto**: senza paginazione, il costo di ogni apertura cresce linearmente e indefinitamente con lo storico accumulato dal singolo docente, anno dopo anno.
 
 Sul frontend, il bundle di produzione è **un solo chunk JS da 1.19 MB (321.65 KB gzip)**, senza alcun `React.lazy`/code-splitting per ruolo (docente vs studente) o per vista: uno studente scarica anche tutto il codice dell'editor pool/import ZIP/monitor docente mai usato. jsPDF (390 KB) e html2canvas (201 KB, dipendenza transitiva di jsPDF) sono correttamente lazy-caricati solo al momento del download PDF — questo è già ottimale.
 
-Nessun finding **P0** (rischio immediato di sicurezza o perdita dati) è stato trovato. Sono stati identificati **2 P1**, **6 P2**, **3 P3** (dettaglio §6).
+Nessun finding **P0** (rischio immediato di sicurezza o perdita dati) è stato trovato. Sono stati identificati **2 P1**, **5 P2**, **4 P3** (dettaglio §6).
 
 ## 2. Metodo e limiti
 
@@ -52,7 +54,7 @@ Tre indici compositi + un field override:
 - `verifications` su `ownerUid`+`status`+`onlineEnabled` — usato da `listActiveOnlineVerificationClassIds`.
 - Field override: `publicLessons.content` escluso dall'indicizzazione (corretto, evita costi di indicizzazione su un campo di testo lungo mai interrogato).
 
-Nessun indice esiste per `verifications`/`programs`/`classes`/`students` filtrati per `ownerUid` da sole — coerente con l'evidenza che `listVerifications`/`listPrograms`/`listClasses`/`listStudents` **non usano `where('ownerUid','==',...)` lato server** (vedi §4, §6 PERF-01/PERF-02).
+Nessun indice esiste per `verifications`/`programs`/`classes`/`students` filtrati per `ownerUid` da sole. Questo è coerente con il fatto che, nel modello single-owner attuale, un filtro `ownerUid` non ridurrebbe le letture (l'intera collezione coincide già con i dati dell'unico docente) — un eventuale indice andrebbe introdotto solo se si aggiungesse paginazione/ordinamento (es. `orderBy('createdAt')` + `limit()`), non come filtro di isolamento owner (vedi §4, §6 PERF-01/PERF-02).
 
 ## 4. Mappa accessi Firebase (per flusso)
 
@@ -64,8 +66,8 @@ Nessun indice esiste per `verifications`/`programs`/`classes`/`students` filtrat
 - **Totale worst-case per sessione**: 1–3 R + 0–1 W. Nessuna query di collezione.
 
 ### Apertura portale docente (`VerificationsView`, `LessonsView`, `StudentsView`, ecc.)
-- Ogni vista principale chiama la propria `list*` **senza filtro server-side**: `listVerifications` (`getDocs(collection(db,'verifications'))`, poi `.filter(ownerUid)` client-side), `listPrograms`, `listClasses`, `listStudents` — stesso pattern in tutte e quattro. Nessun `limit()`.
-- Costo: 1 read per documento nell'intera collezione, non per documento del docente. Vedi PERF-01/PERF-02.
+- Ogni vista principale chiama la propria `list*` **senza `limit()`/paginazione**: `listVerifications` (`getDocs(collection(db,'verifications'))`, poi `.filter(ownerUid)` client-side — filtro ridondante nel modello single-owner attuale, dato che l'intera collezione appartiene già a quel docente), `listPrograms`, `listClasses`, `listStudents` — stesso pattern in tutte e quattro.
+- Costo: 1 read per documento nell'intera collezione, che nel modello attuale coincide con "tutti i documenti del docente" — il costo cresce con lo storico accumulato nel tempo, non con l'uso di una singola sessione. Vedi PERF-01/PERF-02.
 
 ### Apertura portale studente
 - `StudentShell` monta 1× **L** su `settings/studentAccess` (exam mode).
@@ -123,7 +125,7 @@ Nessun indice esiste per `verifications`/`programs`/`classes`/`students` filtrat
 - Apertura portale docente 1×/giorno: `listVerifications`+`listPrograms`+`listClasses`+`listStudents` ≈ 4 letture di collezione. Con collezioni nell'ordine di decine-centinaia di documenti totali (1 docente = tutta la collezione, essendo single-tenant per progetto), il costo per apertura resta nell'ordine di **decine-centinaia di letture**, non migliaia.
 - 20 verifiche/mese: create (2 write) + salvataggi bozza multipli (stimare 3-5 salvataggi × 3 op = 9-15 op) + attivazione (1 R + T + 1 W ≈ 4 op) + eventuale chiusura (3 op) ≈ **20-30 operazioni per verifica**, quindi ~400-600 operazioni/mese solo per il ciclo di vita verifiche.
 - Import lezioni: sporadico, batch singolo, trascurabile su base mensile.
-- **Giudizio**: con questi volumi, anche sommando tutte le viste aperte più volte al giorno, il progetto resta ordini di grandezza sotto la quota gratuita giornaliera (50 000 letture, 20 000 scritture). Nessun rischio di superamento quota in questo scenario, anche considerando il pattern "collection intera senza filtro" di PERF-01/02, perché la collezione stessa è piccola in un deployment mono-docente.
+- **Giudizio**: la stima statica indica margine ampio rispetto alle quote gratuite giornaliere (50 000 letture, 20 000 scritture) nelle ipotesi dichiarate, anche sommando tutte le viste aperte più volte al giorno e considerando il pattern "collezione intera senza `limit()`" di PERF-01/02 — da confermare con misure Firebase Console su un progetto reale (nessun conteggio osservato in questa sessione, vedi §2).
 
 ### Scenario B — Verifica online (1 classe, 30 studenti, 60 minuti, autosave dirty per tutta la prova, monitor docente aperto)
 
@@ -131,29 +133,26 @@ Nessun indice esiste per `verifications`/`programs`/`classes`/`students` filtrat
 - Consegna: 30 × 1 batch (2 op interne, 1 costo di rete) = 30 operazioni.
 - Monitor docente aperto per tutta la prova: 1 listener, riceve un evento di aggiornamento per ogni write di ogni studente → fino a **~900-930 letture "di aggiornamento"** lato listener (ogni snapshot delta conta come lettura secondo il modello standard Firestore per documento cambiato).
 - Avvio sessione: 30 studenti × (1-3 R RoleGate/StudentShell + ricerca sessione attiva, 1 R per verifica online candidata) ≈ 30-90 R aggiuntive.
-- **Totale indicativo per una sessione da 60 minuti/30 studenti**: nell'ordine di **1 800-2 000 operazioni Firestore combinate** (letture + scritture). Ben sotto la quota giornaliera gratuita anche in un giorno con più classi in verifica online, salvo un numero molto elevato di sessioni sovrapposte nello stesso giorno.
+- **Totale indicativo per una sessione da 60 minuti/30 studenti**: nell'ordine di **1 800-2 000 operazioni Firestore combinate** (letture + scritture). La stima statica indica margine rispetto alla quota giornaliera gratuita anche in un giorno con più classi in verifica online, salvo un numero molto elevato di sessioni sovrapposte nello stesso giorno — da confermare con misure Firebase Console (vedi §10).
 
 ### Scenario C — Uso ampliato (più docenti o traffico pubblico)
 
-Ipotesi esplicite: il progetto Firestore attuale è **single-tenant per design** (un solo `settings/owner`, confermato dalla rules review, §5). "Più docenti" nel modello attuale richiederebbe o (a) un progetto Firebase separato per docente, oppure (b) un cambio di architettura multi-tenant non presente oggi. Nel caso (a), i costi non si sommano nello stesso progetto — ogni docente ha la propria quota gratuita indipendente, quindi lo scenario C si riduce a N istanze indipendenti dello scenario A/B, ciascuna sotto quota.
+Ipotesi esplicite: **SchoolForge nella sua architettura attuale supporta un solo docente owner per deployment** (`settings/owner` è un singleton, confermato dalla rules review, §5). Non esiste oggi alcuna nozione di "secondo docente" nello stesso progetto Firestore. Per supportare più docenti esistono, in astratto, due strategie **future e non implementate**, entrambe fuori dal perimetro dell'MVP attuale:
 
-Se invece si ipotizza **traffico pubblico non autenticato** verso pagine servite da Hosting (es. una landing page), il moltiplicatore di costo rilevante è quello di **Firebase Hosting** (banda), non Firestore, poiché tutte le collezioni Firestore sono protette da `isAuthenticated()`/`isOwner()`/`isApprovedStudent()` e non hanno superfici pubbliche non autenticate lette in massa (confermato in rules review, nessun `allow read: if true` trovato). Il principale moltiplicatore di costo in caso di crescita reale entro il modello attuale (singolo docente, più studenti) è quindi il pattern **PERF-01/02** (letture di collezione intera senza filtro server): il costo di ogni apertura della vista docente scala con il numero *totale* di documenti in quella collezione — che nel modello single-tenant coincide comunque con "i documenti di quel docente", quindi il moltiplicatore reale è la crescita nel tempo di un singolo docente (più classi, più studenti, più verifiche archiviate), non un secondo docente. Non vengono fatte previsioni assolute di costo per questo scenario, in assenza di un numero di documenti storici realistico da misurare.
+1. **Deployment/progetto Firebase separato per docente o istituto** — strategia più semplice e isolata: ogni docente ha il proprio progetto Firebase, la propria quota gratuita indipendente, nessuna modifica architetturale al codice esistente. Lo scenario C si riduce in questo caso a N istanze indipendenti dello scenario A/B, ciascuna sotto quota separatamente.
+2. **Evoluzione multi-tenant nello stesso progetto Firestore** — richiederebbe un redesign non banale: introduzione di un concetto di tenant/owner multiplo, filtri `where('ownerUid','==',...)` che a quel punto diventerebbero effettivi (oggi non lo sono, vedi nota architetturale in §1), nuove Security Rules per l'isolamento tra tenant, nuovi indici compositi, e verifica che nessuna query lato client assuma implicitamente "un solo owner nel database".
+
+Nessuna delle due strategie è pianificata o necessaria per l'uso personale dichiarato; sono menzionate qui solo come inquadramento delle opzioni disponibili se il prodotto crescesse oltre il perimetro attuale.
+
+Se invece si ipotizza **traffico pubblico non autenticato** verso pagine servite da Hosting (es. una landing page), il moltiplicatore di costo rilevante sarebbe quello di **Firebase Hosting** (banda), non Firestore, poiché tutte le collezioni Firestore sono protette da `isAuthenticated()`/`isOwner()`/`isApprovedStudent()` e non hanno superfici pubbliche non autenticate lette in massa (confermato in rules review, nessun `allow read: if true` trovato).
+
+Nel modello attuale (un solo docente, più classi/studenti/verifiche nel tempo), il moltiplicatore di costo reale non è "più docenti" ma **la crescita non limitata dello storico di quell'unico docente** (vedi PERF-01 in §6) — mitigabile con paginazione, non con un filtro owner. Non vengono fatte previsioni assolute di costo per lo scenario multi-tenant, in assenza di un design multi-tenant reale da misurare.
 
 ## 6. Findings (ordinati per priorità)
 
 Nessun finding P0 identificato.
 
 ### P1 — costo o blocco prestazionale importante
-
-**PERF-01 — `listVerifications` legge l'intera collezione senza filtro server-side**
-- Evidenza: `apps/web/src/features/repository/verifications/verificationsService.ts:38-55` — `getDocs(collection(db,'verifications'))` poi `.filter((item) => item.ownerUid === ownerUid)` lato client.
-- Impatto: ogni apertura/refresh della vista Verifiche legge *tutti* i documenti `verifications` esistenti nel progetto, non solo quelli del docente corrente. Nel modello single-tenant attuale coincide comunque con "tutte le verifiche di quel docente", ma il costo cresce linearmente con lo storico accumulato (nessun filtro per data/stato, nessun `limit()`).
-- Scenario che lo attiva: uso prolungato nel tempo con molte verifiche archiviate (scenario A esteso su più anni scolastici), o refresh frequenti (la funzione è richiamata dopo create/activate/close/delete — più volte per sessione).
-- Soluzione minimale: aggiungere `where('ownerUid','==',ownerUid)` alla query (richiede indice singolo campo, automatico in Firestore per query a un solo `where`), mantenendo il filtro client come fallback per compatibilità.
-- Beneficio atteso: costo di lettura proporzionale alle verifiche del docente, non all'intera collezione; nessun impatto visibile nello scenario A attuale ma previene crescita futura.
-- Rischio della modifica: basso — query equivalente per risultato, richiede solo verifica che l'indice a campo singolo sia già implicito (lo è, Firestore crea automaticamente indici a campo singolo).
-- File coinvolti: `verificationsService.ts`.
-- Verifica necessaria: test service esistente + conferma che il risultato sia identico al filtro client attuale.
 
 **PERF-04 — `savePool` scrive una domanda alla volta in sequenza (N+1 scritture non batched)**
 - Evidenza: `apps/web/src/features/repository/pools/poolEditorService.ts:190-196` — `for (const q of pool.questions) { await setDoc(...) }`.
@@ -165,17 +164,41 @@ Nessun finding P0 identificato.
 - File coinvolti: `poolEditorService.ts`.
 - Verifica necessaria: test service mirato che verifichi lo stesso risultato finale (stessi documenti scritti) con un batch invece di N `setDoc`.
 
+**PERF-05 — Incoerenza atomicità tra funzioni gemelle in `verificationsService.ts` (promosso a P1 — correttezza, non solo velocità)**
+- Evidenza: `setVerificationVisibility` (righe ~292-321) e `closeVerification` (righe ~438-466) usano 2 `setDoc` sequenziali non atomici (parent + proiezione mirror), mentre `setVerificationOnlineEnabled` (righe ~342-376) e `setVerificationStudentPdfEnabled` (righe ~399-429) usano correttamente un `writeBatch` atomico per lo stesso tipo di doppia scrittura.
+- Impatto: un crash o errore di rete tra le due `setDoc` sequenziali lascia `verifications/{id}` e `publishedProjection/data` temporaneamente fuori sincrono (es. verifica marcata `closed` ma la proiezione pubblica ancora visibile, o viceversa). Questa è una finestra di incoerenza **reale e confermata dal codice** (non solo teorica): la sequenza `await setDoc(A); await setDoc(B);` non ha alcuna garanzia atomica tra i due `setDoc`, e un fallimento di rete tra i due lascia lo stato osservabile inconsistente per un tempo indefinito (fino alla prossima mutazione riuscita su quella verifica). Riguarda la correttezza dei dati esposti allo studente (proiezione pubblica), non solo la latenza — da qui la promozione a P1 rispetto alla classificazione P2 iniziale.
+- Scenario che lo attiva: qualunque chiamata a `setVerificationVisibility`/`closeVerification` durante un errore di rete transitorio tra le due `setDoc`.
+- Soluzione minimale: allineare le due funzioni al pattern `writeBatch` già usato da `setVerificationOnlineEnabled`/`setVerificationStudentPdfEnabled` nello stesso file.
+- Beneficio atteso: eliminazione della finestra di incoerenza, nessun costo aggiuntivo (stesso numero di operazioni, solo atomiche invece di sequenziali).
+- Rischio della modifica: basso — pattern già collaudato nello stesso file per lo stesso tipo di scrittura doppia.
+- File coinvolti: `verificationsService.ts`.
+- Verifica necessaria: test service mirato che verifichi l'atomicità (es. simulando un fallimento a metà, se il mock lo consente) o quantomeno che il risultato finale sia identico.
+
 ### P2 — ottimizzazione utile e misurabile
 
-**PERF-02 — Query di collezione intera senza filtro/limit ripetute in più service (`listPrograms`, `listClasses`, `listStudents`, `listQuestionIndex`, blocchi cancellazione)**
+**PERF-01 — `listVerifications` legge l'intera collezione a ogni apertura, senza tetto sullo storico (riclassificato da P1 a P2)**
+- Evidenza: `apps/web/src/features/repository/verifications/verificationsService.ts:38-55` — `getDocs(collection(db,'verifications'))` poi `.filter((item) => item.ownerUid === ownerUid)` lato client.
+- Impatto: ogni apertura/refresh della vista Verifiche legge *tutti* i documenti `verifications` esistenti. **Correzione rispetto alla prima versione di questo report**: nel modello single-owner attuale questa collezione contiene già solo i documenti dell'unico docente — non "tutte le verifiche di tutti i docenti" — quindi un filtro `where('ownerUid','==',ownerUid)` non ridurrebbe le letture nel sistema di oggi. Il rischio reale è che, senza `limit()`/paginazione, il costo di ogni apertura cresce linearmente e senza tetto con lo storico accumulato dal singolo docente nel tempo (più anni scolastici, più verifiche archiviate).
+- Scenario che lo attiva: uso prolungato nel tempo con molte verifiche archiviate (scenario A esteso su più anni scolastici), o refresh frequenti (la funzione è richiamata dopo create/activate/close/delete — più volte per sessione). Ai volumi dichiarati nello scenario A (20 verifiche/mese) non è un rischio importante immediato — da qui la riclassificazione a P2.
+- Soluzione proposta (da valutare in dettaglio in remediation, non implementata qui): introdurre paginazione/`limit()` con una strategia distinta per bozze (tipicamente poche, sempre rilevanti, da mostrare per intero) e verifiche storiche (potenzialmente molte, ordinabili per data più recente, paginabili), mantenendo comunque la possibilità di raggiungere lo storico completo su richiesta esplicita (non nasconderlo). Un eventuale filtro `ownerUid` andrebbe considerato solo come preparazione a un futuro multi-tenant (vedi §5 scenario C), non come risparmio di costo nel sistema attuale.
+- Beneficio atteso: costo di apertura della vista limitato e costante nel tempo, indipendente dallo storico accumulato.
+- Rischio della modifica: medio — richiede decidere la UX di "carica altro"/paginazione per lo storico verifiche, non è una sostituzione meccanica di una riga di query.
+- File coinvolti: `verificationsService.ts`, `VerificationsView.tsx`.
+- Verifica necessaria: test service mirato + verifica che la UX di accesso allo storico resti chiara (nessuna verifica "persa" dietro paginazione senza modo di raggiungerla).
+
+**PERF-02 — Query di collezione intera senza `limit`/paginazione ripetute in più service (`listPrograms`, `listClasses`, `listStudents`, `listQuestionIndex`, blocchi cancellazione)**
 - Evidenza: `programsService.ts` (`listPrograms`, `listUdas`, `listLessons`), `classesService.ts:15-20` (`listClasses`), `studentsService.ts:17-25` (`listStudents`), `questionIndexService.ts:25-58` (`listQuestionIndex`), più i controlli di blocco cancellazione in `deleteProgram` (`programsService.ts:267`) e `deletePool` (`poolEditorService.ts:252-254`) che leggono l'intera collezione `verifications` solo per un controllo booleano.
-- Impatto: stesso pattern di PERF-01 applicato a più collezioni; nello scenario A resta trascurabile, ma è un pattern ripetuto che merita una correzione sistemica piuttosto che puntuale.
-- Scenario che lo attiva: crescita organica nel tempo (più classi, più studenti, più import).
-- Soluzione minimale: dove esiste un `ownerUid` sul documento, aggiungere `where('ownerUid','==',ownerUid)`; per i controlli di blocco cancellazione, considerare una query mirata (es. `where('config.programId','==',programId)` se il campo è già presente) invece di leggere l'intera collezione per un controllo di esistenza.
-- Beneficio atteso: riduzione lineare del costo di lettura con la crescita dei dati.
-- Rischio della modifica: basso-medio — verificare che i campi `where` esistano già sui documenti (in gran parte sì, `ownerUid` è già scritto ovunque) e che non serva un nuovo indice composito per i controlli di blocco cancellazione (da verificare caso per caso).
-- File coinvolti: `programsService.ts`, `classesService.ts`, `studentsService.ts`, `questionIndexService.ts`, `poolEditorService.ts`.
-- Verifica necessaria: test service mirati per ogni funzione modificata + eventuale aggiornamento `firestore.indexes.json` se un nuovo `where` richiede un indice composito.
+- Impatto: stesso pattern di PERF-01, ma le collezioni coinvolte non sono equivalenti tra loro. **Correzione rispetto alla prima versione**: nel modello single-owner attuale un filtro `ownerUid` non produce risparmio (stesso ragionamento di PERF-01) — non va quindi proposto genericamente per tutte queste collezioni. Vanno distinte:
+  - **Collezioni strutturalmente crescenti nel tempo** (`verifications`, potenzialmente `students` in una scuola con molti anni di iscrizioni): da valutare con `limit()`/paginazione, stessa logica di PERF-01.
+  - **Collezioni naturalmente piccole per un singolo docente** (`programs`, `classes` — tipicamente poche decine anche su più anni): nessuna modifica preventiva necessaria, il costo resta trascurabile per costruzione.
+  - **`listQuestionIndex`**: scope già naturalmente limitato a un singolo import/lezione, non una collezione globale crescente — nessuna azione necessaria.
+  - I controlli di blocco cancellazione (`deleteProgram`/`deletePool` che leggono l'intera collezione `verifications`) restano un caso a parte: qui il problema non è l'assenza di filtro owner ma l'assenza di un filtro *mirato al programma/pool* (es. `where('config.programId','==',programId)`), utile indipendentemente dal modello single/multi-tenant.
+- Scenario che lo attiva: crescita organica nel tempo, principalmente per `verifications` e in misura minore `students`.
+- Soluzione minimale: `limit()`/paginazione solo dove la collezione può realisticamente crescere senza tetto naturale; nessun indice `ownerUid` da introdurre preventivamente nell'architettura corrente.
+- Beneficio atteso: riduzione del rischio di crescita futura sulle sole collezioni che ne hanno bisogno, senza modifiche inutili altrove.
+- Rischio della modifica: basso-medio, e solo dove applicata (vedi sopra).
+- File coinvolti: `verificationsService.ts` (già in PERF-01), `programsService.ts`/`poolEditorService.ts` (solo per i controlli di blocco cancellazione mirati).
+- Verifica necessaria: test service mirati solo per le funzioni effettivamente modificate.
 
 **PERF-03 — Import ZIP e swap `publicLessons` non gestiscono il limite di 500 mutazioni per batch/transazione**
 - Evidenza: `importRepository.ts:81-101` (batch unico per import metadata+UDA+lezioni+questionIndex, nessun chunking) e `importRepository.ts:114-150` (transazione unica per lo swap `publicLessons`, nessun chunking).
@@ -186,26 +209,6 @@ Nessun finding P0 identificato.
 - Rischio della modifica: medio — il chunking del batch di scrittura import è più delicato del chunking delle cancellazioni, perché va preservata l'atomicità logica percepita dal docente (un import "a metà" è uno stato peggiore di un import fallito interamente); da progettare con attenzione in fase di remediation, non applicare meccanicamente.
 - File coinvolti: `importRepository.ts`.
 - Verifica necessaria: test con un import sintetico che superi 500 mutazioni (se il costo di scrivere un test così grande è giustificato) o quantomeno una verifica statica/commento esplicito del limite noto.
-
-**PERF-05 — Incoerenza atomicità tra funzioni gemelle in `verificationsService.ts`**
-- Evidenza: `setVerificationVisibility` (righe ~292-321) e `closeVerification` (righe ~438-466) usano 2 `setDoc` sequenziali non atomici (parent + proiezione mirror), mentre `setVerificationOnlineEnabled` (righe ~342-376) e `setVerificationStudentPdfEnabled` (righe ~399-429) usano correttamente un `writeBatch` atomico per lo stesso tipo di doppia scrittura.
-- Impatto: un crash o errore di rete tra le due `setDoc` sequenziali lascia `verifications/{id}` e `publishedProjection/data` temporaneamente fuori sincrono (es. verifica marcata `closed` ma la proiezione pubblica ancora visibile, o viceversa) — finestra di rischio breve ma reale, e incoerente con il pattern già corretto usato nelle funzioni gemelle.
-- Scenario che lo attiva: qualunque chiamata a `setVerificationVisibility`/`closeVerification` durante un errore di rete transitorio.
-- Soluzione minimale: allineare le due funzioni al pattern `writeBatch` già usato da `setVerificationOnlineEnabled`/`setVerificationStudentPdfEnabled` nello stesso file.
-- Beneficio atteso: eliminazione della finestra di incoerenza, nessun costo aggiuntivo (stesso numero di operazioni, solo atomiche invece di sequenziali).
-- Rischio della modifica: basso — pattern già collaudato nello stesso file per lo stesso tipo di scrittura doppia.
-- File coinvolti: `verificationsService.ts`.
-- Verifica necessaria: test service mirato che verifichi l'atomicità (es. simulando un fallimento a metà, se il mock lo consente) o quantomeno che il risultato finale sia identico.
-
-**PERF-06 — Import misto di `firebase/firestore` impedisce a Vite di isolare il chunk Firebase**
-- Evidenza: warning esplicito di build — `firebase/firestore` importato dinamicamente da `submissionsService.ts` ma staticamente da oltre 15 altri file (`OwnerSetup.tsx`, `RoleGate.tsx`, `classesService.ts`, ecc.).
-- Impatto: Vite non può spostare il modulo Firestore in un chunk separato scaricabile pigramente; il codice Firestore resta nel chunk principale indipendentemente dal singolo import dinamico in `submissionsService.ts`, che quindi non produce il beneficio di code-splitting presumibilmente cercato.
-- Scenario che lo attiva: qualunque caricamento dell'app (sempre, essendo un problema di bundling, non di runtime).
-- Soluzione minimale: rendere l'import di `firebase/firestore` in `submissionsService.ts` statico come ovunque altro nel codice (rimuovere l'unica eccezione), oppure — se l'obiettivo originale era isolare Firestore in un chunk separato — rendere *tutti* gli import dinamici in modo coerente (cambio più ampio, da valutare in remediation).
-- Beneficio atteso: bundle più prevedibile, elimina un warning di build; il beneficio dimensionale reale dipende dalla scelta (statico ovunque = nessun beneficio dimensionale ma coerenza; dinamico ovunque = code-splitting reale ma tocca ~15 file).
-- Rischio della modifica: basso per la prima opzione (statico ovunque), medio per la seconda (dinamico ovunque, tocca molti file e richiede gestione asincrona diffusa).
-- File coinvolti: `submissionsService.ts` (+ eventualmente tutti i file elencati nel warning, se si sceglie la seconda opzione).
-- Verifica necessaria: `pnpm build` senza warning di import misto; confronto dimensione bundle prima/dopo.
 
 **PERF-07 — Il monitor docente riceve il documento `submissions` intero (inclusi `answers`/`flagged`) via listener, anche se la UI li scarta**
 - Evidenza: `submissionsMonitorService.ts` — `watchSubmissions` interroga `submissions` senza proiezione di campi (Firestore non supporta la proiezione lato server su `onSnapshot`), poi `toMonitorItem` scarta `answers`/`flagged` lato client.
@@ -218,6 +221,16 @@ Nessun finding P0 identificato.
 - Verifica necessaria: da definire solo se la remediation viene approvata; per ora finding informativo.
 
 ### P3 — miglioramento eventuale, non prioritario
+
+**PERF-06 — Import misto di `firebase/firestore` impedisce a Vite di isolare il chunk Firebase (riclassificato da P2 a P3)**
+- Evidenza: warning esplicito di build — `firebase/firestore` importato dinamicamente da `submissionsService.ts` ma staticamente da oltre 15 altri file (`OwnerSetup.tsx`, `RoleGate.tsx`, `classesService.ts`, ecc.).
+- Impatto: Vite non può spostare il modulo Firestore in un chunk separato scaricabile pigramente; il codice Firestore resta nel chunk principale indipendentemente dal singolo import dinamico in `submissionsService.ts`. **Correzione rispetto alla prima versione**: la semplice sostituzione dell'import dinamico con uno statico (rendere `submissionsService.ts` coerente con gli altri ~15 file) non è di per sé un'ottimizzazione prestazionale misurabile — è principalmente pulizia/coerenza del codice ed eliminazione di un warning di build. Non c'è evidenza misurata che questo cambio da solo riduca la dimensione del bundle iniziale (il modulo Firestore resterebbe comunque nel chunk principale in entrambi i casi, essendo importato staticamente da tutti gli altri file). Il code-splitting reale (isolare Firestore o intere sezioni per ruolo in chunk separati) è una decisione architetturale distinta e più ampia — vedi PERF-10 — non un effetto collaterale di questa correzione.
+- Scenario che lo attiva: qualunque caricamento dell'app (sempre, essendo un problema di bundling, non di runtime) — impatto pratico basso.
+- Soluzione minimale: rendere l'import di `firebase/firestore` in `submissionsService.ts` statico come ovunque altro nel codice, per eliminare il warning e la disomogeneità — senza attendersi un beneficio dimensionale misurabile da questo solo cambio.
+- Beneficio atteso: bundle più prevedibile, elimina un warning di build; nessun beneficio dimensionale atteso senza un intervento di code-splitting più ampio (PERF-10).
+- Rischio della modifica: basso.
+- File coinvolti: `submissionsService.ts`.
+- Verifica necessaria: `pnpm build` senza warning di import misto; confronto dimensione bundle prima/dopo per confermare (o smentire) l'assenza di beneficio dimensionale diretto.
 
 **PERF-08 — `countPendingStudents` richiama `listStudents` invece di condividere il risultato già caricato**
 - Evidenza: `studentsService.ts:28-31`.
@@ -276,7 +289,7 @@ Contratto minimo, basato sulle soglie già osservate nel codice attuale (non val
 | Listener chiuso quando la vista non è attiva | Cleanup nell'`useEffect` return in ogni componente con `onSnapshot` | Già rispettato (monitor, StudentShell) |
 | Autosave minimo 120s, dirty-only | 120 000 ms, nessuna write se non ci sono modifiche | Valore già in produzione (`OnlineExamView.tsx:21`) |
 | Nessuna write causata dai soli attention events | Eventi bufferizzati in memoria, mai `arrayUnion` isolato | Già rispettato; SEC-01 chiede solo l'enforcement server-side del cap, non tocca questo vincolo |
-| Query di collezioni crescenti sempre filtrate o limitate | `where('ownerUid','==',...)` su ogni collezione con più di un owner potenziale nello schema; `limit()` esplicito dove la crescita non ha un owner naturale (es. `verifications` con molte voci storiche) | Oggi violato da PERF-01/PERF-02 — soglia proposta come target di remediation |
+| Query di collezioni strutturalmente crescenti sempre limitate o paginate | `limit()`/paginazione esplicita su `verifications` (storico che cresce nel tempo) e, se necessario in futuro, su `students`; nessun filtro `ownerUid` da introdurre nell'architettura single-owner attuale (non produrrebbe risparmio, vedi PERF-01) | Oggi violato da PERF-01 (assenza di tetto sullo storico) — soglia proposta come target di remediation |
 | Niente N+1 sui flussi frequenti | Batch invece di loop `await` sequenziale per scritture multiple sullo stesso trigger utente | Oggi violato da PERF-04 (pool) — soglia proposta come target |
 | Nessun contenuto pesante caricato prima dell'apertura | jsPDF/html2canvas restano lazy (già rispettato); considerare lazy anche per sezioni intere per ruolo (PERF-10, target futuro) | jsPDF già lazy, confermato in build |
 | Limite 200 attention events | Enforced lato client oggi; enforced anche lato Rules dopo SEC-01 | Valore già dichiarato nel contesto del progetto |
@@ -285,17 +298,27 @@ Contratto minimo, basato sulle soglie già osservate nel codice attuale (non val
 
 ## 9. Piano di remediation (indicativo, da approvare in PERF-SEC-01B)
 
-Ordine proposto per rapporto beneficio/complessità (non vincolante, da confermare prima di ogni intervento):
+Proposto in pacchetti tematici, ciascuno indipendentemente approvabile ed eseguibile — non un ordine numerico rigido ma un raggruppamento per tipo di beneficio, in modo da poter approvare/rimandare un pacchetto alla volta:
 
-1. PERF-01 (filtro `ownerUid` su `listVerifications`) — beneficio sistemico, complessità minima.
-2. PERF-04 (batch invece di loop in `savePool`) — beneficio percepito alto (tempo di salvataggio), pattern già collaudato nello stesso file.
-3. PERF-05 (allineare atomicità `setVerificationVisibility`/`closeVerification` al pattern batch già usato dalle funzioni gemelle) — beneficio di correttezza, complessità minima.
-4. PERF-02 (stesso filtro `ownerUid` sulle altre `list*`) — beneficio sistemico, complessità bassa-media (verificare indici).
-5. SEC-01 (cap 200 eventi lato Rules) — beneficio di garanzia, complessità bassa, ma richiede toccare Rules e quindi `test:rules` (esplicitamente fuori ambito di questa fase A).
-6. PERF-06 (import Firestore coerente) — beneficio di igiene bundle, complessità bassa se si sceglie l'opzione "statico ovunque".
-7. PERF-03 (chunking import/transazione) — beneficio di robustezza a scala, complessità media, da progettare con cura per non introdurre stati parziali.
-8. PERF-10 (code-splitting per ruolo) — beneficio dimensionale potenzialmente alto ma non misurato con precisione, complessità media; consigliato solo se si osserva un problema di caricamento reale, non preventivamente.
-9. PERF-07, PERF-08, PERF-09 — beneficio marginale ai volumi attuali, rimandabili.
+**01B-1 — Correttezza e sicurezza** (priorità più alta: riguardano dati potenzialmente incoerenti o vincoli non garantiti server-side, non solo velocità)
+- **PERF-05** — allineare `setVerificationVisibility`/`closeVerification` al pattern `writeBatch` atomico già usato dalle funzioni gemelle nello stesso file. Beneficio: elimina una finestra di incoerenza reale tra `verifications` e `publishedProjection`. Complessità: minima, pattern già collaudato.
+- **SEC-01** — cap di 200 attention events enforced anche lato Rules (`attentionEvents.size() <= 200`). Beneficio: garanzia server-side di un vincolo oggi solo client-side. Complessità: bassa, ma richiede toccare `firestore.rules` e quindi `pnpm test:rules` — esplicitamente fuori ambito della fase A, da eseguire solo se questo pacchetto viene approvato.
+
+**01B-2 — Latenza delle operazioni** (percepita dall'utente, non costo economico)
+- **PERF-04** — batch invece di loop sequenziale in `savePool`. Beneficio: salvataggio pool quasi istantaneo indipendentemente dal numero di domande. Complessità: bassa, pattern già collaudato nello stesso file.
+- **PERF-09** — concorrenza limitata (stessa utility già usata da `loadSelectedQuestions`) in `loadSelectedQuestionsWithSolutions`. Beneficio: generazione PDF soluzioni più veloce con domande da molti pool distinti. Complessità: bassa.
+
+**01B-3 — Letture e crescita dei dati**
+- **PERF-01 (corretto)** — paginazione/`limit()` su `listVerifications`, con strategia distinta per bozze (sempre visibili) e storico (paginabile ma raggiungibile). Complessità: media, richiede decisioni di UX, non solo di query.
+- **PERF-08** — evitare la doppia lettura `listStudents`/`countPendingStudents`, **solo se confermato** che un chiamante reale effettua entrambe le letture nello stesso ciclo di rendering (verificare prima di implementare, non assumere).
+- Eventuali altri scan di collezione realmente evitabili individuati durante l'implementazione di PERF-01 (es. `PERF-02` limitatamente ai controlli di blocco cancellazione con filtro mirato al programma/pool, non un filtro owner generico).
+
+**01B-4 — Bundle**
+- Misurare prima di implementare: dimensione del chunk iniziale effettivamente scaricato per ruolo (docente vs studente), non solo la dimensione totale del bundle.
+- Implementare code-splitting per ruolo (**PERF-10**) solo se la misura conferma un beneficio concreto, non automaticamente.
+- **PERF-06** (coerenza import Firestore) può essere applicato in questo stesso pacchetto come pulizia minima, senza attendersi un beneficio dimensionale da solo.
+
+Rimandabili senza pacchetto dedicato, a beneficio marginale ai volumi attuali: **PERF-03** (chunking import/transazione oltre 500 mutazioni — nessuna evidenza di occorrenza reale, solo un limite di piattaforma non gestito), **PERF-07** (split schema `submissions` per ridurre banda al monitor — cambio di schema non banale, rapporto beneficio/complessità sfavorevole).
 
 ## 10. Verifiche consigliate su DEV
 
@@ -309,33 +332,44 @@ Ordine proposto per rapporto beneficio/complessità (non vincolante, da conferma
 
 ## Output finale
 
-**Giudizio sintetico**: architettura solida e coerente con gli obiettivi minimalisti dichiarati; nessun problema di sicurezza enforced mancante nelle Rules; il pattern di costo dominante (letture di collezione intera senza filtro server) è oggi innocuo ai volumi dello scenario A/B dichiarati ma è una scelta che non scala e merita correzione preventiva a basso rischio prima che il volume di dati cresca.
+**Giudizio sintetico**: architettura solida e coerente con gli obiettivi minimalisti dichiarati; nessun problema di sicurezza enforced mancante nelle Rules; SchoolForge è single-owner/single-tenant per scelta di design, non per limite non affrontato — un filtro `ownerUid` sulle query non produce risparmio nel sistema attuale. Il rischio reale non è "più docenti" ma la crescita non limitata nel tempo dello storico di un singolo docente (soprattutto `verifications`), mitigabile con paginazione mirata.
 
-**Finding**: 0 P0, 2 P1 (PERF-01, PERF-04), 6 P2 (PERF-02, PERF-03, PERF-05, PERF-06, PERF-07, SEC-01), 3 P3 (PERF-08, PERF-09, PERF-10).
+**Finding (aggiornati dopo revisione)**: 0 P0, **2 P1** (PERF-04, PERF-05), **5 P2** (PERF-01, PERF-02, PERF-03, PERF-07, SEC-01), **4 P3** (PERF-06, PERF-08, PERF-09, PERF-10).
+
+**Cambiamenti di classificazione rispetto alla prima versione**:
+- **PERF-01**: P1 → P2 — riscritto da "manca filtro `ownerUid`" a "manca un tetto/paginazione sullo storico"; ai volumi personali dichiarati non è un rischio importante immediato.
+- **PERF-02**: testo rivisto per non proporre più filtri `ownerUid` generici su collezioni naturalmente piccole (`programs`, `classes`); resta P2, ma limitato alle collezioni realmente crescenti (`verifications`) e ai controlli di blocco cancellazione con filtro mirato.
+- **PERF-05**: P2 → **P1** — è correttezza dei dati esposti (finestra di incoerenza parent/proiezione confermata dal codice), non solo velocità.
+- **PERF-06**: P2 → P3 — è pulizia/coerenza del codice ed eliminazione di un warning, non un'ottimizzazione prestazionale misurata; il code-splitting reale resta una decisione separata (PERF-10).
+- **Scenario C**: riscritto per non affermare "ogni docente richiederebbe un progetto Firebase separato" come unica via; ora presenta esplicitamente le due strategie future (progetto separato per docente/istituto, oppure redesign multi-tenant), nessuna delle due nell'MVP attuale.
 
 **Cinque rischi principali**:
-1. `listVerifications` legge l'intera collezione senza filtro server-side (PERF-01) — cresce col tempo, non con l'uso.
-2. `savePool` scrive una domanda alla volta in sequenza, nessun batching (PERF-04) — latenza percepita proporzionale al numero di domande.
-3. Cap di 200 attention events enforced solo lato client, non nelle Rules (SEC-01) — vincolo dichiarato non garantito server-side.
-4. Import ZIP e swap `publicLessons` non gestiscono il limite di 500 mutazioni per batch/transazione (PERF-03) — rischio di fallimento a scala, non osservato ma non gestito.
-5. Incoerenza di atomicità tra `setVerificationVisibility`/`closeVerification` (non atomici) e le loro funzioni gemelle (atomiche) nello stesso file (PERF-05) — finestra di stato incoerente in caso di errore transitorio.
+1. `savePool` scrive una domanda alla volta in sequenza, nessun batching (PERF-04, P1) — latenza percepita proporzionale al numero di domande.
+2. Incoerenza di atomicità tra `setVerificationVisibility`/`closeVerification` (non atomici) e le loro funzioni gemelle già atomiche nello stesso file (PERF-05, P1) — finestra di stato incoerente confermata dal codice in caso di errore transitorio.
+3. `listVerifications` non ha un tetto sullo storico letto a ogni apertura (PERF-01, P2) — cresce nel tempo con l'uso del singolo docente, non con "altri docenti".
+4. Cap di 200 attention events enforced solo lato client, non nelle Rules (SEC-01, P2) — vincolo dichiarato non garantito server-side.
+5. Import ZIP e swap `publicLessons` non gestiscono il limite di 500 mutazioni per batch/transazione (PERF-03, P2) — rischio di fallimento a scala, non osservato ma non gestito.
 
 **Cinque ottimizzazioni con miglior rapporto beneficio/complessità**:
-1. PERF-01 — filtro `ownerUid` su `listVerifications`.
-2. PERF-05 — allineare `setVerificationVisibility`/`closeVerification` al pattern batch già collaudato.
-3. PERF-04 — batch invece di loop sequenziale in `savePool`.
-4. PERF-06 — rendere coerente l'import di `firebase/firestore` (statico ovunque).
-5. PERF-02 — stesso filtro `ownerUid` sulle altre `list*` (`listPrograms`, `listClasses`, `listStudents`, `listQuestionIndex`).
+1. PERF-05 — allineare `setVerificationVisibility`/`closeVerification` al pattern batch già collaudato (pacchetto 01B-1).
+2. PERF-04 — batch invece di loop sequenziale in `savePool` (pacchetto 01B-2).
+3. SEC-01 — cap 200 eventi enforced anche lato Rules (pacchetto 01B-1).
+4. PERF-09 — concorrenza limitata anche per il PDF soluzioni (pacchetto 01B-2).
+5. PERF-08 — evitare la doppia lettura studenti, solo se confermato un uso combinato reale (pacchetto 01B-3).
 
-**Stima operativa dei tre scenari**: scenario A (uso personale) e scenario B (una verifica online da 30 studenti) restano ampiamente entro la quota gratuita Firestore anche senza remediation, sulla base dei conteggi di operazioni dedotti dal codice (centinaia-basse migliaia di operazioni per evento, contro una quota giornaliera gratuita nell'ordine delle decine di migliaia). Lo scenario C (più docenti) non è supportato nativamente dall'architettura single-tenant attuale — ogni docente richiederebbe un progetto Firebase separato, il che mantiene ciascuno sotto quota indipendentemente; un moltiplicatore di costo reale nel modello attuale è la crescita nel tempo di un singolo docente (più classi/studenti/verifiche archiviate), mitigata dalle remediation P1/P2 proposte.
+**Nuova sequenza PERF-SEC-01B (pacchetti, non ordine numerico rigido)**: 01B-1 (correttezza/sicurezza: PERF-05, SEC-01) → 01B-2 (latenza: PERF-04, PERF-09) → 01B-3 (letture/crescita dati: PERF-01 corretto, PERF-08 se confermato, altri scan mirati) → 01B-4 (bundle: misura prima, code-splitting solo se il beneficio è concreto, PERF-06 come pulizia minima). Dettaglio in §9.
 
-**File modificati in questa fase**: nessun file applicativo, nessuna Rules. Aggiunti/modificati solo:
-- `documentazione/performance-security-audit.md` (nuovo — questo documento)
-- `documentazione/m3-full-roadmap.md` (aggiunta voci PERF-SEC-01A/01B e gate)
-- `documentazione/piano-implementazione.md` (aggiunta voci PERF-SEC-01A/01B e gate)
+**Stima operativa dei tre scenari**: la stima statica indica margine ampio rispetto alla quota gratuita Firestore per lo scenario A (uso personale) e lo scenario B (verifica online da 30 studenti), sulla base dei conteggi di operazioni dedotti dal codice — **da confermare con misure Firebase Console**, non osservata in questa sessione. Lo scenario C (più docenti) non è supportato nell'architettura single-tenant attuale: le due strategie future possibili sono (a) un progetto Firebase separato per docente/istituto, più semplice e isolato, o (b) un redesign multi-tenant nello stesso progetto — nessuna delle due è nell'MVP attuale. Nel modello di oggi, il moltiplicatore di costo reale è la crescita nel tempo di un singolo docente (più classi/studenti/verifiche archiviate), mitigata dal pacchetto 01B-3.
 
-**Verifiche eseguite**: `pnpm format:check`, `pnpm build` (per le dimensioni reali del bundle riportate in §3.1), letture/ricerche statiche mirate su servizi, viste, Rules. Nessuna suite di test completa, nessun `test:rules` (Rules non modificate in questa fase).
+**File modificati in questa fase**: nessun file applicativo, nessuna Rules, nessuna dipendenza. Aggiunti/modificati solo:
+- `documentazione/performance-security-audit.md` (riallineamento concettuale su single-owner vs multi-tenant, riclassificazione PERF-01/02/05/06, riscrittura scenario C, nuovo piano di remediation a pacchetti)
+- `documentazione/m3-full-roadmap.md` (voci PERF-SEC-01A/01B e gate — invariate in questo aggiornamento)
+- `documentazione/piano-implementazione.md` (voci PERF-SEC-01A/01B e gate — invariate in questo aggiornamento)
+
+**Conferma**: nessun codice applicativo e nessuna Security Rule (Firestore o Storage) sono stati modificati in questo aggiornamento — solo il documento di audit e, nella fase precedente, i due riepiloghi di roadmap.
+
+**Verifiche eseguite in questo aggiornamento**: `pnpm format:check`. Nessuna build (la baseline bundle §3.1 non cambia, nessun codice toccato), nessun test, nessun deploy.
 
 **Limiti dell'audit**: nessuna misura da un progetto Firebase reale attivo (Firebase Console non consultata in questa sessione); le stime di costo sono conteggi di operazioni dedotti dal codice, non osservazioni; le tariffe Blaze citate sono parametriche e vanno riverificate sulla pagina ufficiale prima di qualunque decisione di budget; non è stata misurata la dimensione reale dei documenti Firestore su dati di produzione; PERF-10 (code-splitting) è una stima qualitativa, non una misura quantitativa dell'impatto per ruolo.
 
-**Link PR draft**: da aprire dopo il commit di questo documento (vedi messaggio finale della sessione).
+**Link PR draft**: https://github.com/EnricoPaparo/SchoolForge/pull/110 (aggiornata da questo commit, resta draft).
