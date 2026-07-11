@@ -44,6 +44,13 @@ vi.mock('firebase/firestore', () => ({
   deleteDoc: vi.fn(),
   serverTimestamp: vi.fn(),
   writeBatch: () => ({ set: vi.fn(), commit: vi.fn() }),
+  // StudentShell (M3F-07) opens a single onSnapshot listener on
+  // settings/studentAccess. Report the safe "no document" state and return
+  // a no-op unsubscribe — this suite doesn't exercise Modalità verifica.
+  onSnapshot: (_ref: unknown, onNext: (snap: unknown) => void) => {
+    onNext({ exists: () => false });
+    return () => {};
+  },
 }));
 
 describe('App — unauthenticated', () => {

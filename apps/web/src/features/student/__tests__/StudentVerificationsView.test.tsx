@@ -455,3 +455,35 @@ describe('StudentVerificationsView', () => {
     });
   });
 });
+
+describe('StudentVerificationsView — Modalità verifica banner (M3F-07)', () => {
+  it('shows the discreet notice when examModeActive is true', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({ status: 'ok', verifications: [] });
+    render(<StudentVerificationsView examModeActive={true} />);
+
+    await waitFor(() => expect(screen.getByRole('status')).toBeTruthy());
+    expect(
+      screen.getByText(/Modalità verifica attiva: le lezioni sono temporaneamente/),
+    ).toBeTruthy();
+  });
+
+  it('does not show the notice by default', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({ status: 'ok', verifications: [] });
+    render(<StudentVerificationsView />);
+
+    await waitFor(() => screen.getByText(/Nessuna verifica pubblicata/));
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('still shows the online exam form on top of the banner condition — an in-progress session is never hidden', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_ONLINE],
+    });
+    mockLoadReceipt.mockResolvedValue(null);
+    mockLoadSubmission.mockResolvedValue(DRAFT_SUBMISSION);
+    render(<StudentVerificationsView examModeActive={true} />);
+
+    await waitFor(() => expect(screen.getByTestId('online-exam-view')).toBeTruthy());
+  });
+});

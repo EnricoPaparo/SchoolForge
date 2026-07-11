@@ -5,6 +5,9 @@ import logoScritta from '../../assets/logo-scritta-schoolforge.png';
 import { StudentLessonsView } from './StudentLessonsView.js';
 import { StudentVerificationsView } from './StudentVerificationsView.js';
 import { resolveActiveSession } from './examSessionService.js';
+import { getOwnStudentDoc } from '../repository/students/studentsService.js';
+import { watchStudentAccessSettings } from '../repository/students/studentAccessService.js';
+import { isExamModeActiveForClass } from '../repository/students/examMode.js';
 import styles from './StudentShell.module.css';
 
 type Section = 'lezioni' | 'verifiche';
@@ -34,6 +37,8 @@ export function StudentShell() {
   const [activeSection, setActiveSection] = useState<Section>('lezioni');
   const [sessionChecked, setSessionChecked] = useState(false);
   const [examInProgress, setExamInProgress] = useState(false);
+  const [myClassId, setMyClassId] = useState<string | null>(null);
+  const [examModeSettings, setExamModeSettings] = useState<unknown>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -57,6 +62,43 @@ export function StudentShell() {
       cancelled = true;
     };
   }, [uid]);
+
+  useEffect(() => {
+    if (!uid) return;
+    let cancelled = false;
+    getOwnStudentDoc(uid, db)
+      .then((studentDoc) => {
+        if (!cancelled) setMyClassId(studentDoc?.classId ?? null);
+      })
+      .catch(() => {
+        // Non-fatal — myClassId stays null, which fails Modalità verifica's
+        // per-class check safe (never "active" for an unknown class).
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [uid]);
+
+  // Modalità verifica (M3F-07): a single onSnapshot on settings/studentAccess
+  // — never a listener per lesson or class — so a teacher toggling it takes
+  // effect immediately for an already-open session, without a new login.
+  useEffect(() => {
+    const unsubscribe = watchStudentAccessSettings(db, (settings) => {
+      setExamModeSettings(settings.examMode);
+    });
+    return unsubscribe;
+  }, []);
+
+  const examModeActive = isExamModeActiveForClass(examModeSettings, myClassId);
+
+  // A blocked class must never keep showing Lezioni once the teacher
+  // activates Modalità verifica — force the section switch immediately,
+  // unmounting StudentLessonsView (and any lesson content in the DOM) on
+  // the very next render. A mandatory exam session (examInProgress) always
+  // wins regardless — it already forces 'verifiche' on its own.
+  useEffect(() => {
+    if (examModeActive && activeSection === 'lezioni') setActiveSection('verifiche');
+  }, [examModeActive, activeSection]);
 
   const displayName = user?.displayName ?? user?.email ?? 'Studente';
   const initials = displayName.charAt(0).toUpperCase();
@@ -141,29 +183,34 @@ export function StudentShell() {
         <>
           {!examInProgress && (
             <nav aria-label="Sezioni studente" className={styles.nav}>
-              {SECTIONS.map(({ id, label, icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={styles.navBtn}
-                  onClick={() => setActiveSection(id)}
-                  aria-current={activeSection === id ? 'page' : undefined}
-                  title={label}
-                >
-                  <span className={styles.navIcon} aria-hidden="true">
-                    {icon}
-                  </span>
-                  <span className={styles.navLabel}>{label}</span>
-                </button>
-              ))}
+              {SECTIONS.filter(({ id }) => id !== 'lezioni' || !examModeActive).map(
+                ({ id, label, icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={styles.navBtn}
+                    onClick={() => setActiveSection(id)}
+                    aria-current={activeSection === id ? 'page' : undefined}
+                    title={label}
+                  >
+                    <span className={styles.navIcon} aria-hidden="true">
+                      {icon}
+                    </span>
+                    <span className={styles.navLabel}>{label}</span>
+                  </button>
+                ),
+              )}
             </nav>
           )}
 
           <main className={styles.main}>
-            {activeSection === 'lezioni' ? (
+            {activeSection === 'lezioni' && !examModeActive ? (
               <StudentLessonsView />
             ) : (
-              <StudentVerificationsView onSessionActiveChange={setExamInProgress} />
+              <StudentVerificationsView
+                onSessionActiveChange={setExamInProgress}
+                examModeActive={examModeActive}
+              />
             )}
           </main>
         </>

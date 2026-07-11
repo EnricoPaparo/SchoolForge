@@ -31,9 +31,11 @@ vi.mock('../../repository/students/studentsService.js', () => ({
   listStudents: vi.fn().mockResolvedValue([]),
 }));
 vi.mock('../../repository/students/studentAccessService.js', () => ({
-  getStudentAccessSettings: vi
-    .fn()
-    .mockResolvedValue({ studentPortalEnabled: false, newStudentRequestsEnabled: false }),
+  getStudentAccessSettings: vi.fn().mockResolvedValue({
+    studentPortalEnabled: false,
+    newStudentRequestsEnabled: false,
+    examMode: { enabled: false, scope: 'all', classIds: [], enabledAt: null },
+  }),
 }));
 
 describe('TeacherShell', () => {

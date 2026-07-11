@@ -49,6 +49,13 @@ vi.mock('firebase/firestore', () => ({
     set: mockBatchSet,
     commit: (...args: unknown[]) => mockBatchCommit(...args),
   }),
+  // StudentShell (M3F-07) opens a single onSnapshot listener on
+  // settings/studentAccess. Report the safe "no document" state and return
+  // a no-op unsubscribe — this suite doesn't exercise Modalità verifica.
+  onSnapshot: (_ref: unknown, onNext: (snap: unknown) => void) => {
+    onNext({ exists: () => false });
+    return () => {};
+  },
 }));
 
 beforeEach(() => {

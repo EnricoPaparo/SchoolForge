@@ -95,9 +95,19 @@ type StudentVerificationsViewProps = {
    * working standalone/in tests that don't care about the shell nav.
    */
   onSessionActiveChange?: (active: boolean) => void;
+  /**
+   * Modalità verifica (M3F-07) currently applies to the student's own
+   * class. Shown as a discreet notice on the list view only — never on top
+   * of an in-progress/confirmed exam, which stays fully available
+   * regardless (an online exam already underway is never interrupted).
+   */
+  examModeActive?: boolean;
 };
 
-export function StudentVerificationsView({ onSessionActiveChange }: StudentVerificationsViewProps) {
+export function StudentVerificationsView({
+  onSessionActiveChange,
+  examModeActive = false,
+}: StudentVerificationsViewProps) {
   const { user } = useAuth();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [pdfLoadingId, setPdfLoadingId] = useState<string | null>(null);
@@ -330,9 +340,16 @@ export function StudentVerificationsView({ onSessionActiveChange }: StudentVerif
     );
   }
 
+  const examModeBanner = examModeActive && (
+    <p role="status" className={styles.examModeBanner}>
+      Modalità verifica attiva: le lezioni sono temporaneamente non disponibili.
+    </p>
+  );
+
   if (state.status === 'no-class') {
     return (
       <section aria-label="Verifiche" className={styles.container}>
+        {examModeBanner}
         <p className="state-empty">
           Nessuna classe assegnata. Chiedi al tuo docente di assegnarti una classe per vedere le
           verifiche.
@@ -346,6 +363,7 @@ export function StudentVerificationsView({ onSessionActiveChange }: StudentVerif
   if (verifications.length === 0) {
     return (
       <section aria-label="Verifiche" className={styles.container}>
+        {examModeBanner}
         <p className="state-empty">Nessuna verifica pubblicata per la tua classe.</p>
       </section>
     );
@@ -353,6 +371,7 @@ export function StudentVerificationsView({ onSessionActiveChange }: StudentVerif
 
   return (
     <section aria-label="Verifiche" className={styles.container}>
+      {examModeBanner}
       <ul className={styles.list}>
         {verifications.map((item) => {
           const activatedLabel = formatActivatedAt(item.activatedAt);
