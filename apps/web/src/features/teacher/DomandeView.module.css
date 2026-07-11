@@ -111,16 +111,9 @@
   cursor: default;
 }
 
-.btnPrimary {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: #fff;
-}
-
-.btnPrimary:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
+/* Primary/success/danger coloring reuses the global button-color classes
+   (btn-primary / btn-success / btn-danger from index.css) instead of
+   duplicating them here — .btn only supplies DomandeView's layout/sizing. */
 .btnSecondary {
   background: var(--color-surface-subtle);
 }
@@ -129,16 +122,6 @@
   background: var(--color-primary-light);
   border-color: var(--color-primary);
   color: var(--color-primary);
-}
-
-.btnDanger {
-  background: var(--color-error-btn);
-  border-color: var(--color-error-btn);
-  color: #fff;
-}
-
-.btnDanger:hover:not(:disabled) {
-  opacity: 0.9;
 }
 
 /* ── Tree ──────────────────────────────────────────────────────────── */

@@ -1,6 +1,8 @@
 /* ── Template kit view ─────────────────────────────────────────── */
 .section {
+  width: 100%;
   max-width: 560px;
+  margin: 0 auto;
 }
 
 .templateList {

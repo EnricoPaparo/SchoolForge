@@ -73,7 +73,23 @@ body {
   font-size: 15px;
   line-height: 1.6;
   color: var(--color-text);
-  background-color: var(--color-surface-subtle);
+  /* Same family as the login page's background (brand blue/violet glows over
+     a graphite base) but far more attenuated — a portal-wide "house style"
+     rather than a flat fill. Static (no fixed attachment / animation), so
+     it's a single cheap paint with no scroll or runtime cost. Cards and
+     panels sit on their own opaque surface color, so this only shows
+     through in the gaps and never affects text contrast. */
+  background:
+    radial-gradient(circle at 8% -8%, rgba(56, 189, 248, 0.07), transparent 38%),
+    radial-gradient(circle at 94% 106%, rgba(167, 139, 250, 0.05), transparent 40%),
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.012) 0px,
+      rgba(255, 255, 255, 0.012) 1px,
+      transparent 1px,
+      transparent 64px
+    ),
+    linear-gradient(160deg, #0b0f18 0%, #090d14 55%, #0c0f1a 100%);
   -webkit-font-smoothing: antialiased;
   transition:
     background-color 0.15s,
@@ -311,7 +327,9 @@ label {
   color: var(--color-text);
   line-height: 1.75;
   font-size: 0.9375rem;
-  max-width: 72ch;
+  /* Fills whatever width its panel gives it (e.g. after a sidebar is
+     collapsed) instead of capping at a fixed reading measure. */
+  max-width: 100%;
   min-width: 0;
   overflow-wrap: anywhere;
   word-break: normal;

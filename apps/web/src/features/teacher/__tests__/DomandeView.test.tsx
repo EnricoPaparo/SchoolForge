@@ -319,13 +319,14 @@ describe('DomandeView', () => {
       mockLoadPool.mockResolvedValue({ status: 'absent' });
     });
 
-    it('shows absent state with create button', async () => {
+    it('shows absent state with create button styled as a success (green) action', async () => {
       render(<DomandeView />);
       await expandCourse();
       await expandUda();
       fireEvent.click(await screen.findByRole('button', { name: /Protocolli/ }));
       await screen.findByText(/Nessun pool di domande/);
-      await screen.findByRole('button', { name: 'Crea pool' });
+      const createButton = await screen.findByRole('button', { name: 'Crea pool' });
+      expect(createButton.classList.contains('btn-success')).toBe(true);
     });
 
     it('opens YAML editor when create pool is clicked', async () => {
@@ -534,9 +535,11 @@ questions:
       await screen.findByText('2 domande');
     }
 
-    it('shows "Nuova domanda" button for valid pool', async () => {
+    it('shows "Nuova domanda" button for valid pool, styled as a primary (blue) action', async () => {
       await openLesson();
-      expect(screen.getByRole('button', { name: /Nuova domanda/ })).toBeTruthy();
+      const newQuestionButton = screen.getByRole('button', { name: /Nuova domanda/ });
+      expect(newQuestionButton).toBeTruthy();
+      expect(newQuestionButton.classList.contains('btn-primary')).toBe(true);
     });
 
     it('opens the new-question form when "Nuova domanda" is clicked', async () => {
@@ -545,6 +548,14 @@ questions:
       await screen.findByText('Nuova domanda');
       expect(screen.getByLabelText('ID domanda')).toBeTruthy();
       expect(screen.getByLabelText('Testo domanda')).toBeTruthy();
+    });
+
+    it('styles "Salva domanda" as a success (green) action', async () => {
+      await openLesson();
+      fireEvent.click(screen.getByRole('button', { name: /Nuova domanda/ }));
+      await screen.findByText('Nuova domanda');
+      const saveButton = screen.getByRole('button', { name: 'Salva domanda' });
+      expect(saveButton.classList.contains('btn-success')).toBe(true);
     });
 
     it('closes the new-question form on Annulla', async () => {

@@ -14,10 +14,13 @@
   gap: 1rem;
   padding: 0.625rem 1.5rem;
   min-height: 58px;
-  background:
-    radial-gradient(circle at 14% 0%, rgba(56, 189, 248, 0.34), transparent 34%),
-    radial-gradient(circle at 84% 12%, rgba(251, 146, 60, 0.24), transparent 32%),
-    linear-gradient(120deg, #12243a 0%, #24305f 48%, #3a255f 100%);
+  /* The wordmark's ink (navy blue + orange) needs a light, uniform backdrop
+     to stay legible — it cannot rely on a drop-shadow glow to "fix" a
+     background that's too dark or too colorful right behind it. So the
+     left/logo zone stays a flat, neutral, high-luminosity tone, and the
+     blue/violet/orange accent shifts toward the right side (behind the
+     account menu) where it doesn't interfere with the logo. */
+  background: linear-gradient(100deg, #eef1f6 0%, #e8ecf5 40%, #dbe6fb 72%, #cfe0ff 100%);
   border-bottom: 3px solid transparent;
   border-image: linear-gradient(90deg, var(--color-brand-blue), var(--color-brand-orange)) 1;
   color: var(--color-text);
@@ -31,9 +34,6 @@
   max-width: min(260px, calc(100vw - 6rem));
   width: auto;
   object-fit: contain;
-  filter:
-    drop-shadow(0 0 10px rgba(255, 255, 255, 0.5))
-    drop-shadow(0 2px 5px rgba(0, 0, 0, 0.35));
 }
 
 /* ── User menu / dropdown ──────────────────────────────────────── */

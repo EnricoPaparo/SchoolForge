@@ -3,7 +3,9 @@
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  width: 100%;
   max-width: 720px;
+  margin: 0 auto;
 }
 
 /* ── Create form ──────────────────────────────────────────────────── */
