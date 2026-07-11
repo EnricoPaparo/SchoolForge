@@ -369,11 +369,56 @@ Vecchio corpo della lezione.`;
       { __path: 'programs/prog-1/imports/imp-1/lessons/lesson-1' },
       expectedPatch,
     );
-    expect(mockUpdateDoc).toHaveBeenCalledWith({ __path: 'publicLessons/lesson-1' }, expectedPatch);
+    expect(mockUpdateDoc).toHaveBeenCalledWith(
+      { __path: 'publicLessons/lesson-1' },
+      { ...expectedPatch, content: 'Nuovo corpo della lezione, riscritto dal docente.' },
+    );
     expect(mockSetDoc).toHaveBeenCalledWith(
       { __path: 'auditEvents/auto-id' },
       expect.objectContaining({ action: 'lesson.updated', targetId: 'lesson-1' }),
     );
+  });
+
+  it('does not add a content field to the technical lesson doc, only to publicLessons', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC })
+      .mockResolvedValueOnce({ exists: () => true });
+    mockGetBytes.mockResolvedValueOnce(encode('---\ntitolo: "HTTP"\n---\n\nVecchio corpo.'));
+
+    await updateLessonMarkdownBody({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonId: 'lesson-1',
+      body: 'Corpo aggiornato.',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    const lessonDocCall = mockUpdateDoc.mock.calls.find(
+      (call) =>
+        (call[0] as { __path: string }).__path === 'programs/prog-1/imports/imp-1/lessons/lesson-1',
+    );
+    expect(lessonDocCall?.[1]).not.toHaveProperty('content');
+  });
+
+  it('rejects a body exceeding the size limit before writing anything', async () => {
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
+    mockGetBytes.mockResolvedValueOnce(encode('---\ntitolo: "HTTP"\n---\n\nVecchio corpo.'));
+
+    await expect(
+      updateLessonMarkdownBody({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        lessonId: 'lesson-1',
+        body: 'a'.repeat(800_000),
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow(/supera il limite/);
+    expect(mockUploadBytes).not.toHaveBeenCalled();
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
 
   it('preserves unknown front matter keys when saving the body', async () => {
@@ -537,6 +582,7 @@ describe('createLesson', () => {
         udaId: 'uda-01',
         order: 0,
         titolo: "Introduzione all'HTTP",
+        content: '',
       }),
     );
     expect(mockUpdateDoc).toHaveBeenCalledWith(
@@ -591,6 +637,45 @@ describe('createLesson', () => {
 
     const next = writtenContent();
     expect(next).toBe('---\ntitolo: HTTP\n---');
+  });
+
+  it('sets publicLessons.content to the provided body', async () => {
+    mockGetDocs.mockResolvedValueOnce({ docs: [] });
+
+    await createLesson({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-01',
+      udaDir: 'uda-01-reti',
+      ownerUid: OWNER_UID,
+      fields: { ...BASE_FIELDS, body: 'Corpo della nuova lezione.' },
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    expect(mockSetDoc).toHaveBeenCalledWith(
+      { __path: 'publicLessons/uda-01_lezione-001-http' },
+      expect.objectContaining({ content: 'Corpo della nuova lezione.' }),
+    );
+  });
+
+  it('rejects a body exceeding the size limit before writing anything', async () => {
+    mockGetDocs.mockResolvedValueOnce({ docs: [] });
+
+    await expect(
+      createLesson({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        udaId: 'uda-01',
+        udaDir: 'uda-01-reti',
+        ownerUid: OWNER_UID,
+        fields: { ...BASE_FIELDS, body: 'a'.repeat(800_000) },
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow(/supera il limite/);
+    expect(mockUploadBytes).not.toHaveBeenCalled();
+    expect(mockSetDoc).not.toHaveBeenCalled();
   });
 
   it('throws a Storage-specific error and never touches Firestore when the Storage write fails', async () => {

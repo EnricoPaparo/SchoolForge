@@ -3,28 +3,20 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // Student lesson content is the second hop of the M3-lite flow.
-    // Firestore rules already gate discovery of programs/publicLessons by:
-    // - student portal toggle;
-    // - approved student status;
-    // - assigned classId;
-    // - program.classIds compatibility.
-    //
-    // Production Storage Rules are stricter than the emulator around
-    // cross-service Firestore reads. Storage therefore does not read
-    // Firestore at all: it serves only Markdown lesson files to authenticated
-    // users. The actual student authorization/class gating happens before
-    // this, in Firestore discovery rules for programs/publicLessons, which
-    // are the only way the client receives a contentPath.
-
-    // Student read path for imported lesson Markdown:
-    // repository/{ownerUid}/imports/{importId}/{udaDir}/{fileName}
-    match /repository/{ownerUid}/imports/{importId}/{udaDir}/{fileName} {
-      allow read: if request.auth != null
-        && request.auth.uid != ownerUid
-        && fileName.matches('.*\\.md')
-        && !fileName.matches('.*\\.pool\\.md');
-    }
+    // M3F-08: the student-facing "second hop" that used to grant any
+    // authenticated non-owner a direct read of imported lesson Markdown is
+    // REMOVED. Storage now serves the repository tree — Markdown and pool
+    // files alike — only to its owner. The student portal reads the lesson
+    // body exclusively from `publicLessons/{id}.content` (a Firestore
+    // projection, still gated by the existing discovery rules: portal
+    // toggle, approved status, assigned classId, program.classIds
+    // compatibility, Modalità verifica) — see studentLessonsService.ts.
+    // A student who somehow still knew/cached a contentPath from before this
+    // change gets a plain permission-denied here now, closing the M3F-07
+    // interim gap (see sicurezza.md §3.2a) for good. No cross-service
+    // firestore.get()/exists() calls are introduced — this file still never
+    // reads Firestore at all, it simply stops granting a second, unguarded
+    // path to the same content.
 
     // Owner keeps full control over repository files and pools.
     match /repository/{ownerUid}/{allPaths=**} {

@@ -40,6 +40,11 @@ import {
 import { fetchLessonContent } from './lessonContent.js';
 import { downloadLessonPdf } from './lessonPdf.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
+import {
+  backfillPublicLessonsContent,
+  isPublicLessonsMigrationComplete,
+  type BackfillSummary,
+} from '../repository/programs/publicLessonsBackfillService.js';
 import styles from './LessonsView.module.css';
 
 function linesToArray(value: string): string[] {
@@ -184,6 +189,46 @@ export function LessonsView() {
     lessonId: string;
     blockers: RepositoryDeleteBlocker[];
   } | null>(null);
+
+  // ── Legacy publicLessons.content backfill (M3F-08) ───────────────
+  // Discreet, owner-only: visibility is decided by a single cheap read of
+  // settings/publicLessonsMigration (see isPublicLessonsMigrationComplete),
+  // never by scanning every publicLessons document on each mount — once the
+  // marker is set the trigger stays hidden for good, since every write path
+  // keeps `content` in sync from here on. The actual migration (Storage
+  // reads included) only runs on explicit teacher confirmation.
+  const [migrationComplete, setMigrationComplete] = useState<boolean | null>(null);
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillSummary, setBackfillSummary] = useState<BackfillSummary | null>(null);
+  const [backfillError, setBackfillError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!ownerUid) return;
+    void checkMigrationStatus();
+  }, [ownerUid]);
+
+  async function checkMigrationStatus() {
+    try {
+      setMigrationComplete(await isPublicLessonsMigrationComplete(db));
+    } catch {
+      setMigrationComplete(null);
+    }
+  }
+
+  async function handleRunBackfill() {
+    setBackfillRunning(true);
+    setBackfillError(null);
+    setBackfillSummary(null);
+    try {
+      const summary = await backfillPublicLessonsContent(ownerUid, db, storage);
+      setBackfillSummary(summary);
+      if (summary.failed.length === 0) setMigrationComplete(true);
+    } catch {
+      setBackfillError('Impossibile eseguire il backfill delle proiezioni.');
+    } finally {
+      setBackfillRunning(false);
+    }
+  }
 
   useEffect(() => {
     void loadPrograms();
@@ -811,6 +856,30 @@ export function LessonsView() {
                 <IconChevronLeft />
               </button>
             </div>
+          </div>
+        )}
+
+        {!sidebarCollapsed && migrationComplete === false && (
+          <div role="status" style={{ padding: '0.5rem', fontSize: '0.85em' }}>
+            <p>Proiezioni lezione legacy da sincronizzare (M3F-08).</p>
+            <button
+              type="button"
+              disabled={backfillRunning}
+              onClick={() => void handleRunBackfill()}
+            >
+              {backfillRunning ? 'Sincronizzazione in corso…' : 'Sincronizza proiezioni legacy'}
+            </button>
+            {backfillError && (
+              <p role="alert" className="text-error">
+                {backfillError}
+              </p>
+            )}
+            {backfillSummary && (
+              <p>
+                Analizzate: {backfillSummary.analyzed} · Migrate: {backfillSummary.migrated} · Già
+                sincronizzate: {backfillSummary.skipped} · Fallite: {backfillSummary.failed.length}
+              </p>
+            )}
           </div>
         )}
 

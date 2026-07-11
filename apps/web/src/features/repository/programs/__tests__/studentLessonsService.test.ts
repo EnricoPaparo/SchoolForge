@@ -206,3 +206,62 @@ describe('loadStudentLessons — lesson sorting', () => {
     expect(lesson).not.toHaveProperty('questionCount');
   });
 });
+
+describe('loadStudentLessons — M3F-08 content projection', () => {
+  function singleLessonSnap(data: Record<string, unknown>) {
+    return (q: { __collRef: { __collection: string } }) => {
+      if (q.__collRef.__collection === 'programs') {
+        return Promise.resolve(
+          docsFor('programs', [
+            { id: 'p1', data: { title: 'Informatica', classIds: ['class-a'] } },
+          ]),
+        );
+      }
+      return Promise.resolve(
+        docsFor('publicLessons', [
+          {
+            id: 'l1',
+            data: {
+              programId: 'p1',
+              udaId: 'uda-1',
+              udaDir: 'uda-01-reti',
+              filename: 'lezione-001.md',
+              path: 'uda-01-reti/lezione-001.md',
+              contentPath: 'repository/x/imports/i1/uda-01-reti/lezione-001.md',
+              ownerUid: 'owner',
+              importId: 'i1',
+              ...data,
+            },
+          },
+        ]),
+      );
+    };
+  }
+
+  it('exposes content as-is when the projection has a valid string', async () => {
+    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
+    mockGetDocs.mockImplementation(singleLessonSnap({ content: 'Corpo della lezione.' }));
+
+    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    if (result.status !== 'ok') throw new Error('expected ok');
+    expect(result.lessonsByProgram['p1']![0]!.content).toBe('Corpo della lezione.');
+  });
+
+  it('normalizes a legacy document with no content field to null (no Storage fallback)', async () => {
+    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
+    mockGetDocs.mockImplementation(singleLessonSnap({}));
+
+    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    if (result.status !== 'ok') throw new Error('expected ok');
+    expect(result.lessonsByProgram['p1']![0]!.content).toBeNull();
+  });
+
+  it('normalizes a corrupt non-string content value to null', async () => {
+    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
+    mockGetDocs.mockImplementation(singleLessonSnap({ content: 42 }));
+
+    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    if (result.status !== 'ok') throw new Error('expected ok');
+    expect(result.lessonsByProgram['p1']![0]!.content).toBeNull();
+  });
+});

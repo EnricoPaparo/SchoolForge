@@ -89,6 +89,8 @@ export interface PublicLessonPayload {
     concettiChiave: string[];
     obiettivi: string[];
     order: number;
+    /** The lesson body Markdown itself — see PublicLessonDoc.content. */
+    content: string;
   };
 }
 

@@ -577,6 +577,11 @@ describe('importRepository — publicLessons projection', () => {
       expect(data).not.toHaveProperty('questionCount');
       expect(JSON.stringify(data)).not.toContain('.pool.md');
       expect(data.contentPath).toMatch(/\.md$/);
+      // M3F-08: the projection carries the student-facing body directly —
+      // never the pool, never front matter beyond the already-separate
+      // titolo/sottotitolo/etc. fields.
+      expect(typeof data.content).toBe('string');
+      expect(data.content).not.toContain('poolStorageRef');
     }
   });
 
@@ -830,7 +835,7 @@ describe('importRepository — publicLessons projection', () => {
     expect(meta.customMetadata?.programId).toBe(result.programId);
   });
 
-  it('an approved student in the program’s class can read the lesson file from Storage, but never the pool', async () => {
+  it('M3F-08: an approved, class-compatible student can no longer read the lesson file directly from Storage — publicLessons.content is the only student-facing source', async () => {
     await seedOwner();
     const db = ownerDb();
     const storage = ownerStorage();
@@ -846,7 +851,7 @@ describe('importRepository — publicLessons projection', () => {
     await seedProgramClassIds(result.programId, ['class-a']);
 
     const studentSt = otherStorage();
-    await assertSucceeds(
+    await assertFails(
       getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
     );
     await assertFails(
@@ -856,7 +861,7 @@ describe('importRepository — publicLessons projection', () => {
     );
   });
 
-  it('allows direct Storage read for an authenticated non-owner when Firestore discovery would be denied', async () => {
+  it('the owner can still read the imported lesson and pool files directly from Storage', async () => {
     await seedOwner();
     const db = ownerDb();
     const storage = ownerStorage();
@@ -867,126 +872,14 @@ describe('importRepository — publicLessons projection', () => {
     );
     if (result.status !== 'committed') throw new Error('expected committed');
 
-    await seedStudentAccess(true);
-    await seedProgramClassIds(result.programId, ['class-a']);
-    const studentSt = otherStorage();
+    const ownerSt = ownerStorage();
     await assertSucceeds(
-      getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
+      getBytes(ref(ownerSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
     );
-  });
-
-  it('allows Storage read for an approved class-compatible student even when portal discovery is disabled upstream', async () => {
-    await seedOwner();
-    const db = ownerDb();
-    const storage = ownerStorage();
-
-    const result = await importRepository(
-      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
-    );
-    if (result.status !== 'committed') throw new Error('expected committed');
-
-    await seedStudentAccess(false);
-    await seedStudent('approved', 'class-a');
-    await seedProgramClassIds(result.programId, ['class-a']);
-
-    const studentSt = otherStorage();
-    // Firestore rules block discovery (programs/publicLessons) when the
-    // portal is disabled. Storage deliberately does not repeat those checks:
-    // it only verifies authenticated imported Markdown reads.
     await assertSucceeds(
-      getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
+      getBytes(
+        ref(ownerSt, `repository/${OWNER_UID}/imports/${result.importId}/${VALID_POOL.path}`),
+      ),
     );
-  });
-
-  it('allows direct Storage read for an approved assigned student even when program assignment is blocked upstream', async () => {
-    await seedOwner();
-    const db = ownerDb();
-    const storage = ownerStorage();
-
-    const result = await importRepository(
-      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
-    );
-    if (result.status !== 'committed') throw new Error('expected committed');
-
-    await seedStudentAccess(true);
-    await seedStudent('approved', 'class-a');
-    // importRepository doesn't assign a class by itself — the freshly
-    // imported program carries no classIds at all, never visible by
-    // omission — no seedProgramClassIds() call here.
-
-    const studentSt = otherStorage();
-    await assertSucceeds(
-      getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
-    );
-  });
-
-  it('allows direct Storage read for an approved assigned student even when class compatibility is blocked upstream', async () => {
-    await seedOwner();
-    const db = ownerDb();
-    const storage = ownerStorage();
-
-    const result = await importRepository(
-      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
-    );
-    if (result.status !== 'committed') throw new Error('expected committed');
-
-    await seedStudentAccess(true);
-    await seedStudent('approved', 'class-z');
-    await seedProgramClassIds(result.programId, ['class-a', 'class-b']);
-
-    const studentSt = otherStorage();
-    await assertSucceeds(
-      getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
-    );
-  });
-
-  it('allows direct Storage read for an approved student with no classId when discovery is blocked upstream', async () => {
-    await seedOwner();
-    const db = ownerDb();
-    const storage = ownerStorage();
-
-    const result = await importRepository(
-      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
-    );
-    if (result.status !== 'committed') throw new Error('expected committed');
-
-    await seedStudentAccess(true);
-    await seedStudent('approved', null);
-    await seedProgramClassIds(result.programId, ['class-a']);
-
-    const studentSt = otherStorage();
-    await assertSucceeds(
-      getBytes(ref(studentSt, `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`)),
-    );
-  });
-
-  it('allows an approved assigned student to read a legacy lesson file with no programId metadata', async () => {
-    await seedOwner();
-    const db = ownerDb();
-    const storage = ownerStorage();
-
-    const result = await importRepository(
-      { ownerUid: OWNER_UID, programmaTitle: 'Informatica', files: VALID_FILES },
-      { db, storage },
-    );
-    if (result.status !== 'committed') throw new Error('expected committed');
-
-    await seedStudentAccess(true);
-    await seedStudent('approved', 'class-a');
-    await seedProgramClassIds(result.programId, ['class-a']);
-
-    const legacyPath = `repository/${OWNER_UID}/imports/${result.importId}/${LESSON.path}`;
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await uploadBytes(ref(ctx.storage(), legacyPath), new Uint8Array([1]), {
-        customMetadata: { kind: 'lesson' },
-      });
-    });
-
-    const studentSt = otherStorage();
-    await assertSucceeds(getBytes(ref(studentSt, legacyPath)));
   });
 });

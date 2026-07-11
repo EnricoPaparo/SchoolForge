@@ -22,6 +22,7 @@ import {
   type EditableFrontMatter,
 } from '../validation/frontMatter.js';
 import { parseLessonMetadata } from '../validation/lessonMetadata.js';
+import { assertLessonContentSize } from '../programs/lessonContentSize.js';
 import { toDocId } from '../import/buildImportPayload.js';
 import type { LessonMetadata, UdaMetadata } from '../validation/types.js';
 import type {
@@ -158,19 +159,24 @@ type LessonDocPatch = Pick<
  * didactic metadata patch to persist, whether the teacher edited the
  * metadata directly (`updateLessonMetadata`) or only the body
  * (`updateLessonMarkdownBody`, where the patch is just a resync of whatever
- * front matter the save recomposed).
+ * front matter the save recomposed). `publicContent`, when provided (only by
+ * `updateLessonMarkdownBody`), also patches `publicLessons.content` — never
+ * the technical `LessonDoc`, which has no such field.
  */
 async function syncLessonMetadataDocs(
   db: Firestore,
   lessonRef: DocumentReference,
   lessonId: string,
   docPatch: LessonDocPatch,
+  publicContent?: string,
 ): Promise<void> {
   await updateDoc(lessonRef, docPatch);
   const publicLessonRef = doc(db, 'publicLessons', lessonId);
   const publicLessonSnap = await getDoc(publicLessonRef);
   if (publicLessonSnap.exists()) {
-    await updateDoc(publicLessonRef, docPatch);
+    const publicPatch =
+      publicContent === undefined ? docPatch : { ...docPatch, content: publicContent };
+    await updateDoc(publicLessonRef, publicPatch);
   }
 }
 
@@ -308,17 +314,22 @@ export async function updateLessonMarkdownBody(params: {
   const lesson = snap.data() as LessonDoc;
 
   let metadata: LessonMetadata;
+  let publicBody: string;
   try {
     const currentContent = await fetchStorageText(lesson.storageRef, storage);
     const nextContent = composeMarkdownWithFrontMatter(readRawFrontMatter(currentContent), body);
-    metadata = parseLessonMetadata(nextContent).metadata;
+    const parsed = parseLessonMetadata(nextContent);
+    metadata = parsed.metadata;
+    publicBody = parsed.body;
+    assertLessonContentSize(publicBody, lesson.filename);
     await writeStorageText(lesson.storageRef, nextContent, storage);
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('supera il limite')) throw err;
     throw new Error('Impossibile aggiornare il file della lezione su Storage.');
   }
 
   try {
-    await syncLessonMetadataDocs(db, lessonRef, lessonId, metadata);
+    await syncLessonMetadataDocs(db, lessonRef, lessonId, metadata, publicBody);
   } catch {
     throw new Error(
       'Il contenuto della lezione è stato aggiornato su Storage ma i metadati non sono stati sincronizzati su Firestore. Riprova a salvare.',
@@ -387,10 +398,14 @@ export async function createLesson(params: {
     obiettivi: fields.obiettivi,
   };
 
+  let publicBody: string;
   try {
     const content = composeMarkdownWithFrontMatter(lessonFrontMatterFields(metadata), fields.body);
+    publicBody = parseLessonMetadata(content).body;
+    assertLessonContentSize(publicBody, filename);
     await writeStorageText(storageRef, content, storage);
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('supera il limite')) throw err;
     throw new Error('Impossibile creare il file della lezione su Storage.');
   }
 
@@ -420,6 +435,7 @@ export async function createLesson(params: {
       contentPath: storageRef,
       order,
       createdAt: serverTimestamp(),
+      content: publicBody,
       ...metadata,
     } satisfies PublicLessonDoc);
 

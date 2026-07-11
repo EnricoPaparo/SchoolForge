@@ -1,18 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
-import { db, storage } from '../../lib/firebase.js';
+import { db } from '../../lib/firebase.js';
 import {
   loadStudentLessons,
   type StudentLesson,
   type StudentProgram,
 } from '../repository/programs/studentLessonsService.js';
 import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
-import {
-  EMPTY_LESSON_METADATA,
-  parseLessonMetadata,
-} from '../repository/validation/lessonMetadata.js';
+import { EMPTY_LESSON_METADATA } from '../repository/validation/lessonMetadata.js';
 import type { LessonMetadata } from '../repository/validation/types.js';
-import { fetchLessonContent } from '../teacher/lessonContent.js';
 import { MarkdownRenderer } from '../teacher/MarkdownRenderer.js';
 import { IconChevronLeft, IconChevronRight } from '../../components/icons.js';
 import styles from './StudentLessonsView.module.css';
@@ -36,10 +32,7 @@ export function StudentLessonsView() {
   const [expandedPrograms, setExpandedPrograms] = useState<Set<string>>(new Set());
   const [expandedUdas, setExpandedUdas] = useState<Set<string>>(new Set());
   const [selectedLesson, setSelectedLesson] = useState<StudentLesson | null>(null);
-  const [lessonContent, setLessonContent] = useState<string | null>(null);
   const [lessonMetadata, setLessonMetadata] = useState<LessonMetadata>(EMPTY_LESSON_METADATA);
-  const [lessonContentLoading, setLessonContentLoading] = useState(false);
-  const [lessonContentError, setLessonContentError] = useState<string | null>(null);
 
   const uid = user?.uid;
   useEffect(() => {
@@ -84,27 +77,23 @@ export function StudentLessonsView() {
     });
   }
 
-  async function selectLesson(lesson: StudentLesson) {
+  /**
+   * M3F-08: the lesson body comes exclusively from `publicLessons.content`,
+   * already in memory from `loadStudentLessons` — no Storage call, no
+   * loading/error/retry state. `lesson.content === null` means a legacy
+   * projection written before M3F-08 (see `normalizeLessonContent`); the
+   * student sees a clear "not available" message instead of a spinner that
+   * would never resolve into anything.
+   */
+  function selectLesson(lesson: StudentLesson) {
     setSelectedLesson(lesson);
-    setLessonContent(null);
-    setLessonMetadata(EMPTY_LESSON_METADATA);
-    setLessonContentError(null);
-    setLessonContentLoading(true);
-    try {
-      const raw = await fetchLessonContent(lesson.contentPath, storage);
-      const { metadata, body } = parseLessonMetadata(raw);
-      setLessonMetadata(metadata);
-      setLessonContent(body);
-    } catch {
-      // storage.rules grants any authenticated non-owner a read on a `.md`
-      // lesson file (see storage.rules) — class/approval are gated upstream,
-      // in Firestore discovery of programs/publicLessons. A failure here is
-      // therefore almost always transient (network, expired session), not a
-      // permission issue tied to this specific lesson.
-      setLessonContentError('Impossibile caricare il contenuto della lezione.');
-    } finally {
-      setLessonContentLoading(false);
-    }
+    setLessonMetadata({
+      titolo: lesson.titolo ?? null,
+      sottotitolo: lesson.sottotitolo ?? null,
+      difficolta: lesson.difficolta ?? null,
+      concettiChiave: lesson.concettiChiave ?? [],
+      obiettivi: lesson.obiettivi ?? [],
+    });
   }
 
   if (state.status === 'loading') {
@@ -240,7 +229,7 @@ export function StudentLessonsView() {
                                               className={styles.lessonBtn}
                                               aria-pressed={selectedLesson?.id === lesson.id}
                                               aria-label={`Apri lezione ${lesson.filename}`}
-                                              onClick={() => void selectLesson(lesson)}
+                                              onClick={() => selectLesson(lesson)}
                                             >
                                               {title}
                                             </button>
@@ -309,18 +298,12 @@ export function StudentLessonsView() {
               </div>
             )}
 
-            {lessonContentLoading && (
-              <p aria-busy="true" className="state-loading">
-                Caricamento contenuto…
-              </p>
-            )}
-            {lessonContentError && (
+            {selectedLesson.content === null ? (
               <p role="alert" className="text-error">
-                {lessonContentError}
+                Contenuto temporaneamente non disponibile.
               </p>
-            )}
-            {lessonContent !== null && !lessonContentLoading && (
-              <MarkdownRenderer markdown={lessonContent} />
+            ) : (
+              <MarkdownRenderer markdown={selectedLesson.content} />
             )}
           </>
         )}

@@ -14,10 +14,10 @@ vi.mock('../../repository/programs/studentLessonsService.js', () => ({
   loadStudentLessons: (...args: unknown[]) => mockLoadStudentLessons(...args),
 }));
 
-const mockFetchLessonContent = vi.fn();
-vi.mock('../../teacher/lessonContent.js', () => ({
-  fetchLessonContent: (...args: unknown[]) => mockFetchLessonContent(...args),
-}));
+// M3F-08: the student view no longer touches Storage at all — no
+// fetchLessonContent import remains in StudentLessonsView.tsx, so there is
+// nothing to mock here anymore. If this mock is ever needed again, it means
+// the Storage fallback has regressed.
 
 afterEach(cleanup);
 beforeEach(() => {
@@ -40,6 +40,12 @@ const LESSON_1 = {
   filename: 'lezione-001.md',
   contentPath: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-001.md',
   createdAt: null,
+  titolo: 'Titolo',
+  sottotitolo: null,
+  difficolta: null,
+  concettiChiave: [],
+  obiettivi: [],
+  content: '# Titolo\n\nContenuto della lezione.',
 };
 
 const LESSON_2 = {
@@ -121,13 +127,12 @@ describe('StudentLessonsView', () => {
     expect(titles).toEqual(['Informatica', 'Matematica']);
   });
 
-  it('clicking a lesson loads and renders its markdown content', async () => {
+  it('clicking a lesson renders its markdown content synchronously, from publicLessons.content — no Storage call', async () => {
     mockLoadStudentLessons.mockResolvedValue({
       status: 'ok',
       programs: [PROGRAM_A],
       lessonsByProgram: { [PROGRAM_A.id]: [LESSON_1] },
     });
-    mockFetchLessonContent.mockResolvedValue('# Titolo\n\nContenuto della lezione.');
 
     render(<StudentLessonsView />);
     await waitFor(() => screen.getByText('Informatica'));
@@ -135,17 +140,16 @@ describe('StudentLessonsView', () => {
     fireEvent.click(screen.getByText('uda-01-reti'));
     fireEvent.click(screen.getByRole('button', { name: /Apri lezione lezione-001.md/ }));
 
-    await waitFor(() => expect(screen.getByText('Titolo')).toBeTruthy());
-    expect(mockFetchLessonContent).toHaveBeenCalledWith(LESSON_1.contentPath, {});
+    await waitFor(() => expect(screen.getByText('Contenuto della lezione.')).toBeTruthy());
   });
 
-  it('shows a readable error when lesson content fails to load', async () => {
+  it('shows "Contenuto temporaneamente non disponibile" for a legacy lesson with no content, without retrying', async () => {
+    const legacyLesson = { ...LESSON_1, content: null };
     mockLoadStudentLessons.mockResolvedValue({
       status: 'ok',
       programs: [PROGRAM_A],
-      lessonsByProgram: { [PROGRAM_A.id]: [LESSON_1] },
+      lessonsByProgram: { [PROGRAM_A.id]: [legacyLesson] },
     });
-    mockFetchLessonContent.mockRejectedValue(new Error('storage down'));
 
     render(<StudentLessonsView />);
     await waitFor(() => screen.getByText('Informatica'));
@@ -154,8 +158,10 @@ describe('StudentLessonsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /Apri lezione lezione-001.md/ }));
 
     await waitFor(() =>
-      expect(screen.getByText('Impossibile caricare il contenuto della lezione.')).toBeTruthy(),
+      expect(screen.getByText('Contenuto temporaneamente non disponibile.')).toBeTruthy(),
     );
+    // No async fetch was ever kicked off — no loading state should ever appear.
+    expect(screen.queryByText('Caricamento contenuto…')).toBeNull();
   });
 
   it('never renders docente-only actions (no import, no PDF, no template controls)', async () => {
@@ -164,14 +170,13 @@ describe('StudentLessonsView', () => {
       programs: [PROGRAM_A],
       lessonsByProgram: { [PROGRAM_A.id]: [LESSON_1] },
     });
-    mockFetchLessonContent.mockResolvedValue('# Titolo');
 
     render(<StudentLessonsView />);
     await waitFor(() => screen.getByText('Informatica'));
     fireEvent.click(screen.getByText('Informatica'));
     fireEvent.click(screen.getByText('uda-01-reti'));
     fireEvent.click(screen.getByRole('button', { name: /Apri lezione lezione-001.md/ }));
-    await waitFor(() => expect(screen.getByText('Titolo')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Contenuto della lezione.')).toBeTruthy());
 
     expect(screen.queryByRole('button', { name: /PDF/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /Importa/i })).toBeNull();

@@ -172,6 +172,16 @@ service cloud.firestore {
       allow write: if isOwner();
     }
 
+    // --- settings/publicLessonsMigration (M3F-08 backfill marker) ---
+    // Owner-only in both directions: unlike ownerPublic/studentAccess above,
+    // nothing here needs to be readable by a student — it exists purely so
+    // LessonsView can decide whether to show the backfill trigger without
+    // scanning every publicLessons document on each mount. Written only by
+    // publicLessonsBackfillService, only after a run with zero failures.
+    match /settings/publicLessonsMigration {
+      allow read, write: if isOwner();
+    }
+
     // --- students/{uid} (M3-lite approval roster) ---
     // uid == the student's own Firebase Auth uid. A Google-authenticated
     // non-owner with no document here is treated as 'pending' for
