@@ -261,16 +261,51 @@ export function VerificationsView() {
     }
   }
 
-  async function handleSaveDraftMeta(e: FormEvent) {
-    e.preventDefault();
+  /**
+   * Pure mapping from the current question-picker selection to the stable
+   * `VerificationQuestionRef[]` shape stored on the draft config — never the
+   * full question text/solution. Shared by the standalone draft save and by
+   * activation (which re-saves the selection just before freezing the
+   * immutable teacherSnapshot).
+   */
+  function buildQuestionRefsFromSelection() {
+    if (!questionIndex) return null;
+    const entryMap = new Map(questionIndex.map((e) => [e.id, e]));
+    return Array.from(selectedQuestionIds)
+      .map((id) => {
+        const entry = entryMap.get(id);
+        if (!entry) return null;
+        return {
+          questionIndexEntryId: entry.id,
+          questionLocalId: entry.questionLocalId,
+          udaDir: entry.udaDir,
+          lessonFilename: entry.lessonFilename,
+          poolStorageRef: entry.poolStorageRef,
+          tipo: entry.tipo,
+          difficolta: entry.difficolta,
+          peso: entry.peso,
+          maxPoints: entry.maxPoints,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+  }
+
+  /**
+   * "Salva bozza": persists title, class and the current question selection
+   * together in a single `updateVerificationConfig` write — no immutable
+   * snapshot is created here (only "Attiva verifica" does that).
+   */
+  async function handleSaveDraft() {
     if (!selectedVer || selectedVer.status !== 'draft') return;
     const title = editDraftTitle.trim();
     if (!title) return;
     setSavingDraft(true);
     try {
       const classId = editDraftClassId || null;
-      await updateVerificationConfig(selectedVer.id, { title, classId }, ownerUid, db);
-      const updated = { ...selectedVer, config: { ...selectedVer.config, title, classId } };
+      const questionRefs = buildQuestionRefsFromSelection();
+      const patch = questionRefs === null ? { title, classId } : { title, classId, questionRefs };
+      await updateVerificationConfig(selectedVer.id, patch, ownerUid, db);
+      const updated = { ...selectedVer, config: { ...selectedVer.config, ...patch } };
       setSelectedVer(updated);
       setVerifications((prev) => prev?.map((v) => (v.id === updated.id ? updated : v)) ?? null);
     } finally {
@@ -308,43 +343,23 @@ export function VerificationsView() {
     }
   }
 
-  async function handleSaveQuestionRefs() {
-    if (!selectedVer || !questionIndex) return;
-    const entryMap = new Map(questionIndex.map((e) => [e.id, e]));
-    const questionRefs = Array.from(selectedQuestionIds)
-      .map((id) => {
-        const entry = entryMap.get(id);
-        if (!entry) return null;
-        return {
-          questionIndexEntryId: entry.id,
-          questionLocalId: entry.questionLocalId,
-          udaDir: entry.udaDir,
-          lessonFilename: entry.lessonFilename,
-          poolStorageRef: entry.poolStorageRef,
-          tipo: entry.tipo,
-          difficolta: entry.difficolta,
-          peso: entry.peso,
-          maxPoints: entry.maxPoints,
-        };
-      })
-      .filter((r): r is NonNullable<typeof r> => r !== null);
-    await updateVerificationConfig(selectedVer.id, { questionRefs }, ownerUid, db);
-    setSelectedVer((prev) => (prev ? { ...prev, config: { ...prev.config, questionRefs } } : prev));
-    setVerifications(
-      (prev) =>
-        prev?.map((v) =>
-          v.id === selectedVer.id ? { ...v, config: { ...v.config, questionRefs } } : v,
-        ) ?? null,
-    );
-  }
-
   async function handleConfirmActivate() {
     if (!selectedVer) return;
     setActivating(true);
     setActivateError(null);
     try {
-      await handleSaveQuestionRefs();
-      const classItem = classes.find((c) => c.id === selectedVer.config.classId) ?? null;
+      const title = editDraftTitle.trim();
+      if (!title) {
+        setActivateError('Inserisci un titolo prima di attivare la verifica.');
+        return;
+      }
+      const classId = editDraftClassId || null;
+      const questionRefs = buildQuestionRefsFromSelection();
+      const patch = questionRefs === null ? { title, classId } : { title, classId, questionRefs };
+      // Activation must freeze exactly what is currently visible in the draft
+      // editor, even when the teacher did not click "Salva bozza" first.
+      await updateVerificationConfig(selectedVer.id, patch, ownerUid, db);
+      const classItem = classes.find((c) => c.id === classId) ?? null;
       await activateVerification(selectedVer.id, classItem, ownerUid, db, storage);
       setShowActivateConfirm(false);
       const updated = await listVerifications(ownerUid, db);
@@ -358,53 +373,98 @@ export function VerificationsView() {
     }
   }
 
+  /**
+   * Resolves the (title, questionRefs, className) a draft PDF should be
+   * built from — the current saved/loaded selection, never a snapshot.
+   * Active/closed verifications keep using the immutable `teacherSnapshot`.
+   */
+  function resolvePdfSource(v: VerificationItem): {
+    title: string;
+    questionRefs: VerificationItem['config']['questionRefs'];
+    className: string | null;
+  } | null {
+    if (v.status === 'draft') {
+      const classNameResolved = classes.find((c) => c.id === v.config.classId)?.name ?? null;
+      return {
+        title: v.config.title,
+        questionRefs: v.config.questionRefs,
+        className: classNameResolved,
+      };
+    }
+    const snapshot = v.teacherSnapshot;
+    if (!snapshot) return null;
+    const classNameResolved =
+      classes.find((c) => c.id === snapshot.classId)?.name ?? snapshot.className ?? null;
+    return {
+      title: snapshot.title,
+      questionRefs: snapshot.questionRefs,
+      className: classNameResolved,
+    };
+  }
+
   async function handleDownloadPdf(v: VerificationItem) {
-    if (v.status !== 'active' && v.status !== 'closed') return;
+    if (v.status !== 'draft' && v.status !== 'active' && v.status !== 'closed') return;
     setPdfLoadingId(v.id);
     setPdfErrors((prev) => ({ ...prev, [v.id]: null }));
     try {
-      const snapshot = v.teacherSnapshot;
-      if (!snapshot) {
+      const source = resolvePdfSource(v);
+      if (!source) {
         setPdfErrors((prev) => ({
           ...prev,
           [v.id]: 'Snapshot della verifica non disponibile. Riattiva o ricrea la verifica.',
         }));
         return;
       }
-      const result = await loadSelectedQuestions(snapshot.questionRefs, storage);
+      if (source.questionRefs.length === 0) {
+        setPdfErrors((prev) => ({
+          ...prev,
+          [v.id]:
+            'La bozza non ha domande selezionate. Aggiungi almeno una domanda prima di scaricare il PDF.',
+        }));
+        return;
+      }
+      const result = await loadSelectedQuestions(source.questionRefs, storage);
       if (!result.ok) {
         setPdfErrors((prev) => ({ ...prev, [v.id]: result.error }));
         return;
       }
-      const classNameResolved =
-        classes.find((c) => c.id === snapshot.classId)?.name ?? snapshot.className ?? null;
-      await downloadStudentPdf(snapshot, result.questions, classNameResolved);
+      await downloadStudentPdf({ title: source.title }, result.questions, source.className);
     } finally {
       setPdfLoadingId(null);
     }
   }
 
   async function handleDownloadSolutionsPdf(v: VerificationItem) {
-    if (v.status !== 'active' && v.status !== 'closed') return;
+    if (v.status !== 'draft' && v.status !== 'active' && v.status !== 'closed') return;
     setSolutionsPdfLoadingId(v.id);
     setSolutionsPdfErrors((prev) => ({ ...prev, [v.id]: null }));
     try {
-      const snapshot = v.teacherSnapshot;
-      if (!snapshot) {
+      const source = resolvePdfSource(v);
+      if (!source) {
         setSolutionsPdfErrors((prev) => ({
           ...prev,
           [v.id]: 'Snapshot della verifica non disponibile. Riattiva o ricrea la verifica.',
         }));
         return;
       }
-      const result = await loadSelectedQuestionsWithSolutions(snapshot.questionRefs, storage);
+      if (source.questionRefs.length === 0) {
+        setSolutionsPdfErrors((prev) => ({
+          ...prev,
+          [v.id]:
+            'La bozza non ha domande selezionate. Aggiungi almeno una domanda prima di scaricare il PDF.',
+        }));
+        return;
+      }
+      const result = await loadSelectedQuestionsWithSolutions(source.questionRefs, storage);
       if (!result.ok) {
         setSolutionsPdfErrors((prev) => ({ ...prev, [v.id]: result.error }));
         return;
       }
-      const classNameResolved =
-        classes.find((c) => c.id === snapshot.classId)?.name ?? snapshot.className ?? null;
-      await downloadTeacherSolutionsPdf(snapshot, result.questions, classNameResolved);
+      await downloadTeacherSolutionsPdf(
+        { title: source.title },
+        result.questions,
+        source.className,
+      );
     } finally {
       setSolutionsPdfLoadingId(null);
     }
@@ -922,30 +982,26 @@ export function VerificationsView() {
                       <td className={`${styles.td} ${styles.metaCell}`}>{questionCount}</td>
                       <td className={styles.tdActions}>
                         <div className={styles.actionsWrapper}>
-                          {(v.status === 'active' || v.status === 'closed') && (
-                            <button
-                              type="button"
-                              className={styles.iconBtn}
-                              title="Scarica PDF studenti"
-                              aria-label={`Scarica PDF studenti — ${v.config.title}`}
-                              disabled={pdfLoadingId === v.id}
-                              onClick={() => void handleDownloadPdf(v)}
-                            >
-                              {pdfLoadingId === v.id ? '…' : '⬇️'}
-                            </button>
-                          )}
-                          {(v.status === 'active' || v.status === 'closed') && (
-                            <button
-                              type="button"
-                              className={styles.iconBtn}
-                              title="Scarica PDF soluzioni"
-                              aria-label={`Scarica PDF soluzioni — ${v.config.title}`}
-                              disabled={solutionsPdfLoadingId === v.id}
-                              onClick={() => void handleDownloadSolutionsPdf(v)}
-                            >
-                              {solutionsPdfLoadingId === v.id ? '…' : '🔑'}
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            className={styles.iconBtn}
+                            title="Scarica PDF studenti"
+                            aria-label={`Scarica PDF studenti — ${v.config.title}`}
+                            disabled={pdfLoadingId === v.id}
+                            onClick={() => void handleDownloadPdf(v)}
+                          >
+                            {pdfLoadingId === v.id ? '…' : '⬇️'}
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.iconBtn}
+                            title="Scarica PDF soluzioni"
+                            aria-label={`Scarica PDF soluzioni — ${v.config.title}`}
+                            disabled={solutionsPdfLoadingId === v.id}
+                            onClick={() => void handleDownloadSolutionsPdf(v)}
+                          >
+                            {solutionsPdfLoadingId === v.id ? '…' : '🔑'}
+                          </button>
                           {v.status === 'active' && (
                             <button
                               type="button"
@@ -1076,7 +1132,7 @@ export function VerificationsView() {
 
           {/* ── Draft: edit title/class ── */}
           {selectedVer.status === 'draft' && (
-            <form onSubmit={(e) => void handleSaveDraftMeta(e)} className={styles.draftEditForm}>
+            <div className={styles.draftEditForm}>
               <label htmlFor="draft-title">Titolo bozza</label>
               <input
                 id="draft-title"
@@ -1097,14 +1153,7 @@ export function VerificationsView() {
                   </option>
                 ))}
               </select>
-              <button
-                type="submit"
-                className="btn-success"
-                disabled={savingDraft || !editDraftTitle.trim()}
-              >
-                {savingDraft ? 'Salvataggio…' : 'Salva bozza'}
-              </button>
-            </form>
+            </div>
           )}
 
           {/* ── Draft: question selection + activate ── */}
@@ -1134,9 +1183,17 @@ export function VerificationsView() {
                 )}
               </div>
 
-              {/* Activate */}
+              {/* Salva bozza + Attiva verifica — kept side by side, in this order */}
               {!showActivateConfirm ? (
-                <div className={styles.actionBar}>
+                <div className={styles.draftActionBar}>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={savingDraft || !editDraftTitle.trim()}
+                    onClick={() => void handleSaveDraft()}
+                  >
+                    {savingDraft ? 'Salvataggio…' : 'Salva bozza'}
+                  </button>
                   <button
                     type="button"
                     className="btn-success"
@@ -1196,15 +1253,10 @@ export function VerificationsView() {
             </p>
           )}
 
-          {/* ── Consegne online monitor (M3F-05) — always shown for the selected verification ── */}
-          <div role="region" aria-label="Consegne online" className={styles.monitorPanel}>
-            <h3 className={styles.createTitle}>Consegne online</h3>
-            {selectedVer.status === 'draft' && (
-              <p className="state-empty">
-                Il monitor consegne sarà disponibile dopo l&apos;attivazione della verifica.
-              </p>
-            )}
-            {selectedVer.status !== 'draft' && (
+          {/* ── Consegne online monitor (M3F-05) — hidden entirely for draft (M3F-11C) ── */}
+          {selectedVer.status !== 'draft' && (
+            <div role="region" aria-label="Consegne online" className={styles.monitorPanel}>
+              <h3 className={styles.createTitle}>Consegne online</h3>
               <>
                 {monitorError && (
                   <p role="alert" className="text-error">
@@ -1287,8 +1339,8 @@ export function VerificationsView() {
                     </div>
                   )}
               </>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
 

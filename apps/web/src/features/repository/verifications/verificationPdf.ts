@@ -247,7 +247,7 @@ async function renderStudentPdf(
  * a preview, not a real student's copy.
  */
 export async function downloadStudentPdf(
-  snapshot: VerificationTeacherSnapshot,
+  snapshot: Pick<VerificationTeacherSnapshot, 'title'>,
   questions: LoadedQuestion[],
   className: string | null,
 ): Promise<void> {
@@ -307,7 +307,7 @@ export async function downloadStudentPdfFromProjection(
  * entirely client-side from data already loaded for this download.
  */
 export async function downloadTeacherSolutionsPdf(
-  snapshot: VerificationTeacherSnapshot,
+  snapshot: Pick<VerificationTeacherSnapshot, 'title'>,
   questions: LoadedQuestionWithSolution[],
   className: string | null,
 ): Promise<void> {
