@@ -732,6 +732,24 @@ M3F-10 è completato; M3F-11 è definito operativamente in `m3-full-roadmap.md`.
 | Test minimi | Scope classi deduplicato; toggle disabilitato senza classi idonee; nessuna dialog di attivazione; errore inline; callback fullscreen e richiesta di rientro; lint/typecheck/build. |
 | Deploy | Hosting + indici Firestore dopo merge e CI verde; nessuna modifica a Firestore/Storage Rules. |
 
+#### M3F-11B — Efficienza e UX svolgimento studente
+
+| Campo | Valore |
+|---|---|
+| Scope | Autosave ogni 120s e solo con risposte/flag modificati; eventi da soli persistiti al prossimo salvataggio utile o alla consegna; limite eventi 200; pannello intestazione+navigatore sticky unico, opaco e responsive; scrollbar visivamente nascosta; sidebar Lezioni studente collassata allineata al docente. |
+| Vincoli | Conservare mutex, revision guard, ripresa sessione, consegna atomica e comportamento fullscreen. Nessun polling, listener o write aggiuntivo. |
+| Test minimi | Timer 120s; nessuna write su bozza invariata o solo evento; evento incluso nel successivo save/consegna; limite 200; reflow pannello desktop/mobile; sidebar collassata senza spazio residuo. |
+| Deploy | Nessun deploy dall'agente; merge e deploy solo dopo CI verde e review. |
+
+#### M3F-11C — Bozze cartacee e rifiniture docente
+
+| Campo | Valore |
+|---|---|
+| Scope | Salvataggio bozza completo di titolo, classe e domande; PDF normale e con soluzioni dalla bozza corrente; snapshot immutabile creato solo all'attivazione; azioni `Salva bozza` → `Attiva verifica`; monitor completamente assente nelle bozze; dialog eventi tabellare e responsive. |
+| Efficienza | Riutilizzare selezione e dati già caricati; nessuna nuova proiezione o lettura per la dialog eventi; evitare snapshot immutabili nelle bozze. |
+| Test minimi | Persistenza domande bozza; reload coerente; PDF bozza e soluzioni; attivazione congela lo snapshot; monitor non montato su draft; tabella eventi senza answers/flagged. Rules test solo se il contratto Firestore cambia. |
+| Deploy | Nessun deploy dall'agente; merge e deploy solo dopo CI verde e review. |
+
 ### M4 — Correzione ed export
 
 #### M4-A — Correzione e audit
