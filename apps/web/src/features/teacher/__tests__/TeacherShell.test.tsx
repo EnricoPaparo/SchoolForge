@@ -19,6 +19,7 @@ vi.mock('../../../lib/auth.js', () => ({
 }));
 vi.mock('../../repository/verifications/verificationsService.js', () => ({
   listVerifications: vi.fn().mockResolvedValue([]),
+  listActiveOnlineVerificationClassIds: vi.fn().mockResolvedValue([]),
 }));
 vi.mock('../../repository/classes/classesService.js', () => ({
   listClasses: vi.fn().mockResolvedValue([]),
