@@ -224,4 +224,26 @@ describe('StudentLessonsView — sidebar collapse toggle', () => {
 
     expect(await screen.findByText('Informatica')).toBeTruthy();
   });
+
+  it('M3F-11B: collapsed sidebar renders only the expand button — no leftover header wrapper/title, matching the docente layout', async () => {
+    mockLoadStudentLessons.mockResolvedValue({
+      status: 'ok',
+      programs: [PROGRAM_A],
+      lessonsByProgram: { [PROGRAM_A.id]: [LESSON_1] },
+    });
+    render(<StudentLessonsView />);
+    await screen.findByText('Informatica');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Comprimi sidebar' }));
+
+    const expandBtn = screen.getByRole('button', { name: 'Espandi sidebar' });
+    const aside = expandBtn.closest('aside');
+    expect(aside).toBeTruthy();
+    // The only element inside the collapsed sidebar is the toggle button
+    // itself — no wrapping header div (and no "Lezioni" title) left behind
+    // to reserve vertical space once the sidebar is collapsed.
+    expect(aside?.children).toHaveLength(1);
+    expect(aside?.firstElementChild).toBe(expandBtn);
+    expect(screen.queryByText('Lezioni')).toBeNull();
+  });
 });

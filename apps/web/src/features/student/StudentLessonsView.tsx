@@ -141,18 +141,30 @@ export function StudentLessonsView() {
       <aside
         className={`${styles.sidebar}${sidebarCollapsed ? ` ${styles.sidebarCollapsed}` : ''}`}
       >
-        <div className={styles.sidebarHeader}>
-          {!sidebarCollapsed && <h2 className={styles.sidebarTitle}>Lezioni</h2>}
+        {sidebarCollapsed ? (
           <button
             type="button"
             className={styles.sidebarToggleBtn}
-            aria-label={sidebarCollapsed ? 'Espandi sidebar' : 'Comprimi sidebar'}
-            title={sidebarCollapsed ? 'Espandi sidebar' : 'Comprimi sidebar'}
-            onClick={() => setSidebarCollapsed((v) => !v)}
+            aria-label="Espandi sidebar"
+            title="Espandi sidebar"
+            onClick={() => setSidebarCollapsed(false)}
           >
-            {sidebarCollapsed ? <IconChevronRight /> : <IconChevronLeft />}
+            <IconChevronRight />
           </button>
-        </div>
+        ) : (
+          <div className={styles.sidebarHeader}>
+            <h2 className={styles.sidebarTitle}>Lezioni</h2>
+            <button
+              type="button"
+              className={styles.sidebarToggleBtn}
+              aria-label="Comprimi sidebar"
+              title="Comprimi sidebar"
+              onClick={() => setSidebarCollapsed(true)}
+            >
+              <IconChevronLeft />
+            </button>
+          </div>
+        )}
 
         {!sidebarCollapsed && (
           <ul className={styles.programList}>
