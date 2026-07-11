@@ -14,13 +14,11 @@
   gap: 1rem;
   padding: 0.625rem 1.5rem;
   min-height: 58px;
-  /* The wordmark's ink (navy blue + orange) needs a light, uniform backdrop
-     to stay legible — it cannot rely on a drop-shadow glow to "fix" a
-     background that's too dark or too colorful right behind it. So the
-     left/logo zone stays a flat, neutral, high-luminosity tone, and the
-     blue/violet/orange accent shifts toward the right side (behind the
-     account menu) where it doesn't interfere with the logo. */
-  background: linear-gradient(100deg, #eef1f6 0%, #e8ecf5 40%, #dbe6fb 72%, #cfe0ff 100%);
+  /* Keep the logo zone calm and light enough for the navy/orange wordmark,
+     while adding controlled blue/violet depth toward the account side. */
+  background:
+    radial-gradient(circle at 91% 18%, rgba(251, 146, 60, 0.2), transparent 27%),
+    linear-gradient(105deg, #ccd9ea 0%, #b9c9e7 42%, #a5b6df 72%, #b29dce 100%);
   border-bottom: 3px solid transparent;
   border-image: linear-gradient(90deg, var(--color-brand-blue), var(--color-brand-orange)) 1;
   color: var(--color-text);
