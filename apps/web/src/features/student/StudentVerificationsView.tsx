@@ -9,6 +9,11 @@ import { downloadStudentPdfFromProjection } from '../repository/verifications/ve
 import type { SubmissionDoc, SubmissionReceiptDoc } from '../../types/firestore.js';
 import { loadReceipt, loadSubmission, startSubmission } from './submissionsService.js';
 import { requestFullscreenBestEffort } from './examDeterrence.js';
+import {
+  clearActiveSessionHint,
+  findActiveDraftSession,
+  writeActiveSessionHint,
+} from './examSessionService.js';
 import { OnlineExamView } from './OnlineExamView.js';
 import { ConfirmationView } from './ConfirmationView.js';
 import styles from './StudentVerificationsView.module.css';
@@ -82,7 +87,17 @@ function clearLastSubmittedId(): void {
  * never causes the answer form to be shown again, on this load or after a
  * refresh.
  */
-export function StudentVerificationsView() {
+type StudentVerificationsViewProps = {
+  /**
+   * Reports whether an online exam is currently being taken (`view.mode ===
+   * 'exam'`), so `StudentShell` can hide the Lezioni/Verifiche nav for the
+   * duration of the session (D-M3F-15). Optional so this component keeps
+   * working standalone/in tests that don't care about the shell nav.
+   */
+  onSessionActiveChange?: (active: boolean) => void;
+};
+
+export function StudentVerificationsView({ onSessionActiveChange }: StudentVerificationsViewProps) {
   const { user } = useAuth();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [pdfLoadingId, setPdfLoadingId] = useState<string | null>(null);
@@ -96,6 +111,14 @@ export function StudentVerificationsView() {
     if (!uid) return;
     void load(uid);
   }, [uid]);
+
+  // A draft submission is a mandatory session (D-M3F-14): the parent shell
+  // must know about it for as long as it's shown, not just at the moment it
+  // starts, so a resume-on-refresh (below) hides the nav exactly like a
+  // manually started one.
+  useEffect(() => {
+    onSessionActiveChange?.(view.mode === 'exam');
+  }, [view.mode, onSessionActiveChange]);
 
   async function load(uid: string) {
     setState({ status: 'loading' });
@@ -123,6 +146,16 @@ export function StudentVerificationsView() {
         return;
       }
       setState({ status: 'ok', verifications: result.verifications });
+
+      // Mandatory session resume (D-M3F-14): a draft submission takes over
+      // immediately, before the list is ever shown — no click required.
+      const onlineItems = result.verifications.filter((item) => item.onlineEnabled);
+      const activeDraft = await findActiveDraftSession(uid, onlineItems, db);
+      if (activeDraft) {
+        setView({ mode: 'exam', item: activeDraft.item, submission: activeDraft.submission });
+        return;
+      }
+
       void refreshOnlineStatuses(uid, result.verifications);
     } catch {
       setState({ status: 'error' });
@@ -234,6 +267,7 @@ export function StudentVerificationsView() {
           return;
         }
       }
+      writeActiveSessionHint(item.id);
       setView({ mode: 'exam', item, submission });
     } catch {
       setStartErrors((prev) => ({
@@ -247,13 +281,9 @@ export function StudentVerificationsView() {
     setView({ mode: 'confirmation', receipt });
   }
 
-  function handleExitExam() {
-    setView({ mode: 'list' });
-    if (uid && state.status === 'ok') void refreshOnlineStatuses(uid, state.verifications);
-  }
-
   function handleSubmitted(item: StudentVerificationItem, receipt: SubmissionReceiptDoc) {
     setOnlineStatus((prev) => ({ ...prev, [item.id]: { kind: 'receipt', receipt } }));
+    clearActiveSessionHint();
     writeLastSubmittedId(item.id);
     setView({ mode: 'confirmation', receipt });
   }
@@ -273,7 +303,6 @@ export function StudentVerificationsView() {
         studentUid={uid ?? ''}
         questions={view.item.questions}
         submission={view.submission}
-        onExit={handleExitExam}
         onSubmitted={(receipt) => handleSubmitted(view.item, receipt)}
       />
     );

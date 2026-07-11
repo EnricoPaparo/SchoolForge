@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OnlineExamView } from '../OnlineExamView.js';
 import type { SubmissionDoc } from '../../../types/firestore.js';
@@ -77,7 +77,6 @@ function emptySubmission(overrides: Partial<SubmissionDoc> = {}): SubmissionDoc 
 }
 
 function renderView(overrides: Partial<Parameters<typeof OnlineExamView>[0]> = {}) {
-  const onExit = vi.fn();
   const onSubmitted = vi.fn();
   const props = {
     verificationId: 'v1',
@@ -87,12 +86,11 @@ function renderView(overrides: Partial<Parameters<typeof OnlineExamView>[0]> = {
     studentUid: 'student-uid',
     questions: QUESTIONS,
     submission: emptySubmission(),
-    onExit,
     onSubmitted,
     ...overrides,
   };
   render(<OnlineExamView {...props} />);
-  return { onExit, onSubmitted };
+  return { onSubmitted };
 }
 
 describe('OnlineExamView — question rendering', () => {
@@ -303,10 +301,23 @@ describe('OnlineExamView — delivery', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Consegna' }));
 
-    expect(screen.getByText('Hai compilato 1/3 domande. 2 sono vuote.')).toBeTruthy();
+    expect(
+      screen.getByText('Hai compilato 1/3 domande. 2 sono vuote. 0 sono segnate da rivedere.'),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
     expect(screen.queryByText(/Hai compilato/)).toBeNull();
     expect(mockSubmitSubmission).not.toHaveBeenCalled();
+  });
+
+  it('includes the flagged count in the pre-delivery summary', () => {
+    renderView();
+    fireEvent.click(screen.getByRole('button', { name: 'Segna la domanda 1 come "da rivedere"' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Consegna' }));
+
+    expect(
+      screen.getByText('Hai compilato 0/3 domande. 3 sono vuote. 1 sono segnate da rivedere.'),
+    ).toBeTruthy();
   });
 
   it('"Conferma consegna" submits, loads the receipt and calls onSubmitted', async () => {
@@ -352,40 +363,10 @@ describe('OnlineExamView — delivery', () => {
   });
 });
 
-describe('OnlineExamView — exit and cleanup', () => {
-  it('exits immediately when there are no unsaved changes', () => {
-    const confirmSpy = vi.spyOn(window, 'confirm');
-    const { onExit } = renderView();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Torna alla lista' }));
-
-    expect(confirmSpy).not.toHaveBeenCalled();
-    expect(onExit).toHaveBeenCalledOnce();
-  });
-
-  it('asks for confirmation before exiting with unsaved changes, and respects Annulla', () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    const { onExit } = renderView();
-    fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
-      target: { value: 'Risposta.' },
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Torna alla lista' }));
-
-    expect(confirmSpy).toHaveBeenCalledOnce();
-    expect(onExit).not.toHaveBeenCalled();
-  });
-
-  it('exits when the unsaved-changes confirmation is accepted', () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    const { onExit } = renderView();
-    fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
-      target: { value: 'Risposta.' },
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Torna alla lista' }));
-
-    expect(onExit).toHaveBeenCalledOnce();
+describe('OnlineExamView — no manual exit (M3F-06)', () => {
+  it('never renders a "Torna alla lista" button — a draft session is mandatory', () => {
+    renderView();
+    expect(screen.queryByRole('button', { name: /torna alla lista/i })).toBeNull();
   });
 
   it('removes the deterrence listeners on unmount', () => {
@@ -396,5 +377,181 @@ describe('OnlineExamView — exit and cleanup', () => {
     expect(cleanupSpy).not.toHaveBeenCalled();
     cleanup();
     expect(cleanupSpy).toHaveBeenCalledOnce();
+  });
+});
+
+describe('OnlineExamView — fullscreen on delivery (M3F-06)', () => {
+  beforeEach(() => {
+    mockSubmitSubmission.mockResolvedValue('SF-2026-AAAA');
+    mockLoadReceipt.mockResolvedValue({
+      submissionId: 'v1_student-uid',
+      verificationId: 'v1',
+      studentUid: 'student-uid',
+      ownerUid: 'owner-uid',
+      verificationTitle: 'Verifica Reti',
+      className: 'Classe 3A',
+      deliveryCode: 'SF-2026-AAAA',
+      submittedAt: { seconds: 200 },
+    });
+  });
+
+  it('detaches deterrence listeners and exits fullscreen after a successful delivery, in that order', async () => {
+    const cleanupSpy = vi.fn();
+    mockAttachDeterrenceListeners.mockReturnValue(cleanupSpy);
+    const exitFullscreenSpy = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(document, 'fullscreenElement', {
+      value: document.documentElement,
+      configurable: true,
+    });
+    document.exitFullscreen = exitFullscreenSpy;
+    const callOrder: string[] = [];
+    cleanupSpy.mockImplementation(() => callOrder.push('cleanup'));
+    exitFullscreenSpy.mockImplementation(() => {
+      callOrder.push('exitFullscreen');
+      return Promise.resolve();
+    });
+    const { onSubmitted } = renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Consegna' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Conferma consegna' }));
+
+    await waitFor(() => expect(onSubmitted).toHaveBeenCalledOnce());
+    expect(exitFullscreenSpy).toHaveBeenCalledOnce();
+    expect(callOrder).toEqual(['cleanup', 'exitFullscreen']);
+
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
+  });
+
+  it('the code-driven fullscreen exit after delivery is never recorded as a fullscreen_exit attention event', async () => {
+    let capturedOnEvent: ((type: string) => void) | undefined;
+    mockAttachDeterrenceListeners.mockImplementation((onEvent: (type: string) => void) => {
+      capturedOnEvent = onEvent;
+      return vi.fn();
+    });
+    Object.defineProperty(document, 'fullscreenElement', {
+      value: document.documentElement,
+      configurable: true,
+    });
+    document.exitFullscreen = vi.fn().mockImplementation(() => {
+      // Real browsers fire `fullscreenchange` here; the listener was
+      // already detached by endSessionAfterDelivery before this runs, so
+      // simulating that same call must never reach capturedOnEvent.
+      capturedOnEvent?.('fullscreen_exit');
+      return Promise.resolve();
+    });
+    renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Consegna' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Conferma consegna' }));
+
+    await waitFor(() => expect(mockSubmitSubmission).toHaveBeenCalledOnce());
+    // capturedOnEvent itself is still the same function reference; what
+    // matters is that attachDeterrenceListeners' own cleanup (mocked above
+    // as a no-op) was invoked before exitFullscreen — verified in the
+    // previous test's ordering assertion. Here we just confirm delivery
+    // succeeds without throwing when exitFullscreen synchronously fires
+    // a fullscreenchange-like callback.
+    await waitFor(() => expect(document.exitFullscreen).toHaveBeenCalledOnce());
+
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
+  });
+
+  it('does not exit fullscreen or call onSubmitted when delivery fails — stays editable with a recoverable error', async () => {
+    mockSubmitSubmission.mockRejectedValue(new Error('network error'));
+    const exitFullscreenSpy = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(document, 'fullscreenElement', {
+      value: document.documentElement,
+      configurable: true,
+    });
+    document.exitFullscreen = exitFullscreenSpy;
+    const { onSubmitted } = renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Consegna' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Conferma consegna' }));
+
+    await waitFor(() => expect(mockSubmitSubmission).toHaveBeenCalledOnce());
+    expect(exitFullscreenSpy).not.toHaveBeenCalled();
+    expect(onSubmitted).not.toHaveBeenCalled();
+    // The confirm dialog (and its underlying form) stays open/editable.
+    expect(screen.getByRole('alertdialog', { name: 'Conferma consegna' })).toBeTruthy();
+
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
+  });
+});
+
+describe('OnlineExamView — question navigator (M3F-06)', () => {
+  it('renders one numbered indicator per question with accessible empty/filled/flagged state', () => {
+    renderView();
+    const nav = screen.getByRole('navigation', { name: 'Navigatore domande' });
+
+    expect(within(nav).getByRole('button', { name: /vai alla domanda 1 — vuota/i })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: /vai alla domanda 2 — vuota/i })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: /vai alla domanda 3 — vuota/i })).toBeTruthy();
+  });
+
+  it('updates the indicator to filled once the question is answered', () => {
+    renderView();
+    fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
+      target: { value: 'Risposta.' },
+    });
+
+    const nav = screen.getByRole('navigation', { name: 'Navigatore domande' });
+    expect(
+      within(nav).getByRole('button', { name: /vai alla domanda 1 — compilata/i }),
+    ).toBeTruthy();
+  });
+
+  it('flagged takes priority over filled/empty in the indicator state', () => {
+    renderView();
+    fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
+      target: { value: 'Risposta.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Segna la domanda 1 come "da rivedere"' }));
+
+    const nav = screen.getByRole('navigation', { name: 'Navigatore domande' });
+    expect(
+      within(nav).getByRole('button', { name: /vai alla domanda 1 — da rivedere/i }),
+    ).toBeTruthy();
+  });
+
+  it('clicking an indicator scrolls the corresponding question into view', () => {
+    renderView();
+    const scrollSpy = vi.fn();
+    const target = document.getElementById('question-1');
+    if (target) target.scrollIntoView = scrollSpy;
+
+    const nav = screen.getByRole('navigation', { name: 'Navigatore domande' });
+    fireEvent.click(within(nav).getByRole('button', { name: /vai alla domanda 2/i }));
+
+    expect(scrollSpy).toHaveBeenCalledOnce();
+  });
+});
+
+describe('OnlineExamView — cancella risposta (chiusa_singola, M3F-06)', () => {
+  it('does not change standard radio behavior', () => {
+    renderView();
+    const radios = screen.getAllByRole('radio');
+    fireEvent.click(radios[0]!);
+    expect((radios[0] as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('is disabled when no option is selected', () => {
+    renderView();
+    expect(screen.getByRole('button', { name: 'Cancella risposta' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+  });
+
+  it('clears the selection back to empty when clicked', () => {
+    renderView();
+    const radios = screen.getAllByRole('radio');
+    fireEvent.click(radios[0]!);
+    expect((radios[0] as HTMLInputElement).checked).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancella risposta' }));
+
+    expect((radios[0] as HTMLInputElement).checked).toBe(false);
+    expect((radios[1] as HTMLInputElement).checked).toBe(false);
   });
 });

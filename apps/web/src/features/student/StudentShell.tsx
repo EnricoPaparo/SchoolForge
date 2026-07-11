@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
+import { db } from '../../lib/firebase.js';
 import logoScritta from '../../assets/logo-scritta-schoolforge.png';
 import { StudentLessonsView } from './StudentLessonsView.js';
 import { StudentVerificationsView } from './StudentVerificationsView.js';
+import { resolveActiveSession } from './examSessionService.js';
 import styles from './StudentShell.module.css';
 
 type Section = 'lezioni' | 'verifiche';
@@ -17,12 +19,44 @@ const SECTIONS: { id: Section; label: string; icon: string }[] = [
  * user that is not the configured owner — see RoleGate. Must never import
  * teacher features/components: no repository, classes, templates,
  * import/export, correction, or solutions ever reach this shell.
+ *
+ * M3F-06: a draft online-exam submission is a mandatory session (D-M3F-14).
+ * Before the nav/section switcher ever renders, a single deterministic
+ * check (`resolveActiveSession`) decides whether the student has a draft in
+ * progress; if so, the section switcher is forced to "verifiche" and the
+ * nav bar stays hidden for as long as `StudentVerificationsView` reports an
+ * exam in progress (see `onSessionActiveChange`) — there is no menu, deep
+ * link or UI state that can show Lezioni or leave the exam other than a
+ * successful delivery.
  */
 export function StudentShell() {
   const { user, signOut } = useAuth();
   const [activeSection, setActiveSection] = useState<Section>('lezioni');
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [examInProgress, setExamInProgress] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const uid = user?.uid;
+  useEffect(() => {
+    if (!uid) return;
+    let cancelled = false;
+    resolveActiveSession(uid, db)
+      .then((session) => {
+        if (cancelled) return;
+        if (session) {
+          setActiveSection('verifiche');
+          setExamInProgress(true);
+        }
+        setSessionChecked(true);
+      })
+      .catch(() => {
+        if (!cancelled) setSessionChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [uid]);
 
   const displayName = user?.displayName ?? user?.email ?? 'Studente';
   const initials = displayName.charAt(0).toUpperCase();
@@ -97,27 +131,43 @@ export function StudentShell() {
         </div>
       </header>
 
-      <nav aria-label="Sezioni studente" className={styles.nav}>
-        {SECTIONS.map(({ id, label, icon }) => (
-          <button
-            key={id}
-            type="button"
-            className={styles.navBtn}
-            onClick={() => setActiveSection(id)}
-            aria-current={activeSection === id ? 'page' : undefined}
-            title={label}
-          >
-            <span className={styles.navIcon} aria-hidden="true">
-              {icon}
-            </span>
-            <span className={styles.navLabel}>{label}</span>
-          </button>
-        ))}
-      </nav>
+      {!sessionChecked ? (
+        <main className={styles.main}>
+          <p aria-busy="true" className="state-loading">
+            Caricamento…
+          </p>
+        </main>
+      ) : (
+        <>
+          {!examInProgress && (
+            <nav aria-label="Sezioni studente" className={styles.nav}>
+              {SECTIONS.map(({ id, label, icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={styles.navBtn}
+                  onClick={() => setActiveSection(id)}
+                  aria-current={activeSection === id ? 'page' : undefined}
+                  title={label}
+                >
+                  <span className={styles.navIcon} aria-hidden="true">
+                    {icon}
+                  </span>
+                  <span className={styles.navLabel}>{label}</span>
+                </button>
+              ))}
+            </nav>
+          )}
 
-      <main className={styles.main}>
-        {activeSection === 'lezioni' ? <StudentLessonsView /> : <StudentVerificationsView />}
-      </main>
+          <main className={styles.main}>
+            {activeSection === 'lezioni' ? (
+              <StudentLessonsView />
+            ) : (
+              <StudentVerificationsView onSessionActiveChange={setExamInProgress} />
+            )}
+          </main>
+        </>
+      )}
     </div>
   );
 }

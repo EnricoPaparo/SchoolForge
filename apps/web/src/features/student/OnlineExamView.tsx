@@ -24,7 +24,6 @@ type OnlineExamViewProps = {
   questions: PublicVerificationQuestion[];
   /** The draft submission as loaded/created before this view mounted. */
   submission: SubmissionDoc;
-  onExit: () => void;
   onSubmitted: (receipt: SubmissionReceiptDoc) => void;
 };
 
@@ -37,12 +36,18 @@ function saveErrorMessage(err: unknown): string {
 }
 
 /**
- * Single-page online exam (M3F-04). All questions on one page; reuses
+ * Single-page online exam (M3F-04/M3F-06). All questions on one page; reuses
  * submissionsService exclusively for every write (no ad-hoc Firestore
- * calls here). Fullscreen is requested by the caller's click handler
- * (StudentVerificationsView), not here — this component only attaches the
- * deterrence listeners (attachDeterrenceListeners) for as long as it is
- * mounted and always removes them on unmount, submit, or exit.
+ * calls here). Fullscreen is requested by the caller (a click handler in
+ * StudentVerificationsView, or a best-effort attempt on session resume),
+ * not here — this component only attaches the deterrence listeners
+ * (attachDeterrenceListeners) for as long as it is mounted.
+ *
+ * M3F-06: a draft is a mandatory session (D-M3F-14/15) — there is no exit
+ * button here. The only ways out are a successful delivery (this
+ * component detaches its own listeners and exits fullscreen itself, see
+ * `handleConfirmSubmit`) or the parent unmounting this view for its own
+ * reasons, which still runs the deterrence cleanup via the effect below.
  */
 export function OnlineExamView({
   verificationId,
@@ -52,7 +57,6 @@ export function OnlineExamView({
   studentUid,
   questions,
   submission,
-  onExit,
   onSubmitted,
 }: OnlineExamViewProps) {
   const [answers, setAnswersState] = useState<Record<string, AnswerValue>>(submission.answers);
@@ -144,8 +148,12 @@ export function OnlineExamView({
     return () => clearInterval(interval);
   }, []);
 
-  // Deterrence listeners for the lifetime of this view only — always removed
-  // on unmount (covers exit, submit-success, and the browser back button).
+  // Deterrence listeners for the lifetime of this view — removed on unmount
+  // (covers submit-success and the browser back button) AND explicitly on a
+  // successful delivery (see handleConfirmSubmit), so the code-driven
+  // exitFullscreen() call that follows a successful submit is never itself
+  // logged as a fullscreen_exit attention event.
+  const deterrenceCleanupRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     const cleanup = attachDeterrenceListeners((type: AttentionEventType) => {
       // Once the 200-event cap is reached, ignored events must not mark the
@@ -155,19 +163,33 @@ export function OnlineExamView({
       dirtyRef.current = true;
       revisionRef.current += 1;
     });
-    return cleanup;
+    deterrenceCleanupRef.current = cleanup;
+    return () => {
+      cleanup();
+      deterrenceCleanupRef.current = null;
+    };
   }, []);
 
   const orders = questions.map((q) => q.order);
   const filledCount = countFilled(orders, answers);
+  const flaggedCount = orders.filter((o) => flagged[String(o)]).length;
   const totalCount = questions.length;
 
-  function handleExit() {
-    if (dirtyRef.current) {
-      const proceed = window.confirm('Hai modifiche non salvate. Uscire comunque?');
-      if (!proceed) return;
+  /**
+   * Detaches the deterrence listeners first, then exits fullscreen — in
+   * that order, and only after a successful delivery — so the resulting
+   * `fullscreenchange` is never observed as a `fullscreen_exit` attention
+   * event. Non-blocking: a rejected/unsupported exitFullscreen is ignored,
+   * same spirit as requestFullscreenBestEffort.
+   */
+  function endSessionAfterDelivery() {
+    deterrenceCleanupRef.current?.();
+    deterrenceCleanupRef.current = null;
+    if (document.fullscreenElement && typeof document.exitFullscreen === 'function') {
+      document.exitFullscreen().catch(() => {
+        // Ignored — fullscreen is deterrence only, never blocking.
+      });
     }
-    onExit();
   }
 
   async function handleConfirmSubmit() {
@@ -189,6 +211,10 @@ export function OnlineExamView({
         },
         db,
       );
+      // The atomic delivery write already succeeded and is irreversible —
+      // end the deterrence session regardless of whether the receipt
+      // read-back below succeeds.
+      endSessionAfterDelivery();
       const receipt = await loadReceipt(verificationId, studentUid, db);
       if (receipt) {
         setConfirmOpen(false);
@@ -199,6 +225,8 @@ export function OnlineExamView({
         'Consegna registrata ma non è stato possibile caricare la ricevuta. Ricarica la pagina.',
       );
     } catch (err) {
+      // Delivery itself failed: stay in fullscreen, keep the deterrence
+      // listeners attached, leave the exam editable, show a recoverable error.
       setSubmitError(saveErrorMessage(err));
     } finally {
       setSubmitting(false);
@@ -230,9 +258,6 @@ export function OnlineExamView({
         </div>
 
         <div className={styles.examActions}>
-          <button type="button" onClick={handleExit}>
-            Torna alla lista
-          </button>
           <button type="button" onClick={() => void persistDraft()} disabled={saving}>
             {saving ? 'Salvataggio…' : 'Salva bozza'}
           </button>
@@ -242,6 +267,38 @@ export function OnlineExamView({
         </div>
       </header>
 
+      <nav aria-label="Navigatore domande" className={styles.questionNav}>
+        {questions.map((q) => {
+          const key = String(q.order);
+          const isFlagged = !!flagged[key];
+          const filled = isAnswerFilled(answers[key]);
+          const navState = isFlagged ? 'flagged' : filled ? 'filled' : 'empty';
+          const navLabel = isFlagged ? 'da rivedere' : filled ? 'compilata' : 'vuota';
+          const navClass =
+            navState === 'flagged'
+              ? styles.navItemFlagged
+              : navState === 'filled'
+                ? styles.navItemFilled
+                : styles.navItemEmpty;
+          return (
+            <button
+              key={q.order}
+              type="button"
+              className={`${styles.navItem} ${navClass}`}
+              title={`Domanda ${q.order + 1} — ${navLabel}`}
+              aria-label={`Vai alla domanda ${q.order + 1} — ${navLabel}`}
+              onClick={() =>
+                document
+                  .getElementById(`question-${q.order}`)
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }
+            >
+              {q.order + 1}
+            </button>
+          );
+        })}
+      </nav>
+
       <div className={styles.questionList}>
         {questions.map((q) => {
           const key = String(q.order);
@@ -250,7 +307,7 @@ export function OnlineExamView({
           const isFlagged = !!flagged[key];
 
           return (
-            <article key={q.order} className={styles.questionCard}>
+            <article key={q.order} id={`question-${q.order}`} className={styles.questionCard}>
               <div className={styles.questionHeader}>
                 <span className={styles.questionNumber}>#{q.order + 1}</span>
                 <span className={filled ? styles.statusFilled : styles.statusEmpty}>
@@ -285,25 +342,35 @@ export function OnlineExamView({
               )}
 
               {q.tipo === 'chiusa_singola' && (
-                <div
-                  className={styles.optionsList}
-                  role="radiogroup"
-                  aria-label={`Opzioni della domanda ${q.order + 1}`}
-                >
-                  {q.opzioni?.map((o) => (
-                    <label key={o.id} className={styles.optionRow}>
-                      <input
-                        type="radio"
-                        name={`q-${verificationId}-${q.order}`}
-                        checked={answer?.tipo === 'chiusa_singola' && answer.selectedId === o.id}
-                        onChange={() =>
-                          setAnswer(q.order, { tipo: 'chiusa_singola', selectedId: o.id })
-                        }
-                      />
-                      {o.testo}
-                    </label>
-                  ))}
-                </div>
+                <>
+                  <div
+                    className={styles.optionsList}
+                    role="radiogroup"
+                    aria-label={`Opzioni della domanda ${q.order + 1}`}
+                  >
+                    {q.opzioni?.map((o) => (
+                      <label key={o.id} className={styles.optionRow}>
+                        <input
+                          type="radio"
+                          name={`q-${verificationId}-${q.order}`}
+                          checked={answer?.tipo === 'chiusa_singola' && answer.selectedId === o.id}
+                          onChange={() =>
+                            setAnswer(q.order, { tipo: 'chiusa_singola', selectedId: o.id })
+                          }
+                        />
+                        {o.testo}
+                      </label>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.clearAnswerBtn}
+                    disabled={!(answer?.tipo === 'chiusa_singola' && answer.selectedId != null)}
+                    onClick={() => setAnswer(q.order, { tipo: 'chiusa_singola', selectedId: null })}
+                  >
+                    Cancella risposta
+                  </button>
+                </>
               )}
 
               {q.tipo === 'chiusa_multipla' && (
@@ -340,7 +407,7 @@ export function OnlineExamView({
           <div className={styles.confirmBox} role="alertdialog" aria-label="Conferma consegna">
             <p>
               Hai compilato {filledCount}/{totalCount} domande. {totalCount - filledCount} sono
-              vuote.
+              vuote. {flaggedCount} sono segnate da rivedere.
             </p>
             {submitError && (
               <p role="alert" className="text-error">
