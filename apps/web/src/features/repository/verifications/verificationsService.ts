@@ -15,15 +15,20 @@ import type { Firestore } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
 import type { ClassItem } from '../classes/classesService.js';
 import type {
-  PublicVerificationQuestion,
   VerificationConfig,
   VerificationDoc,
+  VerificationTeacherQuestionSnapshot,
   VerificationTeacherSnapshot,
   VerificationVisibility,
 } from '../../../types/firestore.js';
-import { loadSelectedQuestions } from './loadSelectedQuestions.js';
+import { loadSelectedQuestionsWithSolutions } from './loadSelectedQuestionsWithSolutions.js';
 import { normalizeOnlineEnabled } from './onlineEnabled.js';
 import { normalizeStudentPdfEnabled } from './studentPdfEnabled.js';
+import { assertTeacherSnapshotQuestionsWithinLimit } from './verificationSnapshotLimits.js';
+import {
+  toPublicVerificationQuestion,
+  toTeacherQuestionSnapshot,
+} from './verificationSnapshotMappers.js';
 import { normalizeVisibility } from './visibility.js';
 
 export type VerificationItem = { id: string } & Omit<
@@ -164,6 +169,14 @@ export function validateForActivation(config: VerificationConfig): {
   return { valid: errors.length === 0, errors };
 }
 
+/** `soluzione` must be a non-empty string, or a non-empty array of non-empty strings. */
+function isValidSoluzione(soluzione: string | string[]): boolean {
+  if (Array.isArray(soluzione)) {
+    return soluzione.length > 0 && soluzione.every((s) => s.trim().length > 0);
+  }
+  return soluzione.trim().length > 0;
+}
+
 /**
  * Activates a draft verification. Alongside the existing owner-only
  * `teacherSnapshot`, this also builds and writes `publishedProjection/data`
@@ -173,11 +186,32 @@ export function validateForActivation(config: VerificationConfig): {
  * `classId` is copied from `config.classId` as-is (including `null`) — a
  * verification never assigned to a class stays invisible to every student.
  *
- * The question text/options are fetched from Storage (loadSelectedQuestions)
- * BEFORE opening the transaction — Storage reads don't belong inside a
- * Firestore transaction, and this keeps retries cheap. `visibility` is
- * always reset to `hidden` on activation: publishing is a separate,
- * explicit teacher action (see setVerificationVisibility).
+ * Fix for the immutable-snapshot gap: `teacherSnapshot.questions` now
+ * embeds each question's full text, options AND solution at activation
+ * time (`VerificationTeacherQuestionSnapshot`) — so an `active`/`closed`
+ * verification's own PDF downloads (normal + solutions, see
+ * `VerificationsView.tsx`) never again need to re-read the current pool
+ * file from Storage. Before this fix, `teacherSnapshot` only kept
+ * `questionRefs` (stable pointers into the *current* pool), so editing or
+ * deleting a pool after activation could silently change — or break — an
+ * already-activated verification's PDFs. `questionRefs` is still kept
+ * alongside `questions` for tracking/compatibility, but is no longer the
+ * PDF data source once `questions` is present.
+ *
+ * All questions are read from Storage exactly ONCE, via
+ * `loadSelectedQuestionsWithSolutions` (solutions included) — BEFORE
+ * opening the transaction, same as before (Storage reads don't belong
+ * inside a Firestore transaction, and this keeps retries cheap). Both
+ * `teacherSnapshot.questions` and `publishedProjection.questions` are then
+ * derived from that single load: the projection strips `soluzione` via
+ * `toPublicVerificationQuestion`, so there is no second Storage read and no
+ * risk of the two ever disagreeing about what a question's text/options
+ * were at activation time. A missing/invalid pool, a missing question, an
+ * invalid solution, or a snapshot that would serialize too large all fail
+ * BEFORE the transaction opens — activation is all-or-nothing.
+ *
+ * `visibility` is always reset to `hidden` on activation: publishing is a
+ * separate, explicit teacher action (see `setVerificationVisibility`).
  */
 export async function activateVerification(
   verificationId: string,
@@ -201,19 +235,30 @@ export async function activateVerification(
     throw new Error(`Verifica non valida: ${preValidation.errors.join(', ')}`);
   }
 
-  const questionsResult = await loadSelectedQuestions(preData.config.questionRefs, storage);
-  if (!questionsResult.ok) {
-    throw new Error(`Impossibile generare la proiezione pubblica: ${questionsResult.error}`);
-  }
-  const publicQuestions: PublicVerificationQuestion[] = questionsResult.questions.map(
-    (q, index) => ({
-      order: index,
-      tipo: q.tipo,
-      maxPoints: q.ref.maxPoints,
-      testo: q.testo,
-      ...(q.opzioni ? { opzioni: q.opzioni } : {}),
-    }),
+  // Single Storage read for both the owner-only teacher snapshot (with
+  // solutions) and the student-safe published projection (without) — see
+  // doc comment above.
+  const questionsResult = await loadSelectedQuestionsWithSolutions(
+    preData.config.questionRefs,
+    storage,
   );
+  if (!questionsResult.ok) {
+    throw new Error(`Impossibile attivare: ${questionsResult.error}`);
+  }
+  const invalidIndex = questionsResult.questions.findIndex((q) => !isValidSoluzione(q.soluzione));
+  if (invalidIndex !== -1) {
+    const badRef = questionsResult.questions[invalidIndex]!.ref;
+    throw new Error(
+      `Impossibile attivare: soluzione mancante o non valida per la domanda ${badRef.questionLocalId}.`,
+    );
+  }
+
+  const teacherQuestions: VerificationTeacherQuestionSnapshot[] = questionsResult.questions.map(
+    (q, index) => toTeacherQuestionSnapshot(q, index),
+  );
+  assertTeacherSnapshotQuestionsWithinLimit(teacherQuestions);
+
+  const publicQuestions = teacherQuestions.map(toPublicVerificationQuestion);
 
   await runTransaction(db, async (transaction) => {
     const snap = await transaction.get(verRef);
@@ -238,6 +283,7 @@ export async function activateVerification(
       programId: data.config.programId,
       importId: data.config.importId,
       questionRefs: data.config.questionRefs,
+      questions: teacherQuestions,
       activatedAt: serverTimestamp(),
     };
     transaction.update(verRef, {

@@ -28,11 +28,15 @@ import {
   downloadStudentPdf,
   downloadTeacherSolutionsPdf,
 } from '../repository/verifications/verificationPdf.js';
+import {
+  toPdfQuestion,
+  toPdfQuestionWithSolution,
+} from '../repository/verifications/verificationSnapshotMappers.js';
 import { db, storage } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import { QuestionPicker } from './QuestionPicker.js';
 import { AttentionEventsDialog } from './AttentionEventsDialog.js';
-import type { AttentionEvent } from '../../types/firestore.js';
+import type { AttentionEvent, VerificationTeacherQuestionSnapshot } from '../../types/firestore.js';
 import styles from './VerificationsView.module.css';
 
 /** Extracts the epoch seconds from a Firestore Timestamp-like value, or null if absent. */
@@ -374,18 +378,41 @@ export function VerificationsView() {
   }
 
   /**
-   * Resolves the (title, questionRefs, className) a draft PDF should be
-   * built from — the current saved/loaded selection, never a snapshot.
-   * Active/closed verifications keep using the immutable `teacherSnapshot`.
+   * Resolves what a PDF download should be built from.
+   *
+   * - `draft`: always `refs` — the current saved/loaded question selection,
+   *   re-read from the live pools in Storage (bozze are never frozen).
+   * - `active`/`closed` with `teacherSnapshot.questions` (every verification
+   *   activated after this fix): `embedded` — the frozen per-question data
+   *   (text/options/solution) from activation time, zero Storage reads,
+   *   completely independent of whatever the pools look like now.
+   * - `active`/`closed` WITHOUT `teacherSnapshot.questions` (legacy —
+   *   activated before this fix): `refs`, falling back to the old behavior
+   *   of re-reading `teacherSnapshot.questionRefs` from the *current* pool
+   *   files. This is intentionally temporary compatibility, not the
+   *   long-term contract — see `VerificationTeacherSnapshot.questions` doc
+   *   comment in `types/firestore.ts`. A teacher who wants a legacy
+   *   verification fully independent from the pools can recreate it
+   *   (draft → activate) to get a fresh embedded snapshot.
    */
-  function resolvePdfSource(v: VerificationItem): {
-    title: string;
-    questionRefs: VerificationItem['config']['questionRefs'];
-    className: string | null;
-  } | null {
+  function resolvePdfSource(v: VerificationItem):
+    | {
+        kind: 'embedded';
+        title: string;
+        className: string | null;
+        questions: VerificationTeacherQuestionSnapshot[];
+      }
+    | {
+        kind: 'refs';
+        title: string;
+        className: string | null;
+        questionRefs: VerificationItem['config']['questionRefs'];
+      }
+    | null {
     if (v.status === 'draft') {
       const classNameResolved = classes.find((c) => c.id === v.config.classId)?.name ?? null;
       return {
+        kind: 'refs',
         title: v.config.title,
         questionRefs: v.config.questionRefs,
         className: classNameResolved,
@@ -395,7 +422,17 @@ export function VerificationsView() {
     if (!snapshot) return null;
     const classNameResolved =
       classes.find((c) => c.id === snapshot.classId)?.name ?? snapshot.className ?? null;
+    if (snapshot.questions) {
+      return {
+        kind: 'embedded',
+        title: snapshot.title,
+        className: classNameResolved,
+        questions: snapshot.questions,
+      };
+    }
+    // Legacy fallback (compatibility only — see doc comment above).
     return {
+      kind: 'refs',
       title: snapshot.title,
       questionRefs: snapshot.questionRefs,
       className: classNameResolved,
@@ -413,6 +450,14 @@ export function VerificationsView() {
           ...prev,
           [v.id]: 'Snapshot della verifica non disponibile. Riattiva o ricrea la verifica.',
         }));
+        return;
+      }
+      if (source.kind === 'embedded') {
+        await downloadStudentPdf(
+          { title: source.title },
+          source.questions.map(toPdfQuestion),
+          source.className,
+        );
         return;
       }
       if (source.questionRefs.length === 0) {
@@ -445,6 +490,14 @@ export function VerificationsView() {
           ...prev,
           [v.id]: 'Snapshot della verifica non disponibile. Riattiva o ricrea la verifica.',
         }));
+        return;
+      }
+      if (source.kind === 'embedded') {
+        await downloadTeacherSolutionsPdf(
+          { title: source.title },
+          source.questions.map(toPdfQuestionWithSolution),
+          source.className,
+        );
         return;
       }
       if (source.questionRefs.length === 0) {

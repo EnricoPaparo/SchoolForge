@@ -772,6 +772,17 @@ M3F-10 è completato; M3F-11 è definito operativamente in `m3-full-roadmap.md`.
 
 **Gate prestazioni/sicurezza (PERF-SEC-01):** prerequisito aggiuntivo, insieme al Gate G5, prima della chiusura definitiva di M3-full — i finding P0/P1 dell'audit devono essere risolti o esplicitamente derogati con motivazione scritta; i finding P2/P3 possono essere rimandati a un ciclo successivo se documentato.
 
+#### Fix snapshot immutabile — `teacherSnapshot.questions` (SEC-02)
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | Nessuno (fix indipendente dalla sequenza PERF-SEC-01B) |
+| Scope | `teacherSnapshot` conteneva solo `questionRefs` (puntatori ai pool correnti): modificare/eliminare un pool dopo l'attivazione poteva alterare o rompere il PDF docente di una verifica già `active`/`closed`. Aggiunge `VerificationTeacherQuestionSnapshot`/`teacherSnapshot.questions?` (testo, opzioni, soluzione, maxPoints, order), scritto una sola volta all'attivazione nella transazione già esistente; i PDF di verifiche con `questions` presente sono costruiti direttamente dallo snapshot, zero letture Storage. Fallback legacy esplicito per le verifiche attivate prima del fix (senza `questions`) — nessuna migrazione automatica. Soglia dimensionale conservativa (700 000 byte) su `questions` prima di aprire la transazione. |
+| File | `types/firestore.ts`, `verificationsService.ts`, `verificationPdf.ts`, `verificationSnapshotMappers.ts` (nuovo), `verificationSnapshotLimits.ts` (nuovo), `VerificationsView.tsx`, documentazione (`api-contract.md`, `sicurezza.md`, `analisi-requisiti.md`, `architettura.md`, `performance-security-audit.md` — SEC-02). |
+| Test minimi | `activateVerification`: scrive `questions` nell'ordine di `questionRefs`, legge ogni pool una sola volta, blocca prima della transazione su pool/soluzione invalidi e su snapshot troppo grande, `publishedProjection` derivata dallo stesso caricamento senza soluzioni. `VerificationsView`: PDF normale/soluzioni da snapshot imbedded senza Storage per active/closed, invariati dopo modifica/cancellazione simulata dei pool, fallback legacy invariato per verifiche senza `questions`. Nessuna Rules modificata (`teacherSnapshot` è già immutabile post-attivazione per le regole di update esistenti). |
+| Deploy | Nessun deploy dall'agente; merge e deploy solo dopo CI verde e review. |
+| Stato | Completato. |
+
 ### M4 — Correzione ed export
 
 #### M4-A — Correzione e audit

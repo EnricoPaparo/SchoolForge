@@ -328,6 +328,57 @@ interface PublicVerificationQuestion {
   opzioni?: { id: string; testo: string }[];  // solo chiusa_singola/chiusa_multipla — id + testo, mai la soluzione
 }
 
+// teacherSnapshot (campo su verifications/{id}, owner-only, scritto solo
+// all'attivazione) — corregge un'incoerenza preesistente: fino a questo
+// contratto, teacherSnapshot conservava solo config.questionRefs (puntatori
+// stabili ai pool correnti), quindi i PDF docente (normale e con soluzioni)
+// di una verifica active/closed rileggevano testo e soluzioni dai pool
+// *correnti* in Storage — modificare o eliminare un pool dopo l'attivazione
+// poteva quindi cambiare o rompere il PDF di una verifica già attivata,
+// contraddicendo il requisito di snapshot immutabile.
+//
+// Ogni nuova attivazione ora scrive anche `questions`: una copia completa e
+// immutabile delle domande necessarie ai PDF docente, incluse le soluzioni.
+// `questionRefs` resta per tracciabilità/compatibilità ma non è più la
+// fonte dati dei PDF quando `questions` è presente. `questions` è
+// deliberatamente minimale: mai poolStorageRef, questionLocalId o
+// questionIndexEntryId (quelli restano solo su VerificationQuestionRef).
+interface VerificationTeacherQuestionSnapshot {
+  order: number;
+  tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
+  maxPoints: number;
+  testo: string;
+  opzioni?: { id: string; testo: string }[];
+  soluzione: string | string[];   // string per aperta/chiusa_singola, string[] per chiusa_multipla
+}
+
+interface VerificationTeacherSnapshot {
+  title: string;
+  classId: string | null;
+  className: string | null;
+  programId: string;
+  importId: string;
+  questionRefs: VerificationQuestionRef[];  // tracciabilità/compatibilità, non più fonte dati PDF se questions è presente
+  questions?: VerificationTeacherQuestionSnapshot[];  // assente solo su verifiche attivate prima di questo contratto (legacy)
+  activatedAt: Timestamp;
+}
+
+// Compatibilità legacy: una verifica active/closed attivata prima di questo
+// contratto non ha `teacherSnapshot.questions` — i suoi PDF continuano a
+// essere generati rileggendo `questionRefs` dai pool correnti in Storage
+// (stesso comportamento di prima, temporaneo, non una migrazione). Nessuna
+// migrazione automatica è prevista: un docente che vuole rendere una
+// verifica legacy pienamente indipendente dai pool può ricrearla (bozza →
+// attivazione), ottenendo così uno snapshot completo.
+//
+// Limite dimensionale: prima di attivare, la dimensione serializzata di
+// `questions` viene stimata e confrontata con una soglia conservativa
+// (700 000 byte, vedi verificationSnapshotLimits.ts) ben al di sotto del
+// limite Firestore di 1 MiB per documento — il documento `verifications/{id}`
+// contiene anche `config` (incluso l'intero `questionRefs`) e gli altri
+// campi di `teacherSnapshot`. Superata la soglia, l'attivazione fallisce
+// con un errore leggibile, prima di aprire la transazione.
+
 // ---------------------------------------------------------------------------
 // M3-full — Verifiche online e consegne studenti (specifica in m3-full-roadmap.md)
 // I tipi seguenti definiscono il contratto Firestore per la consegna online.
