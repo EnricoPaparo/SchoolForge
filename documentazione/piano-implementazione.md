@@ -297,6 +297,8 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 ## 12. M4 — Correzione ed export
 
+Il concept UX approvato per accesso dalla tabella **Consegne online**, workspace di correzione, stati e restituzione studente è fissato in [`m4-correzione-ux-concept.md`](m4-correzione-ux-concept.md). Il documento non implementa M4 e non sostituisce i contratti tecnici da definire in M4-00/M4-A.
+
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
 | M4-A | Servizio correzione client: punteggi 0..massimo, percentuale, stato non definitivo, rettifiche append-only, eliminazione dati. | G4 | M4-B | Percentuale e storico rettifiche corretti; eliminazione preserva solo audit. |

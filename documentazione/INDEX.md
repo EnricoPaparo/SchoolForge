@@ -72,3 +72,4 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 - [sequence-import-lezione.md](diagrammi/sequence-import-lezione.md) — sequenza di import didattico.
 - [sequence-pubblicazione-verifica.md](diagrammi/sequence-pubblicazione-verifica.md) — canale cartaceo, Portale studente M3-lite e note storiche sul canale digitale; la specifica M3-full corrente è in [m3-full-roadmap.md](m3-full-roadmap.md).
 - [sequence-correzione-ai.md](diagrammi/sequence-correzione-ai.md) — correzione AI (Modulo 5, V2).
+- [m4-correzione-ux-concept.md](m4-correzione-ux-concept.md) — concept approvato per lista consegne, workspace di correzione e restituzione studente del Modulo 4.
