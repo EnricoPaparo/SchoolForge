@@ -288,6 +288,12 @@ export async function activateVerification(
  * Also mirrors the new value onto `publishedProjection/data.visibility`
  * (M3L-D) — required so the student's `collectionGroup` discovery query has
  * a query-filterable field to authorize on; see `PublishedProjectionDoc`.
+ *
+ * Written atomically in a single `writeBatch` together with the audit
+ * event (PERF-SEC-01B-1 / PERF-05) — a partial failure can no longer leave
+ * the parent document and the projection mirror out of sync, matching the
+ * pattern already used by `setVerificationOnlineEnabled`/
+ * `setVerificationStudentPdfEnabled`.
  */
 export async function setVerificationVisibility(
   verificationId: string,
@@ -300,17 +306,18 @@ export async function setVerificationVisibility(
   if (!data || data.status !== 'active') {
     throw new Error('Visibilità modificabile solo su una verifica attiva');
   }
-  await setDoc(
+  const batch = writeBatch(db);
+  batch.set(
     doc(db, 'verifications', verificationId),
     { visibility, updatedAt: serverTimestamp() },
     { merge: true },
   );
-  await setDoc(
+  batch.set(
     doc(db, 'verifications', verificationId, 'publishedProjection', 'data'),
     { visibility },
     { merge: true },
   );
-  await setDoc(doc(collection(db, 'auditEvents')), {
+  batch.set(doc(collection(db, 'auditEvents')), {
     actorUid: ownerUid,
     action: 'verification.visibilityChanged',
     targetId: verificationId,
@@ -318,6 +325,7 @@ export async function setVerificationVisibility(
     reason: `visibility -> ${visibility}`,
     timestamp: serverTimestamp(),
   });
+  await batch.commit();
 }
 
 /**
@@ -329,10 +337,10 @@ export async function setVerificationVisibility(
  * or `visibility` — the two toggles are independent, mirroring
  * `setVerificationVisibility`.
  *
- * Unlike `setVerificationVisibility` (two sequential `setDoc` calls), this
- * uses a single `writeBatch` so the parent update and the
- * `publishedProjection/data.onlineEnabled` mirror commit atomically — a
- * partial failure can never leave the two out of sync.
+ * Like `setVerificationVisibility`, this uses a single `writeBatch` so the
+ * parent update and the `publishedProjection/data.onlineEnabled` mirror
+ * commit atomically — a partial failure can never leave the two out of
+ * sync.
  *
  * A verification with no class assigned (`config.classId == null`) can
  * never have online enabled: `verificationClassMatches()` in Security Rules
@@ -434,6 +442,12 @@ export async function setVerificationStudentPdfEnabled(
  * closed verification must never remain readable by a student via a stale
  * `'public'` mirror, since the Security Rules list-query gate checks only
  * this mirrored field, not the parent's `status`.
+ *
+ * Written atomically in a single `writeBatch` together with the audit
+ * event (PERF-SEC-01B-1 / PERF-05) — a partial failure can no longer leave
+ * the parent document and the projection mirror out of sync, matching the
+ * pattern already used by `setVerificationOnlineEnabled`/
+ * `setVerificationStudentPdfEnabled`.
  */
 export async function closeVerification(
   verificationId: string,
@@ -441,21 +455,25 @@ export async function closeVerification(
   db: Firestore,
 ): Promise<void> {
   const snap = await getDoc(doc(db, 'verifications', verificationId));
-  const data = snap.data() as VerificationDoc;
+  const data = snap.data() as VerificationDoc | undefined;
+  if (!data) {
+    throw new Error('Verifica non trovata');
+  }
   if (data.status !== 'active') {
     throw new Error('Verifica non chiudibile: non è attiva');
   }
-  await setDoc(
+  const batch = writeBatch(db);
+  batch.set(
     doc(db, 'verifications', verificationId),
     { status: 'closed', closedAt: serverTimestamp(), updatedAt: serverTimestamp() },
     { merge: true },
   );
-  await setDoc(
+  batch.set(
     doc(db, 'verifications', verificationId, 'publishedProjection', 'data'),
     { visibility: 'hidden' },
     { merge: true },
   );
-  await setDoc(doc(collection(db, 'auditEvents')), {
+  batch.set(doc(collection(db, 'auditEvents')), {
     actorUid: ownerUid,
     action: 'verification.closed',
     targetId: verificationId,
@@ -463,6 +481,7 @@ export async function closeVerification(
     reason: null,
     timestamp: serverTimestamp(),
   });
+  await batch.commit();
 }
 
 /**
