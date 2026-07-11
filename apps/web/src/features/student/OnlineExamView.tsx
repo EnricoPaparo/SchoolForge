@@ -17,8 +17,8 @@ import {
 import { countFilled, isAnswerFilled } from './examAnswers.js';
 import styles from './OnlineExamView.module.css';
 
-/** Dirty-only autosave: at most one write per minute, never per keystroke. */
-const AUTOSAVE_INTERVAL_MS = 60_000;
+/** Dirty-only autosave: at most one write every two minutes, never per keystroke. */
+const AUTOSAVE_INTERVAL_MS = 120_000;
 
 type OnlineExamViewProps = {
   verificationId: string;
@@ -172,7 +172,7 @@ export function OnlineExamView({
     }
   }
 
-  // Autosave: only when dirty, at most once every 60s — never on every
+  // Autosave: only when dirty, at most once every 120s — never on every
   // keystroke. A single interval set up once; refs keep it reading current
   // data without needing to be torn down and recreated.
   useEffect(() => {
@@ -192,12 +192,17 @@ export function OnlineExamView({
   const deterrenceCleanupRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     const cleanup = attachDeterrenceListeners((type: AttentionEventType) => {
-      // Once the 200-event cap is reached, ignored events must not mark the
-      // draft dirty — there is nothing new to save.
+      // Once the 200-event cap is reached, ignored events have nothing new
+      // to save.
       if (knownEventCountRef.current + bufferedEventsRef.current.length >= 200) return;
+      // M3F-11B: an attention event alone must never mark the draft dirty
+      // or trigger an autosave — it is only buffered here. `persistDraft`
+      // always includes whatever is buffered (see `eventsToSend` below and
+      // in `handleConfirmSubmit`), so the event still reaches Firestore on
+      // the next save caused by an answer/flag change, the next manual
+      // "Salva bozza" click, or the final delivery — never dropped, just
+      // not itself a reason to write.
       bufferedEventsRef.current = [...bufferedEventsRef.current, { type, ts: Date.now() }];
-      dirtyRef.current = true;
-      revisionRef.current += 1;
     }, setIsFullscreen);
     deterrenceCleanupRef.current = cleanup;
     return () => {
@@ -305,88 +310,102 @@ export function OnlineExamView({
 
   return (
     <section aria-label={`Verifica online — ${title}`} className={styles.container}>
-      <header className={styles.examHeader}>
-        <div className={styles.examHeaderInfo}>
-          <h2 className={styles.examTitle}>{title}</h2>
-          {className && <span className={styles.examClass}>{className}</span>}
-          <span className={styles.examBadge}>Modalità verifica</span>
-        </div>
+      {/*
+        M3F-11B: header row + question navigator are unified into a single
+        sticky container instead of two independently `position: sticky`
+        elements. Two sticky siblings each computing their own `top` (the
+        navigator previously used a hardcoded `calc(3.75rem + 0.5rem)` guess
+        at the header's height) drift apart the moment the header's own
+        height changes — e.g. examStatus/examActions wrapping to an extra
+        line on a narrow viewport — leaving a gap or overlap between the
+        two rows. A single sticky panel with two rows inside it has no such
+        seam: the gap between rows is normal in-flow spacing, identical at
+        the top of the page and mid-scroll, on every browser.
+      */}
+      <div className={styles.controlPanel}>
+        <div className={styles.controlRow}>
+          <div className={styles.examHeaderInfo}>
+            <h2 className={styles.examTitle}>{title}</h2>
+            {className && <span className={styles.examClass}>{className}</span>}
+            <span className={styles.examBadge}>Modalità verifica</span>
+          </div>
 
-        <div className={styles.examStatus}>
-          <span className={styles.examProgress}>
-            {filledCount}/{totalCount} compilate
-          </span>
-          {saveError ? (
-            <span role="alert" className={styles.saveError}>
-              {saveError}
+          <div className={styles.examStatus}>
+            <span className={styles.examProgress}>
+              {filledCount}/{totalCount} compilate
             </span>
-          ) : (
-            lastSavedLabel && (
-              <span className={styles.saveStatus}>Bozza salvata alle {lastSavedLabel}</span>
-            )
-          )}
-        </div>
+            {saveError ? (
+              <span role="alert" className={styles.saveError}>
+                {saveError}
+              </span>
+            ) : (
+              lastSavedLabel && (
+                <span className={styles.saveStatus}>Bozza salvata alle {lastSavedLabel}</span>
+              )
+            )}
+          </div>
 
-        <div className={styles.examActions}>
-          {!isFullscreen && !sessionEnded && (
+          <div className={styles.examActions}>
+            {!isFullscreen && !sessionEnded && (
+              <button
+                type="button"
+                className={styles.fullscreenBtn}
+                onClick={requestFullscreenBestEffort}
+                disabled={submitting}
+              >
+                Torna a schermo intero
+              </button>
+            )}
             <button
               type="button"
-              className={styles.fullscreenBtn}
-              onClick={requestFullscreenBestEffort}
-              disabled={submitting}
+              onClick={() => void persistDraft()}
+              disabled={saving || controlsLocked}
             >
-              Torna a schermo intero
+              {saving ? 'Salvataggio…' : 'Salva bozza'}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => void persistDraft()}
-            disabled={saving || controlsLocked}
-          >
-            {saving ? 'Salvataggio…' : 'Salva bozza'}
-          </button>
-          <button
-            type="button"
-            className="btn-success"
-            onClick={() => setConfirmOpen(true)}
-            disabled={controlsLocked}
-          >
-            Consegna
-          </button>
-        </div>
-      </header>
-
-      <nav aria-label="Navigatore domande" className={styles.questionNav}>
-        {questions.map((q) => {
-          const key = String(q.order);
-          const isFlagged = !!flagged[key];
-          const filled = isAnswerFilled(answers[key]);
-          const navState = isFlagged ? 'flagged' : filled ? 'filled' : 'empty';
-          const navLabel = isFlagged ? 'da rivedere' : filled ? 'compilata' : 'vuota';
-          const navClass =
-            navState === 'flagged'
-              ? styles.navItemFlagged
-              : navState === 'filled'
-                ? styles.navItemFilled
-                : styles.navItemEmpty;
-          return (
             <button
-              key={q.order}
               type="button"
-              className={`${styles.navItem} ${navClass}`}
-              title={`Domanda ${q.order + 1} — ${navLabel}`}
-              aria-label={`Vai alla domanda ${q.order + 1} — ${navLabel}`}
-              onClick={() =>
-                document
-                  .getElementById(`question-${q.order}`)
-                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-              }
+              className="btn-success"
+              onClick={() => setConfirmOpen(true)}
+              disabled={controlsLocked}
             >
-              {q.order + 1}
+              Consegna
             </button>
-          );
-        })}
-      </nav>
+          </div>
+        </div>
+
+        <nav aria-label="Navigatore domande" className={styles.questionNav}>
+          {questions.map((q) => {
+            const key = String(q.order);
+            const isFlagged = !!flagged[key];
+            const filled = isAnswerFilled(answers[key]);
+            const navState = isFlagged ? 'flagged' : filled ? 'filled' : 'empty';
+            const navLabel = isFlagged ? 'da rivedere' : filled ? 'compilata' : 'vuota';
+            const navClass =
+              navState === 'flagged'
+                ? styles.navItemFlagged
+                : navState === 'filled'
+                  ? styles.navItemFilled
+                  : styles.navItemEmpty;
+            return (
+              <button
+                key={q.order}
+                type="button"
+                className={`${styles.navItem} ${navClass}`}
+                title={`Domanda ${q.order + 1} — ${navLabel}`}
+                aria-label={`Vai alla domanda ${q.order + 1} — ${navLabel}`}
+                onClick={() =>
+                  document
+                    .getElementById(`question-${q.order}`)
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }
+              >
+                {q.order + 1}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
 
       <div className={styles.questionList}>
         {questions.map((q) => {

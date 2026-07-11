@@ -7,21 +7,41 @@
   min-width: 0;
 }
 
-/* ── Sticky header ─────────────────────────────────────────────── */
-.examHeader {
+/* ── Sticky control panel (M3F-11B) ───────────────────────────────
+   Header row + question navigator used to be two independent
+   `position: sticky` elements, the navigator's `top` guessing the
+   header's height with a hardcoded `calc()`. That guess drifts the
+   instant the header wraps onto an extra line (narrow viewport, long
+   title, a save error), leaving a gap or overlap between the two. A
+   single sticky container with the two rows inside it in normal flow
+   has no seam to drift: the gap is ordinary flow spacing, identical
+   at the top of the page and mid-scroll, on Chrome/Brave/Safari alike.
+   Background is fully opaque (`--color-surface` is a solid hex, not a
+   translucent color) so question text never shows through while
+   scrolled underneath. */
+.controlPanel {
   position: sticky;
   top: 0;
   z-index: 10;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.625rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   padding: 0.875rem 1.125rem;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.controlRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   min-width: 0;
 }
 
@@ -101,24 +121,27 @@
   font-weight: 600;
 }
 
-/* ── Question navigator — sticky compact bar ──────────────────── */
+/* ── Question navigator — second row inside .controlPanel ────────
+   No longer its own sticky/boxed element (see .controlPanel above) —
+   just a horizontally-scrollable row sharing the panel's opaque
+   background. Scrollbar hidden visually (scrollbar-width/-ms-overflow-
+   style/::-webkit-scrollbar) while horizontal scroll stays fully
+   functional, so a long question list never widens the page itself. */
 .questionNav {
-  position: sticky;
-  top: calc(3.75rem + 0.5rem);
-  z-index: 9;
   display: flex;
   flex-wrap: nowrap;
   gap: 0.375rem;
   overflow-x: auto;
   overflow-y: hidden;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  padding: 0.5rem 0.625rem;
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.questionNav::-webkit-scrollbar {
+  display: none;
 }
 
 .navItem {
@@ -285,7 +308,7 @@
 }
 
 @media (max-width: 640px) {
-  .examHeader {
+  .controlRow {
     flex-direction: column;
     align-items: stretch;
   }

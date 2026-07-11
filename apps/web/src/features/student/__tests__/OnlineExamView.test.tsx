@@ -183,22 +183,22 @@ describe('OnlineExamView — saving', () => {
     );
   });
 
-  it('autosaves only when dirty, at most once per 60s tick', async () => {
+  it('autosaves only when dirty, at most once per 120s tick', async () => {
     vi.useFakeTimers();
     try {
       renderView();
 
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(120_000);
       expect(mockSaveDraft).not.toHaveBeenCalled();
 
       fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
         target: { value: 'Risposta.' },
       });
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(120_000);
       expect(mockSaveDraft).toHaveBeenCalledOnce();
 
       // No further changes: the next tick must not save again.
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(120_000);
       expect(mockSaveDraft).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
@@ -244,7 +244,7 @@ describe('OnlineExamView — saving', () => {
       fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
         target: { value: 'Prima risposta.' },
       });
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(120_000);
       expect(mockSaveDraft).toHaveBeenCalledOnce();
 
       // A second change arrives while the first save is still in flight —
@@ -259,7 +259,7 @@ describe('OnlineExamView — saving', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       // Still dirty: the next tick must save again, carrying the latest answer.
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(120_000);
       expect(mockSaveDraft).toHaveBeenCalledTimes(2);
       const secondCall = mockSaveDraft.mock.calls[1] as [
         { answers: Record<string, { testo: string }> },
@@ -270,7 +270,7 @@ describe('OnlineExamView — saving', () => {
     }
   });
 
-  it('an attention event alone (no answer change) still marks the draft dirty and is saved on the next tick', async () => {
+  it('M3F-11B: an attention event alone (no answer/flag change) does NOT mark the draft dirty and does NOT trigger an autosave', async () => {
     vi.useFakeTimers();
     try {
       let capturedOnEvent: ((type: string) => void) | undefined;
@@ -281,7 +281,35 @@ describe('OnlineExamView — saving', () => {
       renderView();
 
       capturedOnEvent?.('window_blur');
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(mockSaveDraft).not.toHaveBeenCalled();
+
+      // Still no save on a later tick either — the event alone never becomes dirty.
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(mockSaveDraft).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('M3F-11B: a buffered attention event is included in the next save caused by an answer change', async () => {
+    vi.useFakeTimers();
+    try {
+      let capturedOnEvent: ((type: string) => void) | undefined;
+      mockAttachDeterrenceListeners.mockImplementation((onEvent: (type: string) => void) => {
+        capturedOnEvent = onEvent;
+        return vi.fn();
+      });
+      renderView();
+
+      capturedOnEvent?.('window_blur');
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(mockSaveDraft).not.toHaveBeenCalled();
+
+      fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
+        target: { value: 'Risposta.' },
+      });
+      await vi.advanceTimersByTimeAsync(120_000);
 
       expect(mockSaveDraft).toHaveBeenCalledOnce();
       const [arg] = mockSaveDraft.mock.calls[0] as [{ newAttentionEvents: { type: string }[] }];
@@ -289,6 +317,43 @@ describe('OnlineExamView — saving', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('M3F-11B: a buffered attention event is included in a manual "Salva bozza" even without an answer change', async () => {
+    let capturedOnEvent: ((type: string) => void) | undefined;
+    mockAttachDeterrenceListeners.mockImplementation((onEvent: (type: string) => void) => {
+      capturedOnEvent = onEvent;
+      return vi.fn();
+    });
+    renderView();
+
+    capturedOnEvent?.('tab_blur');
+    fireEvent.click(screen.getByRole('button', { name: 'Salva bozza' }));
+
+    await waitFor(() => expect(mockSaveDraft).toHaveBeenCalledOnce());
+    const [arg] = mockSaveDraft.mock.calls[0] as [{ newAttentionEvents: { type: string }[] }];
+    expect(arg.newAttentionEvents).toEqual([{ type: 'tab_blur', ts: expect.any(Number) }]);
+  });
+
+  it('M3F-11B: a buffered attention event is included in the final delivery even without an answer change', async () => {
+    let capturedOnEvent: ((type: string) => void) | undefined;
+    mockAttachDeterrenceListeners.mockImplementation((onEvent: (type: string) => void) => {
+      capturedOnEvent = onEvent;
+      return vi.fn();
+    });
+    mockSubmitSubmission.mockResolvedValue('SF-2026-AAAA');
+    mockLoadReceipt.mockResolvedValue({ deliveryCode: 'SF-2026-AAAA' });
+    renderView();
+
+    capturedOnEvent?.('copy_attempt');
+    fireEvent.click(screen.getByRole('button', { name: 'Consegna' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Conferma consegna' }));
+
+    await waitFor(() => expect(mockSubmitSubmission).toHaveBeenCalledOnce());
+    const [arg] = mockSubmitSubmission.mock.calls[0] as [
+      { newAttentionEvents: { type: string }[] },
+    ];
+    expect(arg.newAttentionEvents).toEqual([{ type: 'copy_attempt', ts: expect.any(Number) }]);
   });
 
   it('never overlaps manual save and autosave while a write is in flight', async () => {
@@ -306,7 +371,7 @@ describe('OnlineExamView — saving', () => {
       });
 
       fireEvent.click(screen.getByRole('button', { name: 'Salva bozza' }));
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(120_000);
 
       expect(mockSaveDraft).toHaveBeenCalledOnce();
       resolveSave?.();
@@ -597,6 +662,28 @@ describe('OnlineExamView — fullscreen recovery (M3F-11A)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Torna a schermo intero' }));
     expect(requestFullscreenSpy).toHaveBeenCalledOnce();
+  });
+});
+
+describe('OnlineExamView — unified sticky control panel (M3F-11B)', () => {
+  it('wraps the header row and the question navigator inside a single shared container', () => {
+    renderView();
+    const nav = screen.getByRole('navigation', { name: 'Navigatore domande' });
+    const title = screen.getByText('Verifica Reti');
+
+    // Both the title (header row) and the navigator (second row) must
+    // share the same nearest positioned/sticky ancestor — one panel, not
+    // two independent sticky elements with a hardcoded offset between them.
+    const panel = nav.parentElement;
+    expect(panel).toBeTruthy();
+    expect(panel?.contains(title)).toBe(true);
+    expect(panel?.contains(nav)).toBe(true);
+  });
+
+  it('the navigator stays accessible and reachable inside the panel', () => {
+    renderView();
+    const nav = screen.getByRole('navigation', { name: 'Navigatore domande' });
+    expect(within(nav).getAllByRole('button')).toHaveLength(3);
   });
 });
 
