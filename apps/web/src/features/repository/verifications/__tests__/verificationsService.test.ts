@@ -46,6 +46,7 @@ import {
   validateForActivation,
   activateVerification,
   setVerificationVisibility,
+  setVerificationOnlineEnabled,
   closeVerification,
   deleteVerification,
 } from '../verificationsService.js';
@@ -457,6 +458,80 @@ describe('setVerificationVisibility', () => {
 
     await expect(setVerificationVisibility('ver-id', 'hidden', OWNER_UID, fakeDb)).rejects.toThrow(
       'Visibilità modificabile solo su una verifica attiva',
+    );
+  });
+});
+
+// ─── setVerificationOnlineEnabled ────────────────────────────────────────────
+
+describe('setVerificationOnlineEnabled', () => {
+  it('atomically batches parent onlineEnabled/updatedAt + projection mirror + audit', async () => {
+    const activeDoc: Partial<VerificationDoc> = { status: 'active', config: VALID_CONFIG };
+    mockGetDoc.mockResolvedValue({ data: () => activeDoc });
+
+    await setVerificationOnlineEnabled('ver-id', true, OWNER_UID, fakeDb);
+
+    expect(mockWriteBatch).toHaveBeenCalledWith(fakeDb);
+    expect(mockBatchSet).toHaveBeenCalledTimes(3); // parent + projection + audit
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+    expect(mockSetDoc).not.toHaveBeenCalled();
+
+    const [, parentData, parentOptions] = mockBatchSet.mock.calls[0];
+    expect(parentData).toEqual({ onlineEnabled: true, updatedAt: mockServerTimestamp() });
+    expect(parentOptions).toEqual({ merge: true });
+
+    const [, projectionData, projectionOptions] = mockBatchSet.mock.calls[1];
+    expect(projectionData).toEqual({ onlineEnabled: true });
+    expect(projectionOptions).toEqual({ merge: true });
+
+    const [, auditData] = mockBatchSet.mock.calls[2];
+    expect(auditData.action).toBe('verification.onlineEnabledChanged');
+    expect(auditData.actorUid).toBe(OWNER_UID);
+    expect(auditData.reason).toBe('onlineEnabled -> true');
+  });
+
+  it('rejects enabling online when the verification has no class assigned', async () => {
+    const activeDoc: Partial<VerificationDoc> = {
+      status: 'active',
+      config: { ...VALID_CONFIG, classId: null },
+    };
+    mockGetDoc.mockResolvedValue({ data: () => activeDoc });
+
+    await expect(setVerificationOnlineEnabled('ver-id', true, OWNER_UID, fakeDb)).rejects.toThrow(
+      "Assegnare una classe prima di attivare l'online",
+    );
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+  });
+
+  it('allows disabling online even without a class assigned', async () => {
+    const activeDoc: Partial<VerificationDoc> = {
+      status: 'active',
+      config: { ...VALID_CONFIG, classId: null },
+      onlineEnabled: true,
+    };
+    mockGetDoc.mockResolvedValue({ data: () => activeDoc });
+
+    await setVerificationOnlineEnabled('ver-id', false, OWNER_UID, fakeDb);
+
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects when the verification is a draft', async () => {
+    const draftDoc: Partial<VerificationDoc> = { status: 'draft', config: VALID_CONFIG };
+    mockGetDoc.mockResolvedValue({ data: () => draftDoc });
+
+    await expect(setVerificationOnlineEnabled('ver-id', true, OWNER_UID, fakeDb)).rejects.toThrow(
+      'Online modificabile solo su una verifica attiva',
+    );
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the verification is closed', async () => {
+    const closedDoc: Partial<VerificationDoc> = { status: 'closed', config: VALID_CONFIG };
+    mockGetDoc.mockResolvedValue({ data: () => closedDoc });
+
+    await expect(setVerificationOnlineEnabled('ver-id', false, OWNER_UID, fakeDb)).rejects.toThrow(
+      'Online modificabile solo su una verifica attiva',
     );
   });
 });

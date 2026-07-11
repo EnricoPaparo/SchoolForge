@@ -23,8 +23,12 @@ import { loadSelectedQuestions } from './loadSelectedQuestions.js';
 import { normalizeOnlineEnabled } from './onlineEnabled.js';
 import { normalizeVisibility } from './visibility.js';
 
-export type VerificationItem = { id: string } & Omit<VerificationDoc, 'visibility'> & {
+export type VerificationItem = { id: string } & Omit<
+  VerificationDoc,
+  'visibility' | 'onlineEnabled'
+> & {
     visibility: VerificationVisibility;
+    onlineEnabled: boolean;
   };
 
 export async function listVerifications(
@@ -35,7 +39,12 @@ export async function listVerifications(
   return snap.docs
     .map((d) => {
       const data = d.data() as VerificationDoc;
-      return { id: d.id, ...data, visibility: normalizeVisibility(data.visibility) };
+      return {
+        id: d.id,
+        ...data,
+        visibility: normalizeVisibility(data.visibility),
+        onlineEnabled: normalizeOnlineEnabled(data.onlineEnabled),
+      };
     })
     .filter((item) => item.ownerUid === ownerUid);
 }
@@ -270,6 +279,61 @@ export async function setVerificationVisibility(
     reason: `visibility -> ${visibility}`,
     timestamp: serverTimestamp(),
   });
+}
+
+/**
+ * Toggles `onlineEnabled` on an `active` verification — the master switch
+ * that lets students actually start/save/submit the online exam (Security
+ * Rules gate every submission write on `verificationOnlineAndActive()`,
+ * which reads this exact field). Touches only `onlineEnabled` and
+ * `updatedAt` on the parent document; never config, teacherSnapshot, status,
+ * or `visibility` — the two toggles are independent, mirroring
+ * `setVerificationVisibility`.
+ *
+ * Unlike `setVerificationVisibility` (two sequential `setDoc` calls), this
+ * uses a single `writeBatch` so the parent update and the
+ * `publishedProjection/data.onlineEnabled` mirror commit atomically — a
+ * partial failure can never leave the two out of sync.
+ *
+ * A verification with no class assigned (`config.classId == null`) can
+ * never have online enabled: `verificationClassMatches()` in Security Rules
+ * would deny every submission anyway, so enabling here would be a dead,
+ * confusing toggle.
+ */
+export async function setVerificationOnlineEnabled(
+  verificationId: string,
+  onlineEnabled: boolean,
+  ownerUid: string,
+  db: Firestore,
+): Promise<void> {
+  const snap = await getDoc(doc(db, 'verifications', verificationId));
+  const data = snap.data() as VerificationDoc | undefined;
+  if (!data || data.status !== 'active') {
+    throw new Error('Online modificabile solo su una verifica attiva');
+  }
+  if (onlineEnabled && data.config.classId == null) {
+    throw new Error("Assegnare una classe prima di attivare l'online");
+  }
+  const batch = writeBatch(db);
+  batch.set(
+    doc(db, 'verifications', verificationId),
+    { onlineEnabled, updatedAt: serverTimestamp() },
+    { merge: true },
+  );
+  batch.set(
+    doc(db, 'verifications', verificationId, 'publishedProjection', 'data'),
+    { onlineEnabled },
+    { merge: true },
+  );
+  batch.set(doc(collection(db, 'auditEvents')), {
+    actorUid: ownerUid,
+    action: 'verification.onlineEnabledChanged',
+    targetId: verificationId,
+    outcome: 'success',
+    reason: `onlineEnabled -> ${onlineEnabled}`,
+    timestamp: serverTimestamp(),
+  });
+  await batch.commit();
 }
 
 /**
