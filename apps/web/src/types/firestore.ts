@@ -388,7 +388,10 @@ export type PublishedProjectionDoc = {
 
 /**
  * Answer value for a single question in a submission.
- * Keyed by `order.toString()` (1-based, matching PublicVerificationQuestion.order).
+ * Keyed by `order.toString()` — 0-based internally, matching
+ * `PublicVerificationQuestion.order` (set from the array index at
+ * activation, see `activateVerification`). The UI displays `order + 1` as
+ * the question number; storage itself stays 0-based throughout.
  */
 export type AnswerValue =
   | { tipo: 'aperta'; testo: string }

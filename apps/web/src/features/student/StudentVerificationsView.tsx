@@ -24,18 +24,53 @@ type OnlineStatus =
   | { kind: 'checking' }
   | { kind: 'receipt'; receipt: SubmissionReceiptDoc }
   | { kind: 'draft' }
-  | { kind: 'none' };
+  | { kind: 'none' }
+  | { kind: 'error' };
 
 type ViewState =
   | { mode: 'list' }
   | { mode: 'exam'; item: StudentVerificationItem; submission: SubmissionDoc }
-  | { mode: 'confirmation'; item: StudentVerificationItem; receipt: SubmissionReceiptDoc };
+  | { mode: 'confirmation'; receipt: SubmissionReceiptDoc };
 
 /** it-IT date from a Firestore Timestamp-like value, or null if absent. */
 function formatActivatedAt(ts: unknown): string | null {
   if (!ts || typeof ts !== 'object' || !('seconds' in ts)) return null;
   const date = new Date((ts as { seconds: number }).seconds * 1000);
   return date.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+/**
+ * Remembers only the verificationId of the exam just submitted — never
+ * answers or any personal data — so a page refresh lands back on
+ * ConfirmationView instead of the list (M3F-04 §8). Cleared once the
+ * student explicitly chooses "Torna alle verifiche". sessionStorage can be
+ * unavailable (private browsing, disabled storage); every call is a no-op
+ * on failure rather than breaking the flow.
+ */
+const LAST_SUBMITTED_KEY = 'schoolforge:lastSubmittedVerificationId';
+
+function readLastSubmittedId(): string | null {
+  try {
+    return sessionStorage.getItem(LAST_SUBMITTED_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeLastSubmittedId(verificationId: string): void {
+  try {
+    sessionStorage.setItem(LAST_SUBMITTED_KEY, verificationId);
+  } catch {
+    // Non-fatal — the in-memory view state still shows the confirmation now.
+  }
+}
+
+function clearLastSubmittedId(): void {
+  try {
+    sessionStorage.removeItem(LAST_SUBMITTED_KEY);
+  } catch {
+    // Non-fatal.
+  }
 }
 
 /**
@@ -64,6 +99,23 @@ export function StudentVerificationsView() {
 
   async function load(uid: string) {
     setState({ status: 'loading' });
+
+    const pendingId = readLastSubmittedId();
+    if (pendingId) {
+      try {
+        const receipt = await loadReceipt(pendingId, uid, db);
+        if (receipt) {
+          setView({ mode: 'confirmation', receipt });
+        } else {
+          // Stale/foreign value (e.g. a previous student on a shared
+          // browser profile) — drop it and fall through to the list.
+          clearLastSubmittedId();
+        }
+      } catch {
+        // Non-fatal — fall through to the normal list load below.
+      }
+    }
+
     try {
       const result = await loadStudentVerifications(uid, db);
       if (result.status === 'no-class') {
@@ -77,29 +129,59 @@ export function StudentVerificationsView() {
     }
   }
 
-  /** Receipt first, submission only if absent — never both reads when unneeded. */
+  /**
+   * Receipt first, submission only if absent — never both reads when
+   * unneeded. A failed check resolves to 'error', never 'none': the two
+   * must stay distinguishable so a genuine load failure is never rendered
+   * as an inviting "Svolgi online" button.
+   */
   async function checkOnlineStatus(
     uid: string,
     item: StudentVerificationItem,
   ): Promise<OnlineStatus> {
-    const receipt = await loadReceipt(item.id, uid, db);
-    if (receipt) return { kind: 'receipt', receipt };
-    const submission = await loadSubmission(item.id, uid, db);
-    if (submission && submission.status === 'draft') return { kind: 'draft' };
-    return { kind: 'none' };
+    try {
+      const receipt = await loadReceipt(item.id, uid, db);
+      if (receipt) return { kind: 'receipt', receipt };
+      const submission = await loadSubmission(item.id, uid, db);
+      if (submission && submission.status === 'draft') return { kind: 'draft' };
+      return { kind: 'none' };
+    } catch {
+      return { kind: 'error' };
+    }
   }
 
+  /**
+   * Checks every onlineEnabled verification in parallel (Promise.all across
+   * items — independent reads, no reason to serialize them) while each
+   * item's own receipt->submission check stays sequential internally. State
+   * is applied in two batched updates (all "checking" placeholders, then all
+   * resolved statuses) rather than one setState per item, to avoid a long
+   * render cascade as results trickle in one at a time.
+   */
   async function refreshOnlineStatuses(uid: string, verifications: StudentVerificationItem[]) {
     const onlineItems = verifications.filter((item) => item.onlineEnabled);
-    for (const item of onlineItems) {
-      setOnlineStatus((prev) => ({ ...prev, [item.id]: { kind: 'checking' } }));
-      try {
-        const status = await checkOnlineStatus(uid, item);
-        setOnlineStatus((prev) => ({ ...prev, [item.id]: status }));
-      } catch {
-        setOnlineStatus((prev) => ({ ...prev, [item.id]: { kind: 'none' } }));
-      }
-    }
+    if (onlineItems.length === 0) return;
+
+    setOnlineStatus((prev) => {
+      const next = { ...prev };
+      for (const item of onlineItems) next[item.id] = { kind: 'checking' };
+      return next;
+    });
+
+    const results = await Promise.all(
+      onlineItems.map(
+        async (item): Promise<readonly [string, OnlineStatus]> => [
+          item.id,
+          await checkOnlineStatus(uid, item),
+        ],
+      ),
+    );
+
+    setOnlineStatus((prev) => {
+      const next = { ...prev };
+      for (const [id, status] of results) next[id] = status;
+      return next;
+    });
   }
 
   async function handleDownloadPdf(item: StudentVerificationItem) {
@@ -148,7 +230,7 @@ export function StudentVerificationsView() {
         // Already submitted between the list load and this click (e.g. another tab) — show the receipt instead.
         const receipt = await loadReceipt(item.id, uid, db);
         if (receipt) {
-          setView({ mode: 'confirmation', item, receipt });
+          setView({ mode: 'confirmation', receipt });
           return;
         }
       }
@@ -161,8 +243,8 @@ export function StudentVerificationsView() {
     }
   }
 
-  function handleShowReceipt(item: StudentVerificationItem, receipt: SubmissionReceiptDoc) {
-    setView({ mode: 'confirmation', item, receipt });
+  function handleShowReceipt(receipt: SubmissionReceiptDoc) {
+    setView({ mode: 'confirmation', receipt });
   }
 
   function handleExitExam() {
@@ -172,10 +254,12 @@ export function StudentVerificationsView() {
 
   function handleSubmitted(item: StudentVerificationItem, receipt: SubmissionReceiptDoc) {
     setOnlineStatus((prev) => ({ ...prev, [item.id]: { kind: 'receipt', receipt } }));
-    setView({ mode: 'confirmation', item, receipt });
+    writeLastSubmittedId(item.id);
+    setView({ mode: 'confirmation', receipt });
   }
 
   function handleBackToListFromConfirmation() {
+    clearLastSubmittedId();
     setView({ mode: 'list' });
   }
 
@@ -282,7 +366,7 @@ export function StudentVerificationsView() {
                   <button
                     type="button"
                     className={styles.receiptBtn}
-                    onClick={() => handleShowReceipt(item, status.receipt)}
+                    onClick={() => handleShowReceipt(status.receipt)}
                   >
                     Consegnata — Codice: {status.receipt.deliveryCode}
                   </button>
@@ -298,18 +382,26 @@ export function StudentVerificationsView() {
                   </button>
                 )}
 
-                {item.onlineEnabled && (status?.kind === 'none' || status === undefined) && (
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    disabled={status === undefined}
-                    onClick={() => void handleStartOrResume(item)}
-                  >
-                    Svolgi online
-                  </button>
-                )}
+                {item.onlineEnabled &&
+                  (status === undefined ||
+                    status.kind === 'none' ||
+                    status.kind === 'checking') && (
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={status === undefined || status.kind === 'checking'}
+                      onClick={() => void handleStartOrResume(item)}
+                    >
+                      Svolgi online
+                    </button>
+                  )}
               </div>
 
+              {item.onlineEnabled && status?.kind === 'error' && (
+                <p role="alert" className={`text-error ${styles.pdfError}`}>
+                  Impossibile verificare lo stato della verifica online. Riprova più tardi.
+                </p>
+              )}
               {pdfError && (
                 <p role="alert" className={`text-error ${styles.pdfError}`}>
                   {pdfError}

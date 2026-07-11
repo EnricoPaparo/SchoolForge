@@ -316,7 +316,8 @@ interface SubmissionDoc {
   studentUid: string;
   ownerUid: string;
   status: 'draft' | 'submitted';
-  // risposte sparse: solo le domande toccate; key = order.toString() (1-based)
+  // risposte sparse: solo le domande toccate; key = order.toString() (0-based,
+  // stesso indice di PublicVerificationQuestion.order; la UI mostra order + 1)
   answers: Record<string, AnswerValue>;
   // marcatori UX opzionali: restano per docente/M4 ma non sono visibili allo studente dopo la consegna
   flagged: Record<string, boolean>;

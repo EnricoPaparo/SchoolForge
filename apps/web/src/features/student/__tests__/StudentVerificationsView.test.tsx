@@ -83,6 +83,7 @@ vi.mock('../ConfirmationView.js', () => ({
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
+  sessionStorage.clear();
 });
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -429,6 +430,28 @@ describe('StudentVerificationsView', () => {
             /Impossibile avviare la verifica online: verifica chiusa o disabilitata/,
           ),
         ).toBeTruthy(),
+      );
+    });
+
+    it('a page refresh with a pending sessionStorage id and an existing receipt lands directly on ConfirmationView', async () => {
+      sessionStorage.setItem('schoolforge:lastSubmittedVerificationId', 'ver-online');
+      mockLoadStudentVerifications.mockResolvedValue({
+        status: 'ok',
+        verifications: [VERIFICATION_ONLINE],
+      });
+      mockLoadReceipt.mockResolvedValue(RECEIPT);
+
+      render(<StudentVerificationsView />);
+
+      await waitFor(() => expect(screen.getByTestId('confirmation-view')).toBeTruthy());
+      expect(mockLoadReceipt).toHaveBeenCalledWith('ver-online', 'student-uid', {});
+      expect(screen.queryByTestId('online-exam-view')).toBeNull();
+
+      // "Torna alle verifiche" clears the pending id so a subsequent refresh
+      // does not land back on the confirmation.
+      fireEvent.click(screen.getByText('stub-back'));
+      await waitFor(() =>
+        expect(sessionStorage.getItem('schoolforge:lastSubmittedVerificationId')).toBeNull(),
       );
     });
   });

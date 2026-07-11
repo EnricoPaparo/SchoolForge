@@ -230,6 +230,68 @@ describe('OnlineExamView — saving', () => {
     const [arg] = mockSaveDraft.mock.calls[0] as [{ newAttentionEvents: unknown[] }];
     expect(arg.newAttentionEvents).toHaveLength(1);
   });
+
+  it('a change made while a save is in flight is not lost — stays dirty and is saved on the next tick', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveFirstSave: (() => void) | undefined;
+      mockSaveDraft.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirstSave = resolve;
+          }),
+      );
+      renderView();
+
+      fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
+        target: { value: 'Prima risposta.' },
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(mockSaveDraft).toHaveBeenCalledOnce();
+
+      // A second change arrives while the first save is still in flight —
+      // it must not be silently treated as already saved once the first
+      // write resolves.
+      fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
+        target: { value: 'Seconda risposta.' },
+      });
+
+      mockSaveDraft.mockResolvedValue(undefined);
+      resolveFirstSave?.();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Still dirty: the next tick must save again, carrying the latest answer.
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(mockSaveDraft).toHaveBeenCalledTimes(2);
+      const secondCall = mockSaveDraft.mock.calls[1] as [
+        { answers: Record<string, { testo: string }> },
+      ];
+      expect(secondCall[0].answers['0']).toEqual({ tipo: 'aperta', testo: 'Seconda risposta.' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an attention event alone (no answer change) still marks the draft dirty and is saved on the next tick', async () => {
+    vi.useFakeTimers();
+    try {
+      let capturedOnEvent: ((type: string) => void) | undefined;
+      mockAttachDeterrenceListeners.mockImplementation((onEvent: (type: string) => void) => {
+        capturedOnEvent = onEvent;
+        return vi.fn();
+      });
+      renderView();
+
+      capturedOnEvent?.('window_blur');
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(mockSaveDraft).toHaveBeenCalledOnce();
+      const [arg] = mockSaveDraft.mock.calls[0] as [{ newAttentionEvents: { type: string }[] }];
+      expect(arg.newAttentionEvents).toEqual([{ type: 'window_blur', ts: expect.any(Number) }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('OnlineExamView — delivery', () => {

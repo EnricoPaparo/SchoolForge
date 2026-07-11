@@ -59,7 +59,8 @@ interface SubmissionDoc {
 
   // risposte (sparse: solo domande toccate)
   answers: Record<string, AnswerValue>;
-  // key = order.toString() (1-based, corrisponde a PublicVerificationQuestion.order)
+  // key = order.toString() (0-based, corrisponde a PublicVerificationQuestion.order;
+  // la UI mostra order + 1 come numero di domanda)
 
   // marcatori UX; restano sul documento per docente/M4 ma non sono visibili allo studente dopo la consegna
   flagged: Record<string, boolean>;  // key = order.toString()

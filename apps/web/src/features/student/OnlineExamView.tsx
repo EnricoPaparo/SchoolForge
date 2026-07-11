@@ -73,6 +73,12 @@ export function OnlineExamView({
   const savingRef = useRef(false);
   const knownEventCountRef = useRef(submission.attentionEvents.length);
   const bufferedEventsRef = useRef<AttentionEvent[]>([]);
+  // Bumped on every change to answers/flagged/attentionEvents. A save
+  // captures the revision it started with; if the revision has moved on by
+  // the time the write resolves, a change happened *during* the write and
+  // must not be discarded as "already saved" — dirty stays true so the next
+  // autosave tick (or a manual save) picks it up.
+  const revisionRef = useRef(0);
 
   function setAnswer(order: number, value: AnswerValue) {
     const key = String(order);
@@ -80,6 +86,7 @@ export function OnlineExamView({
     answersRef.current = next;
     setAnswersState(next);
     dirtyRef.current = true;
+    revisionRef.current += 1;
   }
 
   function toggleFlag(order: number) {
@@ -88,6 +95,7 @@ export function OnlineExamView({
     flaggedRef.current = next;
     setFlaggedState(next);
     dirtyRef.current = true;
+    revisionRef.current += 1;
   }
 
   async function persistDraft(): Promise<void> {
@@ -95,6 +103,7 @@ export function OnlineExamView({
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
+    const startRevision = revisionRef.current;
     const eventsToSend = capAttentionEvents(knownEventCountRef.current, bufferedEventsRef.current);
     try {
       await saveDraft(
@@ -109,7 +118,11 @@ export function OnlineExamView({
       );
       knownEventCountRef.current += eventsToSend.length;
       bufferedEventsRef.current = bufferedEventsRef.current.slice(eventsToSend.length);
-      dirtyRef.current = false;
+      // Only clear dirty if nothing changed while this write was in flight —
+      // otherwise the newer change would be silently treated as saved.
+      if (revisionRef.current === startRevision) {
+        dirtyRef.current = false;
+      }
       setLastSavedLabel(
         new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
       );
@@ -135,8 +148,12 @@ export function OnlineExamView({
   // on unmount (covers exit, submit-success, and the browser back button).
   useEffect(() => {
     const cleanup = attachDeterrenceListeners((type: AttentionEventType) => {
+      // Once the 200-event cap is reached, ignored events must not mark the
+      // draft dirty — there is nothing new to save.
       if (knownEventCountRef.current + bufferedEventsRef.current.length >= 200) return;
       bufferedEventsRef.current = [...bufferedEventsRef.current, { type, ts: Date.now() }];
+      dirtyRef.current = true;
+      revisionRef.current += 1;
     });
     return cleanup;
   }, []);
