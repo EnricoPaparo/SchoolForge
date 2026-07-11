@@ -20,6 +20,66 @@ vi.mock('../../repository/verifications/verificationPdf.js', () => ({
     mockDownloadStudentPdfFromProjection(...args),
 }));
 
+const mockLoadReceipt = vi.fn();
+const mockLoadSubmission = vi.fn();
+const mockStartSubmission = vi.fn();
+vi.mock('../submissionsService.js', () => ({
+  loadReceipt: (...args: unknown[]) => mockLoadReceipt(...args),
+  loadSubmission: (...args: unknown[]) => mockLoadSubmission(...args),
+  startSubmission: (...args: unknown[]) => mockStartSubmission(...args),
+}));
+
+const mockRequestFullscreenBestEffort = vi.fn();
+vi.mock('../examDeterrence.js', () => ({
+  requestFullscreenBestEffort: () => mockRequestFullscreenBestEffort(),
+}));
+
+// OnlineExamView/ConfirmationView get their own dedicated test files for
+// internal behavior — here they're stubbed so these tests stay focused on
+// StudentVerificationsView's own routing (which view is shown, with what
+// props) rather than re-testing the child views' internals.
+vi.mock('../OnlineExamView.js', () => ({
+  OnlineExamView: (props: {
+    title: string;
+    onExit: () => void;
+    onSubmitted: (receipt: unknown) => void;
+  }) => (
+    <div data-testid="online-exam-view">
+      <span>{props.title}</span>
+      <button type="button" onClick={props.onExit}>
+        stub-exit
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          props.onSubmitted({
+            submissionId: 'ver-online_student-uid',
+            verificationId: 'ver-online',
+            studentUid: 'student-uid',
+            ownerUid: 'owner-uid',
+            verificationTitle: props.title,
+            className: 'Classe 3A',
+            deliveryCode: 'SF-2026-STUB',
+            submittedAt: { seconds: 200 },
+          })
+        }
+      >
+        stub-submit
+      </button>
+    </div>
+  ),
+}));
+vi.mock('../ConfirmationView.js', () => ({
+  ConfirmationView: (props: { receipt: { deliveryCode: string }; onBackToList: () => void }) => (
+    <div data-testid="confirmation-view">
+      <span>{props.receipt.deliveryCode}</span>
+      <button type="button" onClick={props.onBackToList}>
+        stub-back
+      </button>
+    </div>
+  ),
+}));
+
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
@@ -37,6 +97,45 @@ const VERIFICATION_A = {
     { order: 0, tipo: 'aperta' as const, maxPoints: 2, testo: 'Descrivi il modello OSI.' },
     { order: 1, tipo: 'chiusa_singola' as const, maxPoints: 1, testo: 'Livello di routing?' },
   ],
+};
+
+const VERIFICATION_ONLINE = {
+  id: 'ver-online',
+  title: 'Verifica Online',
+  className: 'Classe 3A',
+  activatedAt: { seconds: 150 },
+  questionCount: 1,
+  questions: [{ order: 0, tipo: 'aperta' as const, maxPoints: 2, testo: 'Domanda?' }],
+  onlineEnabled: true,
+  ownerUid: 'owner-uid',
+};
+
+const DRAFT_SUBMISSION = {
+  submissionId: 'ver-online_student-uid',
+  verificationId: 'ver-online',
+  studentUid: 'student-uid',
+  ownerUid: 'owner-uid',
+  status: 'draft' as const,
+  answers: {},
+  flagged: {},
+  attentionEvents: [],
+  deliveryCode: null,
+  verificationTitle: 'Verifica Online',
+  className: 'Classe 3A',
+  startedAt: { seconds: 140 },
+  lastSavedAt: { seconds: 140 },
+  submittedAt: null,
+};
+
+const RECEIPT = {
+  submissionId: 'ver-online_student-uid',
+  verificationId: 'ver-online',
+  studentUid: 'student-uid',
+  ownerUid: 'owner-uid',
+  verificationTitle: 'Verifica Online',
+  className: 'Classe 3A',
+  deliveryCode: 'SF-2026-AAAA',
+  submittedAt: { seconds: 200 },
 };
 
 const VERIFICATION_B = {
@@ -150,5 +249,187 @@ describe('StudentVerificationsView', () => {
     expect(screen.queryByRole('button', { name: /Elimina/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /Correggi/i })).toBeNull();
     expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  describe('M3F-04 — online exam flow', () => {
+    it('a paper-only verification (onlineEnabled false/absent) never shows an online button', async () => {
+      mockLoadStudentVerifications.mockResolvedValue({
+        status: 'ok',
+        verifications: [VERIFICATION_A],
+      });
+      render(<StudentVerificationsView />);
+
+      await waitFor(() => screen.getByText('Verifica Reti'));
+      expect(screen.queryByRole('button', { name: /Svolgi online/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Riprendi bozza/ })).toBeNull();
+    });
+
+    it('shows "Svolgi online" once the receipt/submission check finds nothing', async () => {
+      mockLoadStudentVerifications.mockResolvedValue({
+        status: 'ok',
+        verifications: [VERIFICATION_ONLINE],
+      });
+      mockLoadReceipt.mockResolvedValue(null);
+      mockLoadSubmission.mockResolvedValue(null);
+      render(<StudentVerificationsView />);
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Svolgi online' })).toBeTruthy(),
+      );
+      expect(mockLoadReceipt).toHaveBeenCalledWith('ver-online', 'student-uid', {});
+    });
+
+    it('checks the receipt before the submission, and skips the submission check once a receipt is found', async () => {
+      mockLoadStudentVerifications.mockResolvedValue({
+        status: 'ok',
+        verifications: [VERIFICATION_ONLINE],
+      });
+      mockLoadReceipt.mockResolvedValue(RECEIPT);
+      render(<StudentVerificationsView />);
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /Consegnata — Codice: SF-2026-AAAA/ }),
+        ).toBeTruthy(),
+      );
+      expect(mockLoadSubmission).not.toHaveBeenCalled();
+    });
+
+    it('shows "Riprendi bozza" when a draft submission exists and no receipt does', async () => {
+      mockLoadStudentVerifications.mockResolvedValue({
+        status: 'ok',
+        verifications: [VERIFICATION_ONLINE],
+      });
+      mockLoadReceipt.mockResolvedValue(null);
+      mockLoadSubmission.mockResolvedValue(DRAFT_SUBMISSION);
+      render(<StudentVerificationsView />);
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Riprendi bozza' })).toBeTruthy(),
+      );
+    });
+
+    it('clicking "Svolgi online" requests fullscreen, starts the submission and opens OnlineExamView', async () => {
+      mockLoadStudentVerifications.mockResolvedValue({
+        status: 'ok',
+        verifications: [VERIFICATION_ONLINE],
+      });
+      mockLoadReceipt.mockResolvedValue(null);
+      mockLoadSubmission.mockResolvedValueOnce(null).mockResolvedValueOnce(DRAFT_SUBMISSION);
+      mockStartSubmission.mockResolvedValue(undefined);
+      render(<StudentVerificationsView />);
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Svolgi online' })).toBeTruthy(),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Svolgi online' }));
+
+      expect(mockRequestFullscreenBestEffort).toHaveBeenCalledOnce();
+      await waitFor(() => expect(mockStartSubmission).toHaveBeenCalledOnce());
+      await waitFor(() => expect(screen.getByTestId('online-exam-view')).toBeTruthy());
+      expect(screen.getByText('Verifica Online')).toBeTruthy();
+    });
+
+    it('OnlineExamView onExit returns to the list', async () => {
+      mockLoadStudentVerifications.mockResolvedValue({
+        status: 'ok',
+        verifications: [VERIFICATION_ONLINE],
+      });
+      mockLoadReceipt.mockResolvedValue(null);
+      mockLoadSubmission.mockResolvedValue(DRAFT_SUBMISSION);
+      mockStartSubmission.mockResolvedValue(undefined);
+      render(<StudentVerificationsView />);
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Riprendi bozza' })).toBeTruthy(),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Riprendi bozza' }));
+      await waitFor(() => expect(screen.getByTestId('online-exam-view')).toBeTruthy());
+
+      fireEvent.click(screen.getByText('stub-exit'));
+      await waitFor(() => expect(screen.queryByTestId('online-exam-view')).toBeNull());
+      expect(screen.getByRole('button', { name: 'Riprendi bozza' })).toBeTruthy();
+    });
+
+    it('OnlineExamView onSubmitted shows ConfirmationView with the receipt', async () => {
+      mockLoadStudentVerifications.mockResolvedValue({
+        status: 'ok',
+        verifications: [VERIFICATION_ONLINE],
+      });
+      mockLoadReceipt.mockResolvedValue(null);
+      mockLoadSubmission.mockResolvedValue(DRAFT_SUBMISSION);
+      mockStartSubmission.mockResolvedValue(undefined);
+      render(<StudentVerificationsView />);
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Riprendi bozza' })).toBeTruthy(),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Riprendi bozza' }));
+      await waitFor(() => expect(screen.getByTestId('online-exam-view')).toBeTruthy());
+
+      fireEvent.click(screen.getByText('stub-submit'));
+      await waitFor(() => expect(screen.getByTestId('confirmation-view')).toBeTruthy());
+      expect(screen.getByText('SF-2026-STUB')).toBeTruthy();
+    });
+
+    it('clicking the delivered receipt button reopens ConfirmationView directly, without ever showing the exam form', async () => {
+      mockLoadStudentVerifications.mockResolvedValue({
+        status: 'ok',
+        verifications: [VERIFICATION_ONLINE],
+      });
+      mockLoadReceipt.mockResolvedValue(RECEIPT);
+      render(<StudentVerificationsView />);
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /Consegnata — Codice: SF-2026-AAAA/ }),
+        ).toBeTruthy(),
+      );
+      fireEvent.click(screen.getByRole('button', { name: /Consegnata — Codice: SF-2026-AAAA/ }));
+
+      await waitFor(() => expect(screen.getByTestId('confirmation-view')).toBeTruthy());
+      expect(screen.queryByTestId('online-exam-view')).toBeNull();
+    });
+
+    it('ConfirmationView onBackToList returns to the verification list', async () => {
+      mockLoadStudentVerifications.mockResolvedValue({
+        status: 'ok',
+        verifications: [VERIFICATION_ONLINE],
+      });
+      mockLoadReceipt.mockResolvedValue(RECEIPT);
+      render(<StudentVerificationsView />);
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /Consegnata/ })).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: /Consegnata/ }));
+      await waitFor(() => expect(screen.getByTestId('confirmation-view')).toBeTruthy());
+
+      fireEvent.click(screen.getByText('stub-back'));
+      await waitFor(() => expect(screen.queryByTestId('confirmation-view')).toBeNull());
+      expect(screen.getByText('Verifica Online')).toBeTruthy();
+    });
+
+    it('shows a clear error when starting the online exam fails (closed/disabled verification)', async () => {
+      mockLoadStudentVerifications.mockResolvedValue({
+        status: 'ok',
+        verifications: [VERIFICATION_ONLINE],
+      });
+      mockLoadReceipt.mockResolvedValue(null);
+      mockLoadSubmission.mockResolvedValue(null);
+      mockStartSubmission.mockRejectedValue(new Error('permission-denied'));
+      render(<StudentVerificationsView />);
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Svolgi online' })).toBeTruthy(),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Svolgi online' }));
+
+      await waitFor(() =>
+        expect(
+          screen.getByText(
+            /Impossibile avviare la verifica online: verifica chiusa o disabilitata/,
+          ),
+        ).toBeTruthy(),
+      );
+    });
   });
 });

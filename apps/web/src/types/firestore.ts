@@ -361,6 +361,17 @@ export type PublicVerificationQuestion = {
  * `classId: null` (verification never assigned to a class) is never visible
  * to any student, same as `ProgramDoc.classIds` — never "visible to
  * everyone" by omission.
+ *
+ * `onlineEnabled` (M3F-04 preflight) is mirrored from the parent verification
+ * at activation, same reasoning as `classId`/`visibility`: the student's
+ * "Svolgi online" button decision is made entirely from this projection
+ * (StudentVerificationsView never reads the parent `verifications/{id}`), so
+ * the field has to live here too. Absent on projections written before
+ * M3F-04 — always read through `normalizeOnlineEnabled()`, which treats a
+ * missing value as `false`. M3F-05 will add the teacher-facing toggle and
+ * keep this mirror in sync the same way `setVerificationVisibility` keeps
+ * `visibility` in sync; until then it is always written `false` at
+ * activation (see `activateVerification`).
  */
 export type PublishedProjectionDoc = {
   ownerUid: string;
@@ -368,6 +379,7 @@ export type PublishedProjectionDoc = {
   className: string | null;
   visibility: VerificationVisibility;
   classId: string | null;
+  onlineEnabled?: boolean;
   questions: PublicVerificationQuestion[];
   activatedAt: Timestamp | FieldValue;
 };

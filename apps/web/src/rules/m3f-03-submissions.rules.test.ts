@@ -19,7 +19,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
-import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIRESTORE_RULES = resolve(__dirname, '../../../../firestore.rules');
@@ -629,5 +629,48 @@ describe('Firestore rules — submissions/receipts reads and isolation', () => {
 
     await assertFails(deleteDoc(doc(ownerDb(), 'submissions', SUBMISSION_ID)));
     await assertFails(deleteDoc(doc(studentDb(), 'submissions', SUBMISSION_ID)));
+  });
+});
+
+// ─── M3F-04 preflight: get() on a not-yet-existing own path ────────────────
+//
+// startSubmission()/loadSubmission()/loadReceipt() all call getDoc() on the
+// deterministic path before the document necessarily exists. Firestore still
+// evaluates read rules for a get() on a missing document (`resource` is
+// simply `null`, not an evaluation error) — these four cases are exactly
+// what unblocks that first-load path without opening it up to querying or to
+// another student's documents.
+describe('Firestore rules — M3F-04 preflight: get() on a not-yet-existing path', () => {
+  it('an approved student can get() their own not-yet-existing submission (returns non-existence, not denied)', async () => {
+    await seed({ studentStatus: 'approved' });
+
+    const snap = await assertSucceeds(getDoc(doc(studentDb(), 'submissions', SUBMISSION_ID)));
+    expect(snap.exists()).toBe(false);
+  });
+
+  it('an approved student can get() their own not-yet-existing receipt (returns non-existence, not denied)', async () => {
+    await seed({ studentStatus: 'approved' });
+
+    const snap = await assertSucceeds(
+      getDoc(doc(studentDb(), 'submissionReceipts', SUBMISSION_ID)),
+    );
+    expect(snap.exists()).toBe(false);
+  });
+
+  it('a submitted submission is still never readable by the student, even with the get()-on-missing-doc allowance', async () => {
+    await seed({ studentStatus: 'approved' });
+    await seedSubmitted();
+
+    await assertFails(getDoc(doc(studentDb(), 'submissions', SUBMISSION_ID)));
+  });
+
+  it("a path belonging to another student is denied even when it doesn't exist yet (no path-guessing)", async () => {
+    await seed({ studentStatus: 'approved' });
+    // SUBMISSION_ID = `${VERIFICATION_ID}_${STUDENT_UID}` — OTHER_STUDENT_UID
+    // has no submission of their own at this path, and it doesn't exist.
+    await assertFails(getDoc(doc(studentDb(OTHER_STUDENT_UID), 'submissions', SUBMISSION_ID)));
+    await assertFails(
+      getDoc(doc(studentDb(OTHER_STUDENT_UID), 'submissionReceipts', SUBMISSION_ID)),
+    );
   });
 });

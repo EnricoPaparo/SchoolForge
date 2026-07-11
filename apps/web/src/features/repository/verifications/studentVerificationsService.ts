@@ -5,6 +5,7 @@ import type {
   PublishedProjectionDoc,
 } from '../../../types/firestore.js';
 import { getOwnStudentDoc } from '../students/studentsService.js';
+import { normalizeOnlineEnabled } from './onlineEnabled.js';
 
 export type StudentVerificationItem = {
   id: string;
@@ -13,6 +14,10 @@ export type StudentVerificationItem = {
   activatedAt: PublishedProjectionDoc['activatedAt'];
   questionCount: number;
   questions: PublicVerificationQuestion[];
+  /** Normalized: a projection written before M3F-04 has no field and reads as false. */
+  onlineEnabled: boolean;
+  /** Needed by submissionsService (M3F-04) — not sensitive, already read here. */
+  ownerUid: string;
 };
 
 export type StudentVerificationsResult =
@@ -73,6 +78,8 @@ export async function loadStudentVerifications(
         activatedAt: data.activatedAt,
         questionCount: data.questions.length,
         questions: data.questions,
+        onlineEnabled: normalizeOnlineEnabled(data.onlineEnabled),
+        ownerUid: data.ownerUid,
       };
     })
     .filter((item): item is StudentVerificationItem => item !== null)
