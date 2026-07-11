@@ -276,14 +276,14 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 ## 11. M3-full — Portale digitale (specifica definita)
 
-> Specifica completa in `m3-full-roadmap.md`. M3F-00/M3F-01/M3F-02 sono già stati avviati/completati a livello documentazione, tipi/indici e service layer client-only. Il vecchio modello gateway Cloud Functions non è più il perimetro corrente.
+> Specifica completa in `m3-full-roadmap.md`. M3F-00/M3F-01/M3F-02/M3F-03 sono già stati avviati/completati a livello documentazione, tipi/indici, service layer client-only e Security Rules. Il vecchio modello gateway Cloud Functions non è più il perimetro corrente.
 
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
 | M3F-00 | Specifica M3-full: modello dati, stati, Security Rules desiderate, UX docente/studente, modalità verifica, gate G5. Solo documentazione. | G4-lite/GRE | — | `m3-full-roadmap.md` approvato. Completato. |
 | M3F-01 | Tipi Firestore e indici per `submissions`/`submissionReceipts`, più `onlineEnabled` retrocompatibile. | M3F-00 | — | Typecheck/build verdi; indici JSON presenti. Completato. |
 | M3F-02 | Service layer submission client-only: avvio bozza, salvataggio, consegna atomica con receipt, codice consegna. | M3F-01 | — | Test unitari service verdi; nessuna Cloud Function. Completato. |
-| M3F-03 | Security Rules per submission/receipt con test Emulator Suite: unicità path deterministico, immutabilità, gate active+onlineEnabled, receipt post-consegna. | M3F-02 | — | Test rules positivi/negativi verdi. |
+| M3F-03 | Security Rules per submission/receipt con test Emulator Suite: unicità path deterministico, immutabilità, gate active+onlineEnabled, receipt post-consegna. | M3F-02 | — | Test rules positivi/negativi verdi. Completato. |
 | M3F-04 | UI studente OnlineExamView + ConfirmationView + modalità verifica deterrente. | M3F-03 | — | Flusso avvio→bozza→consegna→receipt. |
 | M3F-05 | UI docente: toggle onlineEnabled, pubblicazione online, monitor consegne. | M3F-03 | M3F-04 | Monitor stati/consegne/eventi attenzione. |
 | M3F-06 | Integrazione, smoke DEV, checklist G5. | M3F-04/M3F-05 | — | Gate G5 approvabile. |
@@ -644,9 +644,9 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 
 ### M3-full — Portale digitale (specifica definita)
 
-> Specifica corrente in `m3-full-roadmap.md`. M3-full è client-only: nessun gateway Cloud Functions, nessun cookie server-side, nessun `startDigitalAttempt`/`continueDigitalAttempt`. M3F-00/M3F-01/M3F-02 sono già completati.
+> Specifica corrente in `m3-full-roadmap.md`. M3-full è client-only: nessun gateway Cloud Functions, nessun cookie server-side, nessun `startDigitalAttempt`/`continueDigitalAttempt`. M3F-00/M3F-01/M3F-02/M3F-03 sono già completati.
 
-#### M3F-03 — Security Rules submission/receipt
+#### M3F-03 — Security Rules submission/receipt (Completato)
 
 | Campo | Valore |
 |---|---|
@@ -654,7 +654,7 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | File da creare | Test Emulator Suite mirati per `submissions` e `submissionReceipts` |
 | File da modificare | `firestore.rules` |
 | Test minimi | Path deterministico; create/update solo bozza propria; submitted immutabile; receipt leggibile dallo studente; submission submitted non leggibile dallo studente; owner legge submission proprie; verifica chiusa/non online blocca create/update |
-| Evidenza richiesta | Test Rules positivi/negativi verdi |
+| Evidenza richiesta | Test Rules positivi/negativi verdi — 46 test in `m3f-03-submissions.rules.test.ts`, suite `pnpm test:rules` completa verde (261 test, 9 file) |
 
 #### M3F-04 — UI studente verifica online
 

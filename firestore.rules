@@ -62,6 +62,38 @@ service cloud.firestore {
         && classIds.hasAny([myStudentClassId()]);
     }
 
+    // --- M3-full submission helpers (M3F-03) ---
+    // Cross-document get() bypasses the read rules on /verifications/{docId}
+    // itself (a student is never allowed a direct read there) — get()/exists()
+    // in Rules evaluation always fetch the raw document server-side regardless
+    // of what the caller's own read permissions would be. This mirrors the
+    // publishedProjection class-gate pattern above, applied to submissions.
+    function verificationData(verificationId) {
+      return get(/databases/$(database)/documents/verifications/$(verificationId)).data;
+    }
+
+    // A submission may only be created/updated while its target verification
+    // is simultaneously active, public and online-submittable. Closing the
+    // verification (or ever toggling onlineEnabled off) immediately blocks
+    // both new submissions and further edits to existing drafts, without any
+    // change needed on the submission document itself.
+    function verificationOnlineAndActive(verificationId) {
+      return exists(/databases/$(database)/documents/verifications/$(verificationId))
+        && verificationData(verificationId).status == 'active'
+        && verificationData(verificationId).get('visibility', 'hidden') == 'public'
+        && verificationData(verificationId).get('onlineEnabled', false) == true;
+    }
+
+    // Mirrors isClassmateOf(): independently re-checks isApprovedStudent() so
+    // it stays safe to call on its own, not just after a caller-side guard.
+    // config.classId is the source-of-truth class assignment (teacherSnapshot
+    // duplicates it only for the student-facing title/className snapshot).
+    function verificationClassMatches(verificationId) {
+      return isApprovedStudent()
+        && verificationData(verificationId).config.classId != null
+        && verificationData(verificationId).config.classId == myStudentClassId();
+    }
+
     // --- settings/owner ---
     // First authenticated user to write becomes the owner (no existing doc).
     // Subsequent updates/deletes require ownerUid match.
@@ -262,6 +294,171 @@ service cloud.firestore {
             && resource.data.get('classId', null) != null
             && isClassmateOf([resource.data.get('classId', null)]));
       allow write: if isOwner();
+    }
+
+    // --- submissions/{verificationId}_{studentUid} (M3-full, M3F-03) ---
+    // Path-deterministic id: `${verificationId}_${studentUid}`. This is the
+    // ONLY mechanism that guarantees one submission per (student,
+    // verification) pair — Firestore Rules cannot run a query to check for
+    // an existing duplicate, so uniqueness is enforced entirely by which
+    // document id a create is even allowed to target.
+    match /submissions/{submissionId} {
+      // Create: only the very first draft, on the exact deterministic path,
+      // for a verification that is active+public+onlineEnabled and assigned
+      // to the student's own class. No privileged/arbitrary fields: the
+      // exact key set is required, answers/flagged/attentionEvents must
+      // start empty, deliveryCode/submittedAt must start null (a client
+      // cannot create a submission that already looks submitted), and
+      // ownerUid/verificationTitle/className must match the verification's
+      // own data rather than whatever the client claims.
+      allow create: if isApprovedStudent()
+        && request.resource.data.keys().hasOnly([
+             'submissionId', 'verificationId', 'studentUid', 'ownerUid', 'status',
+             'answers', 'flagged', 'attentionEvents', 'deliveryCode',
+             'verificationTitle', 'className', 'startedAt', 'lastSavedAt', 'submittedAt'
+           ])
+        && request.resource.data.keys().hasAll([
+             'submissionId', 'verificationId', 'studentUid', 'ownerUid', 'status',
+             'answers', 'flagged', 'attentionEvents', 'deliveryCode',
+             'verificationTitle', 'className', 'startedAt', 'lastSavedAt', 'submittedAt'
+           ])
+        && request.resource.data.studentUid == request.auth.uid
+        && request.resource.data.status == 'draft'
+        && request.resource.data.submissionId == submissionId
+        && submissionId == request.resource.data.verificationId + '_' + request.auth.uid
+        && request.resource.data.answers.size() == 0
+        && request.resource.data.flagged.size() == 0
+        && request.resource.data.attentionEvents.size() == 0
+        && request.resource.data.deliveryCode == null
+        && request.resource.data.submittedAt == null
+        && request.resource.data.lastSavedAt == request.time
+        && verificationOnlineAndActive(request.resource.data.verificationId)
+        && verificationClassMatches(request.resource.data.verificationId)
+        && request.resource.data.ownerUid
+             == verificationData(request.resource.data.verificationId).ownerUid
+        && request.resource.data.verificationTitle
+             == verificationData(request.resource.data.verificationId).teacherSnapshot.title
+        && request.resource.data.className
+             == verificationData(request.resource.data.verificationId).teacherSnapshot.className;
+
+      // Update: only the student's own submission, only while it is still
+      // draft (this alone also blocks any 'submitted' -> 'draft' or any
+      // further post-submission edit — no rule below ever matches a resource
+      // whose status is already 'submitted'). Identity/verification/owner,
+      // the title+class snapshot and the initial startedAt are immutable;
+      // the only fields allowed to change are answers/flagged/
+      // attentionEvents/lastSavedAt (autosave) plus status/deliveryCode/
+      // submittedAt (delivery). The verification must still be
+      // active+public+onlineEnabled and still assigned to the student's
+      // class for either a draft autosave or the final delivery.
+      //
+      // Delivery (draft -> submitted) additionally requires, via getAfter(),
+      // that the matching submissionReceipts/{submissionId} document exists
+      // with coherent fields as of the SAME atomic write batch — this is
+      // what makes "submit" and "create receipt" a single indivisible
+      // operation: a submission can never end up 'submitted' without its
+      // receipt, because getAfter() reflects the receipt write only when it
+      // is part of the very same commit as this update.
+      allow update: if isApprovedStudent()
+        && resource.data.studentUid == request.auth.uid
+        && resource.data.status == 'draft'
+        && (request.resource.data.status == 'draft' || request.resource.data.status == 'submitted')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'status', 'answers', 'flagged', 'attentionEvents', 'lastSavedAt',
+             'deliveryCode', 'submittedAt'
+           ])
+        && request.resource.data.submissionId == resource.data.submissionId
+        && request.resource.data.verificationId == resource.data.verificationId
+        && request.resource.data.studentUid == resource.data.studentUid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.verificationTitle == resource.data.verificationTitle
+        && request.resource.data.className == resource.data.className
+        && request.resource.data.startedAt == resource.data.startedAt
+        && request.resource.data.lastSavedAt == request.time
+        && verificationOnlineAndActive(resource.data.verificationId)
+        && verificationClassMatches(resource.data.verificationId)
+        && (
+          request.resource.data.status == 'draft'
+            ? (request.resource.data.deliveryCode == null
+                && request.resource.data.submittedAt == null)
+            : (
+                request.resource.data.deliveryCode is string
+                && request.resource.data.submittedAt == request.time
+                && getAfter(/databases/$(database)/documents/submissionReceipts/$(submissionId))
+                     .data.studentUid == request.auth.uid
+                && getAfter(/databases/$(database)/documents/submissionReceipts/$(submissionId))
+                     .data.verificationId == resource.data.verificationId
+                && getAfter(/databases/$(database)/documents/submissionReceipts/$(submissionId))
+                     .data.ownerUid == resource.data.ownerUid
+                && getAfter(/databases/$(database)/documents/submissionReceipts/$(submissionId))
+                     .data.deliveryCode == request.resource.data.deliveryCode
+                && getAfter(/databases/$(database)/documents/submissionReceipts/$(submissionId))
+                     .data.submittedAt == request.resource.data.submittedAt
+              )
+        );
+
+      // Read: the student sees their own submission only while it is still
+      // draft — once submitted, they read only the matching
+      // submissionReceipts/{submissionId} (see below), never the full
+      // submission with its answers again. The owner reads every submission
+      // for their own verifications regardless of status.
+      allow read: if isApprovedStudent()
+        && resource.data.studentUid == request.auth.uid
+        && resource.data.status == 'draft';
+      allow read: if isOwner() && resource.data.ownerUid == request.auth.uid;
+
+      // No deletion in M3F-03 (M4 may add archiving later).
+      allow delete: if false;
+    }
+
+    // --- submissionReceipts/{verificationId}_{studentUid} (M3-full, M3F-03) ---
+    // Minimal post-submission document. Its whole purpose is to let the
+    // student see a confirmation screen without ever reading the submission's
+    // answers again once status == 'submitted'.
+    match /submissionReceipts/{submissionId} {
+      // Create: only as part of the same write batch that transitions the
+      // matching submission to 'submitted' (see the update rule above) — the
+      // getAfter() checks below require the submission to already show
+      // status=='submitted' with matching fields as of this same commit, so
+      // a receipt can never be fabricated without a real, simultaneous
+      // draft -> submitted transition. Once created it can never be
+      // targeted again by `create` (a second attempt is an `update`, denied
+      // below), so this document is effectively write-once.
+      allow create: if isApprovedStudent()
+        && request.resource.data.keys().hasOnly([
+             'submissionId', 'verificationId', 'studentUid', 'ownerUid',
+             'verificationTitle', 'className', 'deliveryCode', 'submittedAt'
+           ])
+        && request.resource.data.keys().hasAll([
+             'submissionId', 'verificationId', 'studentUid', 'ownerUid',
+             'verificationTitle', 'className', 'deliveryCode', 'submittedAt'
+           ])
+        && request.resource.data.studentUid == request.auth.uid
+        && request.resource.data.submissionId == submissionId
+        && submissionId == request.resource.data.verificationId + '_' + request.auth.uid
+        && getAfter(/databases/$(database)/documents/submissions/$(submissionId))
+             .data.status == 'submitted'
+        && getAfter(/databases/$(database)/documents/submissions/$(submissionId))
+             .data.studentUid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/submissions/$(submissionId))
+             .data.verificationId == request.resource.data.verificationId
+        && getAfter(/databases/$(database)/documents/submissions/$(submissionId))
+             .data.ownerUid == request.resource.data.ownerUid
+        && getAfter(/databases/$(database)/documents/submissions/$(submissionId))
+             .data.verificationTitle == request.resource.data.verificationTitle
+        && getAfter(/databases/$(database)/documents/submissions/$(submissionId))
+             .data.className == request.resource.data.className
+        && getAfter(/databases/$(database)/documents/submissions/$(submissionId))
+             .data.deliveryCode == request.resource.data.deliveryCode
+        && getAfter(/databases/$(database)/documents/submissions/$(submissionId))
+             .data.submittedAt == request.resource.data.submittedAt;
+
+      allow read: if isApprovedStudent() && resource.data.studentUid == request.auth.uid;
+      allow read: if isOwner() && resource.data.ownerUid == request.auth.uid;
+
+      // Never modifiable or deletable — it is the immutable proof of a
+      // one-time delivery.
+      allow update, delete: if false;
     }
 
     match /auditEvents/{docId} {
