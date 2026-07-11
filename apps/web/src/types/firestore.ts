@@ -437,7 +437,7 @@ export type SubmissionDoc = {
   answers: Record<string, AnswerValue>;
   /** Per-question "flag for review" markers; key = order.toString(). */
   flagged: Record<string, boolean>;
-  /** Lightweight deterrence log; capped at 200 entries by the client. */
+  /** Lightweight deterrence log; capped at 200 by Rules and respected by the M3F-04 UI. */
   attentionEvents: AttentionEvent[];
   /** Null until status becomes 'submitted'. Human-readable, e.g. "SF-2026-A3B7". */
   deliveryCode: string | null;
