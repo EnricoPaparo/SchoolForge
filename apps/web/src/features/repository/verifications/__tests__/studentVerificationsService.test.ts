@@ -73,6 +73,7 @@ describe('loadStudentVerifications — class filtering', () => {
     mockGetDocs.mockResolvedValue({
       docs: [
         fakeDoc('ver-1', {
+          ownerUid: 'owner',
           title: 'Verifica 1',
           className: 'Classe A',
           classId: 'class-a',
@@ -92,11 +93,33 @@ describe('loadStudentVerifications — class filtering', () => {
         activatedAt: { seconds: 100 },
         questionCount: 1,
         questions: [{ order: 0, tipo: 'aperta', maxPoints: 3, testo: 'Domanda?' }],
+        onlineEnabled: false,
+        ownerUid: 'owner',
       },
     ]);
   });
 
-  it('never includes technical fields (ownerUid is present but questionRefs/soluzione never are)', async () => {
+  it('normalizes onlineEnabled: true only when the projection field is literally true', async () => {
+    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        fakeDoc('ver-1', {
+          title: 'Verifica 1',
+          className: 'Classe A',
+          classId: 'class-a',
+          onlineEnabled: true,
+          questions: [],
+          activatedAt: { seconds: 100 },
+        }),
+      ],
+    });
+
+    const result = await loadStudentVerifications(STUDENT_UID, fakeDb);
+    if (result.status !== 'ok') throw new Error('expected ok');
+    expect(result.verifications[0]?.onlineEnabled).toBe(true);
+  });
+
+  it('carries ownerUid through (needed by submissionsService, M3F-04) but never questionRefs/soluzione', async () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
     mockGetDocs.mockResolvedValue({
       docs: [
@@ -114,8 +137,8 @@ describe('loadStudentVerifications — class filtering', () => {
     const result = await loadStudentVerifications(STUDENT_UID, fakeDb);
     if (result.status !== 'ok') throw new Error('expected ok');
     const item = result.verifications[0]!;
+    expect(item.ownerUid).toBe('owner');
     expect(item).not.toHaveProperty('questionRefs');
-    expect(item).not.toHaveProperty('ownerUid');
     expect(JSON.stringify(item)).not.toContain('soluzione');
     expect(JSON.stringify(item)).not.toContain('poolStorageRef');
   });

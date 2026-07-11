@@ -94,6 +94,18 @@ service cloud.firestore {
         && verificationData(verificationId).config.classId == myStudentClassId();
     }
 
+    // Exact suffix match (no regex): true only when `id` ends with literally
+    // `_` + the caller's own uid — e.g. id `v1_abc` for uid `abc`, never for
+    // uid `bc` or a different uid entirely. This is the strictest available
+    // check for "this deterministic submissionId belongs to me", used to
+    // authorize a get() on a submission/receipt path before the document
+    // necessarily exists (see the M3F-04 preflight note on submissions
+    // below) without ever falling back to a looser prefix/contains check.
+    function idBelongsToCaller(id) {
+      return id.size() > request.auth.uid.size()
+        && id[id.size() - request.auth.uid.size() - 1:] == '_' + request.auth.uid;
+    }
+
     // --- settings/owner ---
     // First authenticated user to write becomes the owner (no existing doc).
     // Subsequent updates/deletes require ownerUid match.
@@ -399,14 +411,23 @@ service cloud.firestore {
               )
         );
 
-      // Read: the student sees their own submission only while it is still
-      // draft — once submitted, they read only the matching
-      // submissionReceipts/{submissionId} (see below), never the full
-      // submission with its answers again. The owner reads every submission
-      // for their own verifications regardless of status.
-      allow read: if isApprovedStudent()
-        && resource.data.studentUid == request.auth.uid
-        && resource.data.status == 'draft';
+      // Get (M3F-04 preflight): startSubmission()/loadSubmission() call
+      // getDoc() on the deterministic path BEFORE the document necessarily
+      // exists — Firestore still evaluates read rules for a get() on a
+      // missing document, and `resource` is simply `null` in that case
+      // (never an evaluation error on its own). A student may fetch their
+      // own path whether or not it exists yet, but once it does exist it
+      // must still be `draft` — a submitted submission is never returned to
+      // the student here. Deliberately `allow get`, not `allow read`: a
+      // `list`/query can never satisfy this rule, only a single known-path
+      // fetch, so this can't be used to enumerate submissions.
+      allow get: if isApprovedStudent()
+        && idBelongsToCaller(submissionId)
+        && (resource == null || resource.data.status == 'draft');
+
+      // The owner reads every submission for their own verifications
+      // regardless of status (get and list both — a future monitor, M3F-05,
+      // will list by ownerUid + verificationId).
       allow read: if isOwner() && resource.data.ownerUid == request.auth.uid;
 
       // No deletion in M3F-03 (M4 may add archiving later).
@@ -455,7 +476,14 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/submissions/$(submissionId))
              .data.submittedAt == request.resource.data.submittedAt;
 
-      allow read: if isApprovedStudent() && resource.data.studentUid == request.auth.uid;
+      // Get (M3F-04 preflight): loadReceipt() needs to check "does my receipt
+      // exist yet" before a delivery has happened — same `resource == null`
+      // idiom as the submissions get rule above. A receipt has no draft
+      // concept, so once it exists it's simply readable by its own student
+      // forever. `allow get`, not `allow read`, for the same reason as above.
+      allow get: if isApprovedStudent()
+        && idBelongsToCaller(submissionId)
+        && (resource == null || resource.data.studentUid == request.auth.uid);
       allow read: if isOwner() && resource.data.ownerUid == request.auth.uid;
 
       // Never modifiable or deletable — it is the immutable proof of a

@@ -2,7 +2,7 @@
 
 **Versione:** 1.0
 **Data:** 10 luglio 2026
-**Stato:** in implementazione — M3F-00/M3F-01/M3F-02/M3F-03 completati (documentazione, tipi/indici, service layer client-only, Security Rules); M3F-04/M3F-05/M3F-06 (UI studente/docente, integrazione) non ancora implementati.
+**Stato:** in implementazione — M3F-00/M3F-01/M3F-02/M3F-03/M3F-04 completati (documentazione, tipi/indici, service layer client-only, Security Rules, UI studente flusso online); M3F-05/M3F-06 (UI docente monitor consegne, integrazione) non ancora implementati.
 **Dipendenze:** M1, M2, M3-lite (tutti completati)
 **Fuori scope in M3-full:** M4 (correzione/restituzione), M5 (AI), timer, anti-cheat aggressivo, tentativi multipli, allegati, voti.
 
@@ -59,7 +59,8 @@ interface SubmissionDoc {
 
   // risposte (sparse: solo domande toccate)
   answers: Record<string, AnswerValue>;
-  // key = order.toString() (1-based, corrisponde a PublicVerificationQuestion.order)
+  // key = order.toString() (0-based, corrisponde a PublicVerificationQuestion.order;
+  // la UI mostra order + 1 come numero di domanda)
 
   // marcatori UX; restano sul documento per docente/M4 ma non sono visibili allo studente dopo la consegna
   flagged: Record<string, boolean>;  // key = order.toString()

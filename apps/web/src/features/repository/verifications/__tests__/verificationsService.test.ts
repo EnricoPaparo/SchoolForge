@@ -326,6 +326,35 @@ describe('activateVerification', () => {
     expect(JSON.stringify(projection)).not.toContain('poolStorageRef');
   });
 
+  it('writes onlineEnabled: false into publishedProjection when the verification has no toggle yet (M3F-04 preflight)', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: VALID_CONFIG,
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(draftDoc);
+
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    expect(capture.getProjection()?.onlineEnabled).toBe(false);
+  });
+
+  it('mirrors onlineEnabled: true into publishedProjection when already set on the verification', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: VALID_CONFIG,
+      onlineEnabled: true,
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(draftDoc);
+
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    expect(capture.getProjection()?.onlineEnabled).toBe(true);
+  });
+
   it('writes classId: null into publishedProjection when the verification has no class (M3L-D)', async () => {
     const draftDoc: Partial<VerificationDoc> = {
       status: 'draft',

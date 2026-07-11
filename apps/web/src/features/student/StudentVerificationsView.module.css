@@ -75,8 +75,21 @@
   font-size: 0.875rem;
 }
 
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .pdfBtn {
   align-self: flex-start;
+}
+
+.receiptBtn {
+  font-weight: 600;
+  color: var(--color-success);
+  background: var(--color-success-bg);
+  border-color: var(--color-success-border);
 }
 
 .pdfError {

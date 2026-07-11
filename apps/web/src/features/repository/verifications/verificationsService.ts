@@ -20,6 +20,7 @@ import type {
   VerificationVisibility,
 } from '../../../types/firestore.js';
 import { loadSelectedQuestions } from './loadSelectedQuestions.js';
+import { normalizeOnlineEnabled } from './onlineEnabled.js';
 import { normalizeVisibility } from './visibility.js';
 
 export type VerificationItem = { id: string } & Omit<VerificationDoc, 'visibility'> & {
@@ -211,6 +212,10 @@ export async function activateVerification(
       className,
       classId: data.config.classId,
       visibility: 'hidden',
+      // Mirrored from the parent verification, same as classId/visibility —
+      // see PublishedProjectionDoc. No teacher toggle exists yet (M3F-05), so
+      // this is always false today; activation just keeps the mirror honest.
+      onlineEnabled: normalizeOnlineEnabled(data.onlineEnabled),
       questions: publicQuestions,
       activatedAt: serverTimestamp(),
     });
