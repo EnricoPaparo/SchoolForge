@@ -62,6 +62,21 @@ describe('attachDeterrenceListeners', () => {
     cleanup();
   });
 
+  it('reports the current fullscreen state to the optional UI callback', () => {
+    const onFullscreenChange = vi.fn();
+    const cleanup = attachDeterrenceListeners(vi.fn(), onFullscreenChange);
+    Object.defineProperty(document, 'fullscreenElement', {
+      value: document.documentElement,
+      configurable: true,
+    });
+
+    document.dispatchEvent(new Event('fullscreenchange'));
+
+    expect(onFullscreenChange).toHaveBeenCalledWith(true);
+    cleanup();
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
+  });
+
   it('reports window_blur on window blur', () => {
     const onEvent = vi.fn();
     const cleanup = attachDeterrenceListeners(onEvent);

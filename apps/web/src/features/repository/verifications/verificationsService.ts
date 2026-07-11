@@ -4,10 +4,12 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
   runTransaction,
   serverTimestamp,
   setDoc,
   writeBatch,
+  where,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
@@ -50,6 +52,34 @@ export async function listVerifications(
       };
     })
     .filter((item) => item.ownerUid === ownerUid);
+}
+
+/**
+ * Returns only the distinct classes that currently have an active online
+ * verification. Used by the teacher's manual Modalità verifica switch: the
+ * switch derives its scope without a class-picker dialog, while paper-only
+ * or merely active verifications never block lessons. The Firestore query is
+ * bounded to matching documents; it does not scan the verification archive.
+ */
+export async function listActiveOnlineVerificationClassIds(
+  ownerUid: string,
+  db: Firestore,
+): Promise<string[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, 'verifications'),
+      where('ownerUid', '==', ownerUid),
+      where('status', '==', 'active'),
+      where('onlineEnabled', '==', true),
+    ),
+  );
+  return [
+    ...new Set(
+      snap.docs
+        .map((item) => (item.data() as VerificationDoc).config?.classId)
+        .filter((classId): classId is string => typeof classId === 'string' && classId.length > 0),
+    ),
+  ];
 }
 
 export async function createVerification(

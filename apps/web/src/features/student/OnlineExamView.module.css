@@ -94,6 +94,13 @@
   gap: 0.5rem;
 }
 
+.fullscreenBtn {
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
 /* ── Question navigator — sticky compact bar ──────────────────── */
 .questionNav {
   position: sticky;

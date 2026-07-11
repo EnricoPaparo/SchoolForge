@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OnlineExamView } from '../OnlineExamView.js';
 import type { SubmissionDoc } from '../../../types/firestore.js';
@@ -20,7 +20,7 @@ vi.mock('../examDeterrence.js', async () => {
   const actual = await vi.importActual<typeof ExamDeterrenceModule>('../examDeterrence.js');
   return {
     ...actual,
-    attachDeterrenceListeners: (onEvent: unknown) => mockAttachDeterrenceListeners(onEvent),
+    attachDeterrenceListeners: (...args: unknown[]) => mockAttachDeterrenceListeners(...args),
   };
 });
 
@@ -568,6 +568,35 @@ describe('OnlineExamView — fullscreen on delivery (M3F-06)', () => {
     expect(screen.getByRole('alertdialog', { name: 'Conferma consegna' })).toBeTruthy();
 
     Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
+  });
+});
+
+describe('OnlineExamView — fullscreen recovery (M3F-11A)', () => {
+  it('offers a direct return to fullscreen after the browser exits it', () => {
+    let notifyFullscreen: ((active: boolean) => void) | undefined;
+    mockAttachDeterrenceListeners.mockImplementation(
+      (_onEvent: unknown, onFullscreenChange?: (active: boolean) => void) => {
+        notifyFullscreen = onFullscreenChange;
+        return vi.fn();
+      },
+    );
+    const requestFullscreenSpy = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(document.documentElement, 'requestFullscreen', {
+      value: requestFullscreenSpy,
+      configurable: true,
+    });
+    Object.defineProperty(document, 'fullscreenElement', {
+      value: document.documentElement,
+      configurable: true,
+    });
+    renderView();
+
+    expect(screen.queryByRole('button', { name: 'Torna a schermo intero' })).toBeNull();
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
+    act(() => notifyFullscreen?.(false));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Torna a schermo intero' }));
+    expect(requestFullscreenSpy).toHaveBeenCalledOnce();
   });
 });
 

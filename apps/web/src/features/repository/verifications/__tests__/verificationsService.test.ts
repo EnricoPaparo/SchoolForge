@@ -9,6 +9,8 @@ const mockSetDoc = vi.fn();
 const mockDeleteDoc = vi.fn();
 const mockDoc = vi.fn();
 const mockCollection = vi.fn();
+const mockQuery = vi.fn((...args: unknown[]) => ({ args }));
+const mockWhere = vi.fn((...args: unknown[]) => ({ where: args }));
 const mockServerTimestamp = vi.fn(() => ({ _type: 'serverTimestamp' }));
 const mockRunTransaction = vi.fn();
 const mockBatchSet = vi.fn();
@@ -23,6 +25,8 @@ vi.mock('firebase/firestore', () => ({
   doc: (...args: unknown[]) => mockDoc(...args),
   getDocs: (...args: unknown[]) => mockGetDocs(...args),
   getDoc: (...args: unknown[]) => mockGetDoc(...args),
+  query: (...args: unknown[]) => mockQuery(...args),
+  where: (...args: unknown[]) => mockWhere(...args),
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
   deleteDoc: (...args: unknown[]) => mockDeleteDoc(...args),
   runTransaction: (...args: unknown[]) => mockRunTransaction(...args),
@@ -41,6 +45,7 @@ vi.mock('../loadSelectedQuestions.js', () => ({
 
 import {
   listVerifications,
+  listActiveOnlineVerificationClassIds,
   createVerification,
   updateVerificationConfig,
   validateForActivation,
@@ -140,6 +145,27 @@ describe('listVerifications', () => {
 
     const result = await listVerifications(OWNER_UID, fakeDb);
     expect(result[0].visibility).toBe('public');
+  });
+});
+
+describe('listActiveOnlineVerificationClassIds', () => {
+  it('returns unique non-null class ids from the bounded active-online query', async () => {
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        { data: () => ({ config: { classId: 'class-1' } }) },
+        { data: () => ({ config: { classId: 'class-1' } }) },
+        { data: () => ({ config: { classId: 'class-2' } }) },
+        { data: () => ({ config: { classId: null } }) },
+      ],
+    });
+
+    await expect(listActiveOnlineVerificationClassIds(OWNER_UID, fakeDb)).resolves.toEqual([
+      'class-1',
+      'class-2',
+    ]);
+    expect(mockWhere).toHaveBeenCalledWith('ownerUid', '==', OWNER_UID);
+    expect(mockWhere).toHaveBeenCalledWith('status', '==', 'active');
+    expect(mockWhere).toHaveBeenCalledWith('onlineEnabled', '==', true);
   });
 });
 

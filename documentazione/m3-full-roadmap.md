@@ -36,7 +36,7 @@ M3-lite (login Google, portale read-only, download PDF) resta invariata e compat
 | D-M3F-14 | Una submission `draft` identifica una sessione d'esame in corso: dopo refresh, riapertura del browser o nuovo login, lo studente viene riportato direttamente nella verifica e non può navigare nelle altre sezioni. |
 | D-M3F-15 | Durante una sessione d'esame la shell studente non mostra navigazione o azioni di uscita dal questionario. Il fullscreen è deterrenza, mentre il blocco di navigazione è stato applicativo persistente. |
 | D-M3F-16 | Dopo una consegna riuscita il client esce dal fullscreen e mostra soltanto la ricevuta. Se la consegna fallisce, resta nella verifica e non esce dal fullscreen. |
-| D-M3F-17 | Il docente può attivare la Modalità verifica per tutte le classi o per classi selezionate. Il default operativo è per classe; il blocco globale è un'azione eccezionale con conferma. |
+| D-M3F-17 | Il docente attiva manualmente la Modalità verifica con un unico interruttore. Le classi coinvolte sono derivate dalle verifiche `active + onlineEnabled + classId`; nessun automatismo e nessuna selezione duplicata in una dialog. |
 | D-M3F-18 | La Modalità verifica nega realmente la lettura delle lezioni tramite Firestore Security Rules; nascondere il menu non è considerato una protezione. |
 | D-M3F-19 | Il Markdown canonico resta in Storage. Una proiezione studente del corpo lezione vive in `publicLessons`, è sincronizzata da import/editor ed è esclusa dagli indici; ciò permette alle Rules Firestore di applicare il blocco d'esame. |
 | D-M3F-20 | Il PDF studente è un canale separato: il docente può abilitarne o negarne il download senza modificare `onlineEnabled`. Il default e le transizioni devono restare fail-closed. |
@@ -395,8 +395,9 @@ All'avvio della schermata verifica:
 Il pannello **Studenti** espone un terzo controllo accanto a Portale studenti e Nuove richieste:
 
 - stato inattivo;
-- attivo per tutte le classi;
-- attivo per una o più classi selezionate.
+- attivo per le classi che, al momento del click, hanno almeno una verifica `active + onlineEnabled + classId`.
+
+L'attivazione resta manuale: pubblicare o abilitare una verifica non nasconde automaticamente le lezioni. Il toggle è disabilitato quando nessuna classe è idonea e mostra in anticipo le classi coinvolte. La disattivazione conserva una conferma leggera per evitare lo sblocco accidentale durante una prova.
 
 Il modello minimo vive nel documento di configurazione studente esistente:
 
@@ -454,6 +455,8 @@ Non si considera completata la Modalità verifica finché UI, migrazione e Rules
 | **M3F-10** ✅ | Hardening costi/concorrenza | `OnlineExamView.tsx` (autosave dirty-only ogni 60s, mutex save/consegna, revision guard, stato post-consegna), test mirati e documentazione costi | M3F-06, M3F-09 | Nessuna scrittura senza modifiche; una sola write in volo; consegna serializzata dopo il save pendente; nessun autosave post-consegna; listener/timer auditati e chiusi; nessun polling aggiuntivo. |
 | **M3F-11** | Integrazione, migrazione DEV e gate finale | checklist/smoke M3F, deploy Rules+indici+Hosting | M3F-06→M3F-10 | Migrazione DEV verificata; smoke docente+2 studenti; sicurezza diretta testata; costi osservati; Gate G5 superata. |
 
+**M3F-11A — rifinitura pre-gate:** interruttore Modalità verifica allineato alle altre card, scope derivato con query circoscritta sulle verifiche online attive, pulsante di rientro fullscreen e scrollbar interna docente visivamente nascosta senza disabilitare lo scorrimento.
+
 ### M3F-08 rollout (da eseguire in M3F-11 — nessun deploy in questa PR)
 
 Ordine sicuro per evitare una finestra permanente in cui uno studente perde l'accesso alle lezioni prima che la proiezione sia pronta, o in cui il vecchio canale Storage resta aperto più del necessario:
@@ -478,7 +481,7 @@ Ordine sicuro per evitare una finestra permanente in cui uno studente perde l'ac
 | Modalità verifica: eventi registrati nel documento | Test componente |
 | Una bozza forza il rientro nella prova e impedisce la navigazione applicativa | Test componente + smoke DEV dopo refresh/logout/login |
 | La consegna riuscita esce dal fullscreen; un errore di consegna no | Test componente + smoke DEV |
-| Modalità verifica per classe/globale blocca davvero le letture delle lezioni | Test Rules negativo + chiamata diretta DEV |
+| Modalità verifica blocca le classi derivate dalle verifiche online attive e nega davvero le letture delle lezioni | Test Rules negativo + chiamata diretta DEV |
 | Le lezioni esistenti sono migrate e restano leggibili fuori dalla Modalità verifica | Smoke DEV pre/post migrazione |
 | Listener e autosave rispettano i vincoli di costo | Test mirati + osservazione Firestore durante smoke |
 | Format check e typecheck verdi | CI |
