@@ -349,6 +349,38 @@ describe('Firestore rules — submissions update (draft autosave)', () => {
     );
   });
 
+  it('accepts a draft update with exactly 200 attention events', async () => {
+    await seed({ studentStatus: 'approved' });
+    await seedDraft();
+
+    const attentionEvents = Array.from({ length: 200 }, (_, index) => ({
+      type: 'tab_blur',
+      ts: index,
+    }));
+    await assertSucceeds(
+      updateDoc(doc(studentDb(), 'submissions', SUBMISSION_ID), {
+        attentionEvents,
+        lastSavedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('rejects a draft update with more than 200 attention events', async () => {
+    await seed({ studentStatus: 'approved' });
+    await seedDraft();
+
+    const attentionEvents = Array.from({ length: 201 }, (_, index) => ({
+      type: 'tab_blur',
+      ts: index,
+    }));
+    await assertFails(
+      updateDoc(doc(studentDb(), 'submissions', SUBMISSION_ID), {
+        attentionEvents,
+        lastSavedAt: serverTimestamp(),
+      }),
+    );
+  });
+
   it.each([
     ['verificationId', { verificationId: 'other-verification' }],
     ['studentUid', { studentUid: OTHER_STUDENT_UID }],

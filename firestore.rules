@@ -329,6 +329,7 @@ service cloud.firestore {
         && request.resource.data.answers.size() == 0
         && request.resource.data.flagged.size() == 0
         && request.resource.data.attentionEvents.size() == 0
+        && request.resource.data.attentionEvents.size() <= 200
         && request.resource.data.deliveryCode == null
         && request.resource.data.submittedAt == null
         && request.resource.data.lastSavedAt == request.time
@@ -375,6 +376,7 @@ service cloud.firestore {
         && request.resource.data.className == resource.data.className
         && request.resource.data.startedAt == resource.data.startedAt
         && request.resource.data.lastSavedAt == request.time
+        && request.resource.data.attentionEvents.size() <= 200
         && verificationOnlineAndActive(resource.data.verificationId)
         && verificationClassMatches(resource.data.verificationId)
         && (
