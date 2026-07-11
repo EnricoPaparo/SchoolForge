@@ -39,16 +39,9 @@ vi.mock('../examDeterrence.js', () => ({
 // StudentVerificationsView's own routing (which view is shown, with what
 // props) rather than re-testing the child views' internals.
 vi.mock('../OnlineExamView.js', () => ({
-  OnlineExamView: (props: {
-    title: string;
-    onExit: () => void;
-    onSubmitted: (receipt: unknown) => void;
-  }) => (
+  OnlineExamView: (props: { title: string; onSubmitted: (receipt: unknown) => void }) => (
     <div data-testid="online-exam-view">
       <span>{props.title}</span>
-      <button type="button" onClick={props.onExit}>
-        stub-exit
-      </button>
       <button
         type="button"
         onClick={() =>
@@ -280,7 +273,7 @@ describe('StudentVerificationsView', () => {
       expect(mockLoadReceipt).toHaveBeenCalledWith('ver-online', 'student-uid', {});
     });
 
-    it('checks the receipt before the submission, and skips the submission check once a receipt is found', async () => {
+    it('checks the receipt before the submission when building the per-item list status, and skips the per-item submission check once a receipt is found', async () => {
       mockLoadStudentVerifications.mockResolvedValue({
         status: 'ok',
         verifications: [VERIFICATION_ONLINE],
@@ -293,10 +286,16 @@ describe('StudentVerificationsView', () => {
           screen.getByRole('button', { name: /Consegnata — Codice: SF-2026-AAAA/ }),
         ).toBeTruthy(),
       );
-      expect(mockLoadSubmission).not.toHaveBeenCalled();
+      // The mandatory-session scan (findActiveDraftSession) still calls
+      // loadSubmission once up front to rule out a draft — Security Rules
+      // deny that get() once the submission is already `submitted`, which
+      // resolves here (mocked) to `undefined`/no draft and the scan moves
+      // on. The per-item list status check (checkOnlineStatus) is the one
+      // that must skip its own submission check once the receipt is found.
+      expect(mockLoadSubmission).toHaveBeenCalledTimes(1);
     });
 
-    it('shows "Riprendi bozza" when a draft submission exists and no receipt does', async () => {
+    it('a draft submission auto-resumes directly into OnlineExamView — no manual click, no list flash (D-M3F-14)', async () => {
       mockLoadStudentVerifications.mockResolvedValue({
         status: 'ok',
         verifications: [VERIFICATION_ONLINE],
@@ -305,9 +304,26 @@ describe('StudentVerificationsView', () => {
       mockLoadSubmission.mockResolvedValue(DRAFT_SUBMISSION);
       render(<StudentVerificationsView />);
 
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Riprendi bozza' })).toBeTruthy(),
-      );
+      await waitFor(() => expect(screen.getByTestId('online-exam-view')).toBeTruthy());
+      expect(screen.getByText('Verifica Online')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Riprendi bozza' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Svolgi online' })).toBeNull();
+    });
+
+    it('reports the session as active via onSessionActiveChange while auto-resumed, and inactive again after submission', async () => {
+      mockLoadStudentVerifications.mockResolvedValue({
+        status: 'ok',
+        verifications: [VERIFICATION_ONLINE],
+      });
+      mockLoadReceipt.mockResolvedValue(null);
+      mockLoadSubmission.mockResolvedValue(DRAFT_SUBMISSION);
+      const onSessionActiveChange = vi.fn();
+      render(<StudentVerificationsView onSessionActiveChange={onSessionActiveChange} />);
+
+      await waitFor(() => expect(onSessionActiveChange).toHaveBeenCalledWith(true));
+
+      fireEvent.click(screen.getByText('stub-submit'));
+      await waitFor(() => expect(onSessionActiveChange).toHaveBeenCalledWith(false));
     });
 
     it('clicking "Svolgi online" requests fullscreen, starts the submission and opens OnlineExamView', async () => {
@@ -316,7 +332,13 @@ describe('StudentVerificationsView', () => {
         verifications: [VERIFICATION_ONLINE],
       });
       mockLoadReceipt.mockResolvedValue(null);
-      mockLoadSubmission.mockResolvedValueOnce(null).mockResolvedValueOnce(DRAFT_SUBMISSION);
+      // 1st call: findActiveDraftSession (mandatory-session scan) — no draft yet.
+      // 2nd call: checkOnlineStatus (per-item list status) — still no draft.
+      // 3rd call: handleStartOrResume, right after startSubmission creates one.
+      mockLoadSubmission
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(DRAFT_SUBMISSION);
       mockStartSubmission.mockResolvedValue(undefined);
       render(<StudentVerificationsView />);
 
@@ -331,27 +353,6 @@ describe('StudentVerificationsView', () => {
       expect(screen.getByText('Verifica Online')).toBeTruthy();
     });
 
-    it('OnlineExamView onExit returns to the list', async () => {
-      mockLoadStudentVerifications.mockResolvedValue({
-        status: 'ok',
-        verifications: [VERIFICATION_ONLINE],
-      });
-      mockLoadReceipt.mockResolvedValue(null);
-      mockLoadSubmission.mockResolvedValue(DRAFT_SUBMISSION);
-      mockStartSubmission.mockResolvedValue(undefined);
-      render(<StudentVerificationsView />);
-
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Riprendi bozza' })).toBeTruthy(),
-      );
-      fireEvent.click(screen.getByRole('button', { name: 'Riprendi bozza' }));
-      await waitFor(() => expect(screen.getByTestId('online-exam-view')).toBeTruthy());
-
-      fireEvent.click(screen.getByText('stub-exit'));
-      await waitFor(() => expect(screen.queryByTestId('online-exam-view')).toBeNull());
-      expect(screen.getByRole('button', { name: 'Riprendi bozza' })).toBeTruthy();
-    });
-
     it('OnlineExamView onSubmitted shows ConfirmationView with the receipt', async () => {
       mockLoadStudentVerifications.mockResolvedValue({
         status: 'ok',
@@ -362,10 +363,6 @@ describe('StudentVerificationsView', () => {
       mockStartSubmission.mockResolvedValue(undefined);
       render(<StudentVerificationsView />);
 
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Riprendi bozza' })).toBeTruthy(),
-      );
-      fireEvent.click(screen.getByRole('button', { name: 'Riprendi bozza' }));
       await waitFor(() => expect(screen.getByTestId('online-exam-view')).toBeTruthy());
 
       fireEvent.click(screen.getByText('stub-submit'));
@@ -379,6 +376,7 @@ describe('StudentVerificationsView', () => {
         verifications: [VERIFICATION_ONLINE],
       });
       mockLoadReceipt.mockResolvedValue(RECEIPT);
+      mockLoadSubmission.mockResolvedValue(null);
       render(<StudentVerificationsView />);
 
       await waitFor(() =>
@@ -398,6 +396,7 @@ describe('StudentVerificationsView', () => {
         verifications: [VERIFICATION_ONLINE],
       });
       mockLoadReceipt.mockResolvedValue(RECEIPT);
+      mockLoadSubmission.mockResolvedValue(null);
       render(<StudentVerificationsView />);
 
       await waitFor(() => expect(screen.getByRole('button', { name: /Consegnata/ })).toBeTruthy());
