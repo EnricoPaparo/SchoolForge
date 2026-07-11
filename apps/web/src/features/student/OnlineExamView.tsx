@@ -13,7 +13,8 @@ import { attachDeterrenceListeners, capAttentionEvents } from './examDeterrence.
 import { countFilled, isAnswerFilled } from './examAnswers.js';
 import styles from './OnlineExamView.module.css';
 
-const AUTOSAVE_INTERVAL_MS = 30_000;
+/** Dirty-only autosave: at most one write per minute, never per keystroke. */
+const AUTOSAVE_INTERVAL_MS = 60_000;
 
 type OnlineExamViewProps = {
   verificationId: string;
@@ -66,15 +67,20 @@ export function OnlineExamView({
   const [lastSavedLabel, setLastSavedLabel] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [sessionEnded, setSessionEnded] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Refs mirror the state above so the 30s autosave interval (set up once)
+  // Refs mirror the state above so the 60s autosave interval (set up once)
   // and the deterrence event handlers (also set up once) always see the
   // latest values without needing to be re-created on every keystroke.
   const answersRef = useRef(answers);
   const flaggedRef = useRef(flagged);
   const dirtyRef = useRef(false);
   const savingRef = useRef(false);
+  const savePromiseRef = useRef<Promise<void> | null>(null);
+  const submittingRef = useRef(false);
+  const sessionEndedRef = useRef(false);
+  const mountedRef = useRef(true);
   const knownEventCountRef = useRef(submission.attentionEvents.length);
   const bufferedEventsRef = useRef<AttentionEvent[]>([]);
   // Bumped on every change to answers/flagged/attentionEvents. A save
@@ -84,7 +90,15 @@ export function OnlineExamView({
   // autosave tick (or a manual save) picks it up.
   const revisionRef = useRef(0);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   function setAnswer(order: number, value: AnswerValue) {
+    if (submittingRef.current || sessionEndedRef.current) return;
     const key = String(order);
     const next = { ...answersRef.current, [key]: value };
     answersRef.current = next;
@@ -94,6 +108,7 @@ export function OnlineExamView({
   }
 
   function toggleFlag(order: number) {
+    if (submittingRef.current || sessionEndedRef.current) return;
     const key = String(order);
     const next = { ...flaggedRef.current, [key]: !flaggedRef.current[key] };
     flaggedRef.current = next;
@@ -103,47 +118,63 @@ export function OnlineExamView({
   }
 
   async function persistDraft(): Promise<void> {
-    if (savingRef.current) return;
+    if (savingRef.current || submittingRef.current || sessionEndedRef.current) return;
     savingRef.current = true;
-    setSaving(true);
-    setSaveError(null);
+    if (mountedRef.current) {
+      setSaving(true);
+      setSaveError(null);
+    }
     const startRevision = revisionRef.current;
     const eventsToSend = capAttentionEvents(knownEventCountRef.current, bufferedEventsRef.current);
-    try {
-      await saveDraft(
-        {
-          verificationId,
-          studentUid,
-          answers: answersRef.current,
-          flagged: flaggedRef.current,
-          newAttentionEvents: eventsToSend,
-        },
-        db,
-      );
-      knownEventCountRef.current += eventsToSend.length;
-      bufferedEventsRef.current = bufferedEventsRef.current.slice(eventsToSend.length);
-      // Only clear dirty if nothing changed while this write was in flight —
-      // otherwise the newer change would be silently treated as saved.
-      if (revisionRef.current === startRevision) {
-        dirtyRef.current = false;
+    const savePromise = (async () => {
+      try {
+        await saveDraft(
+          {
+            verificationId,
+            studentUid,
+            answers: answersRef.current,
+            flagged: flaggedRef.current,
+            newAttentionEvents: eventsToSend,
+          },
+          db,
+        );
+        knownEventCountRef.current += eventsToSend.length;
+        bufferedEventsRef.current = bufferedEventsRef.current.slice(eventsToSend.length);
+        // Only clear dirty if nothing changed while this write was in flight —
+        // otherwise the newer change would be silently treated as saved.
+        if (revisionRef.current === startRevision) {
+          dirtyRef.current = false;
+        }
+        if (mountedRef.current && !sessionEndedRef.current) {
+          setLastSavedLabel(
+            new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
+          );
+        }
+      } catch (err) {
+        if (mountedRef.current && !sessionEndedRef.current) {
+          setSaveError(saveErrorMessage(err));
+        }
+      } finally {
+        savingRef.current = false;
+        if (mountedRef.current) setSaving(false);
       }
-      setLastSavedLabel(
-        new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
-      );
-    } catch (err) {
-      setSaveError(saveErrorMessage(err));
+    })();
+    savePromiseRef.current = savePromise;
+    try {
+      await savePromise;
     } finally {
-      savingRef.current = false;
-      setSaving(false);
+      if (savePromiseRef.current === savePromise) savePromiseRef.current = null;
     }
   }
 
-  // Autosave: only when dirty, at most once every 30s — never on every
+  // Autosave: only when dirty, at most once every 60s — never on every
   // keystroke. A single interval set up once; refs keep it reading current
   // data without needing to be torn down and recreated.
   useEffect(() => {
     const interval = setInterval(() => {
-      if (dirtyRef.current) void persistDraft();
+      if (dirtyRef.current && !submittingRef.current && !sessionEndedRef.current) {
+        void persistDraft();
+      }
     }, AUTOSAVE_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
@@ -174,6 +205,7 @@ export function OnlineExamView({
   const filledCount = countFilled(orders, answers);
   const flaggedCount = orders.filter((o) => flagged[String(o)]).length;
   const totalCount = questions.length;
+  const controlsLocked = submitting || sessionEnded;
 
   /**
    * Detaches the deterrence listeners first, then exits fullscreen — in
@@ -193,9 +225,20 @@ export function OnlineExamView({
   }
 
   async function handleConfirmSubmit() {
-    if (submitting) return;
+    // Ref guard is synchronous: two clicks in the same React render cannot
+    // start two deliveries while the `submitting` state is still stale.
+    if (submittingRef.current || sessionEndedRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setSubmitError(null);
+    setSaveError(null);
+
+    // Serialize delivery after any draft write already in flight. The final
+    // submission below still uses the latest refs, so changes made while that
+    // save was pending are included and no stale draft write can finish after
+    // a successful `submitted` transition.
+    await savePromiseRef.current;
+
     const eventsToSend = capAttentionEvents(knownEventCountRef.current, bufferedEventsRef.current);
     try {
       await submitSubmission(
@@ -211,25 +254,47 @@ export function OnlineExamView({
         },
         db,
       );
-      // The atomic delivery write already succeeded and is irreversible —
-      // end the deterrence session regardless of whether the receipt
-      // read-back below succeeds.
-      endSessionAfterDelivery();
+    } catch (err) {
+      // Delivery itself failed: resume autosave, stay in fullscreen and leave
+      // the form editable with its dirty revision intact.
+      submittingRef.current = false;
+      if (mountedRef.current) {
+        setSubmitting(false);
+        setSubmitError(saveErrorMessage(err));
+      }
+      return;
+    }
+
+    // From here delivery is irreversible. Stop every future draft write even
+    // if receipt read-back fails, then detach deterrence before fullscreen exit.
+    sessionEndedRef.current = true;
+    dirtyRef.current = false;
+    bufferedEventsRef.current = [];
+    if (mountedRef.current) setSessionEnded(true);
+    endSessionAfterDelivery();
+
+    try {
       const receipt = await loadReceipt(verificationId, studentUid, db);
       if (receipt) {
-        setConfirmOpen(false);
+        if (mountedRef.current) setConfirmOpen(false);
         onSubmitted(receipt);
         return;
       }
-      setSubmitError(
-        'Consegna registrata ma non è stato possibile caricare la ricevuta. Ricarica la pagina.',
-      );
-    } catch (err) {
-      // Delivery itself failed: stay in fullscreen, keep the deterrence
-      // listeners attached, leave the exam editable, show a recoverable error.
-      setSubmitError(saveErrorMessage(err));
+      if (mountedRef.current) {
+        setSubmitError(
+          'Consegna registrata ma non è stato possibile caricare la ricevuta. Ricarica la pagina.',
+        );
+      }
+    } catch {
+      if (mountedRef.current) {
+        setSubmitError(
+          'Consegna registrata ma non è stato possibile caricare la ricevuta. Ricarica la pagina.',
+        );
+      }
     } finally {
-      setSubmitting(false);
+      // Keep controls locked after a successful delivery. The receipt view (or
+      // a refresh that resolves it from Firestore) is the only next screen.
+      if (mountedRef.current && !sessionEndedRef.current) setSubmitting(false);
     }
   }
 
@@ -258,10 +323,19 @@ export function OnlineExamView({
         </div>
 
         <div className={styles.examActions}>
-          <button type="button" onClick={() => void persistDraft()} disabled={saving}>
+          <button
+            type="button"
+            onClick={() => void persistDraft()}
+            disabled={saving || controlsLocked}
+          >
             {saving ? 'Salvataggio…' : 'Salva bozza'}
           </button>
-          <button type="button" className="btn-success" onClick={() => setConfirmOpen(true)}>
+          <button
+            type="button"
+            className="btn-success"
+            onClick={() => setConfirmOpen(true)}
+            disabled={controlsLocked}
+          >
             Consegna
           </button>
         </div>
@@ -324,6 +398,7 @@ export function OnlineExamView({
                       : `Segna la domanda ${q.order + 1} come "da rivedere"`
                   }
                   onClick={() => toggleFlag(q.order)}
+                  disabled={controlsLocked}
                 >
                   {isFlagged ? 'Rimuovi "da rivedere"' : 'Da rivedere'}
                 </button>
@@ -338,6 +413,7 @@ export function OnlineExamView({
                   onChange={(e) => setAnswer(q.order, { tipo: 'aperta', testo: e.target.value })}
                   rows={4}
                   aria-label={`Risposta alla domanda ${q.order + 1}`}
+                  disabled={controlsLocked}
                 />
               )}
 
@@ -357,6 +433,7 @@ export function OnlineExamView({
                           onChange={() =>
                             setAnswer(q.order, { tipo: 'chiusa_singola', selectedId: o.id })
                           }
+                          disabled={controlsLocked}
                         />
                         {o.testo}
                       </label>
@@ -365,7 +442,10 @@ export function OnlineExamView({
                   <button
                     type="button"
                     className={styles.clearAnswerBtn}
-                    disabled={!(answer?.tipo === 'chiusa_singola' && answer.selectedId != null)}
+                    disabled={
+                      controlsLocked ||
+                      !(answer?.tipo === 'chiusa_singola' && answer.selectedId != null)
+                    }
                     onClick={() => setAnswer(q.order, { tipo: 'chiusa_singola', selectedId: null })}
                   >
                     Cancella risposta
@@ -390,6 +470,7 @@ export function OnlineExamView({
                               : [...selectedIds, o.id];
                             setAnswer(q.order, { tipo: 'chiusa_multipla', selectedIds: next });
                           }}
+                          disabled={controlsLocked}
                         />
                         {o.testo}
                       </label>
@@ -415,16 +496,20 @@ export function OnlineExamView({
               </p>
             )}
             <div className={styles.confirmActions}>
-              <button type="button" onClick={() => setConfirmOpen(false)} disabled={submitting}>
+              <button type="button" onClick={() => setConfirmOpen(false)} disabled={controlsLocked}>
                 Annulla
               </button>
               <button
                 type="button"
                 className="btn-success"
                 onClick={() => void handleConfirmSubmit()}
-                disabled={submitting}
+                disabled={controlsLocked}
               >
-                {submitting ? 'Consegna in corso…' : 'Conferma consegna'}
+                {sessionEnded
+                  ? 'Consegna registrata'
+                  : submitting
+                    ? 'Consegna in corso…'
+                    : 'Conferma consegna'}
               </button>
             </div>
           </div>
