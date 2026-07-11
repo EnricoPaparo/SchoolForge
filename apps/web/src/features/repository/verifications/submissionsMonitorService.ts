@@ -1,17 +1,21 @@
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import type { Firestore, Unsubscribe } from 'firebase/firestore';
-import type { SubmissionDoc } from '../../../types/firestore.js';
+import type { AttentionEvent, SubmissionDoc } from '../../../types/firestore.js';
 
 /**
  * Client-side projection of a submission for the teacher's "Consegne
- * online" monitor (M3F-05). The listener below reads each full, authorized
- * `SubmissionDoc` over the network (Security Rules already allow the owner
- * to read every submission for their own verifications) — `answers` and
- * `flagged` arrive with it. `toMonitorItem` discards them before the data
- * ever reaches the UI: they are never rendered and never returned from
- * `watchSubmissions`, only this compact shape is. `attentionEventsCount`
- * likewise replaces the full `attentionEvents[]` array (event count only,
- * not per-event detail).
+ * online" monitor (M3F-05, event detail M3F-09). The listener below reads
+ * each full, authorized `SubmissionDoc` over the network (Security Rules
+ * already allow the owner to read every submission for their own
+ * verifications) — `answers` and `flagged` arrive with it on the wire.
+ * `toMonitorItem` discards them before the data ever reaches the UI: they
+ * are never rendered and never returned from `watchSubmissions`, only this
+ * compact shape is. `attentionEvents` is a sanitized copy of the raw
+ * array — each entry keeps only `type`/`ts` (which is all `AttentionEvent`
+ * ever contains — see `types/firestore.ts`), never `answers` or `flagged`.
+ * `attentionEventsCount` is kept as a separate field (not derived from
+ * `.length` by callers) so a monitor row can render the count without
+ * holding onto the full list.
  *
  * Deliberately not backed by a second, narrower projection document (no
  * `submissions/{id}/monitorProjection` mirror): that would double the
@@ -26,16 +30,20 @@ export type SubmissionMonitorItem = {
   submittedAt: SubmissionDoc['submittedAt'];
   deliveryCode: SubmissionDoc['deliveryCode'];
   attentionEventsCount: number;
+  /** Sanitized: `type` + `ts` only, same shape as `AttentionEvent` — never answers/flagged. */
+  attentionEvents: AttentionEvent[];
 };
 
 function toMonitorItem(data: SubmissionDoc): SubmissionMonitorItem {
+  const attentionEvents = (data.attentionEvents ?? []).map((e) => ({ type: e.type, ts: e.ts }));
   return {
     studentUid: data.studentUid,
     status: data.status,
     lastSavedAt: data.lastSavedAt,
     submittedAt: data.submittedAt,
     deliveryCode: data.deliveryCode,
-    attentionEventsCount: data.attentionEvents?.length ?? 0,
+    attentionEventsCount: attentionEvents.length,
+    attentionEvents,
   };
 }
 

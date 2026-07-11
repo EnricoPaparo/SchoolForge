@@ -29,6 +29,7 @@ export type AuditAction =
   | 'verification.activated'
   | 'verification.visibilityChanged'
   | 'verification.onlineEnabledChanged'
+  | 'verification.studentPdfEnabledChanged'
   | 'verification.closed'
   | 'verification.deleted'
   | 'studentAccess.updated'
@@ -363,6 +364,23 @@ export type VerificationDoc = {
    * `status == 'active'` AND `onlineEnabled == true`.
    */
   onlineEnabled?: boolean;
+  /**
+   * M3F-09: controls exclusively whether a student may download the
+   * verification PDF (`StudentVerificationsView` "Scarica PDF") — entirely
+   * independent of `onlineEnabled`, `visibility`, and `status`. Absent on
+   * verifications created before this field existed — always read through
+   * `normalizeStudentPdfEnabled()`, which treats a missing value as `false`
+   * (fail-closed). Unlike `visibility`/`onlineEnabled`, the teacher may
+   * toggle this while the verification is `draft`, `active`, or `closed` —
+   * it never reopens a closed verification or makes a hidden/draft one
+   * visible: `studentPdfEnabled == true` only matters once the verification
+   * is otherwise `active` + `visibility == 'public'` + assigned to the
+   * student's class (see `PublishedProjectionDoc.studentPdfEnabled`, the
+   * mirror the student client actually reads). Never affects the teacher's
+   * own PDF downloads (`downloadStudentPdf`/`downloadTeacherSolutionsPdf`),
+   * which stay owner-only and ungated by this field.
+   */
+  studentPdfEnabled?: boolean;
   config: VerificationConfig;
   teacherSnapshot: VerificationTeacherSnapshot | null; // set at activation
   createdAt: Timestamp | FieldValue;
@@ -430,6 +448,19 @@ export type PublishedProjectionDoc = {
   visibility: VerificationVisibility;
   classId: string | null;
   onlineEnabled?: boolean;
+  /**
+   * Mirrored from the parent verification (M3F-09), same reasoning as
+   * `onlineEnabled`/`visibility`: the student's "Scarica PDF" button
+   * decision is made entirely from this projection
+   * (`StudentVerificationsView` never reads the parent `verifications/{id}`
+   * document). Absent on projections written before M3F-09 — always read
+   * through `normalizeStudentPdfEnabled()`, which treats a missing value as
+   * `false`. Kept in sync by `setVerificationStudentPdfEnabled` whenever the
+   * projection already exists (i.e. the verification has been activated at
+   * least once); a still-`draft` verification has no projection document
+   * yet, so there is nothing to mirror until activation writes it.
+   */
+  studentPdfEnabled?: boolean;
   questions: PublicVerificationQuestion[];
   activatedAt: Timestamp | FieldValue;
 };

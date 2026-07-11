@@ -100,14 +100,21 @@
   padding: 0.4375rem 0.75rem;
   border-bottom: 1px solid var(--color-border);
   vertical-align: middle;
-  white-space: nowrap;
-  min-width: 4.75rem;
+  min-width: 8.5rem;
 }
 
 .actionsWrapper {
   display: flex;
+  flex-wrap: nowrap;
   gap: 0.25rem;
   align-items: center;
+}
+
+/* Stato column: fixed width so toggling between "Online attivo" /
+   "Online disattivato" / "Nessuna classe" never resizes the column or row. */
+.statusColumn {
+  width: 11rem;
+  min-width: 11rem;
 }
 
 .verTitleBtn {
@@ -147,6 +154,21 @@
   padding: 0.3125rem 0.5rem;
   font-size: 0.9375rem;
   line-height: 1;
+}
+
+.iconBtnActive {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+}
+
+.eventsBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--color-primary);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 /* ── Online switch (row-level, in the Stato cell) ──────────────────── */
@@ -207,6 +229,10 @@
   font-size: 0.75rem;
   color: var(--color-text-muted);
   white-space: nowrap;
+  /* Reserves space for the longest label ("Online disattivato") so
+     toggling never resizes the Stato column or bumps row height. */
+  min-width: 7.5rem;
+  display: inline-block;
 }
 
 /* ── Consegne online monitor panel ─────────────────────────────────── */
@@ -345,6 +371,12 @@
 
 .detailMeta {
   font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.pdfStatusBadge {
+  font-size: 0.8125rem;
+  font-weight: 600;
   color: var(--color-text-muted);
 }
 

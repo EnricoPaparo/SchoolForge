@@ -21,14 +21,16 @@ import type {
 } from '../../../types/firestore.js';
 import { loadSelectedQuestions } from './loadSelectedQuestions.js';
 import { normalizeOnlineEnabled } from './onlineEnabled.js';
+import { normalizeStudentPdfEnabled } from './studentPdfEnabled.js';
 import { normalizeVisibility } from './visibility.js';
 
 export type VerificationItem = { id: string } & Omit<
   VerificationDoc,
-  'visibility' | 'onlineEnabled'
+  'visibility' | 'onlineEnabled' | 'studentPdfEnabled'
 > & {
     visibility: VerificationVisibility;
     onlineEnabled: boolean;
+    studentPdfEnabled: boolean;
   };
 
 export async function listVerifications(
@@ -44,6 +46,7 @@ export async function listVerifications(
         ...data,
         visibility: normalizeVisibility(data.visibility),
         onlineEnabled: normalizeOnlineEnabled(data.onlineEnabled),
+        studentPdfEnabled: normalizeStudentPdfEnabled(data.studentPdfEnabled),
       };
     })
     .filter((item) => item.ownerUid === ownerUid);
@@ -65,6 +68,7 @@ export async function createVerification(
     ownerUid,
     status: 'draft',
     visibility: 'hidden',
+    studentPdfEnabled: false,
     config: fullConfig,
     teacherSnapshot: null,
     createdAt: serverTimestamp(),
@@ -225,6 +229,11 @@ export async function activateVerification(
       // see PublishedProjectionDoc. No teacher toggle exists yet (M3F-05), so
       // this is always false today; activation just keeps the mirror honest.
       onlineEnabled: normalizeOnlineEnabled(data.onlineEnabled),
+      // M3F-09: mirrored the same way — a teacher may have already toggled
+      // studentPdfEnabled while this verification was still a draft (no
+      // projection existed yet to mirror onto), so activation is what
+      // carries that choice into the projection for the first time.
+      studentPdfEnabled: normalizeStudentPdfEnabled(data.studentPdfEnabled),
       questions: publicQuestions,
       activatedAt: serverTimestamp(),
     });
@@ -331,6 +340,59 @@ export async function setVerificationOnlineEnabled(
     targetId: verificationId,
     outcome: 'success',
     reason: `onlineEnabled -> ${onlineEnabled}`,
+    timestamp: serverTimestamp(),
+  });
+  await batch.commit();
+}
+
+/**
+ * Toggles `studentPdfEnabled` — the sole gate on whether a student may
+ * download the verification PDF (M3F-09). Unlike `visibility`/
+ * `onlineEnabled`, this is allowed on `draft`, `active`, AND `closed`: a
+ * teacher may want to prepare the flag before activation, or open/close
+ * paper access on an already-closed exam without reopening anything else.
+ * Toggling it never changes `status`, `visibility`, or `onlineEnabled` — a
+ * `draft`/`closed`/hidden verification never becomes visible to a student
+ * just because this flag is `true` (see `PublishedProjectionDoc` and
+ * `loadStudentVerifications`, which still gate on `visibility == 'public'`
+ * and class match first).
+ *
+ * Touches only `studentPdfEnabled`/`updatedAt` on the parent document —
+ * the Security Rules enforce the same restriction for `active`/`closed`
+ * server-side (a `draft` verification allows any owner update already).
+ * Written atomically in a single `writeBatch` together with the
+ * `publishedProjection/data` mirror (when one exists — a `draft`
+ * verification has none yet, see `activateVerification`) and the audit
+ * event, so a partial failure can never leave the parent document and the
+ * projection out of sync.
+ */
+export async function setVerificationStudentPdfEnabled(
+  verificationId: string,
+  studentPdfEnabled: boolean,
+  ownerUid: string,
+  db: Firestore,
+): Promise<void> {
+  const verRef = doc(db, 'verifications', verificationId);
+  const snap = await getDoc(verRef);
+  const data = snap.data() as VerificationDoc | undefined;
+  if (!data) {
+    throw new Error('Verifica non trovata');
+  }
+
+  const projectionRef = doc(db, 'verifications', verificationId, 'publishedProjection', 'data');
+  const projectionSnap = await getDoc(projectionRef);
+
+  const batch = writeBatch(db);
+  batch.set(verRef, { studentPdfEnabled, updatedAt: serverTimestamp() }, { merge: true });
+  if (projectionSnap.exists()) {
+    batch.set(projectionRef, { studentPdfEnabled }, { merge: true });
+  }
+  batch.set(doc(collection(db, 'auditEvents')), {
+    actorUid: ownerUid,
+    action: 'verification.studentPdfEnabledChanged',
+    targetId: verificationId,
+    outcome: 'success',
+    reason: `studentPdfEnabled -> ${studentPdfEnabled}`,
     timestamp: serverTimestamp(),
   });
   await batch.commit();

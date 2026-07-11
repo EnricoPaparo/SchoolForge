@@ -81,7 +81,10 @@ function clearLastSubmittedId(): void {
 /**
  * Verifiche section for the student portal. Read-only for paper
  * verifications (M3L-D: "Scarica PDF" from publishedProjection, never the
- * parent verification document). For `onlineEnabled` verifications (M3F-04)
+ * parent verification document) — shown only when `studentPdfEnabled ==
+ * true` (M3F-09), entirely independent of `onlineEnabled`: a verification
+ * can offer PDF only, online only, both, or neither. For `onlineEnabled`
+ * verifications (M3F-04)
  * it additionally offers "Svolgi online"/"Riprendi bozza", checking the
  * receipt first and only then (if absent) the submission — a submitted exam
  * never causes the answer form to be shown again, on this load or after a
@@ -400,15 +403,17 @@ export function StudentVerificationsView({
               </dl>
 
               <div className={styles.cardActions}>
-                <button
-                  type="button"
-                  className={styles.pdfBtn}
-                  disabled={pdfLoadingId === item.id}
-                  aria-label={`Scarica PDF — ${item.title}`}
-                  onClick={() => void handleDownloadPdf(item)}
-                >
-                  {pdfLoadingId === item.id ? 'Generazione…' : 'Scarica PDF'}
-                </button>
+                {item.studentPdfEnabled && (
+                  <button
+                    type="button"
+                    className={styles.pdfBtn}
+                    disabled={pdfLoadingId === item.id}
+                    aria-label={`Scarica PDF — ${item.title}`}
+                    onClick={() => void handleDownloadPdf(item)}
+                  >
+                    {pdfLoadingId === item.id ? 'Generazione…' : 'Scarica PDF'}
+                  </button>
+                )}
 
                 {item.onlineEnabled && status?.kind === 'receipt' && (
                   <button

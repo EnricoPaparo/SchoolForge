@@ -47,6 +47,7 @@ import {
   activateVerification,
   setVerificationVisibility,
   setVerificationOnlineEnabled,
+  setVerificationStudentPdfEnabled,
   closeVerification,
   deleteVerification,
 } from '../verificationsService.js';
@@ -160,6 +161,7 @@ describe('createVerification', () => {
     const [, verData] = mockBatchSet.mock.calls[0];
     expect(verData.status).toBe('draft');
     expect(verData.visibility).toBe('hidden');
+    expect(verData.studentPdfEnabled).toBe(false);
     expect(verData.config.questionRefs).toEqual([]);
     expect(verData.teacherSnapshot).toBeNull();
     expect(verData.activatedAt).toBeNull();
@@ -356,6 +358,35 @@ describe('activateVerification', () => {
     expect(capture.getProjection()?.onlineEnabled).toBe(true);
   });
 
+  it('writes studentPdfEnabled: false into publishedProjection when never toggled on the draft (M3F-09)', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: VALID_CONFIG,
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(draftDoc);
+
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    expect(capture.getProjection()?.studentPdfEnabled).toBe(false);
+  });
+
+  it('mirrors studentPdfEnabled: true into publishedProjection when already toggled on the draft (M3F-09)', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: VALID_CONFIG,
+      studentPdfEnabled: true,
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(draftDoc);
+
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    expect(capture.getProjection()?.studentPdfEnabled).toBe(true);
+  });
+
   it('writes classId: null into publishedProjection when the verification has no class (M3L-D)', async () => {
     const draftDoc: Partial<VerificationDoc> = {
       status: 'draft',
@@ -533,6 +564,87 @@ describe('setVerificationOnlineEnabled', () => {
     await expect(setVerificationOnlineEnabled('ver-id', false, OWNER_UID, fakeDb)).rejects.toThrow(
       'Online modificabile solo su una verifica attiva',
     );
+  });
+});
+
+// ─── setVerificationStudentPdfEnabled ────────────────────────────────────────
+
+describe('setVerificationStudentPdfEnabled', () => {
+  it('atomically batches parent studentPdfEnabled/updatedAt + projection mirror + audit, on an active verification', async () => {
+    const activeDoc: Partial<VerificationDoc> = { status: 'active', config: VALID_CONFIG };
+    mockGetDoc
+      .mockResolvedValueOnce({ data: () => activeDoc }) // verification
+      .mockResolvedValueOnce({ exists: () => true }); // publishedProjection
+
+    await setVerificationStudentPdfEnabled('ver-id', true, OWNER_UID, fakeDb);
+
+    expect(mockWriteBatch).toHaveBeenCalledWith(fakeDb);
+    expect(mockBatchSet).toHaveBeenCalledTimes(3); // parent + projection + audit
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+
+    const [, parentData, parentOptions] = mockBatchSet.mock.calls[0];
+    expect(parentData).toEqual({ studentPdfEnabled: true, updatedAt: mockServerTimestamp() });
+    expect(parentOptions).toEqual({ merge: true });
+
+    const [, projectionData, projectionOptions] = mockBatchSet.mock.calls[1];
+    expect(projectionData).toEqual({ studentPdfEnabled: true });
+    expect(projectionOptions).toEqual({ merge: true });
+
+    const [, auditData] = mockBatchSet.mock.calls[2];
+    expect(auditData.action).toBe('verification.studentPdfEnabledChanged');
+    expect(auditData.actorUid).toBe(OWNER_UID);
+    expect(auditData.reason).toBe('studentPdfEnabled -> true');
+  });
+
+  it('allows the toggle on a draft verification, and skips the projection mirror (none exists yet)', async () => {
+    const draftDoc: Partial<VerificationDoc> = { status: 'draft', config: VALID_CONFIG };
+    mockGetDoc
+      .mockResolvedValueOnce({ data: () => draftDoc })
+      .mockResolvedValueOnce({ exists: () => false });
+
+    await setVerificationStudentPdfEnabled('ver-id', true, OWNER_UID, fakeDb);
+
+    expect(mockBatchSet).toHaveBeenCalledTimes(2); // parent + audit only
+    const [, parentData] = mockBatchSet.mock.calls[0];
+    expect(parentData).toEqual({ studentPdfEnabled: true, updatedAt: mockServerTimestamp() });
+    const [, auditData] = mockBatchSet.mock.calls[1];
+    expect(auditData.action).toBe('verification.studentPdfEnabledChanged');
+  });
+
+  it('allows the toggle on a closed verification, mirroring the projection', async () => {
+    const closedDoc: Partial<VerificationDoc> = { status: 'closed', config: VALID_CONFIG };
+    mockGetDoc
+      .mockResolvedValueOnce({ data: () => closedDoc })
+      .mockResolvedValueOnce({ exists: () => true });
+
+    await setVerificationStudentPdfEnabled('ver-id', false, OWNER_UID, fakeDb);
+
+    expect(mockBatchSet).toHaveBeenCalledTimes(3);
+    const [, parentData] = mockBatchSet.mock.calls[0];
+    expect(parentData).toEqual({ studentPdfEnabled: false, updatedAt: mockServerTimestamp() });
+    const [, projectionData] = mockBatchSet.mock.calls[1];
+    expect(projectionData).toEqual({ studentPdfEnabled: false });
+  });
+
+  it('never touches status/visibility/onlineEnabled/config on the parent document', async () => {
+    const activeDoc: Partial<VerificationDoc> = { status: 'active', config: VALID_CONFIG };
+    mockGetDoc
+      .mockResolvedValueOnce({ data: () => activeDoc })
+      .mockResolvedValueOnce({ exists: () => true });
+
+    await setVerificationStudentPdfEnabled('ver-id', true, OWNER_UID, fakeDb);
+
+    const [, parentData] = mockBatchSet.mock.calls[0];
+    expect(Object.keys(parentData).sort()).toEqual(['studentPdfEnabled', 'updatedAt']);
+  });
+
+  it('throws when the verification does not exist', async () => {
+    mockGetDoc.mockResolvedValueOnce({ data: () => undefined });
+
+    await expect(
+      setVerificationStudentPdfEnabled('ver-id', true, OWNER_UID, fakeDb),
+    ).rejects.toThrow('Verifica non trovata');
+    expect(mockWriteBatch).not.toHaveBeenCalled();
   });
 });
 
