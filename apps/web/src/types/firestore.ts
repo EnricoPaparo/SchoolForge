@@ -32,6 +32,7 @@ export type AuditAction =
   | 'verification.closed'
   | 'verification.deleted'
   | 'studentAccess.updated'
+  | 'studentAccess.examModeUpdated'
   | 'student.approved'
   | 'student.blocked'
   | 'student.reset'
@@ -200,11 +201,25 @@ export interface PublicLessonDoc {
  * controls whether an unknown Google-authenticated non-owner may create
  * their own `students/{uid}` request (status `pending`) — see
  * studentsService.requestStudentAccess and RoleGate.
+ *
+ * `examMode` (M3F-07): absent on documents written before this milestone —
+ * always read through `normalizeExamMode()` (examMode.ts), which treats a
+ * missing/malformed value as disabled. When active for a class it hides
+ * that class's Lezioni section in the student UI and denies Firestore
+ * discovery of `programs`/`publicLessons` for that class (Security Rules).
+ * It does NOT yet deny the underlying Storage Markdown read — that is
+ * M3F-08's job; see sicurezza.md for the interim risk note.
  */
 export interface StudentAccessSettings {
   ownerUid: string;
   studentPortalEnabled: boolean;
   newStudentRequestsEnabled: boolean;
+  examMode?: {
+    enabled: boolean;
+    scope: 'all' | 'classes';
+    classIds: string[];
+    enabledAt: Timestamp | FieldValue | null;
+  };
   updatedAt: Timestamp | FieldValue;
   updatedBy: string;
 }

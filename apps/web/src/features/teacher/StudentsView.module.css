@@ -238,6 +238,95 @@
   color: var(--color-text-muted);
 }
 
+/* ── Modalità verifica (M3F-07) ───────────────────────────────────── */
+.examModeBanner {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-warning);
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius);
+  padding: 0.625rem 0.875rem;
+  margin: 0;
+}
+
+.examModeOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9, 13, 20, 0.6);
+  padding: 1rem;
+}
+
+.examModeDialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  width: 100%;
+  max-width: 420px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 1.5rem;
+  box-sizing: border-box;
+}
+
+.examModeDialogTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.examModeScopeChoice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.examModeScopeOption {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.examModeClassList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.examModeClassOption {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.examModeGlobalConfirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-warning);
+}
+
+.examModeDialogActions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
 @media (max-width: 640px) {
   .filterRow {
     flex-direction: column;

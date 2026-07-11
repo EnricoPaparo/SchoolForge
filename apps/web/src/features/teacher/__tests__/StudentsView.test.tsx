@@ -15,6 +15,7 @@ const mockListClasses = vi.fn();
 const mockGetStudentAccessSettings = vi.fn();
 const mockSetStudentPortalEnabled = vi.fn();
 const mockSetNewStudentRequestsEnabled = vi.fn();
+const mockSetExamMode = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {} }));
 
@@ -26,6 +27,7 @@ vi.mock('../../repository/students/studentAccessService.js', () => ({
   getStudentAccessSettings: (...args: unknown[]) => mockGetStudentAccessSettings(...args),
   setStudentPortalEnabled: (...args: unknown[]) => mockSetStudentPortalEnabled(...args),
   setNewStudentRequestsEnabled: (...args: unknown[]) => mockSetNewStudentRequestsEnabled(...args),
+  setExamMode: (...args: unknown[]) => mockSetExamMode(...args),
 }));
 
 vi.mock('../../repository/students/studentsService.js', () => ({
@@ -78,7 +80,12 @@ const STUDENTS = [
   },
 ];
 
-const CLASSES = [{ id: 'class-1', ownerUid: OWNER_UID, name: '3A Informatica', description: null }];
+const CLASSES = [
+  { id: 'class-1', ownerUid: OWNER_UID, name: '3A Informatica', description: null },
+  { id: 'class-2', ownerUid: OWNER_UID, name: '4B Chimica', description: null },
+];
+
+const EXAM_MODE_OFF = { enabled: false, scope: 'all' as const, classIds: [], enabledAt: null };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -86,6 +93,7 @@ beforeEach(() => {
   mockGetStudentAccessSettings.mockResolvedValue({
     studentPortalEnabled: false,
     newStudentRequestsEnabled: false,
+    examMode: EXAM_MODE_OFF,
   });
   mockApproveStudent.mockResolvedValue(undefined);
   mockBlockStudent.mockResolvedValue(undefined);
@@ -94,6 +102,7 @@ beforeEach(() => {
   mockAssignStudentClass.mockResolvedValue(undefined);
   mockSetStudentPortalEnabled.mockResolvedValue(undefined);
   mockSetNewStudentRequestsEnabled.mockResolvedValue(undefined);
+  mockSetExamMode.mockResolvedValue(undefined);
 });
 
 describe('StudentsView — loading and empty states', () => {
@@ -189,16 +198,16 @@ describe('StudentsView — search', () => {
 });
 
 describe('StudentsView — toggles', () => {
-  it('renders both toggles as accessible switches with a clear on/off state', async () => {
+  it('renders all three toggles as accessible switches with a clear on/off state', async () => {
     mockListStudents.mockResolvedValue([]);
     render(<StudentsView ownerUid={OWNER_UID} />);
     await waitFor(() => screen.getByText(/Portale studenti/i));
 
     const switches = screen.getAllByRole('switch');
-    expect(switches).toHaveLength(2);
-    expect(switches[0].getAttribute('aria-checked')).toBe('false');
-    expect(switches[1].getAttribute('aria-checked')).toBe('false');
+    expect(switches).toHaveLength(3);
+    for (const s of switches) expect(s.getAttribute('aria-checked')).toBe('false');
     expect(screen.getAllByText('Disattivato')).toHaveLength(2);
+    expect(screen.getByRole('switch', { name: 'Modalità verifica' })).toBeTruthy();
   });
 
   it('calls setStudentPortalEnabled when the portal switch is clicked', async () => {
@@ -230,6 +239,7 @@ describe('StudentsView — toggles', () => {
     mockGetStudentAccessSettings.mockResolvedValue({
       studentPortalEnabled: true,
       newStudentRequestsEnabled: false,
+      examMode: EXAM_MODE_OFF,
     });
     render(<StudentsView ownerUid={OWNER_UID} />);
     await waitFor(() => screen.getByText(/Portale studenti/i));
@@ -341,5 +351,181 @@ describe('StudentsView — row actions', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'Approva' }));
 
     await waitFor(() => expect(onStudentsChanged).toHaveBeenCalled());
+  });
+});
+
+describe('StudentsView — Modalità verifica (M3F-07)', () => {
+  it('shows "Disattivata" and no banner when off', async () => {
+    mockListStudents.mockResolvedValue([]);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    await waitFor(() => screen.getByRole('switch', { name: 'Modalità verifica' }));
+
+    expect(screen.getByText('Disattivata')).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('clicking the switch when off opens the activation dialog, defaulting to "classi selezionate"', async () => {
+    mockListStudents.mockResolvedValue([]);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    await waitFor(() => screen.getByRole('switch', { name: 'Modalità verifica' }));
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Modalità verifica' }));
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Attiva modalità verifica' });
+    expect(within(dialog).getByLabelText('Una o più classi')).toHaveProperty('checked', true);
+    expect(within(dialog).getByLabelText('Tutte le classi')).toHaveProperty('checked', false);
+    expect(within(dialog).getByRole('button', { name: 'Attiva' })).toHaveProperty('disabled', true);
+  });
+
+  it('does not confirm with zero classes selected in "classi" scope', async () => {
+    mockListStudents.mockResolvedValue([]);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    await waitFor(() => screen.getByRole('switch', { name: 'Modalità verifica' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Modalità verifica' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Attiva modalità verifica' });
+
+    expect(within(dialog).getByRole('button', { name: 'Attiva' })).toHaveProperty('disabled', true);
+    expect(mockSetExamMode).not.toHaveBeenCalled();
+  });
+
+  it('activates for selected classes once at least one is checked', async () => {
+    mockListStudents.mockResolvedValue([]);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    await waitFor(() => screen.getByRole('switch', { name: 'Modalità verifica' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Modalità verifica' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Attiva modalità verifica' });
+
+    fireEvent.click(within(dialog).getByLabelText('3A Informatica'));
+    expect(within(dialog).getByRole('button', { name: 'Attiva' })).toHaveProperty(
+      'disabled',
+      false,
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Attiva' }));
+
+    await waitFor(() =>
+      expect(mockSetExamMode).toHaveBeenCalledWith(
+        { enabled: true, scope: 'classes', classIds: ['class-1'] },
+        OWNER_UID,
+        {},
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('alertdialog', { name: 'Attiva modalità verifica' })).toBeNull(),
+    );
+  });
+
+  it('requires the explicit global confirmation checkbox before activating scope=all', async () => {
+    mockListStudents.mockResolvedValue([]);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    await waitFor(() => screen.getByRole('switch', { name: 'Modalità verifica' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Modalità verifica' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Attiva modalità verifica' });
+
+    fireEvent.click(within(dialog).getByLabelText('Tutte le classi'));
+    expect(within(dialog).getByRole('button', { name: 'Attiva' })).toHaveProperty('disabled', true);
+
+    fireEvent.click(within(dialog).getByLabelText(/Confermo di voler bloccare/));
+    expect(within(dialog).getByRole('button', { name: 'Attiva' })).toHaveProperty(
+      'disabled',
+      false,
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Attiva' }));
+
+    await waitFor(() =>
+      expect(mockSetExamMode).toHaveBeenCalledWith({ enabled: true, scope: 'all' }, OWNER_UID, {}),
+    );
+  });
+
+  it('cancelling the dialog does not call setExamMode', async () => {
+    mockListStudents.mockResolvedValue([]);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    await waitFor(() => screen.getByRole('switch', { name: 'Modalità verifica' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Modalità verifica' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Attiva modalità verifica' });
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }));
+
+    expect(screen.queryByRole('alertdialog', { name: 'Attiva modalità verifica' })).toBeNull();
+    expect(mockSetExamMode).not.toHaveBeenCalled();
+  });
+
+  it('shows a readable error and keeps the dialog open when setExamMode fails', async () => {
+    mockSetExamMode.mockRejectedValue(new Error('boom'));
+    mockListStudents.mockResolvedValue([]);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    await waitFor(() => screen.getByRole('switch', { name: 'Modalità verifica' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Modalità verifica' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Attiva modalità verifica' });
+    fireEvent.click(within(dialog).getByLabelText('3A Informatica'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Attiva' }));
+
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toBeTruthy());
+    expect(within(dialog).getByText('boom')).toBeTruthy();
+  });
+
+  it('shows a prominent banner with the active scope when enabled', async () => {
+    mockListStudents.mockResolvedValue([]);
+    mockGetStudentAccessSettings.mockResolvedValue({
+      studentPortalEnabled: false,
+      newStudentRequestsEnabled: false,
+      examMode: { enabled: true, scope: 'classes', classIds: ['class-1'], enabledAt: null },
+    });
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => expect(screen.getByRole('status')).toBeTruthy());
+    expect(screen.getByRole('status').textContent).toMatch(/3A Informatica/);
+    expect(screen.getByText('3A Informatica')).toBeTruthy(); // status label on the card too
+  });
+
+  it('shows "Tutte le classi" in the status/banner for scope=all', async () => {
+    mockListStudents.mockResolvedValue([]);
+    mockGetStudentAccessSettings.mockResolvedValue({
+      studentPortalEnabled: false,
+      newStudentRequestsEnabled: false,
+      examMode: { enabled: true, scope: 'all', classIds: [], enabledAt: null },
+    });
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    await waitFor(() => expect(screen.getByRole('status')).toBeTruthy());
+    expect(screen.getByRole('status').textContent).toMatch(/Tutte le classi/);
+  });
+
+  it('disabling requires confirmation, and calls setExamMode({enabled:false}) on confirm', async () => {
+    mockListStudents.mockResolvedValue([]);
+    mockGetStudentAccessSettings.mockResolvedValue({
+      studentPortalEnabled: false,
+      newStudentRequestsEnabled: false,
+      examMode: { enabled: true, scope: 'all', classIds: [], enabledAt: null },
+    });
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    await waitFor(() => screen.getByRole('switch', { name: 'Modalità verifica' }));
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Modalità verifica' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Disattiva modalità verifica' });
+    expect(mockSetExamMode).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Disattiva' }));
+
+    await waitFor(() =>
+      expect(mockSetExamMode).toHaveBeenCalledWith({ enabled: false }, OWNER_UID, {}),
+    );
+  });
+
+  it('cancelling the disable confirmation does not call setExamMode', async () => {
+    mockListStudents.mockResolvedValue([]);
+    mockGetStudentAccessSettings.mockResolvedValue({
+      studentPortalEnabled: false,
+      newStudentRequestsEnabled: false,
+      examMode: { enabled: true, scope: 'all', classIds: [], enabledAt: null },
+    });
+    render(<StudentsView ownerUid={OWNER_UID} />);
+    await waitFor(() => screen.getByRole('switch', { name: 'Modalità verifica' }));
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Modalità verifica' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Disattiva modalità verifica' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }));
+
+    expect(mockSetExamMode).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog', { name: 'Disattiva modalità verifica' })).toBeNull();
   });
 });

@@ -287,7 +287,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 | M3F-04 | UI studente OnlineExamView + ConfirmationView + modalità verifica deterrente. | M3F-03 | — | Flusso avvio→bozza→consegna→receipt. Completato. |
 | M3F-05 | UI docente: toggle onlineEnabled, pubblicazione online, monitor consegne. | M3F-03 | M3F-04 | Monitor stati/consegne/eventi attenzione. Completato. |
 | M3F-06 | Sessione obbligatoria e UX prova: ripresa bozza, shell senza navigazione, navigatore domande, risposta singola cancellabile, uscita fullscreen solo dopo consegna riuscita. | M3F-04/M3F-05 | — | Refresh/login riporta nella prova; nessuna uscita applicativa prima della consegna; test mirati verdi. Completato. |
-| M3F-07 | Modalità verifica globale/per classe in Studenti, audit e listener studente. | M3F-06 | M3F-09 | Controllo owner-only; default per classe; blocco globale confermato; nessun deploy isolato prima di M3F-08. |
+| M3F-07 | Modalità verifica globale/per classe in Studenti, audit e listener studente. | M3F-06 | M3F-09 | Controllo owner-only; default per classe; blocco globale confermato; nessun deploy isolato prima di M3F-08. Completato — non distribuibile da sola (Storage non ancora protetto). |
 | M3F-08 | Proiezione sicura corpo lezioni in `publicLessons`, sincronizzazione import/editor, migrazione e Rules. | M3F-07 | M3F-09 | Una chiamata diretta non legge lezioni durante il blocco; Storage resta canonico; dati DEV migrati. |
 | M3F-09 | Rifiniture docente: permesso download PDF, monitor sempre visibile sulla verifica selezionata, dettaglio eventi, tabella stabile. | M3F-05 | M3F-07/M3F-08 | Toggle PDF indipendente; un solo listener; popup eventi senza risposte; nessun layout shift. |
 | M3F-10 | Hardening costi e concorrenza di autosave/listener. | M3F-06/M3F-09 | — | Scritture solo su revisione cambiata; debounce/intervallo esplicito; cleanup e race testati. |
@@ -691,7 +691,17 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | Test minimi | Refresh/login con bozza forza la prova (`examSessionService.test.ts`, `StudentShell.test.tsx`); menu e ritorno lista assenti durante la sessione; indicatori domanda compilata/vuota/da rivedere con aria-label; cancella risposta singola; `exitFullscreen()` solo dopo consegna riuscita e mai su errore; cleanup listener |
 | Evidenza richiesta | Test componente/service mirati (140 test in `src/features/student/`), typecheck e build verdi. `firestore.rules` non modificato in questo pacchetto — nessuna suite Rules eseguita. Nessun deploy. |
 
-I pacchetti M3F-07→M3F-11 sono definiti operativamente in `m3-full-roadmap.md`. Il primo incarico da assegnare è esclusivamente M3F-06; non anticipare la migrazione lezioni o le rifiniture docente nella stessa PR.
+#### M3F-07 — Modalità verifica globale/per classe (Completato — non distribuibile isolatamente)
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M3F-06 |
+| File creati | `examMode.ts` (helper puro `normalizeExamMode`/`isExamModeActiveForClass`, fail-safe: dati assenti/incompleti/`classes` senza classi valide → disattivata) |
+| File modificati | `studentAccessService.ts` (`examMode` nella lettura una tantum e nel nuovo `watchStudentAccessSettings` — un solo `onSnapshot`; `setExamMode` unica operazione owner-only per attivare globalmente/per classi/disattivare, merge senza toccare gli altri toggle, `serverTimestamp()` per `enabledAt`/`updatedAt`, audit `studentAccess.examModeUpdated`), `StudentsView.tsx` (card "Modalità verifica" + dialog di attivazione con scelta predefinita "classi" e conferma esplicita per "tutte le classi" + conferma di disattivazione + banner), `StudentShell.tsx` (listener `settings/studentAccess`, nasconde "Lezioni" e smonta `StudentLessonsView` immediatamente quando la modalità si applica alla classe dello studente, ripristino senza nuovo login), `StudentVerificationsView.tsx` (banner discreto, mai sopra una sessione d'esame in corso), `firestore.rules` (nuova funzione `examModeAppliesToClass`, applicata solo a `programs`/`publicLessons` — mai a `publishedProjection`/`submissions`) |
+| Test minimi | Helper puro (scope all/classes/off/malformato); service (`setExamMode` tre transizioni + audit, `watchStudentAccessSettings` normalizzazione condivisa); UI docente (dialog classi/globale, conferme, errori, skip-write se stato invariato); StudentShell (nasconde/ripristina Lezioni, non interrompe una verifica online in corso); Rules mirate (classe bloccata negata, altra classe consentita, globale negato, owner invariato, verifiche/submission invariate) |
+| Evidenza richiesta | Test componente/service/Rules mirati verdi, `pnpm test:rules` completo verde (294 test, 11 file — eseguito perché `firestore.rules` è stato modificato), typecheck e build verdi. **Rischio residuo esplicito**: Storage continua a servire il Markdown della lezione a qualunque non-owner autenticato — la Modalità verifica nega solo la *discovery* Firestore (`programs`/`publicLessons`), non ancora la lettura diretta del contenuto. Non dichiarare il blocco lezioni "sicuro" e non fare deploy finché M3F-08 non chiude questo gap. |
+
+I pacchetti M3F-08→M3F-11 sono definiti operativamente in `m3-full-roadmap.md`. Non anticipare la migrazione lezioni (`publicLessons.content`) o le rifiniture docente nella stessa PR di M3F-07.
 
 ### M4 — Correzione ed export
 
