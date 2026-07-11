@@ -4,14 +4,14 @@
 
 **M1 + M2 + M3-lite (portale studente Google, read-only) + RE (Repository Editor) completati. Deploy DEV attivo: https://schoolforge-dev.web.app**
 
-Il flusso docente cartaceo, il portale studente in sola lettura e il Repository Editor sono funzionanti sia in locale (emulatori Firebase) che su Firebase DEV. M3-full (consegna online), M4 (correzione) e M5 (AI) non sono implementati.
+Il flusso docente cartaceo, il portale studente, il Repository Editor e il flusso base di consegna online M3-full sono implementati. M3-full richiede ancora hardening sessione/modalità verifica e gate DEV (M3F-06→11); M4 (correzione) e M5 (AI) non sono implementati.
 Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente locale e [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) per lo smoke test DEV.
 
 **Repository Editor (RE-00 → RE-07) completato** — vedi [repository-editor-roadmap.md](repository-editor-roadmap.md) per la roadmap e [evidenze/repository-editor-checklist-manuale.md](evidenze/repository-editor-checklist-manuale.md) per la checklist manuale DEV. Nessuna fase RE obbligatoria successiva.
 
 **Question Editor (QE, sezione "Domande") — specifica definita** — vedi [question-editor-roadmap.md](question-editor-roadmap.md) per la roadmap QE-00 → QE-05: editor pool domande Markdown-first, serializzatore YAML, service layer (doppia scrittura Storage + Firestore), UI con sidebar Corso→UDA→Lezione e form domanda inline. Non dipende da M3-full; implementabile indipendentemente.
 
-**M3-full (verifiche online e consegne studenti) è in fase di design** — vedi [m3-full-roadmap.md](m3-full-roadmap.md) per la specifica: modello dati, Security Rules, stati/transizioni, UX docente/studente, roadmap M3F-00 → M3F-06 e gate G5. M4 (correzione/restituzione) dipende da M3-full.
+**M3-full (verifiche online e consegne studenti) è in implementazione** — M3F-00→05 sono completati; vedi [m3-full-roadmap.md](m3-full-roadmap.md) per sessione obbligatoria, modalità verifica per classe, protezione lezioni, hardening costi e gate G5 in M3F-06→11. M4 dipende dal completamento di M3-full.
 
 ## Per iniziare
 
@@ -53,7 +53,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [ux-product-roadmap.md](ux-product-roadmap.md) | Roadmap UX/Product Polish (UX-01–06). | Per pianificare e implementare il polish UI. |
 | [repository-editor-roadmap.md](repository-editor-roadmap.md) | Roadmap Repository Editor (RE-00–RE-07, implementato). | Per consultare decisioni tecniche e scope dell'editor UDA/lezioni. |
 | [question-editor-roadmap.md](question-editor-roadmap.md) | Roadmap Question Editor (QE-00–QE-05): editor pool domande Markdown-first, senza reimport ZIP. | Per progettare e implementare la sezione "Domande". |
-| [m3-full-roadmap.md](m3-full-roadmap.md) | Specifica M3-full: verifiche online, consegne studenti, monitor docente. Roadmap M3F-00–M3F-06. | Per progettare e implementare M3-full. |
+| [m3-full-roadmap.md](m3-full-roadmap.md) | Specifica M3-full: verifiche online, consegne, monitor, sessione obbligatoria e modalità verifica. Roadmap M3F-00–M3F-11. | Per completare e validare M3-full. |
 
 ## Evidenze
 

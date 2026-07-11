@@ -286,7 +286,12 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 | M3F-03 | Security Rules per submission/receipt con test Emulator Suite: unicità path deterministico, immutabilità, gate active+onlineEnabled, receipt post-consegna. | M3F-02 | — | Test rules positivi/negativi verdi. Completato. |
 | M3F-04 | UI studente OnlineExamView + ConfirmationView + modalità verifica deterrente. | M3F-03 | — | Flusso avvio→bozza→consegna→receipt. Completato. |
 | M3F-05 | UI docente: toggle onlineEnabled, pubblicazione online, monitor consegne. | M3F-03 | M3F-04 | Monitor stati/consegne/eventi attenzione. Completato. |
-| M3F-06 | Integrazione, smoke DEV, checklist G5. | M3F-04/M3F-05 | — | Gate G5 approvabile. |
+| M3F-06 | Sessione obbligatoria e UX prova: ripresa bozza, shell senza navigazione, navigatore domande, risposta singola cancellabile, uscita fullscreen solo dopo consegna riuscita. | M3F-04/M3F-05 | — | Refresh/login riporta nella prova; nessuna uscita applicativa prima della consegna; test mirati verdi. |
+| M3F-07 | Modalità verifica globale/per classe in Studenti, audit e listener studente. | M3F-06 | M3F-09 | Controllo owner-only; default per classe; blocco globale confermato; nessun deploy isolato prima di M3F-08. |
+| M3F-08 | Proiezione sicura corpo lezioni in `publicLessons`, sincronizzazione import/editor, migrazione e Rules. | M3F-07 | M3F-09 | Una chiamata diretta non legge lezioni durante il blocco; Storage resta canonico; dati DEV migrati. |
+| M3F-09 | Rifiniture docente: permesso download PDF, monitor sempre visibile sulla verifica selezionata, dettaglio eventi, tabella stabile. | M3F-05 | M3F-07/M3F-08 | Toggle PDF indipendente; un solo listener; popup eventi senza risposte; nessun layout shift. |
+| M3F-10 | Hardening costi e concorrenza di autosave/listener. | M3F-06/M3F-09 | — | Scritture solo su revisione cambiata; debounce/intervallo esplicito; cleanup e race testati. |
+| M3F-11 | Integrazione, migrazione DEV, smoke con docente e due studenti, checklist G5. | M3F-06→M3F-10 | — | Gate G5 approvabile; nessun accesso lezioni durante blocco; osservazione costi completata. |
 
 ---
 
@@ -676,15 +681,17 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | Test minimi | Toggle `onlineEnabled` (abilita senza conferma, disabilita con conferma esplicita); nessuna classe → controllo disabilitato; stati non iniziata/bozza/consegnata; timestamp; conteggio eventi attenzione (mai il dettaglio); nessuna correzione M4; listener chiuso a pannello chiuso/verifica cambiata/unmount; test Rules mirati (abilita, disabilita, non-owner negato, modifica simultanea negata, verifica chiusa non modificabile) |
 | Evidenza richiesta | Test componente + service + Rules verdi (vedi `VerificationsView.test.tsx`, `verificationsService.test.ts`, `submissionsMonitorService.test.ts`, `m3f-05-online-toggle.rules.test.ts`). Smoke DEV non ancora eseguito — rimane a carico di M3F-06. |
 
-#### M3F-06 — Integrazione M3-full
+#### M3F-06 — Sessione obbligatoria e UX prova
 
 | Campo | Valore |
 |---|---|
 | Prerequisiti | M3F-04/M3F-05 |
-| File da creare | Checklist/smoke M3-full |
-| File da modificare | — |
-| Test minimi | Flusso avvio→bozza→consegna→monitor; immutabilità; verifica chiusa blocca bozze; soluzioni non accessibili |
-| Evidenza richiesta | Gate G5 approvabile |
+| File da creare | Solo eventuali helper puri per risoluzione sessione/navigatore; evitare nuovi layer non necessari |
+| File da modificare | `StudentShell`, `StudentVerificationsView`, `OnlineExamView`, service submission, tipi/Rules solo se il contratto persistente lo richiede |
+| Test minimi | Refresh/login con bozza forza la prova; menu e ritorno lista assenti; indicatori domanda; cancella risposta singola; `exitFullscreen()` solo dopo consegna riuscita e mai su errore |
+| Evidenza richiesta | Test componente/service mirati, typecheck e build; Rules test solo se cambiano le Rules. Nessun deploy. |
+
+I pacchetti M3F-07→M3F-11 sono definiti operativamente in `m3-full-roadmap.md`. Il primo incarico da assegnare è esclusivamente M3F-06; non anticipare la migrazione lezioni o le rifiniture docente nella stessa PR.
 
 ### M4 — Correzione ed export
 
