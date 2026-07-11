@@ -3,10 +3,27 @@ import type {
   PublishedProjectionDoc,
   VerificationTeacherSnapshot,
 } from '../../../types/firestore.js';
-import type { LoadedQuestion } from './loadSelectedQuestions.js';
-import type { LoadedQuestionWithSolution } from './loadSelectedQuestionsWithSolutions.js';
 import { computeFieldLineLayout, getAnswerAreaKind } from './verificationPdfLayout.js';
 import { buildVerificationPdfFilename } from './verificationPdfNaming.js';
+
+/**
+ * Minimal shape `downloadStudentPdf` actually needs from each question —
+ * only `ref.maxPoints`, never any other field of a full
+ * `VerificationQuestionRef`. Satisfied both by `LoadedQuestion[]` (teacher
+ * preview sourced from Storage pool files) and by the frozen
+ * `teacherSnapshot.questions` mapped through `toPdfQuestion` (see
+ * `verificationSnapshotMappers.ts`) — the two data sources share this exact
+ * drawing code without either one depending on the other's full type.
+ */
+type PdfQuestionInput = {
+  ref: { maxPoints: number };
+  testo: string;
+  tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
+  opzioni?: { id: string; testo: string }[];
+};
+
+/** Same as `PdfQuestionInput`, plus `soluzione` for the solutions PDF. */
+type PdfQuestionWithSolutionInput = PdfQuestionInput & { soluzione: string | string[] };
 
 /**
  * Minimal, solution-free question shape the student PDF layout actually
@@ -248,7 +265,7 @@ async function renderStudentPdf(
  */
 export async function downloadStudentPdf(
   snapshot: Pick<VerificationTeacherSnapshot, 'title'>,
-  questions: LoadedQuestion[],
+  questions: PdfQuestionInput[],
   className: string | null,
 ): Promise<void> {
   await renderStudentPdf(
@@ -308,7 +325,7 @@ export async function downloadStudentPdfFromProjection(
  */
 export async function downloadTeacherSolutionsPdf(
   snapshot: Pick<VerificationTeacherSnapshot, 'title'>,
-  questions: LoadedQuestionWithSolution[],
+  questions: PdfQuestionWithSolutionInput[],
   className: string | null,
 ): Promise<void> {
   const { jsPDF } = await import('jspdf');

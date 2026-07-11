@@ -822,6 +822,47 @@ describe('VerificationsView', () => {
       },
     });
 
+  // ─── New-contract fixtures: teacherSnapshot.questions present (M-immutable-snapshot) ──
+  const embeddedSnapshotQuestion = {
+    order: 0,
+    tipo: 'aperta' as const,
+    maxPoints: 4,
+    testo: 'Domanda congelata?',
+    soluzione: 'Risposta congelata.',
+  };
+
+  const activeVerWithEmbeddedSnapshot = () =>
+    makeDraftVer({
+      status: 'active',
+      config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] },
+      teacherSnapshot: {
+        title: 'Verifica Algebra',
+        classId: 'cls-1',
+        className: 'Classe 3A',
+        programId: 'prog-1',
+        importId: 'imp-1',
+        questionRefs: [sampleQuestionRef],
+        questions: [embeddedSnapshotQuestion],
+        activatedAt: null,
+      },
+    });
+
+  const closedVerWithEmbeddedSnapshot = () =>
+    makeDraftVer({
+      status: 'closed',
+      config: { ...makeDraftVer().config, questionRefs: [] },
+      teacherSnapshot: {
+        title: 'Verifica Algebra',
+        classId: 'cls-1',
+        className: 'Classe 3A',
+        programId: 'prog-1',
+        importId: 'imp-1',
+        questionRefs: [sampleQuestionRef],
+        questions: [embeddedSnapshotQuestion],
+        activatedAt: null,
+      },
+    });
+
   it('shows Scarica PDF studenti, Scarica PDF soluzioni and Chiudi verifica row actions only for active verifications', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([activeVerWithSnapshot()]);
@@ -1048,6 +1089,87 @@ describe('VerificationsView', () => {
 
     await waitFor(() => screen.getByRole('alert'));
     expect(screen.getByRole('alert').textContent).toMatch(/pool non trovato/i);
+  });
+
+  // ─── PDF from embedded teacherSnapshot.questions (immutable snapshot fix) ──
+
+  it('active with embedded snapshot.questions generates the normal PDF with zero Storage reads', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerWithEmbeddedSnapshot()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+
+    await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
+    expect(mockLoadSelectedQuestions).not.toHaveBeenCalled();
+    expect(mockDownloadStudentPdf).toHaveBeenCalledWith(
+      { title: 'Verifica Algebra' },
+      [{ ref: { maxPoints: 4 }, testo: 'Domanda congelata?', tipo: 'aperta' }],
+      'Classe 3A',
+    );
+  });
+
+  it('active with embedded snapshot.questions generates the solutions PDF with zero Storage reads', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerWithEmbeddedSnapshot()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+
+    await waitFor(() => expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalled());
+    expect(mockLoadSelectedQuestionsWithSolutions).not.toHaveBeenCalled();
+    expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalledWith(
+      { title: 'Verifica Algebra' },
+      [
+        {
+          ref: { maxPoints: 4 },
+          testo: 'Domanda congelata?',
+          tipo: 'aperta',
+          soluzione: 'Risposta congelata.',
+        },
+      ],
+      'Classe 3A',
+    );
+  });
+
+  it('closed with embedded snapshot.questions generates both PDFs with zero Storage reads', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([closedVerWithEmbeddedSnapshot()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+    await waitFor(() => expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalled());
+
+    expect(mockLoadSelectedQuestions).not.toHaveBeenCalled();
+    expect(mockLoadSelectedQuestionsWithSolutions).not.toHaveBeenCalled();
+  });
+
+  it('a simulated pool edit/deletion never changes the PDF built from an embedded snapshot', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerWithEmbeddedSnapshot()]);
+    // Simulate the pool having been edited/deleted after activation: any
+    // Storage loader call would now fail or return different content.
+    mockLoadSelectedQuestions.mockResolvedValue({ ok: false, error: 'Pool non trovato' });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue({
+      ok: false,
+      error: 'Pool non trovato',
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+
+    await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
+    // No error surfaced despite the (irrelevant, simulated) Storage failure —
+    // the embedded snapshot never touches Storage at all.
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(mockDownloadStudentPdf).toHaveBeenCalledWith(
+      { title: 'Verifica Algebra' },
+      [{ ref: { maxPoints: 4 }, testo: 'Domanda congelata?', tipo: 'aperta' }],
+      'Classe 3A',
+    );
   });
 
   // ─── Close (row action) ─────────────────────────────────────────────────────

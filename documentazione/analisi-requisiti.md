@@ -254,6 +254,8 @@ questions:
 
 **AC-VER-02.** Il download docente non persiste PDF e non modifica il registro dei tentativi.
 
+**FR-VER-03a (M3-full, fix snapshot immutabile).** Per una verifica `active`/`closed` attivata nell'implementazione M3-full corrente, il PDF docente (normale e con soluzioni) deve essere generato esclusivamente dallo snapshot immutabile congelato all'attivazione (`teacherSnapshot.questions`), mai rileggendo i pool correnti in Storage — modificare o eliminare un pool dopo l'attivazione non deve mai alterare il PDF di una verifica già attivata. Le verifiche attivate prima di questo requisito (legacy, senza `teacherSnapshot.questions`) continuano temporaneamente a dipendere dai pool correnti; nessuna migrazione automatica è prevista — il docente può ricreare una verifica legacy (bozza → attivazione) per ottenere uno snapshot completo.
+
 ## 9. Portale Verifiche — canale cartaceo — Modulo 2
 
 **FR-PAP-01.** Il canale cartaceo è puramente fisico. Cliccando "Stampa/Scarica PDF", il PDF della verifica viene generato direttamente nel browser con `@react-pdf/renderer` e scaricato, senza passare per il server.

@@ -34,13 +34,14 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: () => mockServerTimestamp(),
 }));
 
-// loadSelectedQuestions hits Storage directly — mocked out here so
-// activateVerification tests stay pure unit tests. Its own behaviour
-// (pool parsing, "never includes soluzione") is covered by
-// loadSelectedQuestions.test.ts.
-const mockLoadSelectedQuestions = vi.fn();
-vi.mock('../loadSelectedQuestions.js', () => ({
-  loadSelectedQuestions: (...args: unknown[]) => mockLoadSelectedQuestions(...args),
+// loadSelectedQuestionsWithSolutions hits Storage directly — mocked out
+// here so activateVerification tests stay pure unit tests. Its own
+// behaviour (pool parsing, concurrency, dedup) is covered by
+// loadSelectedQuestionsWithSolutions.test.ts.
+const mockLoadSelectedQuestionsWithSolutions = vi.fn();
+vi.mock('../loadSelectedQuestionsWithSolutions.js', () => ({
+  loadSelectedQuestionsWithSolutions: (...args: unknown[]) =>
+    mockLoadSelectedQuestionsWithSolutions(...args),
 }));
 
 import {
@@ -265,6 +266,7 @@ describe('activateVerification', () => {
           { id: 'a', testo: 'Opzione A' },
           { id: 'b', testo: 'Opzione B' },
         ],
+        soluzione: 'a',
       },
     ],
   };
@@ -298,7 +300,7 @@ describe('activateVerification', () => {
       config: VALID_CONFIG,
     };
     mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
-    mockLoadSelectedQuestions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
     const capture = setupTransactionCapture(draftDoc);
 
     const classItem = {
@@ -335,7 +337,7 @@ describe('activateVerification', () => {
       config: VALID_CONFIG,
     };
     mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
-    mockLoadSelectedQuestions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
     const capture = setupTransactionCapture(draftDoc);
 
     await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
@@ -361,7 +363,7 @@ describe('activateVerification', () => {
       config: VALID_CONFIG,
     };
     mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
-    mockLoadSelectedQuestions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
     const capture = setupTransactionCapture(draftDoc);
 
     await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
@@ -376,7 +378,7 @@ describe('activateVerification', () => {
       onlineEnabled: true,
     };
     mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
-    mockLoadSelectedQuestions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
     const capture = setupTransactionCapture(draftDoc);
 
     await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
@@ -390,7 +392,7 @@ describe('activateVerification', () => {
       config: VALID_CONFIG,
     };
     mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
-    mockLoadSelectedQuestions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
     const capture = setupTransactionCapture(draftDoc);
 
     await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
@@ -405,7 +407,7 @@ describe('activateVerification', () => {
       studentPdfEnabled: true,
     };
     mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
-    mockLoadSelectedQuestions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
     const capture = setupTransactionCapture(draftDoc);
 
     await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
@@ -419,7 +421,7 @@ describe('activateVerification', () => {
       config: { ...VALID_CONFIG, classId: null },
     };
     mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
-    mockLoadSelectedQuestions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
     const capture = setupTransactionCapture(draftDoc);
 
     await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
@@ -437,7 +439,7 @@ describe('activateVerification', () => {
     await expect(
       activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage),
     ).rejects.toThrow('Verifica non attivabile: non è in bozza');
-    expect(mockLoadSelectedQuestions).not.toHaveBeenCalled();
+    expect(mockLoadSelectedQuestionsWithSolutions).not.toHaveBeenCalled();
     expect(mockRunTransaction).not.toHaveBeenCalled();
   });
 
@@ -454,17 +456,173 @@ describe('activateVerification', () => {
     expect(mockRunTransaction).not.toHaveBeenCalled();
   });
 
-  it('throws when the pool cannot be loaded from Storage', async () => {
+  it('throws when the pool cannot be loaded from Storage, before opening the transaction', async () => {
     const draftDoc: Partial<VerificationDoc> = {
       status: 'draft',
       config: VALID_CONFIG,
     };
     mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
-    mockLoadSelectedQuestions.mockResolvedValue({ ok: false, error: 'Pool non trovato' });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue({
+      ok: false,
+      error: 'Pool non trovato',
+    });
 
     await expect(
       activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage),
-    ).rejects.toThrow('Impossibile generare la proiezione pubblica');
+    ).rejects.toThrow('Impossibile attivare');
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+  });
+
+  it('throws when a solution is missing/invalid, before opening the transaction', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: VALID_CONFIG,
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue({
+      ok: true,
+      questions: [{ ...LOADED_QUESTIONS_OK.questions[0], soluzione: '' }],
+    });
+
+    await expect(
+      activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage),
+    ).rejects.toThrow(/soluzione/i);
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects activation if questionRefs change after the Storage preflight', async () => {
+    const preflightDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: VALID_CONFIG,
+    };
+    const changedRef = {
+      ...VALID_CONFIG.questionRefs[0]!,
+      questionIndexEntryId: 'qi-changed',
+      questionLocalId: 'q-changed',
+    };
+    const transactionDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: { ...VALID_CONFIG, questionRefs: [changedRef] },
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => preflightDoc });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(transactionDoc);
+
+    await expect(
+      activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage),
+    ).rejects.toThrow(/selezione delle domande è cambiata/i);
+
+    expect(capture.getUpdate()).toBeUndefined();
+    expect(capture.getProjection()).toBeUndefined();
+    expect(mockSetDoc).not.toHaveBeenCalled();
+  });
+
+  it('reads each pool exactly once for both teacherSnapshot.questions and publishedProjection', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: VALID_CONFIG,
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    setupTransactionCapture(draftDoc);
+
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    expect(mockLoadSelectedQuestionsWithSolutions).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes teacherSnapshot.questions with order, testo, opzioni, maxPoints and soluzione frozen', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: VALID_CONFIG,
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(draftDoc);
+
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    const teacherSnapshot = capture.getUpdate()?.teacherSnapshot as
+      | { questions?: Record<string, unknown>[]; questionRefs?: unknown[] }
+      | undefined;
+    expect(teacherSnapshot?.questions).toHaveLength(1);
+    const q = teacherSnapshot!.questions![0]!;
+    expect(q.order).toBe(0);
+    expect(q.tipo).toBe('chiusa_singola');
+    expect(q.maxPoints).toBe(VALID_CONFIG.questionRefs[0]!.maxPoints);
+    expect(q.testo).toBe('Domanda 1?');
+    expect(q.opzioni).toEqual(LOADED_QUESTIONS_OK.questions[0].opzioni);
+    expect(q.soluzione).toBe('a');
+    // questionRefs is still kept alongside questions, for tracking/compatibility.
+    expect(teacherSnapshot?.questionRefs).toEqual(VALID_CONFIG.questionRefs);
+  });
+
+  it('freezes teacherSnapshot.questions in the same order as questionRefs, for multiple questions', async () => {
+    const refA = { ...VALID_CONFIG.questionRefs[0]!, questionIndexEntryId: 'qi-a' };
+    const refB = { ...VALID_CONFIG.questionRefs[0]!, questionIndexEntryId: 'qi-b' };
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: { ...VALID_CONFIG, questionRefs: [refA, refB] },
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue({
+      ok: true,
+      questions: [
+        { ref: refA, testo: 'Domanda A', tipo: 'aperta' as const, soluzione: 'Risposta A' },
+        { ref: refB, testo: 'Domanda B', tipo: 'aperta' as const, soluzione: 'Risposta B' },
+      ],
+    });
+    const capture = setupTransactionCapture(draftDoc);
+
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    const teacherSnapshot = capture.getUpdate()?.teacherSnapshot as {
+      questions: Record<string, unknown>[];
+    };
+    expect(teacherSnapshot.questions.map((q) => q.testo)).toEqual(['Domanda A', 'Domanda B']);
+    expect(teacherSnapshot.questions.map((q) => q.order)).toEqual([0, 1]);
+  });
+
+  it('derives publishedProjection.questions from the same loaded result — never a second Storage read', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: VALID_CONFIG,
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(draftDoc);
+
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    expect(mockLoadSelectedQuestionsWithSolutions).toHaveBeenCalledTimes(1);
+    const projectionQuestion = (capture.getProjection()?.questions as Record<string, unknown>[])[0];
+    expect(projectionQuestion.testo).toBe('Domanda 1?');
+    expect(projectionQuestion).not.toHaveProperty('soluzione');
+  });
+
+  it('blocks activation before the transaction when the snapshot would be too large', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: VALID_CONFIG,
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    // A single question whose testo alone exceeds the conservative byte
+    // threshold — cheaper than constructing many questions to reach it.
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue({
+      ok: true,
+      questions: [
+        {
+          ref: VALID_CONFIG.questionRefs[0],
+          testo: 'x'.repeat(800_000),
+          tipo: 'aperta' as const,
+          soluzione: 'y',
+        },
+      ],
+    });
+
+    await expect(
+      activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage),
+    ).rejects.toThrow(/troppo grande/i);
     expect(mockRunTransaction).not.toHaveBeenCalled();
   });
 });

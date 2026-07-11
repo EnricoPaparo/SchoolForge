@@ -338,6 +338,30 @@ export type VerificationConfig = {
   questionsPerStudent?: number | null;
 };
 
+/**
+ * A single question, fully embedded (owner-only, set at activation) so the
+ * teacher's own PDF downloads (normal + solutions) for an `active`/`closed`
+ * verification never need to re-read the current pool file from Storage.
+ * Deliberately minimal: only what `downloadStudentPdf`/
+ * `downloadTeacherSolutionsPdf` actually render — no `poolStorageRef`,
+ * `questionLocalId` or `questionIndexEntryId` (those stay on
+ * `VerificationQuestionRef`/`config.questionRefs`, which remains the
+ * tracking/compatibility record, not the PDF data source once this field is
+ * present). Frozen at activation; never rewritten afterwards (Security
+ * Rules already forbid any post-activation update to `teacherSnapshot` as a
+ * whole — see `firestore.rules`, `verifications/{docId}` update rules).
+ */
+export type VerificationTeacherQuestionSnapshot = {
+  order: number;
+  tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
+  maxPoints: number;
+  testo: string;
+  /** Present only for chiusa_singola / chiusa_multipla. id + testo only. */
+  opzioni?: { id: string; testo: string }[];
+  /** string for aperta/chiusa_singola, string[] for chiusa_multipla. */
+  soluzione: string | string[];
+};
+
 /** Teacher-side full snapshot (owner-only, set at activation) */
 export type VerificationTeacherSnapshot = {
   title: string;
@@ -346,6 +370,16 @@ export type VerificationTeacherSnapshot = {
   programId: string;
   importId: string;
   questionRefs: VerificationQuestionRef[];
+  /**
+   * Absent on verifications activated before this field existed (legacy) —
+   * those keep resolving PDFs from `questionRefs` + the current Storage
+   * pool files (see `resolvePdfSource`/`loadSelectedQuestions*` in
+   * `VerificationsView.tsx`). Every verification activated from now on
+   * always has this populated; `questionRefs` is kept alongside it purely
+   * for tracking/compatibility, not as a PDF data source once `questions`
+   * is present.
+   */
+  questions?: VerificationTeacherQuestionSnapshot[];
   activatedAt: Timestamp;
 };
 
