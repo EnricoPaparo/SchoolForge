@@ -6,7 +6,7 @@
 
 ## 1. Executive summary
 
-SchoolForge è architetturalmente coerente con i suoi obiettivi dichiarati (nessuna Cloud Function, nessun polling, autosave dirty-only, listener singoli e puliti). La revisione statica delle Security Rules (`firestore.rules`, `storage.rules`) non ha trovato nessun gap non enforced rispetto al modello descritto in `sicurezza.md`: isolamento studente, immutabilità post-consegna, blocco enumerazione via `list`, campi privilegiati non modificabili dal client sono tutti verificati a livello di regola con citazione di riga. Il rischio di sicurezza reale più concreto individuato non è nelle Rules ma nel **client**: il cap di 200 attention events è enforced solo in JavaScript (`examDeterrence.ts`), non nelle Rules — un client modificato potrebbe scrivere array arbitrariamente grandi.
+SchoolForge è architetturalmente coerente con i suoi obiettivi dichiarati (nessuna Cloud Function, nessun polling, autosave dirty-only, listener singoli e puliti). La revisione statica delle Security Rules (`firestore.rules`, `storage.rules`) non ha trovato gap non enforced rispetto al modello descritto in `sicurezza.md`: isolamento studente, immutabilità post-consegna, blocco enumerazione via `list`, campi privilegiati non modificabili dal client e limite di 200 attention events sono verificati a livello di regola.
 
 **Nota architetturale (riallineata dopo revisione — vedi changelog in fondo al documento):** SchoolForge oggi è **single-owner/single-tenant per scelta di design**, non per limite non affrontato. `settings/owner` identifica un unico docente per deployment; `isOwner()` concede a quel docente l'accesso alle proprie collezioni; non esiste oggi un insieme di proprietari concorrenti nello stesso portale. Di conseguenza, aggiungere `where('ownerUid','==',ownerUid)` alle query `list*` **non riduce le letture nel sistema attuale** (l'intera collezione coincide già con i dati del singolo docente) — non è quindi un'ottimizzazione di costo per l'oggi, ma al più una preparazione a un eventuale multi-tenant futuro. Il rischio di costo reale è un altro: **la crescita non limitata dello storico di un singolo docente nel tempo** (più verifiche, più classi, più studenti archiviati anno dopo anno), poiché le query `list*` non hanno `limit()`/paginazione e leggono sempre l'intera collezione a ogni apertura, indipendentemente da quanti di quei documenti siano effettivamente rilevanti nella sessione corrente.
 
@@ -14,7 +14,7 @@ Sul fronte costi/prestazioni, il pattern dominante è quindi: **query di collezi
 
 Sul frontend, il bundle di produzione è **un solo chunk JS da 1.19 MB (321.65 KB gzip)**, senza alcun `React.lazy`/code-splitting per ruolo (docente vs studente) o per vista: uno studente scarica anche tutto il codice dell'editor pool/import ZIP/monitor docente mai usato. jsPDF (390 KB) e html2canvas (201 KB, dipendenza transitiva di jsPDF) sono correttamente lazy-caricati solo al momento del download PDF — questo è già ottimale.
 
-Nessun finding **P0** (rischio immediato di sicurezza o perdita dati) è stato trovato. Sono stati identificati **2 P1**, **5 P2**, **4 P3** (dettaglio §6).
+Nessun finding **P0** (rischio immediato di sicurezza o perdita dati) è stato trovato. Sono stati identificati **2 P1**, **4 P2**, **4 P3** (dettaglio §6).
 
 ## 2. Metodo e limiti
 
@@ -101,7 +101,7 @@ Nessun indice esiste per `verifications`/`programs`/`classes`/`students` filtrat
 ### Avvio, autosave e consegna online (studente)
 - Avvio/ripresa sessione (`examSessionService.findActiveDraftSession`): **loop sequenziale di `getDoc` singoli**, uno per verifica online candidata — non `Promise.all`. Basso rischio pratico (poche verifiche online candidate per studente in un dato momento) ma è un pattern sequenziale evitabile.
 - Autosave: `setInterval` a 120 000 ms, dirty-only (nessuna write se nulla è cambiato dall'ultimo tick), 1 **W** per tick attivo — confermato in `OnlineExamView.tsx:21,178-185`.
-- Attention events: bufferizzati in memoria, **mai causa di write da soli** (commento esplicito nel codice), viaggiano solo agganciati al prossimo autosave "vero" o alla consegna, con `arrayUnion` solo se ci sono nuovi eventi. Cap 200 lato client (`examDeterrence.ts`).
+- Attention events: bufferizzati in memoria, **mai causa di write da soli** (commento esplicito nel codice), viaggiano solo agganciati al prossimo autosave "vero" o alla consegna, con `arrayUnion` solo se ci sono nuovi eventi. Cap 200 lato client (`examDeterrence.ts`) e nelle Rules sia su create sia su update (`firestore.rules`); test Rules positivi a 200 e negativi a 201 già presenti.
 - Consegna: 1 **B** (update submission + set receipt, atomico).
 
 ### Monitor consegne docente
@@ -268,16 +268,6 @@ Nessun gap "NOT ENFORCED" è stato trovato in `firestore.rules`/`storage.rules` 
 
 Un solo elemento è annotato come **"enforced ma degno di nota"**: la lettura di `settings/studentAccess` è intenzionalmente aperta a *qualunque* utente autenticato (anche non ancora approvato) — la scrittura resta owner-only e ogni gate di contenuto reale ri-legge il documento server-side, quindi non è uno scavalcamento di sicurezza, ma espone comunque quali `classId` sono in Modalità verifica a un account Google autenticato ma non approvato. Documentato come tradeoff esplicito già in `sicurezza.md`, non trattato come finding SEC in questo report perché non contraddice il contratto documentato.
 
-**SEC-01 (P2) — Il cap di 200 attention events è enforced solo lato client**
-- Evidenza: `examDeterrence.ts` — `MAX_ATTENTION_EVENTS = 200` applicato da `capAttentionEvents`, richiamata prima di ogni `arrayUnion` in `submissionsService.ts`. Nessun riferimento a `attentionEvents.size()` o simile è stato trovato in `firestore.rules` durante la revisione delle regole `submissions` (righe 396-513).
-- Prerequisiti dell'attacco: un client modificato (bypass della UI React, chiamata diretta all'SDK Firestore) che invia un `update` con un array `attentionEvents` più lungo di 200 elementi.
-- Impatto: crescita del documento `submissions` oltre il limite atteso (comunque ben sotto il limite fisico di 1 MB per documento anche con migliaia di eventi, essendo ogni evento un piccolo record `{type, ts}`), quindi non è un rischio di perdita dati o violazione di isolamento — è un mancato enforcement di un vincolo di igiene dati dichiarato come garantito ("Gli attention events... sono limitati a 200" nel contesto del task). Il rischio pratico è basso (nessun dato sensibile aggiuntivo esposto, nessun altro utente impattato) ma il vincolo non è oggi verificabile lato server.
-- Soluzione minimale: aggiungere un vincolo `request.resource.data.attentionEvents.size() <= 200` alla regola di update di `submissions` in `firestore.rules` (fuori ambito di questa fase, che non modifica le Rules — da valutare in PERF-SEC-01B).
-- Beneficio atteso: garanzia server-side del vincolo già rispettato dal client onesto.
-- Rischio della modifica: basso — regola additiva, non restringe alcun comportamento client legittimo esistente (che già rispetta il cap).
-- File coinvolti: `firestore.rules` (blocco `submissions`, update rule).
-- Verifica necessaria: test Rules mirato (positivo: ≤200 eventi accettato; negativo: >200 rifiutato) — richiederebbe `pnpm test:rules`, non eseguito in questa fase.
-
 ## 8. Budget prestazionale proposto
 
 Contratto minimo, basato sulle soglie già osservate nel codice attuale (non valori arbitrari):
@@ -288,11 +278,11 @@ Contratto minimo, basato sulle soglie già osservate nel codice attuale (non val
 | Massimo un listener realtime per funzione attiva | 1 `onSnapshot` per (monitor consegne docente), 1 per (Modalità verifica studente) | Pattern già rispettato ovunque nel codice attuale |
 | Listener chiuso quando la vista non è attiva | Cleanup nell'`useEffect` return in ogni componente con `onSnapshot` | Già rispettato (monitor, StudentShell) |
 | Autosave minimo 120s, dirty-only | 120 000 ms, nessuna write se non ci sono modifiche | Valore già in produzione (`OnlineExamView.tsx:21`) |
-| Nessuna write causata dai soli attention events | Eventi bufferizzati in memoria, mai `arrayUnion` isolato | Già rispettato; SEC-01 chiede solo l'enforcement server-side del cap, non tocca questo vincolo |
+| Nessuna write causata dai soli attention events | Eventi bufferizzati in memoria, mai `arrayUnion` isolato | Già rispettato |
 | Query di collezioni strutturalmente crescenti sempre limitate o paginate | `limit()`/paginazione esplicita su `verifications` (storico che cresce nel tempo) e, se necessario in futuro, su `students`; nessun filtro `ownerUid` da introdurre nell'architettura single-owner attuale (non produrrebbe risparmio, vedi PERF-01) | Oggi violato da PERF-01 (assenza di tetto sullo storico) — soglia proposta come target di remediation |
 | Niente N+1 sui flussi frequenti | Batch invece di loop `await` sequenziale per scritture multiple sullo stesso trigger utente | Oggi violato da PERF-04 (pool) — soglia proposta come target |
 | Nessun contenuto pesante caricato prima dell'apertura | jsPDF/html2canvas restano lazy (già rispettato); considerare lazy anche per sezioni intere per ruolo (PERF-10, target futuro) | jsPDF già lazy, confermato in build |
-| Limite 200 attention events | Enforced lato client oggi; enforced anche lato Rules dopo SEC-01 | Valore già dichiarato nel contesto del progetto |
+| Limite 200 attention events | Enforced lato client e nelle Rules su create/update; test Rules 200/201 presenti | Vincolo già rispettato end-to-end |
 | Cancellazioni con feedback di avanzamento e stato recuperabile | Non misurato in questa sessione se `deleteProgram`/`deletePool` espongono progresso incrementale alla UI — verificare in una fase successiva, nessun finding aperto qui per mancanza di evidenza diretta raccolta | — |
 | Budget bundle iniziale e chunk PDF separati | Bundle iniziale (entry, gzip) sotto ~350 KB gzip come soglia di allarme (attuale: 321.65 KB gzip, già vicino al limite proposto); chunk PDF (jspdf+html2canvas) resta lazy, mai nel bundle iniziale | Soglia derivata dalla misura attuale stessa: 321.65 KB è già la baseline reale, quindi il budget proposto è "non peggiorare oltre ~10% da qui" finché non si applica PERF-10 |
 
@@ -300,9 +290,8 @@ Contratto minimo, basato sulle soglie già osservate nel codice attuale (non val
 
 Proposto in pacchetti tematici, ciascuno indipendentemente approvabile ed eseguibile — non un ordine numerico rigido ma un raggruppamento per tipo di beneficio, in modo da poter approvare/rimandare un pacchetto alla volta:
 
-**01B-1 — Correttezza e sicurezza** (priorità più alta: riguardano dati potenzialmente incoerenti o vincoli non garantiti server-side, non solo velocità)
+**01B-1 — Correttezza delle proiezioni**
 - **PERF-05** — allineare `setVerificationVisibility`/`closeVerification` al pattern `writeBatch` atomico già usato dalle funzioni gemelle nello stesso file. Beneficio: elimina una finestra di incoerenza reale tra `verifications` e `publishedProjection`. Complessità: minima, pattern già collaudato.
-- **SEC-01** — cap di 200 attention events enforced anche lato Rules (`attentionEvents.size() <= 200`). Beneficio: garanzia server-side di un vincolo oggi solo client-side. Complessità: bassa, ma richiede toccare `firestore.rules` e quindi `pnpm test:rules` — esplicitamente fuori ambito della fase A, da eseguire solo se questo pacchetto viene approvato.
 
 **01B-2 — Latenza delle operazioni** (percepita dall'utente, non costo economico)
 - **PERF-04** — batch invece di loop sequenziale in `savePool`. Beneficio: salvataggio pool quasi istantaneo indipendentemente dal numero di domande. Complessità: bassa, pattern già collaudato nello stesso file.
@@ -325,7 +314,6 @@ Rimandabili senza pacchetto dedicato, a beneficio marginale ai volumi attuali: *
 - Osservare da Firebase Console (scheda Utilizzo) il conteggio reale di letture/scritture Firestore durante una sessione di verifica online reale con almeno 5-10 studenti simultanei, per confrontare con le stime di §5 scenario B.
 - Dopo l'eventuale remediation di PERF-01/PERF-02, confermare via Console che il numero di letture per apertura vista docente sia effettivamente sceso.
 - Dopo l'eventuale remediation di PERF-04, misurare il tempo di salvataggio pool prima/dopo su un pool con almeno 30-50 domande.
-- Se si implementa SEC-01, eseguire `pnpm test:rules` con un caso positivo (200 eventi) e uno negativo (201 eventi) prima del deploy.
 - Se si implementa PERF-10, eseguire `pnpm build` e confrontare la dimensione del chunk iniziale scaricato da un utente studente vs docente (via Network tab), non solo la dimensione totale del bundle.
 
 ---
@@ -334,7 +322,7 @@ Rimandabili senza pacchetto dedicato, a beneficio marginale ai volumi attuali: *
 
 **Giudizio sintetico**: architettura solida e coerente con gli obiettivi minimalisti dichiarati; nessun problema di sicurezza enforced mancante nelle Rules; SchoolForge è single-owner/single-tenant per scelta di design, non per limite non affrontato — un filtro `ownerUid` sulle query non produce risparmio nel sistema attuale. Il rischio reale non è "più docenti" ma la crescita non limitata nel tempo dello storico di un singolo docente (soprattutto `verifications`), mitigabile con paginazione mirata.
 
-**Finding (aggiornati dopo revisione)**: 0 P0, **2 P1** (PERF-04, PERF-05), **5 P2** (PERF-01, PERF-02, PERF-03, PERF-07, SEC-01), **4 P3** (PERF-06, PERF-08, PERF-09, PERF-10).
+**Finding (aggiornati dopo revisione)**: 0 P0, **2 P1** (PERF-04, PERF-05), **4 P2** (PERF-01, PERF-02, PERF-03, PERF-07), **4 P3** (PERF-06, PERF-08, PERF-09, PERF-10).
 
 **Cambiamenti di classificazione rispetto alla prima versione**:
 - **PERF-01**: P1 → P2 — riscritto da "manca filtro `ownerUid`" a "manca un tetto/paginazione sullo storico"; ai volumi personali dichiarati non è un rischio importante immediato.
@@ -347,17 +335,17 @@ Rimandabili senza pacchetto dedicato, a beneficio marginale ai volumi attuali: *
 1. `savePool` scrive una domanda alla volta in sequenza, nessun batching (PERF-04, P1) — latenza percepita proporzionale al numero di domande.
 2. Incoerenza di atomicità tra `setVerificationVisibility`/`closeVerification` (non atomici) e le loro funzioni gemelle già atomiche nello stesso file (PERF-05, P1) — finestra di stato incoerente confermata dal codice in caso di errore transitorio.
 3. `listVerifications` non ha un tetto sullo storico letto a ogni apertura (PERF-01, P2) — cresce nel tempo con l'uso del singolo docente, non con "altri docenti".
-4. Cap di 200 attention events enforced solo lato client, non nelle Rules (SEC-01, P2) — vincolo dichiarato non garantito server-side.
-5. Import ZIP e swap `publicLessons` non gestiscono il limite di 500 mutazioni per batch/transazione (PERF-03, P2) — rischio di fallimento a scala, non osservato ma non gestito.
+4. Import ZIP e swap `publicLessons` non gestiscono il limite di 500 mutazioni per batch/transazione (PERF-03, P2) — rischio di fallimento a scala, non osservato ma non gestito.
+5. Il monitor trasferisce documenti submission completi anche se scarta le risposte prima del render (PERF-07, P2) — costo di banda, non di read Firestore.
 
 **Cinque ottimizzazioni con miglior rapporto beneficio/complessità**:
 1. PERF-05 — allineare `setVerificationVisibility`/`closeVerification` al pattern batch già collaudato (pacchetto 01B-1).
 2. PERF-04 — batch invece di loop sequenziale in `savePool` (pacchetto 01B-2).
-3. SEC-01 — cap 200 eventi enforced anche lato Rules (pacchetto 01B-1).
-4. PERF-09 — concorrenza limitata anche per il PDF soluzioni (pacchetto 01B-2).
-5. PERF-08 — evitare la doppia lettura studenti, solo se confermato un uso combinato reale (pacchetto 01B-3).
+3. PERF-09 — concorrenza limitata anche per il PDF soluzioni (pacchetto 01B-2).
+4. PERF-08 — evitare la doppia lettura studenti, solo se confermato un uso combinato reale (pacchetto 01B-3).
+5. PERF-01 — progettare una paginazione dello storico senza nascondere bozze o dati raggiungibili (pacchetto 01B-3).
 
-**Nuova sequenza PERF-SEC-01B (pacchetti, non ordine numerico rigido)**: 01B-1 (correttezza/sicurezza: PERF-05, SEC-01) → 01B-2 (latenza: PERF-04, PERF-09) → 01B-3 (letture/crescita dati: PERF-01 corretto, PERF-08 se confermato, altri scan mirati) → 01B-4 (bundle: misura prima, code-splitting solo se il beneficio è concreto, PERF-06 come pulizia minima). Dettaglio in §9.
+**Nuova sequenza PERF-SEC-01B (pacchetti, non ordine numerico rigido)**: 01B-1 (correttezza: PERF-05) → 01B-2 (latenza: PERF-04, PERF-09) → 01B-3 (letture/crescita dati: PERF-01 corretto, PERF-08 se confermato, altri scan mirati) → 01B-4 (bundle: misura prima, code-splitting solo se il beneficio è concreto, PERF-06 come pulizia minima). Dettaglio in §9.
 
 **Stima operativa dei tre scenari**: la stima statica indica margine ampio rispetto alla quota gratuita Firestore per lo scenario A (uso personale) e lo scenario B (verifica online da 30 studenti), sulla base dei conteggi di operazioni dedotti dal codice — **da confermare con misure Firebase Console**, non osservata in questa sessione. Lo scenario C (più docenti) non è supportato nell'architettura single-tenant attuale: le due strategie future possibili sono (a) un progetto Firebase separato per docente/istituto, più semplice e isolato, o (b) un redesign multi-tenant nello stesso progetto — nessuna delle due è nell'MVP attuale. Nel modello di oggi, il moltiplicatore di costo reale è la crescita nel tempo di un singolo docente (più classi/studenti/verifiche archiviate), mitigata dal pacchetto 01B-3.
 
