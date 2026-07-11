@@ -348,11 +348,18 @@ export function VerificationsView() {
     setActivating(true);
     setActivateError(null);
     try {
-      const questionRefs = buildQuestionRefsFromSelection();
-      if (questionRefs !== null) {
-        await updateVerificationConfig(selectedVer.id, { questionRefs }, ownerUid, db);
+      const title = editDraftTitle.trim();
+      if (!title) {
+        setActivateError('Inserisci un titolo prima di attivare la verifica.');
+        return;
       }
-      const classItem = classes.find((c) => c.id === selectedVer.config.classId) ?? null;
+      const classId = editDraftClassId || null;
+      const questionRefs = buildQuestionRefsFromSelection();
+      const patch = questionRefs === null ? { title, classId } : { title, classId, questionRefs };
+      // Activation must freeze exactly what is currently visible in the draft
+      // editor, even when the teacher did not click "Salva bozza" first.
+      await updateVerificationConfig(selectedVer.id, patch, ownerUid, db);
+      const classItem = classes.find((c) => c.id === classId) ?? null;
       await activateVerification(selectedVer.id, classItem, ownerUid, db, storage);
       setShowActivateConfirm(false);
       const updated = await listVerifications(ownerUid, db);

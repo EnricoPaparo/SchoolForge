@@ -671,6 +671,39 @@ describe('VerificationsView', () => {
     );
   });
 
+  it('activation persists the currently edited title, class and questions before freezing', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+
+    await waitFor(() => screen.getByLabelText(/titolo bozza/i));
+    fireEvent.change(screen.getByLabelText(/titolo bozza/i), {
+      target: { value: 'Verifica pronta' },
+    });
+    fireEvent.change(screen.getByLabelText('Classe', { exact: true }), { target: { value: '' } });
+    fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
+
+    fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
+    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
+
+    await waitFor(() =>
+      expect(mockUpdateVerificationConfig).toHaveBeenCalledWith(
+        'ver-1',
+        expect.objectContaining({
+          title: 'Verifica pronta',
+          classId: null,
+          questionRefs: [expect.objectContaining({ questionIndexEntryId: 'qi-1' })],
+        }),
+        'owner-uid',
+        {},
+      ),
+    );
+    expect(mockActivateVerification).toHaveBeenCalledWith('ver-1', null, 'owner-uid', {}, {});
+  });
+
   it('Salva bozza and Attiva verifica are adjacent, in this order, and neither is duplicated elsewhere', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
