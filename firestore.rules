@@ -269,6 +269,7 @@ service cloud.firestore {
         && request.resource.data.status == 'active'
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['onlineEnabled', 'updatedAt'])
+        && request.resource.data.onlineEnabled is bool
         && (request.resource.data.onlineEnabled != true
             || resource.data.config.classId != null);
     }

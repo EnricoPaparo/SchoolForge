@@ -1141,6 +1141,10 @@ describe('VerificationsView — consegne online monitor (M3F-05)', () => {
         expect.any(Function),
       ),
     );
+    // Simulates the initial (empty) onSnapshot delivery, same as watchSubmissions
+    // would fire in production before any submission exists yet.
+    pushItems([]);
+
     // Only the same-class approved students appear; Carla (other-class) is excluded.
     await waitFor(() => expect(screen.getByText('Anna')).toBeTruthy());
     const names = screen.getAllByText(/^(Anna|Bruno|Carla)$/).map((n) => n.textContent);
@@ -1185,6 +1189,33 @@ describe('VerificationsView — consegne online monitor (M3F-05)', () => {
     fireEvent.click(screen.getByRole('button', { name: /consegne online/i }));
 
     await waitFor(() => expect(screen.getByText('In corso')).toBeTruthy());
+  });
+
+  it('keeps showing the loading state — never "Non iniziata" — while students are loaded but the first submissions snapshot has not arrived yet', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerWithClass()]);
+    mockListStudents.mockResolvedValue([approvedStudents[1]]); // Anna only
+    let pushItems: (items: unknown[]) => void = () => {};
+    mockWatchSubmissions.mockImplementation((_verId, _ownerUid, _db, onChange) => {
+      pushItems = onChange;
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /consegne online/i }));
+    fireEvent.click(screen.getByRole('button', { name: /consegne online/i }));
+
+    // Students resolved (mockListStudents is a resolved promise), but the
+    // submissions listener has not delivered its first snapshot yet: the
+    // monitor must stay in the loading state, never claim "Non iniziata"
+    // before it actually knows whether a submission exists.
+    await waitFor(() => expect(screen.getByText(/caricamento consegne/i)).toBeTruthy());
+    expect(screen.queryByText('Non iniziata')).toBeNull();
+    expect(screen.queryByText('Anna')).toBeNull();
+
+    pushItems([]);
+
+    await waitFor(() => expect(screen.getByText('Non iniziata')).toBeTruthy());
+    expect(screen.getByText('Anna')).toBeTruthy();
   });
 
   it('never renders answer content — only compact monitor fields', async () => {

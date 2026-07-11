@@ -197,4 +197,21 @@ describe('Firestore rules — verifications onlineEnabled toggle (M3F-05)', () =
       }),
     );
   });
+
+  it.each([null, 'true', 1, {}, []])(
+    'rejects a non-boolean onlineEnabled value (%j)',
+    async (nonBoolValue) => {
+      await seedOwner();
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), 'verifications/v1'), ACTIVE_DOC_WITH_CLASS);
+      });
+      await assertFails(
+        setDoc(doc(ownerDb(), 'verifications/v1'), {
+          ...ACTIVE_DOC_WITH_CLASS,
+          onlineEnabled: nonBoolValue,
+          updatedAt: null,
+        }),
+      );
+    },
+  );
 });

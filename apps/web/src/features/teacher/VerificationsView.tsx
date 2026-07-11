@@ -725,7 +725,7 @@ export function VerificationsView() {
                           <div className={styles.confirmRow}>
                             <button
                               type="button"
-                              className="btn-danger"
+                              className="btn-primary"
                               disabled={onlineLoadingId === v.id}
                               onClick={() => void handleConfirmDisableOnline(v.id)}
                             >
@@ -1076,58 +1076,63 @@ export function VerificationsView() {
                   {monitorError}
                 </p>
               )}
-              {!monitorError && monitorStudents === null && (
-                <p aria-busy="true" className="state-loading">
-                  Caricamento consegne…
-                </p>
-              )}
+              {!monitorError &&
+                (monitorStudents === null ||
+                  (monitorStudents.length > 0 && monitorItems === null)) && (
+                  <p aria-busy="true" className="state-loading">
+                    Caricamento consegne…
+                  </p>
+                )}
               {!monitorError && monitorStudents !== null && monitorStudents.length === 0 && (
                 <p className="state-empty">Nessuno studente approvato in questa classe.</p>
               )}
-              {!monitorError && monitorStudents !== null && monitorStudents.length > 0 && (
-                <div className={styles.tableWrap}>
-                  <table className={styles.table}>
-                    <thead>
-                      <tr>
-                        <th className={styles.th}>Studente</th>
-                        <th className={styles.th}>Stato</th>
-                        <th className={styles.th}>Ultimo salvataggio</th>
-                        <th className={styles.th}>Consegnata il</th>
-                        <th className={styles.th}>Eventi</th>
-                        <th className={styles.th}>Codice</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {monitorStudents.map((s) => {
-                        const item = monitorItems?.find((m) => m.studentUid === s.id);
-                        const stateLabel = !item
-                          ? 'Non iniziata'
-                          : item.status === 'submitted'
-                            ? 'Consegnata'
-                            : 'In corso';
-                        return (
-                          <tr key={s.id} className={styles.row}>
-                            <td className={styles.td}>{s.displayName ?? s.email}</td>
-                            <td className={styles.td}>{stateLabel}</td>
-                            <td className={`${styles.td} ${styles.metaCell}`}>
-                              {item ? formatTimestamp(item.lastSavedAt) : '—'}
-                            </td>
-                            <td className={`${styles.td} ${styles.metaCell}`}>
-                              {item ? formatTimestamp(item.submittedAt) : '—'}
-                            </td>
-                            <td className={`${styles.td} ${styles.metaCell}`}>
-                              {item?.attentionEventsCount ?? 0}
-                            </td>
-                            <td className={`${styles.td} ${styles.metaCell}`}>
-                              {item?.deliveryCode ?? '—'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {!monitorError &&
+                monitorStudents !== null &&
+                monitorStudents.length > 0 &&
+                monitorItems !== null && (
+                  <div className={styles.tableWrap}>
+                    <table className={styles.table}>
+                      <thead>
+                        <tr>
+                          <th className={styles.th}>Studente</th>
+                          <th className={styles.th}>Stato</th>
+                          <th className={styles.th}>Ultimo salvataggio</th>
+                          <th className={styles.th}>Consegnata il</th>
+                          <th className={styles.th}>Eventi</th>
+                          <th className={styles.th}>Codice</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {monitorStudents.map((s) => {
+                          const item = monitorItems?.find((m) => m.studentUid === s.id);
+                          const stateLabel = !item
+                            ? 'Non iniziata'
+                            : item.status === 'submitted'
+                              ? 'Consegnata'
+                              : 'In corso';
+                          return (
+                            <tr key={s.id} className={styles.row}>
+                              <td className={styles.td}>{s.displayName ?? s.email}</td>
+                              <td className={styles.td}>{stateLabel}</td>
+                              <td className={`${styles.td} ${styles.metaCell}`}>
+                                {item ? formatTimestamp(item.lastSavedAt) : '—'}
+                              </td>
+                              <td className={`${styles.td} ${styles.metaCell}`}>
+                                {item ? formatTimestamp(item.submittedAt) : '—'}
+                              </td>
+                              <td className={`${styles.td} ${styles.metaCell}`}>
+                                {item?.attentionEventsCount ?? 0}
+                              </td>
+                              <td className={`${styles.td} ${styles.metaCell}`}>
+                                {item?.deliveryCode ?? '—'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
             </div>
           )}
         </div>
