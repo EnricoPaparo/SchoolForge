@@ -28,6 +28,7 @@ export type AuditAction =
   | 'verification.updated'
   | 'verification.activated'
   | 'verification.visibilityChanged'
+  | 'verification.onlineEnabledChanged'
   | 'verification.closed'
   | 'verification.deleted'
   | 'studentAccess.updated'

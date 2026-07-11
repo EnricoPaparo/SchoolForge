@@ -10,11 +10,14 @@ const mockCreateVerification = vi.fn();
 const mockUpdateVerificationConfig = vi.fn();
 const mockActivateVerification = vi.fn();
 const mockSetVerificationVisibility = vi.fn();
+const mockSetVerificationOnlineEnabled = vi.fn();
 const mockCloseVerification = vi.fn();
 const mockDeleteVerification = vi.fn();
 const mockListQuestionIndex = vi.fn();
 const mockListPrograms = vi.fn();
 const mockListClasses = vi.fn();
+const mockListStudents = vi.fn();
+const mockWatchSubmissions = vi.fn();
 
 const mockLoadSelectedQuestions = vi.fn();
 const mockDownloadStudentPdf = vi.fn();
@@ -42,17 +45,24 @@ vi.mock('../../repository/verifications/verificationsService.js', () => ({
   updateVerificationConfig: (...args: unknown[]) => mockUpdateVerificationConfig(...args),
   activateVerification: (...args: unknown[]) => mockActivateVerification(...args),
   setVerificationVisibility: (...args: unknown[]) => mockSetVerificationVisibility(...args),
+  setVerificationOnlineEnabled: (...args: unknown[]) => mockSetVerificationOnlineEnabled(...args),
   closeVerification: (...args: unknown[]) => mockCloseVerification(...args),
   deleteVerification: (...args: unknown[]) => mockDeleteVerification(...args),
 }));
 vi.mock('../../repository/verifications/questionIndexService.js', () => ({
   listQuestionIndex: (...args: unknown[]) => mockListQuestionIndex(...args),
 }));
+vi.mock('../../repository/verifications/submissionsMonitorService.js', () => ({
+  watchSubmissions: (...args: unknown[]) => mockWatchSubmissions(...args),
+}));
 vi.mock('../../repository/classes/classesService.js', () => ({
   listClasses: (...args: unknown[]) => mockListClasses(...args),
 }));
 vi.mock('../../repository/programs/programsService.js', () => ({
   listPrograms: (...args: unknown[]) => mockListPrograms(...args),
+}));
+vi.mock('../../repository/students/studentsService.js', () => ({
+  listStudents: (...args: unknown[]) => mockListStudents(...args),
 }));
 
 const sampleProgram = {
@@ -144,6 +154,9 @@ function setupDefaults() {
   mockDownloadStudentPdf.mockResolvedValue(undefined);
   mockLoadSelectedQuestionsWithSolutions.mockResolvedValue({ ok: true, questions: [] });
   mockDownloadTeacherSolutionsPdf.mockResolvedValue(undefined);
+  mockSetVerificationOnlineEnabled.mockResolvedValue(undefined);
+  mockListStudents.mockResolvedValue([]);
+  mockWatchSubmissions.mockReturnValue(vi.fn());
 }
 
 describe('VerificationsView', () => {
@@ -953,6 +966,329 @@ describe('VerificationsView', () => {
     await waitFor(() => expect(within(region).getByRole('alert')).toBeTruthy());
     expect(within(region).getByRole('alert').textContent).toMatch(/non è chiusa/i);
     expect(screen.getByText('Verifica Algebra')).toBeTruthy();
+  });
+});
+
+describe('VerificationsView — online toggle (M3F-05)', () => {
+  const activeVerOnline = (overrides = {}) =>
+    makeDraftVer({ status: 'active', onlineEnabled: false, ...overrides });
+
+  it('enables online with no confirmation required', async () => {
+    setupDefaults();
+    const activeVer = activeVerOnline();
+    mockListVerifications
+      .mockResolvedValueOnce([activeVer])
+      .mockResolvedValue([{ ...activeVer, onlineEnabled: true }]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+
+    fireEvent.click(screen.getByRole('switch', { name: /attiva online/i }));
+
+    await waitFor(() =>
+      expect(mockSetVerificationOnlineEnabled).toHaveBeenCalledWith('ver-1', true, 'owner-uid', {}),
+    );
+    expect(screen.queryByRole('region', { name: /conferma disattivazione online/i })).toBeNull();
+  });
+
+  it('requires confirmation before disabling online, with the exact warning message', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerOnline({ onlineEnabled: true })]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+
+    fireEvent.click(screen.getByRole('switch', { name: /disattiva online/i }));
+
+    const region = await screen.findByRole('region', { name: /conferma disattivazione online/i });
+    expect(
+      within(region).getByText(
+        /le bozze esistenti non potranno essere salvate o consegnate finché l.online resta disabilitato/i,
+      ),
+    ).toBeTruthy();
+    expect(mockSetVerificationOnlineEnabled).not.toHaveBeenCalled();
+
+    fireEvent.click(within(region).getByRole('button', { name: /disattiva online/i }));
+    await waitFor(() =>
+      expect(mockSetVerificationOnlineEnabled).toHaveBeenCalledWith(
+        'ver-1',
+        false,
+        'owner-uid',
+        {},
+      ),
+    );
+  });
+
+  it('disabling online can be cancelled without calling the service', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerOnline({ onlineEnabled: true })]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+
+    fireEvent.click(screen.getByRole('switch', { name: /disattiva online/i }));
+    const region = await screen.findByRole('region', { name: /conferma disattivazione online/i });
+    fireEvent.click(within(region).getByRole('button', { name: /annulla/i }));
+
+    expect(screen.queryByRole('region', { name: /conferma disattivazione online/i })).toBeNull();
+    expect(mockSetVerificationOnlineEnabled).not.toHaveBeenCalled();
+  });
+
+  it('disables the online switch with an explanation when the verification has no class', async () => {
+    setupDefaults();
+    const noClassVer = activeVerOnline({
+      config: { ...makeDraftVer().config, classId: null },
+    });
+    mockListVerifications.mockResolvedValue([noClassVer]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+
+    const toggle = screen.getByRole('switch', { name: /attiva online/i });
+    expect(toggle).toHaveProperty('disabled', true);
+    expect(screen.getByText('Nessuna classe')).toBeTruthy();
+  });
+
+  it('shows a readable error when enabling online fails, without crashing', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerOnline()]);
+    mockSetVerificationOnlineEnabled.mockRejectedValue(
+      new Error("Assegnare una classe prima di attivare l'online"),
+    );
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+
+    fireEvent.click(screen.getByRole('switch', { name: /attiva online/i }));
+
+    await waitFor(() => screen.getByRole('alert'));
+    expect(screen.getByRole('alert').textContent).toMatch(/assegnare una classe/i);
+  });
+});
+
+describe('VerificationsView — consegne online monitor (M3F-05)', () => {
+  const activeVerWithClass = (overrides = {}) =>
+    makeDraftVer({
+      status: 'active',
+      onlineEnabled: true,
+      teacherSnapshot: {
+        title: 'Verifica Algebra',
+        classId: 'cls-1',
+        className: 'Classe 3A',
+        programId: 'prog-1',
+        importId: 'imp-1',
+        questionRefs: [sampleQuestionRef],
+        activatedAt: null,
+      },
+      ...overrides,
+    });
+
+  const approvedStudents = [
+    {
+      id: 'stud-b',
+      ownerUid: 'owner-uid',
+      uid: 'stud-b',
+      email: 'b@x.it',
+      displayName: 'Bruno',
+      status: 'approved' as const,
+      classId: 'cls-1',
+      createdAt: null,
+      updatedAt: null,
+      lastLoginAt: null,
+    },
+    {
+      id: 'stud-a',
+      ownerUid: 'owner-uid',
+      uid: 'stud-a',
+      email: 'a@x.it',
+      displayName: 'Anna',
+      status: 'approved' as const,
+      classId: 'cls-1',
+      createdAt: null,
+      updatedAt: null,
+      lastLoginAt: null,
+    },
+    {
+      id: 'stud-c',
+      ownerUid: 'owner-uid',
+      uid: 'stud-c',
+      email: 'c@x.it',
+      displayName: 'Carla',
+      status: 'approved' as const,
+      classId: 'other-class',
+      createdAt: null,
+      updatedAt: null,
+      lastLoginAt: null,
+    },
+  ];
+
+  it('opens exactly one submissions listener scoped to ownerUid + verificationId, joins by studentUid, sorted alphabetically', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerWithClass()]);
+    mockListStudents.mockResolvedValue(approvedStudents);
+    let pushItems: (items: unknown[]) => void = () => {};
+    const unsubscribe = vi.fn();
+    mockWatchSubmissions.mockImplementation((_verId, _ownerUid, _db, onChange) => {
+      pushItems = onChange;
+      return unsubscribe;
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /consegne online/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /consegne online/i }));
+
+    await waitFor(() =>
+      expect(mockWatchSubmissions).toHaveBeenCalledWith(
+        'ver-1',
+        'owner-uid',
+        {},
+        expect.any(Function),
+        expect.any(Function),
+      ),
+    );
+    // Simulates the initial (empty) onSnapshot delivery, same as watchSubmissions
+    // would fire in production before any submission exists yet.
+    pushItems([]);
+
+    // Only the same-class approved students appear; Carla (other-class) is excluded.
+    await waitFor(() => expect(screen.getByText('Anna')).toBeTruthy());
+    const names = screen.getAllByText(/^(Anna|Bruno|Carla)$/).map((n) => n.textContent);
+    expect(names).toEqual(['Anna', 'Bruno']);
+
+    pushItems([
+      {
+        studentUid: 'stud-a',
+        status: 'submitted',
+        lastSavedAt: { seconds: 100, nanoseconds: 0 },
+        submittedAt: { seconds: 200, nanoseconds: 0 },
+        deliveryCode: 'SF-2026-A1B2',
+        attentionEventsCount: 3,
+      },
+    ]);
+
+    await waitFor(() => expect(screen.getByText('Consegnata')).toBeTruthy());
+    expect(screen.getByText('Non iniziata')).toBeTruthy(); // Bruno has no submission
+    expect(screen.getByText('SF-2026-A1B2')).toBeTruthy();
+    expect(screen.getByText('3')).toBeTruthy();
+  });
+
+  it('shows "In corso" for a draft submission', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerWithClass()]);
+    mockListStudents.mockResolvedValue([approvedStudents[1]]); // Anna only
+    mockWatchSubmissions.mockImplementation((_verId, _ownerUid, _db, onChange) => {
+      onChange([
+        {
+          studentUid: 'stud-a',
+          status: 'draft',
+          lastSavedAt: { seconds: 100, nanoseconds: 0 },
+          submittedAt: null,
+          deliveryCode: null,
+          attentionEventsCount: 0,
+        },
+      ]);
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /consegne online/i }));
+    fireEvent.click(screen.getByRole('button', { name: /consegne online/i }));
+
+    await waitFor(() => expect(screen.getByText('In corso')).toBeTruthy());
+  });
+
+  it('keeps showing the loading state — never "Non iniziata" — while students are loaded but the first submissions snapshot has not arrived yet', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerWithClass()]);
+    mockListStudents.mockResolvedValue([approvedStudents[1]]); // Anna only
+    let pushItems: (items: unknown[]) => void = () => {};
+    mockWatchSubmissions.mockImplementation((_verId, _ownerUid, _db, onChange) => {
+      pushItems = onChange;
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /consegne online/i }));
+    fireEvent.click(screen.getByRole('button', { name: /consegne online/i }));
+
+    // Students resolved (mockListStudents is a resolved promise), but the
+    // submissions listener has not delivered its first snapshot yet: the
+    // monitor must stay in the loading state, never claim "Non iniziata"
+    // before it actually knows whether a submission exists.
+    await waitFor(() => expect(screen.getByText(/caricamento consegne/i)).toBeTruthy());
+    expect(screen.queryByText('Non iniziata')).toBeNull();
+    expect(screen.queryByText('Anna')).toBeNull();
+
+    pushItems([]);
+
+    await waitFor(() => expect(screen.getByText('Non iniziata')).toBeTruthy());
+    expect(screen.getByText('Anna')).toBeTruthy();
+  });
+
+  it('never renders answer content — only compact monitor fields', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerWithClass()]);
+    mockListStudents.mockResolvedValue([approvedStudents[1]]);
+    mockWatchSubmissions.mockImplementation((_verId, _ownerUid, _db, onChange) => {
+      onChange([
+        {
+          studentUid: 'stud-a',
+          status: 'submitted',
+          lastSavedAt: { seconds: 100, nanoseconds: 0 },
+          submittedAt: { seconds: 200, nanoseconds: 0 },
+          deliveryCode: 'SF-2026-A1B2',
+          attentionEventsCount: 1,
+        },
+      ]);
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /consegne online/i }));
+    fireEvent.click(screen.getByRole('button', { name: /consegne online/i }));
+
+    await waitFor(() => expect(screen.getByText('Consegnata')).toBeTruthy());
+    const rendered = document.body.textContent ?? '';
+    expect(rendered).not.toMatch(/risposta/i);
+    expect(rendered).not.toMatch(/answers/i);
+  });
+
+  it('closes the listener when the monitor panel is closed', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerWithClass()]);
+    mockListStudents.mockResolvedValue([]);
+    const unsubscribe = vi.fn();
+    mockWatchSubmissions.mockReturnValue(unsubscribe);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /consegne online/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /consegne online/i }));
+    await waitFor(() => expect(mockWatchSubmissions).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: /consegne online/i }));
+    await waitFor(() => expect(unsubscribe).toHaveBeenCalledTimes(1));
+  });
+
+  it('closes the listener on unmount', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerWithClass()]);
+    mockListStudents.mockResolvedValue([]);
+    const unsubscribe = vi.fn();
+    mockWatchSubmissions.mockReturnValue(unsubscribe);
+    const { unmount } = render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /consegne online/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /consegne online/i }));
+    await waitFor(() => expect(mockWatchSubmissions).toHaveBeenCalledTimes(1));
+
+    unmount();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the monitor for a closed verification too', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      activeVerWithClass({ status: 'closed', onlineEnabled: false }),
+    ]);
+    mockListStudents.mockResolvedValue([]);
+    mockWatchSubmissions.mockReturnValue(vi.fn());
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByRole('button', { name: /consegne online/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /consegne online/i }));
+    await waitFor(() => expect(mockWatchSubmissions).toHaveBeenCalledTimes(1));
   });
 });
 

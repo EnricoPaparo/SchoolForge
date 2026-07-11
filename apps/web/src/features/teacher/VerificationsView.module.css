@@ -149,6 +149,73 @@
   line-height: 1;
 }
 
+/* ── Online switch (row-level, in the Stato cell) ──────────────────── */
+.onlineControl {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.3125rem;
+}
+
+.onlineSwitch {
+  position: relative;
+  flex-shrink: 0;
+  width: 1.875rem;
+  height: 1.0625rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface-subtle);
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.onlineSwitch:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.onlineSwitchOn {
+  background-color: var(--color-success-btn);
+  border-color: var(--color-success-btn);
+}
+
+.onlineSwitchOn:hover:not(:disabled),
+.onlineSwitchOn:active:not(:disabled) {
+  background-color: var(--color-success-btn);
+}
+
+.onlineSwitchThumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 50%;
+  background-color: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s;
+}
+
+.onlineSwitchOn .onlineSwitchThumb {
+  transform: translateX(0.8125rem);
+}
+
+.onlineLabel {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* ── Consegne online monitor panel ─────────────────────────────────── */
+.monitorPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
 /* ── Inline confirm row (close / delete) ──────────────────────────── */
 .confirmRowInline {
   background: var(--color-warning-bg);

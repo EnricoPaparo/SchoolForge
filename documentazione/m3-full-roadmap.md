@@ -2,7 +2,7 @@
 
 **Versione:** 1.0
 **Data:** 10 luglio 2026
-**Stato:** in implementazione — M3F-00/M3F-01/M3F-02/M3F-03/M3F-04 completati (documentazione, tipi/indici, service layer client-only, Security Rules, UI studente flusso online); M3F-05/M3F-06 (UI docente monitor consegne, integrazione) non ancora implementati.
+**Stato:** in implementazione — M3F-00/M3F-01/M3F-02/M3F-03/M3F-04/M3F-05 completati (documentazione, tipi/indici, service layer client-only, Security Rules, UI studente flusso online, toggle onlineEnabled + monitor consegne docente); M3F-06 (integrazione, smoke test DEV) non ancora implementato.
 **Dipendenze:** M1, M2, M3-lite (tutti completati)
 **Fuori scope in M3-full:** M4 (correzione/restituzione), M5 (AI), timer, anti-cheat aggressivo, tentativi multipli, allegati, voti.
 
@@ -376,7 +376,7 @@ All'avvio della schermata verifica:
 | **M3F-02** | Service layer submission (client-only) | `src/features/student/submissionsService.ts`, test unitari | M3F-01 | Test unitari verdi; nessuna Cloud Function. |
 | **M3F-03** | Security Rules submission | `firestore.rules` (aggiunta blocco `submissions`), test Rules con Emulator Suite | M3F-01 | Tutti i casi positivi e negativi da §4 coperti da test Rules. |
 | **M3F-04** | UI studente — OnlineExamView + ConfirmationView | `src/features/student/OnlineExamView.tsx`, `ConfirmationView.tsx`, CSS modules, test componente | M3F-02, M3F-03 | Flusso completo: avvio → bozza → consegna → schermata conferma. Modalità verifica attiva. |
-| **M3F-05** | UI docente — onlineEnabled toggle + Monitor consegne | `src/features/teacher/VerificationsView.tsx` (aggiunta toggle + monitor), test componente | M3F-02, M3F-03 | Toggle onlineEnabled funzionante; monitor mostra stati e aggiornamento real-time. |
+| **M3F-05** ✅ | UI docente — onlineEnabled toggle + Monitor consegne | `src/features/repository/verifications/verificationsService.ts` (`setVerificationOnlineEnabled`), `submissionsMonitorService.ts`, `src/features/teacher/VerificationsView.tsx` (toggle + monitor), `firestore.rules`, test componente/service/Rules | M3F-02, M3F-03 | Toggle onlineEnabled funzionante (batch atomico parent+projection); monitor mostra stati e aggiornamento real-time via un solo listener `onSnapshot` per verifica aperta. |
 | **M3F-06** | Integrazione, smoke test, aggiornamento evidenze | `documentazione/evidenze/m3f-checklist.md`, `documentazione/evidenze/smoke-m3f.md` | M3F-04, M3F-05 | Smoke test manuale su DEV completo; checklist gate G5 superata. |
 
 ### Gate G5 — M3-full

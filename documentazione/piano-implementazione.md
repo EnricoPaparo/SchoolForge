@@ -276,7 +276,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 ## 11. M3-full — Portale digitale (specifica definita)
 
-> Specifica completa in `m3-full-roadmap.md`. M3F-00/M3F-01/M3F-02/M3F-03/M3F-04 sono già stati avviati/completati a livello documentazione, tipi/indici, service layer client-only, Security Rules e UI studente. Il vecchio modello gateway Cloud Functions non è più il perimetro corrente.
+> Specifica completa in `m3-full-roadmap.md`. M3F-00/M3F-01/M3F-02/M3F-03/M3F-04/M3F-05 sono già stati avviati/completati a livello documentazione, tipi/indici, service layer client-only, Security Rules e UI studente. Il vecchio modello gateway Cloud Functions non è più il perimetro corrente.
 
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
@@ -285,7 +285,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 | M3F-02 | Service layer submission client-only: avvio bozza, salvataggio, consegna atomica con receipt, codice consegna. | M3F-01 | — | Test unitari service verdi; nessuna Cloud Function. Completato. |
 | M3F-03 | Security Rules per submission/receipt con test Emulator Suite: unicità path deterministico, immutabilità, gate active+onlineEnabled, receipt post-consegna. | M3F-02 | — | Test rules positivi/negativi verdi. Completato. |
 | M3F-04 | UI studente OnlineExamView + ConfirmationView + modalità verifica deterrente. | M3F-03 | — | Flusso avvio→bozza→consegna→receipt. Completato. |
-| M3F-05 | UI docente: toggle onlineEnabled, pubblicazione online, monitor consegne. | M3F-03 | M3F-04 | Monitor stati/consegne/eventi attenzione. |
+| M3F-05 | UI docente: toggle onlineEnabled, pubblicazione online, monitor consegne. | M3F-03 | M3F-04 | Monitor stati/consegne/eventi attenzione. Completato. |
 | M3F-06 | Integrazione, smoke DEV, checklist G5. | M3F-04/M3F-05 | — | Gate G5 approvabile. |
 
 ---
@@ -644,7 +644,7 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 
 ### M3-full — Portale digitale (specifica definita)
 
-> Specifica corrente in `m3-full-roadmap.md`. M3-full è client-only: nessun gateway Cloud Functions, nessun cookie server-side, nessun `startDigitalAttempt`/`continueDigitalAttempt`. M3F-00/M3F-01/M3F-02/M3F-03/M3F-04 sono già completati.
+> Specifica corrente in `m3-full-roadmap.md`. M3-full è client-only: nessun gateway Cloud Functions, nessun cookie server-side, nessun `startDigitalAttempt`/`continueDigitalAttempt`. M3F-00/M3F-01/M3F-02/M3F-03/M3F-04/M3F-05 sono già completati.
 
 #### M3F-03 — Security Rules submission/receipt (Completato)
 
@@ -666,15 +666,15 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | Test minimi | Avvio bozza, salva, indicatori compilate/vuote, alert consegna, receipt post-consegna, eventi attenzione registrati |
 | Evidenza richiesta | Test componente + Rules verdi. Nessun router nuovo introdotto: `OnlineExamView`/`ConfirmationView` sono viste locali di `StudentVerificationsView`, come già avviene per le altre sezioni docente/studente (nessuna route URL). Autosave al massimo ogni 30s e solo quando la bozza è "dirty"; `attentionEvents` limitato a 200 per submission, applicato lato client (nessuna lettura Firestore aggiuntiva: la UI conosce già il conteggio della bozza caricata) e verificato anche lato Security Rules. |
 
-#### M3F-05 — UI docente monitor consegne
+#### M3F-05 — UI docente monitor consegne (Completato)
 
 | Campo | Valore |
 |---|---|
 | Prerequisiti | M3F-03 |
-| File da creare | Monitor consegne nella vista verifica |
-| File da modificare | `VerificationsView`, service verifiche |
-| Test minimi | Toggle `onlineEnabled`; stati non iniziata/bozza/consegnata; timestamp; eventi attenzione; nessuna correzione M4 |
-| Evidenza richiesta | Test componente + smoke DEV |
+| File da creare | `submissionsMonitorService.ts` (listener `onSnapshot` compatto, un solo ascolto per verifica aperta) |
+| File da modificare | `VerificationsView` (toggle online per riga + pannello "Consegne online"), `verificationsService.ts` (`setVerificationOnlineEnabled`, scrittura atomica batch parent+projection+audit), `firestore.rules` (terzo ramo `active`→`active` per `onlineEnabled`/`updatedAt`) |
+| Test minimi | Toggle `onlineEnabled` (abilita senza conferma, disabilita con conferma esplicita); nessuna classe → controllo disabilitato; stati non iniziata/bozza/consegnata; timestamp; conteggio eventi attenzione (mai il dettaglio); nessuna correzione M4; listener chiuso a pannello chiuso/verifica cambiata/unmount; test Rules mirati (abilita, disabilita, non-owner negato, modifica simultanea negata, verifica chiusa non modificabile) |
+| Evidenza richiesta | Test componente + service + Rules verdi (vedi `VerificationsView.test.tsx`, `verificationsService.test.ts`, `submissionsMonitorService.test.ts`, `m3f-05-online-toggle.rules.test.ts`). Smoke DEV non ancora eseguito — rimane a carico di M3F-06. |
 
 #### M3F-06 — Integrazione M3-full
 

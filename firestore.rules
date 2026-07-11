@@ -258,6 +258,20 @@ service cloud.firestore {
         && request.resource.data.status == 'active'
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['visibility', 'updatedAt']);
+      // Active: only onlineEnabled toggled (M3F-05 teacher control); only
+      // onlineEnabled/updatedAt may change, status must stay 'active'.
+      // Enabling online is denied when the verification has no class
+      // assigned — mirrors verificationClassMatches(), which would deny
+      // every submission anyway (config is immutable once active, so
+      // resource.data.config.classId reflects the current assignment).
+      allow update: if isOwner()
+        && resource.data.status == 'active'
+        && request.resource.data.status == 'active'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['onlineEnabled', 'updatedAt'])
+        && request.resource.data.onlineEnabled is bool
+        && (request.resource.data.onlineEnabled != true
+            || resource.data.config.classId != null);
     }
     match /verifications/{verificationId}/{sub=**} {
       // read: owner only; write on sub-collections handled per-path in later milestones.

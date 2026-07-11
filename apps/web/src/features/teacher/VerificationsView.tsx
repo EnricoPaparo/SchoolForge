@@ -5,6 +5,7 @@ import {
   createVerification,
   deleteVerification,
   listVerifications,
+  setVerificationOnlineEnabled,
   setVerificationVisibility,
   updateVerificationConfig,
   type VerificationItem,
@@ -13,8 +14,13 @@ import {
   listQuestionIndex,
   type QuestionIndexEntry,
 } from '../repository/verifications/questionIndexService.js';
+import {
+  watchSubmissions,
+  type SubmissionMonitorItem,
+} from '../repository/verifications/submissionsMonitorService.js';
 import { listClasses, type ClassItem } from '../repository/classes/classesService.js';
 import { listPrograms, type ProgramItem } from '../repository/programs/programsService.js';
+import { listStudents, type StudentItem } from '../repository/students/studentsService.js';
 import { loadSelectedQuestions } from '../repository/verifications/loadSelectedQuestions.js';
 import { loadSelectedQuestionsWithSolutions } from '../repository/verifications/loadSelectedQuestionsWithSolutions.js';
 import {
@@ -132,6 +138,11 @@ export function VerificationsView() {
   const [visibilityLoadingId, setVisibilityLoadingId] = useState<string | null>(null);
   const [visibilityErrors, setVisibilityErrors] = useState<Record<string, string | null>>({});
 
+  const [onlineLoadingId, setOnlineLoadingId] = useState<string | null>(null);
+  const [onlineErrors, setOnlineErrors] = useState<Record<string, string | null>>({});
+  const [onlineDisableConfirmId, setOnlineDisableConfirmId] = useState<string | null>(null);
+  const [onlineDisableError, setOnlineDisableError] = useState<string | null>(null);
+
   const [closeConfirmId, setCloseConfirmId] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -140,9 +151,61 @@ export function VerificationsView() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  // ── Consegne online monitor (M3F-05) ────────────────────────────
+  const [monitorOpenId, setMonitorOpenId] = useState<string | null>(null);
+  const [monitorStudents, setMonitorStudents] = useState<StudentItem[] | null>(null);
+  const [monitorItems, setMonitorItems] = useState<SubmissionMonitorItem[] | null>(null);
+  const [monitorError, setMonitorError] = useState<string | null>(null);
+
   useEffect(() => {
     void loadAll();
   }, []);
+
+  // Opens exactly one `submissions` listener, only while the monitor panel
+  // is open for one specific verification — never globally, never for more
+  // than one verification at a time. Always closed via the effect cleanup
+  // when the panel is closed (monitorOpenId -> null), the verification
+  // changes, or the component unmounts.
+  useEffect(() => {
+    if (!monitorOpenId) return;
+    const v = verifications?.find((item) => item.id === monitorOpenId);
+    if (!v) return;
+
+    let cancelled = false;
+    setMonitorError(null);
+    setMonitorStudents(null);
+    setMonitorItems(null);
+
+    const classId = v.teacherSnapshot?.classId ?? v.config.classId;
+    listStudents(ownerUid, db)
+      .then((students) => {
+        if (cancelled) return;
+        const approved = students
+          .filter((s) => s.status === 'approved' && s.classId === classId)
+          .sort((a, b) => (a.displayName ?? a.email).localeCompare(b.displayName ?? b.email, 'it'));
+        setMonitorStudents(approved);
+      })
+      .catch(() => {
+        if (!cancelled) setMonitorError('Impossibile caricare gli studenti della classe.');
+      });
+
+    const unsubscribe = watchSubmissions(
+      v.id,
+      ownerUid,
+      db,
+      (items) => {
+        if (!cancelled) setMonitorItems(items);
+      },
+      () => {
+        if (!cancelled) setMonitorError('Impossibile caricare le consegne.');
+      },
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [monitorOpenId]);
 
   async function loadAll() {
     setLoadError(null);
@@ -166,6 +229,10 @@ export function VerificationsView() {
     setActivateError(null);
     setQuestionIndex(null);
     setQuestionIndexError(null);
+    setMonitorOpenId(null);
+    setMonitorStudents(null);
+    setMonitorItems(null);
+    setMonitorError(null);
     setSelectedQuestionIds(new Set(v.config.questionRefs.map((r) => r.questionIndexEntryId)));
     setEditDraftTitle(v.config.title);
     setEditDraftClassId(v.config.classId ?? '');
@@ -350,10 +417,59 @@ export function VerificationsView() {
     }
   }
 
+  async function handleEnableOnline(v: VerificationItem) {
+    if (v.status !== 'active' || v.onlineEnabled || v.config.classId == null) return;
+    setOnlineLoadingId(v.id);
+    setOnlineErrors((prev) => ({ ...prev, [v.id]: null }));
+    try {
+      await setVerificationOnlineEnabled(v.id, true, ownerUid, db);
+      const updated = { ...v, onlineEnabled: true };
+      setVerifications((prev) => prev?.map((item) => (item.id === v.id ? updated : item)) ?? null);
+      if (selectedVer?.id === v.id) setSelectedVer(updated);
+    } catch (err) {
+      setOnlineErrors((prev) => ({
+        ...prev,
+        [v.id]: err instanceof Error ? err.message : "Impossibile attivare l'online.",
+      }));
+    } finally {
+      setOnlineLoadingId(null);
+    }
+  }
+
+  function handleStartDisableOnline(id: string) {
+    setOnlineDisableConfirmId(id);
+    setOnlineDisableError(null);
+    setCloseConfirmId(null);
+    setDeleteConfirmId(null);
+  }
+
+  async function handleConfirmDisableOnline(id: string) {
+    setOnlineLoadingId(id);
+    setOnlineDisableError(null);
+    try {
+      await setVerificationOnlineEnabled(id, false, ownerUid, db);
+      setOnlineDisableConfirmId(null);
+      setVerifications(
+        (prev) =>
+          prev?.map((item) => (item.id === id ? { ...item, onlineEnabled: false } : item)) ?? null,
+      );
+      if (selectedVer?.id === id) {
+        setSelectedVer((prev) => (prev ? { ...prev, onlineEnabled: false } : prev));
+      }
+    } catch (err) {
+      setOnlineDisableError(
+        err instanceof Error ? err.message : "Impossibile disattivare l'online.",
+      );
+    } finally {
+      setOnlineLoadingId(null);
+    }
+  }
+
   function handleStartClose(id: string) {
     setCloseConfirmId(id);
     setCloseError(null);
     setDeleteConfirmId(null);
+    setOnlineDisableConfirmId(null);
   }
 
   async function handleConfirmClose(id: string) {
@@ -379,6 +495,7 @@ export function VerificationsView() {
     setDeleteConfirmId(id);
     setDeleteError(null);
     setCloseConfirmId(null);
+    setOnlineDisableConfirmId(null);
   }
 
   async function handleConfirmDelete(id: string) {
@@ -587,6 +704,47 @@ export function VerificationsView() {
                   );
                 }
 
+                if (onlineDisableConfirmId === v.id) {
+                  return (
+                    <tr key={v.id} className={styles.confirmRowInline}>
+                      <td colSpan={6} className={styles.td}>
+                        <div
+                          role="region"
+                          aria-label="Conferma disattivazione online"
+                          className={styles.confirmBox}
+                        >
+                          <p className={styles.confirmMsg}>
+                            Le bozze esistenti non potranno essere salvate o consegnate finché
+                            l&apos;online resta disabilitato.
+                          </p>
+                          {onlineDisableError && (
+                            <p role="alert" className="text-error">
+                              {onlineDisableError}
+                            </p>
+                          )}
+                          <div className={styles.confirmRow}>
+                            <button
+                              type="button"
+                              className="btn-primary"
+                              disabled={onlineLoadingId === v.id}
+                              onClick={() => void handleConfirmDisableOnline(v.id)}
+                            >
+                              {onlineLoadingId === v.id ? 'Disattivazione…' : 'Disattiva online'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setOnlineDisableConfirmId(null)}
+                              disabled={onlineLoadingId === v.id}
+                            >
+                              Annulla
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
                 return (
                   <Fragment key={v.id}>
                     <tr className={styles.row}>
@@ -611,6 +769,42 @@ export function VerificationsView() {
                       <td className={`${styles.td} ${styles.metaCell}`}>{programTitle}</td>
                       <td className={styles.td}>
                         <StatusBadge status={v.status} visibility={v.visibility} />
+                        {v.status === 'active' && (
+                          <div className={styles.onlineControl}>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={v.onlineEnabled}
+                              aria-label={`${v.onlineEnabled ? 'Disattiva' : 'Attiva'} online — ${v.config.title}`}
+                              title={
+                                v.config.classId == null
+                                  ? 'Assegna una classe alla verifica per abilitare l’online'
+                                  : v.onlineEnabled
+                                    ? 'Online attivo'
+                                    : 'Online disattivato'
+                              }
+                              className={`${styles.onlineSwitch} ${v.onlineEnabled ? styles.onlineSwitchOn : ''}`}
+                              disabled={
+                                onlineLoadingId === v.id ||
+                                (!v.onlineEnabled && v.config.classId == null)
+                              }
+                              onClick={() =>
+                                v.onlineEnabled
+                                  ? handleStartDisableOnline(v.id)
+                                  : void handleEnableOnline(v)
+                              }
+                            >
+                              <span className={styles.onlineSwitchThumb} />
+                            </button>
+                            <span className={styles.onlineLabel}>
+                              {v.config.classId == null
+                                ? 'Nessuna classe'
+                                : v.onlineEnabled
+                                  ? 'Online attivo'
+                                  : 'Online disattivato'}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className={`${styles.td} ${styles.metaCell}`}>{questionCount}</td>
                       <td className={styles.tdActions}>
@@ -659,6 +853,21 @@ export function VerificationsView() {
                                   : '👁️'}
                             </button>
                           )}
+                          {(v.status === 'active' || v.status === 'closed') && (
+                            <button
+                              type="button"
+                              className={styles.iconBtn}
+                              title="Consegne online"
+                              aria-label={`Consegne online — ${v.config.title}`}
+                              aria-pressed={monitorOpenId === v.id}
+                              onClick={() => {
+                                if (selectedVer?.id !== v.id) void handleSelectVer(v);
+                                setMonitorOpenId((prev) => (prev === v.id ? null : v.id));
+                              }}
+                            >
+                              📊
+                            </button>
+                          )}
                           {v.status === 'active' && (
                             <button
                               type="button"
@@ -698,6 +907,15 @@ export function VerificationsView() {
                         <td colSpan={6} className={styles.td}>
                           <p role="alert" className="text-error">
                             {solutionsPdfErrors[v.id]}
+                          </p>
+                        </td>
+                      </tr>
+                    )}
+                    {onlineErrors[v.id] && (
+                      <tr>
+                        <td colSpan={6} className={styles.td}>
+                          <p role="alert" className="text-error">
+                            {onlineErrors[v.id]}
                           </p>
                         </td>
                       </tr>
@@ -847,6 +1065,75 @@ export function VerificationsView() {
                 selectedVer.config.questionRefs.length) ||
                 0}
             </p>
+          )}
+
+          {/* ── Consegne online monitor (M3F-05) ── */}
+          {selectedVer.status !== 'draft' && monitorOpenId === selectedVer.id && (
+            <div role="region" aria-label="Consegne online" className={styles.monitorPanel}>
+              <h3 className={styles.createTitle}>Consegne online</h3>
+              {monitorError && (
+                <p role="alert" className="text-error">
+                  {monitorError}
+                </p>
+              )}
+              {!monitorError &&
+                (monitorStudents === null ||
+                  (monitorStudents.length > 0 && monitorItems === null)) && (
+                  <p aria-busy="true" className="state-loading">
+                    Caricamento consegne…
+                  </p>
+                )}
+              {!monitorError && monitorStudents !== null && monitorStudents.length === 0 && (
+                <p className="state-empty">Nessuno studente approvato in questa classe.</p>
+              )}
+              {!monitorError &&
+                monitorStudents !== null &&
+                monitorStudents.length > 0 &&
+                monitorItems !== null && (
+                  <div className={styles.tableWrap}>
+                    <table className={styles.table}>
+                      <thead>
+                        <tr>
+                          <th className={styles.th}>Studente</th>
+                          <th className={styles.th}>Stato</th>
+                          <th className={styles.th}>Ultimo salvataggio</th>
+                          <th className={styles.th}>Consegnata il</th>
+                          <th className={styles.th}>Eventi</th>
+                          <th className={styles.th}>Codice</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {monitorStudents.map((s) => {
+                          const item = monitorItems?.find((m) => m.studentUid === s.id);
+                          const stateLabel = !item
+                            ? 'Non iniziata'
+                            : item.status === 'submitted'
+                              ? 'Consegnata'
+                              : 'In corso';
+                          return (
+                            <tr key={s.id} className={styles.row}>
+                              <td className={styles.td}>{s.displayName ?? s.email}</td>
+                              <td className={styles.td}>{stateLabel}</td>
+                              <td className={`${styles.td} ${styles.metaCell}`}>
+                                {item ? formatTimestamp(item.lastSavedAt) : '—'}
+                              </td>
+                              <td className={`${styles.td} ${styles.metaCell}`}>
+                                {item ? formatTimestamp(item.submittedAt) : '—'}
+                              </td>
+                              <td className={`${styles.td} ${styles.metaCell}`}>
+                                {item?.attentionEventsCount ?? 0}
+                              </td>
+                              <td className={`${styles.td} ${styles.metaCell}`}>
+                                {item?.deliveryCode ?? '—'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+            </div>
           )}
         </div>
       )}
