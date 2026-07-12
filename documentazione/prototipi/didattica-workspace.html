@@ -248,7 +248,83 @@
     font-size: 0.9rem;
     line-height: 1;
   }
-  /* Simulatore Desktop/Mobile — segmentato chiaro coerente col pannello. */
+  /* Navigazione mobile: selettore di sezione + menu a tendina. Nascosto
+     su desktop; su mobile sostituisce la fila di pulsanti (che verrebbe
+     tagliata / richiederebbe scroll orizzontale). */
+  .nav-mobile {
+    display: none;
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+  body.mobile .top-nav {
+    display: none;
+  }
+  body.mobile .nav-mobile {
+    display: block;
+  }
+  .nav-mobile-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    max-width: 100%;
+    background: rgba(255, 255, 255, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: 999px;
+    padding: 0.4rem 0.75rem;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    color: #1f2b40;
+    box-shadow: 0 1px 2px rgba(9, 13, 20, 0.12);
+  }
+  .nav-mobile-toggle .nav-mobile-caret {
+    margin-left: auto;
+    font-size: 0.7rem;
+    opacity: 0.7;
+  }
+  .nav-mobile-toggle[aria-expanded='true'] .nav-mobile-caret {
+    transform: rotate(180deg);
+  }
+  .nav-mobile-menu {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: 0 12px 32px rgba(9, 13, 20, 0.5);
+    padding: 0.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .nav-mobile-menu[hidden] {
+    display: none;
+  }
+  .nav-mobile-menu button {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius);
+    padding: 0.6rem 0.7rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+  .nav-mobile-menu button:hover {
+    background: var(--color-surface-subtle);
+  }
+  .nav-mobile-menu button[aria-current='page'] {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+  }
   /* Selettore di anteprima del prototipo — vive nel banner giallo (non
      nell'header dell'app): superficie scura segmentata, coerente col
      resto del prototipo, chiaramente uno strumento di revisione. */
@@ -1442,6 +1518,40 @@
       <span class="nav-icon" aria-hidden="true">📄</span><span>Template</span>
     </button>
   </nav>
+
+  <!-- Navigazione mobile: su schermi stretti i quattro pulsanti non
+       stanno accanto a logo+account senza scroll orizzontale, quindi
+       vengono sostituiti da un selettore di sezione. Mostra la sezione
+       corrente (icona + nome) e apre un menu con tutte le sezioni — la
+       sezione attiva resta sempre visibile, nessuno scroll. -->
+  <div class="nav-mobile">
+    <button
+      type="button"
+      class="nav-mobile-toggle"
+      id="nav-mobile-toggle"
+      aria-haspopup="true"
+      aria-expanded="false"
+    >
+      <span class="nav-icon" aria-hidden="true" id="nav-mobile-current-icon">📚</span>
+      <span id="nav-mobile-current-label">Didattica</span>
+      <span class="nav-mobile-caret" aria-hidden="true">▾</span>
+    </button>
+    <div class="nav-mobile-menu" id="nav-mobile-menu" role="menu" aria-label="Sezioni docente" hidden>
+      <button type="button" role="menuitem" data-topnav="library">
+        <span class="nav-icon" aria-hidden="true">📚</span><span>Didattica</span>
+      </button>
+      <button type="button" role="menuitem" data-topnav="verifiche">
+        <span class="nav-icon" aria-hidden="true">📝</span><span>Verifiche</span>
+      </button>
+      <button type="button" role="menuitem" data-topnav="students">
+        <span class="nav-icon" aria-hidden="true">🎓</span><span>Studenti</span>
+      </button>
+      <button type="button" role="menuitem" data-topnav="template">
+        <span class="nav-icon" aria-hidden="true">📄</span><span>Template</span>
+      </button>
+    </div>
+  </div>
+
   <button type="button" class="account-avatar-btn" aria-label="Account: Docente" title="Account: Docente">DC</button>
 </header>
 
@@ -1886,6 +1996,21 @@ uda-02-sicurezza/
   // se ero in Mobile vedo la libreria mobile, se ero in Desktop vedo
   // quella desktop. "← Libreria" nel workspace mantiene invece il suo
   // comportamento originale (solo courseId azzerato), invariato.
+  // Metadati per il selettore di sezione mobile (icona + nome).
+  var NAV_META = {
+    library: { icon: '📚', label: 'Didattica' },
+    verifiche: { icon: '📝', label: 'Verifiche' },
+    students: { icon: '🎓', label: 'Studenti' },
+    template: { icon: '📄', label: 'Template' }
+  };
+
+  function closeNavMobileMenu() {
+    var menu = byId('nav-mobile-menu');
+    var toggle = byId('nav-mobile-toggle');
+    if (menu) menu.hidden = true;
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+  }
+
   document.querySelectorAll('[data-topnav]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var target = btn.getAttribute('data-topnav');
@@ -1902,8 +2027,22 @@ uda-02-sicurezza/
       }
       state.top = target;
       renderTopNav();
+      closeNavMobileMenu();
       if (target === 'library') renderLibrary();
     });
+  });
+
+  // Apertura/chiusura del menu di sezione mobile.
+  byId('nav-mobile-toggle').addEventListener('click', function (e) {
+    e.stopPropagation();
+    var menu = byId('nav-mobile-menu');
+    var open = menu.hidden; // se ora è nascosto, il click lo apre
+    menu.hidden = !open;
+    this.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  document.addEventListener('click', function (e) {
+    var wrap = document.querySelector('.nav-mobile');
+    if (wrap && !wrap.contains(e.target)) closeNavMobileMenu();
   });
 
   function renderTopNav() {
@@ -1912,13 +2051,22 @@ uda-02-sicurezza/
       if (isActive) {
         btn.setAttribute('aria-current', 'page');
         // La sezione attiva resta sempre raggiungibile: se la nav
-        // scorre in orizzontale su mobile, la riportiamo in vista
-        // invece di lasciarla fuori schermo (fix review §1).
-        btn.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+        // desktop scorre in orizzontale, la riportiamo in vista.
+        // (Solo per i pulsanti della barra desktop — i voci del menu
+        // mobile vivono in un dropdown, non serve scrollarle.)
+        if (btn.closest('.top-nav')) {
+          btn.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+        }
       } else {
         btn.removeAttribute('aria-current');
       }
     });
+    // Aggiorna il selettore di sezione mobile (icona + nome correnti).
+    var meta = NAV_META[state.top];
+    if (meta) {
+      byId('nav-mobile-current-icon').textContent = meta.icon;
+      byId('nav-mobile-current-label').textContent = meta.label;
+    }
     byId('screen-library').classList.toggle('visible', state.top === 'library' && !state.courseId);
     byId('screen-workspace').classList.toggle('visible', state.top === 'library' && !!state.courseId);
     byId('screen-verifiche').classList.toggle('visible', state.top === 'verifiche');
