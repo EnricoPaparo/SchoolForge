@@ -244,7 +244,7 @@ describe('StudentCorrectionView — manual reload', () => {
     expect(screen.queryByText('Verifica Reti')).toBeNull();
   });
 
-  it('shows a readable error when the reload itself fails', async () => {
+  it('shows a readable error when the reload itself fails, and keeps showing the previously loaded data', async () => {
     mockLoadStudentCorrectionReturn.mockRejectedValue(new Error('boom'));
 
     render(
@@ -258,6 +258,12 @@ describe('StudentCorrectionView — manual reload', () => {
 
     fireEvent.click(screen.getByText('Ricarica'));
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+
+    // A transient/network failure must never be mistaken for "the docente
+    // hid the correction" — the previously loaded data stays on screen.
+    expect(screen.getByText('Verifica Reti')).toBeTruthy();
+    expect(screen.getByText('10/12')).toBeTruthy();
+    expect(screen.queryByText(/non è più disponibile/i)).toBeNull();
   });
 
   it('still offers a working "Torna alle verifiche" from the unavailable state', async () => {

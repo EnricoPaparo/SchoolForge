@@ -14,7 +14,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -1105,7 +1104,7 @@ describe('Firestore rules — correctionReturns', () => {
 describe('Firestore rules — correctionReturns student list query', () => {
   it(
     'allows the exact query studentCorrectionReturnsService uses: ' +
-      'studentUid == uid AND visibleToStudent == true (ordered by returnedAt desc)',
+      'studentUid == uid AND visibleToStudent == true (ordering is done in JS, not on the query)',
     async () => {
       await seedBase();
       await seedSubmittedSubmission();
@@ -1118,7 +1117,6 @@ describe('Firestore rules — correctionReturns student list query', () => {
             collection(studentDb(), 'correctionReturns'),
             where('studentUid', '==', STUDENT_UID),
             where('visibleToStudent', '==', true),
-            orderBy('returnedAt', 'desc'),
           ),
         ),
       );
@@ -1162,7 +1160,6 @@ describe('Firestore rules — correctionReturns student list query', () => {
         collection(studentDb(OTHER_STUDENT_UID), 'correctionReturns'),
         where('studentUid', '==', OTHER_STUDENT_UID),
         where('visibleToStudent', '==', true),
-        orderBy('returnedAt', 'desc'),
       ),
     );
     // Not a rules failure (the query itself is well-formed and allowed) —

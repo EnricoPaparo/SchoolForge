@@ -112,6 +112,15 @@ export function StudentCorrectionView({
   const orders = (data ?? initialData).questions.map((q) => q.order).sort((a, b) => a - b);
   const [currentOrder, setCurrentOrder] = useState(orders[0] ?? 0);
 
+  /**
+   * `loadStudentCorrectionReturn` resolves to `null` only for the two cases
+   * that genuinely mean "no longer available" (missing doc, permission
+   * denied) — that transitions this view to the unavailable state below. A
+   * thrown error (network/offline/etc.) means something else entirely: it
+   * must never be treated as "hidden", so `data` is left untouched and only
+   * a dismissible error message is shown — the student keeps looking at
+   * whatever was last successfully loaded.
+   */
   async function handleReload() {
     setReloading(true);
     setReloadError(null);

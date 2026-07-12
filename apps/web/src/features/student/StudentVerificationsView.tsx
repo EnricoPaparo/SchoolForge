@@ -405,9 +405,36 @@ export function StudentVerificationsView({
     );
   }
 
-  const { verifications } = state;
+  const verifications = state.verifications;
 
-  if (verifications.length === 0) {
+  /**
+   * "Correzioni restituite" is built directly from `correctionReturns` —
+   * never by filtering `verifications` — because the return projection is
+   * deliberately self-sufficient (own title/className/totals, see
+   * `types/firestore.ts`) and must stay reachable even once the underlying
+   * verification is closed, hidden, or otherwise dropped from
+   * `loadStudentVerifications`'s public list. `returnedSubmissionIds` is
+   * then used the other way around: to exclude those same submissions from
+   * "Consegne effettuate"/"Verifiche disponibili" so a verification never
+   * appears twice.
+   */
+  const returnedItems = Object.values(correctionReturns);
+  const returnedSubmissionIds = new Set(returnedItems.map((item) => item.submissionId));
+
+  const availableItems: StudentVerificationItem[] = [];
+  const submittedItems: StudentVerificationItem[] = [];
+  for (const item of verifications) {
+    const submissionId = `${item.id}_${uid ?? ''}`;
+    if (returnedSubmissionIds.has(submissionId)) continue;
+    const status = onlineStatus[item.id];
+    if (item.onlineEnabled && status?.kind === 'receipt') {
+      submittedItems.push(item);
+    } else {
+      availableItems.push(item);
+    }
+  }
+
+  if (verifications.length === 0 && returnedItems.length === 0) {
     return (
       <section aria-label="Verifiche" className={styles.container}>
         {examModeBanner}
@@ -416,28 +443,43 @@ export function StudentVerificationsView({
     );
   }
 
-  /**
-   * Three groups, distinct at a glance: a returned correction always wins
-   * over "consegnata" (the delivery already happened, correction is the
-   * newer, more relevant fact); a plain delivered receipt wins over
-   * "disponibile" the same way. No new card design — same `.card` markup
-   * as before, just sorted into labelled sections instead of one flat
-   * list.
-   */
-  const availableItems: StudentVerificationItem[] = [];
-  const submittedItems: StudentVerificationItem[] = [];
-  const returnedItems: StudentVerificationItem[] = [];
-  for (const item of verifications) {
-    const submissionId = `${item.id}_${uid ?? ''}`;
-    const correctionReturn = correctionReturns[submissionId];
-    const status = onlineStatus[item.id];
-    if (correctionReturn) {
-      returnedItems.push(item);
-    } else if (item.onlineEnabled && status?.kind === 'receipt') {
-      submittedItems.push(item);
-    } else {
-      availableItems.push(item);
-    }
+  function renderCorrectionCard(item: StudentCorrectionReturnItem) {
+    const returnedLabel = formatActivatedAt(item.returnedAt);
+    return (
+      <li key={item.submissionId} className={styles.card}>
+        <div className={styles.cardHeader}>
+          <h3 className={styles.cardTitle}>{item.verificationTitle}</h3>
+          {item.className && <span className={styles.classBadge}>{item.className}</span>}
+        </div>
+
+        <dl className={styles.cardMeta}>
+          {returnedLabel && (
+            <div className={styles.metaItem}>
+              <dt>Restituita</dt>
+              <dd>{returnedLabel}</dd>
+            </div>
+          )}
+          <div className={styles.metaItem}>
+            <dt>Punteggio</dt>
+            <dd>
+              {item.totalPoints}/{item.maxPoints}
+              {item.percentage !== null ? ` (${item.percentage}%)` : ''}
+            </dd>
+          </div>
+        </dl>
+
+        <div className={styles.cardActions}>
+          <button
+            type="button"
+            className={styles.correctionBtn}
+            aria-label={`Vedi correzione — ${item.verificationTitle}`}
+            onClick={() => handleShowCorrection(item.submissionId, item)}
+          >
+            Vedi correzione
+          </button>
+        </div>
+      </li>
+    );
   }
 
   function renderCard(item: StudentVerificationItem) {
@@ -445,8 +487,6 @@ export function StudentVerificationsView({
     const pdfError = pdfErrors[item.id];
     const startError = startErrors[item.id];
     const status = onlineStatus[item.id];
-    const submissionId = `${item.id}_${uid ?? ''}`;
-    const correctionReturn = correctionReturns[submissionId];
 
     return (
       <li key={item.id} className={styles.card}>
@@ -478,17 +518,6 @@ export function StudentVerificationsView({
               onClick={() => void handleDownloadPdf(item)}
             >
               {pdfLoadingId === item.id ? 'Generazione…' : 'Scarica PDF'}
-            </button>
-          )}
-
-          {correctionReturn && (
-            <button
-              type="button"
-              className={styles.correctionBtn}
-              aria-label={`Vedi correzione — ${item.title}`}
-              onClick={() => handleShowCorrection(submissionId, correctionReturn)}
-            >
-              Vedi correzione
             </button>
           )}
 
@@ -551,7 +580,7 @@ export function StudentVerificationsView({
       {returnedItems.length > 0 && (
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>Correzioni restituite</h3>
-          <ul className={styles.list}>{returnedItems.map(renderCard)}</ul>
+          <ul className={styles.list}>{returnedItems.map(renderCorrectionCard)}</ul>
         </div>
       )}
 
@@ -562,12 +591,14 @@ export function StudentVerificationsView({
         </div>
       )}
 
-      <div className={styles.group}>
-        {(returnedItems.length > 0 || submittedItems.length > 0) && (
-          <h3 className={styles.groupTitle}>Verifiche disponibili</h3>
-        )}
-        <ul className={styles.list}>{availableItems.map(renderCard)}</ul>
-      </div>
+      {availableItems.length > 0 && (
+        <div className={styles.group}>
+          {(returnedItems.length > 0 || submittedItems.length > 0) && (
+            <h3 className={styles.groupTitle}>Verifiche disponibili</h3>
+          )}
+          <ul className={styles.list}>{availableItems.map(renderCard)}</ul>
+        </div>
+      )}
     </section>
   );
 }

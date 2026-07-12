@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, orderBy, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import type { CorrectionReturnDoc } from '../../types/firestore.js';
 
@@ -22,11 +22,14 @@ function timestampSeconds(ts: unknown): number | null {
  * see firestore.rules). No realtime listener: this is a one-shot read,
  * called again only via an explicit manual reload.
  *
- * Ordered by `returnedAt` descending via the query itself (see the
- * matching composite index in firestore.indexes.json); results are
- * re-sorted defensively in JS too so a legacy/missing `returnedAt` (which
- * Firestore's own `orderBy` would simply exclude from the result set,
- * never crash on) degrades to "sorted last", not a thrown error.
+ * Deliberately no `orderBy('returnedAt')` on the query itself: Firestore's
+ * `orderBy` silently *excludes* any document missing the ordered field
+ * from the result set entirely, which would make a legacy/malformed
+ * `returnedAt` unreachable no matter what JS-side sorting ran afterwards —
+ * exactly the crash-avoidance this function promises, defeated at the
+ * query layer. Ordering is therefore done exclusively in JS via
+ * `timestampSeconds`: a valid timestamp sorts descending, a
+ * missing/malformed one sorts last, never dropped.
  */
 export async function loadStudentCorrectionReturns(
   uid: string,
@@ -37,7 +40,6 @@ export async function loadStudentCorrectionReturns(
       collection(db, 'correctionReturns'),
       where('studentUid', '==', uid),
       where('visibleToStudent', '==', true),
-      orderBy('returnedAt', 'desc'),
     ),
   );
 
@@ -58,11 +60,14 @@ export async function loadStudentCorrectionReturns(
  * submissionId), for the read-only workspace's manual "Ricarica" — a plain
  * `getDoc`, not the list query above, since the workspace already knows
  * which submission it's showing. Security Rules still gate this exactly
- * like the list query (`studentUid == uid && visibleToStudent == true`):
- * if the docente has just hidden the correction (or it never belonged to
- * this student), the read is denied — treated here as "no longer
- * available" (`null`), never as a thrown error surfacing a raw
- * permission-denied to the UI.
+ * like the list query (`studentUid == uid && visibleToStudent == true`).
+ *
+ * Resolves to `null` only for the two cases that genuinely mean "no
+ * longer available": the document doesn't exist, or the read was denied
+ * (`permission-denied` — the docente just hid it, or it never belonged to
+ * this student). Any other failure (network error, offline, etc.) is
+ * rethrown rather than swallowed into `null`: a transient failure must
+ * never be misread by the caller as "the docente hid the correction".
  */
 export async function loadStudentCorrectionReturn(
   submissionId: string,
@@ -72,7 +77,9 @@ export async function loadStudentCorrectionReturn(
     const snap = await getDoc(doc(db, 'correctionReturns', submissionId));
     if (!snap.exists()) return null;
     return { ...(snap.data() as CorrectionReturnDoc), submissionId: snap.id };
-  } catch {
-    return null;
+  } catch (err) {
+    const code = (err as { code?: string } | null)?.code;
+    if (code === 'permission-denied') return null;
+    throw err;
   }
 }

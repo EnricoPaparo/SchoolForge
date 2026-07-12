@@ -660,4 +660,52 @@ describe('StudentVerificationsView — correction returns (M4-02B)', () => {
     await waitFor(() => expect(screen.getByText('Verifica Reti')).toBeTruthy());
     expect(screen.queryByRole('button', { name: /Vedi correzione/ })).toBeNull();
   });
+
+  it('shows a returned correction even when its verification is no longer in the public list (closed/hidden)', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_B],
+    });
+    mockLoadStudentCorrectionReturns.mockResolvedValue([RETURN_A]);
+
+    render(<StudentVerificationsView />);
+
+    await waitFor(() => expect(screen.getByText('Correzioni restituite')).toBeTruthy());
+    expect(screen.getByRole('button', { name: /Vedi correzione — Verifica Reti/ })).toBeTruthy();
+    // Its own self-sufficient data still renders, independent of the (absent) verification item.
+    expect(screen.getByText('Classe 3A')).toBeTruthy();
+  });
+
+  it('renders exactly one card when the returned correction still has a matching verification in the list', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_A],
+    });
+    mockLoadStudentCorrectionReturns.mockResolvedValue([RETURN_A]);
+
+    render(<StudentVerificationsView />);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Vedi correzione — Verifica Reti/ })).toBeTruthy(),
+    );
+    // Only one "Verifica Reti" heading — not duplicated into another section.
+    expect(screen.getAllByText('Verifica Reti')).toHaveLength(1);
+    expect(screen.queryByText('Consegne effettuate')).toBeNull();
+  });
+
+  it('does not also list a returned verification under "Consegne effettuate" or "Verifiche disponibili"', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_A, VERIFICATION_B],
+    });
+    mockLoadStudentCorrectionReturns.mockResolvedValue([RETURN_A]);
+
+    render(<StudentVerificationsView />);
+
+    await waitFor(() => expect(screen.getByText('Correzioni restituite')).toBeTruthy());
+    // VERIFICATION_A (returned) shows once, in the "restituite" section only.
+    expect(screen.getAllByText('Verifica Reti')).toHaveLength(1);
+    // VERIFICATION_B (no return) still shows in "Verifiche disponibili".
+    expect(screen.getByText('Verifica Basi di dati')).toBeTruthy();
+  });
 });
