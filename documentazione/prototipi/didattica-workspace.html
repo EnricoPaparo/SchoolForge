@@ -249,12 +249,16 @@
     line-height: 1;
   }
   /* Simulatore Desktop/Mobile — segmentato chiaro coerente col pannello. */
+  /* Selettore di anteprima del prototipo — vive nel banner giallo (non
+     nell'header dell'app): superficie scura segmentata, coerente col
+     resto del prototipo, chiaramente uno strumento di revisione. */
   .device-toggle {
     display: flex;
+    align-items: center;
     gap: 0.2rem;
     flex-shrink: 0;
-    background: rgba(255, 255, 255, 0.45);
-    border: 1px solid rgba(255, 255, 255, 0.7);
+    background: var(--color-surface-subtle);
+    border: 1px solid var(--color-border);
     border-radius: 999px;
     padding: 0.15rem;
   }
@@ -265,23 +269,14 @@
     border: none;
     border-radius: 999px;
     background: transparent;
-    padding: 0.3rem 0.65rem;
+    padding: 0.3rem 0.7rem;
     font-size: 0.75rem;
     font-weight: 600;
-    color: #1f2b40;
+    color: var(--color-text-muted);
   }
   .device-toggle button.active {
     background: #2563eb;
     color: #fff;
-  }
-  /* Sul frame mobile il simulatore si riduce a due icone (fix review):
-     libera spazio per la nav, che altrimenti collasserebbe e lascerebbe
-     l'header in overflow orizzontale. */
-  body.mobile .device-toggle-label {
-    display: none;
-  }
-  body.mobile .device-toggle button {
-    padding: 0.3rem 0.5rem;
   }
   body.mobile .shell-header {
     gap: 0.5rem;
@@ -349,6 +344,22 @@
     border-radius: var(--radius);
     color: var(--color-warning);
     font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+  }
+  .proto-note-text {
+    flex: 1;
+    min-width: 220px;
+  }
+  .device-toggle-caption {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-warning);
+    margin-right: 0.15rem;
   }
 
   /* ── Screens (only one visible at a time) ────────────────────────── */
@@ -1431,7 +1442,22 @@
       <span class="nav-icon" aria-hidden="true">📄</span><span>Template</span>
     </button>
   </nav>
-  <div class="device-toggle" role="group" aria-label="Simula viewport prototipo">
+  <button type="button" class="account-avatar-btn" aria-label="Account: Docente" title="Account: Docente">DC</button>
+</header>
+
+<!-- Il selettore Desktop/Mobile NON è parte dell'app: è uno strumento di
+     questo prototipo statico per simulare il viewport mobile (layout a
+     colonna singola, drill-down a livelli) senza restringere la finestra
+     né aprire i devtools. Sta qui, nel banner del prototipo, apposta per
+     non sembrare un controllo del prodotto. -->
+<div class="proto-note">
+  <div class="proto-note-text">
+    <strong>Prototipo statico DUX-00</strong> — dati interamente inventati, nessuna chiamata di rete, nessuna
+    dipendenza esterna. Il selettore qui accanto è solo un aiuto di anteprima: simula il viewport mobile e la
+    navigazione a livelli (§5 della roadmap). Non fa parte dell'app.
+  </div>
+  <div class="device-toggle" role="group" aria-label="Anteprima viewport del prototipo">
+    <span class="device-toggle-caption">Anteprima:</span>
     <button type="button" data-device="desktop" class="active" aria-pressed="true">
       <span aria-hidden="true">🖥️</span><span class="device-toggle-label">Desktop</span>
     </button>
@@ -1439,12 +1465,6 @@
       <span aria-hidden="true">📱</span><span class="device-toggle-label">Mobile</span>
     </button>
   </div>
-  <button type="button" class="account-avatar-btn" aria-label="Account: Docente" title="Account: Docente">DC</button>
-</header>
-
-<div class="proto-note">
-  Prototipo statico DUX-00 — dati interamente inventati, nessuna chiamata di rete, nessuna dipendenza esterna.
-  Usa il toggle in alto a destra per simulare il viewport mobile e osservare la navigazione a livelli (§5 della roadmap).
 </div>
 
 <main class="stage">
