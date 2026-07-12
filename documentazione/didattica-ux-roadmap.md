@@ -46,7 +46,10 @@ TeacherShell (nav di primo livello)
 │              │         ├── scheda Contenuto
 │              │         ├── scheda Domande
 │              │         └── scheda Informazioni
-├── Verifiche            (invariato)
+├── Verifiche            (invariata nel concetto/comportamento; solo restyling
+│                          visivo di coerenza con Studenti/Classi in DUX-05 —
+│                          tabella con riga di creazione inline, dettaglio
+│                          sotto la tabella al click, stesso linguaggio visivo)
 ├── Studenti              ← assorbe Classi come tab
 │    ├── tab Studenti
 │    └── tab Classi
@@ -74,6 +77,8 @@ Libreria corsi → Workspace (riepilogo + tabella UDA) → Lezioni dell'UDA → 
 ```
 
 Ogni livello ha un pulsante "← Indietro" coerente in testa al pannello, sempre nella stessa posizione, che risale di esattamente un livello (mai un "torna alla libreria" generico da un livello profondo — coerenza di aspettativa). Le schede Contenuto/Domande/Informazioni della lezione restano tab orizzontali anche su mobile (già un pattern leggero, non richiede drill-down ulteriore).
+
+**Filtri libreria su mobile (fix review)**: la toolbar filtri si dispone su tre righe — riga 1: anno scolastico e classe, due colonne identiche; riga 2: ricerca a piena larghezza; riga 3: "Importa ZIP" e "Nuovo corso", due bottoni identici per larghezza e altezza. Sotto i ~360px anno e classe passano a una colonna singola. Nessun overflow orizzontale in nessun caso; lo stato vuoto (§6/§21) resta correttamente allineato sotto la griglia dei filtri.
 
 ## 6. Anatomia card corso
 
@@ -137,7 +142,11 @@ La scheda "Domande" della lezione selezionata è il Question Editor esistente (`
 "Classi" cessa di essere una voce di primo livello e diventa un tab dentro "Studenti":
 
 - tab **Studenti** — vista attuale invariata (ricerca, filtro stato, tabella con azioni riga, toggle globali portale/richieste/modalità verifica).
-- tab **Classi** — tabella semplice: nome classe, contatore studenti assegnati (derivato lato client dai dati studenti già caricati, nessuna nuova lettura), azioni modifica/elimina sulla riga. Inserimento di una nuova classe **direttamente in una riga della tabella** (un piccolo form inline, non un widget/modal separato). Nessun campo descrizione (rimosso rispetto a `ClassesView` oggi — non usato in pratica, riduce rumore nella tabella).
+- tab **Classi** — tabella semplice: nome classe, contatore studenti assegnati (derivato lato client dai dati studenti già caricati, nessuna nuova lettura), azioni modifica/elimina sulla riga. Inserimento di una nuova classe **direttamente in una riga della tabella** (un piccolo form inline, non un widget/modal separato), con la **stessa griglia/colonne, padding, bordi e altezza** delle righe esistenti — l'input nome vive nella colonna "Classe", la colonna "Studenti" mostra `—` (non ancora nota), il pulsante di conferma è centrato nella colonna Azioni (le righe esistenti invece allineano a destra la coppia Modifica/Elimina, coerente con l'avere un'unica azione da centrare qui). Nessun campo descrizione (rimosso rispetto a `ClassesView` oggi — non usato in pratica, riduce rumore nella tabella).
+
+**Verifiche — restyling di coerenza (fix review, DUX-05)**: la sezione resta concettualmente identica a oggi (nessuna nuova logica applicativa, nessun cambio del modello dati) ma adotta lo stesso linguaggio visivo di Studenti/Classi: tabella con colonne Titolo/Corso/Classe/Stato/Domande/Azioni, prima riga della tabella dedicata alla creazione inline (titolo, corso, classe opzionale, stato "Nuova", pulsante "Crea verifica" — stesso pattern della riga di inserimento Classi), righe successive per le verifiche esistenti. Il click su una verifica apre il dettaglio/configurazione **sotto la tabella**, non in una vista separata; il picker domande nel dettaglio è rappresentativo del solo layout, non introduce editing reale. Su mobile la riga di creazione diventa una sezione impilata compatta, visivamente collegata alla lista sottostante — mai una card enorme e separata.
+
+**Feedback "Salva bozza" persistente (fix review, DUX-05)**: lo stato del salvataggio (modifiche non salvate / salvataggio in corso / salvato / errore) è sempre visibile accanto al pulsante di salvataggio, **mai un solo toast destinato a sparire**. In dettaglio: `● Modifiche non salvate` quando c'è una modifica non ancora persistita; il pulsante mostra `Salvataggio…` disabilitato durante l'operazione; al successo `✓ Bozza salvata alle HH:mm`, con il timestamp che resta visibile finché non arriva una nuova modifica o un nuovo salvataggio (un breve richiamo visivo temporaneo è accettabile, ma non sostituisce lo stato persistente); in caso di errore un messaggio non auto-dismiss con possibilità di riprovare.
 
 ## 13. Pool come proprietà della lezione
 
@@ -162,7 +171,7 @@ Tutte le viste che elencano lezioni (sidebar workspace, tabella lezioni UDA, eve
 `TemplateKitView` resta una voce autonoma (non assorbita da Didattica, perché non riguarda un corso specifico) ma viene ripulita nella forma:
 
 - **Kit completo** — il download ZIP aggregato, in evidenza come azione primaria.
-- **Template singoli** — lista dei file scaricabili singolarmente, secondaria.
+- **Template singoli** — griglia a piena larghezza: 4 colonne identiche su desktop, 2×2 su tablet, 1 colonna su mobile (colonne esplicite, mai auto-fill, così l'ultima riga non si accorcia né si sposta a sinistra); card della stessa altezza; download come bottone icon-only (icona vettoriale inline, mai emoji/caratteri dipendenti dal font) con `aria-label` specifica per template (es. "Scarica template programma") e tooltip.
 - **Guida compatta** — istruzioni minime "come usare questi template con uno strumento AI o manualmente", sostituendo eventuale testo diffuso attuale.
 - **Struttura ZIP di esempio** — un albero di cartelle/file di esempio mostrato staticamente (testo preformattato), per chiarire cosa un import ZIP si aspetta senza dover aprire un file reale.
 
@@ -171,8 +180,8 @@ Nessuna nuova funzionalità (nessun editor template, nessuna generazione assisti
 ## 17. Visual direction
 
 - Eliminare il motivo diagonale a gradiente dell'header `TeacherShell` attuale.
-- Base scura sobria (riuso dei token `--color-surface`/`--color-surface-subtle`/`--color-surface-raised` già definiti in `index.css`, nessuna nuova palette).
-- Glow radiali molto leggeri (intensità ridotta rispetto al glow arancione attuale nell'header), usati con parsimonia come accento, mai come motivo dominante.
+- **Header unico su una riga**: `[Logo] [Didattica][Verifiche][Studenti][Template] … [Account]`, mai due barre di navigazione separate. Riprende dall'header reale (`TeacherShell`) il dimensionamento del logo, il bordo/accento bicolore in fondo, la leggibilità su fondo scuro e lo stile dell'avatar account a destra — non il pannello chiaro a gradiente diagonale. Voci di nav con icona coerente già in uso nell'app (Didattica 📚, Verifiche 📝, Studenti 🎓, Template 📄) + testo, stato attivo chiaro (`aria-current="page"`), focus da tastiera visibile. Su mobile la nav scorre solo in orizzontale (mai uno scroll verticale aggiuntivo), senza mai nascondere completamente logo o sezione corrente.
+- **Base "aurora sobria"**: navy scuro leggermente più vivo (riuso dei token `--color-surface`/`--color-surface-subtle`/`--color-surface-raised`, nessuna nuova palette) con tre glow radiali molto tenui — blu/ciano in alto a sinistra, viola-blu al centro, arancio/corallo in alto a destra — percepibili soprattutto negli spazi vuoti tra i pannelli, mai un motivo dominante, geometrico o animato; i pannelli restano opachi e non ne sono mai attraversati.
 - Pannelli leggibili: contrasto testo/sfondo verificato (stesso standard AA già richiesto per RE/QE), bordi sottili invece di ombre pesanti.
 - Logo sempre ad alto contrasto, indipendentemente dal glow di sfondo sottostante.
 - Nessuna decorazione aggressiva: niente pattern ripetuti, niente animazioni decorative, niente gradient multipli sovrapposti.
@@ -256,7 +265,7 @@ Nessun modulo esistente (Corsi/Lezioni/Domande/Classi) viene dichiarato "rimosso
 | DUX-02 | Workspace corso: intestazione, sidebar UDA/lezioni condivisa, selezione corso/UDA con tabelle, scheda Contenuto lezione. | DUX-01 | Sidebar unica riusata da tutte le selezioni; caricamento UDA/lezioni all'apertura del corso, non in libreria. |
 | DUX-03 | Scheda Domande contestualizzata (Question Editor integrato nel workspace) e scheda Informazioni lezione. | DUX-02 | Editing pool identico a `DomandeView` oggi, stesso contesto lezione della sidebar, nessuna duplicazione di logica di validazione pool. |
 | DUX-04 | Navigazione mobile a livelli, pulsante Indietro coerente, modalità Organizza (frecce su/giù), rimozione delle voci di nav legacy Corsi/Lezioni/Domande. | DUX-03 | Parità funzionale verificata; PR di rimozione separata e reversibile. |
-| DUX-05 | Classi assorbita in Studenti (tab), restauro Template (§16), visual polish finale (§17) sul resto della shell. | DUX-04 | Tab Classi con contatore derivato client-side; Template ripulito; nessun motivo diagonale residuo. |
+| DUX-05 | Classi assorbita in Studenti (tab) con inserimento inline, restyling di coerenza di Verifiche (tabella + creazione inline + feedback persistente "Salva bozza"), restauro Template (griglia 4/2/1), header unico definitivo e visual polish "aurora sobria" (§17) sul resto della shell. | DUX-04 | Tab Classi con contatore derivato client-side, riga di inserimento allineata alla griglia esistente; Template ripulito in griglia 4/2/1; Verifiche invariata nel concetto, coerente nello stile; feedback di salvataggio sempre persistente vicino alle azioni; header a riga singola con icone coerenti, nessun motivo diagonale residuo. |
 | Gate GDUX | Verifica finale end-to-end di tutta la roadmap Didattica. | DUX-01…05 | Checklist manuale DEV + evidenze automatiche, vedi §22. |
 
 ---

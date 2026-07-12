@@ -11,17 +11,19 @@
      il motivo diagonale dell'header attuale (§17 roadmap).
      ──────────────────────────────────────────────────────────────── */
   :root {
-    --color-primary: #3b82f6;
+    --color-primary: #4a8bf7;
     --color-primary-light: rgba(59, 130, 246, 0.16);
     --color-brand-blue: #38bdf8;
     --color-brand-orange: #fb923c;
     --color-brand-orange-light: rgba(251, 146, 60, 0.14);
-    /* Superfici leggermente più chiare della prima bozza DUX-00, per
-       distinguere meglio fondo/pannello/sidebar/contenuto ed evitare
-       grandi aree nere piatte (fix review). */
-    --color-surface: #171e2a;
-    --color-surface-subtle: #0d1119;
-    --color-surface-raised: #212a3a;
+    --color-accent-violet: #8b7cf6;
+    /* Superfici leggermente più chiare/vive della prima bozza DUX-00 —
+       "aurora sobria" (fix review): navy scuro con una punta di blu in
+       più, non un nero neutro — per distinguere meglio fondo/pannello/
+       sidebar/contenuto ed evitare grandi aree piatte. */
+    --color-surface: #182030;
+    --color-surface-subtle: #0e1420;
+    --color-surface-raised: #222c40;
     --color-border: #303c50;
     --color-text: #e7ebf2;
     --color-text-muted: #97a4b8;
@@ -52,12 +54,16 @@
     font-family: var(--font-sans);
     color: var(--color-text);
     background: var(--color-surface-subtle);
-    /* Due soli glow radiali molto tenui — blu (alto sinistra) e arancio
-       (basso destra, coerente col logo) — mai un motivo dominante
-       né un'area nera piatta (§17 roadmap, fix review). */
+    /* "Aurora sobria" (fix review §2): tre glow radiali molto tenui —
+       blu/ciano in alto a sinistra, viola-blu al centro, arancio/
+       corallo in alto a destra — percepibili soprattutto negli spazi
+       vuoti tra i pannelli, mai un motivo dominante, geometrico o
+       animato. I pannelli restano opachi (--color-surface/-raised),
+       così i glow non interferiscono mai con testi o tabelle. */
     background-image:
-      radial-gradient(ellipse 900px 520px at 6% -8%, rgba(59, 130, 246, 0.10), transparent 62%),
-      radial-gradient(ellipse 820px 480px at 100% 100%, rgba(251, 146, 60, 0.08), transparent 58%);
+      radial-gradient(ellipse 780px 520px at 4% -6%, rgba(56, 189, 248, 0.12), transparent 58%),
+      radial-gradient(ellipse 900px 650px at 52% 38%, rgba(139, 124, 246, 0.07), transparent 62%),
+      radial-gradient(ellipse 760px 480px at 102% -4%, rgba(251, 146, 60, 0.09), transparent 56%);
     background-repeat: no-repeat;
     background-attachment: fixed;
     min-height: 100vh;
@@ -126,21 +132,30 @@
     margin: 0;
   }
 
-  /* ── Top shell: logo + nav di primo livello + device toggle ─────── */
+  /* ── Header definitivo (fix review): un solo header su una riga —
+     [Logo] [nav Didattica/Verifiche/Studenti/Template] … [simulatore]
+     [Account]. Riprende dall'header reale dell'app (TeacherShell):
+     dimensionamento del logo (~34px), il bordo/accento bicolore in
+     fondo, la leggibilità su fondo scuro e lo stile dell'avatar
+     account a destra — mai il pannello chiaro a gradiente diagonale,
+     escluso dalla visual direction DUX (§17 roadmap). Nessuna seconda
+     barra di navigazione: il selettore Desktop/Mobile è uno strumento
+     del prototipo, non una sezione applicativa, ed è raggruppato con
+     un aria-label proprio. */
   .shell-header {
     position: sticky;
     top: 0;
     z-index: 20;
     display: flex;
     align-items: center;
-    gap: 1.5rem;
-    padding: 0.75rem 1.25rem;
+    gap: 0.75rem;
+    padding: 0.5rem 1rem;
     background: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
   }
   /* Sottile accento blu→arancio in fondo all'header — eco moderata del
-     doppio accento dell'app reale, mai il motivo diagonale (§17, fix
-     review: "accenti arancio con moderazione, coerenti col logo"). */
+     doppio accento dell'app reale (border-image bicolore), mai il
+     motivo diagonale. */
   .shell-header::after {
     content: '';
     position: absolute;
@@ -149,27 +164,29 @@
     bottom: -1px;
     height: 2px;
     background: linear-gradient(90deg, var(--color-primary), var(--color-brand-orange));
-    opacity: 0.55;
+    opacity: 0.6;
   }
   .logo {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     font-weight: 800;
-    font-size: 1rem;
+    font-size: 0.9rem;
     letter-spacing: 0.02em;
     color: #fff;
+    flex-shrink: 0;
     /* logo sempre ad alto contrasto indipendentemente dal glow (§17) */
   }
   .logo .mark,
   .logo .logo-img {
-    width: 1.6rem;
-    height: 1.6rem;
+    height: 1.9rem;
+    width: auto;
+    max-width: 2.4rem;
     border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     color: #fff;
     object-fit: contain;
     flex-shrink: 0;
@@ -178,35 +195,83 @@
     /* Placeholder testuale, usato SOLO se il PNG reale non è caricabile
        (vedi commento HTML sopra il logo) — mai spacciato per branding
        finale. */
+    width: 1.9rem;
     background: linear-gradient(135deg, var(--color-primary), var(--color-brand-orange));
   }
+  .logo .logo-wordmark {
+    white-space: nowrap;
+  }
+  /* Sul frame mobile simulato il wordmark cede spazio a nav/simulatore/
+     account (il marchio icona resta sempre visibile — mai il logo del
+     tutto nascosto); stessa soglia usata più sotto per il simulatore
+     Desktop/Mobile, così il budget orizzontale dell'header torna a
+     capire tutti gli elementi senza spingere la pagina in overflow. */
+  body.mobile .logo .logo-wordmark {
+    display: none;
+  }
+  @media (max-width: 420px) {
+    .logo .logo-wordmark {
+      display: none;
+    }
+  }
+  /* Nav accanto al logo, scorrevole solo in orizzontale su schermi
+     stretti — mai un secondo scroll verticale, mai la sezione attiva
+     completamente fuori vista (JS la riporta in vista al click). Un
+     min-width impedisce che diventi 0px quando logo/simulatore/account
+     (flex-shrink:0) esauriscono lo spazio disponibile. */
   .top-nav {
     display: flex;
-    gap: 0.25rem;
+    gap: 0.15rem;
     flex: 1;
-    flex-wrap: wrap;
+    min-width: 3.5rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+  .top-nav::-webkit-scrollbar {
+    height: 4px;
   }
   .top-nav button {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+    white-space: nowrap;
     background: transparent;
-    border-color: transparent;
-    padding: 0.5rem 0.85rem;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: var(--radius) var(--radius) 0 0;
+    padding: 0.5rem 0.75rem;
     font-weight: 600;
+    font-size: 0.8125rem;
     color: var(--color-text-muted);
   }
-  .top-nav button.active {
-    color: #fff;
+  .top-nav button:hover:not([aria-current='page']) {
+    color: var(--color-text);
     background: var(--color-surface-raised);
-    border-color: var(--color-border);
+  }
+  .top-nav button[aria-current='page'] {
+    color: var(--color-primary);
+    background: var(--color-primary-light);
+    border-bottom-color: var(--color-primary);
+  }
+  .top-nav .nav-icon {
+    font-size: 0.9rem;
+    line-height: 1;
   }
   .device-toggle {
     display: flex;
     gap: 0.25rem;
+    flex-shrink: 0;
     background: var(--color-surface-subtle);
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
     padding: 0.15rem;
   }
   .device-toggle button {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
     border: none;
     background: transparent;
     padding: 0.3rem 0.65rem;
@@ -215,6 +280,42 @@
   }
   .device-toggle button.active {
     background: var(--color-primary);
+    color: #fff;
+  }
+  /* Sul frame mobile il simulatore si riduce a due icone (fix review):
+     libera spazio per la nav, che altrimenti collasserebbe a 0px e
+     lascerebbe l'header in overflow orizzontale — mai la sezione
+     attiva realmente irraggiungibile. */
+  body.mobile .device-toggle-label {
+    display: none;
+  }
+  body.mobile .device-toggle button {
+    padding: 0.3rem 0.5rem;
+  }
+  body.mobile .shell-header {
+    gap: 0.4rem;
+    padding: 0.5rem 0.6rem;
+  }
+  /* Account a destra — stesso linguaggio dell'avatarBtn reale
+     (cerchio 34px, iniziali, primary-light + bordo, hover invertito). */
+  .account-avatar-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.125rem;
+    height: 2.125rem;
+    border-radius: 50%;
+    background: var(--color-primary-light);
+    border: 1.5px solid var(--color-border);
+    color: var(--color-primary);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    padding: 0;
+  }
+  .account-avatar-btn:hover {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
     color: #fff;
   }
 
@@ -291,6 +392,70 @@
   .library-toolbar .actions {
     display: flex;
     gap: 0.5rem;
+  }
+  /* Filtri Didattica mobile (fix review §3): riga 1 anno+classe (due
+     colonne identiche), riga 2 ricerca a piena larghezza, riga 3
+     Importa ZIP + Nuovo corso (due bottoni identici). Sotto i ~360px,
+     anno e classe passano a una colonna. `.filters`/`.actions` restano
+     wrapper semantici ma diventano "trasparenti" al grid tramite
+     display:contents, così i loro figli partecipano direttamente alle
+     aree nominate. */
+  body.mobile .library-toolbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      'year class'
+      'search search'
+      'importzip newcourse';
+    gap: 0.5rem;
+    align-items: stretch;
+  }
+  body.mobile .library-toolbar .filters,
+  body.mobile .library-toolbar .actions {
+    display: contents;
+  }
+  body.mobile #filter-year {
+    grid-area: year;
+    width: 100%;
+    height: 2.25rem;
+    box-sizing: border-box;
+  }
+  body.mobile #filter-class {
+    grid-area: class;
+    width: 100%;
+    height: 2.25rem;
+    box-sizing: border-box;
+  }
+  body.mobile #filter-search.search {
+    grid-area: search;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    height: 2.25rem;
+    box-sizing: border-box;
+  }
+  body.mobile .btn-import-zip {
+    grid-area: importzip;
+    width: 100%;
+    height: 2.25rem;
+    box-sizing: border-box;
+  }
+  body.mobile .btn-new-course {
+    grid-area: newcourse;
+    width: 100%;
+    height: 2.25rem;
+    box-sizing: border-box;
+  }
+  @media (max-width: 360px) {
+    body.mobile .library-toolbar {
+      grid-template-columns: 1fr;
+      grid-template-areas:
+        'year'
+        'class'
+        'search'
+        'importzip'
+        'newcourse';
+    }
   }
   .library-body {
     padding: 1.25rem;
@@ -721,6 +886,13 @@
     gap: 0.3rem;
     justify-content: flex-end;
   }
+  /* Riga di inserimento inline (tab Classi, fix review): il pulsante
+     "+ Aggiungi" è l'unica azione della riga, va centrato nella
+     colonna Azioni invece di allinearsi a destra come le coppie
+     Modifica/Elimina delle righe esistenti. */
+  .row-actions-center {
+    justify-content: center;
+  }
   .row-actions button {
     padding: 0.2rem 0.5rem;
     font-size: 0.75rem;
@@ -951,6 +1123,130 @@
     width: 100%;
   }
 
+  /* ── Verifiche (fix review §6/§7) ─────────────────────────────────── */
+  .verifiche-body {
+    padding: 0 1.25rem 1.5rem;
+  }
+  .verifiche-table-desktop select,
+  .verifiche-table-desktop input[type='text'] {
+    width: 100%;
+  }
+  .verifiche-mobile {
+    display: none;
+  }
+  body.mobile .verifiche-table-desktop {
+    display: none;
+  }
+  body.mobile .verifiche-mobile {
+    display: block;
+  }
+  /* Sezione di creazione impilata compatta su mobile — collegata
+     visivamente alla lista sottostante, non una card enorme separata. */
+  .verifica-create-mobile {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .verifica-create-mobile .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+  .verifica-create-mobile input,
+  .verifica-create-mobile select,
+  .verifica-create-mobile button {
+    width: 100%;
+    box-sizing: border-box;
+    height: 2.25rem;
+  }
+  .verifica-mobile-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    width: 100%;
+    align-items: flex-start;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface-raised);
+    margin-bottom: 0.5rem;
+    text-align: left;
+  }
+  .verifica-mobile-row .v-title {
+    font-weight: 600;
+    font-size: 0.8125rem;
+  }
+  .verifica-mobile-row .v-meta {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+  .verifica-detail {
+    margin-top: 1rem;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.15rem;
+  }
+  .verifica-detail-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+  .question-picker-mock {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .q-mock-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+  }
+  .verifica-save-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--color-border);
+  }
+  /* Feedback persistente vicino alle azioni (fix review §7) — mai un
+     solo toast destinato a sparire: lo stato resta finché non cambia
+     la condizione (nuova modifica, nuovo salvataggio). */
+  .save-status {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    min-height: 1.1em;
+  }
+  .save-status-dirty {
+    color: var(--color-warning);
+  }
+  .save-status-success {
+    color: var(--color-success);
+    border-radius: var(--radius);
+    padding: 0.15rem 0.4rem;
+    margin: -0.15rem -0.4rem;
+  }
+  .save-status-success.save-flash {
+    background: var(--color-success-bg);
+  }
+  .save-status-error {
+    color: var(--color-error);
+  }
+
   /* ── Template ─────────────────────────────────────────────────────── */
   .template-hero {
     display: flex;
@@ -964,11 +1260,29 @@
     padding: 1.1rem 1.3rem;
     margin-bottom: 1.25rem;
   }
+  /* Griglia Template singoli (fix review): 4 colonne identiche su
+     desktop, 2×2 su tablet, 1 colonna su mobile — colonne esplicite,
+     mai auto-fill, così l'ultima riga non si accorcia né si sposta a
+     sinistra quando il conteggio non riempie la griglia. */
   .template-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(4, 1fr);
     gap: 0.75rem;
     margin-bottom: 1.25rem;
+    align-items: stretch;
+  }
+  @media (max-width: 900px) {
+    .template-list {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 480px) {
+    .template-list {
+      grid-template-columns: 1fr;
+    }
+  }
+  body.mobile .template-list {
+    grid-template-columns: 1fr;
   }
   .template-item {
     display: flex;
@@ -978,8 +1292,41 @@
     background: var(--color-surface-raised);
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
-    padding: 0.65rem 0.85rem;
+    padding: 0.75rem 0.85rem;
     font-size: 0.8125rem;
+    min-height: 4.5rem;
+    box-sizing: border-box;
+  }
+  .template-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+  .template-item-name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .template-item-desc {
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+  }
+  /* Bottone icon-only coerente (fix review): stessa dimensione ovunque,
+     niente emoji/caratteri dipendenti dal font — un'icona vettoriale
+     inline (freccia dentro un vassoio), tooltip via title + aria-label
+     specifica per ogni template. */
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  .icon-btn svg {
+    width: 16px;
+    height: 16px;
   }
   .guide-box {
     background: var(--color-surface-raised);
@@ -1050,18 +1397,31 @@
       alt="SchoolForge"
       onerror="this.outerHTML = '&lt;span class=&quot;mark&quot; title=&quot;Segnaposto — logo reale non trovato a questo percorso relativo&quot;&gt;SF&lt;/span&gt;';"
     />
-    SchoolForge
+    <span class="logo-wordmark">SchoolForge</span>
   </div>
   <nav class="top-nav" aria-label="Sezioni docente">
-    <button type="button" data-topnav="library" class="active">Didattica</button>
-    <button type="button" data-topnav="verifiche">Verifiche</button>
-    <button type="button" data-topnav="students">Studenti</button>
-    <button type="button" data-topnav="template">Template</button>
+    <button type="button" data-topnav="library" aria-current="page">
+      <span class="nav-icon" aria-hidden="true">📚</span><span>Didattica</span>
+    </button>
+    <button type="button" data-topnav="verifiche">
+      <span class="nav-icon" aria-hidden="true">📝</span><span>Verifiche</span>
+    </button>
+    <button type="button" data-topnav="students">
+      <span class="nav-icon" aria-hidden="true">🎓</span><span>Studenti</span>
+    </button>
+    <button type="button" data-topnav="template">
+      <span class="nav-icon" aria-hidden="true">📄</span><span>Template</span>
+    </button>
   </nav>
-  <div class="device-toggle" role="group" aria-label="Simula viewport">
-    <button type="button" data-device="desktop" class="active">🖥️ Desktop</button>
-    <button type="button" data-device="mobile">📱 Mobile</button>
+  <div class="device-toggle" role="group" aria-label="Simula viewport prototipo">
+    <button type="button" data-device="desktop" class="active" aria-pressed="true">
+      <span aria-hidden="true">🖥️</span><span class="device-toggle-label">Desktop</span>
+    </button>
+    <button type="button" data-device="mobile" aria-pressed="false">
+      <span aria-hidden="true">📱</span><span class="device-toggle-label">Mobile</span>
+    </button>
   </div>
+  <button type="button" class="account-avatar-btn" aria-label="Account: Docente" title="Account: Docente">DC</button>
 </header>
 
 <div class="proto-note">
@@ -1073,9 +1433,23 @@
   <div class="device-frame">
     <div class="device-frame-inner">
 
-      <!-- ══════════════════════ VERIFICHE (placeholder, invariato) ══════════════════════ -->
+      <!-- ══════════════════════ VERIFICHE (fix review: vista navigabile) ══════════════════════ -->
       <section class="screen" id="screen-verifiche">
-        <div class="empty-hint">Sezione "Verifiche" invariata da DUX — non fa parte del prototipo Didattica.</div>
+        <h2 class="section-title">Verifiche</h2>
+        <div class="verifiche-body">
+          <!-- Desktop: tabella con riga di creazione inline (stesso pattern della tab Classi). -->
+          <table class="data-table verifiche-table-desktop">
+            <thead>
+              <tr><th>Titolo</th><th>Corso</th><th>Classe</th><th>Stato</th><th>Domande</th><th></th></tr>
+            </thead>
+            <tbody id="verifiche-tbody"></tbody>
+          </table>
+
+          <!-- Mobile: creazione come sezione impilata compatta, collegata visivamente alla lista sottostante (§6 fix review). -->
+          <div class="verifiche-mobile" id="verifiche-mobile"></div>
+
+          <div class="verifica-detail" id="verifica-detail" hidden></div>
+        </div>
       </section>
 
       <!-- ══════════════════════ DIDATTICA — LIBRERIA CORSI ══════════════════════ -->
@@ -1091,8 +1465,8 @@
             <input class="search" id="filter-search" type="search" placeholder="Cerca corso…" aria-label="Cerca corso" />
           </div>
           <div class="actions">
-            <button type="button" class="ghost">Importa ZIP</button>
-            <button type="button" class="primary">+ Nuovo corso</button>
+            <button type="button" class="ghost btn-import-zip">Importa ZIP</button>
+            <button type="button" class="primary btn-new-course">+ Nuovo corso</button>
           </div>
         </div>
         <div class="library-body">
@@ -1417,6 +1791,20 @@ uda-02-sicurezza/
     { name: 'pool.md', desc: 'Domande della lezione' }
   ];
 
+  var verifiche = [
+    { id: 'v1', title: 'Verifica reti — modulo 1', courseId: 'c1', className: '4A INF', status: 'Attiva', questionCount: 10 },
+    { id: 'v2', title: 'Verifica sicurezza informatica', courseId: 'c1', className: '4A INF', status: 'Bozza', questionCount: 6 },
+    { id: 'v3', title: 'Verifica basi di dati — SQL', courseId: 'c2', className: '3B INF', status: 'Chiusa', questionCount: 12 }
+  ];
+
+  var mockQuestions = [
+    'Quanti livelli compongono il modello OSI?',
+    'Descrivi la funzione del livello di trasporto.',
+    'Quali fasi compongono lo handshake TCP a tre vie?',
+    'Cos\'è il NAT e a cosa serve?',
+    'Elenca due differenze tra routing statico e dinamico.'
+  ];
+
   // ── State ────────────────────────────────────────────────────────
   var state = {
     top: 'library',
@@ -1429,8 +1817,15 @@ uda-02-sicurezza/
     lessonId: null,
     lessonTab: 'contenuto',
     organize: false,
-    mobileLevel: 'course' // course | uda | lesson
+    mobileLevel: 'course', // course | uda | lesson
+    verificaId: null
   };
+
+  // Stato del mock "Salva bozza" (§7 fix review) — separato da `state`
+  // perché riguarda solo il pannello dettaglio Verifiche, non la
+  // navigazione. 'idle' | 'dirty' | 'saving' | 'success' | 'error'.
+  var verificaSaveStatus = 'idle';
+  var forceNextSaveError = false;
 
   function byId(id) { return document.getElementById(id); }
 
@@ -1475,10 +1870,16 @@ uda-02-sicurezza/
 
   function renderTopNav() {
     document.querySelectorAll('[data-topnav]').forEach(function (btn) {
-      btn.classList.toggle('active', btn.getAttribute('data-topnav') === state.top);
-    });
-    ['library', 'workspace'].forEach(function (id) {
-      byId('screen-' + id === 'screen-workspace' ? 'screen-workspace' : id === 'library' ? 'screen-library' : id);
+      var isActive = btn.getAttribute('data-topnav') === state.top;
+      if (isActive) {
+        btn.setAttribute('aria-current', 'page');
+        // La sezione attiva resta sempre raggiungibile: se la nav
+        // scorre in orizzontale su mobile, la riportiamo in vista
+        // invece di lasciarla fuori schermo (fix review §1).
+        btn.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+      } else {
+        btn.removeAttribute('aria-current');
+      }
     });
     byId('screen-library').classList.toggle('visible', state.top === 'library' && !state.courseId);
     byId('screen-workspace').classList.toggle('visible', state.top === 'library' && !!state.courseId);
@@ -2045,19 +2446,224 @@ uda-02-sicurezza/
     addRow.className = 'inline-add-row';
     addRow.innerHTML =
       '<td><input type="text" placeholder="Nuova classe…" aria-label="Nome nuova classe" /></td>' +
-      '<td style="color:var(--color-text-muted);">0</td>' +
-      '<td class="row-actions"><button type="button" class="primary">+ Aggiungi</button></td>';
+      '<td style="color:var(--color-text-muted);">—</td>' +
+      '<td class="row-actions row-actions-center"><button type="button" class="primary">+ Aggiungi</button></td>';
     tbody.appendChild(addRow);
   }
 
+  // ── Verifiche (fix review §6/§7) ──────────────────────────────────
+  function courseSelectOptionsHtml() {
+    return courses.map(function (c) { return '<option value="' + c.id + '">' + c.title + '</option>'; }).join('');
+  }
+
+  function classSelectOptionsHtml() {
+    return '<option value="">—</option>' + classes.map(function (c) { return '<option>' + c.name + '</option>'; }).join('');
+  }
+
+  function statusPillClass(status) {
+    if (status === 'Attiva') return 'approved';
+    if (status === 'Bozza') return 'pending';
+    return 'blocked';
+  }
+
+  function renderVerifiche() {
+    var courseTitleById = {};
+    courses.forEach(function (c) { courseTitleById[c.id] = c.title; });
+
+    // ── Desktop: tabella con riga di creazione inline ──
+    var tbody = byId('verifiche-tbody');
+    tbody.innerHTML = '';
+    var createRow = document.createElement('tr');
+    createRow.className = 'inline-add-row';
+    createRow.innerHTML =
+      '<td><input type="text" placeholder="Titolo verifica…" aria-label="Titolo nuova verifica" /></td>' +
+      '<td><select aria-label="Corso della nuova verifica">' + courseSelectOptionsHtml() + '</select></td>' +
+      '<td><select aria-label="Classe della nuova verifica (opzionale)">' + classSelectOptionsHtml() + '</select></td>' +
+      '<td><span class="status-pill pending">Nuova</span></td>' +
+      '<td style="color:var(--color-text-muted);">—</td>' +
+      '<td class="row-actions row-actions-center"><button type="button" class="primary">Crea verifica</button></td>';
+    tbody.appendChild(createRow);
+
+    verifiche.forEach(function (v) {
+      var tr = document.createElement('tr');
+      var openBtn = '<button type="button" class="row-open-btn" data-open-verifica="' + v.id + '">' + v.title + '</button>';
+      tr.innerHTML =
+        '<td>' + openBtn + '</td>' +
+        '<td>' + (courseTitleById[v.courseId] || '—') + '</td>' +
+        '<td>' + (v.className || '—') + '</td>' +
+        '<td><span class="status-pill ' + statusPillClass(v.status) + '">' + v.status + '</span></td>' +
+        '<td>' + v.questionCount + '</td>' +
+        '<td class="row-actions"><button type="button" class="ghost" aria-label="Azioni verifica — ' + v.title + '">⋯</button></td>';
+      tr.querySelector('[data-open-verifica]').addEventListener('click', function () { openVerificaDetail(v.id); });
+      tbody.appendChild(tr);
+    });
+
+    // ── Mobile: creazione compatta impilata + elenco a righe ──
+    var mobileBox = byId('verifiche-mobile');
+    mobileBox.innerHTML =
+      '<div class="verifica-create-mobile">' +
+        '<input type="text" placeholder="Titolo verifica…" aria-label="Titolo nuova verifica" />' +
+        '<div class="two-col">' +
+          '<select aria-label="Corso della nuova verifica">' + courseSelectOptionsHtml() + '</select>' +
+          '<select aria-label="Classe della nuova verifica (opzionale)">' + classSelectOptionsHtml() + '</select>' +
+        '</div>' +
+        '<button type="button" class="primary">Crea verifica</button>' +
+      '</div>';
+    verifiche.forEach(function (v) {
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'verifica-mobile-row';
+      row.setAttribute('aria-label', 'Apri verifica ' + v.title + ' — ' + v.status);
+      row.innerHTML =
+        '<span class="v-title">' + v.title + '</span>' +
+        '<span class="v-meta">' + (courseTitleById[v.courseId] || '—') + ' · ' + (v.className || '—') + ' · ' + v.status + ' · ' + v.questionCount + ' domande</span>';
+      row.addEventListener('click', function () { openVerificaDetail(v.id); });
+      mobileBox.appendChild(row);
+    });
+  }
+
+  function openVerificaDetail(id) {
+    state.verificaId = id;
+    verificaSaveStatus = 'idle';
+    forceNextSaveError = false;
+    renderVerificaDetail();
+  }
+
+  function renderVerificaDetail() {
+    var panel = byId('verifica-detail');
+    if (!state.verificaId) {
+      panel.hidden = true;
+      panel.innerHTML = '';
+      return;
+    }
+    var v = verifiche.filter(function (x) { return x.id === state.verificaId; })[0];
+    if (!v) { panel.hidden = true; return; }
+    var course = findCourse(v.courseId);
+
+    panel.hidden = false;
+    panel.innerHTML =
+      '<div class="verifica-detail-head">' +
+        '<h3 style="font-size:1rem;">' + v.title + '</h3>' +
+        '<span class="status-pill ' + statusPillClass(v.status) + '">' + v.status + '</span>' +
+      '</div>' +
+      '<div class="info-grid" style="margin-bottom:1rem;">' +
+        '<div class="info-field"><div class="label">Corso</div><div class="value">' + (course ? course.title : '—') + '</div></div>' +
+        '<div class="info-field"><div class="label">Classe</div><div class="value">' + (v.className || '—') + '</div></div>' +
+      '</div>' +
+      '<div class="block">' +
+        '<span class="blockLabel" style="font-size:.75rem; font-weight:700; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:.04em;">Domande selezionate (anteprima layout, non logica reale)</span>' +
+        '<div class="question-picker-mock" style="margin-top:.5rem;" id="verifica-question-picker">' +
+          mockQuestions.map(function (q, i) {
+            return '<label class="q-mock-item"><input type="checkbox" ' + (i < 3 ? 'checked' : '') + ' data-q-mock="' + i + '" /> ' + q + '</label>';
+          }).join('') +
+        '</div>' +
+      '</div>' +
+      '<div class="verifica-save-row">' +
+        '<button type="button" class="primary" id="btn-save-draft">Salva bozza</button>' +
+        '<span class="save-status" id="verifica-save-status"></span>' +
+        '<button type="button" class="ghost" id="btn-simulate-error">Simula errore al prossimo salvataggio</button>' +
+      '</div>';
+
+    panel.querySelectorAll('[data-q-mock]').forEach(function (cb) {
+      cb.addEventListener('change', markVerificaDirty);
+    });
+    byId('btn-save-draft').addEventListener('click', handleSaveDraft);
+    byId('btn-simulate-error').addEventListener('click', function () {
+      forceNextSaveError = true;
+      this.textContent = 'Errore programmato al prossimo salvataggio ✓';
+    });
+
+    updateSaveStatusUi();
+  }
+
+  function markVerificaDirty() {
+    if (verificaSaveStatus === 'saving') return;
+    verificaSaveStatus = 'dirty';
+    updateSaveStatusUi();
+  }
+
+  /**
+   * "Salva bozza" (fix review §7): lo stato è sempre uno tra
+   * dirty/saving/success/error, mostrato in modo persistente accanto
+   * al bottone — mai un solo toast destinato a sparire. Il timestamp
+   * di successo resta visibile finché non arriva una nuova modifica o
+   * un nuovo salvataggio.
+   */
+  function handleSaveDraft() {
+    if (verificaSaveStatus === 'saving') return;
+    verificaSaveStatus = 'saving';
+    updateSaveStatusUi();
+    setTimeout(function () {
+      if (forceNextSaveError) {
+        forceNextSaveError = false;
+        verificaSaveStatus = 'error';
+      } else {
+        verificaSaveStatus = 'success';
+      }
+      updateSaveStatusUi();
+    }, 500);
+  }
+
+  function formatNowHHMM() {
+    var d = new Date();
+    function pad(n) { return n < 10 ? '0' + n : String(n); }
+    return pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function updateSaveStatusUi() {
+    var statusEl = byId('verifica-save-status');
+    var btn = byId('btn-save-draft');
+    if (!statusEl || !btn) return;
+
+    if (verificaSaveStatus === 'dirty') {
+      statusEl.className = 'save-status save-status-dirty';
+      statusEl.textContent = '● Modifiche non salvate';
+      btn.disabled = false;
+      btn.textContent = 'Salva bozza';
+    } else if (verificaSaveStatus === 'saving') {
+      btn.disabled = true;
+      btn.textContent = 'Salvataggio…';
+    } else if (verificaSaveStatus === 'success') {
+      statusEl.className = 'save-status save-status-success save-flash';
+      statusEl.textContent = '✓ Bozza salvata alle ' + formatNowHHMM();
+      btn.disabled = true;
+      btn.textContent = 'Salva bozza';
+      setTimeout(function () { statusEl.classList.remove('save-flash'); }, 1200);
+    } else if (verificaSaveStatus === 'error') {
+      statusEl.className = 'save-status save-status-error';
+      statusEl.textContent = '✖ Impossibile salvare la bozza. Riprova.';
+      btn.disabled = false;
+      btn.textContent = 'Riprova';
+    } else {
+      statusEl.className = 'save-status';
+      statusEl.textContent = '';
+      btn.disabled = true;
+      btn.textContent = 'Salva bozza';
+    }
+  }
+
   // ── Template ─────────────────────────────────────────────────────
+  var DOWNLOAD_ICON_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+    '<path d="M12 3v10"/><path d="M8 9l4 4 4-4"/>' +
+    '<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>';
+
   function renderTemplates() {
     var list = byId('template-list');
     list.innerHTML = '';
     templates.forEach(function (t) {
       var item = document.createElement('div');
       item.className = 'template-item';
-      item.innerHTML = '<span>' + t.name + '<br><span style="color:var(--color-text-muted); font-size:.75rem;">' + t.desc + '</span></span><button type="button" class="ghost">⬇</button>';
+      var label = 'Scarica template ' + t.name.replace(/\.md$/, '');
+      item.innerHTML =
+        '<div class="template-item-info">' +
+          '<span class="template-item-name">' + t.name + '</span>' +
+          '<span class="template-item-desc">' + t.desc + '</span>' +
+        '</div>' +
+        '<button type="button" class="ghost icon-btn" aria-label="' + label + '" title="' + label + '">' +
+          DOWNLOAD_ICON_SVG +
+        '</button>';
       list.appendChild(item);
     });
   }
@@ -2067,6 +2673,7 @@ uda-02-sicurezza/
   renderLibrary();
   renderStudents();
   renderClasses();
+  renderVerifiche();
   renderTemplates();
   renderTopNav();
 })();
