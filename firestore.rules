@@ -143,6 +143,19 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/corrections/$(submissionId)).data;
     }
 
+    // Mirrors correctionData(), but reads the correction as it will exist
+    // AFTER the current atomic write commits — required to authorize a
+    // correctionReturns create/update against a correction that is
+    // transitioning to 'returned' in the very same batch (returnCorrection),
+    // and to deny one against a correction that is (or remains) 'in_progress'
+    // or 'completed' after the batch, e.g. a stale correctionReturns left
+    // hidden by reopenCorrection. getAfter() reflects sibling writes only
+    // when they are part of the same commit, same idiom already used for
+    // submissions/submissionReceipts (see submissionReceipts create below).
+    function correctionDataAfter(submissionId) {
+      return getAfter(/databases/$(database)/documents/corrections/$(submissionId)).data;
+    }
+
     // The exact CorrectionStatus transition graph from correctionContract.ts
     // (isValidCorrectionStatusTransition) — kept in sync by hand, since
     // Rules cannot import the TypeScript helper. Deliberately excludes
@@ -153,6 +166,23 @@ service cloud.firestore {
         || (from == 'completed' && to == 'returned')
         || (from == 'completed' && to == 'in_progress')
         || (from == 'returned' && to == 'in_progress');
+    }
+
+    // Minimal event integrity check (no deep validation of questionDeltas
+    // content — see the documented Rules/service boundary above the
+    // corrections match block): every correctionEvents write must declare a
+    // (type, previousStatus, nextStatus) combination that is actually
+    // reachable, mirroring exactly what correctionsService.ts ever writes.
+    // 'scoreAdjusted' never changes status (in_progress -> in_progress, only
+    // reachable after a reopen — the first pass writes no event at all,
+    // enforced client-side by isReopenedCorrection, not re-derivable here
+    // without deep evaluations inspection).
+    function isValidCorrectionEventTypeStatus(type, previousStatus, nextStatus) {
+      return (type == 'reopened'
+              && (previousStatus == 'completed' || previousStatus == 'returned')
+              && nextStatus == 'in_progress')
+        || (type == 'returned' && previousStatus == 'completed' && nextStatus == 'returned')
+        || (type == 'scoreAdjusted' && previousStatus == 'in_progress' && nextStatus == 'in_progress');
     }
 
     // --- settings/owner ---
@@ -714,7 +744,15 @@ service cloud.firestore {
              'correctionId', 'ownerUid', 'type', 'actorUid', 'previousStatus', 'nextStatus',
              'reason', 'timestamp'
            ])
-        && request.resource.data.type in ['reopened', 'scoreAdjusted', 'returned'];
+        && request.resource.data.type in ['reopened', 'scoreAdjusted', 'returned']
+        && request.resource.data.timestamp == request.time
+        && isValidCorrectionEventTypeStatus(
+             request.resource.data.type,
+             request.resource.data.previousStatus,
+             request.resource.data.nextStatus
+           )
+        && request.resource.data.nextStatus
+             == correctionDataAfter(request.resource.data.correctionId).status;
 
       allow read: if isOwner() && resource.data.ownerUid == request.auth.uid;
       allow update, delete: if false;
@@ -727,9 +765,18 @@ service cloud.firestore {
     // NOT sufficient (a reopened correction hides it immediately, without
     // deleting it, by flipping this field).
     match /correctionReturns/{submissionId} {
+      // Both create and update require the correction to be 'returned' as
+      // of AFTER this same atomic write (correctionDataAfter) — never just
+      // "does a corrections doc exist". This is what makes returnCorrection
+      // work (correction transitions to 'returned' in the very same batch
+      // that creates/overwrites this projection) while denying any write
+      // here while the correction is 'in_progress' or 'completed' —
+      // including the two narrow toggles below, which must never re-surface
+      // or grow a projection left stale by reopenCorrection.
       allow create: if isOwner()
         && exists(/databases/$(database)/documents/corrections/$(submissionId))
         && correctionData(submissionId).ownerUid == request.auth.uid
+        && correctionDataAfter(submissionId).status == 'returned'
         && request.resource.data.keys().hasOnly([
              'correctionId', 'verificationId', 'studentUid', 'ownerUid', 'verificationTitle',
              'className', 'submittedAt', 'returnedAt', 'questions', 'generalFeedback',
@@ -747,17 +794,36 @@ service cloud.firestore {
         && request.resource.data.studentUid == correctionData(submissionId).studentUid
         && request.resource.data.ownerUid == request.auth.uid;
 
-      // Update: covers both a full rewrite on a later return (after a
-      // reopen -> re-complete -> return cycle) and the two narrow toggles
-      // (visibleToStudent, solutionsVisible/questions) — only identity
-      // stays pinned; detailed content is owner-only, same boundary as
-      // corrections above.
+      // Update: covers a full rewrite on a later return (after a reopen ->
+      // re-complete -> return cycle), the two narrow toggles
+      // (visibleToStudent, solutionsVisible/questions), AND
+      // reopenCorrection's own atomic hide — the ONE case where the
+      // correction is deliberately leaving 'returned' in this same write.
+      // That last case is narrowly scoped on purpose: it may only flip
+      // visibleToStudent to false (plus updatedAt), never touch scoring
+      // content, and only when the correction is actually transitioning
+      // returned -> in_progress in this same batch — reopenCorrection is
+      // the only caller that satisfies all three. Every other update
+      // (including both toggle service functions, which now also
+      // self-check client-side) requires the correction to be 'returned'
+      // as of after this write — never merely that the projection exists,
+      // per the documented Rules/service boundary above.
       allow update: if isOwner()
         && resource.data.ownerUid == request.auth.uid
         && request.resource.data.correctionId == resource.data.correctionId
         && request.resource.data.verificationId == resource.data.verificationId
         && request.resource.data.studentUid == resource.data.studentUid
-        && request.resource.data.ownerUid == resource.data.ownerUid;
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && (
+          correctionDataAfter(submissionId).status == 'returned'
+            || (
+              correctionData(submissionId).status == 'returned'
+                && correctionDataAfter(submissionId).status == 'in_progress'
+                && request.resource.data.diff(resource.data).affectedKeys()
+                     .hasOnly(['visibleToStudent', 'updatedAt'])
+                && request.resource.data.visibleToStudent == false
+            )
+        );
 
       allow read: if isOwner() && resource.data.ownerUid == request.auth.uid;
 

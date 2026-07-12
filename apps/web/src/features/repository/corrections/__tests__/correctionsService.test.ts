@@ -631,6 +631,7 @@ describe('reopenCorrection', () => {
 
 describe('setReturnVisibleToStudent', () => {
   it('updates visibleToStudent when it actually changes', async () => {
+    seedCorrection({ status: 'returned' });
     seedReturn({ visibleToStudent: true });
 
     await setReturnVisibleToStudent(SUBMISSION_ID, false, fakeDb);
@@ -641,6 +642,7 @@ describe('setReturnVisibleToStudent', () => {
   });
 
   it('writes nothing when the value is already what was requested', async () => {
+    seedCorrection({ status: 'returned' });
     seedReturn({ visibleToStudent: true });
 
     await setReturnVisibleToStudent(SUBMISSION_ID, true, fakeDb);
@@ -649,7 +651,36 @@ describe('setReturnVisibleToStudent', () => {
   });
 
   it('rejects when no return projection exists', async () => {
+    seedCorrection({ status: 'returned' });
+
     await expect(setReturnVisibleToStudent(SUBMISSION_ID, false, fakeDb)).rejects.toThrow();
+  });
+
+  it('rejects when no correction exists at all', async () => {
+    await expect(setReturnVisibleToStudent(SUBMISSION_ID, false, fakeDb)).rejects.toThrow(
+      /correzione non trovata/i,
+    );
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects (no write) when the correction was reopened and is no longer returned', async () => {
+    seedCorrection({ status: 'in_progress', reopenCount: 1 });
+    seedReturn({ visibleToStudent: false });
+
+    await expect(setReturnVisibleToStudent(SUBMISSION_ID, true, fakeDb)).rejects.toThrow(
+      /non è attualmente restituita/i,
+    );
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects (no write) when the correction is completed but not yet returned', async () => {
+    seedCorrection({ status: 'completed' });
+    seedReturn({ visibleToStudent: false });
+
+    await expect(setReturnVisibleToStudent(SUBMISSION_ID, true, fakeDb)).rejects.toThrow(
+      /non è attualmente restituita/i,
+    );
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
 });
 
@@ -658,6 +689,7 @@ describe('setReturnVisibleToStudent', () => {
 describe('setSolutionsVisible', () => {
   it('inserts frozen correctAnswer on every question when turning visible on', async () => {
     seedVerification();
+    seedCorrection({ status: 'returned' });
     seedReturn({ solutionsVisible: false });
 
     await setSolutionsVisible(SUBMISSION_ID, true, fakeDb);
@@ -670,6 +702,7 @@ describe('setSolutionsVisible', () => {
   });
 
   it('physically removes correctAnswer from every question when turning visible off', async () => {
+    seedCorrection({ status: 'returned' });
     seedReturn({
       solutionsVisible: true,
       questions: [
@@ -694,6 +727,7 @@ describe('setSolutionsVisible', () => {
   });
 
   it('writes nothing when solutionsVisible already matches the requested value', async () => {
+    seedCorrection({ status: 'returned' });
     seedReturn({ solutionsVisible: false });
 
     await setSolutionsVisible(SUBMISSION_ID, false, fakeDb);
@@ -722,10 +756,38 @@ describe('setSolutionsVisible', () => {
         closedAt: null,
       },
     });
+    seedCorrection({ status: 'returned' });
     seedReturn({ solutionsVisible: false });
 
     await expect(setSolutionsVisible(SUBMISSION_ID, true, fakeDb)).rejects.toThrow(
       /snapshot con soluzioni/i,
     );
+  });
+
+  it('rejects (no write) when no correction exists at all', async () => {
+    await expect(setSolutionsVisible(SUBMISSION_ID, true, fakeDb)).rejects.toThrow(
+      /correzione non trovata/i,
+    );
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects (no write) when the correction was reopened and is no longer returned', async () => {
+    seedCorrection({ status: 'in_progress', reopenCount: 1 });
+    seedReturn({ solutionsVisible: false });
+
+    await expect(setSolutionsVisible(SUBMISSION_ID, true, fakeDb)).rejects.toThrow(
+      /non è attualmente restituita/i,
+    );
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects (no write) when the correction is completed but not yet returned', async () => {
+    seedCorrection({ status: 'completed' });
+    seedReturn({ solutionsVisible: false });
+
+    await expect(setSolutionsVisible(SUBMISSION_ID, true, fakeDb)).rejects.toThrow(
+      /non è attualmente restituita/i,
+    );
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
 });

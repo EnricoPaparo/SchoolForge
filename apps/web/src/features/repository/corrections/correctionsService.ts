@@ -476,15 +476,47 @@ export async function reopenCorrection(submissionId: string, db: Firestore): Pro
 // ─── Return-projection visibility toggles ───────────────────────────────────
 
 /**
+ * Guards both toggles below against a stale `correctionReturns` document:
+ * `reopenCorrection` hides the projection (`visibleToStudent: false`) but
+ * deliberately does not delete it, so its mere *existence* is never
+ * sufficient to authorize a visibility/solutions change — only the
+ * `corrections` document's own canonical `status` is. Throws explicitly
+ * when the correction is missing or not currently `'returned'` (i.e. a
+ * rectification is in progress after a reopen): no toggle may re-surface
+ * or grow a projection that is being actively corrected.
+ */
+async function assertCorrectionCurrentlyReturned(
+  submissionId: string,
+  db: Firestore,
+  action: string,
+): Promise<void> {
+  const snap = await getDoc(doc(db, 'corrections', submissionId));
+  if (!snap.exists()) {
+    throw new Error(`Impossibile ${action}: correzione non trovata.`);
+  }
+  const correction = snap.data() as CorrectionDoc;
+  if (correction.status !== 'returned') {
+    throw new Error(
+      `Impossibile ${action}: la correzione non è attualmente restituita (stato '${correction.status}').`,
+    );
+  }
+}
+
+/**
  * Shows/hides an existing returned correction to the student without
- * touching `corrections` or the scoring data. No-ops (no write at all) if
- * the value is already what was requested.
+ * touching `corrections` or the scoring data. Requires the correction to be
+ * currently `'returned'` — see `assertCorrectionCurrentlyReturned`: a
+ * projection left over from before a reopen must never be toggled while a
+ * rectification is in progress. No-ops (no write at all) if the value is
+ * already what was requested.
  */
 export async function setReturnVisibleToStudent(
   submissionId: string,
   visible: boolean,
   db: Firestore,
 ): Promise<void> {
+  await assertCorrectionCurrentlyReturned(submissionId, db, 'aggiornare la visibilità');
+
   const ref = doc(db, 'correctionReturns', submissionId);
   const snap = await getDoc(ref);
   if (!snap.exists()) {
@@ -506,14 +538,19 @@ export async function setReturnVisibleToStudent(
  *   never a client-side-only hide, so Security Rules never need to inspect
  *   `questions[*]` to decide what a student may read.
  *
- * No-ops (no write at all) if `solutionsVisible` already matches the
- * requested value.
+ * Requires the correction to be currently `'returned'` — see
+ * `assertCorrectionCurrentlyReturned`: never reveals/removes solutions on a
+ * projection left over from before a reopen while a rectification is in
+ * progress. No-ops (no write at all) if `solutionsVisible` already matches
+ * the requested value.
  */
 export async function setSolutionsVisible(
   submissionId: string,
   visible: boolean,
   db: Firestore,
 ): Promise<void> {
+  await assertCorrectionCurrentlyReturned(submissionId, db, 'aggiornare le soluzioni');
+
   const ref = doc(db, 'correctionReturns', submissionId);
   const snap = await getDoc(ref);
   if (!snap.exists()) {

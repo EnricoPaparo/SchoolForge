@@ -16,6 +16,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
@@ -690,19 +691,152 @@ describe('Firestore rules — correctionEvents', () => {
     );
     await assertFails(deleteDoc(doc(ownerDb(), 'correctionEvents', 'event-1')));
   });
+
+  it('rejects an event with an arbitrary (non-server) timestamp', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCorrection(); // in_progress
+
+    await assertFails(
+      setDoc(
+        doc(ownerDb(), 'correctionEvents', 'event-1'),
+        eventPayload({ timestamp: Timestamp.now() }),
+      ),
+    );
+  });
+
+  it('allows a scoreAdjusted event when previousStatus/nextStatus are both in_progress', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCorrection({ status: 'in_progress', reopenCount: 1 });
+
+    await assertSucceeds(
+      setDoc(
+        doc(ownerDb(), 'correctionEvents', 'event-1'),
+        eventPayload({
+          type: 'scoreAdjusted',
+          previousStatus: 'in_progress',
+          nextStatus: 'in_progress',
+        }),
+      ),
+    );
+  });
+
+  it.each([
+    [
+      'scoreAdjusted claiming a status change',
+      { type: 'scoreAdjusted', previousStatus: 'in_progress', nextStatus: 'completed' },
+    ],
+    [
+      'reopened with an invalid previousStatus',
+      { type: 'reopened', previousStatus: 'in_progress', nextStatus: 'in_progress' },
+    ],
+    [
+      'returned with an invalid previousStatus',
+      { type: 'returned', previousStatus: 'in_progress', nextStatus: 'returned' },
+    ],
+    [
+      'reopened whose nextStatus is not in_progress',
+      { type: 'reopened', previousStatus: 'completed', nextStatus: 'completed' },
+    ],
+  ])(
+    'rejects an incoherent type/previousStatus/nextStatus combination (%s)',
+    async (_label, overrides) => {
+      await seedBase();
+      await seedSubmittedSubmission();
+      await seedCorrection(); // in_progress
+
+      await assertFails(
+        setDoc(doc(ownerDb(), 'correctionEvents', 'event-1'), eventPayload(overrides)),
+      );
+    },
+  );
+
+  it("rejects a 'returned' event whose nextStatus does not match the correction's actual status", async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCorrection(); // in_progress, not 'returned'
+
+    await assertFails(
+      setDoc(
+        doc(ownerDb(), 'correctionEvents', 'event-1'),
+        eventPayload({ type: 'returned', previousStatus: 'completed', nextStatus: 'returned' }),
+      ),
+    );
+  });
+
+  it("accepts a 'returned' event when nextStatus matches the correction's actual (already returned) status", async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCorrection({
+      status: 'returned',
+      evaluations: {
+        '0': { order: 0, points: 8, maxPoints: 10 },
+        '1': { order: 1, points: 4, maxPoints: 5 },
+      },
+      completedAt: Timestamp.now(),
+      returnedAt: Timestamp.now(),
+    });
+
+    await assertSucceeds(
+      setDoc(
+        doc(ownerDb(), 'correctionEvents', 'event-1'),
+        eventPayload({ type: 'returned', previousStatus: 'completed', nextStatus: 'returned' }),
+      ),
+    );
+  });
 });
 
 // ─── correctionReturns ───────────────────────────────────────────────────────
 
+/** A completed correction's evaluations, matching seedCompletedCorrection(). */
+const COMPLETED_EVALUATIONS = {
+  '0': { order: 0, points: 8, maxPoints: 10 },
+  '1': { order: 1, points: 4, maxPoints: 5 },
+};
+
+async function seedReturnedCorrection() {
+  await seedCorrection({
+    status: 'returned',
+    evaluations: COMPLETED_EVALUATIONS,
+    totalPoints: 12,
+    maxPoints: 15,
+    percentage: 80,
+    completedAt: Timestamp.now(),
+    returnedAt: Timestamp.now(),
+  });
+}
+
+/** Mirrors returnCorrection(): correction completed -> returned + correctionReturns create/set, atomically. */
+async function returnBatch(
+  db: Firestore,
+  options: { returnOverrides?: Record<string, unknown> } = {},
+) {
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'corrections', SUBMISSION_ID), {
+    status: 'returned',
+    returnedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(db, 'correctionReturns', SUBMISSION_ID), returnPayload(options.returnOverrides));
+  await batch.commit();
+}
+
 describe('Firestore rules — correctionReturns', () => {
-  it('the owner can create a return projection tied to their own completed correction', async () => {
+  it('the owner can create a return projection atomically with the completed -> returned transition (returnCorrection)', async () => {
     await seedBase();
     await seedSubmittedSubmission();
     await seedCompletedCorrection();
 
-    await assertSucceeds(
-      setDoc(doc(ownerDb(), 'correctionReturns', SUBMISSION_ID), returnPayload()),
-    );
+    await assertSucceeds(returnBatch(ownerDb()));
+  });
+
+  it('rejects creating a return projection without transitioning the correction to returned in the same operation', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCompletedCorrection();
+
+    await assertFails(setDoc(doc(ownerDb(), 'correctionReturns', SUBMISSION_ID), returnPayload()));
   });
 
   it('rejects create when no matching correction exists', async () => {
@@ -734,10 +868,10 @@ describe('Firestore rules — correctionReturns', () => {
     );
   });
 
-  it('the owner can flip visibleToStudent on an existing projection', async () => {
+  it('the owner can flip visibleToStudent on an existing projection while the correction is returned', async () => {
     await seedBase();
     await seedSubmittedSubmission();
-    await seedCompletedCorrection();
+    await seedReturnedCorrection();
     await seedReturn();
 
     await assertSucceeds(
@@ -748,10 +882,10 @@ describe('Firestore rules — correctionReturns', () => {
     );
   });
 
-  it('the owner can rewrite questions when revealing solutions', async () => {
+  it('the owner can rewrite questions when revealing solutions while the correction is returned', async () => {
     await seedBase();
     await seedSubmittedSubmission();
-    await seedCompletedCorrection();
+    await seedReturnedCorrection();
     await seedReturn();
 
     await assertSucceeds(
@@ -773,6 +907,101 @@ describe('Firestore rules — correctionReturns', () => {
     );
   });
 
+  it('rejects a plain update to correctionReturns while the correction is in_progress (stale projection after reopen)', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCorrection({ status: 'in_progress', reopenCount: 1 });
+    await seedReturn({ visibleToStudent: false });
+
+    await assertFails(
+      updateDoc(doc(ownerDb(), 'correctionReturns', SUBMISSION_ID), {
+        visibleToStudent: true,
+        updatedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('rejects a plain update to correctionReturns while the correction is completed (not yet returned again)', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCompletedCorrection();
+    await seedReturn({ visibleToStudent: false });
+
+    await assertFails(
+      updateDoc(doc(ownerDb(), 'correctionReturns', SUBMISSION_ID), {
+        visibleToStudent: true,
+        updatedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('allows reopenCorrection to atomically hide the projection when the correction leaves returned -> in_progress', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedReturnedCorrection();
+    await seedReturn({ visibleToStudent: true });
+
+    const db = ownerDb();
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'corrections', SUBMISSION_ID), {
+      status: 'in_progress',
+      completedAt: null,
+      returnedAt: null,
+      reopenCount: 1,
+      updatedAt: serverTimestamp(),
+    });
+    batch.update(doc(db, 'correctionReturns', SUBMISSION_ID), {
+      visibleToStudent: false,
+      updatedAt: serverTimestamp(),
+    });
+    await assertSucceeds(batch.commit());
+  });
+
+  it('rejects the reopen-hide batch if it also touches scoring content, not just visibleToStudent/updatedAt', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedReturnedCorrection();
+    await seedReturn({ visibleToStudent: true });
+
+    const db = ownerDb();
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'corrections', SUBMISSION_ID), {
+      status: 'in_progress',
+      completedAt: null,
+      returnedAt: null,
+      reopenCount: 1,
+      updatedAt: serverTimestamp(),
+    });
+    batch.update(doc(db, 'correctionReturns', SUBMISSION_ID), {
+      visibleToStudent: false,
+      generalFeedback: 'tampered during reopen',
+      updatedAt: serverTimestamp(),
+    });
+    await assertFails(batch.commit());
+  });
+
+  it('rejects the reopen-hide batch if visibleToStudent is not set to false', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedReturnedCorrection();
+    await seedReturn({ visibleToStudent: true });
+
+    const db = ownerDb();
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'corrections', SUBMISSION_ID), {
+      status: 'in_progress',
+      completedAt: null,
+      returnedAt: null,
+      reopenCount: 1,
+      updatedAt: serverTimestamp(),
+    });
+    batch.update(doc(db, 'correctionReturns', SUBMISSION_ID), {
+      visibleToStudent: true,
+      updatedAt: serverTimestamp(),
+    });
+    await assertFails(batch.commit());
+  });
+
   it.each([
     ['correctionId', { correctionId: 'other-id' }],
     ['verificationId', { verificationId: 'other-verification' }],
@@ -781,7 +1010,7 @@ describe('Firestore rules — correctionReturns', () => {
   ])('rejects an update that tries to change the immutable field %s', async (_field, patch) => {
     await seedBase();
     await seedSubmittedSubmission();
-    await seedCompletedCorrection();
+    await seedReturnedCorrection();
     await seedReturn();
 
     await assertFails(
