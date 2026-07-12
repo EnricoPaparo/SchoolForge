@@ -367,7 +367,7 @@ export function CourseWorkspace({
     void withBusy(async () => {
       try {
         await setProgramClassIds(card.programId, classIds, ownerUid, db);
-        onCardPatch?.(card.programId, { classNames });
+        onCardPatch?.(card.programId, { classIds, classNames });
         closeDialog();
       } catch {
         setWsError('Impossibile salvare le classi.');
@@ -433,13 +433,14 @@ export function CourseWorkspace({
           competenze: values.competenze,
           obiettivi: values.obiettivi,
         };
-        setTree((prev) => {
-          const next = prev
-            ? { udas: [...prev.udas, newUda], lessons: prev.lessons }
-            : { udas: [newUda], lessons: [] };
-          patchCardCounts(next);
-          return next;
-        });
+        // Compute the next tree deterministically, keep setTree pure, and
+        // patch the card once outside the updater (Strict Mode double-invokes
+        // updaters — the external callback must not run twice).
+        const next: Tree = tree
+          ? { udas: [...tree.udas, newUda], lessons: tree.lessons }
+          : { udas: [newUda], lessons: [] };
+        setTree(next);
+        patchCardCounts(next);
         closeDialog();
       } catch (err) {
         setWsError(err instanceof Error ? err.message : 'Impossibile creare la UDA.');
@@ -483,15 +484,16 @@ export function CourseWorkspace({
     void withBusy(async () => {
       try {
         await deleteUda({ programId: card.programId, importId, udaId, ownerUid, db, storage });
-        setTree((prev) => {
-          if (!prev) return prev;
-          const next = {
-            udas: prev.udas.filter((u) => u.id !== udaId),
-            lessons: uda ? prev.lessons.filter((l) => l.udaDir !== uda.dir) : prev.lessons,
+        // Deterministic next tree + pure setTree; patch the card once, outside
+        // the updater, so Strict Mode can't duplicate the card callback.
+        if (tree) {
+          const next: Tree = {
+            udas: tree.udas.filter((u) => u.id !== udaId),
+            lessons: uda ? tree.lessons.filter((l) => l.udaDir !== uda.dir) : tree.lessons,
           };
+          setTree(next);
           patchCardCounts(next);
-          return next;
-        });
+        }
         setSelection({ kind: 'course' });
         closeDialog();
       } catch (err) {
@@ -881,7 +883,7 @@ export function CourseWorkspace({
       {wsDialog.kind === 'classes' && (
         <ClassesDialog
           ownerUid={ownerUid}
-          currentClassIds={[]}
+          currentClassIds={card.classIds}
           busy={wsBusy}
           error={wsError}
           onCancel={closeDialog}

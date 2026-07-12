@@ -49,6 +49,10 @@ vi.mock('../../repository/import/importRepository.js', () => ({
 vi.mock('../../repository/import/readZipFile.js', () => ({
   readZipFile: (...a: unknown[]) => mockReadZipFile(...a),
 }));
+const mockListClasses = vi.fn();
+vi.mock('../../repository/classes/classesService.js', () => ({
+  listClasses: (...a: unknown[]) => mockListClasses(...a),
+}));
 vi.mock('../lessonContent.js', () => ({
   fetchLessonContent: (...a: unknown[]) => mockFetchLessonContent(...a),
 }));
@@ -90,6 +94,7 @@ function card(overrides: Partial<CourseCard> = {}): CourseCard {
     programId: 'p1',
     title: 'Sistemi e Reti',
     annoScolastico: '2025/2026',
+    classIds: ['c-4a'],
     classNames: ['4A INF'],
     udaCount: 2,
     lessonsTotal: 3,
@@ -612,5 +617,131 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
 
     await waitFor(() => expect(mockDeleteProgram).toHaveBeenCalledWith('p1', 'owner', {}, {}));
     expect(onCourseDeleted).toHaveBeenCalledWith('p1');
+  });
+});
+
+describe('CourseWorkspace — pure updaters & class preservation (DUX-04A fixes)', () => {
+  async function selectUda(onCardPatch = vi.fn(), strict = false) {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { questionCount: 4 })]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    const tree = (
+      <CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} onCardPatch={onCardPatch} />
+    );
+    render(strict ? <StrictMode>{tree}</StrictMode> : tree);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
+    return onCardPatch;
+  }
+
+  it('patches the card exactly once when creating a UDA (StrictMode-safe)', async () => {
+    mockCreateUda.mockResolvedValue({ udaId: 'uda-new', dir: 'uda-02-nuova', order: 1 });
+    const onCardPatch = await selectUda(vi.fn(), true);
+    fireEvent.click(screen.getByRole('button', { name: '+ Nuova UDA' }));
+    fireEvent.change(screen.getByLabelText('Titolo UDA'), { target: { value: 'Nuova' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crea UDA' }));
+
+    await waitFor(() => expect(mockCreateUda).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onCardPatch).toHaveBeenCalledTimes(1));
+    expect(onCardPatch).toHaveBeenCalledWith('p1', expect.objectContaining({ udaCount: 2 }));
+  });
+
+  it('patches the card exactly once when deleting a UDA (StrictMode-safe)', async () => {
+    mockDeleteUda.mockResolvedValue(undefined);
+    const onCardPatch = await selectUda(vi.fn(), true);
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni UDA' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Elimina UDA' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina' }));
+
+    await waitFor(() => expect(mockDeleteUda).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onCardPatch).toHaveBeenCalledTimes(1));
+    expect(onCardPatch).toHaveBeenCalledWith('p1', expect.objectContaining({ udaCount: 0 }));
+  });
+
+  async function openClasses(onCardPatch = vi.fn()) {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti')]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    mockListClasses.mockResolvedValue([
+      { id: 'c1', name: '1A' },
+      { id: 'c2', name: '2B' },
+      { id: 'c3', name: '3C' },
+    ]);
+    render(
+      <CourseWorkspace
+        card={card({ classIds: ['c1', 'c2'], classNames: ['1A', '2B'] })}
+        ownerUid="owner"
+        onBack={vi.fn()}
+        onCardPatch={onCardPatch}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Azioni corso' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Classi assegnate' }));
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: '1A' })).toBeTruthy());
+    return onCardPatch;
+  }
+
+  it('opens the classes dialog with the current classIds preselected', async () => {
+    await openClasses();
+    expect((screen.getByRole('checkbox', { name: '1A' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: '2B' }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole('checkbox', { name: '3C' }) as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('saving unchanged preserves the same class ids', async () => {
+    mockSetProgramClassIds.mockResolvedValue(undefined);
+    const onCardPatch = await openClasses();
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    await waitFor(() => expect(mockSetProgramClassIds).toHaveBeenCalledOnce());
+    expect(mockSetProgramClassIds).toHaveBeenCalledWith('p1', ['c1', 'c2'], 'owner', {});
+    expect(onCardPatch).toHaveBeenCalledWith('p1', {
+      classIds: ['c1', 'c2'],
+      classNames: ['1A', '2B'],
+    });
+  });
+
+  it('editing updates classIds and classNames coherently', async () => {
+    mockSetProgramClassIds.mockResolvedValue(undefined);
+    const onCardPatch = await openClasses();
+    fireEvent.click(screen.getByRole('checkbox', { name: '1A' })); // remove c1
+    fireEvent.click(screen.getByRole('checkbox', { name: '3C' })); // add c3
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    await waitFor(() =>
+      expect(mockSetProgramClassIds).toHaveBeenCalledWith('p1', ['c2', 'c3'], 'owner', {}),
+    );
+    expect(onCardPatch).toHaveBeenCalledWith('p1', {
+      classIds: ['c2', 'c3'],
+      classNames: ['2B', '3C'],
+    });
+  });
+
+  it('does not duplicate the class card callback under StrictMode', async () => {
+    mockSetProgramClassIds.mockResolvedValue(undefined);
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti')]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    mockListClasses.mockResolvedValue([{ id: 'c1', name: '1A' }]);
+    const onCardPatch = vi.fn();
+    render(
+      <StrictMode>
+        <CourseWorkspace
+          card={card({ classIds: ['c1'], classNames: ['1A'] })}
+          ownerUid="owner"
+          onBack={vi.fn()}
+          onCardPatch={onCardPatch}
+        />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Azioni corso' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Classi assegnate' }));
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: '1A' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    await waitFor(() => expect(mockSetProgramClassIds).toHaveBeenCalledOnce());
+    expect(onCardPatch).toHaveBeenCalledTimes(1);
   });
 });

@@ -49,6 +49,7 @@ function card(overrides: Partial<CourseCard> = {}): CourseCard {
     programId: 'p1',
     title: 'Sistemi e Reti',
     annoScolastico: '2025/2026',
+    classIds: ['c-4a'],
     classNames: ['4A INF'],
     udaCount: 3,
     lessonsTotal: 12,
