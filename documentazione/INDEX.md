@@ -2,16 +2,16 @@
 
 ## Stato MVP
 
-**M1 + M2 + M3-lite (portale studente Google, read-only) + RE (Repository Editor) completati. Deploy DEV attivo: https://schoolforge-dev.web.app**
+**M1 + M2 + M3-lite (portale studente Google, read-only) + RE (Repository Editor) + M3-full (verifiche online, consegne, monitor) completati. Deploy DEV attivo: https://schoolforge-dev.web.app**
 
-Il flusso docente cartaceo, il portale studente, il Repository Editor e il flusso base di consegna online M3-full sono implementati. M3-full richiede ancora hardening sessione/modalità verifica e gate DEV (M3F-06→11); M4 (correzione) e M5 (AI) non sono implementati.
+Il flusso docente cartaceo, il portale studente, il Repository Editor e il portale digitale con consegna online (M3-full) sono implementati e completi: sessione obbligatoria, modalità verifica per classe e Gate G5 sono superati — vedi [evidenze/g5-m3-full-checklist-finale.md](evidenze/g5-m3-full-checklist-finale.md). M4 (correzione) e M5 (AI) non sono implementati.
 Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente locale e [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) per lo smoke test DEV.
 
 **Repository Editor (RE-00 → RE-07) completato** — vedi [repository-editor-roadmap.md](repository-editor-roadmap.md) per la roadmap e [evidenze/repository-editor-checklist-manuale.md](evidenze/repository-editor-checklist-manuale.md) per la checklist manuale DEV. Nessuna fase RE obbligatoria successiva.
 
 **Question Editor (QE, sezione "Domande") — specifica definita** — vedi [question-editor-roadmap.md](question-editor-roadmap.md) per la roadmap QE-00 → QE-05: editor pool domande Markdown-first, serializzatore YAML, service layer (doppia scrittura Storage + Firestore), UI con sidebar Corso→UDA→Lezione e form domanda inline. Non dipende da M3-full; implementabile indipendentemente.
 
-**M3-full (verifiche online e consegne studenti) è in implementazione** — M3F-00→05 sono completati; vedi [m3-full-roadmap.md](m3-full-roadmap.md) per sessione obbligatoria, modalità verifica per classe, protezione lezioni, hardening costi e gate G5 in M3F-06→11. M4 dipende dal completamento di M3-full.
+**M3-full (verifiche online e consegne studenti) è completato** — M3F-00→M3F-11C completati, Gate G5 superato; vedi [m3-full-roadmap.md](m3-full-roadmap.md) per sessione obbligatoria, modalità verifica per classe, protezione lezioni e hardening costi, e [evidenze/g5-m3-full-checklist-finale.md](evidenze/g5-m3-full-checklist-finale.md) per la checklist finale del gate. M4 dipende da M3-full (ora completato) e non è ancora implementato.
 
 ## Per iniziare
 
@@ -53,7 +53,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [ux-product-roadmap.md](ux-product-roadmap.md) | Roadmap UX/Product Polish (UX-01–06). | Per pianificare e implementare il polish UI. |
 | [repository-editor-roadmap.md](repository-editor-roadmap.md) | Roadmap Repository Editor (RE-00–RE-07, implementato). | Per consultare decisioni tecniche e scope dell'editor UDA/lezioni. |
 | [question-editor-roadmap.md](question-editor-roadmap.md) | Roadmap Question Editor (QE-00–QE-05): editor pool domande Markdown-first, senza reimport ZIP. | Per progettare e implementare la sezione "Domande". |
-| [m3-full-roadmap.md](m3-full-roadmap.md) | Specifica M3-full: verifiche online, consegne, monitor, sessione obbligatoria e modalità verifica. Roadmap M3F-00–M3F-11. | Per completare e validare M3-full. |
+| [m3-full-roadmap.md](m3-full-roadmap.md) | Specifica M3-full: verifiche online, consegne, monitor, sessione obbligatoria e modalità verifica. Roadmap M3F-00–M3F-11C, completata — Gate G5 superato. | Per consultare il modello dati/Rules di M3-full o lo stato del Gate G5. |
 
 ## Evidenze
 
@@ -64,6 +64,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 - [evidenze/checklist-dev-post-hardening.md](evidenze/checklist-dev-post-hardening.md) — checklist manuale DEV completa (docente + studente) post-hardening delle Storage Rules.
 - [evidenze/repository-editor-checklist-manuale.md](evidenze/repository-editor-checklist-manuale.md) — checklist manuale DEV del Repository Editor (RE-07): creazione, modifica, riordino, eliminazione protetta, export/reimport ZIP, vista studente.
 - [evidenze/v1-checklist-finale.md](evidenze/v1-checklist-finale.md) — checklist finale di stabilizzazione V1: sintesi delle checklist di area, giro rapido sulle 6 aree UI principali, incoerenze documentali corrette e backlog residuo.
+- [evidenze/g5-m3-full-checklist-finale.md](evidenze/g5-m3-full-checklist-finale.md) — checklist finale del Gate G5 (M3-full): evidenze automatiche e conferme manuali DEV per i 26 criteri minimi, limiti residui, verdetto.
 
 ## Diagrammi
 

@@ -20,11 +20,11 @@ Il flusso completo è operativo e testato (suite automatica estesa + smoke test 
 | Portale studente Google, read-only (M3-lite) | ✅ funzionante — login Google, StudentShell, Lezioni e Verifiche filtrate per classe, approvazione studenti, PDF verifica studente |
 | Repository Editor (RE) | ✅ funzionante — crea/modifica/riordina/elimina (con blocco protetto) UDA e lezioni, export ZIP coerente e reimportabile |
 | Question Editor (QE) — sezione "Domande" | 📐 specifica definita — implementazione da avviare (roadmap QE-00→QE-05) |
-| Portale digitale con consegna online (M3-full) | 🚧 flusso base studente e monitor docente implementati (M3F-00→05); hardening sessione/modalità verifica e gate DEV pianificati in M3F-06→11 |
+| Portale digitale con consegna online (M3-full) | ✅ completato — avvio online, bozza, consegna immutabile, modalità verifica, monitor docente; Gate G5 superato |
 | Correzione e export risultati (M4) | ❌ non implementato — dipende da M3-full |
 | Correzione AI (M5) | ❌ fuori scope V1 |
 
-**Stato:** il Repository Editor (RE-00 → RE-07) è completo e stabile per uso DEV/manuale. La specifica del Question Editor (QE, sezione "Domande") è definita in `documentazione/question-editor-roadmap.md`. La specifica M3-full (verifiche online, consegne, monitor docente) è definita in `documentazione/m3-full-roadmap.md`; vedi la sezione "Prossimo passo" più sotto.
+**Stato:** il Repository Editor (RE-00 → RE-07) è completo e stabile per uso DEV/manuale. M3-full (verifiche online, consegne, monitor docente) è completato — Gate G5 superato, vedi `documentazione/m3-full-roadmap.md` e `documentazione/evidenze/g5-m3-full-checklist-finale.md`. La specifica del Question Editor (QE, sezione "Domande") è definita in `documentazione/question-editor-roadmap.md`; vedi la sezione "Prossimo passo" più sotto.
 Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartaceo.md) per la guida operativa.
 
 ## Principi non negoziabili
@@ -68,11 +68,11 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 3. **M3-lite — Portale studente (Google, read-only)** ✅: login Google (personale o Workspace for Education), risoluzione ruolo docente/studente, StudentShell con sezioni Lezioni e Verifiche filtrate per classe, approvazione studenti, download del solo PDF studente per le verifiche `active`+`public`. Nessuna Cloud Function, nessun account custom, nessuna consegna online.
 4. **RE — Repository Editor** ✅: creare/modificare/eliminare/riordinare UDA e lezioni, inclusi front matter e corpo Markdown, senza AI e senza CMS complesso; export ZIP coerente e reimportabile.
 5. **QE — Question Editor (sezione "Domande")** 📐 *(specifica definita — da implementare)*: creare, modificare ed eliminare domande nei pool Markdown-first (`.pool.md`) direttamente dal portale, aggiornando `questionIndex` su Firestore senza reimport ZIP. Vedi [question-editor-roadmap.md](documentazione/question-editor-roadmap.md).
-6. **M3-full — Verifiche online e consegne studenti** 🚧 *(M3F-00→05 implementati; hardening e gate da completare)*: avvio online, bozza, consegna immutabile, codice consegna e monitor docente sono presenti; sessione obbligatoria, modalità verifica per classe e protezione effettiva delle lezioni sono pianificate in M3F-06→11. Vedi [m3-full-roadmap.md](documentazione/m3-full-roadmap.md).
+6. **M3-full — Verifiche online e consegne studenti** ✅: avvio online, bozza, consegna immutabile, codice consegna e monitor docente; sessione obbligatoria, modalità verifica per classe e protezione effettiva delle lezioni. Gate G5 superato. Vedi [m3-full-roadmap.md](documentazione/m3-full-roadmap.md) e [evidenze/g5-m3-full-checklist-finale.md](documentazione/evidenze/g5-m3-full-checklist-finale.md).
 7. **M4 — Correzione ed export** ❌ *(dipende da M3-full)*: punteggi, percentuali, rettifiche, export PDF/Markdown/CSV.
 8. **M5 — Correzione AI** *(fuori scope V1 / pianificato per V2)*: proposte assistite, approvazione massiva, correzione automatica opt-in.
 
-V1 comprende M1, M2, M3-lite e RE (tutti implementati). QE ha la specifica pronta e non dipende da M3-full. M3-full ha la specifica pronta; M4 dipende da M3-full. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2.
+V1 comprende M1, M2, M3-lite, RE e M3-full (tutti implementati, Gate G5 superato per M3-full). QE ha la specifica pronta e non dipende da M3-full. M4 dipende da M3-full (completato) e non è ancora implementato. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2.
 
 ## Architettura in sintesi
 
@@ -81,7 +81,7 @@ SPA unica (Firebase Hosting)
 ├── /teacher/*  — docente autenticato (ownerUid), scrittura diretta Firestore + Storage
 └── /student/*  — studente autenticato Google
                   M3-lite: lezioni e verifiche read-only, PDF studente browser-side
-                  M3-full [in implementazione]: avvio online, bozza, consegna immutabile
+                  M3-full [completato]: avvio online, bozza, consegna immutabile
 
 Canale cartaceo: PDF generato nel browser dal docente (M2, implementato).
 Consegna online: scritture client dirette con Security Rules (M3-full, no Cloud Functions).
@@ -99,4 +99,6 @@ Il Docente possiede progetto e billing Firebase. Firestore, Storage e Functions 
 
 **Repository Editor (RE) — completato.** Il docente crea, modifica, elimina (con blocco se esistono verifiche collegate) e riordina UDA e lezioni direttamente dal portale, inclusi front matter e corpo Markdown; l'export ZIP resta coerente e reimportabile. Non ci sono fasi RE obbligatorie ulteriori.
 
-**Prossimo sviluppo pianificato: QE — Question Editor (sezione "Domande").** La specifica è definita in [documentazione/question-editor-roadmap.md](documentazione/question-editor-roadmap.md). QE permette al docente di creare, modificare ed eliminare domande nei pool `.pool.md` direttamente dal portale, aggiornando il `questionIndex` su Firestore senza reimportare lo ZIP. Non dipende da M3-full. La roadmap è QE-01 → QE-05 (QE-00, questa specifica, è completata). Gli sviluppi futuri non ancora pianificati in dettaglio sono M3-full (portale digitale con consegna online) e M4 (correzione ed export), entrambi dipendenti da M3-full. Vedi [documentazione/repository-editor-roadmap.md](documentazione/repository-editor-roadmap.md) e la checklist manuale [documentazione/evidenze/repository-editor-checklist-manuale.md](documentazione/evidenze/repository-editor-checklist-manuale.md).
+**M3-full (portale digitale con consegna online) — completato.** Gate G5 superato con evidenze automatiche e smoke manuale del docente su DEV. Vedi [documentazione/m3-full-roadmap.md](documentazione/m3-full-roadmap.md) e [documentazione/evidenze/g5-m3-full-checklist-finale.md](documentazione/evidenze/g5-m3-full-checklist-finale.md).
+
+**Prossimi sviluppi non ancora implementati:** **M4 — Correzione ed export**, che dipende da M3-full (ora completato) e ha il concept UX già approvato in [documentazione/m4-correzione-ux-concept.md](documentazione/m4-correzione-ux-concept.md); e **QE — Question Editor** (sezione "Domande"), specifica definita in [documentazione/question-editor-roadmap.md](documentazione/question-editor-roadmap.md), roadmap QE-01 → QE-05 (QE-00 completata), non dipendente da M3-full. **M5 — Correzione AI** resta rinviato alla V2. Vedi [documentazione/repository-editor-roadmap.md](documentazione/repository-editor-roadmap.md) e la checklist manuale [documentazione/evidenze/repository-editor-checklist-manuale.md](documentazione/evidenze/repository-editor-checklist-manuale.md) per il Repository Editor.
