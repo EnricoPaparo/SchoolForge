@@ -1445,10 +1445,31 @@ uda-02-sicurezza/
   }
 
   // ── Top nav ──────────────────────────────────────────────────────
+  // "Didattica" è il punto di ingresso canonico della sezione (fix
+  // review finale): da qualunque stato — libreria, corso, UDA,
+  // lezione, Organizza attivo, Desktop o Mobile — un solo click
+  // riporta sempre alla libreria corsi, azzerando corso/UDA/lezione e
+  // disattivando Organizza. Il dispositivo simulato resta invariato:
+  // se ero in Mobile vedo la libreria mobile, se ero in Desktop vedo
+  // quella desktop. "← Libreria" nel workspace mantiene invece il suo
+  // comportamento originale (solo courseId azzerato), invariato.
   document.querySelectorAll('[data-topnav]').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      state.top = btn.getAttribute('data-topnav');
+      var target = btn.getAttribute('data-topnav');
+      if (target === 'library') {
+        state.courseId = null;
+        state.udaId = null;
+        state.lessonId = null;
+        if (state.organize) {
+          state.organize = false;
+          document.body.classList.remove('organize');
+          byId('btn-organize').textContent = 'Organizza';
+          byId('btn-organize').setAttribute('aria-pressed', 'false');
+        }
+      }
+      state.top = target;
       renderTopNav();
+      if (target === 'library') renderLibrary();
     });
   });
 
