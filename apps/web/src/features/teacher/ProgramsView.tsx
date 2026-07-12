@@ -19,30 +19,13 @@ import { updateUdaMetadata } from '../repository/editor/repositoryEditorService.
 import type { ProgrammaMeta } from '../../types/firestore.js';
 import { importRepository } from '../repository/import/importRepository.js';
 import { readZipFile } from '../repository/import/readZipFile.js';
-import type { ValidationIssue } from '../repository/validation/types.js';
+import { describeImportValidationError } from './importValidationMessage.js';
 import { db, storage } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import { exportZip } from './exportZip.js';
 import { downloadMarkdown, downloadPdf, generateMarkdown } from './programmaSvolto.js';
 import { ImportZipModal, type ImportZipResult } from './ImportZipModal.js';
 import styles from './ProgramsView.module.css';
-
-/**
- * Translates the first validation issue into a clean Italian message for the
- * import modal. Falls back to the raw issue message/path for codes without a
- * dedicated translation, keeping compatibility with older validation issues.
- */
-function describeImportValidationError(issues: ValidationIssue[]): string {
-  const first = issues[0];
-  if (!first) return 'Validazione fallita: struttura ZIP non valida.';
-  if (first.code === 'NO_UDAS') {
-    return 'Validazione fallita: lo ZIP non contiene nessuna UDA valida. Verifica che ci sia almeno una cartella "uda-NN-slug/" con un file UDA conforme.';
-  }
-  if (first.code === 'MISSING_UDA_FILE') {
-    return `Validazione fallita: struttura ZIP non conforme — la cartella "${first.path}" non contiene un file UDA valido (es. "uda-01-slug.md").`;
-  }
-  return `Validazione fallita: ${first.message} (${first.path})`;
-}
 
 type CourseState = {
   udas: UdaItem[] | null;
@@ -54,7 +37,18 @@ type CourseState = {
   pdfDownloading?: boolean;
 };
 
-export function ProgramsView() {
+type ProgramsViewProps = {
+  /**
+   * DUX-01 → DUX-02 bridge: quando il docente apre un corso dalla libreria
+   * "Didattica", `TeacherShell` inoltra qui (sezione "Corsi") con questo
+   * programma già espanso, così l'apertura non è un pulsante morto finché
+   * il workspace dedicato non arriva in DUX-02. `null`/assente = comportamento
+   * normale (nessuna espansione iniziale).
+   */
+  initialExpandedProgramId?: string | null;
+};
+
+export function ProgramsView({ initialExpandedProgramId }: ProgramsViewProps = {}) {
   const { user } = useAuth();
   const ownerUid = user?.uid ?? '';
 
@@ -62,7 +56,9 @@ export function ProgramsView() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [courseState, setCourseState] = useState<Record<string, CourseState>>({});
-  const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
+  const [expandedCourses, setExpandedCourses] = useState<Set<string>>(() =>
+    initialExpandedProgramId ? new Set([initialExpandedProgramId]) : new Set(),
+  );
   const [expandedUdas, setExpandedUdas] = useState<Set<string>>(new Set());
 
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);

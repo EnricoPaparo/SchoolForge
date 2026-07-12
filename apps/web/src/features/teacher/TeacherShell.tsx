@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
 import { db } from '../../lib/firebase.js';
 import { countPendingStudents } from '../repository/students/studentsService.js';
+import { DidatticaView } from './DidatticaView.js';
 import { ProgramsView } from './ProgramsView.js';
 import { LessonsView } from './LessonsView.js';
 import { TemplateKitView } from './TemplateKitView.js';
@@ -12,9 +13,20 @@ import { DomandeView } from './DomandeView.js';
 import logoScritta from '../../assets/logo-scritta-schoolforge.png';
 import styles from './TeacherShell.module.css';
 
-type Section = 'lezioni' | 'corsi' | 'verifiche' | 'classi' | 'studenti' | 'template' | 'domande';
+type Section =
+  | 'didattica'
+  | 'lezioni'
+  | 'corsi'
+  | 'verifiche'
+  | 'classi'
+  | 'studenti'
+  | 'template'
+  | 'domande';
 
+// "Didattica" (DUX-01) è la nuova sezione che assorbirà progressivamente
+// Corsi/Lezioni/Domande; durante la migrazione convivono tutte, invariate.
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
+  { id: 'didattica', label: 'Didattica', icon: '📚' },
   { id: 'lezioni', label: 'Lezioni', icon: '📖' },
   { id: 'corsi', label: 'Corsi', icon: '📚' },
   { id: 'domande', label: 'Domande', icon: '❓' },
@@ -27,10 +39,25 @@ const SECTIONS: { id: Section; label: string; icon: string }[] = [
 export function TeacherShell() {
   const { user, signOut } = useAuth();
   const ownerUid = user?.uid ?? '';
-  const [activeSection, setActiveSection] = useState<Section>('lezioni');
+  const [activeSection, setActiveSection] = useState<Section>('didattica');
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [pendingStudentsCount, setPendingStudentsCount] = useState(0);
+  // DUX-01 → DUX-02 bridge: quando la libreria Didattica apre un corso,
+  // inoltriamo alla sezione "Corsi" con quel programma già espanso. Viene
+  // azzerato appena il docente naviga manualmente, per evitare che una
+  // successiva apertura di "Corsi" ri-espanda un programma non richiesto.
+  const [coursesInitialProgramId, setCoursesInitialProgramId] = useState<string | null>(null);
+
+  function selectSection(id: Section) {
+    setCoursesInitialProgramId(null);
+    setActiveSection(id);
+  }
+
+  function openCourseFromDidattica(programId: string) {
+    setCoursesInitialProgramId(programId);
+    setActiveSection('corsi');
+  }
 
   const displayName = user?.displayName ?? user?.email ?? 'Docente';
   const initials = displayName.charAt(0).toUpperCase();
@@ -124,7 +151,7 @@ export function TeacherShell() {
             key={id}
             type="button"
             className={styles.navBtn}
-            onClick={() => setActiveSection(id)}
+            onClick={() => selectSection(id)}
             aria-current={activeSection === id ? 'page' : undefined}
             title={label}
           >
@@ -142,10 +169,12 @@ export function TeacherShell() {
       </nav>
 
       <main className={styles.main}>
-        {activeSection === 'template' ? (
+        {activeSection === 'didattica' ? (
+          <DidatticaView ownerUid={ownerUid} onOpenCourse={openCourseFromDidattica} />
+        ) : activeSection === 'template' ? (
           <TemplateKitView />
         ) : activeSection === 'corsi' ? (
-          <ProgramsView />
+          <ProgramsView initialExpandedProgramId={coursesInitialProgramId} />
         ) : activeSection === 'lezioni' ? (
           <LessonsView />
         ) : activeSection === 'verifiche' ? (

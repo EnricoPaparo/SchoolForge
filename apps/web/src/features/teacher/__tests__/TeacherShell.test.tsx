@@ -62,13 +62,14 @@ describe('TeacherShell', () => {
     expect(screen.getByRole('button', { name: /Studenti/ })).toBeTruthy();
   });
 
-  it('orders navigation sections as Lezioni, Corsi, Domande, Verifiche, Classi, Studenti, Template', () => {
+  it('orders navigation sections as Didattica, Lezioni, Corsi, Domande, Verifiche, Classi, Studenti, Template', () => {
     render(<TeacherShell />);
     const nav = screen.getByRole('navigation', { name: 'Sezioni docente' });
     const labels = within(nav)
       .getAllByRole('button')
       .map((btn) => btn.textContent?.replace(/[^\p{L}]/gu, '') ?? '');
     expect(labels).toEqual([
+      'Didattica',
       'Lezioni',
       'Corsi',
       'Domande',
@@ -79,9 +80,9 @@ describe('TeacherShell', () => {
     ]);
   });
 
-  it('shows Lezioni section by default', async () => {
+  it('shows the Didattica library by default (DUX-01 landing)', async () => {
     render(<TeacherShell />);
-    expect(await screen.findByRole('region', { name: 'Lezioni' })).toBeTruthy();
+    expect(await screen.findByRole('region', { name: 'Didattica' })).toBeTruthy();
   });
 
   it('switches section on nav click', () => {

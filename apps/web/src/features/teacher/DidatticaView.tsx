@@ -1,0 +1,669 @@
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { db, storage } from '../../lib/firebase.js';
+import { loadCourseLibrary, type CourseCard } from '../repository/programs/courseLibrary.js';
+import {
+  createProgram,
+  deleteProgram,
+  updateProgramTitle,
+} from '../repository/programs/programsService.js';
+import { importRepository } from '../repository/import/importRepository.js';
+import { readZipFile } from '../repository/import/readZipFile.js';
+import { describeImportValidationError } from './importValidationMessage.js';
+import styles from './DidatticaView.module.css';
+
+const YEAR_ALL = '__all__';
+const YEAR_NONE = '__none__';
+
+type DidatticaViewProps = {
+  ownerUid: string;
+  /**
+   * Contratto stabile per DUX-02 (item 7): aprire un corso. In DUX-01 il
+   * workspace completo non esiste ancora, quindi `TeacherShell` inoltra
+   * temporaneamente all'esperienza "Corsi" esistente selezionando il
+   * programma — nessun pulsante morto. Il workspace dedicato arriva in
+   * DUX-02, dietro questo stesso callback.
+   */
+  onOpenCourse: (programId: string) => void;
+};
+
+type Dialog =
+  | { kind: 'none' }
+  | { kind: 'new' }
+  | { kind: 'import' }
+  | { kind: 'rename'; programId: string; current: string }
+  | { kind: 'delete'; programId: string; title: string };
+
+export function DidatticaView({ ownerUid, onOpenCourse }: DidatticaViewProps) {
+  const [cards, setCards] = useState<CourseCard[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [yearFilter, setYearFilter] = useState<string>(YEAR_ALL);
+  const yearInitialized = useRef(false);
+  const [classFilter, setClassFilter] = useState<string>(YEAR_ALL);
+  const [search, setSearch] = useState('');
+
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<Dialog>({ kind: 'none' });
+  const [busy, setBusy] = useState(false);
+  const [dialogError, setDialogError] = useState<string | null>(null);
+
+  // ── Load ──────────────────────────────────────────────────────────────
+  async function load() {
+    setLoadError(null);
+    try {
+      const next = await loadCourseLibrary(ownerUid, db);
+      setCards(next);
+      // Default = anno scolastico più recente disponibile (item 5), fissato
+      // solo al primo caricamento così una scelta successiva del docente non
+      // viene sovrascritta a ogni refresh.
+      if (!yearInitialized.current) {
+        yearInitialized.current = true;
+        const years = distinctYears(next);
+        if (years.length > 0) setYearFilter(years[0]!);
+      }
+    } catch {
+      setLoadError('Impossibile caricare i corsi.');
+    }
+  }
+
+  useEffect(() => {
+    if (!ownerUid) return;
+    void load();
+  }, [ownerUid]);
+
+  useEffect(() => {
+    if (!menuOpenId) return;
+    function onDocClick() {
+      setMenuOpenId(null);
+    }
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, [menuOpenId]);
+
+  // ── Derived: filter options + filtered cards ────────────────────────────
+  const years = useMemo(() => (cards ? distinctYears(cards) : []), [cards]);
+  const classOptions = useMemo(() => {
+    if (!cards) return [];
+    const set = new Set<string>();
+    for (const c of cards) for (const name of c.classNames) set.add(name);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [cards]);
+  const hasNoYear = useMemo(() => (cards ? cards.some((c) => !c.annoScolastico) : false), [cards]);
+
+  const filtered = useMemo(() => {
+    if (!cards) return [];
+    const q = search.trim().toLowerCase();
+    return cards.filter((c) => {
+      if (yearFilter === YEAR_NONE && c.annoScolastico) return false;
+      if (yearFilter !== YEAR_ALL && yearFilter !== YEAR_NONE && c.annoScolastico !== yearFilter)
+        return false;
+      if (classFilter !== YEAR_ALL && !c.classNames.includes(classFilter)) return false;
+      if (q && !c.title.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [cards, yearFilter, classFilter, search]);
+
+  function resetFilters() {
+    setYearFilter(YEAR_ALL);
+    setClassFilter(YEAR_ALL);
+    setSearch('');
+  }
+
+  // ── Mutations (riuso esclusivo dei service esistenti) ──────────────────
+  async function handleCreate(title: string) {
+    setBusy(true);
+    setDialogError(null);
+    try {
+      await createProgram(title, ownerUid, db);
+      setDialog({ kind: 'none' });
+      await load();
+    } catch {
+      setDialogError('Impossibile creare il corso.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleImport(title: string, file: File) {
+    setBusy(true);
+    setDialogError(null);
+    try {
+      // "Importa un nuovo corso da ZIP" = crea il programma e poi importa il
+      // contenuto al suo interno, componendo i service esistenti
+      // (createProgram + importRepository) senza duplicarne la logica.
+      const programId = await createProgram(title, ownerUid, db);
+      const files = await readZipFile(file);
+      const result = await importRepository(
+        { ownerUid, programmaTitle: title, programId, files },
+        { db, storage },
+      );
+      if (result.status === 'validation_failed') {
+        setDialogError(describeImportValidationError(result.validationIssues));
+        // Il programma è stato creato ma resta vuoto: aggiorno comunque la
+        // libreria così compare e il docente può ritentare o eliminarlo.
+        await load();
+        return;
+      }
+      setDialog({ kind: 'none' });
+      await load();
+    } catch (err) {
+      setDialogError(err instanceof Error ? err.message : "Errore durante l'importazione.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRename(programId: string, title: string) {
+    setBusy(true);
+    setDialogError(null);
+    try {
+      await updateProgramTitle(programId, title, ownerUid, db);
+      setDialog({ kind: 'none' });
+      await load();
+    } catch {
+      setDialogError('Impossibile rinominare il corso.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete(programId: string) {
+    setBusy(true);
+    setDialogError(null);
+    try {
+      await deleteProgram(programId, ownerUid, db, storage);
+      setDialog({ kind: 'none' });
+      await load();
+    } catch (err) {
+      setDialogError(err instanceof Error ? err.message : 'Impossibile eliminare il corso.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────
+  if (loadError) {
+    return (
+      <section aria-label="Didattica" className={styles.container}>
+        <p role="alert" className="text-error">
+          {loadError}
+        </p>
+      </section>
+    );
+  }
+
+  if (cards === null) {
+    return (
+      <section aria-label="Didattica" className={styles.container}>
+        <p aria-busy="true" className="state-loading">
+          Caricamento…
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section aria-label="Didattica" className={styles.container}>
+      <div className={styles.toolbar}>
+        <div className={styles.filters}>
+          <select
+            aria-label="Filtro anno scolastico"
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+          >
+            <option value={YEAR_ALL}>Tutti gli anni</option>
+            {years.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+            {hasNoYear && <option value={YEAR_NONE}>Senza anno</option>}
+          </select>
+          <select
+            aria-label="Filtro classe"
+            value={classFilter}
+            onChange={(e) => setClassFilter(e.target.value)}
+          >
+            <option value={YEAR_ALL}>Tutte le classi</option>
+            {classOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <input
+            className={styles.search}
+            type="search"
+            placeholder="Cerca corso…"
+            aria-label="Cerca corso"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className={styles.actions}>
+          <button
+            type="button"
+            onClick={() => {
+              setDialogError(null);
+              setDialog({ kind: 'import' });
+            }}
+          >
+            Importa ZIP
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              setDialogError(null);
+              setDialog({ kind: 'new' });
+            }}
+          >
+            + Nuovo corso
+          </button>
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className={styles.emptyState}>
+          {cards.length === 0 ? (
+            <>
+              <p className={styles.emptyTitle}>Nessun corso</p>
+              <p className={styles.emptyDesc}>
+                Crea il tuo primo corso o importane uno da uno ZIP didattico.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className={styles.emptyTitle}>Nessun corso corrisponde ai filtri</p>
+              <p className={styles.emptyDesc}>
+                Prova a cambiare anno scolastico, classe o testo di ricerca.
+              </p>
+              <button type="button" onClick={resetFilters}>
+                Azzera filtri
+              </button>
+            </>
+          )}
+        </div>
+      ) : (
+        <ul className={styles.grid}>
+          {filtered.map((card) => (
+            <CourseCardView
+              key={card.programId}
+              card={card}
+              menuOpen={menuOpenId === card.programId}
+              onToggleMenu={() =>
+                setMenuOpenId((cur) => (cur === card.programId ? null : card.programId))
+              }
+              onOpen={() => onOpenCourse(card.programId)}
+              onRename={() => {
+                setMenuOpenId(null);
+                setDialogError(null);
+                setDialog({ kind: 'rename', programId: card.programId, current: card.title });
+              }}
+              onDelete={() => {
+                setMenuOpenId(null);
+                setDialogError(null);
+                setDialog({ kind: 'delete', programId: card.programId, title: card.title });
+              }}
+            />
+          ))}
+        </ul>
+      )}
+
+      {dialog.kind === 'new' && (
+        <TitleDialog
+          title="Nuovo corso"
+          label="Titolo del corso"
+          confirmLabel="Crea"
+          initial=""
+          busy={busy}
+          error={dialogError}
+          onCancel={() => setDialog({ kind: 'none' })}
+          onConfirm={(t) => void handleCreate(t)}
+        />
+      )}
+
+      {dialog.kind === 'rename' && (
+        <TitleDialog
+          title="Rinomina corso"
+          label="Titolo del corso"
+          confirmLabel="Salva"
+          initial={dialog.current}
+          busy={busy}
+          error={dialogError}
+          onCancel={() => setDialog({ kind: 'none' })}
+          onConfirm={(t) => void handleRename(dialog.programId, t)}
+        />
+      )}
+
+      {dialog.kind === 'import' && (
+        <ImportDialog
+          busy={busy}
+          error={dialogError}
+          onCancel={() => setDialog({ kind: 'none' })}
+          onConfirm={(t, f) => void handleImport(t, f)}
+        />
+      )}
+
+      {dialog.kind === 'delete' && (
+        <ConfirmDialog
+          title="Elimina corso"
+          message={`Eliminare definitivamente "${dialog.title}"? Verranno rimossi import, UDA, lezioni, pool e file caricati. L'operazione non è reversibile.`}
+          confirmLabel="Elimina"
+          danger
+          busy={busy}
+          error={dialogError}
+          onCancel={() => setDialog({ kind: 'none' })}
+          onConfirm={() => void handleDelete(dialog.programId)}
+        />
+      )}
+    </section>
+  );
+}
+
+// ── Card ──────────────────────────────────────────────────────────────────
+
+type CourseCardViewProps = {
+  card: CourseCard;
+  menuOpen: boolean;
+  onToggleMenu: () => void;
+  onOpen: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+};
+
+function CourseCardView({
+  card,
+  menuOpen,
+  onToggleMenu,
+  onOpen,
+  onRename,
+  onDelete,
+}: CourseCardViewProps) {
+  const pct = card.lessonsTotal > 0 ? Math.round((card.lessonsDone / card.lessonsTotal) * 100) : 0;
+  const yearLabel = card.annoScolastico ?? 'Senza anno';
+
+  return (
+    <li className={styles.cardWrap}>
+      {/* Card non interattiva (article): l'apertura passa da un vero <button>
+          e il menu ⋯ è un bottone fratello — nessun controllo annidato. */}
+      <article className={styles.card}>
+        <div className={styles.cardHead}>
+          <button
+            type="button"
+            className={styles.cardOpen}
+            aria-label={`Apri il corso ${card.title}`}
+            onClick={onOpen}
+          >
+            <span className={styles.cardTitle}>{card.title}</span>
+          </button>
+          <div className={styles.menuWrap} onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className={styles.menuBtn}
+              aria-haspopup="true"
+              aria-expanded={menuOpen}
+              aria-label={`Azioni corso — ${card.title}`}
+              onClick={onToggleMenu}
+            >
+              ⋯
+            </button>
+            {menuOpen && (
+              <div className={styles.menu} role="menu">
+                <button type="button" role="menuitem" onClick={onOpen}>
+                  Apri corso
+                </button>
+                <button type="button" role="menuitem" onClick={onRename}>
+                  Rinomina
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={styles.menuDanger}
+                  onClick={onDelete}
+                >
+                  Elimina corso
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className={styles.cardMeta}>
+          <span className={styles.pill}>{yearLabel}</span>
+          {card.classNames.length > 0 ? (
+            card.classNames.map((name) => (
+              <span key={name} className={styles.pill}>
+                {name}
+              </span>
+            ))
+          ) : (
+            <span className={styles.pill}>Nessuna classe</span>
+          )}
+        </div>
+
+        <div className={styles.cardStats}>
+          <div>
+            <strong>{card.udaCount}</strong>UDA
+          </div>
+          <div>
+            <strong>
+              {card.lessonsDone}/{card.lessonsTotal}
+            </strong>
+            lezioni
+          </div>
+          <div>
+            <strong>{card.questionsTotal}</strong>domande
+          </div>
+        </div>
+
+        <div className={styles.progressTrack} role="img" aria-label={`Avanzamento lezioni ${pct}%`}>
+          <div className={styles.progressFill} style={{ width: `${pct}%` }} />
+        </div>
+      </article>
+    </li>
+  );
+}
+
+// ── Dialogs (minimi, coerenti con l'app) ───────────────────────────────────
+
+function DialogShell({
+  title,
+  children,
+  onCancel,
+}: {
+  title: string;
+  children: ReactNode;
+  onCancel: () => void;
+}) {
+  return (
+    <div className={styles.backdrop} onClick={onCancel}>
+      <div
+        className={styles.dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className={styles.dialogTitle}>{title}</h3>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function TitleDialog({
+  title,
+  label,
+  confirmLabel,
+  initial,
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  label: string;
+  confirmLabel: string;
+  initial: string;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: (title: string) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const t = value.trim();
+    if (!t) return;
+    onConfirm(t);
+  }
+  return (
+    <DialogShell title={title} onCancel={onCancel}>
+      <form onSubmit={submit} className={styles.dialogForm}>
+        <label className={styles.dialogLabel}>
+          {label}
+          <input
+            type="text"
+            autoFocus
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            aria-label={label}
+          />
+        </label>
+        {error && (
+          <p role="alert" className="text-error">
+            {error}
+          </p>
+        )}
+        <div className={styles.dialogActions}>
+          <button type="button" onClick={onCancel} disabled={busy}>
+            Annulla
+          </button>
+          <button type="submit" className="btn-primary" disabled={busy || value.trim() === ''}>
+            {busy ? 'Attendere…' : confirmLabel}
+          </button>
+        </div>
+      </form>
+    </DialogShell>
+  );
+}
+
+function ImportDialog({
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: (title: string, file: File) => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const t = title.trim();
+    if (!t || !file) return;
+    onConfirm(t, file);
+  }
+  return (
+    <DialogShell title="Importa un nuovo corso da ZIP" onCancel={onCancel}>
+      <form onSubmit={submit} className={styles.dialogForm}>
+        <label className={styles.dialogLabel}>
+          Titolo del corso
+          <input
+            type="text"
+            autoFocus
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            aria-label="Titolo del corso"
+          />
+        </label>
+        <label className={styles.dialogLabel}>
+          File ZIP
+          <input
+            type="file"
+            accept=".zip"
+            aria-label="File ZIP del corso"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          />
+        </label>
+        <p className={styles.dialogHint}>
+          Lo ZIP deve contenere cartelle <code>uda-NN-slug/</code> con i file UDA, lezioni e pool;
+          il <code>programma.md</code> nella radice è opzionale.
+        </p>
+        {error && (
+          <p role="alert" className="text-error">
+            {error}
+          </p>
+        )}
+        <div className={styles.dialogActions}>
+          <button type="button" onClick={onCancel} disabled={busy}>
+            Annulla
+          </button>
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={busy || title.trim() === '' || !file}
+          >
+            {busy ? 'Importazione…' : 'Importa'}
+          </button>
+        </div>
+      </form>
+    </DialogShell>
+  );
+}
+
+function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  danger,
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  danger?: boolean;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <DialogShell title={title} onCancel={onCancel}>
+      <p className={styles.dialogMessage}>{message}</p>
+      {error && (
+        <p role="alert" className="text-error">
+          {error}
+        </p>
+      )}
+      <div className={styles.dialogActions}>
+        <button type="button" onClick={onCancel} disabled={busy}>
+          Annulla
+        </button>
+        <button
+          type="button"
+          className={danger ? 'btn-danger' : 'btn-primary'}
+          onClick={onConfirm}
+          disabled={busy}
+        >
+          {busy ? 'Attendere…' : confirmLabel}
+        </button>
+      </div>
+    </DialogShell>
+  );
+}
+
+// ── helpers ────────────────────────────────────────────────────────────────
+
+function distinctYears(cards: CourseCard[]): string[] {
+  const set = new Set<string>();
+  for (const c of cards) if (c.annoScolastico) set.add(c.annoScolastico);
+  return [...set].sort((a, b) => b.localeCompare(a)); // più recente prima
+}
