@@ -16,6 +16,11 @@ import {
 } from './examSessionService.js';
 import { OnlineExamView } from './OnlineExamView.js';
 import { ConfirmationView } from './ConfirmationView.js';
+import { StudentCorrectionView } from './StudentCorrectionView.js';
+import {
+  loadStudentCorrectionReturns,
+  type StudentCorrectionReturnItem,
+} from './studentCorrectionReturnsService.js';
 import styles from './StudentVerificationsView.module.css';
 
 type LoadState =
@@ -35,7 +40,8 @@ type OnlineStatus =
 type ViewState =
   | { mode: 'list' }
   | { mode: 'exam'; item: StudentVerificationItem; submission: SubmissionDoc }
-  | { mode: 'confirmation'; receipt: SubmissionReceiptDoc };
+  | { mode: 'confirmation'; receipt: SubmissionReceiptDoc }
+  | { mode: 'correction'; submissionId: string; data: StudentCorrectionReturnItem };
 
 /** it-IT date from a Firestore Timestamp-like value, or null if absent. */
 function formatActivatedAt(ts: unknown): string | null {
@@ -118,6 +124,10 @@ export function StudentVerificationsView({
   const [onlineStatus, setOnlineStatus] = useState<Record<string, OnlineStatus>>({});
   const [startErrors, setStartErrors] = useState<Record<string, string>>({});
   const [view, setView] = useState<ViewState>({ mode: 'list' });
+  /** Keyed by submissionId (`${verificationId}_${uid}`) — loaded once alongside the list, never via a listener. */
+  const [correctionReturns, setCorrectionReturns] = useState<
+    Record<string, StudentCorrectionReturnItem>
+  >({});
 
   const uid = user?.uid;
   useEffect(() => {
@@ -170,8 +180,27 @@ export function StudentVerificationsView({
       }
 
       void refreshOnlineStatuses(uid, result.verifications);
+      void loadCorrectionReturns(uid);
     } catch {
       setState({ status: 'error' });
+    }
+  }
+
+  /**
+   * Loaded once alongside the list, in parallel with the online-status
+   * checks above — a single query (`loadStudentCorrectionReturns`), never
+   * one read per verification. A failure here is non-fatal: the list still
+   * renders, simply without any "Vedi correzione" badge, rather than
+   * failing the whole page load over a secondary read.
+   */
+  async function loadCorrectionReturns(uid: string) {
+    try {
+      const items = await loadStudentCorrectionReturns(uid, db);
+      const byId: Record<string, StudentCorrectionReturnItem> = {};
+      for (const item of items) byId[item.submissionId] = item;
+      setCorrectionReturns(byId);
+    } catch {
+      // Non-fatal — see doc comment above.
     }
   }
 
@@ -306,6 +335,10 @@ export function StudentVerificationsView({
     setView({ mode: 'list' });
   }
 
+  function handleShowCorrection(submissionId: string, data: StudentCorrectionReturnItem) {
+    setView({ mode: 'correction', submissionId, data });
+  }
+
   if (view.mode === 'exam') {
     return (
       <OnlineExamView
@@ -324,6 +357,17 @@ export function StudentVerificationsView({
   if (view.mode === 'confirmation') {
     return (
       <ConfirmationView receipt={view.receipt} onBackToList={handleBackToListFromConfirmation} />
+    );
+  }
+
+  if (view.mode === 'correction') {
+    return (
+      <StudentCorrectionView
+        submissionId={view.submissionId}
+        initialData={view.data}
+        db={db}
+        onBack={() => setView({ mode: 'list' })}
+      />
     );
   }
 
@@ -372,103 +416,158 @@ export function StudentVerificationsView({
     );
   }
 
+  /**
+   * Three groups, distinct at a glance: a returned correction always wins
+   * over "consegnata" (the delivery already happened, correction is the
+   * newer, more relevant fact); a plain delivered receipt wins over
+   * "disponibile" the same way. No new card design — same `.card` markup
+   * as before, just sorted into labelled sections instead of one flat
+   * list.
+   */
+  const availableItems: StudentVerificationItem[] = [];
+  const submittedItems: StudentVerificationItem[] = [];
+  const returnedItems: StudentVerificationItem[] = [];
+  for (const item of verifications) {
+    const submissionId = `${item.id}_${uid ?? ''}`;
+    const correctionReturn = correctionReturns[submissionId];
+    const status = onlineStatus[item.id];
+    if (correctionReturn) {
+      returnedItems.push(item);
+    } else if (item.onlineEnabled && status?.kind === 'receipt') {
+      submittedItems.push(item);
+    } else {
+      availableItems.push(item);
+    }
+  }
+
+  function renderCard(item: StudentVerificationItem) {
+    const activatedLabel = formatActivatedAt(item.activatedAt);
+    const pdfError = pdfErrors[item.id];
+    const startError = startErrors[item.id];
+    const status = onlineStatus[item.id];
+    const submissionId = `${item.id}_${uid ?? ''}`;
+    const correctionReturn = correctionReturns[submissionId];
+
+    return (
+      <li key={item.id} className={styles.card}>
+        <div className={styles.cardHeader}>
+          <h3 className={styles.cardTitle}>{item.title}</h3>
+          {item.className && <span className={styles.classBadge}>{item.className}</span>}
+        </div>
+
+        <dl className={styles.cardMeta}>
+          {activatedLabel && (
+            <div className={styles.metaItem}>
+              <dt>Data</dt>
+              <dd>{activatedLabel}</dd>
+            </div>
+          )}
+          <div className={styles.metaItem}>
+            <dt>Domande</dt>
+            <dd>{item.questionCount}</dd>
+          </div>
+        </dl>
+
+        <div className={styles.cardActions}>
+          {item.studentPdfEnabled && (
+            <button
+              type="button"
+              className={styles.pdfBtn}
+              disabled={pdfLoadingId === item.id}
+              aria-label={`Scarica PDF — ${item.title}`}
+              onClick={() => void handleDownloadPdf(item)}
+            >
+              {pdfLoadingId === item.id ? 'Generazione…' : 'Scarica PDF'}
+            </button>
+          )}
+
+          {correctionReturn && (
+            <button
+              type="button"
+              className={styles.correctionBtn}
+              aria-label={`Vedi correzione — ${item.title}`}
+              onClick={() => handleShowCorrection(submissionId, correctionReturn)}
+            >
+              Vedi correzione
+            </button>
+          )}
+
+          {item.onlineEnabled && status?.kind === 'receipt' && (
+            <button
+              type="button"
+              className={styles.receiptBtn}
+              onClick={() => handleShowReceipt(status.receipt)}
+            >
+              Consegnata — Codice: {status.receipt.deliveryCode}
+            </button>
+          )}
+
+          {item.onlineEnabled && status?.kind === 'draft' && (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => void handleStartOrResume(item)}
+            >
+              Riprendi bozza
+            </button>
+          )}
+
+          {item.onlineEnabled &&
+            (status === undefined || status.kind === 'none' || status.kind === 'checking') && (
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={status === undefined || status.kind === 'checking'}
+                onClick={() => void handleStartOrResume(item)}
+              >
+                Svolgi online
+              </button>
+            )}
+        </div>
+
+        {item.onlineEnabled && status?.kind === 'error' && (
+          <p role="alert" className={`text-error ${styles.pdfError}`}>
+            Impossibile verificare lo stato della verifica online. Riprova più tardi.
+          </p>
+        )}
+        {pdfError && (
+          <p role="alert" className={`text-error ${styles.pdfError}`}>
+            {pdfError}
+          </p>
+        )}
+        {startError && (
+          <p role="alert" className={`text-error ${styles.pdfError}`}>
+            {startError}
+          </p>
+        )}
+      </li>
+    );
+  }
+
   return (
     <section aria-label="Verifiche" className={styles.container}>
       {examModeBanner}
-      <ul className={styles.list}>
-        {verifications.map((item) => {
-          const activatedLabel = formatActivatedAt(item.activatedAt);
-          const pdfError = pdfErrors[item.id];
-          const startError = startErrors[item.id];
-          const status = onlineStatus[item.id];
 
-          return (
-            <li key={item.id} className={styles.card}>
-              <div className={styles.cardHeader}>
-                <h3 className={styles.cardTitle}>{item.title}</h3>
-                {item.className && <span className={styles.classBadge}>{item.className}</span>}
-              </div>
+      {returnedItems.length > 0 && (
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>Correzioni restituite</h3>
+          <ul className={styles.list}>{returnedItems.map(renderCard)}</ul>
+        </div>
+      )}
 
-              <dl className={styles.cardMeta}>
-                {activatedLabel && (
-                  <div className={styles.metaItem}>
-                    <dt>Data</dt>
-                    <dd>{activatedLabel}</dd>
-                  </div>
-                )}
-                <div className={styles.metaItem}>
-                  <dt>Domande</dt>
-                  <dd>{item.questionCount}</dd>
-                </div>
-              </dl>
+      {submittedItems.length > 0 && (
+        <div className={styles.group}>
+          <h3 className={styles.groupTitle}>Consegne effettuate</h3>
+          <ul className={styles.list}>{submittedItems.map(renderCard)}</ul>
+        </div>
+      )}
 
-              <div className={styles.cardActions}>
-                {item.studentPdfEnabled && (
-                  <button
-                    type="button"
-                    className={styles.pdfBtn}
-                    disabled={pdfLoadingId === item.id}
-                    aria-label={`Scarica PDF — ${item.title}`}
-                    onClick={() => void handleDownloadPdf(item)}
-                  >
-                    {pdfLoadingId === item.id ? 'Generazione…' : 'Scarica PDF'}
-                  </button>
-                )}
-
-                {item.onlineEnabled && status?.kind === 'receipt' && (
-                  <button
-                    type="button"
-                    className={styles.receiptBtn}
-                    onClick={() => handleShowReceipt(status.receipt)}
-                  >
-                    Consegnata — Codice: {status.receipt.deliveryCode}
-                  </button>
-                )}
-
-                {item.onlineEnabled && status?.kind === 'draft' && (
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={() => void handleStartOrResume(item)}
-                  >
-                    Riprendi bozza
-                  </button>
-                )}
-
-                {item.onlineEnabled &&
-                  (status === undefined ||
-                    status.kind === 'none' ||
-                    status.kind === 'checking') && (
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      disabled={status === undefined || status.kind === 'checking'}
-                      onClick={() => void handleStartOrResume(item)}
-                    >
-                      Svolgi online
-                    </button>
-                  )}
-              </div>
-
-              {item.onlineEnabled && status?.kind === 'error' && (
-                <p role="alert" className={`text-error ${styles.pdfError}`}>
-                  Impossibile verificare lo stato della verifica online. Riprova più tardi.
-                </p>
-              )}
-              {pdfError && (
-                <p role="alert" className={`text-error ${styles.pdfError}`}>
-                  {pdfError}
-                </p>
-              )}
-              {startError && (
-                <p role="alert" className={`text-error ${styles.pdfError}`}>
-                  {startError}
-                </p>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      <div className={styles.group}>
+        {(returnedItems.length > 0 || submittedItems.length > 0) && (
+          <h3 className={styles.groupTitle}>Verifiche disponibili</h3>
+        )}
+        <ul className={styles.list}>{availableItems.map(renderCard)}</ul>
+      </div>
     </section>
   );
 }

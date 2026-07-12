@@ -51,6 +51,15 @@
         { "fieldPath": "config.programId", "order": "ASCENDING" },
         { "fieldPath": "config.importId", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "correctionReturns",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "studentUid", "order": "ASCENDING" },
+        { "fieldPath": "visibleToStudent", "order": "ASCENDING" },
+        { "fieldPath": "returnedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

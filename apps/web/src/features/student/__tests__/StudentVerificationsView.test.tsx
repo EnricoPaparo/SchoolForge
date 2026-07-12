@@ -34,6 +34,27 @@ vi.mock('../examDeterrence.js', () => ({
   requestFullscreenBestEffort: () => mockRequestFullscreenBestEffort(),
 }));
 
+const mockLoadStudentCorrectionReturns = vi.fn();
+vi.mock('../studentCorrectionReturnsService.js', () => ({
+  loadStudentCorrectionReturns: (...args: unknown[]) => mockLoadStudentCorrectionReturns(...args),
+}));
+
+vi.mock('../StudentCorrectionView.js', () => ({
+  StudentCorrectionView: (props: {
+    submissionId: string;
+    initialData: { verificationTitle: string };
+    onBack: () => void;
+  }) => (
+    <div data-testid="student-correction-view">
+      <span>{props.submissionId}</span>
+      <span>{props.initialData.verificationTitle}</span>
+      <button type="button" onClick={props.onBack}>
+        stub-correction-back
+      </button>
+    </div>
+  ),
+}));
+
 // OnlineExamView/ConfirmationView get their own dedicated test files for
 // internal behavior — here they're stubbed so these tests stay focused on
 // StudentVerificationsView's own routing (which view is shown, with what
@@ -77,6 +98,7 @@ afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
+  mockLoadStudentCorrectionReturns.mockResolvedValue([]);
 });
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -513,5 +535,129 @@ describe('StudentVerificationsView — Modalità verifica banner (M3F-07)', () =
     render(<StudentVerificationsView examModeActive={true} />);
 
     await waitFor(() => expect(screen.getByTestId('online-exam-view')).toBeTruthy());
+  });
+});
+
+describe('StudentVerificationsView — correction returns (M4-02B)', () => {
+  const RETURN_A = {
+    submissionId: 'ver-a_student-uid',
+    correctionId: 'ver-a_student-uid',
+    verificationId: 'ver-a',
+    studentUid: 'student-uid',
+    ownerUid: 'owner-uid',
+    verificationTitle: 'Verifica Reti',
+    className: 'Classe 3A',
+    submittedAt: { seconds: 90 },
+    returnedAt: { seconds: 300 },
+    questions: [
+      {
+        order: 0,
+        tipo: 'aperta' as const,
+        testo: 'Descrivi il modello OSI.',
+        studentAnswer: { tipo: 'aperta' as const, testo: 'risposta' },
+        points: 2,
+        maxPoints: 2,
+      },
+    ],
+    generalFeedback: null,
+    totalPoints: 2,
+    maxPoints: 2,
+    percentage: 100,
+    visibleToStudent: true,
+    solutionsVisible: false,
+    updatedAt: { seconds: 300 },
+  };
+
+  it('shows "Vedi correzione" only for a verification with a loaded, visible return', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_A, VERIFICATION_B],
+    });
+    mockLoadStudentCorrectionReturns.mockResolvedValue([RETURN_A]);
+
+    render(<StudentVerificationsView />);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Vedi correzione — Verifica Reti/ })).toBeTruthy(),
+    );
+    expect(
+      screen.queryByRole('button', { name: /Vedi correzione — Verifica Basi di dati/ }),
+    ).toBeNull();
+  });
+
+  it('does not show "Vedi correzione" when no return has been loaded', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_A],
+    });
+    mockLoadStudentCorrectionReturns.mockResolvedValue([]);
+
+    render(<StudentVerificationsView />);
+
+    await waitFor(() => expect(screen.getByText('Verifica Reti')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /Vedi correzione/ })).toBeNull();
+  });
+
+  it('groups verifications into distinct sections: restituite, consegnate, disponibili', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_A, VERIFICATION_B],
+    });
+    mockLoadStudentCorrectionReturns.mockResolvedValue([RETURN_A]);
+
+    render(<StudentVerificationsView />);
+
+    await waitFor(() => expect(screen.getByText('Correzioni restituite')).toBeTruthy());
+    expect(screen.getByText('Verifiche disponibili')).toBeTruthy();
+  });
+
+  it('clicking "Vedi correzione" opens the read-only StudentCorrectionView with the loaded projection', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_A],
+    });
+    mockLoadStudentCorrectionReturns.mockResolvedValue([RETURN_A]);
+
+    render(<StudentVerificationsView />);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Vedi correzione — Verifica Reti/ })).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Vedi correzione — Verifica Reti/ }));
+
+    await waitFor(() => expect(screen.getByTestId('student-correction-view')).toBeTruthy());
+    expect(screen.getByText('ver-a_student-uid')).toBeTruthy();
+  });
+
+  it('returns to the list from the correction view', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_A],
+    });
+    mockLoadStudentCorrectionReturns.mockResolvedValue([RETURN_A]);
+
+    render(<StudentVerificationsView />);
+
+    await waitFor(() =>
+      fireEvent.click(screen.getByRole('button', { name: /Vedi correzione — Verifica Reti/ })),
+    );
+    await waitFor(() => expect(screen.getByTestId('student-correction-view')).toBeTruthy());
+
+    fireEvent.click(screen.getByText('stub-correction-back'));
+    await waitFor(() => expect(screen.getByText('Verifica Reti')).toBeTruthy());
+    expect(screen.queryByTestId('student-correction-view')).toBeNull();
+  });
+
+  it('a failure loading correction returns does not break the rest of the list', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_A],
+    });
+    mockLoadStudentCorrectionReturns.mockRejectedValue(new Error('boom'));
+
+    render(<StudentVerificationsView />);
+
+    await waitFor(() => expect(screen.getByText('Verifica Reti')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /Vedi correzione/ })).toBeNull();
   });
 });

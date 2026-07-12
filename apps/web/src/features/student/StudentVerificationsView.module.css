@@ -16,6 +16,21 @@
   margin: 0;
 }
 
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.groupTitle {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
 .list {
   list-style: none;
   padding: 0;
@@ -101,6 +116,13 @@
   color: var(--color-success);
   background: var(--color-success-bg);
   border-color: var(--color-success-border);
+}
+
+.correctionBtn {
+  font-weight: 600;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
 }
 
 .pdfError {

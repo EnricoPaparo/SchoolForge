@@ -159,7 +159,7 @@ Prima della restituzione lo studente continua a vedere soltanto la conferma di c
 
 Nascondere nuovamente una correzione non modifica né elimina i dati: cambia soltanto la proiezione leggibile dallo studente.
 
-> **Stato implementazione (M4-02):** i due toggle per singola correzione (`visibleToStudent`, `solutionsVisible`) sono implementati nel workspace, visibili solo nello stato `returned`, con avviso esplicito che riaprire nasconde subito la restituzione. **Non implementata**: l'azione batch "Restituisci tutte le correzioni completate" (né batch analoghi sui due toggle) — resta un'azione per singola correzione, come esplicitamente delimitato in M4-00/M4-01. **Non implementata in M4-02**: la schermata studente che mostra il risultato dopo la restituzione (`correctionReturns` è scritto e leggibile dallo studente via Security Rules, ma nessuna nuova UI studente la renderizza ancora).
+> **Stato implementazione (M4-02):** i due toggle per singola correzione (`visibleToStudent`, `solutionsVisible`) sono implementati nel workspace, visibili solo nello stato `returned`, con avviso esplicito che riaprire nasconde subito la restituzione. **Non implementata**: l'azione batch "Restituisci tutte le correzioni completate" (né batch analoghi sui due toggle) — resta un'azione per singola correzione, come esplicitamente delimitato in M4-00/M4-01. **Implementata in M4-02B**: la schermata studente che mostra il risultato dopo la restituzione — `StudentCorrectionView`, letta esclusivamente da `correctionReturns` con un'unica query (`studentUid`+`visibleToStudent`), integrata nella sezione Verifiche con badge "Vedi correzione" e sezioni distinte per correzioni restituite/consegne effettuate/verifiche disponibili.
 
 ## 7. Contratto dati (M4-00 — definito)
 
