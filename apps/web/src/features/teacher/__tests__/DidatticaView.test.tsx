@@ -25,6 +25,19 @@ vi.mock('../../repository/import/importRepository.js', () => ({
 vi.mock('../../repository/import/readZipFile.js', () => ({
   readZipFile: (...a: unknown[]) => mockReadZipFile(...a),
 }));
+// The workspace (DUX-02) has its own dedicated test; here we only assert
+// Didattica's two-level navigation (library ⇄ workspace) and that returning
+// preserves the library's filters — so a light stub is enough.
+vi.mock('../CourseWorkspace.js', () => ({
+  CourseWorkspace: ({ card, onBack }: { card: { title: string }; onBack: () => void }) => (
+    <div>
+      <p>WORKSPACE: {card.title}</p>
+      <button type="button" onClick={onBack}>
+        ← Libreria
+      </button>
+    </div>
+  ),
+}));
 
 afterEach(cleanup);
 beforeEach(() => {
@@ -42,12 +55,13 @@ function card(overrides: Partial<CourseCard> = {}): CourseCard {
     lessonsDone: 9,
     questionsTotal: 41,
     hasImport: true,
+    activeImportId: 'i1',
     ...overrides,
   };
 }
 
 function renderView() {
-  return render(<DidatticaView ownerUid="owner-uid" onOpenCourse={vi.fn()} />);
+  return render(<DidatticaView ownerUid="owner-uid" />);
 }
 
 describe('DidatticaView — loading and rendering', () => {
@@ -160,14 +174,32 @@ describe('DidatticaView — filters', () => {
 });
 
 describe('DidatticaView — open course', () => {
-  it('calls onOpenCourse with the programId from the card open button', async () => {
-    const onOpenCourse = vi.fn();
-    mockLoadCourseLibrary.mockResolvedValue([card({ programId: 'p42', title: 'Apribile' })]);
-    render(<DidatticaView ownerUid="owner-uid" onOpenCourse={onOpenCourse} />);
+  it('opens the course workspace in place and returns to the library preserving filters', async () => {
+    mockLoadCourseLibrary.mockResolvedValue([
+      card({ programId: 'p1', title: 'Reti', annoScolastico: '2025/2026', classNames: ['4A INF'] }),
+      card({
+        programId: 'p2',
+        title: 'Basi dati',
+        annoScolastico: '2025/2026',
+        classNames: ['4A INF'],
+      }),
+    ]);
+    renderView();
 
-    await waitFor(() => expect(screen.getByText('Apribile')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: /apri il corso apribile/i }));
-    expect(onOpenCourse).toHaveBeenCalledWith('p42');
+    await waitFor(() => expect(screen.getByText('Reti')).toBeTruthy());
+    // Narrow the library with a search before opening the workspace.
+    fireEvent.change(screen.getByLabelText('Cerca corso'), { target: { value: 'reti' } });
+    expect(screen.queryByText('Basi dati')).toBeNull();
+
+    // Open the workspace for "Reti" (the library stays mounted underneath).
+    fireEvent.click(screen.getByRole('button', { name: /apri il corso reti/i }));
+    expect(screen.getByText('WORKSPACE: Reti')).toBeTruthy();
+
+    // Back to the library: the earlier search filter is still applied.
+    fireEvent.click(screen.getByRole('button', { name: /← libreria/i }));
+    expect(screen.getByText('Reti')).toBeTruthy();
+    expect(screen.queryByText('Basi dati')).toBeNull();
+    expect((screen.getByLabelText('Cerca corso') as HTMLInputElement).value).toBe('reti');
   });
 
   it('exposes rename/delete in the ⋯ menu as sibling controls (no nested buttons)', async () => {

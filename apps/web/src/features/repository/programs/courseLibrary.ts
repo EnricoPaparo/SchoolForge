@@ -28,6 +28,12 @@ export type CourseCard = {
   questionsTotal: number;
   /** False when the program has never been populated by a ZIP import yet. */
   hasImport: boolean;
+  /**
+   * The program's active import id, carried through so the DUX-02 workspace
+   * can load that course's UDA/lessons on open without re-reading the full
+   * program list. `null` when the program has no active import.
+   */
+  activeImportId: string | null;
 };
 
 /**
@@ -80,6 +86,7 @@ async function buildCard(
       lessonsDone: 0,
       questionsTotal: 0,
       hasImport: false,
+      activeImportId: null,
     };
   }
 
@@ -100,5 +107,6 @@ async function buildCard(
     lessonsDone: lessons.filter((l) => l.completed).length,
     questionsTotal: lessons.reduce((sum, l) => sum + (l.questionCount ?? 0), 0),
     hasImport: true,
+    activeImportId: importId,
   };
 }

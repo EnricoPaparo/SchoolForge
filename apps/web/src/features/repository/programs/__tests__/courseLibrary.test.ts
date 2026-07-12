@@ -56,6 +56,7 @@ describe('loadCourseLibrary', () => {
         lessonsDone: 2,
         questionsTotal: 9,
         hasImport: true,
+        activeImportId: 'i1',
       },
     ]);
   });

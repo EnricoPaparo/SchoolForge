@@ -37,18 +37,7 @@ type CourseState = {
   pdfDownloading?: boolean;
 };
 
-type ProgramsViewProps = {
-  /**
-   * DUX-01 → DUX-02 bridge: quando il docente apre un corso dalla libreria
-   * "Didattica", `TeacherShell` inoltra qui (sezione "Corsi") con questo
-   * programma già espanso, così l'apertura non è un pulsante morto finché
-   * il workspace dedicato non arriva in DUX-02. `null`/assente = comportamento
-   * normale (nessuna espansione iniziale).
-   */
-  initialExpandedProgramId?: string | null;
-};
-
-export function ProgramsView({ initialExpandedProgramId }: ProgramsViewProps = {}) {
+export function ProgramsView() {
   const { user } = useAuth();
   const ownerUid = user?.uid ?? '';
 
@@ -56,9 +45,7 @@ export function ProgramsView({ initialExpandedProgramId }: ProgramsViewProps = {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [courseState, setCourseState] = useState<Record<string, CourseState>>({});
-  const [expandedCourses, setExpandedCourses] = useState<Set<string>>(() =>
-    initialExpandedProgramId ? new Set([initialExpandedProgramId]) : new Set(),
-  );
+  const [expandedCourses, setExpandedCourses] = useState<Set<string>>(new Set());
   const [expandedUdas, setExpandedUdas] = useState<Set<string>>(new Set());
 
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
