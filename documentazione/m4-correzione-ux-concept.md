@@ -1,8 +1,8 @@
 # M4 — Concept UX della correzione docente
 
-**Stato:** concept approvato, non ancora implementato  
+**Stato:** concept approvato; contratto dati minimo (M4-00) implementato — tipi TypeScript e helper puri, nessun service layer/Rules/UI ancora  
 **Data decisione:** 2026-07-12  
-**Prerequisito:** chiusura di M3-full e superamento del Gate G5
+**Prerequisito:** chiusura di M3-full e superamento del Gate G5 — soddisfatto
 
 ## 1. Obiettivo
 
@@ -149,26 +149,40 @@ Prima della restituzione lo studente continua a vedere soltanto la conferma di c
 
 Nascondere nuovamente una correzione non modifica né elimina i dati: cambia soltanto la proiezione leggibile dallo studente.
 
-## 7. Contratto dati candidato
+## 7. Contratto dati (M4-00 — definito)
 
-La direzione approvata è un documento separato dalla submission, per esempio:
+Il documento è separato dalla submission, sul path deterministico `corrections/{submissionId}` (stesso id di `submissions`/`submissionReceipts`, cioè `${verificationId}_${studentUid}` — non ripetuto come coppia di campi nel path):
 
-```text
-corrections/{verificationId}_{studentUid}
+```typescript
+type CorrectionStatus = 'in_progress' | 'completed' | 'returned';
+
+interface CorrectionDoc {
+  submissionId: string;
+  verificationId: string;
+  studentUid: string;
+  ownerUid: string;
+  status: CorrectionStatus;
+  evaluations: Record<string, QuestionEvaluation>; // key = order.toString()
+  generalFeedback: string | null;
+  totalPoints: number;   // derivato, mai scritto a mano
+  maxPoints: number;     // derivato, mai scritto a mano
+  percentage: number | null; // derivato, arrotondato — vedi §10.1
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  completedAt: Timestamp | null;
+  returnedAt: Timestamp | null;
+}
 ```
 
-Contenuto candidato:
+Ogni domanda è collegata stabilmente tramite `order` (stessa chiave di `SubmissionDoc.answers` e `PublicVerificationQuestion.order`), non tramite un riferimento al pool corrente — vedi `documentazione/api-contract.md` per il tipo completo `QuestionEvaluation` e i contratti gemelli `CorrectionEventDoc`/`CorrectionReturnDoc`.
 
-- `verificationId`, `studentUid`, `ownerUid`;
-- stato della correzione;
-- punteggi per domanda;
-- feedback per domanda;
-- feedback generale;
-- totale, massimo e percentuale derivata;
-- `createdAt`, `updatedAt`, `correctedAt`, `returnedAt`;
-- revisione/versione per gestire salvataggi concorrenti.
+Le rettifiche vivono in eventi append-only separati, `correctionEvents/{eventId}` (id auto-generato, molti eventi per correzione) — solo per riaperture/rettifiche dopo `completed`/`returned`, mai per il progresso ordinario mentre la correzione è `in_progress`.
 
-Le rettifiche candidate vivono in eventi append-only separati, per esempio `correctionEvents`. Il modello definitivo, i path e le Security Rules vengono formalizzati in M4-A.
+Se lo studente deve leggere la propria correzione restituita, legge una proiezione minima separata, `correctionReturns/{submissionId}`, scritta solo dall'azione di restituzione del docente — mai il documento tecnico `corrections`. Il contenuto esatto di questa proiezione (in particolare se includere la risposta consegnata e la soluzione corretta, §6) dipende da un toggle "mostra soluzioni dopo la restituzione" non ancora modellato su `VerificationDoc`, e resta una decisione di M4-01.
+
+Nessuna revisione/versione esplicita per la concorrenza: la correzione è un flusso a singolo autore (un solo docente), a differenza dell'autosave concorrente dello studente in M3-full — non serve un revision guard.
+
+Il modello definitivo dei percorsi, dei tipi e dei valori ammessi è in `documentazione/api-contract.md`; le Security Rules e il service layer restano lo scope di **M4-01** (vedi `piano-implementazione.md`).
 
 ## 8. Principi di sicurezza ed efficienza
 
@@ -192,17 +206,26 @@ Le rettifiche candidate vivono in eventi append-only separati, per esempio `corr
 - analisi statistiche avanzate;
 - email o notifiche push.
 
-## 10. Decisioni ancora da formalizzare
+## 10. Decisioni formalizzate in M4-00 e decisioni ancora aperte
 
-Prima dell'implementazione servono decisioni operative su:
+### 10.1 Formalizzate in M4-00
 
-1. percentuale e arrotondamento;
-2. presenza o meno di un voto distinto dal punteggio;
-3. comportamento dell'eventuale restituzione batch;
-4. formato export predefinito richiesto da H-04;
-5. eliminazione o anonimizzazione di submission e correzione;
-6. gestione di rettifiche già restituite;
-7. soglia e messaggio per correzioni incomplete;
-8. modello definitivo delle proiezioni studente e relative Rules.
+1. **Percentuale e arrotondamento**: `round(totalPoints / maxPoints * 100)` a numero intero (`Math.round`, arrotondamento standard); `null` solo quando `maxPoints == 0`. Vedi `computeCorrectionTotals` in `correctionContract.ts`.
+2. **Range punteggio per domanda**: `[0, maxPoints]`, `maxPoints` congelato per domanda alla creazione della correzione. Un punteggio fuori range è **rifiutato esplicitamente** (`assertValidQuestionPoints`), mai clampato in silenzio.
+3. **Completezza**: una correzione può passare a `completed` solo quando ogni domanda ha un punteggio non nullo (`0` conta come valutata, `null` no).
+4. **Transizioni di stato ammesse**: `in_progress → completed`, `completed → returned`, `completed → in_progress` (riapertura), `returned → in_progress` (riapertura). Non è ammesso saltare `completed` né tornare direttamente da `returned` a `completed`.
+5. **Riapertura**: sempre disponibile dal docente su una correzione `completed`/`returned`; riporta a `in_progress`, azzera `completedAt`/`returnedAt`, produce un evento append-only in `correctionEvents`.
+6. **Eventi append-only**: solo per riaperture/rettifiche/restituzioni/nascondimenti dopo il primo completamento — non un log di autosave del progresso ordinario.
+7. **Compatibilità legacy**: `maxPoints` per domanda è sempre letto da `publishedProjection.questions[order]` (presente per ogni verifica che ha mai accettato consegne online), mai da `teacherSnapshot.questions` (assente sulle verifiche attivate prima del fix SEC-02) — nessuna dipendenza da quel campo opzionale.
 
-Queste decisioni non cambiano il concept UX approvato; vengono chiuse durante M4-00/M4-A.
+### 10.2 Ancora da formalizzare (M4-01)
+
+1. presenza o meno di un voto distinto dal punteggio;
+2. comportamento dell'eventuale restituzione batch;
+3. formato export predefinito richiesto da H-04;
+4. eliminazione o anonimizzazione di submission e correzione;
+5. contenuto esatto di `correctionReturns` — se e come includere la risposta consegnata e la soluzione corretta (dipende dal toggle "mostra soluzioni dopo la restituzione", non ancora modellato);
+6. Security Rules esatte per `corrections`/`correctionEvents`/`correctionReturns`;
+7. soglia e messaggio UI per correzioni incomplete.
+
+Queste decisioni non cambiano il concept UX approvato; vengono chiuse durante M4-01.

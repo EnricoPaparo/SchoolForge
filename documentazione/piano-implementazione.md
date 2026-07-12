@@ -296,15 +296,41 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 ## 12. M4 — Correzione ed export
 
-Il concept UX approvato per accesso dalla tabella **Consegne online**, workspace di correzione, stati e restituzione studente è fissato in [`m4-correzione-ux-concept.md`](m4-correzione-ux-concept.md). Il documento non implementa M4 e non sostituisce i contratti tecnici da definire in M4-00/M4-A.
+Il concept UX approvato per accesso dalla tabella **Consegne online**, workspace di correzione, stati e restituzione studente è fissato in [`m4-correzione-ux-concept.md`](m4-correzione-ux-concept.md). La numerazione dei pacchetti segue la stessa convenzione di M3F-00→11C/RE-00→07/QE-00→05 (M4-00 → M4-04), sostituendo la numerazione precedente M4-A→E.
 
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
-| M4-A | Servizio correzione client: punteggi 0..massimo, percentuale, stato non definitivo, rettifiche append-only, eliminazione dati. | G4 | M4-B | Percentuale e storico rettifiche corretti; eliminazione preserva solo audit. |
-| M4-B | Modello canonico export: leggi tutte le consegne definitive e snapshot, ordina per verifica/data, escludi bozze/annullate. | G4 | M4-A | Ordine corretto; indipendenza dal Markdown corrente. |
-| M4-C | UI correzione: lista filtri (classe inclusa), dettaglio, punteggi, commenti, rettifiche, popup `Registro Correzioni` (tabella nome/cognome/punteggio/percentuale/data con export PDF/CSV opzionale). | M4-A | M4-B | Correzione manuale completa senza voto elettronico; Registro Correzioni consultabile ed esportabile. |
-| M4-D | Renderer export nel browser: genera PDF, Markdown e CSV dal modello canonico; download on-demand. Attende H-04 per il formato di default. | M4-B/H-04 | M4-C | Documento contiene tutte e sole le consegne richieste nei tre formati; nessuna persistenza. |
-| M4-E | Integrazione M4, E2E correzione/export, test su snapshot dopo modifica lezione, evidenze G5. | M4-C/M4-D | — | Ciclo digitale manuale completo. |
+| M4-00 ✅ | Contratto tecnico minimo della correzione: tipi `CorrectionDoc`/`QuestionEvaluation`/`CorrectionEventDoc`/`CorrectionReturnDoc` (`src/types/firestore.ts`), helper puri di scoring/transizione (`correctionContract.ts`). Nessun service layer, nessuna Security Rule, nessuna UI. | G5 (M3-full, superato) | — | Typecheck/lint/build verdi; test unitari mirati sugli helper verdi; nessuna modifica a Rules/indici/dipendenze. Completato. |
+| M4-01 | Service layer client + Security Rules per `corrections`/`correctionEvents`/`correctionReturns`, test Emulator Suite. Nessuna UI. | M4-00 | — | Vedi scheda dettagliata sotto: transizioni di stato, unicità/immutabilità, letture owner-only e proiezione studente coperte da test Rules positivi/negativi. |
+| M4-02 | UI correzione: apertura dalla tabella **Consegne online** esistente, workspace per domanda, salvataggio esplicito, completa/restituisci/riapri. | M4-01 | — | Correzione manuale completa senza voto elettronico; nessuna regressione sul monitor consegne esistente. |
+| M4-03 | Popup `Registro Correzioni` (tabella nome/cognome/punteggio/percentuale/data, export PDF/CSV opzionale) e renderer export `Esporta verifiche` (PDF/Markdown/CSV dal modello canonico). Attende H-04 per il formato di default. | M4-02/H-04 | — | Registro consultabile ed esportabile; export contiene tutte e sole le consegne definitive richieste; nessuna persistenza. |
+| M4-04 | Integrazione M4, test E2E correzione/export, evidenze gate G6. | M4-02/M4-03 | — | Ciclo digitale manuale completo. |
+
+#### M4-00 — Contratto tecnico minimo della correzione (Completato)
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | G5 (M3-full, superato) |
+| File creati | `apps/web/src/features/repository/corrections/correctionContract.ts` (helper puri: `isValidQuestionPoints`/`assertValidQuestionPoints`, `isQuestionEvaluated`/`isCorrectionComplete`, `computeCorrectionTotals`, `isValidCorrectionStatusTransition`/`assertValidCorrectionStatusTransition`, `deriveCorrectionUiStatus`), `apps/web/src/features/repository/corrections/__tests__/correctionContract.test.ts` |
+| File modificati | `apps/web/src/types/firestore.ts` (`CorrectionStatus`, `QuestionEvaluation`, `CorrectionDoc`, `CorrectionEventType`, `CorrectionEventDoc`, `CorrectionReturnDoc`), `documentazione/m4-correzione-ux-concept.md`, `documentazione/api-contract.md`, `documentazione/architettura.md`, `documentazione/sicurezza.md` |
+| Decisioni formalizzate | Path deterministico `corrections/{submissionId}` (== id di `submissions`); nessuna copia di `answers`/`teacherSnapshot`/`publishedProjection` dentro `corrections`; `maxPoints` per domanda congelato da `publishedProjection.questions[order]` alla creazione (mai da `teacherSnapshot.questions`, assente sulle verifiche legacy pre-SEC-02); range punteggio `[0, maxPoints]` con rifiuto esplicito fuori range; percentuale `round(totalPoints/maxPoints*100)`, `null` solo se `maxPoints == 0`; completezza = ogni domanda con `points !== null`; transizioni ammesse `in_progress→completed`, `completed→returned`, `completed→in_progress`, `returned→in_progress`; nessuna transizione diretta `returned→completed` né `in_progress→returned`; "Da correggere" derivato lato UI dall'assenza del documento, mai un documento placeholder; `correctionReturns` come proiezione minima separata, scritta solo dal docente, senza risposta/soluzione (decisione di contenuto esatto rimandata a M4-01). |
+| Test minimi | Helper `correctionContract.ts`: range punteggio (incl. NaN/Infinity/decimali), completezza (incl. `0` vs `null`, mappa vuota), somma/arrotondamento percentuale (incl. maxPoints 0, arrotondamenti non esatti), transizioni valide/non valide, derivazione stato UI senza documento. |
+| Evidenza richiesta | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, test mirati (`correctionContract.test.ts`), `pnpm build` verdi. Nessun `pnpm test:rules` (Rules non modificate). Nessun deploy. |
+
+#### M4-01 — Service layer e Security Rules correzione (specifica, non implementato)
+
+Scope preciso per il prossimo pacchetto, derivato direttamente dal contratto M4-00:
+
+| Campo | Valore |
+|---|---|
+| Prerequisiti | M4-00 |
+| File da creare | `correctionsService.ts` (client-only: `openOrLoadCorrection`, `saveEvaluations`, `completeCorrection`, `returnCorrection`, `reopenCorrection`), test service con Emulator Suite; blocco `corrections`/`correctionEvents`/`correctionReturns` in `firestore.rules`, test Rules dedicati |
+| File da modificare | Nessuno applicativo oltre ai nuovi file — nessuna UI in questo pacchetto |
+| Scope service layer | `openOrLoadCorrection(submissionId)`: legge `corrections/{submissionId}`; se assente, lo crea a `status:'in_progress'` con `evaluations` inizializzate da `publishedProjection.questions` (id, `order`, `maxPoints`, `points: null`), in un'unica scrittura. `saveEvaluations(...)`: aggiorna `evaluations`/`generalFeedback` e i totali derivati (`computeCorrectionTotals`) con una singola `update`; usa `assertValidQuestionPoints` prima di scrivere, mai un clamp silenzioso. `completeCorrection(...)`: usa `assertValidCorrectionStatusTransition`, richiede `isCorrectionComplete`, imposta `completedAt`. `returnCorrection(...)`: transizione `completed→returned`, scrive/aggiorna `correctionReturns/{submissionId}` nella stessa `writeBatch` (atomico, stesso pattern di `submissionsService`/`setVerificationVisibility`), imposta `returnedAt`. `reopenCorrection(...)`: transizione `completed\|returned→in_progress`, azzera `completedAt`/`returnedAt`, appende un `correctionEvents` (`type:'reopened'`) nella stessa `writeBatch`. |
+| Scope Security Rules | Lettura/scrittura `corrections`/`correctionEvents` solo owner (mai lo studente, nemmeno in lettura — a differenza di `submissions`, che il proprietario studente legge finché `draft`). Creazione/aggiornamento `corrections` validati contro `submissionId` corrispondente a una `submissions/{id}` esistente con `status == 'submitted'` e `ownerUid` combaciante. Transizioni di stato validate lato Rules con lo stesso set ammesso di `isValidCorrectionStatusTransition` (nessuna scrittura che salti `completed` o vada `returned→completed`). `correctionReturns`: scrittura solo owner, lettura owner **e** lo studente proprietario (`studentUid == request.auth.uid`) solo quando il documento esiste (creato solo alla restituzione). Nessun nuovo indice se il service non esegue ancora query oltre `get()` su path noti. |
+| Test minimi | Rules: owner crea/legge/aggiorna `corrections` della propria verifica; owner non può leggere/scrivere corrections di un altro owner; studente non legge mai `corrections`/`correctionEvents`; studente legge `correctionReturns` solo la propria e solo se esiste; transizione di stato non ammessa rifiutata lato Rules oltre che lato client; `corrections` non creabile per una submission non `submitted` o di un'altra verifica. Service: creazione idempotente (non ricrea se già esiste), salvataggio non tocca campi derivati con valori incoerenti, completamento rifiutato se una domanda è ancora `null`, restituzione atomica `corrections`+`correctionReturns`, riapertura produce esattamente un evento. |
+| Evidenza richiesta | `pnpm test:rules` completo verde (Rules modificate), test service mirati verdi, typecheck/lint/build verdi. Nessun deploy dall'agente. |
+| Esplicitamente fuori scope M4-01 | UI (M4-02); Registro Correzioni ed export (M4-03); eliminazione submission/correzione; voto elettronico; AI. |
 
 ---
 

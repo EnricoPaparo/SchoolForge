@@ -598,3 +598,158 @@ export type SubmissionReceiptDoc = {
   deliveryCode: string;
   submittedAt: Timestamp | FieldValue;
 };
+
+// ─── M4-00 — Correction contract ─────────────────────────────────────────────
+//
+// Defines the canonical data shape for manual correction of submitted
+// online submissions. M4-00 is contract-only: no service layer, no
+// Security Rules, no UI. See `documentazione/api-contract.md` §M4-00 and
+// `documentazione/m4-correzione-ux-concept.md` for the approved UX and
+// product decisions this contract encodes; see `documentazione/
+// piano-implementazione.md` §M4-01 for the exact scope of what reads/writes
+// these documents next.
+
+/**
+ * Canonical lifecycle of a correction (D-M4-03). There is no `'none'`/
+ * `'to_correct'` status: when no `CorrectionDoc` exists yet for a submitted
+ * submission, the UI derives "Da correggere" itself (see
+ * `deriveCorrectionUiStatus` in `correctionContract.ts`) rather than a
+ * placeholder document being created. The first status a `CorrectionDoc`
+ * is ever created with is always `'in_progress'`.
+ */
+export type CorrectionStatus = 'in_progress' | 'completed' | 'returned';
+
+/**
+ * The evaluation of a single question, keyed by `order.toString()` on
+ * `CorrectionDoc.evaluations` — the exact same key space as
+ * `SubmissionDoc.answers` and `PublicVerificationQuestion.order`. `order` is
+ * therefore the one stable identity a `QuestionEvaluation` is ever linked
+ * to: it is frozen at verification activation (`publishedProjection.
+ * questions[i].order`) and never depends on the current state of the
+ * source pool, which may have been edited or deleted since (D-M4-04).
+ *
+ * `maxPoints` is copied once, when the `CorrectionDoc` is first created,
+ * from `publishedProjection.questions[order].maxPoints` — never from the
+ * live pool, and never recomputed afterwards even if the (immutable, once
+ * activated) verification's projection could theoretically be re-read.
+ * This keeps a correction fully self-contained for scoring math without
+ * embedding the question text, options, or the teacher's solution — those
+ * stay in `teacherSnapshot`/`publishedProjection`, which the correction
+ * workspace reads alongside (never through) this document.
+ */
+export type QuestionEvaluation = {
+  order: number;
+  /**
+   * `null` = not yet evaluated. Distinguishing "not evaluated" from a
+   * legitimate `0` is required for `isCorrectionComplete` (D-M4-06): a
+   * question deliberately scored `0` counts as evaluated, `null` never
+   * does.
+   */
+  points: number | null;
+  /** Frozen at correction creation — see the type-level doc above. */
+  maxPoints: number;
+  feedback?: string;
+};
+
+/**
+ * Stored at `corrections/{submissionId}` — deliberately the same
+ * deterministic id as the `SubmissionDoc` it corrects (D-M4-01), not
+ * `${verificationId}_${studentUid}` spelled out again: the two are the same
+ * string by construction (`SubmissionDoc.submissionId`), and reusing it
+ * keeps a 1:1 relationship enforceable by path alone, the same reasoning
+ * `submissions`/`submissionReceipts` already use for
+ * (verificationId, studentUid) uniqueness.
+ *
+ * Never contains the submission's `answers`, `attentionEvents`, or any
+ * question text/options/solution (D-M4-02): those are read by the
+ * correction workspace directly from `SubmissionDoc` (owner-only, still
+ * readable after `submitted`) and `teacherSnapshot`/`publishedProjection`.
+ * This document is scoring/workflow state only.
+ *
+ * `totalPoints`, `maxPoints` and `percentage` are always derived — see
+ * `computeCorrectionTotals` in `correctionContract.ts` — never written
+ * freehand by a caller (D-M4-07).
+ */
+export type CorrectionDoc = {
+  submissionId: string; // == Firestore doc id, == SubmissionDoc.submissionId
+  verificationId: string;
+  studentUid: string;
+  ownerUid: string;
+  status: CorrectionStatus;
+  /** Sparse-in-principle, dense in practice: one entry per question in the projection. Key = order.toString(). */
+  evaluations: Record<string, QuestionEvaluation>;
+  generalFeedback: string | null;
+  /** Derived — sum of non-null `evaluations[*].points`. Never written directly. */
+  totalPoints: number;
+  /** Derived — sum of `evaluations[*].maxPoints`. Never written directly. */
+  maxPoints: number;
+  /** Derived, rounded — see `computeCorrectionTotals`. `null` only when `maxPoints === 0`. */
+  percentage: number | null;
+  createdAt: Timestamp | FieldValue;
+  updatedAt: Timestamp | FieldValue;
+  /** Set on the transition to `'completed'`; cleared back to `null` on reopen. */
+  completedAt: Timestamp | FieldValue | null;
+  /** Set on the transition to `'returned'`; cleared back to `null` on reopen. */
+  returnedAt: Timestamp | FieldValue | null;
+};
+
+/**
+ * Append-only audit trail (D-M4-10) for state changes that happen after a
+ * correction has already left `'in_progress'` once — i.e. reopening a
+ * `completed`/`returned` correction, or returning/hiding it again after a
+ * rectification. Routine progress while still `'in_progress'` (saving
+ * scores question by question) does **not** produce events: that would
+ * turn this into an autosave log, which D-M4-12 explicitly rules out.
+ * Deliberately minimal — the state transition plus an optional
+ * docente-provided reason, matching `AuditEvent`'s level of detail
+ * elsewhere in this codebase. Never updated or deleted once written.
+ */
+export type CorrectionEventType = 'reopened' | 'scoreAdjusted' | 'returned' | 'hidden';
+
+/** Stored at `correctionEvents/{eventId}` — `eventId` is an auto-generated id, not deterministic (many events per correction). */
+export type CorrectionEventDoc = {
+  correctionId: string; // == submissionId == CorrectionDoc doc id, denormalized for a simple equality query
+  ownerUid: string;
+  type: CorrectionEventType;
+  actorUid: string;
+  previousStatus: CorrectionStatus | null;
+  nextStatus: CorrectionStatus;
+  reason: string | null;
+  timestamp: Timestamp | FieldValue;
+};
+
+/**
+ * Minimal, write-only-from-the-teacher projection the student reads once a
+ * correction is `'returned'` (D-M4-09). Deliberately does **not** embed the
+ * submission's answers or the verification's question text/options/
+ * solution — re-showing "propria risposta" and the correct solution
+ * (§6 of `m4-correzione-ux-concept.md`) depends on a verification-level
+ * "mostra soluzioni dopo la restituzione" toggle not yet modeled anywhere
+ * in this codebase, and is left as an explicit M4-01 decision (see
+ * `piano-implementazione.md` §M4-01) rather than guessed here. What M4-00
+ * *can* define now, because it follows directly from `CorrectionDoc`
+ * without new product decisions, is the scoring/feedback recap: totals,
+ * percentage, general feedback, and per-question points/feedback keyed the
+ * same way as `CorrectionDoc.evaluations`.
+ *
+ * Stored at `correctionReturns/{submissionId}` — same deterministic id
+ * space as `corrections`/`submissions`. Written only by the teacher's
+ * "return" action (never by the student, never continuously); the student
+ * only ever reads it, the same relationship `submissionReceipts` already
+ * has to `submissions`.
+ */
+export type CorrectionReturnDoc = {
+  correctionId: string; // == submissionId
+  verificationId: string;
+  studentUid: string;
+  ownerUid: string;
+  verificationTitle: string;
+  className: string | null;
+  submittedAt: Timestamp | FieldValue;
+  evaluations: Record<string, { points: number | null; maxPoints: number; feedback?: string }>;
+  generalFeedback: string | null;
+  totalPoints: number;
+  maxPoints: number;
+  percentage: number | null;
+  returnedAt: Timestamp | FieldValue;
+};
