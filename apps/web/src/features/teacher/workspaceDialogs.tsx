@@ -447,6 +447,125 @@ export function NewUdaDialog({
   );
 }
 
+// ── New lesson ───────────────────────────────────────────────────────────────
+
+export type NewLessonValues = {
+  titolo: string;
+  sottotitolo: string | null;
+  difficolta: string | null;
+  concettiChiave: string[];
+  obiettivi: string[];
+  body: string;
+};
+
+export function NewLessonDialog({
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: (values: NewLessonValues) => void;
+}) {
+  const [titolo, setTitolo] = useState('');
+  const [sottotitolo, setSottotitolo] = useState('');
+  const [difficolta, setDifficolta] = useState('');
+  const [concettiChiave, setConcettiChiave] = useState('');
+  const [obiettivi, setObiettivi] = useState('');
+  const [body, setBody] = useState('');
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const t = titolo.trim();
+    if (!t) return;
+    onConfirm({
+      titolo: t,
+      sottotitolo: sottotitolo.trim() || null,
+      difficolta: difficolta.trim() || null,
+      concettiChiave: linesToArray(concettiChiave),
+      obiettivi: linesToArray(obiettivi),
+      body,
+    });
+  }
+
+  return (
+    <DialogShell title="Nuova lezione" onCancel={onCancel}>
+      <form onSubmit={submit} className={styles.dialogForm}>
+        <label className={styles.dialogLabel}>
+          Titolo
+          <input
+            type="text"
+            autoFocus
+            value={titolo}
+            onChange={(e) => setTitolo(e.target.value)}
+            aria-label="Titolo lezione"
+          />
+        </label>
+        <label className={styles.dialogLabel}>
+          Sottotitolo
+          <input
+            type="text"
+            value={sottotitolo}
+            onChange={(e) => setSottotitolo(e.target.value)}
+            aria-label="Sottotitolo lezione"
+          />
+        </label>
+        <label className={styles.dialogLabel}>
+          Difficoltà
+          <input
+            type="text"
+            value={difficolta}
+            onChange={(e) => setDifficolta(e.target.value)}
+            aria-label="Difficoltà lezione"
+          />
+        </label>
+        <label className={styles.dialogLabel}>
+          Concetti chiave (uno per riga)
+          <textarea
+            rows={2}
+            value={concettiChiave}
+            onChange={(e) => setConcettiChiave(e.target.value)}
+            aria-label="Concetti chiave lezione"
+          />
+        </label>
+        <label className={styles.dialogLabel}>
+          Obiettivi (uno per riga)
+          <textarea
+            rows={2}
+            value={obiettivi}
+            onChange={(e) => setObiettivi(e.target.value)}
+            aria-label="Obiettivi lezione"
+          />
+        </label>
+        <label className={styles.dialogLabel}>
+          Corpo Markdown iniziale (opzionale)
+          <textarea
+            rows={4}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            aria-label="Corpo Markdown lezione"
+          />
+        </label>
+        {error && (
+          <p role="alert" className="text-error">
+            {error}
+          </p>
+        )}
+        <div className={styles.dialogActions}>
+          <button type="button" onClick={onCancel} disabled={busy}>
+            Annulla
+          </button>
+          <button type="submit" className="btn-success" disabled={busy || titolo.trim() === ''}>
+            {busy ? 'Creazione…' : 'Crea lezione'}
+          </button>
+        </div>
+      </form>
+    </DialogShell>
+  );
+}
+
 // ── Classes assignment ───────────────────────────────────────────────────────
 
 export function ClassesDialog({
