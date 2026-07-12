@@ -36,6 +36,7 @@ import { db, storage } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import { QuestionPicker } from './QuestionPicker.js';
 import { AttentionEventsDialog } from './AttentionEventsDialog.js';
+import { CorrectionWorkspace } from './CorrectionWorkspace.js';
 import type { AttentionEvent, VerificationTeacherQuestionSnapshot } from '../../types/firestore.js';
 import styles from './VerificationsView.module.css';
 
@@ -170,6 +171,12 @@ export function VerificationsView() {
   const [attentionDialog, setAttentionDialog] = useState<{
     studentName: string;
     events: AttentionEvent[];
+  } | null>(null);
+
+  // ── Correction workspace (M4-02) ──────────────────────────────────
+  const [correctionTarget, setCorrectionTarget] = useState<{
+    submissionId: string;
+    studentName: string;
   } | null>(null);
 
   useEffect(() => {
@@ -696,6 +703,21 @@ export function VerificationsView() {
     } finally {
       setDeleting(false);
     }
+  }
+
+  // Full takeover of this view's content area while a correction is open —
+  // same pattern as the student's OnlineExamView taking over StudentShell.
+  // No new router: just a local piece of state gating what this component
+  // renders, exactly like `selectedVer` already gates list vs detail.
+  if (correctionTarget) {
+    return (
+      <CorrectionWorkspace
+        submissionId={correctionTarget.submissionId}
+        ownerUid={ownerUid}
+        studentName={correctionTarget.studentName}
+        onClose={() => setCorrectionTarget(null)}
+      />
+    );
   }
 
   if (loadError)
@@ -1340,6 +1362,7 @@ export function VerificationsView() {
                             <th className={styles.th}>Consegnata il</th>
                             <th className={styles.th}>Eventi</th>
                             <th className={styles.th}>Codice</th>
+                            <th className={styles.th}>Correzione</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1383,6 +1406,26 @@ export function VerificationsView() {
                                 </td>
                                 <td className={`${styles.td} ${styles.metaCell}`}>
                                   {item?.deliveryCode ?? '—'}
+                                </td>
+                                <td className={`${styles.td} ${styles.metaCell}`}>
+                                  {item?.status === 'submitted' ? (
+                                    <button
+                                      type="button"
+                                      className={styles.iconBtn}
+                                      title="Apri correzione"
+                                      aria-label={`Apri correzione — ${studentName}`}
+                                      onClick={() =>
+                                        setCorrectionTarget({
+                                          submissionId: `${selectedVer.id}_${s.id}`,
+                                          studentName,
+                                        })
+                                      }
+                                    >
+                                      ✏️
+                                    </button>
+                                  ) : (
+                                    '—'
+                                  )}
                                 </td>
                               </tr>
                             );

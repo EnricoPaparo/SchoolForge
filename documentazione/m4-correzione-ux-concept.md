@@ -1,6 +1,6 @@
 # M4 — Concept UX della correzione docente
 
-**Stato:** concept approvato; contratto dati minimo (M4-00) implementato — tipi TypeScript e helper puri, nessun service layer/Rules/UI ancora  
+**Stato:** concept approvato; contratto dati (M4-00), service layer/Security Rules (M4-01) e workspace docente di correzione (M4-02, `CorrectionWorkspace.tsx`) implementati. Registro Correzioni, export aggregati ed eliminazione (M4-03) non ancora implementati.  
 **Data decisione:** 2026-07-12  
 **Prerequisito:** chiusura di M3-full e superamento del Gate G5 — soddisfatto
 
@@ -56,6 +56,8 @@ Consegne: N · Da correggere: N · Corrette: N · Restituite: N
 
 Niente griglie di grandi card per ogni studente.
 
+> **Stato implementazione (M4-02):** la colonna **Azione** (icona ✏️ "Apri correzione", visibile solo per submission `submitted`) è implementata in `VerificationsView.tsx`, dentro la tabella Consegne online già esistente. Colonna **Correzione** (stato), colonna **Punteggio**, filtri e la sintesi superiore **non sono ancora implementati** — restano scope di un pacchetto successivo (M4-03 o un affinamento dedicato della tabella), non necessari per aprire e completare il workspace.
+
 ## 4. Workspace di correzione
 
 Il dettaglio non è una modale: usa lo spazio principale della sezione Verifiche, come lo svolgimento lato studente.
@@ -75,6 +77,8 @@ Un pannello sticky, opaco e responsive contiene:
 - azioni **Salva** e **Completa correzione**.
 
 Il contenuto non deve scorrere visivamente dietro al pannello. Su mobile i controlli si ricompongono senza produrre overflow orizzontale della pagina.
+
+> **Stato implementazione (M4-02):** pannello sticky con ritorno alla lista, nome studente, titolo verifica, classe, stato correzione e azioni **Salva**/**Completa** sono implementati. **Non implementati**: punteggio corrente/totale nell'intestazione (mostrato invece nel riepilogo laterale, §4.3), navigazione studente precedente/successivo, accesso agli eventi di attenzione dal workspace (restano nella tabella Consegne online) e uno stato "ultimo salvataggio" testuale (il badge "Modifiche non salvate" copre la stessa esigenza in forma più semplice).
 
 ### 4.2 Correzione per domanda
 
@@ -97,6 +101,8 @@ Per domande chiuse il confronto è visivo:
 
 Il sistema può proporre deterministicamente il punteggio massimo per una risposta chiusa esatta e zero per una risposta errata. Il docente mantiene sempre il controllo e può modificare il punteggio proposto. Le domande aperte restano manuali.
 
+> **Stato implementazione (M4-02):** numero/tipo/punteggio massimo, testo, risposta consegnata, soluzione (visibile solo al docente), campo punti `0..maxPoints` e feedback opzionale per domanda sono implementati; per le domande chiuse, l'opzione selezionata e quella corretta sono distinte sia per colore sia per testo (" — selezionata" / " (corretta)"), non solo colore. **Non implementato**: la proposta automatica deterministica del punteggio massimo/zero per le domande chiuse — il docente inserisce sempre il punteggio manualmente, anche per le domande a risposta chiusa.
+
 ### 4.3 Riepilogo
 
 Su desktop una colonna sticky compatta mostra:
@@ -112,6 +118,8 @@ Su desktop una colonna sticky compatta mostra:
 
 Su mobile il riepilogo diventa un pannello espandibile o una sezione finale, non una sidebar laterale permanente.
 
+> **Stato implementazione (M4-02):** domande valutate/totali, punteggio totale/massimo, percentuale, feedback generale, **Salva correzione** e **Completa correzione** sono implementati nel pannello laterale (sticky su desktop, sotto la card domanda a schermo stretto — `@media (max-width: 860px)`). **Non implementato**: un conteggio "risposte mancanti" separato da "domande ancora da valutare" (nel contratto M4-00 una domanda non valutata è già l'unico stato tracciato: non esiste una distinzione fra "non risposta dello studente" e "non ancora valutata dal docente" a questo livello).
+
 ## 5. Stati e transizioni
 
 Gli stati UX approvati sono:
@@ -126,6 +134,8 @@ Da correggere → In correzione → Corretta → Restituita
 - **Restituita:** risultato reso visibile allo studente.
 
 Una correzione completa può essere riaperta dal docente. Ogni rettifica significativa deve essere tracciata con evento append-only.
+
+> **Stato implementazione (M4-02):** le quattro transizioni sono implementate nel workspace esattamente come da contratto M4-00/M4-01 — "Completa correzione" e "Riapri" richiedono conferma esplicita in una dialog; l'etichetta di stato mostrata (`STATUS_LABELS`) usa le stesse quattro parole di questo documento.
 
 ## 6. Visibilità e restituzione
 
@@ -148,6 +158,8 @@ Prima della restituzione lo studente continua a vedere soltanto la conferma di c
 - soluzione corretta solo quando il relativo controllo docente è abilitato.
 
 Nascondere nuovamente una correzione non modifica né elimina i dati: cambia soltanto la proiezione leggibile dallo studente.
+
+> **Stato implementazione (M4-02):** i due toggle per singola correzione (`visibleToStudent`, `solutionsVisible`) sono implementati nel workspace, visibili solo nello stato `returned`, con avviso esplicito che riaprire nasconde subito la restituzione. **Non implementata**: l'azione batch "Restituisci tutte le correzioni completate" (né batch analoghi sui due toggle) — resta un'azione per singola correzione, come esplicitamente delimitato in M4-00/M4-01. **Non implementata in M4-02**: la schermata studente che mostra il risultato dopo la restituzione (`correctionReturns` è scritto e leggibile dallo studente via Security Rules, ma nessuna nuova UI studente la renderizza ancora).
 
 ## 7. Contratto dati (M4-00 — definito)
 
