@@ -21,12 +21,12 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 | M3-lite — Portale studente (Google, read-only) | Login Google, risoluzione ruolo docente/studente, StudentShell con Lezioni e Verifiche in sola lettura, download PDF studente per verifiche `attiva`+`public`. Nessuna Cloud Function. | Sì |
 | RE — Repository Editor | Editor minimale per creare, modificare, eliminare e riordinare UDA/lezioni, inclusi front matter e corpo Markdown. Nessuna AI, nessuna Cloud Function. | Sì |
 | QE — Question Editor | Editor pool domande Markdown-first (`.pool.md`): crea/modifica/elimina domande dal portale, aggiorna `questionIndex` su Firestore senza reimport ZIP. Nessuna AI, nessuna Cloud Function. Specifica in `question-editor-roadmap.md`. | Sì |
-| M3-full — Verifiche online e consegne studenti | Avvio online, salvataggio bozza, consegna immutabile, codice consegna, modalità verifica (deterrenza leggera), monitor consegne docente. Nessuna Cloud Function. Specifica in `m3-full-roadmap.md`. | Sì |
+| M3-full — Verifiche online e consegne studenti ✅ | Avvio online, salvataggio bozza, consegna immutabile, codice consegna, modalità verifica (deterrenza leggera), monitor consegne docente. Nessuna Cloud Function. Completato — Gate G5 superato, vedi `m3-full-roadmap.md` e `documentazione/evidenze/g5-m3-full-checklist-finale.md`. | Sì |
 | M4 — Correzione ed export | Punteggi, percentuali, rettifiche, eliminazione e `Esporta verifiche` in PDF/Markdown/CSV. Dipende da M3-full. | Sì |
 
 **M5 — Correzione AI** è fuori scope V1 ed è pianificato per la V2. Vedi la sezione "V2 — Roadmap futura" in fondo. M5 non fa parte del perimetro né delle dipendenze della V1.
 
-Il Modulo 3 (Portale digitale) è diviso in **M3-lite** (deciso e completato dopo M2) e **M3-full** (specifica definita in `m3-full-roadmap.md`, implementazione avviata a livello contratti/service). M3-lite non richiede Cloud Functions e non dipende da M3-full. Dopo M3-lite è stata completata **RE — Repository Editor** (RE-00 → RE-07), perché migliora il lavoro quotidiano del docente senza introdurre consegne online, correzione o AI. Il **QE — Question Editor** (specifica definita in `question-editor-roadmap.md`, QE-00 completata) è il prossimo sviluppo pianificato: rende editabili i pool domande senza reimport ZIP e non dipende da M3-full.
+Il Modulo 3 (Portale digitale) è diviso in **M3-lite** e **M3-full**, entrambi completati; Gate G5 superato per M3-full. Dopo M3-lite sono stati completati **RE — Repository Editor** (RE-00 → RE-07) e **QE — Question Editor** (QE-00 → QE-05). Il prossimo modulo dipendente da M3-full è **M4 — Correzione ed export**, non ancora implementato.
 
 ---
 
@@ -101,15 +101,15 @@ Un pacchetto è abbastanza piccolo da essere verificato in una review e abbastan
 | G1 — Fondazioni Firebase | H-01/H-02/H-03 completate; CI ed Emulator Suite disponibili. | Progetti separati, budget, export Firestore manuale disponibile, Security Rules default-deny. | M1 con dati sintetici. |
 | G2 — Repository didattico | M1 integrato. | Import valido/invalido, rendering senza pool, ZIP e programma svolto. | M2. |
 | G3 — Verifiche e cartaceo | M2 integrato. | PDF browser, canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`), nessun PDF persistito. | M3-lite. |
-| G4-lite — Portale studente (M3-lite) | M3-lite integrato. | Login Google risolve TeacherShell/StudentShell; un Google-autenticato non-owner scopre lezioni pubblicate e verifiche `attiva`+`public` solo se `students/{uid}.status == "approved"` e `settings/studentAccess.studentPortalEnabled == true` (mai per la sola autenticazione); PDF studente senza soluzioni; nessuna Cloud Function introdotta. | RE, M3-full (se pianificato), o uso operativo stabile. |
+| G4-lite — Portale studente (M3-lite) | M3-lite integrato. | Login Google risolve TeacherShell/StudentShell; un Google-autenticato non-owner scopre lezioni pubblicate e verifiche `attiva`+`public` solo se `students/{uid}.status == "approved"` e `settings/studentAccess.studentPortalEnabled == true` (mai per la sola autenticazione); PDF studente senza soluzioni; nessuna Cloud Function introdotta. | RE, M3-full (completato), o uso operativo stabile. |
 | GRE — Repository Editor | RE integrato. | Il docente crea/modifica/elimina/riordina UDA e lezioni, modifica front matter e corpo Markdown, vede anteprima, export ZIP resta portabile, publicLessons resta coerente, eliminazioni bloccate se ci sono verifiche collegate. | QE, M3-full, polish ulteriore o uso operativo stabile. |
 | GQE — Question Editor | QE integrato (QE-01→QE-05). | Il docente crea/modifica/elimina domande nel pool, `questionIndex` aggiornato atomicamente, picker verifiche riflette le modifiche, export ZIP include il pool aggiornato, nessuna regressione sui pool esistenti. | M3-full, polish ulteriore o uso operativo stabile. |
-| G5 — Portale digitale (M3-full) | G4-lite e GRE superati; M3-full integrato. | Flusso avvio→bozza→consegna; immutabilità post-consegna; unicità submission; verifica chiusa blocca bozze; monitor docente real-time; modalità verifica attiva. Vedi gate G5 in `m3-full-roadmap.md §8`. | M4. |
+| G5 — Portale digitale (M3-full) ✅ | G4-lite e GRE superati; M3-full integrato. | Flusso avvio→bozza→consegna; immutabilità post-consegna; unicità submission; verifica chiusa blocca bozze; monitor docente real-time; modalità verifica attiva. **Superato** — vedi gate G5 in `m3-full-roadmap.md §8` e checklist finale in `documentazione/evidenze/g5-m3-full-checklist-finale.md`. | M4. |
 | G6 — Correzione ed export | M4 integrato, G5 (M3-full) superato e H-04 completata. | Punteggi, rettifiche, eliminazione, export PDF/Markdown/CSV da snapshot. | Uso manuale completo — fine V1. |
 | G6 — AI assistita (V2) | M5-A..C integrati e H-05 completata. | Contesto chiuso, audit, proposte assistite per risposta, approvazione massiva. | AI assistita. |
 | G7 — AI automatica (V2) | G6 e H-06 completati. | Opt-in per verifica, audit e rollback. | Correzione automatica. |
 
-C-02 e C-03 riguardano la V2 e non bloccano M1–M4. M4 (Correzione ed export) resta bloccato finché M3-full non è pianificato e completato: il progetto può fermarsi utilmente a G4-lite (fine V1 "read-only") se M3-full viene rinviato oltre la V1.
+C-02 e C-03 riguardano la V2 e non bloccano M1–M4. M3-full è completato (Gate G5 superato); M4 (Correzione ed export) può quindi essere pianificato. Il progetto resta comunque in grado di fermarsi a ogni gate superato mantenendo un prodotto utile.
 
 ---
 
@@ -160,12 +160,11 @@ flowchart TD
     RE4 --> RE5["RE-05 Eliminazione protetta"]
     RE5 --> RE6["RE-06 Export ZIP coerente"]
     RE6 --> REG["GRE"]
-    G4LITE -. "se pianificato" .-> M3FA["M3F-A Gateway digitale Functions (M3-full)"]
-    M3FA --> M3FB["M3F-B UI consegna online"]
-    M3FA --> M3FC["M3F-C Bozza e consegna"]
-    M3FB --> M3FD["M3F-D Integrazione M3-full"]
-    M3FC --> M3FD
-    M3FD --> G4
+    G4LITE --> M3FA["M3F-00..05 Contratti, Rules, service, UI M3-full"]
+    M3FA --> M3FB["M3F-06..10 Sessione, modalità verifica, hardening"]
+    M3FB --> M3FD["M3F-11 Integrazione, migrazione DEV, Gate G5"]
+    M3FD --> G5FULL["G5 (M3-full) — superato"]
+    G5FULL --> G4
     G4 --> M4A["M4-A Correzione e audit"]
     G4 --> M4B["M4-B Modello export"]
     M4A --> M4C["M4-C UI correzione"]
@@ -259,7 +258,7 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 ---
 
-## 10b. QE — Question Editor (specifica definita — da implementare)
+## 10b. QE — Question Editor (QE-00 → QE-05 completati)
 
 > Fase prodotto successiva a RE, specifica completa in `question-editor-roadmap.md`. Rende editabili i pool domande dal portale senza reimport ZIP. Non dipende da M3-full e non introduce Cloud Functions o AI.
 
@@ -274,9 +273,9 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 
 ---
 
-## 11. M3-full — Portale digitale (specifica definita)
+## 11. M3-full — Portale digitale (completato — Gate G5 superato)
 
-> Specifica completa in `m3-full-roadmap.md`. M3F-00/M3F-01/M3F-02/M3F-03/M3F-04/M3F-05 sono già stati avviati/completati a livello documentazione, tipi/indici, service layer client-only, Security Rules e UI studente. Il vecchio modello gateway Cloud Functions non è più il perimetro corrente.
+> Specifica completa in `m3-full-roadmap.md`. Tutti i pacchetti M3F-00 → M3F-11C sono completati; il Gate G5 è superato (checklist finale in `documentazione/evidenze/g5-m3-full-checklist-finale.md`). Il vecchio modello gateway Cloud Functions descritto nella prima stesura della specifica non è mai stato il perimetro implementato.
 
 | ID | Outcome e scope | Dipende da | Parallelo | Evidenza DoD |
 |---|---|---|---|---|
@@ -290,8 +289,8 @@ I rami paralleli possono partire insieme solo dopo aver fissato i contratti Type
 | M3F-07 | Modalità verifica globale/per classe in Studenti, audit e listener studente. | M3F-06 | M3F-09 | Controllo owner-only; default per classe; blocco globale confermato. Completato — reso effettivo end-to-end da M3F-08. |
 | M3F-08 | Proiezione sicura corpo lezioni in `publicLessons`, sincronizzazione import/editor, migrazione e Rules. | M3F-07 | M3F-09 | Una chiamata diretta non legge lezioni durante il blocco; Storage resta canonico; backfill pronto e idempotente (dati DEV **non** migrati in questa PR — rimandato a M3F-11). Completato. |
 | M3F-09 | Rifiniture docente: permesso download PDF, monitor sempre visibile sulla verifica selezionata, dettaglio eventi, tabella stabile. | M3F-05 | M3F-07/M3F-08 | Toggle PDF indipendente; un solo listener; popup eventi senza risposte; nessun layout shift. Completato. |
-| M3F-10 | Hardening costi e concorrenza completato: autosave dirty-only ogni 60s, mutex sincrono save/consegna, attesa della write pendente, blocco definitivo dopo `submitted`, audit lifecycle listener/timer. | M3F-06/M3F-09 | — | Nessuna write su bozza invariata o post-consegna; revision guard preservata; consegna fallita riabilita editing/autosave; test race e cleanup verdi. Completato. |
-| M3F-11 | Integrazione, migrazione DEV, smoke con docente e due studenti, checklist G5. | M3F-06→M3F-10 | — | Gate G5 approvabile; nessun accesso lezioni durante blocco; osservazione costi completata. |
+| M3F-10 | Hardening costi e concorrenza: autosave dirty-only introdotto a 60s e poi portato a 120s in M3F-11B; mutex sincrono save/consegna, attesa della write pendente, blocco definitivo dopo `submitted`, audit lifecycle listener/timer. | M3F-06/M3F-09 | — | Nessuna write su bozza invariata o post-consegna; revision guard preservata; consegna fallita riabilita editing/autosave; test race e cleanup verdi. Completato. |
+| M3F-11 ✅ | Integrazione, migrazione DEV, smoke manuale del docente, checklist G5. | M3F-06→M3F-10 | — | Gate G5 superato; nessun accesso lezioni durante blocco; checklist finale in `documentazione/evidenze/g5-m3-full-checklist-finale.md`. Completato. |
 
 ---
 
@@ -320,7 +319,7 @@ Il concept UX approvato per accesso dalla tabella **Consegne online**, workspace
 | Stage | Trigger | Blocca | Contenuto |
 |---|---|---|---|
 | Verifica | Ogni push/PR | Merge | Format, lint, typecheck, unit test e build. |
-| Integrazione | PR verso `main` | Merge | Firebase Emulator Suite: Auth, Firestore, Storage; Functions solo da M5 (V2) o da un eventuale M3-full. |
+| Integrazione | PR verso `main` | Merge | Firebase Emulator Suite: Auth, Firestore, Storage; Functions riservate a M5 (V2) — M3-full (completato) non ne introduce. |
 | E2E | Prima dei gate G2–G7 (inclusi G4-lite e G4) | Gate | Browser test sui flussi del modulo e casi negativi. |
 | Deploy `dev` | Merge su `main` | — | Deploy controllato senza dati reali. |
 | Deploy `prod` | Gate approvato + azione manuale Docente | Go-live | Backup verificato, release notes e smoke test. |
@@ -374,7 +373,7 @@ Ogni pacchetto concluso produce:
 
 1. Ogni modulo rilascia una capacità usabile senza anticipare AI o scope LMS.
 2. Nessun agente lavora su un pacchetto senza DoR o ignora un gate umano.
-3. M3-lite rispetta la risoluzione del ruolo (docente vs studente Google), le proiezioni read-only e l'assenza di PDF persistenti; un eventuale M3-full rispetterà lock nome+cognome, log nome+IP e snapshot.
+3. M3-lite rispetta la risoluzione del ruolo (docente vs studente Google), le proiezioni read-only e l'assenza di PDF persistenti; M3-full (completato) rispetta autenticazione Google approvata, unicità/immutabilità della submission e snapshot pubblicato immutabile — nessun lock nome+cognome né log IP, modello superato dalla specifica client-only realizzata (vedi `m3-full-roadmap.md`).
 4. `Esporta verifiche` è costruito da tutte le consegne definitive e non dalle lezioni correnti (dipende da M3-full).
 5. Test automatici, E2E e review crescono insieme al prodotto.
 6. Firebase resta configurato con costo minimo; nessuna Cloud Function aggiuntiva senza approvazione; M3-lite non ne richiede.
@@ -649,9 +648,9 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | Test minimi | Nessun dato tecnico/soluzione ottenibile dal client studente; nessuna Cloud Function introdotta |
 | Evidenza richiesta | Evidenze G4-lite |
 
-### M3-full — Portale digitale (specifica definita)
+### M3-full — Portale digitale (completato — Gate G5 superato)
 
-> Specifica corrente in `m3-full-roadmap.md`. M3-full è client-only: nessun gateway Cloud Functions, nessun cookie server-side, nessun `startDigitalAttempt`/`continueDigitalAttempt`. M3F-00/M3F-01/M3F-02/M3F-03/M3F-04/M3F-05 sono già completati.
+> Specifica corrente in `m3-full-roadmap.md`. M3-full è client-only: nessun gateway Cloud Functions, nessun cookie server-side, nessun `startDigitalAttempt`/`continueDigitalAttempt`. Tutti i pacchetti M3F-00 → M3F-11C sono completati; Gate G5 superato — vedi `documentazione/evidenze/g5-m3-full-checklist-finale.md`.
 
 #### M3F-03 — Security Rules submission/receipt (Completato)
 
@@ -671,7 +670,7 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | File da creare | `OnlineExamView`, `ConfirmationView`, `examDeterrence.ts`, `examAnswers.ts`, componenti modalità verifica |
 | File da modificare | `StudentVerificationsView` (lista → avvio/ripresa/receipt), `studentVerificationsService`/`PublishedProjectionDoc` (mirror `onlineEnabled`), `firestore.rules` (preflight: get() sul path deterministico prima che il documento esista) |
 | Test minimi | Avvio bozza, salva, indicatori compilate/vuote, alert consegna, receipt post-consegna, eventi attenzione registrati |
-| Evidenza richiesta | Test componente + Rules verdi. Nessun router nuovo introdotto: `OnlineExamView`/`ConfirmationView` sono viste locali di `StudentVerificationsView`, come già avviene per le altre sezioni docente/studente (nessuna route URL). Da M3F-10 autosave al massimo ogni 60s e solo quando la bozza è "dirty"; `attentionEvents` limitato a 200 per submission, applicato lato client e verificato anche lato Security Rules. |
+| Evidenza richiesta | Test componente + Rules verdi. Nessun router nuovo introdotto: `OnlineExamView`/`ConfirmationView` sono viste locali di `StudentVerificationsView`, come già avviene per le altre sezioni docente/studente (nessuna route URL). Da M3F-11B autosave al massimo ogni 120s e solo quando la bozza è "dirty"; `attentionEvents` limitato a 200 per submission, applicato lato client e verificato anche lato Security Rules. |
 
 #### M3F-05 — UI docente monitor consegne (Completato)
 
@@ -723,9 +722,9 @@ Ogni scheda standardizza prerequisiti, file e verifica. I percorsi seguono il mo
 | Test minimi | Helper `normalizeStudentPdfEnabled` (5 test); `createVerification` inizializza il campo; `activateVerification` mirra `false`/`true` sulla proiezione; `setVerificationStudentPdfEnabled` atomico su draft/active/closed, non tocca altri campi, non-owner/verifica assente rifiutati; `submissionsMonitorService` include `attentionEvents` sanificato (mai `answers`/`flagged`); `VerificationsView` — selezione verifica apre/chiude il listener monitor correttamente (incl. passaggio a un'altra verifica draft), draft mostra stato vuoto senza listener, dialog eventi: ordine cronologico, etichette umane, fallback per tipo sconosciuto, chiusura con pulsante/Escape/backdrop, mai `answers`/`flagged`; `StudentVerificationsView` — combinazioni PDF/online (entrambe, solo PDF, solo online, nessuna), legacy senza campo non mostra il pulsante; Rules mirate (`m3f-09-student-pdf.rules.test.ts`): toggle draft/active/closed, modifica simultanea di config/status/visibility/ownerUid negata, valore non booleano negato, studente non può modificarlo, mirror `publishedProjection` coerente, verifica hidden/closed non diventa leggibile |
 | Evidenza richiesta | `pnpm test:rules` completo verde (11 file, 298 test — eseguito perché `firestore.rules` è stato modificato), test mirati verdi (997 test totali nella suite `vitest run`), typecheck, lint e build verdi. Nessun deploy. |
 
-M3F-10 è completato; M3F-11 è definito operativamente in `m3-full-roadmap.md`.
+M3F-10 è completato; M3F-11 (con i sotto-pacchetti M3F-11A/B/C sotto) è completato — Gate G5 superato, vedi `documentazione/evidenze/g5-m3-full-checklist-finale.md`.
 
-#### M3F-11A — Rifiniture UX pre-gate
+#### M3F-11A — Rifiniture UX pre-gate (Completato)
 
 | Campo | Valore |
 |---|---|
@@ -734,7 +733,7 @@ M3F-10 è completato; M3F-11 è definito operativamente in `m3-full-roadmap.md`.
 | Test minimi | Scope classi deduplicato; toggle disabilitato senza classi idonee; nessuna dialog di attivazione; errore inline; callback fullscreen e richiesta di rientro; lint/typecheck/build. |
 | Deploy | Hosting + indici Firestore dopo merge e CI verde; nessuna modifica a Firestore/Storage Rules. |
 
-#### M3F-11B — Efficienza e UX svolgimento studente
+#### M3F-11B — Efficienza e UX svolgimento studente (Completato)
 
 | Campo | Valore |
 |---|---|
@@ -743,7 +742,7 @@ M3F-10 è completato; M3F-11 è definito operativamente in `m3-full-roadmap.md`.
 | Test minimi | Timer 120s; nessuna write su bozza invariata o solo evento; evento incluso nel successivo save/consegna; limite 200; reflow pannello desktop/mobile; sidebar collassata senza spazio residuo. |
 | Deploy | Nessun deploy dall'agente; merge e deploy solo dopo CI verde e review. |
 
-#### M3F-11C — Bozze cartacee e rifiniture docente
+#### M3F-11C — Bozze cartacee e rifiniture docente (Completato)
 
 | Campo | Valore |
 |---|---|
@@ -772,7 +771,7 @@ M3F-10 è completato; M3F-11 è definito operativamente in `m3-full-roadmap.md`.
 | Deploy | Nessun deploy dall'agente; merge e deploy solo dopo CI verde e review. |
 | Stato | **PERF-SEC-01B-1** (PERF-05, `setVerificationVisibility`/`closeVerification` atomici via `writeBatch`) completato. **PERF-SEC-01B-2** (PERF-04 `savePool` batch/chunked; PERF-09 `loadSelectedQuestionsWithSolutions` con concorrenza limitata) completato. **PERF-SEC-01B-3** (PERF-08 `countPendingStudents` con `getCountFromServer`; guard di cancellazione `deleteProgram`/`deletePool`/UDA/lezione con query mirate `config.programId`/`config.importId`; PERF-01 esplicitamente rimandato con soglia di rivalutazione documentata) completato. **PERF-SEC-01B-4** (PERF-10, `React.lazy` di `TeacherShell`/`StudentShell` al confine ruolo in `App.tsx`/`RoleGate.tsx`, entry iniziale da 1 194.56 KB a 647.00 KB minificati [-45.8%], da 323.04 KB a 164.65 KB gzip [-49.0%]; PERF-06, import Firestore statico in `submissionsService.ts`, warning Vite eliminato) completato. Pacchetto PERF-SEC-01B (01B-1 → 01B-4) interamente completato. |
 
-**Gate prestazioni/sicurezza (PERF-SEC-01):** prerequisito aggiuntivo, insieme al Gate G5, prima della chiusura definitiva di M3-full — i finding P0/P1 dell'audit devono essere risolti o esplicitamente derogati con motivazione scritta; i finding P2/P3 possono essere rimandati a un ciclo successivo se documentato.
+**Gate prestazioni/sicurezza (PERF-SEC-01): superato.** Nessun finding P0; tutti i finding P1 approvati sono risolti in PERF-SEC-01B (vedi tabella "Stato" sopra). I finding P2/P3 residui (PERF-01, PERF-03, PERF-07) sono documentati come rimandati in `performance-security-audit.md`, non bloccanti per la chiusura di M3-full. Con questo e con il Gate G5 (§4) superato, **M3-full è dichiarato completato** — vedi `documentazione/evidenze/g5-m3-full-checklist-finale.md`.
 
 #### Fix snapshot immutabile — `teacherSnapshot.questions` (SEC-02)
 

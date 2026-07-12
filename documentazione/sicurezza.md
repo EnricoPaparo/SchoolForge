@@ -1,7 +1,7 @@
 # SchoolForge — Sicurezza e protezione dei dati
 
 **Versione:** 3.0
-**Stato:** in vigore — controlli implementati da F-04 in avanti (M1, M2, M3-lite, RE); M3-full/M4/M5 restano specifica rinviata
+**Stato:** in vigore — controlli implementati da F-04 in avanti (M1, M2, M3-lite, RE, M3-full); M3-full completato con Gate G5 superato (vedi `documentazione/evidenze/g5-m3-full-checklist-finale.md`); M4/M5 restano non implementati/rinviati
 
 ---
 
@@ -11,7 +11,7 @@ Proteggere Markdown, asset, dati di correzione, audit e segreti, e garantire che
 
 **Un utente Google non-owner non è automaticamente uno studente autorizzato.** L'autenticazione Google identifica solo un *richiedente/studente potenziale*: distingue "questo utente è il docente proprietario" da "questo utente è qualcun altro", ma non basta da sola a concedere lettura di contenuti. Uno studente diventa uno studente autorizzato solo quando il docente lo approva esplicitamente in `students/{uid}` (`status: "approved"`) e il portale studente è globalmente attivo (`settings/studentAccess.studentPortalEnabled == true`). Uno studente `pending` (in attesa di approvazione) o `blocked` (bloccato dal docente) non legge alcun contenuto, esattamente come un utente non autenticato. Questo modello — introdotto in M3L-A2, dopo la prima versione di M3L-A che trattava "autenticato Google" come sufficiente — è descritto in dettaglio in §3.1.
 
-Il modello precedente (studente non autenticato, nome+cognome autodichiarati, lock di partecipazione, audit nome+IP) resta descritto in questo documento solo come specifica di un eventuale **M3-full** (§4, §9), non ancora pianificato in dettaglio e non applicabile a M3-lite.
+Il modello precedente (studente non autenticato, nome+cognome autodichiarati, lock di partecipazione, audit nome+IP) descritto in questo documento (§4, §9) come specifica di un eventuale gateway Cloud Functions **non è mai stato implementato**: M3-full, completato con Gate G5 superato, usa invece autenticazione Google approvata e scritture client dirette validate da Security Rules, sullo stesso modello di M3-lite (§3.1). §4 e §9 restano solo come nota storica dell'alternativa scartata.
 
 ---
 
@@ -112,7 +112,7 @@ match /{allPaths=**} {
   - test Security Rules mirati in `apps/web/src/rules/m3l-student-verifications.rules.test.ts`: approvato+portale attivo+classe compatibile legge la proiezione e può fare `list` con `classId`+`visibility`; la stessa `list` senza il filtro `visibility` è negata; pending/blocked/nessun documento negati; approvato senza `classId` negato; classe incompatibile negata; `hidden`/`draft`/`closed` negati; verifica senza `classId` negata; documento padre mai leggibile; una sotto-collezione `publishedSnapshot` ipotetica mai leggibile; scrittura studente sempre negata; owner sempre consentito.
   - **`teacherSnapshot.questions` (fix snapshot immutabile)**: campo interno a `teacherSnapshot`, quindi eredita automaticamente le stesse garanzie — mai letto dallo studente (documento padre non leggibile), e immutabile dopo l'attivazione senza bisogno di alcuna modifica alle Rules: nessuna regola di update su `verifications/{docId}` per gli stati successivi a `draft` include `teacherSnapshot` tra i campi consentiti (`affectedKeys().hasOnly([...])` — vedi le regole di `close`/`visibility`/`onlineEnabled`/`studentPdfEnabled`), quindi l'intero campo, `questions` incluso, resta congelato dal primo `transaction.update` di `activateVerification` in poi. `publishedProjection.questions` (derivata dallo stesso caricamento, mai da `teacherSnapshot.questions` direttamente) continua a non contenere mai `soluzione`, `poolStorageRef`, `questionLocalId` o `questionIndexEntryId` — verificato anche a livello di mapper puro (`toPublicVerificationQuestion`), non solo di Rules.
 
-Le regole seguenti restano specifica di un eventuale **M3-full** (link pubblico, tentativi, gateway) e non si applicano a M3-lite:
+Le regole seguenti descrivono il modello gateway (link pubblico, tentativi, Cloud Functions) valutato per M3-full e **scartato**: M3-full, completato, non le implementa — vedi §4 e `m3-full-roadmap.md §4` per il modello effettivamente realizzato (Security Rules client-only, submission/receipt):
 
 - `publicVerificationLinks/{SHA-256(token)}` consentirebbe al portale solo `get` del documento esatto: nessun `list`, nessuna configurazione privata e nessun token in chiaro nel database.
 - Il client portale non leggerebbe né scriverebbe direttamente `deliveryAttempts`, `answers`, `snapshot`, `participantLocks` o `accessLog`: tutte le operazioni digitali passerebbero dal gateway.
@@ -121,9 +121,9 @@ Le regole seguenti restano specifica di un eventuale **M3-full** (link pubblico,
 
 ---
 
-## 4. Gateway M3-full: `startDigitalAttempt` e `continueDigitalAttempt` (specifica rinviata)
+## 4. Gateway M3-full: `startDigitalAttempt` e `continueDigitalAttempt` (modello scartato, non implementato)
 
-> Questa sezione descrive l'eventuale punto critico di sicurezza di un **M3-full**, fase successiva a M3-lite e non pianificata in dettaglio. M3-lite non introduce alcuna Cloud Function e non ha bisogno di queste garanzie, perché non scrive né autentica tentativi.
+> Questa sezione descrive il modello gateway Cloud Functions valutato inizialmente per M3-full e **mai realizzato**. M3-full, completato, usa invece scritture client dirette validate da Security Rules (submission/receipt su path deterministico, immutabilità post-consegna) — vedi `m3-full-roadmap.md §3-4` per il modello effettivo e `documentazione/evidenze/g5-m3-full-checklist-finale.md` per le evidenze del Gate G5. Il resto di questa sezione resta come nota storica dell'alternativa scartata.
 
 **Garanzie richieste (se M3-full verrà realizzato):**
 
@@ -210,6 +210,7 @@ Questa sezione andrà rivista quando M3-full sarà pianificato in dettaglio, val
 | G3 | PDF generato nel browser senza persistenza; canale cartaceo senza record di tentativo né accessLog (al più `downloadCount`); nessun PDF in Storage. |
 | G4-lite | Login Google risolve correttamente TeacherShell/StudentShell; nessun accesso anonimo; un utente Google non-owner legge contenuti solo se `students/{uid}.status == "approved"` e `settings/studentAccess.studentPortalEnabled == true` (mai per la sola autenticazione); studente `pending`/`blocked` o senza documento `students/{uid}` non legge nulla; pool, soluzioni, `questionIndex` e documenti tecnici mai raggiungibili dallo studente; PDF studente senza soluzioni; nessuna Cloud Function introdotta. |
 | GRE (Repository Editor) | Creazione/modifica/riordino/eliminazione di UDA/lezioni non introducono nuove Security Rule (owner-only preesistente); eliminazione bloccata lato client se esiste una verifica collegata (§5.2, limite noto: solo client-side); riordino non rinomina mai file Storage; export ZIP resta Markdown-first, portabile e con `order` coerente al reimport. |
-| G4 (M3-full, specifica rinviata) | Gateway `startDigitalAttempt`/`continueDigitalAttempt` con participant lock nome+cognome e cookie HttpOnly/Secure; nessun write Firestore dal portale; log nome+IP; soluzioni non nel response; bozza/consegna immutabile; reset controllato e auditato. |
-| G5 | Correzione, audit, eliminazione ed export solo docente; export non persistito; richiede G4 (M3-full). |
+| G4 (gateway Cloud Functions, modello scartato) | Non implementato: M3-full non usa gateway, participant lock nome+cognome, cookie HttpOnly né log nome+IP. Nota storica, vedi §4. |
+| G5 — Portale digitale (M3-full) ✅ | Superato. Submission unica e immutabile post-consegna; studente post-consegna legge solo la receipt; verifica chiusa blocca bozze; modalità verifica nega realmente la lettura delle lezioni via Security Rules; nessuna Cloud Function. Evidenze in `documentazione/evidenze/g5-m3-full-checklist-finale.md` e `m3-full-roadmap.md §8`. |
+| G6 (M4, non implementato) | Correzione, audit, eliminazione ed export solo docente; export non persistito; richiede G5 (M3-full, superato). |
 | G6/G7 (V2) | C-02 risolta / C-03; AI senza web; audit completo; opt-in; rollback verificato. |
