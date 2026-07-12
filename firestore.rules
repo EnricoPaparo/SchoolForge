@@ -132,6 +132,59 @@ service cloud.firestore {
         && id[id.size() - request.auth.uid.size() - 1:] == '_' + request.auth.uid;
     }
 
+    // --- M4-01 helpers: manual correction ---
+    // Mirrors verificationData(): a bare cross-doc data getter, kept as a
+    // named function purely for readability at call sites below.
+    function submissionData(submissionId) {
+      return get(/databases/$(database)/documents/submissions/$(submissionId)).data;
+    }
+
+    function correctionData(submissionId) {
+      return get(/databases/$(database)/documents/corrections/$(submissionId)).data;
+    }
+
+    // Mirrors correctionData(), but reads the correction as it will exist
+    // AFTER the current atomic write commits — required to authorize a
+    // correctionReturns create/update against a correction that is
+    // transitioning to 'returned' in the very same batch (returnCorrection),
+    // and to deny one against a correction that is (or remains) 'in_progress'
+    // or 'completed' after the batch, e.g. a stale correctionReturns left
+    // hidden by reopenCorrection. getAfter() reflects sibling writes only
+    // when they are part of the same commit, same idiom already used for
+    // submissions/submissionReceipts (see submissionReceipts create below).
+    function correctionDataAfter(submissionId) {
+      return getAfter(/databases/$(database)/documents/corrections/$(submissionId)).data;
+    }
+
+    // The exact CorrectionStatus transition graph from correctionContract.ts
+    // (isValidCorrectionStatusTransition) — kept in sync by hand, since
+    // Rules cannot import the TypeScript helper. Deliberately excludes
+    // 'returned' -> 'completed' directly and 'in_progress' -> 'returned'
+    // directly, same reasoning as the client-side helper.
+    function isValidCorrectionTransition(from, to) {
+      return (from == 'in_progress' && to == 'completed')
+        || (from == 'completed' && to == 'returned')
+        || (from == 'completed' && to == 'in_progress')
+        || (from == 'returned' && to == 'in_progress');
+    }
+
+    // Minimal event integrity check (no deep validation of questionDeltas
+    // content — see the documented Rules/service boundary above the
+    // corrections match block): every correctionEvents write must declare a
+    // (type, previousStatus, nextStatus) combination that is actually
+    // reachable, mirroring exactly what correctionsService.ts ever writes.
+    // 'scoreAdjusted' never changes status (in_progress -> in_progress, only
+    // reachable after a reopen — the first pass writes no event at all,
+    // enforced client-side by isReopenedCorrection, not re-derivable here
+    // without deep evaluations inspection).
+    function isValidCorrectionEventTypeStatus(type, previousStatus, nextStatus) {
+      return (type == 'reopened'
+              && (previousStatus == 'completed' || previousStatus == 'returned')
+              && nextStatus == 'in_progress')
+        || (type == 'returned' && previousStatus == 'completed' && nextStatus == 'returned')
+        || (type == 'scoreAdjusted' && previousStatus == 'in_progress' && nextStatus == 'in_progress');
+    }
+
     // --- settings/owner ---
     // First authenticated user to write becomes the owner (no existing doc).
     // Subsequent updates/deletes require ownerUid match.
@@ -574,11 +627,213 @@ service cloud.firestore {
       allow read, write: if isOwner();
     }
 
-    match /corrections/{docId} {
-      allow read, write: if isOwner();
+    // --- corrections/{submissionId} (M4-01) ---
+    // Same deterministic id as submissions/submissionReceipts — enforces the
+    // 1:1 relationship by path alone, same reasoning as those collections.
+    // Owner-only in every direction: unlike submissions, the student is
+    // NEVER authorized here, not even in read (they read only
+    // correctionReturns/{submissionId} once returned — see below).
+    //
+    // Boundary (documented once, applies to both corrections and
+    // correctionEvents below): these Rules enforce ownership, identity,
+    // top-level shape and the allowed status-transition graph — never a
+    // deep validation of `evaluations`/`questionDeltas` map contents
+    // (per-question point ranges, key-set completeness, delta correctness).
+    // That validation is owner-only application logic
+    // (`correctionContract.ts`, exercised by `correctionsService.ts`), not
+    // a Rules concern: the caller who could tamper with it (the owner) is
+    // the same principal Rules already trust for every other owner-write
+    // path in this codebase (e.g. `teacherSnapshot`, `verifications.config`).
+    match /corrections/{submissionId} {
+      // Create: only once, only for a submitted submission owned by the
+      // caller, identity fields pinned to that submission, always starting
+      // 'in_progress' with reopenCount 0 and no completedAt/returnedAt yet.
+      allow create: if isOwner()
+        && exists(/databases/$(database)/documents/submissions/$(submissionId))
+        && submissionData(submissionId).status == 'submitted'
+        && submissionData(submissionId).ownerUid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+             'submissionId', 'verificationId', 'studentUid', 'ownerUid', 'status',
+             'evaluations', 'generalFeedback', 'totalPoints', 'maxPoints', 'percentage',
+             'createdAt', 'updatedAt', 'completedAt', 'returnedAt', 'reopenCount'
+           ])
+        && request.resource.data.keys().hasAll([
+             'submissionId', 'verificationId', 'studentUid', 'ownerUid', 'status',
+             'evaluations', 'generalFeedback', 'totalPoints', 'maxPoints', 'percentage',
+             'createdAt', 'updatedAt', 'completedAt', 'returnedAt', 'reopenCount'
+           ])
+        && request.resource.data.submissionId == submissionId
+        && request.resource.data.verificationId == submissionData(submissionId).verificationId
+        && request.resource.data.studentUid == submissionData(submissionId).studentUid
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.status == 'in_progress'
+        && request.resource.data.reopenCount == 0
+        && request.resource.data.completedAt == null
+        && request.resource.data.returnedAt == null;
+
+      // Update: identity (submissionId/verificationId/studentUid/ownerUid)
+      // and createdAt are immutable forever. Only the workflow/scoring
+      // fields may change, and only in one of two shapes:
+      //   - a plain save while still 'in_progress' (status unchanged,
+      //     reopenCount unchanged, completedAt/returnedAt stay whatever
+      //     they already were — i.e. null);
+      //   - a status transition that is a member of
+      //     isValidCorrectionTransition, with reopenCount incremented by
+      //     exactly 1 only on a transition back to 'in_progress', and
+      //     completedAt/returnedAt set to request.time on the matching
+      //     transition (or both cleared to null on reopen).
+      allow update: if isOwner()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.submissionId == resource.data.submissionId
+        && request.resource.data.verificationId == resource.data.verificationId
+        && request.resource.data.studentUid == resource.data.studentUid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'status', 'evaluations', 'generalFeedback', 'totalPoints', 'maxPoints',
+             'percentage', 'updatedAt', 'completedAt', 'returnedAt', 'reopenCount'
+           ])
+        && (
+          request.resource.data.status == resource.data.status
+            ? (
+                resource.data.status == 'in_progress'
+                  && request.resource.data.reopenCount == resource.data.reopenCount
+                  && request.resource.data.completedAt == resource.data.completedAt
+                  && request.resource.data.returnedAt == resource.data.returnedAt
+              )
+            : (
+                isValidCorrectionTransition(resource.data.status, request.resource.data.status)
+                  && (
+                    request.resource.data.status == 'completed'
+                      ? request.resource.data.reopenCount == resource.data.reopenCount
+                          && request.resource.data.completedAt == request.time
+                          && request.resource.data.returnedAt == resource.data.returnedAt
+                      : request.resource.data.status == 'returned'
+                        ? request.resource.data.reopenCount == resource.data.reopenCount
+                            && request.resource.data.completedAt == resource.data.completedAt
+                            && request.resource.data.returnedAt == request.time
+                        : (
+                            request.resource.data.status == 'in_progress'
+                              && request.resource.data.reopenCount == resource.data.reopenCount + 1
+                              && request.resource.data.completedAt == null
+                              && request.resource.data.returnedAt == null
+                          )
+                  )
+              )
+        );
+
+      allow read: if isOwner() && resource.data.ownerUid == request.auth.uid;
+      allow delete: if false;
     }
-    match /correctionEvents/{docId} {
-      allow read, write: if isOwner();
+
+    // --- correctionEvents/{eventId} (M4-01) ---
+    // Append-only audit trail. Auto-generated id (many events per
+    // correction), so uniqueness/ordering isn't path-enforced — only that
+    // every event is tied to a correction the caller actually owns.
+    match /correctionEvents/{eventId} {
+      allow create: if isOwner()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.actorUid == request.auth.uid
+        && exists(/databases/$(database)/documents/corrections/$(request.resource.data.correctionId))
+        && correctionData(request.resource.data.correctionId).ownerUid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+             'correctionId', 'ownerUid', 'type', 'actorUid', 'previousStatus', 'nextStatus',
+             'reason', 'questionDeltas', 'generalFeedbackDelta', 'timestamp'
+           ])
+        && request.resource.data.keys().hasAll([
+             'correctionId', 'ownerUid', 'type', 'actorUid', 'previousStatus', 'nextStatus',
+             'reason', 'timestamp'
+           ])
+        && request.resource.data.type in ['reopened', 'scoreAdjusted', 'returned']
+        && request.resource.data.timestamp == request.time
+        && isValidCorrectionEventTypeStatus(
+             request.resource.data.type,
+             request.resource.data.previousStatus,
+             request.resource.data.nextStatus
+           )
+        && request.resource.data.nextStatus
+             == correctionDataAfter(request.resource.data.correctionId).status;
+
+      allow read: if isOwner() && resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // --- correctionReturns/{submissionId} (M4-01) ---
+    // Same deterministic id space as corrections/submissions. The ONE
+    // student-readable document in the whole correction flow, and only
+    // when visibleToStudent == true — existence of the document alone is
+    // NOT sufficient (a reopened correction hides it immediately, without
+    // deleting it, by flipping this field).
+    match /correctionReturns/{submissionId} {
+      // Both create and update require the correction to be 'returned' as
+      // of AFTER this same atomic write (correctionDataAfter) — never just
+      // "does a corrections doc exist". This is what makes returnCorrection
+      // work (correction transitions to 'returned' in the very same batch
+      // that creates/overwrites this projection) while denying any write
+      // here while the correction is 'in_progress' or 'completed' —
+      // including the two narrow toggles below, which must never re-surface
+      // or grow a projection left stale by reopenCorrection.
+      allow create: if isOwner()
+        && exists(/databases/$(database)/documents/corrections/$(submissionId))
+        && correctionData(submissionId).ownerUid == request.auth.uid
+        && correctionDataAfter(submissionId).status == 'returned'
+        && request.resource.data.keys().hasOnly([
+             'correctionId', 'verificationId', 'studentUid', 'ownerUid', 'verificationTitle',
+             'className', 'submittedAt', 'returnedAt', 'questions', 'generalFeedback',
+             'totalPoints', 'maxPoints', 'percentage', 'visibleToStudent', 'solutionsVisible',
+             'updatedAt'
+           ])
+        && request.resource.data.keys().hasAll([
+             'correctionId', 'verificationId', 'studentUid', 'ownerUid', 'verificationTitle',
+             'className', 'submittedAt', 'returnedAt', 'questions', 'generalFeedback',
+             'totalPoints', 'maxPoints', 'percentage', 'visibleToStudent', 'solutionsVisible',
+             'updatedAt'
+           ])
+        && request.resource.data.correctionId == submissionId
+        && request.resource.data.verificationId == correctionData(submissionId).verificationId
+        && request.resource.data.studentUid == correctionData(submissionId).studentUid
+        && request.resource.data.ownerUid == request.auth.uid;
+
+      // Update: covers a full rewrite on a later return (after a reopen ->
+      // re-complete -> return cycle), the two narrow toggles
+      // (visibleToStudent, solutionsVisible/questions), AND
+      // reopenCorrection's own atomic hide — the ONE case where the
+      // correction is deliberately leaving 'returned' in this same write.
+      // That last case is narrowly scoped on purpose: it may only flip
+      // visibleToStudent to false (plus updatedAt), never touch scoring
+      // content, and only when the correction is actually transitioning
+      // returned -> in_progress in this same batch — reopenCorrection is
+      // the only caller that satisfies all three. Every other update
+      // (including both toggle service functions, which now also
+      // self-check client-side) requires the correction to be 'returned'
+      // as of after this write — never merely that the projection exists,
+      // per the documented Rules/service boundary above.
+      allow update: if isOwner()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.correctionId == resource.data.correctionId
+        && request.resource.data.verificationId == resource.data.verificationId
+        && request.resource.data.studentUid == resource.data.studentUid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && (
+          correctionDataAfter(submissionId).status == 'returned'
+            || (
+              correctionData(submissionId).status == 'returned'
+                && correctionDataAfter(submissionId).status == 'in_progress'
+                && request.resource.data.diff(resource.data).affectedKeys()
+                     .hasOnly(['visibleToStudent', 'updatedAt'])
+                && request.resource.data.visibleToStudent == false
+            )
+        );
+
+      allow read: if isOwner() && resource.data.ownerUid == request.auth.uid;
+
+      // The student reads only their own projection, and only while the
+      // docente has left it visible.
+      allow read: if isApprovedStudent()
+        && resource.data.studentUid == request.auth.uid
+        && resource.data.visibleToStudent == true;
+
+      allow delete: if false;
     }
 
     // deliveryAttempts: owner can read (for corrections/export); writes via Cloud Functions (M3)
