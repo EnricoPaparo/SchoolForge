@@ -21,6 +21,8 @@ export type CourseCard = {
   programId: string;
   title: string;
   annoScolastico: string | null;
+  /** Assigned class ids (source of truth). Kept alongside the resolved names. */
+  classIds: string[];
   classNames: string[];
   udaCount: number;
   lessonsTotal: number;
@@ -71,7 +73,8 @@ async function buildCard(
   classNameById: Map<string, string>,
   db: Firestore,
 ): Promise<CourseCard> {
-  const classNames = (program.classIds ?? [])
+  const classIds = program.classIds ?? [];
+  const classNames = classIds
     .map((id) => classNameById.get(id))
     .filter((name): name is string => Boolean(name));
 
@@ -80,6 +83,7 @@ async function buildCard(
       programId: program.id,
       title: program.title,
       annoScolastico: null,
+      classIds,
       classNames,
       udaCount: 0,
       lessonsTotal: 0,
@@ -101,6 +105,7 @@ async function buildCard(
     programId: program.id,
     title: program.title,
     annoScolastico: programmaMeta?.annoScolastico ?? null,
+    classIds,
     classNames,
     udaCount: udas.length,
     lessonsTotal: lessons.length,

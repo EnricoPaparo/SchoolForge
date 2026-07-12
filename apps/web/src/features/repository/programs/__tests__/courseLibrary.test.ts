@@ -50,6 +50,7 @@ describe('loadCourseLibrary', () => {
         programId: 'p1',
         title: 'Reti',
         annoScolastico: '2025/2026',
+        classIds: ['cA', 'cB'],
         classNames: ['4A INF', '5A INF'],
         udaCount: 3,
         lessonsTotal: 4,

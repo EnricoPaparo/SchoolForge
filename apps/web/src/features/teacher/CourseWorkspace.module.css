@@ -250,6 +250,61 @@
   font-size: 0.875rem;
 }
 
+/* ── Contextual toolbar (course / UDA actions, DUX-04A) ─────────────────── */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+.menuWrap {
+  position: relative;
+}
+.toolbarMenuBtn {
+  font-size: 0.8125rem;
+}
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  min-width: 12rem;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 0.25rem;
+}
+.menu button {
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--color-text);
+}
+.menu button:hover:not(:disabled) {
+  background: var(--color-surface);
+}
+.menu button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.menuDanger {
+  color: var(--color-error) !important;
+}
+.blockersList {
+  margin: 0 0 0.75rem;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
 /* ── Lesson tabs ────────────────────────────────────────────────────────── */
 .tablist {
   display: flex;

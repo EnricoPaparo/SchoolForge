@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { db, storage } from '../../lib/firebase.js';
 import { loadCourseLibrary, type CourseCard } from '../repository/programs/courseLibrary.js';
 import {
@@ -10,6 +10,7 @@ import { importRepository } from '../repository/import/importRepository.js';
 import { readZipFile } from '../repository/import/readZipFile.js';
 import { describeImportValidationError } from './importValidationMessage.js';
 import { CourseWorkspace } from './CourseWorkspace.js';
+import { TitleDialog, ImportDialog, ConfirmDialog } from './workspaceDialogs.js';
 import styles from './DidatticaView.module.css';
 
 const YEAR_ALL = '__all__';
@@ -215,6 +216,16 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
                 prev,
             )
           }
+          onCardPatch={(programId, patch) =>
+            setCards(
+              (prev) =>
+                prev?.map((c) => (c.programId === programId ? { ...c, ...patch } : c)) ?? prev,
+            )
+          }
+          onCourseDeleted={(programId) => {
+            setCards((prev) => prev?.filter((c) => c.programId !== programId) ?? prev);
+            setOpenProgramId(null);
+          }}
         />
       </section>
     );
@@ -480,201 +491,6 @@ function CourseCardView({
         </div>
       </article>
     </li>
-  );
-}
-
-// ── Dialogs (minimi, coerenti con l'app) ───────────────────────────────────
-
-function DialogShell({
-  title,
-  children,
-  onCancel,
-}: {
-  title: string;
-  children: ReactNode;
-  onCancel: () => void;
-}) {
-  return (
-    <div className={styles.backdrop} onClick={onCancel}>
-      <div
-        className={styles.dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className={styles.dialogTitle}>{title}</h3>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function TitleDialog({
-  title,
-  label,
-  confirmLabel,
-  initial,
-  busy,
-  error,
-  onCancel,
-  onConfirm,
-}: {
-  title: string;
-  label: string;
-  confirmLabel: string;
-  initial: string;
-  busy: boolean;
-  error: string | null;
-  onCancel: () => void;
-  onConfirm: (title: string) => void;
-}) {
-  const [value, setValue] = useState(initial);
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    const t = value.trim();
-    if (!t) return;
-    onConfirm(t);
-  }
-  return (
-    <DialogShell title={title} onCancel={onCancel}>
-      <form onSubmit={submit} className={styles.dialogForm}>
-        <label className={styles.dialogLabel}>
-          {label}
-          <input
-            type="text"
-            autoFocus
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            aria-label={label}
-          />
-        </label>
-        {error && (
-          <p role="alert" className="text-error">
-            {error}
-          </p>
-        )}
-        <div className={styles.dialogActions}>
-          <button type="button" onClick={onCancel} disabled={busy}>
-            Annulla
-          </button>
-          <button type="submit" className="btn-primary" disabled={busy || value.trim() === ''}>
-            {busy ? 'Attendere…' : confirmLabel}
-          </button>
-        </div>
-      </form>
-    </DialogShell>
-  );
-}
-
-function ImportDialog({
-  busy,
-  error,
-  onCancel,
-  onConfirm,
-}: {
-  busy: boolean;
-  error: string | null;
-  onCancel: () => void;
-  onConfirm: (title: string, file: File) => void;
-}) {
-  const [title, setTitle] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    const t = title.trim();
-    if (!t || !file) return;
-    onConfirm(t, file);
-  }
-  return (
-    <DialogShell title="Importa un nuovo corso da ZIP" onCancel={onCancel}>
-      <form onSubmit={submit} className={styles.dialogForm}>
-        <label className={styles.dialogLabel}>
-          Titolo del corso
-          <input
-            type="text"
-            autoFocus
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            aria-label="Titolo del corso"
-          />
-        </label>
-        <label className={styles.dialogLabel}>
-          File ZIP
-          <input
-            type="file"
-            accept=".zip"
-            aria-label="File ZIP del corso"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-        </label>
-        <p className={styles.dialogHint}>
-          Lo ZIP deve contenere cartelle <code>uda-NN-slug/</code> con i file UDA, lezioni e pool;
-          il <code>programma.md</code> nella radice è opzionale.
-        </p>
-        {error && (
-          <p role="alert" className="text-error">
-            {error}
-          </p>
-        )}
-        <div className={styles.dialogActions}>
-          <button type="button" onClick={onCancel} disabled={busy}>
-            Annulla
-          </button>
-          <button
-            type="submit"
-            className="btn-primary"
-            disabled={busy || title.trim() === '' || !file}
-          >
-            {busy ? 'Importazione…' : 'Importa'}
-          </button>
-        </div>
-      </form>
-    </DialogShell>
-  );
-}
-
-function ConfirmDialog({
-  title,
-  message,
-  confirmLabel,
-  danger,
-  busy,
-  error,
-  onCancel,
-  onConfirm,
-}: {
-  title: string;
-  message: string;
-  confirmLabel: string;
-  danger?: boolean;
-  busy: boolean;
-  error: string | null;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <DialogShell title={title} onCancel={onCancel}>
-      <p className={styles.dialogMessage}>{message}</p>
-      {error && (
-        <p role="alert" className="text-error">
-          {error}
-        </p>
-      )}
-      <div className={styles.dialogActions}>
-        <button type="button" onClick={onCancel} disabled={busy}>
-          Annulla
-        </button>
-        <button
-          type="button"
-          className={danger ? 'btn-danger' : 'btn-primary'}
-          onClick={onConfirm}
-          disabled={busy}
-        >
-          {busy ? 'Attendere…' : confirmLabel}
-        </button>
-      </div>
-    </DialogShell>
   );
 }
 
