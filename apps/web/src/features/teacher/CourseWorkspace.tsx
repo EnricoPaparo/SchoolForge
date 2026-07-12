@@ -147,17 +147,19 @@ export function CourseWorkspace({
     questionCount: number,
     poolStatus: PoolCountStatus,
   ) {
-    setTree((prev) => {
-      if (!prev) return prev;
-      const lessons = prev.lessons.map((l) =>
-        l.id === lessonId ? { ...l, questionCount, poolStatus } : l,
-      );
-      onProgramQuestionsChange?.(
-        card.programId,
-        lessons.reduce((s, l) => s + (l.questionCount ?? 0), 0),
-      );
-      return { ...prev, lessons };
-    });
+    if (!tree) return;
+    // Compute the next lessons deterministically, keep the state updater pure
+    // (it only sets the value), and notify the parent exactly once — outside
+    // the updater — so React Strict Mode's double-invoke can't fire the
+    // external callback twice.
+    const lessons = tree.lessons.map((l) =>
+      l.id === lessonId ? { ...l, questionCount, poolStatus } : l,
+    );
+    setTree({ udas: tree.udas, lessons });
+    onProgramQuestionsChange?.(
+      card.programId,
+      lessons.reduce((s, l) => s + (l.questionCount ?? 0), 0),
+    );
   }
 
   async function selectLesson(lesson: LessonItem) {
@@ -592,7 +594,12 @@ function LessonDetail({
 }) {
   const { title } = resolveLessonTitle(lesson.filename, metadata.titolo ?? lesson.titolo);
 
-  // Roving-ish keyboard navigation across the tablist (←/→, Home/End).
+  // Local refs to the tab buttons so keyboard navigation can move real focus
+  // (roving tabindex) without fragile global DOM queries.
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // Keyboard navigation across the tablist (←/→, Home/End): selects the tab
+  // and moves focus to its button. Only the active tab keeps tabIndex 0.
   function onTabKeyDown(e: ReactKeyboardEvent) {
     const idx = LESSON_TABS.findIndex((t) => t.id === activeTab);
     let next = idx;
@@ -603,6 +610,7 @@ function LessonDetail({
     else return;
     e.preventDefault();
     onSelectTab(LESSON_TABS[next]!.id);
+    tabRefs.current[next]?.focus();
   }
 
   return (
@@ -614,12 +622,15 @@ function LessonDetail({
       </div>
 
       <div className={styles.tablist} role="tablist" aria-label="Schede lezione">
-        {LESSON_TABS.map((t) => (
+        {LESSON_TABS.map((t, i) => (
           <button
             key={t.id}
             type="button"
             role="tab"
             id={`tab-${t.id}`}
+            ref={(el) => {
+              tabRefs.current[i] = el;
+            }}
             aria-selected={activeTab === t.id}
             aria-controls={`panel-${t.id}`}
             tabIndex={activeTab === t.id ? 0 : -1}

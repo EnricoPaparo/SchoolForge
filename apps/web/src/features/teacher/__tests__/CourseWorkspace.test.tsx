@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { StrictMode } from 'react';
 import { CourseWorkspace } from '../CourseWorkspace.js';
 import type { CourseCard } from '../../repository/programs/courseLibrary.js';
 import type { LessonItem, UdaItem } from '../../repository/programs/programsService.js';
@@ -366,5 +367,62 @@ describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
     expect(screen.getByText('7')).toBeTruthy();
     expect(mockListUdas).toHaveBeenCalledTimes(1);
     expect(mockListLessons).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies onProgramQuestionsChange exactly once (no double-call in Strict Mode)', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('l1', 'uda-01-reti', { titolo: 'Lez 1', questionCount: 5 }),
+      lesson('l2', 'uda-01-reti', { titolo: 'Lez 2', questionCount: 3 }),
+    ]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    const onProgramQuestionsChange = vi.fn();
+    render(
+      <StrictMode>
+        <CourseWorkspace
+          card={card()}
+          ownerUid="owner"
+          onBack={vi.fn()}
+          onProgramQuestionsChange={onProgramQuestionsChange}
+        />
+      </StrictMode>,
+    );
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Lez 1' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Lez 1' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Domande' }));
+    fireEvent.click(screen.getByRole('button', { name: 'set-count-7' }));
+
+    // Called once, with the correct course total (l1 7 + l2 3 = 10).
+    expect(onProgramQuestionsChange).toHaveBeenCalledTimes(1);
+    expect(onProgramQuestionsChange).toHaveBeenCalledWith('p1', 10);
+  });
+
+  it('moves selection AND focus with arrow/Home/End keys, keeping one tabbable tab', async () => {
+    await openLesson();
+    const tabContenuto = screen.getByRole('tab', { name: 'Contenuto' });
+    const tabDomande = screen.getByRole('tab', { name: 'Domande' });
+    const tabInformazioni = screen.getByRole('tab', { name: 'Informazioni' });
+
+    tabContenuto.focus();
+    fireEvent.keyDown(tabContenuto, { key: 'ArrowRight' });
+    expect(tabDomande.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tabDomande);
+    // Roving tabindex: exactly one tab is in the tab order.
+    expect([tabContenuto, tabDomande, tabInformazioni].filter((t) => t.tabIndex === 0)).toEqual([
+      tabDomande,
+    ]);
+
+    fireEvent.keyDown(tabDomande, { key: 'End' });
+    expect(tabInformazioni.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tabInformazioni);
+
+    fireEvent.keyDown(tabInformazioni, { key: 'Home' });
+    expect(tabContenuto.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tabContenuto);
+
+    fireEvent.keyDown(tabContenuto, { key: 'ArrowLeft' });
+    expect(tabInformazioni.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tabInformazioni);
   });
 });
