@@ -373,6 +373,24 @@ Il concept UX approvato per accesso dalla tabella **Consegne online**, workspace
 
 ---
 
+## 12b. Didattica — Roadmap UX (DUX)
+
+Redesign UX approvato che unifica le attuali sezioni Corsi, Lezioni e Domande in un unico workspace docente "Didattica", con Classi assorbita in Studenti come tab. Specifica completa, decisioni UX, invarianti di sicurezza/costo e prototipo statico standalone sono in [`didattica-ux-roadmap.md`](didattica-ux-roadmap.md). Riusa esclusivamente i service/dati già esistenti di RE/QE — nessuna nuova Cloud Function, nessuna Security Rule più permissiva, nessun nuovo documento Firestore di statistiche.
+
+**Stato: DUX-00 completato (specifica + prototipo). Nessun pacchetto successivo avviato. Nessun codice applicativo sotto `apps/web/src/` modificato.** Corsi/Lezioni/Domande/Classi restano le sezioni funzionanti oggi finché i pacchetti seguenti non le sostituiscono a fasi, con parità funzionale verificata a ogni passaggio (vedi §21 "Strategia di migrazione" del documento).
+
+| ID | Outcome e scope | Dipende da | Evidenza DoD |
+|---|---|---|---|
+| DUX-00 ✅ | Specifica UX completa e prototipo statico standalone (`documentazione/prototipi/didattica-workspace.html`). Nessun codice applicativo toccato. | — | Documento e prototipo revisionabili dal docente; nessuna modifica sotto `apps/web/src/`. Completato. |
+| DUX-01 | Libreria corsi: nuova voce `Didattica`, landing a card, toolbar filtri (anno/classe/ricerca). Corsi/Lezioni/Domande restano invariate in parallelo. | DUX-00 | Card con le sole metriche approvate; filtri client-side; nessuna nuova query/Rule. |
+| DUX-02 | Workspace corso: intestazione, sidebar UDA/lezioni condivisa, selezione corso/UDA, scheda Contenuto lezione. | DUX-01 | Sidebar unica riusata da tutte le selezioni. |
+| DUX-03 | Scheda Domande contestualizzata (Question Editor integrato) e scheda Informazioni lezione. | DUX-02 | Editing pool identico a oggi, stesso contesto lezione della sidebar. |
+| DUX-04 | Navigazione mobile a livelli, modalità Organizza, rimozione delle voci di nav legacy Corsi/Lezioni/Domande. | DUX-03 | Parità funzionale verificata; PR di rimozione separata e reversibile. |
+| DUX-05 | Classi assorbita in Studenti (tab, inserimento inline come prima riga), restyling di coerenza di Verifiche (tabella + creazione inline + feedback persistente "Salva bozza"), restauro Template (griglia 4/2/1), header unico definitivo (identità dell'app + veri pulsanti con iconcina, non tab) e "aurora sobria" sul corpo della shell. | DUX-04 | Tab Classi con contatore derivato client-side; Verifiche invariata nel concetto; feedback di salvataggio sempre persistente; header con l'identità dell'app e pulsanti di navigazione, corpo con aurora sobria. |
+| Gate GDUX | Verifica finale end-to-end della roadmap Didattica. | DUX-01…05 | Checklist manuale DEV + evidenze automatiche. |
+
+---
+
 ## 13. Qualità, CI/CD e costi
 
 ### 12.1 Pipeline minima

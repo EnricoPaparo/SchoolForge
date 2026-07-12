@@ -1,0 +1,2869 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SchoolForge — Prototipo Didattica (DUX-00)</title>
+<style>
+  /* ────────────────────────────────────────────────────────────────
+     Design tokens — riuso approssimato della palette scura esistente
+     di SchoolForge (index.css), niente di nuovo: solo applicato senza
+     il motivo diagonale dell'header attuale (§17 roadmap).
+     ──────────────────────────────────────────────────────────────── */
+  :root {
+    --color-primary: #4a8bf7;
+    --color-primary-light: rgba(59, 130, 246, 0.16);
+    --color-brand-blue: #38bdf8;
+    --color-brand-orange: #fb923c;
+    --color-brand-orange-light: rgba(251, 146, 60, 0.14);
+    --color-accent-violet: #8b7cf6;
+    /* Superfici leggermente più chiare/vive della prima bozza DUX-00 —
+       "aurora sobria" (fix review): navy scuro con una punta di blu in
+       più, non un nero neutro — per distinguere meglio fondo/pannello/
+       sidebar/contenuto ed evitare grandi aree piatte. */
+    --color-surface: #182030;
+    --color-surface-subtle: #0e1420;
+    --color-surface-raised: #222c40;
+    --color-border: #303c50;
+    --color-text: #e7ebf2;
+    --color-text-muted: #97a4b8;
+    --color-success: #34d399;
+    --color-success-bg: rgba(52, 211, 153, 0.12);
+    --color-error: #f87171;
+    --color-error-bg: rgba(248, 113, 113, 0.12);
+    --color-warning: #fbbf24;
+    --color-warning-bg: rgba(251, 191, 36, 0.12);
+    --radius: 8px;
+    --radius-lg: 12px;
+    --font-sans:
+      -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    color: var(--color-text);
+    background: var(--color-surface-subtle);
+    /* "Aurora sobria" (fix review §2, rinforzata): quattro glow radiali
+       tenui ma percepibili — blu/ciano in alto a sinistra, viola-blu
+       ampio al centro, arancio/corallo in alto a destra, e un blu
+       basso a destra che riempie il vuoto in fondo alla pagina. Danno
+       carattere agli spazi vuoti senza diventare un motivo dominante,
+       geometrico o animato. I pannelli restano opachi
+       (--color-surface/-raised), così i glow non interferiscono mai con
+       testi o tabelle. */
+    background-image:
+      radial-gradient(ellipse 820px 560px at 2% -8%, rgba(56, 189, 248, 0.18), transparent 60%),
+      radial-gradient(ellipse 1040px 740px at 50% 26%, rgba(139, 124, 246, 0.13), transparent 64%),
+      radial-gradient(ellipse 820px 520px at 104% -4%, rgba(251, 146, 60, 0.14), transparent 58%),
+      radial-gradient(ellipse 780px 600px at 86% 112%, rgba(56, 189, 248, 0.1), transparent 60%);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 0.8125rem;
+    cursor: pointer;
+    border-radius: var(--radius);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    padding: 0.4rem 0.75rem;
+    transition: border-color 0.12s ease, background 0.12s ease;
+  }
+  button:hover {
+    border-color: var(--color-primary);
+  }
+  button:focus-visible,
+  a:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+  button.primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+    font-weight: 600;
+  }
+  button.primary:hover {
+    filter: brightness(1.08);
+  }
+  button.ghost {
+    background: transparent;
+    border-color: transparent;
+  }
+  button.ghost:hover {
+    background: var(--color-surface-raised);
+    border-color: var(--color-border);
+  }
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  input,
+  select {
+    font-family: inherit;
+    font-size: 0.8125rem;
+    color: var(--color-text);
+    background: var(--color-surface-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.4rem 0.6rem;
+  }
+  input:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 1px;
+  }
+
+  h1, h2, h3, h4 {
+    margin: 0;
+  }
+
+  /* ── Header definitivo (fix review 3): un solo header su una riga —
+     [Logo-scritta] [Didattica][Verifiche][Studenti][Template] …
+     [simulatore] [Account]. Riprende ESATTAMENTE la grafica
+     dell'header reale dell'app (TeacherShell): pannello chiaro con
+     gradiente blu→violetto, glow arancio in alto a destra, logo-scritta
+     completo (immagine con wordmark), bordo bicolore blu→arancio in
+     fondo, avatar account a destra. Novità DUX: veri pulsanti di
+     navigazione con iconcina (non tab), leggibili sul pannello chiaro.
+     Un solo header — il selettore Desktop/Mobile è uno strumento del
+     prototipo, non una seconda barra di navigazione. */
+  .shell-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 0.55rem 1.25rem;
+    /* Stessa grafica dell'header reale: gradiente chiaro + glow arancio. */
+    background:
+      radial-gradient(circle at 91% 18%, rgba(251, 146, 60, 0.2), transparent 27%),
+      linear-gradient(105deg, #ccd9ea 0%, #b9c9e7 42%, #a5b6df 72%, #b29dce 100%);
+    border-bottom: 3px solid transparent;
+    border-image: linear-gradient(90deg, var(--color-brand-blue), var(--color-brand-orange)) 1;
+    box-shadow: 0 1px 8px rgba(9, 13, 20, 0.35);
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  /* Logo-scritta reale (immagine con wordmark già inclusa) — stesso
+     dimensionamento dell'app; nessun testo separato accanto. */
+  .logo .logo-img {
+    height: 2.125rem;
+    width: auto;
+    max-width: min(220px, calc(100vw - 8rem));
+    object-fit: contain;
+    display: block;
+  }
+  /* Fallback testuale SOLO se il PNG reale non è caricabile — mai
+     spacciato per il branding finale. */
+  .logo .mark {
+    height: 2rem;
+    width: 2rem;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: #fff;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-brand-orange));
+  }
+  /* Nav accanto al logo: veri pulsanti (icona + testo), scorrevoli solo
+     in orizzontale su schermi stretti — mai uno scroll verticale
+     aggiuntivo, mai la sezione attiva fuori vista (JS scrollIntoView).
+     Un min-width impedisce che la nav collassi a 0px quando gli altri
+     elementi (flex-shrink:0) esauriscono lo spazio. */
+  .top-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex: 1;
+    min-width: 3.5rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    padding: 0.1rem;
+  }
+  .top-nav::-webkit-scrollbar {
+    display: none;
+  }
+  /* Pulsanti veri, non tab: pill con superficie chiara opaca, testo
+     navy ad alto contrasto sul pannello chiaro, ombra sottile per
+     dare profondità. Attivo = pill blu piena con testo bianco. */
+  .top-nav button {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+    white-space: nowrap;
+    background: rgba(255, 255, 255, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: 999px;
+    padding: 0.4rem 0.85rem;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    color: #1f2b40;
+    box-shadow: 0 1px 2px rgba(9, 13, 20, 0.12);
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease,
+      transform 0.06s ease;
+  }
+  .top-nav button:hover:not([aria-current='page']) {
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 2px 6px rgba(9, 13, 20, 0.18);
+  }
+  .top-nav button:active {
+    transform: translateY(1px);
+  }
+  .top-nav button[aria-current='page'] {
+    /* Blu profondo per far passare il testo bianco in AA (≥4.5:1). */
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.45);
+  }
+  .top-nav .nav-icon {
+    font-size: 0.9rem;
+    line-height: 1;
+  }
+  /* Navigazione mobile: selettore di sezione + menu a tendina. Nascosto
+     su desktop; su mobile sostituisce la fila di pulsanti (che verrebbe
+     tagliata / richiederebbe scroll orizzontale). */
+  .nav-mobile {
+    display: none;
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+  body.mobile .top-nav {
+    display: none;
+  }
+  body.mobile .nav-mobile {
+    display: block;
+  }
+  .nav-mobile-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    max-width: 100%;
+    background: rgba(255, 255, 255, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: 999px;
+    padding: 0.4rem 0.75rem;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    color: #1f2b40;
+    box-shadow: 0 1px 2px rgba(9, 13, 20, 0.12);
+  }
+  .nav-mobile-toggle .nav-mobile-caret {
+    margin-left: auto;
+    font-size: 0.7rem;
+    opacity: 0.7;
+  }
+  .nav-mobile-toggle[aria-expanded='true'] .nav-mobile-caret {
+    transform: rotate(180deg);
+  }
+  .nav-mobile-menu {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    left: 0;
+    right: 0;
+    z-index: 30;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: 0 12px 32px rgba(9, 13, 20, 0.5);
+    padding: 0.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .nav-mobile-menu[hidden] {
+    display: none;
+  }
+  .nav-mobile-menu button {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius);
+    padding: 0.6rem 0.7rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+  .nav-mobile-menu button:hover {
+    background: var(--color-surface-subtle);
+  }
+  .nav-mobile-menu button[aria-current='page'] {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+  }
+  /* Selettore di anteprima del prototipo — vive nel banner giallo (non
+     nell'header dell'app): superficie scura segmentata, coerente col
+     resto del prototipo, chiaramente uno strumento di revisione. */
+  .device-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    flex-shrink: 0;
+    background: var(--color-surface-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    padding: 0.15rem;
+  }
+  .device-toggle button {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+  }
+  .device-toggle button.active {
+    background: #2563eb;
+    color: #fff;
+  }
+  body.mobile .shell-header {
+    gap: 0.5rem;
+    padding: 0.5rem 0.7rem;
+  }
+  body.mobile .logo .logo-img {
+    height: 1.9rem;
+    max-width: 130px;
+  }
+  /* Account a destra — chip circolare leggibile sul pannello chiaro. */
+  .account-avatar-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.125rem;
+    height: 2.125rem;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.75);
+    border: 1.5px solid #2563eb;
+    color: #2563eb;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    padding: 0;
+  }
+  .account-avatar-btn:hover {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #fff;
+  }
+
+  /* ── Prototype stage: centers a simulated viewport ───────────────── */
+  .stage {
+    padding: 1.5rem;
+    display: flex;
+    justify-content: center;
+  }
+  .device-frame {
+    width: 100%;
+    max-width: 1180px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    transition: max-width 0.15s ease;
+  }
+  body.mobile .device-frame {
+    max-width: 390px;
+  }
+  .device-frame-inner {
+    /* Nessun min-height fisso: il pannello si adatta al contenuto
+       (fix review — evitava un grande riquadro vuoto sotto le card
+       quando i corsi filtrati erano pochi). */
+    display: flex;
+    flex-direction: column;
+  }
+
+  .proto-note {
+    max-width: 1180px;
+    margin: 0 auto 0.75rem;
+    padding: 0.6rem 0.9rem;
+    background: var(--color-warning-bg);
+    border: 1px solid var(--color-warning);
+    border-radius: var(--radius);
+    color: var(--color-warning);
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+  }
+  .proto-note-text {
+    flex: 1;
+    min-width: 220px;
+  }
+  .device-toggle-caption {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-warning);
+    margin-right: 0.15rem;
+  }
+
+  /* ── Screens (only one visible at a time) ────────────────────────── */
+  .screen {
+    display: none;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  .screen.visible {
+    display: flex;
+  }
+
+  /* ── Libreria corsi ───────────────────────────────────────────────── */
+  .library-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .library-toolbar .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+  }
+  .library-toolbar .search {
+    min-width: 160px;
+    flex: 1;
+    max-width: 260px;
+  }
+  .library-toolbar .actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  /* Filtri Didattica mobile (fix review §3): riga 1 anno+classe (due
+     colonne identiche), riga 2 ricerca a piena larghezza, riga 3
+     Importa ZIP + Nuovo corso (due bottoni identici). Sotto i ~360px,
+     anno e classe passano a una colonna. `.filters`/`.actions` restano
+     wrapper semantici ma diventano "trasparenti" al grid tramite
+     display:contents, così i loro figli partecipano direttamente alle
+     aree nominate. */
+  body.mobile .library-toolbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      'year class'
+      'search search'
+      'importzip newcourse';
+    gap: 0.5rem;
+    align-items: stretch;
+  }
+  body.mobile .library-toolbar .filters,
+  body.mobile .library-toolbar .actions {
+    display: contents;
+  }
+  body.mobile #filter-year {
+    grid-area: year;
+    width: 100%;
+    height: 2.25rem;
+    box-sizing: border-box;
+  }
+  body.mobile #filter-class {
+    grid-area: class;
+    width: 100%;
+    height: 2.25rem;
+    box-sizing: border-box;
+  }
+  body.mobile #filter-search.search {
+    grid-area: search;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    height: 2.25rem;
+    box-sizing: border-box;
+  }
+  body.mobile .btn-import-zip {
+    grid-area: importzip;
+    width: 100%;
+    height: 2.25rem;
+    box-sizing: border-box;
+  }
+  body.mobile .btn-new-course {
+    grid-area: newcourse;
+    width: 100%;
+    height: 2.25rem;
+    box-sizing: border-box;
+  }
+  @media (max-width: 360px) {
+    body.mobile .library-toolbar {
+      grid-template-columns: 1fr;
+      grid-template-areas:
+        'year'
+        'class'
+        'search'
+        'importzip'
+        'newcourse';
+    }
+  }
+  .library-body {
+    padding: 1.25rem;
+    overflow-y: auto;
+  }
+  .course-grid {
+    display: grid;
+    /* minmax scelto per rendere una griglia a 3 colonne alla larghezza
+       tipica del prototipo desktop (fix review — valutare davvero una
+       griglia a 3 colonne, non un caso limite a 4-5). */
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+    align-items: start;
+  }
+  body.mobile .course-grid {
+    grid-template-columns: 1fr;
+  }
+  /* Card corso — accessibile (fix review): NON è un role="button" con
+     un bottone annidato dentro. È un <article> non interattivo; l'unico
+     controllo di apertura è .course-card-open, un <button> reale;
+     .card-menu-btn è un fratello separato, mai annidato nell'altro
+     controllo. La card intera resta "visivamente" cliccabile via
+     :hover/:focus-within sull'article, senza duplicare la semantica. */
+  .course-card {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    position: relative;
+  }
+  .course-card:hover,
+  .course-card:focus-within {
+    border-color: var(--color-primary);
+  }
+  .course-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .course-card-open {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    color: inherit;
+    cursor: pointer;
+    border-radius: var(--radius);
+  }
+  .course-card-open:hover .course-card-title {
+    color: var(--color-primary);
+  }
+  .course-card-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+  .card-menu-btn {
+    padding: 0.15rem 0.45rem;
+    font-size: 0.9rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .course-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .pill {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    white-space: nowrap;
+  }
+  .course-card-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+  .course-card-stats strong {
+    display: block;
+    color: var(--color-text);
+    font-size: 0.95rem;
+  }
+  .progress-track {
+    height: 5px;
+    border-radius: 999px;
+    background: var(--color-surface-subtle);
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-brand-blue));
+    border-radius: 999px;
+  }
+  .empty-hint {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    padding: 2rem;
+    text-align: center;
+  }
+  /* Stato vuoto composto per la libreria filtrata senza risultati
+     (fix review) — non solo una riga di testo generica. */
+  .empty-state {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 2.5rem 1.5rem;
+    text-align: center;
+    color: var(--color-text-muted);
+  }
+  .empty-state .empty-icon {
+    font-size: 1.75rem;
+    opacity: 0.6;
+  }
+  .empty-state .empty-title {
+    color: var(--color-text);
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+  .empty-state .empty-desc {
+    font-size: 0.8125rem;
+    max-width: 320px;
+  }
+
+  /* ── Workspace corso ──────────────────────────────────────────────── */
+  .workspace {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  .workspace-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.85rem 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+  .workspace-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .breadcrumb {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    padding: 0.85rem 1.25rem 0;
+  }
+  .breadcrumb button {
+    border: none;
+    background: transparent;
+    padding: 0;
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .breadcrumb button:hover {
+    color: var(--color-primary);
+  }
+  .breadcrumb .sep {
+    margin: 0 0.35rem;
+  }
+  .workspace-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+  body.mobile .workspace-body {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 250px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--color-border);
+    overflow-y: auto;
+    padding: 0.75rem 0.5rem;
+    /* Un filo più scura del contenuto — separa visivamente sidebar e
+       area principale senza una linea sola (fix review, distinguibilità
+       fondo/pannello/contenuto). */
+    background: var(--color-surface-subtle);
+  }
+  body.mobile .sidebar {
+    display: none; /* niente sidebar collassabile su mobile — drill-down a livelli invece (§5) */
+  }
+  .sidebar-uda {
+    margin-bottom: 0.35rem;
+  }
+  /* Riga UDA: sempre un vero <button>, anche in modalità Organizza
+     (semplicemente disabilitato — nessuna riga UDA riordinabile in
+     questo prototipo, solo le lezioni, §10 roadmap). Reset stile
+     bottone di base, poi ridisegnata come riga (fix review: niente
+     <div> con solo onclick). */
+  .sidebar-uda-head {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 0.4rem;
+    padding: 0.4rem 0.5rem;
+    border: none;
+    border-radius: var(--radius);
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 0.8125rem;
+    color: var(--color-text);
+  }
+  .sidebar-uda-head:hover:not(:disabled) {
+    background: var(--color-surface-raised);
+  }
+  .sidebar-uda-head.selected {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+  }
+  .sidebar-uda-head:disabled {
+    cursor: default;
+    opacity: 0.65;
+  }
+  .sidebar-caret {
+    font-size: 0.65rem;
+    color: var(--color-text-muted);
+    width: 0.9rem;
+    display: inline-block;
+  }
+  .sidebar-lessons {
+    display: flex;
+    flex-direction: column;
+    padding-left: 1.4rem;
+  }
+  /* Riga lezione — stessa tipografia (0.8125rem) ovunque compaia
+     (sidebar, tabella UDA, elenco mobile — §19 roadmap "componente
+     condiviso"). Fuori da Organizza è un vero <button> a tutta
+     larghezza; dentro Organizza diventa un contenitore non interattivo
+     con due <button> freccia separati (mai un bottone dentro un
+     bottone — fix review). */
+  .lesson-row-btn {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 0.45rem;
+    padding: 0.32rem 0.5rem;
+    border: none;
+    border-radius: var(--radius);
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    color: var(--color-text);
+  }
+  .lesson-row-btn:hover {
+    background: var(--color-surface-raised);
+  }
+  .lesson-row-btn.selected {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+  .lesson-row-static {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.32rem 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+  }
+  .lesson-num {
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+    width: 1.4rem;
+    flex-shrink: 0;
+  }
+  .lesson-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pool-dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-block;
+  }
+  .pool-dot.valid { background: var(--color-success); }
+  .pool-dot.absent { background: var(--color-text-muted); opacity: 0.5; }
+  .pool-dot.invalid { background: var(--color-error); }
+  .pool-label {
+    font-size: 0.6875rem;
+    color: var(--color-text-muted);
+  }
+  .organize-arrows {
+    display: flex;
+    gap: 0.15rem;
+    margin-left: auto;
+  }
+  .organize-arrows button {
+    padding: 0.05rem 0.35rem;
+    font-size: 0.7rem;
+  }
+
+  .content-area {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 1.1rem 1.4rem;
+  }
+
+  .toolbar-context {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+  .toolbar-context .selected-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    font-weight: 700;
+  }
+  .toolbar-context .actions {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+  }
+
+  /* Riepilogo corso compatto (fix review — sostituisce le quattro
+     card-dashboard con una singola fascia di metriche + una barra di
+     avanzamento sottile: "3 UDA · 8/12 lezioni svolte · 41 domande ·
+     4A INF"). Usato sia nel content-area desktop sia nel riepilogo
+     mobile — stessa funzione, stesso markup. */
+  .course-summary-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+    margin-bottom: 0.6rem;
+  }
+  .course-summary-strip strong {
+    color: var(--color-text);
+    font-weight: 700;
+  }
+  .course-summary-strip .sep {
+    color: var(--color-border);
+  }
+  .progress-track.thin {
+    height: 3px;
+    max-width: 260px;
+    margin-bottom: 1.25rem;
+  }
+
+  table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+  }
+  table.data-table th {
+    text-align: left;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted);
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  table.data-table td {
+    padding: 0.55rem 0.6rem;
+    border-bottom: 1px solid var(--color-border);
+    vertical-align: middle;
+  }
+  table.data-table tr:last-child td {
+    border-bottom: none;
+  }
+  table.data-table tr:focus-within td {
+    background: var(--color-surface-raised);
+  }
+  /* Apertura riga UDA/lezione dalla tabella: un vero <button> nella
+     prima cella, non l'intera <tr> con solo un onclick (fix review —
+     una <tr> non è nativamente raggiungibile da tastiera). */
+  .row-open-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    padding: 0.15rem 0;
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: var(--radius);
+  }
+  .row-open-btn:hover {
+    color: var(--color-primary);
+  }
+  table.data-table tr:hover td {
+    background: var(--color-surface-raised);
+  }
+  .row-actions {
+    display: flex;
+    gap: 0.3rem;
+    justify-content: flex-end;
+  }
+  /* Riga di inserimento inline (tab Classi, fix review): il pulsante
+     "+ Aggiungi" è l'unica azione della riga, va centrato nella
+     colonna Azioni invece di allinearsi a destra come le coppie
+     Modifica/Elimina delle righe esistenti. */
+  .row-actions-center {
+    justify-content: center;
+  }
+  .row-actions button {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+  }
+  .badge-pool {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+  }
+  .checkbox-done {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  /* ── Lesson detail: tabs ──────────────────────────────────────────── */
+  .lesson-detail-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+  .tablist {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 1rem;
+  }
+  .tablist [role="tab"] {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 0.5rem 0.85rem;
+    color: var(--color-text-muted);
+    font-weight: 600;
+  }
+  .tablist [role="tab"][aria-selected="true"] {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+  }
+  [role="tabpanel"] {
+    display: none;
+  }
+  [role="tabpanel"].active {
+    display: block;
+  }
+  .markdown-preview {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 1rem 1.15rem;
+    font-size: 0.875rem;
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+  }
+  .markdown-preview h3 {
+    margin-bottom: 0.4rem;
+  }
+  .markdown-preview p {
+    margin: 0.5rem 0;
+  }
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.85rem;
+  }
+  .info-field .label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    letter-spacing: 0.04em;
+    margin-bottom: 0.2rem;
+  }
+  .info-field .value {
+    font-size: 0.875rem;
+    overflow-wrap: anywhere;
+  }
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+  .tag-list .pill {
+    background: var(--color-surface-subtle);
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-border);
+  }
+
+  .question-card {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.85rem 1rem;
+    margin-bottom: 0.75rem;
+  }
+  .question-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+  }
+  .question-card-head .qtype {
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+  }
+  .question-card .qtext {
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+  }
+  .qopts {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .qopt {
+    font-size: 0.8125rem;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+  }
+  .qopt.correct {
+    border-color: var(--color-success);
+    background: var(--color-success-bg);
+    color: var(--color-success);
+  }
+
+  /* ── Mobile drill-down list (progressive nav) ────────────────────── */
+  .mobile-back {
+    display: none;
+    padding: 0.6rem 1rem 0.25rem;
+  }
+  body.mobile .mobile-back.show {
+    display: block;
+  }
+  /* Pulsante Indietro a tutta larghezza su mobile (fix review §7). */
+  .mobile-back #mobile-back-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+  }
+  .mobile-list {
+    display: none;
+    flex-direction: column;
+  }
+  body.mobile .mobile-list.show {
+    display: flex;
+  }
+  body.mobile .breadcrumb {
+    /* Mobile ha già "Indietro" + intestazione di livello: il breadcrumb
+       desktop resterebbe ambiguo/ridondante quando il contenuto è il
+       riepilogo del corso (fix review §4) — mai mostrato su mobile. */
+    display: none;
+  }
+  body.mobile .desktop-only-workspace {
+    display: none;
+  }
+  /* Riga di drill-down mobile: vero <button> a tutta larghezza (fix
+     review), reset di base + stile riga, stessa dimensione tipografica
+     delle righe lezione desktop (0.8125rem). */
+  .mobile-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 0.5rem;
+    padding: 0.85rem 1.1rem;
+    border: none;
+    border-bottom: 1px solid var(--color-border);
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text);
+    text-align: left;
+    font-size: 0.8125rem;
+    cursor: pointer;
+  }
+  .mobile-item:hover {
+    background: var(--color-surface-raised);
+  }
+  .mobile-item .chev {
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+  }
+
+  /* ── Studenti / Classi ────────────────────────────────────────────── */
+  .subtabs {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.85rem 1.25rem 0;
+  }
+  .subtabs button {
+    background: transparent;
+    border-color: transparent;
+    color: var(--color-text-muted);
+    font-weight: 600;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 0.5rem 0.9rem;
+  }
+  .subtabs button.active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+  }
+  .subscreen {
+    display: none;
+    padding: 1rem 1.25rem 1.5rem;
+  }
+  .subscreen.active {
+    display: block;
+  }
+  .status-pill {
+    font-size: 0.6875rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-weight: 600;
+  }
+  .status-pill.approved { background: var(--color-success-bg); color: var(--color-success); }
+  .status-pill.pending { background: var(--color-warning-bg); color: var(--color-warning); }
+  .status-pill.blocked { background: var(--color-error-bg); color: var(--color-error); }
+  /* Riga di creazione inline (Classi e Verifiche) — SEMPRE la prima
+     riga della tabella (fix review 3). I controlli sono compatti e di
+     altezza uniforme, con padding di cella ridotto, così la riga non
+     risulta più alta delle righe dati sottostanti. Una superficie
+     appena più scura segnala "crea qui" senza rompere l'allineamento. */
+  /* Specificità: `table.data-table td` (0,0,1,2) sovrascriverebbe un
+     semplice `.inline-add-row td` — qui serve `table.data-table
+     .inline-add-row td` per far valere il padding ridotto. */
+  table.data-table .inline-add-row td {
+    background: var(--color-surface-subtle);
+    padding: 0.3rem 0.6rem;
+    vertical-align: middle;
+  }
+  .inline-add-row input,
+  .inline-add-row select {
+    width: 100%;
+    height: 2rem;
+    padding: 0 0.55rem;
+    font-size: 0.8125rem;
+    box-sizing: border-box;
+  }
+  .inline-add-row .row-actions button,
+  .inline-add-row button {
+    height: 2rem;
+    padding: 0 0.9rem;
+    font-size: 0.8125rem;
+  }
+
+  /* ── Verifiche (fix review §6/§7) ─────────────────────────────────── */
+  .verifiche-body {
+    padding: 0 1.25rem 1.5rem;
+  }
+  .verifiche-table-desktop select,
+  .verifiche-table-desktop input[type='text'] {
+    width: 100%;
+  }
+  .verifiche-mobile {
+    display: none;
+  }
+  body.mobile .verifiche-table-desktop {
+    display: none;
+  }
+  body.mobile .verifiche-mobile {
+    display: block;
+  }
+  /* Sezione di creazione impilata compatta su mobile — collegata
+     visivamente alla lista sottostante, non una card enorme separata. */
+  .verifica-create-mobile {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .verifica-create-mobile .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+  .verifica-create-mobile input,
+  .verifica-create-mobile select,
+  .verifica-create-mobile button {
+    width: 100%;
+    box-sizing: border-box;
+    height: 2.25rem;
+  }
+  .verifica-mobile-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    width: 100%;
+    align-items: flex-start;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface-raised);
+    margin-bottom: 0.5rem;
+    text-align: left;
+  }
+  .verifica-mobile-row .v-title {
+    font-weight: 600;
+    font-size: 0.8125rem;
+  }
+  .verifica-mobile-row .v-meta {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+  .verifica-detail {
+    margin-top: 1rem;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.15rem;
+  }
+  .verifica-detail-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+  .question-picker-mock {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .q-mock-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+  }
+  .verifica-save-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--color-border);
+  }
+  /* Feedback persistente vicino alle azioni (fix review §7) — mai un
+     solo toast destinato a sparire: lo stato resta finché non cambia
+     la condizione (nuova modifica, nuovo salvataggio). */
+  .save-status {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    min-height: 1.1em;
+  }
+  .save-status-dirty {
+    color: var(--color-warning);
+  }
+  .save-status-success {
+    color: var(--color-success);
+    border-radius: var(--radius);
+    padding: 0.15rem 0.4rem;
+    margin: -0.15rem -0.4rem;
+  }
+  .save-status-success.save-flash {
+    background: var(--color-success-bg);
+  }
+  .save-status-error {
+    color: var(--color-error);
+  }
+
+  /* ── Template ─────────────────────────────────────────────────────── */
+  .template-hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 1.1rem 1.3rem;
+    margin-bottom: 1.25rem;
+  }
+  /* Griglia Template singoli (fix review): 4 colonne identiche su
+     desktop, 2×2 su tablet, 1 colonna su mobile — colonne esplicite,
+     mai auto-fill, così l'ultima riga non si accorcia né si sposta a
+     sinistra quando il conteggio non riempie la griglia. */
+  .template-list {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+    align-items: stretch;
+  }
+  @media (max-width: 900px) {
+    .template-list {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 480px) {
+    .template-list {
+      grid-template-columns: 1fr;
+    }
+  }
+  body.mobile .template-list {
+    grid-template-columns: 1fr;
+  }
+  .template-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.75rem 0.85rem;
+    font-size: 0.8125rem;
+    min-height: 4.5rem;
+    box-sizing: border-box;
+  }
+  .template-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+  .template-item-name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .template-item-desc {
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+  }
+  /* Bottone icon-only coerente (fix review): stessa dimensione ovunque,
+     niente emoji/caratteri dipendenti dal font — un'icona vettoriale
+     inline (freccia dentro un vassoio), tooltip via title + aria-label
+     specifica per ogni template. */
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  .icon-btn svg {
+    width: 16px;
+    height: 16px;
+  }
+  .guide-box {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.9rem 1.1rem;
+    font-size: 0.8125rem;
+    margin-bottom: 1.25rem;
+  }
+  .guide-box ol {
+    margin: 0.5rem 0 0;
+    padding-left: 1.2rem;
+  }
+  pre.zip-tree {
+    background: var(--color-surface-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.9rem 1.1rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    overflow-x: auto;
+    color: var(--color-text-muted);
+  }
+
+  h2.section-title {
+    font-size: 1rem;
+    margin: 0 1.25rem 0.75rem;
+    padding-top: 1rem;
+  }
+
+  footer.proto-footer {
+    max-width: 1180px;
+    margin: 1rem auto 3rem;
+    padding: 0 0.25rem;
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    text-align: center;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>
+</head>
+<body>
+
+<header class="shell-header">
+  <!--
+    Logo: tenta di caricare il PNG reale del repository con un path
+    relativo (documentazione/prototipi/ → apps/web/src/assets/). Se il
+    file non è raggiungibile (es. prototipo copiato altrove, o aperto
+    fuori dal repository), lo script sostituisce l'immagine con un
+    segnaposto testuale "SF" chiaramente marcato come tale — mai
+    spacciato per il branding finale (§6 fix review).
+  -->
+  <div class="logo">
+    <!-- Logo-scritta reale del repository (wordmark incluso nell'immagine),
+         stesso file e dimensionamento dell'header dell'app. Se il PNG non
+         è raggiungibile con questo path relativo, lo script mette un
+         segnaposto testuale "SF" chiaramente marcato come tale. -->
+    <img
+      class="logo-img"
+      src="../../apps/web/src/assets/logo-scritta-schoolforge.png"
+      alt="SchoolForge"
+      onerror="this.outerHTML = '&lt;span class=&quot;mark&quot; title=&quot;Segnaposto — logo reale non trovato a questo percorso relativo&quot;&gt;SF&lt;/span&gt;';"
+    />
+  </div>
+  <nav class="top-nav" aria-label="Sezioni docente">
+    <button type="button" data-topnav="library" aria-current="page">
+      <span class="nav-icon" aria-hidden="true">📚</span><span>Didattica</span>
+    </button>
+    <button type="button" data-topnav="verifiche">
+      <span class="nav-icon" aria-hidden="true">📝</span><span>Verifiche</span>
+    </button>
+    <button type="button" data-topnav="students">
+      <span class="nav-icon" aria-hidden="true">🎓</span><span>Studenti</span>
+    </button>
+    <button type="button" data-topnav="template">
+      <span class="nav-icon" aria-hidden="true">📄</span><span>Template</span>
+    </button>
+  </nav>
+
+  <!-- Navigazione mobile: su schermi stretti i quattro pulsanti non
+       stanno accanto a logo+account senza scroll orizzontale, quindi
+       vengono sostituiti da un selettore di sezione. Mostra la sezione
+       corrente (icona + nome) e apre un menu con tutte le sezioni — la
+       sezione attiva resta sempre visibile, nessuno scroll. -->
+  <div class="nav-mobile">
+    <button
+      type="button"
+      class="nav-mobile-toggle"
+      id="nav-mobile-toggle"
+      aria-haspopup="true"
+      aria-expanded="false"
+    >
+      <span class="nav-icon" aria-hidden="true" id="nav-mobile-current-icon">📚</span>
+      <span id="nav-mobile-current-label">Didattica</span>
+      <span class="nav-mobile-caret" aria-hidden="true">▾</span>
+    </button>
+    <div class="nav-mobile-menu" id="nav-mobile-menu" role="menu" aria-label="Sezioni docente" hidden>
+      <button type="button" role="menuitem" data-topnav="library">
+        <span class="nav-icon" aria-hidden="true">📚</span><span>Didattica</span>
+      </button>
+      <button type="button" role="menuitem" data-topnav="verifiche">
+        <span class="nav-icon" aria-hidden="true">📝</span><span>Verifiche</span>
+      </button>
+      <button type="button" role="menuitem" data-topnav="students">
+        <span class="nav-icon" aria-hidden="true">🎓</span><span>Studenti</span>
+      </button>
+      <button type="button" role="menuitem" data-topnav="template">
+        <span class="nav-icon" aria-hidden="true">📄</span><span>Template</span>
+      </button>
+    </div>
+  </div>
+
+  <button type="button" class="account-avatar-btn" aria-label="Account: Docente" title="Account: Docente">DC</button>
+</header>
+
+<!-- Il selettore Desktop/Mobile NON è parte dell'app: è uno strumento di
+     questo prototipo statico per simulare il viewport mobile (layout a
+     colonna singola, drill-down a livelli) senza restringere la finestra
+     né aprire i devtools. Sta qui, nel banner del prototipo, apposta per
+     non sembrare un controllo del prodotto. -->
+<div class="proto-note">
+  <div class="proto-note-text">
+    <strong>Prototipo statico DUX-00</strong> — dati interamente inventati, nessuna chiamata di rete, nessuna
+    dipendenza esterna. Il selettore qui accanto è solo un aiuto di anteprima: simula il viewport mobile e la
+    navigazione a livelli (§5 della roadmap). Non fa parte dell'app.
+  </div>
+  <div class="device-toggle" role="group" aria-label="Anteprima viewport del prototipo">
+    <span class="device-toggle-caption">Anteprima:</span>
+    <button type="button" data-device="desktop" class="active" aria-pressed="true">
+      <span aria-hidden="true">🖥️</span><span class="device-toggle-label">Desktop</span>
+    </button>
+    <button type="button" data-device="mobile" aria-pressed="false">
+      <span aria-hidden="true">📱</span><span class="device-toggle-label">Mobile</span>
+    </button>
+  </div>
+</div>
+
+<main class="stage">
+  <div class="device-frame">
+    <div class="device-frame-inner">
+
+      <!-- ══════════════════════ VERIFICHE (fix review: vista navigabile) ══════════════════════ -->
+      <section class="screen" id="screen-verifiche">
+        <h2 class="section-title">Verifiche</h2>
+        <div class="verifiche-body">
+          <!-- Desktop: tabella con riga di creazione inline (stesso pattern della tab Classi). -->
+          <table class="data-table verifiche-table-desktop">
+            <thead>
+              <tr><th>Titolo</th><th>Corso</th><th>Classe</th><th>Stato</th><th>Domande</th><th></th></tr>
+            </thead>
+            <tbody id="verifiche-tbody"></tbody>
+          </table>
+
+          <!-- Mobile: creazione come sezione impilata compatta, collegata visivamente alla lista sottostante (§6 fix review). -->
+          <div class="verifiche-mobile" id="verifiche-mobile"></div>
+
+          <div class="verifica-detail" id="verifica-detail" hidden></div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════ DIDATTICA — LIBRERIA CORSI ══════════════════════ -->
+      <section class="screen visible" id="screen-library">
+        <div class="library-toolbar">
+          <div class="filters">
+            <select id="filter-year" aria-label="Filtro anno scolastico">
+              <option value="all">Tutti gli anni</option>
+            </select>
+            <select id="filter-class" aria-label="Filtro classe">
+              <option value="all">Tutte le classi</option>
+            </select>
+            <input class="search" id="filter-search" type="search" placeholder="Cerca corso…" aria-label="Cerca corso" />
+          </div>
+          <div class="actions">
+            <button type="button" class="ghost btn-import-zip">Importa ZIP</button>
+            <button type="button" class="primary btn-new-course">+ Nuovo corso</button>
+          </div>
+        </div>
+        <div class="library-body">
+          <div class="course-grid" id="course-grid"></div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════ DIDATTICA — WORKSPACE CORSO (desktop) ══════════════════════ -->
+      <section class="screen" id="screen-workspace">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <div class="workspace desktop-only-workspace">
+          <div class="workspace-header">
+            <div class="workspace-header-left">
+              <button type="button" class="ghost" id="btn-back-to-library">← Libreria</button>
+              <h2 id="course-title" style="font-size:1rem;"></h2>
+              <span class="pill" id="course-year-badge"></span>
+              <span class="pill" id="course-class-badge"></span>
+            </div>
+            <div class="actions" style="display:flex; gap:.4rem;">
+              <button type="button" id="btn-organize" class="ghost" aria-pressed="false">Organizza</button>
+              <button type="button" class="ghost">Programma svolto</button>
+              <button type="button" class="ghost">⋯</button>
+            </div>
+          </div>
+
+          <div class="workspace-body">
+            <nav class="sidebar" id="sidebar" aria-label="Struttura corso"></nav>
+            <div class="content-area" id="content-area"></div>
+          </div>
+        </div>
+
+        <!-- ══════════ MOBILE progressive drill-down (Corso → UDA → Lezioni → Lezione) ══════════ -->
+        <div class="mobile-back" id="mobile-back">
+          <button type="button" class="ghost" id="mobile-back-btn">← Indietro</button>
+        </div>
+
+        <div class="mobile-list show" id="mobile-course-summary">
+          <!-- popolato da JS: riepilogo corso + tabella UDA in forma elenco -->
+        </div>
+
+        <div class="mobile-list" id="mobile-uda-lessons">
+          <!-- popolato da JS: lista lezioni dell'UDA selezionato -->
+        </div>
+
+        <div class="mobile-list" id="mobile-lesson-detail">
+          <!-- popolato da JS: tabs Contenuto/Domande/Informazioni -->
+        </div>
+      </section>
+
+      <!-- ══════════════════════ STUDENTI (tab Studenti / Classi) ══════════════════════ -->
+      <section class="screen" id="screen-students">
+        <div class="subtabs" role="tablist" aria-label="Studenti e Classi">
+          <button type="button" role="tab" aria-selected="true" data-subtab="students-tab" class="active">Studenti</button>
+          <button type="button" role="tab" aria-selected="false" data-subtab="classes-tab">Classi</button>
+        </div>
+
+        <div class="subscreen active" id="students-tab">
+          <div class="toolbar-context">
+            <input class="search" placeholder="Cerca studente…" aria-label="Cerca studente" />
+            <select aria-label="Filtro stato">
+              <option>Tutti</option>
+              <option>In attesa</option>
+              <option>Approvati</option>
+              <option>Bloccati</option>
+            </select>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr><th>Nome</th><th>Email</th><th>Stato</th><th>Classe</th><th></th></tr>
+            </thead>
+            <tbody id="students-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="subscreen" id="classes-tab">
+          <p style="color:var(--color-text-muted); font-size:.8125rem; margin: 0 0 .75rem;">
+            Le classi sono gestite qui, dentro Studenti — non più come voce di nav separata (§12 roadmap).
+          </p>
+          <table class="data-table">
+            <thead>
+              <tr><th>Nome classe</th><th>Studenti</th><th></th></tr>
+            </thead>
+            <tbody id="classes-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ══════════════════════ TEMPLATE ══════════════════════ -->
+      <section class="screen" id="screen-template">
+        <h2 class="section-title">Template</h2>
+        <div style="padding: 0 1.25rem 1.5rem;">
+          <div class="template-hero">
+            <div>
+              <strong style="font-size:.95rem;">Kit completo</strong>
+              <p style="margin:.3rem 0 0; color:var(--color-text-muted); font-size:.8125rem;">
+                Tutti i template in un unico archivio, pronto per essere passato a uno strumento AI o compilato manualmente.
+              </p>
+            </div>
+            <button type="button" class="primary">⬇ Scarica kit completo (ZIP)</button>
+          </div>
+
+          <h3 style="font-size:.85rem; margin: 0 0 .6rem; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:.04em;">Template singoli</h3>
+          <div class="template-list" id="template-list"></div>
+
+          <div class="guide-box">
+            <strong>Guida compatta</strong>
+            <ol>
+              <li>Scarica il kit completo o i singoli template.</li>
+              <li>Compilali manualmente o passali a uno strumento AI (es. Claude, GPT) con le istruzioni incluse.</li>
+              <li>Importa lo ZIP risultante da "Importa ZIP" nella libreria Didattica.</li>
+            </ol>
+          </div>
+
+          <h3 style="font-size:.85rem; margin: 0 0 .6rem; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:.04em;">Struttura ZIP di esempio</h3>
+          <pre class="zip-tree">programma.md
+uda-01-reti/
+  uda.md
+  01-modello-osi.md
+  01-modello-osi.pool.md
+  02-tcp-ip.md
+  02-tcp-ip.pool.md
+uda-02-sicurezza/
+  uda.md
+  01-crittografia.md
+  01-crittografia.pool.md</pre>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</main>
+
+<footer class="proto-footer">
+  Prototipo statico DUX-00 — documentazione/prototipi/didattica-workspace.html — nessun dato reale, nessuna rete, nessuna dipendenza esterna.
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Dati inventati ──────────────────────────────────────────────
+  var courses = [
+    {
+      id: 'c1', title: 'Sistemi e Reti', year: '2025/2026', classes: ['4A INF'],
+      udaCount: 3, lessonsDone: 9, lessonsTotal: 12, questionCount: 41,
+      udas: [
+        {
+          id: 'u1', title: 'UDA 1 — Reti e protocolli', desc: 'Fondamenti di reti, modello OSI, TCP/IP.',
+          lessons: [
+            { id: 'l1', num: 1, title: 'Il modello OSI', done: true, pool: 'valid' },
+            { id: 'l2', num: 2, title: 'TCP/IP in pratica', done: true, pool: 'valid' },
+            { id: 'l3', num: 3, title: 'Routing statico e dinamico', done: false, pool: 'absent' },
+            { id: 'l4', num: 4, title: 'NAT e indirizzamento privato', done: false, pool: 'invalid' }
+          ]
+        },
+        {
+          id: 'u2', title: 'UDA 2 — Sicurezza informatica', desc: 'Crittografia simmetrica/asimmetrica, minacce comuni.',
+          lessons: [
+            { id: 'l5', num: 1, title: 'Crittografia simmetrica', done: true, pool: 'valid' },
+            { id: 'l6', num: 2, title: 'Crittografia asimmetrica e certificati', done: true, pool: 'valid' },
+            { id: 'l7', num: 3, title: 'Minacce comuni e social engineering', done: false, pool: 'absent' }
+          ]
+        },
+        {
+          id: 'u3', title: 'UDA 3 — Amministrazione di sistema', desc: 'Gestione utenti, permessi, servizi di rete.',
+          lessons: [
+            { id: 'l8', num: 1, title: 'Utenti e permessi Linux', done: true, pool: 'valid' },
+            { id: 'l9', num: 2, title: 'Servizi di rete essenziali', done: true, pool: 'valid' },
+            { id: 'l10', num: 3, title: 'Log e monitoraggio', done: true, pool: 'valid' },
+            { id: 'l11', num: 4, title: 'Backup e disaster recovery', done: true, pool: 'invalid' },
+            { id: 'l12', num: 5, title: 'Virtualizzazione', done: false, pool: 'absent' }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'c2', title: 'Tecnologie e Progettazione', year: '2025/2026', classes: ['3B INF', '3C INF'],
+      udaCount: 2, lessonsDone: 4, lessonsTotal: 8, questionCount: 18,
+      udas: [
+        {
+          id: 'u4', title: 'UDA 1 — Basi di dati relazionali', desc: 'Modello E-R, normalizzazione, SQL.',
+          lessons: [
+            { id: 'l13', num: 1, title: 'Modello Entità-Relazione', done: true, pool: 'valid' },
+            { id: 'l14', num: 2, title: 'Normalizzazione', done: true, pool: 'valid' },
+            { id: 'l15', num: 3, title: 'SQL — query di base', done: true, pool: 'valid' },
+            { id: 'l16', num: 4, title: 'SQL — join e sottoquery', done: false, pool: 'absent' }
+          ]
+        },
+        {
+          id: 'u5', title: 'UDA 2 — Progettazione web', desc: 'HTML/CSS, architettura client-server.',
+          lessons: [
+            { id: 'l17', num: 1, title: 'HTML semantico', done: true, pool: 'valid' },
+            { id: 'l18', num: 2, title: 'CSS layout moderno', done: false, pool: 'absent' },
+            { id: 'l19', num: 3, title: 'Architettura client-server', done: false, pool: 'absent' },
+            { id: 'l20', num: 4, title: 'API REST — introduzione', done: false, pool: 'invalid' }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'c3', title: 'Informatica — Base', year: '2024/2025', classes: ['1A INF'],
+      udaCount: 2, lessonsDone: 6, lessonsTotal: 6, questionCount: 22,
+      udas: [
+        {
+          id: 'u6', title: 'UDA 1 — Algoritmi e problem solving', desc: 'Diagrammi di flusso, pseudocodice.',
+          lessons: [
+            { id: 'l21', num: 1, title: 'Diagrammi di flusso', done: true, pool: 'valid' },
+            { id: 'l22', num: 2, title: 'Pseudocodice', done: true, pool: 'valid' },
+            { id: 'l23', num: 3, title: 'Strutture di controllo', done: true, pool: 'valid' }
+          ]
+        },
+        {
+          id: 'u7', title: 'UDA 2 — Introduzione a Python', desc: 'Sintassi di base, tipi di dato, funzioni.',
+          lessons: [
+            { id: 'l24', num: 1, title: 'Sintassi di base', done: true, pool: 'valid' },
+            { id: 'l25', num: 2, title: 'Tipi di dato', done: true, pool: 'valid' },
+            { id: 'l26', num: 3, title: 'Funzioni', done: true, pool: 'valid' }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'c4', title: 'Progetto extra — senza anno', year: null, classes: [],
+      udaCount: 1, lessonsDone: 0, lessonsTotal: 2, questionCount: 0,
+      udas: [
+        {
+          id: 'u8', title: 'UDA 1 — Bozza iniziale', desc: 'Materiale non ancora assegnato a una classe.',
+          lessons: [
+            { id: 'l27', num: 1, title: 'Introduzione (bozza)', done: false, pool: 'absent' },
+            { id: 'l28', num: 2, title: 'Da definire', done: false, pool: 'absent' }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'c5', title: 'Sistemi Operativi e Reti (5A)', year: '2025/2026', classes: ['5A INF'],
+      udaCount: 2, lessonsDone: 5, lessonsTotal: 9, questionCount: 27,
+      udas: [
+        {
+          id: 'u9', title: 'UDA 1 — Kernel e processi', desc: 'Scheduling, gestione memoria, sincronizzazione.',
+          lessons: [
+            { id: 'l29', num: 1, title: 'Scheduling dei processi', done: true, pool: 'valid' },
+            { id: 'l30', num: 2, title: 'Gestione della memoria virtuale', done: true, pool: 'valid' },
+            { id: 'l31', num: 3, title: 'Sincronizzazione e deadlock', done: true, pool: 'invalid' },
+            { id: 'l32', num: 4, title: 'File system', done: false, pool: 'absent' }
+          ]
+        },
+        {
+          id: 'u10', title: 'UDA 2 — Reti avanzate', desc: 'VLAN, routing dinamico, QoS.',
+          lessons: [
+            { id: 'l33', num: 1, title: 'VLAN e segmentazione', done: true, pool: 'valid' },
+            { id: 'l34', num: 2, title: 'Routing dinamico (OSPF)', done: true, pool: 'valid' },
+            { id: 'l35', num: 3, title: 'Quality of Service', done: false, pool: 'absent' },
+            { id: 'l36', num: 4, title: 'VPN site-to-site', done: false, pool: 'absent' },
+            { id: 'l37', num: 5, title: 'Monitoraggio SNMP', done: false, pool: 'absent' }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'c6', title: 'Laboratorio di Programmazione (3A/3B)', year: '2025/2026', classes: ['3A INF', '3B INF'],
+      udaCount: 2, lessonsDone: 3, lessonsTotal: 7, questionCount: 15,
+      udas: [
+        {
+          id: 'u11', title: 'UDA 1 — Strutture dati', desc: 'Liste, pile, code, alberi binari.',
+          lessons: [
+            { id: 'l38', num: 1, title: 'Liste concatenate', done: true, pool: 'valid' },
+            { id: 'l39', num: 2, title: 'Pile e code', done: true, pool: 'valid' },
+            { id: 'l40', num: 3, title: 'Alberi binari di ricerca', done: false, pool: 'invalid' },
+            { id: 'l41', num: 4, title: 'Grafi — rappresentazione', done: false, pool: 'absent' }
+          ]
+        },
+        {
+          id: 'u12', title: 'UDA 2 — Programmazione orientata agli oggetti', desc: 'Classi, ereditarietà, polimorfismo.',
+          lessons: [
+            { id: 'l42', num: 1, title: 'Classi e oggetti', done: true, pool: 'valid' },
+            { id: 'l43', num: 2, title: 'Ereditarietà', done: false, pool: 'absent' },
+            { id: 'l44', num: 3, title: 'Polimorfismo e interfacce', done: false, pool: 'absent' }
+          ]
+        }
+      ]
+    }
+  ];
+
+  var lessonContent = {
+    l1: {
+      md: '# Il modello OSI\n\nIl modello OSI (Open Systems Interconnection) suddivide la comunicazione di rete in sette livelli, ciascuno con una responsabilità precisa…',
+      meta: { titolo: 'Il modello OSI', sottotitolo: 'Sette livelli, una responsabilità ciascuno', difficolta: 'Base', concetti: ['OSI', 'Incapsulamento', 'Protocolli'], obiettivi: ['Elencare i 7 livelli OSI', 'Distinguere livello fisico e livello applicazione'] },
+      questions: [
+        { tipo: 'chiusa_singola', testo: 'Quanti livelli compongono il modello OSI?', opts: [{ t: '5', ok: false }, { t: '7', ok: true }, { t: '9', ok: false }] },
+        { tipo: 'aperta', testo: 'Descrivi la funzione del livello di trasporto.', opts: [] }
+      ]
+    },
+    l2: {
+      md: '# TCP/IP in pratica\n\nLa suite TCP/IP è lo standard de facto delle reti moderne. Analizziamo l\'handshake a tre vie e la struttura di un pacchetto IP…',
+      meta: { titolo: 'TCP/IP in pratica', sottotitolo: 'Dallo handshake al pacchetto IP', difficolta: 'Intermedio', concetti: ['TCP', 'IP', 'Handshake'], obiettivi: ['Descrivere il three-way handshake'] },
+      questions: [
+        { tipo: 'chiusa_multipla', testo: 'Quali fasi compongono lo handshake TCP a tre vie?', opts: [{ t: 'SYN', ok: true }, { t: 'SYN-ACK', ok: true }, { t: 'ACK', ok: true }, { t: 'FIN', ok: false }] }
+      ]
+    }
+  };
+
+  var students = [
+    { name: 'Anna Bianchi', email: 'anna.bianchi@example.com', status: 'approved', cls: '4A INF' },
+    { name: 'Marco Verdi', email: 'marco.verdi@example.com', status: 'pending', cls: '—' },
+    { name: 'Giulia Rossi', email: 'giulia.rossi@example.com', status: 'approved', cls: '3B INF' },
+    { name: 'Luca Ferrari', email: 'luca.ferrari@example.com', status: 'blocked', cls: '4A INF' }
+  ];
+
+  var classes = [
+    { name: '4A INF', count: 18 },
+    { name: '3B INF', count: 21 },
+    { name: '3C INF', count: 19 },
+    { name: '1A INF', count: 24 }
+  ];
+
+  var templates = [
+    { name: 'programma.md', desc: 'Metadata del programma' },
+    { name: 'uda.md', desc: 'Front matter UDA' },
+    { name: 'lezione.md', desc: 'Front matter + corpo lezione' },
+    { name: 'pool.md', desc: 'Domande della lezione' }
+  ];
+
+  var verifiche = [
+    { id: 'v1', title: 'Verifica reti — modulo 1', courseId: 'c1', className: '4A INF', status: 'Attiva', questionCount: 10 },
+    { id: 'v2', title: 'Verifica sicurezza informatica', courseId: 'c1', className: '4A INF', status: 'Bozza', questionCount: 6 },
+    { id: 'v3', title: 'Verifica basi di dati — SQL', courseId: 'c2', className: '3B INF', status: 'Chiusa', questionCount: 12 }
+  ];
+
+  var mockQuestions = [
+    'Quanti livelli compongono il modello OSI?',
+    'Descrivi la funzione del livello di trasporto.',
+    'Quali fasi compongono lo handshake TCP a tre vie?',
+    'Cos\'è il NAT e a cosa serve?',
+    'Elenca due differenze tra routing statico e dinamico.'
+  ];
+
+  // ── State ────────────────────────────────────────────────────────
+  var state = {
+    top: 'library',
+    device: 'desktop',
+    year: 'all',
+    cls: 'all',
+    search: '',
+    courseId: null,
+    udaId: null,
+    lessonId: null,
+    lessonTab: 'contenuto',
+    organize: false,
+    mobileLevel: 'course', // course | uda | lesson
+    verificaId: null
+  };
+
+  // Stato del mock "Salva bozza" (§7 fix review) — separato da `state`
+  // perché riguarda solo il pannello dettaglio Verifiche, non la
+  // navigazione. 'idle' | 'dirty' | 'saving' | 'success' | 'error'.
+  var verificaSaveStatus = 'idle';
+  var forceNextSaveError = false;
+
+  function byId(id) { return document.getElementById(id); }
+
+  function findCourse(id) { return courses.filter(function (c) { return c.id === id; })[0]; }
+  function findUda(course, id) { return course.udas.filter(function (u) { return u.id === id; })[0]; }
+  function findLesson(uda, id) { return uda.lessons.filter(function (l) { return l.id === id; })[0]; }
+
+  function poolMeta(status) {
+    if (status === 'valid') return { cls: 'valid', label: 'Pool valido', symbol: '●' };
+    if (status === 'invalid') return { cls: 'invalid', label: 'Pool non valido', symbol: '⚠' };
+    return { cls: 'absent', label: 'Pool assente', symbol: '○' };
+  }
+
+  // ── Top nav ──────────────────────────────────────────────────────
+  // "Didattica" è il punto di ingresso canonico della sezione (fix
+  // review finale): da qualunque stato — libreria, corso, UDA,
+  // lezione, Organizza attivo, Desktop o Mobile — un solo click
+  // riporta sempre alla libreria corsi, azzerando corso/UDA/lezione e
+  // disattivando Organizza. Il dispositivo simulato resta invariato:
+  // se ero in Mobile vedo la libreria mobile, se ero in Desktop vedo
+  // quella desktop. "← Libreria" nel workspace mantiene invece il suo
+  // comportamento originale (solo courseId azzerato), invariato.
+  // Metadati per il selettore di sezione mobile (icona + nome).
+  var NAV_META = {
+    library: { icon: '📚', label: 'Didattica' },
+    verifiche: { icon: '📝', label: 'Verifiche' },
+    students: { icon: '🎓', label: 'Studenti' },
+    template: { icon: '📄', label: 'Template' }
+  };
+
+  function closeNavMobileMenu() {
+    var menu = byId('nav-mobile-menu');
+    var toggle = byId('nav-mobile-toggle');
+    if (menu) menu.hidden = true;
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+  }
+
+  document.querySelectorAll('[data-topnav]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var target = btn.getAttribute('data-topnav');
+      if (target === 'library') {
+        state.courseId = null;
+        state.udaId = null;
+        state.lessonId = null;
+        if (state.organize) {
+          state.organize = false;
+          document.body.classList.remove('organize');
+          byId('btn-organize').textContent = 'Organizza';
+          byId('btn-organize').setAttribute('aria-pressed', 'false');
+        }
+      }
+      state.top = target;
+      renderTopNav();
+      closeNavMobileMenu();
+      if (target === 'library') renderLibrary();
+    });
+  });
+
+  // Apertura/chiusura del menu di sezione mobile.
+  byId('nav-mobile-toggle').addEventListener('click', function (e) {
+    e.stopPropagation();
+    var menu = byId('nav-mobile-menu');
+    var open = menu.hidden; // se ora è nascosto, il click lo apre
+    menu.hidden = !open;
+    this.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  document.addEventListener('click', function (e) {
+    var wrap = document.querySelector('.nav-mobile');
+    if (wrap && !wrap.contains(e.target)) closeNavMobileMenu();
+  });
+
+  function renderTopNav() {
+    document.querySelectorAll('[data-topnav]').forEach(function (btn) {
+      var isActive = btn.getAttribute('data-topnav') === state.top;
+      if (isActive) {
+        btn.setAttribute('aria-current', 'page');
+        // La sezione attiva resta sempre raggiungibile: se la nav
+        // desktop scorre in orizzontale, la riportiamo in vista.
+        // (Solo per i pulsanti della barra desktop — i voci del menu
+        // mobile vivono in un dropdown, non serve scrollarle.)
+        if (btn.closest('.top-nav')) {
+          btn.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+        }
+      } else {
+        btn.removeAttribute('aria-current');
+      }
+    });
+    // Aggiorna il selettore di sezione mobile (icona + nome correnti).
+    var meta = NAV_META[state.top];
+    if (meta) {
+      byId('nav-mobile-current-icon').textContent = meta.icon;
+      byId('nav-mobile-current-label').textContent = meta.label;
+    }
+    byId('screen-library').classList.toggle('visible', state.top === 'library' && !state.courseId);
+    byId('screen-workspace').classList.toggle('visible', state.top === 'library' && !!state.courseId);
+    byId('screen-verifiche').classList.toggle('visible', state.top === 'verifiche');
+    byId('screen-students').classList.toggle('visible', state.top === 'students');
+    byId('screen-template').classList.toggle('visible', state.top === 'template');
+  }
+
+  // ── Device toggle ────────────────────────────────────────────────
+  // Passando a mobile, il livello di drill-down (state.mobileLevel) è
+  // sincronizzato con la selezione desktop corrente (courseId/udaId/
+  // lessonId sono già lo stesso stato condiviso) — mai lasciato al
+  // valore residuo di un'apertura precedente. Tornando a desktop la
+  // stessa selezione resta invariata, quindi il comportamento è
+  // prevedibile in entrambe le direzioni (fix review §4).
+  document.querySelectorAll('[data-device]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      state.device = btn.getAttribute('data-device');
+      document.body.classList.toggle('mobile', state.device === 'mobile');
+      document.querySelectorAll('[data-device]').forEach(function (b) {
+        b.classList.toggle('active', b === btn);
+      });
+      if (state.device === 'mobile') {
+        if (state.lessonId) state.mobileLevel = 'lesson';
+        else if (state.udaId) state.mobileLevel = 'uda';
+        else state.mobileLevel = 'course';
+      }
+      renderWorkspace();
+    });
+  });
+
+  // ── Filters ──────────────────────────────────────────────────────
+  function populateFilters() {
+    var years = [];
+    courses.forEach(function (c) {
+      if (c.year && years.indexOf(c.year) === -1) years.push(c.year);
+    });
+    years.sort().reverse();
+    var yearSel = byId('filter-year');
+    years.forEach(function (y) {
+      var opt = document.createElement('option');
+      opt.value = y;
+      opt.textContent = y;
+      yearSel.appendChild(opt);
+    });
+    var noYearOpt = document.createElement('option');
+    noYearOpt.value = 'none';
+    noYearOpt.textContent = 'Senza anno';
+    yearSel.appendChild(noYearOpt);
+    // default = anno più recente presente (§6 decisione "Anni")
+    if (years.length > 0) {
+      state.year = years[0];
+      yearSel.value = years[0];
+    }
+
+    var allClasses = [];
+    courses.forEach(function (c) {
+      c.classes.forEach(function (cl) {
+        if (allClasses.indexOf(cl) === -1) allClasses.push(cl);
+      });
+    });
+    var clsSel = byId('filter-class');
+    allClasses.sort().forEach(function (cl) {
+      var opt = document.createElement('option');
+      opt.value = cl;
+      opt.textContent = cl;
+      clsSel.appendChild(opt);
+    });
+  }
+
+  byId('filter-year').addEventListener('change', function (e) {
+    state.year = e.target.value;
+    renderLibrary();
+  });
+  byId('filter-class').addEventListener('change', function (e) {
+    state.cls = e.target.value;
+    renderLibrary();
+  });
+  byId('filter-search').addEventListener('input', function (e) {
+    state.search = e.target.value.trim().toLowerCase();
+    renderLibrary();
+  });
+
+  // ── Libreria ─────────────────────────────────────────────────────
+  function renderLibrary() {
+    var grid = byId('course-grid');
+    grid.innerHTML = '';
+    var filtered = courses.filter(function (c) {
+      if (state.year === 'none' && c.year !== null) return false;
+      if (state.year !== 'all' && state.year !== 'none' && c.year !== state.year) return false;
+      if (state.cls !== 'all' && c.classes.indexOf(state.cls) === -1) return false;
+      if (state.search && c.title.toLowerCase().indexOf(state.search) === -1) return false;
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      // Stato vuoto composto (fix review) — non solo una riga di testo.
+      var empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.innerHTML =
+        '<span class="empty-icon" aria-hidden="true">🔍</span>' +
+        '<span class="empty-title">Nessun corso corrisponde ai filtri</span>' +
+        '<span class="empty-desc">Prova a cambiare anno scolastico, classe o testo di ricerca.</span>';
+      var resetBtn = document.createElement('button');
+      resetBtn.type = 'button';
+      resetBtn.className = 'ghost';
+      resetBtn.textContent = 'Azzera filtri';
+      resetBtn.addEventListener('click', function () {
+        state.year = 'all';
+        state.cls = 'all';
+        state.search = '';
+        byId('filter-year').value = 'all';
+        byId('filter-class').value = 'all';
+        byId('filter-search').value = '';
+        renderLibrary();
+      });
+      empty.appendChild(resetBtn);
+      grid.appendChild(empty);
+      return;
+    }
+
+    filtered.forEach(function (c) {
+      var pct = c.lessonsTotal > 0 ? Math.round((c.lessonsDone / c.lessonsTotal) * 100) : 0;
+      // Card accessibile (fix review): <article> non interattivo,
+      // un unico <button> reale per aprire il corso, un fratello
+      // separato per il menu ⋯ — mai controlli annidati.
+      var card = document.createElement('article');
+      card.className = 'course-card';
+      card.innerHTML =
+        '<div class="course-card-head">' +
+          '<button type="button" class="course-card-open" aria-label="Apri il corso ' + c.title + '">' +
+            '<span class="course-card-title">' + c.title + '</span>' +
+          '</button>' +
+          '<button type="button" class="ghost card-menu-btn" aria-label="Azioni corso — ' + c.title + '">⋯</button>' +
+        '</div>' +
+        '<div class="course-card-meta">' +
+          '<span class="pill">' + (c.year || 'Senza anno') + '</span>' +
+          (c.classes.length ? c.classes.map(function (cl) { return '<span class="pill">' + cl + '</span>'; }).join('') : '<span class="pill">Nessuna classe</span>') +
+        '</div>' +
+        '<div class="course-card-stats">' +
+          '<div><strong>' + c.udaCount + '</strong>UDA</div>' +
+          '<div><strong>' + c.lessonsDone + '/' + c.lessonsTotal + '</strong>lezioni</div>' +
+          '<div><strong>' + c.questionCount + '</strong>domande</div>' +
+        '</div>' +
+        '<div class="progress-track" role="img" aria-label="Avanzamento ' + pct + '%"><div class="progress-fill" style="width:' + pct + '%"></div></div>';
+      card.querySelector('.course-card-open').addEventListener('click', function () { openCourse(c.id); });
+      grid.appendChild(card);
+    });
+  }
+
+  // ── Workspace navigation ─────────────────────────────────────────
+  function openCourse(id) {
+    state.courseId = id;
+    state.udaId = null;
+    state.lessonId = null;
+    state.organize = false;
+    state.mobileLevel = 'course';
+    renderTopNav();
+    renderWorkspace();
+  }
+
+  byId('btn-back-to-library').addEventListener('click', function () {
+    state.courseId = null;
+    renderTopNav();
+    renderLibrary();
+  });
+
+  byId('btn-organize').addEventListener('click', function () {
+    state.organize = !state.organize;
+    document.body.classList.toggle('organize', state.organize);
+    byId('btn-organize').textContent = state.organize ? 'Fine' : 'Organizza';
+    byId('btn-organize').setAttribute('aria-pressed', state.organize ? 'true' : 'false');
+    renderWorkspace();
+  });
+
+  byId('mobile-back-btn').addEventListener('click', function () {
+    if (state.mobileLevel === 'lesson') {
+      state.mobileLevel = 'uda';
+    } else if (state.mobileLevel === 'uda') {
+      state.mobileLevel = 'course';
+      state.udaId = null;
+    } else {
+      state.courseId = null;
+      renderTopNav();
+      renderLibrary();
+      return;
+    }
+    renderWorkspace();
+  });
+
+  function renderBreadcrumb() {
+    var course = findCourse(state.courseId);
+    var parts = [];
+    parts.push('<button type="button" data-crumb="library">Didattica</button>');
+    parts.push('<span class="sep">/</span>');
+    if (!course) return;
+    if (!state.udaId) {
+      parts.push('<strong>' + course.title + '</strong>');
+    } else {
+      parts.push('<button type="button" data-crumb="course">' + course.title + '</button>');
+      var uda = findUda(course, state.udaId);
+      parts.push('<span class="sep">/</span>');
+      if (!state.lessonId) {
+        parts.push('<strong>' + uda.title + '</strong>');
+      } else {
+        parts.push('<button type="button" data-crumb="uda">' + uda.title + '</button>');
+        var lesson = findLesson(uda, state.lessonId);
+        parts.push('<span class="sep">/</span>');
+        parts.push('<strong>' + lesson.title + '</strong>');
+      }
+    }
+    byId('breadcrumb').innerHTML = parts.join('');
+    byId('breadcrumb').querySelectorAll('[data-crumb]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var level = btn.getAttribute('data-crumb');
+        if (level === 'library') { state.courseId = null; renderTopNav(); renderLibrary(); return; }
+        if (level === 'course') { state.udaId = null; state.lessonId = null; }
+        if (level === 'uda') { state.lessonId = null; }
+        renderWorkspace();
+      });
+    });
+  }
+
+  /**
+   * UDA e lezioni sono sempre veri <button> (fix review — mai <div>
+   * con solo un onclick). In modalità Organizza la riga lezione smette
+   * di essere un bottone selezionabile e diventa un contenitore statico
+   * con due <button> freccia separati: un bottone non può contenerne un
+   * altro in HTML, quindi le frecce non possono vivere dentro il
+   * bottone di selezione — la riga cambia struttura invece di annidare.
+   */
+  function renderSidebar() {
+    var course = findCourse(state.courseId);
+    var sidebar = byId('sidebar');
+    sidebar.innerHTML = '';
+    course.udas.forEach(function (uda) {
+      var wrap = document.createElement('div');
+      wrap.className = 'sidebar-uda';
+
+      var head = document.createElement('button');
+      head.type = 'button';
+      head.className = 'sidebar-uda-head' + (state.udaId === uda.id && !state.lessonId ? ' selected' : '');
+      head.disabled = state.organize;
+      head.setAttribute('aria-label', 'Apri UDA ' + uda.title);
+      head.innerHTML = '<span class="sidebar-caret" aria-hidden="true">▾</span><span>' + uda.title + '</span>';
+      head.addEventListener('click', function () {
+        state.udaId = uda.id;
+        state.lessonId = null;
+        renderWorkspace();
+      });
+      wrap.appendChild(head);
+
+      var lessonsWrap = document.createElement('div');
+      lessonsWrap.className = 'sidebar-lessons';
+      uda.lessons.forEach(function (lesson, idx) {
+        var pm = poolMeta(lesson.pool);
+
+        if (state.organize) {
+          var staticRow = document.createElement('div');
+          staticRow.className = 'lesson-row-static';
+          staticRow.innerHTML =
+            '<span class="lesson-num">' + lesson.num + '</span>' +
+            '<span class="lesson-title">' + lesson.title + '</span>' +
+            '<span class="pool-dot ' + pm.cls + '" role="img" aria-label="' + pm.label + '" title="' + pm.label + '"></span>' +
+            '<span class="organize-arrows">' +
+              '<button type="button" ' + (idx === 0 ? 'disabled' : '') + ' aria-label="Sposta su ' + lesson.title + '">↑</button>' +
+              '<button type="button" ' + (idx === uda.lessons.length - 1 ? 'disabled' : '') + ' aria-label="Sposta giù ' + lesson.title + '">↓</button>' +
+            '</span>';
+          lessonsWrap.appendChild(staticRow);
+          return;
+        }
+
+        var row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'lesson-row-btn' + (state.lessonId === lesson.id ? ' selected' : '');
+        row.setAttribute('aria-label', 'Apri lezione ' + lesson.num + '. ' + lesson.title + ' — ' + pm.label);
+        row.innerHTML =
+          '<span class="lesson-num" aria-hidden="true">' + lesson.num + '</span>' +
+          '<span class="lesson-title">' + lesson.title + '</span>' +
+          '<span class="pool-dot ' + pm.cls + '" aria-hidden="true" title="' + pm.label + '"></span>';
+        row.addEventListener('click', function () {
+          state.udaId = uda.id;
+          state.lessonId = lesson.id;
+          state.lessonTab = 'contenuto';
+          renderWorkspace();
+        });
+        lessonsWrap.appendChild(row);
+      });
+      wrap.appendChild(lessonsWrap);
+      sidebar.appendChild(wrap);
+    });
+  }
+
+  /**
+   * Riepilogo corso compatto — una fascia di metriche + una barra di
+   * avanzamento sottile, non quattro card-dashboard (fix review §5).
+   * Condiviso tra content-area desktop e riepilogo mobile.
+   */
+  function compactSummaryHtml(course) {
+    var totalLessons = 0, doneLessons = 0;
+    course.udas.forEach(function (u) { totalLessons += u.lessons.length; doneLessons += u.lessons.filter(function (l) { return l.done; }).length; });
+    var pct = totalLessons > 0 ? Math.round((doneLessons / totalLessons) * 100) : 0;
+    var parts = [
+      course.udas.length + ' UDA',
+      doneLessons + '/' + totalLessons + ' lezioni svolte',
+      course.questionCount + ' domande'
+    ];
+    if (course.classes.length) parts.push(course.classes.join(', '));
+    return {
+      html:
+        '<div class="course-summary-strip">' + parts.map(function (p) { return '<strong>' + p + '</strong>'; }).join('<span class="sep">·</span>') + '</div>' +
+        '<div class="progress-track thin" role="img" aria-label="Avanzamento lezioni ' + pct + '%"><div class="progress-fill" style="width:' + pct + '%"></div></div>',
+      pct: pct
+    };
+  }
+
+  function renderContentArea() {
+    var course = findCourse(state.courseId);
+    var area = byId('content-area');
+
+    if (!state.udaId) {
+      // 8.1 — nessuna selezione: riepilogo compatto + tabella UDA
+      area.innerHTML =
+        compactSummaryHtml(course).html +
+        '<table class="data-table"><thead><tr><th>UDA</th><th>Lezioni</th><th>Svolte</th><th></th></tr></thead><tbody id="uda-table-body"></tbody></table>';
+      var tbody = byId('uda-table-body');
+      course.udas.forEach(function (u) {
+        var done = u.lessons.filter(function (l) { return l.done; }).length;
+        var tr = document.createElement('tr');
+        var openBtn = '<button type="button" class="row-open-btn" data-open-uda="' + u.id + '">' + u.title + '</button>';
+        tr.innerHTML = '<td>' + openBtn + '</td><td>' + u.lessons.length + '</td><td>' + done + '/' + u.lessons.length + '</td>' +
+          '<td class="row-actions"><button type="button" class="ghost" aria-label="Azioni UDA — ' + u.title + '">⋯</button></td>';
+        tr.querySelector('[data-open-uda]').addEventListener('click', function () { state.udaId = u.id; renderWorkspace(); });
+        tbody.appendChild(tr);
+      });
+      return;
+    }
+
+    var uda = findUda(course, state.udaId);
+
+    if (!state.lessonId) {
+      // 8.2 — selezione UDA: metadata + tabella lezioni
+      area.innerHTML =
+        '<div class="toolbar-context"><span class="selected-label">UDA selezionata</span>' +
+          '<div class="actions"><button type="button" class="ghost">Modifica metadata</button><button type="button" class="ghost" aria-label="Azioni UDA — ' + uda.title + '">⋯</button></div></div>' +
+        '<p style="color:var(--color-text-muted); font-size:.85rem; margin-bottom:1rem;">' + uda.desc + '</p>' +
+        '<table class="data-table"><thead><tr><th>#</th><th>Lezione</th><th>Svolta</th><th>Pool</th></tr></thead><tbody id="lesson-table-body"></tbody></table>';
+      var lb = byId('lesson-table-body');
+      uda.lessons.forEach(function (l) {
+        var pm = poolMeta(l.pool);
+        var tr = document.createElement('tr');
+        var openBtn = '<button type="button" class="row-open-btn" data-open-lesson="' + l.id + '">' + l.num + '. ' + l.title + '</button>';
+        tr.innerHTML =
+          '<td colspan="2">' + openBtn + '</td>' +
+          '<td><input type="checkbox" class="checkbox-done" ' + (l.done ? 'checked' : '') + ' aria-label="' + l.title + ' — lezione svolta" /></td>' +
+          '<td><span class="badge-pool"><span class="pool-dot ' + pm.cls + '" role="img" aria-label="' + pm.label + '"></span>' + pm.label + '</span></td>';
+        tr.querySelector('[data-open-lesson]').addEventListener('click', function () { state.lessonId = l.id; state.lessonTab = 'contenuto'; renderWorkspace(); });
+        lb.appendChild(tr);
+      });
+      return;
+    }
+
+    // 8.3 — selezione lezione: tabs
+    var lesson = findLesson(uda, state.lessonId);
+    var content = lessonContent[lesson.id] || {
+      md: '# ' + lesson.title + '\n\nContenuto di esempio non disponibile per questa lezione nel prototipo.',
+      meta: { titolo: lesson.title, sottotitolo: '', difficolta: '—', concetti: [], obiettivi: [] },
+      questions: []
+    };
+
+    area.innerHTML =
+      '<div class="lesson-detail-head"><h3 style="font-size:1rem;">' + lesson.title + '</h3></div>' +
+      '<div class="tablist" role="tablist" aria-label="Sezioni lezione">' +
+        '<button type="button" role="tab" id="tab-contenuto" aria-selected="' + (state.lessonTab === 'contenuto') + '" aria-controls="panel-contenuto">Contenuto</button>' +
+        '<button type="button" role="tab" id="tab-domande" aria-selected="' + (state.lessonTab === 'domande') + '" aria-controls="panel-domande">Domande</button>' +
+        '<button type="button" role="tab" id="tab-info" aria-selected="' + (state.lessonTab === 'info') + '" aria-controls="panel-info">Informazioni</button>' +
+      '</div>' +
+      '<div role="tabpanel" id="panel-contenuto" class="' + (state.lessonTab === 'contenuto' ? 'active' : '') + '">' +
+        '<div class="markdown-preview">' + mdToHtml(content.md) + '</div>' +
+      '</div>' +
+      '<div role="tabpanel" id="panel-domande" class="' + (state.lessonTab === 'domande' ? 'active' : '') + '">' +
+        renderQuestionsHtml(content.questions) +
+      '</div>' +
+      '<div role="tabpanel" id="panel-info" class="' + (state.lessonTab === 'info' ? 'active' : '') + '">' +
+        renderInfoHtml(content.meta) +
+      '</div>';
+
+    ['contenuto', 'domande', 'info'].forEach(function (t) {
+      byId('tab-' + t).addEventListener('click', function () {
+        state.lessonTab = t;
+        renderWorkspace();
+      });
+    });
+  }
+
+  function mdToHtml(md) {
+    var lines = md.split('\n');
+    return lines.map(function (line) {
+      if (line.indexOf('# ') === 0) return '<h3>' + line.slice(2) + '</h3>';
+      if (line.trim() === '') return '';
+      return '<p>' + line + '</p>';
+    }).join('');
+  }
+
+  function renderQuestionsHtml(questions) {
+    if (!questions || questions.length === 0) {
+      return '<div class="empty-hint">Nessuna domanda di esempio per questa lezione nel prototipo. Il Question Editor reale mostrerebbe qui il pool contestualizzato (§11 roadmap).</div><button type="button" class="ghost" style="margin: 0 1.25rem;">+ Nuova domanda</button>';
+    }
+    return questions.map(function (q, i) {
+      var opts = (q.opts || []).map(function (o) {
+        return '<div class="qopt' + (o.ok ? ' correct' : '') + '">' + o.t + '</div>';
+      }).join('');
+      return '<div class="question-card">' +
+        '<div class="question-card-head"><strong>Domanda ' + (i + 1) + '</strong><span class="qtype">' + q.tipo + '</span></div>' +
+        '<div class="qtext">' + q.testo + '</div>' +
+        (opts ? '<div class="qopts">' + opts + '</div>' : '') +
+      '</div>';
+    }).join('') + '<button type="button" class="ghost">+ Nuova domanda</button>';
+  }
+
+  function renderInfoHtml(meta) {
+    return '<div class="info-grid">' +
+      '<div class="info-field"><div class="label">Titolo</div><div class="value">' + meta.titolo + '</div></div>' +
+      '<div class="info-field"><div class="label">Sottotitolo</div><div class="value">' + (meta.sottotitolo || '—') + '</div></div>' +
+      '<div class="info-field"><div class="label">Difficoltà</div><div class="value">' + meta.difficolta + '</div></div>' +
+      '<div class="info-field"><div class="label">Concetti chiave</div><div class="value tag-list">' + (meta.concetti.map(function (c) { return '<span class="pill">' + c + '</span>'; }).join('') || '—') + '</div></div>' +
+      '<div class="info-field" style="grid-column: 1 / -1;"><div class="label">Obiettivi</div><div class="value tag-list">' + (meta.obiettivi.map(function (o) { return '<span class="pill">' + o + '</span>'; }).join('') || '—') + '</div></div>' +
+    '</div>';
+  }
+
+  // ── Mobile drill-down rendering ──────────────────────────────────
+  function renderMobile() {
+    var course = findCourse(state.courseId);
+    byId('mobile-course-summary').classList.toggle('show', state.mobileLevel === 'course');
+    byId('mobile-uda-lessons').classList.toggle('show', state.mobileLevel === 'uda');
+    byId('mobile-lesson-detail').classList.toggle('show', state.mobileLevel === 'lesson');
+    byId('mobile-back').classList.toggle('show', true);
+
+    if (state.mobileLevel === 'course') {
+      var summary = compactSummaryHtml(course);
+      var box = byId('mobile-course-summary');
+      box.innerHTML =
+        '<div style="padding: 0 1.1rem 0.75rem;">' +
+          '<h3 style="font-size:1rem;">' + course.title + '</h3>' +
+          '<div class="course-card-meta" style="margin-top:.4rem;"><span class="pill">' + (course.year || 'Senza anno') + '</span></div>' +
+          '<div style="margin-top:.6rem;">' + summary.html + '</div>' +
+        '</div>';
+      course.udas.forEach(function (u) {
+        var done = u.lessons.filter(function (l) { return l.done; }).length;
+        // Riga di drill-down: vero <button> (fix review), non un <div>.
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'mobile-item';
+        item.setAttribute('aria-label', 'Apri UDA ' + u.title + ' — ' + done + ' di ' + u.lessons.length + ' lezioni svolte');
+        item.innerHTML = '<span>' + u.title + ' <span style="color:var(--color-text-muted); font-size:.75rem;">(' + done + '/' + u.lessons.length + ')</span></span><span class="chev" aria-hidden="true">›</span>';
+        item.addEventListener('click', function () {
+          state.udaId = u.id;
+          state.mobileLevel = 'uda';
+          renderMobile();
+        });
+        box.appendChild(item);
+      });
+    }
+
+    if (state.mobileLevel === 'uda') {
+      var uda = findUda(course, state.udaId);
+      var box2 = byId('mobile-uda-lessons');
+      box2.innerHTML = '<div style="padding: 0 1.1rem .5rem;"><h3 style="font-size:1rem;">' + uda.title + '</h3></div>';
+      uda.lessons.forEach(function (l) {
+        var pm = poolMeta(l.pool);
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'mobile-item';
+        item.setAttribute('aria-label', 'Apri lezione ' + l.num + '. ' + l.title + ' — ' + pm.label);
+        item.innerHTML =
+          '<span style="display:flex; align-items:center; gap:.4rem;">' +
+            '<span class="pool-dot ' + pm.cls + '" aria-hidden="true" title="' + pm.label + '"></span>' +
+            l.num + '. ' + l.title +
+          '</span><span class="chev" aria-hidden="true">›</span>';
+        item.addEventListener('click', function () {
+          state.lessonId = l.id;
+          state.lessonTab = 'contenuto';
+          state.mobileLevel = 'lesson';
+          renderMobile();
+        });
+        box2.appendChild(item);
+      });
+    }
+
+    if (state.mobileLevel === 'lesson') {
+      var udaM = findUda(course, state.udaId);
+      var lesson = findLesson(udaM, state.lessonId);
+      var content = lessonContent[lesson.id] || { md: '# ' + lesson.title + '\n\nContenuto di esempio.', meta: { titolo: lesson.title, sottotitolo: '', difficolta: '—', concetti: [], obiettivi: [] }, questions: [] };
+      var box3 = byId('mobile-lesson-detail');
+      box3.innerHTML =
+        '<div style="padding: 0 1.1rem;">' +
+          '<h3 style="font-size:1rem; margin-bottom:.6rem;">' + lesson.title + '</h3>' +
+          '<div class="tablist" role="tablist" aria-label="Sezioni lezione">' +
+            '<button type="button" role="tab" id="mtab-contenuto" aria-selected="' + (state.lessonTab === 'contenuto') + '" aria-controls="mpanel-contenuto">Contenuto</button>' +
+            '<button type="button" role="tab" id="mtab-domande" aria-selected="' + (state.lessonTab === 'domande') + '" aria-controls="mpanel-domande">Domande</button>' +
+            '<button type="button" role="tab" id="mtab-info" aria-selected="' + (state.lessonTab === 'info') + '" aria-controls="mpanel-info">Informazioni</button>' +
+          '</div>' +
+          '<div role="tabpanel" id="mpanel-contenuto" class="' + (state.lessonTab === 'contenuto' ? 'active' : '') + '" style="display:' + (state.lessonTab === 'contenuto' ? 'block' : 'none') + ';"><div class="markdown-preview">' + mdToHtml(content.md) + '</div></div>' +
+          '<div role="tabpanel" id="mpanel-domande" style="display:' + (state.lessonTab === 'domande' ? 'block' : 'none') + ';">' + renderQuestionsHtml(content.questions) + '</div>' +
+          '<div role="tabpanel" id="mpanel-info" style="display:' + (state.lessonTab === 'info' ? 'block' : 'none') + ';">' + renderInfoHtml(content.meta) + '</div>' +
+        '</div>';
+      ['contenuto', 'domande', 'info'].forEach(function (t) {
+        byId('mtab-' + t).addEventListener('click', function () { state.lessonTab = t; renderMobile(); });
+      });
+    }
+  }
+
+  function renderWorkspace() {
+    if (!state.courseId) return;
+    var course = findCourse(state.courseId);
+    byId('course-title').textContent = course.title;
+    byId('course-year-badge').textContent = course.year || 'Senza anno';
+    byId('course-class-badge').textContent = course.classes.join(', ') || 'Nessuna classe';
+    renderBreadcrumb();
+    renderSidebar();
+    renderContentArea();
+    renderMobile();
+  }
+
+  // ── Studenti / Classi ────────────────────────────────────────────
+  document.querySelectorAll('[data-subtab]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var target = btn.getAttribute('data-subtab');
+      document.querySelectorAll('[data-subtab]').forEach(function (b) {
+        b.classList.toggle('active', b === btn);
+        b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+      });
+      document.querySelectorAll('.subscreen').forEach(function (s) {
+        s.classList.toggle('active', s.id === target);
+      });
+    });
+  });
+
+  function renderStudents() {
+    var tbody = byId('students-tbody');
+    tbody.innerHTML = '';
+    students.forEach(function (s) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + s.name + '</td><td>' + s.email + '</td>' +
+        '<td><span class="status-pill ' + s.status + '">' + (s.status === 'approved' ? 'Approvato' : s.status === 'pending' ? 'In attesa' : 'Bloccato') + '</span></td>' +
+        '<td>' + s.cls + '</td>' +
+        '<td class="row-actions"><button type="button" class="ghost">⋯</button></td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderClasses() {
+    var tbody = byId('classes-tbody');
+    tbody.innerHTML = '';
+    // Creazione come PRIMA riga (fix review 3) — coerente con Verifiche.
+    var addRow = document.createElement('tr');
+    addRow.className = 'inline-add-row';
+    addRow.innerHTML =
+      '<td><input type="text" placeholder="Nuova classe…" aria-label="Nome nuova classe" /></td>' +
+      '<td style="color:var(--color-text-muted);">—</td>' +
+      '<td class="row-actions row-actions-center"><button type="button" class="primary">+ Aggiungi</button></td>';
+    tbody.appendChild(addRow);
+    classes.forEach(function (c) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + c.name + '</td><td>' + c.count + '</td>' +
+        '<td class="row-actions"><button type="button" class="ghost">Modifica</button><button type="button" class="ghost">Elimina</button></td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  // ── Verifiche (fix review §6/§7) ──────────────────────────────────
+  function courseSelectOptionsHtml() {
+    return courses.map(function (c) { return '<option value="' + c.id + '">' + c.title + '</option>'; }).join('');
+  }
+
+  function classSelectOptionsHtml() {
+    return '<option value="">—</option>' + classes.map(function (c) { return '<option>' + c.name + '</option>'; }).join('');
+  }
+
+  function statusPillClass(status) {
+    if (status === 'Attiva') return 'approved';
+    if (status === 'Bozza') return 'pending';
+    return 'blocked';
+  }
+
+  function renderVerifiche() {
+    var courseTitleById = {};
+    courses.forEach(function (c) { courseTitleById[c.id] = c.title; });
+
+    // ── Desktop: tabella con riga di creazione inline ──
+    var tbody = byId('verifiche-tbody');
+    tbody.innerHTML = '';
+    var createRow = document.createElement('tr');
+    createRow.className = 'inline-add-row';
+    createRow.innerHTML =
+      '<td><input type="text" placeholder="Titolo verifica…" aria-label="Titolo nuova verifica" /></td>' +
+      '<td><select aria-label="Corso della nuova verifica">' + courseSelectOptionsHtml() + '</select></td>' +
+      '<td><select aria-label="Classe della nuova verifica (opzionale)">' + classSelectOptionsHtml() + '</select></td>' +
+      '<td><span class="status-pill pending">Nuova</span></td>' +
+      '<td style="color:var(--color-text-muted);">—</td>' +
+      '<td class="row-actions row-actions-center"><button type="button" class="primary">Crea verifica</button></td>';
+    tbody.appendChild(createRow);
+
+    verifiche.forEach(function (v) {
+      var tr = document.createElement('tr');
+      var openBtn = '<button type="button" class="row-open-btn" data-open-verifica="' + v.id + '">' + v.title + '</button>';
+      tr.innerHTML =
+        '<td>' + openBtn + '</td>' +
+        '<td>' + (courseTitleById[v.courseId] || '—') + '</td>' +
+        '<td>' + (v.className || '—') + '</td>' +
+        '<td><span class="status-pill ' + statusPillClass(v.status) + '">' + v.status + '</span></td>' +
+        '<td>' + v.questionCount + '</td>' +
+        '<td class="row-actions"><button type="button" class="ghost" aria-label="Azioni verifica — ' + v.title + '">⋯</button></td>';
+      tr.querySelector('[data-open-verifica]').addEventListener('click', function () { openVerificaDetail(v.id); });
+      tbody.appendChild(tr);
+    });
+
+    // ── Mobile: creazione compatta impilata + elenco a righe ──
+    var mobileBox = byId('verifiche-mobile');
+    mobileBox.innerHTML =
+      '<div class="verifica-create-mobile">' +
+        '<input type="text" placeholder="Titolo verifica…" aria-label="Titolo nuova verifica" />' +
+        '<div class="two-col">' +
+          '<select aria-label="Corso della nuova verifica">' + courseSelectOptionsHtml() + '</select>' +
+          '<select aria-label="Classe della nuova verifica (opzionale)">' + classSelectOptionsHtml() + '</select>' +
+        '</div>' +
+        '<button type="button" class="primary">Crea verifica</button>' +
+      '</div>';
+    verifiche.forEach(function (v) {
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'verifica-mobile-row';
+      row.setAttribute('aria-label', 'Apri verifica ' + v.title + ' — ' + v.status);
+      row.innerHTML =
+        '<span class="v-title">' + v.title + '</span>' +
+        '<span class="v-meta">' + (courseTitleById[v.courseId] || '—') + ' · ' + (v.className || '—') + ' · ' + v.status + ' · ' + v.questionCount + ' domande</span>';
+      row.addEventListener('click', function () { openVerificaDetail(v.id); });
+      mobileBox.appendChild(row);
+    });
+  }
+
+  function openVerificaDetail(id) {
+    state.verificaId = id;
+    verificaSaveStatus = 'idle';
+    forceNextSaveError = false;
+    renderVerificaDetail();
+  }
+
+  function renderVerificaDetail() {
+    var panel = byId('verifica-detail');
+    if (!state.verificaId) {
+      panel.hidden = true;
+      panel.innerHTML = '';
+      return;
+    }
+    var v = verifiche.filter(function (x) { return x.id === state.verificaId; })[0];
+    if (!v) { panel.hidden = true; return; }
+    var course = findCourse(v.courseId);
+
+    panel.hidden = false;
+    panel.innerHTML =
+      '<div class="verifica-detail-head">' +
+        '<h3 style="font-size:1rem;">' + v.title + '</h3>' +
+        '<span class="status-pill ' + statusPillClass(v.status) + '">' + v.status + '</span>' +
+      '</div>' +
+      '<div class="info-grid" style="margin-bottom:1rem;">' +
+        '<div class="info-field"><div class="label">Corso</div><div class="value">' + (course ? course.title : '—') + '</div></div>' +
+        '<div class="info-field"><div class="label">Classe</div><div class="value">' + (v.className || '—') + '</div></div>' +
+      '</div>' +
+      '<div class="block">' +
+        '<span class="blockLabel" style="font-size:.75rem; font-weight:700; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:.04em;">Domande selezionate (anteprima layout, non logica reale)</span>' +
+        '<div class="question-picker-mock" style="margin-top:.5rem;" id="verifica-question-picker">' +
+          mockQuestions.map(function (q, i) {
+            return '<label class="q-mock-item"><input type="checkbox" ' + (i < 3 ? 'checked' : '') + ' data-q-mock="' + i + '" /> ' + q + '</label>';
+          }).join('') +
+        '</div>' +
+      '</div>' +
+      '<div class="verifica-save-row">' +
+        '<button type="button" class="primary" id="btn-save-draft">Salva bozza</button>' +
+        '<span class="save-status" id="verifica-save-status"></span>' +
+        '<button type="button" class="ghost" id="btn-simulate-error">Simula errore al prossimo salvataggio</button>' +
+      '</div>';
+
+    panel.querySelectorAll('[data-q-mock]').forEach(function (cb) {
+      cb.addEventListener('change', markVerificaDirty);
+    });
+    byId('btn-save-draft').addEventListener('click', handleSaveDraft);
+    byId('btn-simulate-error').addEventListener('click', function () {
+      forceNextSaveError = true;
+      this.textContent = 'Errore programmato al prossimo salvataggio ✓';
+    });
+
+    updateSaveStatusUi();
+  }
+
+  function markVerificaDirty() {
+    if (verificaSaveStatus === 'saving') return;
+    verificaSaveStatus = 'dirty';
+    updateSaveStatusUi();
+  }
+
+  /**
+   * "Salva bozza" (fix review §7): lo stato è sempre uno tra
+   * dirty/saving/success/error, mostrato in modo persistente accanto
+   * al bottone — mai un solo toast destinato a sparire. Il timestamp
+   * di successo resta visibile finché non arriva una nuova modifica o
+   * un nuovo salvataggio.
+   */
+  function handleSaveDraft() {
+    if (verificaSaveStatus === 'saving') return;
+    verificaSaveStatus = 'saving';
+    updateSaveStatusUi();
+    setTimeout(function () {
+      if (forceNextSaveError) {
+        forceNextSaveError = false;
+        verificaSaveStatus = 'error';
+      } else {
+        verificaSaveStatus = 'success';
+      }
+      updateSaveStatusUi();
+    }, 500);
+  }
+
+  function formatNowHHMM() {
+    var d = new Date();
+    function pad(n) { return n < 10 ? '0' + n : String(n); }
+    return pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function updateSaveStatusUi() {
+    var statusEl = byId('verifica-save-status');
+    var btn = byId('btn-save-draft');
+    if (!statusEl || !btn) return;
+
+    if (verificaSaveStatus === 'dirty') {
+      statusEl.className = 'save-status save-status-dirty';
+      statusEl.textContent = '● Modifiche non salvate';
+      btn.disabled = false;
+      btn.textContent = 'Salva bozza';
+    } else if (verificaSaveStatus === 'saving') {
+      btn.disabled = true;
+      btn.textContent = 'Salvataggio…';
+    } else if (verificaSaveStatus === 'success') {
+      statusEl.className = 'save-status save-status-success save-flash';
+      statusEl.textContent = '✓ Bozza salvata alle ' + formatNowHHMM();
+      btn.disabled = true;
+      btn.textContent = 'Salva bozza';
+      setTimeout(function () { statusEl.classList.remove('save-flash'); }, 1200);
+    } else if (verificaSaveStatus === 'error') {
+      statusEl.className = 'save-status save-status-error';
+      statusEl.textContent = '✖ Impossibile salvare la bozza. Riprova.';
+      btn.disabled = false;
+      btn.textContent = 'Riprova';
+    } else {
+      statusEl.className = 'save-status';
+      statusEl.textContent = '';
+      btn.disabled = true;
+      btn.textContent = 'Salva bozza';
+    }
+  }
+
+  // ── Template ─────────────────────────────────────────────────────
+  var DOWNLOAD_ICON_SVG =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+    '<path d="M12 3v10"/><path d="M8 9l4 4 4-4"/>' +
+    '<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>';
+
+  function renderTemplates() {
+    var list = byId('template-list');
+    list.innerHTML = '';
+    templates.forEach(function (t) {
+      var item = document.createElement('div');
+      item.className = 'template-item';
+      var label = 'Scarica template ' + t.name.replace(/\.md$/, '');
+      item.innerHTML =
+        '<div class="template-item-info">' +
+          '<span class="template-item-name">' + t.name + '</span>' +
+          '<span class="template-item-desc">' + t.desc + '</span>' +
+        '</div>' +
+        '<button type="button" class="ghost icon-btn" aria-label="' + label + '" title="' + label + '">' +
+          DOWNLOAD_ICON_SVG +
+        '</button>';
+      list.appendChild(item);
+    });
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────
+  populateFilters();
+  renderLibrary();
+  renderStudents();
+  renderClasses();
+  renderVerifiche();
+  renderTemplates();
+  renderTopNav();
+})();
+</script>
+</body>
+</html>
