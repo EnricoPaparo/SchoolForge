@@ -34,8 +34,8 @@ L'implementazione deve consentire al docente di:
 3. attivare verifiche con configurazione e contenuti pubblicati immutabili, e pubblicarle/nasconderle allo studente in modo indipendente (`visibility`);
 4. distribuire PDF della verifica — download diretto per il docente, per lo studente nel canale cartaceo, o per lo studente autenticato Google nel Portale M3-lite;
 5. consentire a ogni studente Google autenticato di consultare in sola lettura le lezioni pubblicate e le verifiche visibili (M3-lite), senza Cloud Function;
-6. raccogliere svolgimenti digitali con snapshot sicuro (M3-full, specifica rinviata);
-7. correggere consegne digitali ed esportarle in PDF, Markdown e CSV (dipende da M3-full);
+6. raccogliere svolgimenti digitali con snapshot sicuro (M3-full, completato — Gate G5 superato);
+7. correggere consegne digitali ed esportarle in PDF, Markdown e CSV (M4, dipende da M3-full completato; M4-00 ne definisce il contratto dati, non ancora implementato);
 8. usare facoltativamente l'AI solo per la correzione nel Modulo 5.
 
 ---
@@ -280,13 +280,12 @@ Il `questionIndex` è riallineato esclusivamente tramite re-import tramite l'int
 | `students/{uid}` (M3-lite) | `uid`, `ownerUid`, `email`, `displayName` (identità Google verificata da Firebase, non autodichiarata), `status` (`pending`/`approved`/`blocked`), `classId` | Registro di approvazione (ADR-14). Gestito dalla UI docente Studenti; assenza del documento equivale a richiesta non approvata. |
 | `publicLessons/{lessonId}` (M3-lite, `content` dal M3F-08) | `programId`, `udaId`, `title`, `order`, `contentPath` (solo file lezione, canonico, letto solo dal docente/backfill), `content?` (corpo Markdown — unica fonte per lo studente), `validationStatus` | Proiezione read-only priva di riferimenti al pool; scritta dal docente nello stesso flusso di import. Lettura solo per uno studente approvato con portale attivo (ADR-14); scrittura solo owner. |
 | `verifications` | configurazione bozza o pubblicata, fonti, stato, `visibility` (`hidden`/`public`), classi, `downloadCount` | Stati `bozza`, `attiva`, `chiusa`, `archiviata`; immutabile dopo attivazione. Lettura completa solo owner; il documento padre non è mai leggibile dallo studente, nemmeno se `attiva`+`public` (vedi `publishedProjection` sotto). |
-| `verifications/{id}/publishedSnapshot/items` | candidati, soluzioni private, punteggi e origine | Owner soltanto (ed eventuale gateway M3-full); mai leggibile dallo studente. Creato all'attivazione. |
+| `verifications/{id}/teacherSnapshot` (campo, non sottocollezione) | domande e soluzioni congelate all'attivazione | Owner soltanto; mai leggibile dallo studente. Sostituisce nella pratica il precedente `publishedSnapshot/items` mai implementato — vedi ADR-07. |
 | `verifications/{id}/publishedProjection/meta` | titolo, stato pubblico, `visibility`, canali e variante | Accessibile al canale cartaceo e, da M3-lite, allo studente approvato con portale attivo quando `state == 'attiva' && visibility == 'public'` (ADR-14). |
 | `verifications/{id}/publishedProjection/items` | proiezione senza soluzioni della selezione comune | Stessa regola di accesso di `publishedProjection/meta`; usata sia dal cartaceo sia dal PDF studente M3-lite. |
-| `corrections`, `correctionEvents` | punteggi, commenti, percentuale, origine, rettifiche | Eventi append-only. Dipendono da consegne M3-full; non popolate da M3-lite. |
+| `submissions`, `submissionReceipts` (M3-full, completato) | risposte, stato, eventi attenzione (`submissions`); ricevuta minima post-consegna (`submissionReceipts`) | Path deterministico `${verificationId}_${studentUid}`. Owner legge tutte le submission della propria verifica; lo studente legge/scrive solo la propria finché `draft`, dopo `submitted` legge solo la receipt. Vedi `m3-full-roadmap.md`. |
+| `corrections`, `correctionEvents`, `correctionReturns` (M4-00: contratto; M4-01: service+Rules, non ancora implementato) | punteggi per domanda, feedback, stato, totali derivati (`corrections`); rettifiche append-only (`correctionEvents`); proiezione minima restituita allo studente (`correctionReturns`) | `corrections/{submissionId}` (stesso id di `submissions`). Dipendono dalle consegne M3-full (completato); non popolate da M3-lite. |
 | `auditEvents` | attore, azione, oggetto, esito, motivazione, timestamp | Nessuna risposta completa nei log. |
-
-> Le collezioni `publicVerificationLinks`, `deliveryAttempts` (con `accessLog`, `snapshot`, `answers`) e `participantLocks`, descritte nella baseline precedente, restano solo specifica di un eventuale **M3-full** (consegna online con tentativi) e non sono introdotte da M3-lite, che non produce tentativi né consegne.
 
 ### 6.3 Transazioni obbligatorie
 
@@ -297,10 +296,10 @@ Il `questionIndex` è riallineato esclusivamente tramite re-import tramite l'int
 | Pubblica/nascondi verifica (M3-lite) | Transazione client Firestore SDK del docente: aggiorna solo `visibility` (`hidden ↔ public`) su una verifica `attiva`; non tocca configurazione, fonti o snapshot; scrive audit. |
 | Download cartaceo | Nessun record di tentativo né voce `accessLog`. Opzionale: incremento atomico di `downloadCount` sul documento `verifications`. Nessun lock, nessun dato personale. |
 | Download PDF studente (M3-lite) | Sola lettura di `verifications` (campi pubblici) e `publishedProjection` quando `state == 'attiva' && visibility == 'public'`; genera il PDF nel browser. Nessuna scrittura, nessun record, nessuna Cloud Function. |
-| Rettifica | Evento append-only con precedente/nuovo valore; percentuale ricalcolata. Dipende da consegne M3-full. |
-| Eliminazione consegna | Rimuove dati personali, risposte e correzioni; preserva audit non identificativo. Dipende da consegne M3-full. |
+| Rettifica (M4-01, non ancora implementato) | Correzione `completed`/`returned` riaperta a `in_progress` (`reopenCount` incrementato); un salvataggio successivo che cambia effettivamente un punteggio o un feedback scrive un evento append-only `correctionEvents` (`type: 'scoreAdjusted'`) con delta minimale per domanda, non l'intera valutazione; totali ricalcolati da `computeCorrectionTotals`. Dipende da consegne M3-full (completato). |
+| Eliminazione consegna (fuori scope M4-00/M4-01) | Non implementata. |
 
-> Avvio digitale, salvataggio bozza, consegna e reset tentativo restano descritti solo come specifica di un eventuale **M3-full** (gateway Cloud Functions, participant lock, cookie di sessione); non fanno parte di M3-lite.
+> Avvio digitale, salvataggio bozza e consegna sono implementati (M3-full, completato): scritture client dirette su `submissions`/`submissionReceipts` validate da Security Rules, senza gateway Cloud Functions né cookie di sessione — vedi `m3-full-roadmap.md`. Il reset di una submission consegnata non è previsto: la consegna è immutabile per decisione di prodotto (D-M3F-04), non per un limite tecnico.
 
 ---
 
@@ -383,14 +382,17 @@ sequenceDiagram
     CF->>F: valida cookie, transazione in_corso → consegnato, immutabile, audit
 ```
 
-### 7.6 Correzione ed export globale (dipende da M3-full)
+### 7.6 Correzione ed export globale (M4 — dipende da M3-full, completato; M4-00 definisce solo il contratto dati)
 
-1. Il docente consulta le consegne digitali, filtra per verifica/stato/classe.
-2. Assegna punteggi e commenti; la SPA calcola percentuale e scrive in Firestore.
-3. Il docente apre il popup `Registro Correzioni`: la SPA mostra la tabella nome/cognome/punteggio/percentuale/data e, su richiesta, ne genera nel browser l'export PDF o CSV senza persistenza.
-4. Il docente avvia `Esporta verifiche`: la SPA legge tutte le consegne definitive e i relativi snapshot.
-5. La SPA genera nel browser il documento nel formato scelto (PDF, Markdown o CSV) e avvia il download.
-6. Il docente carica il file manualmente nel Drive dell'istituto; nessuna chiamata Drive dall'applicazione.
+> Il flusso seguente descrive M4 nel suo complesso, come da `m4-correzione-ux-concept.md`. **M4-00 implementa solo i tipi TypeScript e gli helper puri di scoring** (`corrections/{submissionId}`, `correctionEvents/{eventId}`, `correctionReturns/{submissionId}`); nessuno dei passi sotto è ancora eseguibile — il service layer, le Security Rules e la UI sono lo scope di M4-01 (vedi `piano-implementazione.md`).
+
+1. Il docente apre la tabella **Consegne online** già esistente (M3F-05/M3F-09) su una verifica, filtra per stato di correzione (da correggere/in correzione/corrette/restituite).
+2. Apre il workspace di correzione per uno studente; se non esiste ancora un documento `corrections/{submissionId}`, la UI lo crea a `status: 'in_progress'` con `evaluations` inizializzate da `publishedProjection.questions` (nessun documento vuoto creato solo per mostrare "Da correggere").
+3. Assegna punti `0..maxPoints` e feedback per domanda; la SPA deriva totale, massimo e percentuale (`computeCorrectionTotals`) e scrive in Firestore con salvataggio esplicito, non ad ogni digitazione.
+4. Il docente completa la correzione (richiede tutte le domande valutate) e, separatamente, la restituisce allo studente — due azioni distinte, non un'unica transizione.
+5. Il docente apre il popup `Registro Correzioni`: la SPA mostra la tabella nome/cognome/punteggio/percentuale/data e, su richiesta, ne genera nel browser l'export PDF o CSV senza persistenza. **Fuori scope M4-00/M4-01.**
+6. Il docente avvia `Esporta verifiche`: la SPA legge tutte le consegne definitive e i relativi snapshot (`teacherSnapshot`/`publishedProjection`) e genera nel browser il documento nel formato scelto (PDF, Markdown o CSV). **Fuori scope M4-00/M4-01.**
+7. Il docente carica il file manualmente nel Drive dell'istituto; nessuna chiamata Drive dall'applicazione.
 
 ---
 
@@ -405,9 +407,9 @@ sequenceDiagram
 | Verifiche — visibilità (M3-lite) | Il docente aggiorna solo `visibility` (`hidden ↔ public`) su una verifica `attiva`; nessun'altra scrittura consentita da questa operazione. |
 | Canale cartaceo | Nessuna scrittura di tentativo o `accessLog`. Solo, in opzione, incremento atomico di `downloadCount` su `verifications`. |
 | Portale studente (M3-lite) | Nessuna scrittura: solo lettura di `publicLessons` e di `verifications`/`publishedProjection` quando `attiva`+`public`. |
-| Correzione | Scrivi `corrections`, `correctionEvents`, elimina consegna. Dipende da consegne M3-full. |
+| Correzione (M4-01, non ancora implementato) | Scrivi `corrections`, `correctionEvents`, `correctionReturns`. Nessuna eliminazione consegna (fuori scope). Dipende da consegne M3-full (completato). |
 
-Le operazioni di reset di un tentativo digitale, descritte nella baseline precedente, restano specifica di un eventuale M3-full e non sono presenti in M3-lite, che non produce tentativi.
+M3-full (completato) non introduce reset di una submission consegnata: la consegna è immutabile per decisione di prodotto, non riapribile nemmeno dal docente (D-M3F-04).
 
 ### 8.2 Cloud Functions
 

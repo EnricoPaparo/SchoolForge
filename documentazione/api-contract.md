@@ -1,7 +1,7 @@
 # SchoolForge — Contratto API
 
-**Versione:** 3.1
-**Stato:** in vigore — M1, M2, M3-lite e RE (Repository Editor) implementati; QE (Question Editor, specifica QE-00 definita) da implementare; M3-full specificato e avviato a livello contratti/service; M4/M5 restano non implementati
+**Versione:** 3.2
+**Stato:** in vigore — M1, M2, M3-lite, RE (Repository Editor), QE (Question Editor) e M3-full implementati (Gate G5 superato); M4-00 (contratto correzione) definito, service layer/Rules/UI (M4-01+) non ancora implementati; M5 resta fuori scope V1
 **Autorità:** `analisi-requisiti.md` e `architettura.md`
 
 ---
@@ -17,8 +17,8 @@ I tipi e gli artefatti di questo contratto risiedono nei seguenti percorsi:
 | `packages/lesson-contract/src/index.ts` | Schemi Zod del contratto pool v1 (package interno del workspace, non pubblicato su npm). |
 | `functions/src/index.ts` | Entry point delle Cloud Functions (solo M5/V2 nella baseline corrente). |
 | `src/components/pdf/VerificaPdfRenderer.tsx` | Renderer PDF unificato (`mode="teacher" \| "student"`); riusato dal canale cartaceo e dal Portale studente M3-lite. |
-| `src/features/student/` | StudentShell M3-lite: routing, lettura `publicLessons`, lettura verifiche `attiva`+`public`, download PDF studente. |
-| `functions/src/startDigitalAttempt.ts`, `functions/src/continueDigitalAttempt.ts` | Legacy M3-full server-side: non pianificati nella specifica corrente. M3-full è client-only, vedi `m3-full-roadmap.md`. |
+| `src/features/student/` | StudentShell M3-lite/M3-full: routing, lettura `publicLessons`, verifiche, svolgimento e consegna online. |
+| `src/features/repository/corrections/correctionContract.ts` | M4-00: helper puri per punteggi, totali/percentuale derivati, completezza e transizioni di stato della correzione. Nessun service layer, nessuna Rules, nessuna UI (M4-01+). |
 
 > Nota: nel contesto della SPA, `src/contracts/lesson.ts` riesporta gli schemi da `packages/lesson-contract/src/index.ts` per semplificare gli import del client.
 
@@ -493,30 +493,102 @@ interface SubmissionReceiptDoc {
 // resta comunque necessario status=='active' && visibility=='public' &&
 // classe assegnata compatibile (vedi PublishedProjectionDoc sopra).
 
-// corrections/{attemptId} e correctionEvents — Modulo 4, dipende da M3-full
-// (operano sull'attemptId di una consegna digitale; non popolati da M3-lite)
-interface Correction {
-  attemptId: string;
-  verificationId: string;
-  totalPoints: number;
-  maxPoints: number;
-  percentage: number | null;       // null se non definitiva
-  state: 'partial' | 'complete';
-  origin: 'manual' | 'ai_assisted' | 'ai_auto';
-  updatedAt: Timestamp;
+// corrections/{submissionId} — M4-00 (contratto), M4-01 (service+Rules, non ancora implementato)
+// submissionId è lo stesso id deterministico di SubmissionDoc/SubmissionReceiptDoc
+// (`${verificationId}_${studentUid}`). Nessun campo `origin`/AI: M4 è manuale.
+// Se non esiste un documento, la UI deriva "Da correggere" senza crearne uno vuoto.
+type CorrectionStatus = 'in_progress' | 'completed' | 'returned';
+
+interface QuestionEvaluation {
+  order: number;                   // stessa chiave di SubmissionDoc.answers / PublicVerificationQuestion.order
+  points: number | null;           // null = non ancora valutata; 0 è un voto legittimo
+  maxPoints: number;                // congelato da publishedProjection.questions[order] alla creazione
+  feedback?: string;
 }
 
-// correctionEvents/{eventId}
-interface CorrectionEvent {
-  attemptId: string;
-  itemId: string;
-  actor: string;                   // ownerUid o 'ai'
-  previousScore: number | null;
-  newScore: number;
-  previousComment: string | null;
-  newComment: string;
-  reason: string;                  // obbligatorio per rettifiche
+interface Correction {
+  submissionId: string;            // == Firestore doc id, == SubmissionDoc.submissionId
+  verificationId: string;
+  studentUid: string;
+  ownerUid: string;
+  status: CorrectionStatus;
+  evaluations: Record<string, QuestionEvaluation>; // key = order.toString()
+  generalFeedback: string | null;
+  totalPoints: number;             // derivato — mai scritto a mano
+  maxPoints: number;                // derivato — mai scritto a mano
+  percentage: number | null;       // derivato, arrotondato — null solo se maxPoints == 0
   createdAt: Timestamp;
+  updatedAt: Timestamp;
+  completedAt: Timestamp | null;   // impostato alla transizione a 'completed', azzerato alla riapertura
+  returnedAt: Timestamp | null;    // impostato alla transizione a 'returned', azzerato alla riapertura
+  reopenCount: number;             // 0 alla creazione, incrementato a ogni riapertura — mai azzerato
+}
+
+// Delta minimale di una domanda — registrato solo se points e/o feedback sono
+// effettivamente cambiati rispetto all'ultimo salvataggio (mai l'intera QuestionEvaluation)
+interface QuestionEvaluationDelta {
+  order: number;
+  previousPoints: number | null;
+  nextPoints: number | null;
+  previousFeedback?: string;
+  nextFeedback?: string;
+}
+
+// correctionEvents/{eventId} — append-only. Un salvataggio con reopenCount == 0
+// (primo giro di compilazione) non produce mai un evento, per quante volte il
+// docente salvi. Solo un salvataggio dopo una riapertura (reopenCount > 0) che
+// cambia effettivamente qualcosa scrive un evento 'scoreAdjusted', atomico con
+// l'aggiornamento della correzione. Nessun tipo 'hidden': l'azione di
+// nascondere/mostrare la restituzione (CorrectionReturn.visibleToStudent) è
+// formalizzata, ma non lo è il comportamento docente/audit che la produce —
+// lasciato a M4-01 invece di un tipo evento ambiguo.
+interface CorrectionEvent {
+  correctionId: string;            // == submissionId == Correction doc id
+  ownerUid: string;
+  type: 'reopened' | 'scoreAdjusted' | 'returned';
+  actorUid: string;
+  previousStatus: CorrectionStatus | null;
+  nextStatus: CorrectionStatus;
+  reason: string | null;
+  questionDeltas?: QuestionEvaluationDelta[]; // solo le domande cambiate, mai la mappa intera
+  generalFeedbackDelta?: { previous: string | null; next: string | null }; // solo se generalFeedback è cambiato
+  timestamp: Timestamp;
+}
+
+// Recap per domanda, autosufficiente: copiato al momento della restituzione,
+// non un riferimento a submissions/teacherSnapshot/publishedProjection (che
+// potrebbero non essere più leggibili, es. verifica chiusa/nascosta).
+interface CorrectionReturnQuestionView {
+  order: number;
+  tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
+  testo: string;
+  opzioni?: { id: string; testo: string }[]; // id+testo soltanto, mai quale sia corretta
+  studentAnswer: AnswerValue | null;         // copiata da submissions.answers[order] alla restituzione
+  points: number;                            // mai null: una correzione incompleta non può essere restituita
+  maxPoints: number;
+  feedback?: string;
+  correctAnswer?: string | string[];         // presente solo se solutionsVisible == true per questa domanda
+}
+
+// correctionReturns/{submissionId} — proiezione minima ma autosufficiente,
+// scritta solo dal docente (restituzione + i due toggle sotto); letta solo
+// dallo studente. Le soluzioni non sono mai incluse automaticamente.
+interface CorrectionReturn {
+  correctionId: string;            // == submissionId
+  verificationId: string;
+  studentUid: string;
+  ownerUid: string;
+  verificationTitle: string;
+  className: string | null;
+  submittedAt: Timestamp;
+  returnedAt: Timestamp;
+  questions: CorrectionReturnQuestionView[];
+  generalFeedback: string | null;
+  totalPoints: number;
+  maxPoints: number;
+  percentage: number | null;
+  visibleToStudent: boolean;   // mostra/nasconde la restituzione senza cancellarla; Rules M4-01 la applicano al read
+  solutionsVisible: boolean;   // rispecchia esattamente se questions[*].correctAnswer è popolato in questo momento
 }
 
 // auditEvents/{eventId}
@@ -627,19 +699,24 @@ Lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applic
 
 `classId` su `Student`, `classIds` su `Program` e `classId` su `PublishedProjectionDoc` filtrano ulteriormente cosa uno studente approvato vede: un programma senza classi assegnate, o una verifica senza `classId`, non sono visibili a nessuno studente anche se altrimenti pubblici. Lo schema e la UI docente per assegnare le classi ai programmi sono implementati da M3L-A4. Il filtro per classe è implementato sia sulla sezione **Lezioni** (query client + Security Rules, `isClassmateOf()`, M3L-C) sia sulla sezione **Verifiche** (query `collectionGroup` + Security Rules, M3L-D) — nessuna consegna, risposta online o punteggio è prevista per M3-lite in nessuna delle due sezioni.
 
-### 3.5 Correzione ed export (Modulo 4, dipende da M3-full)
+### 3.5 Correzione ed export (Modulo 4, dipende da M3-full — completato)
 
-> Le operazioni seguenti richiedono le consegne digitali di M3-full (`submissions/{id}`), quindi non sono utilizzabili con M3-lite, che non produce consegne.
+> Le operazioni seguenti operano sulle consegne digitali di M3-full (`submissions/{id}`, path `${verificationId}_${studentUid}`), quindi non sono utilizzabili con M3-lite, che non produce consegne. **M4-00 definisce solo il contratto dati** (`Correction`, `QuestionEvaluationDelta`, `CorrectionEvent`, `CorrectionReturnQuestionView`, `CorrectionReturn` sopra); nessuna di queste operazioni è ancora implementata — sono la specifica di scope per **M4-01** (service layer + Security Rules + test Emulator).
 
 | Operazione | Scrittura Firestore |
 |---|---|
-| Leggi consegne | Query `deliveryAttempts` filtrata per `ownerUid` |
-| Assegna punteggio | Scrivi `corrections` e `correctionEvents` |
-| Rettifica | Appendi `correctionEvents`, aggiorna `corrections` |
-| Registro Correzioni (popup) | Solo lettura `corrections` + `deliveryAttempts` (nome, cognome, punteggio, percentuale, data consegna); export PDF/CSV generato nel browser, nessuna scrittura |
-| Elimina consegna | Transazione: rimuove `declaredData`, `answers`, `corrections`; preserva `auditEvents` |
-| Reset tentativo in corso | Transazione docente con `confirmation: true` e motivazione: porta il tentativo a `cancelled`, invalida la sessione, rimuove il lock e scrive audit; una consegna non è riapribile |
-| Export verifiche | Leggi `deliveryAttempts` + `snapshot/items` + `answers` + `corrections`; genera nel browser |
+| Leggi consegne | Query `submissions` filtrata per `verificationId` + `ownerUid` (già esistente, `submissionsMonitorService`); stato "Da correggere"/"In correzione"/"Corretta"/"Restituita" derivato lato client da `corrections/{submissionId}` assente o dal suo `status` — nessun documento vuoto creato solo per rappresentare "Da correggere" |
+| Apri correzione | Se assente, crea `corrections/{submissionId}` con `status: 'in_progress'`, `reopenCount: 0`, `evaluations` inizializzate da `publishedProjection.questions` (`points: null`, `maxPoints` congelato); se presente, legge il documento esistente |
+| Assegna punteggio (primo giro, `reopenCount == 0`) | Aggiorna `corrections/{submissionId}.evaluations[order]` e i totali derivati (`computeCorrectionTotals`); salvataggio esplicito, non ad ogni digitazione; **nessun** `correctionEvents` scritto, per quanti salvataggi avvengano |
+| Completa correzione | Transizione `in_progress → completed`, ammessa solo se `isCorrectionComplete(evaluations)` (mappa non vuota, ogni domanda valutata); imposta `completedAt` |
+| Restituisci | Transizione `completed → returned`; scrive `correctionReturns/{submissionId}` con `questions[]` autosufficiente (testo, opzioni, risposta consegnata, punti sempre definiti, `visibleToStudent: true`, `solutionsVisible: false`) nella stessa `writeBatch`; imposta `returnedAt`; appende `correctionEvents` (`type: 'returned'`) |
+| Riapri | Transizione `completed \| returned → in_progress`; azzera `completedAt`/`returnedAt`; incrementa `reopenCount`; appende `correctionEvents` (`type: 'reopened'`, senza `questionDeltas` se nessuna domanda è stata ancora ritoccata) |
+| Rettifica dopo riapertura (`reopenCount > 0`) | Aggiorna `corrections`; se `computeQuestionEvaluationDeltas`/`computeGeneralFeedbackDelta` produce almeno un cambiamento, appende atomicamente `correctionEvents` (`type: 'scoreAdjusted'`, `questionDeltas`/`generalFeedbackDelta` solo sui campi cambiati); se la correzione era già `returned`, la rettifica richiede prima la riapertura, poi eventualmente una nuova restituzione (che riscrive `correctionReturns` da zero, preservando `visibleToStudent`/`solutionsVisible` correnti) |
+| Mostra/nascondi soluzioni | Aggiorna `correctionReturns.solutionsVisible`; `true` riscrive `correctAnswer` su ogni `questions[i]` dalle soluzioni congelate; `false` **rimuove** il campo da ogni domanda, non lo nasconde solo lato UI |
+| Mostra/nascondi restituzione | Aggiorna `correctionReturns.visibleToStudent`; non tocca `corrections` né i punteggi |
+| Registro Correzioni (popup) | Solo lettura `corrections` + `submissions` (nome, cognome, punteggio, percentuale, data consegna); export PDF/CSV generato nel browser, nessuna scrittura — **fuori scope M4-00/M4-01** |
+| Elimina consegna | **Fuori scope M4-00/M4-01** — non implementata |
+| Export verifiche | **Fuori scope M4-00/M4-01** — leggerà `submissions` + `teacherSnapshot`/`publishedProjection` + `corrections`; genera nel browser |
 
 ---
 
@@ -781,7 +858,8 @@ Le Security Rules Firestore devono garantire, per la baseline corrente (M1+M2+M3
 | `verifications` | Lettura + scrittura solo per bozza e transizioni consentite; scrittura di `visibility` su verifica `attiva` | — (documento padre mai leggibile dallo studente, vedi `publishedProjection`) | — | — |
 | `verifications/*/publishedSnapshot` | Lettura | — | — | — |
 | `verifications/*/publishedProjection` | Lettura + scrittura | Lettura solo quando `visibility == "public"` (che vale solo mentre il padre è `active` — vedi §3.4a) **e** `classId` è compatibile col proprio `classId` (M3L-D; assente/`null` → nessuno studente) | — | — |
-| `corrections`, `correctionEvents` | Lettura + scrittura | — | — | — |
+| `corrections`, `correctionEvents` | Lettura + scrittura (M4-01, non ancora implementato) | — | — | — |
+| `correctionReturns` | Lettura + scrittura (M4-01, non ancora implementato) | Solo lettura della propria (`studentUid`), solo quando `visibleToStudent == true` | — | — |
 | `auditEvents` | Lettura + sola creazione append-only con schema ammesso | — | — | — |
 
 Un Google-autenticato non approvato (nessun documento `students/{uid}`, oppure `pending`/`blocked`, oppure `studentPortalEnabled == false`) non ha alcuna riga con permesso diverso da "—" nella colonna dedicata: è trattato come un non-owner qualunque, con l'unica eccezione di `settings/ownerPublic` (necessaria solo per il routing UI, non per l'autorizzazione).
@@ -792,7 +870,7 @@ Un Google-autenticato non approvato (nessun documento `students/{uid}`, oppure `
 
 Le Security Rules esatte vengono scritte e testate con Emulator Suite obbligatoria, incluso il gate M3-lite e il gate di approvazione studente (§3.4a).
 
-> I percorsi seguenti (`publicVerificationLinks`, `verifications/*/participantLocks`, `deliveryAttempts` e sottocollezioni) restano specifica di un eventuale M3-full e non esistono nella baseline corrente:
+> I percorsi seguenti (`publicVerificationLinks`, `verifications/*/participantLocks`, `deliveryAttempts` e sottocollezioni) appartengono al modello gateway Cloud Functions valutato per M3-full e mai realizzato — M3-full (completato) usa invece `submissions`/`submissionReceipts` con Security Rules client-only (vedi tabella sopra e `m3-full-roadmap.md`). Non esistono nella baseline corrente, nota storica:
 >
 > | Percorso | Docente (`ownerUid`) | Client portale M3-full | Nessuno |
 > |---|---|---|---|
@@ -813,7 +891,7 @@ Le Security Rules esatte vengono scritte e testate con Emulator Suite obbligator
 | Configurazione non attivabile | "Impossibile attivare: [motivo specifico]." | Correggere la configurazione |
 | Pool insufficiente | "Non ci sono abbastanza domande per questa configurazione." | Aggiungere domande al pool |
 
-Le condizioni seguenti restano specifica di un eventuale M3-full (link pubblico, tentativi, sessione):
+Le condizioni seguenti appartengono al modello gateway (link pubblico, tentativi, sessione server-side) valutato per M3-full e mai realizzato — nota storica, non applicabile a M3-full (completato), che non ha link pubblico né tentativi anonimi:
 
 | Condizione | Messaggio utente | Azione suggerita |
 |---|---|---|

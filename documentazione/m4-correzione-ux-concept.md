@@ -1,8 +1,8 @@
 # M4 — Concept UX della correzione docente
 
-**Stato:** concept approvato, non ancora implementato  
+**Stato:** concept approvato; contratto dati minimo (M4-00) implementato — tipi TypeScript e helper puri, nessun service layer/Rules/UI ancora  
 **Data decisione:** 2026-07-12  
-**Prerequisito:** chiusura di M3-full e superamento del Gate G5
+**Prerequisito:** chiusura di M3-full e superamento del Gate G5 — soddisfatto
 
 ## 1. Obiettivo
 
@@ -131,11 +131,11 @@ Una correzione completa può essere riaperta dal docente. Ogni rettifica signifi
 
 La pubblicazione della verifica e la restituzione della correzione sono controlli distinti.
 
-Sono previsti:
+Sono previsti (formalizzati in M4-00 come `correctionReturns.visibleToStudent`/`solutionsVisible`, per singola correzione — non un interruttore a livello verifica):
 
-- controllo per rendere visibile o nascondere allo studente la propria correzione;
-- controllo a livello verifica **Mostra soluzioni dopo la restituzione**, disattivato per default;
-- eventuale azione batch **Restituisci tutte le correzioni completate**, da confermare durante la specifica M4.
+- controllo per rendere visibile o nascondere allo studente la propria correzione (`visibleToStudent`);
+- controllo **Mostra soluzioni dopo la restituzione** per singola correzione, disattivato per default (`solutionsVisible`);
+- eventuale azione batch **Restituisci tutte le correzioni completate** (ed eventuali batch analoghi su `visibleToStudent`/`solutionsVisible`), da confermare durante M4-01.
 
 Prima della restituzione lo studente continua a vedere soltanto la conferma di consegna. Dopo la restituzione vede:
 
@@ -149,26 +149,41 @@ Prima della restituzione lo studente continua a vedere soltanto la conferma di c
 
 Nascondere nuovamente una correzione non modifica né elimina i dati: cambia soltanto la proiezione leggibile dallo studente.
 
-## 7. Contratto dati candidato
+## 7. Contratto dati (M4-00 — definito)
 
-La direzione approvata è un documento separato dalla submission, per esempio:
+Il documento è separato dalla submission, sul path deterministico `corrections/{submissionId}` (stesso id di `submissions`/`submissionReceipts`, cioè `${verificationId}_${studentUid}` — non ripetuto come coppia di campi nel path):
 
-```text
-corrections/{verificationId}_{studentUid}
+```typescript
+type CorrectionStatus = 'in_progress' | 'completed' | 'returned';
+
+interface CorrectionDoc {
+  submissionId: string;
+  verificationId: string;
+  studentUid: string;
+  ownerUid: string;
+  status: CorrectionStatus;
+  evaluations: Record<string, QuestionEvaluation>; // key = order.toString()
+  generalFeedback: string | null;
+  totalPoints: number;   // derivato, mai scritto a mano
+  maxPoints: number;     // derivato, mai scritto a mano
+  percentage: number | null; // derivato, arrotondato — vedi §10.1
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  completedAt: Timestamp | null;
+  returnedAt: Timestamp | null;
+  reopenCount: number;   // 0 alla creazione, incrementato a ogni riapertura, mai azzerato
+}
 ```
 
-Contenuto candidato:
+Ogni domanda è collegata stabilmente tramite `order` (stessa chiave di `SubmissionDoc.answers` e `PublicVerificationQuestion.order`), non tramite un riferimento al pool corrente — vedi `documentazione/api-contract.md` per il tipo completo `QuestionEvaluation` e i contratti gemelli `CorrectionEventDoc`/`CorrectionReturnDoc`.
 
-- `verificationId`, `studentUid`, `ownerUid`;
-- stato della correzione;
-- punteggi per domanda;
-- feedback per domanda;
-- feedback generale;
-- totale, massimo e percentuale derivata;
-- `createdAt`, `updatedAt`, `correctedAt`, `returnedAt`;
-- revisione/versione per gestire salvataggi concorrenti.
+Le rettifiche vivono in eventi append-only separati, `correctionEvents/{eventId}` (id auto-generato, molti eventi per correzione). Il primo giro di compilazione (`reopenCount == 0`) non produce mai un evento, per quanti salvataggi avvengano: sarebbe un log di autosave, non un audit di rettifica. Solo un salvataggio dopo una riapertura (`reopenCount > 0`) che cambia effettivamente un punteggio o un feedback produce un evento `scoreAdjusted`, con un delta minimale per domanda (`order`, `previousPoints`/`nextPoints`, `previousFeedback`/`nextFeedback` solo se presenti) — mai l'intera mappa `evaluations` né la submission. `reopenCount` è quindi l'unico segnale persistente di cui il service M4-01 ha bisogno per distinguere le due situazioni.
 
-Le rettifiche candidate vivono in eventi append-only separati, per esempio `correctionEvents`. Il modello definitivo, i path e le Security Rules vengono formalizzati in M4-A.
+Lo studente legge la propria correzione restituita da una proiezione separata e **autosufficiente**, `correctionReturns/{submissionId}`, scritta solo dal docente — mai il documento tecnico `corrections`. "Autosufficiente" perché la verifica potrebbe nel frattempo essere chiusa, nascosta o resa irraggiungibile dalla Modalità verifica: la proiezione copia quindi testo/opzioni della domanda, la risposta consegnata e il punteggio (sempre un `number`, mai `null` — una correzione incompleta non può essere restituita), invece di rimandare a `submissions`/`publishedProjection`. Le soluzioni **non** sono incluse per default: due booleani indipendenti sulla singola restituzione — `visibleToStudent` (mostra/nasconde il risultato senza cancellarlo) e `solutionsVisible` (quando `true`, ogni domanda ha `correctAnswer` popolato dalle soluzioni congelate; quando torna `false`, il campo viene **rimosso** dalla proiezione, non solo nascosto lato UI) — sostituiscono il toggle a livello `VerificationDoc` ipotizzato in una prima stesura: appartengono alla singola correzione/restituzione dello studente, non alla verifica nel suo complesso. Le eventuali azioni batch (es. "mostra soluzioni a tutta la classe") restano fuori scope M4-01.
+
+Nessuna revisione/versione esplicita per la concorrenza sulle scritture ordinarie: la correzione è un flusso a singolo autore (un solo docente), a differenza dell'autosave concorrente dello studente in M3-full — non serve un revision guard. `reopenCount` non è un revision guard: è un contatore di stato di prodotto, non un meccanismo anti-concorrenza.
+
+Il modello definitivo dei percorsi, dei tipi e dei valori ammessi è in `documentazione/api-contract.md`; le Security Rules e il service layer restano lo scope di **M4-01** (vedi `piano-implementazione.md`).
 
 ## 8. Principi di sicurezza ed efficienza
 
@@ -192,17 +207,27 @@ Le rettifiche candidate vivono in eventi append-only separati, per esempio `corr
 - analisi statistiche avanzate;
 - email o notifiche push.
 
-## 10. Decisioni ancora da formalizzare
+## 10. Decisioni formalizzate in M4-00 e decisioni ancora aperte
 
-Prima dell'implementazione servono decisioni operative su:
+### 10.1 Formalizzate in M4-00
 
-1. percentuale e arrotondamento;
-2. presenza o meno di un voto distinto dal punteggio;
-3. comportamento dell'eventuale restituzione batch;
-4. formato export predefinito richiesto da H-04;
-5. eliminazione o anonimizzazione di submission e correzione;
-6. gestione di rettifiche già restituite;
-7. soglia e messaggio per correzioni incomplete;
-8. modello definitivo delle proiezioni studente e relative Rules.
+1. **Percentuale e arrotondamento**: `round(totalPoints / maxPoints * 100)` a numero intero (`Math.round`, arrotondamento standard); `null` solo quando `maxPoints == 0`. Vedi `computeCorrectionTotals` in `correctionContract.ts`.
+2. **Range punteggio per domanda**: `[0, maxPoints]`, `maxPoints` congelato per domanda alla creazione della correzione e a sua volta validato (finito, non negativo). Un punteggio fuori range, o un `maxPoints` malformato, è **rifiutato esplicitamente** (`assertValidQuestionPoints`), mai clampato in silenzio.
+3. **Completezza**: una correzione può passare a `completed` solo quando `evaluations` non è vuota **e** ogni domanda ha un punteggio non nullo (`0` conta come valutata, `null` no; una mappa vuota non è mai completa).
+4. **Transizioni di stato ammesse**: `in_progress → completed`, `completed → returned`, `completed → in_progress` (riapertura), `returned → in_progress` (riapertura). Non è ammesso saltare `completed` né tornare direttamente da `returned` a `completed`.
+5. **Riapertura**: sempre disponibile dal docente su una correzione `completed`/`returned`; riporta a `in_progress`, azzera `completedAt`/`returnedAt`, incrementa `reopenCount`, produce un evento append-only `'reopened'` in `correctionEvents`.
+6. **Eventi append-only e delta minimale**: `correctionEvents` non contiene mai l'intera `evaluations` né la submission. Il primo giro di compilazione (`reopenCount == 0`) non produce mai un evento, indipendentemente da quanti salvataggi avvengano. Solo un salvataggio dopo una riapertura che cambia effettivamente un punteggio o un feedback produce `'scoreAdjusted'` con `questionDeltas`/`generalFeedbackDelta` limitati ai campi cambiati (`computeQuestionEvaluationDeltas`/`computeGeneralFeedbackDelta`). Nessun tipo evento `'hidden'`: mostrare/nascondere una restituzione è formalizzato come toggle di dato (`correctionReturns.visibleToStudent`), non come evento — il comportamento docente/audit che lo produce resta una decisione di M4-01.
+7. **Compatibilità legacy**: `maxPoints` per domanda è sempre letto da `publishedProjection.questions[order]` (presente per ogni verifica che ha mai accettato consegne online), mai da `teacherSnapshot.questions` (assente sulle verifiche attivate prima del fix SEC-02) — nessuna dipendenza da quel campo opzionale.
+8. **Proiezione studente autosufficiente**: `correctionReturns` copia testo/opzioni/risposta consegnata/punteggio (mai un riferimento a `submissions`/`publishedProjection`, che potrebbero non essere più leggibili). `points` per domanda è sempre `number` una volta restituita (mai `null`: una correzione incompleta non può essere restituita). Le soluzioni non sono mai incluse per default; `visibleToStudent`/`solutionsVisible` sono due booleani indipendenti sulla singola restituzione, non su `VerificationDoc` — le azioni batch restano fuori scope M4-01.
 
-Queste decisioni non cambiano il concept UX approvato; vengono chiuse durante M4-00/M4-A.
+### 10.2 Ancora da formalizzare (M4-01)
+
+1. presenza o meno di un voto distinto dal punteggio;
+2. comportamento dell'eventuale restituzione batch (incluse eventuali azioni batch su `visibleToStudent`/`solutionsVisible`);
+3. formato export predefinito richiesto da H-04;
+4. eliminazione o anonimizzazione di submission e correzione;
+5. Security Rules esatte per `corrections`/`correctionEvents`/`correctionReturns` (il modello dati che devono applicare è però già definito — vedi §7 e §10.1);
+6. soglia e messaggio UI per correzioni incomplete;
+7. comportamento docente/audit dietro `visibleToStudent` (che tipo di evento, se non un tipo dedicato, o nessun evento).
+
+Nessuna di queste è una decisione contrattuale bloccante per iniziare M4-01: sono scelte di service layer/UI/Rules, non ambiguità sul modello dati. Queste decisioni non cambiano il concept UX approvato; vengono chiuse durante M4-01.
