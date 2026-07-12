@@ -43,21 +43,6 @@ export function TeacherShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [pendingStudentsCount, setPendingStudentsCount] = useState(0);
-  // DUX-01 → DUX-02 bridge: quando la libreria Didattica apre un corso,
-  // inoltriamo alla sezione "Corsi" con quel programma già espanso. Viene
-  // azzerato appena il docente naviga manualmente, per evitare che una
-  // successiva apertura di "Corsi" ri-espanda un programma non richiesto.
-  const [coursesInitialProgramId, setCoursesInitialProgramId] = useState<string | null>(null);
-
-  function selectSection(id: Section) {
-    setCoursesInitialProgramId(null);
-    setActiveSection(id);
-  }
-
-  function openCourseFromDidattica(programId: string) {
-    setCoursesInitialProgramId(programId);
-    setActiveSection('corsi');
-  }
 
   const displayName = user?.displayName ?? user?.email ?? 'Docente';
   const initials = displayName.charAt(0).toUpperCase();
@@ -151,7 +136,7 @@ export function TeacherShell() {
             key={id}
             type="button"
             className={styles.navBtn}
-            onClick={() => selectSection(id)}
+            onClick={() => setActiveSection(id)}
             aria-current={activeSection === id ? 'page' : undefined}
             title={label}
           >
@@ -170,11 +155,11 @@ export function TeacherShell() {
 
       <main className={styles.main}>
         {activeSection === 'didattica' ? (
-          <DidatticaView ownerUid={ownerUid} onOpenCourse={openCourseFromDidattica} />
+          <DidatticaView ownerUid={ownerUid} />
         ) : activeSection === 'template' ? (
           <TemplateKitView />
         ) : activeSection === 'corsi' ? (
-          <ProgramsView initialExpandedProgramId={coursesInitialProgramId} />
+          <ProgramsView />
         ) : activeSection === 'lezioni' ? (
           <LessonsView />
         ) : activeSection === 'verifiche' ? (

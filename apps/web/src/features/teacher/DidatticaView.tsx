@@ -9,6 +9,7 @@ import {
 import { importRepository } from '../repository/import/importRepository.js';
 import { readZipFile } from '../repository/import/readZipFile.js';
 import { describeImportValidationError } from './importValidationMessage.js';
+import { CourseWorkspace } from './CourseWorkspace.js';
 import styles from './DidatticaView.module.css';
 
 const YEAR_ALL = '__all__';
@@ -16,14 +17,6 @@ const YEAR_NONE = '__none__';
 
 type DidatticaViewProps = {
   ownerUid: string;
-  /**
-   * Contratto stabile per DUX-02 (item 7): aprire un corso. In DUX-01 il
-   * workspace completo non esiste ancora, quindi `TeacherShell` inoltra
-   * temporaneamente all'esperienza "Corsi" esistente selezionando il
-   * programma — nessun pulsante morto. Il workspace dedicato arriva in
-   * DUX-02, dietro questo stesso callback.
-   */
-  onOpenCourse: (programId: string) => void;
 };
 
 type Dialog =
@@ -33,9 +26,14 @@ type Dialog =
   | { kind: 'rename'; programId: string; current: string }
   | { kind: 'delete'; programId: string; title: string };
 
-export function DidatticaView({ ownerUid, onOpenCourse }: DidatticaViewProps) {
+export function DidatticaView({ ownerUid }: DidatticaViewProps) {
   const [cards, setCards] = useState<CourseCard[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Didattica ha due livelli (DUX-02): libreria (openProgramId === null) e
+  // workspace del corso selezionato. La libreria resta montata sotto al
+  // workspace, così filtri e ricerca sono conservati al ritorno.
+  const [openProgramId, setOpenProgramId] = useState<string | null>(null);
 
   const [yearFilter, setYearFilter] = useState<string>(YEAR_ALL);
   const yearInitialized = useRef(false);
@@ -202,6 +200,15 @@ export function DidatticaView({ ownerUid, onOpenCourse }: DidatticaViewProps) {
     );
   }
 
+  const openCard = openProgramId ? cards.find((c) => c.programId === openProgramId) : undefined;
+  if (openCard) {
+    return (
+      <section aria-label="Didattica" className={styles.container}>
+        <CourseWorkspace card={openCard} onBack={() => setOpenProgramId(null)} />
+      </section>
+    );
+  }
+
   return (
     <section aria-label="Didattica" className={styles.container}>
       <div className={styles.toolbar}>
@@ -294,7 +301,7 @@ export function DidatticaView({ ownerUid, onOpenCourse }: DidatticaViewProps) {
               onToggleMenu={() =>
                 setMenuOpenId((cur) => (cur === card.programId ? null : card.programId))
               }
-              onOpen={() => onOpenCourse(card.programId)}
+              onOpen={() => setOpenProgramId(card.programId)}
               onRename={() => {
                 setMenuOpenId(null);
                 setDialogError(null);
