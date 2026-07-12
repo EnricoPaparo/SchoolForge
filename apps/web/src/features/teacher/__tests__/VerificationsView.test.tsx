@@ -67,6 +67,24 @@ vi.mock('../../repository/programs/programsService.js', () => ({
 vi.mock('../../repository/students/studentsService.js', () => ({
   listStudents: (...args: unknown[]) => mockListStudents(...args),
 }));
+// CorrectionWorkspace (M4-02) has its own dedicated test suite — mocked here
+// so this file stays focused on how VerificationsView opens it (which
+// submissions get the action, what props it receives), not its internals.
+vi.mock('../CorrectionWorkspace.js', () => ({
+  CorrectionWorkspace: (props: {
+    submissionId: string;
+    studentName: string;
+    onClose: () => void;
+  }) => (
+    <div data-testid="correction-workspace">
+      <span>Correzione — {props.studentName}</span>
+      <span>{props.submissionId}</span>
+      <button type="button" onClick={props.onClose}>
+        Chiudi workspace
+      </button>
+    </div>
+  ),
+}));
 
 const sampleProgram = {
   id: 'prog-1',
@@ -1638,6 +1656,119 @@ describe('VerificationsView — consegne online monitor (M3F-05)', () => {
     expect(screen.queryByRole('region', { name: /consegne online/i })).toBeNull();
     expect(screen.queryByText(/monitor consegne/i)).toBeNull();
     expect(mockWatchSubmissions).not.toHaveBeenCalled();
+  });
+});
+
+describe('VerificationsView — correction workspace action (M4-02)', () => {
+  const activeVerWithClass = (overrides = {}) =>
+    makeDraftVer({
+      status: 'active',
+      onlineEnabled: true,
+      teacherSnapshot: {
+        title: 'Verifica Algebra',
+        classId: 'cls-1',
+        className: 'Classe 3A',
+        programId: 'prog-1',
+        importId: 'imp-1',
+        questionRefs: [sampleQuestionRef],
+        activatedAt: null,
+      },
+      ...overrides,
+    });
+
+  const oneApprovedStudent = [
+    {
+      id: 'stud-a',
+      ownerUid: 'owner-uid',
+      uid: 'stud-a',
+      email: 'a@x.it',
+      displayName: 'Anna Bianchi',
+      status: 'approved' as const,
+      classId: 'cls-1',
+      createdAt: null,
+      updatedAt: null,
+      lastLoginAt: null,
+    },
+  ];
+
+  async function renderSelectedWithMonitor(items: unknown[]) {
+    mockListVerifications.mockResolvedValue([activeVerWithClass()]);
+    mockListStudents.mockResolvedValue(oneApprovedStudent);
+    mockWatchSubmissions.mockImplementation((_verId, _ownerUid, _db, onChange) => {
+      onChange(items);
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => expect(screen.getByLabelText('Consegne online')).toBeTruthy());
+  }
+
+  it('shows the "Apri correzione" action only for a submitted submission', async () => {
+    setupDefaults();
+    await renderSelectedWithMonitor([
+      {
+        studentUid: 'stud-a',
+        status: 'submitted',
+        lastSavedAt: null,
+        submittedAt: null,
+        deliveryCode: 'SF-1',
+        attentionEventsCount: 0,
+        attentionEvents: [],
+      },
+    ]);
+
+    expect(screen.getByLabelText('Apri correzione — Anna Bianchi')).toBeTruthy();
+  });
+
+  it('shows no correction action for a draft (in-progress) submission', async () => {
+    setupDefaults();
+    await renderSelectedWithMonitor([
+      {
+        studentUid: 'stud-a',
+        status: 'draft',
+        lastSavedAt: null,
+        submittedAt: null,
+        deliveryCode: null,
+        attentionEventsCount: 0,
+        attentionEvents: [],
+      },
+    ]);
+
+    expect(screen.queryByLabelText('Apri correzione — Anna Bianchi')).toBeNull();
+  });
+
+  it('shows no correction action for a student with no submission at all', async () => {
+    setupDefaults();
+    await renderSelectedWithMonitor([]);
+
+    expect(screen.queryByLabelText(/apri correzione/i)).toBeNull();
+  });
+
+  it('opens the correction workspace with the deterministic submissionId and student name, and returns to the table on close', async () => {
+    setupDefaults();
+    await renderSelectedWithMonitor([
+      {
+        studentUid: 'stud-a',
+        status: 'submitted',
+        lastSavedAt: null,
+        submittedAt: null,
+        deliveryCode: 'SF-1',
+        attentionEventsCount: 0,
+        attentionEvents: [],
+      },
+    ]);
+
+    fireEvent.click(screen.getByLabelText('Apri correzione — Anna Bianchi'));
+
+    const workspace = await screen.findByTestId('correction-workspace');
+    expect(within(workspace).getByText('Correzione — Anna Bianchi')).toBeTruthy();
+    expect(within(workspace).getByText('ver-1_stud-a')).toBeTruthy();
+    // The table underneath is not rendered while the workspace has taken over.
+    expect(screen.queryByLabelText('Consegne online')).toBeNull();
+
+    fireEvent.click(within(workspace).getByText('Chiudi workspace'));
+    await waitFor(() => expect(screen.getByLabelText('Consegne online')).toBeTruthy());
   });
 });
 

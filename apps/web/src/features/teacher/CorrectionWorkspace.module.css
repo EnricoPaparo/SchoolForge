@@ -1,0 +1,410 @@
+/* ── Correction workspace (M4-02) — mirrors OnlineExamView's visual
+   language (sticky control panel, question navigator, question cards)
+   so the docente sees the same shell the student saw while taking the
+   exam, adapted with a compact summary panel instead of a flag toggle. */
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.controlPanel {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 0.875rem 1.125rem;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.controlRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.headerInfo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.backBtn {
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.625rem;
+}
+
+.title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+.statusBadge {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 999px;
+  padding: 0.1875rem 0.625rem;
+  white-space: nowrap;
+}
+
+.statusInProgress {
+  color: var(--color-warning);
+  background: var(--color-warning-bg);
+}
+
+.statusCompleted {
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.statusReturned {
+  color: var(--color-success);
+  background: var(--color-success-bg);
+}
+
+.dirtyBadge {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--color-error);
+}
+
+.questionNav {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.375rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.questionNav::-webkit-scrollbar {
+  display: none;
+}
+
+.navItem {
+  flex-shrink: 0;
+  width: 1.875rem;
+  height: 1.875rem;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  border: 2px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.navItemEvaluated {
+  border-color: var(--color-success);
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.navItemCurrent {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+/* ── Body: question + summary side by side on desktop ────────────── */
+.body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18rem;
+  gap: 1rem;
+  align-items: start;
+  min-width: 0;
+}
+
+.questionCard {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.125rem;
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.questionHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.questionNumber {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.questionType {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.questionText {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.blockLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.answerBox {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.answerEmpty {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.optionsList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.optionRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  padding: 0.375rem 0.625rem;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--color-border);
+  overflow-wrap: anywhere;
+}
+
+.optionSelected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  font-weight: 600;
+}
+
+.optionCorrect {
+  border-color: var(--color-success);
+  background: var(--color-success-bg);
+}
+
+.optionSelectedWrong {
+  border-color: var(--color-error);
+  background: var(--color-error-bg);
+}
+
+.solutionBox {
+  border: 1px solid var(--color-success-border, var(--color-success));
+  background: var(--color-success-bg);
+  border-radius: var(--radius-md, 8px);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--color-success);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.solutionUnavailable {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.scoreRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.pointsInput {
+  width: 5rem;
+}
+
+.maxPoints {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.pointsError {
+  font-size: 0.8125rem;
+  color: var(--color-error);
+}
+
+.feedbackTextarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.questionFooterNav {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+/* ── Summary panel ─────────────────────────────────────────────── */
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 1rem 1.125rem;
+  box-sizing: border-box;
+  position: sticky;
+  top: 6.5rem;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.875rem;
+}
+
+.summaryLabel {
+  color: var(--color-text-muted);
+}
+
+.summaryValue {
+  font-weight: 700;
+}
+
+.generalFeedbackLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.summaryActions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.reopenWarning {
+  font-size: 0.75rem;
+  color: var(--color-warning);
+}
+
+.actionError {
+  font-size: 0.8125rem;
+  color: var(--color-error);
+}
+
+/* ── Confirm dialogs ───────────────────────────────────────────── */
+.confirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9, 13, 20, 0.6);
+  padding: 1rem;
+}
+
+.confirmBox {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  width: 100%;
+  max-width: 380px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 1.5rem;
+  box-sizing: border-box;
+}
+
+.confirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+@media (max-width: 860px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .summary {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .controlRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
