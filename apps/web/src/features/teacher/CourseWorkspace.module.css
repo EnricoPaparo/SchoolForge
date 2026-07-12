@@ -250,6 +250,92 @@
   font-size: 0.875rem;
 }
 
+/* ── Lesson tabs ────────────────────────────────────────────────────────── */
+.tablist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 1rem;
+}
+.tab {
+  border: none;
+  background: transparent;
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tab:hover {
+  color: var(--color-text);
+}
+.tabActive {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  font-weight: 700;
+}
+
+/* ── Informazioni tab ───────────────────────────────────────────────────── */
+.infoList {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0;
+  font-size: 0.875rem;
+}
+.infoList dt {
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+.infoList dd {
+  margin: 0;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+.infoTechnical {
+  margin-top: 1rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+.infoTechnical summary {
+  cursor: pointer;
+}
+.infoTechnical dl {
+  margin-top: 0.5rem;
+}
+
+/* ── Unsaved-changes confirm dialog ─────────────────────────────────────── */
+.confirmBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 50;
+}
+.confirmDialog {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 1.25rem;
+  max-width: 24rem;
+  width: 100%;
+}
+.confirmMessage {
+  margin: 0 0 1rem;
+  color: var(--color-text);
+}
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
 /* ── Data table ─────────────────────────────────────────────────────────── */
 .dataTable {
   width: 100%;
