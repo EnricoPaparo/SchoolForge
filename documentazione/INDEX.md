@@ -56,7 +56,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [repository-editor-roadmap.md](repository-editor-roadmap.md) | Roadmap Repository Editor (RE-00–RE-07, implementato). | Per consultare decisioni tecniche e scope dell'editor UDA/lezioni. |
 | [question-editor-roadmap.md](question-editor-roadmap.md) | Roadmap Question Editor (QE-00–QE-05, completato): editor pool domande Markdown-first, senza reimport ZIP. | Per consultare contratto, decisioni e implementazione della sezione "Domande". |
 | [m3-full-roadmap.md](m3-full-roadmap.md) | Specifica M3-full: verifiche online, consegne, monitor, sessione obbligatoria e modalità verifica. Roadmap M3F-00–M3F-11C, completata — Gate G5 superato. | Per consultare il modello dati/Rules di M3-full o lo stato del Gate G5. |
-| [didattica-ux-roadmap.md](didattica-ux-roadmap.md) | Specifica UX del redesign "Didattica" (DUX-00–05 + Gate GDUX): unifica Corsi/Lezioni/Domande in un unico workspace docente. **DUX-00 approvato, non ancora implementato.** | Per consultare architettura informativa, invarianti di sicurezza/costo e roadmap DUX prima di iniziare DUX-01. |
+| [didattica-ux-roadmap.md](didattica-ux-roadmap.md) | Specifica UX del redesign "Didattica" (DUX-00–05 + Gate GDUX): unifica Corsi/Lezioni/Domande in un unico workspace docente. **DUX-01 implementato (libreria corsi `Didattica`); DUX-02…05 da fare.** | Per consultare architettura informativa, invarianti di sicurezza/costo e roadmap DUX prima di iniziare DUX-02. |
 
 ## Evidenze
 
