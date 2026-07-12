@@ -12,6 +12,7 @@ import {
   getImportMeta,
   listLessons,
   listUdas,
+  setLessonCompleted,
   setProgramClassIds,
   updateProgramTitle,
   type LessonItem,
@@ -19,8 +20,12 @@ import {
   type UdaItem,
 } from '../repository/programs/programsService.js';
 import {
+  createLesson,
   createUda,
+  deleteLesson,
   deleteUda,
+  updateLessonMarkdownBody,
+  updateLessonMetadata,
   updateUdaMetadata,
   RepositoryDeleteBlockedError,
 } from '../repository/editor/repositoryEditorService.js';
@@ -34,8 +39,10 @@ import {
 } from '../repository/validation/lessonMetadata.js';
 import type { LessonMetadata } from '../repository/validation/types.js';
 import { fetchLessonContent } from './lessonContent.js';
+import { downloadLessonPdf } from './lessonPdf.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { QuestionPoolEditor, type PoolCountStatus } from './QuestionPoolEditor.js';
+import { MarkdownBodyEditor, LessonMetadataForm, type EditStatus } from './lessonEditors.js';
 import { exportZip } from './exportZip.js';
 import { downloadMarkdown, downloadPdf, generateMarkdown } from './programmaSvolto.js';
 import { describeImportValidationError } from './importValidationMessage.js';
@@ -43,13 +50,17 @@ import {
   ClassesDialog,
   ConfirmDialog,
   ImportIntoCourseDialog,
+  NewLessonDialog,
   NewUdaDialog,
   ProgramInfoDialog,
   TitleDialog,
   UdaMetadataDialog,
+  type NewLessonValues,
   type UdaMetadataValues,
 } from './workspaceDialogs.js';
 import styles from './CourseWorkspace.module.css';
+
+const NO_STATUS: EditStatus = { busy: false, error: null, saved: false };
 
 /**
  * Builds the minimal `ProgramItem` shape the export/programma-svolto helpers
@@ -102,7 +113,9 @@ type WsDialog =
   | { kind: 'deleteCourse' }
   | { kind: 'newUda' }
   | { kind: 'editUda'; udaId: string }
-  | { kind: 'deleteUda'; udaId: string };
+  | { kind: 'deleteUda'; udaId: string }
+  | { kind: 'newLesson' }
+  | { kind: 'deleteLesson'; lessonId: string };
 
 type Tree = { udas: UdaItem[]; lessons: LessonItem[] };
 
@@ -152,8 +165,27 @@ export function CourseWorkspace({
   const [activeTab, setActiveTab] = useState<LessonTab>('contenuto');
   const [domandeVisited, setDomandeVisited] = useState(false);
   const [poolDirty, setPoolDirty] = useState(false);
-  // Navigation held back until the teacher confirms losing unsaved pool edits.
+  // Navigation held back until the teacher confirms losing unsaved edits (any
+  // of pool / content / metadata).
   const [pendingNav, setPendingNav] = useState<{ run: () => void } | null>(null);
+
+  // Lesson editors (DUX-04B): content (Markdown body) and info (metadata).
+  const [editingContent, setEditingContent] = useState(false);
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [contentDirty, setContentDirty] = useState(false);
+  const [infoDirty, setInfoDirty] = useState(false);
+  const [contentStatus, setContentStatus] = useState<EditStatus>(NO_STATUS);
+  const [infoStatus, setInfoStatus] = useState<EditStatus>(NO_STATUS);
+  const [completedBusy, setCompletedBusy] = useState(false);
+  const [completedError, setCompletedError] = useState<string | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [lessonBlockers, setLessonBlockers] = useState<RepositoryDeleteBlocker[] | null>(null);
+  // Tracks the currently-selected lesson id so a save that resolves after the
+  // context changed can never write the new lesson's panel.
+  const currentLessonRef = useRef<string | null>(null);
+
+  const anyDirty = poolDirty || contentDirty || infoDirty;
 
   // ── Load the course tree once (UDA + lessons, 2 reads) ──────────────────
   useEffect(() => {
@@ -201,11 +233,23 @@ export function CourseWorkspace({
   const selectedUda =
     selection.kind === 'uda' ? (tree?.udas.find((u) => u.dir === selection.udaDir) ?? null) : null;
 
-  // Guards a navigation that would discard unsaved pool edits: when the pool
-  // editor is dirty, hold the action back behind a confirm; otherwise run it.
+  // Guards a navigation that would discard any unsaved edit (pool / content /
+  // metadata): when dirty, hold the action back behind a confirm; else run it.
   function guardedNav(run: () => void) {
-    if (poolDirty) setPendingNav({ run });
+    if (anyDirty) setPendingNav({ run });
     else run();
+  }
+
+  // Drops every open lesson-editor draft of the current context. Used by the
+  // "Continua senza salvare" confirm so a superseded draft can't reappear.
+  function invalidateDrafts() {
+    setEditingContent(false);
+    setEditingInfo(false);
+    setContentDirty(false);
+    setInfoDirty(false);
+    setPoolDirty(false);
+    setContentStatus(NO_STATUS);
+    setInfoStatus(NO_STATUS);
   }
 
   function selectTab(tab: LessonTab) {
@@ -235,12 +279,21 @@ export function CourseWorkspace({
 
   async function selectLesson(lesson: LessonItem) {
     const requestId = ++lessonRequestRef.current;
+    currentLessonRef.current = lesson.id;
     setSelection({ kind: 'lesson', lessonId: lesson.id });
     // New lesson: reset the tabs to Contenuto and drop the previous lesson's
-    // contextual (pool) state so nothing from it can bleed through.
+    // contextual (pool + editor) state so nothing from it can bleed through.
     setActiveTab('contenuto');
     setDomandeVisited(false);
     setPoolDirty(false);
+    setEditingContent(false);
+    setEditingInfo(false);
+    setContentDirty(false);
+    setInfoDirty(false);
+    setContentStatus(NO_STATUS);
+    setInfoStatus(NO_STATUS);
+    setCompletedError(null);
+    setPdfError(null);
     setLessonContent(null);
     setLessonMetadata(EMPTY_LESSON_METADATA);
     setLessonError(null);
@@ -271,6 +324,7 @@ export function CourseWorkspace({
   }, [menuOpen]);
   useEffect(() => {
     setMenuOpen(false);
+    if (selection.kind !== 'lesson') currentLessonRef.current = null;
   }, [selection]);
 
   function toggleUdaCollapsed(udaDir: string) {
@@ -288,6 +342,7 @@ export function CourseWorkspace({
     guardedNav(() => {
       setWsError(null);
       setUdaBlockers(null);
+      setLessonBlockers(null);
       setMenuOpen(false);
       setWsDialog(kind);
     });
@@ -296,6 +351,7 @@ export function CourseWorkspace({
     setWsDialog({ kind: 'none' });
     setWsError(null);
     setUdaBlockers(null);
+    setLessonBlockers(null);
   }
 
   // Patches the library card's derived counters from a freshly-updated tree,
@@ -501,6 +557,227 @@ export function CourseWorkspace({
           setUdaBlockers(err.blockers);
         } else {
           setWsError(err instanceof Error ? err.message : 'Impossibile eliminare la UDA.');
+        }
+      }
+    });
+  }
+
+  // ── Lesson actions (DUX-04B) ────────────────────────────────────────────
+  function handleNewLesson(uda: UdaItem, values: NewLessonValues) {
+    if (!card.activeImportId) return;
+    const importId = card.activeImportId;
+    void withBusy(async () => {
+      try {
+        const { lessonId, filename } = await createLesson({
+          programId: card.programId,
+          importId,
+          udaId: uda.id,
+          udaDir: uda.dir,
+          ownerUid,
+          fields: values,
+          db,
+          storage,
+        });
+        const newLesson: LessonItem = {
+          id: lessonId,
+          ownerUid,
+          importId,
+          udaDir: uda.dir,
+          path: `${uda.dir}/${filename}`,
+          filename,
+          poolStatus: 'absent',
+          questionCount: 0,
+          storageRef: `repository/${ownerUid}/imports/${importId}/${uda.dir}/${filename}`,
+          poolStorageRef: null,
+          completed: false,
+          titolo: values.titolo,
+          sottotitolo: values.sottotitolo,
+          difficolta: values.difficolta,
+          concettiChiave: values.concettiChiave,
+          obiettivi: values.obiettivi,
+        };
+        const next: Tree = tree
+          ? { udas: tree.udas, lessons: [...tree.lessons, newLesson] }
+          : { udas: [], lessons: [newLesson] };
+        setTree(next);
+        patchCardCounts(next);
+        closeDialog();
+        // Select the new lesson and show its content locally — no Storage read.
+        currentLessonRef.current = lessonId;
+        setSelection({ kind: 'lesson', lessonId });
+        setActiveTab('contenuto');
+        setDomandeVisited(false);
+        setPoolDirty(false);
+        setEditingContent(false);
+        setEditingInfo(false);
+        setContentDirty(false);
+        setInfoDirty(false);
+        setLessonError(null);
+        setLessonLoading(false);
+        setLessonContent(values.body);
+        setLessonMetadata({
+          titolo: values.titolo,
+          sottotitolo: values.sottotitolo,
+          difficolta: values.difficolta,
+          concettiChiave: values.concettiChiave,
+          obiettivi: values.obiettivi,
+        });
+        lessonRequestRef.current++; // invalidate any in-flight fetch
+      } catch (err) {
+        setWsError(err instanceof Error ? err.message : 'Impossibile creare la lezione.');
+      }
+    });
+  }
+
+  function handleSaveContent(lesson: LessonItem, body: string) {
+    if (!card.activeImportId) return;
+    const importId = card.activeImportId;
+    const lessonId = lesson.id;
+    setContentStatus({ busy: true, error: null, saved: false });
+    void (async () => {
+      try {
+        await updateLessonMarkdownBody({
+          programId: card.programId,
+          importId,
+          lessonId,
+          body,
+          ownerUid,
+          db,
+          storage,
+        });
+        // A save that resolves after the context changed must not write the
+        // now-current lesson's panel.
+        if (currentLessonRef.current !== lessonId) return;
+        setLessonContent(body);
+        setEditingContent(false);
+        setContentDirty(false);
+        setContentStatus({ busy: false, error: null, saved: true });
+      } catch (err) {
+        if (currentLessonRef.current !== lessonId) return;
+        setContentStatus({
+          busy: false,
+          error: err instanceof Error ? err.message : 'Impossibile salvare il contenuto.',
+          saved: false,
+        });
+      }
+    })();
+  }
+
+  function handleSaveInfo(lesson: LessonItem, fields: LessonMetadata) {
+    if (!card.activeImportId) return;
+    const importId = card.activeImportId;
+    const lessonId = lesson.id;
+    setInfoStatus({ busy: true, error: null, saved: false });
+    void (async () => {
+      try {
+        await updateLessonMetadata({
+          programId: card.programId,
+          importId,
+          lessonId,
+          fields,
+          ownerUid,
+          db,
+          storage,
+        });
+        // Tree update is keyed by id → safe regardless of current selection.
+        setTree((prev) =>
+          prev
+            ? {
+                ...prev,
+                lessons: prev.lessons.map((l) => (l.id === lessonId ? { ...l, ...fields } : l)),
+              }
+            : prev,
+        );
+        if (currentLessonRef.current !== lessonId) return;
+        setLessonMetadata(fields);
+        setEditingInfo(false);
+        setInfoDirty(false);
+        setInfoStatus({ busy: false, error: null, saved: true });
+      } catch (err) {
+        if (currentLessonRef.current !== lessonId) return;
+        setInfoStatus({
+          busy: false,
+          error: err instanceof Error ? err.message : 'Impossibile salvare le informazioni.',
+          saved: false,
+        });
+      }
+    })();
+  }
+
+  function handleToggleCompleted(lesson: LessonItem) {
+    if (!card.activeImportId) return;
+    const importId = card.activeImportId;
+    const next = !(lesson.completed ?? false);
+    setCompletedBusy(true);
+    setCompletedError(null);
+    void (async () => {
+      try {
+        await setLessonCompleted(card.programId, importId, lesson.id, next, ownerUid, db);
+        // Deterministic next tree + pure setTree; patch the card's lessonsDone
+        // once, outside the updater (Strict Mode-safe).
+        if (tree) {
+          const lessons = tree.lessons.map((l) =>
+            l.id === lesson.id ? { ...l, completed: next } : l,
+          );
+          const nextTree: Tree = { udas: tree.udas, lessons };
+          setTree(nextTree);
+          patchCardCounts(nextTree);
+        }
+      } catch (err) {
+        setCompletedError(err instanceof Error ? err.message : 'Impossibile aggiornare lo stato.');
+      } finally {
+        setCompletedBusy(false);
+      }
+    })();
+  }
+
+  async function handleDownloadLessonPdf(lesson: LessonItem) {
+    if (lessonContent == null) return;
+    setPdfBusy(true);
+    setPdfError(null);
+    try {
+      const context = `${card.title} - ${lesson.udaDir}`;
+      const { title } = resolveLessonTitle(lesson.filename, lessonMetadata.titolo ?? lesson.titolo);
+      await downloadLessonPdf(title, lessonContent, context, lessonMetadata);
+    } catch {
+      setPdfError('Impossibile generare il PDF della lezione.');
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
+  function handleDeleteLesson(lessonId: string) {
+    if (!card.activeImportId) return;
+    const importId = card.activeImportId;
+    const lesson = tree?.lessons.find((l) => l.id === lessonId);
+    const uda = lesson ? tree?.udas.find((u) => u.dir === lesson.udaDir) : undefined;
+    if (!lesson || !uda) return;
+    void withBusy(async () => {
+      try {
+        await deleteLesson({
+          programId: card.programId,
+          importId,
+          udaId: uda.id,
+          lessonId,
+          ownerUid,
+          db,
+          storage,
+        });
+        if (tree) {
+          const nextTree: Tree = {
+            udas: tree.udas,
+            lessons: tree.lessons.filter((l) => l.id !== lessonId),
+          };
+          setTree(nextTree);
+          patchCardCounts(nextTree);
+        }
+        setSelection({ kind: 'uda', udaDir: uda.dir });
+        closeDialog();
+      } catch (err) {
+        if (err instanceof RepositoryDeleteBlockedError) {
+          setLessonBlockers(err.blockers);
+        } else {
+          setWsError(err instanceof Error ? err.message : 'Impossibile eliminare la lezione.');
         }
       }
     });
@@ -760,8 +1037,11 @@ export function CourseWorkspace({
               <button
                 type="button"
                 className="btn-success"
-                onClick={() => openDialog({ kind: 'newUda' })}
+                onClick={() => openDialog({ kind: 'newLesson' })}
               >
+                + Nuova lezione
+              </button>
+              <button type="button" onClick={() => openDialog({ kind: 'newUda' })}>
                 + Nuova UDA
               </button>
               <div className={styles.menuWrap}>
@@ -805,6 +1085,85 @@ export function CourseWorkspace({
             />
           )}
           {selection.kind === 'lesson' && selectedLesson && (
+            <div className={styles.toolbar}>
+              <button
+                type="button"
+                onClick={() => {
+                  selectTab('contenuto');
+                  setEditingContent(true);
+                  setContentStatus(NO_STATUS);
+                }}
+                disabled={editingContent || lessonContent == null}
+              >
+                Modifica contenuto
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  selectTab('informazioni');
+                  setEditingInfo(true);
+                  setInfoStatus(NO_STATUS);
+                }}
+                disabled={editingInfo || lessonContent == null}
+              >
+                Modifica informazioni
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDownloadLessonPdf(selectedLesson)}
+                disabled={pdfBusy || lessonContent == null}
+              >
+                {pdfBusy ? 'PDF…' : 'Scarica PDF'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleCompleted(selectedLesson)}
+                disabled={completedBusy}
+                aria-pressed={selectedLesson.completed ?? false}
+              >
+                {selectedLesson.completed ? 'Segna non svolta' : 'Segna svolta'}
+              </button>
+              <div className={styles.menuWrap}>
+                <button
+                  type="button"
+                  className={styles.toolbarMenuBtn}
+                  aria-haspopup="true"
+                  aria-expanded={menuOpen}
+                  aria-label="Azioni lezione"
+                  onClick={() => setMenuOpen((o) => !o)}
+                >
+                  ⋯
+                </button>
+                {menuOpen && (
+                  <div className={styles.menu} role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={styles.menuDanger}
+                      onClick={() =>
+                        openDialog({ kind: 'deleteLesson', lessonId: selectedLesson.id })
+                      }
+                    >
+                      Elimina lezione
+                    </button>
+                  </div>
+                )}
+              </div>
+              {contentStatus.saved && <span className={styles.savedNote}>Contenuto salvato</span>}
+              {infoStatus.saved && <span className={styles.savedNote}>Informazioni salvate</span>}
+              {completedError && (
+                <span role="alert" className="text-error">
+                  {completedError}
+                </span>
+              )}
+              {pdfError && (
+                <span role="alert" className="text-error">
+                  {pdfError}
+                </span>
+              )}
+            </div>
+          )}
+          {selection.kind === 'lesson' && selectedLesson && (
             <LessonDetail
               lesson={selectedLesson}
               metadata={lessonMetadata}
@@ -821,6 +1180,24 @@ export function CourseWorkspace({
               onPoolCountChange={(count, status) =>
                 handlePoolCountChange(selectedLesson.id, count, status)
               }
+              editingContent={editingContent}
+              editingInfo={editingInfo}
+              contentStatus={contentStatus}
+              infoStatus={infoStatus}
+              onSaveContent={(body) => handleSaveContent(selectedLesson, body)}
+              onSaveInfo={(fields) => handleSaveInfo(selectedLesson, fields)}
+              onCancelContent={() => {
+                setEditingContent(false);
+                setContentDirty(false);
+                setContentStatus(NO_STATUS);
+              }}
+              onCancelInfo={() => {
+                setEditingInfo(false);
+                setInfoDirty(false);
+                setInfoStatus(NO_STATUS);
+              }}
+              onContentDirtyChange={setContentDirty}
+              onInfoDirtyChange={setInfoDirty}
             />
           )}
         </div>
@@ -848,7 +1225,7 @@ export function CourseWorkspace({
                 onClick={() => {
                   const nav = pendingNav;
                   setPendingNav(null);
-                  setPoolDirty(false);
+                  invalidateDrafts();
                   nav.run();
                 }}
               >
@@ -971,6 +1348,52 @@ export function CourseWorkspace({
               }
               onCancel={closeDialog}
               onConfirm={() => (udaBlockers ? closeDialog() : handleDeleteUda(wsDialog.udaId))}
+            />
+          );
+        })()}
+      {wsDialog.kind === 'newLesson' &&
+        selectedUda &&
+        (() => {
+          const uda = selectedUda;
+          return (
+            <NewLessonDialog
+              busy={wsBusy}
+              error={wsError}
+              onCancel={closeDialog}
+              onConfirm={(values) => handleNewLesson(uda, values)}
+            />
+          );
+        })()}
+      {wsDialog.kind === 'deleteLesson' &&
+        (() => {
+          const lesson = tree?.lessons.find((l) => l.id === wsDialog.lessonId);
+          if (!lesson) return null;
+          const { title } = resolveLessonTitle(lesson.filename, lesson.titolo);
+          return (
+            <ConfirmDialog
+              title="Elimina lezione"
+              message={
+                lessonBlockers
+                  ? `Impossibile eliminare "${title}": è collegata a delle verifiche. Rimuovile o modificale prima di eliminare.`
+                  : `Eliminare "${title}"? Verranno rimossi il file su Storage e l'eventuale pool collegato. L'operazione non è reversibile.`
+              }
+              confirmLabel="Elimina"
+              danger
+              busy={wsBusy}
+              error={wsError}
+              extra={
+                lessonBlockers ? (
+                  <ul className={styles.blockersList}>
+                    {lessonBlockers.map((b) => (
+                      <li key={b.verificationId}>{b.title}</li>
+                    ))}
+                  </ul>
+                ) : undefined
+              }
+              onCancel={closeDialog}
+              onConfirm={() =>
+                lessonBlockers ? closeDialog() : handleDeleteLesson(wsDialog.lessonId)
+              }
             />
           );
         })()}
@@ -1124,6 +1547,16 @@ function LessonDetail({
   ownerUid,
   onDirtyChange,
   onPoolCountChange,
+  editingContent,
+  editingInfo,
+  contentStatus,
+  infoStatus,
+  onSaveContent,
+  onSaveInfo,
+  onCancelContent,
+  onCancelInfo,
+  onContentDirtyChange,
+  onInfoDirtyChange,
 }: {
   lesson: LessonItem;
   metadata: LessonMetadata;
@@ -1138,6 +1571,16 @@ function LessonDetail({
   ownerUid: string;
   onDirtyChange: (dirty: boolean) => void;
   onPoolCountChange: (questionCount: number, poolStatus: PoolCountStatus) => void;
+  editingContent: boolean;
+  editingInfo: boolean;
+  contentStatus: EditStatus;
+  infoStatus: EditStatus;
+  onSaveContent: (body: string) => void;
+  onSaveInfo: (fields: LessonMetadata) => void;
+  onCancelContent: () => void;
+  onCancelInfo: () => void;
+  onContentDirtyChange: (dirty: boolean) => void;
+  onInfoDirtyChange: (dirty: boolean) => void;
 }) {
   const { title } = resolveLessonTitle(lesson.filename, metadata.titolo ?? lesson.titolo);
 
@@ -1196,25 +1639,37 @@ function LessonDetail({
         aria-labelledby="tab-contenuto"
         hidden={activeTab !== 'contenuto'}
       >
-        {activeTab === 'contenuto' && (
-          <>
-            {loading && (
-              <p aria-busy="true" className="state-loading">
-                Caricamento contenuto…
-              </p>
-            )}
-            {error && (
-              <p role="alert" className="text-error">
-                {error}
-              </p>
-            )}
-            {!loading && !error && content !== null && content.trim() === '' && (
-              <p className="state-empty">Nessun contenuto disponibile per questa lezione.</p>
-            )}
-            {!loading && !error && content !== null && content.trim() !== '' && (
-              <MarkdownRenderer markdown={content} />
-            )}
-          </>
+        {editingContent ? (
+          // Mounted whenever editing (even if the tab is hidden) so the draft
+          // survives switching to another tab of the same lesson.
+          <MarkdownBodyEditor
+            initial={content ?? ''}
+            status={contentStatus}
+            onSave={onSaveContent}
+            onCancel={onCancelContent}
+            onDirtyChange={onContentDirtyChange}
+          />
+        ) : (
+          activeTab === 'contenuto' && (
+            <>
+              {loading && (
+                <p aria-busy="true" className="state-loading">
+                  Caricamento contenuto…
+                </p>
+              )}
+              {error && (
+                <p role="alert" className="text-error">
+                  {error}
+                </p>
+              )}
+              {!loading && !error && content !== null && content.trim() === '' && (
+                <p className="state-empty">Nessun contenuto disponibile per questa lezione.</p>
+              )}
+              {!loading && !error && content !== null && content.trim() !== '' && (
+                <MarkdownRenderer markdown={content} />
+              )}
+            </>
+          )
         )}
       </div>
 
@@ -1244,7 +1699,17 @@ function LessonDetail({
         aria-labelledby="tab-informazioni"
         hidden={activeTab !== 'informazioni'}
       >
-        {activeTab === 'informazioni' && <LessonInfo lesson={lesson} metadata={metadata} />}
+        {editingInfo ? (
+          <LessonMetadataForm
+            initial={metadata}
+            status={infoStatus}
+            onSave={onSaveInfo}
+            onCancel={onCancelInfo}
+            onDirtyChange={onInfoDirtyChange}
+          />
+        ) : (
+          activeTab === 'informazioni' && <LessonInfo lesson={lesson} metadata={metadata} />
+        )}
       </div>
     </div>
   );

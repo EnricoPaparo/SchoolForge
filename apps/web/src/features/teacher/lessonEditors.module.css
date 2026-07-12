@@ -1,0 +1,67 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.editorTabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.editorTab {
+  border: none;
+  background: transparent;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.editorTab:hover {
+  color: var(--color-text);
+}
+.editorTabActive {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  font-weight: 700;
+}
+.textarea {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+.preview {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+.field input,
+.field textarea {
+  width: 100%;
+  resize: vertical;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.statusMuted {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+.statusSaved {
+  font-size: 0.8125rem;
+  color: var(--color-success);
+  font-weight: 600;
+}

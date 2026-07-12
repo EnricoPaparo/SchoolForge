@@ -304,6 +304,11 @@
   font-size: 0.85rem;
   color: var(--color-text);
 }
+.savedNote {
+  font-size: 0.8125rem;
+  color: var(--color-success);
+  font-weight: 600;
+}
 
 /* ── Lesson tabs ────────────────────────────────────────────────────────── */
 .tablist {

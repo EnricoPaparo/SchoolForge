@@ -17,6 +17,12 @@ const mockUpdateUdaMetadata = vi.fn();
 const mockDeleteUda = vi.fn();
 const mockImportRepository = vi.fn();
 const mockReadZipFile = vi.fn();
+const mockSetLessonCompleted = vi.fn();
+const mockCreateLesson = vi.fn();
+const mockDeleteLesson = vi.fn();
+const mockUpdateLessonBody = vi.fn();
+const mockUpdateLessonMetadata = vi.fn();
+const mockDownloadLessonPdf = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
 vi.mock('../../repository/programs/programsService.js', () => ({
@@ -26,6 +32,10 @@ vi.mock('../../repository/programs/programsService.js', () => ({
   setProgramClassIds: (...a: unknown[]) => mockSetProgramClassIds(...a),
   deleteProgram: (...a: unknown[]) => mockDeleteProgram(...a),
   getImportMeta: (...a: unknown[]) => mockGetImportMeta(...a),
+  setLessonCompleted: (...a: unknown[]) => mockSetLessonCompleted(...a),
+}));
+vi.mock('../lessonPdf.js', () => ({
+  downloadLessonPdf: (...a: unknown[]) => mockDownloadLessonPdf(...a),
 }));
 const { mockDeleteBlockedError } = vi.hoisted(() => ({
   mockDeleteBlockedError: class extends Error {
@@ -41,6 +51,10 @@ vi.mock('../../repository/editor/repositoryEditorService.js', () => ({
   createUda: (...a: unknown[]) => mockCreateUda(...a),
   updateUdaMetadata: (...a: unknown[]) => mockUpdateUdaMetadata(...a),
   deleteUda: (...a: unknown[]) => mockDeleteUda(...a),
+  createLesson: (...a: unknown[]) => mockCreateLesson(...a),
+  deleteLesson: (...a: unknown[]) => mockDeleteLesson(...a),
+  updateLessonMarkdownBody: (...a: unknown[]) => mockUpdateLessonBody(...a),
+  updateLessonMetadata: (...a: unknown[]) => mockUpdateLessonMetadata(...a),
   RepositoryDeleteBlockedError: mockDeleteBlockedError,
 }));
 vi.mock('../../repository/import/importRepository.js', () => ({
@@ -743,5 +757,221 @@ describe('CourseWorkspace — pure updaters & class preservation (DUX-04A fixes)
 
     await waitFor(() => expect(mockSetProgramClassIds).toHaveBeenCalledOnce());
     expect(onCardPatch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
+  async function openLesson(over: Partial<LessonItem> = {}, body = 'Corpo lezione A.') {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('l1', 'uda-01-reti', { titolo: 'Lezione A', ...over }),
+    ]);
+    mockFetchLessonContent.mockResolvedValue(body);
+    const onCardPatch = vi.fn();
+    render(
+      <CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} onCardPatch={onCardPatch} />,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
+    return onCardPatch;
+  }
+
+  it('creates a lesson, updates the tree locally and shows it selected', async () => {
+    const onCardPatch = vi.fn();
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Esistente' })]);
+    mockCreateLesson.mockResolvedValue({ lessonId: 'l2', filename: 'lezione-002-nuova.md' });
+    render(
+      <CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} onCardPatch={onCardPatch} />,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Nuova lezione' }));
+    fireEvent.change(screen.getByLabelText('Titolo lezione'), { target: { value: 'Nuova' } });
+    fireEvent.change(screen.getByLabelText('Corpo Markdown lezione'), {
+      target: { value: 'Corpo iniziale.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Crea lezione' }));
+
+    await waitFor(() => expect(mockCreateLesson).toHaveBeenCalledOnce());
+    // New lesson selected, its content shown locally (no extra Storage read).
+    await waitFor(() => expect(screen.getByTestId('md').textContent).toContain('Corpo iniziale.'));
+    expect(mockFetchLessonContent).not.toHaveBeenCalled();
+    expect(onCardPatch).toHaveBeenCalledWith('p1', expect.objectContaining({ lessonsTotal: 2 }));
+  });
+
+  it('edits the content and cancels back to consultation', async () => {
+    await openLesson();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica contenuto' }));
+    const textarea = screen.getByLabelText('Corpo Markdown') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('Corpo lezione A.');
+    fireEvent.change(textarea, { target: { value: 'Modificato.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    // Back to consultation showing the original content.
+    expect(screen.queryByLabelText('Corpo Markdown')).toBeNull();
+    expect(screen.getByTestId('md').textContent).toContain('Corpo lezione A.');
+    expect(mockUpdateLessonBody).not.toHaveBeenCalled();
+  });
+
+  it('saves content via updateLessonMarkdownBody without touching metadata', async () => {
+    mockUpdateLessonBody.mockResolvedValue(undefined);
+    await openLesson();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica contenuto' }));
+    fireEvent.change(screen.getByLabelText('Corpo Markdown'), {
+      target: { value: 'Nuovo corpo.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    await waitFor(() => expect(mockUpdateLessonBody).toHaveBeenCalledOnce());
+    expect(mockUpdateLessonBody.mock.calls[0][0]).toMatchObject({
+      lessonId: 'l1',
+      body: 'Nuovo corpo.',
+    });
+    expect(mockUpdateLessonMetadata).not.toHaveBeenCalled();
+    // Persistent "saved" feedback in the toolbar; editor closed, content updated.
+    await waitFor(() => expect(screen.getByText('Contenuto salvato')).toBeTruthy());
+    expect(screen.getByTestId('md').textContent).toContain('Nuovo corpo.');
+  });
+
+  it('saves metadata via updateLessonMetadata without touching the body', async () => {
+    mockUpdateLessonMetadata.mockResolvedValue(undefined);
+    await openLesson();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica informazioni' }));
+    fireEvent.change(screen.getByLabelText('Titolo lezione'), { target: { value: 'Titolo 2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    await waitFor(() => expect(mockUpdateLessonMetadata).toHaveBeenCalledOnce());
+    expect(mockUpdateLessonMetadata.mock.calls[0][0]).toMatchObject({
+      lessonId: 'l1',
+      fields: expect.objectContaining({ titolo: 'Titolo 2' }),
+    });
+    expect(mockUpdateLessonBody).not.toHaveBeenCalled();
+  });
+
+  it('guards a lesson change when the content editor is dirty', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('lA', 'uda-01-reti', { titolo: 'Lezione A' }),
+      lesson('lB', 'uda-01-reti', { titolo: 'Lezione B' }),
+    ]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica contenuto' }));
+    fireEvent.change(screen.getByLabelText('Corpo Markdown'), { target: { value: 'dirty' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione B' }));
+    expect(screen.getByRole('alertdialog', { name: 'Modifiche non salvate' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /continua senza salvare/i }));
+    expect(screen.getByRole('heading', { name: 'Lezione B' })).toBeTruthy();
+    expect(screen.queryByLabelText('Corpo Markdown')).toBeNull();
+  });
+
+  it('toggles completion with one write and patches the card once (StrictMode)', async () => {
+    mockSetLessonCompleted.mockResolvedValue(undefined);
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Lezione A' })]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    const onCardPatch = vi.fn();
+    render(
+      <StrictMode>
+        <CourseWorkspace
+          card={card()}
+          ownerUid="owner"
+          onBack={vi.fn()}
+          onCardPatch={onCardPatch}
+        />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Segna svolta' }));
+
+    await waitFor(() => expect(mockSetLessonCompleted).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onCardPatch).toHaveBeenCalledTimes(1));
+    expect(onCardPatch).toHaveBeenCalledWith('p1', expect.objectContaining({ lessonsDone: 1 }));
+  });
+
+  it('downloads the PDF reusing the already-loaded content and metadata', async () => {
+    mockDownloadLessonPdf.mockResolvedValue(undefined);
+    await openLesson();
+    expect(mockFetchLessonContent).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Scarica PDF' }));
+
+    await waitFor(() => expect(mockDownloadLessonPdf).toHaveBeenCalledOnce());
+    const [, content, context] = mockDownloadLessonPdf.mock.calls[0];
+    expect(content).toBe('Corpo lezione A.');
+    expect(context).toBe('Sistemi e Reti - uda-01-reti');
+    // No second Storage read for the PDF.
+    expect(mockFetchLessonContent).toHaveBeenCalledTimes(1);
+  });
+
+  it('deletes an authorized lesson and returns to its UDA', async () => {
+    mockDeleteLesson.mockResolvedValue(undefined);
+    const onCardPatch = await openLesson();
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni lezione' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Elimina lezione' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina' }));
+
+    await waitFor(() => expect(mockDeleteLesson).toHaveBeenCalledOnce());
+    // Back on the UDA overview; the lesson is gone.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '+ Nuova lezione' })).toBeTruthy(),
+    );
+    expect(onCardPatch).toHaveBeenCalledWith('p1', expect.objectContaining({ lessonsTotal: 0 }));
+  });
+
+  it('shows verification blockers and keeps a lesson when deletion is blocked', async () => {
+    mockDeleteLesson.mockRejectedValue(
+      new mockDeleteBlockedError([{ verificationId: 'v1', title: 'Compito' }]),
+    );
+    await openLesson();
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni lezione' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Elimina lezione' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina' }));
+
+    await waitFor(() => expect(screen.getByText('Compito')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    expect(screen.getByRole('heading', { name: 'Lezione A' })).toBeTruthy();
+  });
+
+  it('ignores a content save that resolves after the lesson changed', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('lA', 'uda-01-reti', { titolo: 'Lezione A' }),
+      lesson('lB', 'uda-01-reti', { titolo: 'Lezione B' }),
+    ]);
+    mockFetchLessonContent.mockImplementation((ref: string) =>
+      Promise.resolve(ref.includes('lA') ? 'Corpo A.' : 'Corpo B.'),
+    );
+    let resolveSave!: () => void;
+    mockUpdateLessonBody.mockImplementation(
+      () => new Promise<void>((r) => (resolveSave = () => r())),
+    );
+    render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    await waitFor(() => expect(screen.getByTestId('md').textContent).toContain('Corpo A.'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica contenuto' }));
+    fireEvent.change(screen.getByLabelText('Corpo Markdown'), {
+      target: { value: 'Stale A body.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    // Switch to B while A's save is still pending (confirm the dirty guard).
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione B' }));
+    fireEvent.click(screen.getByRole('button', { name: /continua senza salvare/i }));
+    await waitFor(() => expect(screen.getByTestId('md').textContent).toContain('Corpo B.'));
+
+    // Now A's save resolves — it must not overwrite B's panel.
+    resolveSave();
+    await Promise.resolve();
+    expect(screen.getByTestId('md').textContent).toContain('Corpo B.');
+    expect(screen.getByTestId('md').textContent).not.toContain('Stale A body.');
   });
 });
