@@ -223,6 +223,94 @@ describe('CorrectionWorkspace — scoring input', () => {
     expect(await screen.findByText(/deve essere un numero tra 0 e 10/i)).toBeTruthy();
     expect(screen.getByText('Salva correzione').closest('button')).toHaveProperty('disabled', true);
   });
+
+  it('updates the summary panel live as scores are edited, before saving', async () => {
+    setupDefaults();
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByText('Spiega il TCP.')).toBeTruthy());
+
+    // Nothing evaluated yet: live totals start at 0/15.
+    expect(screen.getByText('0/15')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Punteggio per la domanda 1'), {
+      target: { value: '8' },
+    });
+    fireEvent.click(screen.getByText('Successiva →'));
+    fireEvent.change(screen.getByLabelText('Punteggio per la domanda 2'), {
+      target: { value: '5' },
+    });
+
+    // Live summary reflects the unsaved edits immediately — no save call yet.
+    expect(screen.getByText('13/15')).toBeTruthy();
+    expect(screen.getByText('87%')).toBeTruthy();
+    expect(mockSaveCorrection).not.toHaveBeenCalled();
+  });
+
+  it('shows an invalid-state banner and excludes the invalid score from the live total', async () => {
+    setupDefaults();
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByText('Spiega il TCP.')).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('Punteggio per la domanda 1'), {
+      target: { value: '999' },
+    });
+
+    expect(await screen.findByText(/uno o più punteggi non sono validi/i)).toBeTruthy();
+    // The invalid entry contributes nothing to the live total (treated as unevaluated).
+    expect(screen.getByText('0/15')).toBeTruthy();
+  });
+});
+
+describe('CorrectionWorkspace — question selection on load', () => {
+  it('selects the first question in the frozen order set, not a hardcoded order 0', async () => {
+    setupDefaults();
+    mockLoadCorrectionWorkspace.mockResolvedValue(
+      makeWorkspaceData({
+        verification: {
+          teacherSnapshot: {
+            title: 'Verifica reti',
+            classId: 'cls-1',
+            className: 'Classe 3A',
+            programId: 'p1',
+            importId: 'i1',
+            questionRefs: [],
+            questions: [
+              {
+                order: 3,
+                tipo: 'aperta',
+                maxPoints: 10,
+                testo: 'Domanda con order 3.',
+                soluzione: 'x',
+              },
+              {
+                order: 5,
+                tipo: 'aperta',
+                maxPoints: 5,
+                testo: 'Domanda con order 5.',
+                soluzione: 'y',
+              },
+            ],
+            activatedAt: { seconds: 1, nanoseconds: 0 },
+          },
+        },
+        correction: {
+          evaluations: {
+            '3': { order: 3, points: null, maxPoints: 10 },
+            '5': { order: 5, points: null, maxPoints: 5 },
+          },
+          totalPoints: 0,
+          maxPoints: 15,
+          percentage: 0,
+        },
+      }),
+    );
+
+    renderWorkspace();
+
+    expect(await screen.findByText('Domanda con order 3.')).toBeTruthy();
+    expect(screen.getByText('Domanda 4')).toBeTruthy();
+    expect(screen.queryByText('Domanda con order 5.')).toBeNull();
+  });
 });
 
 describe('CorrectionWorkspace — dirty state and leave confirmation', () => {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { db } from '../../lib/firebase.js';
 import {
   isValidQuestionPoints,
+  computeCorrectionTotals,
   type CorrectionUiStatus,
   deriveCorrectionUiStatus,
 } from '../repository/corrections/correctionContract.js';
@@ -17,7 +18,11 @@ import {
   setReturnVisibleToStudent,
   setSolutionsVisible,
 } from '../repository/corrections/correctionsService.js';
-import type { AnswerValue, VerificationTeacherQuestionSnapshot } from '../../types/firestore.js';
+import type {
+  AnswerValue,
+  QuestionEvaluation,
+  VerificationTeacherQuestionSnapshot,
+} from '../../types/firestore.js';
 import styles from './CorrectionWorkspace.module.css';
 
 export type CorrectionWorkspaceProps = {
@@ -206,6 +211,19 @@ export function CorrectionWorkspace({
     : [];
   const hasAnyPointsError = orders.some((order) => pointsError(order) !== null);
 
+  // Selects the first question in `orders` whenever a fresh correction is
+  // loaded (initial open or after a refresh whose question set changed) —
+  // never assumes order 0 exists, since `order` is whatever was frozen in
+  // the published projection at activation. Only resets when the currently
+  // selected order is no longer part of the loaded question set, so normal
+  // navigation (Prev/Next, nav squares) is never overridden mid-edit.
+  useEffect(() => {
+    if (orders.length === 0) return;
+    if (!orders.includes(currentOrder)) {
+      setCurrentOrder(orders[0]!);
+    }
+  }, [data]);
+
   function requestClose() {
     if (dirty) {
       setConfirmLeave(true);
@@ -345,7 +363,32 @@ export function CorrectionWorkspace({
     return parsed !== null && !Number.isNaN(parsed);
   }).length;
   const allEvaluated = orders.length > 0 && evaluatedCount === orders.length;
-  const canComplete = correction.status === 'in_progress' && !dirty && allEvaluated && !busy;
+  const canComplete =
+    correction.status === 'in_progress' && !dirty && !hasAnyPointsError && allEvaluated && !busy;
+
+  // Live riepilogo: derived from the locally edited scores (via the same
+  // computeCorrectionTotals used by correctionsService.ts, never
+  // reimplemented here), not from the last-persisted correction.totalPoints/
+  // maxPoints/percentage — so the summary panel reflects what "Salva
+  // correzione" would actually write, updating as the docente types. A
+  // question whose current input is out of range (invalid state) is
+  // treated as not-yet-evaluated for this computation — its own field
+  // shows an explicit error (see currentPointsError below) rather than
+  // silently contributing a wrong total.
+  const liveEvaluations: Record<string, QuestionEvaluation> = {};
+  for (const key of Object.keys(correction.evaluations)) {
+    const previous = correction.evaluations[key]!;
+    const parsed = parsePoints(edit.evaluations[key]?.pointsText ?? '');
+    const invalid =
+      parsed !== null &&
+      (Number.isNaN(parsed) || !isValidQuestionPoints(parsed, previous.maxPoints));
+    liveEvaluations[key] = {
+      order: previous.order,
+      maxPoints: previous.maxPoints,
+      points: parsed === null || invalid ? null : parsed,
+    };
+  }
+  const liveTotals = computeCorrectionTotals(liveEvaluations);
 
   const teacherQuestions: VerificationTeacherQuestionSnapshot[] =
     verification.teacherSnapshot?.questions ?? [];
@@ -506,15 +549,20 @@ export function CorrectionWorkspace({
           <div className={styles.summaryRow}>
             <span className={styles.summaryLabel}>Punteggio</span>
             <span className={styles.summaryValue}>
-              {correction.totalPoints}/{correction.maxPoints}
+              {liveTotals.totalPoints}/{liveTotals.maxPoints}
             </span>
           </div>
           <div className={styles.summaryRow}>
             <span className={styles.summaryLabel}>Percentuale</span>
             <span className={styles.summaryValue}>
-              {correction.percentage === null ? '—' : `${correction.percentage}%`}
+              {liveTotals.percentage === null ? '—' : `${liveTotals.percentage}%`}
             </span>
           </div>
+          {hasAnyPointsError && (
+            <p role="alert" className={styles.actionError}>
+              Uno o più punteggi non sono validi: correggili prima di salvare o completare.
+            </p>
+          )}
 
           <div className={styles.block}>
             <span className={styles.generalFeedbackLabel}>Feedback generale</span>
@@ -545,11 +593,13 @@ export function CorrectionWorkspace({
                   onClick={() => setConfirmComplete(true)}
                   disabled={!canComplete}
                   title={
-                    !allEvaluated
-                      ? 'Valuta tutte le domande per completare'
-                      : dirty
-                        ? 'Salva le modifiche prima di completare'
-                        : undefined
+                    hasAnyPointsError
+                      ? 'Correggi i punteggi non validi prima di completare'
+                      : !allEvaluated
+                        ? 'Valuta tutte le domande per completare'
+                        : dirty
+                          ? 'Salva le modifiche prima di completare'
+                          : undefined
                   }
                 >
                   Completa correzione
