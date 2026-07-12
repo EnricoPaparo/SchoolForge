@@ -847,4 +847,10 @@ export type CorrectionReturnDoc = {
    * may read.
    */
   solutionsVisible: boolean;
+  /**
+   * M4-01: bumped by every write to this document (return, reopen-hides-it,
+   * `setReturnVisibleToStudent`, `setSolutionsVisible`) — a plain technical
+   * bookkeeping timestamp, not part of the M4-00 UX-facing contract.
+   */
+  updatedAt: Timestamp | FieldValue;
 };

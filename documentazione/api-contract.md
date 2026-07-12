@@ -1,7 +1,7 @@
 # SchoolForge — Contratto API
 
 **Versione:** 3.2
-**Stato:** in vigore — M1, M2, M3-lite, RE (Repository Editor), QE (Question Editor) e M3-full implementati (Gate G5 superato); M4-00 (contratto correzione) definito, service layer/Rules/UI (M4-01+) non ancora implementati; M5 resta fuori scope V1
+**Stato:** in vigore — M1, M2, M3-lite, RE (Repository Editor), QE (Question Editor) e M3-full implementati (Gate G5 superato); M4-00 (contratto correzione) e M4-01 (service layer + Security Rules) implementati; UI/Registro Correzioni/export (M4-02+) non ancora implementati; M5 resta fuori scope V1
 **Autorità:** `analisi-requisiti.md` e `architettura.md`
 
 ---
@@ -18,7 +18,9 @@ I tipi e gli artefatti di questo contratto risiedono nei seguenti percorsi:
 | `functions/src/index.ts` | Entry point delle Cloud Functions (solo M5/V2 nella baseline corrente). |
 | `src/components/pdf/VerificaPdfRenderer.tsx` | Renderer PDF unificato (`mode="teacher" \| "student"`); riusato dal canale cartaceo e dal Portale studente M3-lite. |
 | `src/features/student/` | StudentShell M3-lite/M3-full: routing, lettura `publicLessons`, verifiche, svolgimento e consegna online. |
-| `src/features/repository/corrections/correctionContract.ts` | M4-00: helper puri per punteggi, totali/percentuale derivati, completezza e transizioni di stato della correzione. Nessun service layer, nessuna Rules, nessuna UI (M4-01+). |
+| `src/features/repository/corrections/correctionContract.ts` | M4-00: helper puri per punteggi, totali/percentuale derivati, completezza e transizioni di stato della correzione. |
+| `src/features/repository/corrections/correctionsService.ts` | M4-01: service layer client-only (`openOrLoadCorrection`, `saveCorrection`, `completeCorrection`, `returnCorrection`, `reopenCorrection`, `setReturnVisibleToStudent`, `setSolutionsVisible`). Nessuna UI (M4-02+). |
+| `src/features/repository/corrections/correctionReturnSize.ts` | M4-01: limite dimensionale conservativo su `correctionReturns` prima della scrittura. |
 
 > Nota: nel contesto della SPA, `src/contracts/lesson.ts` riesporta gli schemi da `packages/lesson-contract/src/index.ts` per semplificare gli import del client.
 
@@ -493,7 +495,7 @@ interface SubmissionReceiptDoc {
 // resta comunque necessario status=='active' && visibility=='public' &&
 // classe assegnata compatibile (vedi PublishedProjectionDoc sopra).
 
-// corrections/{submissionId} — M4-00 (contratto), M4-01 (service+Rules, non ancora implementato)
+// corrections/{submissionId} — M4-00 (contratto), M4-01 (service+Rules, implementato)
 // submissionId è lo stesso id deterministico di SubmissionDoc/SubmissionReceiptDoc
 // (`${verificationId}_${studentUid}`). Nessun campo `origin`/AI: M4 è manuale.
 // Se non esiste un documento, la UI deriva "Da correggere" senza crearne uno vuoto.
@@ -587,7 +589,7 @@ interface CorrectionReturn {
   totalPoints: number;
   maxPoints: number;
   percentage: number | null;
-  visibleToStudent: boolean;   // mostra/nasconde la restituzione senza cancellarla; Rules M4-01 la applicano al read
+  visibleToStudent: boolean;   // mostra/nasconde la restituzione senza cancellarla; le Rules M4-01 la applicano al read
   solutionsVisible: boolean;   // rispecchia esattamente se questions[*].correctAnswer è popolato in questo momento
 }
 
@@ -701,7 +703,7 @@ Lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applic
 
 ### 3.5 Correzione ed export (Modulo 4, dipende da M3-full — completato)
 
-> Le operazioni seguenti operano sulle consegne digitali di M3-full (`submissions/{id}`, path `${verificationId}_${studentUid}`), quindi non sono utilizzabili con M3-lite, che non produce consegne. **M4-00 definisce solo il contratto dati** (`Correction`, `QuestionEvaluationDelta`, `CorrectionEvent`, `CorrectionReturnQuestionView`, `CorrectionReturn` sopra); nessuna di queste operazioni è ancora implementata — sono la specifica di scope per **M4-01** (service layer + Security Rules + test Emulator).
+> Le operazioni seguenti operano sulle consegne digitali di M3-full (`submissions/{id}`, path `${verificationId}_${studentUid}`), quindi non sono utilizzabili con M3-lite, che non produce consegne. **M4-00 definisce il contratto dati** (`Correction`, `QuestionEvaluationDelta`, `CorrectionEvent`, `CorrectionReturnQuestionView`, `CorrectionReturn` sopra) e **M4-01 implementa** il service layer client-only (`correctionsService.ts`) e le Security Rules corrispondenti (`firestore.rules`). Registro Correzioni, export ed eliminazione consegna restano non implementati (M4-02/M4-03).
 
 | Operazione | Scrittura Firestore |
 |---|---|
@@ -714,9 +716,9 @@ Lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applic
 | Rettifica dopo riapertura (`reopenCount > 0`) | Aggiorna `corrections`; se `computeQuestionEvaluationDeltas`/`computeGeneralFeedbackDelta` produce almeno un cambiamento, appende atomicamente `correctionEvents` (`type: 'scoreAdjusted'`, `questionDeltas`/`generalFeedbackDelta` solo sui campi cambiati); se la correzione era già `returned`, la rettifica richiede prima la riapertura, poi eventualmente una nuova restituzione (che riscrive `correctionReturns` da zero, preservando `visibleToStudent`/`solutionsVisible` correnti) |
 | Mostra/nascondi soluzioni | Aggiorna `correctionReturns.solutionsVisible`; `true` riscrive `correctAnswer` su ogni `questions[i]` dalle soluzioni congelate; `false` **rimuove** il campo da ogni domanda, non lo nasconde solo lato UI |
 | Mostra/nascondi restituzione | Aggiorna `correctionReturns.visibleToStudent`; non tocca `corrections` né i punteggi |
-| Registro Correzioni (popup) | Solo lettura `corrections` + `submissions` (nome, cognome, punteggio, percentuale, data consegna); export PDF/CSV generato nel browser, nessuna scrittura — **fuori scope M4-00/M4-01** |
-| Elimina consegna | **Fuori scope M4-00/M4-01** — non implementata |
-| Export verifiche | **Fuori scope M4-00/M4-01** — leggerà `submissions` + `teacherSnapshot`/`publishedProjection` + `corrections`; genera nel browser |
+| Registro Correzioni (popup) | Solo lettura `corrections` + `submissions` (nome, cognome, punteggio, percentuale, data consegna); export PDF/CSV generato nel browser, nessuna scrittura — **fuori scope M4-01, pianificato M4-03** |
+| Elimina consegna | **Fuori scope M4-01** — non implementata |
+| Export verifiche | **Fuori scope M4-01, pianificato M4-03** — leggerà `submissions` + `teacherSnapshot`/`publishedProjection` + `corrections`; genera nel browser |
 
 ---
 
@@ -858,8 +860,10 @@ Le Security Rules Firestore devono garantire, per la baseline corrente (M1+M2+M3
 | `verifications` | Lettura + scrittura solo per bozza e transizioni consentite; scrittura di `visibility` su verifica `attiva` | — (documento padre mai leggibile dallo studente, vedi `publishedProjection`) | — | — |
 | `verifications/*/publishedSnapshot` | Lettura | — | — | — |
 | `verifications/*/publishedProjection` | Lettura + scrittura | Lettura solo quando `visibility == "public"` (che vale solo mentre il padre è `active` — vedi §3.4a) **e** `classId` è compatibile col proprio `classId` (M3L-D; assente/`null` → nessuno studente) | — | — |
-| `corrections`, `correctionEvents` | Lettura + scrittura (M4-01, non ancora implementato) | — | — | — |
-| `correctionReturns` | Lettura + scrittura (M4-01, non ancora implementato) | Solo lettura della propria (`studentUid`), solo quando `visibleToStudent == true` | — | — |
+| `corrections`, `correctionEvents` | Lettura + scrittura (M4-01) | — | — | — |
+| `correctionReturns` | Lettura + scrittura (M4-01) | Solo lettura della propria (`studentUid`), solo quando `visibleToStudent == true` | — | — |
+
+**Confine Rules/service per la correzione (M4-01)**: le Security Rules di `corrections`/`correctionEvents`/`correctionReturns` verificano ownership, identità dei campi principali e la matrice di transizione di stato ammessa (`isValidCorrectionTransition`, specchio di `isValidCorrectionStatusTransition` in `correctionContract.ts`) — mai il contenuto dettagliato di `evaluations`/`questionDeltas` (range dei punteggi, coerenza dei delta), che resta responsabilità del service owner-only, come già avviene per `teacherSnapshot`/`config` altrove in questo codebase.
 | `auditEvents` | Lettura + sola creazione append-only con schema ammesso | — | — | — |
 
 Un Google-autenticato non approvato (nessun documento `students/{uid}`, oppure `pending`/`blocked`, oppure `studentPortalEnabled == false`) non ha alcuna riga con permesso diverso da "—" nella colonna dedicata: è trattato come un non-owner qualunque, con l'unica eccezione di `settings/ownerPublic` (necessaria solo per il routing UI, non per l'autorizzazione).
