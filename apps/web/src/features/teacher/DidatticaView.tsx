@@ -204,7 +204,18 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
   if (openCard) {
     return (
       <section aria-label="Didattica" className={styles.container}>
-        <CourseWorkspace card={openCard} onBack={() => setOpenProgramId(null)} />
+        <CourseWorkspace
+          card={openCard}
+          ownerUid={ownerUid}
+          onBack={() => setOpenProgramId(null)}
+          onProgramQuestionsChange={(programId, questionsTotal) =>
+            setCards(
+              (prev) =>
+                prev?.map((c) => (c.programId === programId ? { ...c, questionsTotal } : c)) ??
+                prev,
+            )
+          }
+        />
       </section>
     );
   }

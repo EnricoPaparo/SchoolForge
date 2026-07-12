@@ -19,6 +19,30 @@ vi.mock('../lessonContent.js', () => ({
 vi.mock('../MarkdownRenderer.js', () => ({
   MarkdownRenderer: ({ markdown }: { markdown: string }) => <div data-testid="md">{markdown}</div>,
 }));
+// The pool editor has its own dedicated test; here we stub it to observe that
+// the workspace mounts it lazily (only on the Domande tab) and to drive its
+// dirty/count callbacks for the tab + confirm-navigation tests.
+vi.mock('../QuestionPoolEditor.js', () => ({
+  QuestionPoolEditor: ({
+    lesson,
+    onDirtyChange,
+    onPoolCountChange,
+  }: {
+    lesson: { id: string };
+    onDirtyChange?: (d: boolean) => void;
+    onPoolCountChange?: (n: number, s: string) => void;
+  }) => (
+    <div data-testid="pool-editor">
+      POOL: {lesson.id}
+      <button type="button" onClick={() => onDirtyChange?.(true)}>
+        make-dirty
+      </button>
+      <button type="button" onClick={() => onPoolCountChange?.(7, 'valid')}>
+        set-count-7
+      </button>
+    </div>
+  ),
+}));
 
 afterEach(cleanup);
 beforeEach(() => {
@@ -80,13 +104,13 @@ function lesson(id: string, udaDir: string, over: Partial<LessonItem> = {}): Les
 }
 
 function renderWorkspace(over: Partial<CourseCard> = {}, onBack = vi.fn()) {
-  return render(<CourseWorkspace card={card(over)} onBack={onBack} />);
+  return render(<CourseWorkspace card={card(over)} ownerUid="owner" onBack={onBack} />);
 }
 
 describe('CourseWorkspace — loading', () => {
   it('loads UDA and lessons once for the selected course only', async () => {
     mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
-    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { questionCount: 12 })]);
     renderWorkspace();
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy());
@@ -94,7 +118,7 @@ describe('CourseWorkspace — loading', () => {
     expect(mockListLessons).toHaveBeenCalledTimes(1);
     expect(mockListUdas).toHaveBeenCalledWith('p1', 'imp1', expect.anything());
     expect(mockListLessons).toHaveBeenCalledWith('p1', 'imp1', expect.anything());
-    // The summary strip reuses the card counters (no recompute).
+    // The summary strip derives the domande total from the loaded tree.
     expect(screen.getByText('12')).toBeTruthy(); // domande
     expect(screen.getByRole('img', { name: /avanzamento lezioni 33%/i })).toBeTruthy();
   });
@@ -250,5 +274,97 @@ describe('CourseWorkspace — sidebar and semantics', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: /← libreria/i }));
     expect(onBack).toHaveBeenCalledOnce();
+  });
+});
+
+describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
+  async function openLesson(title = 'Il modello ISO/OSI') {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: title })]);
+    mockFetchLessonContent.mockResolvedValue('Corpo lezione.');
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByRole('button', { name: title })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: title }));
+    await waitFor(() =>
+      expect(screen.getByRole('tablist', { name: 'Schede lezione' })).toBeTruthy(),
+    );
+  }
+
+  it('shows three tabs, Contenuto active, and does NOT mount the pool before Domande is opened', async () => {
+    await openLesson();
+    expect(screen.getByRole('tab', { name: 'Contenuto' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('tab', { name: 'Domande' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Informazioni' })).toBeTruthy();
+    // Content is visible; the pool editor has not been mounted (lazy).
+    await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
+    expect(screen.queryByTestId('pool-editor')).toBeNull();
+  });
+
+  it('mounts the pool editor when Domande opens and keeps it mounted across tab switches', async () => {
+    await openLesson();
+    fireEvent.click(screen.getByRole('tab', { name: 'Domande' }));
+    expect(screen.getByTestId('pool-editor')).toBeTruthy();
+
+    // Switching to another tab keeps it mounted (hidden), not unmounted, so
+    // the pool is not re-read when returning.
+    fireEvent.click(screen.getByRole('tab', { name: 'Informazioni' }));
+    expect(screen.getByTestId('pool-editor')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Domande' }));
+    expect(screen.getByTestId('pool-editor')).toBeTruthy();
+  });
+
+  it('Informazioni shows only present metadata (empty state + technical file path here)', async () => {
+    await openLesson();
+    fireEvent.click(screen.getByRole('tab', { name: 'Informazioni' }));
+    expect(screen.getByText(/nessun metadato/i)).toBeTruthy();
+    // Technical detail is available in a discreet secondary section.
+    expect(screen.getByText('uda-01-reti/l1.md')).toBeTruthy();
+  });
+
+  it('confirms before changing lesson when the pool has unsaved edits', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('lA', 'uda-01-reti', { titolo: 'Lezione A' }),
+      lesson('lB', 'uda-01-reti', { titolo: 'Lezione B' }),
+    ]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    renderWorkspace();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Domande' }));
+    fireEvent.click(screen.getByRole('button', { name: 'make-dirty' }));
+
+    // Attempt to switch lesson → confirm dialog, no immediate switch.
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione B' }));
+    expect(screen.getByRole('alertdialog', { name: 'Modifiche non salvate' })).toBeTruthy();
+    expect(screen.getByTestId('pool-editor').textContent).toContain('lA');
+
+    // Confirm → the switch goes through.
+    fireEvent.click(screen.getByRole('button', { name: /continua senza salvare/i }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Lezione B' })).toBeTruthy();
+  });
+
+  it('updates the domande counter locally after a pool save, without reloading the tree', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('l1', 'uda-01-reti', { titolo: 'Lez 1', questionCount: 5 }),
+    ]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Lez 1' })).toBeTruthy());
+    // Strip derives the domande total from the loaded tree (5).
+    expect(screen.getByText('5')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lez 1' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Domande' }));
+    fireEvent.click(screen.getByRole('button', { name: 'set-count-7' }));
+    // Only one lesson in the tree → total becomes 7; no extra tree reads.
+    expect(screen.getByText('7')).toBeTruthy();
+    expect(mockListUdas).toHaveBeenCalledTimes(1);
+    expect(mockListLessons).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { db, storage } from '../../lib/firebase.js';
 import type { CourseCard } from '../repository/programs/courseLibrary.js';
 import {
@@ -15,6 +21,7 @@ import {
 import type { LessonMetadata } from '../repository/validation/types.js';
 import { fetchLessonContent } from './lessonContent.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
+import { QuestionPoolEditor, type PoolCountStatus } from './QuestionPoolEditor.js';
 import styles from './CourseWorkspace.module.css';
 
 type CourseWorkspaceProps = {
@@ -25,7 +32,14 @@ type CourseWorkspaceProps = {
    * it load this one course's tree without re-reading the program list.
    */
   card: CourseCard;
+  ownerUid: string;
   onBack: () => void;
+  /**
+   * Called when a pool edit changes the course's total question count, so the
+   * library card counter can be updated in place without re-reading the whole
+   * library (DUX-03 item 8).
+   */
+  onProgramQuestionsChange?: (programId: string, questionsTotal: number) => void;
 };
 
 type Tree = { udas: UdaItem[]; lessons: LessonItem[] };
@@ -35,7 +49,14 @@ type Selection =
   | { kind: 'uda'; udaDir: string }
   | { kind: 'lesson'; lessonId: string };
 
-export function CourseWorkspace({ card, onBack }: CourseWorkspaceProps) {
+type LessonTab = 'contenuto' | 'domande' | 'informazioni';
+
+export function CourseWorkspace({
+  card,
+  ownerUid,
+  onBack,
+  onProgramQuestionsChange,
+}: CourseWorkspaceProps) {
   const [tree, setTree] = useState<Tree | null>(null);
   const [treeError, setTreeError] = useState<string | null>(null);
 
@@ -53,6 +74,15 @@ export function CourseWorkspace({ card, onBack }: CourseWorkspaceProps) {
   // fetch resolving after a newer one (out-of-order) and against a course
   // change / unmount landing a stale result.
   const lessonRequestRef = useRef(0);
+
+  // Lesson tabs (DUX-03). The pool (Domande) is loaded lazily: only after the
+  // Domande tab has been opened for the current lesson, and kept mounted while
+  // switching tabs so the pool is read once per lesson.
+  const [activeTab, setActiveTab] = useState<LessonTab>('contenuto');
+  const [domandeVisited, setDomandeVisited] = useState(false);
+  const [poolDirty, setPoolDirty] = useState(false);
+  // Navigation held back until the teacher confirms losing unsaved pool edits.
+  const [pendingNav, setPendingNav] = useState<{ run: () => void } | null>(null);
 
   // ── Load the course tree once (UDA + lessons, 2 reads) ──────────────────
   useEffect(() => {
@@ -100,9 +130,44 @@ export function CourseWorkspace({ card, onBack }: CourseWorkspaceProps) {
   const selectedUda =
     selection.kind === 'uda' ? (tree?.udas.find((u) => u.dir === selection.udaDir) ?? null) : null;
 
+  // Guards a navigation that would discard unsaved pool edits: when the pool
+  // editor is dirty, hold the action back behind a confirm; otherwise run it.
+  function guardedNav(run: () => void) {
+    if (poolDirty) setPendingNav({ run });
+    else run();
+  }
+
+  function selectTab(tab: LessonTab) {
+    setActiveTab(tab);
+    if (tab === 'domande') setDomandeVisited(true);
+  }
+
+  function handlePoolCountChange(
+    lessonId: string,
+    questionCount: number,
+    poolStatus: PoolCountStatus,
+  ) {
+    setTree((prev) => {
+      if (!prev) return prev;
+      const lessons = prev.lessons.map((l) =>
+        l.id === lessonId ? { ...l, questionCount, poolStatus } : l,
+      );
+      onProgramQuestionsChange?.(
+        card.programId,
+        lessons.reduce((s, l) => s + (l.questionCount ?? 0), 0),
+      );
+      return { ...prev, lessons };
+    });
+  }
+
   async function selectLesson(lesson: LessonItem) {
     const requestId = ++lessonRequestRef.current;
     setSelection({ kind: 'lesson', lessonId: lesson.id });
+    // New lesson: reset the tabs to Contenuto and drop the previous lesson's
+    // contextual (pool) state so nothing from it can bleed through.
+    setActiveTab('contenuto');
+    setDomandeVisited(false);
+    setPoolDirty(false);
     setLessonContent(null);
     setLessonMetadata(EMPTY_LESSON_METADATA);
     setLessonError(null);
@@ -132,11 +197,16 @@ export function CourseWorkspace({ card, onBack }: CourseWorkspaceProps) {
 
   const pct = card.lessonsTotal > 0 ? Math.round((card.lessonsDone / card.lessonsTotal) * 100) : 0;
   const yearLabel = card.annoScolastico ?? 'Senza anno';
+  // Once the tree is loaded, derive the domande total from it so a pool edit
+  // updates the strip live; before that, fall back to the card's counter.
+  const questionsTotal = tree
+    ? tree.lessons.reduce((s, l) => s + (l.questionCount ?? 0), 0)
+    : card.questionsTotal;
 
   return (
     <section aria-label={`Corso — ${card.title}`} className={styles.workspace}>
       <header className={styles.header}>
-        <button type="button" className={styles.backBtn} onClick={onBack}>
+        <button type="button" className={styles.backBtn} onClick={() => guardedNav(onBack)}>
           ← Libreria
         </button>
         <h2 className={styles.title}>{card.title}</h2>
@@ -172,7 +242,7 @@ export function CourseWorkspace({ card, onBack }: CourseWorkspaceProps) {
           ·
         </span>
         <span>
-          <strong>{card.questionsTotal}</strong> domande
+          <strong>{questionsTotal}</strong> domande
         </span>
         <div className={styles.progressTrack} role="img" aria-label={`Avanzamento lezioni ${pct}%`}>
           <div className={styles.progressFill} style={{ width: `${pct}%` }} />
@@ -197,7 +267,7 @@ export function CourseWorkspace({ card, onBack }: CourseWorkspaceProps) {
                 type="button"
                 className={`${styles.overviewBtn}${selection.kind === 'course' ? ` ${styles.selected}` : ''}`}
                 aria-current={selection.kind === 'course' ? 'true' : undefined}
-                onClick={() => setSelection({ kind: 'course' })}
+                onClick={() => guardedNav(() => setSelection({ kind: 'course' }))}
               >
                 Panoramica corso
               </button>
@@ -249,7 +319,9 @@ export function CourseWorkspace({ card, onBack }: CourseWorkspaceProps) {
                           type="button"
                           className={`${styles.udaTitleBtn}${udaSelected ? ` ${styles.selected}` : ''}`}
                           aria-current={udaSelected ? 'true' : undefined}
-                          onClick={() => setSelection({ kind: 'uda', udaDir: uda.dir })}
+                          onClick={() =>
+                            guardedNav(() => setSelection({ kind: 'uda', udaDir: uda.dir }))
+                          }
                         >
                           {uda.dir}
                         </button>
@@ -266,7 +338,7 @@ export function CourseWorkspace({ card, onBack }: CourseWorkspaceProps) {
                                   type="button"
                                   className={`${styles.lessonBtn}${active ? ` ${styles.selected}` : ''}`}
                                   aria-current={active ? 'true' : undefined}
-                                  onClick={() => void selectLesson(lesson)}
+                                  onClick={() => guardedNav(() => void selectLesson(lesson))}
                                 >
                                   {lesson.completed && (
                                     <span className={styles.doneDot} aria-hidden="true">
@@ -296,7 +368,7 @@ export function CourseWorkspace({ card, onBack }: CourseWorkspaceProps) {
             <UdaOverview
               uda={selectedUda}
               lessons={lessonsByUda.get(selectedUda.dir) ?? []}
-              onOpenLesson={(l) => void selectLesson(l)}
+              onOpenLesson={(l) => guardedNav(() => void selectLesson(l))}
             />
           )}
           {selection.kind === 'lesson' && selectedLesson && (
@@ -306,10 +378,53 @@ export function CourseWorkspace({ card, onBack }: CourseWorkspaceProps) {
               content={lessonContent}
               loading={lessonLoading}
               error={lessonError}
+              activeTab={activeTab}
+              onSelectTab={selectTab}
+              domandeVisited={domandeVisited}
+              programId={card.programId}
+              importId={card.activeImportId}
+              ownerUid={ownerUid}
+              onDirtyChange={setPoolDirty}
+              onPoolCountChange={(count, status) =>
+                handlePoolCountChange(selectedLesson.id, count, status)
+              }
             />
           )}
         </div>
       </div>
+
+      {pendingNav && (
+        <div className={styles.confirmBackdrop} onClick={() => setPendingNav(null)}>
+          <div
+            className={styles.confirmDialog}
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="Modifiche non salvate"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className={styles.confirmMessage}>
+              Ci sono modifiche non salvate nel pool di domande. Continuando andranno perse.
+            </p>
+            <div className={styles.confirmActions}>
+              <button type="button" onClick={() => setPendingNav(null)}>
+                Annulla
+              </button>
+              <button
+                type="button"
+                className="btn-danger"
+                onClick={() => {
+                  const nav = pendingNav;
+                  setPendingNav(null);
+                  setPoolDirty(false);
+                  nav.run();
+                }}
+              >
+                Continua senza salvare
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -440,20 +555,56 @@ function UdaOverview({
 
 // ── Lesson detail (lesson selected) ─────────────────────────────────────────
 
+const LESSON_TABS: { id: LessonTab; label: string }[] = [
+  { id: 'contenuto', label: 'Contenuto' },
+  { id: 'domande', label: 'Domande' },
+  { id: 'informazioni', label: 'Informazioni' },
+];
+
 function LessonDetail({
   lesson,
   metadata,
   content,
   loading,
   error,
+  activeTab,
+  onSelectTab,
+  domandeVisited,
+  programId,
+  importId,
+  ownerUid,
+  onDirtyChange,
+  onPoolCountChange,
 }: {
   lesson: LessonItem;
   metadata: LessonMetadata;
   content: string | null;
   loading: boolean;
   error: string | null;
+  activeTab: LessonTab;
+  onSelectTab: (tab: LessonTab) => void;
+  domandeVisited: boolean;
+  programId: string;
+  importId: string | null;
+  ownerUid: string;
+  onDirtyChange: (dirty: boolean) => void;
+  onPoolCountChange: (questionCount: number, poolStatus: PoolCountStatus) => void;
 }) {
   const { title } = resolveLessonTitle(lesson.filename, metadata.titolo ?? lesson.titolo);
+
+  // Roving-ish keyboard navigation across the tablist (←/→, Home/End).
+  function onTabKeyDown(e: ReactKeyboardEvent) {
+    const idx = LESSON_TABS.findIndex((t) => t.id === activeTab);
+    let next = idx;
+    if (e.key === 'ArrowRight') next = (idx + 1) % LESSON_TABS.length;
+    else if (e.key === 'ArrowLeft') next = (idx - 1 + LESSON_TABS.length) % LESSON_TABS.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = LESSON_TABS.length - 1;
+    else return;
+    e.preventDefault();
+    onSelectTab(LESSON_TABS[next]!.id);
+  }
+
   return (
     <div>
       <p className={styles.contextLabel}>Lezione</p>
@@ -461,24 +612,142 @@ function LessonDetail({
         <h3 className={styles.sectionTitle}>{title}</h3>
         {metadata.sottotitolo && <p className={styles.lessonSubtitle}>{metadata.sottotitolo}</p>}
       </div>
-      {metadata.difficolta && <span className={styles.difficulty}>{metadata.difficolta}</span>}
 
-      {loading && (
-        <p aria-busy="true" className="state-loading">
-          Caricamento contenuto…
-        </p>
+      <div className={styles.tablist} role="tablist" aria-label="Schede lezione">
+        {LESSON_TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`tab-${t.id}`}
+            aria-selected={activeTab === t.id}
+            aria-controls={`panel-${t.id}`}
+            tabIndex={activeTab === t.id ? 0 : -1}
+            className={`${styles.tab}${activeTab === t.id ? ` ${styles.tabActive}` : ''}`}
+            onClick={() => onSelectTab(t.id)}
+            onKeyDown={onTabKeyDown}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="panel-contenuto"
+        aria-labelledby="tab-contenuto"
+        hidden={activeTab !== 'contenuto'}
+      >
+        {activeTab === 'contenuto' && (
+          <>
+            {loading && (
+              <p aria-busy="true" className="state-loading">
+                Caricamento contenuto…
+              </p>
+            )}
+            {error && (
+              <p role="alert" className="text-error">
+                {error}
+              </p>
+            )}
+            {!loading && !error && content !== null && content.trim() === '' && (
+              <p className="state-empty">Nessun contenuto disponibile per questa lezione.</p>
+            )}
+            {!loading && !error && content !== null && content.trim() !== '' && (
+              <MarkdownRenderer markdown={content} />
+            )}
+          </>
+        )}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="panel-domande"
+        aria-labelledby="tab-domande"
+        hidden={activeTab !== 'domande'}
+      >
+        {/* Lazy: mounted only once the Domande tab has been opened, then kept
+            mounted across tab switches so the pool is read once per lesson. */}
+        {domandeVisited && (
+          <QuestionPoolEditor
+            programId={programId}
+            importId={importId}
+            lesson={lesson}
+            ownerUid={ownerUid}
+            onDirtyChange={onDirtyChange}
+            onPoolCountChange={onPoolCountChange}
+          />
+        )}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="panel-informazioni"
+        aria-labelledby="tab-informazioni"
+        hidden={activeTab !== 'informazioni'}
+      >
+        {activeTab === 'informazioni' && <LessonInfo lesson={lesson} metadata={metadata} />}
+      </div>
+    </div>
+  );
+}
+
+// ── Lesson "Informazioni" tab: only metadata actually present ────────────────
+
+function LessonInfo({ lesson, metadata }: { lesson: LessonItem; metadata: LessonMetadata }) {
+  const hasAny =
+    Boolean(metadata.titolo) ||
+    Boolean(metadata.sottotitolo) ||
+    Boolean(metadata.difficolta) ||
+    metadata.concettiChiave.length > 0 ||
+    metadata.obiettivi.length > 0;
+
+  return (
+    <div>
+      {!hasAny ? (
+        <p className="state-empty">Nessun metadato per questa lezione.</p>
+      ) : (
+        <dl className={styles.infoList}>
+          {metadata.titolo && (
+            <>
+              <dt>Titolo</dt>
+              <dd>{metadata.titolo}</dd>
+            </>
+          )}
+          {metadata.sottotitolo && (
+            <>
+              <dt>Sottotitolo</dt>
+              <dd>{metadata.sottotitolo}</dd>
+            </>
+          )}
+          {metadata.difficolta && (
+            <>
+              <dt>Difficoltà</dt>
+              <dd>{metadata.difficolta}</dd>
+            </>
+          )}
+          {metadata.concettiChiave.length > 0 && (
+            <>
+              <dt>Concetti chiave</dt>
+              <dd>{metadata.concettiChiave.join(', ')}</dd>
+            </>
+          )}
+          {metadata.obiettivi.length > 0 && (
+            <>
+              <dt>Obiettivi</dt>
+              <dd>{metadata.obiettivi.join(', ')}</dd>
+            </>
+          )}
+        </dl>
       )}
-      {error && (
-        <p role="alert" className="text-error">
-          {error}
-        </p>
-      )}
-      {!loading && !error && content !== null && content.trim() === '' && (
-        <p className="state-empty">Nessun contenuto disponibile per questa lezione.</p>
-      )}
-      {!loading && !error && content !== null && content.trim() !== '' && (
-        <MarkdownRenderer markdown={content} />
-      )}
+
+      <details className={styles.infoTechnical}>
+        <summary>Dettagli tecnici</summary>
+        <dl className={styles.infoList}>
+          <dt>File</dt>
+          <dd>{lesson.path}</dd>
+        </dl>
+      </details>
     </div>
   );
 }
