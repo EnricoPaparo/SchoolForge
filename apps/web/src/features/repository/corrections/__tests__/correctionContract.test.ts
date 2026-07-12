@@ -4,9 +4,13 @@ import {
   assertValidCorrectionStatusTransition,
   assertValidQuestionPoints,
   computeCorrectionTotals,
+  computeGeneralFeedbackDelta,
+  computeQuestionEvaluationDeltas,
   deriveCorrectionUiStatus,
+  INITIAL_CORRECTION_REOPEN_COUNT,
   isCorrectionComplete,
   isQuestionEvaluated,
+  isReopenedCorrection,
   isValidCorrectionStatusTransition,
   isValidQuestionPoints,
   MIN_QUESTION_POINTS,
@@ -29,6 +33,12 @@ describe('isValidQuestionPoints / assertValidQuestionPoints', () => {
     expect(isValidQuestionPoints(11, 10)).toBe(false);
     expect(isValidQuestionPoints(Number.NaN, 10)).toBe(false);
     expect(isValidQuestionPoints(Number.POSITIVE_INFINITY, 10)).toBe(false);
+  });
+
+  it('rejects a malformed maxPoints (negative, NaN, Infinity) regardless of points', () => {
+    expect(isValidQuestionPoints(0, -1)).toBe(false);
+    expect(isValidQuestionPoints(0, Number.NaN)).toBe(false);
+    expect(isValidQuestionPoints(5, Number.POSITIVE_INFINITY)).toBe(false);
   });
 
   it('assertValidQuestionPoints throws a readable error instead of clamping', () => {
@@ -60,8 +70,8 @@ describe('isQuestionEvaluated / isCorrectionComplete', () => {
     ).toBe(false);
   });
 
-  it('is vacuously complete for an empty evaluations map', () => {
-    expect(isCorrectionComplete({})).toBe(true);
+  it('is never complete for an empty evaluations map', () => {
+    expect(isCorrectionComplete({})).toBe(false);
   });
 });
 
@@ -142,5 +152,85 @@ describe('deriveCorrectionUiStatus', () => {
     expect(deriveCorrectionUiStatus({ status: 'in_progress' })).toBe('in_progress');
     expect(deriveCorrectionUiStatus({ status: 'completed' })).toBe('completed');
     expect(deriveCorrectionUiStatus({ status: 'returned' })).toBe('returned');
+  });
+});
+
+describe('isReopenedCorrection', () => {
+  it('is false at the initial reopen count and true once reopened', () => {
+    expect(INITIAL_CORRECTION_REOPEN_COUNT).toBe(0);
+    expect(isReopenedCorrection({ reopenCount: 0 })).toBe(false);
+    expect(isReopenedCorrection({ reopenCount: 1 })).toBe(true);
+    expect(isReopenedCorrection({ reopenCount: 3 })).toBe(true);
+  });
+});
+
+describe('computeQuestionEvaluationDeltas', () => {
+  it('returns no deltas when nothing changed', () => {
+    const evaluations: Record<string, QuestionEvaluation> = {
+      '0': evaluation({ order: 0, points: 5, maxPoints: 10, feedback: 'ok' }),
+    };
+    expect(computeQuestionEvaluationDeltas(evaluations, evaluations)).toEqual([]);
+  });
+
+  it('records only questions whose points and/or feedback actually changed', () => {
+    const previous: Record<string, QuestionEvaluation> = {
+      '0': evaluation({ order: 0, points: 5, maxPoints: 10 }),
+      '1': evaluation({ order: 1, points: 2, maxPoints: 10, feedback: 'quasi' }),
+      '2': evaluation({ order: 2, points: 7, maxPoints: 10 }),
+    };
+    const next: Record<string, QuestionEvaluation> = {
+      '0': evaluation({ order: 0, points: 8, maxPoints: 10 }), // points changed
+      '1': evaluation({ order: 1, points: 2, maxPoints: 10, feedback: 'ottimo' }), // feedback changed
+      '2': evaluation({ order: 2, points: 7, maxPoints: 10 }), // unchanged
+    };
+
+    const deltas = computeQuestionEvaluationDeltas(previous, next);
+    expect(deltas).toHaveLength(2);
+    expect(deltas.find((d) => d.order === 0)).toEqual({
+      order: 0,
+      previousPoints: 5,
+      nextPoints: 8,
+    });
+    expect(deltas.find((d) => d.order === 1)).toEqual({
+      order: 1,
+      previousPoints: 2,
+      nextPoints: 2,
+      previousFeedback: 'quasi',
+      nextFeedback: 'ottimo',
+    });
+  });
+
+  it('treats a question absent from the previous snapshot as previously unevaluated', () => {
+    const deltas = computeQuestionEvaluationDeltas(
+      {},
+      { '0': evaluation({ order: 0, points: 4, maxPoints: 10 }) },
+    );
+    expect(deltas).toEqual([{ order: 0, previousPoints: null, nextPoints: 4 }]);
+  });
+
+  it('never includes the full evaluation object, only points/feedback', () => {
+    const deltas = computeQuestionEvaluationDeltas(
+      { '0': evaluation({ order: 0, points: 1, maxPoints: 10 }) },
+      { '0': evaluation({ order: 0, points: 9, maxPoints: 10 }) },
+    );
+    expect(Object.keys(deltas[0])).toEqual(['order', 'previousPoints', 'nextPoints']);
+  });
+});
+
+describe('computeGeneralFeedbackDelta', () => {
+  it('returns undefined when the general feedback is unchanged', () => {
+    expect(computeGeneralFeedbackDelta('stesso', 'stesso')).toBeUndefined();
+    expect(computeGeneralFeedbackDelta(null, null)).toBeUndefined();
+  });
+
+  it('returns the before/after pair when it changed', () => {
+    expect(computeGeneralFeedbackDelta(null, 'buon lavoro')).toEqual({
+      previous: null,
+      next: 'buon lavoro',
+    });
+    expect(computeGeneralFeedbackDelta('vecchio', 'nuovo')).toEqual({
+      previous: 'vecchio',
+      next: 'nuovo',
+    });
   });
 });

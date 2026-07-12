@@ -521,26 +521,58 @@ interface Correction {
   updatedAt: Timestamp;
   completedAt: Timestamp | null;   // impostato alla transizione a 'completed', azzerato alla riapertura
   returnedAt: Timestamp | null;    // impostato alla transizione a 'returned', azzerato alla riapertura
+  reopenCount: number;             // 0 alla creazione, incrementato a ogni riapertura — mai azzerato
 }
 
-// correctionEvents/{eventId} — append-only, solo per riaperture/rettifiche
-// (non per ogni salvataggio mentre è 'in_progress': niente log di autosave)
+// Delta minimale di una domanda — registrato solo se points e/o feedback sono
+// effettivamente cambiati rispetto all'ultimo salvataggio (mai l'intera QuestionEvaluation)
+interface QuestionEvaluationDelta {
+  order: number;
+  previousPoints: number | null;
+  nextPoints: number | null;
+  previousFeedback?: string;
+  nextFeedback?: string;
+}
+
+// correctionEvents/{eventId} — append-only. Un salvataggio con reopenCount == 0
+// (primo giro di compilazione) non produce mai un evento, per quante volte il
+// docente salvi. Solo un salvataggio dopo una riapertura (reopenCount > 0) che
+// cambia effettivamente qualcosa scrive un evento 'scoreAdjusted', atomico con
+// l'aggiornamento della correzione. Nessun tipo 'hidden': l'azione di
+// nascondere/mostrare la restituzione (CorrectionReturn.visibleToStudent) è
+// formalizzata, ma non lo è il comportamento docente/audit che la produce —
+// lasciato a M4-01 invece di un tipo evento ambiguo.
 interface CorrectionEvent {
   correctionId: string;            // == submissionId == Correction doc id
   ownerUid: string;
-  type: 'reopened' | 'scoreAdjusted' | 'returned' | 'hidden';
+  type: 'reopened' | 'scoreAdjusted' | 'returned';
   actorUid: string;
   previousStatus: CorrectionStatus | null;
   nextStatus: CorrectionStatus;
   reason: string | null;
+  questionDeltas?: QuestionEvaluationDelta[]; // solo le domande cambiate, mai la mappa intera
+  generalFeedbackDelta?: { previous: string | null; next: string | null }; // solo se generalFeedback è cambiato
   timestamp: Timestamp;
 }
 
-// correctionReturns/{submissionId} — proiezione minima, scritta solo dal docente
-// alla restituzione; letta solo dallo studente. Non contiene mai le risposte
-// consegnate né il testo/soluzione delle domande (decisione rimandata a M4-01,
-// dipende da un toggle "mostra soluzioni dopo la restituzione" non ancora
-// modellato su VerificationDoc).
+// Recap per domanda, autosufficiente: copiato al momento della restituzione,
+// non un riferimento a submissions/teacherSnapshot/publishedProjection (che
+// potrebbero non essere più leggibili, es. verifica chiusa/nascosta).
+interface CorrectionReturnQuestionView {
+  order: number;
+  tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
+  testo: string;
+  opzioni?: { id: string; testo: string }[]; // id+testo soltanto, mai quale sia corretta
+  studentAnswer: AnswerValue | null;         // copiata da submissions.answers[order] alla restituzione
+  points: number;                            // mai null: una correzione incompleta non può essere restituita
+  maxPoints: number;
+  feedback?: string;
+  correctAnswer?: string | string[];         // presente solo se solutionsVisible == true per questa domanda
+}
+
+// correctionReturns/{submissionId} — proiezione minima ma autosufficiente,
+// scritta solo dal docente (restituzione + i due toggle sotto); letta solo
+// dallo studente. Le soluzioni non sono mai incluse automaticamente.
 interface CorrectionReturn {
   correctionId: string;            // == submissionId
   verificationId: string;
@@ -549,12 +581,14 @@ interface CorrectionReturn {
   verificationTitle: string;
   className: string | null;
   submittedAt: Timestamp;
-  evaluations: Record<string, { points: number | null; maxPoints: number; feedback?: string }>;
+  returnedAt: Timestamp;
+  questions: CorrectionReturnQuestionView[];
   generalFeedback: string | null;
   totalPoints: number;
   maxPoints: number;
   percentage: number | null;
-  returnedAt: Timestamp;
+  visibleToStudent: boolean;   // mostra/nasconde la restituzione senza cancellarla; Rules M4-01 la applicano al read
+  solutionsVisible: boolean;   // rispecchia esattamente se questions[*].correctAnswer è popolato in questo momento
 }
 
 // auditEvents/{eventId}
@@ -667,17 +701,19 @@ Lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applic
 
 ### 3.5 Correzione ed export (Modulo 4, dipende da M3-full — completato)
 
-> Le operazioni seguenti operano sulle consegne digitali di M3-full (`submissions/{id}`, path `${verificationId}_${studentUid}`), quindi non sono utilizzabili con M3-lite, che non produce consegne. **M4-00 definisce solo il contratto dati** (`Correction`, `CorrectionEvent`, `CorrectionReturn` sopra); nessuna di queste operazioni è ancora implementata — sono la specifica di scope per **M4-01** (service layer + Security Rules + test Emulator).
+> Le operazioni seguenti operano sulle consegne digitali di M3-full (`submissions/{id}`, path `${verificationId}_${studentUid}`), quindi non sono utilizzabili con M3-lite, che non produce consegne. **M4-00 definisce solo il contratto dati** (`Correction`, `QuestionEvaluationDelta`, `CorrectionEvent`, `CorrectionReturnQuestionView`, `CorrectionReturn` sopra); nessuna di queste operazioni è ancora implementata — sono la specifica di scope per **M4-01** (service layer + Security Rules + test Emulator).
 
 | Operazione | Scrittura Firestore |
 |---|---|
 | Leggi consegne | Query `submissions` filtrata per `verificationId` + `ownerUid` (già esistente, `submissionsMonitorService`); stato "Da correggere"/"In correzione"/"Corretta"/"Restituita" derivato lato client da `corrections/{submissionId}` assente o dal suo `status` — nessun documento vuoto creato solo per rappresentare "Da correggere" |
-| Apri correzione | Se assente, crea `corrections/{submissionId}` con `status: 'in_progress'`, `evaluations` inizializzate da `publishedProjection.questions` (`points: null`, `maxPoints` congelato); se presente, legge il documento esistente |
-| Assegna punteggio | Aggiorna `corrections/{submissionId}.evaluations[order]` e i totali derivati (`computeCorrectionTotals`); salvataggio esplicito, non ad ogni digitazione |
-| Completa correzione | Transizione `in_progress → completed`, ammessa solo se `isCorrectionComplete(evaluations)`; imposta `completedAt` |
-| Restituisci | Transizione `completed → returned`; scrive/aggiorna `correctionReturns/{submissionId}` (proiezione minima letta dallo studente); imposta `returnedAt` |
-| Riapri | Transizione `completed \| returned → in_progress`; azzera `completedAt`/`returnedAt`; appende un `correctionEvents` (`type: 'reopened'`) |
-| Rettifica dopo restituzione | Aggiorna `corrections`, appende `correctionEvents` (`type: 'scoreAdjusted'`); se la correzione era `returned`, la rettifica richiede prima la riapertura |
+| Apri correzione | Se assente, crea `corrections/{submissionId}` con `status: 'in_progress'`, `reopenCount: 0`, `evaluations` inizializzate da `publishedProjection.questions` (`points: null`, `maxPoints` congelato); se presente, legge il documento esistente |
+| Assegna punteggio (primo giro, `reopenCount == 0`) | Aggiorna `corrections/{submissionId}.evaluations[order]` e i totali derivati (`computeCorrectionTotals`); salvataggio esplicito, non ad ogni digitazione; **nessun** `correctionEvents` scritto, per quanti salvataggi avvengano |
+| Completa correzione | Transizione `in_progress → completed`, ammessa solo se `isCorrectionComplete(evaluations)` (mappa non vuota, ogni domanda valutata); imposta `completedAt` |
+| Restituisci | Transizione `completed → returned`; scrive `correctionReturns/{submissionId}` con `questions[]` autosufficiente (testo, opzioni, risposta consegnata, punti sempre definiti, `visibleToStudent: true`, `solutionsVisible: false`) nella stessa `writeBatch`; imposta `returnedAt`; appende `correctionEvents` (`type: 'returned'`) |
+| Riapri | Transizione `completed \| returned → in_progress`; azzera `completedAt`/`returnedAt`; incrementa `reopenCount`; appende `correctionEvents` (`type: 'reopened'`, senza `questionDeltas` se nessuna domanda è stata ancora ritoccata) |
+| Rettifica dopo riapertura (`reopenCount > 0`) | Aggiorna `corrections`; se `computeQuestionEvaluationDeltas`/`computeGeneralFeedbackDelta` produce almeno un cambiamento, appende atomicamente `correctionEvents` (`type: 'scoreAdjusted'`, `questionDeltas`/`generalFeedbackDelta` solo sui campi cambiati); se la correzione era già `returned`, la rettifica richiede prima la riapertura, poi eventualmente una nuova restituzione (che riscrive `correctionReturns` da zero, preservando `visibleToStudent`/`solutionsVisible` correnti) |
+| Mostra/nascondi soluzioni | Aggiorna `correctionReturns.solutionsVisible`; `true` riscrive `correctAnswer` su ogni `questions[i]` dalle soluzioni congelate; `false` **rimuove** il campo da ogni domanda, non lo nasconde solo lato UI |
+| Mostra/nascondi restituzione | Aggiorna `correctionReturns.visibleToStudent`; non tocca `corrections` né i punteggi |
 | Registro Correzioni (popup) | Solo lettura `corrections` + `submissions` (nome, cognome, punteggio, percentuale, data consegna); export PDF/CSV generato nel browser, nessuna scrittura — **fuori scope M4-00/M4-01** |
 | Elimina consegna | **Fuori scope M4-00/M4-01** — non implementata |
 | Export verifiche | **Fuori scope M4-00/M4-01** — leggerà `submissions` + `teacherSnapshot`/`publishedProjection` + `corrections`; genera nel browser |
@@ -823,7 +859,7 @@ Le Security Rules Firestore devono garantire, per la baseline corrente (M1+M2+M3
 | `verifications/*/publishedSnapshot` | Lettura | — | — | — |
 | `verifications/*/publishedProjection` | Lettura + scrittura | Lettura solo quando `visibility == "public"` (che vale solo mentre il padre è `active` — vedi §3.4a) **e** `classId` è compatibile col proprio `classId` (M3L-D; assente/`null` → nessuno studente) | — | — |
 | `corrections`, `correctionEvents` | Lettura + scrittura (M4-01, non ancora implementato) | — | — | — |
-| `correctionReturns` | Lettura + scrittura (M4-01, non ancora implementato) | Solo lettura della propria (`studentUid`), solo quando la correzione è `returned` | — | — |
+| `correctionReturns` | Lettura + scrittura (M4-01, non ancora implementato) | Solo lettura della propria (`studentUid`), solo quando `visibleToStudent == true` | — | — |
 | `auditEvents` | Lettura + sola creazione append-only con schema ammesso | — | — | — |
 
 Un Google-autenticato non approvato (nessun documento `students/{uid}`, oppure `pending`/`blocked`, oppure `studentPortalEnabled == false`) non ha alcuna riga con permesso diverso da "—" nella colonna dedicata: è trattato come un non-owner qualunque, con l'unica eccezione di `settings/ownerPublic` (necessaria solo per il routing UI, non per l'autorizzazione).

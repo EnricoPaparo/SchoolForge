@@ -1,16 +1,28 @@
-import type { CorrectionStatus, QuestionEvaluation } from '../../../types/firestore.js';
+import type {
+  CorrectionStatus,
+  QuestionEvaluation,
+  QuestionEvaluationDelta,
+} from '../../../types/firestore.js';
 
 /** D-M4-05: the only valid score range for a question is `[0, maxPoints]`. */
 export const MIN_QUESTION_POINTS = 0;
 
 /**
- * D-M4-05: a score is valid only when it is a finite number, not negative,
- * and not greater than the question's frozen `maxPoints`. Partial/decimal
- * credit (e.g. `1.5`) is allowed — this codebase never mandates integer
- * points, only the range.
+ * D-M4-05: a score is valid only when both `points` and `maxPoints` are
+ * finite numbers, `maxPoints` is not negative, and `points` falls within
+ * `[0, maxPoints]`. Partial/decimal credit (e.g. `1.5`) is allowed — this
+ * codebase never mandates integer points, only the range. A malformed
+ * `maxPoints` (negative, `NaN`, `Infinity`) is rejected the same as an
+ * out-of-range `points` — it can never be satisfied by any valid score.
  */
 export function isValidQuestionPoints(points: number, maxPoints: number): boolean {
-  return Number.isFinite(points) && points >= MIN_QUESTION_POINTS && points <= maxPoints;
+  return (
+    Number.isFinite(points) &&
+    Number.isFinite(maxPoints) &&
+    maxPoints >= MIN_QUESTION_POINTS &&
+    points >= MIN_QUESTION_POINTS &&
+    points <= maxPoints
+  );
 }
 
 /**
@@ -39,13 +51,14 @@ export function isQuestionEvaluated(evaluation: QuestionEvaluation): boolean {
 
 /**
  * D-M4-06/D-M4-08: a correction may transition to `'completed'` only once
- * every question in `evaluations` has been evaluated (see
- * `isQuestionEvaluated`). An empty `evaluations` map (a verification with
- * zero questions, which should not exist in practice) is vacuously
- * complete — callers should not rely on this edge case.
+ * `evaluations` is non-empty and every question in it has been evaluated
+ * (see `isQuestionEvaluated`). An empty `evaluations` map is **not**
+ * complete — a correction with nothing to grade is not a legitimate state,
+ * and must never be reachable as `'completed'`.
  */
 export function isCorrectionComplete(evaluations: Record<string, QuestionEvaluation>): boolean {
-  return Object.values(evaluations).every(isQuestionEvaluated);
+  const values = Object.values(evaluations);
+  return values.length > 0 && values.every(isQuestionEvaluated);
 }
 
 export type CorrectionTotals = {
@@ -138,4 +151,60 @@ export function deriveCorrectionUiStatus(
   correction: { status: CorrectionStatus } | null,
 ): CorrectionUiStatus {
   return correction ? correction.status : 'to_correct';
+}
+
+/** D-M4-10: the `reopenCount` every newly created `CorrectionDoc` starts at. */
+export const INITIAL_CORRECTION_REOPEN_COUNT = 0;
+
+/**
+ * D-M4-10/D-M4-12: whether a correction has ever been reopened. This is
+ * the exact condition M4-01's save operation must check to decide whether
+ * an edit needs a `correctionEvents` entry at all — a first-pass edit
+ * (`reopenCount === 0`) never does, however many times the docente saves;
+ * only an edit made after at least one reopen does, and only when it
+ * actually changes something (see `computeQuestionEvaluationDeltas`).
+ */
+export function isReopenedCorrection(correction: { reopenCount: number }): boolean {
+  return correction.reopenCount > 0;
+}
+
+/**
+ * D-M4-11: computes the minimal set of per-question deltas between two
+ * `evaluations` snapshots — only questions whose `points` and/or
+ * `feedback` actually changed, never the full map. Order-stable (iterates
+ * `next` in key order) so a caller can persist `questionDeltas` directly
+ * on a `CorrectionEventDoc` without further filtering.
+ */
+export function computeQuestionEvaluationDeltas(
+  previous: Record<string, QuestionEvaluation>,
+  next: Record<string, QuestionEvaluation>,
+): QuestionEvaluationDelta[] {
+  const deltas: QuestionEvaluationDelta[] = [];
+  for (const key of Object.keys(next)) {
+    const before = previous[key];
+    const after = next[key];
+    const pointsChanged = (before?.points ?? null) !== after.points;
+    const feedbackChanged = (before?.feedback ?? undefined) !== after.feedback;
+    if (!pointsChanged && !feedbackChanged) continue;
+    deltas.push({
+      order: after.order,
+      previousPoints: before?.points ?? null,
+      nextPoints: after.points,
+      ...(before?.feedback !== undefined ? { previousFeedback: before.feedback } : {}),
+      ...(after.feedback !== undefined ? { nextFeedback: after.feedback } : {}),
+    });
+  }
+  return deltas;
+}
+
+/**
+ * D-M4-11: whether `generalFeedback` changed between two correction
+ * snapshots — the companion check to `computeQuestionEvaluationDeltas` for
+ * `CorrectionEventDoc.generalFeedbackDelta`.
+ */
+export function computeGeneralFeedbackDelta(
+  previous: string | null,
+  next: string | null,
+): { previous: string | null; next: string | null } | undefined {
+  return previous === next ? undefined : { previous, next };
 }

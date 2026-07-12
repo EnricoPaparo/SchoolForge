@@ -691,20 +691,51 @@ export type CorrectionDoc = {
   completedAt: Timestamp | FieldValue | null;
   /** Set on the transition to `'returned'`; cleared back to `null` on reopen. */
   returnedAt: Timestamp | FieldValue | null;
+  /**
+   * Persistent, minimal counter incremented every time the correction is
+   * reopened (`completed`/`returned` → `in_progress`). Starts at `0` on
+   * creation and never resets. This is how M4-01's service layer
+   * distinguishes "first-pass compilation" (`reopenCount === 0`, no
+   * `correctionEvents` written on save, however many times the docente
+   * saves) from "editing after a reopen" (`reopenCount > 0`, a save that
+   * actually changes an evaluation writes a `'scoreAdjusted'` event
+   * alongside the update, atomically) — see `isReopenedCorrection` in
+   * `correctionContract.ts`.
+   */
+  reopenCount: number;
+};
+
+/**
+ * A single question's before/after delta — only ever recorded when
+ * `points` and/or `feedback` actually changed. See
+ * `computeQuestionEvaluationDeltas` in `correctionContract.ts`.
+ */
+export type QuestionEvaluationDelta = {
+  order: number;
+  previousPoints: number | null;
+  nextPoints: number | null;
+  previousFeedback?: string;
+  nextFeedback?: string;
 };
 
 /**
  * Append-only audit trail (D-M4-10) for state changes that happen after a
  * correction has already left `'in_progress'` once — i.e. reopening a
- * `completed`/`returned` correction, or returning/hiding it again after a
- * rectification. Routine progress while still `'in_progress'` (saving
- * scores question by question) does **not** produce events: that would
- * turn this into an autosave log, which D-M4-12 explicitly rules out.
- * Deliberately minimal — the state transition plus an optional
- * docente-provided reason, matching `AuditEvent`'s level of detail
- * elsewhere in this codebase. Never updated or deleted once written.
+ * `completed`/`returned` correction, returning it, or adjusting scores on a
+ * correction that has `reopenCount > 0`. Routine progress on the first pass
+ * (`reopenCount === 0`, saving scores question by question) does **not**
+ * produce events: that would turn this into an autosave log, which
+ * D-M4-12 explicitly rules out. `'hidden'` is deliberately not a member of
+ * `CorrectionEventType` — showing/hiding a returned correction
+ * (`CorrectionReturnDoc.visibleToStudent`) is formalized in M4-00, but the
+ * docente-facing hide action and its audit story are not, and are left to
+ * M4-01 rather than named here ambiguously.
+ *
+ * Deliberately minimal — the state transition plus, only when relevant,
+ * the specific fields that changed. Never the full `evaluations` map or
+ * the submission. Never updated or deleted once written.
  */
-export type CorrectionEventType = 'reopened' | 'scoreAdjusted' | 'returned' | 'hidden';
+export type CorrectionEventType = 'reopened' | 'scoreAdjusted' | 'returned';
 
 /** Stored at `correctionEvents/{eventId}` — `eventId` is an auto-generated id, not deterministic (many events per correction). */
 export type CorrectionEventDoc = {
@@ -715,28 +746,72 @@ export type CorrectionEventDoc = {
   previousStatus: CorrectionStatus | null;
   nextStatus: CorrectionStatus;
   reason: string | null;
+  /**
+   * Only the questions whose `points` and/or `feedback` actually changed
+   * since the correction was last saved — never the full `evaluations`
+   * map. Absent/empty for a pure status transition with no accompanying
+   * score edit (e.g. `'reopened'` with nothing changed yet, or `'returned'`
+   * with no last-minute edit).
+   */
+  questionDeltas?: QuestionEvaluationDelta[];
+  /** Present only when `CorrectionDoc.generalFeedback` changed in the same write. */
+  generalFeedbackDelta?: { previous: string | null; next: string | null };
   timestamp: Timestamp | FieldValue;
 };
 
 /**
- * Minimal, write-only-from-the-teacher projection the student reads once a
- * correction is `'returned'` (D-M4-09). Deliberately does **not** embed the
- * submission's answers or the verification's question text/options/
- * solution — re-showing "propria risposta" and the correct solution
- * (§6 of `m4-correzione-ux-concept.md`) depends on a verification-level
- * "mostra soluzioni dopo la restituzione" toggle not yet modeled anywhere
- * in this codebase, and is left as an explicit M4-01 decision (see
- * `piano-implementazione.md` §M4-01) rather than guessed here. What M4-00
- * *can* define now, because it follows directly from `CorrectionDoc`
- * without new product decisions, is the scoring/feedback recap: totals,
- * percentage, general feedback, and per-question points/feedback keyed the
- * same way as `CorrectionDoc.evaluations`.
+ * Per-question recap embedded in `CorrectionReturnDoc` — deliberately a
+ * self-sufficient copy (question text/options/student answer/score), not a
+ * reference into `SubmissionDoc`/`teacherSnapshot`/`publishedProjection`:
+ * those may become unreadable to the student by the time they read this
+ * projection (verification closed/hidden, Modalità verifica active, etc.),
+ * and a returned result must remain readable regardless. `correctAnswer`
+ * is the one field that is never copied by default — see
+ * `CorrectionReturnDoc.solutionsVisible`.
+ */
+export type CorrectionReturnQuestionView = {
+  order: number;
+  tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
+  testo: string;
+  /** Present only for chiusa_singola/chiusa_multipla. id + testo only — never which option is correct. */
+  opzioni?: { id: string; testo: string }[];
+  /** Copied from the submission's `answers[order]` at return time. `null` if the student left the question blank. */
+  studentAnswer: AnswerValue | null;
+  /**
+   * Always a definite number once returned — never `null`. A correction
+   * must be `completed` (every question evaluated) before it can be
+   * returned (see `isValidCorrectionStatusTransition`), so there is no
+   * "returned but still ungraded" state to represent here.
+   */
+  points: number;
+  maxPoints: number;
+  feedback?: string;
+  /**
+   * Present only while `CorrectionReturnDoc.solutionsVisible === true` for
+   * this question's snapshot. `string` for aperta/chiusa_singola, `string[]`
+   * for chiusa_multipla — same shape as
+   * `VerificationTeacherQuestionSnapshot.soluzione`.
+   */
+  correctAnswer?: string | string[];
+};
+
+/**
+ * Self-sufficient, write-only-from-the-teacher projection the student reads
+ * once a correction is `'returned'` (D-M4-09). Never depends on
+ * `publishedProjection`/`teacherSnapshot` being readable at read time — the
+ * verification may since have been closed, hidden, or made unreachable by
+ * Modalità verifica; the returned result must not go blank because of that.
+ * Everything the student needs to see (§6 of
+ * `m4-correzione-ux-concept.md`) is embedded directly: question text,
+ * options, the student's own answer, per-question score/feedback, and
+ * totals. Solutions are the one exception — never included automatically.
  *
  * Stored at `correctionReturns/{submissionId}` — same deterministic id
  * space as `corrections`/`submissions`. Written only by the teacher's
- * "return" action (never by the student, never continuously); the student
- * only ever reads it, the same relationship `submissionReceipts` already
- * has to `submissions`.
+ * "return" action and by the two explicit `solutionsVisible` toggles below
+ * (never by the student, never continuously); the student only ever reads
+ * it, the same relationship `submissionReceipts` already has to
+ * `submissions`.
  */
 export type CorrectionReturnDoc = {
   correctionId: string; // == submissionId
@@ -746,10 +821,30 @@ export type CorrectionReturnDoc = {
   verificationTitle: string;
   className: string | null;
   submittedAt: Timestamp | FieldValue;
-  evaluations: Record<string, { points: number | null; maxPoints: number; feedback?: string }>;
+  returnedAt: Timestamp | FieldValue;
+  questions: CorrectionReturnQuestionView[];
   generalFeedback: string | null;
   totalPoints: number;
   maxPoints: number;
   percentage: number | null;
-  returnedAt: Timestamp | FieldValue;
+  /**
+   * Whether the student can currently read this projection at all
+   * (M4-01 Security Rules will gate the `read` on this field). Lets the
+   * docente hide a restituted result without deleting it or losing the
+   * scoring data — e.g. to correct a mistake before the student re-reads
+   * it. Independent of `CorrectionDoc.status`: a correction can be
+   * `returned` with `visibleToStudent: false`.
+   */
+  visibleToStudent: boolean;
+  /**
+   * Whether `questions[*].correctAnswer` is currently populated on this
+   * document. M4-01's service must keep this in sync by construction:
+   * flipping to `true` explicitly rewrites every question with its frozen
+   * `correctAnswer`; flipping to `false` explicitly **removes** the field
+   * from every question in the same write — never a client-side-only
+   * hide. This field always reflects what is actually stored, so Security
+   * Rules never need to inspect `questions[*]` to decide what the student
+   * may read.
+   */
+  solutionsVisible: boolean;
 };
