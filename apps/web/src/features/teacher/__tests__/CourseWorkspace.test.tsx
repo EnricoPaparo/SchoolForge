@@ -8,11 +8,46 @@ import type { LessonItem, UdaItem } from '../../repository/programs/programsServ
 const mockListUdas = vi.fn();
 const mockListLessons = vi.fn();
 const mockFetchLessonContent = vi.fn();
+const mockUpdateProgramTitle = vi.fn();
+const mockSetProgramClassIds = vi.fn();
+const mockDeleteProgram = vi.fn();
+const mockGetImportMeta = vi.fn();
+const mockCreateUda = vi.fn();
+const mockUpdateUdaMetadata = vi.fn();
+const mockDeleteUda = vi.fn();
+const mockImportRepository = vi.fn();
+const mockReadZipFile = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
 vi.mock('../../repository/programs/programsService.js', () => ({
   listUdas: (...a: unknown[]) => mockListUdas(...a),
   listLessons: (...a: unknown[]) => mockListLessons(...a),
+  updateProgramTitle: (...a: unknown[]) => mockUpdateProgramTitle(...a),
+  setProgramClassIds: (...a: unknown[]) => mockSetProgramClassIds(...a),
+  deleteProgram: (...a: unknown[]) => mockDeleteProgram(...a),
+  getImportMeta: (...a: unknown[]) => mockGetImportMeta(...a),
+}));
+const { mockDeleteBlockedError } = vi.hoisted(() => ({
+  mockDeleteBlockedError: class extends Error {
+    blockers: { verificationId: string; title: string }[];
+    constructor(blockers: { verificationId: string; title: string }[]) {
+      super('blocked');
+      this.name = 'RepositoryDeleteBlockedError';
+      this.blockers = blockers;
+    }
+  },
+}));
+vi.mock('../../repository/editor/repositoryEditorService.js', () => ({
+  createUda: (...a: unknown[]) => mockCreateUda(...a),
+  updateUdaMetadata: (...a: unknown[]) => mockUpdateUdaMetadata(...a),
+  deleteUda: (...a: unknown[]) => mockDeleteUda(...a),
+  RepositoryDeleteBlockedError: mockDeleteBlockedError,
+}));
+vi.mock('../../repository/import/importRepository.js', () => ({
+  importRepository: (...a: unknown[]) => mockImportRepository(...a),
+}));
+vi.mock('../../repository/import/readZipFile.js', () => ({
+  readZipFile: (...a: unknown[]) => mockReadZipFile(...a),
 }));
 vi.mock('../lessonContent.js', () => ({
   fetchLessonContent: (...a: unknown[]) => mockFetchLessonContent(...a),
@@ -424,5 +459,158 @@ describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
     fireEvent.keyDown(tabContenuto, { key: 'ArrowLeft' });
     expect(tabInformazioni.getAttribute('aria-selected')).toBe('true');
     expect(document.activeElement).toBe(tabInformazioni);
+  });
+});
+
+describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
+  async function renderAndReady(
+    over: Partial<CourseCard> = {},
+    spies: Partial<Record<'onCardPatch' | 'onCourseDeleted', ReturnType<typeof vi.fn>>> = {},
+  ) {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { questionCount: 4 })]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    render(
+      <CourseWorkspace
+        card={card(over)}
+        ownerUid="owner"
+        onBack={vi.fn()}
+        onCardPatch={spies.onCardPatch}
+        onCourseDeleted={spies.onCourseDeleted}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy());
+  }
+
+  it('shows the course toolbar by default and the UDA toolbar when a UDA is selected', async () => {
+    await renderAndReady();
+    expect(screen.getByRole('button', { name: 'Azioni corso' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Azioni UDA' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
+    expect(screen.getByRole('button', { name: '+ Nuova UDA' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Azioni UDA' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Azioni corso' })).toBeNull();
+  });
+
+  it('renames the course and patches the card', async () => {
+    const onCardPatch = vi.fn();
+    mockUpdateProgramTitle.mockResolvedValue(undefined);
+    await renderAndReady({}, { onCardPatch });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Modifica titolo' }));
+    fireEvent.change(screen.getByLabelText('Titolo del corso'), { target: { value: 'Reti 2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    await waitFor(() =>
+      expect(mockUpdateProgramTitle).toHaveBeenCalledWith('p1', 'Reti 2', 'owner', {}),
+    );
+    expect(onCardPatch).toHaveBeenCalledWith('p1', { title: 'Reti 2' });
+  });
+
+  it('edits UDA metadata and updates the tree', async () => {
+    mockUpdateUdaMetadata.mockResolvedValue(undefined);
+    await renderAndReady();
+    fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni UDA' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Modifica metadata' }));
+
+    fireEvent.change(screen.getByLabelText('Descrizione UDA'), {
+      target: { value: 'Nuova descr' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    await waitFor(() => expect(mockUpdateUdaMetadata).toHaveBeenCalledOnce());
+    const arg = mockUpdateUdaMetadata.mock.calls[0][0] as { fields: { descrizione: string } };
+    expect(arg.fields.descrizione).toBe('Nuova descr');
+    // Tree updated locally: description now visible in the UDA overview.
+    await waitFor(() => expect(screen.getByText('Nuova descr')).toBeTruthy());
+  });
+
+  it('creates a new UDA and shows it in the sidebar', async () => {
+    const onCardPatch = vi.fn();
+    mockCreateUda.mockResolvedValue({ udaId: 'uda-new', dir: 'uda-02-nuova', order: 1 });
+    await renderAndReady({}, { onCardPatch });
+    fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: '+ Nuova UDA' }));
+    fireEvent.change(screen.getByLabelText('Titolo UDA'), { target: { value: 'Nuova' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crea UDA' }));
+
+    await waitFor(() => expect(mockCreateUda).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'uda-02-nuova' })).toBeTruthy());
+    // Card UDA count patched locally (1 → 2).
+    expect(onCardPatch).toHaveBeenCalledWith('p1', expect.objectContaining({ udaCount: 2 }));
+  });
+
+  it('deletes an authorized UDA and returns to the course overview', async () => {
+    mockDeleteUda.mockResolvedValue(undefined);
+    await renderAndReady();
+    fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni UDA' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Elimina UDA' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina' }));
+
+    await waitFor(() => expect(mockDeleteUda).toHaveBeenCalledOnce());
+    // UDA gone from the sidebar; back on the course overview.
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'uda-01-reti' })).toBeNull());
+    expect(screen.getByText('Panoramica corso', { selector: 'p' })).toBeTruthy();
+  });
+
+  it('shows the verifications blockers and keeps the UDA when deletion is blocked', async () => {
+    mockDeleteUda.mockRejectedValue(
+      new mockDeleteBlockedError([{ verificationId: 'v1', title: 'Compito di Reti' }]),
+    );
+    await renderAndReady();
+    fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni UDA' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Elimina UDA' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina' }));
+
+    await waitFor(() => expect(screen.getByText('Compito di Reti')).toBeTruthy());
+    // Still selectable (not removed) once the dialog is closed.
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy();
+  });
+
+  it('imports a ZIP into the course and patches only that course (no library reload)', async () => {
+    const onCardPatch = vi.fn();
+    mockReadZipFile.mockResolvedValue([{ path: 'programma.md', text: '' }]);
+    mockImportRepository.mockResolvedValue({
+      status: 'committed',
+      importId: 'imp2',
+      udaCount: 3,
+      lessonCount: 9,
+      questionCount: 20,
+    });
+    mockGetImportMeta.mockResolvedValue({ annoScolastico: '2026/2027' });
+    await renderAndReady({}, { onCardPatch });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Importa ZIP' }));
+    const file = new File(['z'], 'c.zip', { type: 'application/zip' });
+    fireEvent.change(screen.getByLabelText('File ZIP del corso'), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Importa' }));
+
+    await waitFor(() => expect(mockImportRepository).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(onCardPatch).toHaveBeenCalledWith(
+        'p1',
+        expect.objectContaining({ activeImportId: 'imp2', udaCount: 3, questionsTotal: 20 }),
+      ),
+    );
+  });
+
+  it('deletes the course and notifies the parent', async () => {
+    const onCourseDeleted = vi.fn();
+    mockDeleteProgram.mockResolvedValue(undefined);
+    await renderAndReady({}, { onCourseDeleted });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Elimina corso' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina' }));
+
+    await waitFor(() => expect(mockDeleteProgram).toHaveBeenCalledWith('p1', 'owner', {}, {}));
+    expect(onCourseDeleted).toHaveBeenCalledWith('p1');
   });
 });

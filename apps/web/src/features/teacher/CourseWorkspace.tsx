@@ -8,11 +8,25 @@ import {
 import { db, storage } from '../../lib/firebase.js';
 import type { CourseCard } from '../repository/programs/courseLibrary.js';
 import {
+  deleteProgram,
+  getImportMeta,
   listLessons,
   listUdas,
+  setProgramClassIds,
+  updateProgramTitle,
   type LessonItem,
+  type ProgramItem,
   type UdaItem,
 } from '../repository/programs/programsService.js';
+import {
+  createUda,
+  deleteUda,
+  updateUdaMetadata,
+  RepositoryDeleteBlockedError,
+} from '../repository/editor/repositoryEditorService.js';
+import type { RepositoryDeleteBlocker } from '../repository/editor/repositoryEditorGuards.js';
+import { importRepository } from '../repository/import/importRepository.js';
+import { readZipFile } from '../repository/import/readZipFile.js';
 import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
 import {
   EMPTY_LESSON_METADATA,
@@ -22,7 +36,36 @@ import type { LessonMetadata } from '../repository/validation/types.js';
 import { fetchLessonContent } from './lessonContent.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { QuestionPoolEditor, type PoolCountStatus } from './QuestionPoolEditor.js';
+import { exportZip } from './exportZip.js';
+import { downloadMarkdown, downloadPdf, generateMarkdown } from './programmaSvolto.js';
+import { describeImportValidationError } from './importValidationMessage.js';
+import {
+  ClassesDialog,
+  ConfirmDialog,
+  ImportIntoCourseDialog,
+  NewUdaDialog,
+  ProgramInfoDialog,
+  TitleDialog,
+  UdaMetadataDialog,
+  type UdaMetadataValues,
+} from './workspaceDialogs.js';
 import styles from './CourseWorkspace.module.css';
+
+/**
+ * Builds the minimal `ProgramItem` shape the export/programma-svolto helpers
+ * expect, from the library card the workspace already holds.
+ */
+function cardToProgram(card: CourseCard): ProgramItem {
+  return {
+    id: card.programId,
+    ownerUid: '',
+    title: card.title,
+    activeImportId: card.activeImportId,
+    classIds: [],
+    createdAt: null as never,
+    updatedAt: null as never,
+  };
+}
 
 type CourseWorkspaceProps = {
   /**
@@ -40,7 +83,26 @@ type CourseWorkspaceProps = {
    * library (DUX-03 item 8).
    */
   onProgramQuestionsChange?: (programId: string, questionsTotal: number) => void;
+  /**
+   * DUX-04A: patch the library card in place after a course/UDA action
+   * (title, classes, counts, active import) — avoids reloading the whole
+   * library.
+   */
+  onCardPatch?: (programId: string, patch: Partial<CourseCard>) => void;
+  /** DUX-04A: the course was deleted — drop its card and leave the workspace. */
+  onCourseDeleted?: (programId: string) => void;
 };
+
+type WsDialog =
+  | { kind: 'none' }
+  | { kind: 'renameCourse' }
+  | { kind: 'importCourse' }
+  | { kind: 'classes' }
+  | { kind: 'info' }
+  | { kind: 'deleteCourse' }
+  | { kind: 'newUda' }
+  | { kind: 'editUda'; udaId: string }
+  | { kind: 'deleteUda'; udaId: string };
 
 type Tree = { udas: UdaItem[]; lessons: LessonItem[] };
 
@@ -56,9 +118,18 @@ export function CourseWorkspace({
   ownerUid,
   onBack,
   onProgramQuestionsChange,
+  onCardPatch,
+  onCourseDeleted,
 }: CourseWorkspaceProps) {
   const [tree, setTree] = useState<Tree | null>(null);
   const [treeError, setTreeError] = useState<string | null>(null);
+
+  // Contextual course/UDA actions (DUX-04A).
+  const [wsDialog, setWsDialog] = useState<WsDialog>({ kind: 'none' });
+  const [wsBusy, setWsBusy] = useState(false);
+  const [wsError, setWsError] = useState<string | null>(null);
+  const [udaBlockers, setUdaBlockers] = useState<RepositoryDeleteBlocker[] | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const [selection, setSelection] = useState<Selection>({ kind: 'course' });
   const [collapsedUdas, setCollapsedUdas] = useState<Set<string>>(new Set());
@@ -188,12 +259,248 @@ export function CourseWorkspace({
     }
   }
 
+  // Close the toolbar menu on any outside click, and whenever the selection
+  // changes (course ⇄ UDA ⇄ lesson) so it never lingers over a new context.
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDocClick() {
+      setMenuOpen(false);
+    }
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, [menuOpen]);
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [selection]);
+
   function toggleUdaCollapsed(udaDir: string) {
     setCollapsedUdas((prev) => {
       const next = new Set(prev);
       if (next.has(udaDir)) next.delete(udaDir);
       else next.add(udaDir);
       return next;
+    });
+  }
+
+  // ── Course / UDA actions (DUX-04A) ──────────────────────────────────────
+  // All go through the dirty guard so an unsaved pool edit is never lost.
+  function openDialog(kind: WsDialog) {
+    guardedNav(() => {
+      setWsError(null);
+      setUdaBlockers(null);
+      setMenuOpen(false);
+      setWsDialog(kind);
+    });
+  }
+  function closeDialog() {
+    setWsDialog({ kind: 'none' });
+    setWsError(null);
+    setUdaBlockers(null);
+  }
+
+  // Patches the library card's derived counters from a freshly-updated tree,
+  // so the card and the summary strip stay correct without a library reload.
+  function patchCardCounts(next: Tree) {
+    onCardPatch?.(card.programId, {
+      udaCount: next.udas.length,
+      lessonsTotal: next.lessons.length,
+      lessonsDone: next.lessons.filter((l) => l.completed).length,
+      questionsTotal: next.lessons.reduce((s, l) => s + (l.questionCount ?? 0), 0),
+    });
+  }
+
+  async function withBusy(fn: () => Promise<void>) {
+    setWsBusy(true);
+    setWsError(null);
+    try {
+      await fn();
+    } finally {
+      setWsBusy(false);
+    }
+  }
+
+  function handleRenameCourse(title: string) {
+    void withBusy(async () => {
+      try {
+        await updateProgramTitle(card.programId, title, ownerUid, db);
+        onCardPatch?.(card.programId, { title });
+        closeDialog();
+      } catch {
+        setWsError('Impossibile rinominare il corso.');
+      }
+    });
+  }
+
+  function handleImportCourse(file: File) {
+    void withBusy(async () => {
+      try {
+        const files = await readZipFile(file);
+        const result = await importRepository(
+          { ownerUid, programmaTitle: card.title, programId: card.programId, files },
+          { db, storage },
+        );
+        if (result.status === 'validation_failed') {
+          setWsError(describeImportValidationError(result.validationIssues));
+          return;
+        }
+        // Structure fully changed: reload only this course's metadata + tree by
+        // patching the card's active import (the tree effect reloads UDA/lezioni).
+        const meta = await getImportMeta(card.programId, result.importId, db);
+        onCardPatch?.(card.programId, {
+          activeImportId: result.importId,
+          hasImport: true,
+          udaCount: result.udaCount,
+          lessonsTotal: result.lessonCount,
+          lessonsDone: 0,
+          questionsTotal: result.questionCount,
+          annoScolastico: meta?.annoScolastico ?? null,
+        });
+        setSelection({ kind: 'course' });
+        closeDialog();
+      } catch (err) {
+        setWsError(err instanceof Error ? err.message : "Errore durante l'importazione.");
+      }
+    });
+  }
+
+  function handleSaveClasses(classIds: string[], classNames: string[]) {
+    void withBusy(async () => {
+      try {
+        await setProgramClassIds(card.programId, classIds, ownerUid, db);
+        onCardPatch?.(card.programId, { classNames });
+        closeDialog();
+      } catch {
+        setWsError('Impossibile salvare le classi.');
+      }
+    });
+  }
+
+  function handleDeleteCourse() {
+    void withBusy(async () => {
+      try {
+        await deleteProgram(card.programId, ownerUid, db, storage);
+        onCourseDeleted?.(card.programId);
+      } catch (err) {
+        setWsError(err instanceof Error ? err.message : 'Impossibile eliminare il corso.');
+      }
+    });
+  }
+
+  async function handleExportZip() {
+    setMenuOpen(false);
+    try {
+      await exportZip(cardToProgram(card), storage, db);
+    } catch {
+      setWsError('Impossibile esportare il ZIP.');
+    }
+  }
+
+  async function handleProgrammaSvolto(format: 'md' | 'pdf') {
+    setMenuOpen(false);
+    if (!tree) return;
+    const meta = card.activeImportId
+      ? await getImportMeta(card.programId, card.activeImportId, db).catch(() => null)
+      : null;
+    const content = generateMarkdown(cardToProgram(card), tree.udas, tree.lessons, meta);
+    const base = `programma-svolto-${card.title.replace(/\s+/g, '_')}`;
+    if (format === 'md') downloadMarkdown(content, `${base}.md`);
+    else await downloadPdf(content, base);
+  }
+
+  function handleNewUda(values: { titolo: string } & UdaMetadataValues) {
+    if (!card.activeImportId) return;
+    const importId = card.activeImportId;
+    void withBusy(async () => {
+      try {
+        const { udaId, dir, order } = await createUda({
+          programId: card.programId,
+          importId,
+          ownerUid,
+          fields: values,
+          db,
+          storage,
+        });
+        const newUda: UdaItem = {
+          id: udaId,
+          ownerUid,
+          importId,
+          dir,
+          filename: `${dir}.md`,
+          order,
+          storageBasePath: `repository/${ownerUid}/imports/${importId}/${dir}`,
+          lessonCount: 0,
+          descrizione: values.descrizione,
+          competenze: values.competenze,
+          obiettivi: values.obiettivi,
+        };
+        setTree((prev) => {
+          const next = prev
+            ? { udas: [...prev.udas, newUda], lessons: prev.lessons }
+            : { udas: [newUda], lessons: [] };
+          patchCardCounts(next);
+          return next;
+        });
+        closeDialog();
+      } catch (err) {
+        setWsError(err instanceof Error ? err.message : 'Impossibile creare la UDA.');
+      }
+    });
+  }
+
+  function handleEditUda(udaId: string, values: UdaMetadataValues) {
+    if (!card.activeImportId) return;
+    const importId = card.activeImportId;
+    void withBusy(async () => {
+      try {
+        await updateUdaMetadata({
+          programId: card.programId,
+          importId,
+          udaId,
+          fields: values,
+          ownerUid,
+          db,
+          storage,
+        });
+        setTree((prev) =>
+          prev
+            ? {
+                ...prev,
+                udas: prev.udas.map((u) => (u.id === udaId ? { ...u, ...values } : u)),
+              }
+            : prev,
+        );
+        closeDialog();
+      } catch (err) {
+        setWsError(err instanceof Error ? err.message : 'Impossibile salvare la UDA.');
+      }
+    });
+  }
+
+  function handleDeleteUda(udaId: string) {
+    if (!card.activeImportId) return;
+    const importId = card.activeImportId;
+    const uda = tree?.udas.find((u) => u.id === udaId);
+    void withBusy(async () => {
+      try {
+        await deleteUda({ programId: card.programId, importId, udaId, ownerUid, db, storage });
+        setTree((prev) => {
+          if (!prev) return prev;
+          const next = {
+            udas: prev.udas.filter((u) => u.id !== udaId),
+            lessons: uda ? prev.lessons.filter((l) => l.udaDir !== uda.dir) : prev.lessons,
+          };
+          patchCardCounts(next);
+          return next;
+        });
+        setSelection({ kind: 'course' });
+        closeDialog();
+      } catch (err) {
+        if (err instanceof RepositoryDeleteBlockedError) {
+          setUdaBlockers(err.blockers);
+        } else {
+          setWsError(err instanceof Error ? err.message : 'Impossibile eliminare la UDA.');
+        }
+      }
     });
   }
 
@@ -364,7 +671,129 @@ export function CourseWorkspace({
 
         <div className={styles.content}>
           {selection.kind === 'course' && (
+            <div className={styles.toolbar}>
+              <div className={styles.menuWrap}>
+                <button
+                  type="button"
+                  className={styles.toolbarMenuBtn}
+                  aria-haspopup="true"
+                  aria-expanded={menuOpen}
+                  aria-label="Azioni corso"
+                  onClick={() => setMenuOpen((o) => !o)}
+                >
+                  Azioni corso ▾
+                </button>
+                {menuOpen && (
+                  <div className={styles.menu} role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => openDialog({ kind: 'renameCourse' })}
+                    >
+                      Modifica titolo
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => openDialog({ kind: 'importCourse' })}
+                    >
+                      Importa ZIP
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!card.hasImport}
+                      onClick={() => void handleExportZip()}
+                    >
+                      Esporta ZIP
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!card.hasImport}
+                      onClick={() => void handleProgrammaSvolto('md')}
+                    >
+                      Programma svolto (MD)
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!card.hasImport}
+                      onClick={() => void handleProgrammaSvolto('pdf')}
+                    >
+                      Programma svolto (PDF)
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => openDialog({ kind: 'classes' })}
+                    >
+                      Classi assegnate
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => openDialog({ kind: 'info' })}
+                    >
+                      Informazioni
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={styles.menuDanger}
+                      onClick={() => openDialog({ kind: 'deleteCourse' })}
+                    >
+                      Elimina corso
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {selection.kind === 'course' && (
             <CourseOverview card={card} tree={tree} lessonsByUda={lessonsByUda} />
+          )}
+          {selection.kind === 'uda' && selectedUda && (
+            <div className={styles.toolbar}>
+              <button
+                type="button"
+                className="btn-success"
+                onClick={() => openDialog({ kind: 'newUda' })}
+              >
+                + Nuova UDA
+              </button>
+              <div className={styles.menuWrap}>
+                <button
+                  type="button"
+                  className={styles.toolbarMenuBtn}
+                  aria-haspopup="true"
+                  aria-expanded={menuOpen}
+                  aria-label="Azioni UDA"
+                  onClick={() => setMenuOpen((o) => !o)}
+                >
+                  Azioni UDA ▾
+                </button>
+                {menuOpen && (
+                  <div className={styles.menu} role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => openDialog({ kind: 'editUda', udaId: selectedUda.id })}
+                    >
+                      Modifica metadata
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={styles.menuDanger}
+                      onClick={() => openDialog({ kind: 'deleteUda', udaId: selectedUda.id })}
+                    >
+                      Elimina UDA
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
           {selection.kind === 'uda' && selectedUda && (
             <UdaOverview
@@ -427,6 +856,122 @@ export function CourseWorkspace({
           </div>
         </div>
       )}
+
+      {wsDialog.kind === 'renameCourse' && (
+        <TitleDialog
+          title="Modifica titolo corso"
+          label="Titolo del corso"
+          confirmLabel="Salva"
+          initial={card.title}
+          busy={wsBusy}
+          error={wsError}
+          onCancel={closeDialog}
+          onConfirm={handleRenameCourse}
+        />
+      )}
+      {wsDialog.kind === 'importCourse' && (
+        <ImportIntoCourseDialog
+          courseTitle={card.title}
+          busy={wsBusy}
+          error={wsError}
+          onCancel={closeDialog}
+          onConfirm={handleImportCourse}
+        />
+      )}
+      {wsDialog.kind === 'classes' && (
+        <ClassesDialog
+          ownerUid={ownerUid}
+          currentClassIds={[]}
+          busy={wsBusy}
+          error={wsError}
+          onCancel={closeDialog}
+          onConfirm={handleSaveClasses}
+        />
+      )}
+      {wsDialog.kind === 'info' && (
+        <ProgramInfoDialog
+          programId={card.programId}
+          importId={card.activeImportId}
+          counts={{
+            udaCount: tree?.udas.length ?? card.udaCount,
+            lessonsDone: tree?.lessons.filter((l) => l.completed).length ?? card.lessonsDone,
+            lessonsTotal: tree?.lessons.length ?? card.lessonsTotal,
+            questionsTotal,
+          }}
+          classNames={card.classNames}
+          onClose={closeDialog}
+        />
+      )}
+      {wsDialog.kind === 'deleteCourse' && (
+        <ConfirmDialog
+          title="Elimina corso"
+          message={`Eliminare definitivamente "${card.title}"? Verranno rimossi import, UDA, lezioni, pool e file caricati. L'operazione non è reversibile.`}
+          confirmLabel="Elimina"
+          danger
+          busy={wsBusy}
+          error={wsError}
+          onCancel={closeDialog}
+          onConfirm={handleDeleteCourse}
+        />
+      )}
+      {wsDialog.kind === 'newUda' && (
+        <NewUdaDialog
+          busy={wsBusy}
+          error={wsError}
+          onCancel={closeDialog}
+          onConfirm={handleNewUda}
+        />
+      )}
+      {wsDialog.kind === 'editUda' &&
+        (() => {
+          const uda = tree?.udas.find((u) => u.id === wsDialog.udaId);
+          if (!uda) return null;
+          return (
+            <UdaMetadataDialog
+              title={`Modifica UDA — ${uda.dir}`}
+              confirmLabel="Salva"
+              initial={{
+                descrizione: uda.descrizione,
+                competenze: uda.competenze,
+                obiettivi: uda.obiettivi,
+              }}
+              busy={wsBusy}
+              error={wsError}
+              onCancel={closeDialog}
+              onConfirm={(values) => handleEditUda(wsDialog.udaId, values)}
+            />
+          );
+        })()}
+      {wsDialog.kind === 'deleteUda' &&
+        (() => {
+          const uda = tree?.udas.find((u) => u.id === wsDialog.udaId);
+          if (!uda) return null;
+          return (
+            <ConfirmDialog
+              title="Elimina UDA"
+              message={
+                udaBlockers
+                  ? `Impossibile eliminare "${uda.dir}": è collegata a delle verifiche. Rimuovile o modificale prima di eliminare.`
+                  : `Eliminare "${uda.dir}"? Verranno rimosse tutte le sue lezioni, i file su Storage e i pool collegati. L'operazione non è reversibile.`
+              }
+              confirmLabel="Elimina"
+              danger
+              busy={wsBusy}
+              error={wsError}
+              extra={
+                udaBlockers ? (
+                  <ul className={styles.blockersList}>
+                    {udaBlockers.map((b) => (
+                      <li key={b.verificationId}>{b.title}</li>
+                    ))}
+                  </ul>
+                ) : undefined
+              }
+              onCancel={closeDialog}
+              onConfirm={() => (udaBlockers ? closeDialog() : handleDeleteUda(wsDialog.udaId))}
+            />
+          );
+        })()}
     </section>
   );
 }
