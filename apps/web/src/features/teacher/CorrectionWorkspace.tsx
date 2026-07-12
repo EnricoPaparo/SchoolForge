@@ -360,7 +360,8 @@ export function CorrectionWorkspace({
   const uiStatus = deriveCorrectionUiStatus(correction);
   const evaluatedCount = orders.filter((order) => {
     const parsed = parsePoints(edit.evaluations[String(order)]?.pointsText ?? '');
-    return parsed !== null && !Number.isNaN(parsed);
+    const maxPoints = correction.evaluations[String(order)]?.maxPoints ?? 0;
+    return parsed !== null && !Number.isNaN(parsed) && isValidQuestionPoints(parsed, maxPoints);
   }).length;
   const allEvaluated = orders.length > 0 && evaluatedCount === orders.length;
   const canComplete =
@@ -427,17 +428,24 @@ export function CorrectionWorkspace({
         <nav aria-label="Navigatore domande" className={styles.questionNav}>
           {orders.map((order) => {
             const parsed = parsePoints(edit.evaluations[String(order)]?.pointsText ?? '');
-            const evaluated = parsed !== null && !Number.isNaN(parsed);
+            const maxPoints = correction.evaluations[String(order)]?.maxPoints ?? 0;
+            const invalid = parsed !== null && !isValidQuestionPoints(parsed, maxPoints);
+            const evaluated = parsed !== null && !invalid;
             const isCurrent = order === currentOrder;
+            const statusLabel = invalid
+              ? 'punteggio non valido'
+              : evaluated
+                ? 'valutata'
+                : 'non valutata';
             return (
               <button
                 key={order}
                 type="button"
                 className={`${styles.navItem}${evaluated ? ` ${styles.navItemEvaluated}` : ''}${
-                  isCurrent ? ` ${styles.navItemCurrent}` : ''
-                }`}
-                title={`Domanda ${order + 1} — ${evaluated ? 'valutata' : 'non valutata'}`}
-                aria-label={`Vai alla domanda ${order + 1} — ${evaluated ? 'valutata' : 'non valutata'}`}
+                  invalid ? ` ${styles.navItemInvalid}` : ''
+                }${isCurrent ? ` ${styles.navItemCurrent}` : ''}`}
+                title={`Domanda ${order + 1} — ${statusLabel}`}
+                aria-label={`Vai alla domanda ${order + 1} — ${statusLabel}`}
                 aria-current={isCurrent ? 'true' : undefined}
                 onClick={() => goTo(order)}
               >

@@ -258,6 +258,21 @@ describe('CorrectionWorkspace — scoring input', () => {
     expect(await screen.findByText(/uno o più punteggi non sono validi/i)).toBeTruthy();
     // The invalid entry contributes nothing to the live total (treated as unevaluated).
     expect(screen.getByText('0/15')).toBeTruthy();
+
+    // Not counted as "Valutate" either.
+    expect(screen.getByText('0/2')).toBeTruthy();
+
+    // The nav button for the invalid question is not marked evaluated, but
+    // is flagged invalid with an accessible "punteggio non valido" hint.
+    const navButton = screen.getByLabelText(/vai alla domanda 1/i);
+    expect(navButton.getAttribute('aria-label')).toMatch(/punteggio non valido/i);
+    expect(navButton.getAttribute('title')).toMatch(/punteggio non valido/i);
+
+    // "Completa correzione" stays disabled.
+    expect(screen.getByText('Completa correzione').closest('button')).toHaveProperty(
+      'disabled',
+      true,
+    );
   });
 });
 
