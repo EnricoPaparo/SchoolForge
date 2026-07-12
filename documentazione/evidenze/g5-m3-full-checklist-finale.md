@@ -21,7 +21,7 @@ Questo documento consolida le evidenze già prodotte (automatiche, da CI/test, e
 | 2 | Submission unica e deterministica | Automatica | Path deterministico `submissions/{verificationId}_{studentUid}`; test Rules M3F-03 (unicità, creazione solo sul path corretto). |
 | 3 | Autosave dirty-only 120s | Automatica | Test mirati M3F-11B (`OnlineExamView`): timer 120s, nessuna write su bozza invariata, revision guard. |
 | 4 | Eventi soli senza write | Automatica | Test mirati M3F-11B: un evento attenzione da solo resta in memoria, persistito solo al prossimo save dovuto o alla consegna. |
-| 5 | Cap 200 client+Rules | Automatica | Test `examDeterrence`/`OnlineExamView` (limite client a 200 voci); nessun vincolo aggiuntivo lato Rules oltre alla scrittura solo-studente già validata in M3F-03 (il cap è applicato client-side, come da specifica M3F-11B). |
+| 5 | Cap 200 client+Rules | Automatica | Test `examDeterrence`/`OnlineExamView` (limite client a 200 voci); `firestore.rules` impone `attentionEvents.size() <= 200` sia su create sia su update; test Rules M3F-03 accetta 200 eventi e rifiuta 201. |
 | 6 | Ripresa dopo refresh/login | Automatica + Manuale DEV | Test M3F-06 (`examSessionService`, `StudentShell`): una bozza `draft` forza il rientro nella prova; confermato manualmente dal docente su DEV dopo refresh e nuovo login. |
 | 7 | Shell senza navigazione durante la prova | Automatica + Manuale DEV | Test M3F-06 (`StudentShell` non mostra menu/uscita durante sessione attiva); confermato manualmente su DEV. |
 | 8 | Fullscreen e rientro fullscreen | Automatica + Manuale DEV | Test M3F-04/M3F-06/M3F-11A (richiesta fullscreen, evento `fullscreen_exit`, pulsante di rientro); confermato manualmente su DEV. |

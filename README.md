@@ -19,12 +19,12 @@ Il flusso completo è operativo e testato (suite automatica estesa + smoke test 
 | Dashboard prontezza repository | ✅ funzionante |
 | Portale studente Google, read-only (M3-lite) | ✅ funzionante — login Google, StudentShell, Lezioni e Verifiche filtrate per classe, approvazione studenti, PDF verifica studente |
 | Repository Editor (RE) | ✅ funzionante — crea/modifica/riordina/elimina (con blocco protetto) UDA e lezioni, export ZIP coerente e reimportabile |
-| Question Editor (QE) — sezione "Domande" | 📐 specifica definita — implementazione da avviare (roadmap QE-00→QE-05) |
+| Question Editor (QE) — sezione "Domande" | ✅ funzionante — crea/modifica/elimina pool e domande Markdown-first, questionIndex coerente, picker aggiornato |
 | Portale digitale con consegna online (M3-full) | ✅ completato — avvio online, bozza, consegna immutabile, modalità verifica, monitor docente; Gate G5 superato |
 | Correzione e export risultati (M4) | ❌ non implementato — dipende da M3-full |
 | Correzione AI (M5) | ❌ fuori scope V1 |
 
-**Stato:** il Repository Editor (RE-00 → RE-07) è completo e stabile per uso DEV/manuale. M3-full (verifiche online, consegne, monitor docente) è completato — Gate G5 superato, vedi `documentazione/m3-full-roadmap.md` e `documentazione/evidenze/g5-m3-full-checklist-finale.md`. La specifica del Question Editor (QE, sezione "Domande") è definita in `documentazione/question-editor-roadmap.md`; vedi la sezione "Prossimo passo" più sotto.
+**Stato:** Repository Editor (RE-00 → RE-07), Question Editor (QE-00 → QE-05) e M3-full sono completi e stabili per uso DEV/manuale; Gate G5 superato per M3-full. Vedi `documentazione/repository-editor-roadmap.md`, `documentazione/question-editor-roadmap.md`, `documentazione/m3-full-roadmap.md` e `documentazione/evidenze/g5-m3-full-checklist-finale.md`.
 Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartaceo.md) per la guida operativa.
 
 ## Principi non negoziabili
@@ -67,12 +67,12 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 2. **M2 — Verifiche e cartaceo** ✅: configurazione, classi, selezione domande, attivazione, PDF studente browser-side.
 3. **M3-lite — Portale studente (Google, read-only)** ✅: login Google (personale o Workspace for Education), risoluzione ruolo docente/studente, StudentShell con sezioni Lezioni e Verifiche filtrate per classe, approvazione studenti, download del solo PDF studente per le verifiche `active`+`public`. Nessuna Cloud Function, nessun account custom, nessuna consegna online.
 4. **RE — Repository Editor** ✅: creare/modificare/eliminare/riordinare UDA e lezioni, inclusi front matter e corpo Markdown, senza AI e senza CMS complesso; export ZIP coerente e reimportabile.
-5. **QE — Question Editor (sezione "Domande")** 📐 *(specifica definita — da implementare)*: creare, modificare ed eliminare domande nei pool Markdown-first (`.pool.md`) direttamente dal portale, aggiornando `questionIndex` su Firestore senza reimport ZIP. Vedi [question-editor-roadmap.md](documentazione/question-editor-roadmap.md).
+5. **QE — Question Editor (sezione "Domande")** ✅: crea, modifica ed elimina domande e pool Markdown-first (`.pool.md`) direttamente dal portale, aggiornando `questionIndex` su Firestore senza reimport ZIP. Vedi [question-editor-roadmap.md](documentazione/question-editor-roadmap.md).
 6. **M3-full — Verifiche online e consegne studenti** ✅: avvio online, bozza, consegna immutabile, codice consegna e monitor docente; sessione obbligatoria, modalità verifica per classe e protezione effettiva delle lezioni. Gate G5 superato. Vedi [m3-full-roadmap.md](documentazione/m3-full-roadmap.md) e [evidenze/g5-m3-full-checklist-finale.md](documentazione/evidenze/g5-m3-full-checklist-finale.md).
 7. **M4 — Correzione ed export** ❌ *(dipende da M3-full)*: punteggi, percentuali, rettifiche, export PDF/Markdown/CSV.
 8. **M5 — Correzione AI** *(fuori scope V1 / pianificato per V2)*: proposte assistite, approvazione massiva, correzione automatica opt-in.
 
-V1 comprende M1, M2, M3-lite, RE e M3-full (tutti implementati, Gate G5 superato per M3-full). QE ha la specifica pronta e non dipende da M3-full. M4 dipende da M3-full (completato) e non è ancora implementato. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2.
+V1 comprende M1, M2, M3-lite, RE, QE e M3-full (tutti implementati, Gate G5 superato per M3-full). M4 dipende da M3-full (completato) e non è ancora implementato. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2.
 
 ## Architettura in sintesi
 
@@ -101,4 +101,4 @@ Il Docente possiede progetto e billing Firebase. Firestore, Storage e Functions 
 
 **M3-full (portale digitale con consegna online) — completato.** Gate G5 superato con evidenze automatiche e smoke manuale del docente su DEV. Vedi [documentazione/m3-full-roadmap.md](documentazione/m3-full-roadmap.md) e [documentazione/evidenze/g5-m3-full-checklist-finale.md](documentazione/evidenze/g5-m3-full-checklist-finale.md).
 
-**Prossimi sviluppi non ancora implementati:** **M4 — Correzione ed export**, che dipende da M3-full (ora completato) e ha il concept UX già approvato in [documentazione/m4-correzione-ux-concept.md](documentazione/m4-correzione-ux-concept.md); e **QE — Question Editor** (sezione "Domande"), specifica definita in [documentazione/question-editor-roadmap.md](documentazione/question-editor-roadmap.md), roadmap QE-01 → QE-05 (QE-00 completata), non dipendente da M3-full. **M5 — Correzione AI** resta rinviato alla V2. Vedi [documentazione/repository-editor-roadmap.md](documentazione/repository-editor-roadmap.md) e la checklist manuale [documentazione/evidenze/repository-editor-checklist-manuale.md](documentazione/evidenze/repository-editor-checklist-manuale.md) per il Repository Editor.
+**Prossimo sviluppo non ancora implementato:** **M4 — Correzione ed export**, che dipende da M3-full (ora completato) e ha il concept UX già approvato in [documentazione/m4-correzione-ux-concept.md](documentazione/m4-correzione-ux-concept.md). **QE — Question Editor** è già completato; **M5 — Correzione AI** resta rinviato alla V2.

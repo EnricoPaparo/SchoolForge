@@ -2,7 +2,7 @@
 
 **Versione:** 1.0
 **Data:** 10 luglio 2026
-**Stato:** specifica approvata — non ancora implementato
+**Stato:** QE-00 → QE-05 completati e operativi
 **Dipendenze:** M1, M2, M3-lite, RE (tutti completati)
 **Fuori scope in QE:** M3-full, M4, M5, AI, timer, import formati esterni, immagini, scoring avanzato.
 
