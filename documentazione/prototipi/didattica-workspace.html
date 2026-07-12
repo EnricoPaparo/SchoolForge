@@ -1,0 +1,1760 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SchoolForge — Prototipo Didattica (DUX-00)</title>
+<style>
+  /* ────────────────────────────────────────────────────────────────
+     Design tokens — riuso approssimato della palette scura esistente
+     di SchoolForge (index.css), niente di nuovo: solo applicato senza
+     il motivo diagonale dell'header attuale (§17 roadmap).
+     ──────────────────────────────────────────────────────────────── */
+  :root {
+    --color-primary: #3b82f6;
+    --color-primary-light: rgba(59, 130, 246, 0.16);
+    --color-accent-violet: #a78bfa;
+    --color-brand-blue: #38bdf8;
+    --color-surface: #141a24;
+    --color-surface-subtle: #0a0e16;
+    --color-surface-raised: #1d2532;
+    --color-border: #2a3444;
+    --color-text: #e7ebf2;
+    --color-text-muted: #93a0b4;
+    --color-success: #34d399;
+    --color-success-bg: rgba(52, 211, 153, 0.12);
+    --color-error: #f87171;
+    --color-error-bg: rgba(248, 113, 113, 0.12);
+    --color-warning: #fbbf24;
+    --color-warning-bg: rgba(251, 191, 36, 0.12);
+    --radius: 8px;
+    --radius-lg: 12px;
+    --font-sans:
+      -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    color: var(--color-text);
+    background: var(--color-surface-subtle);
+    /* Glow radiali molto leggeri — accento, mai motivo dominante (§17). */
+    background-image:
+      radial-gradient(ellipse 900px 500px at 12% -10%, rgba(59, 130, 246, 0.10), transparent 60%),
+      radial-gradient(ellipse 700px 450px at 100% 0%, rgba(167, 139, 250, 0.08), transparent 55%);
+    background-repeat: no-repeat;
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 0.8125rem;
+    cursor: pointer;
+    border-radius: var(--radius);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    padding: 0.4rem 0.75rem;
+    transition: border-color 0.12s ease, background 0.12s ease;
+  }
+  button:hover {
+    border-color: var(--color-primary);
+  }
+  button:focus-visible,
+  a:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+  button.primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+    font-weight: 600;
+  }
+  button.primary:hover {
+    filter: brightness(1.08);
+  }
+  button.ghost {
+    background: transparent;
+    border-color: transparent;
+  }
+  button.ghost:hover {
+    background: var(--color-surface-raised);
+    border-color: var(--color-border);
+  }
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  input,
+  select {
+    font-family: inherit;
+    font-size: 0.8125rem;
+    color: var(--color-text);
+    background: var(--color-surface-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.4rem 0.6rem;
+  }
+  input:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 1px;
+  }
+
+  h1, h2, h3, h4 {
+    margin: 0;
+  }
+
+  /* ── Top shell: logo + nav di primo livello + device toggle ─────── */
+  .shell-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 0.75rem 1.25rem;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 800;
+    font-size: 1rem;
+    letter-spacing: 0.02em;
+    color: #fff;
+    /* logo sempre ad alto contrasto indipendentemente dal glow (§17) */
+  }
+  .logo .mark {
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 6px;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-accent-violet));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    color: #fff;
+  }
+  .top-nav {
+    display: flex;
+    gap: 0.25rem;
+    flex: 1;
+    flex-wrap: wrap;
+  }
+  .top-nav button {
+    background: transparent;
+    border-color: transparent;
+    padding: 0.5rem 0.85rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+  }
+  .top-nav button.active {
+    color: #fff;
+    background: var(--color-surface-raised);
+    border-color: var(--color-border);
+  }
+  .device-toggle {
+    display: flex;
+    gap: 0.25rem;
+    background: var(--color-surface-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.15rem;
+  }
+  .device-toggle button {
+    border: none;
+    background: transparent;
+    padding: 0.3rem 0.65rem;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+  .device-toggle button.active {
+    background: var(--color-primary);
+    color: #fff;
+  }
+
+  /* ── Prototype stage: centers a simulated viewport ───────────────── */
+  .stage {
+    padding: 1.5rem;
+    display: flex;
+    justify-content: center;
+  }
+  .device-frame {
+    width: 100%;
+    max-width: 1180px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    transition: max-width 0.15s ease;
+  }
+  body.mobile .device-frame {
+    max-width: 390px;
+  }
+  .device-frame-inner {
+    min-height: 640px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .proto-note {
+    max-width: 1180px;
+    margin: 0 auto 0.75rem;
+    padding: 0.6rem 0.9rem;
+    background: var(--color-warning-bg);
+    border: 1px solid var(--color-warning);
+    border-radius: var(--radius);
+    color: var(--color-warning);
+    font-size: 0.75rem;
+  }
+
+  /* ── Screens (only one visible at a time) ────────────────────────── */
+  .screen {
+    display: none;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  .screen.visible {
+    display: flex;
+  }
+
+  /* ── Libreria corsi ───────────────────────────────────────────────── */
+  .library-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .library-toolbar .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+  }
+  .library-toolbar .search {
+    min-width: 160px;
+    flex: 1;
+    max-width: 260px;
+  }
+  .library-toolbar .actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .library-body {
+    padding: 1.25rem;
+    overflow-y: auto;
+  }
+  .course-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+  }
+  body.mobile .course-grid {
+    grid-template-columns: 1fr;
+  }
+  .course-card {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    cursor: pointer;
+    position: relative;
+  }
+  .course-card:hover {
+    border-color: var(--color-primary);
+  }
+  .course-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .course-card-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+  .card-menu-btn {
+    padding: 0.15rem 0.45rem;
+    font-size: 0.9rem;
+    line-height: 1;
+  }
+  .course-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .pill {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    white-space: nowrap;
+  }
+  .course-card-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+  .course-card-stats strong {
+    display: block;
+    color: var(--color-text);
+    font-size: 0.95rem;
+  }
+  .progress-track {
+    height: 5px;
+    border-radius: 999px;
+    background: var(--color-surface-subtle);
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-brand-blue));
+    border-radius: 999px;
+  }
+  .empty-hint {
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    padding: 2rem;
+    text-align: center;
+  }
+
+  /* ── Workspace corso ──────────────────────────────────────────────── */
+  .workspace {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  .workspace-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.85rem 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+  }
+  .workspace-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .breadcrumb {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    padding: 0.85rem 1.25rem 0;
+  }
+  .breadcrumb button {
+    border: none;
+    background: transparent;
+    padding: 0;
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .breadcrumb button:hover {
+    color: var(--color-primary);
+  }
+  .breadcrumb .sep {
+    margin: 0 0.35rem;
+  }
+  .workspace-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+  body.mobile .workspace-body {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 250px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--color-border);
+    overflow-y: auto;
+    padding: 0.75rem 0.5rem;
+  }
+  body.mobile .sidebar {
+    display: none; /* niente sidebar collassabile su mobile — drill-down a livelli invece (§5) */
+  }
+  .sidebar-uda {
+    margin-bottom: 0.35rem;
+  }
+  .sidebar-uda-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.5rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 0.8125rem;
+  }
+  .sidebar-uda-head:hover {
+    background: var(--color-surface-raised);
+  }
+  .sidebar-uda-head.selected {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+  }
+  .sidebar-caret {
+    font-size: 0.65rem;
+    color: var(--color-text-muted);
+    width: 0.9rem;
+    display: inline-block;
+  }
+  .sidebar-lessons {
+    display: flex;
+    flex-direction: column;
+    padding-left: 1.4rem;
+  }
+  .lesson-row {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.32rem 0.5rem;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.8125rem;
+    color: var(--color-text);
+  }
+  .lesson-row:hover {
+    background: var(--color-surface-raised);
+  }
+  .lesson-row.selected {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+  .lesson-row .lesson-num {
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+    width: 1.4rem;
+    flex-shrink: 0;
+  }
+  .lesson-row .lesson-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pool-dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-block;
+  }
+  .pool-dot.valid { background: var(--color-success); }
+  .pool-dot.absent { background: var(--color-text-muted); opacity: 0.5; }
+  .pool-dot.invalid { background: var(--color-error); }
+  .pool-label {
+    font-size: 0.6875rem;
+    color: var(--color-text-muted);
+  }
+  .organize-arrows {
+    display: none;
+    gap: 0.15rem;
+  }
+  body.organize .organize-arrows {
+    display: flex;
+  }
+  body.organize .lesson-row,
+  body.organize .sidebar-uda-head {
+    cursor: default;
+  }
+  .organize-arrows button {
+    padding: 0.05rem 0.35rem;
+    font-size: 0.7rem;
+  }
+
+  .content-area {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 1.1rem 1.4rem;
+  }
+
+  .toolbar-context {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+  .toolbar-context .selected-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    font-weight: 700;
+  }
+  .toolbar-context .actions {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+  }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+  .summary-tile {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.75rem 0.9rem;
+  }
+  .summary-tile .label {
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .summary-tile .value {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-top: 0.15rem;
+  }
+
+  table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+  }
+  table.data-table th {
+    text-align: left;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted);
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  table.data-table td {
+    padding: 0.55rem 0.6rem;
+    border-bottom: 1px solid var(--color-border);
+    vertical-align: middle;
+  }
+  table.data-table tr:last-child td {
+    border-bottom: none;
+  }
+  table.data-table tr.clickable {
+    cursor: pointer;
+  }
+  table.data-table tr.clickable:hover td {
+    background: var(--color-surface-raised);
+  }
+  .row-actions {
+    display: flex;
+    gap: 0.3rem;
+    justify-content: flex-end;
+  }
+  .row-actions button {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+  }
+  .badge-pool {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+  }
+  .checkbox-done {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  /* ── Lesson detail: tabs ──────────────────────────────────────────── */
+  .lesson-detail-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+  .tablist {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 1rem;
+  }
+  .tablist [role="tab"] {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 0.5rem 0.85rem;
+    color: var(--color-text-muted);
+    font-weight: 600;
+  }
+  .tablist [role="tab"][aria-selected="true"] {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+  }
+  [role="tabpanel"] {
+    display: none;
+  }
+  [role="tabpanel"].active {
+    display: block;
+  }
+  .markdown-preview {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 1rem 1.15rem;
+    font-size: 0.875rem;
+    line-height: 1.65;
+  }
+  .markdown-preview h3 {
+    margin-bottom: 0.4rem;
+  }
+  .markdown-preview p {
+    margin: 0.5rem 0;
+  }
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.85rem;
+  }
+  .info-field .label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    letter-spacing: 0.04em;
+    margin-bottom: 0.2rem;
+  }
+  .info-field .value {
+    font-size: 0.875rem;
+  }
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+  .tag-list .pill {
+    background: var(--color-surface-subtle);
+    color: var(--color-text-muted);
+    border: 1px solid var(--color-border);
+  }
+
+  .question-card {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.85rem 1rem;
+    margin-bottom: 0.75rem;
+  }
+  .question-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+  }
+  .question-card-head .qtype {
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+  }
+  .question-card .qtext {
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+  }
+  .qopts {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .qopt {
+    font-size: 0.8125rem;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+  }
+  .qopt.correct {
+    border-color: var(--color-success);
+    background: var(--color-success-bg);
+    color: var(--color-success);
+  }
+
+  /* ── Mobile drill-down list (progressive nav) ────────────────────── */
+  .mobile-back {
+    display: none;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.75rem 1rem 0.25rem;
+  }
+  body.mobile .mobile-back.show {
+    display: flex;
+  }
+  .mobile-list {
+    display: none;
+    flex-direction: column;
+  }
+  body.mobile .mobile-list.show {
+    display: flex;
+  }
+  body.mobile .desktop-only-workspace {
+    display: none;
+  }
+  .mobile-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid var(--color-border);
+    cursor: pointer;
+  }
+  .mobile-item:hover {
+    background: var(--color-surface-raised);
+  }
+  .mobile-item .chev {
+    color: var(--color-text-muted);
+  }
+
+  /* ── Studenti / Classi ────────────────────────────────────────────── */
+  .subtabs {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.85rem 1.25rem 0;
+  }
+  .subtabs button {
+    background: transparent;
+    border-color: transparent;
+    color: var(--color-text-muted);
+    font-weight: 600;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 0.5rem 0.9rem;
+  }
+  .subtabs button.active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+  }
+  .subscreen {
+    display: none;
+    padding: 1rem 1.25rem 1.5rem;
+  }
+  .subscreen.active {
+    display: block;
+  }
+  .status-pill {
+    font-size: 0.6875rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-weight: 600;
+  }
+  .status-pill.approved { background: var(--color-success-bg); color: var(--color-success); }
+  .status-pill.pending { background: var(--color-warning-bg); color: var(--color-warning); }
+  .status-pill.blocked { background: var(--color-error-bg); color: var(--color-error); }
+  .inline-add-row td {
+    background: var(--color-surface-subtle);
+  }
+  .inline-add-row input {
+    width: 100%;
+  }
+
+  /* ── Template ─────────────────────────────────────────────────────── */
+  .template-hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 1.1rem 1.3rem;
+    margin-bottom: 1.25rem;
+  }
+  .template-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+  .template-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.65rem 0.85rem;
+    font-size: 0.8125rem;
+  }
+  .guide-box {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.9rem 1.1rem;
+    font-size: 0.8125rem;
+    margin-bottom: 1.25rem;
+  }
+  .guide-box ol {
+    margin: 0.5rem 0 0;
+    padding-left: 1.2rem;
+  }
+  pre.zip-tree {
+    background: var(--color-surface-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.9rem 1.1rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    overflow-x: auto;
+    color: var(--color-text-muted);
+  }
+
+  h2.section-title {
+    font-size: 1rem;
+    margin: 0 1.25rem 0.75rem;
+    padding-top: 1rem;
+  }
+
+  footer.proto-footer {
+    max-width: 1180px;
+    margin: 1rem auto 3rem;
+    padding: 0 0.25rem;
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    text-align: center;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>
+</head>
+<body>
+
+<header class="shell-header">
+  <div class="logo"><span class="mark">SF</span> SchoolForge</div>
+  <nav class="top-nav" aria-label="Sezioni docente">
+    <button type="button" data-topnav="library" class="active">Didattica</button>
+    <button type="button" data-topnav="verifiche">Verifiche</button>
+    <button type="button" data-topnav="students">Studenti</button>
+    <button type="button" data-topnav="template">Template</button>
+  </nav>
+  <div class="device-toggle" role="group" aria-label="Simula viewport">
+    <button type="button" data-device="desktop" class="active">🖥️ Desktop</button>
+    <button type="button" data-device="mobile">📱 Mobile</button>
+  </div>
+</header>
+
+<div class="proto-note">
+  Prototipo statico DUX-00 — dati interamente inventati, nessuna chiamata di rete, nessuna dipendenza esterna.
+  Usa il toggle in alto a destra per simulare il viewport mobile e osservare la navigazione a livelli (§5 della roadmap).
+</div>
+
+<main class="stage">
+  <div class="device-frame">
+    <div class="device-frame-inner">
+
+      <!-- ══════════════════════ VERIFICHE (placeholder, invariato) ══════════════════════ -->
+      <section class="screen" id="screen-verifiche">
+        <div class="empty-hint">Sezione "Verifiche" invariata da DUX — non fa parte del prototipo Didattica.</div>
+      </section>
+
+      <!-- ══════════════════════ DIDATTICA — LIBRERIA CORSI ══════════════════════ -->
+      <section class="screen visible" id="screen-library">
+        <div class="library-toolbar">
+          <div class="filters">
+            <select id="filter-year" aria-label="Filtro anno scolastico">
+              <option value="all">Tutti gli anni</option>
+            </select>
+            <select id="filter-class" aria-label="Filtro classe">
+              <option value="all">Tutte le classi</option>
+            </select>
+            <input class="search" id="filter-search" type="search" placeholder="Cerca corso…" aria-label="Cerca corso" />
+          </div>
+          <div class="actions">
+            <button type="button" class="ghost">Importa ZIP</button>
+            <button type="button" class="primary">+ Nuovo corso</button>
+          </div>
+        </div>
+        <div class="library-body">
+          <div class="course-grid" id="course-grid"></div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════ DIDATTICA — WORKSPACE CORSO (desktop) ══════════════════════ -->
+      <section class="screen" id="screen-workspace">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <div class="workspace desktop-only-workspace">
+          <div class="workspace-header">
+            <div class="workspace-header-left">
+              <button type="button" class="ghost" id="btn-back-to-library">← Libreria</button>
+              <h2 id="course-title" style="font-size:1rem;"></h2>
+              <span class="pill" id="course-year-badge"></span>
+              <span class="pill" id="course-class-badge"></span>
+            </div>
+            <div class="actions" style="display:flex; gap:.4rem;">
+              <button type="button" id="btn-organize" class="ghost">Organizza</button>
+              <button type="button" class="ghost">Programma svolto</button>
+              <button type="button" class="ghost">⋯</button>
+            </div>
+          </div>
+
+          <div class="workspace-body">
+            <nav class="sidebar" id="sidebar" aria-label="Struttura corso"></nav>
+            <div class="content-area" id="content-area"></div>
+          </div>
+        </div>
+
+        <!-- ══════════ MOBILE progressive drill-down (Corso → UDA → Lezioni → Lezione) ══════════ -->
+        <div class="mobile-back" id="mobile-back">
+          <button type="button" class="ghost" id="mobile-back-btn">← Indietro</button>
+        </div>
+
+        <div class="mobile-list show" id="mobile-course-summary">
+          <!-- popolato da JS: riepilogo corso + tabella UDA in forma elenco -->
+        </div>
+
+        <div class="mobile-list" id="mobile-uda-lessons">
+          <!-- popolato da JS: lista lezioni dell'UDA selezionato -->
+        </div>
+
+        <div class="mobile-list" id="mobile-lesson-detail">
+          <!-- popolato da JS: tabs Contenuto/Domande/Informazioni -->
+        </div>
+      </section>
+
+      <!-- ══════════════════════ STUDENTI (tab Studenti / Classi) ══════════════════════ -->
+      <section class="screen" id="screen-students">
+        <div class="subtabs" role="tablist" aria-label="Studenti e Classi">
+          <button type="button" role="tab" aria-selected="true" data-subtab="students-tab" class="active">Studenti</button>
+          <button type="button" role="tab" aria-selected="false" data-subtab="classes-tab">Classi</button>
+        </div>
+
+        <div class="subscreen active" id="students-tab">
+          <div class="toolbar-context">
+            <input class="search" placeholder="Cerca studente…" aria-label="Cerca studente" />
+            <select aria-label="Filtro stato">
+              <option>Tutti</option>
+              <option>In attesa</option>
+              <option>Approvati</option>
+              <option>Bloccati</option>
+            </select>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr><th>Nome</th><th>Email</th><th>Stato</th><th>Classe</th><th></th></tr>
+            </thead>
+            <tbody id="students-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="subscreen" id="classes-tab">
+          <p style="color:var(--color-text-muted); font-size:.8125rem; margin: 0 0 .75rem;">
+            Le classi sono gestite qui, dentro Studenti — non più come voce di nav separata (§12 roadmap).
+          </p>
+          <table class="data-table">
+            <thead>
+              <tr><th>Nome classe</th><th>Studenti</th><th></th></tr>
+            </thead>
+            <tbody id="classes-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ══════════════════════ TEMPLATE ══════════════════════ -->
+      <section class="screen" id="screen-template">
+        <h2 class="section-title">Template</h2>
+        <div style="padding: 0 1.25rem 1.5rem;">
+          <div class="template-hero">
+            <div>
+              <strong style="font-size:.95rem;">Kit completo</strong>
+              <p style="margin:.3rem 0 0; color:var(--color-text-muted); font-size:.8125rem;">
+                Tutti i template in un unico archivio, pronto per essere passato a uno strumento AI o compilato manualmente.
+              </p>
+            </div>
+            <button type="button" class="primary">⬇ Scarica kit completo (ZIP)</button>
+          </div>
+
+          <h3 style="font-size:.85rem; margin: 0 0 .6rem; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:.04em;">Template singoli</h3>
+          <div class="template-list" id="template-list"></div>
+
+          <div class="guide-box">
+            <strong>Guida compatta</strong>
+            <ol>
+              <li>Scarica il kit completo o i singoli template.</li>
+              <li>Compilali manualmente o passali a uno strumento AI (es. Claude, GPT) con le istruzioni incluse.</li>
+              <li>Importa lo ZIP risultante da "Importa ZIP" nella libreria Didattica.</li>
+            </ol>
+          </div>
+
+          <h3 style="font-size:.85rem; margin: 0 0 .6rem; color:var(--color-text-muted); text-transform:uppercase; letter-spacing:.04em;">Struttura ZIP di esempio</h3>
+          <pre class="zip-tree">programma.md
+uda-01-reti/
+  uda.md
+  01-modello-osi.md
+  01-modello-osi.pool.md
+  02-tcp-ip.md
+  02-tcp-ip.pool.md
+uda-02-sicurezza/
+  uda.md
+  01-crittografia.md
+  01-crittografia.pool.md</pre>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</main>
+
+<footer class="proto-footer">
+  Prototipo statico DUX-00 — documentazione/prototipi/didattica-workspace.html — nessun dato reale, nessuna rete, nessuna dipendenza esterna.
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Dati inventati ──────────────────────────────────────────────
+  var courses = [
+    {
+      id: 'c1', title: 'Sistemi e Reti', year: '2025/2026', classes: ['4A INF'],
+      udaCount: 3, lessonsDone: 9, lessonsTotal: 12, questionCount: 41,
+      udas: [
+        {
+          id: 'u1', title: 'UDA 1 — Reti e protocolli', desc: 'Fondamenti di reti, modello OSI, TCP/IP.',
+          lessons: [
+            { id: 'l1', num: 1, title: 'Il modello OSI', done: true, pool: 'valid' },
+            { id: 'l2', num: 2, title: 'TCP/IP in pratica', done: true, pool: 'valid' },
+            { id: 'l3', num: 3, title: 'Routing statico e dinamico', done: false, pool: 'absent' },
+            { id: 'l4', num: 4, title: 'NAT e indirizzamento privato', done: false, pool: 'invalid' }
+          ]
+        },
+        {
+          id: 'u2', title: 'UDA 2 — Sicurezza informatica', desc: 'Crittografia simmetrica/asimmetrica, minacce comuni.',
+          lessons: [
+            { id: 'l5', num: 1, title: 'Crittografia simmetrica', done: true, pool: 'valid' },
+            { id: 'l6', num: 2, title: 'Crittografia asimmetrica e certificati', done: true, pool: 'valid' },
+            { id: 'l7', num: 3, title: 'Minacce comuni e social engineering', done: false, pool: 'absent' }
+          ]
+        },
+        {
+          id: 'u3', title: 'UDA 3 — Amministrazione di sistema', desc: 'Gestione utenti, permessi, servizi di rete.',
+          lessons: [
+            { id: 'l8', num: 1, title: 'Utenti e permessi Linux', done: true, pool: 'valid' },
+            { id: 'l9', num: 2, title: 'Servizi di rete essenziali', done: true, pool: 'valid' },
+            { id: 'l10', num: 3, title: 'Log e monitoraggio', done: true, pool: 'valid' },
+            { id: 'l11', num: 4, title: 'Backup e disaster recovery', done: true, pool: 'invalid' },
+            { id: 'l12', num: 5, title: 'Virtualizzazione', done: false, pool: 'absent' }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'c2', title: 'Tecnologie e Progettazione', year: '2025/2026', classes: ['3B INF', '3C INF'],
+      udaCount: 2, lessonsDone: 4, lessonsTotal: 8, questionCount: 18,
+      udas: [
+        {
+          id: 'u4', title: 'UDA 1 — Basi di dati relazionali', desc: 'Modello E-R, normalizzazione, SQL.',
+          lessons: [
+            { id: 'l13', num: 1, title: 'Modello Entità-Relazione', done: true, pool: 'valid' },
+            { id: 'l14', num: 2, title: 'Normalizzazione', done: true, pool: 'valid' },
+            { id: 'l15', num: 3, title: 'SQL — query di base', done: true, pool: 'valid' },
+            { id: 'l16', num: 4, title: 'SQL — join e sottoquery', done: false, pool: 'absent' }
+          ]
+        },
+        {
+          id: 'u5', title: 'UDA 2 — Progettazione web', desc: 'HTML/CSS, architettura client-server.',
+          lessons: [
+            { id: 'l17', num: 1, title: 'HTML semantico', done: true, pool: 'valid' },
+            { id: 'l18', num: 2, title: 'CSS layout moderno', done: false, pool: 'absent' },
+            { id: 'l19', num: 3, title: 'Architettura client-server', done: false, pool: 'absent' },
+            { id: 'l20', num: 4, title: 'API REST — introduzione', done: false, pool: 'invalid' }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'c3', title: 'Informatica — Base', year: '2024/2025', classes: ['1A INF'],
+      udaCount: 2, lessonsDone: 6, lessonsTotal: 6, questionCount: 22,
+      udas: [
+        {
+          id: 'u6', title: 'UDA 1 — Algoritmi e problem solving', desc: 'Diagrammi di flusso, pseudocodice.',
+          lessons: [
+            { id: 'l21', num: 1, title: 'Diagrammi di flusso', done: true, pool: 'valid' },
+            { id: 'l22', num: 2, title: 'Pseudocodice', done: true, pool: 'valid' },
+            { id: 'l23', num: 3, title: 'Strutture di controllo', done: true, pool: 'valid' }
+          ]
+        },
+        {
+          id: 'u7', title: 'UDA 2 — Introduzione a Python', desc: 'Sintassi di base, tipi di dato, funzioni.',
+          lessons: [
+            { id: 'l24', num: 1, title: 'Sintassi di base', done: true, pool: 'valid' },
+            { id: 'l25', num: 2, title: 'Tipi di dato', done: true, pool: 'valid' },
+            { id: 'l26', num: 3, title: 'Funzioni', done: true, pool: 'valid' }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'c4', title: 'Progetto extra — senza anno', year: null, classes: [],
+      udaCount: 1, lessonsDone: 0, lessonsTotal: 2, questionCount: 0,
+      udas: [
+        {
+          id: 'u8', title: 'UDA 1 — Bozza iniziale', desc: 'Materiale non ancora assegnato a una classe.',
+          lessons: [
+            { id: 'l27', num: 1, title: 'Introduzione (bozza)', done: false, pool: 'absent' },
+            { id: 'l28', num: 2, title: 'Da definire', done: false, pool: 'absent' }
+          ]
+        }
+      ]
+    }
+  ];
+
+  var lessonContent = {
+    l1: {
+      md: '# Il modello OSI\n\nIl modello OSI (Open Systems Interconnection) suddivide la comunicazione di rete in sette livelli, ciascuno con una responsabilità precisa…',
+      meta: { titolo: 'Il modello OSI', sottotitolo: 'Sette livelli, una responsabilità ciascuno', difficolta: 'Base', concetti: ['OSI', 'Incapsulamento', 'Protocolli'], obiettivi: ['Elencare i 7 livelli OSI', 'Distinguere livello fisico e livello applicazione'] },
+      questions: [
+        { tipo: 'chiusa_singola', testo: 'Quanti livelli compongono il modello OSI?', opts: [{ t: '5', ok: false }, { t: '7', ok: true }, { t: '9', ok: false }] },
+        { tipo: 'aperta', testo: 'Descrivi la funzione del livello di trasporto.', opts: [] }
+      ]
+    },
+    l2: {
+      md: '# TCP/IP in pratica\n\nLa suite TCP/IP è lo standard de facto delle reti moderne. Analizziamo l\'handshake a tre vie e la struttura di un pacchetto IP…',
+      meta: { titolo: 'TCP/IP in pratica', sottotitolo: 'Dallo handshake al pacchetto IP', difficolta: 'Intermedio', concetti: ['TCP', 'IP', 'Handshake'], obiettivi: ['Descrivere il three-way handshake'] },
+      questions: [
+        { tipo: 'chiusa_multipla', testo: 'Quali fasi compongono lo handshake TCP a tre vie?', opts: [{ t: 'SYN', ok: true }, { t: 'SYN-ACK', ok: true }, { t: 'ACK', ok: true }, { t: 'FIN', ok: false }] }
+      ]
+    }
+  };
+
+  var students = [
+    { name: 'Anna Bianchi', email: 'anna.bianchi@example.com', status: 'approved', cls: '4A INF' },
+    { name: 'Marco Verdi', email: 'marco.verdi@example.com', status: 'pending', cls: '—' },
+    { name: 'Giulia Rossi', email: 'giulia.rossi@example.com', status: 'approved', cls: '3B INF' },
+    { name: 'Luca Ferrari', email: 'luca.ferrari@example.com', status: 'blocked', cls: '4A INF' }
+  ];
+
+  var classes = [
+    { name: '4A INF', count: 18 },
+    { name: '3B INF', count: 21 },
+    { name: '3C INF', count: 19 },
+    { name: '1A INF', count: 24 }
+  ];
+
+  var templates = [
+    { name: 'programma.md', desc: 'Metadata del programma' },
+    { name: 'uda.md', desc: 'Front matter UDA' },
+    { name: 'lezione.md', desc: 'Front matter + corpo lezione' },
+    { name: 'pool.md', desc: 'Domande della lezione' }
+  ];
+
+  // ── State ────────────────────────────────────────────────────────
+  var state = {
+    top: 'library',
+    device: 'desktop',
+    year: 'all',
+    cls: 'all',
+    search: '',
+    courseId: null,
+    udaId: null,
+    lessonId: null,
+    lessonTab: 'contenuto',
+    organize: false,
+    mobileLevel: 'course' // course | uda | lesson
+  };
+
+  function byId(id) { return document.getElementById(id); }
+
+  function findCourse(id) { return courses.filter(function (c) { return c.id === id; })[0]; }
+  function findUda(course, id) { return course.udas.filter(function (u) { return u.id === id; })[0]; }
+  function findLesson(uda, id) { return uda.lessons.filter(function (l) { return l.id === id; })[0]; }
+
+  function poolMeta(status) {
+    if (status === 'valid') return { cls: 'valid', label: 'Pool valido', symbol: '●' };
+    if (status === 'invalid') return { cls: 'invalid', label: 'Pool non valido', symbol: '⚠' };
+    return { cls: 'absent', label: 'Pool assente', symbol: '○' };
+  }
+
+  // ── Top nav ──────────────────────────────────────────────────────
+  document.querySelectorAll('[data-topnav]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      state.top = btn.getAttribute('data-topnav');
+      renderTopNav();
+    });
+  });
+
+  function renderTopNav() {
+    document.querySelectorAll('[data-topnav]').forEach(function (btn) {
+      btn.classList.toggle('active', btn.getAttribute('data-topnav') === state.top);
+    });
+    ['library', 'workspace'].forEach(function (id) {
+      byId('screen-' + id === 'screen-workspace' ? 'screen-workspace' : id === 'library' ? 'screen-library' : id);
+    });
+    byId('screen-library').classList.toggle('visible', state.top === 'library' && !state.courseId);
+    byId('screen-workspace').classList.toggle('visible', state.top === 'library' && !!state.courseId);
+    byId('screen-verifiche').classList.toggle('visible', state.top === 'verifiche');
+    byId('screen-students').classList.toggle('visible', state.top === 'students');
+    byId('screen-template').classList.toggle('visible', state.top === 'template');
+  }
+
+  // ── Device toggle ────────────────────────────────────────────────
+  document.querySelectorAll('[data-device]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      state.device = btn.getAttribute('data-device');
+      document.body.classList.toggle('mobile', state.device === 'mobile');
+      document.querySelectorAll('[data-device]').forEach(function (b) {
+        b.classList.toggle('active', b === btn);
+      });
+      renderWorkspace();
+    });
+  });
+
+  // ── Filters ──────────────────────────────────────────────────────
+  function populateFilters() {
+    var years = [];
+    courses.forEach(function (c) {
+      if (c.year && years.indexOf(c.year) === -1) years.push(c.year);
+    });
+    years.sort().reverse();
+    var yearSel = byId('filter-year');
+    years.forEach(function (y) {
+      var opt = document.createElement('option');
+      opt.value = y;
+      opt.textContent = y;
+      yearSel.appendChild(opt);
+    });
+    var noYearOpt = document.createElement('option');
+    noYearOpt.value = 'none';
+    noYearOpt.textContent = 'Senza anno';
+    yearSel.appendChild(noYearOpt);
+    // default = anno più recente presente (§6 decisione "Anni")
+    if (years.length > 0) {
+      state.year = years[0];
+      yearSel.value = years[0];
+    }
+
+    var allClasses = [];
+    courses.forEach(function (c) {
+      c.classes.forEach(function (cl) {
+        if (allClasses.indexOf(cl) === -1) allClasses.push(cl);
+      });
+    });
+    var clsSel = byId('filter-class');
+    allClasses.sort().forEach(function (cl) {
+      var opt = document.createElement('option');
+      opt.value = cl;
+      opt.textContent = cl;
+      clsSel.appendChild(opt);
+    });
+  }
+
+  byId('filter-year').addEventListener('change', function (e) {
+    state.year = e.target.value;
+    renderLibrary();
+  });
+  byId('filter-class').addEventListener('change', function (e) {
+    state.cls = e.target.value;
+    renderLibrary();
+  });
+  byId('filter-search').addEventListener('input', function (e) {
+    state.search = e.target.value.trim().toLowerCase();
+    renderLibrary();
+  });
+
+  // ── Libreria ─────────────────────────────────────────────────────
+  function renderLibrary() {
+    var grid = byId('course-grid');
+    grid.innerHTML = '';
+    var filtered = courses.filter(function (c) {
+      if (state.year === 'none' && c.year !== null) return false;
+      if (state.year !== 'all' && state.year !== 'none' && c.year !== state.year) return false;
+      if (state.cls !== 'all' && c.classes.indexOf(state.cls) === -1) return false;
+      if (state.search && c.title.toLowerCase().indexOf(state.search) === -1) return false;
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      grid.innerHTML = '<div class="empty-hint">Nessun corso corrisponde ai filtri selezionati.</div>';
+      return;
+    }
+
+    filtered.forEach(function (c) {
+      var pct = c.lessonsTotal > 0 ? Math.round((c.lessonsDone / c.lessonsTotal) * 100) : 0;
+      var card = document.createElement('div');
+      card.className = 'course-card';
+      card.tabIndex = 0;
+      card.setAttribute('role', 'button');
+      card.setAttribute('aria-label', 'Apri il corso ' + c.title);
+      card.innerHTML =
+        '<div class="course-card-head">' +
+          '<div class="course-card-title">' + c.title + '</div>' +
+          '<button type="button" class="ghost card-menu-btn" aria-label="Azioni corso" onclick="event.stopPropagation()">⋯</button>' +
+        '</div>' +
+        '<div class="course-card-meta">' +
+          '<span class="pill">' + (c.year || 'Senza anno') + '</span>' +
+          (c.classes.length ? c.classes.map(function (cl) { return '<span class="pill">' + cl + '</span>'; }).join('') : '<span class="pill">Nessuna classe</span>') +
+        '</div>' +
+        '<div class="course-card-stats">' +
+          '<div><strong>' + c.udaCount + '</strong>UDA</div>' +
+          '<div><strong>' + c.lessonsDone + '/' + c.lessonsTotal + '</strong>lezioni</div>' +
+          '<div><strong>' + c.questionCount + '</strong>domande</div>' +
+        '</div>' +
+        '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%"></div></div>';
+      card.addEventListener('click', function () { openCourse(c.id); });
+      card.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openCourse(c.id); }
+      });
+      grid.appendChild(card);
+    });
+  }
+
+  // ── Workspace navigation ─────────────────────────────────────────
+  function openCourse(id) {
+    state.courseId = id;
+    state.udaId = null;
+    state.lessonId = null;
+    state.organize = false;
+    state.mobileLevel = 'course';
+    renderTopNav();
+    renderWorkspace();
+  }
+
+  byId('btn-back-to-library').addEventListener('click', function () {
+    state.courseId = null;
+    renderTopNav();
+    renderLibrary();
+  });
+
+  byId('btn-organize').addEventListener('click', function () {
+    state.organize = !state.organize;
+    document.body.classList.toggle('organize', state.organize);
+    byId('btn-organize').textContent = state.organize ? 'Fine' : 'Organizza';
+    renderWorkspace();
+  });
+
+  byId('mobile-back-btn').addEventListener('click', function () {
+    if (state.mobileLevel === 'lesson') {
+      state.mobileLevel = 'uda';
+    } else if (state.mobileLevel === 'uda') {
+      state.mobileLevel = 'course';
+      state.udaId = null;
+    } else {
+      state.courseId = null;
+      renderTopNav();
+      renderLibrary();
+      return;
+    }
+    renderWorkspace();
+  });
+
+  function renderBreadcrumb() {
+    var course = findCourse(state.courseId);
+    var parts = [];
+    parts.push('<button type="button" data-crumb="library">Didattica</button>');
+    parts.push('<span class="sep">/</span>');
+    if (!course) return;
+    if (!state.udaId) {
+      parts.push('<strong>' + course.title + '</strong>');
+    } else {
+      parts.push('<button type="button" data-crumb="course">' + course.title + '</button>');
+      var uda = findUda(course, state.udaId);
+      parts.push('<span class="sep">/</span>');
+      if (!state.lessonId) {
+        parts.push('<strong>' + uda.title + '</strong>');
+      } else {
+        parts.push('<button type="button" data-crumb="uda">' + uda.title + '</button>');
+        var lesson = findLesson(uda, state.lessonId);
+        parts.push('<span class="sep">/</span>');
+        parts.push('<strong>' + lesson.title + '</strong>');
+      }
+    }
+    byId('breadcrumb').innerHTML = parts.join('');
+    byId('breadcrumb').querySelectorAll('[data-crumb]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var level = btn.getAttribute('data-crumb');
+        if (level === 'library') { state.courseId = null; renderTopNav(); renderLibrary(); return; }
+        if (level === 'course') { state.udaId = null; state.lessonId = null; }
+        if (level === 'uda') { state.lessonId = null; }
+        renderWorkspace();
+      });
+    });
+  }
+
+  function renderSidebar() {
+    var course = findCourse(state.courseId);
+    var sidebar = byId('sidebar');
+    sidebar.innerHTML = '';
+    course.udas.forEach(function (uda) {
+      var wrap = document.createElement('div');
+      wrap.className = 'sidebar-uda';
+
+      var head = document.createElement('div');
+      head.className = 'sidebar-uda-head' + (state.udaId === uda.id && !state.lessonId ? ' selected' : '');
+      head.innerHTML = '<span class="sidebar-caret">▾</span><span>' + uda.title + '</span>';
+      head.addEventListener('click', function () {
+        if (state.organize) return;
+        state.udaId = uda.id;
+        state.lessonId = null;
+        renderWorkspace();
+      });
+      wrap.appendChild(head);
+
+      var lessonsWrap = document.createElement('div');
+      lessonsWrap.className = 'sidebar-lessons';
+      uda.lessons.forEach(function (lesson, idx) {
+        var pm = poolMeta(lesson.pool);
+        var row = document.createElement('div');
+        row.className = 'lesson-row' + (state.lessonId === lesson.id ? ' selected' : '');
+        row.innerHTML =
+          '<span class="lesson-num">' + lesson.num + '</span>' +
+          '<span class="lesson-title">' + lesson.title + '</span>' +
+          '<span class="pool-dot ' + pm.cls + '" role="img" aria-label="' + pm.label + '" title="' + pm.label + '"></span>' +
+          '<span class="organize-arrows">' +
+            '<button type="button" ' + (idx === 0 ? 'disabled' : '') + ' aria-label="Sposta su">↑</button>' +
+            '<button type="button" ' + (idx === uda.lessons.length - 1 ? 'disabled' : '') + ' aria-label="Sposta giù">↓</button>' +
+          '</span>';
+        row.addEventListener('click', function () {
+          if (state.organize) return;
+          state.udaId = uda.id;
+          state.lessonId = lesson.id;
+          state.lessonTab = 'contenuto';
+          renderWorkspace();
+        });
+        lessonsWrap.appendChild(row);
+      });
+      wrap.appendChild(lessonsWrap);
+      sidebar.appendChild(wrap);
+    });
+  }
+
+  function renderContentArea() {
+    var course = findCourse(state.courseId);
+    var area = byId('content-area');
+
+    if (!state.udaId) {
+      // 8.1 — nessuna selezione: riepilogo corso + tabella UDA
+      var totalLessons = 0, doneLessons = 0;
+      course.udas.forEach(function (u) { totalLessons += u.lessons.length; doneLessons += u.lessons.filter(function (l) { return l.done; }).length; });
+      area.innerHTML =
+        '<div class="summary-grid">' +
+          '<div class="summary-tile"><div class="label">UDA</div><div class="value">' + course.udas.length + '</div></div>' +
+          '<div class="summary-tile"><div class="label">Lezioni svolte</div><div class="value">' + doneLessons + '/' + totalLessons + '</div></div>' +
+          '<div class="summary-tile"><div class="label">Domande</div><div class="value">' + course.questionCount + '</div></div>' +
+          '<div class="summary-tile"><div class="label">Classi</div><div class="value">' + (course.classes.join(', ') || '—') + '</div></div>' +
+        '</div>' +
+        '<table class="data-table"><thead><tr><th>UDA</th><th>Lezioni</th><th>Svolte</th><th></th></tr></thead><tbody id="uda-table-body"></tbody></table>';
+      var tbody = byId('uda-table-body');
+      course.udas.forEach(function (u) {
+        var done = u.lessons.filter(function (l) { return l.done; }).length;
+        var tr = document.createElement('tr');
+        tr.className = 'clickable';
+        tr.innerHTML = '<td>' + u.title + '</td><td>' + u.lessons.length + '</td><td>' + done + '/' + u.lessons.length + '</td>' +
+          '<td class="row-actions"><button type="button" class="ghost">⋯</button></td>';
+        tr.addEventListener('click', function () { state.udaId = u.id; renderWorkspace(); });
+        tbody.appendChild(tr);
+      });
+      return;
+    }
+
+    var uda = findUda(course, state.udaId);
+
+    if (!state.lessonId) {
+      // 8.2 — selezione UDA: metadata + tabella lezioni
+      area.innerHTML =
+        '<div class="toolbar-context"><span class="selected-label">UDA selezionata</span>' +
+          '<div class="actions"><button type="button" class="ghost">Modifica metadata</button><button type="button" class="ghost">⋯</button></div></div>' +
+        '<p style="color:var(--color-text-muted); font-size:.85rem; margin-bottom:1rem;">' + uda.desc + '</p>' +
+        '<table class="data-table"><thead><tr><th>#</th><th>Lezione</th><th>Svolta</th><th>Pool</th></tr></thead><tbody id="lesson-table-body"></tbody></table>';
+      var lb = byId('lesson-table-body');
+      uda.lessons.forEach(function (l) {
+        var pm = poolMeta(l.pool);
+        var tr = document.createElement('tr');
+        tr.className = 'clickable';
+        tr.innerHTML =
+          '<td>' + l.num + '</td><td>' + l.title + '</td>' +
+          '<td><input type="checkbox" class="checkbox-done" ' + (l.done ? 'checked' : '') + ' aria-label="Lezione svolta" onclick="event.stopPropagation()" /></td>' +
+          '<td><span class="badge-pool"><span class="pool-dot ' + pm.cls + '" role="img" aria-label="' + pm.label + '"></span>' + pm.label + '</span></td>';
+        tr.addEventListener('click', function () { state.lessonId = l.id; state.lessonTab = 'contenuto'; renderWorkspace(); });
+        lb.appendChild(tr);
+      });
+      return;
+    }
+
+    // 8.3 — selezione lezione: tabs
+    var lesson = findLesson(uda, state.lessonId);
+    var content = lessonContent[lesson.id] || {
+      md: '# ' + lesson.title + '\n\nContenuto di esempio non disponibile per questa lezione nel prototipo.',
+      meta: { titolo: lesson.title, sottotitolo: '', difficolta: '—', concetti: [], obiettivi: [] },
+      questions: []
+    };
+
+    area.innerHTML =
+      '<div class="lesson-detail-head"><h3 style="font-size:1rem;">' + lesson.title + '</h3></div>' +
+      '<div class="tablist" role="tablist" aria-label="Sezioni lezione">' +
+        '<button type="button" role="tab" id="tab-contenuto" aria-selected="' + (state.lessonTab === 'contenuto') + '" aria-controls="panel-contenuto">Contenuto</button>' +
+        '<button type="button" role="tab" id="tab-domande" aria-selected="' + (state.lessonTab === 'domande') + '" aria-controls="panel-domande">Domande</button>' +
+        '<button type="button" role="tab" id="tab-info" aria-selected="' + (state.lessonTab === 'info') + '" aria-controls="panel-info">Informazioni</button>' +
+      '</div>' +
+      '<div role="tabpanel" id="panel-contenuto" class="' + (state.lessonTab === 'contenuto' ? 'active' : '') + '">' +
+        '<div class="markdown-preview">' + mdToHtml(content.md) + '</div>' +
+      '</div>' +
+      '<div role="tabpanel" id="panel-domande" class="' + (state.lessonTab === 'domande' ? 'active' : '') + '">' +
+        renderQuestionsHtml(content.questions) +
+      '</div>' +
+      '<div role="tabpanel" id="panel-info" class="' + (state.lessonTab === 'info' ? 'active' : '') + '">' +
+        renderInfoHtml(content.meta) +
+      '</div>';
+
+    ['contenuto', 'domande', 'info'].forEach(function (t) {
+      byId('tab-' + t).addEventListener('click', function () {
+        state.lessonTab = t;
+        renderWorkspace();
+      });
+    });
+  }
+
+  function mdToHtml(md) {
+    var lines = md.split('\n');
+    return lines.map(function (line) {
+      if (line.indexOf('# ') === 0) return '<h3>' + line.slice(2) + '</h3>';
+      if (line.trim() === '') return '';
+      return '<p>' + line + '</p>';
+    }).join('');
+  }
+
+  function renderQuestionsHtml(questions) {
+    if (!questions || questions.length === 0) {
+      return '<div class="empty-hint">Nessuna domanda di esempio per questa lezione nel prototipo. Il Question Editor reale mostrerebbe qui il pool contestualizzato (§11 roadmap).</div><button type="button" class="ghost" style="margin: 0 1.25rem;">+ Nuova domanda</button>';
+    }
+    return questions.map(function (q, i) {
+      var opts = (q.opts || []).map(function (o) {
+        return '<div class="qopt' + (o.ok ? ' correct' : '') + '">' + o.t + '</div>';
+      }).join('');
+      return '<div class="question-card">' +
+        '<div class="question-card-head"><strong>Domanda ' + (i + 1) + '</strong><span class="qtype">' + q.tipo + '</span></div>' +
+        '<div class="qtext">' + q.testo + '</div>' +
+        (opts ? '<div class="qopts">' + opts + '</div>' : '') +
+      '</div>';
+    }).join('') + '<button type="button" class="ghost">+ Nuova domanda</button>';
+  }
+
+  function renderInfoHtml(meta) {
+    return '<div class="info-grid">' +
+      '<div class="info-field"><div class="label">Titolo</div><div class="value">' + meta.titolo + '</div></div>' +
+      '<div class="info-field"><div class="label">Sottotitolo</div><div class="value">' + (meta.sottotitolo || '—') + '</div></div>' +
+      '<div class="info-field"><div class="label">Difficoltà</div><div class="value">' + meta.difficolta + '</div></div>' +
+      '<div class="info-field"><div class="label">Concetti chiave</div><div class="value tag-list">' + (meta.concetti.map(function (c) { return '<span class="pill">' + c + '</span>'; }).join('') || '—') + '</div></div>' +
+      '<div class="info-field" style="grid-column: 1 / -1;"><div class="label">Obiettivi</div><div class="value tag-list">' + (meta.obiettivi.map(function (o) { return '<span class="pill">' + o + '</span>'; }).join('') || '—') + '</div></div>' +
+    '</div>';
+  }
+
+  // ── Mobile drill-down rendering ──────────────────────────────────
+  function renderMobile() {
+    var course = findCourse(state.courseId);
+    byId('mobile-course-summary').classList.toggle('show', state.mobileLevel === 'course');
+    byId('mobile-uda-lessons').classList.toggle('show', state.mobileLevel === 'uda');
+    byId('mobile-lesson-detail').classList.toggle('show', state.mobileLevel === 'lesson');
+    byId('mobile-back').classList.toggle('show', true);
+
+    if (state.mobileLevel === 'course') {
+      var totalLessons = 0, doneLessons = 0;
+      course.udas.forEach(function (u) { totalLessons += u.lessons.length; doneLessons += u.lessons.filter(function (l) { return l.done; }).length; });
+      var box = byId('mobile-course-summary');
+      box.innerHTML =
+        '<div style="padding: 0 1.1rem 0.75rem;">' +
+          '<h3 style="font-size:1rem;">' + course.title + '</h3>' +
+          '<div class="course-card-meta" style="margin-top:.4rem;"><span class="pill">' + (course.year || 'Senza anno') + '</span></div>' +
+          '<div class="summary-grid" style="margin-top:.75rem;">' +
+            '<div class="summary-tile"><div class="label">UDA</div><div class="value">' + course.udas.length + '</div></div>' +
+            '<div class="summary-tile"><div class="label">Lezioni</div><div class="value">' + doneLessons + '/' + totalLessons + '</div></div>' +
+          '</div>' +
+        '</div>';
+      course.udas.forEach(function (u) {
+        var done = u.lessons.filter(function (l) { return l.done; }).length;
+        var item = document.createElement('div');
+        item.className = 'mobile-item';
+        item.innerHTML = '<span>' + u.title + ' <span style="color:var(--color-text-muted); font-size:.75rem;">(' + done + '/' + u.lessons.length + ')</span></span><span class="chev">›</span>';
+        item.addEventListener('click', function () {
+          state.udaId = u.id;
+          state.mobileLevel = 'uda';
+          renderMobile();
+        });
+        box.appendChild(item);
+      });
+    }
+
+    if (state.mobileLevel === 'uda') {
+      var uda = findUda(course, state.udaId);
+      var box2 = byId('mobile-uda-lessons');
+      box2.innerHTML = '<div style="padding: 0 1.1rem .5rem;"><h3 style="font-size:1rem;">' + uda.title + '</h3></div>';
+      uda.lessons.forEach(function (l) {
+        var pm = poolMeta(l.pool);
+        var item = document.createElement('div');
+        item.className = 'mobile-item';
+        item.innerHTML =
+          '<span style="display:flex; align-items:center; gap:.4rem;">' +
+            '<span class="pool-dot ' + pm.cls + '" role="img" aria-label="' + pm.label + '"></span>' +
+            l.num + '. ' + l.title +
+          '</span><span class="chev">›</span>';
+        item.addEventListener('click', function () {
+          state.lessonId = l.id;
+          state.lessonTab = 'contenuto';
+          state.mobileLevel = 'lesson';
+          renderMobile();
+        });
+        box2.appendChild(item);
+      });
+    }
+
+    if (state.mobileLevel === 'lesson') {
+      var udaM = findUda(course, state.udaId);
+      var lesson = findLesson(udaM, state.lessonId);
+      var content = lessonContent[lesson.id] || { md: '# ' + lesson.title + '\n\nContenuto di esempio.', meta: { titolo: lesson.title, sottotitolo: '', difficolta: '—', concetti: [], obiettivi: [] }, questions: [] };
+      var box3 = byId('mobile-lesson-detail');
+      box3.innerHTML =
+        '<div style="padding: 0 1.1rem;">' +
+          '<h3 style="font-size:1rem; margin-bottom:.6rem;">' + lesson.title + '</h3>' +
+          '<div class="tablist" role="tablist">' +
+            '<button type="button" role="tab" id="mtab-contenuto" aria-selected="' + (state.lessonTab === 'contenuto') + '">Contenuto</button>' +
+            '<button type="button" role="tab" id="mtab-domande" aria-selected="' + (state.lessonTab === 'domande') + '">Domande</button>' +
+            '<button type="button" role="tab" id="mtab-info" aria-selected="' + (state.lessonTab === 'info') + '">Informazioni</button>' +
+          '</div>' +
+          '<div class="' + (state.lessonTab === 'contenuto' ? 'active' : '') + '" style="display:' + (state.lessonTab === 'contenuto' ? 'block' : 'none') + ';"><div class="markdown-preview">' + mdToHtml(content.md) + '</div></div>' +
+          '<div style="display:' + (state.lessonTab === 'domande' ? 'block' : 'none') + ';">' + renderQuestionsHtml(content.questions) + '</div>' +
+          '<div style="display:' + (state.lessonTab === 'info' ? 'block' : 'none') + ';">' + renderInfoHtml(content.meta) + '</div>' +
+        '</div>';
+      ['contenuto', 'domande', 'info'].forEach(function (t) {
+        byId('mtab-' + t).addEventListener('click', function () { state.lessonTab = t; renderMobile(); });
+      });
+    }
+  }
+
+  function renderWorkspace() {
+    if (!state.courseId) return;
+    var course = findCourse(state.courseId);
+    byId('course-title').textContent = course.title;
+    byId('course-year-badge').textContent = course.year || 'Senza anno';
+    byId('course-class-badge').textContent = course.classes.join(', ') || 'Nessuna classe';
+    renderBreadcrumb();
+    renderSidebar();
+    renderContentArea();
+    renderMobile();
+  }
+
+  // ── Studenti / Classi ────────────────────────────────────────────
+  document.querySelectorAll('[data-subtab]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var target = btn.getAttribute('data-subtab');
+      document.querySelectorAll('[data-subtab]').forEach(function (b) {
+        b.classList.toggle('active', b === btn);
+        b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+      });
+      document.querySelectorAll('.subscreen').forEach(function (s) {
+        s.classList.toggle('active', s.id === target);
+      });
+    });
+  });
+
+  function renderStudents() {
+    var tbody = byId('students-tbody');
+    tbody.innerHTML = '';
+    students.forEach(function (s) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + s.name + '</td><td>' + s.email + '</td>' +
+        '<td><span class="status-pill ' + s.status + '">' + (s.status === 'approved' ? 'Approvato' : s.status === 'pending' ? 'In attesa' : 'Bloccato') + '</span></td>' +
+        '<td>' + s.cls + '</td>' +
+        '<td class="row-actions"><button type="button" class="ghost">⋯</button></td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderClasses() {
+    var tbody = byId('classes-tbody');
+    tbody.innerHTML = '';
+    classes.forEach(function (c) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + c.name + '</td><td>' + c.count + '</td>' +
+        '<td class="row-actions"><button type="button" class="ghost">Modifica</button><button type="button" class="ghost">Elimina</button></td>';
+      tbody.appendChild(tr);
+    });
+    var addRow = document.createElement('tr');
+    addRow.className = 'inline-add-row';
+    addRow.innerHTML =
+      '<td><input type="text" placeholder="Nuova classe…" aria-label="Nome nuova classe" /></td>' +
+      '<td style="color:var(--color-text-muted);">0</td>' +
+      '<td class="row-actions"><button type="button" class="primary">+ Aggiungi</button></td>';
+    tbody.appendChild(addRow);
+  }
+
+  // ── Template ─────────────────────────────────────────────────────
+  function renderTemplates() {
+    var list = byId('template-list');
+    list.innerHTML = '';
+    templates.forEach(function (t) {
+      var item = document.createElement('div');
+      item.className = 'template-item';
+      item.innerHTML = '<span>' + t.name + '<br><span style="color:var(--color-text-muted); font-size:.75rem;">' + t.desc + '</span></span><button type="button" class="ghost">⬇</button>';
+      list.appendChild(item);
+    });
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────
+  populateFilters();
+  renderLibrary();
+  renderStudents();
+  renderClasses();
+  renderTemplates();
+  renderTopNav();
+})();
+</script>
+</body>
+</html>
