@@ -975,3 +975,85 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
     expect(screen.getByTestId('md').textContent).not.toContain('Stale A body.');
   });
 });
+
+describe('CourseWorkspace — async hardening after unmount (DUX-04B)', () => {
+  async function selectA(onCardPatch = vi.fn()) {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('lA', 'uda-01-reti', { titolo: 'Lezione A' })]);
+    mockFetchLessonContent.mockResolvedValue('Corpo A.');
+    const view = render(
+      <CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} onCardPatch={onCardPatch} />,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
+    return view;
+  }
+
+  it('does not patch the card when completion resolves after unmount', async () => {
+    let resolve!: () => void;
+    mockSetLessonCompleted.mockImplementation(
+      () => new Promise<void>((r) => (resolve = () => r())),
+    );
+    const onCardPatch = vi.fn();
+    const { unmount } = await selectA(onCardPatch);
+    fireEvent.click(screen.getByRole('button', { name: 'Segna svolta' }));
+
+    unmount();
+    resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    // Remote write completed, but no card callback after unmount.
+    expect(onCardPatch).not.toHaveBeenCalled();
+  });
+
+  it('does not update or callback when a content save resolves after unmount', async () => {
+    let resolve!: () => void;
+    mockUpdateLessonBody.mockImplementation(() => new Promise<void>((r) => (resolve = () => r())));
+    const onCardPatch = vi.fn();
+    const { unmount } = await selectA(onCardPatch);
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica contenuto' }));
+    fireEvent.change(screen.getByLabelText('Corpo Markdown'), { target: { value: 'nuovo' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    unmount();
+    resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    // Save proceeded; no post-unmount state update or callback.
+    expect(mockUpdateLessonBody).toHaveBeenCalledOnce();
+    expect(onCardPatch).not.toHaveBeenCalled();
+  });
+
+  it('lets a metadata save after a lesson change update the old doc but not the new panel', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('lA', 'uda-01-reti', { titolo: 'Lezione A' }),
+      lesson('lB', 'uda-01-reti', { titolo: 'Lezione B' }),
+    ]);
+    mockFetchLessonContent.mockImplementation((ref: string) =>
+      Promise.resolve(ref.includes('lA') ? 'Corpo A.' : 'Corpo B.'),
+    );
+    let resolveSave!: () => void;
+    mockUpdateLessonMetadata.mockImplementation(
+      () => new Promise<void>((r) => (resolveSave = () => r())),
+    );
+    render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    await waitFor(() => expect(screen.getByTestId('md').textContent).toContain('Corpo A.'));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica informazioni' }));
+    fireEvent.change(screen.getByLabelText('Titolo lezione'), { target: { value: 'A2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    // Switch to B while A's metadata save is pending (dirty guard → confirm).
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione B' }));
+    fireEvent.click(screen.getByRole('button', { name: /continua senza salvare/i }));
+    await waitFor(() => expect(screen.getByTestId('md').textContent).toContain('Corpo B.'));
+
+    resolveSave();
+    await Promise.resolve();
+    // Still on lesson B; its heading/panel not overwritten by A's save.
+    expect(screen.getByRole('heading', { name: 'Lezione B' })).toBeTruthy();
+  });
+});

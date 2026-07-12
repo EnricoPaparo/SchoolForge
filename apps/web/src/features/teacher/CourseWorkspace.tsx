@@ -184,6 +184,21 @@ export function CourseWorkspace({
   // Tracks the currently-selected lesson id so a save that resolves after the
   // context changed can never write the new lesson's panel.
   const currentLessonRef = useRef<string | null>(null);
+  // True while mounted; flipped false on unmount so no async handler resolving
+  // after the teacher has left Didattica can setState / setTree / patch the
+  // card. The underlying Firebase/Storage write still completes normally — we
+  // only drop the UI update, which is what unmount makes meaningless.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      // Invalidate in-flight revision/request ids so any resolving fetch or
+      // save is treated as stale.
+      lessonRequestRef.current++;
+      currentLessonRef.current = null;
+    };
+  }, []);
 
   const anyDirty = poolDirty || contentDirty || infoDirty;
 
@@ -371,7 +386,7 @@ export function CourseWorkspace({
     try {
       await fn();
     } finally {
-      setWsBusy(false);
+      if (mountedRef.current) setWsBusy(false);
     }
   }
 
@@ -379,10 +394,11 @@ export function CourseWorkspace({
     void withBusy(async () => {
       try {
         await updateProgramTitle(card.programId, title, ownerUid, db);
+        if (!mountedRef.current) return;
         onCardPatch?.(card.programId, { title });
         closeDialog();
       } catch {
-        setWsError('Impossibile rinominare il corso.');
+        if (mountedRef.current) setWsError('Impossibile rinominare il corso.');
       }
     });
   }
@@ -395,6 +411,7 @@ export function CourseWorkspace({
           { ownerUid, programmaTitle: card.title, programId: card.programId, files },
           { db, storage },
         );
+        if (!mountedRef.current) return;
         if (result.status === 'validation_failed') {
           setWsError(describeImportValidationError(result.validationIssues));
           return;
@@ -402,6 +419,7 @@ export function CourseWorkspace({
         // Structure fully changed: reload only this course's metadata + tree by
         // patching the card's active import (the tree effect reloads UDA/lezioni).
         const meta = await getImportMeta(card.programId, result.importId, db);
+        if (!mountedRef.current) return;
         onCardPatch?.(card.programId, {
           activeImportId: result.importId,
           hasImport: true,
@@ -414,7 +432,8 @@ export function CourseWorkspace({
         setSelection({ kind: 'course' });
         closeDialog();
       } catch (err) {
-        setWsError(err instanceof Error ? err.message : "Errore durante l'importazione.");
+        if (mountedRef.current)
+          setWsError(err instanceof Error ? err.message : "Errore durante l'importazione.");
       }
     });
   }
@@ -423,10 +442,11 @@ export function CourseWorkspace({
     void withBusy(async () => {
       try {
         await setProgramClassIds(card.programId, classIds, ownerUid, db);
+        if (!mountedRef.current) return;
         onCardPatch?.(card.programId, { classIds, classNames });
         closeDialog();
       } catch {
-        setWsError('Impossibile salvare le classi.');
+        if (mountedRef.current) setWsError('Impossibile salvare le classi.');
       }
     });
   }
@@ -435,9 +455,11 @@ export function CourseWorkspace({
     void withBusy(async () => {
       try {
         await deleteProgram(card.programId, ownerUid, db, storage);
+        if (!mountedRef.current) return;
         onCourseDeleted?.(card.programId);
       } catch (err) {
-        setWsError(err instanceof Error ? err.message : 'Impossibile eliminare il corso.');
+        if (mountedRef.current)
+          setWsError(err instanceof Error ? err.message : 'Impossibile eliminare il corso.');
       }
     });
   }
@@ -447,7 +469,7 @@ export function CourseWorkspace({
     try {
       await exportZip(cardToProgram(card), storage, db);
     } catch {
-      setWsError('Impossibile esportare il ZIP.');
+      if (mountedRef.current) setWsError('Impossibile esportare il ZIP.');
     }
   }
 
@@ -489,6 +511,7 @@ export function CourseWorkspace({
           competenze: values.competenze,
           obiettivi: values.obiettivi,
         };
+        if (!mountedRef.current) return;
         // Compute the next tree deterministically, keep setTree pure, and
         // patch the card once outside the updater (Strict Mode double-invokes
         // updaters — the external callback must not run twice).
@@ -499,7 +522,8 @@ export function CourseWorkspace({
         patchCardCounts(next);
         closeDialog();
       } catch (err) {
-        setWsError(err instanceof Error ? err.message : 'Impossibile creare la UDA.');
+        if (mountedRef.current)
+          setWsError(err instanceof Error ? err.message : 'Impossibile creare la UDA.');
       }
     });
   }
@@ -518,6 +542,7 @@ export function CourseWorkspace({
           db,
           storage,
         });
+        if (!mountedRef.current) return;
         setTree((prev) =>
           prev
             ? {
@@ -528,7 +553,8 @@ export function CourseWorkspace({
         );
         closeDialog();
       } catch (err) {
-        setWsError(err instanceof Error ? err.message : 'Impossibile salvare la UDA.');
+        if (mountedRef.current)
+          setWsError(err instanceof Error ? err.message : 'Impossibile salvare la UDA.');
       }
     });
   }
@@ -540,6 +566,7 @@ export function CourseWorkspace({
     void withBusy(async () => {
       try {
         await deleteUda({ programId: card.programId, importId, udaId, ownerUid, db, storage });
+        if (!mountedRef.current) return;
         // Deterministic next tree + pure setTree; patch the card once, outside
         // the updater, so Strict Mode can't duplicate the card callback.
         if (tree) {
@@ -553,6 +580,7 @@ export function CourseWorkspace({
         setSelection({ kind: 'course' });
         closeDialog();
       } catch (err) {
+        if (!mountedRef.current) return;
         if (err instanceof RepositoryDeleteBlockedError) {
           setUdaBlockers(err.blockers);
         } else {
@@ -596,6 +624,7 @@ export function CourseWorkspace({
           concettiChiave: values.concettiChiave,
           obiettivi: values.obiettivi,
         };
+        if (!mountedRef.current) return;
         const next: Tree = tree
           ? { udas: tree.udas, lessons: [...tree.lessons, newLesson] }
           : { udas: [], lessons: [newLesson] };
@@ -624,7 +653,8 @@ export function CourseWorkspace({
         });
         lessonRequestRef.current++; // invalidate any in-flight fetch
       } catch (err) {
-        setWsError(err instanceof Error ? err.message : 'Impossibile creare la lezione.');
+        if (mountedRef.current)
+          setWsError(err instanceof Error ? err.message : 'Impossibile creare la lezione.');
       }
     });
   }
@@ -645,15 +675,15 @@ export function CourseWorkspace({
           db,
           storage,
         });
-        // A save that resolves after the context changed must not write the
-        // now-current lesson's panel.
-        if (currentLessonRef.current !== lessonId) return;
+        // After unmount, no UI update at all; after a mere lesson change, the
+        // save must not write the now-current lesson's panel.
+        if (!mountedRef.current || currentLessonRef.current !== lessonId) return;
         setLessonContent(body);
         setEditingContent(false);
         setContentDirty(false);
         setContentStatus({ busy: false, error: null, saved: true });
       } catch (err) {
-        if (currentLessonRef.current !== lessonId) return;
+        if (!mountedRef.current || currentLessonRef.current !== lessonId) return;
         setContentStatus({
           busy: false,
           error: err instanceof Error ? err.message : 'Impossibile salvare il contenuto.',
@@ -679,7 +709,10 @@ export function CourseWorkspace({
           db,
           storage,
         });
-        // Tree update is keyed by id → safe regardless of current selection.
+        // After unmount, no local update at all. While still mounted, the tree
+        // update (keyed by id) is allowed even after a mere lesson change —
+        // it updates the *old* lesson's document, not the new panel.
+        if (!mountedRef.current) return;
         setTree((prev) =>
           prev
             ? {
@@ -694,7 +727,7 @@ export function CourseWorkspace({
         setInfoDirty(false);
         setInfoStatus({ busy: false, error: null, saved: true });
       } catch (err) {
-        if (currentLessonRef.current !== lessonId) return;
+        if (!mountedRef.current || currentLessonRef.current !== lessonId) return;
         setInfoStatus({
           busy: false,
           error: err instanceof Error ? err.message : 'Impossibile salvare le informazioni.',
@@ -713,6 +746,7 @@ export function CourseWorkspace({
     void (async () => {
       try {
         await setLessonCompleted(card.programId, importId, lesson.id, next, ownerUid, db);
+        if (!mountedRef.current) return;
         // Deterministic next tree + pure setTree; patch the card's lessonsDone
         // once, outside the updater (Strict Mode-safe).
         if (tree) {
@@ -724,9 +758,12 @@ export function CourseWorkspace({
           patchCardCounts(nextTree);
         }
       } catch (err) {
-        setCompletedError(err instanceof Error ? err.message : 'Impossibile aggiornare lo stato.');
+        if (mountedRef.current)
+          setCompletedError(
+            err instanceof Error ? err.message : 'Impossibile aggiornare lo stato.',
+          );
       } finally {
-        setCompletedBusy(false);
+        if (mountedRef.current) setCompletedBusy(false);
       }
     })();
   }
@@ -740,9 +777,9 @@ export function CourseWorkspace({
       const { title } = resolveLessonTitle(lesson.filename, lessonMetadata.titolo ?? lesson.titolo);
       await downloadLessonPdf(title, lessonContent, context, lessonMetadata);
     } catch {
-      setPdfError('Impossibile generare il PDF della lezione.');
+      if (mountedRef.current) setPdfError('Impossibile generare il PDF della lezione.');
     } finally {
-      setPdfBusy(false);
+      if (mountedRef.current) setPdfBusy(false);
     }
   }
 
@@ -763,6 +800,7 @@ export function CourseWorkspace({
           db,
           storage,
         });
+        if (!mountedRef.current) return;
         if (tree) {
           const nextTree: Tree = {
             udas: tree.udas,
@@ -774,6 +812,7 @@ export function CourseWorkspace({
         setSelection({ kind: 'uda', udaDir: uda.dir });
         closeDialog();
       } catch (err) {
+        if (!mountedRef.current) return;
         if (err instanceof RepositoryDeleteBlockedError) {
           setLessonBlockers(err.blockers);
         } else {
