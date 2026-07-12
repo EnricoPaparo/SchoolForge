@@ -9,13 +9,17 @@ import {
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import {
+  collection,
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
+  query,
   serverTimestamp,
   setDoc,
   Timestamp,
   updateDoc,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
@@ -1092,5 +1096,91 @@ describe('Firestore rules — correctionReturns', () => {
       .authenticatedContext(OTHER_OWNER_UID)
       .firestore() as unknown as Firestore;
     await assertFails(getDoc(doc(otherOwnerDb, 'correctionReturns', SUBMISSION_ID)));
+  });
+});
+
+// ─── correctionReturns: student list query (M4-02B) ─────────────────────────
+
+describe('Firestore rules — correctionReturns student list query', () => {
+  it(
+    'allows the exact query studentCorrectionReturnsService uses: ' +
+      'studentUid == uid AND visibleToStudent == true (ordering is done in JS, not on the query)',
+    async () => {
+      await seedBase();
+      await seedSubmittedSubmission();
+      await seedCompletedCorrection();
+      await seedReturn({ visibleToStudent: true });
+
+      await assertSucceeds(
+        getDocs(
+          query(
+            collection(studentDb(), 'correctionReturns'),
+            where('studentUid', '==', STUDENT_UID),
+            where('visibleToStudent', '==', true),
+          ),
+        ),
+      );
+    },
+  );
+
+  it('rejects a query missing the visibleToStudent filter', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCompletedCorrection();
+    await seedReturn({ visibleToStudent: true });
+
+    await assertFails(
+      getDocs(
+        query(collection(studentDb(), 'correctionReturns'), where('studentUid', '==', STUDENT_UID)),
+      ),
+    );
+  });
+
+  it('rejects a query missing the studentUid filter', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCompletedCorrection();
+    await seedReturn({ visibleToStudent: true });
+
+    await assertFails(
+      getDocs(
+        query(collection(studentDb(), 'correctionReturns'), where('visibleToStudent', '==', true)),
+      ),
+    );
+  });
+
+  it("does not return another student's visible return in the caller's own query", async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCompletedCorrection();
+    await seedReturn({ visibleToStudent: true });
+
+    const otherStudentSnap = await getDocs(
+      query(
+        collection(studentDb(OTHER_STUDENT_UID), 'correctionReturns'),
+        where('studentUid', '==', OTHER_STUDENT_UID),
+        where('visibleToStudent', '==', true),
+      ),
+    );
+    // Not a rules failure (the query itself is well-formed and allowed) —
+    // simply no documents belong to this student, matching the isolation
+    // already covered by the single-doc get() tests above.
+    await assertSucceeds(Promise.resolve(otherStudentSnap));
+    if (otherStudentSnap.size !== 0) {
+      throw new Error('expected no results for a different student');
+    }
+  });
+
+  it("rejects a query with the caller's own studentUid but visibleToStudent left unfiltered (would leak hidden returns)", async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCompletedCorrection();
+    await seedReturn({ visibleToStudent: false });
+
+    await assertFails(
+      getDocs(
+        query(collection(studentDb(), 'correctionReturns'), where('studentUid', '==', STUDENT_UID)),
+      ),
+    );
   });
 });
