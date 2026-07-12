@@ -74,7 +74,11 @@ describe('App — owner authenticated', () => {
     _mockUser = { uid: OWNER_UID, email: 'teacher@test.com', displayName: null };
     firestoreDocs = { 'settings/ownerPublic': { ownerUid: OWNER_UID } };
     render(<App />);
-    expect(await screen.findByRole('button', { name: /Template/ })).toBeTruthy();
+    // TeacherShell is now React.lazy-loaded at the role boundary
+    // (PERF-SEC-01B-4) — a real dynamic import() resolves asynchronously
+    // even in the test environment, so the default findByRole timeout can
+    // be too tight for this specific module graph.
+    expect(await screen.findByRole('button', { name: /Template/ }, { timeout: 3000 })).toBeTruthy();
   });
 });
 

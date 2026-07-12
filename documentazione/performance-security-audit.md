@@ -226,12 +226,13 @@ Nessun finding P0 identificato.
 
 ### P3 — miglioramento eventuale, non prioritario
 
-**PERF-06 — Import misto di `firebase/firestore` impedisce a Vite di isolare il chunk Firebase (riclassificato da P2 a P3)**
+**PERF-06 — Import misto di `firebase/firestore` impedisce a Vite di isolare il chunk Firebase (riclassificato da P2 a P3) — ✅ RISOLTO da PERF-SEC-01B-4**
 - Evidenza: warning esplicito di build — `firebase/firestore` importato dinamicamente da `submissionsService.ts` ma staticamente da oltre 15 altri file (`OwnerSetup.tsx`, `RoleGate.tsx`, `classesService.ts`, ecc.).
 - Impatto: Vite non può spostare il modulo Firestore in un chunk separato scaricabile pigramente; il codice Firestore resta nel chunk principale indipendentemente dal singolo import dinamico in `submissionsService.ts`. **Correzione rispetto alla prima versione**: la semplice sostituzione dell'import dinamico con uno statico (rendere `submissionsService.ts` coerente con gli altri ~15 file) non è di per sé un'ottimizzazione prestazionale misurabile — è principalmente pulizia/coerenza del codice ed eliminazione di un warning di build. Non c'è evidenza misurata che questo cambio da solo riduca la dimensione del bundle iniziale (il modulo Firestore resterebbe comunque nel chunk principale in entrambi i casi, essendo importato staticamente da tutti gli altri file). Il code-splitting reale (isolare Firestore o intere sezioni per ruolo in chunk separati) è una decisione architetturale distinta e più ampia — vedi PERF-10 — non un effetto collaterale di questa correzione.
 - Scenario che lo attiva: qualunque caricamento dell'app (sempre, essendo un problema di bundling, non di runtime) — impatto pratico basso.
 - Soluzione minimale: rendere l'import di `firebase/firestore` in `submissionsService.ts` statico come ovunque altro nel codice, per eliminare il warning e la disomogeneità — senza attendersi un beneficio dimensionale misurabile da questo solo cambio.
 - Beneficio atteso: bundle più prevedibile, elimina un warning di build; nessun beneficio dimensionale atteso senza un intervento di code-splitting più ampio (PERF-10).
+- **Stato**: risolto in PERF-SEC-01B-4 — l'unico `await import('firebase/firestore')` isolato in `saveDraft` (`submissionsService.ts`) è stato sostituito con l'import statico di `updateDoc`, già usato per tutti gli altri simboli dello stesso modulo nello stesso file. Il warning Vite di import misto non compare più in build. Confermato **nessun beneficio dimensionale misurabile da questo cambio isolato** (come previsto): il beneficio dimensionale reale osservato in questa fase viene interamente da PERF-10 (confine di code-splitting per ruolo), non da questa pulizia.
 - Rischio della modifica: basso.
 - File coinvolti: `submissionsService.ts`.
 - Verifica necessaria: `pnpm build` senza warning di import misto; confronto dimensione bundle prima/dopo per confermare (o smentire) l'assenza di beneficio dimensionale diretto.
@@ -258,7 +259,7 @@ Nessun finding P0 identificato.
 - Verifica necessaria: test mirato esistente su questa funzione, confermare stesso risultato con concorrenza.
 - **Stato**: risolto in PERF-SEC-01B-2 — la funzione `mapWithConcurrency` (concorrenza 4) è stata estratta da `loadSelectedQuestions.ts` in un piccolo modulo condiviso (`mapWithConcurrency.ts`) e riusata da entrambi i loader. Il numero di letture Storage è invariato (un `getBytes` per pool distinto, deduplicato come prima); a diminuire è il tempo di attesa complessivo quando le domande coprono più pool. Test aggiunti per l'helper condiviso e per la concorrenza/deduplica/gestione errori di `loadSelectedQuestionsWithSolutions`.
 
-**PERF-10 — Nessun code-splitting per ruolo/vista sul bundle principale**
+**PERF-10 — Nessun code-splitting per ruolo/vista sul bundle principale — ✅ RISOLTO da PERF-SEC-01B-4 (confine docente/studente)**
 - Evidenza: bundle unico da 1.19 MB (§3.1), nessun `React.lazy` trovato nel codice.
 - Impatto: ogni utente (docente o studente) scarica l'intero codice applicativo, incluse sezioni mai visitate dal proprio ruolo (es. uno studente scarica il codice dell'editor pool e dell'import ZIP, mai raggiungibile dal suo ruolo). Impatto pratico limitato dal fatto che 321.65 KB gzip è comunque un carico iniziale ragionevole su una connessione tipica, e Vite/browser cache l'asset dopo il primo caricamento.
 - Scenario che lo attiva: primo caricamento dell'app per ogni nuovo utente/dispositivo/dopo un deploy (cache invalidata).
@@ -267,6 +268,18 @@ Nessun finding P0 identificato.
 - Rischio della modifica: medio — richiede introdurre `Suspense`/boundary di caricamento e verificare che non rompa test esistenti basati su render sincrono; da pianificare, non applicare meccanicamente senza validare l'impatto UX del caricamento differito.
 - File coinvolti: componente di routing principale (`App.tsx` o equivalente), `TeacherShell`/`StudentShell` e le viste che montano.
 - Verifica necessaria: `pnpm build` con confronto dimensione chunk prima/dopo, smoke test di navigazione per ruolo.
+- **Stato**: risolto in PERF-SEC-01B-4, esclusivamente al confine docente/studente (nessun micro-chunking per vista). `TeacherShell` è ora `React.lazy` in `App.tsx`, montato solo quando `RoleGate` risolve lo stato `'teacher'`; `StudentShell` è ora `React.lazy` in `RoleGate.tsx`, montato solo per lo stato `'student'`. Entrambe le shell sono racchiuse in un unico `Suspense` interno a `RoleGate` (fallback "Caricamento portale…", stesso stile visivo dello stato `'loading'` già esistente — nessun flash tra i due), così che i test che montano `RoleGate` direttamente (senza `App`) restano validi senza bisogno di un boundary esterno. Risultato misurato in `pnpm build`:
+
+| Misura | Prima | Dopo | Differenza |
+|---|---:|---:|---:|
+| Entry iniziale minificata | 1 194.56 KB | 647.00 KB | **-547.56 KB (-45.8%)** |
+| Entry iniziale gzip | 323.04 KB | 164.65 KB | **-158.39 KB (-49.0%)** |
+| Chunk docente (`TeacherShell` JS) | — | 335.08 KB / 91.13 KB gzip | nuovo |
+| Chunk studente (`StudentShell` JS) | — | 32.20 KB / 9.93 KB gzip | nuovo |
+| jsPDF (lazy) | 390.47 KB / 128.80 KB gzip | 390.56 KB / 128.86 KB gzip | invariato (differenza da hash/build, non da codice) |
+| html2canvas (lazy) | 201.42 KB / 48.03 KB gzip | 201.42 KB / 48.03 KB gzip | invariato (stesso file, stesso hash) |
+
+  Emerge anche un chunk `verificationPdf-*.js` (179.17 KB / 58.19 KB gzip) prima assorbito nell'entry: `verificationPdf.ts` è importato staticamente sia da `VerificationsView.tsx` (docente) sia da `StudentVerificationsView.tsx` (studente), quindi Rollup lo isola correttamente in un chunk condiviso caricato insieme a **qualunque** delle due shell, non duplicato in entrambe. Peso indicativo per ruolo (JS, oltre all'entry comune 647.00 KB/164.65 KB gzip sempre scaricato): **docente** ≈ 335.08 + 179.17 = 514.25 KB / 91.13 + 58.19 = 149.32 KB gzip; **studente** ≈ 32.20 + 179.17 = 211.37 KB / 9.93 + 58.19 = 68.12 KB gzip (jsPDF/html2canvas restano lazy per entrambi, scaricati solo al download PDF). Un chunk preesistente `index.es-*.js` (150.7 KB/51.6 KB gzip, dimensione invariata prima/dopo) non è né nell'entry né nelle shell — resta una dipendenza dinamica preesistente indipendente da questo intervento. Nessun micro-chunking oltre questo confine: nessuna vista individuale è stata resa `React.lazy` in questa PR. Test aggiornati/aggiunti in `App.test.tsx`/`RoleGate.test.tsx`.
 
 ## 7. Sicurezza — sintesi (dettaglio completo nella revisione statica allegata)
 
@@ -340,7 +353,7 @@ Rimandabili senza pacchetto dedicato, a beneficio marginale ai volumi attuali: *
 
 **Finding (aggiornati dopo revisione)**: 0 P0, **2 P1** (PERF-04, PERF-05), **4 P2** (PERF-01, PERF-02, PERF-03, PERF-07), **4 P3** (PERF-06, PERF-08, PERF-09, PERF-10).
 
-**Stato remediation (aggiornato dopo PERF-SEC-01B-1/B-2/B-3)**: risolti PERF-05 (P1, atomicità), PERF-04 e PERF-09 (P1/P3, latenza), PERF-08 (P3, count aggregato) e parzialmente PERF-02 (P2, guard di cancellazione ora con query mirate). PERF-01 (P2) resta esplicitamente rimandato con soglia di rivalutazione documentata (vedi la sua voce sopra). PERF-03, PERF-06, PERF-07, PERF-10 non ancora affrontati.
+**Stato remediation (aggiornato dopo PERF-SEC-01B-1/B-2/B-3/B-4)**: risolti PERF-05 (P1, atomicità), PERF-04 e PERF-09 (P1/P3, latenza), PERF-08 (P3, count aggregato), PERF-06 (P3, pulizia import Firestore) e PERF-10 (P3, code-splitting per ruolo docente/studente) e parzialmente PERF-02 (P2, guard di cancellazione ora con query mirate). PERF-01 (P2) resta esplicitamente rimandato con soglia di rivalutazione documentata (vedi la sua voce sopra). PERF-03, PERF-07 non ancora affrontati. Con questo, il pacchetto PERF-SEC-01B (01B-1 → 01B-4) è completo.
 
 **Cambiamenti di classificazione rispetto alla prima versione**:
 - **PERF-01**: P1 → P2 — riscritto da "manca filtro `ownerUid`" a "manca un tetto/paginazione sullo storico"; ai volumi personali dichiarati non è un rischio importante immediato.
