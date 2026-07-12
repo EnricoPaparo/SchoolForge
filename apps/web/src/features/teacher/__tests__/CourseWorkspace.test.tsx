@@ -163,6 +163,37 @@ describe('CourseWorkspace — selection', () => {
     expect(mockListUdas).toHaveBeenCalledTimes(1);
   });
 
+  it('ignores an out-of-order stale fetch: the last selected lesson wins', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('lA', 'uda-01-reti', { titolo: 'Lezione A' }),
+      lesson('lB', 'uda-01-reti', { titolo: 'Lezione B' }),
+    ]);
+
+    // Two controlled fetches: A (first selected) resolves *after* B (second).
+    let resolveA!: (v: string) => void;
+    let resolveB!: (v: string) => void;
+    mockFetchLessonContent
+      .mockImplementationOnce(() => new Promise<string>((r) => (resolveA = r)))
+      .mockImplementationOnce(() => new Promise<string>((r) => (resolveB = r)));
+
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione B' }));
+
+    // B (the latest selection) resolves first, then the stale A resolves.
+    resolveB('# B\n\nContenuto della lezione B — meta-B.');
+    await waitFor(() => expect(screen.getByTestId('md').textContent).toContain('meta-B'));
+    resolveA('# A\n\nContenuto della lezione A — meta-A.');
+
+    // A must not overwrite the panel: B's content and title stay on screen.
+    await waitFor(() => expect(screen.getByTestId('md').textContent).toContain('meta-B'));
+    expect(screen.getByTestId('md').textContent).not.toContain('meta-A');
+    expect(screen.getByRole('heading', { name: 'Lezione B' })).toBeTruthy();
+  });
+
   it('shows a readable error when the lesson content fails to load', async () => {
     mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
     mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Rotta' })]);

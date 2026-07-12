@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { db, storage } from '../../lib/firebase.js';
 import type { CourseCard } from '../repository/programs/courseLibrary.js';
 import {
@@ -48,6 +48,11 @@ export function CourseWorkspace({ card, onBack }: CourseWorkspaceProps) {
   const [lessonMetadata, setLessonMetadata] = useState<LessonMetadata>(EMPTY_LESSON_METADATA);
   const [lessonLoading, setLessonLoading] = useState(false);
   const [lessonError, setLessonError] = useState<string | null>(null);
+  // Monotonic id of the most recent lesson selection: only the request that
+  // matches it may write the lesson panel. Guards against a slower earlier
+  // fetch resolving after a newer one (out-of-order) and against a course
+  // change / unmount landing a stale result.
+  const lessonRequestRef = useRef(0);
 
   // ── Load the course tree once (UDA + lessons, 2 reads) ──────────────────
   useEffect(() => {
@@ -72,6 +77,9 @@ export function CourseWorkspace({ card, onBack }: CourseWorkspaceProps) {
     void load();
     return () => {
       cancelled = true;
+      // Invalidate any in-flight lesson fetch so a stale result from the
+      // previous course can never write this (or the next) course's panel.
+      lessonRequestRef.current++;
     };
   }, [card.programId, card.activeImportId]);
 
@@ -93,6 +101,7 @@ export function CourseWorkspace({ card, onBack }: CourseWorkspaceProps) {
     selection.kind === 'uda' ? (tree?.udas.find((u) => u.dir === selection.udaDir) ?? null) : null;
 
   async function selectLesson(lesson: LessonItem) {
+    const requestId = ++lessonRequestRef.current;
     setSelection({ kind: 'lesson', lessonId: lesson.id });
     setLessonContent(null);
     setLessonMetadata(EMPTY_LESSON_METADATA);
@@ -101,12 +110,14 @@ export function CourseWorkspace({ card, onBack }: CourseWorkspaceProps) {
     try {
       const raw = await fetchLessonContent(lesson.storageRef, storage);
       const { metadata, body } = parseLessonMetadata(raw);
+      if (lessonRequestRef.current !== requestId) return; // superseded
       setLessonMetadata(metadata);
       setLessonContent(body);
     } catch {
+      if (lessonRequestRef.current !== requestId) return; // superseded
       setLessonError('Impossibile caricare il contenuto della lezione.');
     } finally {
-      setLessonLoading(false);
+      if (lessonRequestRef.current === requestId) setLessonLoading(false);
     }
   }
 
