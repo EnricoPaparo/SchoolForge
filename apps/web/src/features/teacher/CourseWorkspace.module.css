@@ -439,22 +439,56 @@
 
 /* ── Mobile: no desktop sidebar — a simple stacked, readable nav (§7,
    drill-down completo rimandato a DUX-04) ─────────────────────────────── */
+/* ── Organize mode (DUX-04C) ────────────────────────────────────────────── */
+.organizeLabel {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  margin-right: auto;
+}
+.reorderControls {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+.reorderBtn {
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0.2rem 0.45rem;
+  line-height: 1;
+}
+.reorderBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Mobile: single-level progressive navigation (DUX-04C) ──────────────────
+   The desktop sidebar is not rendered on mobile at all; the content column
+   is the single visible level. Keep everything within the viewport. */
 @media (max-width: 640px) {
   .body {
     flex-direction: column;
+    border-top: none;
+    padding-top: 0.5rem;
   }
-  .sidebar {
+  .content {
     width: 100%;
-    border-right: none;
-    border-bottom: 1px solid var(--color-border);
-    padding-right: 0;
-    padding-bottom: 0.5rem;
-    max-height: 40vh;
   }
-  /* La compressione sidebar è una comodità desktop: su mobile la struttura
-     resta sempre visibile e impilata sopra il contenuto. */
-  .collapseBtn,
-  .sidebarExpand {
-    display: none;
+  .header {
+    gap: 0.5rem;
+  }
+  .title {
+    font-size: 1rem;
+  }
+  .tablist {
+    overflow-x: auto;
+  }
+  .dataTable {
+    display: block;
+    overflow-x: auto;
+  }
+  /* Touch-friendly toolbar controls. */
+  .toolbar button,
+  .backBtn {
+    min-height: 2.25rem;
   }
 }

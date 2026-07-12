@@ -24,6 +24,8 @@ import {
   createUda,
   deleteLesson,
   deleteUda,
+  reorderLesson,
+  reorderUda,
   updateLessonMarkdownBody,
   updateLessonMetadata,
   updateUdaMetadata,
@@ -61,6 +63,95 @@ import {
 import styles from './CourseWorkspace.module.css';
 
 const NO_STATUS: EditStatus = { busy: false, error: null, saved: false };
+const MOBILE_QUERY = '(max-width: 640px)';
+
+/**
+ * Local matchMedia hook (no new dependency). Mobile = single-level
+ * progressive navigation; desktop = shared sidebar. Falls back to desktop
+ * when matchMedia is unavailable (e.g. jsdom without a stub).
+ */
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.(MOBILE_QUERY).matches === true,
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia(MOBILE_QUERY);
+    const onChange = () => setIsMobile(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return isMobile;
+}
+
+// Local order comparators mirroring the service's sort, so a reorder can be
+// reflected in place (swap the two `order` values, then re-sort) without a
+// Firestore re-read.
+function udaOrderKey(uda: UdaItem): number {
+  if (uda.order !== undefined) return uda.order;
+  const m = /^uda-(\d+)(?:-|$)/.exec(uda.dir);
+  return m ? Number(m[1]) - 1 : Number.MAX_SAFE_INTEGER;
+}
+function sortUdas(udas: UdaItem[]): UdaItem[] {
+  return [...udas].sort((a, b) => udaOrderKey(a) - udaOrderKey(b) || a.dir.localeCompare(b.dir));
+}
+function lessonOrderKey(lesson: LessonItem): number {
+  if (lesson.order !== undefined) return lesson.order;
+  const m = /^lezione-(\d+)(?:-|\.md$)/.exec(lesson.filename);
+  return m ? Number(m[1]) - 1 : Number.MAX_SAFE_INTEGER;
+}
+function sortLessons(lessons: LessonItem[]): LessonItem[] {
+  return [...lessons].sort(
+    (a, b) =>
+      a.udaDir.localeCompare(b.udaDir) ||
+      lessonOrderKey(a) - lessonOrderKey(b) ||
+      a.filename.localeCompare(b.filename),
+  );
+}
+
+/**
+ * Reorder up/down controls (RE-04 in the workspace). Two sibling buttons —
+ * never nested inside an open/edit control — shown only in Organize mode.
+ */
+function ReorderControls({
+  label,
+  isFirst,
+  isLast,
+  disabled,
+  onUp,
+  onDown,
+}: {
+  label: string;
+  isFirst: boolean;
+  isLast: boolean;
+  disabled: boolean;
+  onUp: () => void;
+  onDown: () => void;
+}) {
+  return (
+    <span className={styles.reorderControls} role="group" aria-label={`Riordina ${label}`}>
+      <button
+        type="button"
+        className={styles.reorderBtn}
+        aria-label={`Sposta su — ${label}`}
+        disabled={disabled || isFirst}
+        onClick={onUp}
+      >
+        ↑
+      </button>
+      <button
+        type="button"
+        className={styles.reorderBtn}
+        aria-label={`Sposta giù — ${label}`}
+        disabled={disabled || isLast}
+        onClick={onDown}
+      >
+        ↓
+      </button>
+    </span>
+  );
+}
 
 /**
  * Builds the minimal `ProgramItem` shape the export/programma-svolto helpers
@@ -202,6 +293,13 @@ export function CourseWorkspace({
 
   const anyDirty = poolDirty || contentDirty || infoDirty;
 
+  const isMobile = useIsMobile();
+  // Organize mode (DUX-04C): reorder UDAs (course level) or lessons (UDA
+  // level). Exclusive per context; reset whenever the selection changes.
+  const [organizing, setOrganizing] = useState(false);
+  const [reorderBusy, setReorderBusy] = useState(false);
+  const [reorderError, setReorderError] = useState<string | null>(null);
+
   // ── Load the course tree once (UDA + lessons, 2 reads) ──────────────────
   useEffect(() => {
     let cancelled = false;
@@ -339,6 +437,8 @@ export function CourseWorkspace({
   }, [menuOpen]);
   useEffect(() => {
     setMenuOpen(false);
+    setOrganizing(false);
+    setReorderError(null);
     if (selection.kind !== 'lesson') currentLessonRef.current = null;
   }, [selection]);
 
@@ -822,6 +922,114 @@ export function CourseWorkspace({
     });
   }
 
+  // ── Organize mode + reorder (DUX-04C) ───────────────────────────────────
+  // Entering Organize goes through the dirty guard: an unsaved editor must be
+  // resolved first (never silently discarded).
+  function enterOrganize() {
+    guardedNav(() => {
+      setReorderError(null);
+      setMenuOpen(false);
+      setOrganizing(true);
+    });
+  }
+  function exitOrganize() {
+    setOrganizing(false);
+    setReorderError(null);
+  }
+
+  function handleMoveUda(index: number, direction: -1 | 1) {
+    if (!card.activeImportId || !tree || reorderBusy) return;
+    const importId = card.activeImportId;
+    const udas = tree.udas;
+    const neighborIndex = index + direction;
+    if (neighborIndex < 0 || neighborIndex >= udas.length) return;
+    const uda = udas[index]!;
+    const neighbor = udas[neighborIndex]!;
+    setReorderBusy(true);
+    setReorderError(null);
+    void (async () => {
+      try {
+        const { order, neighborOrder } = await reorderUda({
+          programId: card.programId,
+          importId,
+          udaId: uda.id,
+          neighborUdaId: neighbor.id,
+          ownerUid,
+          db,
+        });
+        if (!mountedRef.current) return;
+        // Apply the swapped orders locally only after success, then re-sort.
+        setTree((prev) => {
+          if (!prev) return prev;
+          const nextUdas = sortUdas(
+            prev.udas.map((u) =>
+              u.id === uda.id
+                ? { ...u, order }
+                : u.id === neighbor.id
+                  ? { ...u, order: neighborOrder }
+                  : u,
+            ),
+          );
+          return { udas: nextUdas, lessons: prev.lessons };
+        });
+      } catch (err) {
+        if (mountedRef.current)
+          setReorderError(err instanceof Error ? err.message : 'Impossibile riordinare la UDA.');
+      } finally {
+        if (mountedRef.current) setReorderBusy(false);
+      }
+    })();
+  }
+
+  function handleMoveLesson(
+    udaDir: string,
+    lessonsInUda: LessonItem[],
+    index: number,
+    direction: -1 | 1,
+  ) {
+    if (!card.activeImportId || !tree || reorderBusy) return;
+    const importId = card.activeImportId;
+    const neighborIndex = index + direction;
+    if (neighborIndex < 0 || neighborIndex >= lessonsInUda.length) return;
+    const lesson = lessonsInUda[index]!;
+    const neighbor = lessonsInUda[neighborIndex]!;
+    setReorderBusy(true);
+    setReorderError(null);
+    void (async () => {
+      try {
+        const { order, neighborOrder } = await reorderLesson({
+          programId: card.programId,
+          importId,
+          lessonId: lesson.id,
+          neighborLessonId: neighbor.id,
+          ownerUid,
+          db,
+        });
+        if (!mountedRef.current) return;
+        setTree((prev) => {
+          if (!prev) return prev;
+          const nextLessons = sortLessons(
+            prev.lessons.map((l) =>
+              l.id === lesson.id
+                ? { ...l, order }
+                : l.id === neighbor.id
+                  ? { ...l, order: neighborOrder }
+                  : l,
+            ),
+          );
+          return { udas: prev.udas, lessons: nextLessons };
+        });
+      } catch (err) {
+        if (mountedRef.current)
+          setReorderError(
+            err instanceof Error ? err.message : 'Impossibile riordinare la lezione.',
+          );
+      } finally {
+        if (mountedRef.current) setReorderBusy(false);
+      }
+    })();
+  }
+
   const pct = card.lessonsTotal > 0 ? Math.round((card.lessonsDone / card.lessonsTotal) * 100) : 0;
   const yearLabel = card.annoScolastico ?? 'Senza anno';
   // Once the tree is loaded, derive the domande total from it so a pool edit
@@ -830,11 +1038,31 @@ export function CourseWorkspace({
     ? tree.lessons.reduce((s, l) => s + (l.questionCount ?? 0), 0)
     : card.questionsTotal;
 
+  // Back button: while organizing, it first leaves Organize (never navigates
+  // away with residual state). On mobile it steps up exactly one level; on
+  // desktop it always returns to the library (the sidebar handles the rest).
+  function goUpOneLevel() {
+    if (selection.kind === 'lesson' && selectedLesson) {
+      const udaDir = selectedLesson.udaDir;
+      guardedNav(() => setSelection({ kind: 'uda', udaDir }));
+    } else if (selection.kind === 'uda') {
+      guardedNav(() => setSelection({ kind: 'course' }));
+    } else {
+      guardedNav(onBack);
+    }
+  }
+  const backLabel = organizing
+    ? 'Esci da Organizza'
+    : isMobile && selection.kind !== 'course'
+      ? '← Indietro'
+      : '← Libreria';
+  const backRun = organizing ? exitOrganize : isMobile ? goUpOneLevel : () => guardedNav(onBack);
+
   return (
     <section aria-label={`Corso — ${card.title}`} className={styles.workspace}>
       <header className={styles.header}>
-        <button type="button" className={styles.backBtn} onClick={() => guardedNav(onBack)}>
-          ← Libreria
+        <button type="button" className={styles.backBtn} onClick={backRun}>
+          {backLabel}
         </button>
         <h2 className={styles.title}>{card.title}</h2>
       </header>
@@ -876,8 +1104,11 @@ export function CourseWorkspace({
         </div>
       </div>
 
-      <div className={`${styles.body}${sidebarCollapsed ? ` ${styles.bodyCollapsed}` : ''}`}>
-        {sidebarCollapsed ? (
+      <div
+        className={`${styles.body}${sidebarCollapsed && !isMobile ? ` ${styles.bodyCollapsed}` : ''}`}
+      >
+        {/* Mobile: no sidebar at all — single-level progressive navigation. */}
+        {isMobile ? null : sidebarCollapsed ? (
           <button
             type="button"
             className={styles.sidebarExpand}
@@ -988,7 +1219,15 @@ export function CourseWorkspace({
         )}
 
         <div className={styles.content}>
-          {selection.kind === 'course' && (
+          {selection.kind === 'course' && organizing && (
+            <div className={styles.toolbar}>
+              <span className={styles.organizeLabel}>Riordina UDA</span>
+              <button type="button" className="btn-primary" onClick={exitOrganize}>
+                Fine
+              </button>
+            </div>
+          )}
+          {selection.kind === 'course' && !organizing && (
             <div className={styles.toolbar}>
               <div className={styles.menuWrap}>
                 <button
@@ -1066,12 +1305,34 @@ export function CourseWorkspace({
                   </div>
                 )}
               </div>
+              {card.hasImport && tree && tree.udas.length > 1 && (
+                <button type="button" onClick={enterOrganize}>
+                  Organizza UDA
+                </button>
+              )}
             </div>
           )}
           {selection.kind === 'course' && (
-            <CourseOverview card={card} tree={tree} lessonsByUda={lessonsByUda} />
+            <CourseOverview
+              card={card}
+              tree={tree}
+              lessonsByUda={lessonsByUda}
+              organizing={organizing}
+              reorderBusy={reorderBusy}
+              reorderError={reorderError}
+              onSelectUda={(udaDir) => guardedNav(() => setSelection({ kind: 'uda', udaDir }))}
+              onMoveUda={handleMoveUda}
+            />
           )}
-          {selection.kind === 'uda' && selectedUda && (
+          {selection.kind === 'uda' && selectedUda && organizing && (
+            <div className={styles.toolbar}>
+              <span className={styles.organizeLabel}>Riordina lezioni</span>
+              <button type="button" className="btn-primary" onClick={exitOrganize}>
+                Fine
+              </button>
+            </div>
+          )}
+          {selection.kind === 'uda' && selectedUda && !organizing && (
             <div className={styles.toolbar}>
               <button
                 type="button"
@@ -1114,6 +1375,11 @@ export function CourseWorkspace({
                   </div>
                 )}
               </div>
+              {(lessonsByUda.get(selectedUda.dir) ?? []).length > 1 && (
+                <button type="button" onClick={enterOrganize}>
+                  Organizza lezioni
+                </button>
+              )}
             </div>
           )}
           {selection.kind === 'uda' && selectedUda && (
@@ -1121,6 +1387,17 @@ export function CourseWorkspace({
               uda={selectedUda}
               lessons={lessonsByUda.get(selectedUda.dir) ?? []}
               onOpenLesson={(l) => guardedNav(() => void selectLesson(l))}
+              organizing={organizing}
+              reorderBusy={reorderBusy}
+              reorderError={reorderError}
+              onMoveLesson={(index, dir) =>
+                handleMoveLesson(
+                  selectedUda.dir,
+                  lessonsByUda.get(selectedUda.dir) ?? [],
+                  index,
+                  dir,
+                )
+              }
             />
           )}
           {selection.kind === 'lesson' && selectedLesson && (
@@ -1446,10 +1723,20 @@ function CourseOverview({
   card,
   tree,
   lessonsByUda,
+  organizing,
+  reorderBusy,
+  reorderError,
+  onSelectUda,
+  onMoveUda,
 }: {
   card: CourseCard;
   tree: Tree | null;
   lessonsByUda: Map<string, LessonItem[]>;
+  organizing: boolean;
+  reorderBusy: boolean;
+  reorderError: string | null;
+  onSelectUda: (udaDir: string) => void;
+  onMoveUda: (index: number, direction: -1 | 1) => void;
 }) {
   return (
     <div>
@@ -1465,26 +1752,59 @@ function CourseOverview({
       ) : tree.udas.length === 0 ? (
         <p className="state-empty">Nessuna UDA in questo corso.</p>
       ) : (
-        <table className={styles.dataTable}>
-          <thead>
-            <tr>
-              <th>UDA</th>
-              <th>Lezioni svolte</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tree.udas.map((uda) => {
-              const udaLessons = lessonsByUda.get(uda.dir) ?? [];
-              const done = udaLessons.filter((l) => l.completed).length;
-              return (
-                <tr key={uda.id}>
-                  <td>{uda.dir}</td>
-                  <td>{`${done}/${udaLessons.length}`}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <>
+          {organizing && reorderError && (
+            <p role="alert" className="text-error">
+              {reorderError}
+            </p>
+          )}
+          <table className={styles.dataTable}>
+            <thead>
+              <tr>
+                <th>UDA</th>
+                <th>Lezioni svolte</th>
+                {organizing && <th>Ordine</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {tree.udas.map((uda, index) => {
+                const udaLessons = lessonsByUda.get(uda.dir) ?? [];
+                const done = udaLessons.filter((l) => l.completed).length;
+                return (
+                  <tr key={uda.id}>
+                    <td>
+                      {organizing ? (
+                        uda.dir
+                      ) : (
+                        <button
+                          type="button"
+                          className={styles.rowOpenBtn}
+                          aria-label={`Apri UDA ${uda.dir}`}
+                          onClick={() => onSelectUda(uda.dir)}
+                        >
+                          {uda.dir}
+                        </button>
+                      )}
+                    </td>
+                    <td>{`${done}/${udaLessons.length}`}</td>
+                    {organizing && (
+                      <td>
+                        <ReorderControls
+                          label={uda.dir}
+                          isFirst={index === 0}
+                          isLast={index === tree.udas.length - 1}
+                          disabled={reorderBusy}
+                          onUp={() => onMoveUda(index, -1)}
+                          onDown={() => onMoveUda(index, 1)}
+                        />
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </>
       )}
     </div>
   );
@@ -1496,10 +1816,18 @@ function UdaOverview({
   uda,
   lessons,
   onOpenLesson,
+  organizing,
+  reorderBusy,
+  reorderError,
+  onMoveLesson,
 }: {
   uda: UdaItem;
   lessons: LessonItem[];
   onOpenLesson: (lesson: LessonItem) => void;
+  organizing: boolean;
+  reorderBusy: boolean;
+  reorderError: string | null;
+  onMoveLesson: (index: number, direction: -1 | 1) => void;
 }) {
   return (
     <div>
@@ -1530,35 +1858,60 @@ function UdaOverview({
       {lessons.length === 0 ? (
         <p className="state-empty">Nessuna lezione in questa UDA.</p>
       ) : (
-        <table className={styles.dataTable}>
-          <thead>
-            <tr>
-              <th>Lezione</th>
-              <th>Stato</th>
-              <th>Domande</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lessons.map((lesson) => {
-              const { title } = resolveLessonTitle(lesson.filename, lesson.titolo);
-              return (
-                <tr key={lesson.id}>
-                  <td>
-                    <button
-                      type="button"
-                      className={styles.rowOpenBtn}
-                      onClick={() => onOpenLesson(lesson)}
-                    >
-                      {title}
-                    </button>
-                  </td>
-                  <td>{lesson.completed ? 'Svolta' : 'Da svolgere'}</td>
-                  <td>{lesson.questionCount}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <>
+          {organizing && reorderError && (
+            <p role="alert" className="text-error">
+              {reorderError}
+            </p>
+          )}
+          <table className={styles.dataTable}>
+            <thead>
+              <tr>
+                <th>Lezione</th>
+                <th>Stato</th>
+                <th>Domande</th>
+                {organizing && <th>Ordine</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {lessons.map((lesson, index) => {
+                const { title } = resolveLessonTitle(lesson.filename, lesson.titolo);
+                return (
+                  <tr key={lesson.id}>
+                    <td>
+                      {organizing ? (
+                        title
+                      ) : (
+                        <button
+                          type="button"
+                          className={styles.rowOpenBtn}
+                          aria-label={`Apri lezione ${title}`}
+                          onClick={() => onOpenLesson(lesson)}
+                        >
+                          {title}
+                        </button>
+                      )}
+                    </td>
+                    <td>{lesson.completed ? 'Svolta' : 'Da svolgere'}</td>
+                    <td>{lesson.questionCount}</td>
+                    {organizing && (
+                      <td>
+                        <ReorderControls
+                          label={title}
+                          isFirst={index === 0}
+                          isLast={index === lessons.length - 1}
+                          disabled={reorderBusy}
+                          onUp={() => onMoveLesson(index, -1)}
+                          onDown={() => onMoveLesson(index, 1)}
+                        />
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </>
       )}
     </div>
   );
