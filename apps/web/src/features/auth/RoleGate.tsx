@@ -1,12 +1,40 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, type ReactNode, useEffect, useRef, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import { getStudentAccessSettings } from '../repository/students/studentAccessService.js';
 import { getOwnStudentDoc, requestStudentAccess } from '../repository/students/studentsService.js';
 import { OwnerSetup } from './OwnerSetup.js';
-import { StudentShell } from '../student/StudentShell.js';
 import styles from './OwnerSetup.module.css';
+
+/**
+ * Lazy-loaded at the docente/studente role boundary (PERF-SEC-01B-4): this
+ * is the one place StudentShell — and everything it statically imports — is
+ * referenced from the initial render path, so the chunk is fetched only
+ * once RoleGate has actually resolved the caller as an approved student,
+ * never for the owner.
+ */
+const StudentShell = lazy(() =>
+  import('../student/StudentShell.js').then((m) => ({ default: m.StudentShell })),
+);
+
+/**
+ * Shared Suspense fallback for both lazy shells below — deliberately plain
+ * (no spinner/dependency), reusing the same loading-screen styling as the
+ * `'loading'` gate state above so there is no visual flash between "resolving
+ * role" and "loading the resolved shell's code".
+ */
+function PortalLoadingFallback() {
+  return (
+    <div className={styles.loadingScreen}>
+      <main>
+        <p className={styles.loadingText} aria-busy="true">
+          Caricamento portale…
+        </p>
+      </main>
+    </div>
+  );
+}
 
 type GateState =
   | 'loading'
@@ -132,11 +160,15 @@ export function RoleGate({ children }: { children: ReactNode }) {
   }
 
   if (state === 'student') {
-    return <StudentShell />;
+    return (
+      <Suspense fallback={<PortalLoadingFallback />}>
+        <StudentShell />
+      </Suspense>
+    );
   }
 
   if (state === 'teacher') {
-    return <>{children}</>;
+    return <Suspense fallback={<PortalLoadingFallback />}>{children}</Suspense>;
   }
 
   const screen = STATUS_SCREENS[state];

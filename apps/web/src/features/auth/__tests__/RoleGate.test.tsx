@@ -99,6 +99,21 @@ describe('RoleGate — owner access', () => {
     );
     expect(await screen.findByText('Area docente')).toBeTruthy();
   });
+
+  it('never renders the children slot before the role has resolved', () => {
+    seedOwnerPublic();
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    // Synchronous assertion, before any await: role resolution is always
+    // async (RoleGate's own effect), so the initial render must be the
+    // 'loading' state — never the teacher slot, never StudentShell.
+    expect(screen.queryByText('Area docente')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: /Sezioni studente/i })).toBeNull();
+    expect(screen.getByText('Caricamento…')).toBeTruthy();
+  });
 });
 
 describe('RoleGate — approved student', () => {

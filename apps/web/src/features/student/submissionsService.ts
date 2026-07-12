@@ -5,6 +5,7 @@ import {
   serverTimestamp,
   setDoc,
   Timestamp,
+  updateDoc,
   writeBatch,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
@@ -143,7 +144,6 @@ export async function saveDraft(input: SaveDraftInput, db: Firestore): Promise<v
   if (newAttentionEvents.length > 0) {
     update['attentionEvents'] = arrayUnion(...newAttentionEvents);
   }
-  const { updateDoc } = await import('firebase/firestore');
   await updateDoc(doc(db, 'submissions', id), update);
 }
 
