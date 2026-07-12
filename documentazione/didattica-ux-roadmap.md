@@ -187,6 +187,7 @@ Il prototipo statico (`documentazione/prototipi/didattica-workspace.html`) è la
 - Breadcrumb e pulsanti "Indietro" sono elementi `<button>`/`<a>` veri, navigabili da tastiera.
 - Le schede Contenuto/Domande/Informazioni sono un tablist ARIA standard (`role="tablist"`/`role="tab"`/`role="tabpanel"`), non semplici `<div>` cliccabili.
 - Nessuna informazione trasmessa esclusivamente tramite animazione o hover-only.
+- **Nessun controllo interattivo annidato in un altro** (es. un bottone dentro un elemento con `role="button"`, o un bottone dentro un altro bottone): card corso, righe UDA/lezione e voci di drill-down mobile sono sempre `<button>` reali, con eventuali azioni secondarie (menu `⋯`, frecce di riordino) rese come controlli fratelli separati, mai innestati — verificato nel prototipo DUX-00 (§ fix review) e vincolante per l'implementazione reale.
 
 ## 19. Sicurezza
 
@@ -242,6 +243,8 @@ Nessun modulo esistente (Corsi/Lezioni/Domande/Classi) viene dichiarato "rimosso
 - Nessun nuovo documento Firestore di tipo "statistiche/riepilogo" introdotto.
 - Nessuna regressione nei test automatici esistenti su RE/QE/M3-full/M4.
 - Checklist manuale DEV eseguita su desktop e mobile (drill-down, modalità Organizza, indicatori pool, tab Classi/Studenti).
+- **Coerenza desktop/mobile**: passando dal simulatore/breakpoint desktop a quello mobile (e viceversa) con una selezione attiva (corso/UDA/lezione), il livello di navigazione mostrato è sempre sincronizzato con la selezione corrente — mai un livello residuo di una sessione precedente. Il breadcrumb desktop non è mai mostrato lato mobile (la navigazione a livelli con pulsante Indietro lo sostituisce integralmente).
+- **Controlli navigabili semanticamente**: ogni elemento cliccabile che rappresenta una selezione (card corso, riga UDA, riga lezione, voce di drill-down mobile) è un vero elemento interattivo nativo (`<button>` o `<a>`), mai un contenitore generico con solo un gestore di click — raggiungibile e attivabile da tastiera, con focus visibile, senza controlli interattivi annidati l'uno nell'altro.
 - `TeacherShell` non espone più le voci di nav legacy Corsi/Lezioni/Domande/Classi (assorbite).
 
 ## 23. Roadmap

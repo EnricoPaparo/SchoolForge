@@ -13,14 +13,18 @@
   :root {
     --color-primary: #3b82f6;
     --color-primary-light: rgba(59, 130, 246, 0.16);
-    --color-accent-violet: #a78bfa;
     --color-brand-blue: #38bdf8;
-    --color-surface: #141a24;
-    --color-surface-subtle: #0a0e16;
-    --color-surface-raised: #1d2532;
-    --color-border: #2a3444;
+    --color-brand-orange: #fb923c;
+    --color-brand-orange-light: rgba(251, 146, 60, 0.14);
+    /* Superfici leggermente più chiare della prima bozza DUX-00, per
+       distinguere meglio fondo/pannello/sidebar/contenuto ed evitare
+       grandi aree nere piatte (fix review). */
+    --color-surface: #171e2a;
+    --color-surface-subtle: #0d1119;
+    --color-surface-raised: #212a3a;
+    --color-border: #303c50;
     --color-text: #e7ebf2;
-    --color-text-muted: #93a0b4;
+    --color-text-muted: #97a4b8;
     --color-success: #34d399;
     --color-success-bg: rgba(52, 211, 153, 0.12);
     --color-error: #f87171;
@@ -48,11 +52,14 @@
     font-family: var(--font-sans);
     color: var(--color-text);
     background: var(--color-surface-subtle);
-    /* Glow radiali molto leggeri — accento, mai motivo dominante (§17). */
+    /* Due soli glow radiali molto tenui — blu (alto sinistra) e arancio
+       (basso destra, coerente col logo) — mai un motivo dominante
+       né un'area nera piatta (§17 roadmap, fix review). */
     background-image:
-      radial-gradient(ellipse 900px 500px at 12% -10%, rgba(59, 130, 246, 0.10), transparent 60%),
-      radial-gradient(ellipse 700px 450px at 100% 0%, rgba(167, 139, 250, 0.08), transparent 55%);
+      radial-gradient(ellipse 900px 520px at 6% -8%, rgba(59, 130, 246, 0.10), transparent 62%),
+      radial-gradient(ellipse 820px 480px at 100% 100%, rgba(251, 146, 60, 0.08), transparent 58%);
     background-repeat: no-repeat;
+    background-attachment: fixed;
     min-height: 100vh;
     font-size: 14px;
     line-height: 1.5;
@@ -131,6 +138,19 @@
     background: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
   }
+  /* Sottile accento blu→arancio in fondo all'header — eco moderata del
+     doppio accento dell'app reale, mai il motivo diagonale (§17, fix
+     review: "accenti arancio con moderazione, coerenti col logo"). */
+  .shell-header::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-brand-orange));
+    opacity: 0.55;
+  }
   .logo {
     display: flex;
     align-items: center;
@@ -141,16 +161,24 @@
     color: #fff;
     /* logo sempre ad alto contrasto indipendentemente dal glow (§17) */
   }
-  .logo .mark {
+  .logo .mark,
+  .logo .logo-img {
     width: 1.6rem;
     height: 1.6rem;
     border-radius: 6px;
-    background: linear-gradient(135deg, var(--color-primary), var(--color-accent-violet));
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 0.85rem;
     color: #fff;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+  .logo .mark {
+    /* Placeholder testuale, usato SOLO se il PNG reale non è caricabile
+       (vedi commento HTML sopra il logo) — mai spacciato per branding
+       finale. */
+    background: linear-gradient(135deg, var(--color-primary), var(--color-brand-orange));
   }
   .top-nav {
     display: flex;
@@ -210,7 +238,9 @@
     max-width: 390px;
   }
   .device-frame-inner {
-    min-height: 640px;
+    /* Nessun min-height fisso: il pannello si adatta al contenuto
+       (fix review — evitava un grande riquadro vuoto sotto le card
+       quando i corsi filtrati erano pochi). */
     display: flex;
     flex-direction: column;
   }
@@ -268,12 +298,22 @@
   }
   .course-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    /* minmax scelto per rendere una griglia a 3 colonne alla larghezza
+       tipica del prototipo desktop (fix review — valutare davvero una
+       griglia a 3 colonne, non un caso limite a 4-5). */
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 1rem;
+    align-items: start;
   }
   body.mobile .course-grid {
     grid-template-columns: 1fr;
   }
+  /* Card corso — accessibile (fix review): NON è un role="button" con
+     un bottone annidato dentro. È un <article> non interattivo; l'unico
+     controllo di apertura è .course-card-open, un <button> reale;
+     .card-menu-btn è un fratello separato, mai annidato nell'altro
+     controllo. La card intera resta "visivamente" cliccabile via
+     :hover/:focus-within sull'article, senza duplicare la semantica. */
   .course-card {
     background: var(--color-surface-raised);
     border: 1px solid var(--color-border);
@@ -282,10 +322,10 @@
     display: flex;
     flex-direction: column;
     gap: 0.65rem;
-    cursor: pointer;
     position: relative;
   }
-  .course-card:hover {
+  .course-card:hover,
+  .course-card:focus-within {
     border-color: var(--color-primary);
   }
   .course-card-head {
@@ -293,6 +333,21 @@
     justify-content: space-between;
     align-items: flex-start;
     gap: 0.5rem;
+  }
+  .course-card-open {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    color: inherit;
+    cursor: pointer;
+    border-radius: var(--radius);
+  }
+  .course-card-open:hover .course-card-title {
+    color: var(--color-primary);
   }
   .course-card-title {
     font-size: 0.95rem;
@@ -303,6 +358,7 @@
     padding: 0.15rem 0.45rem;
     font-size: 0.9rem;
     line-height: 1;
+    flex-shrink: 0;
   }
   .course-card-meta {
     display: flex;
@@ -346,6 +402,31 @@
     font-size: 0.85rem;
     padding: 2rem;
     text-align: center;
+  }
+  /* Stato vuoto composto per la libreria filtrata senza risultati
+     (fix review) — non solo una riga di testo generica. */
+  .empty-state {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 2.5rem 1.5rem;
+    text-align: center;
+    color: var(--color-text-muted);
+  }
+  .empty-state .empty-icon {
+    font-size: 1.75rem;
+    opacity: 0.6;
+  }
+  .empty-state .empty-title {
+    color: var(--color-text);
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+  .empty-state .empty-desc {
+    font-size: 0.8125rem;
+    max-width: 320px;
   }
 
   /* ── Workspace corso ──────────────────────────────────────────────── */
@@ -406,6 +487,10 @@
     border-right: 1px solid var(--color-border);
     overflow-y: auto;
     padding: 0.75rem 0.5rem;
+    /* Un filo più scura del contenuto — separa visivamente sidebar e
+       area principale senza una linea sola (fix review, distinguibilità
+       fondo/pannello/contenuto). */
+    background: var(--color-surface-subtle);
   }
   body.mobile .sidebar {
     display: none; /* niente sidebar collassabile su mobile — drill-down a livelli invece (§5) */
@@ -413,22 +498,36 @@
   .sidebar-uda {
     margin-bottom: 0.35rem;
   }
+  /* Riga UDA: sempre un vero <button>, anche in modalità Organizza
+     (semplicemente disabilitato — nessuna riga UDA riordinabile in
+     questo prototipo, solo le lezioni, §10 roadmap). Reset stile
+     bottone di base, poi ridisegnata come riga (fix review: niente
+     <div> con solo onclick). */
   .sidebar-uda-head {
     display: flex;
     align-items: center;
+    width: 100%;
     gap: 0.4rem;
     padding: 0.4rem 0.5rem;
+    border: none;
     border-radius: var(--radius);
+    background: transparent;
+    text-align: left;
     cursor: pointer;
     font-weight: 700;
     font-size: 0.8125rem;
+    color: var(--color-text);
   }
-  .sidebar-uda-head:hover {
+  .sidebar-uda-head:hover:not(:disabled) {
     background: var(--color-surface-raised);
   }
   .sidebar-uda-head.selected {
     background: var(--color-primary-light);
     color: var(--color-primary);
+  }
+  .sidebar-uda-head:disabled {
+    cursor: default;
+    opacity: 0.65;
   }
   .sidebar-caret {
     font-size: 0.65rem;
@@ -441,31 +540,49 @@
     flex-direction: column;
     padding-left: 1.4rem;
   }
-  .lesson-row {
+  /* Riga lezione — stessa tipografia (0.8125rem) ovunque compaia
+     (sidebar, tabella UDA, elenco mobile — §19 roadmap "componente
+     condiviso"). Fuori da Organizza è un vero <button> a tutta
+     larghezza; dentro Organizza diventa un contenitore non interattivo
+     con due <button> freccia separati (mai un bottone dentro un
+     bottone — fix review). */
+  .lesson-row-btn {
     display: flex;
     align-items: center;
+    width: 100%;
     gap: 0.45rem;
     padding: 0.32rem 0.5rem;
+    border: none;
     border-radius: var(--radius);
+    background: transparent;
+    text-align: left;
     cursor: pointer;
     font-size: 0.8125rem;
     color: var(--color-text);
   }
-  .lesson-row:hover {
+  .lesson-row-btn:hover {
     background: var(--color-surface-raised);
   }
-  .lesson-row.selected {
+  .lesson-row-btn.selected {
     background: var(--color-primary-light);
     color: var(--color-primary);
     font-weight: 600;
   }
-  .lesson-row .lesson-num {
+  .lesson-row-static {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.32rem 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+  }
+  .lesson-num {
     color: var(--color-text-muted);
     font-variant-numeric: tabular-nums;
     width: 1.4rem;
     flex-shrink: 0;
   }
-  .lesson-row .lesson-title {
+  .lesson-title {
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -487,15 +604,9 @@
     color: var(--color-text-muted);
   }
   .organize-arrows {
-    display: none;
-    gap: 0.15rem;
-  }
-  body.organize .organize-arrows {
     display: flex;
-  }
-  body.organize .lesson-row,
-  body.organize .sidebar-uda-head {
-    cursor: default;
+    gap: 0.15rem;
+    margin-left: auto;
   }
   .organize-arrows button {
     padding: 0.05rem 0.35rem;
@@ -530,28 +641,31 @@
     align-items: center;
   }
 
-  .summary-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 0.75rem;
-    margin-bottom: 1.25rem;
-  }
-  .summary-tile {
-    background: var(--color-surface-raised);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius);
-    padding: 0.75rem 0.9rem;
-  }
-  .summary-tile .label {
-    font-size: 0.7rem;
+  /* Riepilogo corso compatto (fix review — sostituisce le quattro
+     card-dashboard con una singola fascia di metriche + una barra di
+     avanzamento sottile: "3 UDA · 8/12 lezioni svolte · 41 domande ·
+     4A INF"). Usato sia nel content-area desktop sia nel riepilogo
+     mobile — stessa funzione, stesso markup. */
+  .course-summary-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8125rem;
     color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    margin-bottom: 0.6rem;
   }
-  .summary-tile .value {
-    font-size: 1.15rem;
+  .course-summary-strip strong {
+    color: var(--color-text);
     font-weight: 700;
-    margin-top: 0.15rem;
+  }
+  .course-summary-strip .sep {
+    color: var(--color-border);
+  }
+  .progress-track.thin {
+    height: 3px;
+    max-width: 260px;
+    margin-bottom: 1.25rem;
   }
 
   table.data-table {
@@ -576,10 +690,30 @@
   table.data-table tr:last-child td {
     border-bottom: none;
   }
-  table.data-table tr.clickable {
-    cursor: pointer;
+  table.data-table tr:focus-within td {
+    background: var(--color-surface-raised);
   }
-  table.data-table tr.clickable:hover td {
+  /* Apertura riga UDA/lezione dalla tabella: un vero <button> nella
+     prima cella, non l'intera <tr> con solo un onclick (fix review —
+     una <tr> non è nativamente raggiungibile da tastiera). */
+  .row-open-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    padding: 0.15rem 0;
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: var(--radius);
+  }
+  .row-open-btn:hover {
+    color: var(--color-primary);
+  }
+  table.data-table tr:hover td {
     background: var(--color-surface-raised);
   }
   .row-actions {
@@ -613,6 +747,7 @@
   }
   .tablist {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.25rem;
     border-bottom: 1px solid var(--color-border);
     margin-bottom: 1rem;
@@ -643,6 +778,7 @@
     padding: 1rem 1.15rem;
     font-size: 0.875rem;
     line-height: 1.65;
+    overflow-wrap: anywhere;
   }
   .markdown-preview h3 {
     margin-bottom: 0.4rem;
@@ -664,6 +800,7 @@
   }
   .info-field .value {
     font-size: 0.875rem;
+    overflow-wrap: anywhere;
   }
   .tag-list {
     display: flex;
@@ -718,12 +855,16 @@
   /* ── Mobile drill-down list (progressive nav) ────────────────────── */
   .mobile-back {
     display: none;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.75rem 1rem 0.25rem;
+    padding: 0.6rem 1rem 0.25rem;
   }
   body.mobile .mobile-back.show {
-    display: flex;
+    display: block;
+  }
+  /* Pulsante Indietro a tutta larghezza su mobile (fix review §7). */
+  .mobile-back #mobile-back-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
   }
   .mobile-list {
     display: none;
@@ -732,16 +873,32 @@
   body.mobile .mobile-list.show {
     display: flex;
   }
+  body.mobile .breadcrumb {
+    /* Mobile ha già "Indietro" + intestazione di livello: il breadcrumb
+       desktop resterebbe ambiguo/ridondante quando il contenuto è il
+       riepilogo del corso (fix review §4) — mai mostrato su mobile. */
+    display: none;
+  }
   body.mobile .desktop-only-workspace {
     display: none;
   }
+  /* Riga di drill-down mobile: vero <button> a tutta larghezza (fix
+     review), reset di base + stile riga, stessa dimensione tipografica
+     delle righe lezione desktop (0.8125rem). */
   .mobile-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    width: 100%;
     gap: 0.5rem;
     padding: 0.85rem 1.1rem;
+    border: none;
     border-bottom: 1px solid var(--color-border);
+    border-radius: 0;
+    background: transparent;
+    color: var(--color-text);
+    text-align: left;
+    font-size: 0.8125rem;
     cursor: pointer;
   }
   .mobile-item:hover {
@@ -749,6 +906,7 @@
   }
   .mobile-item .chev {
     color: var(--color-text-muted);
+    flex-shrink: 0;
   }
 
   /* ── Studenti / Classi ────────────────────────────────────────────── */
@@ -877,7 +1035,23 @@
 <body>
 
 <header class="shell-header">
-  <div class="logo"><span class="mark">SF</span> SchoolForge</div>
+  <!--
+    Logo: tenta di caricare il PNG reale del repository con un path
+    relativo (documentazione/prototipi/ → apps/web/src/assets/). Se il
+    file non è raggiungibile (es. prototipo copiato altrove, o aperto
+    fuori dal repository), lo script sostituisce l'immagine con un
+    segnaposto testuale "SF" chiaramente marcato come tale — mai
+    spacciato per il branding finale (§6 fix review).
+  -->
+  <div class="logo">
+    <img
+      class="logo-img"
+      src="../../apps/web/src/assets/logo-schoolforge.png"
+      alt="SchoolForge"
+      onerror="this.outerHTML = '&lt;span class=&quot;mark&quot; title=&quot;Segnaposto — logo reale non trovato a questo percorso relativo&quot;&gt;SF&lt;/span&gt;';"
+    />
+    SchoolForge
+  </div>
   <nav class="top-nav" aria-label="Sezioni docente">
     <button type="button" data-topnav="library" class="active">Didattica</button>
     <button type="button" data-topnav="verifiche">Verifiche</button>
@@ -939,7 +1113,7 @@
               <span class="pill" id="course-class-badge"></span>
             </div>
             <div class="actions" style="display:flex; gap:.4rem;">
-              <button type="button" id="btn-organize" class="ghost">Organizza</button>
+              <button type="button" id="btn-organize" class="ghost" aria-pressed="false">Organizza</button>
               <button type="button" class="ghost">Programma svolto</button>
               <button type="button" class="ghost">⋯</button>
             </div>
@@ -1153,6 +1327,54 @@ uda-02-sicurezza/
           ]
         }
       ]
+    },
+    {
+      id: 'c5', title: 'Sistemi Operativi e Reti (5A)', year: '2025/2026', classes: ['5A INF'],
+      udaCount: 2, lessonsDone: 5, lessonsTotal: 9, questionCount: 27,
+      udas: [
+        {
+          id: 'u9', title: 'UDA 1 — Kernel e processi', desc: 'Scheduling, gestione memoria, sincronizzazione.',
+          lessons: [
+            { id: 'l29', num: 1, title: 'Scheduling dei processi', done: true, pool: 'valid' },
+            { id: 'l30', num: 2, title: 'Gestione della memoria virtuale', done: true, pool: 'valid' },
+            { id: 'l31', num: 3, title: 'Sincronizzazione e deadlock', done: true, pool: 'invalid' },
+            { id: 'l32', num: 4, title: 'File system', done: false, pool: 'absent' }
+          ]
+        },
+        {
+          id: 'u10', title: 'UDA 2 — Reti avanzate', desc: 'VLAN, routing dinamico, QoS.',
+          lessons: [
+            { id: 'l33', num: 1, title: 'VLAN e segmentazione', done: true, pool: 'valid' },
+            { id: 'l34', num: 2, title: 'Routing dinamico (OSPF)', done: true, pool: 'valid' },
+            { id: 'l35', num: 3, title: 'Quality of Service', done: false, pool: 'absent' },
+            { id: 'l36', num: 4, title: 'VPN site-to-site', done: false, pool: 'absent' },
+            { id: 'l37', num: 5, title: 'Monitoraggio SNMP', done: false, pool: 'absent' }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'c6', title: 'Laboratorio di Programmazione (3A/3B)', year: '2025/2026', classes: ['3A INF', '3B INF'],
+      udaCount: 2, lessonsDone: 3, lessonsTotal: 7, questionCount: 15,
+      udas: [
+        {
+          id: 'u11', title: 'UDA 1 — Strutture dati', desc: 'Liste, pile, code, alberi binari.',
+          lessons: [
+            { id: 'l38', num: 1, title: 'Liste concatenate', done: true, pool: 'valid' },
+            { id: 'l39', num: 2, title: 'Pile e code', done: true, pool: 'valid' },
+            { id: 'l40', num: 3, title: 'Alberi binari di ricerca', done: false, pool: 'invalid' },
+            { id: 'l41', num: 4, title: 'Grafi — rappresentazione', done: false, pool: 'absent' }
+          ]
+        },
+        {
+          id: 'u12', title: 'UDA 2 — Programmazione orientata agli oggetti', desc: 'Classi, ereditarietà, polimorfismo.',
+          lessons: [
+            { id: 'l42', num: 1, title: 'Classi e oggetti', done: true, pool: 'valid' },
+            { id: 'l43', num: 2, title: 'Ereditarietà', done: false, pool: 'absent' },
+            { id: 'l44', num: 3, title: 'Polimorfismo e interfacce', done: false, pool: 'absent' }
+          ]
+        }
+      ]
     }
   ];
 
@@ -1245,6 +1467,12 @@ uda-02-sicurezza/
   }
 
   // ── Device toggle ────────────────────────────────────────────────
+  // Passando a mobile, il livello di drill-down (state.mobileLevel) è
+  // sincronizzato con la selezione desktop corrente (courseId/udaId/
+  // lessonId sono già lo stesso stato condiviso) — mai lasciato al
+  // valore residuo di un'apertura precedente. Tornando a desktop la
+  // stessa selezione resta invariata, quindi il comportamento è
+  // prevedibile in entrambe le direzioni (fix review §4).
   document.querySelectorAll('[data-device]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       state.device = btn.getAttribute('data-device');
@@ -1252,6 +1480,11 @@ uda-02-sicurezza/
       document.querySelectorAll('[data-device]').forEach(function (b) {
         b.classList.toggle('active', b === btn);
       });
+      if (state.device === 'mobile') {
+        if (state.lessonId) state.mobileLevel = 'lesson';
+        else if (state.udaId) state.mobileLevel = 'uda';
+        else state.mobileLevel = 'course';
+      }
       renderWorkspace();
     });
   });
@@ -1321,21 +1554,44 @@ uda-02-sicurezza/
     });
 
     if (filtered.length === 0) {
-      grid.innerHTML = '<div class="empty-hint">Nessun corso corrisponde ai filtri selezionati.</div>';
+      // Stato vuoto composto (fix review) — non solo una riga di testo.
+      var empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.innerHTML =
+        '<span class="empty-icon" aria-hidden="true">🔍</span>' +
+        '<span class="empty-title">Nessun corso corrisponde ai filtri</span>' +
+        '<span class="empty-desc">Prova a cambiare anno scolastico, classe o testo di ricerca.</span>';
+      var resetBtn = document.createElement('button');
+      resetBtn.type = 'button';
+      resetBtn.className = 'ghost';
+      resetBtn.textContent = 'Azzera filtri';
+      resetBtn.addEventListener('click', function () {
+        state.year = 'all';
+        state.cls = 'all';
+        state.search = '';
+        byId('filter-year').value = 'all';
+        byId('filter-class').value = 'all';
+        byId('filter-search').value = '';
+        renderLibrary();
+      });
+      empty.appendChild(resetBtn);
+      grid.appendChild(empty);
       return;
     }
 
     filtered.forEach(function (c) {
       var pct = c.lessonsTotal > 0 ? Math.round((c.lessonsDone / c.lessonsTotal) * 100) : 0;
-      var card = document.createElement('div');
+      // Card accessibile (fix review): <article> non interattivo,
+      // un unico <button> reale per aprire il corso, un fratello
+      // separato per il menu ⋯ — mai controlli annidati.
+      var card = document.createElement('article');
       card.className = 'course-card';
-      card.tabIndex = 0;
-      card.setAttribute('role', 'button');
-      card.setAttribute('aria-label', 'Apri il corso ' + c.title);
       card.innerHTML =
         '<div class="course-card-head">' +
-          '<div class="course-card-title">' + c.title + '</div>' +
-          '<button type="button" class="ghost card-menu-btn" aria-label="Azioni corso" onclick="event.stopPropagation()">⋯</button>' +
+          '<button type="button" class="course-card-open" aria-label="Apri il corso ' + c.title + '">' +
+            '<span class="course-card-title">' + c.title + '</span>' +
+          '</button>' +
+          '<button type="button" class="ghost card-menu-btn" aria-label="Azioni corso — ' + c.title + '">⋯</button>' +
         '</div>' +
         '<div class="course-card-meta">' +
           '<span class="pill">' + (c.year || 'Senza anno') + '</span>' +
@@ -1346,11 +1602,8 @@ uda-02-sicurezza/
           '<div><strong>' + c.lessonsDone + '/' + c.lessonsTotal + '</strong>lezioni</div>' +
           '<div><strong>' + c.questionCount + '</strong>domande</div>' +
         '</div>' +
-        '<div class="progress-track"><div class="progress-fill" style="width:' + pct + '%"></div></div>';
-      card.addEventListener('click', function () { openCourse(c.id); });
-      card.addEventListener('keydown', function (ev) {
-        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openCourse(c.id); }
-      });
+        '<div class="progress-track" role="img" aria-label="Avanzamento ' + pct + '%"><div class="progress-fill" style="width:' + pct + '%"></div></div>';
+      card.querySelector('.course-card-open').addEventListener('click', function () { openCourse(c.id); });
       grid.appendChild(card);
     });
   }
@@ -1376,6 +1629,7 @@ uda-02-sicurezza/
     state.organize = !state.organize;
     document.body.classList.toggle('organize', state.organize);
     byId('btn-organize').textContent = state.organize ? 'Fine' : 'Organizza';
+    byId('btn-organize').setAttribute('aria-pressed', state.organize ? 'true' : 'false');
     renderWorkspace();
   });
 
@@ -1427,6 +1681,14 @@ uda-02-sicurezza/
     });
   }
 
+  /**
+   * UDA e lezioni sono sempre veri <button> (fix review — mai <div>
+   * con solo un onclick). In modalità Organizza la riga lezione smette
+   * di essere un bottone selezionabile e diventa un contenitore statico
+   * con due <button> freccia separati: un bottone non può contenerne un
+   * altro in HTML, quindi le frecce non possono vivere dentro il
+   * bottone di selezione — la riga cambia struttura invece di annidare.
+   */
   function renderSidebar() {
     var course = findCourse(state.courseId);
     var sidebar = byId('sidebar');
@@ -1435,11 +1697,13 @@ uda-02-sicurezza/
       var wrap = document.createElement('div');
       wrap.className = 'sidebar-uda';
 
-      var head = document.createElement('div');
+      var head = document.createElement('button');
+      head.type = 'button';
       head.className = 'sidebar-uda-head' + (state.udaId === uda.id && !state.lessonId ? ' selected' : '');
-      head.innerHTML = '<span class="sidebar-caret">▾</span><span>' + uda.title + '</span>';
+      head.disabled = state.organize;
+      head.setAttribute('aria-label', 'Apri UDA ' + uda.title);
+      head.innerHTML = '<span class="sidebar-caret" aria-hidden="true">▾</span><span>' + uda.title + '</span>';
       head.addEventListener('click', function () {
-        if (state.organize) return;
         state.udaId = uda.id;
         state.lessonId = null;
         renderWorkspace();
@@ -1450,18 +1714,31 @@ uda-02-sicurezza/
       lessonsWrap.className = 'sidebar-lessons';
       uda.lessons.forEach(function (lesson, idx) {
         var pm = poolMeta(lesson.pool);
-        var row = document.createElement('div');
-        row.className = 'lesson-row' + (state.lessonId === lesson.id ? ' selected' : '');
+
+        if (state.organize) {
+          var staticRow = document.createElement('div');
+          staticRow.className = 'lesson-row-static';
+          staticRow.innerHTML =
+            '<span class="lesson-num">' + lesson.num + '</span>' +
+            '<span class="lesson-title">' + lesson.title + '</span>' +
+            '<span class="pool-dot ' + pm.cls + '" role="img" aria-label="' + pm.label + '" title="' + pm.label + '"></span>' +
+            '<span class="organize-arrows">' +
+              '<button type="button" ' + (idx === 0 ? 'disabled' : '') + ' aria-label="Sposta su ' + lesson.title + '">↑</button>' +
+              '<button type="button" ' + (idx === uda.lessons.length - 1 ? 'disabled' : '') + ' aria-label="Sposta giù ' + lesson.title + '">↓</button>' +
+            '</span>';
+          lessonsWrap.appendChild(staticRow);
+          return;
+        }
+
+        var row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'lesson-row-btn' + (state.lessonId === lesson.id ? ' selected' : '');
+        row.setAttribute('aria-label', 'Apri lezione ' + lesson.num + '. ' + lesson.title + ' — ' + pm.label);
         row.innerHTML =
-          '<span class="lesson-num">' + lesson.num + '</span>' +
+          '<span class="lesson-num" aria-hidden="true">' + lesson.num + '</span>' +
           '<span class="lesson-title">' + lesson.title + '</span>' +
-          '<span class="pool-dot ' + pm.cls + '" role="img" aria-label="' + pm.label + '" title="' + pm.label + '"></span>' +
-          '<span class="organize-arrows">' +
-            '<button type="button" ' + (idx === 0 ? 'disabled' : '') + ' aria-label="Sposta su">↑</button>' +
-            '<button type="button" ' + (idx === uda.lessons.length - 1 ? 'disabled' : '') + ' aria-label="Sposta giù">↓</button>' +
-          '</span>';
+          '<span class="pool-dot ' + pm.cls + '" aria-hidden="true" title="' + pm.label + '"></span>';
         row.addEventListener('click', function () {
-          if (state.organize) return;
           state.udaId = uda.id;
           state.lessonId = lesson.id;
           state.lessonTab = 'contenuto';
@@ -1474,30 +1751,46 @@ uda-02-sicurezza/
     });
   }
 
+  /**
+   * Riepilogo corso compatto — una fascia di metriche + una barra di
+   * avanzamento sottile, non quattro card-dashboard (fix review §5).
+   * Condiviso tra content-area desktop e riepilogo mobile.
+   */
+  function compactSummaryHtml(course) {
+    var totalLessons = 0, doneLessons = 0;
+    course.udas.forEach(function (u) { totalLessons += u.lessons.length; doneLessons += u.lessons.filter(function (l) { return l.done; }).length; });
+    var pct = totalLessons > 0 ? Math.round((doneLessons / totalLessons) * 100) : 0;
+    var parts = [
+      course.udas.length + ' UDA',
+      doneLessons + '/' + totalLessons + ' lezioni svolte',
+      course.questionCount + ' domande'
+    ];
+    if (course.classes.length) parts.push(course.classes.join(', '));
+    return {
+      html:
+        '<div class="course-summary-strip">' + parts.map(function (p) { return '<strong>' + p + '</strong>'; }).join('<span class="sep">·</span>') + '</div>' +
+        '<div class="progress-track thin" role="img" aria-label="Avanzamento lezioni ' + pct + '%"><div class="progress-fill" style="width:' + pct + '%"></div></div>',
+      pct: pct
+    };
+  }
+
   function renderContentArea() {
     var course = findCourse(state.courseId);
     var area = byId('content-area');
 
     if (!state.udaId) {
-      // 8.1 — nessuna selezione: riepilogo corso + tabella UDA
-      var totalLessons = 0, doneLessons = 0;
-      course.udas.forEach(function (u) { totalLessons += u.lessons.length; doneLessons += u.lessons.filter(function (l) { return l.done; }).length; });
+      // 8.1 — nessuna selezione: riepilogo compatto + tabella UDA
       area.innerHTML =
-        '<div class="summary-grid">' +
-          '<div class="summary-tile"><div class="label">UDA</div><div class="value">' + course.udas.length + '</div></div>' +
-          '<div class="summary-tile"><div class="label">Lezioni svolte</div><div class="value">' + doneLessons + '/' + totalLessons + '</div></div>' +
-          '<div class="summary-tile"><div class="label">Domande</div><div class="value">' + course.questionCount + '</div></div>' +
-          '<div class="summary-tile"><div class="label">Classi</div><div class="value">' + (course.classes.join(', ') || '—') + '</div></div>' +
-        '</div>' +
+        compactSummaryHtml(course).html +
         '<table class="data-table"><thead><tr><th>UDA</th><th>Lezioni</th><th>Svolte</th><th></th></tr></thead><tbody id="uda-table-body"></tbody></table>';
       var tbody = byId('uda-table-body');
       course.udas.forEach(function (u) {
         var done = u.lessons.filter(function (l) { return l.done; }).length;
         var tr = document.createElement('tr');
-        tr.className = 'clickable';
-        tr.innerHTML = '<td>' + u.title + '</td><td>' + u.lessons.length + '</td><td>' + done + '/' + u.lessons.length + '</td>' +
-          '<td class="row-actions"><button type="button" class="ghost">⋯</button></td>';
-        tr.addEventListener('click', function () { state.udaId = u.id; renderWorkspace(); });
+        var openBtn = '<button type="button" class="row-open-btn" data-open-uda="' + u.id + '">' + u.title + '</button>';
+        tr.innerHTML = '<td>' + openBtn + '</td><td>' + u.lessons.length + '</td><td>' + done + '/' + u.lessons.length + '</td>' +
+          '<td class="row-actions"><button type="button" class="ghost" aria-label="Azioni UDA — ' + u.title + '">⋯</button></td>';
+        tr.querySelector('[data-open-uda]').addEventListener('click', function () { state.udaId = u.id; renderWorkspace(); });
         tbody.appendChild(tr);
       });
       return;
@@ -1509,19 +1802,19 @@ uda-02-sicurezza/
       // 8.2 — selezione UDA: metadata + tabella lezioni
       area.innerHTML =
         '<div class="toolbar-context"><span class="selected-label">UDA selezionata</span>' +
-          '<div class="actions"><button type="button" class="ghost">Modifica metadata</button><button type="button" class="ghost">⋯</button></div></div>' +
+          '<div class="actions"><button type="button" class="ghost">Modifica metadata</button><button type="button" class="ghost" aria-label="Azioni UDA — ' + uda.title + '">⋯</button></div></div>' +
         '<p style="color:var(--color-text-muted); font-size:.85rem; margin-bottom:1rem;">' + uda.desc + '</p>' +
         '<table class="data-table"><thead><tr><th>#</th><th>Lezione</th><th>Svolta</th><th>Pool</th></tr></thead><tbody id="lesson-table-body"></tbody></table>';
       var lb = byId('lesson-table-body');
       uda.lessons.forEach(function (l) {
         var pm = poolMeta(l.pool);
         var tr = document.createElement('tr');
-        tr.className = 'clickable';
+        var openBtn = '<button type="button" class="row-open-btn" data-open-lesson="' + l.id + '">' + l.num + '. ' + l.title + '</button>';
         tr.innerHTML =
-          '<td>' + l.num + '</td><td>' + l.title + '</td>' +
-          '<td><input type="checkbox" class="checkbox-done" ' + (l.done ? 'checked' : '') + ' aria-label="Lezione svolta" onclick="event.stopPropagation()" /></td>' +
+          '<td colspan="2">' + openBtn + '</td>' +
+          '<td><input type="checkbox" class="checkbox-done" ' + (l.done ? 'checked' : '') + ' aria-label="' + l.title + ' — lezione svolta" /></td>' +
           '<td><span class="badge-pool"><span class="pool-dot ' + pm.cls + '" role="img" aria-label="' + pm.label + '"></span>' + pm.label + '</span></td>';
-        tr.addEventListener('click', function () { state.lessonId = l.id; state.lessonTab = 'contenuto'; renderWorkspace(); });
+        tr.querySelector('[data-open-lesson]').addEventListener('click', function () { state.lessonId = l.id; state.lessonTab = 'contenuto'; renderWorkspace(); });
         lb.appendChild(tr);
       });
       return;
@@ -1604,23 +1897,22 @@ uda-02-sicurezza/
     byId('mobile-back').classList.toggle('show', true);
 
     if (state.mobileLevel === 'course') {
-      var totalLessons = 0, doneLessons = 0;
-      course.udas.forEach(function (u) { totalLessons += u.lessons.length; doneLessons += u.lessons.filter(function (l) { return l.done; }).length; });
+      var summary = compactSummaryHtml(course);
       var box = byId('mobile-course-summary');
       box.innerHTML =
         '<div style="padding: 0 1.1rem 0.75rem;">' +
           '<h3 style="font-size:1rem;">' + course.title + '</h3>' +
           '<div class="course-card-meta" style="margin-top:.4rem;"><span class="pill">' + (course.year || 'Senza anno') + '</span></div>' +
-          '<div class="summary-grid" style="margin-top:.75rem;">' +
-            '<div class="summary-tile"><div class="label">UDA</div><div class="value">' + course.udas.length + '</div></div>' +
-            '<div class="summary-tile"><div class="label">Lezioni</div><div class="value">' + doneLessons + '/' + totalLessons + '</div></div>' +
-          '</div>' +
+          '<div style="margin-top:.6rem;">' + summary.html + '</div>' +
         '</div>';
       course.udas.forEach(function (u) {
         var done = u.lessons.filter(function (l) { return l.done; }).length;
-        var item = document.createElement('div');
+        // Riga di drill-down: vero <button> (fix review), non un <div>.
+        var item = document.createElement('button');
+        item.type = 'button';
         item.className = 'mobile-item';
-        item.innerHTML = '<span>' + u.title + ' <span style="color:var(--color-text-muted); font-size:.75rem;">(' + done + '/' + u.lessons.length + ')</span></span><span class="chev">›</span>';
+        item.setAttribute('aria-label', 'Apri UDA ' + u.title + ' — ' + done + ' di ' + u.lessons.length + ' lezioni svolte');
+        item.innerHTML = '<span>' + u.title + ' <span style="color:var(--color-text-muted); font-size:.75rem;">(' + done + '/' + u.lessons.length + ')</span></span><span class="chev" aria-hidden="true">›</span>';
         item.addEventListener('click', function () {
           state.udaId = u.id;
           state.mobileLevel = 'uda';
@@ -1636,13 +1928,15 @@ uda-02-sicurezza/
       box2.innerHTML = '<div style="padding: 0 1.1rem .5rem;"><h3 style="font-size:1rem;">' + uda.title + '</h3></div>';
       uda.lessons.forEach(function (l) {
         var pm = poolMeta(l.pool);
-        var item = document.createElement('div');
+        var item = document.createElement('button');
+        item.type = 'button';
         item.className = 'mobile-item';
+        item.setAttribute('aria-label', 'Apri lezione ' + l.num + '. ' + l.title + ' — ' + pm.label);
         item.innerHTML =
           '<span style="display:flex; align-items:center; gap:.4rem;">' +
-            '<span class="pool-dot ' + pm.cls + '" role="img" aria-label="' + pm.label + '"></span>' +
+            '<span class="pool-dot ' + pm.cls + '" aria-hidden="true" title="' + pm.label + '"></span>' +
             l.num + '. ' + l.title +
-          '</span><span class="chev">›</span>';
+          '</span><span class="chev" aria-hidden="true">›</span>';
         item.addEventListener('click', function () {
           state.lessonId = l.id;
           state.lessonTab = 'contenuto';
@@ -1661,14 +1955,14 @@ uda-02-sicurezza/
       box3.innerHTML =
         '<div style="padding: 0 1.1rem;">' +
           '<h3 style="font-size:1rem; margin-bottom:.6rem;">' + lesson.title + '</h3>' +
-          '<div class="tablist" role="tablist">' +
-            '<button type="button" role="tab" id="mtab-contenuto" aria-selected="' + (state.lessonTab === 'contenuto') + '">Contenuto</button>' +
-            '<button type="button" role="tab" id="mtab-domande" aria-selected="' + (state.lessonTab === 'domande') + '">Domande</button>' +
-            '<button type="button" role="tab" id="mtab-info" aria-selected="' + (state.lessonTab === 'info') + '">Informazioni</button>' +
+          '<div class="tablist" role="tablist" aria-label="Sezioni lezione">' +
+            '<button type="button" role="tab" id="mtab-contenuto" aria-selected="' + (state.lessonTab === 'contenuto') + '" aria-controls="mpanel-contenuto">Contenuto</button>' +
+            '<button type="button" role="tab" id="mtab-domande" aria-selected="' + (state.lessonTab === 'domande') + '" aria-controls="mpanel-domande">Domande</button>' +
+            '<button type="button" role="tab" id="mtab-info" aria-selected="' + (state.lessonTab === 'info') + '" aria-controls="mpanel-info">Informazioni</button>' +
           '</div>' +
-          '<div class="' + (state.lessonTab === 'contenuto' ? 'active' : '') + '" style="display:' + (state.lessonTab === 'contenuto' ? 'block' : 'none') + ';"><div class="markdown-preview">' + mdToHtml(content.md) + '</div></div>' +
-          '<div style="display:' + (state.lessonTab === 'domande' ? 'block' : 'none') + ';">' + renderQuestionsHtml(content.questions) + '</div>' +
-          '<div style="display:' + (state.lessonTab === 'info' ? 'block' : 'none') + ';">' + renderInfoHtml(content.meta) + '</div>' +
+          '<div role="tabpanel" id="mpanel-contenuto" class="' + (state.lessonTab === 'contenuto' ? 'active' : '') + '" style="display:' + (state.lessonTab === 'contenuto' ? 'block' : 'none') + ';"><div class="markdown-preview">' + mdToHtml(content.md) + '</div></div>' +
+          '<div role="tabpanel" id="mpanel-domande" style="display:' + (state.lessonTab === 'domande' ? 'block' : 'none') + ';">' + renderQuestionsHtml(content.questions) + '</div>' +
+          '<div role="tabpanel" id="mpanel-info" style="display:' + (state.lessonTab === 'info' ? 'block' : 'none') + ';">' + renderInfoHtml(content.meta) + '</div>' +
         '</div>';
       ['contenuto', 'domande', 'info'].forEach(function (t) {
         byId('mtab-' + t).addEventListener('click', function () { state.lessonTab = t; renderMobile(); });
