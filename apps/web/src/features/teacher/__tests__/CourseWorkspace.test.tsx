@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
 import { CourseWorkspace } from '../CourseWorkspace.js';
@@ -23,6 +23,8 @@ const mockDeleteLesson = vi.fn();
 const mockUpdateLessonBody = vi.fn();
 const mockUpdateLessonMetadata = vi.fn();
 const mockDownloadLessonPdf = vi.fn();
+const mockReorderUda = vi.fn();
+const mockReorderLesson = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
 vi.mock('../../repository/programs/programsService.js', () => ({
@@ -55,6 +57,8 @@ vi.mock('../../repository/editor/repositoryEditorService.js', () => ({
   deleteLesson: (...a: unknown[]) => mockDeleteLesson(...a),
   updateLessonMarkdownBody: (...a: unknown[]) => mockUpdateLessonBody(...a),
   updateLessonMetadata: (...a: unknown[]) => mockUpdateLessonMetadata(...a),
+  reorderUda: (...a: unknown[]) => mockReorderUda(...a),
+  reorderLesson: (...a: unknown[]) => mockReorderLesson(...a),
   RepositoryDeleteBlockedError: mockDeleteBlockedError,
 }));
 vi.mock('../../repository/import/importRepository.js', () => ({
@@ -98,10 +102,34 @@ vi.mock('../QuestionPoolEditor.js', () => ({
   ),
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // Reset the viewport stub so desktop is the default for other tests.
+  delete (window as { matchMedia?: unknown }).matchMedia;
+});
 beforeEach(() => {
   vi.clearAllMocks();
 });
+
+// Controllable matchMedia stub for the mobile/desktop breakpoint tests.
+function setViewport(mobile: boolean) {
+  const listeners = new Set<() => void>();
+  let matches = mobile;
+  (window as { matchMedia?: unknown }).matchMedia = vi.fn().mockReturnValue({
+    get matches() {
+      return matches;
+    },
+    media: '(max-width: 640px)',
+    addEventListener: (_: string, cb: () => void) => listeners.add(cb),
+    removeEventListener: (_: string, cb: () => void) => listeners.delete(cb),
+  });
+  return {
+    set(next: boolean) {
+      matches = next;
+      act(() => listeners.forEach((cb) => cb()));
+    },
+  };
+}
 
 function card(overrides: Partial<CourseCard> = {}): CourseCard {
   return {
@@ -1055,5 +1083,192 @@ describe('CourseWorkspace — async hardening after unmount (DUX-04B)', () => {
     await Promise.resolve();
     // Still on lesson B; its heading/panel not overwritten by A's save.
     expect(screen.getByRole('heading', { name: 'Lezione B' })).toBeTruthy();
+  });
+});
+
+describe('CourseWorkspace — mobile progressive navigation (DUX-04C)', () => {
+  function renderMobile(onBack = vi.fn()) {
+    setViewport(true);
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Lezione A' })]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    return render(<CourseWorkspace card={card()} ownerUid="owner" onBack={onBack} />);
+  }
+
+  it('hides the desktop sidebar and drills course → UDA → lesson', async () => {
+    renderMobile();
+    await waitFor(() =>
+      expect(screen.getByText('Panoramica corso', { selector: 'p' })).toBeTruthy(),
+    );
+    // No desktop sidebar on mobile.
+    expect(screen.queryByRole('navigation', { name: 'Struttura corso' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apri UDA uda-01-reti' }));
+    expect(screen.getByRole('heading', { name: 'uda-01-reti' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Apri lezione Lezione A' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Lezione A' })).toBeTruthy());
+  });
+
+  it('steps back exactly one level: lesson → UDA → course → library', async () => {
+    const onBack = vi.fn();
+    renderMobile(onBack);
+    await waitFor(() =>
+      expect(screen.getByText('Panoramica corso', { selector: 'p' })).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Apri UDA uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apri lezione Lezione A' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Lezione A' })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: '← Indietro' }));
+    expect(screen.getByRole('heading', { name: 'uda-01-reti' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '← Indietro' }));
+    expect(screen.getByText('Panoramica corso', { selector: 'p' })).toBeTruthy();
+    // At the course level the button returns to the library.
+    fireEvent.click(screen.getByRole('button', { name: '← Libreria' }));
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the selection across a breakpoint change (desktop lesson → mobile lesson)', async () => {
+    const vp = setViewport(false);
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Lezione A' })]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Struttura corso' })));
+    // Select the lesson via the desktop sidebar.
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Lezione A' })).toBeTruthy());
+
+    vp.set(true); // switch to mobile
+    expect(screen.queryByRole('navigation', { name: 'Struttura corso' })).toBeNull();
+    // Same selection is the source of truth → still on the lesson.
+    expect(screen.getByRole('heading', { name: 'Lezione A' })).toBeTruthy();
+  });
+
+  it('does not reset an open editor draft across a breakpoint change', async () => {
+    const vp = setViewport(false);
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Lezione A' })]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Struttura corso' })));
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica contenuto' }));
+    fireEvent.change(screen.getByLabelText('Corpo Markdown'), {
+      target: { value: 'bozza mobile' },
+    });
+
+    vp.set(true);
+    // Draft preserved through the breakpoint change.
+    expect((screen.getByLabelText('Corpo Markdown') as HTMLTextAreaElement).value).toBe(
+      'bozza mobile',
+    );
+  });
+});
+
+describe('CourseWorkspace — Organize mode (DUX-04C)', () => {
+  async function organizeUdas() {
+    mockListUdas.mockResolvedValue([
+      uda('uda-01-reti', { order: 0 }),
+      uda('uda-02-sic', { order: 1 }),
+      uda('uda-03-db', { order: 2 }),
+    ]);
+    mockListLessons.mockResolvedValue([]);
+    render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Organizza UDA' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Organizza UDA' }));
+  }
+
+  it('reorders UDAs down via reorderUda and disables normal actions', async () => {
+    mockReorderUda.mockResolvedValue({ order: 1, neighborOrder: 0 });
+    await organizeUdas();
+    // Normal course actions hidden; "Fine" shown.
+    expect(screen.queryByRole('button', { name: 'Azioni corso' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Fine' })).toBeTruthy();
+    // First row: up disabled; last row: down disabled.
+    expect(
+      (screen.getByRole('button', { name: 'Sposta su — uda-01-reti' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole('button', { name: 'Sposta giù — uda-03-db' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sposta giù — uda-01-reti' }));
+    await waitFor(() => expect(mockReorderUda).toHaveBeenCalledOnce());
+    expect(mockReorderUda.mock.calls[0][0]).toMatchObject({
+      udaId: 'uda-uda-01-reti',
+      neighborUdaId: 'uda-uda-02-sic',
+    });
+  });
+
+  it('reorders lessons only within the UDA via reorderLesson', async () => {
+    mockReorderLesson.mockResolvedValue({ order: 1, neighborOrder: 0 });
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('lA', 'uda-01-reti', { titolo: 'Lez A', order: 0 }),
+      lesson('lB', 'uda-01-reti', { titolo: 'Lez B', order: 1 }),
+    ]);
+    render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Organizza lezioni' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sposta giù — Lez A' }));
+    await waitFor(() => expect(mockReorderLesson).toHaveBeenCalledOnce());
+    expect(mockReorderLesson.mock.calls[0][0]).toMatchObject({
+      lessonId: 'lA',
+      neighborLessonId: 'lB',
+    });
+  });
+
+  it('keeps the previous order and shows an error when reorder fails', async () => {
+    mockReorderUda.mockRejectedValue(
+      new Error('Impossibile salvare il nuovo ordine delle UDA. Riprova.'),
+    );
+    await organizeUdas();
+    const before = screen.getAllByRole('cell').map((c) => c.textContent);
+    fireEvent.click(screen.getByRole('button', { name: 'Sposta giù — uda-01-reti' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.getByText(/nuovo ordine delle uda/i)).toBeTruthy();
+    // Order unchanged (uda-01 still before uda-02 in the DOM).
+    const after = screen.getAllByRole('cell').map((c) => c.textContent);
+    expect(after).toEqual(before);
+  });
+
+  it('invokes reorderUda once even on a rapid double click (busy lock)', async () => {
+    let resolve!: () => void;
+    mockReorderUda.mockImplementation(
+      () => new Promise((r) => (resolve = () => r({ order: 1, neighborOrder: 0 }))),
+    );
+    await organizeUdas();
+    const down = screen.getByRole('button', { name: 'Sposta giù — uda-01-reti' });
+    fireEvent.click(down);
+    fireEvent.click(down);
+    expect(mockReorderUda).toHaveBeenCalledTimes(1);
+    resolve();
+    await waitFor(() => expect(mockReorderUda).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not update after unmount when a reorder resolves late', async () => {
+    let resolve!: () => void;
+    mockReorderUda.mockImplementation(
+      () => new Promise((r) => (resolve = () => r({ order: 1, neighborOrder: 0 }))),
+    );
+    await organizeUdas();
+    fireEvent.click(screen.getByRole('button', { name: 'Sposta giù — uda-01-reti' }));
+    cleanup();
+    expect(() => {
+      resolve();
+    }).not.toThrow();
+  });
+
+  it('enters Organize directly when there are no unsaved edits (guarded path)', async () => {
+    await organizeUdas();
+    // No confirm dialog; arrows are shown immediately.
+    expect(screen.queryByRole('alertdialog', { name: 'Modifiche non salvate' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Sposta giù — uda-01-reti' })).toBeTruthy();
   });
 });
