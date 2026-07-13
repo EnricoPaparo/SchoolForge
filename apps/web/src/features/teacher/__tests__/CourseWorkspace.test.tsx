@@ -520,12 +520,13 @@ describe('CourseWorkspace — sidebar and semantics', () => {
     expect(screen.queryByRole('button', { name: /comprimi struttura corso/i })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Lez 1' }));
-    clickMenuAction('Azioni lezione', 'Nascondi struttura');
+    // Structure toggle lives on the toolbar (outside the "Azioni" menu) now.
+    fireEvent.click(screen.getByRole('button', { name: 'Nascondi struttura' }));
     expect(screen.queryByRole('navigation', { name: 'Struttura corso' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'uda-01-reti' })).toBeNull();
     expect(screen.getByRole('tablist', { name: 'Schede lezione' })).toBeTruthy();
 
-    clickMenuAction('Azioni lezione', 'Mostra struttura');
+    fireEvent.click(screen.getByRole('button', { name: 'Mostra struttura' }));
     expect(screen.getByRole('navigation', { name: 'Struttura corso' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy();
   });
@@ -1254,7 +1255,8 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
     await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
-    clickMenuAction('Azioni lezione', 'Segna svolta');
+    // "Segna svolta" is a toolbar button (outside the "Azioni" menu) now.
+    fireEvent.click(screen.getByRole('button', { name: /^Segna svolta/i }));
 
     await waitFor(() => expect(mockSetLessonCompleted).toHaveBeenCalledOnce());
     await waitFor(() => expect(onCardPatch).toHaveBeenCalledTimes(1));
@@ -1362,7 +1364,7 @@ describe('CourseWorkspace — async hardening after unmount (DUX-04B)', () => {
     );
     const onCardPatch = vi.fn();
     const { unmount } = await selectA(onCardPatch);
-    clickMenuAction('Azioni lezione', 'Segna svolta');
+    fireEvent.click(screen.getByRole('button', { name: /^Segna svolta/i }));
 
     unmount();
     resolve();
@@ -1627,5 +1629,105 @@ describe('CourseWorkspace — Organize mode (DUX-04C)', () => {
     // No confirm dialog; arrows are shown immediately.
     expect(screen.queryByRole('alertdialog', { name: 'Modifiche non salvate' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Sposta giù — uda-01-reti' })).toBeTruthy();
+  });
+});
+
+describe('CourseWorkspace — lesson toolbar + table wrapping (DUX-08)', () => {
+  async function openLessonDesktop() {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Lezione A' })]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    renderWorkspace();
+    await expandUda();
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    await waitFor(() =>
+      expect(screen.getByRole('tablist', { name: 'Schede lezione' })).toBeTruthy(),
+    );
+  }
+
+  it('keeps only "Segna svolta" and the structure toggle outside the "Azioni" menu (desktop)', async () => {
+    await openLessonDesktop();
+    // Both visible on the toolbar without opening the menu.
+    expect(screen.getByRole('button', { name: /^Segna svolta/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Nascondi struttura' })).toBeTruthy();
+
+    // The menu holds the remaining actions and NOT these two.
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni lezione' }));
+    const menu = screen.getByRole('menu');
+    expect(within(menu).getByRole('menuitem', { name: 'Modifica contenuto' })).toBeTruthy();
+    expect(within(menu).getByRole('menuitem', { name: 'Modifica informazioni' })).toBeTruthy();
+    expect(within(menu).getByRole('menuitem', { name: 'Scarica PDF' })).toBeTruthy();
+    expect(within(menu).getByRole('menuitem', { name: 'Elimina lezione' })).toBeTruthy();
+    expect(within(menu).queryByRole('menuitem', { name: /segna svolta/i })).toBeNull();
+    expect(within(menu).queryByRole('menuitem', { name: /struttura/i })).toBeNull();
+  });
+
+  it('never duplicates the svolta / structure actions inside and outside the menu', async () => {
+    await openLessonDesktop();
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni lezione' }));
+    expect(screen.getAllByRole('button', { name: /^Segna svolta/i })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Nascondi struttura' })).toHaveLength(1);
+  });
+
+  it('does not expose the structure command on mobile (no sidebar to toggle)', async () => {
+    setViewport(true);
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Lezione A' })]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    renderWorkspace();
+    await screen.findByRole('table');
+    fireEvent.click(screen.getByRole('button', { name: 'Apri UDA uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apri lezione Lezione A' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Lezione A' })).toBeTruthy());
+
+    expect(screen.queryByRole('button', { name: /struttura/i })).toBeNull();
+    // The svolta toggle is still available on mobile.
+    expect(screen.getByRole('button', { name: /^Segna svolta/i })).toBeTruthy();
+  });
+
+  it('preserves state, callback and a busy lock on the svolta toggle', async () => {
+    let resolveToggle!: () => void;
+    mockSetLessonCompleted.mockImplementation(() => new Promise<void>((r) => (resolveToggle = r)));
+    const onCardPatch = vi.fn();
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Lezione A' })]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    render(
+      <CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} onCardPatch={onCardPatch} />,
+    );
+    await expandUda();
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /^Segna svolta/i }));
+    // Busy lock while the single write is in flight.
+    expect(
+      (screen.getByRole('button', { name: /^Segna svolta/i }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    await act(async () => {
+      resolveToggle();
+    });
+    await waitFor(() => expect(mockSetLessonCompleted).toHaveBeenCalledOnce());
+    // State flipped (label now "non svolta") and the card patched once.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^Segna non svolta/i })).toBeTruthy(),
+    );
+    expect(onCardPatch).toHaveBeenCalledWith('p1', expect.objectContaining({ lessonsDone: 1 }));
+  });
+
+  it('marks UDA and lesson title cells for wrapping', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Lezione A' })]);
+    renderWorkspace();
+    // Course overview UDA table: title cell carries the wrapping class
+    // (CSS modules hash the name, so match on the token substring).
+    await screen.findByRole('table');
+    expect(document.querySelector('[class*="titleCell"]')).toBeTruthy();
+
+    // Open the UDA → the lessons table's title cell carries it too.
+    fireEvent.click(screen.getByRole('button', { name: 'Apri UDA uda-01-reti' }));
+    await waitFor(() => expect(screen.getByRole('table')).toBeTruthy());
+    expect(document.querySelectorAll('[class*="titleCell"]').length).toBeGreaterThan(0);
   });
 });

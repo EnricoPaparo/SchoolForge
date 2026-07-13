@@ -303,6 +303,14 @@
   gap: 0.4rem;
   font-size: 0.8125rem;
 }
+/* Lesson actions kept outside the "Azioni" menu (DUX-08): svolta + struttura. */
+.toolbarActionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+}
 .menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -464,6 +472,18 @@
   color: var(--color-primary);
   background: var(--color-primary-light);
 }
+/* DUX-08 — long UDA/lesson titles wrap inside their own column instead of
+   pushing the metric columns out or forcing horizontal scroll. */
+.titleCell {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+.titleCell .rowOpenBtn {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
 /* ── Mobile: no desktop sidebar — a simple stacked, readable nav (§7,
    drill-down completo rimandato a DUX-04) ─────────────────────────────── */
@@ -526,6 +546,15 @@
   .dataTable td {
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+  /* Give the wrapping title column most of the width; metrics stay compact on
+     a single line so the title never overlaps them (DUX-08). */
+  .titleCell {
+    width: 55%;
+  }
+  .dataTable td:not(.titleCell),
+  .dataTable th:not(.titleCell) {
+    white-space: nowrap;
   }
   .tab {
     min-width: 0;

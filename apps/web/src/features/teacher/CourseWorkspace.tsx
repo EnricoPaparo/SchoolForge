@@ -1631,32 +1631,6 @@ export function CourseWorkspace({
                     <button
                       type="button"
                       role="menuitem"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        handleToggleCompleted(selectedLesson);
-                      }}
-                      disabled={completedBusy}
-                      aria-pressed={selectedLesson.completed ?? false}
-                    >
-                      {selectedLesson.completed ? 'Segna non svolta' : 'Segna svolta'}
-                    </button>
-                    {!isMobile && (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setMenuOpen(false);
-                          setLessonFocusMode((current) => !current);
-                        }}
-                        aria-pressed={lessonFocusMode}
-                      >
-                        <IconPanelLeft size={15} />
-                        {lessonFocusMode ? 'Mostra struttura' : 'Nascondi struttura'}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      role="menuitem"
                       className={styles.menuDanger}
                       onClick={() =>
                         openDialog({ kind: 'deleteLesson', lessonId: selectedLesson.id })
@@ -1667,6 +1641,39 @@ export function CourseWorkspace({
                   </div>
                 )}
               </div>
+              {/* Kept outside the menu: the two most frequent lesson actions. */}
+              <button
+                type="button"
+                className={styles.toolbarActionBtn}
+                onClick={() => handleToggleCompleted(selectedLesson)}
+                disabled={completedBusy}
+                aria-pressed={selectedLesson.completed ?? false}
+                title={selectedLesson.completed ? 'Segna non svolta' : 'Segna svolta'}
+                aria-label={`${selectedLesson.completed ? 'Segna non svolta' : 'Segna svolta'} — ${
+                  selectedLesson.titolo ?? selectedLesson.filename
+                }`}
+              >
+                {selectedLesson.completed ? (
+                  <IconFileText size={15} />
+                ) : (
+                  <IconFileCheck size={15} />
+                )}
+                <span>{selectedLesson.completed ? 'Segna non svolta' : 'Segna svolta'}</span>
+              </button>
+              {/* Structure toggle only where a desktop sidebar actually exists. */}
+              {!isMobile && (
+                <button
+                  type="button"
+                  className={styles.toolbarActionBtn}
+                  onClick={() => setLessonFocusMode((current) => !current)}
+                  aria-pressed={lessonFocusMode}
+                  title={lessonFocusMode ? 'Mostra struttura' : 'Nascondi struttura'}
+                  aria-label={lessonFocusMode ? 'Mostra struttura' : 'Nascondi struttura'}
+                >
+                  <IconPanelLeft size={15} />
+                  <span>{lessonFocusMode ? 'Mostra struttura' : 'Nascondi struttura'}</span>
+                </button>
+              )}
               {contentStatus.saved && <span className={styles.savedNote}>Contenuto salvato</span>}
               {infoStatus.saved && <span className={styles.savedNote}>Informazioni salvate</span>}
               {completedError && (
@@ -1979,7 +1986,7 @@ function CourseOverview({
                 const done = udaLessons.filter((l) => l.completed).length;
                 return (
                   <tr key={uda.id}>
-                    <td>
+                    <td className={styles.titleCell}>
                       {organizing ? (
                         uda.dir
                       ) : (
@@ -2084,7 +2091,7 @@ function UdaOverview({
                 const { title } = resolveLessonTitle(lesson.filename, lesson.titolo);
                 return (
                   <tr key={lesson.id}>
-                    <td>
+                    <td className={styles.titleCell}>
                       {organizing ? (
                         title
                       ) : (
