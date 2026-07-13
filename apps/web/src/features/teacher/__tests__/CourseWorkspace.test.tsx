@@ -22,6 +22,7 @@ const mockCreateLesson = vi.fn();
 const mockDeleteLesson = vi.fn();
 const mockUpdateLessonBody = vi.fn();
 const mockUpdateLessonMetadata = vi.fn();
+const mockUpdateProgramMetadata = vi.fn();
 const mockDownloadLessonPdf = vi.fn();
 const mockReorderUda = vi.fn();
 const mockReorderLesson = vi.fn();
@@ -50,6 +51,7 @@ const { mockDeleteBlockedError } = vi.hoisted(() => ({
   },
 }));
 vi.mock('../../repository/editor/repositoryEditorService.js', () => ({
+  updateProgramMetadata: (...a: unknown[]) => mockUpdateProgramMetadata(...a),
   createUda: (...a: unknown[]) => mockCreateUda(...a),
   updateUdaMetadata: (...a: unknown[]) => mockUpdateUdaMetadata(...a),
   deleteUda: (...a: unknown[]) => mockDeleteUda(...a),
@@ -589,6 +591,70 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
       expect(mockUpdateProgramTitle).toHaveBeenCalledWith('p1', 'Reti 2', 'owner', {}),
     );
     expect(onCardPatch).toHaveBeenCalledWith('p1', { title: 'Reti 2' });
+  });
+
+  it('edits course metadata and patches the school year without reloading the library', async () => {
+    const onCardPatch = vi.fn();
+    mockGetImportMeta.mockResolvedValue({
+      annoScolastico: '2025/2026',
+      docente: 'Mario Rossi',
+      materia: 'Informatica',
+      classe: '3A',
+      descrizione: 'Corso base',
+    });
+    mockUpdateProgramMetadata.mockResolvedValue({
+      annoScolastico: '2026/2027',
+      docente: 'Mario Rossi',
+      materia: 'Informatica',
+      classe: '3A',
+      descrizione: 'Corso aggiornato',
+    });
+    await renderAndReady({}, { onCardPatch });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Informazioni' }));
+    await waitFor(() => expect(screen.getByText('2025/2026')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica' }));
+    fireEvent.change(screen.getByLabelText('Anno scolastico'), {
+      target: { value: '2026/2027' },
+    });
+    fireEvent.change(screen.getByLabelText('Descrizione'), {
+      target: { value: 'Corso aggiornato' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    await waitFor(() => expect(mockUpdateProgramMetadata).toHaveBeenCalledOnce());
+    expect(mockUpdateProgramMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        programId: 'p1',
+        importId: 'imp1',
+        ownerUid: 'owner',
+        fields: expect.objectContaining({
+          annoScolastico: '2026/2027',
+          descrizione: 'Corso aggiornato',
+        }),
+      }),
+    );
+    expect(onCardPatch).toHaveBeenCalledWith('p1', { annoScolastico: '2026/2027' });
+  });
+
+  it('does not offer metadata editing before the course has an active import', async () => {
+    render(
+      <CourseWorkspace
+        card={card({ activeImportId: null, hasImport: false })}
+        ownerUid="owner"
+        onBack={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Azioni corso' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Informazioni' }));
+
+    expect(
+      screen.getByText('Importa prima un contenuto didattico per aggiungere i metadati.'),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Modifica' })).toBeNull();
+    expect(mockUpdateProgramMetadata).not.toHaveBeenCalled();
   });
 
   it('edits UDA metadata and updates the tree', async () => {

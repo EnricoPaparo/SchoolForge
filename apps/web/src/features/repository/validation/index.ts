@@ -3,6 +3,7 @@ export { validateLesson } from './validateLesson.js';
 export { validateUda } from './validateUda.js';
 export { EMPTY_LESSON_METADATA, parseLessonMetadata } from './lessonMetadata.js';
 export { EMPTY_UDA_METADATA, parseUdaMetadata } from './udaMetadata.js';
+export { EMPTY_PROGRAM_METADATA, parseProgramMetadata } from './programMetadata.js';
 export {
   composeMarkdownWithFrontMatter,
   replaceFrontMatter,

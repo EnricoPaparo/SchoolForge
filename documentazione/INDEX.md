@@ -7,7 +7,7 @@
 Il flusso docente cartaceo, il portale studente, il Repository Editor e il portale digitale con consegna online (M3-full) sono implementati e completi: sessione obbligatoria, modalità verifica per classe e Gate G5 sono superati — vedi [evidenze/g5-m3-full-checklist-finale.md](evidenze/g5-m3-full-checklist-finale.md). M4 (correzione) è in corso: contratto, service/Rules, workspace docente di correzione e lettura studente della correzione restituita (M4-00→M4-02B) completati; Registro Correzioni ed export (M4-03) non ancora implementati. M5 (AI) non è implementato.
 Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente locale e [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) per lo smoke test DEV.
 
-**Didattica (DUX) — implementazione DUX-01–07A completata.** Didattica ha assorbito Corsi/Lezioni/Domande dopo il **Gate di parità PASS** (vedi [evidenze/dux-04d-matrice-parita.md](evidenze/dux-04d-matrice-parita.md)); Classi è una scheda di Studenti, Verifiche è uniformata e il polish responsive finale è applicato. Restano DUX-07B e Gate GDUX — vedi [didattica-ux-roadmap.md](didattica-ux-roadmap.md).
+**Didattica (DUX) — implementazione DUX-01–07B completata.** Didattica ha assorbito Corsi/Lezioni/Domande dopo il **Gate di parità PASS** (vedi [evidenze/dux-04d-matrice-parita.md](evidenze/dux-04d-matrice-parita.md)); Classi è una scheda di Studenti, Verifiche è uniformata e metadata corso/anno sono modificabili. Resta Gate GDUX — vedi [didattica-ux-roadmap.md](didattica-ux-roadmap.md).
 
 **Repository Editor (RE-00 → RE-07) completato** — vedi [repository-editor-roadmap.md](repository-editor-roadmap.md) per la roadmap e [evidenze/repository-editor-checklist-manuale.md](evidenze/repository-editor-checklist-manuale.md) per la checklist manuale DEV. Nessuna fase RE obbligatoria successiva.
 
@@ -56,7 +56,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [repository-editor-roadmap.md](repository-editor-roadmap.md) | Roadmap Repository Editor (RE-00–RE-07, implementato). | Per consultare decisioni tecniche e scope dell'editor UDA/lezioni. |
 | [question-editor-roadmap.md](question-editor-roadmap.md) | Roadmap Question Editor (QE-00–QE-05, completato): editor pool domande Markdown-first, senza reimport ZIP. | Per consultare contratto, decisioni e implementazione della sezione "Domande". |
 | [m3-full-roadmap.md](m3-full-roadmap.md) | Specifica M3-full: verifiche online, consegne, monitor, sessione obbligatoria e modalità verifica. Roadmap M3F-00–M3F-11C, completata — Gate G5 superato. | Per consultare il modello dati/Rules di M3-full o lo stato del Gate G5. |
-| [didattica-ux-roadmap.md](didattica-ux-roadmap.md) | Specifica UX del redesign "Didattica" (DUX-00–07 + Gate GDUX). **DUX-01–07A completati: viste legacy rimosse, Classi assorbita in Studenti, Verifiche uniformata e polish responsive applicato; DUX-07B e Gate GDUX pendenti.** | Per consultare architettura informativa, invarianti di sicurezza/costo e prossimi passi. |
+| [didattica-ux-roadmap.md](didattica-ux-roadmap.md) | Specifica UX del redesign "Didattica" (DUX-00–07 + Gate GDUX). **DUX-01–07B completati: viste legacy rimosse, Classi assorbita in Studenti, Verifiche uniformata, polish responsive e metadata corso applicati; Gate GDUX pendente.** | Per consultare architettura informativa, invarianti di sicurezza/costo e prossimo Gate. |
 
 ## Evidenze
 

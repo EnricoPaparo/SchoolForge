@@ -1,7 +1,9 @@
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
-import { db } from '../../lib/firebase.js';
+import { db, storage } from '../../lib/firebase.js';
 import { getImportMeta } from '../repository/programs/programsService.js';
 import { listClasses, type ClassItem } from '../repository/classes/classesService.js';
+import { updateProgramMetadata } from '../repository/editor/repositoryEditorService.js';
+import { EMPTY_PROGRAM_METADATA } from '../repository/validation/programMetadata.js';
 import type { ProgrammaMeta } from '../../types/firestore.js';
 import styles from './DidatticaView.module.css';
 
@@ -665,17 +667,25 @@ export function ClassesDialog({
 export function ProgramInfoDialog({
   programId,
   importId,
+  ownerUid,
   counts,
   classNames,
+  onSaved,
   onClose,
 }: {
   programId: string;
   importId: string | null;
+  ownerUid: string;
   counts: { udaCount: number; lessonsDone: number; lessonsTotal: number; questionsTotal: number };
   classNames: string[];
+  onSaved: (metadata: ProgrammaMeta) => void;
   onClose: () => void;
 }) {
   const [meta, setMeta] = useState<ProgrammaMeta | null | undefined>(undefined);
+  const [draft, setDraft] = useState<ProgrammaMeta>(EMPTY_PROGRAM_METADATA);
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!importId) {
@@ -685,15 +695,52 @@ export function ProgramInfoDialog({
     let cancelled = false;
     getImportMeta(programId, importId, db)
       .then((m) => {
-        if (!cancelled) setMeta(m);
+        if (!cancelled) {
+          setMeta(m);
+          setDraft(m ?? EMPTY_PROGRAM_METADATA);
+        }
       })
       .catch(() => {
-        if (!cancelled) setMeta(null);
+        if (!cancelled) {
+          setMeta(null);
+          setDraft(EMPTY_PROGRAM_METADATA);
+          setError('Impossibile caricare i metadati del corso.');
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [programId, importId]);
+
+  function updateDraft(field: keyof ProgrammaMeta, value: string) {
+    setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function save() {
+    if (!importId || busy) return;
+    setBusy(true);
+    setError(null);
+    void updateProgramMetadata({
+      programId,
+      importId,
+      fields: draft,
+      ownerUid,
+      db,
+      storage,
+    })
+      .then((saved) => {
+        setMeta(saved);
+        setDraft(saved);
+        setEditing(false);
+        onSaved(saved);
+      })
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error ? cause.message : 'Impossibile salvare i metadati del corso.',
+        );
+      })
+      .finally(() => setBusy(false));
+  }
 
   return (
     <DialogShell title="Informazioni corso" onCancel={onClose}>
@@ -710,12 +757,12 @@ export function ProgramInfoDialog({
         <dd>{counts.questionsTotal}</dd>
         <dt>Classi</dt>
         <dd>{classNames.length > 0 ? classNames.join(', ') : 'Nessuna'}</dd>
-        {meta === undefined ? (
+        {meta === undefined && importId ? (
           <>
             <dt>Metadata</dt>
             <dd aria-busy="true">Caricamento…</dd>
           </>
-        ) : meta ? (
+        ) : meta && !editing ? (
           <>
             <dt>Anno scolastico</dt>
             <dd>{meta.annoScolastico ?? 'Non indicato'}</dd>
@@ -730,10 +777,96 @@ export function ProgramInfoDialog({
           </>
         ) : null}
       </dl>
+      {!importId ? (
+        <p className={styles.dialogHint}>
+          Importa prima un contenuto didattico per aggiungere i metadati.
+        </p>
+      ) : editing ? (
+        <form
+          className={styles.dialogForm}
+          onSubmit={(event) => {
+            event.preventDefault();
+            save();
+          }}
+        >
+          <label className={styles.dialogLabel}>
+            Anno scolastico
+            <input
+              value={draft.annoScolastico ?? ''}
+              placeholder="2025/2026"
+              onChange={(event) => updateDraft('annoScolastico', event.target.value)}
+            />
+          </label>
+          <label className={styles.dialogLabel}>
+            Docente
+            <input
+              value={draft.docente ?? ''}
+              onChange={(event) => updateDraft('docente', event.target.value)}
+            />
+          </label>
+          <label className={styles.dialogLabel}>
+            Materia
+            <input
+              value={draft.materia ?? ''}
+              onChange={(event) => updateDraft('materia', event.target.value)}
+            />
+          </label>
+          <label className={styles.dialogLabel}>
+            Classe descrittiva
+            <input
+              value={draft.classe ?? ''}
+              onChange={(event) => updateDraft('classe', event.target.value)}
+            />
+          </label>
+          <label className={styles.dialogLabel}>
+            Descrizione
+            <textarea
+              rows={4}
+              value={draft.descrizione ?? ''}
+              onChange={(event) => updateDraft('descrizione', event.target.value)}
+            />
+          </label>
+          <div className={styles.dialogActions}>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setDraft(meta ?? EMPTY_PROGRAM_METADATA);
+                setEditing(false);
+                setError(null);
+              }}
+            >
+              Annulla
+            </button>
+            <button type="submit" className="btn-success" disabled={busy}>
+              {busy ? 'Salvataggio…' : 'Salva'}
+            </button>
+          </div>
+        </form>
+      ) : null}
+      {error && (
+        <p role="alert" className="text-error">
+          {error}
+        </p>
+      )}
       <div className={styles.dialogActions}>
-        <button type="button" className="btn-primary" onClick={onClose}>
-          Chiudi
-        </button>
+        {!editing && importId && meta !== undefined && (
+          <button
+            type="button"
+            onClick={() => {
+              setDraft(meta ?? EMPTY_PROGRAM_METADATA);
+              setEditing(true);
+              setError(null);
+            }}
+          >
+            Modifica
+          </button>
+        )}
+        {!editing && (
+          <button type="button" className="btn-primary" onClick={onClose}>
+            Chiudi
+          </button>
+        )}
       </div>
     </DialogShell>
   );

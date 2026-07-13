@@ -642,6 +642,7 @@ Implementato in `apps/web/src/features/repository/editor/repositoryEditorService
 
 | Operazione | Scrittura Firestore | Storage |
 |---|---|---|
+| Modifica metadata corso (DUX-07B) | Aggiorna `imports/{importId}.programmaMeta`, `programs/{programId}.updatedAt` e audit `program.metadataUpdated` nello stesso batch | Riscrive o crea `programma.md`; preserva corpo e chiavi front matter estranee. Storage precede il batch Firestore, con errore distinto in caso di sincronizzazione parziale |
 | Crea UDA / crea lezione | `udas`/`lessons` (+ `publicLessons` per la lezione, `content` = corpo fornito dal docente, validato con `assertLessonContentSize`) con `order` = massimo esistente + 1; `filename` tecnico generato da slug del titolo, mai da un contatore riusabile | Scrivi il nuovo file `.md` con front matter minimo valido |
 | Modifica metadata UDA/lezione | Aggiorna solo i campi didattici (mai `order`/`filename`/`storageRef`/`content`); sincronizza `publicLessons` se la proiezione esiste — non tocca `content` | Riscrive il front matter del file esistente, corpo invariato |
 | Modifica corpo Markdown lezione | Ricalcola e sincronizza i metadata Firestore/`publicLessons` dal front matter ricomposto; sincronizza anche `publicLessons.content` con il nuovo corpo (validato con `assertLessonContentSize` prima della scrittura Storage) | Riscrive l'intero file con lo stesso front matter e il nuovo corpo |

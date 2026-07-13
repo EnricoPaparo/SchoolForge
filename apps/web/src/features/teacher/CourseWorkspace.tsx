@@ -1651,6 +1651,7 @@ export function CourseWorkspace({
         <ProgramInfoDialog
           programId={card.programId}
           importId={card.activeImportId}
+          ownerUid={ownerUid}
           counts={{
             udaCount: tree?.udas.length ?? card.udaCount,
             lessonsDone: tree?.lessons.filter((l) => l.completed).length ?? card.lessonsDone,
@@ -1658,6 +1659,9 @@ export function CourseWorkspace({
             questionsTotal,
           }}
           classNames={card.classNames}
+          onSaved={(metadata) =>
+            onCardPatch?.(card.programId, { annoScolastico: metadata.annoScolastico })
+          }
           onClose={closeDialog}
         />
       )}

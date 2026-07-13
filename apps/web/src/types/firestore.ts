@@ -12,6 +12,7 @@ export type AuditAction =
   | 'import.committed'
   | 'program.created'
   | 'program.updated'
+  | 'program.metadataUpdated'
   | 'program.deleted'
   | 'uda.created'
   | 'uda.updated'

@@ -121,6 +121,22 @@ Programma annuale di reti informatiche.
     });
   });
 
+  it('prefers the editable descrizione front-matter field over the legacy body fallback', () => {
+    const programmaFile: RawFile = {
+      path: 'programma.md',
+      content: `---
+anno_scolastico: '2026/2027'
+descrizione: Descrizione modificabile
+---
+
+Descrizione legacy nel corpo.
+`,
+    };
+    const result = validateImport('Informatica', [programmaFile, UDA_FILE, LESSON_WITHOUT_POOL]);
+    expect(result.programma?.annoScolastico).toBe('2026/2027');
+    expect(result.programma?.descrizione).toBe('Descrizione modificabile');
+  });
+
   it('never blocks the import when programma.md front matter is malformed', () => {
     const badProgrammaFile: RawFile = { path: 'programma.md', content: '---\n: : bad yaml\n---' };
     const result = validateImport('Informatica', [badProgrammaFile, UDA_FILE, LESSON_WITHOUT_POOL]);

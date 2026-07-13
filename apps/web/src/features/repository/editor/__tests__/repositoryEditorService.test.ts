@@ -7,6 +7,7 @@ const mockGetDocs = vi.fn();
 const mockSetDoc = vi.fn();
 const mockUpdateDoc = vi.fn();
 const mockBatchUpdate = vi.fn();
+const mockBatchSet = vi.fn();
 const mockBatchDelete = vi.fn();
 const mockBatchCommit = vi.fn();
 const mockWriteBatch = vi.fn();
@@ -59,6 +60,7 @@ import {
   reorderLesson,
   reorderUda,
   RepositoryDeleteBlockedError,
+  updateProgramMetadata,
   updateLessonMarkdownBody,
   updateLessonMetadata,
   updateUdaMetadata,
@@ -90,8 +92,118 @@ beforeEach(() => {
   mockBatchCommit.mockResolvedValue(undefined);
   mockWriteBatch.mockReturnValue({
     update: mockBatchUpdate,
+    set: mockBatchSet,
     delete: mockBatchDelete,
     commit: mockBatchCommit,
+  });
+});
+
+describe('updateProgramMetadata', () => {
+  const fields = {
+    annoScolastico: ' 2026/2027 ',
+    docente: ' Mario Rossi ',
+    materia: 'Informatica',
+    classe: '3A',
+    descrizione: 'Corso aggiornato',
+  };
+
+  function existingImport() {
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ ownerUid: OWNER_UID, programId: 'prog-1', importId: 'imp-1' }),
+    });
+  }
+
+  it('preserves body and unrelated front matter, then commits projection and audit once', async () => {
+    existingImport();
+    mockGetBytes.mockResolvedValueOnce(
+      encode('---\ntitolo: Corso legacy\ncustom: valore\n---\n\nCorpo da preservare.'),
+    );
+
+    const saved = await updateProgramMetadata({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      fields,
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    expect(saved.annoScolastico).toBe('2026/2027');
+    expect(saved.docente).toBe('Mario Rossi');
+    expect(writtenContent()).toContain('titolo: Corso legacy');
+    expect(writtenContent()).toContain('custom: valore');
+    expect(writtenContent()).toContain('descrizione: Corso aggiornato');
+    expect(writtenContent()).toContain('Corpo da preservare.');
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1/imports/imp-1' },
+      { programmaMeta: saved },
+    );
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      { __path: 'programs/prog-1' },
+      { updatedAt: { _type: 'serverTimestamp' } },
+    );
+    expect(mockBatchSet).toHaveBeenCalledWith(
+      { __path: 'auditEvents/auto-id' },
+      expect.objectContaining({ action: 'program.metadataUpdated', targetId: 'prog-1' }),
+    );
+    expect(mockBatchCommit).toHaveBeenCalledOnce();
+  });
+
+  it('creates programma.md when the import exists but the Storage object is absent', async () => {
+    existingImport();
+    mockGetBytes.mockRejectedValueOnce({ code: 'storage/object-not-found' });
+
+    await updateProgramMetadata({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      fields,
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    expect(mockUploadBytes.mock.calls[0]?.[0]).toEqual({
+      __storagePath: 'repository/owner-uid/imports/imp-1/programma.md',
+    });
+    expect(writtenContent()).toContain('anno_scolastico: 2026/2027');
+    expect(writtenContent()).toContain('descrizione: Corso aggiornato');
+  });
+
+  it('does not open a Firestore batch when Storage cannot be read', async () => {
+    existingImport();
+    mockGetBytes.mockRejectedValueOnce(new Error('network down'));
+
+    await expect(
+      updateProgramMetadata({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        fields,
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow('Impossibile leggere il file programma.md da Storage.');
+    expect(mockUploadBytes).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+  });
+
+  it('reports a distinct partial-sync error when Firestore fails after Storage', async () => {
+    existingImport();
+    mockGetBytes.mockResolvedValueOnce(encode('Corpo.'));
+    mockBatchCommit.mockRejectedValueOnce(new Error('firestore down'));
+
+    await expect(
+      updateProgramMetadata({
+        programId: 'prog-1',
+        importId: 'imp-1',
+        fields,
+        ownerUid: OWNER_UID,
+        db: fakeDb,
+        storage: fakeStorage,
+      }),
+    ).rejects.toThrow('aggiornato su Storage ma i metadati non sono stati sincronizzati');
+    expect(mockUploadBytes).toHaveBeenCalledOnce();
   });
 });
 
