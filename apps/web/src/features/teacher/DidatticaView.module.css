@@ -83,7 +83,9 @@
   border-radius: calc(var(--radius) + 2px);
   background-color: var(--color-surface);
 }
+.filters select:focus-visible,
 .search:focus-visible {
+  outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--color-focus-ring);
 }

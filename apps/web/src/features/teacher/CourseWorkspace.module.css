@@ -1,6 +1,8 @@
 .workspace {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -11,6 +13,9 @@
   gap: 0.75rem;
   flex-wrap: wrap;
   margin-bottom: 0.75rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .backBtn {
   flex-shrink: 0;
@@ -33,6 +38,9 @@
   font-size: 0.8125rem;
   color: var(--color-text-muted);
   margin-bottom: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .summaryStrip strong {
   color: var(--color-text);
@@ -53,7 +61,7 @@
 .progressTrack {
   flex-basis: 100%;
   height: 3px;
-  max-width: 260px;
+  max-width: none;
   border-radius: 999px;
   background: var(--color-surface-raised);
   overflow: hidden;
@@ -118,6 +126,7 @@
   display: flex;
   align-items: center;
   gap: 0.15rem;
+  min-width: 0;
 }
 .caretBtn {
   flex-shrink: 0;
@@ -152,6 +161,14 @@
   font-size: 0.8125rem;
   color: var(--color-text);
   overflow-wrap: anywhere;
+  white-space: normal;
+  min-width: 0;
+  line-height: 1.35;
+}
+.udaTitleBtn > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .udaTitleBtn:hover {
   background: var(--color-surface-raised);
@@ -161,7 +178,7 @@
 }
 .lessonBtn {
   display: grid;
-  grid-template-columns: 1rem minmax(0, 1fr) 1rem;
+  grid-template-columns: 1rem 1rem minmax(0, 1fr);
   align-items: start;
   gap: 0.4rem;
   width: 100%;
@@ -173,6 +190,7 @@
   cursor: pointer;
   font-size: 0.8125rem;
   color: var(--color-text);
+  white-space: normal;
 }
 .lessonBtn:hover {
   background: var(--color-surface-raised);
@@ -180,14 +198,8 @@
 .lessonBtnText {
   min-width: 0;
   overflow-wrap: anywhere;
-  word-break: normal;
+  word-break: break-word;
   line-height: 1.35;
-}
-.lessonStatuses {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  flex-shrink: 0;
 }
 .poolStatus {
   display: inline-flex;
@@ -195,10 +207,12 @@
   justify-content: center;
 }
 .lessonCompletedIcon,
+.udaCompletedIcon,
 .poolValid {
   color: var(--color-success);
 }
-.lessonPendingIcon {
+.lessonPendingIcon,
+.udaPendingIcon {
   color: var(--color-text-muted);
 }
 .poolAbsent {
@@ -282,20 +296,12 @@
 .menuWrap {
   position: relative;
 }
-.lessonMenuWrap {
-  flex: 0 0 auto;
-}
 .toolbarMenuBtn {
-  font-size: 0.8125rem;
-}
-.toolbarIconBtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  padding: 0;
-  line-height: 1;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
 }
 .menu {
   position: absolute;
@@ -498,6 +504,10 @@
   }
   .header {
     gap: 0.5rem;
+    align-self: stretch;
+  }
+  .summaryStrip {
+    align-self: stretch;
   }
   .title {
     font-size: 1rem;
@@ -530,11 +540,10 @@
   .toolbar {
     width: 100%;
   }
-  .toolbar > button:not(.toolbarIconBtn),
-  .toolbar > .menuWrap:not(.lessonMenuWrap) {
-    flex: 1 1 calc(50% - 0.25rem);
+  .toolbar > .menuWrap {
+    flex: 1 1 100%;
   }
-  .toolbar > .menuWrap:not(.lessonMenuWrap) > button {
+  .toolbar > .menuWrap > button {
     width: 100%;
   }
 }
