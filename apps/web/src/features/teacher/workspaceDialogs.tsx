@@ -612,7 +612,7 @@ export function ClassesDialog({
         </p>
       ) : classes.length === 0 ? (
         <p className="state-empty">
-          Nessuna classe creata. Vai alla sezione Classi per crearne una.
+          Nessuna classe creata. Vai in Studenti, scheda Classi, per crearne una.
         </p>
       ) : (
         <>

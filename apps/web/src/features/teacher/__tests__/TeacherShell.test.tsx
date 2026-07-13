@@ -52,11 +52,10 @@ describe('TeacherShell', () => {
     expect(screen.getByRole('menuitem', { name: 'Esci' })).toBeTruthy();
   });
 
-  it('renders the remaining navigation sections (DUX-04D)', () => {
+  it('renders the consolidated navigation sections (DUX-05A)', () => {
     render(<TeacherShell />);
     expect(screen.getByRole('button', { name: /Didattica/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Verifiche/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Classi/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Studenti/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Template/ })).toBeTruthy();
   });
@@ -69,13 +68,13 @@ describe('TeacherShell', () => {
     expect(within(nav).queryByRole('button', { name: /Domande/ })).toBeNull();
   });
 
-  it('orders navigation sections as Didattica, Verifiche, Classi, Studenti, Template', () => {
+  it('orders navigation sections as Didattica, Verifiche, Studenti, Template', () => {
     render(<TeacherShell />);
     const nav = screen.getByRole('navigation', { name: 'Sezioni docente' });
     const labels = within(nav)
       .getAllByRole('button')
       .map((btn) => btn.textContent?.replace(/[^\p{L}]/gu, '') ?? '');
-    expect(labels).toEqual(['Didattica', 'Verifiche', 'Classi', 'Studenti', 'Template']);
+    expect(labels).toEqual(['Didattica', 'Verifiche', 'Studenti', 'Template']);
   });
 
   it('shows the Didattica library by default (landing)', async () => {
@@ -133,6 +132,7 @@ describe('TeacherShell', () => {
     render(<TeacherShell />);
     fireEvent.click(screen.getByRole('button', { name: /Studenti/ }));
     expect(await screen.findByRole('region', { name: 'Studenti' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Classi' })).toBeTruthy();
   });
 
   it('does not show a pending badge when there are no pending students', () => {

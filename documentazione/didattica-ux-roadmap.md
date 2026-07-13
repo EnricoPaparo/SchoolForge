@@ -1,7 +1,7 @@
 # Didattica — Roadmap UX (DUX)
 
 **Versione:** 1.1
-**Stato:** DUX-00→DUX-04D implementati; Gate di parità superato e viste legacy rimosse. DUX-05 resta da completare.
+**Stato:** DUX-00→DUX-04D e DUX-05A implementati; viste legacy rimosse e Classi assorbita in Studenti. DUX-05B/05C e Gate GDUX restano da completare.
 **Dipendenze:** nessuna dipendenza tecnica da M4 (M4-03/M4-04 continuano in parallelo); riusa esclusivamente backend/service/dati già esistenti di RE (Repository Editor) e QE (Question Editor).
 
 ---
@@ -230,8 +230,10 @@ Migrazione incrementale, mai un "big bang":
 3. **DUX-02** introduce il workspace corso (sidebar + selezione UDA/lezione + scheda Contenuto), riusando `lessonsService`/`udaService` esistenti. A questo punto `LessonsView` diventa ridondante ma non viene ancora rimossa.
 4. **DUX-03** integra la scheda Domande (Question Editor contestualizzato), riusando `questionsService`/`poolService` esistenti. `DomandeView` diventa ridondante ma non viene ancora rimossa.
 5. **DUX-04** completa la navigazione mobile a livelli e la modalità Organizza; a questo punto Didattica copre il 100% delle funzionalità di Corsi+Lezioni+Domande. Solo qui, con evidenza DoD verificata, le tre voci di nav legacy vengono rimosse dalla `TeacherShell` in un'unica PR dedicata e reversibile (revert singolo se necessario).
-6. **DUX-05** assorbe Classi in Studenti (tab), ripulisce Template, applica il visual polish finale (§17) al resto della shell.
-7. **Gate GDUX** verifica l'insieme: nessuna funzionalità persa rispetto allo stato pre-DUX, nessuna regressione di sicurezza/costo, checklist manuale DEV completa.
+6. **DUX-05A** assorbe Classi in Studenti (tab) e rimuove la voce di navigazione autonoma.
+7. **DUX-05B** applica il restyling di coerenza a Verifiche e il feedback persistente di salvataggio bozza.
+8. **DUX-05C** ripulisce Template e applica header/aurora finali (§17) al resto della shell.
+9. **Gate GDUX** verifica l'insieme: nessuna funzionalità persa rispetto allo stato pre-DUX, nessuna regressione di sicurezza/costo, checklist manuale DEV completa.
 
 Nessun modulo esistente (Corsi/Lezioni/Domande/Classi) viene dichiarato "rimosso" prima che il pacchetto DUX corrispondente sia effettivamente implementato, testato e verificato — fino ad allora restano la fonte di verità funzionante.
 
@@ -267,8 +269,10 @@ Nessun modulo esistente (Corsi/Lezioni/Domande/Classi) viene dichiarato "rimosso
 | DUX-04B ✅ | Editing completo **lezione** nel workspace: toolbar lezione (modifica contenuto/informazioni, PDF, segna svolta, `⋯` elimina), editor contenuto Markdown con anteprima, form metadata lezione, creazione ed eliminazione lezione (con guard verifiche). **Implementato** (`CourseWorkspace` + editor condivisi `lessonEditors` + `NewLessonDialog`). | DUX-04A | Riuso esclusivo dei service Repository Editor (`createLesson`/`updateLessonMarkdownBody`/`updateLessonMetadata`/`deleteLesson`) + `setLessonCompleted`/`downloadLessonPdf`; dirty-guard unificato (pool + contenuto + metadata); aggiornamento locale albero/card; nessuna nuova Rule. Parità **non** ancora completa (manca 04C/D). |
 | DUX-04C ✅ | Navigazione mobile a livelli (drill-down: libreria→corso→UDA→lezione, un livello per volta, sidebar desktop assente su mobile, Indietro risale di un livello), modalità **Organizza** (riordino UDA a livello corso e lezioni a livello UDA con frecce su/giù). **Implementato** (`CourseWorkspace`: hook `useIsMobile`, `ReorderControls`, `reorderUda`/`reorderLesson`). | DUX-04B | Stessa `selection` come fonte di verità desktop/mobile; riordino via i service esistenti, order aggiornati solo dopo successo, nessuna rilettura; nessun drag-and-drop; nessun bottone annidato; nessuna nuova Rule. Parità **non** ancora completa (manca il Gate 04D). |
 | DUX-04D ✅ | **Gate di parità** end-to-end (matrice `documentazione/evidenze/dux-04d-matrice-parita.md`, verdetto PASS) e **rimozione** delle voci di nav legacy Corsi/Lezioni/Domande + relativi componenti (`ProgramsView`/`LessonsView`/`DomandeView`/`ImportZipModal`). Backfill `publicLessons` spostato in Didattica (avviso di manutenzione). **Implementato.** | DUX-04C | Parità coperta o ritirata con motivazione per ogni controllo; componenti condivisi conservati (`QuestionPoolEditor`, `lessonEditors`, `workspaceDialogs`, `MarkdownRenderer`); nessuna nuova Rule; nav docente = Didattica/Verifiche/Classi/Studenti/Template. |
-| DUX-05 | Classi assorbita in Studenti (tab) con inserimento inline, restyling di coerenza di Verifiche (tabella + creazione inline + feedback persistente "Salva bozza"), restauro Template (griglia 4/2/1), header unico definitivo (identità dell'app + veri pulsanti con iconcina) e "aurora sobria" sul corpo della shell (§17). | DUX-04D | Tab Classi con contatore derivato client-side, riga di inserimento (prima riga) allineata alla griglia esistente; Template ripulito in griglia 4/2/1; Verifiche invariata nel concetto, coerente nello stile; feedback di salvataggio sempre persistente vicino alle azioni; header a riga singola con identità dell'app e pulsanti (non tab); corpo con aurora sobria. |
-| Gate GDUX | Verifica finale end-to-end di tutta la roadmap Didattica. | DUX-01…05 (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche, vedi §22. |
+| DUX-05A ✅ | Classi assorbita in Studenti con tab accessibili, inserimento inline e contatore studenti derivato client-side; rimossa la voce autonoma Classi e la relativa vista legacy. **Implementato.** | DUX-04D | Nessuna nuova lettura: classi e studenti sono caricati una volta da `StudentsView`; contatori calcolati in memoria; CRUD esistente preservato; nav docente = Didattica/Verifiche/Studenti/Template. |
+| DUX-05B | Restyling di coerenza di Verifiche: tabella + creazione inline + feedback persistente "Salva bozza". | DUX-05A | Concetto e service invariati; feedback di salvataggio sempre persistente vicino alle azioni; mobile compatto. |
+| DUX-05C | Restauro Template (griglia 4/2/1), header unico definitivo e "aurora sobria" sul corpo della shell (§17). | DUX-05B | Template ripulito; header a riga singola con identità e pulsanti; corpo sobrio e leggibile. |
+| Gate GDUX | Verifica finale end-to-end di tutta la roadmap Didattica. | DUX-01…05C (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche, vedi §22. |
 
 ---
 
