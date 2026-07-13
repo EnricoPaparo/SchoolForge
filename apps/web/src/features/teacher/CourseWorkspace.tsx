@@ -1800,7 +1800,6 @@ function CourseOverview({
 }) {
   return (
     <div>
-      <p className={styles.contextLabel}>Panoramica corso</p>
       {!card.hasImport ? (
         <p className="state-empty">
           Nessun contenuto importato. Importa uno ZIP dalla libreria per popolare questo corso.
@@ -1891,7 +1890,6 @@ function UdaOverview({
 }) {
   return (
     <div>
-      <p className={styles.contextLabel}>UDA</p>
       <h3 className={styles.sectionTitle}>{uda.dir}</h3>
       {uda.descrizione && <p className={styles.udaDescription}>{uda.descrizione}</p>}
       {uda.competenze.length > 0 && (
@@ -2057,7 +2055,6 @@ function LessonDetail({
 
   return (
     <div>
-      <p className={styles.contextLabel}>Lezione</p>
       <div className={styles.lessonHead}>
         <h3 className={styles.sectionTitle}>{title}</h3>
         {metadata.sottotitolo && <p className={styles.lessonSubtitle}>{metadata.sottotitolo}</p>}

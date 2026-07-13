@@ -16,6 +16,7 @@ import {
 import { describeImportValidationError } from './importValidationMessage.js';
 import { CourseWorkspace } from './CourseWorkspace.js';
 import { TitleDialog, ImportDialog, ConfirmDialog } from './workspaceDialogs.js';
+import { IconPlus, IconSearch, IconUpload } from '../../components/icons.js';
 import styles from './DidatticaView.module.css';
 
 const YEAR_ALL = '__all__';
@@ -297,7 +298,7 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
           sincronizzate: {backfillSummary.skipped} · Fallite: {backfillSummary.failed.length}
         </p>
       )}
-      <div className={styles.toolbar}>
+      <div className={styles.toolbar} aria-label="Filtri e azioni corsi">
         <div className={styles.filters}>
           <select
             aria-label="Filtro anno scolastico"
@@ -324,14 +325,20 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
               </option>
             ))}
           </select>
-          <input
-            className={styles.search}
-            type="search"
-            placeholder="Cerca corso…"
-            aria-label="Cerca corso"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <label className={styles.searchWrap}>
+            <span className={styles.searchIcon} aria-hidden="true">
+              <IconSearch size={16} />
+            </span>
+            <span className={styles.visuallyHidden}>Cerca corso</span>
+            <input
+              className={styles.search}
+              type="search"
+              placeholder="Cerca corso…"
+              aria-label="Cerca corso"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
         </div>
         <div className={styles.actions}>
           <button
@@ -341,6 +348,7 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
               setDialog({ kind: 'import' });
             }}
           >
+            <IconUpload size={16} />
             Importa ZIP
           </button>
           <button
@@ -351,7 +359,8 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
               setDialog({ kind: 'new' });
             }}
           >
-            + Nuovo corso
+            <IconPlus size={16} />
+            Nuovo corso
           </button>
         </div>
       </div>
@@ -481,15 +490,16 @@ function CourseCardView({
       {/* Card non interattiva (article): l'apertura passa da un vero <button>
           e il menu ⋯ è un bottone fratello — nessun controllo annidato. */}
       <article className={styles.card}>
+        <button
+          type="button"
+          className={styles.cardOpen}
+          aria-label={`Apri il corso ${card.title}`}
+          onClick={onOpen}
+        />
         <div className={styles.cardHead}>
-          <button
-            type="button"
-            className={styles.cardOpen}
-            aria-label={`Apri il corso ${card.title}`}
-            onClick={onOpen}
-          >
-            <span className={styles.cardTitle}>{card.title}</span>
-          </button>
+          <h3 className={styles.cardTitle} title={card.title}>
+            {card.title}
+          </h3>
           <div className={styles.menuWrap} onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
