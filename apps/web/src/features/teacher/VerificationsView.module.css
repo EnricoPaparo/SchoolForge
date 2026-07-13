@@ -535,7 +535,16 @@
   }
 
   .table {
-    min-width: 760px;
+    min-width: 940px;
+  }
+
+  .tdActions,
+  .actionsColumn {
+    min-width: 220px;
+  }
+
+  .actionsWrapper {
+    width: max-content;
   }
 }
 

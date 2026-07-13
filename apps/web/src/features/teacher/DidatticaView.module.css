@@ -79,10 +79,11 @@
   width: 100%;
   min-height: 2.35rem;
   padding-left: 2.35rem;
+  border: 1px solid var(--color-border);
   border-radius: calc(var(--radius) + 2px);
   background-color: var(--color-surface);
 }
-.search:focus {
+.search:focus-visible {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--color-focus-ring);
 }

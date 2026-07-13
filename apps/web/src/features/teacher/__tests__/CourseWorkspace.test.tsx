@@ -312,21 +312,23 @@ describe('CourseWorkspace — selection', () => {
 });
 
 describe('CourseWorkspace — sidebar and semantics', () => {
-  it('collapses the sidebar and gives the content the freed space', async () => {
+  it('offers lesson focus mode without a global sidebar collapse control', async () => {
     mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
     mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Lez 1' })]);
+    mockFetchLessonContent.mockResolvedValue('Corpo lezione.');
     renderWorkspace();
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy());
-    // Collapse: the structure nav disappears, an expand affordance replaces it.
-    fireEvent.click(screen.getByRole('button', { name: /comprimi struttura corso/i }));
+    expect(screen.queryByRole('button', { name: /comprimi struttura corso/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lez 1' }));
+    const hide = await screen.findByRole('button', { name: /nascondi struttura/i });
+    fireEvent.click(hide);
     expect(screen.queryByRole('navigation', { name: 'Struttura corso' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'uda-01-reti' })).toBeNull();
-    // Content (course overview) is still present, now occupying the row.
-    expect(screen.getByRole('table')).toBeTruthy();
+    expect(screen.getByRole('tablist', { name: 'Schede lezione' })).toBeTruthy();
 
-    // Expand again restores the structure.
-    fireEvent.click(screen.getByRole('button', { name: /espandi struttura corso/i }));
+    fireEvent.click(screen.getByRole('button', { name: /mostra struttura/i }));
     expect(screen.getByRole('navigation', { name: 'Struttura corso' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy();
   });
@@ -415,12 +417,12 @@ describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
     expect(screen.getByTestId('pool-editor')).toBeTruthy();
   });
 
-  it('Informazioni shows only present metadata (empty state + technical file path here)', async () => {
+  it('Informazioni shows only didactic metadata and no technical file path', async () => {
     await openLesson();
     fireEvent.click(screen.getByRole('tab', { name: 'Informazioni' }));
     expect(screen.getByText(/nessun metadato/i)).toBeTruthy();
-    // Technical detail is available in a discreet secondary section.
-    expect(screen.getByText('uda-01-reti/l1.md')).toBeTruthy();
+    expect(screen.queryByText(/dettagli tecnici/i)).toBeNull();
+    expect(screen.queryByText('uda-01-reti/l1.md')).toBeNull();
   });
 
   it('confirms before changing lesson when the pool has unsaved edits', async () => {

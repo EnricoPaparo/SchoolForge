@@ -74,8 +74,8 @@
   border-top: 1px solid var(--color-border);
   padding-top: 0.75rem;
 }
-.bodyCollapsed {
-  gap: 0.5rem;
+.bodyFocus {
+  gap: 0;
 }
 
 .sidebar {
@@ -84,6 +84,8 @@
   border-right: 1px solid var(--color-border);
   padding-right: 0.5rem;
   overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
   background: transparent;
 }
 .sidebarHead {
@@ -93,7 +95,7 @@
   padding: 0.35rem;
 }
 .overviewBtn {
-  flex: 1;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -103,21 +105,6 @@
   font-size: 0.8125rem;
   padding: 0.35rem 0.5rem;
 }
-.collapseBtn,
-.sidebarExpand {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  padding: 0;
-}
-.sidebarExpand {
-  align-self: flex-start;
-  margin-top: 0.35rem;
-}
-
 .udaList,
 .lessonList {
   list-style: none;
@@ -173,8 +160,9 @@
   padding-left: 1.4rem;
 }
 .lessonBtn {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) 1rem;
+  align-items: start;
   gap: 0.4rem;
   width: 100%;
   text-align: left;
@@ -190,9 +178,10 @@
   background: var(--color-surface-raised);
 }
 .lessonBtnText {
-  flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.35;
 }
 .lessonStatuses {
   display: inline-flex;
@@ -200,15 +189,17 @@
   gap: 0.25rem;
   flex-shrink: 0;
 }
-.doneStatus,
 .poolStatus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
-.doneStatus,
+.lessonCompletedIcon,
 .poolValid {
   color: var(--color-success);
+}
+.lessonPendingIcon {
+  color: var(--color-text-muted);
 }
 .poolAbsent {
   color: var(--color-text-muted);
@@ -282,8 +273,17 @@
   gap: 0.5rem;
   margin-bottom: 0.85rem;
 }
+.toolbar > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
 .menuWrap {
   position: relative;
+}
+.lessonMenuWrap {
+  flex: 0 0 auto;
 }
 .toolbarMenuBtn {
   font-size: 0.8125rem;
@@ -387,18 +387,6 @@
   color: var(--color-text);
   overflow-wrap: anywhere;
 }
-.infoTechnical {
-  margin-top: 1rem;
-  font-size: 0.8125rem;
-  color: var(--color-text-muted);
-}
-.infoTechnical summary {
-  cursor: pointer;
-}
-.infoTechnical dl {
-  margin-top: 0.5rem;
-}
-
 /* ── Unsaved-changes confirm dialog ─────────────────────────────────────── */
 .confirmBackdrop {
   position: fixed;
@@ -506,6 +494,7 @@
   }
   .content {
     width: 100%;
+    min-width: 0;
   }
   .header {
     gap: 0.5rem;
@@ -514,15 +503,38 @@
     font-size: 1rem;
   }
   .tablist {
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: hidden;
+    gap: 0;
   }
   .dataTable {
-    display: block;
-    overflow-x: auto;
+    width: 100%;
+    table-layout: fixed;
+  }
+  .dataTable th,
+  .dataTable td {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .tab {
+    min-width: 0;
+    padding-inline: 0.35rem;
+    white-space: normal;
   }
   /* Touch-friendly toolbar controls. */
   .toolbar button,
   .backBtn {
     min-height: 2.25rem;
+  }
+  .toolbar {
+    width: 100%;
+  }
+  .toolbar > button:not(.toolbarIconBtn),
+  .toolbar > .menuWrap:not(.lessonMenuWrap) {
+    flex: 1 1 calc(50% - 0.25rem);
+  }
+  .toolbar > .menuWrap:not(.lessonMenuWrap) > button {
+    width: 100%;
   }
 }

@@ -1,7 +1,7 @@
 # Didattica — Roadmap UX (DUX)
 
 **Versione:** 1.1
-**Stato:** DUX-00→DUX-06C implementati; viste legacy rimosse, Classi assorbita in Studenti, Verifiche uniformata e shell finale applicata. Resta da completare il Gate GDUX.
+**Stato:** DUX-00→DUX-07A implementati; viste legacy rimosse, Classi assorbita in Studenti, Verifiche uniformata e shell finale applicata. DUX-07B resta dedicato all'editing dei metadati corso/anno; segue il Gate GDUX.
 **Dipendenze:** nessuna dipendenza tecnica da M4 (M4-03/M4-04 continuano in parallelo); riusa esclusivamente backend/service/dati già esistenti di RE (Repository Editor) e QE (Question Editor).
 
 ---
@@ -275,7 +275,9 @@ Nessun modulo esistente (Corsi/Lezioni/Domande/Classi) viene dichiarato "rimosso
 | DUX-06A ✅ | Hardening funzionale del workspace Didattica dopo lo smoke DEV: menu contestuali non ritagliati, chiusura click-esterno/Escape, recupero del draft Informazioni tra schede, sidebar gerarchica con icone e indicatori distinti per lezione svolta e stato pool, controlli icona uniformati. **Implementato.** | DUX-05C | Nessuna nuova funzione, lettura, scrittura, Rule o dipendenza; pool valido/assente/non valido ha indicatore testuale oltre al colore; draft non perso tra schede. |
 | DUX-06B ✅ | Polish della libreria e del workspace Didattica: toolbar filtri su superficie coerente, ricerca moderna, card interamente apribile con titolo su due righe, padding delle righe e rimozione dei titoletti contestuali ridondanti. **Implementato.** | DUX-06A | Solo UX/UI, nessuna modifica ai contratti repository, alle letture o alle scritture. |
 | DUX-06C ✅ | Coerenza Studenti/Classi e Verifiche: controlli globali separati dal pannello dati con tab interno, inserimento classe stabile, tabella verifiche compatta su desktop e dettaglio a livello dedicato. **Implementato.** | DUX-06B | Nessuna nuova lettura o modifica a Rules/schema; lista e dettaglio verifica non si accumulano verticalmente. |
-| Gate GDUX | Verifica finale end-to-end di tutta la roadmap Didattica. | DUX-01…06C (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche, vedi §22. |
+| DUX-07A ✅ | Rifinitura responsive finale del workspace: ricerca coerente, focus lezione contestuale al posto del collasso globale, sidebar senza overflow orizzontale, indicatori distinti svolgimento/pool, tab e toolbar mobile stabili, tab Studenti/Classi a piena larghezza e tabella Verifiche mobile completamente scorribile. **Implementato.** | DUX-06C | Solo UI; nessuna modifica a service, dati, Rules, indici, query o costi Firebase. “Panoramica corso” resta disponibile. |
+| DUX-07B | Editing dei metadati corso, incluso anno scolastico, con creazione controllata di `programma.md` quando assente. | DUX-07A | PR separata perché richiede contratto e aggiornamento coordinato Storage/Firestore; nessuna scorciatoia solo-client. |
+| Gate GDUX | Verifica finale end-to-end di tutta la roadmap Didattica. | DUX-01…07B (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche, vedi §22. |
 
 ---
 
