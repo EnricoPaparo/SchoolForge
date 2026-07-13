@@ -8,6 +8,11 @@ import {
 } from '../repository/programs/programsService.js';
 import { importRepository } from '../repository/import/importRepository.js';
 import { readZipFile } from '../repository/import/readZipFile.js';
+import {
+  backfillPublicLessonsContent,
+  isPublicLessonsMigrationComplete,
+  type BackfillSummary,
+} from '../repository/programs/publicLessonsBackfillService.js';
 import { describeImportValidationError } from './importValidationMessage.js';
 import { CourseWorkspace } from './CourseWorkspace.js';
 import { TitleDialog, ImportDialog, ConfirmDialog } from './workspaceDialogs.js';
@@ -45,6 +50,46 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
   const [dialog, setDialog] = useState<Dialog>({ kind: 'none' });
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
+
+  // Legacy publicLessons.content backfill (M3F-08), moved here from LessonsView
+  // in DUX-04D. Owner-only, discreet: visibility is a single cheap read of the
+  // settings marker on mount — never a per-document scan. Once the marker is
+  // set the notice stays hidden for good (every write path keeps `content` in
+  // sync from here on). The migration itself runs only on explicit confirmation.
+  const [migrationComplete, setMigrationComplete] = useState<boolean | null>(null);
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillSummary, setBackfillSummary] = useState<BackfillSummary | null>(null);
+  const [backfillError, setBackfillError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!ownerUid) return;
+    let cancelled = false;
+    isPublicLessonsMigrationComplete(db)
+      .then((done) => {
+        if (!cancelled) setMigrationComplete(done);
+      })
+      .catch(() => {
+        if (!cancelled) setMigrationComplete(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ownerUid]);
+
+  async function handleRunBackfill() {
+    setBackfillRunning(true);
+    setBackfillError(null);
+    setBackfillSummary(null);
+    try {
+      const summary = await backfillPublicLessonsContent(ownerUid, db, storage);
+      setBackfillSummary(summary);
+      if (summary.failed.length === 0) setMigrationComplete(true);
+    } catch {
+      setBackfillError('Impossibile eseguire il backfill delle proiezioni.');
+    } finally {
+      setBackfillRunning(false);
+    }
+  }
 
   // ── Load ──────────────────────────────────────────────────────────────
   async function load() {
@@ -233,6 +278,25 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
 
   return (
     <section aria-label="Didattica" className={styles.container}>
+      {migrationComplete === false && (
+        <div role="status" className={styles.migrationNotice}>
+          <p>Proiezioni lezione legacy da sincronizzare (manutenzione una tantum).</p>
+          <button type="button" disabled={backfillRunning} onClick={() => void handleRunBackfill()}>
+            {backfillRunning ? 'Sincronizzazione in corso…' : 'Sincronizza proiezioni legacy'}
+          </button>
+          {backfillError && (
+            <p role="alert" className="text-error">
+              {backfillError}
+            </p>
+          )}
+          {backfillSummary && (
+            <p>
+              Analizzate: {backfillSummary.analyzed} · Migrate: {backfillSummary.migrated} · Già
+              sincronizzate: {backfillSummary.skipped} · Fallite: {backfillSummary.failed.length}
+            </p>
+          )}
+        </div>
+      )}
       <div className={styles.toolbar}>
         <div className={styles.filters}>
           <select

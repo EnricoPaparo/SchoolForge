@@ -11,13 +11,13 @@ import {
 } from '../repository/pools/poolEditorService.js';
 import { db, storage } from '../../lib/firebase.js';
 import { IconPencil, IconPlus, IconTrash } from '../../components/icons.js';
-import styles from './DomandeView.module.css';
+import styles from './QuestionPoolEditor.module.css';
 
 /**
- * Contextual question-pool editor for a single lesson, extracted verbatim
- * from `DomandeView` so the legacy Domande section and the DUX-03 Didattica
- * workspace share exactly the same editor, services, validation and Markdown
- * pool format — no second implementation.
+ * Contextual question-pool editor for a single lesson. Originally extracted
+ * from the legacy `DomandeView` (removed in DUX-04D); it is now the single
+ * pool editor, mounted by the Didattica workspace's Domande tab — one editor,
+ * services, validation and Markdown pool format.
  *
  * The parent must mount this component with a `key` that is unique per
  * lesson (e.g. `${programId}:${lesson.id}`) so a lesson change remounts it:

@@ -80,7 +80,7 @@ export async function isPublicLessonsMigrationComplete(db: Firestore): Promise<b
  *
  * Sets `settings/publicLessonsMigration` only when the run ends with zero
  * failures — a partial run leaves the marker untouched (or absent), so the
- * trigger in `LessonsView` stays visible and the docente can rerun.
+ * trigger in Didattica stays visible and the docente can rerun.
  */
 export async function backfillPublicLessonsContent(
   ownerUid: string,

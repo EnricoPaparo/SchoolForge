@@ -43,7 +43,7 @@ export type CourseCard = {
  * exist (DUX-01) — no new Firestore document, index, Rule or Cloud
  * Function, and no Storage read (no Markdown, no pool files).
  *
- * Reads, deliberately matching the budget the current "Corsi" view
+ * Reads, deliberately matching the budget the legacy "Corsi" view (removed in DUX-04D)
  * (`ProgramsView`) already spends so the two sections show identical
  * numbers during the coexistence migration:
  *   - `listPrograms` — 1 query (all programs of the owner)

@@ -52,35 +52,33 @@ describe('TeacherShell', () => {
     expect(screen.getByRole('menuitem', { name: 'Esci' })).toBeTruthy();
   });
 
-  it('renders all six navigation sections with new labels', () => {
+  it('renders the remaining navigation sections (DUX-04D)', () => {
     render(<TeacherShell />);
-    expect(screen.getByRole('button', { name: /Template/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Corsi/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Lezioni/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Didattica/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Verifiche/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Classi/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Studenti/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Template/ })).toBeTruthy();
   });
 
-  it('orders navigation sections as Didattica, Lezioni, Corsi, Domande, Verifiche, Classi, Studenti, Template', () => {
+  it('no longer exposes the legacy Corsi/Lezioni/Domande nav (DUX-04D)', () => {
+    render(<TeacherShell />);
+    const nav = screen.getByRole('navigation', { name: 'Sezioni docente' });
+    expect(within(nav).queryByRole('button', { name: /Corsi/ })).toBeNull();
+    expect(within(nav).queryByRole('button', { name: /Lezioni/ })).toBeNull();
+    expect(within(nav).queryByRole('button', { name: /Domande/ })).toBeNull();
+  });
+
+  it('orders navigation sections as Didattica, Verifiche, Classi, Studenti, Template', () => {
     render(<TeacherShell />);
     const nav = screen.getByRole('navigation', { name: 'Sezioni docente' });
     const labels = within(nav)
       .getAllByRole('button')
       .map((btn) => btn.textContent?.replace(/[^\p{L}]/gu, '') ?? '');
-    expect(labels).toEqual([
-      'Didattica',
-      'Lezioni',
-      'Corsi',
-      'Domande',
-      'Verifiche',
-      'Classi',
-      'Studenti',
-      'Template',
-    ]);
+    expect(labels).toEqual(['Didattica', 'Verifiche', 'Classi', 'Studenti', 'Template']);
   });
 
-  it('shows the Didattica library by default (DUX-01 landing)', async () => {
+  it('shows the Didattica library by default (landing)', async () => {
     render(<TeacherShell />);
     expect(await screen.findByRole('region', { name: 'Didattica' })).toBeTruthy();
   });
@@ -89,12 +87,6 @@ describe('TeacherShell', () => {
     render(<TeacherShell />);
     fireEvent.click(screen.getByRole('button', { name: /Verifiche/ }));
     expect(screen.getByRole('main')).toBeTruthy();
-  });
-
-  it('shows the Lezioni section on nav click', async () => {
-    render(<TeacherShell />);
-    fireEvent.click(screen.getByRole('button', { name: /Lezioni/ }));
-    expect(await screen.findByRole('region', { name: 'Lezioni' })).toBeTruthy();
   });
 
   it('calls signOut when Esci clicked in dropdown', () => {

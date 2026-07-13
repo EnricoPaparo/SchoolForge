@@ -5,7 +5,7 @@ import type { ValidationIssue } from '../repository/validation/types.js';
  * import modal. Falls back to the raw issue message/path for codes without a
  * dedicated translation, keeping compatibility with older validation issues.
  *
- * Shared between the current "Corsi" view (`ProgramsView`) and the new
+ * Shared across the Didattica library and workspace (originally between the
  * "Didattica" library (`DidatticaView`) so the two import flows surface
  * identical wording — no duplicated formatting logic.
  */
