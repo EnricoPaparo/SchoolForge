@@ -38,6 +38,25 @@ describe('TemplateKitView', () => {
     expect(screen.getByRole('button', { name: /Scarica template Pool domande/ })).toBeTruthy();
   });
 
+  it('renders the complete four-part template workspace', () => {
+    render(<TemplateKitView />);
+    expect(screen.getByRole('heading', { name: 'Kit completo' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Template singoli' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Guida compatta' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Struttura ZIP di esempio' })).toBeTruthy();
+    expect(screen.getByLabelText('Struttura ZIP di esempio').textContent).toContain(
+      '01-modello-osi.pool.md',
+    );
+  });
+
+  it('uses icon-only controls for single-template downloads', () => {
+    render(<TemplateKitView />);
+    const button = screen.getByRole('button', { name: 'Scarica template Programma' });
+    expect(button.textContent).toBe('');
+    expect(button.querySelector('svg')).toBeTruthy();
+    expect(button.getAttribute('title')).toBe('Scarica template Programma');
+  });
+
   it('renders Scarica kit completo (ZIP) button', () => {
     render(<TemplateKitView />);
     expect(screen.getByRole('button', { name: 'Scarica kit completo (ZIP)' })).toBeTruthy();

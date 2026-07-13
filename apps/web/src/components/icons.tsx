@@ -88,3 +88,61 @@ export function IconChevronUp(props: IconProps = {}) {
 export function IconChevronDown(props: IconProps = {}) {
   return icon(<polyline points="6 9 12 15 18 9" />, props);
 }
+
+/** Open book — didactic workspace */
+export function IconBookOpen(props: IconProps = {}) {
+  return icon(
+    <>
+      <path d="M2 4h6a4 4 0 0 1 4 4v12a4 4 0 0 0-4-4H2z" />
+      <path d="M22 4h-6a4 4 0 0 0-4 4v12a4 4 0 0 1 4-4h6z" />
+    </>,
+    props,
+  );
+}
+
+/** Clipboard with check — verifications */
+export function IconClipboardCheck(props: IconProps = {}) {
+  return icon(
+    <>
+      <rect x="5" y="4" width="14" height="18" rx="2" />
+      <path d="M9 4V2h6v2M9 13l2 2 4-4" />
+    </>,
+    props,
+  );
+}
+
+/** Graduation cap — students */
+export function IconGraduationCap(props: IconProps = {}) {
+  return icon(
+    <>
+      <path d="M2 10l10-5 10 5-10 5z" />
+      <path d="M6 12v5c3 2 9 2 12 0v-5M22 10v6" />
+    </>,
+    props,
+  );
+}
+
+/** File — templates */
+export function IconFileText(props: IconProps = {}) {
+  return icon(
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="8" y1="13" x2="16" y2="13" />
+      <line x1="8" y1="17" x2="16" y2="17" />
+    </>,
+    props,
+  );
+}
+
+/** Download arrow into tray */
+export function IconDownload(props: IconProps = {}) {
+  return icon(
+    <>
+      <path d="M12 3v12" />
+      <polyline points="7 10 12 15 17 10" />
+      <path d="M5 21h14a2 2 0 0 0 2-2v-2M3 17v2a2 2 0 0 0 2 2" />
+    </>,
+    props,
+  );
+}

@@ -1,7 +1,7 @@
 # Didattica — Roadmap UX (DUX)
 
 **Versione:** 1.1
-**Stato:** DUX-00→DUX-04D e DUX-05A/05B implementati; viste legacy rimosse, Classi assorbita in Studenti e Verifiche uniformata. DUX-05C e Gate GDUX restano da completare.
+**Stato:** DUX-00→DUX-05C implementati; viste legacy rimosse, Classi assorbita in Studenti, Verifiche uniformata e shell finale applicata. Gate GDUX resta da completare.
 **Dipendenze:** nessuna dipendenza tecnica da M4 (M4-03/M4-04 continuano in parallelo); riusa esclusivamente backend/service/dati già esistenti di RE (Repository Editor) e QE (Question Editor).
 
 ---
@@ -271,7 +271,7 @@ Nessun modulo esistente (Corsi/Lezioni/Domande/Classi) viene dichiarato "rimosso
 | DUX-04D ✅ | **Gate di parità** end-to-end (matrice `documentazione/evidenze/dux-04d-matrice-parita.md`, verdetto PASS) e **rimozione** delle voci di nav legacy Corsi/Lezioni/Domande + relativi componenti (`ProgramsView`/`LessonsView`/`DomandeView`/`ImportZipModal`). Backfill `publicLessons` spostato in Didattica (avviso di manutenzione). **Implementato.** | DUX-04C | Parità coperta o ritirata con motivazione per ogni controllo; componenti condivisi conservati (`QuestionPoolEditor`, `lessonEditors`, `workspaceDialogs`, `MarkdownRenderer`); nessuna nuova Rule; nav docente = Didattica/Verifiche/Classi/Studenti/Template. |
 | DUX-05A ✅ | Classi assorbita in Studenti con tab accessibili, inserimento inline e contatore studenti derivato client-side; rimossa la voce autonoma Classi e la relativa vista legacy. **Implementato.** | DUX-04D | Nessuna nuova lettura: classi e studenti sono caricati una volta da `StudentsView`; contatori calcolati in memoria; CRUD esistente preservato; nav docente = Didattica/Verifiche/Studenti/Template. |
 | DUX-05B ✅ | Restyling di coerenza di Verifiche: tabella + creazione inline + feedback persistente "Salva bozza". **Implementato.** | DUX-05A | Concetto e service invariati; feedback dirty/saving/saved/error persistente vicino alle azioni; nessuna modifica a Rules/schema. |
-| DUX-05C | Restauro Template (griglia 4/2/1), header unico definitivo e "aurora sobria" sul corpo della shell (§17). | DUX-05B | Template ripulito; header a riga singola con identità e pulsanti; corpo sobrio e leggibile. |
+| DUX-05C ✅ | Restauro Template (griglia 4/2/1), header unico definitivo e "aurora sobria" sul corpo della shell (§17). **Implementato.** | DUX-05B | Template ripulito; header a riga singola con selettore mobile; SVG locali; fondo statico senza pattern, nuove letture o dipendenze. |
 | Gate GDUX | Verifica finale end-to-end di tutta la roadmap Didattica. | DUX-01…05C (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche, vedi §22. |
 
 ---

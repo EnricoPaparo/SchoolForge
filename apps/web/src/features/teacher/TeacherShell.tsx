@@ -1,4 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  IconBookOpen,
+  IconChevronDown,
+  IconClipboardCheck,
+  IconFileText,
+  IconGraduationCap,
+} from '../../components/icons.js';
 import { useAuth } from '../../lib/auth.js';
 import { db } from '../../lib/firebase.js';
 import { countPendingStudents } from '../repository/students/studentsService.js';
@@ -14,12 +21,19 @@ type Section = 'didattica' | 'verifiche' | 'studenti' | 'template';
 // DUX-04D: "Didattica" ha assorbito Corsi/Lezioni/Domande (parità verificata,
 // vedi documentazione/evidenze/dux-04d-matrice-parita.md) — le tre voci legacy
 // sono state rimosse. DUX-05A ha inoltre assorbito Classi dentro Studenti.
-const SECTIONS: { id: Section; label: string; icon: string }[] = [
-  { id: 'didattica', label: 'Didattica', icon: '📚' },
-  { id: 'verifiche', label: 'Verifiche', icon: '📝' },
-  { id: 'studenti', label: 'Studenti', icon: '🎓' },
-  { id: 'template', label: 'Template', icon: '📄' },
+const SECTIONS: { id: Section; label: string }[] = [
+  { id: 'didattica', label: 'Didattica' },
+  { id: 'verifiche', label: 'Verifiche' },
+  { id: 'studenti', label: 'Studenti' },
+  { id: 'template', label: 'Template' },
 ];
+
+function SectionIcon({ section }: { section: Section }) {
+  if (section === 'didattica') return <IconBookOpen size={17} />;
+  if (section === 'verifiche') return <IconClipboardCheck size={17} />;
+  if (section === 'studenti') return <IconGraduationCap size={17} />;
+  return <IconFileText size={17} />;
+}
 
 export function TeacherShell() {
   const { user, signOut } = useAuth();
@@ -27,6 +41,8 @@ export function TeacherShell() {
   const [activeSection, setActiveSection] = useState<Section>('didattica');
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const mobileNavRef = useRef<HTMLDivElement>(null);
   const [pendingStudentsCount, setPendingStudentsCount] = useState(0);
 
   const displayName = user?.displayName ?? user?.email ?? 'Docente';
@@ -46,14 +62,20 @@ export function TeacherShell() {
   }, [refreshPendingStudentsCount]);
 
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen && !mobileNavOpen) return;
     function handlePointerDown(e: MouseEvent | TouchEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
       }
+      if (mobileNavRef.current && !mobileNavRef.current.contains(e.target as Node)) {
+        setMobileNavOpen(false);
+      }
     }
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') setMenuOpen(false);
+      if (e.key === 'Escape') {
+        setMenuOpen(false);
+        setMobileNavOpen(false);
+      }
     }
     document.addEventListener('mousedown', handlePointerDown);
     document.addEventListener('touchstart', handlePointerDown);
@@ -63,12 +85,89 @@ export function TeacherShell() {
       document.removeEventListener('touchstart', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [menuOpen]);
+  }, [menuOpen, mobileNavOpen]);
+
+  const currentSection =
+    SECTIONS.find(({ id }) => id === activeSection) ??
+    ({ id: 'didattica', label: 'Didattica' } satisfies { id: Section; label: string });
+
+  function selectSection(section: Section) {
+    setActiveSection(section);
+    setMobileNavOpen(false);
+  }
 
   return (
     <div className={styles.layout}>
       <header className={styles.header}>
         <img src={logoScritta} alt="SchoolForge" className={styles.logo} />
+
+        <nav aria-label="Sezioni docente" className={styles.nav}>
+          {SECTIONS.map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              className={styles.navBtn}
+              onClick={() => selectSection(id)}
+              aria-current={activeSection === id ? 'page' : undefined}
+              title={label}
+            >
+              <span className={styles.navIcon} aria-hidden="true">
+                <SectionIcon section={id} />
+              </span>
+              <span className={styles.navLabel}>{label}</span>
+              {id === 'studenti' && pendingStudentsCount > 0 && (
+                <span className={styles.navBadge} aria-label={`${pendingStudentsCount} in attesa`}>
+                  {pendingStudentsCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        <div className={styles.mobileNav} ref={mobileNavRef}>
+          <button
+            type="button"
+            className={styles.mobileNavToggle}
+            aria-label={`Sezione corrente: ${currentSection.label}. Apri menu sezioni`}
+            aria-haspopup="menu"
+            aria-expanded={mobileNavOpen}
+            onClick={() => {
+              setMenuOpen(false);
+              setMobileNavOpen((open) => !open);
+            }}
+          >
+            <SectionIcon section={currentSection.id} />
+            <span>{currentSection.label}</span>
+            <span className={styles.mobileNavCaret} aria-hidden="true">
+              <IconChevronDown size={14} />
+            </span>
+          </button>
+          {mobileNavOpen && (
+            <div className={styles.mobileNavMenu} role="menu" aria-label="Cambia sezione">
+              {SECTIONS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="menuitem"
+                  aria-current={activeSection === id ? 'page' : undefined}
+                  onClick={() => selectSection(id)}
+                >
+                  <SectionIcon section={id} />
+                  <span>{label}</span>
+                  {id === 'studenti' && pendingStudentsCount > 0 && (
+                    <span
+                      className={styles.navBadge}
+                      aria-label={`${pendingStudentsCount} in attesa`}
+                    >
+                      {pendingStudentsCount}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className={styles.userMenu} ref={menuRef}>
           <button
             type="button"
@@ -76,7 +175,10 @@ export function TeacherShell() {
             aria-label={`Account: ${displayName}`}
             aria-expanded={menuOpen}
             aria-haspopup="true"
-            onClick={() => setMenuOpen((o) => !o)}
+            onClick={() => {
+              setMobileNavOpen(false);
+              setMenuOpen((o) => !o);
+            }}
           >
             <span className={styles.avatar}>{initials}</span>
           </button>
@@ -114,29 +216,6 @@ export function TeacherShell() {
           )}
         </div>
       </header>
-
-      <nav aria-label="Sezioni docente" className={styles.nav}>
-        {SECTIONS.map(({ id, label, icon }) => (
-          <button
-            key={id}
-            type="button"
-            className={styles.navBtn}
-            onClick={() => setActiveSection(id)}
-            aria-current={activeSection === id ? 'page' : undefined}
-            title={label}
-          >
-            <span className={styles.navIcon} aria-hidden="true">
-              {icon}
-            </span>
-            <span className={styles.navLabel}>{label}</span>
-            {id === 'studenti' && pendingStudentsCount > 0 && (
-              <span className={styles.navBadge} aria-label={`${pendingStudentsCount} in attesa`}>
-                {pendingStudentsCount}
-              </span>
-            )}
-          </button>
-        ))}
-      </nav>
 
       <main className={styles.main}>
         {activeSection === 'didattica' ? (
