@@ -12,6 +12,9 @@ const mockResetStudentToPending = vi.fn();
 const mockRemoveStudent = vi.fn();
 const mockAssignStudentClass = vi.fn();
 const mockListClasses = vi.fn();
+const mockCreateClass = vi.fn();
+const mockUpdateClass = vi.fn();
+const mockDeleteClass = vi.fn();
 const mockGetStudentAccessSettings = vi.fn();
 const mockSetStudentPortalEnabled = vi.fn();
 const mockSetNewStudentRequestsEnabled = vi.fn();
@@ -22,6 +25,9 @@ vi.mock('../../../lib/firebase.js', () => ({ db: {} }));
 
 vi.mock('../../repository/classes/classesService.js', () => ({
   listClasses: (...args: unknown[]) => mockListClasses(...args),
+  createClass: (...args: unknown[]) => mockCreateClass(...args),
+  updateClass: (...args: unknown[]) => mockUpdateClass(...args),
+  deleteClass: (...args: unknown[]) => mockDeleteClass(...args),
 }));
 
 vi.mock('../../repository/students/studentAccessService.js', () => ({
@@ -96,6 +102,9 @@ const EXAM_MODE_OFF = { enabled: false, scope: 'all' as const, classIds: [], ena
 beforeEach(() => {
   vi.clearAllMocks();
   mockListClasses.mockResolvedValue(CLASSES);
+  mockCreateClass.mockResolvedValue('new-class');
+  mockUpdateClass.mockResolvedValue(undefined);
+  mockDeleteClass.mockResolvedValue(undefined);
   mockGetStudentAccessSettings.mockResolvedValue({
     studentPortalEnabled: false,
     newStudentRequestsEnabled: false,
@@ -110,6 +119,41 @@ beforeEach(() => {
   mockSetNewStudentRequestsEnabled.mockResolvedValue(undefined);
   mockSetExamMode.mockResolvedValue(undefined);
   mockListActiveOnlineVerificationClassIds.mockResolvedValue(['class-1']);
+});
+
+describe('StudentsView — tabs Studenti/Classi (DUX-05A)', () => {
+  it('shows Classi inside Studenti and derives counts from the already loaded students', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    const tabs = await screen.findByRole('tablist', { name: 'Gestione studenti e classi' });
+    expect(
+      within(tabs)
+        .getByRole('tab', { name: /Studenti/ })
+        .getAttribute('aria-selected'),
+    ).toBe('true');
+
+    fireEvent.click(within(tabs).getByRole('tab', { name: 'Classi' }));
+    const panel = screen.getByRole('tabpanel', { name: 'Classi' });
+    const classRow = within(panel).getByText('3A Informatica').closest('tr');
+    expect(classRow).toBeTruthy();
+    expect(within(classRow!).getByText('1')).toBeTruthy();
+    expect(mockListStudents).toHaveBeenCalledOnce();
+    expect(mockListClasses).toHaveBeenCalledOnce();
+  });
+
+  it('moves tab selection and focus with the keyboard', async () => {
+    mockListStudents.mockResolvedValue(STUDENTS);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    const studentsTab = await screen.findByRole('tab', { name: /Studenti/ });
+    studentsTab.focus();
+    fireEvent.keyDown(studentsTab, { key: 'ArrowRight' });
+
+    const classesTab = screen.getByRole('tab', { name: 'Classi' });
+    expect(classesTab.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(classesTab);
+  });
 });
 
 describe('StudentsView — loading and empty states', () => {
