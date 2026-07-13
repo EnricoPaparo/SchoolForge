@@ -911,7 +911,7 @@ export function QuestionPoolEditor({
               </button>
               <button
                 type="button"
-                className={`${styles.btn} ${styles.btnSm} ${styles.iconBtnDanger}`}
+                className={`${styles.btn} ${styles.iconBtnDanger}`}
                 onClick={() => {
                   setDeleteConfirm(true);
                   setDeleteError(null);

@@ -348,6 +348,26 @@ describe('CourseWorkspace — sidebar and semantics', () => {
     expect(udaTitleBtn.querySelector('button')).toBeNull();
   });
 
+  it('distinguishes lesson completion and pool status with labelled sidebar indicators', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('l1', 'uda-01-reti', {
+        titolo: 'Con pool',
+        completed: true,
+        poolStatus: 'valid',
+      }),
+      lesson('l2', 'uda-01-reti', { titolo: 'Senza pool', poolStatus: 'absent' }),
+      lesson('l3', 'uda-01-reti', { titolo: 'Pool non valido', poolStatus: 'invalid' }),
+    ]);
+    renderWorkspace();
+
+    const nav = await screen.findByRole('navigation', { name: 'Struttura corso' });
+    expect(within(nav).getByRole('img', { name: 'Lezione svolta' })).toBeTruthy();
+    expect(within(nav).getByRole('img', { name: 'Pool presente e valido' })).toBeTruthy();
+    expect(within(nav).getByRole('img', { name: 'Pool assente' })).toBeTruthy();
+    expect(within(nav).getByRole('img', { name: 'Pool presente ma non valido' })).toBeTruthy();
+  });
+
   it('calls onBack from the "← Libreria" control', async () => {
     const onBack = vi.fn();
     mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
@@ -538,6 +558,22 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     expect(screen.getByRole('button', { name: '+ Nuova UDA' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Azioni UDA' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Azioni corso' })).toBeNull();
+  });
+
+  it('closes contextual menus with Escape or an outside pointer and restores trigger focus', async () => {
+    await renderAndReady();
+    const trigger = screen.getByRole('button', { name: 'Azioni corso' });
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole('menu')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole('menu')).toBeTruthy();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 
   it('renames the course and patches the card', async () => {
@@ -875,6 +911,25 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
       fields: expect.objectContaining({ titolo: 'Titolo 2' }),
     });
     expect(mockUpdateLessonBody).not.toHaveBeenCalled();
+  });
+
+  it('returns to an open information draft after switching tabs', async () => {
+    await openLesson();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica informazioni' }));
+    const titleInput = screen.getByLabelText('Titolo lezione') as HTMLInputElement;
+    fireEvent.change(titleInput, { target: { value: 'Titolo non salvato' } });
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Contenuto' }));
+    const returnButton = screen.getByRole('button', { name: 'Modifica informazioni' });
+    expect((returnButton as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(returnButton);
+
+    expect(screen.getByRole('tab', { name: 'Informazioni' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    expect((screen.getByLabelText('Titolo lezione') as HTMLInputElement).value).toBe(
+      'Titolo non salvato',
+    );
   });
 
   it('guards a lesson change when the content editor is dirty', async () => {

@@ -377,7 +377,7 @@ Il concept UX approvato per accesso dalla tabella **Consegne online**, workspace
 
 Redesign UX approvato che unifica le attuali sezioni Corsi, Lezioni e Domande in un unico workspace docente "Didattica", con Classi assorbita in Studenti come tab. Specifica completa, decisioni UX, invarianti di sicurezza/costo e prototipo statico standalone sono in [`didattica-ux-roadmap.md`](didattica-ux-roadmap.md). Riusa esclusivamente i service/dati già esistenti di RE/QE — nessuna nuova Cloud Function, nessuna Security Rule più permissiva, nessun nuovo documento Firestore di statistiche.
 
-**Stato: DUX-00→05C completati.** Didattica ha sostituito Corsi/Lezioni/Domande dopo il Gate di parità; Classi è stata assorbita in Studenti, Verifiche è uniformata e la shell finale applica header unico, Template restaurato e aurora sobria. Resta Gate GDUX.
+**Stato: DUX-00→05C e DUX-06A completati.** Didattica ha sostituito Corsi/Lezioni/Domande dopo il Gate di parità; Classi è stata assorbita in Studenti, Verifiche è uniformata e la shell finale applica header unico, Template restaurato e aurora sobria. Lo smoke DEV ha aperto il polish mirato DUX-06A→06C: 06A è completato, 06B/06C e Gate GDUX restano pendenti.
 
 | ID | Outcome e scope | Dipende da | Evidenza DoD |
 |---|---|---|---|
@@ -392,7 +392,10 @@ Redesign UX approvato che unifica le attuali sezioni Corsi, Lezioni e Domande in
 | DUX-05A ✅ | Classi assorbita in Studenti: tab accessibili, CRUD inline, contatore studenti derivato in memoria; rimossa la nav/vista Classi autonoma. **Implementato.** | DUX-04D | Stessi dati caricati una volta da StudentsView; nessuna nuova query/listener; nav docente Didattica/Verifiche/Studenti/Template. |
 | DUX-05B ✅ | Restyling Verifiche: tabella + creazione inline + feedback persistente "Salva bozza". **Implementato.** | DUX-05A | Logica, service e dati invariati; feedback dirty/saving/saved/error persistente; nessuna nuova lettura. |
 | DUX-05C ✅ | Restauro Template, header unico definitivo e aurora sobria. **Implementato.** | DUX-05B | Griglia Template 4/2/1; header responsive con selettore mobile; aurora statica; nessuna nuova dipendenza o lettura. |
-| Gate GDUX | Verifica finale end-to-end della roadmap Didattica. | DUX-01…05C (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche. |
+| DUX-06A ✅ | Fix funzionali workspace e sidebar: menu contestuali robusti, draft Informazioni recuperabile tra schede, icone gerarchiche e indicatori separati svolta/pool, controlli uniformi. **Implementato.** | DUX-05C | Nessuna modifica a service, Rules, schema, indici o costi Firebase; test mirati su menu, stato editor e indicatori accessibili. |
+| DUX-06B | Polish libreria/workspace Didattica emerso dallo smoke DEV. | DUX-06A | Toolbar filtri, card e rifiniture visive senza cambiare contratti o dati. |
+| DUX-06C | Coerenza Studenti/Classi e Verifiche emersa dallo smoke DEV. | DUX-06B | Tab e righe inline stabili; dettaglio verifica dedicato; nessuna nuova lettura. |
+| Gate GDUX | Verifica finale end-to-end della roadmap Didattica. | DUX-01…06C (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche. |
 
 ---
 
