@@ -1,4 +1,4 @@
-import { Fragment, type FormEvent, useEffect, useState } from 'react';
+import { Fragment, type FormEvent, useEffect, useRef, useState } from 'react';
 import {
   activateVerification,
   closeVerification,
@@ -130,6 +130,12 @@ export function VerificationsView() {
   const [editDraftTitle, setEditDraftTitle] = useState('');
   const [editDraftClassId, setEditDraftClassId] = useState('');
   const [savingDraft, setSavingDraft] = useState(false);
+  const [draftSaveStatus, setDraftSaveStatus] = useState<
+    'idle' | 'dirty' | 'saving' | 'saved' | 'error'
+  >('idle');
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
+  const draftRevisionRef = useRef(0);
 
   // ── Activation state (draft detail flow) ────────────────────────
   const [showActivateConfirm, setShowActivateConfirm] = useState(false);
@@ -261,6 +267,10 @@ export function VerificationsView() {
     setSelectedQuestionIds(new Set(v.config.questionRefs.map((r) => r.questionIndexEntryId)));
     setEditDraftTitle(v.config.title);
     setEditDraftClassId(v.config.classId ?? '');
+    draftRevisionRef.current = 0;
+    setDraftSaveStatus('idle');
+    setDraftSavedAt(null);
+    setDraftSaveError(null);
 
     if (v.status === 'draft' && v.config.programId && v.config.importId) {
       try {
@@ -301,6 +311,18 @@ export function VerificationsView() {
       .filter((r): r is NonNullable<typeof r> => r !== null);
   }
 
+  function markDraftDirty() {
+    draftRevisionRef.current += 1;
+    setDraftSaveStatus('dirty');
+    setDraftSavedAt(null);
+    setDraftSaveError(null);
+  }
+
+  function handleQuestionSelectionChange(next: Set<string>) {
+    setSelectedQuestionIds(next);
+    markDraftDirty();
+  }
+
   /**
    * "Salva bozza": persists title, class and the current question selection
    * together in a single `updateVerificationConfig` write — no immutable
@@ -310,7 +332,10 @@ export function VerificationsView() {
     if (!selectedVer || selectedVer.status !== 'draft') return;
     const title = editDraftTitle.trim();
     if (!title) return;
+    const savedRevision = draftRevisionRef.current;
     setSavingDraft(true);
+    setDraftSaveStatus('saving');
+    setDraftSaveError(null);
     try {
       const classId = editDraftClassId || null;
       const questionRefs = buildQuestionRefsFromSelection();
@@ -319,6 +344,17 @@ export function VerificationsView() {
       const updated = { ...selectedVer, config: { ...selectedVer.config, ...patch } };
       setSelectedVer(updated);
       setVerifications((prev) => prev?.map((v) => (v.id === updated.id ? updated : v)) ?? null);
+      if (draftRevisionRef.current === savedRevision) {
+        setDraftSaveStatus('saved');
+        setDraftSavedAt(
+          new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
+        );
+      } else {
+        setDraftSaveStatus('dirty');
+      }
+    } catch (error) {
+      setDraftSaveStatus('error');
+      setDraftSaveError(error instanceof Error ? error.message : 'Impossibile salvare la bozza.');
     } finally {
       setSavingDraft(false);
     }
@@ -738,86 +774,111 @@ export function VerificationsView() {
 
   return (
     <section aria-label="Verifiche" className={styles.container}>
-      {/* ── Create form ── */}
       <form
+        id="new-verification-form"
         aria-label="Nuova verifica"
-        className={styles.createForm}
         onSubmit={(e) => void handleCreate(e)}
-      >
-        <div className={styles.formRow}>
-          <label htmlFor="new-ver-title">Titolo</label>
-          <input
-            id="new-ver-title"
-            type="text"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-          />
-        </div>
-
-        <div className={styles.formRow}>
-          <label htmlFor="new-ver-program">Programma</label>
-          <select
-            id="new-ver-program"
-            value={newProgramId}
-            onChange={(e) => setNewProgramId(e.target.value)}
-          >
-            <option value="">— Seleziona programma —</option>
-            {programs.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className={styles.formRow}>
-          <label htmlFor="new-ver-class">Classe (opzionale)</label>
-          <select
-            id="new-ver-class"
-            value={newClassId}
-            onChange={(e) => setNewClassId(e.target.value)}
-          >
-            <option value="">— Nessuna classe —</option>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {createError && (
-          <p role="alert" className="text-error">
-            {createError}
-          </p>
-        )}
-
-        <button
-          type="submit"
-          className="btn-success"
-          disabled={creating || !newTitle.trim() || !newProgramId}
-        >
-          {creating ? 'Creazione…' : 'Crea verifica'}
-        </button>
-      </form>
+      />
 
       {/* ── Verification table ── */}
-      {verifications.length === 0 ? (
-        <p className="state-empty">Nessuna verifica. Creane una.</p>
-      ) : (
+      {
         <div className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
               <tr>
                 <th className={styles.th}>Titolo</th>
-                <th className={styles.th}>Classe</th>
                 <th className={styles.th}>Corso</th>
+                <th className={styles.th}>Classe</th>
                 <th className={`${styles.th} ${styles.statusColumn}`}>Stato</th>
                 <th className={styles.th}>Domande</th>
-                <th className={styles.th} aria-label="Azioni"></th>
+                <th className={styles.th}>Azioni</th>
               </tr>
             </thead>
             <tbody>
+              <tr className={styles.createRowInline}>
+                <td className={`${styles.td} ${styles.createCell}`}>
+                  <label className={styles.visuallyHidden} htmlFor="new-ver-title">
+                    Titolo nuova verifica
+                  </label>
+                  <input
+                    id="new-ver-title"
+                    form="new-verification-form"
+                    className={styles.createInput}
+                    type="text"
+                    placeholder="Titolo nuova verifica"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                  />
+                </td>
+                <td className={`${styles.td} ${styles.createCell}`}>
+                  <label className={styles.visuallyHidden} htmlFor="new-ver-program">
+                    Programma nuova verifica
+                  </label>
+                  <select
+                    id="new-ver-program"
+                    form="new-verification-form"
+                    className={styles.createInput}
+                    value={newProgramId}
+                    onChange={(e) => setNewProgramId(e.target.value)}
+                  >
+                    <option value="">— Seleziona corso —</option>
+                    {programs.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td className={`${styles.td} ${styles.createCell}`}>
+                  <label className={styles.visuallyHidden} htmlFor="new-ver-class">
+                    Classe nuova verifica (opzionale)
+                  </label>
+                  <select
+                    id="new-ver-class"
+                    form="new-verification-form"
+                    className={styles.createInput}
+                    value={newClassId}
+                    onChange={(e) => setNewClassId(e.target.value)}
+                  >
+                    <option value="">— Nessuna classe —</option>
+                    {classes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td className={styles.td}>
+                  <span className={`${styles.badge} ${styles.badgeNew}`}>Nuova</span>
+                </td>
+                <td className={`${styles.td} ${styles.metaCell}`}>—</td>
+                <td className={`${styles.tdActions} ${styles.createActionCell}`}>
+                  <button
+                    type="submit"
+                    form="new-verification-form"
+                    className="btn-success"
+                    disabled={creating || !newTitle.trim() || !newProgramId}
+                  >
+                    {creating ? 'Creazione…' : 'Crea verifica'}
+                  </button>
+                </td>
+              </tr>
+              {createError && (
+                <tr className={styles.createErrorRow}>
+                  <td colSpan={6} className={styles.td}>
+                    <p role="alert" className="text-error">
+                      {createError}
+                    </p>
+                  </td>
+                </tr>
+              )}
+              {verifications.length === 0 && (
+                <tr>
+                  <td colSpan={6} className={styles.emptyTableCell}>
+                    Nessuna verifica. Creane una dalla prima riga.
+                  </td>
+                </tr>
+              )}
               {sortedVerifications.map((v) => {
                 const programTitle =
                   programs.find((p) => p.id === v.config.programId)?.title ?? v.config.programId;
@@ -1013,8 +1074,8 @@ export function VerificationsView() {
                           </span>
                         )}
                       </td>
-                      <td className={`${styles.td} ${styles.metaCell}`}>{className}</td>
                       <td className={`${styles.td} ${styles.metaCell}`}>{programTitle}</td>
+                      <td className={`${styles.td} ${styles.metaCell}`}>{className}</td>
                       <td className={styles.td}>
                         <StatusBadge status={v.status} visibility={v.visibility} />
                         {v.status === 'active' && (
@@ -1192,7 +1253,7 @@ export function VerificationsView() {
             </tbody>
           </table>
         </div>
-      )}
+      }
 
       {/* ── Detail panel — draft configuration only; active/closed show a compact summary ── */}
       {selectedVer && (
@@ -1213,13 +1274,19 @@ export function VerificationsView() {
                 id="draft-title"
                 type="text"
                 value={editDraftTitle}
-                onChange={(e) => setEditDraftTitle(e.target.value)}
+                onChange={(e) => {
+                  setEditDraftTitle(e.target.value);
+                  markDraftDirty();
+                }}
               />
               <label htmlFor="draft-class">Classe</label>
               <select
                 id="draft-class"
                 value={editDraftClassId}
-                onChange={(e) => setEditDraftClassId(e.target.value)}
+                onChange={(e) => {
+                  setEditDraftClassId(e.target.value);
+                  markDraftDirty();
+                }}
               >
                 <option value="">— Nessuna classe —</option>
                 {classes.map((c) => (
@@ -1253,31 +1320,59 @@ export function VerificationsView() {
                   <QuestionPicker
                     entries={questionIndex}
                     selectedIds={selectedQuestionIds}
-                    onChange={setSelectedQuestionIds}
+                    onChange={handleQuestionSelectionChange}
                   />
                 )}
               </div>
 
               {/* Salva bozza + Attiva verifica — kept side by side, in this order */}
               {!showActivateConfirm ? (
-                <div className={styles.draftActionBar}>
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    disabled={savingDraft || !editDraftTitle.trim()}
-                    onClick={() => void handleSaveDraft()}
+                <div className={styles.draftActionArea}>
+                  <div className={styles.draftActionBar}>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={
+                        savingDraft ||
+                        !editDraftTitle.trim() ||
+                        (draftSaveStatus !== 'dirty' && draftSaveStatus !== 'error')
+                      }
+                      onClick={() => void handleSaveDraft()}
+                    >
+                      {savingDraft
+                        ? 'Salvataggio…'
+                        : draftSaveStatus === 'error'
+                          ? 'Riprova salvataggio'
+                          : 'Salva bozza'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-success"
+                      disabled={!canActivate}
+                      onClick={() => setShowActivateConfirm(true)}
+                      aria-label="Attiva verifica"
+                    >
+                      Attiva verifica
+                    </button>
+                  </div>
+                  <p
+                    className={`${styles.draftSaveFeedback} ${
+                      draftSaveStatus === 'error'
+                        ? styles.draftSaveFeedbackError
+                        : draftSaveStatus === 'saved'
+                          ? styles.draftSaveFeedbackSuccess
+                          : ''
+                    }`}
+                    aria-live="polite"
+                    role={draftSaveStatus === 'error' ? 'alert' : 'status'}
                   >
-                    {savingDraft ? 'Salvataggio…' : 'Salva bozza'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-success"
-                    disabled={!canActivate}
-                    onClick={() => setShowActivateConfirm(true)}
-                    aria-label="Attiva verifica"
-                  >
-                    Attiva verifica
-                  </button>
+                    {draftSaveStatus === 'dirty' && '● Modifiche non salvate'}
+                    {draftSaveStatus === 'saving' && 'Salvataggio in corso…'}
+                    {draftSaveStatus === 'saved' && `✓ Bozza salvata alle ${draftSavedAt ?? '—'}`}
+                    {draftSaveStatus === 'error' &&
+                      `✕ ${draftSaveError ?? 'Impossibile salvare la bozza.'}`}
+                    {draftSaveStatus === 'idle' && 'Nessuna modifica da salvare'}
+                  </p>
                 </div>
               ) : (
                 <div

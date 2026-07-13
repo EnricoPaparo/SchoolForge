@@ -377,7 +377,7 @@ Il concept UX approvato per accesso dalla tabella **Consegne online**, workspace
 
 Redesign UX approvato che unifica le attuali sezioni Corsi, Lezioni e Domande in un unico workspace docente "Didattica", con Classi assorbita in Studenti come tab. Specifica completa, decisioni UX, invarianti di sicurezza/costo e prototipo statico standalone sono in [`didattica-ux-roadmap.md`](didattica-ux-roadmap.md). Riusa esclusivamente i service/dati già esistenti di RE/QE — nessuna nuova Cloud Function, nessuna Security Rule più permissiva, nessun nuovo documento Firestore di statistiche.
 
-**Stato: DUX-04D e DUX-05A completati.** Didattica ha sostituito Corsi/Lezioni/Domande dopo il Gate di parità; Classi è stata assorbita in Studenti con tab accessibili e contatori client-side. La nav docente corrente è Didattica/Verifiche/Studenti/Template. Restano DUX-05B, DUX-05C e Gate GDUX.
+**Stato: DUX-04D e DUX-05A/05B completati.** Didattica ha sostituito Corsi/Lezioni/Domande dopo il Gate di parità; Classi è stata assorbita in Studenti e Verifiche usa creazione inline con feedback bozza persistente. La nav docente corrente è Didattica/Verifiche/Studenti/Template. Restano DUX-05C e Gate GDUX.
 
 | ID | Outcome e scope | Dipende da | Evidenza DoD |
 |---|---|---|---|
@@ -390,7 +390,7 @@ Redesign UX approvato che unifica le attuali sezioni Corsi, Lezioni e Domande in
 | DUX-04C ✅ | Navigazione mobile a livelli (drill-down un livello per volta, Indietro coerente) + modalità **Organizza** (riordino UDA/lezioni con frecce). **Implementato** (`useIsMobile`, `ReorderControls`, `reorderUda`/`reorderLesson`). | DUX-04B | Selezione unica fonte di verità desktop/mobile; riordino via service esistenti, nessuna rilettura, no drag-and-drop; nessuna nuova Rule. Completato. |
 | DUX-04D ✅ | **Gate di parità** PASS (matrice `evidenze/dux-04d-matrice-parita.md`) e rimozione voci nav + componenti legacy Corsi/Lezioni/Domande (`ProgramsView`/`LessonsView`/`DomandeView`/`ImportZipModal`); backfill `publicLessons` spostato in Didattica. **Implementato.** | DUX-04C | Ogni controllo coperto o ritirato con motivazione; componenti condivisi conservati; nessuna nuova Rule; bundle TeacherShell −13,6 kB gzip JS / −2,2 kB gzip CSS. Completato. |
 | DUX-05A ✅ | Classi assorbita in Studenti: tab accessibili, CRUD inline, contatore studenti derivato in memoria; rimossa la nav/vista Classi autonoma. **Implementato.** | DUX-04D | Stessi dati caricati una volta da StudentsView; nessuna nuova query/listener; nav docente Didattica/Verifiche/Studenti/Template. |
-| DUX-05B | Restyling Verifiche: tabella + creazione inline + feedback persistente "Salva bozza". | DUX-05A | Logica e dati invariati; feedback persistente; mobile compatto. |
+| DUX-05B ✅ | Restyling Verifiche: tabella + creazione inline + feedback persistente "Salva bozza". **Implementato.** | DUX-05A | Logica, service e dati invariati; feedback dirty/saving/saved/error persistente; nessuna nuova lettura. |
 | DUX-05C | Restauro Template, header unico definitivo e aurora sobria. | DUX-05B | Griglia Template 4/2/1; header coerente; leggibilità preservata. |
 | Gate GDUX | Verifica finale end-to-end della roadmap Didattica. | DUX-01…05C (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche. |
 
