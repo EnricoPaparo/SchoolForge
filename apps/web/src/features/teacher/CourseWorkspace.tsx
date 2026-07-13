@@ -12,6 +12,7 @@ import {
   IconFileCheck,
   IconFileText,
   IconLayers,
+  IconMoreHorizontal,
   IconPanelLeft,
   IconTriangleAlert,
 } from '../../components/icons.js';
@@ -324,7 +325,10 @@ export function CourseWorkspace({
     setTreeError(null);
     async function load() {
       if (!card.activeImportId) {
-        if (!cancelled) setTree({ udas: [], lessons: [] });
+        if (!cancelled) {
+          setTree({ udas: [], lessons: [] });
+          setCollapsedUdas(new Set());
+        }
         return;
       }
       try {
@@ -332,7 +336,13 @@ export function CourseWorkspace({
           listUdas(card.programId, card.activeImportId, db),
           listLessons(card.programId, card.activeImportId, db),
         ]);
-        if (!cancelled) setTree({ udas, lessons });
+        if (!cancelled) {
+          setTree({ udas, lessons });
+          // A large course must open as an overview, never as an already
+          // exploded wall of lessons. The teacher can expand only the UDA
+          // currently needed; later local tree updates preserve that choice.
+          setCollapsedUdas(new Set(udas.map((uda) => uda.dir)));
+        }
       } catch {
         if (!cancelled) setTreeError('Impossibile caricare la struttura del corso.');
       }
@@ -1165,6 +1175,8 @@ export function CourseWorkspace({
                 {tree.udas.map((uda) => {
                   const open = !collapsedUdas.has(uda.dir);
                   const udaLessons = lessonsByUda.get(uda.dir) ?? [];
+                  const udaCompleted =
+                    udaLessons.length > 0 && udaLessons.every((lesson) => lesson.completed);
                   const udaSelected = selection.kind === 'uda' && selection.udaDir === uda.dir;
                   return (
                     <li key={uda.id} className={styles.udaItem}>
@@ -1188,10 +1200,25 @@ export function CourseWorkspace({
                           className={`${styles.udaTitleBtn}${udaSelected ? ` ${styles.selected}` : ''}`}
                           aria-current={udaSelected ? 'true' : undefined}
                           onClick={() =>
-                            guardedNav(() => setSelection({ kind: 'uda', udaDir: uda.dir }))
+                            guardedNav(() => {
+                              setCollapsedUdas((current) => {
+                                const next = new Set(current);
+                                next.delete(uda.dir);
+                                return next;
+                              });
+                              setSelection({ kind: 'uda', udaDir: uda.dir });
+                            })
                           }
                         >
-                          <IconLayers size={14} />
+                          <span
+                            className={
+                              udaCompleted ? styles.udaCompletedIcon : styles.udaPendingIcon
+                            }
+                            aria-hidden="true"
+                            title={udaCompleted ? 'UDA completata' : 'UDA da completare'}
+                          >
+                            <IconLayers size={14} />
+                          </span>
                           <span>{uda.dir}</span>
                         </button>
                       </div>
@@ -1230,27 +1257,25 @@ export function CourseWorkspace({
                                       <IconFileText size={14} />
                                     )}
                                   </span>
-                                  <span className={styles.lessonBtnText}>{title}</span>
-                                  <span className={styles.lessonStatuses}>
-                                    <span
-                                      className={`${styles.poolStatus} ${
-                                        lesson.poolStatus === 'valid'
-                                          ? styles.poolValid
-                                          : lesson.poolStatus === 'invalid'
-                                            ? styles.poolInvalid
-                                            : styles.poolAbsent
-                                      }`}
-                                      role="img"
-                                      aria-label={poolStatusText(lesson.poolStatus)}
-                                      title={poolStatusText(lesson.poolStatus)}
-                                    >
-                                      {lesson.poolStatus === 'invalid' ? (
-                                        <IconTriangleAlert size={14} />
-                                      ) : (
-                                        <IconCircleQuestion size={14} />
-                                      )}
-                                    </span>
+                                  <span
+                                    className={`${styles.poolStatus} ${
+                                      lesson.poolStatus === 'valid'
+                                        ? styles.poolValid
+                                        : lesson.poolStatus === 'invalid'
+                                          ? styles.poolInvalid
+                                          : styles.poolAbsent
+                                    }`}
+                                    role="img"
+                                    aria-label={poolStatusText(lesson.poolStatus)}
+                                    title={poolStatusText(lesson.poolStatus)}
+                                  >
+                                    {lesson.poolStatus === 'invalid' ? (
+                                      <IconTriangleAlert size={14} />
+                                    ) : (
+                                      <IconCircleQuestion size={14} />
+                                    )}
                                   </span>
+                                  <span className={styles.lessonBtnText}>{title}</span>
                                 </button>
                               </li>
                             );
@@ -1286,7 +1311,8 @@ export function CourseWorkspace({
                   aria-label="Azioni corso"
                   onClick={() => setMenuOpen((o) => !o)}
                 >
-                  Azioni corso ▾
+                  <IconMoreHorizontal size={16} />
+                  <span>Azioni</span>
                 </button>
                 {menuOpen && (
                   <div ref={menuRef} className={styles.menu} role="menu">
@@ -1340,8 +1366,13 @@ export function CourseWorkspace({
                       role="menuitem"
                       onClick={() => openDialog({ kind: 'info' })}
                     >
-                      Informazioni
+                      Modifica metadati corso
                     </button>
+                    {card.hasImport && tree && tree.udas.length > 1 && (
+                      <button type="button" role="menuitem" onClick={enterOrganize}>
+                        Organizza UDA
+                      </button>
+                    )}
                     <button
                       type="button"
                       role="menuitem"
@@ -1353,11 +1384,6 @@ export function CourseWorkspace({
                   </div>
                 )}
               </div>
-              {card.hasImport && tree && tree.udas.length > 1 && (
-                <button type="button" onClick={enterOrganize}>
-                  Organizza UDA
-                </button>
-              )}
             </div>
           )}
           {selection.kind === 'course' && (
@@ -1382,16 +1408,6 @@ export function CourseWorkspace({
           )}
           {selection.kind === 'uda' && selectedUda && !organizing && (
             <div className={styles.toolbar}>
-              <button
-                type="button"
-                className="btn-success"
-                onClick={() => openDialog({ kind: 'newLesson' })}
-              >
-                + Nuova lezione
-              </button>
-              <button type="button" onClick={() => openDialog({ kind: 'newUda' })}>
-                + Nuova UDA
-              </button>
               <div className={styles.menuWrap}>
                 <button
                   type="button"
@@ -1402,10 +1418,25 @@ export function CourseWorkspace({
                   aria-label="Azioni UDA"
                   onClick={() => setMenuOpen((o) => !o)}
                 >
-                  Azioni UDA ▾
+                  <IconMoreHorizontal size={16} />
+                  <span>Azioni</span>
                 </button>
                 {menuOpen && (
                   <div ref={menuRef} className={styles.menu} role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => openDialog({ kind: 'newLesson' })}
+                    >
+                      Nuova lezione
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => openDialog({ kind: 'newUda' })}
+                    >
+                      Nuova UDA
+                    </button>
                     <button
                       type="button"
                       role="menuitem"
@@ -1413,6 +1444,11 @@ export function CourseWorkspace({
                     >
                       Modifica metadata
                     </button>
+                    {(lessonsByUda.get(selectedUda.dir) ?? []).length > 1 && (
+                      <button type="button" role="menuitem" onClick={enterOrganize}>
+                        Organizza lezioni
+                      </button>
+                    )}
                     <button
                       type="button"
                       role="menuitem"
@@ -1424,11 +1460,6 @@ export function CourseWorkspace({
                   </div>
                 )}
               </div>
-              {(lessonsByUda.get(selectedUda.dir) ?? []).length > 1 && (
-                <button type="button" onClick={enterOrganize}>
-                  Organizza lezioni
-                </button>
-              )}
             </div>
           )}
           {selection.kind === 'uda' && selectedUda && (
@@ -1451,71 +1482,92 @@ export function CourseWorkspace({
           )}
           {selection.kind === 'lesson' && selectedLesson && (
             <div className={styles.toolbar}>
-              <button
-                type="button"
-                onClick={() => {
-                  selectTab('contenuto');
-                  if (!editingContent) {
-                    setEditingContent(true);
-                    setContentStatus(NO_STATUS);
-                  }
-                }}
-                disabled={(editingContent && activeTab === 'contenuto') || lessonContent == null}
-              >
-                Modifica contenuto
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  selectTab('informazioni');
-                  if (!editingInfo) {
-                    setEditingInfo(true);
-                    setInfoStatus(NO_STATUS);
-                  }
-                }}
-                disabled={(editingInfo && activeTab === 'informazioni') || lessonContent == null}
-              >
-                Modifica informazioni
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleDownloadLessonPdf(selectedLesson)}
-                disabled={pdfBusy || lessonContent == null}
-              >
-                {pdfBusy ? 'PDF…' : 'Scarica PDF'}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleToggleCompleted(selectedLesson)}
-                disabled={completedBusy}
-                aria-pressed={selectedLesson.completed ?? false}
-              >
-                {selectedLesson.completed ? 'Segna non svolta' : 'Segna svolta'}
-              </button>
-              {!isMobile && (
-                <button
-                  type="button"
-                  onClick={() => setLessonFocusMode((current) => !current)}
-                  aria-pressed={lessonFocusMode}
-                >
-                  <IconPanelLeft size={15} />
-                  {lessonFocusMode ? 'Mostra struttura' : 'Nascondi struttura'}
-                </button>
-              )}
-              <div className={`${styles.menuWrap} ${styles.lessonMenuWrap}`}>
+              <div className={styles.menuWrap}>
                 <button
                   type="button"
                   ref={menuTriggerRef}
-                  className={`${styles.toolbarMenuBtn} ${styles.toolbarIconBtn}`}
+                  className={styles.toolbarMenuBtn}
                   aria-haspopup="true"
                   aria-expanded={menuOpen}
                   aria-label="Azioni lezione"
                   onClick={() => setMenuOpen((o) => !o)}
                 >
-                  ⋯
+                  <IconMoreHorizontal size={16} />
+                  <span>Azioni</span>
                 </button>
                 {menuOpen && (
                   <div ref={menuRef} className={styles.menu} role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        selectTab('contenuto');
+                        if (!editingContent) {
+                          setEditingContent(true);
+                          setContentStatus(NO_STATUS);
+                        }
+                      }}
+                      disabled={
+                        (editingContent && activeTab === 'contenuto') || lessonContent == null
+                      }
+                    >
+                      Modifica contenuto
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        selectTab('informazioni');
+                        if (!editingInfo) {
+                          setEditingInfo(true);
+                          setInfoStatus(NO_STATUS);
+                        }
+                      }}
+                      disabled={
+                        (editingInfo && activeTab === 'informazioni') || lessonContent == null
+                      }
+                    >
+                      Modifica informazioni
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        void handleDownloadLessonPdf(selectedLesson);
+                      }}
+                      disabled={pdfBusy || lessonContent == null}
+                    >
+                      {pdfBusy ? 'PDF…' : 'Scarica PDF'}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        handleToggleCompleted(selectedLesson);
+                      }}
+                      disabled={completedBusy}
+                      aria-pressed={selectedLesson.completed ?? false}
+                    >
+                      {selectedLesson.completed ? 'Segna non svolta' : 'Segna svolta'}
+                    </button>
+                    {!isMobile && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setLessonFocusMode((current) => !current);
+                        }}
+                        aria-pressed={lessonFocusMode}
+                      >
+                        <IconPanelLeft size={15} />
+                        {lessonFocusMode ? 'Mostra struttura' : 'Nascondi struttura'}
+                      </button>
+                    )}
                     <button
                       type="button"
                       role="menuitem"

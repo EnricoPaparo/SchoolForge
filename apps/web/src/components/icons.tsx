@@ -205,6 +205,18 @@ export function IconPanelLeft(props: IconProps = {}) {
   );
 }
 
+/** Three horizontal dots — contextual actions menu */
+export function IconMoreHorizontal(props: IconProps = {}) {
+  return icon(
+    <>
+      <circle cx="5" cy="12" r="1" />
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="19" cy="12" r="1" />
+    </>,
+    props,
+  );
+}
+
 /** Download arrow into tray */
 export function IconDownload(props: IconProps = {}) {
   return icon(

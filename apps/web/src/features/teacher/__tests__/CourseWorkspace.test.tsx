@@ -192,6 +192,20 @@ function renderWorkspace(over: Partial<CourseCard> = {}, onBack = vi.fn()) {
   return render(<CourseWorkspace card={card(over)} ownerUid="owner" onBack={onBack} />);
 }
 
+async function expandUda(dir = 'uda-01-reti') {
+  await waitFor(() => expect(screen.getByRole('button', { name: dir })).toBeTruthy());
+  const expand = screen.queryByRole('button', { name: `Espandi ${dir}` });
+  if (expand) fireEvent.click(expand);
+}
+
+function clickMenuAction(
+  context: 'Azioni corso' | 'Azioni UDA' | 'Azioni lezione',
+  action: string,
+) {
+  fireEvent.click(screen.getByRole('button', { name: context }));
+  fireEvent.click(screen.getByRole('menuitem', { name: action }));
+}
+
 describe('CourseWorkspace — loading', () => {
   it('loads UDA and lessons once for the selected course only', async () => {
     mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
@@ -203,6 +217,9 @@ describe('CourseWorkspace — loading', () => {
     expect(mockListLessons).toHaveBeenCalledTimes(1);
     expect(mockListUdas).toHaveBeenCalledWith('p1', 'imp1', expect.anything());
     expect(mockListLessons).toHaveBeenCalledWith('p1', 'imp1', expect.anything());
+    // Large course trees start compact: every UDA is collapsed until requested.
+    expect(screen.getByRole('button', { name: 'Espandi uda-01-reti' })).toBeTruthy();
+    expect(screen.queryByTitle('Pool assente')).toBeNull();
     // The summary strip derives the domande total from the loaded tree.
     expect(screen.getByText('12')).toBeTruthy(); // domande
     expect(screen.getByRole('img', { name: /avanzamento lezioni 33%/i })).toBeTruthy();
@@ -259,6 +276,7 @@ describe('CourseWorkspace — selection', () => {
     // Not fetched until a lesson is actually opened.
     expect(mockFetchLessonContent).not.toHaveBeenCalled();
 
+    await expandUda();
     fireEvent.click(screen.getByRole('button', { name: 'Il modello ISO/OSI' }));
     await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
     expect(mockFetchLessonContent).toHaveBeenCalledTimes(1);
@@ -284,7 +302,7 @@ describe('CourseWorkspace — selection', () => {
       .mockImplementationOnce(() => new Promise<string>((r) => (resolveB = r)));
 
     renderWorkspace();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy());
+    await expandUda();
 
     fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
     fireEvent.click(screen.getByRole('button', { name: 'Lezione B' }));
@@ -306,7 +324,7 @@ describe('CourseWorkspace — selection', () => {
     mockFetchLessonContent.mockRejectedValue(new Error('boom'));
     renderWorkspace();
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy());
+    await expandUda();
     fireEvent.click(screen.getByRole('button', { name: 'Rotta' }));
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     expect(screen.getByText(/impossibile caricare il contenuto/i)).toBeTruthy();
@@ -320,17 +338,16 @@ describe('CourseWorkspace — sidebar and semantics', () => {
     mockFetchLessonContent.mockResolvedValue('Corpo lezione.');
     renderWorkspace();
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy());
+    await expandUda();
     expect(screen.queryByRole('button', { name: /comprimi struttura corso/i })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Lez 1' }));
-    const hide = await screen.findByRole('button', { name: /nascondi struttura/i });
-    fireEvent.click(hide);
+    clickMenuAction('Azioni lezione', 'Nascondi struttura');
     expect(screen.queryByRole('navigation', { name: 'Struttura corso' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'uda-01-reti' })).toBeNull();
     expect(screen.getByRole('tablist', { name: 'Schede lezione' })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: /mostra struttura/i }));
+    clickMenuAction('Azioni lezione', 'Mostra struttura');
     expect(screen.getByRole('navigation', { name: 'Struttura corso' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy();
   });
@@ -340,7 +357,7 @@ describe('CourseWorkspace — sidebar and semantics', () => {
     mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Lez 1' })]);
     renderWorkspace();
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy());
+    await expandUda();
     const nav = screen.getByRole('navigation', { name: 'Struttura corso' });
     const lessonBtn = within(nav).getByRole('button', { name: 'Lez 1' });
     // The lesson row is a real button with no button nested inside it.
@@ -362,11 +379,24 @@ describe('CourseWorkspace — sidebar and semantics', () => {
     ]);
     renderWorkspace();
 
+    await expandUda();
     const nav = await screen.findByRole('navigation', { name: 'Struttura corso' });
     expect(within(nav).getByRole('img', { name: 'Lezione svolta' })).toBeTruthy();
     expect(within(nav).getByRole('img', { name: 'Pool presente e valido' })).toBeTruthy();
     expect(within(nav).getByRole('img', { name: 'Pool assente' })).toBeTruthy();
     expect(within(nav).getByRole('img', { name: 'Pool presente ma non valido' })).toBeTruthy();
+  });
+
+  it('marks an UDA as completed only when all of its lessons are completed', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti'), uda('uda-02-vuota')]);
+    mockListLessons.mockResolvedValue([
+      lesson('l1', 'uda-01-reti', { completed: true }),
+      lesson('l2', 'uda-01-reti', { completed: true }),
+    ]);
+    renderWorkspace();
+
+    await waitFor(() => expect(screen.getByTitle('UDA completata')).toBeTruthy());
+    expect(screen.getByTitle('UDA da completare')).toBeTruthy();
   });
 
   it('calls onBack from the "← Libreria" control', async () => {
@@ -387,6 +417,7 @@ describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
     mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: title })]);
     mockFetchLessonContent.mockResolvedValue('Corpo lezione.');
     renderWorkspace();
+    await expandUda();
     await waitFor(() => expect(screen.getByRole('button', { name: title })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: title }));
     await waitFor(() =>
@@ -436,6 +467,7 @@ describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
     mockFetchLessonContent.mockResolvedValue('Corpo.');
     renderWorkspace();
 
+    await expandUda();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
     fireEvent.click(await screen.findByRole('tab', { name: 'Domande' }));
@@ -459,6 +491,7 @@ describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
     ]);
     mockFetchLessonContent.mockResolvedValue('Corpo.');
     renderWorkspace();
+    await expandUda();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Lez 1' })).toBeTruthy());
     // Strip derives the domande total from the loaded tree (5).
     expect(screen.getByText('5')).toBeTruthy();
@@ -491,6 +524,7 @@ describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
       </StrictMode>,
     );
 
+    await expandUda();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Lez 1' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Lez 1' }));
     fireEvent.click(await screen.findByRole('tab', { name: 'Domande' }));
@@ -556,9 +590,10 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     expect(screen.queryByRole('button', { name: 'Azioni UDA' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
-    expect(screen.getByRole('button', { name: '+ Nuova UDA' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Azioni UDA' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Azioni corso' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni UDA' }));
+    expect(screen.getByRole('menuitem', { name: 'Nuova UDA' })).toBeTruthy();
   });
 
   it('closes contextual menus with Escape or an outside pointer and restores trigger focus', async () => {
@@ -612,7 +647,7 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     await renderAndReady({}, { onCardPatch });
 
     fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Informazioni' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Modifica metadati corso' }));
     await waitFor(() => expect(screen.getByText('2025/2026')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Modifica' }));
     fireEvent.change(screen.getByLabelText('Anno scolastico'), {
@@ -648,7 +683,7 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     );
     await waitFor(() => expect(screen.getByRole('button', { name: 'Azioni corso' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Informazioni' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Modifica metadati corso' }));
 
     expect(
       screen.getByText('Importa prima un contenuto didattico per aggiungere i metadati.'),
@@ -681,7 +716,7 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     mockCreateUda.mockResolvedValue({ udaId: 'uda-new', dir: 'uda-02-nuova', order: 1 });
     await renderAndReady({}, { onCardPatch });
     fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
-    fireEvent.click(screen.getByRole('button', { name: '+ Nuova UDA' }));
+    clickMenuAction('Azioni UDA', 'Nuova UDA');
     fireEvent.change(screen.getByLabelText('Titolo UDA'), { target: { value: 'Nuova' } });
     fireEvent.click(screen.getByRole('button', { name: 'Crea UDA' }));
 
@@ -780,7 +815,7 @@ describe('CourseWorkspace — pure updaters & class preservation (DUX-04A fixes)
   it('patches the card exactly once when creating a UDA (StrictMode-safe)', async () => {
     mockCreateUda.mockResolvedValue({ udaId: 'uda-new', dir: 'uda-02-nuova', order: 1 });
     const onCardPatch = await selectUda(vi.fn(), true);
-    fireEvent.click(screen.getByRole('button', { name: '+ Nuova UDA' }));
+    clickMenuAction('Azioni UDA', 'Nuova UDA');
     fireEvent.change(screen.getByLabelText('Titolo UDA'), { target: { value: 'Nuova' } });
     fireEvent.click(screen.getByRole('button', { name: 'Crea UDA' }));
 
@@ -900,6 +935,7 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
     render(
       <CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} onCardPatch={onCardPatch} />,
     );
+    await expandUda();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
     await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
@@ -916,7 +952,7 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
     );
     await waitFor(() => expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
-    fireEvent.click(screen.getByRole('button', { name: '+ Nuova lezione' }));
+    clickMenuAction('Azioni UDA', 'Nuova lezione');
     fireEvent.change(screen.getByLabelText('Titolo lezione'), { target: { value: 'Nuova' } });
     fireEvent.change(screen.getByLabelText('Corpo Markdown lezione'), {
       target: { value: 'Corpo iniziale.' },
@@ -932,7 +968,7 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
 
   it('edits the content and cancels back to consultation', async () => {
     await openLesson();
-    fireEvent.click(screen.getByRole('button', { name: 'Modifica contenuto' }));
+    clickMenuAction('Azioni lezione', 'Modifica contenuto');
     const textarea = screen.getByLabelText('Corpo Markdown') as HTMLTextAreaElement;
     expect(textarea.value).toBe('Corpo lezione A.');
     fireEvent.change(textarea, { target: { value: 'Modificato.' } });
@@ -946,7 +982,7 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
   it('saves content via updateLessonMarkdownBody without touching metadata', async () => {
     mockUpdateLessonBody.mockResolvedValue(undefined);
     await openLesson();
-    fireEvent.click(screen.getByRole('button', { name: 'Modifica contenuto' }));
+    clickMenuAction('Azioni lezione', 'Modifica contenuto');
     fireEvent.change(screen.getByLabelText('Corpo Markdown'), {
       target: { value: 'Nuovo corpo.' },
     });
@@ -966,7 +1002,7 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
   it('saves metadata via updateLessonMetadata without touching the body', async () => {
     mockUpdateLessonMetadata.mockResolvedValue(undefined);
     await openLesson();
-    fireEvent.click(screen.getByRole('button', { name: 'Modifica informazioni' }));
+    clickMenuAction('Azioni lezione', 'Modifica informazioni');
     fireEvent.change(screen.getByLabelText('Titolo lezione'), { target: { value: 'Titolo 2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
 
@@ -980,12 +1016,13 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
 
   it('returns to an open information draft after switching tabs', async () => {
     await openLesson();
-    fireEvent.click(screen.getByRole('button', { name: 'Modifica informazioni' }));
+    clickMenuAction('Azioni lezione', 'Modifica informazioni');
     const titleInput = screen.getByLabelText('Titolo lezione') as HTMLInputElement;
     fireEvent.change(titleInput, { target: { value: 'Titolo non salvato' } });
 
     fireEvent.click(screen.getByRole('tab', { name: 'Contenuto' }));
-    const returnButton = screen.getByRole('button', { name: 'Modifica informazioni' });
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni lezione' }));
+    const returnButton = screen.getByRole('menuitem', { name: 'Modifica informazioni' });
     expect((returnButton as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(returnButton);
 
@@ -1005,10 +1042,11 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
     ]);
     mockFetchLessonContent.mockResolvedValue('Corpo.');
     render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
+    await expandUda();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
     await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Modifica contenuto' }));
+    clickMenuAction('Azioni lezione', 'Modifica contenuto');
     fireEvent.change(screen.getByLabelText('Corpo Markdown'), { target: { value: 'dirty' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Lezione B' }));
@@ -1034,10 +1072,11 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
         />
       </StrictMode>,
     );
+    await expandUda();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
     await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Segna svolta' }));
+    clickMenuAction('Azioni lezione', 'Segna svolta');
 
     await waitFor(() => expect(mockSetLessonCompleted).toHaveBeenCalledOnce());
     await waitFor(() => expect(onCardPatch).toHaveBeenCalledTimes(1));
@@ -1048,7 +1087,7 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
     mockDownloadLessonPdf.mockResolvedValue(undefined);
     await openLesson();
     expect(mockFetchLessonContent).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Scarica PDF' }));
+    clickMenuAction('Azioni lezione', 'Scarica PDF');
 
     await waitFor(() => expect(mockDownloadLessonPdf).toHaveBeenCalledOnce());
     const [, content, context] = mockDownloadLessonPdf.mock.calls[0];
@@ -1067,9 +1106,7 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
 
     await waitFor(() => expect(mockDeleteLesson).toHaveBeenCalledOnce());
     // Back on the UDA overview; the lesson is gone.
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: '+ Nuova lezione' })).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Azioni UDA' })).toBeTruthy());
     expect(onCardPatch).toHaveBeenCalledWith('p1', expect.objectContaining({ lessonsTotal: 0 }));
   });
 
@@ -1101,11 +1138,12 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
       () => new Promise<void>((r) => (resolveSave = () => r())),
     );
     render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
+    await expandUda();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
     await waitFor(() => expect(screen.getByTestId('md').textContent).toContain('Corpo A.'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Modifica contenuto' }));
+    clickMenuAction('Azioni lezione', 'Modifica contenuto');
     fireEvent.change(screen.getByLabelText('Corpo Markdown'), {
       target: { value: 'Stale A body.' },
     });
@@ -1132,6 +1170,7 @@ describe('CourseWorkspace — async hardening after unmount (DUX-04B)', () => {
     const view = render(
       <CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} onCardPatch={onCardPatch} />,
     );
+    await expandUda();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
     await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
@@ -1145,7 +1184,7 @@ describe('CourseWorkspace — async hardening after unmount (DUX-04B)', () => {
     );
     const onCardPatch = vi.fn();
     const { unmount } = await selectA(onCardPatch);
-    fireEvent.click(screen.getByRole('button', { name: 'Segna svolta' }));
+    clickMenuAction('Azioni lezione', 'Segna svolta');
 
     unmount();
     resolve();
@@ -1160,7 +1199,7 @@ describe('CourseWorkspace — async hardening after unmount (DUX-04B)', () => {
     mockUpdateLessonBody.mockImplementation(() => new Promise<void>((r) => (resolve = () => r())));
     const onCardPatch = vi.fn();
     const { unmount } = await selectA(onCardPatch);
-    fireEvent.click(screen.getByRole('button', { name: 'Modifica contenuto' }));
+    clickMenuAction('Azioni lezione', 'Modifica contenuto');
     fireEvent.change(screen.getByLabelText('Corpo Markdown'), { target: { value: 'nuovo' } });
     fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
 
@@ -1187,10 +1226,11 @@ describe('CourseWorkspace — async hardening after unmount (DUX-04B)', () => {
       () => new Promise<void>((r) => (resolveSave = () => r())),
     );
     render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
+    await expandUda();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Lezione A' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
     await waitFor(() => expect(screen.getByTestId('md').textContent).toContain('Corpo A.'));
-    fireEvent.click(screen.getByRole('button', { name: 'Modifica informazioni' }));
+    clickMenuAction('Azioni lezione', 'Modifica informazioni');
     fireEvent.change(screen.getByLabelText('Titolo lezione'), { target: { value: 'A2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
 
@@ -1252,6 +1292,7 @@ describe('CourseWorkspace — mobile progressive navigation (DUX-04C)', () => {
     render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByRole('navigation', { name: 'Struttura corso' })));
     // Select the lesson via the desktop sidebar.
+    await expandUda();
     fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Lezione A' })).toBeTruthy());
 
@@ -1268,9 +1309,10 @@ describe('CourseWorkspace — mobile progressive navigation (DUX-04C)', () => {
     mockFetchLessonContent.mockResolvedValue('Corpo.');
     render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByRole('navigation', { name: 'Struttura corso' })));
+    await expandUda();
     fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
     await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Modifica contenuto' }));
+    clickMenuAction('Azioni lezione', 'Modifica contenuto');
     fireEvent.change(screen.getByLabelText('Corpo Markdown'), {
       target: { value: 'bozza mobile' },
     });
@@ -1292,8 +1334,8 @@ describe('CourseWorkspace — Organize mode (DUX-04C)', () => {
     ]);
     mockListLessons.mockResolvedValue([]);
     render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Organizza UDA' })).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Organizza UDA' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Azioni corso' })).toBeTruthy());
+    clickMenuAction('Azioni corso', 'Organizza UDA');
   }
 
   it('reorders UDAs down via reorderUda and disables normal actions', async () => {
@@ -1330,7 +1372,7 @@ describe('CourseWorkspace — Organize mode (DUX-04C)', () => {
     render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByRole('button', { name: 'uda-01-reti' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Organizza lezioni' }));
+    clickMenuAction('Azioni UDA', 'Organizza lezioni');
 
     fireEvent.click(screen.getByRole('button', { name: 'Sposta giù — Lez A' }));
     await waitFor(() => expect(mockReorderLesson).toHaveBeenCalledOnce());
