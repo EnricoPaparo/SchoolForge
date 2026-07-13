@@ -26,7 +26,9 @@ import { assertLessonContentSize } from '../programs/lessonContentSize.js';
 import { toDocId } from '../import/buildImportPayload.js';
 import type { LessonMetadata, UdaMetadata } from '../validation/types.js';
 import type {
+  ImportDoc,
   LessonDoc,
+  ProgrammaMeta,
   PublicLessonDoc,
   UdaDoc,
   VerificationDoc,
@@ -65,6 +67,100 @@ function readRawFrontMatter(content: string): EditableFrontMatter {
   } catch {
     return {};
   }
+}
+
+function isStorageObjectNotFound(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'storage/object-not-found'
+  );
+}
+
+function normalizeProgramMetadata(fields: ProgrammaMeta): ProgrammaMeta {
+  const clean = (value: string | null): string | null => {
+    const trimmed = value?.trim() ?? '';
+    return trimmed || null;
+  };
+  return {
+    annoScolastico: clean(fields.annoScolastico),
+    docente: clean(fields.docente),
+    materia: clean(fields.materia),
+    classe: clean(fields.classe),
+    descrizione: clean(fields.descrizione),
+  };
+}
+
+/**
+ * Updates the optional root-level `programma.md` and its Firestore projection.
+ * The file is created only inside an existing import; when already present,
+ * its body and unrelated front-matter keys are preserved.
+ */
+export async function updateProgramMetadata(params: {
+  programId: string;
+  importId: string;
+  fields: ProgrammaMeta;
+  ownerUid: string;
+  db: Firestore;
+  storage: FirebaseStorage;
+}): Promise<ProgrammaMeta> {
+  const { programId, importId, ownerUid, db, storage } = params;
+  const fields = normalizeProgramMetadata(params.fields);
+  const importRef = doc(db, 'programs', programId, 'imports', importId);
+  const importSnap = await getDoc(importRef);
+  if (!importSnap.exists()) throw new Error('Import del corso non trovato.');
+  const importDoc = importSnap.data() as ImportDoc;
+  if (importDoc.ownerUid !== ownerUid || importDoc.programId !== programId) {
+    throw new Error('Import del corso non valido.');
+  }
+
+  const storagePath = `repository/${ownerUid}/imports/${importId}/programma.md`;
+  let currentContent = '';
+  try {
+    currentContent = await fetchStorageText(storagePath, storage);
+  } catch (error) {
+    if (!isStorageObjectNotFound(error)) {
+      throw new Error('Impossibile leggere il file programma.md da Storage.');
+    }
+  }
+
+  const nextFrontMatter: EditableFrontMatter = {
+    ...readRawFrontMatter(currentContent),
+    anno_scolastico: fields.annoScolastico,
+    docente: fields.docente,
+    materia: fields.materia,
+    classe: fields.classe,
+    descrizione: fields.descrizione,
+  };
+  const nextContent = replaceFrontMatter(currentContent, nextFrontMatter);
+
+  try {
+    await writeStorageText(storagePath, nextContent, storage);
+  } catch {
+    throw new Error('Impossibile aggiornare il file programma.md su Storage.');
+  }
+
+  try {
+    const batch = writeBatch(db);
+    batch.update(importRef, { programmaMeta: fields });
+    batch.update(doc(db, 'programs', programId), { updatedAt: serverTimestamp() });
+    batch.set(doc(collection(db, 'auditEvents')), {
+      actorUid: ownerUid,
+      action: 'program.metadataUpdated',
+      targetId: programId,
+      outcome: 'success',
+      reason: null,
+      timestamp: serverTimestamp(),
+    });
+    await batch.commit();
+  } catch {
+    throw new Error(
+      'Il file programma.md è stato aggiornato su Storage ma i metadati non sono stati sincronizzati su Firestore. Riprova a salvare.',
+    );
+  }
+
+  return fields;
 }
 
 /**

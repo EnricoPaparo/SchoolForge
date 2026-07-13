@@ -129,12 +129,13 @@ anno_scolastico: '2025/2026'
 classe: 3A
 materia: Informatica
 docente: Nome Cognome
+descrizione: Descrizione sintetica del programma annuale
 ---
 
-Descrizione sintetica del programma annuale.
+# Contenuto libero opzionale
 ```
 
-Se presente, questi metadati (anno scolastico, docente, materia, classe, descrizione) compaiono nel pannello **Info corso**. Se assente, l'import funziona comunque: il pannello info mostra solo UDA/lezioni/domande.
+Se presente, questi metadati (anno scolastico, docente, materia, classe, descrizione) compaiono nel pannello **Info corso** e sono modificabili dal docente. DUX-07B salva `descrizione` nel front matter senza toccare il corpo Markdown; per compatibilità, nei file legacy privi della chiave `descrizione` continua a valere come fallback la prima riga descrittiva del corpo. Se `programma.md` è assente ma il corso ha un import attivo, il primo salvataggio dei metadati lo crea nella radice dell'import. Un corso senza import deve invece essere prima popolato.
 
 **Front matter obbligatorio per il file UDA** (es. `uda-01-reti/uda-01-reti.md`):
 
