@@ -82,27 +82,31 @@
 }
 
 .titleColumn {
-  width: 22%;
+  width: 20%;
 }
 
 .courseColumn {
-  width: 17%;
+  width: 15%;
 }
 
 .classColumn {
-  width: 7%;
+  width: 8%;
+}
+
+.yearColumn {
+  width: 8%;
 }
 
 .statusColumn {
-  width: 22%;
+  width: 20%;
 }
 
 .exercisesColumn {
-  width: 5%;
+  width: 4%;
 }
 
 .actionsColumn {
-  width: 27%;
+  width: 25%;
 }
 
 .createRowInline {
@@ -529,13 +533,40 @@
   color: var(--color-error);
 }
 
+/* ── Archive filters (VUX-01) ── */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.filters select,
+.filterSearch {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 0.875rem;
+}
+
+.filterSearch {
+  flex: 1 1 12rem;
+  min-width: 8rem;
+}
+
 @media (max-width: 900px) {
   .tableWrap {
     overflow-x: auto;
+    /* Ensure the horizontal scroll can reach the full Actions column. */
+    -webkit-overflow-scrolling: touch;
   }
 
   .table {
-    min-width: 840px;
+    /* Wider than before to accommodate the added Anno column without
+       squeezing Classe/Azioni. */
+    min-width: 960px;
   }
 
   .tdActions,
@@ -544,7 +575,7 @@
   }
 
   .classColumn {
-    width: 6%;
+    width: 7%;
   }
 
   .actionsWrapper {
@@ -559,5 +590,19 @@
 
   .createInput {
     font-size: 0.8125rem;
+  }
+
+  /* Keep the Classe column readable on mobile rather than collapsing it. */
+  .classColumn {
+    min-width: 6.5rem;
+  }
+
+  .yearColumn {
+    min-width: 5rem;
+  }
+
+  .filters select,
+  .filterSearch {
+    flex: 1 1 100%;
   }
 }

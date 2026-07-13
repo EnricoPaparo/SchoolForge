@@ -16,6 +16,7 @@ const mockCloseVerification = vi.fn();
 const mockDeleteVerification = vi.fn();
 const mockListQuestionIndex = vi.fn();
 const mockListPrograms = vi.fn();
+const mockGetImportMeta = vi.fn();
 const mockListClasses = vi.fn();
 const mockListStudents = vi.fn();
 const mockWatchSubmissions = vi.fn();
@@ -63,6 +64,7 @@ vi.mock('../../repository/classes/classesService.js', () => ({
 }));
 vi.mock('../../repository/programs/programsService.js', () => ({
   listPrograms: (...args: unknown[]) => mockListPrograms(...args),
+  getImportMeta: (...args: unknown[]) => mockGetImportMeta(...args),
 }));
 vi.mock('../../repository/students/studentsService.js', () => ({
   listStudents: (...args: unknown[]) => mockListStudents(...args),
@@ -165,6 +167,7 @@ function setupDefaults() {
   vi.clearAllMocks();
   mockListVerifications.mockResolvedValue([]);
   mockListPrograms.mockResolvedValue([sampleProgram]);
+  mockGetImportMeta.mockResolvedValue(null);
   mockListClasses.mockResolvedValue([sampleClass]);
   mockListQuestionIndex.mockResolvedValue(sampleQuestionIndexEntries);
   mockUpdateVerificationConfig.mockResolvedValue(undefined);
@@ -1438,7 +1441,10 @@ describe('VerificationsView — online toggle (M3F-05)', () => {
 
     const toggle = screen.getByRole('switch', { name: /attiva online/i });
     expect(toggle).toHaveProperty('disabled', true);
-    expect(screen.getByText('Nessuna classe')).toBeTruthy();
+    // The online status label reads "Nessuna classe" (distinct from the class
+    // filter's option of the same text, which also appears now).
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('Nessuna classe')).toBeTruthy();
   });
 
   it('shows a readable error when enabling online fails, without crashing', async () => {
@@ -2112,5 +2118,148 @@ describe('VerificationsView — sort order', () => {
       'Verifica Chiusa Senza Attivazione',
       'Verifica Solo Aggiornata',
     ]);
+  });
+});
+
+describe('VerificationsView — school year + archive filters (VUX-01)', () => {
+  const cls3a = { ...sampleClass, id: 'cls-1', name: 'Classe 3A' };
+  const cls3b = { ...sampleClass, id: 'cls-2', name: 'Classe 3B' };
+
+  function verWith(id: string, title: string, importId: string, classId: string | null) {
+    return makeDraftVer({
+      id,
+      config: { ...makeDraftVer().config, title, importId, classId },
+    });
+  }
+
+  /** Returns a year per importId (imp-1 recent, imp-old legacy year, else null). */
+  function yearByImport(_programId: string, importId: string) {
+    if (importId === 'imp-1') return Promise.resolve({ annoScolastico: '2025/2026' });
+    if (importId === 'imp-old') return Promise.resolve({ annoScolastico: '2019/2020' });
+    return Promise.resolve(null);
+  }
+
+  it('calls getImportMeta once per distinct (programId, importId) pair and uses the verification’s own importId', async () => {
+    setupDefaults();
+    mockGetImportMeta.mockImplementation(yearByImport);
+    mockListVerifications.mockResolvedValue([
+      verWith('v1', 'Alfa', 'imp-1', 'cls-1'),
+      verWith('v2', 'Beta', 'imp-1', 'cls-1'),
+      verWith('v3', 'Gamma', 'imp-old', 'cls-1'), // historical import, not the active one
+    ]);
+    render(<VerificationsView />);
+    await screen.findByText('Alfa');
+
+    // Two distinct pairs → exactly two reads (imp-1 deduped across v1+v2).
+    await waitFor(() => expect(mockGetImportMeta).toHaveBeenCalledTimes(2));
+    expect(mockGetImportMeta).toHaveBeenCalledWith('prog-1', 'imp-1', expect.anything());
+    expect(mockGetImportMeta).toHaveBeenCalledWith('prog-1', 'imp-old', expect.anything());
+  });
+
+  it('shows "—" and a "Senza anno" filter option when the import metadata is absent', async () => {
+    setupDefaults();
+    mockGetImportMeta.mockResolvedValue(null);
+    mockListVerifications.mockResolvedValue([verWith('v1', 'Alfa', 'imp-1', 'cls-1')]);
+    render(<VerificationsView />);
+    await screen.findByText('Alfa');
+
+    const table = screen.getByRole('table');
+    // Anno column present, rendered as "—" for this row.
+    expect(within(table).getByRole('columnheader', { name: 'Anno' })).toBeTruthy();
+    await waitFor(() =>
+      expect(mockGetImportMeta).toHaveBeenCalledWith('prog-1', 'imp-1', expect.anything()),
+    );
+    expect(screen.getByRole('option', { name: 'Senza anno' })).toBeTruthy();
+  });
+
+  it('auto-selects the most recent year on first load and hides older-year verifications', async () => {
+    setupDefaults();
+    mockListClasses.mockResolvedValue([cls3a]);
+    mockGetImportMeta.mockImplementation(yearByImport);
+    mockListVerifications.mockResolvedValue([
+      verWith('v1', 'Recente', 'imp-1', 'cls-1'),
+      verWith('v2', 'Storica', 'imp-old', 'cls-1'),
+    ]);
+    render(<VerificationsView />);
+    await screen.findByText('Recente');
+
+    const yearSelect = screen.getByLabelText('Filtro anno scolastico') as HTMLSelectElement;
+    await waitFor(() => expect(yearSelect.value).toBe('2025/2026'));
+    // The older-year verification is filtered out by the auto-selected year.
+    expect(screen.queryByText('Storica')).toBeNull();
+    expect(screen.getByText('Recente')).toBeTruthy();
+  });
+
+  it('combines year, class and text filters client-side', async () => {
+    setupDefaults();
+    mockListClasses.mockResolvedValue([cls3a, cls3b]);
+    mockGetImportMeta.mockImplementation(yearByImport);
+    mockListVerifications.mockResolvedValue([
+      verWith('v1', 'Algebra', 'imp-1', 'cls-1'), // 2025/2026, 3A
+      verWith('v2', 'Geometria', 'imp-1', 'cls-2'), // 2025/2026, 3B
+    ]);
+    render(<VerificationsView />);
+    await screen.findByText('Algebra');
+    // Year auto-selected to 2025/2026 → both visible.
+    await waitFor(() => expect(screen.getByText('Geometria')).toBeTruthy());
+
+    // Class filter → only 3B.
+    fireEvent.change(screen.getByLabelText('Filtro classe'), { target: { value: 'Classe 3B' } });
+    expect(screen.queryByText('Algebra')).toBeNull();
+    expect(screen.getByText('Geometria')).toBeTruthy();
+
+    // Text search on the title, on top of the class filter.
+    fireEvent.change(screen.getByLabelText('Cerca verifica'), { target: { value: 'geom' } });
+    expect(screen.getByText('Geometria')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Cerca verifica'), { target: { value: 'algebra' } });
+    // Algebra is 3A, filtered out by the class filter → no match.
+    expect(screen.getByText(/nessuna verifica corrisponde ai filtri/i)).toBeTruthy();
+
+    // No extra Firestore reads happened while filtering.
+    expect(mockListVerifications).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reset a manual year choice on a later list update', async () => {
+    setupDefaults();
+    mockListClasses.mockResolvedValue([cls3a]);
+    mockGetImportMeta.mockImplementation(yearByImport);
+    mockListVerifications.mockResolvedValue([
+      verWith('v1', 'Recente', 'imp-1', 'cls-1'),
+      verWith('v2', 'Storica', 'imp-old', 'cls-1'),
+    ]);
+    render(<VerificationsView />);
+    await screen.findByText('Recente');
+    const yearSelect = screen.getByLabelText('Filtro anno scolastico') as HTMLSelectElement;
+    await waitFor(() => expect(yearSelect.value).toBe('2025/2026'));
+
+    // Manually widen to all years.
+    fireEvent.change(yearSelect, { target: { value: '__all__' } });
+    expect(screen.getByText('Storica')).toBeTruthy();
+
+    // A later list update (enabling the student PDF re-writes the list state).
+    const pdfButtons = screen.getAllByRole('button', { name: /Abilita PDF studente/i });
+    fireEvent.click(pdfButtons[0]!);
+    await waitFor(() => expect(mockSetVerificationStudentPdfEnabled).toHaveBeenCalled());
+
+    // The manual "all years" choice is preserved (not snapped back to 2025/2026).
+    expect(yearSelect.value).toBe('__all__');
+    expect(screen.getByText('Storica')).toBeTruthy();
+  });
+
+  it('shows a filtered-empty state with a reset button that restores the list', async () => {
+    setupDefaults();
+    mockGetImportMeta.mockImplementation(yearByImport);
+    mockListVerifications.mockResolvedValue([verWith('v1', 'Alfa', 'imp-1', 'cls-1')]);
+    render(<VerificationsView />);
+    await screen.findByText('Alfa');
+
+    fireEvent.change(screen.getByLabelText('Cerca verifica'), {
+      target: { value: 'zzz-nessun-match' },
+    });
+    expect(screen.getByText(/nessuna verifica corrisponde ai filtri/i)).toBeTruthy();
+    expect(screen.queryByText('Alfa')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Azzera filtri' }));
+    expect(screen.getByText('Alfa')).toBeTruthy();
   });
 });

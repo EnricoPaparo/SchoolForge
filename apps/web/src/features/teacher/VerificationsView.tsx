@@ -1,4 +1,4 @@
-import { Fragment, type FormEvent, useEffect, useRef, useState } from 'react';
+import { Fragment, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   activateVerification,
   closeVerification,
@@ -20,7 +20,11 @@ import {
   type SubmissionMonitorItem,
 } from '../repository/verifications/submissionsMonitorService.js';
 import { listClasses, type ClassItem } from '../repository/classes/classesService.js';
-import { listPrograms, type ProgramItem } from '../repository/programs/programsService.js';
+import {
+  getImportMeta,
+  listPrograms,
+  type ProgramItem,
+} from '../repository/programs/programsService.js';
 import { listStudents, type StudentItem } from '../repository/students/studentsService.js';
 import { loadSelectedQuestions } from '../repository/verifications/loadSelectedQuestions.js';
 import { loadSelectedQuestionsWithSolutions } from '../repository/verifications/loadSelectedQuestionsWithSolutions.js';
@@ -54,6 +58,42 @@ function formatTimestamp(ts: unknown): string {
     dateStyle: 'short',
     timeStyle: 'short',
   });
+}
+
+// ── Archive filters (VUX-01) ──────────────────────────────────────────────
+const FILTER_ALL = '__all__';
+const YEAR_NONE = '__none_year__';
+const CLASS_NONE = '__none_class__';
+
+/** Stable cache key for an exact (programId, importId) pair. */
+function importKey(programId: string, importId: string): string {
+  return `${programId}|${importId}`;
+}
+
+/**
+ * The school year for a verification comes from the EXACT import the
+ * verification used (`config.importId`) — never the program's currently
+ * active import — read from the shared `annoByKey` cache. Legacy/missing
+ * metadata (or a verification without programId/importId) yields `null`,
+ * shown as "—" and grouped under "Senza anno".
+ */
+function verificationYear(
+  v: VerificationItem,
+  annoByKey: Map<string, string | null>,
+): string | null {
+  const { programId, importId } = v.config;
+  if (!programId || !importId) return null;
+  return annoByKey.get(importKey(programId, importId)) ?? null;
+}
+
+/** Distinct school years present in the list, most recent first. */
+function distinctYears(list: VerificationItem[], annoByKey: Map<string, string | null>): string[] {
+  const set = new Set<string>();
+  for (const v of list) {
+    const year = verificationYear(v, annoByKey);
+    if (year) set.add(year);
+  }
+  return [...set].sort((a, b) => b.localeCompare(a));
 }
 
 /**
@@ -112,6 +152,18 @@ export function VerificationsView() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [programs, setPrograms] = useState<ProgramItem[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
+
+  // ── Archive: school-year cache + filters (VUX-01) ───────────────
+  // `annoByKey` caches the school year per exact (programId, importId)
+  // pair, so getImportMeta is called once per distinct pair and shared
+  // across every verification that uses it. `annoRequestedRef` dedupes
+  // requests across re-renders (never fetch the same pair twice).
+  const [annoByKey, setAnnoByKey] = useState<Map<string, string | null>>(new Map());
+  const annoRequestedRef = useRef<Set<string>>(new Set());
+  const [yearFilter, setYearFilter] = useState<string>(FILTER_ALL);
+  const yearInitialized = useRef(false);
+  const [classFilter, setClassFilter] = useState<string>(FILTER_ALL);
+  const [search, setSearch] = useState('');
 
   // ── Create form state ───────────────────────────────────────────
   const [newTitle, setNewTitle] = useState('');
@@ -188,6 +240,60 @@ export function VerificationsView() {
   useEffect(() => {
     void loadAll();
   }, []);
+
+  // Resolves the school year for every distinct (programId, importId) pair
+  // in the list — one getImportMeta per pair, cached and shared. No Storage
+  // read, no realtime listener. Missing/legacy metadata resolves to null
+  // (shown as "—" / "Senza anno") and never blocks the list, which renders
+  // immediately while years fill in. The most-recent year is auto-selected
+  // once, after the first resolution, without overriding a manual choice.
+  useEffect(() => {
+    if (!verifications) return;
+    const toFetch: { key: string; programId: string; importId: string }[] = [];
+    for (const v of verifications) {
+      const { programId, importId } = v.config;
+      if (!programId || !importId) continue;
+      const key = importKey(programId, importId);
+      if (annoRequestedRef.current.has(key)) continue;
+      annoRequestedRef.current.add(key);
+      toFetch.push({ key, programId, importId });
+    }
+    if (toFetch.length === 0) {
+      initYearDefault(verifications, annoByKey);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const results = await Promise.all(
+        toFetch.map(async ({ key, programId, importId }) => {
+          try {
+            const meta = await getImportMeta(programId, importId, db);
+            return [key, meta?.annoScolastico ?? null] as const;
+          } catch {
+            return [key, null] as const;
+          }
+        }),
+      );
+      if (cancelled) return;
+      const merged = new Map(annoByKey);
+      for (const [k, val] of results) merged.set(k, val);
+      setAnnoByKey(merged);
+      initYearDefault(verifications, merged);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Driven by `verifications` changing; `annoByKey` is read as a fresh
+    // snapshot inside and per-pair dedup lives in `annoRequestedRef`.
+  }, [verifications]);
+
+  /** Selects the most-recent available year once; never overrides a manual pick. */
+  function initYearDefault(list: VerificationItem[], anno: Map<string, string | null>) {
+    if (yearInitialized.current) return;
+    yearInitialized.current = true;
+    const years = distinctYears(list, anno);
+    if (years.length > 0) setYearFilter(years[0]!);
+  }
 
   // Opens exactly one `submissions` listener, only while a non-draft
   // verification is selected — never globally, never for more than one
@@ -741,6 +847,61 @@ export function VerificationsView() {
     }
   }
 
+  // ── Derived: filter options + filtered/sorted list (VUX-01) ──────
+  const programTitleById = useMemo(() => new Map(programs.map((p) => [p.id, p.title])), [programs]);
+  const classNameById = useMemo(() => new Map(classes.map((c) => [c.id, c.name])), [classes]);
+
+  const verList = verifications ?? [];
+  const yearOptions = useMemo(() => distinctYears(verList, annoByKey), [verList, annoByKey]);
+  const hasNoYear = useMemo(
+    () => verList.some((v) => !verificationYear(v, annoByKey)),
+    [verList, annoByKey],
+  );
+  const classOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const v of verList) {
+      const name = v.config.classId
+        ? (classNameById.get(v.config.classId) ?? v.config.classId)
+        : null;
+      if (name) set.add(name);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [verList, classNameById]);
+  const hasNoClass = useMemo(() => verList.some((v) => !v.config.classId), [verList]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = verList.filter((v) => {
+      const year = verificationYear(v, annoByKey);
+      if (yearFilter === YEAR_NONE && year) return false;
+      if (yearFilter !== FILTER_ALL && yearFilter !== YEAR_NONE && year !== yearFilter)
+        return false;
+
+      const className = v.config.classId
+        ? (classNameById.get(v.config.classId) ?? v.config.classId)
+        : null;
+      if (classFilter === CLASS_NONE && className) return false;
+      if (classFilter !== FILTER_ALL && classFilter !== CLASS_NONE && className !== classFilter)
+        return false;
+
+      if (q) {
+        const programTitleResolved = programTitleById.get(v.config.programId) ?? v.config.programId;
+        // Search text only — never technical ids.
+        const haystack =
+          `${v.config.title} ${programTitleResolved} ${className ?? ''}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+    return sortVerificationsByActivation(list);
+  }, [verList, annoByKey, yearFilter, classFilter, search, programTitleById, classNameById]);
+
+  function resetFilters() {
+    setYearFilter(FILTER_ALL);
+    setClassFilter(FILTER_ALL);
+    setSearch('');
+  }
+
   // Full takeover of this view's content area while a correction is open —
   // same pattern as the student's OnlineExamView taking over StudentShell.
   // No new router: just a local piece of state gating what this component
@@ -770,7 +931,6 @@ export function VerificationsView() {
     );
 
   const canActivate = selectedQuestionIds.size >= 1;
-  const sortedVerifications = sortVerificationsByActivation(verifications);
 
   return (
     <section aria-label="Verifiche" className={styles.container}>
@@ -782,6 +942,46 @@ export function VerificationsView() {
         />
       )}
 
+      {/* ── Archive filters (VUX-01) ── */}
+      {!selectedVer && verifications.length > 0 && (
+        <div className={styles.filters} aria-label="Filtri archivio verifiche">
+          <select
+            aria-label="Filtro anno scolastico"
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+          >
+            <option value={FILTER_ALL}>Tutti gli anni</option>
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+            {hasNoYear && <option value={YEAR_NONE}>Senza anno</option>}
+          </select>
+          <select
+            aria-label="Filtro classe"
+            value={classFilter}
+            onChange={(e) => setClassFilter(e.target.value)}
+          >
+            <option value={FILTER_ALL}>Tutte le classi</option>
+            {classOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+            {hasNoClass && <option value={CLASS_NONE}>Nessuna classe</option>}
+          </select>
+          <input
+            className={styles.filterSearch}
+            type="search"
+            placeholder="Cerca verifica…"
+            aria-label="Cerca verifica"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      )}
+
       {/* ── Verification table ── */}
       {!selectedVer && (
         <div className={styles.tableWrap}>
@@ -790,6 +990,7 @@ export function VerificationsView() {
               <col className={styles.titleColumn} />
               <col className={styles.courseColumn} />
               <col className={styles.classColumn} />
+              <col className={styles.yearColumn} />
               <col className={styles.statusColumn} />
               <col className={styles.exercisesColumn} />
               <col className={styles.actionsColumn} />
@@ -799,6 +1000,7 @@ export function VerificationsView() {
                 <th className={styles.th}>Titolo</th>
                 <th className={styles.th}>Corso</th>
                 <th className={styles.th}>Classe</th>
+                <th className={styles.th}>Anno</th>
                 <th className={styles.th}>Stato</th>
                 <th className={styles.th} title="Esercizi">
                   Es.
@@ -860,6 +1062,7 @@ export function VerificationsView() {
                     ))}
                   </select>
                 </td>
+                <td className={`${styles.td} ${styles.metaCell}`}>—</td>
                 <td className={styles.td}>
                   <span className={`${styles.badge} ${styles.badgeNew}`}>Nuova</span>
                 </td>
@@ -877,7 +1080,7 @@ export function VerificationsView() {
               </tr>
               {createError && (
                 <tr className={styles.createErrorRow}>
-                  <td colSpan={6} className={styles.td}>
+                  <td colSpan={7} className={styles.td}>
                     <p role="alert" className="text-error">
                       {createError}
                     </p>
@@ -886,17 +1089,28 @@ export function VerificationsView() {
               )}
               {verifications.length === 0 && (
                 <tr>
-                  <td colSpan={6} className={styles.emptyTableCell}>
+                  <td colSpan={7} className={styles.emptyTableCell}>
                     Nessuna verifica. Creane una dalla prima riga.
                   </td>
                 </tr>
               )}
-              {sortedVerifications.map((v) => {
+              {verifications.length > 0 && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className={styles.emptyTableCell}>
+                    <p>Nessuna verifica corrisponde ai filtri.</p>
+                    <button type="button" onClick={resetFilters}>
+                      Azzera filtri
+                    </button>
+                  </td>
+                </tr>
+              )}
+              {filtered.map((v) => {
                 const programTitle =
                   programs.find((p) => p.id === v.config.programId)?.title ?? v.config.programId;
                 const className = v.config.classId
                   ? (classes.find((c) => c.id === v.config.classId)?.name ?? v.config.classId)
                   : '—';
+                const annoScolastico = verificationYear(v, annoByKey) ?? '—';
                 const questionCount =
                   v.status === 'draft'
                     ? v.config.questionRefs.length
@@ -905,7 +1119,7 @@ export function VerificationsView() {
                 if (closeConfirmId === v.id) {
                   return (
                     <tr key={v.id} className={styles.confirmRowInline}>
-                      <td colSpan={6} className={styles.td}>
+                      <td colSpan={7} className={styles.td}>
                         <div
                           role="region"
                           aria-label="Conferma chiusura"
@@ -946,7 +1160,7 @@ export function VerificationsView() {
                 if (deleteConfirmId === v.id) {
                   return (
                     <tr key={v.id} className={styles.confirmRowInline}>
-                      <td colSpan={6} className={styles.td}>
+                      <td colSpan={7} className={styles.td}>
                         <div
                           role="region"
                           aria-label="Conferma eliminazione"
@@ -987,7 +1201,7 @@ export function VerificationsView() {
                 if (onlineDisableConfirmId === v.id) {
                   return (
                     <tr key={v.id} className={styles.confirmRowInline}>
-                      <td colSpan={6} className={styles.td}>
+                      <td colSpan={7} className={styles.td}>
                         <div
                           role="region"
                           aria-label="Conferma disattivazione online"
@@ -1028,7 +1242,7 @@ export function VerificationsView() {
                 if (pdfDisableConfirmId === v.id) {
                   return (
                     <tr key={v.id} className={styles.confirmRowInline}>
-                      <td colSpan={6} className={styles.td}>
+                      <td colSpan={7} className={styles.td}>
                         <div
                           role="region"
                           aria-label="Conferma disattivazione PDF studente"
@@ -1087,6 +1301,7 @@ export function VerificationsView() {
                       </td>
                       <td className={`${styles.td} ${styles.metaCell}`}>{programTitle}</td>
                       <td className={`${styles.td} ${styles.metaCell}`}>{className}</td>
+                      <td className={`${styles.td} ${styles.metaCell}`}>{annoScolastico}</td>
                       <td className={styles.td}>
                         <StatusBadge status={v.status} visibility={v.visibility} />
                         {v.status === 'active' && (
@@ -1215,7 +1430,7 @@ export function VerificationsView() {
                     </tr>
                     {pdfErrors[v.id] && (
                       <tr>
-                        <td colSpan={6} className={styles.td}>
+                        <td colSpan={7} className={styles.td}>
                           <p role="alert" className="text-error">
                             {pdfErrors[v.id]}
                           </p>
@@ -1224,7 +1439,7 @@ export function VerificationsView() {
                     )}
                     {solutionsPdfErrors[v.id] && (
                       <tr>
-                        <td colSpan={6} className={styles.td}>
+                        <td colSpan={7} className={styles.td}>
                           <p role="alert" className="text-error">
                             {solutionsPdfErrors[v.id]}
                           </p>
@@ -1233,7 +1448,7 @@ export function VerificationsView() {
                     )}
                     {onlineErrors[v.id] && (
                       <tr>
-                        <td colSpan={6} className={styles.td}>
+                        <td colSpan={7} className={styles.td}>
                           <p role="alert" className="text-error">
                             {onlineErrors[v.id]}
                           </p>
@@ -1242,7 +1457,7 @@ export function VerificationsView() {
                     )}
                     {visibilityErrors[v.id] && (
                       <tr>
-                        <td colSpan={6} className={styles.td}>
+                        <td colSpan={7} className={styles.td}>
                           <p role="alert" className="text-error">
                             {visibilityErrors[v.id]}
                           </p>
@@ -1251,7 +1466,7 @@ export function VerificationsView() {
                     )}
                     {pdfEnabledErrors[v.id] && (
                       <tr>
-                        <td colSpan={6} className={styles.td}>
+                        <td colSpan={7} className={styles.td}>
                           <p role="alert" className="text-error">
                             {pdfEnabledErrors[v.id]}
                           </p>
