@@ -1267,6 +1267,27 @@ describe('CourseWorkspace — mobile progressive navigation (DUX-04C)', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Lezione A' })).toBeTruthy());
   });
 
+  it('loads the lesson content on mobile: same storageRef, fetched exactly once (MOB-01)', async () => {
+    setViewport(true);
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Lezione A' })]);
+    mockFetchLessonContent.mockResolvedValue('# Titolo\n\nCorpo della lezione mobile.');
+    render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
+
+    await screen.findByRole('table');
+    // Drill the mobile-only progressive path: course → UDA → lesson.
+    fireEvent.click(screen.getByRole('button', { name: 'Apri UDA uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apri lezione Lezione A' }));
+
+    // Content actually renders (not the generic error), and the fetch used the
+    // lesson's own storageRef exactly once — identical to the desktop path.
+    await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
+    expect(screen.getByTestId('md').textContent).toContain('Corpo della lezione mobile.');
+    expect(screen.queryByText(/impossibile caricare il contenuto/i)).toBeNull();
+    expect(mockFetchLessonContent).toHaveBeenCalledTimes(1);
+    expect(mockFetchLessonContent).toHaveBeenCalledWith('ref/uda-01-reti/l1.md', expect.anything());
+  });
+
   it('steps back exactly one level: lesson → UDA → course → library', async () => {
     const onBack = vi.fn();
     renderMobile(onBack);
