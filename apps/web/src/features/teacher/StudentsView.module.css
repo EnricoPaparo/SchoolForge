@@ -6,8 +6,9 @@
 }
 
 .tabs {
-  display: inline-flex;
-  align-self: flex-start;
+  display: flex;
+  align-self: stretch;
+  width: 100%;
   gap: 0.25rem;
   padding: 0.25rem;
   border: 1px solid var(--color-border);
@@ -21,7 +22,8 @@
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-  min-width: 7rem;
+  flex: 1;
+  min-width: 0;
   border-color: transparent;
   background: transparent;
   color: var(--color-text-muted);

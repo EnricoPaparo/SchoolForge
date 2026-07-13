@@ -8,12 +8,12 @@ import {
 import { db, storage } from '../../lib/firebase.js';
 import {
   IconBookOpen,
-  IconChevronLeft,
-  IconChevronRight,
-  IconCircleCheck,
   IconCircleQuestion,
+  IconFileCheck,
   IconFileText,
   IconLayers,
+  IconPanelLeft,
+  IconTriangleAlert,
 } from '../../components/icons.js';
 import type { CourseCard } from '../repository/programs/courseLibrary.js';
 import {
@@ -254,7 +254,7 @@ export function CourseWorkspace({
 
   const [selection, setSelection] = useState<Selection>({ kind: 'course' });
   const [collapsedUdas, setCollapsedUdas] = useState<Set<string>>(new Set());
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [lessonFocusMode, setLessonFocusMode] = useState(false);
 
   // Lesson content is loaded on demand, only when a lesson is selected.
   const [lessonContent, setLessonContent] = useState<string | null>(null);
@@ -467,8 +467,15 @@ export function CourseWorkspace({
     setMenuOpen(false);
     setOrganizing(false);
     setReorderError(null);
-    if (selection.kind !== 'lesson') currentLessonRef.current = null;
+    if (selection.kind !== 'lesson') {
+      currentLessonRef.current = null;
+      setLessonFocusMode(false);
+    }
   }, [selection]);
+
+  useEffect(() => {
+    if (isMobile) setLessonFocusMode(false);
+  }, [isMobile]);
 
   function toggleUdaCollapsed(udaDir: string) {
     setCollapsedUdas((prev) => {
@@ -1066,9 +1073,8 @@ export function CourseWorkspace({
     ? tree.lessons.reduce((s, l) => s + (l.questionCount ?? 0), 0)
     : card.questionsTotal;
 
-  // Back button: while organizing, it first leaves Organize (never navigates
-  // away with residual state). On mobile it steps up exactly one level; on
-  // desktop it always returns to the library (the sidebar handles the rest).
+  // Back keeps its navigation meaning even while organizing. The selection
+  // effect clears Organize, while "Fine" remains the explicit exit control.
   function goUpOneLevel() {
     if (selection.kind === 'lesson' && selectedLesson) {
       const udaDir = selectedLesson.udaDir;
@@ -1079,12 +1085,8 @@ export function CourseWorkspace({
       guardedNav(onBack);
     }
   }
-  const backLabel = organizing
-    ? 'Esci da Organizza'
-    : isMobile && selection.kind !== 'course'
-      ? '← Indietro'
-      : '← Libreria';
-  const backRun = organizing ? exitOrganize : isMobile ? goUpOneLevel : () => guardedNav(onBack);
+  const backLabel = isMobile && selection.kind !== 'course' ? '← Indietro' : '← Libreria';
+  const backRun = isMobile ? goUpOneLevel : () => guardedNav(onBack);
 
   return (
     <section aria-label={`Corso — ${card.title}`} className={styles.workspace}>
@@ -1132,21 +1134,9 @@ export function CourseWorkspace({
         </div>
       </div>
 
-      <div
-        className={`${styles.body}${sidebarCollapsed && !isMobile ? ` ${styles.bodyCollapsed}` : ''}`}
-      >
+      <div className={`${styles.body}${lessonFocusMode ? ` ${styles.bodyFocus}` : ''}`}>
         {/* Mobile: no sidebar at all — single-level progressive navigation. */}
-        {isMobile ? null : sidebarCollapsed ? (
-          <button
-            type="button"
-            className={styles.sidebarExpand}
-            aria-label="Espandi struttura corso"
-            title="Espandi struttura corso"
-            onClick={() => setSidebarCollapsed(false)}
-          >
-            <IconChevronRight size={16} />
-          </button>
-        ) : (
+        {isMobile || lessonFocusMode ? null : (
           <nav className={styles.sidebar} aria-label="Struttura corso">
             <div className={styles.sidebarHead}>
               <button
@@ -1157,15 +1147,6 @@ export function CourseWorkspace({
               >
                 <IconBookOpen size={15} />
                 <span>Panoramica corso</span>
-              </button>
-              <button
-                type="button"
-                className={styles.collapseBtn}
-                aria-label="Comprimi struttura corso"
-                title="Comprimi struttura corso"
-                onClick={() => setSidebarCollapsed(true)}
-              >
-                <IconChevronLeft size={16} />
               </button>
             </div>
 
@@ -1229,19 +1210,28 @@ export function CourseWorkspace({
                                   aria-current={active ? 'true' : undefined}
                                   onClick={() => guardedNav(() => void selectLesson(lesson))}
                                 >
-                                  <IconFileText size={14} />
+                                  <span
+                                    className={
+                                      lesson.completed
+                                        ? styles.lessonCompletedIcon
+                                        : styles.lessonPendingIcon
+                                    }
+                                    role="img"
+                                    aria-label={
+                                      lesson.completed ? 'Lezione svolta' : 'Lezione da svolgere'
+                                    }
+                                    title={
+                                      lesson.completed ? 'Lezione svolta' : 'Lezione da svolgere'
+                                    }
+                                  >
+                                    {lesson.completed ? (
+                                      <IconFileCheck size={14} />
+                                    ) : (
+                                      <IconFileText size={14} />
+                                    )}
+                                  </span>
                                   <span className={styles.lessonBtnText}>{title}</span>
                                   <span className={styles.lessonStatuses}>
-                                    {lesson.completed && (
-                                      <span
-                                        className={styles.doneStatus}
-                                        role="img"
-                                        aria-label="Lezione svolta"
-                                        title="Lezione svolta"
-                                      >
-                                        <IconCircleCheck size={14} />
-                                      </span>
-                                    )}
                                     <span
                                       className={`${styles.poolStatus} ${
                                         lesson.poolStatus === 'valid'
@@ -1254,7 +1244,11 @@ export function CourseWorkspace({
                                       aria-label={poolStatusText(lesson.poolStatus)}
                                       title={poolStatusText(lesson.poolStatus)}
                                     >
-                                      <IconCircleQuestion size={14} />
+                                      {lesson.poolStatus === 'invalid' ? (
+                                        <IconTriangleAlert size={14} />
+                                      ) : (
+                                        <IconCircleQuestion size={14} />
+                                      )}
                                     </span>
                                   </span>
                                 </button>
@@ -1498,7 +1492,17 @@ export function CourseWorkspace({
               >
                 {selectedLesson.completed ? 'Segna non svolta' : 'Segna svolta'}
               </button>
-              <div className={styles.menuWrap}>
+              {!isMobile && (
+                <button
+                  type="button"
+                  onClick={() => setLessonFocusMode((current) => !current)}
+                  aria-pressed={lessonFocusMode}
+                >
+                  <IconPanelLeft size={15} />
+                  {lessonFocusMode ? 'Mostra struttura' : 'Nascondi struttura'}
+                </button>
+              )}
+              <div className={`${styles.menuWrap} ${styles.lessonMenuWrap}`}>
                 <button
                   type="button"
                   ref={menuTriggerRef}
@@ -2157,7 +2161,7 @@ function LessonDetail({
             onDirtyChange={onInfoDirtyChange}
           />
         ) : (
-          activeTab === 'informazioni' && <LessonInfo lesson={lesson} metadata={metadata} />
+          activeTab === 'informazioni' && <LessonInfo metadata={metadata} />
         )}
       </div>
     </div>
@@ -2166,7 +2170,7 @@ function LessonDetail({
 
 // ── Lesson "Informazioni" tab: only metadata actually present ────────────────
 
-function LessonInfo({ lesson, metadata }: { lesson: LessonItem; metadata: LessonMetadata }) {
+function LessonInfo({ metadata }: { metadata: LessonMetadata }) {
   const hasAny =
     Boolean(metadata.titolo) ||
     Boolean(metadata.sottotitolo) ||
@@ -2212,14 +2216,6 @@ function LessonInfo({ lesson, metadata }: { lesson: LessonItem; metadata: Lesson
           )}
         </dl>
       )}
-
-      <details className={styles.infoTechnical}>
-        <summary>Dettagli tecnici</summary>
-        <dl className={styles.infoList}>
-          <dt>File</dt>
-          <dd>{lesson.path}</dd>
-        </dl>
-      </details>
     </div>
   );
 }

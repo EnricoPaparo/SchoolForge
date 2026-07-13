@@ -135,6 +135,18 @@ export function IconFileText(props: IconProps = {}) {
   );
 }
 
+/** File with check — completed lesson */
+export function IconFileCheck(props: IconProps = {}) {
+  return icon(
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <polyline points="8 15 10.5 17.5 16 12" />
+    </>,
+    props,
+  );
+}
+
 /** Stacked layers — UDA/group in the didactic tree */
 export function IconLayers(props: IconProps = {}) {
   return icon(
@@ -165,6 +177,29 @@ export function IconCircleCheck(props: IconProps = {}) {
     <>
       <circle cx="12" cy="12" r="10" />
       <polyline points="8 12 11 15 16 9" />
+    </>,
+    props,
+  );
+}
+
+/** Warning triangle — invalid question pool */
+export function IconTriangleAlert(props: IconProps = {}) {
+  return icon(
+    <>
+      <path d="M10.3 2.9 1.8 17a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 2.9a2 2 0 0 0-3.4 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </>,
+    props,
+  );
+}
+
+/** Panel with left rail — lesson focus mode */
+export function IconPanelLeft(props: IconProps = {}) {
+  return icon(
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="9" y1="3" x2="9" y2="21" />
     </>,
     props,
   );
