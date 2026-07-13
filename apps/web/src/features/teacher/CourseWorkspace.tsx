@@ -51,6 +51,11 @@ import {
 } from '../repository/validation/lessonMetadata.js';
 import type { LessonMetadata } from '../repository/validation/types.js';
 import { fetchLessonContent } from './lessonContent.js';
+import {
+  describeStorageError,
+  storageErrorDetailLines,
+  type StorageErrorDetails,
+} from './storageErrorDetails.js';
 import { downloadLessonPdf } from './lessonPdf.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { QuestionPoolEditor, type PoolCountStatus } from './QuestionPoolEditor.js';
@@ -262,6 +267,9 @@ export function CourseWorkspace({
   const [lessonMetadata, setLessonMetadata] = useState<LessonMetadata>(EMPTY_LESSON_METADATA);
   const [lessonLoading, setLessonLoading] = useState(false);
   const [lessonError, setLessonError] = useState<string | null>(null);
+  // MOB-01B: non-sensitive diagnostics for the last failed content read, shown
+  // in an expandable "Dettagli tecnici" panel next to a "Riprova" button.
+  const [lessonErrorDetails, setLessonErrorDetails] = useState<StorageErrorDetails | null>(null);
   // Monotonic id of the most recent lesson selection: only the request that
   // matches it may write the lesson panel. Guards against a slower earlier
   // fetch resolving after a newer one (out-of-order) and against a course
@@ -434,22 +442,54 @@ export function CourseWorkspace({
     setInfoStatus(NO_STATUS);
     setCompletedError(null);
     setPdfError(null);
+    await loadLessonContent(lesson, requestId);
+  }
+
+  // Core content fetch, shared by the initial lesson selection and "Riprova".
+  // The `requestId` is the monotonic guard: only the write for the most recent
+  // request lands, so a stale/out-of-order fetch (or one resolving after the
+  // teacher moved on) can never overwrite the panel.
+  async function loadLessonContent(lesson: LessonItem, requestId: number) {
     setLessonContent(null);
     setLessonMetadata(EMPTY_LESSON_METADATA);
     setLessonError(null);
+    setLessonErrorDetails(null);
     setLessonLoading(true);
+    // Wall-clock start, so the diagnostics can report how long Brave hung
+    // before the failure (a long elapsed ≈ Firebase's own retry window).
+    const startedAt = Date.now();
     try {
       const raw = await fetchLessonContent(lesson.storageRef, storage);
       const { metadata, body } = parseLessonMetadata(raw);
       if (lessonRequestRef.current !== requestId) return; // superseded
       setLessonMetadata(metadata);
       setLessonContent(body);
-    } catch {
+    } catch (err) {
       if (lessonRequestRef.current !== requestId) return; // superseded
+      // Preserve the ORIGINAL error (Firebase StorageError) — classify it into
+      // whitelisted, non-sensitive fields for the UI, and log a single
+      // structured line per failed attempt (console only, never to Firebase).
+      const details = describeStorageError(err, {
+        bucket: storage.app?.options?.storageBucket ?? null,
+        elapsedMs: Date.now() - startedAt,
+      });
+      console.error('[lesson-content] load failed', {
+        storageRef: lesson.storageRef,
+        ...details,
+      });
       setLessonError('Impossibile caricare il contenuto della lezione.');
+      setLessonErrorDetails(details);
     } finally {
       if (lessonRequestRef.current === requestId) setLessonLoading(false);
     }
+  }
+
+  // "Riprova": exactly one new read for the current lesson, guarded by a fresh
+  // request id so it also invalidates any earlier in-flight fetch.
+  function retryLessonContent(lesson: LessonItem) {
+    const requestId = ++lessonRequestRef.current;
+    currentLessonRef.current = lesson.id;
+    void loadLessonContent(lesson, requestId);
   }
 
   // Close the toolbar menu on any outside click, and whenever the selection
@@ -1602,6 +1642,8 @@ export function CourseWorkspace({
               content={lessonContent}
               loading={lessonLoading}
               error={lessonError}
+              errorDetails={lessonErrorDetails}
+              onRetryContent={() => retryLessonContent(selectedLesson)}
               activeTab={activeTab}
               onSelectTab={selectTab}
               domandeVisited={domandeVisited}
@@ -2049,6 +2091,8 @@ function LessonDetail({
   content,
   loading,
   error,
+  errorDetails,
+  onRetryContent,
   activeTab,
   onSelectTab,
   domandeVisited,
@@ -2073,6 +2117,8 @@ function LessonDetail({
   content: string | null;
   loading: boolean;
   error: string | null;
+  errorDetails: StorageErrorDetails | null;
+  onRetryContent: () => void;
   activeTab: LessonTab;
   onSelectTab: (tab: LessonTab) => void;
   domandeVisited: boolean;
@@ -2167,9 +2213,27 @@ function LessonDetail({
                 </p>
               )}
               {error && (
-                <p role="alert" className="text-error">
-                  {error}
-                </p>
+                <div role="alert" className={styles.lessonErrorBox}>
+                  <p className="text-error">{error}</p>
+                  <div className={styles.lessonErrorActions}>
+                    <button type="button" className="btn-secondary" onClick={onRetryContent}>
+                      Riprova
+                    </button>
+                  </div>
+                  {errorDetails && (
+                    <details className={styles.lessonErrorDetails}>
+                      <summary>Dettagli tecnici</summary>
+                      <dl className={styles.lessonErrorDl}>
+                        {storageErrorDetailLines(errorDetails).map((row) => (
+                          <div key={row.label}>
+                            <dt>{row.label}</dt>
+                            <dd>{row.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </details>
+                  )}
+                </div>
               )}
               {!loading && !error && content !== null && content.trim() === '' && (
                 <p className="state-empty">Nessun contenuto disponibile per questa lezione.</p>

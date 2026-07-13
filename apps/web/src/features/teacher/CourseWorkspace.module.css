@@ -547,3 +547,40 @@
     width: 100%;
   }
 }
+
+/* MOB-01B — lesson content load failure: message + Riprova + technical details. */
+.lessonErrorBox {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+.lessonErrorActions {
+  display: flex;
+  gap: 0.5rem;
+}
+.lessonErrorDetails {
+  width: 100%;
+  font-size: 0.85rem;
+}
+.lessonErrorDetails > summary {
+  cursor: pointer;
+  color: var(--color-text-muted, #64748b);
+}
+.lessonErrorDl {
+  margin: 0.5rem 0 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.75rem;
+}
+.lessonErrorDl > div {
+  display: contents;
+}
+.lessonErrorDl dt {
+  font-weight: 600;
+  color: var(--color-text-muted, #64748b);
+}
+.lessonErrorDl dd {
+  margin: 0;
+  word-break: break-word;
+}

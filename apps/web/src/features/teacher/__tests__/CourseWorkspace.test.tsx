@@ -331,6 +331,91 @@ describe('CourseWorkspace — selection', () => {
   });
 });
 
+describe('CourseWorkspace — content load diagnostics + retry (MOB-01B)', () => {
+  function storageErr() {
+    return Object.assign(new Error('blocked'), { code: 'storage/unknown', status: 0 });
+  }
+
+  it('shows non-sensitive technical details on failure', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Rotta' })]);
+    mockFetchLessonContent.mockRejectedValue(storageErr());
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderWorkspace();
+
+    await expandUda();
+    fireEvent.click(screen.getByRole('button', { name: 'Rotta' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Riprova' })).toBeTruthy());
+
+    // Details are behind a disclosure and carry only whitelisted fields.
+    fireEvent.click(screen.getByText('Dettagli tecnici'));
+    expect(screen.getByText('storage/unknown')).toBeTruthy();
+    expect(screen.getByText('Codice')).toBeTruthy();
+    expect(screen.getByText('Stato HTTP')).toBeTruthy();
+
+    // Exactly one structured console line per failed attempt; nothing written
+    // to Firebase (no service mock was invoked beyond the content fetch).
+    expect(errSpy).toHaveBeenCalledTimes(1);
+    expect(errSpy.mock.calls[0][0]).toBe('[lesson-content] load failed');
+    errSpy.mockRestore();
+  });
+
+  it('Riprova performs exactly one new read and renders content on success', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Rotta' })]);
+    mockFetchLessonContent
+      .mockRejectedValueOnce(storageErr())
+      .mockResolvedValueOnce('# Ok\n\nContenuto recuperato.');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderWorkspace();
+
+    await expandUda();
+    fireEvent.click(screen.getByRole('button', { name: 'Rotta' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Riprova' })).toBeTruthy());
+    expect(mockFetchLessonContent).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Riprova' }));
+    await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
+    // One new read only, on the same storageRef.
+    expect(mockFetchLessonContent).toHaveBeenCalledTimes(2);
+    expect(mockFetchLessonContent).toHaveBeenLastCalledWith(
+      'ref/uda-01-reti/l1.md',
+      expect.anything(),
+    );
+    expect(screen.getByTestId('md').textContent).toContain('Contenuto recuperato.');
+    expect(screen.queryByRole('button', { name: 'Riprova' })).toBeNull();
+  });
+
+  it('a superseded earlier read never overwrites a newer selection', async () => {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Rotta' })]);
+    let resolveRetry!: (v: string) => void;
+    let resolveNewer!: (v: string) => void;
+    mockFetchLessonContent
+      .mockRejectedValueOnce(storageErr())
+      .mockImplementationOnce(() => new Promise<string>((r) => (resolveRetry = r)))
+      .mockImplementationOnce(() => new Promise<string>((r) => (resolveNewer = r)));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderWorkspace();
+
+    await expandUda();
+    fireEvent.click(screen.getByRole('button', { name: 'Rotta' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Riprova' })).toBeTruthy());
+
+    // Retry (read #2, still pending), then re-select the lesson from the
+    // sidebar (read #3) which supersedes it.
+    fireEvent.click(screen.getByRole('button', { name: 'Riprova' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rotta' }));
+
+    resolveNewer('# Tre\n\nmeta-nuovo.');
+    await waitFor(() => expect(screen.getByTestId('md').textContent).toContain('meta-nuovo'));
+    // The obsolete retry resolves last and must not overwrite the panel.
+    resolveRetry('# Due\n\nmeta-obsoleto.');
+    await waitFor(() => expect(screen.getByTestId('md').textContent).toContain('meta-nuovo'));
+    expect(screen.getByTestId('md').textContent).not.toContain('meta-obsoleto');
+  });
+});
+
 describe('CourseWorkspace — sidebar and semantics', () => {
   it('offers lesson focus mode without a global sidebar collapse control', async () => {
     mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
