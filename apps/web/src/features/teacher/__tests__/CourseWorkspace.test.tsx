@@ -214,10 +214,7 @@ describe('CourseWorkspace — loading', () => {
     ]);
     renderWorkspace();
 
-    await waitFor(() =>
-      expect(screen.getByText('Panoramica corso', { selector: 'p' })).toBeTruthy(),
-    );
-    const table = screen.getByRole('table');
+    const table = await screen.findByRole('table');
     // uda-01 has 1/2 lessons done.
     expect(within(table).getByText('1/2')).toBeTruthy();
   });
@@ -326,7 +323,7 @@ describe('CourseWorkspace — sidebar and semantics', () => {
     expect(screen.queryByRole('navigation', { name: 'Struttura corso' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'uda-01-reti' })).toBeNull();
     // Content (course overview) is still present, now occupying the row.
-    expect(screen.getByText('Panoramica corso', { selector: 'p' })).toBeTruthy();
+    expect(screen.getByRole('table')).toBeTruthy();
 
     // Expand again restores the structure.
     fireEvent.click(screen.getByRole('button', { name: /espandi struttura corso/i }));
@@ -637,7 +634,7 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     await waitFor(() => expect(mockDeleteUda).toHaveBeenCalledOnce());
     // UDA gone from the sidebar; back on the course overview.
     await waitFor(() => expect(screen.queryByRole('button', { name: 'uda-01-reti' })).toBeNull());
-    expect(screen.getByText('Panoramica corso', { selector: 'p' })).toBeTruthy();
+    expect(screen.getAllByText('Nessuna UDA in questo corso.')).toHaveLength(2);
   });
 
   it('shows the verifications blockers and keeps the UDA when deletion is blocked', async () => {
@@ -1152,9 +1149,7 @@ describe('CourseWorkspace — mobile progressive navigation (DUX-04C)', () => {
 
   it('hides the desktop sidebar and drills course → UDA → lesson', async () => {
     renderMobile();
-    await waitFor(() =>
-      expect(screen.getByText('Panoramica corso', { selector: 'p' })).toBeTruthy(),
-    );
+    await screen.findByRole('table');
     // No desktop sidebar on mobile.
     expect(screen.queryByRole('navigation', { name: 'Struttura corso' })).toBeNull();
 
@@ -1167,9 +1162,7 @@ describe('CourseWorkspace — mobile progressive navigation (DUX-04C)', () => {
   it('steps back exactly one level: lesson → UDA → course → library', async () => {
     const onBack = vi.fn();
     renderMobile(onBack);
-    await waitFor(() =>
-      expect(screen.getByText('Panoramica corso', { selector: 'p' })).toBeTruthy(),
-    );
+    await screen.findByRole('table');
     fireEvent.click(screen.getByRole('button', { name: 'Apri UDA uda-01-reti' }));
     fireEvent.click(screen.getByRole('button', { name: 'Apri lezione Lezione A' }));
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Lezione A' })).toBeTruthy());
@@ -1177,7 +1170,7 @@ describe('CourseWorkspace — mobile progressive navigation (DUX-04C)', () => {
     fireEvent.click(screen.getByRole('button', { name: '← Indietro' }));
     expect(screen.getByRole('heading', { name: 'uda-01-reti' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '← Indietro' }));
-    expect(screen.getByText('Panoramica corso', { selector: 'p' })).toBeTruthy();
+    expect(screen.getByRole('table')).toBeTruthy();
     // At the course level the button returns to the library.
     fireEvent.click(screen.getByRole('button', { name: '← Libreria' }));
     expect(onBack).toHaveBeenCalledOnce();

@@ -239,7 +239,7 @@ describe('DidatticaView — create and import refresh the library', () => {
     renderView();
 
     await waitFor(() => expect(screen.getByText('Esistente')).toBeTruthy());
-    fireEvent.click(screen.getByText('+ Nuovo corso'));
+    fireEvent.click(screen.getByRole('button', { name: 'Nuovo corso' }));
     fireEvent.change(screen.getByLabelText('Titolo del corso'), {
       target: { value: 'Nuovo Corso' },
     });

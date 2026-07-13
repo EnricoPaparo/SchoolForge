@@ -181,3 +181,26 @@ export function IconDownload(props: IconProps = {}) {
     props,
   );
 }
+
+/** Magnifying glass — search fields */
+export function IconSearch(props: IconProps = {}) {
+  return icon(
+    <>
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </>,
+    props,
+  );
+}
+
+/** Upload arrow from tray — import actions */
+export function IconUpload(props: IconProps = {}) {
+  return icon(
+    <>
+      <path d="M12 21V9" />
+      <polyline points="7 14 12 9 17 14" />
+      <path d="M5 3h14a2 2 0 0 1 2 2v2M3 7V5a2 2 0 0 1 2-2" />
+    </>,
+    props,
+  );
+}
