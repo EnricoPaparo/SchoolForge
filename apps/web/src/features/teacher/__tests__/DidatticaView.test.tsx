@@ -25,6 +25,12 @@ vi.mock('../../repository/import/importRepository.js', () => ({
 vi.mock('../../repository/import/readZipFile.js', () => ({
   readZipFile: (...a: unknown[]) => mockReadZipFile(...a),
 }));
+const mockMigrationComplete = vi.fn();
+const mockBackfill = vi.fn();
+vi.mock('../../repository/programs/publicLessonsBackfillService.js', () => ({
+  isPublicLessonsMigrationComplete: (...a: unknown[]) => mockMigrationComplete(...a),
+  backfillPublicLessonsContent: (...a: unknown[]) => mockBackfill(...a),
+}));
 // The workspace (DUX-02) has its own dedicated test; here we only assert
 // Didattica's two-level navigation (library ⇄ workspace) and that returning
 // preserves the library's filters — so a light stub is enough.
@@ -42,6 +48,8 @@ vi.mock('../CourseWorkspace.js', () => ({
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: migration already complete → maintenance notice hidden.
+  mockMigrationComplete.mockResolvedValue(true);
 });
 
 function card(overrides: Partial<CourseCard> = {}): CourseCard {
@@ -296,5 +304,32 @@ describe('DidatticaView — create and import refresh the library', () => {
     await waitFor(() => expect(screen.getByText(/validazione fallita/i)).toBeTruthy());
     // Dialog stays open (the title field is still present).
     expect(screen.getByLabelText('File ZIP del corso')).toBeTruthy();
+  });
+});
+
+describe('DidatticaView — publicLessons backfill notice (DUX-04D)', () => {
+  it('hides the notice when the migration is already complete', async () => {
+    mockMigrationComplete.mockResolvedValue(true);
+    mockLoadCourseLibrary.mockResolvedValue([card()]);
+    renderView();
+    await waitFor(() => expect(screen.getByText('Sistemi e Reti')).toBeTruthy());
+    expect(screen.queryByText(/proiezioni lezione legacy/i)).toBeNull();
+  });
+
+  it('runs a pending backfill and keeps its final summary visible', async () => {
+    mockMigrationComplete.mockResolvedValue(false);
+    mockBackfill.mockResolvedValue({ analyzed: 3, migrated: 2, skipped: 1, failed: [] });
+    mockLoadCourseLibrary.mockResolvedValue([card()]);
+    renderView();
+
+    await waitFor(() => expect(screen.getByText(/proiezioni lezione legacy/i)).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /sincronizza proiezioni legacy/i }));
+
+    await waitFor(() => expect(mockBackfill).toHaveBeenCalledOnce());
+    // On success the operational prompt disappears, while the result remains visible.
+    await waitFor(() => expect(screen.queryByText(/proiezioni lezione legacy/i)).toBeNull());
+    expect(
+      screen.getByText('Analizzate: 3 · Migrate: 2 · Già sincronizzate: 1 · Fallite: 0'),
+    ).toBeTruthy();
   });
 });

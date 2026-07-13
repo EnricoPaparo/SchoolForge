@@ -65,7 +65,7 @@ Nessun indice esiste per `verifications`/`programs`/`classes`/`students` filtrat
 - Nessun listener in RoleGate stesso. `StudentShell` apre poi 1× **L** persistente su `settings/studentAccess` (Modalità verifica), con cleanup su unmount confermato.
 - **Totale worst-case per sessione**: 1–3 R + 0–1 W. Nessuna query di collezione.
 
-### Apertura portale docente (`VerificationsView`, `LessonsView`, `StudentsView`, ecc.)
+### Apertura portale docente (`VerificationsView`, `DidatticaView`/`CourseWorkspace`, `StudentsView`, ecc.)
 - Ogni vista principale chiama la propria `list*` **senza `limit()`/paginazione**: `listVerifications` (`getDocs(collection(db,'verifications'))`, poi `.filter(ownerUid)` client-side — filtro ridondante nel modello single-owner attuale, dato che l'intera collezione appartiene già a quel docente), `listPrograms`, `listClasses`, `listStudents` — stesso pattern in tutte e quattro.
 - Costo: 1 read per documento nell'intera collezione, che nel modello attuale coincide con "tutti i documenti del docente" — il costo cresce con lo storico accumulato nel tempo, non con l'uso di una singola sessione. Vedi PERF-01/PERF-02.
 

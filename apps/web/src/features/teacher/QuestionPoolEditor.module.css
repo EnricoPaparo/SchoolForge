@@ -113,7 +113,7 @@
 
 /* Primary/success/danger coloring reuses the global button-color classes
    (btn-primary / btn-success / btn-danger from index.css) instead of
-   duplicating them here — .btn only supplies DomandeView's layout/sizing. */
+   duplicating them here — .btn only supplies QuestionPoolEditor's layout/sizing. */
 .btnSecondary {
   background: var(--color-surface-subtle);
 }

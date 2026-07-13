@@ -1,20 +1,20 @@
 # Didattica — Roadmap UX (DUX)
 
-**Versione:** 1.0
-**Stato:** DUX-00 — specifica approvata, prototipo statico allegato. **Nessuna implementazione applicativa.**
+**Versione:** 1.1
+**Stato:** DUX-00→DUX-04D implementati; Gate di parità superato e viste legacy rimosse. DUX-05 resta da completare.
 **Dipendenze:** nessuna dipendenza tecnica da M4 (M4-03/M4-04 continuano in parallelo); riusa esclusivamente backend/service/dati già esistenti di RE (Repository Editor) e QE (Question Editor).
 
 ---
 
-## 1. Problema attuale
+## 1. Problema di partenza (prima di DUX)
 
-Il docente lavora oggi su tre sezioni separate del `TeacherShell` che sono in realtà tre viste diverse sullo **stesso corso**:
+Prima dell'implementazione DUX, il docente lavorava su tre sezioni separate del `TeacherShell` che erano tre viste diverse sullo **stesso corso**:
 
 - **Corsi** (`ProgramsView`) — creazione/import ZIP/export/visibilità classi/programma svolto, con un albero corso→UDA→lezione minimale solo per completamento/metadata UDA.
 - **Lezioni** (`LessonsView`) — stesso albero corso→UDA→lezione, riproposto da zero, per leggere/modificare contenuto Markdown e front matter della lezione.
 - **Domande** (`DomandeView`) — di nuovo lo stesso albero corso→UDA→lezione, riproposto una terza volta, per editare il pool di domande della lezione.
 
-Conseguenze concrete, verificabili nel codice attuale:
+Conseguenze concrete rilevate nel codice di partenza:
 
 - Lo stesso albero di navigazione (programma → UDA → lezione) è implementato e mantenuto **tre volte**, con tre stati di espansione (`expandedCourses`/`expandedUdas`) indipendenti — aprire una lezione in "Lezioni" non lascia alcuna traccia se il docente passa a "Domande" per la stessa lezione.
 - Non esiste un concetto di "sto lavorando su questo corso": il docente deve ricostruire il contesto (quale UDA, quale lezione) da capo a ogni cambio di tab.
@@ -63,7 +63,7 @@ Corsi/Lezioni/Domande **non spariscono immediatamente**: la migrazione (§16) è
 Tre livelli di profondità, mai di più:
 
 1. **Libreria** (`Didattica` cliccata dalla nav) — griglia di card corso.
-2. **Workspace corso** (click su una card) — intestazione corso + sidebar (UDA/lezioni) + area contenuto principale. La sidebar è sempre visibile su desktop, non collassabile (a differenza dell'attuale `LessonsView`/`DomandeView`, dove il collapse esiste solo per compattare l'albero, non per nasconderlo strutturalmente — in Didattica la sidebar resta un pannello fisso di layout).
+2. **Workspace corso** (click su una card) — intestazione corso + sidebar (UDA/lezioni) + area contenuto principale. Su desktop la sidebar condivisa può essere collassata per ampliare il contenuto; su mobile è sostituita dalla navigazione a livelli definita in DUX-04C.
 3. **Dettaglio** all'interno del workspace: selezione UDA (tabella lezioni) o selezione lezione (schede Contenuto/Domande/Informazioni). Questo terzo livello vive nell'area contenuto principale, la sidebar resta ferma.
 
 Un breadcrumb testuale in testa all'area contenuto (`Nome corso / UDA 3 / Lezione 2`) rende sempre esplicito il livello corrente; click su un segmento del breadcrumb torna a quel livello, senza uscire dal workspace.
@@ -91,7 +91,7 @@ Ogni card mostra **solo**:
 - lezioni svolte / totali (derivato da `LessonItem.completed`, già disponibile per programma);
 - numero domande (derivato dal conteggio già presente in `questionIndex` per import, nessuna nuova lettura);
 - barra di avanzamento discreta (percentuale lezioni svolte — un filo colorato sottile, non un widget invadente);
-- menu contestuale `⋯` (rinomina, import ZIP, export ZIP, programma svolto, visibilità classi, elimina — le stesse azioni già presenti in `ProgramsView` oggi, spostate dal corpo espanso al menu della card).
+- menu contestuale `⋯` (rinomina, import ZIP, export ZIP, programma svolto, visibilità classi, elimina — le stesse azioni della precedente `ProgramsView`, spostate dal corpo espanso al menu della card).
 
 Nessun'altra icona, badge o etichetta sulla card: la superficie resta scannerizzabile a colpo d'occhio anche con 15-20 corsi in libreria.
 
@@ -111,15 +111,15 @@ Riepilogo compatto del corso (le stesse metriche della card, qui più estese: da
 
 ### 8.2 Selezione UDA
 
-Metadata UDA (descrizione, competenze, obiettivi — stesso form di editing già presente in `ProgramsView`) + tabella lezioni dell'UDA con: numero, titolo, stato "svolta" (checkbox, stesso comportamento di `setLessonCompleted` oggi), indicatore presenza/validità pool (§13).
+Metadata UDA (descrizione, competenze, obiettivi — form derivato dalla precedente `ProgramsView`) + tabella lezioni dell'UDA con: numero, titolo, stato "svolta" (checkbox, comportamento di `setLessonCompleted`), indicatore presenza/validità pool (§13).
 
 ### 8.3 Selezione lezione
 
 Tre schede:
 
-- **Contenuto** — consultazione/editor Markdown della lezione (stesso motore di `LessonsView` oggi: split front matter/corpo, editor con tab Editor/Anteprima, "Scarica PDF").
-- **Domande** — Question Editor contestualizzato alla lezione selezionata (stesso motore di `DomandeView` oggi: crea/modifica/elimina pool e domande), senza dover riselezionare corso→UDA→lezione da un albero separato: il contesto è già quello della sidebar.
-- **Informazioni** — front matter della lezione in sola lettura/modifica strutturata (titolo, sottotitolo, difficoltà, concetti chiave, obiettivi) — attualmente mescolato nel form "edit metadata" di `LessonsView`, qui isolato in una scheda dedicata per chiarezza.
+- **Contenuto** — consultazione/editor Markdown della lezione (motore derivato dalla precedente `LessonsView`: split front matter/corpo, editor con tab Editor/Anteprima, "Scarica PDF").
+- **Domande** — Question Editor contestualizzato alla lezione selezionata (motore estratto dalla precedente `DomandeView`: crea/modifica/elimina pool e domande), senza dover riselezionare corso→UDA→lezione da un albero separato: il contesto è già quello del workspace.
+- **Informazioni** — front matter della lezione in sola lettura/modifica strutturata (titolo, sottotitolo, difficoltà, concetti chiave, obiettivi), isolato in una scheda dedicata per chiarezza.
 
 ## 9. Toolbar e azioni contestuali
 
@@ -135,7 +135,7 @@ Il riordino (UDA nel corso, lezioni nell'UDA) avviene **solo** dentro una modali
 
 ## 11. Integrazione Domande
 
-La scheda "Domande" della lezione selezionata è il Question Editor esistente (`DomandeView`/`QuestionCard`/`QuestionEditorForm`), **contestualizzato**: riceve la lezione già selezionata dalla sidebar del workspace invece di dover navigare un proprio albero separato. Nessuna riscrittura della logica di editing pool (creazione, validazione YAML, editor domanda per domanda) — solo un cambio di come la lezione target viene scelta. Questo è l'obiettivo di DUX-03.
+La scheda "Domande" della lezione selezionata usa `QuestionPoolEditor`, estratto dalla precedente `DomandeView` e **contestualizzato**: riceve la lezione già selezionata dal workspace invece di dover navigare un proprio albero separato. Nessuna riscrittura della logica di editing pool (creazione, validazione YAML, editor domanda per domanda) — solo un cambio di come la lezione target viene scelta. Questo è l'obiettivo di DUX-03.
 
 ## 12. Integrazione Classi/Studenti
 
@@ -156,7 +156,7 @@ Il pool (domande) è concettualmente **parte della lezione**, non un'entità di 
 - **grigio** — pool assente;
 - **rosso** — pool presente ma non valido (errori di parsing/validazione).
 
-L'indicatore non è **mai** affidato al solo colore: porta sempre anche un simbolo/etichetta testuale accessibile (es. `●`/`○`/`⚠` con `aria-label` esplicito, "Pool valido"/"Pool assente"/"Pool non valido" — già il pattern usato da `DomandeView` oggi, riportato inalterato).
+L'indicatore non è **mai** affidato al solo colore: porta sempre anche un simbolo/etichetta testuale accessibile (es. `●`/`○`/`⚠` con `aria-label` esplicito, "Pool valido"/"Pool assente"/"Pool non valido" — pattern ereditato dalla precedente `DomandeView`).
 
 ## 14. Assenza di fila di icone permanente
 
@@ -164,7 +164,7 @@ Le righe (UDA, lezione, classe, studente) non portano mai una fila fissa di icon
 
 ## 15. Componente riga lezione condiviso
 
-Tutte le viste che elencano lezioni (sidebar workspace, tabella lezioni UDA, eventuale ricerca futura) usano lo stesso componente di riga: stessa tipografia, stesso ordine di elementi (numero, titolo, indicatore pool, stato svolta se applicabile), stesso comportamento hover/selezione. Elimina la divergenza attuale in cui `LessonsView` e `DomandeView` disegnano la riga lezione in due modi leggermente diversi.
+Tutte le viste che elencano lezioni (sidebar workspace, tabella lezioni UDA, eventuale ricerca futura) mantengono la stessa tipografia e lo stesso ordine di elementi (numero, titolo, indicatore pool, stato svolta se applicabile). Questo elimina la divergenza che esisteva tra le precedenti `LessonsView` e `DomandeView`.
 
 ## 16. Restauro Template
 
@@ -212,7 +212,7 @@ Didattica non introduce alcuna nuova superficie di autorizzazione: riusa gli ste
 
 Vincoli invarianti per ogni fase di implementazione DUX (DUX-01 in avanti):
 
-- **Nessuna query per card corso**: la libreria carica l'elenco programmi con le stesse letture già fatte oggi da `ProgramsView` (una lista programmi + import attivo per import), non una query aggiuntiva per corso.
+- **Nessuna query per card corso**: la libreria conserva il budget di letture della precedente `ProgramsView` (una lista programmi + import attivo per import), senza introdurre una query aggiuntiva per corso.
 - **Nessun listener nuovo** (`onSnapshot`): tutte le letture restano `getDoc`/`getDocs` one-shot, come l'intero codice teacher-side attuale.
 - **Nessun polling**.
 - **Nessun documento di statistiche persistito**: UDA totali, lezioni svolte/totali, numero domande sono **derivati** dai dati già caricati (stessa fonte di `listUdas`/`listLessons`/`questionIndex` per import), mai scritti in un nuovo documento Firestore "riepilogo corso".
@@ -262,11 +262,11 @@ Nessun modulo esistente (Corsi/Lezioni/Domande/Classi) viene dichiarato "rimosso
 | DUX-00 | Specifica UX completa (questo documento) e prototipo statico standalone. Nessun codice applicativo toccato. | — | Documento e prototipo revisionabili dal docente; nessuna modifica sotto `apps/web/src/`. |
 | DUX-01 ✅ | Libreria corsi: nuova voce `Didattica`, landing a card, toolbar filtri (anno/classe/ricerca), "Nuovo corso"/"Importa ZIP". Corsi/Lezioni/Domande restano invariate in parallelo. **Implementato** (`DidatticaView` + servizio `courseLibrary`). | DUX-00 | Card mostra le sole metriche di §6; filtri client-side, nessuna nuova query oltre a quelle già spese da Corsi; nessuna Rule modificata. |
 | DUX-02 ✅ | Workspace corso: intestazione, sidebar UDA/lezioni condivisa, selezione corso/UDA con tabelle, scheda Contenuto lezione. **Implementato** (`CourseWorkspace`, secondo livello dentro `DidatticaView`; bridge `initialExpandedProgramId` rimosso). | DUX-01 | Sidebar unica riusata da tutte le selezioni; UDA/lezioni caricate una sola volta all'apertura (2 read), Markdown on-demand alla selezione lezione; nessuna lettura pool. |
-| DUX-03 ✅ | Scheda Domande contestualizzata (Question Editor integrato nel workspace) e scheda Informazioni lezione. **Implementato**: schede Contenuto/Domande/Informazioni, componente condiviso `QuestionPoolEditor` riusato anche da `DomandeView` legacy. | DUX-02 | Editing pool identico a `DomandeView` oggi (stesso componente estratto), stesso contesto lezione della sidebar, nessuna duplicazione di logica di validazione pool; pool letto solo all'apertura di Domande, una volta per lezione. |
+| DUX-03 ✅ | Scheda Domande contestualizzata (Question Editor integrato nel workspace) e scheda Informazioni lezione. **Implementato**: schede Contenuto/Domande/Informazioni, `QuestionPoolEditor` inizialmente condiviso con la vista legacy e poi conservato come editor unico dalla rimozione DUX-04D. | DUX-02 | Editing pool preservato nello stesso componente estratto, stesso contesto lezione del workspace, nessuna duplicazione di logica di validazione pool; pool letto solo all'apertura di Domande, una volta per lezione. |
 | DUX-04A ✅ | Parità operativa **azioni Corso e UDA** nel workspace: toolbar contestuale + menu `⋯`; azioni corso (modifica titolo, importa/esporta ZIP, programma svolto MD/PDF, classi, informazioni, eliminazione con guard verifiche) e azioni UDA (metadata, nuova UDA, eliminazione con guard verifiche). Legacy Corsi/Lezioni/Domande ancora presenti. **Implementato** (`CourseWorkspace` + dialog condivisi `workspaceDialogs`). | DUX-03 | Riuso esclusivo dei service Repository Editor/programs; aggiornamento locale card/tree; nessuna Rule/documento/indice nuovo; parità **non** ancora completa (manca DUX-04B/C/D). |
 | DUX-04B ✅ | Editing completo **lezione** nel workspace: toolbar lezione (modifica contenuto/informazioni, PDF, segna svolta, `⋯` elimina), editor contenuto Markdown con anteprima, form metadata lezione, creazione ed eliminazione lezione (con guard verifiche). **Implementato** (`CourseWorkspace` + editor condivisi `lessonEditors` + `NewLessonDialog`). | DUX-04A | Riuso esclusivo dei service Repository Editor (`createLesson`/`updateLessonMarkdownBody`/`updateLessonMetadata`/`deleteLesson`) + `setLessonCompleted`/`downloadLessonPdf`; dirty-guard unificato (pool + contenuto + metadata); aggiornamento locale albero/card; nessuna nuova Rule. Parità **non** ancora completa (manca 04C/D). |
 | DUX-04C ✅ | Navigazione mobile a livelli (drill-down: libreria→corso→UDA→lezione, un livello per volta, sidebar desktop assente su mobile, Indietro risale di un livello), modalità **Organizza** (riordino UDA a livello corso e lezioni a livello UDA con frecce su/giù). **Implementato** (`CourseWorkspace`: hook `useIsMobile`, `ReorderControls`, `reorderUda`/`reorderLesson`). | DUX-04B | Stessa `selection` come fonte di verità desktop/mobile; riordino via i service esistenti, order aggiornati solo dopo successo, nessuna rilettura; nessun drag-and-drop; nessun bottone annidato; nessuna nuova Rule. Parità **non** ancora completa (manca il Gate 04D). |
-| DUX-04D | **Gate di parità** end-to-end e rimozione delle voci di nav legacy Corsi/Lezioni/Domande. | DUX-04C | Parità funzionale verificata; PR di rimozione separata e reversibile. |
+| DUX-04D ✅ | **Gate di parità** end-to-end (matrice `documentazione/evidenze/dux-04d-matrice-parita.md`, verdetto PASS) e **rimozione** delle voci di nav legacy Corsi/Lezioni/Domande + relativi componenti (`ProgramsView`/`LessonsView`/`DomandeView`/`ImportZipModal`). Backfill `publicLessons` spostato in Didattica (avviso di manutenzione). **Implementato.** | DUX-04C | Parità coperta o ritirata con motivazione per ogni controllo; componenti condivisi conservati (`QuestionPoolEditor`, `lessonEditors`, `workspaceDialogs`, `MarkdownRenderer`); nessuna nuova Rule; nav docente = Didattica/Verifiche/Classi/Studenti/Template. |
 | DUX-05 | Classi assorbita in Studenti (tab) con inserimento inline, restyling di coerenza di Verifiche (tabella + creazione inline + feedback persistente "Salva bozza"), restauro Template (griglia 4/2/1), header unico definitivo (identità dell'app + veri pulsanti con iconcina) e "aurora sobria" sul corpo della shell (§17). | DUX-04D | Tab Classi con contatore derivato client-side, riga di inserimento (prima riga) allineata alla griglia esistente; Template ripulito in griglia 4/2/1; Verifiche invariata nel concetto, coerente nello stile; feedback di salvataggio sempre persistente vicino alle azioni; header a riga singola con identità dell'app e pulsanti (non tab); corpo con aurora sobria. |
 | Gate GDUX | Verifica finale end-to-end di tutta la roadmap Didattica. | DUX-01…05 (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche, vedi §22. |
 

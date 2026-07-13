@@ -8,6 +8,29 @@
   min-width: 0;
 }
 
+/* ── Backfill publicLessons — avviso di manutenzione discreto (DUX-04D) ── */
+.migrationNotice {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-raised);
+  padding: 0.6rem 0.85rem;
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: flex-start;
+}
+
+.migrationSummary {
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-raised);
+  padding: 0.6rem 0.85rem;
+  color: var(--color-text);
+  font-size: 0.85rem;
+}
+
 /* ── Toolbar ─────────────────────────────────────────────────────── */
 .toolbar {
   display: flex;

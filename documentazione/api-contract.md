@@ -100,9 +100,10 @@ interface StudentAccessSettings {
 // publicLessonsBackfillService.backfillPublicLessonsContent, e solo al
 // termine di un'esecuzione con `failed.length === 0`. Assente, o con
 // `publicLessonsContentVersion` diverso dalla versione corrente: il backfill
-// non è (ancora) completo. LessonsView legge questo singolo documento
-// (isPublicLessonsMigrationComplete) invece di scandire ogni publicLessons
-// a ogni mount, per decidere se mostrare il trigger di sincronizzazione.
+// non è (ancora) completo. L'avviso di manutenzione in DidatticaView legge
+// questo singolo documento (isPublicLessonsMigrationComplete) invece di
+// scandire ogni publicLessons a ogni mount, per decidere se mostrare il
+// trigger di sincronizzazione.
 // C'è una sola migrazione tracciata oggi, quindi il campo versione vale
 // sempre 1 una volta impostato; un'eventuale migrazione futura userebbe un
 // documento settings/ dedicato, non un secondo campo qui.

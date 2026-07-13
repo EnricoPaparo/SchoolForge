@@ -210,7 +210,7 @@ export interface PublicLessonDoc {
 
 /**
  * Stored at settings/publicLessonsMigration (M3F-08). Owner-only marker so
- * `LessonsView` can decide whether to show the backfill trigger without
+ * the Didattica maintenance notice can decide whether to show the backfill trigger without
  * running a `getDocs` scan over every `publicLessons` document on each
  * mount — the expensive check the task explicitly asked to avoid. Written
  * only by `publicLessonsBackfillService.backfillPublicLessonsContent`, and

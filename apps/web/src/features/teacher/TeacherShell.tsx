@@ -3,33 +3,21 @@ import { useAuth } from '../../lib/auth.js';
 import { db } from '../../lib/firebase.js';
 import { countPendingStudents } from '../repository/students/studentsService.js';
 import { DidatticaView } from './DidatticaView.js';
-import { ProgramsView } from './ProgramsView.js';
-import { LessonsView } from './LessonsView.js';
 import { TemplateKitView } from './TemplateKitView.js';
 import { VerificationsView } from './VerificationsView.js';
 import { ClassesView } from './ClassesView.js';
 import { StudentsView } from './StudentsView.js';
-import { DomandeView } from './DomandeView.js';
 import logoScritta from '../../assets/logo-scritta-schoolforge.png';
 import styles from './TeacherShell.module.css';
 
-type Section =
-  | 'didattica'
-  | 'lezioni'
-  | 'corsi'
-  | 'verifiche'
-  | 'classi'
-  | 'studenti'
-  | 'template'
-  | 'domande';
+type Section = 'didattica' | 'verifiche' | 'classi' | 'studenti' | 'template';
 
-// "Didattica" (DUX-01) è la nuova sezione che assorbirà progressivamente
-// Corsi/Lezioni/Domande; durante la migrazione convivono tutte, invariate.
+// DUX-04D: "Didattica" ha assorbito Corsi/Lezioni/Domande (parità verificata,
+// vedi documentazione/evidenze/dux-04d-matrice-parita.md) — le tre voci legacy
+// sono state rimosse. Classi/Verifiche/Template restano voci autonome fino a
+// DUX-05.
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
   { id: 'didattica', label: 'Didattica', icon: '📚' },
-  { id: 'lezioni', label: 'Lezioni', icon: '📖' },
-  { id: 'corsi', label: 'Corsi', icon: '📚' },
-  { id: 'domande', label: 'Domande', icon: '❓' },
   { id: 'verifiche', label: 'Verifiche', icon: '📝' },
   { id: 'classi', label: 'Classi', icon: '🏫' },
   { id: 'studenti', label: 'Studenti', icon: '🎓' },
@@ -158,16 +146,10 @@ export function TeacherShell() {
           <DidatticaView ownerUid={ownerUid} />
         ) : activeSection === 'template' ? (
           <TemplateKitView />
-        ) : activeSection === 'corsi' ? (
-          <ProgramsView />
-        ) : activeSection === 'lezioni' ? (
-          <LessonsView />
         ) : activeSection === 'verifiche' ? (
           <VerificationsView />
         ) : activeSection === 'classi' ? (
           <ClassesView />
-        ) : activeSection === 'domande' ? (
-          <DomandeView />
         ) : activeSection === 'studenti' ? (
           <StudentsView ownerUid={ownerUid} onStudentsChanged={refreshPendingStudentsCount} />
         ) : null}

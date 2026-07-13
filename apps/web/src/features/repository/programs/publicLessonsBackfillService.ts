@@ -55,8 +55,9 @@ function migrationMarkerRef(db: Firestore) {
 
 /**
  * Owner-only cheap check: reads a single settings document instead of
- * scanning every `publicLessons` doc, so `LessonsView` can decide whether to
- * show the backfill trigger without a `getDocs` sweep on each mount. `true`
+ * scanning every `publicLessons` doc, so the maintenance notice in
+ * `DidatticaView` can decide whether to show the backfill trigger without a
+ * `getDocs` sweep on each mount. `true`
  * means a previous `backfillPublicLessonsContent` run completed with zero
  * failures — new write paths (import/createLesson/updateLessonMarkdownBody)
  * already keep `content` in sync, so once this is true it stays true.
@@ -80,7 +81,7 @@ export async function isPublicLessonsMigrationComplete(db: Firestore): Promise<b
  *
  * Sets `settings/publicLessonsMigration` only when the run ends with zero
  * failures — a partial run leaves the marker untouched (or absent), so the
- * trigger in `LessonsView` stays visible and the docente can rerun.
+ * trigger in Didattica stays visible and the docente can rerun.
  */
 export async function backfillPublicLessonsContent(
   ownerUid: string,

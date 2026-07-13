@@ -43,9 +43,9 @@ export type CourseCard = {
  * exist (DUX-01) — no new Firestore document, index, Rule or Cloud
  * Function, and no Storage read (no Markdown, no pool files).
  *
- * Reads, deliberately matching the budget the current "Corsi" view
- * (`ProgramsView`) already spends so the two sections show identical
- * numbers during the coexistence migration:
+ * Reads, deliberately matching the budget established by the legacy "Corsi"
+ * view (removed in DUX-04D), so the consolidated Didattica experience keeps
+ * the same metrics without adding queries:
  *   - `listPrograms` — 1 query (all programs of the owner)
  *   - `listClasses`  — 1 query (all classes, only to resolve class names)
  *   - per program that has an active import: `listUdas` + `listLessons` +
