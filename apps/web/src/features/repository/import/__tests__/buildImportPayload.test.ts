@@ -123,6 +123,8 @@ describe('buildImportPayload — structure', () => {
     expect(payload.udas[0].data.dir).toBe('uda-01-reti');
     expect(payload.udas[0].data.lessonCount).toBe(3);
     expect(payload.udas[0].data.order).toBe(0);
+    // EXP-01: the declared front matter titolo is persisted on the UDA doc.
+    expect(payload.udas[0].data.titolo).toBe('Reti di computer');
   });
 
   it('produces three lesson entries', () => {

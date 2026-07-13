@@ -36,6 +36,7 @@ export interface UdaPayload {
     order: number;
     storageBasePath: string;
     lessonCount: number;
+    titolo?: string | null;
     descrizione: string | null;
     competenze: string[];
     obiettivi: string[];

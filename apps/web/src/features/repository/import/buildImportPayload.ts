@@ -54,6 +54,7 @@ export function buildImportPayload(params: {
         order: udaIndex,
         storageBasePath,
         lessonCount: uda.lessons.length,
+        titolo: uda.metadata.titolo ?? null,
         descrizione: uda.metadata.descrizione,
         competenze: uda.metadata.competenze,
         obiettivi: uda.metadata.obiettivi,

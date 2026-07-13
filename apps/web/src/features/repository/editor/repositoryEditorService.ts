@@ -206,9 +206,9 @@ function lessonOrderFromFilename(filename: string | undefined): number | null {
 }
 
 /**
- * Maps a UDA's titolo (not part of `UdaMetadata` — see `validateUda`,
- * `descrizione`/`competenze`/`obiettivi` are the only metadata fields) plus
- * its metadata to the YAML front matter keys used on disk.
+ * Maps a UDA's `titolo` plus its metadata to the YAML front matter keys used
+ * on disk. `titolo` is passed explicitly (the canonical value at create time)
+ * and takes precedence over any `metadata.titolo`.
  */
 function udaFrontMatterFields(titolo: string, metadata: UdaMetadata): EditableFrontMatter {
   return {
@@ -599,6 +599,7 @@ export async function createUda(params: {
   const order = maxOrder + 1;
 
   const metadata: UdaMetadata = {
+    titolo,
     descrizione: fields.descrizione,
     competenze: fields.competenze,
     obiettivi: fields.obiettivi,

@@ -3,6 +3,7 @@ import type { UdaMetadata } from './types.js';
 import { extractDescription, splitFrontMatter } from './frontMatter.js';
 
 export const EMPTY_UDA_METADATA: UdaMetadata = {
+  titolo: null,
   descrizione: null,
   competenze: [],
   obiettivi: [],
@@ -39,6 +40,7 @@ export function parseUdaMetadata(content: string): { metadata: UdaMetadata; body
   }
 
   const metadata: UdaMetadata = {
+    titolo: toStringOrNull(fm.titolo),
     descrizione: toStringOrNull(fm.descrizione) ?? extractDescription(body),
     competenze: toStringArray(fm.competenze),
     obiettivi: toStringArray(fm.obiettivi),

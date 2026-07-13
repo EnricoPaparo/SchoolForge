@@ -123,6 +123,11 @@ export function validateUda(
     lessons,
     issues: udaIssues,
     metadata: {
+      // `titolo` is a required front matter field (validated above); carry it
+      // through so import can persist it (EXP-01). Null only when absent/empty,
+      // in which case readers fall back to a label derived from `dir`.
+      titolo:
+        typeof fm.titolo === 'string' && fm.titolo.trim().length > 0 ? fm.titolo.trim() : null,
       // `descrizione` front matter is optional and RE-01+: UDA files imported
       // before it existed have no such key, so they keep falling back to the
       // body's first paragraph, exactly as before.

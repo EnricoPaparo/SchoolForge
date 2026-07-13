@@ -142,6 +142,7 @@ export async function listUdas(
       id: d.id,
       ...raw,
       order: raw.order,
+      titolo: raw.titolo ?? null,
       descrizione: raw.descrizione ?? null,
       competenze: raw.competenze ?? [],
       obiettivi: raw.obiettivi ?? [],

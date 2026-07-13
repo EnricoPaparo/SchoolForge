@@ -52,6 +52,13 @@ export interface LessonResult {
 
 /** Didactic metadata for a UDA, shown to the teacher in the info panel — never technical details. */
 export interface UdaMetadata {
+  /**
+   * Didactic title from the UDA front matter (EXP-01). Optional and
+   * backward-compatible: a UDA imported/created before this field was
+   * persisted has no `titolo` — readers fall back to a readable label
+   * derived from the technical `dir` (see `resolveUdaTitle`).
+   */
+  titolo?: string | null;
   descrizione: string | null;
   competenze: string[];
   obiettivi: string[];

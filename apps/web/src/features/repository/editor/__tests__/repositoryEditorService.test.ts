@@ -882,6 +882,7 @@ describe('createUda', () => {
         order: 0,
         lessonCount: 0,
         storageBasePath: 'repository/owner-uid/imports/imp-1/uda-01-reti-informatiche',
+        titolo: 'Reti informatiche',
         descrizione: null,
         competenze: [],
         obiettivi: [],

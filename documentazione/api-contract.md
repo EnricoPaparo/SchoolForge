@@ -161,6 +161,7 @@ interface Uda {
   order?: number;              // RE: ordinamento stabile; assente sui dati legacy
   storageBasePath: string;     // prefisso in Cloud Storage
   lessonCount: number;
+  titolo?: string | null;      // EXP-01: titolo didattico dal front matter; assente sui dati legacy → fallback leggibile dal dir
   descrizione: string | null;
   competenze: string[];
   obiettivi: string[];

@@ -737,6 +737,7 @@ export function CourseWorkspace({
           order,
           storageBasePath: `repository/${ownerUid}/imports/${importId}/${dir}`,
           lessonCount: 0,
+          titolo: values.titolo,
           descrizione: values.descrizione,
           competenze: values.competenze,
           obiettivi: values.obiettivi,

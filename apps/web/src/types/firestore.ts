@@ -111,6 +111,13 @@ export interface UdaDoc {
   descrizione: string | null;
   competenze: string[];
   obiettivi: string[];
+  /**
+   * Didactic UDA title from the front matter `titolo` (EXP-01). Optional and
+   * backward-compatible: UDA documents written before this field was
+   * persisted have no `titolo`, and readers fall back to a readable label
+   * derived from `dir`. Never technical (never the `uda-XX-slug` dir).
+   */
+  titolo?: string | null;
 }
 
 /** Stored at programs/{programId}/imports/{importId}/lessons/{lessonId} */

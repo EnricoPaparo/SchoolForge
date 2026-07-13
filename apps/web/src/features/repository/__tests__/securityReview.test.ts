@@ -143,8 +143,9 @@ describe('Security: generateMarkdown excludes non-completed lessons', () => {
 
     const md = generateMarkdown(PROGRAM as never, [UDA], [completedLesson, incompleteLesson]);
 
-    expect(md).toContain('lezione-001.md');
-    expect(md).not.toContain('lezione-002.md');
+    // EXP-01: readable label, completed-only filter unchanged.
+    expect(md).toContain('Lezione 001');
+    expect(md).not.toContain('Lezione 002');
   });
 
   it('returns placeholder when no lessons are completed', async () => {

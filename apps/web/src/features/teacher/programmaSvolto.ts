@@ -1,5 +1,7 @@
 import type { LessonItem, ProgramItem, UdaItem } from '../repository/programs/programsService.js';
 import type { ProgrammaMeta } from '../../types/firestore.js';
+import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
+import { resolveUdaTitle } from '../repository/programs/udaTitle.js';
 
 /**
  * Generates a Markdown document of completed lessons, grouped by UDA.
@@ -47,10 +49,12 @@ export function generateMarkdown(
     const groupLessons = byUda.get(dir);
     if (!groupLessons || groupLessons.length === 0) continue;
 
-    lines.push(`## ${dir}`);
+    const uda = udas.find((u) => u.dir === dir);
+    // Readable heading: front matter titolo when present, else a label derived
+    // from the technical dir (EXP-01) — never the raw "uda-XX-slug".
+    lines.push(`## ${resolveUdaTitle(dir, uda?.titolo)}`);
     lines.push('');
 
-    const uda = udas.find((u) => u.dir === dir);
     const hasCompetenze = (uda?.competenze?.length ?? 0) > 0;
     const hasObiettivi = (uda?.obiettivi?.length ?? 0) > 0;
 
@@ -76,7 +80,10 @@ export function generateMarkdown(
             )
           : null;
       const dateStr = date ? ` (${date})` : '';
-      lines.push(`- ${lesson.filename}${dateStr}`);
+      // Readable lesson label: front matter titolo when present, else a
+      // cleaned-up filename (never the raw "lezione-001-....md").
+      const { title } = resolveLessonTitle(lesson.filename, lesson.titolo);
+      lines.push(`- ${title}${dateStr}`);
     }
     lines.push('');
   }

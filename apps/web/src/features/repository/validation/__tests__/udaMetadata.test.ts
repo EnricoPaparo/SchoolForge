@@ -6,6 +6,7 @@ describe('parseUdaMetadata — front matter absent', () => {
     const content = '# Reti\n\nUna introduzione alle reti.';
     const { metadata, body } = parseUdaMetadata(content);
     expect(metadata).toEqual({
+      titolo: null,
       descrizione: 'Una introduzione alle reti.',
       competenze: [],
       obiettivi: [],
@@ -33,6 +34,7 @@ obiettivi:
 Questo paragrafo non deve essere usato come descrizione.`;
 
     const { metadata, body } = parseUdaMetadata(content);
+    expect(metadata.titolo).toBe('Reti');
     expect(metadata.descrizione).toBe('Descrizione curata dal docente');
     expect(metadata.competenze).toEqual(['Comprendere il modello OSI']);
     expect(metadata.obiettivi).toEqual(['Distinguere client e server']);

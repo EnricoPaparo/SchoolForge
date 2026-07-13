@@ -8,7 +8,7 @@ Firebase Storage `getBytes`).
 |---|---|---|---|
 | Safari | mobile (iOS) | ✅ funziona | Stesso account/lezione di Brave. |
 | Chrome | desktop | ✅ funziona | Percorso desktop = percorso mobile (MOB-01). |
-| **Brave** | **mobile** | 🔧 **corretto in MOB-01C, da confermare su DEV** | In precedenza il caricamento restava a lungo in attesa e falliva con `storage/retry-limit-exceeded` (httpStatus 0, ~120s): la lettura Storage `getBytes` non completava il round-trip. MOB-01C legge il corpo dalla proiezione Firestore `publicLessons.content` (nessun `getBytes`), quindi il timeout non si presenta più. Da confermare su DEV con Brave mobile reale. |
+| **Brave** | **mobile** | ✅ **funziona (confermato dopo MOB-01C)** | In precedenza il caricamento restava a lungo in attesa e falliva con `storage/retry-limit-exceeded` (httpStatus 0, ~120s): la lettura Storage `getBytes` non completava il round-trip. Dopo MOB-01C la consultazione legge il corpo dalla proiezione Firestore `publicLessons.content` (nessun `getBytes`) e il caricamento funziona su Brave mobile reale. |
 
 ## Brave mobile — diagnosi (MOB-01B) e correzione (MOB-01C)
 

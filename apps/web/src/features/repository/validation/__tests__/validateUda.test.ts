@@ -102,6 +102,8 @@ describe('validateUda — valid UDA, one lesson with valid pool, one without poo
       'Distinguere protocolli di livello applicativo',
     ]);
     expect(result.metadata.obiettivi).toEqual(['Spiegare il funzionamento di HTTP e HTTPS']);
+    // EXP-01: the validated titolo is carried through the metadata for import.
+    expect(result.metadata.titolo).toBe('Reti di computer');
   });
 
   it('extracts a descrizione from the first non-heading body line', () => {
