@@ -329,13 +329,14 @@ describe('VerificationsView', () => {
     render(<VerificationsView />);
 
     const table = await screen.findByRole('table');
-    const [, ...bodyRows] = within(table).getAllByRole('row'); // drop header row
+    const [, createRow, ...bodyRows] = within(table).getAllByRole('row'); // drop header + create row
+    expect(within(createRow).getByLabelText(/titolo nuova verifica/i)).toBeTruthy();
     const cellCounts = bodyRows.map((row) => within(row).getAllByRole('cell').length);
     expect(bodyRows).toHaveLength(3);
     expect(new Set(cellCounts).size).toBe(1);
   });
 
-  it('renders the create-verification form before the verification table', async () => {
+  it('renders creation controls as the first table row', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
     render(<VerificationsView />);
@@ -344,6 +345,10 @@ describe('VerificationsView', () => {
     const form = screen.getByRole('form', { name: 'Nuova verifica' });
     const table = screen.getByRole('table');
     expect(form.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const [, firstBodyRow] = within(table).getAllByRole('row');
+    expect(within(firstBodyRow).getByLabelText(/titolo nuova verifica/i)).toBeTruthy();
+    expect(within(firstBodyRow).getByText('Nuova')).toBeTruthy();
+    expect(within(firstBodyRow).getByRole('button', { name: /crea verifica/i })).toBeTruthy();
   });
 
   it('creates draft verification', async () => {
@@ -647,6 +652,54 @@ describe('VerificationsView', () => {
     expect(configArg.questionRefs[0].questionIndexEntryId).toBe('qi-1');
     // "Salva bozza" never activates the verification — no immutable snapshot.
     expect(mockActivateVerification).not.toHaveBeenCalled();
+  });
+
+  it('shows persistent dirty and saved feedback for the draft', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+
+    await waitFor(() => screen.getByText('Nessuna modifica da salvare'));
+    expect(
+      (screen.getByRole('button', { name: /salva bozza/i }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    fireEvent.change(screen.getByLabelText(/titolo bozza/i), {
+      target: { value: 'Verifica aggiornata' },
+    });
+    expect(screen.getByText(/modifiche non salvate/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /salva bozza/i }));
+    await waitFor(() => expect(screen.getByText(/bozza salvata alle \d{2}:\d{2}/i)).toBeTruthy());
+    expect(screen.queryByText(/modifiche non salvate/i)).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(/titolo bozza/i), {
+      target: { value: 'Verifica aggiornata ancora' },
+    });
+    expect(screen.getByText(/modifiche non salvate/i)).toBeTruthy();
+    expect(screen.queryByText(/bozza salvata alle/i)).toBeNull();
+  });
+
+  it('keeps a readable draft-save error and allows retry', async () => {
+    setupDefaults();
+    mockUpdateVerificationConfig.mockRejectedValueOnce(new Error('Connessione non disponibile'));
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+
+    await waitFor(() => screen.getByLabelText(/titolo bozza/i));
+    fireEvent.change(screen.getByLabelText(/titolo bozza/i), {
+      target: { value: 'Verifica aggiornata' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /salva bozza/i }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Connessione non disponibile');
+    expect(
+      (screen.getByRole('button', { name: /riprova salvataggio/i }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 
   it('reopening a draft restores the previously selected questions from config.questionRefs', async () => {
