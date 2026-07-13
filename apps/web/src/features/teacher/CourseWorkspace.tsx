@@ -6,6 +6,15 @@ import {
   useState,
 } from 'react';
 import { db, storage } from '../../lib/firebase.js';
+import {
+  IconBookOpen,
+  IconChevronLeft,
+  IconChevronRight,
+  IconCircleCheck,
+  IconCircleQuestion,
+  IconFileText,
+  IconLayers,
+} from '../../components/icons.js';
 import type { CourseCard } from '../repository/programs/courseLibrary.js';
 import {
   deleteProgram,
@@ -108,6 +117,12 @@ function sortLessons(lessons: LessonItem[]): LessonItem[] {
       lessonOrderKey(a) - lessonOrderKey(b) ||
       a.filename.localeCompare(b.filename),
   );
+}
+
+function poolStatusText(status: LessonItem['poolStatus']): string {
+  if (status === 'valid') return 'Pool presente e valido';
+  if (status === 'invalid') return 'Pool presente ma non valido';
+  return 'Pool assente';
 }
 
 /**
@@ -234,6 +249,8 @@ export function CourseWorkspace({
   const [wsError, setWsError] = useState<string | null>(null);
   const [udaBlockers, setUdaBlockers] = useState<RepositoryDeleteBlocker[] | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const [selection, setSelection] = useState<Selection>({ kind: 'course' });
   const [collapsedUdas, setCollapsedUdas] = useState<Set<string>>(new Set());
@@ -429,11 +446,22 @@ export function CourseWorkspace({
   // changes (course ⇄ UDA ⇄ lesson) so it never lingers over a new context.
   useEffect(() => {
     if (!menuOpen) return;
-    function onDocClick() {
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || menuTriggerRef.current?.contains(target)) return;
       setMenuOpen(false);
     }
-    document.addEventListener('click', onDocClick);
-    return () => document.removeEventListener('click', onDocClick);
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      setMenuOpen(false);
+      menuTriggerRef.current?.focus();
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, [menuOpen]);
   useEffect(() => {
     setMenuOpen(false);
@@ -1116,7 +1144,7 @@ export function CourseWorkspace({
             title="Espandi struttura corso"
             onClick={() => setSidebarCollapsed(false)}
           >
-            ▸
+            <IconChevronRight size={16} />
           </button>
         ) : (
           <nav className={styles.sidebar} aria-label="Struttura corso">
@@ -1127,7 +1155,8 @@ export function CourseWorkspace({
                 aria-current={selection.kind === 'course' ? 'true' : undefined}
                 onClick={() => guardedNav(() => setSelection({ kind: 'course' }))}
               >
-                Panoramica corso
+                <IconBookOpen size={15} />
+                <span>Panoramica corso</span>
               </button>
               <button
                 type="button"
@@ -1136,7 +1165,7 @@ export function CourseWorkspace({
                 title="Comprimi struttura corso"
                 onClick={() => setSidebarCollapsed(true)}
               >
-                ◂
+                <IconChevronLeft size={16} />
               </button>
             </div>
 
@@ -1181,7 +1210,8 @@ export function CourseWorkspace({
                             guardedNav(() => setSelection({ kind: 'uda', udaDir: uda.dir }))
                           }
                         >
-                          {uda.dir}
+                          <IconLayers size={14} />
+                          <span>{uda.dir}</span>
                         </button>
                       </div>
                       {open && udaLessons.length > 0 && (
@@ -1195,15 +1225,38 @@ export function CourseWorkspace({
                                 <button
                                   type="button"
                                   className={`${styles.lessonBtn}${active ? ` ${styles.selected}` : ''}`}
+                                  aria-label={title}
                                   aria-current={active ? 'true' : undefined}
                                   onClick={() => guardedNav(() => void selectLesson(lesson))}
                                 >
-                                  {lesson.completed && (
-                                    <span className={styles.doneDot} aria-hidden="true">
-                                      ●
-                                    </span>
-                                  )}
+                                  <IconFileText size={14} />
                                   <span className={styles.lessonBtnText}>{title}</span>
+                                  <span className={styles.lessonStatuses}>
+                                    {lesson.completed && (
+                                      <span
+                                        className={styles.doneStatus}
+                                        role="img"
+                                        aria-label="Lezione svolta"
+                                        title="Lezione svolta"
+                                      >
+                                        <IconCircleCheck size={14} />
+                                      </span>
+                                    )}
+                                    <span
+                                      className={`${styles.poolStatus} ${
+                                        lesson.poolStatus === 'valid'
+                                          ? styles.poolValid
+                                          : lesson.poolStatus === 'invalid'
+                                            ? styles.poolInvalid
+                                            : styles.poolAbsent
+                                      }`}
+                                      role="img"
+                                      aria-label={poolStatusText(lesson.poolStatus)}
+                                      title={poolStatusText(lesson.poolStatus)}
+                                    >
+                                      <IconCircleQuestion size={14} />
+                                    </span>
+                                  </span>
                                 </button>
                               </li>
                             );
@@ -1232,6 +1285,7 @@ export function CourseWorkspace({
               <div className={styles.menuWrap}>
                 <button
                   type="button"
+                  ref={menuTriggerRef}
                   className={styles.toolbarMenuBtn}
                   aria-haspopup="true"
                   aria-expanded={menuOpen}
@@ -1241,7 +1295,7 @@ export function CourseWorkspace({
                   Azioni corso ▾
                 </button>
                 {menuOpen && (
-                  <div className={styles.menu} role="menu">
+                  <div ref={menuRef} className={styles.menu} role="menu">
                     <button
                       type="button"
                       role="menuitem"
@@ -1347,6 +1401,7 @@ export function CourseWorkspace({
               <div className={styles.menuWrap}>
                 <button
                   type="button"
+                  ref={menuTriggerRef}
                   className={styles.toolbarMenuBtn}
                   aria-haspopup="true"
                   aria-expanded={menuOpen}
@@ -1356,7 +1411,7 @@ export function CourseWorkspace({
                   Azioni UDA ▾
                 </button>
                 {menuOpen && (
-                  <div className={styles.menu} role="menu">
+                  <div ref={menuRef} className={styles.menu} role="menu">
                     <button
                       type="button"
                       role="menuitem"
@@ -1406,10 +1461,12 @@ export function CourseWorkspace({
                 type="button"
                 onClick={() => {
                   selectTab('contenuto');
-                  setEditingContent(true);
-                  setContentStatus(NO_STATUS);
+                  if (!editingContent) {
+                    setEditingContent(true);
+                    setContentStatus(NO_STATUS);
+                  }
                 }}
-                disabled={editingContent || lessonContent == null}
+                disabled={(editingContent && activeTab === 'contenuto') || lessonContent == null}
               >
                 Modifica contenuto
               </button>
@@ -1417,10 +1474,12 @@ export function CourseWorkspace({
                 type="button"
                 onClick={() => {
                   selectTab('informazioni');
-                  setEditingInfo(true);
-                  setInfoStatus(NO_STATUS);
+                  if (!editingInfo) {
+                    setEditingInfo(true);
+                    setInfoStatus(NO_STATUS);
+                  }
                 }}
-                disabled={editingInfo || lessonContent == null}
+                disabled={(editingInfo && activeTab === 'informazioni') || lessonContent == null}
               >
                 Modifica informazioni
               </button>
@@ -1442,7 +1501,8 @@ export function CourseWorkspace({
               <div className={styles.menuWrap}>
                 <button
                   type="button"
-                  className={styles.toolbarMenuBtn}
+                  ref={menuTriggerRef}
+                  className={`${styles.toolbarMenuBtn} ${styles.toolbarIconBtn}`}
                   aria-haspopup="true"
                   aria-expanded={menuOpen}
                   aria-label="Azioni lezione"
@@ -1451,7 +1511,7 @@ export function CourseWorkspace({
                   ⋯
                 </button>
                 {menuOpen && (
-                  <div className={styles.menu} role="menu">
+                  <div ref={menuRef} className={styles.menu} role="menu">
                     <button
                       type="button"
                       role="menuitem"

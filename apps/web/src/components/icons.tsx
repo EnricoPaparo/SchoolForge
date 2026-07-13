@@ -135,6 +135,41 @@ export function IconFileText(props: IconProps = {}) {
   );
 }
 
+/** Stacked layers — UDA/group in the didactic tree */
+export function IconLayers(props: IconProps = {}) {
+  return icon(
+    <>
+      <polygon points="12 2 2 7 12 12 22 7 12 2" />
+      <polyline points="2 12 12 17 22 12" />
+      <polyline points="2 17 12 22 22 17" />
+    </>,
+    props,
+  );
+}
+
+/** Question mark in a circle — question-pool status */
+export function IconCircleQuestion(props: IconProps = {}) {
+  return icon(
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.1 9a3 3 0 1 1 5.6 1.5c-.9 1.2-2.7 1.5-2.7 3" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </>,
+    props,
+  );
+}
+
+/** Check in a circle — completed lesson status */
+export function IconCircleCheck(props: IconProps = {}) {
+  return icon(
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="8 12 11 15 16 9" />
+    </>,
+    props,
+  );
+}
+
 /** Download arrow into tray */
 export function IconDownload(props: IconProps = {}) {
   return icon(

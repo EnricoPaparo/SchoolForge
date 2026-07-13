@@ -1,7 +1,7 @@
 # Didattica — Roadmap UX (DUX)
 
 **Versione:** 1.1
-**Stato:** DUX-00→DUX-05C implementati; viste legacy rimosse, Classi assorbita in Studenti, Verifiche uniformata e shell finale applicata. Gate GDUX resta da completare.
+**Stato:** DUX-00→DUX-05C e DUX-06A implementati; viste legacy rimosse, Classi assorbita in Studenti, Verifiche uniformata e shell finale applicata. Il polish post-smoke DUX-06B/06C e il Gate GDUX restano da completare.
 **Dipendenze:** nessuna dipendenza tecnica da M4 (M4-03/M4-04 continuano in parallelo); riusa esclusivamente backend/service/dati già esistenti di RE (Repository Editor) e QE (Question Editor).
 
 ---
@@ -272,7 +272,10 @@ Nessun modulo esistente (Corsi/Lezioni/Domande/Classi) viene dichiarato "rimosso
 | DUX-05A ✅ | Classi assorbita in Studenti con tab accessibili, inserimento inline e contatore studenti derivato client-side; rimossa la voce autonoma Classi e la relativa vista legacy. **Implementato.** | DUX-04D | Nessuna nuova lettura: classi e studenti sono caricati una volta da `StudentsView`; contatori calcolati in memoria; CRUD esistente preservato; nav docente = Didattica/Verifiche/Studenti/Template. |
 | DUX-05B ✅ | Restyling di coerenza di Verifiche: tabella + creazione inline + feedback persistente "Salva bozza". **Implementato.** | DUX-05A | Concetto e service invariati; feedback dirty/saving/saved/error persistente vicino alle azioni; nessuna modifica a Rules/schema. |
 | DUX-05C ✅ | Restauro Template (griglia 4/2/1), header unico definitivo e "aurora sobria" sul corpo della shell (§17). **Implementato.** | DUX-05B | Template ripulito; header a riga singola con selettore mobile; SVG locali; fondo statico senza pattern, nuove letture o dipendenze. |
-| Gate GDUX | Verifica finale end-to-end di tutta la roadmap Didattica. | DUX-01…05C (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche, vedi §22. |
+| DUX-06A ✅ | Hardening funzionale del workspace Didattica dopo lo smoke DEV: menu contestuali non ritagliati, chiusura click-esterno/Escape, recupero del draft Informazioni tra schede, sidebar gerarchica con icone e indicatori distinti per lezione svolta e stato pool, controlli icona uniformati. **Implementato.** | DUX-05C | Nessuna nuova funzione, lettura, scrittura, Rule o dipendenza; pool valido/assente/non valido ha indicatore testuale oltre al colore; draft non perso tra schede. |
+| DUX-06B | Polish della libreria e del workspace Didattica: toolbar filtri, card corso, padding tabelle, titoli ridondanti e rifinitura superfici. | DUX-06A | Solo UX/UI, nessuna modifica ai contratti repository. |
+| DUX-06C | Coerenza Studenti/Classi e Verifiche: tab interno, inserimento classe stabile, tabella verifiche desktop e dettaglio dedicato. | DUX-06B | Nessuna nuova lettura o modifica a Rules/schema. |
+| Gate GDUX | Verifica finale end-to-end di tutta la roadmap Didattica. | DUX-01…06C (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche, vedi §22. |
 
 ---
 
