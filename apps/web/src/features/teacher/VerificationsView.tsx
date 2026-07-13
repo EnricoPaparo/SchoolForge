@@ -245,8 +245,7 @@ export function VerificationsView() {
   // in the list — one getImportMeta per pair, cached and shared. No Storage
   // read, no realtime listener. Missing/legacy metadata resolves to null
   // (shown as "—" / "Senza anno") and never blocks the list, which renders
-  // immediately while years fill in. The most-recent year is auto-selected
-  // once, after the first resolution, without overriding a manual choice.
+  // immediately while years fill in.
   useEffect(() => {
     if (!verifications) return;
     const toFetch: { key: string; programId: string; importId: string }[] = [];
@@ -258,42 +257,62 @@ export function VerificationsView() {
       annoRequestedRef.current.add(key);
       toFetch.push({ key, programId, importId });
     }
-    if (toFetch.length === 0) {
-      initYearDefault(verifications, annoByKey);
-      return;
-    }
+    if (toFetch.length === 0) return;
+
     let cancelled = false;
     void (async () => {
       const results = await Promise.all(
         toFetch.map(async ({ key, programId, importId }) => {
           try {
             const meta = await getImportMeta(programId, importId, db);
-            return [key, meta?.annoScolastico ?? null] as const;
+            // A resolved `null` is a legitimate "Senza anno" and is cached.
+            return { key, ok: true, year: meta?.annoScolastico ?? null } as const;
           } catch {
-            return [key, null] as const;
+            // A transient throw must NOT be frozen as "Senza anno".
+            return { key, ok: false } as const;
           }
         }),
       );
       if (cancelled) return;
-      const merged = new Map(annoByKey);
-      for (const [k, val] of results) merged.set(k, val);
-      setAnnoByKey(merged);
-      initYearDefault(verifications, merged);
+      // Free every errored key so a later list refresh can retry it — but do
+      // not retry in a loop here.
+      for (const r of results) if (!r.ok) annoRequestedRef.current.delete(r.key);
+      const resolved = results.filter(
+        (r): r is { key: string; ok: true; year: string | null } => r.ok,
+      );
+      if (resolved.length === 0) return;
+      // Functional update: merge into the LATEST map so concurrent resolutions
+      // for different pairs never overwrite each other. Pure/StrictMode-safe —
+      // no side effects inside the updater.
+      setAnnoByKey((prev) => {
+        const next = new Map(prev);
+        for (const r of resolved) next.set(r.key, r.year);
+        return next;
+      });
     })();
     return () => {
       cancelled = true;
     };
-    // Driven by `verifications` changing; `annoByKey` is read as a fresh
-    // snapshot inside and per-pair dedup lives in `annoRequestedRef`.
+    // Driven by `verifications` changing; per-pair dedup lives in the ref.
   }, [verifications]);
 
-  /** Selects the most-recent available year once; never overrides a manual pick. */
-  function initYearDefault(list: VerificationItem[], anno: Map<string, string | null>) {
-    if (yearInitialized.current) return;
+  // Auto-selects the most recent year exactly once, only after the initial
+  // pairs have resolved (every pair with ids is present in the cache — errored
+  // pairs, freed above, are retried on a later refresh and don't count as
+  // resolved). Uses "Tutti gli anni" when no year exists, and never overrides
+  // a manual choice.
+  useEffect(() => {
+    if (yearInitialized.current || !verifications) return;
+    const allResolved = verifications.every((v) => {
+      const { programId, importId } = v.config;
+      if (!programId || !importId) return true;
+      return annoByKey.has(importKey(programId, importId));
+    });
+    if (!allResolved) return;
     yearInitialized.current = true;
-    const years = distinctYears(list, anno);
+    const years = distinctYears(verifications, annoByKey);
     if (years.length > 0) setYearFilter(years[0]!);
-  }
+  }, [verifications, annoByKey]);
 
   // Opens exactly one `submissions` listener, only while a non-draft
   // verification is selected — never globally, never for more than one
@@ -859,10 +878,10 @@ export function VerificationsView() {
   );
   const classOptions = useMemo(() => {
     const set = new Set<string>();
+    // Readable class names only — an unresolved classId is never shown as an
+    // option (no technical id leaks into the filter).
     for (const v of verList) {
-      const name = v.config.classId
-        ? (classNameById.get(v.config.classId) ?? v.config.classId)
-        : null;
+      const name = v.config.classId ? (classNameById.get(v.config.classId) ?? null) : null;
       if (name) set.add(name);
     }
     return [...set].sort((a, b) => a.localeCompare(b));
@@ -877,16 +896,17 @@ export function VerificationsView() {
       if (yearFilter !== FILTER_ALL && yearFilter !== YEAR_NONE && year !== yearFilter)
         return false;
 
-      const className = v.config.classId
-        ? (classNameById.get(v.config.classId) ?? v.config.classId)
-        : null;
+      // Resolved class name only (no id fallback) — used both for matching the
+      // class filter and for the search haystack.
+      const className = v.config.classId ? (classNameById.get(v.config.classId) ?? null) : null;
       if (classFilter === CLASS_NONE && className) return false;
       if (classFilter !== FILTER_ALL && classFilter !== CLASS_NONE && className !== classFilter)
         return false;
 
       if (q) {
-        const programTitleResolved = programTitleById.get(v.config.programId) ?? v.config.programId;
-        // Search text only — never technical ids.
+        // Search text only — never technical ids: resolved titles/names or an
+        // empty string, so a raw programId/classId can never match.
+        const programTitleResolved = programTitleById.get(v.config.programId) ?? '';
         const haystack =
           `${v.config.title} ${programTitleResolved} ${className ?? ''}`.toLowerCase();
         if (!haystack.includes(q)) return false;

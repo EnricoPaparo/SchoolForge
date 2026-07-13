@@ -2262,4 +2262,80 @@ describe('VerificationsView — school year + archive filters (VUX-01)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Azzera filtri' }));
     expect(screen.getByText('Alfa')).toBeTruthy();
   });
+
+  it('does not lose any pair when concurrent resolutions land out of order', async () => {
+    setupDefaults();
+    mockListClasses.mockResolvedValue([cls3a]);
+    const resolvers = new Map<string, (v: { annoScolastico: string }) => void>();
+    mockGetImportMeta.mockImplementation(
+      (_programId: string, importId: string) =>
+        new Promise((resolve) => resolvers.set(importId, resolve)),
+    );
+    mockListVerifications.mockResolvedValue([
+      verWith('v1', 'Recente', 'imp-1', 'cls-1'),
+      verWith('v2', 'Storica', 'imp-old', 'cls-1'),
+    ]);
+    render(<VerificationsView />);
+    await screen.findByText('Recente');
+    await waitFor(() => expect(resolvers.size).toBe(2));
+
+    // Resolve out of order (older pair first, then the recent one).
+    resolvers.get('imp-old')!({ annoScolastico: '2019/2020' });
+    resolvers.get('imp-1')!({ annoScolastico: '2025/2026' });
+
+    // Both years survived the merge → both appear as year-filter options.
+    await waitFor(() => expect(screen.getByRole('option', { name: '2019/2020' })).toBeTruthy());
+    expect(screen.getByRole('option', { name: '2025/2026' })).toBeTruthy();
+  });
+
+  it('never matches technical programId/classId in the text search', async () => {
+    setupDefaults();
+    mockGetImportMeta.mockResolvedValue(null);
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer({
+        id: 'v1',
+        config: {
+          ...makeDraftVer().config,
+          title: 'Alfa',
+          programId: 'prog-secret',
+          classId: 'cls-secret',
+          importId: 'imp-1',
+        },
+      }),
+    ]);
+    render(<VerificationsView />);
+    await screen.findByText('Alfa');
+
+    // Searching a technical id substring finds nothing (ids are not in the haystack).
+    fireEvent.change(screen.getByLabelText('Cerca verifica'), { target: { value: 'secret' } });
+    expect(screen.getByText(/nessuna verifica corrisponde ai filtri/i)).toBeTruthy();
+    expect(screen.queryByText('Alfa')).toBeNull();
+
+    // The readable title still matches.
+    fireEvent.change(screen.getByLabelText('Cerca verifica'), { target: { value: 'alfa' } });
+    expect(screen.getByText('Alfa')).toBeTruthy();
+  });
+
+  it('does not freeze a transient getImportMeta error as "Senza anno" and retries on a refresh', async () => {
+    setupDefaults();
+    mockListClasses.mockResolvedValue([cls3a]);
+    mockGetImportMeta
+      .mockRejectedValueOnce(new Error('transient'))
+      .mockResolvedValue({ annoScolastico: '2025/2026' });
+    mockListVerifications.mockResolvedValue([verWith('v1', 'Alfa', 'imp-1', 'cls-1')]);
+    render(<VerificationsView />);
+    await screen.findByText('Alfa');
+
+    // First resolution threw → year not cached, not shown yet.
+    await waitFor(() => expect(mockGetImportMeta).toHaveBeenCalledTimes(1));
+    expect(within(screen.getByRole('table')).queryByText('2025/2026')).toBeNull();
+
+    // A later list update re-runs the effect; the freed key is retried.
+    fireEvent.click(screen.getAllByRole('button', { name: /Abilita PDF studente/i })[0]!);
+    await waitFor(() => expect(mockSetVerificationStudentPdfEnabled).toHaveBeenCalled());
+    await waitFor(() => expect(mockGetImportMeta).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(within(screen.getByRole('table')).getByText('2025/2026')).toBeTruthy(),
+    );
+  });
 });
