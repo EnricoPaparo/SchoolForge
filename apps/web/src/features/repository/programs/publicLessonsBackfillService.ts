@@ -55,8 +55,9 @@ function migrationMarkerRef(db: Firestore) {
 
 /**
  * Owner-only cheap check: reads a single settings document instead of
- * scanning every `publicLessons` doc, so `LessonsView` can decide whether to
- * show the backfill trigger without a `getDocs` sweep on each mount. `true`
+ * scanning every `publicLessons` doc, so the maintenance notice in
+ * `DidatticaView` can decide whether to show the backfill trigger without a
+ * `getDocs` sweep on each mount. `true`
  * means a previous `backfillPublicLessonsContent` run completed with zero
  * failures — new write paths (import/createLesson/updateLessonMarkdownBody)
  * already keep `content` in sync, so once this is true it stays true.

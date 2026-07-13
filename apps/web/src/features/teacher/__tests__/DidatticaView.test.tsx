@@ -316,7 +316,7 @@ describe('DidatticaView — publicLessons backfill notice (DUX-04D)', () => {
     expect(screen.queryByText(/proiezioni lezione legacy/i)).toBeNull();
   });
 
-  it('shows the notice and runs the backfill when the migration is pending', async () => {
+  it('runs a pending backfill and keeps its final summary visible', async () => {
     mockMigrationComplete.mockResolvedValue(false);
     mockBackfill.mockResolvedValue({ analyzed: 3, migrated: 2, skipped: 1, failed: [] });
     mockLoadCourseLibrary.mockResolvedValue([card()]);
@@ -326,7 +326,10 @@ describe('DidatticaView — publicLessons backfill notice (DUX-04D)', () => {
     fireEvent.click(screen.getByRole('button', { name: /sincronizza proiezioni legacy/i }));
 
     await waitFor(() => expect(mockBackfill).toHaveBeenCalledOnce());
-    // On success the marker flips and the notice disappears.
+    // On success the operational prompt disappears, while the result remains visible.
     await waitFor(() => expect(screen.queryByText(/proiezioni lezione legacy/i)).toBeNull());
+    expect(
+      screen.getByText('Analizzate: 3 · Migrate: 2 · Già sincronizzate: 1 · Fallite: 0'),
+    ).toBeTruthy();
   });
 });

@@ -42,7 +42,7 @@
 
 - Routing docente/studente, pending/blocked, nessuna classe, filtro classe lezioni/verifiche, PDF senza soluzioni: `g4-lite-checklist-manuale.md` + suite `pnpm test`.
 - Storage Rules (nuovo modello, nessuna lettura Firestore): `apps/web/src/rules/storage.test.ts`, `apps/web/src/rules/m3l-storage-lesson-class-gate.rules.test.ts`, `apps/web/src/rules/import.rules.test.ts` — verificati con `pnpm test:rules` prima di questa checklist (213/213 al momento della stesura).
-- Blocco cancellazione programma con verifiche collegate: `programsService.test.ts`/`ProgramsView.test.tsx`.
+- Blocco cancellazione programma con verifiche collegate: `programsService.test.ts`/`CourseWorkspace.test.tsx`.
 - Naming e prefill PDF verifica studente: `verificationPdfNaming.test.ts`, `verificationPdf.test.ts`.
 
 ## Limiti residui

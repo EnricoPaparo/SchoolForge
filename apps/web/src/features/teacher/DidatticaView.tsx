@@ -289,13 +289,13 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
               {backfillError}
             </p>
           )}
-          {backfillSummary && (
-            <p>
-              Analizzate: {backfillSummary.analyzed} · Migrate: {backfillSummary.migrated} · Già
-              sincronizzate: {backfillSummary.skipped} · Fallite: {backfillSummary.failed.length}
-            </p>
-          )}
         </div>
+      )}
+      {backfillSummary && (
+        <p role="status" className={styles.migrationSummary}>
+          Analizzate: {backfillSummary.analyzed} · Migrate: {backfillSummary.migrated} · Già
+          sincronizzate: {backfillSummary.skipped} · Fallite: {backfillSummary.failed.length}
+        </p>
       )}
       <div className={styles.toolbar}>
         <div className={styles.filters}>

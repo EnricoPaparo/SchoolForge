@@ -53,10 +53,11 @@ Legenda stato: ✅ coperta · 🅫 intenzionalmente ritirata · ⛔ gap bloccant
 
 ## Domande (`DomandeView`)
 
-Tutte le operazioni pool sono realizzate dal **componente condiviso**
-`QuestionPoolEditor`, montato sia da `DomandeView` (legacy) sia dalla scheda
-Domande di `CourseWorkspace`. La rimozione di `DomandeView` non tocca la
-logica: resta identica in Didattica.
+Tutte le operazioni pool sono realizzate da `QuestionPoolEditor`, estratto e
+condiviso con la vista legacy durante DUX-03. Dopo la rimozione di
+`DomandeView`, il componente è montato unicamente dalla scheda Domande di
+`CourseWorkspace`: la logica resta identica e ha un solo punto di manutenzione
+in Didattica.
 
 | Azione | Service/helper | Sostituto in Didattica | Test | Stato |
 |---|---|---|---|---|
@@ -90,8 +91,9 @@ owner ha già eseguito la migrazione.
 amministrativa discreta dentro Didattica** (avviso nella libreria, visibile
 solo quando `isPublicLessonsMigrationComplete` è `false`), riusando gli stessi
 service `isPublicLessonsMigrationComplete`/`backfillPublicLessonsContent` senza
-duplicare logica. A migrazione conclusa il marker si imposta e l'avviso sparisce
-per sempre, esattamente come in `LessonsView`.
+duplicare logica. A migrazione conclusa il marker si imposta e l'avviso
+operativo sparisce, come avveniva nella precedente `LessonsView`; il riepilogo
+dell'esecuzione resta visibile nella sessione corrente.
 
 ## Componenti/UI ritirati con la rimozione
 
