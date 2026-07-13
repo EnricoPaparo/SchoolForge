@@ -50,7 +50,7 @@ import {
   parseLessonMetadata,
 } from '../repository/validation/lessonMetadata.js';
 import type { LessonMetadata } from '../repository/validation/types.js';
-import { fetchLessonContent } from './lessonContent.js';
+import { fetchLessonContent, fetchPublicLessonContent } from './lessonContent.js';
 import {
   describeStorageError,
   storageErrorDetailLines,
@@ -123,6 +123,23 @@ function sortLessons(lessons: LessonItem[]): LessonItem[] {
       lessonOrderKey(a) - lessonOrderKey(b) ||
       a.filename.localeCompare(b.filename),
   );
+}
+
+/**
+ * Builds the visual lesson metadata from the tree lesson itself (MOB-01C).
+ * When the body comes from the `publicLessons` projection — which stores the
+ * body already split from its front matter — the metadata can't be re-parsed
+ * from the content, so it is taken from the fields `listLessons` already
+ * loaded (populated from the same front matter at import time).
+ */
+function lessonMetadataFromItem(lesson: LessonItem): LessonMetadata {
+  return {
+    titolo: lesson.titolo ?? null,
+    sottotitolo: lesson.sottotitolo ?? null,
+    difficolta: lesson.difficolta ?? null,
+    concettiChiave: lesson.concettiChiave ?? [],
+    obiettivi: lesson.obiettivi ?? [],
+  };
 }
 
 function poolStatusText(status: LessonItem['poolStatus']): string {
@@ -455,10 +472,37 @@ export function CourseWorkspace({
     setLessonError(null);
     setLessonErrorDetails(null);
     setLessonLoading(true);
-    // Wall-clock start, so the diagnostics can report how long Brave hung
+    // Wall-clock start, so the diagnostics can report how long a hang lasted
     // before the failure (a long elapsed ≈ Firebase's own retry window).
     const startedAt = Date.now();
+    // Tracks which source is in play, so an error's diagnostics name it and
+    // so a Firestore failure never silently falls through to Storage.
+    let source: 'firestore' | 'storage' = 'firestore';
     try {
+      // Primary (MOB-01C): the already-synced Firestore projection. One
+      // deterministic getDoc, validated against the open course/import — no
+      // Storage round-trip (which times out on Brave mobile).
+      const projected = await fetchPublicLessonContent(
+        {
+          lessonId: lesson.id,
+          programId: card.programId,
+          importId: card.activeImportId ?? '',
+          ownerUid,
+        },
+        db,
+      );
+      if (lessonRequestRef.current !== requestId) return; // superseded
+      if (projected !== null) {
+        // Valid projection: render immediately, metadata from the loaded tree.
+        setLessonMetadata(lessonMetadataFromItem(lesson));
+        setLessonContent(projected);
+        return;
+      }
+      // Legacy fallback: projection absent / no valid content / mismatched —
+      // read the Markdown from Storage and parse its front matter. Reached
+      // only because the getDoc SUCCEEDED but had nothing usable, never
+      // because it threw (a thrown getDoc is handled below, no Storage read).
+      source = 'storage';
       const raw = await fetchLessonContent(lesson.storageRef, storage);
       const { metadata, body } = parseLessonMetadata(raw);
       if (lessonRequestRef.current !== requestId) return; // superseded
@@ -466,12 +510,13 @@ export function CourseWorkspace({
       setLessonContent(body);
     } catch (err) {
       if (lessonRequestRef.current !== requestId) return; // superseded
-      // Preserve the ORIGINAL error (Firebase StorageError) — classify it into
-      // whitelisted, non-sensitive fields for the UI, and log a single
-      // structured line per failed attempt (console only, never to Firebase).
+      // Preserve the ORIGINAL error — classify it into whitelisted,
+      // non-sensitive fields for the UI, and log a single structured line per
+      // failed attempt (console only, never to Firebase).
       const details = describeStorageError(err, {
         bucket: storage.app?.options?.storageBucket ?? null,
         elapsedMs: Date.now() - startedAt,
+        source,
       });
       console.error('[lesson-content] load failed', {
         storageRef: lesson.storageRef,

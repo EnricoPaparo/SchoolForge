@@ -66,6 +66,7 @@ describe('describeStorageError — safe classification', () => {
       'Stato HTTP',
       'Durata',
       'Dopo retry automatici',
+      'Sorgente',
       'Connessione',
       'Browser',
       'Bucket',

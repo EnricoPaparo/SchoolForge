@@ -8,6 +8,7 @@ import type { LessonItem, UdaItem } from '../../repository/programs/programsServ
 const mockListUdas = vi.fn();
 const mockListLessons = vi.fn();
 const mockFetchLessonContent = vi.fn();
+const mockFetchPublicLessonContent = vi.fn();
 const mockUpdateProgramTitle = vi.fn();
 const mockSetProgramClassIds = vi.fn();
 const mockDeleteProgram = vi.fn();
@@ -75,6 +76,7 @@ vi.mock('../../repository/classes/classesService.js', () => ({
 }));
 vi.mock('../lessonContent.js', () => ({
   fetchLessonContent: (...a: unknown[]) => mockFetchLessonContent(...a),
+  fetchPublicLessonContent: (...a: unknown[]) => mockFetchPublicLessonContent(...a),
 }));
 vi.mock('../MarkdownRenderer.js', () => ({
   MarkdownRenderer: ({ markdown }: { markdown: string }) => <div data-testid="md">{markdown}</div>,
@@ -111,6 +113,9 @@ afterEach(() => {
 });
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: no usable Firestore projection, so existing tests exercise the
+  // legacy Storage path (fetchLessonContent). MOB-01C tests override this.
+  mockFetchPublicLessonContent.mockResolvedValue(null);
 });
 
 // Controllable matchMedia stub for the mobile/desktop breakpoint tests.
@@ -294,10 +299,11 @@ describe('CourseWorkspace — selection', () => {
       lesson('lB', 'uda-01-reti', { titolo: 'Lezione B' }),
     ]);
 
-    // Two controlled fetches: A (first selected) resolves *after* B (second).
+    // Two controlled reads (primary Firestore projection): A (first selected)
+    // resolves *after* B (second).
     let resolveA!: (v: string) => void;
     let resolveB!: (v: string) => void;
-    mockFetchLessonContent
+    mockFetchPublicLessonContent
       .mockImplementationOnce(() => new Promise<string>((r) => (resolveA = r)))
       .mockImplementationOnce(() => new Promise<string>((r) => (resolveB = r)));
 
@@ -391,7 +397,8 @@ describe('CourseWorkspace — content load diagnostics + retry (MOB-01B)', () =>
     mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Rotta' })]);
     let resolveRetry!: (v: string) => void;
     let resolveNewer!: (v: string) => void;
-    mockFetchLessonContent
+    // Primary reads go through the Firestore projection now; drive it.
+    mockFetchPublicLessonContent
       .mockRejectedValueOnce(storageErr())
       .mockImplementationOnce(() => new Promise<string>((r) => (resolveRetry = r)))
       .mockImplementationOnce(() => new Promise<string>((r) => (resolveNewer = r)));
@@ -413,6 +420,92 @@ describe('CourseWorkspace — content load diagnostics + retry (MOB-01B)', () =>
     resolveRetry('# Due\n\nmeta-obsoleto.');
     await waitFor(() => expect(screen.getByTestId('md').textContent).toContain('meta-nuovo'));
     expect(screen.getByTestId('md').textContent).not.toContain('meta-obsoleto');
+  });
+});
+
+describe('CourseWorkspace — Firestore projection primary source (MOB-01C)', () => {
+  async function openLessonFrom(over: Partial<LessonItem> = {}) {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('l1', 'uda-01-reti', { titolo: 'Lezione A', ...over }),
+    ]);
+    renderWorkspace();
+    await expandUda();
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+  }
+
+  it('valid projection → one Firestore read, zero Storage reads', async () => {
+    mockFetchPublicLessonContent.mockResolvedValue('# Titolo\n\nCorpo dalla proiezione.');
+    await openLessonFrom();
+
+    await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
+    expect(screen.getByTestId('md').textContent).toContain('Corpo dalla proiezione.');
+    expect(mockFetchPublicLessonContent).toHaveBeenCalledTimes(1);
+    expect(mockFetchPublicLessonContent).toHaveBeenCalledWith(
+      { lessonId: 'l1', programId: 'p1', importId: 'imp1', ownerUid: 'owner' },
+      expect.anything(),
+    );
+    expect(mockFetchLessonContent).not.toHaveBeenCalled();
+  });
+
+  it('valid empty content → rendered as empty, zero Storage reads', async () => {
+    mockFetchPublicLessonContent.mockResolvedValue('');
+    await openLessonFrom();
+
+    await waitFor(() => expect(screen.getByText(/nessun contenuto disponibile/i)).toBeTruthy());
+    expect(mockFetchLessonContent).not.toHaveBeenCalled();
+  });
+
+  it('keeps the lesson metadata (from the tree) when serving the projection', async () => {
+    mockFetchPublicLessonContent.mockResolvedValue('Corpo.');
+    // titolo stays 'Lezione A' (the sidebar/click name); the subtitle comes
+    // from the tree lesson, not from re-parsed front matter.
+    await openLessonFrom({ sottotitolo: 'Livelli' });
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Lezione A' })).toBeTruthy());
+    expect(screen.getByText('Livelli')).toBeTruthy();
+  });
+
+  it('legacy projection without content → one Firestore + one Storage read', async () => {
+    mockFetchPublicLessonContent.mockResolvedValue(null); // legacy / no content
+    mockFetchLessonContent.mockResolvedValue('# T\n\nCorpo da Storage legacy.');
+    await openLessonFrom();
+
+    await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
+    expect(screen.getByTestId('md').textContent).toContain('Corpo da Storage legacy.');
+    expect(mockFetchPublicLessonContent).toHaveBeenCalledTimes(1);
+    expect(mockFetchLessonContent).toHaveBeenCalledTimes(1);
+    expect(mockFetchLessonContent).toHaveBeenCalledWith('ref/uda-01-reti/l1.md', expect.anything());
+  });
+
+  it('Firestore error → NO Storage fallback, error visible, source = Firestore', async () => {
+    mockFetchPublicLessonContent.mockRejectedValue(
+      Object.assign(new Error('denied'), { code: 'permission-denied' }),
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await openLessonFrom();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Riprova' })).toBeTruthy());
+    // Never fell through to Storage.
+    expect(mockFetchLessonContent).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Dettagli tecnici'));
+    expect(screen.getByText('Firestore publicLessons')).toBeTruthy();
+  });
+
+  it('Riprova after a Firestore error performs exactly one new read', async () => {
+    mockFetchPublicLessonContent
+      .mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'unavailable' }))
+      .mockResolvedValueOnce('# Ok\n\nRecuperato via proiezione.');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await openLessonFrom();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Riprova' })).toBeTruthy());
+    expect(mockFetchPublicLessonContent).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Riprova' }));
+    await waitFor(() => expect(screen.getByTestId('md')).toBeTruthy());
+    expect(mockFetchPublicLessonContent).toHaveBeenCalledTimes(2);
+    expect(mockFetchLessonContent).not.toHaveBeenCalled();
+    expect(screen.getByTestId('md').textContent).toContain('Recuperato via proiezione.');
   });
 });
 

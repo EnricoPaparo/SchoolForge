@@ -39,7 +39,16 @@ export type StorageErrorDetails = {
   browser: string;
   /** Configured Storage bucket (public config, never a signed URL). */
   bucket: string | null;
+  /** Which source failed: the Firestore projection or the legacy Storage read. */
+  source: 'firestore' | 'storage' | null;
 };
+
+/** Human label for the content source shown in the diagnostics. */
+export function sourceLabel(source: 'firestore' | 'storage' | null): string {
+  if (source === 'firestore') return 'Firestore publicLessons';
+  if (source === 'storage') return 'Storage legacy fallback';
+  return 'n/d';
+}
 
 /**
  * Elapsed threshold (ms) above which a failure is treated as having gone
@@ -119,7 +128,12 @@ function globalThisNavigator(): Navigator | undefined {
  */
 export function describeStorageError(
   err: unknown,
-  options: { bucket?: string | null; navigator?: Navigator; elapsedMs?: number | null } = {},
+  options: {
+    bucket?: string | null;
+    navigator?: Navigator;
+    elapsedMs?: number | null;
+    source?: 'firestore' | 'storage' | null;
+  } = {},
 ): StorageErrorDetails {
   const code = readString(err, 'code') ?? 'unknown';
   const name = readString(err, 'name') ?? (err instanceof Error ? 'Error' : typeof err);
@@ -146,6 +160,7 @@ export function describeStorageError(
     online,
     browser: syntheticBrowser(options.navigator),
     bucket: options.bucket ?? null,
+    source: options.source ?? null,
   };
 }
 
@@ -166,6 +181,7 @@ export function storageErrorDetailLines(
       value: details.elapsedMs === null ? 'n/d' : `${details.elapsedMs} ms`,
     },
     { label: 'Dopo retry automatici', value: details.afterAutoRetries ? 'sì' : 'no' },
+    { label: 'Sorgente', value: sourceLabel(details.source) },
     { label: 'Connessione', value: details.online ? 'online' : 'offline' },
     { label: 'Browser', value: details.browser },
     { label: 'Bucket', value: details.bucket ?? 'n/d' },

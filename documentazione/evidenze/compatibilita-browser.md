@@ -8,26 +8,35 @@ Firebase Storage `getBytes`).
 |---|---|---|---|
 | Safari | mobile (iOS) | ✅ funziona | Stesso account/lezione di Brave. |
 | Chrome | desktop | ✅ funziona | Percorso desktop = percorso mobile (MOB-01). |
-| **Brave** | **mobile** | ⚠️ **da verificare** | Il caricamento resta a lungo in attesa e termina per timeout con "Impossibile caricare il contenuto della lezione", anche con Shields disattivati, dati puliti e nuovo login. |
+| **Brave** | **mobile** | 🔧 **corretto in MOB-01C, da confermare su DEV** | In precedenza il caricamento restava a lungo in attesa e falliva con `storage/retry-limit-exceeded` (httpStatus 0, ~120s): la lettura Storage `getBytes` non completava il round-trip. MOB-01C legge il corpo dalla proiezione Firestore `publicLessons.content` (nessun `getBytes`), quindi il timeout non si presenta più. Da confermare su DEV con Brave mobile reale. |
 
-## Brave mobile — diagnosi in corso (MOB-01B)
+## Brave mobile — diagnosi (MOB-01B) e correzione (MOB-01C)
 
-Non è stata individuata una causa certa lato codice: i percorsi desktop e
-mobile usano lo stesso `selectLesson()`, lo stesso `storageRef` e una sola
-lettura (dimostrato in MOB-01). Le Storage Rules gateano la lettura solo su
-`request.auth.uid == ownerUid`, senza alcuna distinzione per dispositivo o
-browser.
+I percorsi desktop e mobile usano lo stesso `selectLesson()`, lo stesso
+`storageRef` e una sola lettura (dimostrato in MOB-01); le Storage Rules
+gateano la lettura solo su `request.auth.uid == ownerUid`, senza distinzione
+per dispositivo o browser. La diagnostica MOB-01B (pannello "Dettagli
+tecnici" + "Riprova") ha raccolto l'evidenza reale su DEV per Brave mobile:
 
-MOB-01B aggiunge una **diagnostica utente non sensibile** (pannello
-"Dettagli tecnici" + pulsante "Riprova") che, al prossimo fallimento su Brave
-mobile reale, permette di leggere: codice Firebase Storage, categoria, stato
-HTTP, **durata (`elapsedMs`)**, se il fallimento è avvenuto **dopo i retry
-automatici di Firebase**, online/offline, browser sintetico e bucket. Non
-vengono mostrati token, header `Authorization`, `serverResponse`, URL firmati
-o dati personali.
+- `code: storage/retry-limit-exceeded`
+- `httpStatus: 0`
+- `elapsedMs: 120588`
+- `online: true`
 
-**Ancora da verificare**: raccogliere codice ed `elapsedMs` reali da Brave
-mobile per decidere l'intervento. Nessuna modifica speculativa applicata
-(niente aumento di `maxOperationRetryTime`, niente retry aggiuntivi oltre al
-"Riprova" manuale, niente fallback `getDownloadURL`/`fetch`, proxy o modifiche
-CORS).
+cioè la richiesta `getBytes` a Firebase Storage non completa il round-trip su
+Brave e fallisce solo dopo l'esaurimento dei retry automatici di Firebase
+(~120s), mentre Safari mobile funziona.
+
+**Correzione (MOB-01C)**: la consultazione del corpo lezione nel workspace
+docente legge in via primaria la proiezione Firestore già esistente
+`publicLessons/{lessonId}.content` (un solo `getDoc` deterministico, validato
+per `ownerUid`/`programId`/`importId`), che è già la sorgente esclusiva lato
+studente. La lettura Storage `getBytes` resta solo come **fallback legacy**
+per proiezioni assenti/non valide/incoerenti. Nessuna nuova collezione,
+schema, indice, dipendenza, Cloud Function, proxy o modifica CORS; nessun
+aumento di `maxOperationRetryTime`. La diagnostica MOB-01B resta attiva e ora
+mostra anche la voce **`Sorgente`** (`Firestore publicLessons` /
+`Storage legacy fallback`).
+
+La proiezione non contiene pool né dati privati: Storage resta owner-only e il
+comportamento studente è invariato.
