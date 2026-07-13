@@ -66,7 +66,7 @@
 
 /* ── Verification table ──────────────────────────────────────────── */
 .tableWrap {
-  overflow-x: auto;
+  overflow-x: hidden;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -75,9 +75,34 @@
 
 .table {
   width: 100%;
-  min-width: 820px;
+  min-width: 0;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.875rem;
+}
+
+.titleColumn {
+  width: 22%;
+}
+
+.courseColumn {
+  width: 17%;
+}
+
+.classColumn {
+  width: 10%;
+}
+
+.statusColumn {
+  width: 21%;
+}
+
+.exercisesColumn {
+  width: 5%;
+}
+
+.actionsColumn {
+  width: 25%;
 }
 
 .createRowInline {
@@ -89,7 +114,7 @@
 }
 
 .createCell {
-  min-width: 10rem;
+  min-width: 0;
 }
 
 .createInput {
@@ -160,13 +185,15 @@
   padding: 0.5625rem 0.75rem;
   border-bottom: 1px solid var(--color-border);
   vertical-align: middle;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .tdActions {
   padding: 0.4375rem 0.75rem;
   border-bottom: 1px solid var(--color-border);
   vertical-align: middle;
-  min-width: 8.5rem;
+  min-width: 0;
 }
 
 .actionsWrapper {
@@ -176,14 +203,12 @@
   align-items: center;
 }
 
-/* Stato column: fixed width so toggling between "Online attivo" /
-   "Online disattivato" / "Nessuna classe" never resizes the column or row. */
-.statusColumn {
-  width: 11rem;
-  min-width: 11rem;
-}
-
 .verTitleBtn {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   background: none;
   border: none;
   padding: 0;
@@ -208,7 +233,7 @@
   margin-top: 0.125rem;
   font-size: 0.75rem;
   color: var(--color-text-muted);
-  white-space: nowrap;
+  line-height: 1.35;
 }
 
 .metaCell {
@@ -394,6 +419,21 @@
   flex-wrap: wrap;
 }
 
+.backButton {
+  flex-basis: 100%;
+  width: fit-content;
+  padding-inline: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.backButton:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+}
+
 .detailTitle {
   font-size: 1.125rem;
   font-weight: 700;
@@ -489,11 +529,17 @@
   color: var(--color-error);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 900px) {
+  .tableWrap {
+    overflow-x: auto;
+  }
+
   .table {
     min-width: 760px;
   }
+}
 
+@media (max-width: 640px) {
   .createCell {
     min-width: 8.75rem;
   }

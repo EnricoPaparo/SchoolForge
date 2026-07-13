@@ -12,7 +12,8 @@
   padding: 0.25rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: var(--color-surface);
+  background: var(--color-surface-subtle);
+  box-shadow: var(--shadow-sm);
 }
 
 .tab {
@@ -193,7 +194,6 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
 }
 
 .table {

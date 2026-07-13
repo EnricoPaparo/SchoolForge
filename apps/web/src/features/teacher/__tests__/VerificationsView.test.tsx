@@ -236,7 +236,7 @@ describe('VerificationsView', () => {
     expect(within(table).getByText('Classe')).toBeTruthy();
     expect(within(table).getByText('Corso')).toBeTruthy();
     expect(within(table).getByText('Stato')).toBeTruthy();
-    expect(within(table).getByText('Domande')).toBeTruthy();
+    expect(within(table).getByText('Es.')).toBeTruthy();
 
     expect(within(table).getByText('Verifica Algebra')).toBeTruthy();
     expect(within(table).getByText('Verifica Geometria')).toBeTruthy();
@@ -349,6 +349,22 @@ describe('VerificationsView', () => {
     expect(within(firstBodyRow).getByLabelText(/titolo nuova verifica/i)).toBeTruthy();
     expect(within(firstBodyRow).getByText('Nuova')).toBeTruthy();
     expect(within(firstBodyRow).getByRole('button', { name: /crea verifica/i })).toBeTruthy();
+  });
+
+  it('opens verification details as a dedicated level and returns to the list', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+
+    fireEvent.click(await screen.findByText('Verifica Algebra'));
+
+    expect(screen.getByLabelText('Dettaglio verifica')).toBeTruthy();
+    expect(screen.queryByRole('table')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /torna alle verifiche/i }));
+
+    expect(screen.getByRole('table')).toBeTruthy();
+    expect(screen.queryByLabelText('Dettaglio verifica')).toBeNull();
   });
 
   it('creates draft verification', async () => {
@@ -1660,6 +1676,7 @@ describe('VerificationsView — consegne online monitor (M3F-05)', () => {
     fireEvent.click(screen.getByText('Verifica Algebra'));
     await waitFor(() => expect(mockWatchSubmissions).toHaveBeenCalledTimes(1));
 
+    fireEvent.click(screen.getByRole('button', { name: /torna alle verifiche/i }));
     fireEvent.click(screen.getByText(draftVer.config.title));
     await waitFor(() => expect(unsubscribe).toHaveBeenCalledTimes(1));
     // Draft renders no monitor region at all (M3F-11C), no listener.

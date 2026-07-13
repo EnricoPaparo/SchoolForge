@@ -774,23 +774,35 @@ export function VerificationsView() {
 
   return (
     <section aria-label="Verifiche" className={styles.container}>
-      <form
-        id="new-verification-form"
-        aria-label="Nuova verifica"
-        onSubmit={(e) => void handleCreate(e)}
-      />
+      {!selectedVer && (
+        <form
+          id="new-verification-form"
+          aria-label="Nuova verifica"
+          onSubmit={(e) => void handleCreate(e)}
+        />
+      )}
 
       {/* ── Verification table ── */}
-      {
+      {!selectedVer && (
         <div className={styles.tableWrap}>
           <table className={styles.table}>
+            <colgroup>
+              <col className={styles.titleColumn} />
+              <col className={styles.courseColumn} />
+              <col className={styles.classColumn} />
+              <col className={styles.statusColumn} />
+              <col className={styles.exercisesColumn} />
+              <col className={styles.actionsColumn} />
+            </colgroup>
             <thead>
               <tr>
                 <th className={styles.th}>Titolo</th>
                 <th className={styles.th}>Corso</th>
                 <th className={styles.th}>Classe</th>
-                <th className={`${styles.th} ${styles.statusColumn}`}>Stato</th>
-                <th className={styles.th}>Domande</th>
+                <th className={styles.th}>Stato</th>
+                <th className={styles.th} title="Esercizi">
+                  Es.
+                </th>
                 <th className={styles.th}>Azioni</th>
               </tr>
             </thead>
@@ -840,7 +852,7 @@ export function VerificationsView() {
                     value={newClassId}
                     onChange={(e) => setNewClassId(e.target.value)}
                   >
-                    <option value="">— Nessuna classe —</option>
+                    <option value="">Nessuna</option>
                     {classes.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -1061,7 +1073,6 @@ export function VerificationsView() {
                         <button
                           type="button"
                           className={styles.verTitleBtn}
-                          aria-pressed={selectedVer?.id === v.id}
                           aria-label={`Apri dettaglio verifica ${v.config.title}`}
                           onClick={() => void handleSelectVer(v)}
                         >
@@ -1253,12 +1264,19 @@ export function VerificationsView() {
             </tbody>
           </table>
         </div>
-      }
+      )}
 
       {/* ── Detail panel — draft configuration only; active/closed show a compact summary ── */}
       {selectedVer && (
         <div className={styles.detail} aria-label="Dettaglio verifica">
           <div className={styles.detailHeader}>
+            <button
+              type="button"
+              className={styles.backButton}
+              onClick={() => setSelectedVer(null)}
+            >
+              ← Torna alle verifiche
+            </button>
             <h2 className={styles.detailTitle}>{selectedVer.config.title}</h2>
             <StatusBadge status={selectedVer.status} visibility={selectedVer.visibility} />
             <span className={styles.pdfStatusBadge} aria-live="polite">

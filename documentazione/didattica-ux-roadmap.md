@@ -1,7 +1,7 @@
 # Didattica — Roadmap UX (DUX)
 
 **Versione:** 1.1
-**Stato:** DUX-00→DUX-05C e DUX-06A/06B implementati; viste legacy rimosse, Classi assorbita in Studenti, Verifiche uniformata e shell finale applicata. Il polish post-smoke DUX-06C e il Gate GDUX restano da completare.
+**Stato:** DUX-00→DUX-06C implementati; viste legacy rimosse, Classi assorbita in Studenti, Verifiche uniformata e shell finale applicata. Resta da completare il Gate GDUX.
 **Dipendenze:** nessuna dipendenza tecnica da M4 (M4-03/M4-04 continuano in parallelo); riusa esclusivamente backend/service/dati già esistenti di RE (Repository Editor) e QE (Question Editor).
 
 ---
@@ -274,7 +274,7 @@ Nessun modulo esistente (Corsi/Lezioni/Domande/Classi) viene dichiarato "rimosso
 | DUX-05C ✅ | Restauro Template (griglia 4/2/1), header unico definitivo e "aurora sobria" sul corpo della shell (§17). **Implementato.** | DUX-05B | Template ripulito; header a riga singola con selettore mobile; SVG locali; fondo statico senza pattern, nuove letture o dipendenze. |
 | DUX-06A ✅ | Hardening funzionale del workspace Didattica dopo lo smoke DEV: menu contestuali non ritagliati, chiusura click-esterno/Escape, recupero del draft Informazioni tra schede, sidebar gerarchica con icone e indicatori distinti per lezione svolta e stato pool, controlli icona uniformati. **Implementato.** | DUX-05C | Nessuna nuova funzione, lettura, scrittura, Rule o dipendenza; pool valido/assente/non valido ha indicatore testuale oltre al colore; draft non perso tra schede. |
 | DUX-06B ✅ | Polish della libreria e del workspace Didattica: toolbar filtri su superficie coerente, ricerca moderna, card interamente apribile con titolo su due righe, padding delle righe e rimozione dei titoletti contestuali ridondanti. **Implementato.** | DUX-06A | Solo UX/UI, nessuna modifica ai contratti repository, alle letture o alle scritture. |
-| DUX-06C | Coerenza Studenti/Classi e Verifiche: tab interno, inserimento classe stabile, tabella verifiche desktop e dettaglio dedicato. | DUX-06B | Nessuna nuova lettura o modifica a Rules/schema. |
+| DUX-06C ✅ | Coerenza Studenti/Classi e Verifiche: controlli globali separati dal pannello dati con tab interno, inserimento classe stabile, tabella verifiche compatta su desktop e dettaglio a livello dedicato. **Implementato.** | DUX-06B | Nessuna nuova lettura o modifica a Rules/schema; lista e dettaglio verifica non si accumulano verticalmente. |
 | Gate GDUX | Verifica finale end-to-end di tutta la roadmap Didattica. | DUX-01…06C (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche, vedi §22. |
 
 ---
