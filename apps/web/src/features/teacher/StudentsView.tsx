@@ -413,6 +413,81 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
 
   return (
     <section aria-label="Studenti" className={styles.container}>
+      <div className={styles.togglesGrid}>
+        <ToggleCard
+          title="Portale studenti"
+          description="Consente agli studenti approvati di leggere lezioni e verifiche pubblicate."
+          checked={access.studentPortalEnabled}
+          disabled={togglingPortal}
+          onToggle={() => void handleTogglePortal()}
+        />
+        <ToggleCard
+          title="Nuove richieste"
+          description="Consente a un account Google sconosciuto di creare una richiesta di accesso in attesa."
+          checked={access.newStudentRequestsEnabled}
+          disabled={togglingRequests}
+          onToggle={() => void handleToggleRequests()}
+        />
+        <ExamModeCard
+          examMode={access.examMode}
+          classNameById={classNameById}
+          eligibleClassIds={eligibleExamClassIds}
+          disabled={
+            examModeSaving || (!access.examMode.enabled && eligibleExamClassIds.length === 0)
+          }
+          onRequestEnable={() => void handleEnableExamMode()}
+          onRequestDisable={handleStartDisableExamMode}
+        />
+      </div>
+
+      {access.examMode.enabled && (
+        <p role="status" className={styles.examModeBanner}>
+          ⚠️ Modalità verifica attiva — {examModeStatusLabel(access.examMode, classNameById)}. Le
+          lezioni non sono visibili agli studenti delle classi coinvolte.
+        </p>
+      )}
+
+      {examModeError && !examModeDisableConfirm && (
+        <p role="alert" className="text-error">
+          {examModeError}
+        </p>
+      )}
+
+      {examModeDisableConfirm && (
+        <div className={styles.examModeOverlay}>
+          <div
+            className={styles.examModeDialog}
+            role="alertdialog"
+            aria-label="Disattiva modalità verifica"
+          >
+            <h3 className={styles.examModeDialogTitle}>Disattiva modalità verifica</h3>
+            <p>Le lezioni torneranno visibili agli studenti delle classi coinvolte. Continuare?</p>
+            {examModeError && (
+              <p role="alert" className="text-error">
+                {examModeError}
+              </p>
+            )}
+            <div className={styles.examModeDialogActions}>
+              <button
+                type="button"
+                onClick={() => setExamModeDisableConfirm(false)}
+                disabled={examModeSaving}
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={examModeSaving}
+                onClick={() => void handleConfirmDisableExamMode()}
+              >
+                {examModeSaving ? 'Disattivazione…' : 'Disattiva'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className={styles.tabs} role="tablist" aria-label="Gestione studenti e classi">
         <button
           ref={studentsTabRef}
@@ -452,83 +527,6 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
           aria-labelledby="students-tab"
           className={styles.tabPanel}
         >
-          <div className={styles.togglesGrid}>
-            <ToggleCard
-              title="Portale studenti"
-              description="Consente agli studenti approvati di leggere lezioni e verifiche pubblicate."
-              checked={access.studentPortalEnabled}
-              disabled={togglingPortal}
-              onToggle={() => void handleTogglePortal()}
-            />
-            <ToggleCard
-              title="Nuove richieste"
-              description="Consente a un account Google sconosciuto di creare una richiesta di accesso in attesa."
-              checked={access.newStudentRequestsEnabled}
-              disabled={togglingRequests}
-              onToggle={() => void handleToggleRequests()}
-            />
-            <ExamModeCard
-              examMode={access.examMode}
-              classNameById={classNameById}
-              eligibleClassIds={eligibleExamClassIds}
-              disabled={
-                examModeSaving || (!access.examMode.enabled && eligibleExamClassIds.length === 0)
-              }
-              onRequestEnable={() => void handleEnableExamMode()}
-              onRequestDisable={handleStartDisableExamMode}
-            />
-          </div>
-
-          {access.examMode.enabled && (
-            <p role="status" className={styles.examModeBanner}>
-              ⚠️ Modalità verifica attiva — {examModeStatusLabel(access.examMode, classNameById)}.
-              Le lezioni non sono visibili agli studenti delle classi coinvolte.
-            </p>
-          )}
-
-          {examModeError && !examModeDisableConfirm && (
-            <p role="alert" className="text-error">
-              {examModeError}
-            </p>
-          )}
-
-          {examModeDisableConfirm && (
-            <div className={styles.examModeOverlay}>
-              <div
-                className={styles.examModeDialog}
-                role="alertdialog"
-                aria-label="Disattiva modalità verifica"
-              >
-                <h3 className={styles.examModeDialogTitle}>Disattiva modalità verifica</h3>
-                <p>
-                  Le lezioni torneranno visibili agli studenti delle classi coinvolte. Continuare?
-                </p>
-                {examModeError && (
-                  <p role="alert" className="text-error">
-                    {examModeError}
-                  </p>
-                )}
-                <div className={styles.examModeDialogActions}>
-                  <button
-                    type="button"
-                    onClick={() => setExamModeDisableConfirm(false)}
-                    disabled={examModeSaving}
-                  >
-                    Annulla
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    disabled={examModeSaving}
-                    onClick={() => void handleConfirmDisableExamMode()}
-                  >
-                    {examModeSaving ? 'Disattivazione…' : 'Disattiva'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {actionError && (
             <p role="alert" className="text-error">
               {actionError}

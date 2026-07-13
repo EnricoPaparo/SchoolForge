@@ -109,6 +109,11 @@ export function ClassesTab({
 
       <div className={styles.tableWrap}>
         <table className={styles.table}>
+          <colgroup>
+            <col className={styles.classColumn} />
+            <col className={styles.studentsColumn} />
+            <col className={styles.actionsColumn} />
+          </colgroup>
           <thead>
             <tr>
               <th className={styles.th}>Classe</th>

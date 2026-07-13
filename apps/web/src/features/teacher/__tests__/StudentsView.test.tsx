@@ -135,6 +135,7 @@ describe('StudentsView — tabs Studenti/Classi (DUX-05A)', () => {
 
     fireEvent.click(within(tabs).getByRole('tab', { name: 'Classi' }));
     const panel = screen.getByRole('tabpanel', { name: 'Classi' });
+    expect(screen.getAllByRole('switch')).toHaveLength(3);
     const classRow = within(panel).getByText('3A Informatica').closest('tr');
     expect(classRow).toBeTruthy();
     expect(within(classRow!).getByText('1')).toBeTruthy();
