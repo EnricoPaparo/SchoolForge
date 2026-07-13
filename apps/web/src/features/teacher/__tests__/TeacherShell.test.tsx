@@ -54,10 +54,31 @@ describe('TeacherShell', () => {
 
   it('renders the consolidated navigation sections (DUX-05A)', () => {
     render(<TeacherShell />);
-    expect(screen.getByRole('button', { name: /Didattica/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Verifiche/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Studenti/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Template/ })).toBeTruthy();
+    const nav = screen.getByRole('navigation', { name: 'Sezioni docente' });
+    expect(within(nav).getByRole('button', { name: 'Didattica' })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: 'Verifiche' })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: 'Studenti' })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: 'Template' })).toBeTruthy();
+  });
+
+  it('keeps logo, desktop navigation and account in one header row (DUX-05C)', () => {
+    render(<TeacherShell />);
+    const header = screen.getByRole('banner');
+    const nav = screen.getByRole('navigation', { name: 'Sezioni docente' });
+    expect(header.contains(screen.getByRole('img', { name: 'SchoolForge' }))).toBe(true);
+    expect(header.contains(nav)).toBe(true);
+    expect(header.contains(screen.getByRole('button', { name: /Account:/ }))).toBe(true);
+  });
+
+  it('switches section from the mobile selector and closes its menu', async () => {
+    render(<TeacherShell />);
+    fireEvent.click(screen.getByRole('button', { name: /sezione corrente: Didattica/i }));
+    const menu = screen.getByRole('menu', { name: 'Cambia sezione' });
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Template' }));
+
+    expect(screen.queryByRole('menu', { name: 'Cambia sezione' })).toBeNull();
+    expect(await screen.findByRole('region', { name: 'Template' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /sezione corrente: Template/i })).toBeTruthy();
   });
 
   it('no longer exposes the legacy Corsi/Lezioni/Domande nav (DUX-04D)', () => {
