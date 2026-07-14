@@ -33,10 +33,19 @@ export type CorrectionRegisterPdfParams = {
 
 // ─── Pure formatting helpers (unit-tested without jsPDF) ────────────────────
 
-/** `ottenuto / massimo`, or `—` when the row has no score yet. */
+/**
+ * `ottenuto / massimo` in Italian formatting (decimal comma, quarter-point
+ * scores like `2,5` / `2,75`), or `—` when the row has no score yet — matching
+ * the M4-03A CSV's Italian number format instead of a raw `String(2.5)`.
+ */
+const SCORE_FORMATTER = new Intl.NumberFormat('it-IT', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+
 export function formatScore(total: number | null, max: number | null): string {
   if (total === null && max === null) return '—';
-  const fmt = (v: number | null) => (v === null ? '—' : String(v));
+  const fmt = (v: number | null) => (v === null ? '—' : SCORE_FORMATTER.format(v));
   return `${fmt(total)} / ${fmt(max)}`;
 }
 

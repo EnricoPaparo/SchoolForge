@@ -95,6 +95,10 @@ const allText = () => (lastDoc?.textCalls ?? []).map((c) => c.text).join('\n');
 describe('correctionRegisterPdf — pure helpers', () => {
   it('formats score, percentage and date, with — for missing values', () => {
     expect(formatScore(8, 10)).toBe('8 / 10');
+    // Italian decimal comma for quarter-point scores.
+    expect(formatScore(2.5, 5)).toBe('2,5 / 5');
+    expect(formatScore(2.75, 4)).toBe('2,75 / 4');
+    expect(formatScore(3, 3)).toBe('3 / 3');
     expect(formatScore(null, null)).toBe('—');
     expect(formatScore(null, 10)).toBe('— / 10');
     expect(formatPercentage(80)).toBe('80%');
@@ -174,6 +178,7 @@ describe('downloadCorrectionRegisterPdf', () => {
       className: null,
       rows: [
         row({ totalPoints: 8, maxPoints: 10, percentage: 80 }),
+        row({ studentName: 'Decimale', totalPoints: 2.5, maxPoints: 5, percentage: 50 }),
         row({
           studentName: 'Non Iniziata',
           studentEmail: null,
@@ -189,6 +194,7 @@ describe('downloadCorrectionRegisterPdf', () => {
     });
     const text = allText();
     expect(text).toContain('8 / 10');
+    expect(text).toContain('2,5 / 5'); // Italian decimal comma end-to-end
     expect(text).toContain('80%');
     expect(text).toContain('—');
     // No UID / submissionId / ownerUid / answers / feedback leaked.
