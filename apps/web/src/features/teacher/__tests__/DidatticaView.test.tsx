@@ -5,6 +5,7 @@ import type { CourseCard } from '../../repository/programs/courseLibrary.js';
 
 const mockLoadCourseLibrary = vi.fn();
 const mockCreateProgram = vi.fn();
+const mockCreateInitializedProgram = vi.fn();
 const mockUpdateProgramTitle = vi.fn();
 const mockDeleteProgram = vi.fn();
 const mockImportRepository = vi.fn();
@@ -16,6 +17,7 @@ vi.mock('../../repository/programs/courseLibrary.js', () => ({
 }));
 vi.mock('../../repository/programs/programsService.js', () => ({
   createProgram: (...a: unknown[]) => mockCreateProgram(...a),
+  createInitializedProgram: (...a: unknown[]) => mockCreateInitializedProgram(...a),
   updateProgramTitle: (...a: unknown[]) => mockUpdateProgramTitle(...a),
   deleteProgram: (...a: unknown[]) => mockDeleteProgram(...a),
 }));
@@ -228,14 +230,13 @@ describe('DidatticaView — open course', () => {
 });
 
 describe('DidatticaView — create and import refresh the library', () => {
-  it('creates a course and refreshes the library in place', async () => {
-    mockLoadCourseLibrary
-      .mockResolvedValueOnce([card({ programId: 'p1', title: 'Esistente' })])
-      .mockResolvedValueOnce([
-        card({ programId: 'p1', title: 'Esistente' }),
-        card({ programId: 'p2', title: 'Nuovo Corso' }),
-      ]);
-    mockCreateProgram.mockResolvedValue('p2');
+  it('creates an initialized course and opens its workspace immediately', async () => {
+    mockLoadCourseLibrary.mockResolvedValue([card({ programId: 'p1', title: 'Esistente' })]);
+    mockCreateInitializedProgram.mockResolvedValue({
+      programId: 'p2',
+      importId: 'i2',
+      annoScolastico: '2025/2026',
+    });
     renderView();
 
     await waitFor(() => expect(screen.getByText('Esistente')).toBeTruthy());
@@ -243,11 +244,17 @@ describe('DidatticaView — create and import refresh the library', () => {
     fireEvent.change(screen.getByLabelText('Titolo del corso'), {
       target: { value: 'Nuovo Corso' },
     });
+    expect((screen.getByLabelText('Anno scolastico') as HTMLInputElement).value).toBe('2025/2026');
     fireEvent.click(screen.getByText('Crea'));
 
-    await waitFor(() => expect(screen.getByText('Nuovo Corso')).toBeTruthy());
-    expect(mockCreateProgram).toHaveBeenCalledWith('Nuovo Corso', 'owner-uid', {});
-    expect(mockLoadCourseLibrary).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getByText('WORKSPACE: Nuovo Corso')).toBeTruthy());
+    expect(mockCreateInitializedProgram).toHaveBeenCalledWith(
+      'Nuovo Corso',
+      '2025/2026',
+      'owner-uid',
+      {},
+    );
+    expect(mockLoadCourseLibrary).toHaveBeenCalledOnce();
   });
 
   it('imports a new course from ZIP (create + import) and refreshes', async () => {

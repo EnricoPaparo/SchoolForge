@@ -1,16 +1,16 @@
 # Repository Storage Gateway — roadmap e contratto (SGW)
 
-> **Stato: SGW-01 implementato nel codice (deploy DEV e smoke Brave ancora da
-> eseguire); SGW-02 ancora pendente.**
+> **Stato: SGW-01 implementato, deployato su DEV e verificato su Brave mobile;
+> SGW-02 ancora pendente.**
 > Il codice del gateway esiste ora nel repo: la Cloud Function
 > `repositoryGateway` (`functions/src/repositoryGateway.ts` +
 > `repositoryGatewayCore.ts`), il client adapter
 > (`apps/web/src/features/repository/gateway/repositoryGatewayClient.ts`), il
 > rewrite `/api/repository/**` in `firebase.json` e la migrazione delle
 > operazioni **singolo-file** (editing lezioni/UDA, pool, fallback lezione).
-> **Non è ancora stato fatto alcun deploy né alcuno smoke Brave**: finché non
-> avvengono davvero, il comportamento su Brave mobile resta **non verificato in
-> produzione**. Le operazioni **batch/prefix** (import/export/eliminazioni di
+> Il deploy DEV della Function in `us-central1`, la rewrite Hosting e lo smoke
+> reale su Brave mobile sono completati. Le operazioni **batch/prefix**
+> (import/export/eliminazioni di
 > prefisso/backfill/domande verifiche) restano **accesso diretto a Storage**
 > fino a **SGW-02**.
 
@@ -341,7 +341,7 @@ qui come opzione, non come requisito SGW-01.
 
 ## Task 7 — Roadmap implementativa
 
-### SGW-01 — Fondamenta + operazioni singole — **codice implementato; deploy/smoke da fare**
+### SGW-01 — Fondamenta + operazioni singole — **completato su DEV**
 - ✅ Cloud Function `repositoryGateway` (2ª gen) + **client adapter** (unico
   punto che parla col gateway).
 - ✅ Endpoint **read / write / delete singolo** (§3.1–3.3).
@@ -353,8 +353,8 @@ qui come opzione, non come requisito SGW-01.
 - ✅ **Test di sicurezza** del gateway (owner, path traversal, estensioni,
   dimensioni, metodi, token) — `functions/src/repositoryGatewayCore.test.ts` +
   adapter test.
-- ⏳ **Deploy DEV** + **smoke Brave** su editing/pool — **da eseguire** (vedi
-  §Task 6 per i comandi; region `us-central1` già confermata).
+- ✅ **Deploy DEV** + **smoke Brave** su editing/pool completati dal docente;
+  region `us-central1` confermata.
 - Copre le righe **1–7** dell'inventario.
 
 ### SGW-02 — Batch + prefissi + accessi residui
@@ -379,9 +379,9 @@ qui come opzione, non come requisito SGW-01.
 
 ---
 
-## Task 8 — Backlog DUX-09 (registrato, NON implementato in SGW-00)
+## Task 8 — DUX-09 (implementato in PR UX separata)
 
-Acceptance criteria da implementare in una PR UX separata (**DUX-09**):
+Acceptance criteria implementati in una PR UX separata (**DUX-09**):
 
 **Didattica**
 - Campo ricerca con **font coerente** e placeholder **`Cerca…`**.
@@ -415,3 +415,6 @@ Acceptance criteria da implementare in una PR UX separata (**DUX-09**):
 4. **App Check**: se/quando introdurlo (post-stabilizzazione SGW).
 5. **Fallback diretto durante la migrazione**: mantenere l'accesso Storage
    diretto dietro flag per il rollback fino al Gate SGW-03, poi rimuoverlo.
+6. **Manutenzione runtime**: migrare Functions da Node 20 prima della
+   dismissione prevista il 30 ottobre 2026 e aggiornare `firebase-functions`
+   con una PR infrastrutturale dedicata, senza mescolarla a DUX-09.

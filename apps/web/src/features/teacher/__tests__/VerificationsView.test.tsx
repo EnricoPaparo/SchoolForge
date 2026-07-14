@@ -237,7 +237,7 @@ describe('VerificationsView', () => {
     const table = await screen.findByRole('table');
     expect(within(table).getByText('Titolo')).toBeTruthy();
     expect(within(table).getByText('Classe')).toBeTruthy();
-    expect(within(table).getByText('Corso')).toBeTruthy();
+    expect(within(table).getByRole('columnheader', { name: 'Corso' })).toBeTruthy();
     expect(within(table).getByText('Stato')).toBeTruthy();
     expect(within(table).getByText('Es.')).toBeTruthy();
 

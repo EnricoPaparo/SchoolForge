@@ -434,8 +434,25 @@
 /* ── Data table ─────────────────────────────────────────────────────────── */
 .dataTable {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.8125rem;
+}
+.udaTitleColumn,
+.lessonTitleColumn {
+  width: auto;
+}
+.progressColumn {
+  width: 7rem;
+}
+.lessonStatusColumn {
+  width: 6.25rem;
+}
+.questionsColumn {
+  width: 4.5rem;
+}
+.orderColumn {
+  width: 4.75rem;
 }
 .dataTable th {
   text-align: left;
@@ -477,12 +494,27 @@
 .titleCell {
   min-width: 0;
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: auto;
   vertical-align: top;
 }
 .titleCell .rowOpenBtn {
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: auto;
+}
+.lessonMainTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.lessonMainCompleted {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--color-success);
 }
 
 /* ── Mobile: no desktop sidebar — a simple stacked, readable nav (§7,
@@ -545,16 +577,23 @@
   .dataTable th,
   .dataTable td {
     min-width: 0;
-    overflow-wrap: anywhere;
-  }
-  /* Give the wrapping title column most of the width; metrics stay compact on
-     a single line so the title never overlaps them (DUX-08). */
-  .titleCell {
-    width: 55%;
+    overflow-wrap: break-word;
   }
   .dataTable td:not(.titleCell),
   .dataTable th:not(.titleCell) {
     white-space: nowrap;
+  }
+  .progressColumn {
+    width: 5.75rem;
+  }
+  .lessonStatusColumn {
+    width: 5.25rem;
+  }
+  .questionsColumn {
+    width: 3.75rem;
+  }
+  .orderColumn {
+    width: 4.25rem;
   }
   .tab {
     min-width: 0;

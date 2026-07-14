@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { db, storage } from '../../lib/firebase.js';
 import { loadCourseLibrary, type CourseCard } from '../repository/programs/courseLibrary.js';
 import {
+  createInitializedProgram,
   createProgram,
   deleteProgram,
   updateProgramTitle,
@@ -15,7 +16,7 @@ import {
 } from '../repository/programs/publicLessonsBackfillService.js';
 import { describeImportValidationError } from './importValidationMessage.js';
 import { CourseWorkspace } from './CourseWorkspace.js';
-import { TitleDialog, ImportDialog, ConfirmDialog } from './workspaceDialogs.js';
+import { TitleDialog, NewCourseDialog, ImportDialog, ConfirmDialog } from './workspaceDialogs.js';
 import { IconPlus, IconSearch, IconUpload } from '../../components/icons.js';
 import styles from './DidatticaView.module.css';
 
@@ -155,15 +156,32 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
   }
 
   // ── Mutations (riuso esclusivo dei service esistenti) ──────────────────
-  async function handleCreate(title: string) {
+  async function handleCreate(title: string, annoScolastico: string) {
     setBusy(true);
     setDialogError(null);
     try {
-      await createProgram(title, ownerUid, db);
+      const created = await createInitializedProgram(title, annoScolastico, ownerUid, db);
+      const card: CourseCard = {
+        programId: created.programId,
+        title: title.trim(),
+        annoScolastico: created.annoScolastico,
+        classIds: [],
+        classNames: [],
+        udaCount: 0,
+        lessonsTotal: 0,
+        lessonsDone: 0,
+        questionsTotal: 0,
+        hasImport: true,
+        activeImportId: created.importId,
+      };
+      setCards((prev) => (prev ? [...prev, card] : [card]));
+      setYearFilter(created.annoScolastico);
+      setClassFilter(YEAR_ALL);
+      setSearch('');
       setDialog({ kind: 'none' });
-      await load();
-    } catch {
-      setDialogError('Impossibile creare il corso.');
+      setOpenProgramId(created.programId);
+    } catch (err) {
+      setDialogError(err instanceof Error ? err.message : 'Impossibile creare il corso.');
     } finally {
       setBusy(false);
     }
@@ -333,7 +351,7 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
             <input
               className={styles.search}
               type="search"
-              placeholder="Cerca corso…"
+              placeholder="Cerca…"
               aria-label="Cerca corso"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -413,15 +431,12 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
       )}
 
       {dialog.kind === 'new' && (
-        <TitleDialog
-          title="Nuovo corso"
-          label="Titolo del corso"
-          confirmLabel="Crea"
-          initial=""
+        <NewCourseDialog
+          initialYear={defaultNewCourseYear(yearFilter, years)}
           busy={busy}
           error={dialogError}
           onCancel={() => setDialog({ kind: 'none' })}
-          onConfirm={(t) => void handleCreate(t)}
+          onConfirm={(title, year) => void handleCreate(title, year)}
         />
       )}
 
@@ -574,4 +589,15 @@ function distinctYears(cards: CourseCard[]): string[] {
   const set = new Set<string>();
   for (const c of cards) if (c.annoScolastico) set.add(c.annoScolastico);
   return [...set].sort((a, b) => b.localeCompare(a)); // più recente prima
+}
+
+export function currentSchoolYear(now = new Date()): string {
+  const calendarYear = now.getFullYear();
+  const startYear = now.getMonth() >= 8 ? calendarYear : calendarYear - 1;
+  return `${startYear}/${startYear + 1}`;
+}
+
+export function defaultNewCourseYear(yearFilter: string, years: string[]): string {
+  if (yearFilter !== YEAR_ALL && yearFilter !== YEAR_NONE) return yearFilter;
+  return years[0] ?? currentSchoolYear();
 }

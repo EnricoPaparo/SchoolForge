@@ -278,9 +278,14 @@ Nessun modulo esistente (Corsi/Lezioni/Domande/Classi) viene dichiarato "rimosso
 | DUX-07A ✅ | Rifinitura responsive finale del workspace: ricerca coerente, focus lezione contestuale al posto del collasso globale, sidebar senza overflow orizzontale, indicatori distinti svolgimento/pool, tab e toolbar mobile stabili, tab Studenti/Classi a piena larghezza e tabella Verifiche mobile completamente scorribile. **Implementato.** | DUX-06C | Solo UI; nessuna modifica a service, dati, Rules, indici, query o costi Firebase. “Panoramica corso” resta disponibile. |
 | DUX-07B ✅ | Editing dei metadati corso (anno, docente, materia, classe descrittiva, descrizione), con creazione controllata di `programma.md` quando assente. **Implementato.** | DUX-07A | Parser legacy-compatible; Storage prima del batch Firestore (`programmaMeta` + timestamp programma + audit); card e filtri anno aggiornati in memoria; nessuna modifica a Rules, indici o lato studente. |
 | DUX-08 ✅ | Rifinitura azioni lezione (Segna svolta/non svolta + toggle struttura fuori dal menu "Azioni", con icone coerenti; struttura solo su desktop) e wrapping dei titoli lunghi nelle tabelle UDA/lezioni su mobile. **Implementato.** | DUX-07B | Solo UI; nessuna azione duplicata; nessuna modifica a service, Rules, schema, indici o costi; test mirati `CourseWorkspace`. |
-| Gate GDUX | Verifica finale end-to-end di tutta la roadmap Didattica. | DUX-01…07B (incl. 04A–D), DUX-08 | Checklist manuale DEV + evidenze automatiche, vedi §22. |
+| DUX-09 ✅ | Nuovo corso realmente inizializzato, apertura immediata e polish finale di Didattica/Verifiche e responsive. **Implementato.** | DUX-08, SGW-01 | `programma.md` + import vuoto coerente, batch Firestore, compensazione best-effort, test mirati; Rules e indici invariati. |
+| Gate GDUX | Verifica finale end-to-end di tutta la roadmap Didattica. | DUX-01…09 (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche, vedi §22. |
 
-> **DUX-09 (backlog, non ancora implementato).** Rifiniture Didattica (ricerca con placeholder `Cerca…` e font coerente; "Nuovo corso" che inizializza davvero il corso e lo apre subito, senza sparire per il filtro anno; più spazio ai titoli UDA/lezioni con metriche più compatte; spunta verde accanto al titolo della lezione svolta) e Verifiche (toolbar filtri compatta uguale a Didattica; placeholder `Corso`/`Nessuna`; colonna Classe larga da non spezzare `Nessuna`; colonna Anno larga da mostrare `2025/2026` su una riga; pulsante `Crea` con aria-label `Crea verifica` che non allarga Azioni; righe `Attivata:`/`Chiusa:` su righe separate e omesse quando il valore non esiste). Acceptance criteria completi in [storage-gateway-roadmap.md](storage-gateway-roadmap.md) §Task 8.
+> **DUX-09 completato.** Il flusso “Nuovo corso” crea un import vuoto e un
+> `programma.md` canonico tramite SGW, poi scrive programma/import/audit in un
+> unico batch Firestore e apre subito il workspace. Il polish include anche
+> colonne UDA/lezioni più leggibili, feedback svolgimento, toolbar Verifiche e
+> stabilizzazione della dimensione del testo al cambio orientamento mobile.
 
 ---
 
