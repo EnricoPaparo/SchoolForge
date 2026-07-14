@@ -832,7 +832,13 @@ service cloud.firestore {
             )
         );
 
-      allow read: if isOwner() && resource.data.ownerUid == request.auth.uid;
+      // The return projection is optional until the docente actually returns
+      // a completed correction. The workspace probes this deterministic path
+      // on every load, so the owner must receive a normal missing-document
+      // result instead of permission-denied when it does not exist yet.
+      // isOwner() already identifies the single trusted teacher account;
+      // student reads remain constrained by the separate rule below.
+      allow read: if isOwner();
 
       // The student reads only their own projection, and only while the
       // docente has left it visible.
