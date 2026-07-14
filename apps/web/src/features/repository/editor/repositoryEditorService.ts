@@ -11,7 +11,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
-import type { DocumentReference, Firestore } from 'firebase/firestore';
+import type { DocumentReference, Firestore, WriteBatch } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
 import { deleteFile, readText, writeText } from '../gateway/repositoryGatewayClient.js';
 import { parse as parseYaml } from 'yaml';
@@ -215,18 +215,37 @@ function udaFrontMatterFields(titolo: string, metadata: UdaMetadata): EditableFr
   };
 }
 
+type RepositoryAuditAction =
+  | 'uda.updated'
+  | 'uda.created'
+  | 'uda.reordered'
+  | 'uda.deleted'
+  | 'lesson.updated'
+  | 'lesson.created'
+  | 'lesson.reordered'
+  | 'lesson.deleted';
+
+function addAuditEvent(
+  batch: WriteBatch,
+  db: Firestore,
+  ownerUid: string,
+  action: RepositoryAuditAction,
+  targetId: string,
+): void {
+  batch.set(doc(collection(db, 'auditEvents')), {
+    actorUid: ownerUid,
+    action,
+    targetId,
+    outcome: 'success',
+    reason: null,
+    timestamp: serverTimestamp(),
+  });
+}
+
 async function writeAuditEvent(
   db: Firestore,
   ownerUid: string,
-  action:
-    | 'uda.updated'
-    | 'uda.created'
-    | 'uda.reordered'
-    | 'uda.deleted'
-    | 'lesson.updated'
-    | 'lesson.created'
-    | 'lesson.reordered'
-    | 'lesson.deleted',
+  action: RepositoryAuditAction,
   targetId: string,
 ): Promise<void> {
   await setDoc(doc(collection(db, 'auditEvents')), {
@@ -259,17 +278,21 @@ async function syncLessonMetadataDocs(
   db: Firestore,
   lessonRef: DocumentReference,
   lessonId: string,
+  publicLessonExists: boolean,
   docPatch: LessonDocPatch,
+  ownerUid: string,
   publicContent?: string,
 ): Promise<void> {
-  await updateDoc(lessonRef, docPatch);
+  const batch = writeBatch(db);
+  batch.update(lessonRef, docPatch);
   const publicLessonRef = doc(db, 'publicLessons', lessonId);
-  const publicLessonSnap = await getDoc(publicLessonRef);
-  if (publicLessonSnap.exists()) {
+  if (publicLessonExists) {
     const publicPatch =
       publicContent === undefined ? docPatch : { ...docPatch, content: publicContent };
-    await updateDoc(publicLessonRef, publicPatch);
+    batch.update(publicLessonRef, publicPatch);
   }
+  addAuditEvent(batch, db, ownerUid, 'lesson.updated', lessonId);
+  await batch.commit();
 }
 
 /**
@@ -310,18 +333,19 @@ export async function updateUdaMetadata(params: {
   }
 
   try {
-    await updateDoc(udaRef, {
+    const batch = writeBatch(db);
+    batch.update(udaRef, {
       descrizione: fields.descrizione,
       competenze: fields.competenze,
       obiettivi: fields.obiettivi,
     });
+    addAuditEvent(batch, db, ownerUid, 'uda.updated', udaId);
+    await batch.commit();
   } catch {
     throw new Error(
       'Il file della UDA è stato aggiornato su Storage ma i metadati non sono stati salvati su Firestore. Riprova a salvare.',
     );
   }
-
-  await writeAuditEvent(db, ownerUid, 'uda.updated', udaId);
 }
 
 /**
@@ -343,7 +367,8 @@ export async function updateLessonMetadata(params: {
 }): Promise<void> {
   const { programId, importId, lessonId, fields, ownerUid, db } = params;
   const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
-  const snap = await getDoc(lessonRef);
+  const publicLessonRef = doc(db, 'publicLessons', lessonId);
+  const [snap, publicLessonSnap] = await Promise.all([getDoc(lessonRef), getDoc(publicLessonRef)]);
   if (!snap.exists()) throw new Error('Lezione non trovata.');
   const lesson = snap.data() as LessonDoc;
 
@@ -361,14 +386,19 @@ export async function updateLessonMetadata(params: {
   }
 
   try {
-    await syncLessonMetadataDocs(db, lessonRef, lessonId, fields);
+    await syncLessonMetadataDocs(
+      db,
+      lessonRef,
+      lessonId,
+      publicLessonSnap.exists(),
+      fields,
+      ownerUid,
+    );
   } catch {
     throw new Error(
       'Il file della lezione è stato aggiornato su Storage ma i metadati non sono stati sincronizzati su Firestore. Riprova a salvare.',
     );
   }
-
-  await writeAuditEvent(db, ownerUid, 'lesson.updated', lessonId);
 }
 
 /**
@@ -393,7 +423,8 @@ export async function updateLessonMarkdownBody(params: {
 }): Promise<void> {
   const { programId, importId, lessonId, body, ownerUid, db } = params;
   const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
-  const snap = await getDoc(lessonRef);
+  const publicLessonRef = doc(db, 'publicLessons', lessonId);
+  const [snap, publicLessonSnap] = await Promise.all([getDoc(lessonRef), getDoc(publicLessonRef)]);
   if (!snap.exists()) throw new Error('Lezione non trovata.');
   const lesson = snap.data() as LessonDoc;
 
@@ -413,14 +444,20 @@ export async function updateLessonMarkdownBody(params: {
   }
 
   try {
-    await syncLessonMetadataDocs(db, lessonRef, lessonId, metadata, publicBody);
+    await syncLessonMetadataDocs(
+      db,
+      lessonRef,
+      lessonId,
+      publicLessonSnap.exists(),
+      metadata,
+      ownerUid,
+      publicBody,
+    );
   } catch {
     throw new Error(
       'Il contenuto della lezione è stato aggiornato su Storage ma i metadati non sono stati sincronizzati su Firestore. Riprova a salvare.',
     );
   }
-
-  await writeAuditEvent(db, ownerUid, 'lesson.updated', lessonId);
 }
 
 export interface NewLessonFields {
@@ -494,7 +531,8 @@ export async function createLesson(params: {
   }
 
   try {
-    await setDoc(doc(lessonsRef, lessonId), {
+    const batch = writeBatch(db);
+    batch.set(doc(lessonsRef, lessonId), {
       ownerUid,
       importId,
       udaDir,
@@ -508,7 +546,7 @@ export async function createLesson(params: {
       ...metadata,
     } satisfies LessonDoc);
 
-    await setDoc(doc(db, 'publicLessons', lessonId), {
+    batch.set(doc(db, 'publicLessons', lessonId), {
       ownerUid,
       programId,
       importId,
@@ -523,16 +561,16 @@ export async function createLesson(params: {
       ...metadata,
     } satisfies PublicLessonDoc);
 
-    await updateDoc(doc(db, 'programs', programId, 'imports', importId, 'udas', udaId), {
+    batch.update(doc(db, 'programs', programId, 'imports', importId, 'udas', udaId), {
       lessonCount: increment(1),
     });
+    addAuditEvent(batch, db, ownerUid, 'lesson.created', lessonId);
+    await batch.commit();
   } catch {
     throw new Error(
       'Il file della lezione è stato creato su Storage ma non è stato possibile salvare i metadati su Firestore. Riprova.',
     );
   }
-
-  await writeAuditEvent(db, ownerUid, 'lesson.created', lessonId);
 
   return { lessonId, filename };
 }
@@ -601,7 +639,8 @@ export async function createUda(params: {
   }
 
   try {
-    await setDoc(doc(udasRef, udaId), {
+    const batch = writeBatch(db);
+    batch.set(doc(udasRef, udaId), {
       ownerUid,
       importId,
       dir,
@@ -611,13 +650,13 @@ export async function createUda(params: {
       lessonCount: 0,
       ...metadata,
     } satisfies UdaDoc);
+    addAuditEvent(batch, db, ownerUid, 'uda.created', udaId);
+    await batch.commit();
   } catch {
     throw new Error(
       'Il file della UDA è stato creato su Storage ma non è stato possibile salvare i metadati su Firestore. Riprova.',
     );
   }
-
-  await writeAuditEvent(db, ownerUid, 'uda.created', udaId);
 
   return { udaId, dir, order };
 }

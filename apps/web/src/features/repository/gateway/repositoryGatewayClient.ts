@@ -4,7 +4,7 @@ import { auth } from '../../../lib/firebase.js';
  * SGW-01 — unico client adapter del Repository Storage Gateway same-origin.
  *
  * I service applicativi non conoscono `fetch`, token o dettagli HTTP: usano
- * solo `readText` / `writeText` / `deleteFile`. L'adapter recupera il Firebase
+ * solo `readText` / `writeText` / `deleteFile` / `deleteImportPrefix`. L'adapter recupera il Firebase
  * ID token corrente, chiama gli endpoint same-origin `/api/repository/*` e
  * traduce gli errori del gateway in `GatewayError` leggibili.
  *
@@ -101,5 +101,11 @@ export async function writeText(path: string, content: string): Promise<void> {
 /** Elimina un singolo file (idempotente: un file assente non è un errore). */
 export async function deleteFile(path: string): Promise<void> {
   const res = await callGateway('/delete', { path });
+  if (!res.ok) await throwGatewayError(res);
+}
+
+/** Elimina tutti i file sotto la root esatta di un import (owner-only). */
+export async function deleteImportPrefix(path: string): Promise<void> {
+  const res = await callGateway('/delete-prefix', { path });
   if (!res.ok) await throwGatewayError(res);
 }

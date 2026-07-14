@@ -90,8 +90,17 @@ beforeEach(() => {
   mockUpdateDoc.mockResolvedValue(undefined);
   mockWriteText.mockResolvedValue(undefined);
   mockDeleteFile.mockResolvedValue(undefined);
+  mockGetDoc.mockResolvedValue({ exists: () => false, data: () => ({}) });
   mockGetDocs.mockResolvedValue({ docs: [] });
   mockBatchCommit.mockResolvedValue(undefined);
+  // Keep legacy assertions readable while the production path now records
+  // the same writes inside one atomic batch.
+  mockBatchSet.mockImplementation((...args: unknown[]) => {
+    void mockSetDoc(...args);
+  });
+  mockBatchUpdate.mockImplementation((...args: unknown[]) => {
+    void mockUpdateDoc(...args);
+  });
   mockWriteBatch.mockReturnValue({
     update: mockBatchUpdate,
     set: mockBatchSet,
@@ -301,13 +310,13 @@ Corpo della UDA, invariato.`;
       }),
     ).rejects.toThrow('Impossibile aggiornare il file della UDA su Storage.');
     expect(mockUpdateDoc).not.toHaveBeenCalled();
-    expect(mockSetDoc).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
   });
 
   it('throws a distinct, Firestore-specific error when Storage succeeded but the metadata update fails', async () => {
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => UDA_DOC });
     mockReadText.mockResolvedValueOnce(text('---\ntitolo: "Reti"\n---\n\nCorpo.'));
-    mockUpdateDoc.mockRejectedValueOnce(new Error('permission-denied'));
+    mockBatchCommit.mockRejectedValueOnce(new Error('permission-denied'));
 
     await expect(
       updateUdaMetadata({
@@ -321,7 +330,7 @@ Corpo della UDA, invariato.`;
       }),
     ).rejects.toThrow(/aggiornato su Storage ma i metadati non sono stati salvati/);
     expect(mockWriteText).toHaveBeenCalled();
-    expect(mockSetDoc).not.toHaveBeenCalled();
+    expect(mockBatchCommit).toHaveBeenCalledOnce();
   });
 });
 
@@ -606,13 +615,13 @@ Vecchio corpo.`;
       }),
     ).rejects.toThrow('Impossibile aggiornare il file della lezione su Storage.');
     expect(mockUpdateDoc).not.toHaveBeenCalled();
-    expect(mockSetDoc).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
   });
 
   it('throws a distinct error when Storage succeeds but the Firestore resync fails', async () => {
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
     mockReadText.mockResolvedValueOnce(text('---\ntitolo: "HTTP"\n---\n\nCorpo.'));
-    mockUpdateDoc.mockRejectedValueOnce(new Error('permission-denied'));
+    mockBatchCommit.mockRejectedValueOnce(new Error('permission-denied'));
 
     await expect(
       updateLessonMarkdownBody({
@@ -626,7 +635,7 @@ Vecchio corpo.`;
       }),
     ).rejects.toThrow(/aggiornato su Storage ma i metadati non sono stati sincronizzati/);
     expect(mockWriteText).toHaveBeenCalled();
-    expect(mockSetDoc).not.toHaveBeenCalled();
+    expect(mockBatchCommit).toHaveBeenCalledOnce();
   });
 });
 
@@ -815,7 +824,7 @@ describe('createLesson', () => {
 
   it('throws a distinct error when Storage succeeds but the Firestore writes fail', async () => {
     mockGetDocs.mockResolvedValueOnce({ docs: [] });
-    mockSetDoc.mockRejectedValueOnce(new Error('permission-denied'));
+    mockBatchCommit.mockRejectedValueOnce(new Error('permission-denied'));
 
     await expect(
       createLesson({
@@ -996,7 +1005,7 @@ describe('createUda', () => {
 
   it('throws a distinct error when Storage succeeds but the Firestore write fails', async () => {
     mockGetDocs.mockResolvedValueOnce({ docs: [] });
-    mockSetDoc.mockRejectedValueOnce(new Error('permission-denied'));
+    mockBatchCommit.mockRejectedValueOnce(new Error('permission-denied'));
 
     await expect(
       createUda({

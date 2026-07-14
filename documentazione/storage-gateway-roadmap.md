@@ -1,18 +1,19 @@
 # Repository Storage Gateway — roadmap e contratto (SGW)
 
 > **Stato: SGW-01 implementato, deployato su DEV e verificato su Brave mobile;
-> SGW-02 ancora pendente.**
+> SGW-02A implementato nel codice e in attesa di deploy/smoke DEV; il resto di
+> SGW-02 rimane pendente.**
 > Il codice del gateway esiste ora nel repo: la Cloud Function
 > `repositoryGateway` (`functions/src/repositoryGateway.ts` +
 > `repositoryGatewayCore.ts`), il client adapter
 > (`apps/web/src/features/repository/gateway/repositoryGatewayClient.ts`), il
 > rewrite `/api/repository/**` in `firebase.json` e la migrazione delle
-> operazioni **singolo-file** (editing lezioni/UDA, pool, fallback lezione).
+> operazioni **singolo-file** (editing lezioni/UDA, pool, fallback lezione) e,
+> con SGW-02A, la cancellazione della root esatta di un import.
 > Il deploy DEV della Function in `us-central1`, la rewrite Hosting e lo smoke
-> reale su Brave mobile sono completati. Le operazioni **batch/prefix**
-> (import/export/eliminazioni di
-> prefisso/backfill/domande verifiche) restano **accesso diretto a Storage**
-> fino a **SGW-02**.
+> reale su Brave mobile sono completati per SGW-01. Import/export, backfill e
+> caricamenti batch delle domande restano accessi diretti a Storage fino al
+> completamento di SGW-02.
 
 ## 0. Perché (contesto verificato su DEV)
 
@@ -58,7 +59,7 @@ Verificato con `rg "from 'firebase/storage'"` e
 | 7 | `repository/editor/repositoryEditorService.ts` · delete lezione/UDA (:830) | delete | file lezione/UDA | `deleteObject` | owner | bassa | no | alta | **SGW-01** |
 | 8 | `teacher/exportZip.ts` · `fetchContent`/`buildExportZip` (:15) | read | Markdown UDA+lezioni | `getBytes` (concorrente) | owner | bassa (export) | **sì** | alta | **SGW-02** |
 | 9 | `repository/import/importRepository.ts` (:74) | write | tutti i file Markdown+pool | `uploadBytes` (loop) | owner | bassa (import) | **sì** | **alta (scrittura, molti file)** | **SGW-02** |
-| 10 | `repository/programs/programsService.ts` · `deleteStoragePrefix` (:246–247) | list+delete | intero prefisso import | `listAll` + `deleteObject` | owner | rara (elimina programma/import) | **sì (prefix)** | alta | **SGW-02** |
+| 10 | `repository/programs/programsService.ts` · `deleteProgram` | delete-prefix | intero prefisso import | gateway `deleteImportPrefix` | owner | rara (elimina programma/import) | **sì (prefix)** | alta | **SGW-02A ✅ codice** |
 | 11 | `repository/programs/publicLessonsBackfillService.ts` (:116) | read | Markdown lezione | `getBytes` (per lezione) | owner | rara (migrazione one-shot) | **sì** | alta | **SGW-02** |
 | 12 | `repository/verifications/loadSelectedQuestions.ts` (:54) | read | pool files (raggruppati) | `getBytes` (concorrenza 4) | owner | media (prep/attivazione verifica, PDF studenti) | **sì** | alta | **SGW-02** |
 | 13 | `repository/verifications/loadSelectedQuestionsWithSolutions.ts` (:72) | read | pool files (raggruppati) | `getBytes` (concorrenza 4) | owner | media (PDF soluzioni docente) | **sì** | alta | **SGW-02** |
@@ -207,14 +208,16 @@ Per **import** di un corso.
 
 Per **eliminazione programma/import** (sostituisce `deleteStoragePrefix`).
 
-- **Request**: `{ "prefix": "repository/{ownerUid}/imports/{importId}" }`
-- **Response 200**: `{ "deleted": N }`.
-- **Vincolo**: il prefisso **deve** stare sotto `repository/{ownerUid}/` con
-  `ownerUid` = utente autenticato; qualsiasi prefisso più corto/ambiguo →
-  `400 invalid_prefix`.
-- **Errori**: `400 invalid_prefix`, `401`, `403 not_owner`, `500 storage_error`.
+- **Request**: `{ "path": "repository/{ownerUid}/imports/{importId}" }`.
+- **Response 200**: `{ "path": "…", "deleted": true }`; conferma il
+  completamento idempotente, non espone il numero di file.
+- **Vincolo**: accetta **solo** la root esatta
+  `repository/{ownerUid}/imports/{importId}`, con `ownerUid` uguale all'utente
+  autenticato; file, sottocartelle, prefissi più corti, slash finali e traversal
+  sono rifiutati.
+- **Errori**: `400 invalid_path`, `401`, `403 not_owner`, `500 internal_error`.
 - **Atomicità**: **best-effort**, **non atomica** (elimina oggetto per oggetto).
-- **Retry/Idempotenza**: sì (ri-eseguire su un prefisso già vuoto → `deleted: 0`).
+- **Retry/Idempotenza**: sì (ri-eseguire su un prefisso già vuoto resta un 200).
 - **Costo**: 1 invocazione + 1+ `list` (classe A, paginata) + N `delete`
   (classe A). Nessun egress di contenuti.
 
@@ -358,9 +361,16 @@ qui come opzione, non come requisito SGW-01.
 - Copre le righe **1–7** dell'inventario.
 
 ### SGW-02 — Batch + prefissi + accessi residui
+- ✅ **SGW-02A**: endpoint owner-only `delete-prefix` limitato alla root esatta
+  dell'import; `deleteProgram` non usa più `listAll`/`deleteObject` dal browser,
+  scopre in parallelo import/proiezioni e sottocollezioni, poi effettua una sola
+  chiamata gateway per import. Create/salvataggi UDA/lezioni accorpano inoltre
+  documenti tecnici, proiezioni e audit in un solo batch Firestore.
+  `minInstances: 0` resta invariato: nessun costo fisso, possibile cold start.
 - Endpoint **batch-read / batch-write / delete-prefix** (§3.4–3.6).
 - Migrazione di: **import** (`importRepository`), **export** (`exportZip`),
-  **eliminazioni/prefix delete** (`programsService.deleteStoragePrefix`),
+  ~~**eliminazioni/prefix delete** (`programsService`)~~ **completato in
+  SGW-02A**, quindi
   **backfill** (`publicLessonsBackfillService`), **`loadSelectedQuestions`** e
   **`loadSelectedQuestionsWithSolutions`**, e **ogni altro accesso Storage
   residuo**.
@@ -368,7 +378,22 @@ qui come opzione, non come requisito SGW-01.
   dall'adapter/configurazione autorizzata
   (`rg "getBytes\(|uploadBytes\(|deleteObject\(|listAll\(" apps/web/src`
   deve restare vuoto fuori da `lib/firebase.ts` e dall'adapter).
-- Copre le righe **8–13** dell'inventario.
+- SGW-02A copre la riga **10**; restano le righe **8, 9, 11, 12, 13**.
+
+#### Misura strutturale SGW-02A (round-trip, non tempi reali)
+
+| Flusso | Prima | Dopo |
+|---|---:|---:|
+| Aggiorna metadata UDA | get Firestore + read/write gateway + update + audit | get + read/write gateway + 1 batch (update+audit) |
+| Aggiorna contenuto/metadata lezione | letture e update Firestore sequenziali + audit | letture Firestore parallele + read/write gateway + 1 batch |
+| Crea UDA | query + write gateway + set doc + audit | query + write gateway + 1 batch |
+| Crea lezione | query + write gateway + 3 write sequenziali + audit | query + write gateway + 1 batch da 4 mutazioni |
+| Elimina file di un import | `listAll` ricorsivi + N delete dal browser | 1 chiamata gateway per import; N delete Storage restano lato server |
+
+Il numero di documenti/oggetti fatturabili non viene dichiarato ridotto:
+diminuiscono i round-trip di rete e aumenta l'atomicità Firestore. I tempi reali
+vanno misurati con lo smoke DEV; il cold start può ancora dominare la prima
+operazione dopo un periodo di inattività.
 
 ### SGW-03 / Gate
 - **Smoke completo** Brave / Safari / desktop su tutti i flussi.

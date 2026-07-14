@@ -35,22 +35,14 @@ vi.mock('firebase/firestore', () => ({
   writeBatch: (...args: unknown[]) => mockWriteBatch(...args),
 }));
 
-const mockStorageRef = vi.fn();
-const mockListAll = vi.fn();
-const mockDeleteObject = vi.fn();
-
-vi.mock('firebase/storage', () => ({
-  ref: (...args: unknown[]) => mockStorageRef(...args),
-  listAll: (...args: unknown[]) => mockListAll(...args),
-  deleteObject: (...args: unknown[]) => mockDeleteObject(...args),
-}));
-
 const mockWriteText = vi.fn();
 const mockDeleteFile = vi.fn();
+const mockDeleteImportPrefix = vi.fn();
 
 vi.mock('../../gateway/repositoryGatewayClient.js', () => ({
   writeText: (...args: unknown[]) => mockWriteText(...args),
   deleteFile: (...args: unknown[]) => mockDeleteFile(...args),
+  deleteImportPrefix: (...args: unknown[]) => mockDeleteImportPrefix(...args),
 }));
 
 import {
@@ -64,10 +56,8 @@ import {
   PROGRAM_DELETE_BLOCKED_MESSAGE,
 } from '../programsService.js';
 import type { Firestore } from 'firebase/firestore';
-import type { FirebaseStorage } from 'firebase/storage';
 
 const fakeDb = {} as Firestore;
-const fakeStorage = {} as FirebaseStorage;
 
 /** Path-echoing stub: joins all path segments so tests can branch by full path. */
 function pathStub(_root: unknown, ...segments: string[]) {
@@ -451,25 +441,6 @@ describe('deleteProgram', () => {
     });
   }
 
-  function setupStorage() {
-    mockStorageRef.mockImplementation((_storage: unknown, path: string) => ({ __path: path }));
-    mockListAll.mockImplementation((storageRef: { __path: string }) => {
-      if (storageRef.__path === 'repository/owner-uid/imports/imp-1') {
-        return Promise.resolve({
-          items: [{ fullPath: 'repository/owner-uid/imports/imp-1/uda-01/lezione-001.md' }],
-          prefixes: [{ fullPath: 'repository/owner-uid/imports/imp-1/uda-01' }],
-        });
-      }
-      if (storageRef.__path === 'repository/owner-uid/imports/imp-1/uda-01') {
-        return Promise.resolve({
-          items: [{ fullPath: 'repository/owner-uid/imports/imp-1/uda-01/lezione-001.pool.md' }],
-          prefixes: [],
-        });
-      }
-      return Promise.resolve({ items: [], prefixes: [] });
-    });
-  }
-
   it('throws and does not delete anything when a verification references the program (targeted query, no full scan)', async () => {
     // Simulates the server-side filter: the guard query for prog-1 returns
     // exactly the (single, limit(1)) matching document — a real Firestore
@@ -480,12 +451,12 @@ describe('deleteProgram', () => {
       verifications: [{ data: () => ({ config: { programId: 'prog-1' } }) }],
     });
 
-    await expect(deleteProgram('prog-1', 'owner-uid', fakeDb, fakeStorage)).rejects.toThrow(
+    await expect(deleteProgram('prog-1', 'owner-uid', fakeDb)).rejects.toThrow(
       PROGRAM_DELETE_BLOCKED_MESSAGE,
     );
     expect(mockDeleteDoc).not.toHaveBeenCalled();
     expect(mockWriteBatch).not.toHaveBeenCalled();
-    expect(mockListAll).not.toHaveBeenCalled();
+    expect(mockDeleteImportPrefix).not.toHaveBeenCalled();
 
     // The guard query is targeted (config.programId equality + limit(1)),
     // never an unfiltered full-collection scan.
@@ -501,11 +472,7 @@ describe('deleteProgram', () => {
       verifications: [],
       imports: [],
     });
-    setupStorage();
-
-    await expect(
-      deleteProgram('prog-1', 'owner-uid', fakeDb, fakeStorage),
-    ).resolves.toBeUndefined();
+    await expect(deleteProgram('prog-1', 'owner-uid', fakeDb)).resolves.toBeUndefined();
     expect(mockDeleteDoc).toHaveBeenCalledWith({ __path: 'programs/prog-1' });
   });
 
@@ -520,9 +487,7 @@ describe('deleteProgram', () => {
       lessons: [{ ref: lessonRef }],
       questionIndex: [{ ref: questionRef }],
     });
-    setupStorage();
-
-    await deleteProgram('prog-1', 'owner-uid', fakeDb, fakeStorage);
+    await deleteProgram('prog-1', 'owner-uid', fakeDb);
 
     // All docs under the import (udas, lessons, questionIndex, the import doc itself) are batch-deleted.
     expect(mockBatchDelete).toHaveBeenCalledWith(udaRef);
@@ -531,8 +496,9 @@ describe('deleteProgram', () => {
     expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'programs/prog-1/imports/imp-1' });
     expect(mockBatchCommit).toHaveBeenCalled();
 
-    // Storage files are deleted recursively (top-level items + nested uda-01/ prefix).
-    expect(mockDeleteObject).toHaveBeenCalledTimes(2);
+    // One gateway request removes the exact import prefix server-side.
+    expect(mockDeleteImportPrefix).toHaveBeenCalledTimes(1);
+    expect(mockDeleteImportPrefix).toHaveBeenCalledWith('repository/owner-uid/imports/imp-1');
 
     // The program doc itself is deleted.
     expect(mockDeleteDoc).toHaveBeenCalledWith({ __path: 'programs/prog-1' });
@@ -553,12 +519,10 @@ describe('deleteProgram', () => {
 
   it('deletes a program with no imports at all (no batch/storage calls needed)', async () => {
     setupGetDocs({ verifications: [], imports: [] });
-    setupStorage();
-
-    await deleteProgram('prog-1', 'owner-uid', fakeDb, fakeStorage);
+    await deleteProgram('prog-1', 'owner-uid', fakeDb);
 
     expect(mockWriteBatch).not.toHaveBeenCalled();
-    expect(mockListAll).not.toHaveBeenCalled();
+    expect(mockDeleteImportPrefix).not.toHaveBeenCalled();
     expect(mockDeleteDoc).toHaveBeenCalledWith({ __path: 'programs/prog-1' });
   });
 
@@ -569,9 +533,7 @@ describe('deleteProgram', () => {
       imports: [],
       publicLessons: [{ ref: publicLessonRef }],
     });
-    setupStorage();
-
-    await deleteProgram('prog-1', 'owner-uid', fakeDb, fakeStorage);
+    await deleteProgram('prog-1', 'owner-uid', fakeDb);
 
     expect(mockBatchDelete).toHaveBeenCalledWith(publicLessonRef);
   });

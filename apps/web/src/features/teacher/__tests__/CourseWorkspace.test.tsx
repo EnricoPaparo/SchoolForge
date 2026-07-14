@@ -975,7 +975,7 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Elimina corso' }));
     fireEvent.click(screen.getByRole('button', { name: 'Elimina' }));
 
-    await waitFor(() => expect(mockDeleteProgram).toHaveBeenCalledWith('p1', 'owner', {}, {}));
+    await waitFor(() => expect(mockDeleteProgram).toHaveBeenCalledWith('p1', 'owner', {}));
     expect(onCourseDeleted).toHaveBeenCalledWith('p1');
   });
 });

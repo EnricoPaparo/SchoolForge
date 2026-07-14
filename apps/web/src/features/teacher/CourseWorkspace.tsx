@@ -684,7 +684,7 @@ export function CourseWorkspace({
   function handleDeleteCourse() {
     void withBusy(async () => {
       try {
-        await deleteProgram(card.programId, ownerUid, db, storage);
+        await deleteProgram(card.programId, ownerUid, db);
         if (!mountedRef.current) return;
         onCourseDeleted?.(card.programId);
       } catch (err) {

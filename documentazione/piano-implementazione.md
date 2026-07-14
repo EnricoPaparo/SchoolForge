@@ -405,12 +405,13 @@ Redesign UX approvato che unifica le attuali sezioni Corsi, Lezioni e Domande in
 
 ## 12c. SGW — Repository Storage Gateway same-origin (SGW-00 → 03)
 
-> Fase infrastrutturale approvata, specifica completa in [`storage-gateway-roadmap.md`](storage-gateway-roadmap.md). Instrada gli accessi Storage del docente dietro `/api/repository/*` → Hosting rewrite → **una** Cloud Function HTTPS 2ª gen → Admin SDK → Storage, per renderli affidabili anche su Brave mobile. **Stato: SGW-01 completato e verificato su DEV; SGW-02/03 pendenti.**
+> Fase infrastrutturale approvata, specifica completa in [`storage-gateway-roadmap.md`](storage-gateway-roadmap.md). Instrada gli accessi Storage del docente dietro `/api/repository/*` → Hosting rewrite → **una** Cloud Function HTTPS 2ª gen → Admin SDK → Storage, per renderli affidabili anche su Brave mobile. **Stato: SGW-01 completato e verificato su DEV; SGW-02A implementato nel codice (delete-prefix + riduzione round-trip), in attesa di deploy/smoke; resto SGW-02 e SGW-03 pendenti.**
 
 | ID | Outcome e scope | Dipende da | Evidenza DoD |
 |---|---|---|---|
 | SGW-00 | Contratto definitivo del gateway: inventario Storage, API `/api/repository/*`, sicurezza (Admin SDK bypassa le Rules → vincoli equivalenti/più stretti), costi/prestazioni, emulatori/deploy, roadmap SGW-01/02/03, backlog DUX-09. Solo documentazione. | MOB-01C | Questo documento + `storage-gateway-roadmap.md`; nessuna modifica a codice/Rules/`firebase.json`/dipendenze. |
 | SGW-01 ✅ | Function `repositoryGateway` + client adapter; read/write/delete singolo; migrazione contenuto/metadata lezioni e UDA e pool (load/save/delete); test sicurezza; deploy DEV + smoke Brave. | SGW-00 | Codice, rewrite e dipendenze implementati; deploy DEV in `us-central1` e smoke Brave mobile confermati dal docente. |
+| SGW-02A ✅ codice | Delete-prefix owner-only sulla root esatta di un import; eliminazione programma senza Storage SDK diretto; letture parallele e batch Firestore per create/save UDA e lezioni; `minInstances: 0` invariato. | SGW-01 | Test gateway/service, typecheck e build; deploy Function+Hosting e smoke tempi/Brave ancora da eseguire. |
 | SGW-02 | Batch import/export, delete-prefix, backfill, `loadSelectedQuestions`(+solutions), ogni accesso Storage residuo; gate `rg` (nessuna operazione Storage diretta nel frontend fuori dall'adapter). | SGW-01 | Import/export/eliminazioni/verifiche dal gateway; `rg` pulito; smoke Brave completo. |
 | SGW-03 / Gate | Smoke completo Brave/Safari/desktop, sicurezza, prestazioni, costi, rollback; documentazione da "target" a "implementato". | SGW-02 | Checklist DEV multi-browser + evidenze; doc aggiornata. Richiede Docente. |
 
