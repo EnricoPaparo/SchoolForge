@@ -96,7 +96,40 @@ describe('loadStudentVerifications — class filtering', () => {
         onlineEnabled: false,
         studentPdfEnabled: false,
         ownerUid: 'owner',
+        status: 'active',
       },
+    ]);
+  });
+
+  it('keeps closed public projections visible and normalizes legacy status to active', async () => {
+    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        fakeDoc('ver-closed', {
+          ownerUid: 'owner',
+          title: 'Chiusa',
+          className: 'Classe A',
+          classId: 'class-a',
+          status: 'closed',
+          questions: [],
+          activatedAt: { seconds: 200 },
+        }),
+        fakeDoc('ver-legacy', {
+          ownerUid: 'owner',
+          title: 'Legacy',
+          className: 'Classe A',
+          classId: 'class-a',
+          questions: [],
+          activatedAt: { seconds: 100 },
+        }),
+      ],
+    });
+
+    const result = await loadStudentVerifications(STUDENT_UID, fakeDb);
+    if (result.status !== 'ok') throw new Error('expected ok');
+    expect(result.verifications.map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: 'ver-closed', status: 'closed' },
+      { id: 'ver-legacy', status: 'active' },
     ]);
   });
 

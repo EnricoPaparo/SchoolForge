@@ -126,6 +126,7 @@ const VERIFICATION_ONLINE = {
   onlineEnabled: true,
   studentPdfEnabled: true,
   ownerUid: 'owner-uid',
+  status: 'active' as const,
 };
 
 const DRAFT_SUBMISSION = {
@@ -321,6 +322,21 @@ describe('StudentVerificationsView', () => {
         expect(screen.getByRole('button', { name: 'Svolgi online' })).toBeTruthy(),
       );
       expect(mockLoadReceipt).toHaveBeenCalledWith('ver-online', 'student-uid', {});
+    });
+
+    it('keeps a closed public verification downloadable but never startable or resumable', async () => {
+      mockLoadStudentVerifications.mockResolvedValue({
+        status: 'ok',
+        verifications: [{ ...VERIFICATION_ONLINE, status: 'closed' }],
+      });
+      mockLoadReceipt.mockResolvedValue(null);
+      render(<StudentVerificationsView />);
+
+      await waitFor(() => expect(screen.getByText('Chiusa')).toBeTruthy());
+      expect(screen.getByRole('button', { name: /Scarica PDF/ })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /Svolgi online/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Riprendi bozza/ })).toBeNull();
+      expect(mockLoadSubmission).not.toHaveBeenCalled();
     });
 
     it('checks the receipt before the submission when building the per-item list status, and skips the per-item submission check once a receipt is found', async () => {

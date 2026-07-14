@@ -1,6 +1,7 @@
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import type { Firestore, Unsubscribe } from 'firebase/firestore';
 import type { AttentionEvent, SubmissionDoc } from '../../../types/firestore.js';
+import { normalizeSubmissionCorrectionStatus } from '../corrections/submissionCorrectionStatus.js';
 
 /**
  * Client-side projection of a submission for the teacher's "Consegne
@@ -29,6 +30,7 @@ export type SubmissionMonitorItem = {
   lastSavedAt: SubmissionDoc['lastSavedAt'];
   submittedAt: SubmissionDoc['submittedAt'];
   deliveryCode: SubmissionDoc['deliveryCode'];
+  correctionStatus: NonNullable<SubmissionDoc['correctionStatus']>;
   attentionEventsCount: number;
   /** Sanitized: `type` + `ts` only, same shape as `AttentionEvent` — never answers/flagged. */
   attentionEvents: AttentionEvent[];
@@ -42,6 +44,7 @@ function toMonitorItem(data: SubmissionDoc): SubmissionMonitorItem {
     lastSavedAt: data.lastSavedAt,
     submittedAt: data.submittedAt,
     deliveryCode: data.deliveryCode,
+    correctionStatus: normalizeSubmissionCorrectionStatus(data.correctionStatus),
     attentionEventsCount: attentionEvents.length,
     attentionEvents,
   };

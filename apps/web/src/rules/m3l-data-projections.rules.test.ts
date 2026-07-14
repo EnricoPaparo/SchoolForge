@@ -518,10 +518,10 @@ describe('Firestore rules — verification visibility toggle', () => {
     );
   });
 
-  it('owner cannot toggle visibility on a closed verification', async () => {
+  it('owner can toggle visibility on a closed verification', async () => {
     await seedVerification({ status: 'closed', visibility: 'hidden' });
 
-    await assertFails(
+    await assertSucceeds(
       setDoc(
         doc(ownerDb(), 'verifications/v1'),
         { visibility: 'public', updatedAt: null },

@@ -312,14 +312,17 @@ describe('Firestore rules — verification immutability', () => {
     );
   });
 
-  it('closed verification cannot be updated', async () => {
+  it('closed verification cannot update fields outside the explicit controls', async () => {
     await seedOwner();
     const CLOSED_DOC = { ...ACTIVE_DOC, status: 'closed', closedAt: null };
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), 'verifications/v1'), CLOSED_DOC);
     });
     await assertFails(
-      setDoc(doc(ownerDb(), 'verifications/v1'), { ...CLOSED_DOC, closedAt: null }),
+      setDoc(doc(ownerDb(), 'verifications/v1'), {
+        ...CLOSED_DOC,
+        config: { ...CLOSED_DOC.config, title: 'Titolo alterato' },
+      }),
     );
   });
 

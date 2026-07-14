@@ -156,6 +156,17 @@ service cloud.firestore {
       return getAfter(/databases/$(database)/documents/corrections/$(submissionId)).data;
     }
 
+    function isValidSubmissionCorrectionStatus(status) {
+      return status in ['submitted', 'in_progress', 'completed', 'returned'];
+    }
+
+    function publicCorrectionStatusMatchesCorrection(submissionId, status) {
+      let correctionStatus = correctionDataAfter(submissionId).status;
+      return (correctionStatus == 'in_progress'
+               && status in ['submitted', 'in_progress'])
+        || correctionStatus == status;
+    }
+
     // The exact CorrectionStatus transition graph from correctionContract.ts
     // (isValidCorrectionStatusTransition) — kept in sync by hand, since
     // Rules cannot import the TypeScript helper. Deliberately excludes
@@ -346,8 +357,9 @@ service cloud.firestore {
       allow create: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
       // Draft: any owner update allowed.
       // Active: only close allowed; only status/closedAt/updatedAt may change.
-      // Active: only visibility toggled (M3-lite publish/hide); only
-      // visibility/updatedAt may change, status must stay 'active'.
+      // Active/closed: visibility may be toggled without reopening the
+      // verification. Closed public projections remain consultable and
+      // downloadable, but submission Rules still require active status.
       // Active/closed: only studentPdfEnabled toggled (M3F-09) — see below.
       // Closed: no other update allowed (studentPdfEnabled is the sole
       // exception — a closed verification never reopens, but the teacher may
@@ -359,8 +371,8 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['status', 'closedAt', 'updatedAt']);
       allow update: if isOwner()
-        && resource.data.status == 'active'
-        && request.resource.data.status == 'active'
+        && (resource.data.status == 'active' || resource.data.status == 'closed')
+        && request.resource.data.status == resource.data.status
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['visibility', 'updatedAt']);
       // Active: only onlineEnabled toggled (M3F-05 teacher control); only
@@ -422,9 +434,11 @@ service cloud.firestore {
     //      for collectionGroup). Confirmed empirically: even
     //      `allow read: if true` failed list validation under the
     //      fixed-depth pattern, and succeeded once switched to {path=**}.
-    // `visibility` therefore also stands in for `status` here:
-    // setVerificationVisibility mirrors it, and closeVerification forces it
-    // back to 'hidden' — see verificationsService.ts. isClassmateOf()
+    // `status` is duplicated in the projection for student UI semantics;
+    // discovery remains intentionally constrained only by classId and
+    // visibility so closed-public verifications stay readable. Submission
+    // Rules independently require the parent verification to be active.
+    // isClassmateOf()
     // already requires isApprovedStudent() internally — a verification
     // with no classId (resource.data.get('classId', null) == null) is
     // never visible to any student, never "visible to everyone" by
@@ -543,6 +557,26 @@ service cloud.firestore {
               )
         );
 
+      // The owner may update only the public correction-state mirror on an
+      // already submitted delivery. The sibling receipt must receive the
+      // identical value in the same atomic commit, and the value must agree
+      // with the canonical correction workflow after that commit.
+      allow update: if isOwner()
+        && resource.data.ownerUid == request.auth.uid
+        && resource.data.status == 'submitted'
+        && request.resource.data.status == 'submitted'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['correctionStatus', 'correctionStatusUpdatedAt'])
+        && isValidSubmissionCorrectionStatus(request.resource.data.correctionStatus)
+        && request.resource.data.correctionStatusUpdatedAt == request.time
+        && publicCorrectionStatusMatchesCorrection(
+             submissionId, request.resource.data.correctionStatus)
+        && getAfter(/databases/$(database)/documents/submissionReceipts/$(submissionId))
+             .data.get('correctionStatus', 'submitted')
+             == request.resource.data.correctionStatus
+        && getAfter(/databases/$(database)/documents/submissionReceipts/$(submissionId))
+             .data.correctionStatusUpdatedAt == request.time;
+
       // Get (M3F-04 preflight): startSubmission()/loadSubmission() call
       // getDoc() on the deterministic path BEFORE the document necessarily
       // exists — Firestore still evaluates read rules for a get() on a
@@ -618,9 +652,23 @@ service cloud.firestore {
         && (resource == null || resource.data.studentUid == request.auth.uid);
       allow read: if isOwner() && resource.data.ownerUid == request.auth.uid;
 
-      // Never modifiable or deletable — it is the immutable proof of a
-      // one-time delivery.
-      allow update, delete: if false;
+      // The immutable delivery fields never change. Only the owner may
+      // atomically mirror the correction workflow state together with the
+      // matching submitted submission.
+      allow update: if isOwner()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['correctionStatus', 'correctionStatusUpdatedAt'])
+        && isValidSubmissionCorrectionStatus(request.resource.data.correctionStatus)
+        && request.resource.data.correctionStatusUpdatedAt == request.time
+        && publicCorrectionStatusMatchesCorrection(
+             submissionId, request.resource.data.correctionStatus)
+        && getAfter(/databases/$(database)/documents/submissions/$(submissionId))
+             .data.get('correctionStatus', 'submitted')
+             == request.resource.data.correctionStatus
+        && getAfter(/databases/$(database)/documents/submissions/$(submissionId))
+             .data.correctionStatusUpdatedAt == request.time;
+      allow delete: if false;
     }
 
     match /auditEvents/{docId} {

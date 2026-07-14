@@ -7,6 +7,7 @@ import type {
 import { getOwnStudentDoc } from '../students/studentsService.js';
 import { normalizeOnlineEnabled } from './onlineEnabled.js';
 import { normalizeStudentPdfEnabled } from './studentPdfEnabled.js';
+import { normalizePublishedVerificationStatus } from './publishedVerificationStatus.js';
 
 export type StudentVerificationItem = {
   id: string;
@@ -25,6 +26,8 @@ export type StudentVerificationItem = {
   studentPdfEnabled: boolean;
   /** Needed by submissionsService (M3F-04) — not sensitive, already read here. */
   ownerUid: string;
+  /** Missing on legacy projections and normalized to `active`. */
+  status: 'active' | 'closed';
 };
 
 export type StudentVerificationsResult =
@@ -88,6 +91,7 @@ export async function loadStudentVerifications(
         onlineEnabled: normalizeOnlineEnabled(data.onlineEnabled),
         studentPdfEnabled: normalizeStudentPdfEnabled(data.studentPdfEnabled),
         ownerUid: data.ownerUid,
+        status: normalizePublishedVerificationStatus(data.status),
       };
     })
     .filter((item): item is StudentVerificationItem => item !== null)

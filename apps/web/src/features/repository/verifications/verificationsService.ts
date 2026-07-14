@@ -369,6 +369,7 @@ export async function activateVerification(
       className,
       classId: data.config.classId,
       visibility: 'hidden',
+      status: 'active',
       // Mirrored from the parent verification, same as classId/visibility —
       // see PublishedProjectionDoc. No teacher toggle exists yet (M3F-05), so
       // this is always false today; activation just keeps the mirror honest.
@@ -393,7 +394,7 @@ export async function activateVerification(
 }
 
 /**
- * Toggles `visibility` on an `active` verification — publishing or hiding
+ * Toggles `visibility` on an `active` or `closed` verification — publishing or hiding
  * it from the student portal (M3-lite). Touches only `visibility` and
  * `updatedAt` on the parent document; never config, teacherSnapshot, status
  * or any other field. The Security Rules enforce the same restriction
@@ -417,8 +418,8 @@ export async function setVerificationVisibility(
 ): Promise<void> {
   const snap = await getDoc(doc(db, 'verifications', verificationId));
   const data = snap.data() as VerificationDoc | undefined;
-  if (!data || data.status !== 'active') {
-    throw new Error('Visibilità modificabile solo su una verifica attiva');
+  if (!data || (data.status !== 'active' && data.status !== 'closed')) {
+    throw new Error('Visibilità modificabile solo su una verifica attiva o chiusa');
   }
   const batch = writeBatch(db);
   batch.set(
@@ -551,11 +552,10 @@ export async function setVerificationStudentPdfEnabled(
 }
 
 /**
- * Closes an active verification. Also forces
- * `publishedProjection/data.visibility` back to `'hidden'` (M3L-D) — a
- * closed verification must never remain readable by a student via a stale
- * `'public'` mirror, since the Security Rules list-query gate checks only
- * this mirrored field, not the parent's `status`.
+ * Closes an active verification while preserving its independent visibility.
+ * The projection receives `status: 'closed'`; a public closed verification
+ * remains discoverable for history/PDF, but submission writes stay denied by
+ * the parent-status checks in Security Rules.
  *
  * Written atomically in a single `writeBatch` together with the audit
  * event (PERF-SEC-01B-1 / PERF-05) — a partial failure can no longer leave
@@ -584,7 +584,7 @@ export async function closeVerification(
   );
   batch.set(
     doc(db, 'verifications', verificationId, 'publishedProjection', 'data'),
-    { visibility: 'hidden' },
+    { status: 'closed' },
     { merge: true },
   );
   batch.set(doc(collection(db, 'auditEvents')), {

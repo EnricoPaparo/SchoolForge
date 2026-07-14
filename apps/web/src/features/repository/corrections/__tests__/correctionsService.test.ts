@@ -345,12 +345,12 @@ describe('saveCorrection', () => {
       fakeDb,
     );
 
-    expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
-    const [, update] = mockUpdateDoc.mock.calls[0]!;
+    expect(mockBatchUpdate).toHaveBeenCalledTimes(3);
+    const [, update] = mockBatchUpdate.mock.calls[0]!;
     expect(update.totalPoints).toBe(10);
     expect(update.maxPoints).toBe(15);
     expect(update.percentage).toBe(67);
-    expect(mockWriteBatch).not.toHaveBeenCalled();
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
   });
 
   it('rejects an out-of-range score', async () => {
@@ -433,8 +433,9 @@ describe('saveCorrection', () => {
       fakeDb,
     );
 
-    expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
-    expect(mockWriteBatch).not.toHaveBeenCalled();
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+    expect(mockWriteBatch).toHaveBeenCalledTimes(1);
+    expect(mockBatchUpdate).toHaveBeenCalledTimes(3);
     expect(mockBatchSet).not.toHaveBeenCalled();
   });
 
@@ -516,8 +517,8 @@ describe('completeCorrection', () => {
 
     await completeCorrection(SUBMISSION_ID, fakeDb);
 
-    expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
-    const [, update] = mockUpdateDoc.mock.calls[0]!;
+    expect(mockBatchUpdate).toHaveBeenCalledTimes(3);
+    const [, update] = mockBatchUpdate.mock.calls[0]!;
     expect(update.status).toBe('completed');
     expect(update.completedAt).toBeDefined();
   });
@@ -544,7 +545,7 @@ describe('returnCorrection', () => {
     await returnCorrection(SUBMISSION_ID, fakeDb);
 
     expect(mockWriteBatch).toHaveBeenCalledTimes(1);
-    expect(mockBatchUpdate).toHaveBeenCalledTimes(1); // corrections -> returned
+    expect(mockBatchUpdate).toHaveBeenCalledTimes(3); // correction + submission + receipt
     expect(mockBatchSet).toHaveBeenCalledTimes(2); // correctionReturns + event
     expect(mockBatchCommit).toHaveBeenCalledTimes(1);
 
@@ -604,7 +605,7 @@ describe('reopenCorrection', () => {
 
     await reopenCorrection(SUBMISSION_ID, fakeDb);
 
-    expect(mockBatchUpdate).toHaveBeenCalledTimes(1);
+    expect(mockBatchUpdate).toHaveBeenCalledTimes(3);
     const [, correctionUpdate] = mockBatchUpdate.mock.calls[0]!;
     expect(correctionUpdate.status).toBe('in_progress');
     expect(correctionUpdate.reopenCount).toBe(1);
@@ -622,7 +623,7 @@ describe('reopenCorrection', () => {
 
     await reopenCorrection(SUBMISSION_ID, fakeDb);
 
-    expect(mockBatchUpdate).toHaveBeenCalledTimes(2); // corrections + correctionReturns
+    expect(mockBatchUpdate).toHaveBeenCalledTimes(4); // correction + mirrors + correctionReturns
     const returnUpdateCall = mockBatchUpdate.mock.calls.find(
       ([ref]: [{ __path: string }, unknown]) => ref.__path === `correctionReturns/${SUBMISSION_ID}`,
     );

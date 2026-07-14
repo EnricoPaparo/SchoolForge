@@ -58,6 +58,14 @@
   gap: 0.5rem;
 }
 
+.cardBadges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
 .cardTitle {
   font-size: 1rem;
   font-weight: 700;

@@ -729,22 +729,20 @@ describe('setVerificationVisibility', () => {
     mockGetDoc.mockResolvedValue({ data: () => draftDoc });
 
     await expect(setVerificationVisibility('ver-id', 'public', OWNER_UID, fakeDb)).rejects.toThrow(
-      'Visibilità modificabile solo su una verifica attiva',
+      'Visibilità modificabile solo su una verifica attiva o chiusa',
     );
     expect(mockWriteBatch).not.toHaveBeenCalled();
     expect(mockBatchSet).not.toHaveBeenCalled();
     expect(mockBatchCommit).not.toHaveBeenCalled();
   });
 
-  it('throws when the verification is closed, without opening a batch or committing', async () => {
+  it('allows changing visibility on a closed verification', async () => {
     const closedDoc: Partial<VerificationDoc> = { status: 'closed', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => closedDoc });
 
-    await expect(setVerificationVisibility('ver-id', 'hidden', OWNER_UID, fakeDb)).rejects.toThrow(
-      'Visibilità modificabile solo su una verifica attiva',
-    );
-    expect(mockWriteBatch).not.toHaveBeenCalled();
-    expect(mockBatchCommit).not.toHaveBeenCalled();
+    await setVerificationVisibility('ver-id', 'hidden', OWNER_UID, fakeDb);
+    expect(mockWriteBatch).toHaveBeenCalledTimes(1);
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -925,14 +923,14 @@ describe('closeVerification', () => {
     expect(auditData.action).toBe('verification.closed');
   });
 
-  it('forces publishedProjection/data.visibility back to hidden on close (M3L-D)', async () => {
+  it('marks publishedProjection/data closed while preserving visibility', async () => {
     const activeDoc: Partial<VerificationDoc> = { status: 'active', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => activeDoc });
 
     await closeVerification('ver-id', OWNER_UID, fakeDb);
 
     const [, projectionData, projectionOptions] = mockBatchSet.mock.calls[1];
-    expect(projectionData).toEqual({ visibility: 'hidden' });
+    expect(projectionData).toEqual({ status: 'closed' });
     expect(projectionOptions).toEqual({ merge: true });
   });
 

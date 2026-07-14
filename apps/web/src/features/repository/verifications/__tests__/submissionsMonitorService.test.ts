@@ -79,6 +79,7 @@ describe('watchSubmissions', () => {
         submittedAt: submission.submittedAt,
         deliveryCode: 'SF-2026-A1B2',
         attentionEventsCount: 2,
+        correctionStatus: 'submitted',
         attentionEvents: [
           { type: 'tab_blur', ts: 1 },
           { type: 'copy_attempt', ts: 2 },

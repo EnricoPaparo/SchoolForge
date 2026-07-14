@@ -42,6 +42,7 @@ import { QuestionPicker } from './QuestionPicker.js';
 import { AttentionEventsDialog } from './AttentionEventsDialog.js';
 import { CorrectionWorkspace } from './CorrectionWorkspace.js';
 import type { AttentionEvent, VerificationTeacherQuestionSnapshot } from '../../types/firestore.js';
+import { correctionStatusLabel } from '../repository/corrections/submissionCorrectionStatus.js';
 import styles from './VerificationsView.module.css';
 
 /** Extracts the epoch seconds from a Firestore Timestamp-like value, or null if absent. */
@@ -1402,7 +1403,7 @@ export function VerificationsView() {
                           >
                             {solutionsPdfLoadingId === v.id ? '…' : '🔑'}
                           </button>
-                          {v.status === 'active' && (
+                          {(v.status === 'active' || v.status === 'closed') && (
                             <button
                               type="button"
                               className={styles.iconBtn}
@@ -1737,7 +1738,7 @@ export function VerificationsView() {
                             const stateLabel = !item
                               ? 'Non iniziata'
                               : item.status === 'submitted'
-                                ? 'Consegnata'
+                                ? correctionStatusLabel(item.correctionStatus)
                                 : 'In corso';
                             const studentName = s.displayName ?? s.email;
                             const eventsCount = item?.attentionEventsCount ?? 0;
