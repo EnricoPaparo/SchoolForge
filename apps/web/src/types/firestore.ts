@@ -182,7 +182,7 @@ export interface QuestionIndexEntry {
  * rendered to the student, already split from front matter (see
  * `parseLessonMetadata`), never the pool, soluzioni, questionIndex or any
  * technical/private metadata. This is now the ONLY source the student
- * client reads (`StudentLessonsView`/`studentLessonsService` never call
+ * client reads (`StudentDidatticaView`/`studentLessonsService` never call
  * Storage) — `storage.rules` (M3F-08) denies a student direct Storage read
  * even with a known `contentPath`. Every write path that creates/updates a
  * lesson body must keep this field in sync with what Storage stores at

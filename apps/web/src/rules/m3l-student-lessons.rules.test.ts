@@ -243,6 +243,37 @@ describe('Firestore rules — programs/{docId} student read (M3L-C)', () => {
 
     await assertFails(getDoc(doc(studentDb(), 'programs/p1/imports/i1')));
   });
+
+  it('an approved student cannot update or delete a readable program through crafted calls', async () => {
+    await seed({
+      studentStatus: 'approved',
+      studentClassId: 'class-a',
+      programClassIds: ['class-a'],
+    });
+
+    await assertFails(
+      setDoc(doc(studentDb(), 'programs/p1'), { title: 'Titolo manomesso' }, { merge: true }),
+    );
+    await assertFails(deleteDoc(doc(studentDb(), 'programs/p1')));
+  });
+
+  it('an approved student cannot read technical lessons or questionIndex even by exact path', async () => {
+    await seed({
+      studentStatus: 'approved',
+      studentClassId: 'class-a',
+      programClassIds: ['class-a'],
+    });
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'programs/p1/imports/i1/lessons/l1'), { ownerUid: OWNER_UID });
+      await setDoc(doc(db, 'programs/p1/imports/i1/questionIndex/q1'), {
+        ownerUid: OWNER_UID,
+      });
+    });
+
+    await assertFails(getDoc(doc(studentDb(), 'programs/p1/imports/i1/lessons/l1')));
+    await assertFails(getDoc(doc(studentDb(), 'programs/p1/imports/i1/questionIndex/q1')));
+  });
 });
 
 describe('Firestore rules — publicLessons student read (M3L-C)', () => {

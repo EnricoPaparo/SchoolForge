@@ -18,6 +18,7 @@ Il flusso completo è operativo e testato (suite automatica estesa + smoke test 
 | PDF studente senza soluzioni (generato nel browser) | ✅ funzionante |
 | Dashboard prontezza repository | ✅ funzionante |
 | Portale studente Google, read-only (M3-lite) | ✅ funzionante — login Google, StudentShell, Lezioni e Verifiche filtrate per classe, approvazione studenti, PDF verifica studente |
+| Didattica studente read-only (SDUX) | 🚧 SDUX-01 implementato — libreria corsi + workspace corso/UDA/lezione su sole proiezioni pubbliche; resta smoke/Gate SDUX-02 |
 | Repository Editor (RE) | ✅ funzionante — crea/modifica/riordina/elimina (con blocco protetto) UDA e lezioni, export ZIP coerente e reimportabile |
 | Question Editor (QE) — sezione "Domande" | ✅ funzionante — crea/modifica/elimina pool e domande Markdown-first, questionIndex coerente, picker aggiornato |
 | Portale digitale con consegna online (M3-full) | ✅ completato — avvio online, bozza, consegna immutabile, modalità verifica, monitor docente; Gate G5 superato |
@@ -63,6 +64,7 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 | [Question Editor](documentazione/question-editor-roadmap.md) | Roadmap QE-00–QE-05: editor pool domande Markdown-first, senza reimport ZIP. |
 | [M3-full](documentazione/m3-full-roadmap.md) | Specifica M3-full (verifiche online, consegne, monitor e modalità verifica): modello dati, Security Rules, UX, roadmap M3F-00→M3F-11. |
 | [Didattica (DUX)](documentazione/didattica-ux-roadmap.md) | Redesign UX del workspace docente: Didattica ha assorbito Corsi/Lezioni/Domande, Classi è ora una scheda di Studenti, Verifiche usa la creazione inline e la shell adotta header unico, Template restaurato e aurora sobria. **DUX-00→10A completati; Gate GDUX pendente.** |
+| [Didattica studente (SDUX)](documentazione/student-didattica-ux-roadmap.md) | Versione read-only della Didattica su proiezioni pubbliche: **SDUX-01 implementato; smoke e Gate Modalità verifica SDUX-02 pendenti.** |
 
 ## Moduli di delivery
 
@@ -75,6 +77,7 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 7. **M4 — Correzione ed export** 🚧 *(dipende da M3-full, completato)*: contratto dati, service layer/Security Rules, workspace docente di correzione manuale e lettura studente della correzione restituita (M4-00→M4-02B) completati; punteggi, percentuali e feedback assegnabili, restituibili e consultabili dallo studente. Registro Correzioni ed export PDF/Markdown/CSV (M4-03) non ancora implementati.
 8. **M5 — Correzione AI** *(fuori scope V1 / pianificato per V2)*: proposte assistite, approvazione massiva, correzione automatica opt-in.
 9. **Didattica (DUX)** ✅ *(DUX-00→10A implementati; Gate GDUX pendente)*: workspace docente unico che ha assorbito Corsi, Lezioni e Domande riusando service e dati RE/QE; include libreria corsi, editor contenuti/pool, organizzazione, filtri e UI responsive. Vedi [didattica-ux-roadmap.md](documentazione/didattica-ux-roadmap.md).
+10. **Didattica studente (SDUX)** 🚧: SDUX-01 implementa libreria corsi e consultazione corso/UDA/lezione in sola lettura, senza componenti/service docente, pool o Storage; SDUX-02 chiuderà smoke DEV e Gate Modalità verifica.
 
 V1 comprende M1, M2, M3-lite, RE, QE e M3-full (tutti implementati, Gate G5 superato per M3-full). M4 è in corso: contratto, service/Rules, workspace di correzione e lettura studente della correzione restituita (M4-00→M4-02B) completati; Registro Correzioni ed export (M4-03) restano da implementare. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2. Didattica DUX-00→10A è implementata; resta il Gate GDUX.
 
