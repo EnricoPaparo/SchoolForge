@@ -14,7 +14,7 @@
  * used as one single trailing segment instead of two.
  */
 
-function sanitizeForFilename(value: string): string {
+export function sanitizeForFilename(value: string): string {
   return value
     .trim()
     .replace(/[\\/:*?"<>|]/g, '')
@@ -23,7 +23,7 @@ function sanitizeForFilename(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-function formatDateForFilename(date: Date): string {
+export function formatDateForFilename(date: Date): string {
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, '0');
   const dd = String(date.getDate()).padStart(2, '0');
