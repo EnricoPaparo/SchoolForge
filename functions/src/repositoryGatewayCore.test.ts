@@ -8,9 +8,12 @@ import {
   isStorageNotFound,
   parseRoute,
   validateContent,
+  validateBatchReadPaths,
   validateImportPrefix,
   validateRepositoryPath,
   GatewayError,
+  MAX_BATCH_READ_FILES,
+  MAX_BATCH_READ_TOTAL_BYTES,
   MAX_FILE_BYTES,
   type BucketLike,
   type Route,
@@ -69,11 +72,12 @@ function req(over: Partial<Parameters<typeof handleGateway>[0]> = {}) {
 }
 
 describe('parseRoute (routing rigoroso)', () => {
-  it('accepts exactly the four documented repository routes', () => {
+  it('accepts exactly the five documented repository routes', () => {
     expect(parseRoute('/api/repository/read')).toBe('read');
     expect(parseRoute('/api/repository/write')).toBe('write');
     expect(parseRoute('/api/repository/delete')).toBe('delete');
     expect(parseRoute('/api/repository/delete-prefix')).toBe('delete-prefix');
+    expect(parseRoute('/api/repository/batch-read')).toBe('batch-read');
     expect(parseRoute('/api/repository/read/')).toBe('read'); // single trailing slash tolerated
   });
 
@@ -89,6 +93,32 @@ describe('parseRoute (routing rigoroso)', () => {
     ]) {
       expect(parseRoute(p)).toBeNull();
     }
+  });
+});
+
+describe('validateBatchReadPaths', () => {
+  const secondPath = `repository/${UID}/imports/imp-1/uda-01/lezione-002-y.md`;
+
+  it('preserves a valid ordered list', () => {
+    expect(validateBatchReadPaths([OK_PATH, secondPath], UID)).toEqual([OK_PATH, secondPath]);
+  });
+
+  it('rejects empty, oversized and duplicate lists', () => {
+    expect(() => validateBatchReadPaths([], UID)).toThrowError(
+      expect.objectContaining({ code: 'invalid_paths' }),
+    );
+    expect(() =>
+      validateBatchReadPaths(Array(MAX_BATCH_READ_FILES + 1).fill(OK_PATH), UID),
+    ).toThrowError(expect.objectContaining({ code: 'too_many_files' }));
+    expect(() => validateBatchReadPaths([OK_PATH, OK_PATH], UID)).toThrowError(
+      expect.objectContaining({ code: 'duplicate_path' }),
+    );
+  });
+
+  it('applies the same owner/path allowlist to every element', () => {
+    expect(() =>
+      validateBatchReadPaths([OK_PATH, 'repository/other/imports/imp-1/x.md'], UID),
+    ).toThrowError(expect.objectContaining({ code: 'not_owner' }));
   });
 });
 
@@ -338,6 +368,41 @@ describe('handleGateway', () => {
     );
     expect(prefixDelete).toMatchObject({ status: 200, body: { path: importRoot, deleted: true } });
     expect((d.storage as ReturnType<typeof memoryStorage>).files.size).toBe(0);
+  });
+
+  it('batch-read preserves order and reports a missing file per entry', async () => {
+    const secondPath = `repository/${UID}/imports/imp-1/uda-01/lezione-002-y.md`;
+    const missingPath = `repository/${UID}/imports/imp-1/uda-01/missing.md`;
+    const storage = memoryStorage({ [OK_PATH]: 'Uno', [secondPath]: 'Due' });
+    const result = await handleGateway(
+      req({
+        route: 'batch-read',
+        body: { paths: [secondPath, missingPath, OK_PATH] },
+      }),
+      deps({ storage }),
+    );
+    expect(result).toEqual({
+      status: 200,
+      body: {
+        files: [
+          { path: secondPath, content: 'Due', encoding: 'utf-8' },
+          {
+            path: missingPath,
+            error: { code: 'file_not_found', message: 'File non trovato.' },
+          },
+          { path: OK_PATH, content: 'Uno', encoding: 'utf-8' },
+        ],
+      },
+    });
+  });
+
+  it('batch-read rejects a response above the total byte limit', async () => {
+    const storage = memoryStorage({ [OK_PATH]: 'x'.repeat(MAX_BATCH_READ_TOTAL_BYTES + 1) });
+    const result = await handleGateway(
+      req({ route: 'batch-read', body: { paths: [OK_PATH] } }),
+      deps({ storage }),
+    );
+    expect(result).toMatchObject({ status: 413, body: { error: { code: 'total_too_large' } } });
   });
 
   it('read: 404 file_not_found for an absent file', async () => {

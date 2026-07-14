@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock firebase/storage
-vi.mock('firebase/storage', () => ({
-  getBytes: vi.fn(),
-  ref: vi.fn(),
+const mockReadTexts = vi.fn();
+vi.mock('../../repository/gateway/repositoryGatewayClient.js', () => ({
+  readTexts: (...args: unknown[]) => mockReadTexts(...args),
 }));
 
 // Mock programsService
@@ -14,7 +13,6 @@ vi.mock('../../repository/programs/programsService.js', () => ({
   listLessons: (...args: unknown[]) => mockListLessons(...args),
 }));
 
-import { getBytes, ref } from 'firebase/storage';
 import type JSZip from 'jszip';
 import { buildExportZip, exportZip } from '../exportZip.js';
 import { readZipFile } from '../../repository/import/readZipFile.js';
@@ -24,14 +22,8 @@ import type { ProgramItem } from '../../repository/programs/programsService.js';
 import type { FirebaseStorage } from 'firebase/storage';
 import type { Firestore } from 'firebase/firestore';
 
-const mockGetBytes = getBytes as ReturnType<typeof vi.fn>;
-const mockRef = ref as ReturnType<typeof vi.fn>;
 const mockStorage = {} as FirebaseStorage;
 const mockDb = {} as Firestore;
-
-function encode(content: string): Uint8Array {
-  return new TextEncoder().encode(content);
-}
 
 /** JSZip auto-creates implicit directory entries — order assertions only care about files. */
 function fileKeys(zip: JSZip): string[] {
@@ -81,8 +73,9 @@ const POOL_LESSON = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockRef.mockImplementation((_storage: unknown, path: string) => ({ __path: path }));
-  mockGetBytes.mockResolvedValue(encode('# content'));
+  mockReadTexts.mockImplementation(async (paths: string[]) =>
+    paths.map((path) => ({ ok: true, path, content: '# content' })),
+  );
 
   global.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
   global.URL.revokeObjectURL = vi.fn();
@@ -107,15 +100,10 @@ describe('exportZip — pool file exclusion', () => {
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON, POOL_LESSON]);
 
-    const fetchedRefs: string[] = [];
-    mockRef.mockImplementation((_storage: unknown, path: string) => {
-      fetchedRefs.push(path);
-      return { __path: path };
-    });
-
     stubDownloadLink();
     await exportZip(PROGRAM, mockStorage, mockDb);
 
+    const fetchedRefs = mockReadTexts.mock.calls[0]?.[0] as string[];
     const poolRefs = fetchedRefs.filter((r) => r.endsWith('.pool.md'));
     expect(poolRefs.length).toBe(0);
 
@@ -128,33 +116,25 @@ describe('exportZip — included files', () => {
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON]);
 
-    const fetchedPaths: string[] = [];
-    mockRef.mockImplementation((_storage: unknown, path: string) => {
-      fetchedPaths.push(path as string);
-      return { __path: path };
-    });
-
     stubDownloadLink();
     await exportZip(PROGRAM, mockStorage, mockDb);
 
+    const fetchedPaths = mockReadTexts.mock.calls[0]?.[0] as string[];
     expect(fetchedPaths).toContain(LESSON.storageRef);
 
     vi.restoreAllMocks();
   });
 });
 
-describe('exportZip — no Firebase Storage writes', () => {
-  it('only uses getBytes (read) — no write/upload functions called', async () => {
+describe('exportZip — gateway batch-read', () => {
+  it('uses one batch-read and performs no Storage SDK operation', async () => {
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON]);
 
     stubDownloadLink();
     await exportZip(PROGRAM, mockStorage, mockDb);
 
-    // Only getBytes (read) should be called from the firebase/storage mock.
-    expect(mockGetBytes).toHaveBeenCalled();
-    // The mock only defines getBytes and ref — no uploadBytes, deleteObject,
-    // etc. This verifies no write calls are made.
+    expect(mockReadTexts).toHaveBeenCalledTimes(1);
 
     vi.restoreAllMocks();
   });
@@ -173,8 +153,12 @@ describe('buildExportZip — reflects the current Repository Editor state (RE-06
   it('exports whatever content is currently in Storage — e.g. after a metadata/body edit', async () => {
     mockListUdas.mockResolvedValue([UDA]);
     mockListLessons.mockResolvedValue([LESSON]);
-    mockGetBytes.mockResolvedValue(
-      encode('---\ntitolo: "Titolo modificato"\n---\n\nCorpo modificato dal docente.'),
+    mockReadTexts.mockImplementation(async (paths: string[]) =>
+      paths.map((path) => ({
+        ok: true,
+        path,
+        content: '---\ntitolo: "Titolo modificato"\n---\n\nCorpo modificato dal docente.',
+      })),
     );
 
     const zip = await buildExportZip(PROGRAM, mockStorage, mockDb);
@@ -236,18 +220,6 @@ describe('buildExportZip — order preservation (RE-06)', () => {
   it('keeps listUdas order even when content fetches resolve out of order', async () => {
     mockListUdas.mockResolvedValue([UDA_A, UDA_B]);
     mockListLessons.mockResolvedValue([]);
-
-    // uda-01-a's fetch resolves after extra microtask ticks — simulating a
-    // slower network response — while uda-02-b resolves immediately.
-    mockGetBytes.mockImplementation((fileRef: { __path?: string }) => {
-      const bytes = encode('# content');
-      if (fileRef.__path?.includes('uda-01-a')) {
-        return Promise.resolve()
-          .then(() => Promise.resolve())
-          .then(() => bytes);
-      }
-      return Promise.resolve(bytes);
-    });
 
     const zip = await buildExportZip(PROGRAM, mockStorage, mockDb);
 
@@ -317,19 +289,17 @@ describe('exportZip — reimport round-trip (RE-06)', () => {
     mockListUdas.mockResolvedValue([UDA_B, UDA_A]);
     mockListLessons.mockResolvedValue([LESSON_B, LESSON_A]);
 
-    mockGetBytes.mockImplementation((fileRef: { __path: string }) => {
-      if (fileRef.__path.endsWith('uda-01-a.md')) {
-        return Promise.resolve(
-          encode('---\ntitolo: "A"\ncompetenze:\n  - "Comp A"\nobiettivi:\n  - "Obj A"\n---\n'),
-        );
-      }
-      if (fileRef.__path.endsWith('uda-02-b.md')) {
-        return Promise.resolve(
-          encode('---\ntitolo: "B"\ncompetenze:\n  - "Comp B"\nobiettivi:\n  - "Obj B"\n---\n'),
-        );
-      }
-      return Promise.resolve(encode('---\ntitolo: "Lezione"\n---\n\nCorpo.'));
-    });
+    mockReadTexts.mockImplementation(async (paths: string[]) =>
+      paths.map((path) => ({
+        ok: true,
+        path,
+        content: path.endsWith('uda-01-a.md')
+          ? '---\ntitolo: "A"\ncompetenze:\n  - "Comp A"\nobiettivi:\n  - "Obj A"\n---\n'
+          : path.endsWith('uda-02-b.md')
+            ? '---\ntitolo: "B"\ncompetenze:\n  - "Comp B"\nobiettivi:\n  - "Obj B"\n---\n'
+            : '---\ntitolo: "Lezione"\n---\n\nCorpo.',
+      })),
+    );
 
     const zip = await buildExportZip(PROGRAM, mockStorage, mockDb);
     const blob = await zip.generateAsync({ type: 'blob' });

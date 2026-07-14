@@ -4,7 +4,7 @@ const mockGetDocs = vi.fn();
 const mockGetDoc = vi.fn();
 const mockUpdateDoc = vi.fn();
 const mockSetDoc = vi.fn();
-const mockGetBytes = vi.fn();
+const mockReadTexts = vi.fn();
 
 vi.mock('firebase/firestore', () => ({
   collection: (_db: unknown, name: string) => ({ __collection: name }),
@@ -18,9 +18,8 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: () => ({ __type: 'serverTimestamp' }),
 }));
 
-vi.mock('firebase/storage', () => ({
-  ref: (_storage: unknown, path: string) => ({ __storagePath: path }),
-  getBytes: (...args: unknown[]) => mockGetBytes(...args),
+vi.mock('../../gateway/repositoryGatewayClient.js', () => ({
+  readTexts: (...args: unknown[]) => mockReadTexts(...args),
 }));
 
 import {
@@ -28,15 +27,9 @@ import {
   isPublicLessonsMigrationComplete,
 } from '../publicLessonsBackfillService.js';
 import type { Firestore } from 'firebase/firestore';
-import type { FirebaseStorage } from 'firebase/storage';
 
 const fakeDb = {} as Firestore;
-const fakeStorage = {} as FirebaseStorage;
 const OWNER_UID = 'owner-uid';
-
-function encode(content: string): Uint8Array {
-  return new TextEncoder().encode(content);
-}
 
 function docsFor(items: { id: string; data: Record<string, unknown> }[]) {
   return { docs: items.map((item) => ({ id: item.id, data: () => item.data })) };
@@ -46,6 +39,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockUpdateDoc.mockResolvedValue(undefined);
   mockSetDoc.mockResolvedValue(undefined);
+  mockReadTexts.mockImplementation(async (paths: string[]) =>
+    paths.map((path) => ({ ok: true, path, content: 'Corpo.' })),
+  );
 });
 
 describe('backfillPublicLessonsContent', () => {
@@ -58,9 +54,15 @@ describe('backfillPublicLessonsContent', () => {
         },
       ]),
     );
-    mockGetBytes.mockResolvedValueOnce(encode('---\ntitolo: "L1"\n---\n\nCorpo.'));
+    mockReadTexts.mockImplementationOnce(async (paths: string[]) =>
+      paths.map((path) => ({
+        ok: true,
+        path,
+        content: '---\ntitolo: "L1"\n---\n\nCorpo.',
+      })),
+    );
 
-    const summary = await backfillPublicLessonsContent(OWNER_UID, fakeDb, fakeStorage);
+    const summary = await backfillPublicLessonsContent(OWNER_UID, fakeDb);
 
     expect(summary).toEqual({ analyzed: 1, migrated: 1, skipped: 0, failed: [] });
     expect(mockUpdateDoc).toHaveBeenCalledWith(
@@ -88,14 +90,14 @@ describe('backfillPublicLessonsContent', () => {
       ]),
     );
 
-    const summary = await backfillPublicLessonsContent(OWNER_UID, fakeDb, fakeStorage);
+    const summary = await backfillPublicLessonsContent(OWNER_UID, fakeDb);
 
     expect(summary).toEqual({ analyzed: 1, migrated: 0, skipped: 1, failed: [] });
-    expect(mockGetBytes).not.toHaveBeenCalled();
+    expect(mockReadTexts).not.toHaveBeenCalled();
     expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
 
-  it('records a failure with reason when the Storage read fails, and does not throw', async () => {
+  it('records a failure with reason when batch-read fails, and does not throw', async () => {
     mockGetDocs.mockResolvedValueOnce(
       docsFor([
         {
@@ -104,9 +106,9 @@ describe('backfillPublicLessonsContent', () => {
         },
       ]),
     );
-    mockGetBytes.mockRejectedValueOnce(new Error('permission-denied'));
+    mockReadTexts.mockRejectedValueOnce(new Error('permission-denied'));
 
-    const summary = await backfillPublicLessonsContent(OWNER_UID, fakeDb, fakeStorage);
+    const summary = await backfillPublicLessonsContent(OWNER_UID, fakeDb);
 
     expect(summary.migrated).toBe(0);
     expect(summary.failed).toEqual([{ id: 'l1', reason: 'permission-denied' }]);
@@ -122,9 +124,11 @@ describe('backfillPublicLessonsContent', () => {
         },
       ]),
     );
-    mockGetBytes.mockResolvedValueOnce(encode('a'.repeat(800_000)));
+    mockReadTexts.mockImplementationOnce(async (paths: string[]) =>
+      paths.map((path) => ({ ok: true, path, content: 'a'.repeat(800_000) })),
+    );
 
-    const summary = await backfillPublicLessonsContent(OWNER_UID, fakeDb, fakeStorage);
+    const summary = await backfillPublicLessonsContent(OWNER_UID, fakeDb);
 
     expect(summary.migrated).toBe(0);
     expect(summary.failed[0]?.id).toBe('l1');
@@ -146,7 +150,7 @@ describe('backfillPublicLessonsContent', () => {
       ]),
     );
 
-    const summary = await backfillPublicLessonsContent(OWNER_UID, fakeDb, fakeStorage);
+    const summary = await backfillPublicLessonsContent(OWNER_UID, fakeDb);
     expect(summary).toEqual({ analyzed: 1, migrated: 0, skipped: 1, failed: [] });
   });
 
@@ -168,9 +172,11 @@ describe('backfillPublicLessonsContent', () => {
         },
       ]),
     );
-    mockGetBytes.mockResolvedValueOnce(encode('Corpo l1.'));
+    mockReadTexts.mockImplementationOnce(async (paths: string[]) =>
+      paths.map((path) => ({ ok: true, path, content: 'Corpo l1.' })),
+    );
 
-    const summary = await backfillPublicLessonsContent(OWNER_UID, fakeDb, fakeStorage);
+    const summary = await backfillPublicLessonsContent(OWNER_UID, fakeDb);
 
     expect(summary).toEqual({ analyzed: 2, migrated: 1, skipped: 1, failed: [] });
     expect(mockUpdateDoc).toHaveBeenCalledTimes(1);

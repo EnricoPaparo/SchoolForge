@@ -1,9 +1,7 @@
-import { getBytes, ref } from 'firebase/storage';
-import type { FirebaseStorage } from 'firebase/storage';
 import { parsePool } from '@schoolforge/lesson-contract';
 import type { QuestionOption } from '@schoolforge/lesson-contract';
 import type { VerificationQuestionRef } from '../../../types/firestore.js';
-import { mapWithConcurrency } from './mapWithConcurrency.js';
+import { readTexts } from '../gateway/repositoryGatewayClient.js';
 
 /** Safe question data for PDF — never includes soluzione, correctAnswer or answers. */
 export type LoadedQuestion = {
@@ -18,24 +16,22 @@ export type LoadQuestionsResult =
   | { ok: true; questions: LoadedQuestion[] }
   | { ok: false; error: string };
 
-const POOL_READ_CONCURRENCY = 4;
-
 /**
  * Loads the question text and options for each selected ref.
- * Fetches pool files from Firebase Storage, parses them, and returns
+ * Fetches pool files through the same-origin repository gateway, parses them, and returns
  * only the safe metadata — testo and opzioni — never soluzione.
  *
  * Returns refs in the same order as the input array.
  */
 export async function loadSelectedQuestions(
   questionRefs: VerificationQuestionRef[],
-  storage: FirebaseStorage,
+  _legacyStorage?: unknown,
 ): Promise<LoadQuestionsResult> {
   if (questionRefs.length === 0) {
     return { ok: false, error: 'Nessuna domanda selezionata.' };
   }
 
-  // Group refs by poolStorageRef to minimise Storage reads
+  // Group refs by poolStorageRef to avoid duplicate file reads in the gateway batch.
   const byPool = new Map<string, VerificationQuestionRef[]>();
   for (const r of questionRefs) {
     const arr = byPool.get(r.poolStorageRef) ?? [];
@@ -45,35 +41,26 @@ export async function loadSelectedQuestions(
 
   const resultMap = new Map<string, LoadedQuestion>();
 
-  const loadedPools = await mapWithConcurrency(
-    Array.from(byPool.entries()),
-    POOL_READ_CONCURRENCY,
-    async ([poolRef, refs]) => {
-      let content: string;
-      try {
-        const bytes = await getBytes(ref(storage, poolRef));
-        content = new TextDecoder().decode(bytes);
-      } catch {
-        return { ok: false as const, error: `Pool non trovato: ${poolRef}` };
-      }
-
-      const parsed = parsePool(content, poolRef);
-      if (!parsed.ok) {
-        return { ok: false as const, error: `Pool non valido: ${poolRef}` };
-      }
-
-      return {
-        ok: true as const,
-        poolRef,
-        refs,
-        questionMap: new Map(parsed.pool.questions.map((q) => [q.id, q])),
-      };
-    },
+  let batchResults: Awaited<ReturnType<typeof readTexts>>;
+  try {
+    batchResults = await readTexts([...byPool.keys()]);
+  } catch {
+    return { ok: false, error: 'Impossibile caricare i pool delle domande.' };
+  }
+  const contentByPath = new Map(
+    batchResults.filter((result) => result.ok).map((result) => [result.path, result.content]),
   );
 
-  for (const loaded of loadedPools) {
-    if (!loaded.ok) return { ok: false, error: loaded.error };
-    const { poolRef, refs, questionMap } = loaded;
+  for (const [poolRef, refs] of byPool.entries()) {
+    const content = contentByPath.get(poolRef);
+    if (content === undefined) {
+      return { ok: false, error: `Pool non trovato: ${poolRef}` };
+    }
+    const parsed = parsePool(content, poolRef);
+    if (!parsed.ok) {
+      return { ok: false as const, error: `Pool non valido: ${poolRef}` };
+    }
+    const questionMap = new Map(parsed.pool.questions.map((q) => [q.id, q]));
 
     for (const r of refs) {
       const q = questionMap.get(r.questionLocalId);

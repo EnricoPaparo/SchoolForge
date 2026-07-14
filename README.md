@@ -26,7 +26,7 @@ Il flusso completo è operativo e testato (suite automatica estesa + smoke test 
 
 **Stato:** Repository Editor (RE-00 → RE-07), Question Editor (QE-00 → QE-05) e M3-full sono completi e stabili per uso DEV/manuale; Gate G5 superato per M3-full. Vedi `documentazione/repository-editor-roadmap.md`, `documentazione/question-editor-roadmap.md`, `documentazione/m3-full-roadmap.md` e `documentazione/evidenze/g5-m3-full-checklist-finale.md`.
 
-**Compatibilità Storage / Brave (in progettazione).** Oggi la web app accede a Firebase Storage **direttamente** dal browser: su **Brave mobile** queste richieste dirette falliscono (`storage/retry-limit-exceeded`, HTTP 0, ~120 s). MOB-01C ha già spostato la *consultazione* delle lezioni su Firestore (`publicLessons.content`); restano diretti pool, editing Markdown, import/export, eliminazioni, backfill e caricamento domande verifiche. È **approvato ma non ancora implementato** un **Repository Storage Gateway same-origin** (`/api/repository/*` → Hosting rewrite → Cloud Function → Admin SDK → Storage): contratto in `documentazione/storage-gateway-roadmap.md` (SGW). Le Cloud Functions per il gateway **non esistono ancora**.
+**Compatibilità Storage / Brave (SGW in corso).** Il **Repository Storage Gateway same-origin** (`/api/repository/*` → Hosting rewrite → Cloud Function → Admin SDK → Storage) è implementato e verificato su DEV per operazioni singole, pool, editing Markdown ed eliminazione programmi (SGW-01/02A). SGW-02B porta nel gateway export ZIP, backfill e caricamento batch dei pool; resta solo l'upload dell'import ZIP diretto fino a SGW-02C. Contratto e stato in `documentazione/storage-gateway-roadmap.md`.
 Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartaceo.md) per la guida operativa.
 
 ## Principi non negoziabili
@@ -74,15 +74,16 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 6. **M3-full — Verifiche online e consegne studenti** ✅: avvio online, bozza, consegna immutabile, codice consegna e monitor docente; sessione obbligatoria, modalità verifica per classe e protezione effettiva delle lezioni. Gate G5 superato. Vedi [m3-full-roadmap.md](documentazione/m3-full-roadmap.md) e [evidenze/g5-m3-full-checklist-finale.md](documentazione/evidenze/g5-m3-full-checklist-finale.md).
 7. **M4 — Correzione ed export** 🚧 *(dipende da M3-full, completato)*: contratto dati, service layer/Security Rules, workspace docente di correzione manuale e lettura studente della correzione restituita (M4-00→M4-02B) completati; punteggi, percentuali e feedback assegnabili, restituibili e consultabili dallo studente. Registro Correzioni ed export PDF/Markdown/CSV (M4-03) non ancora implementati.
 8. **M5 — Correzione AI** *(fuori scope V1 / pianificato per V2)*: proposte assistite, approvazione massiva, correzione automatica opt-in.
-9. **Didattica (DUX)** 🚧 *(redesign UX approvato, non ancora implementato)*: unifica progressivamente le sezioni Corsi, Lezioni e Domande in un unico workspace docente, riusando gli stessi service/dati di RE/QE. DUX-00 (specifica completa + prototipo statico) è completato; nessuna sezione esistente è stata modificata o rimossa. Vedi [didattica-ux-roadmap.md](documentazione/didattica-ux-roadmap.md).
+9. **Didattica (DUX)** ✅ *(DUX-00→10A implementati; Gate GDUX pendente)*: workspace docente unico che ha assorbito Corsi, Lezioni e Domande riusando service e dati RE/QE; include libreria corsi, editor contenuti/pool, organizzazione, filtri e UI responsive. Vedi [didattica-ux-roadmap.md](documentazione/didattica-ux-roadmap.md).
 
-V1 comprende M1, M2, M3-lite, RE, QE e M3-full (tutti implementati, Gate G5 superato per M3-full). M4 è in corso: contratto, service/Rules, workspace di correzione e lettura studente della correzione restituita (M4-00→M4-02B) completati; Registro Correzioni ed export (M4-03) restano da implementare. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2. Didattica (DUX) è un redesign UX approvato in fase di specifica (DUX-00 completato), non ancora implementato nell'app.
+V1 comprende M1, M2, M3-lite, RE, QE e M3-full (tutti implementati, Gate G5 superato per M3-full). M4 è in corso: contratto, service/Rules, workspace di correzione e lettura studente della correzione restituita (M4-00→M4-02B) completati; Registro Correzioni ed export (M4-03) restano da implementare. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2. Didattica DUX-00→10A è implementata; resta il Gate GDUX.
 
 ## Architettura in sintesi
 
 ```
 SPA unica (Firebase Hosting)
-├── /teacher/*  — docente autenticato (ownerUid), scrittura diretta Firestore + Storage
+├── /teacher/*  — docente autenticato (ownerUid), Firestore diretto + Storage via gateway SGW
+│                 (import ZIP ancora diretto fino a SGW-02C)
 └── /student/*  — studente autenticato Google
                   M3-lite: lezioni e verifiche read-only, PDF studente browser-side
                   M3-full [completato]: avvio online, bozza, consegna immutabile
@@ -90,7 +91,7 @@ SPA unica (Firebase Hosting)
 Canale cartaceo: PDF generato nel browser dal docente (M2, implementato).
 Consegna online: scritture client dirette con Security Rules (M3-full, no Cloud Functions).
 
-Cloud Functions: riservate a AI (M5/V2).
+Cloud Functions: una Function HTTPS scale-to-zero per il gateway SGW; AI resta riservata a M5/V2.
 
 PDF generati nel browser (@react-pdf/renderer) — nessun server coinvolto, nessuna persistenza
 ```

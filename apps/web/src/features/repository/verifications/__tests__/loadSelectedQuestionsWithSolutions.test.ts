@@ -2,13 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { loadSelectedQuestionsWithSolutions } from '../loadSelectedQuestionsWithSolutions.js';
 import type { VerificationQuestionRef } from '../../../../types/firestore.js';
 
-const mockGetBytes = vi.fn();
-vi.mock('firebase/storage', () => ({
-  getBytes: (...args: unknown[]) => mockGetBytes(...args),
-  ref: (_storage: unknown, path: string) => ({ path }),
+const mockReadTexts = vi.fn();
+vi.mock('../../gateway/repositoryGatewayClient.js', () => ({
+  readTexts: (...args: unknown[]) => mockReadTexts(...args),
 }));
-
-const encoder = new TextEncoder();
 
 const POOL_YAML = `---
 schema: schoolforge-pool/v1
@@ -60,7 +57,9 @@ const makeRef = (overrides: Partial<VerificationQuestionRef> = {}): Verification
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockGetBytes.mockResolvedValue(encoder.encode(POOL_YAML));
+  mockReadTexts.mockImplementation(async (paths: string[]) =>
+    paths.map((path) => ({ ok: true, path, content: POOL_YAML })),
+  );
 });
 
 describe('loadSelectedQuestionsWithSolutions', () => {
@@ -70,8 +69,14 @@ describe('loadSelectedQuestionsWithSolutions', () => {
     if (!result.ok) expect(result.error).toMatch(/nessuna domanda/i);
   });
 
-  it('returns error when pool file is not found in Storage', async () => {
-    mockGetBytes.mockRejectedValue(new Error('storage/object-not-found'));
+  it('returns error when the gateway reports a missing pool', async () => {
+    mockReadTexts.mockImplementation(async (paths: string[]) =>
+      paths.map((path) => ({
+        ok: false,
+        path,
+        error: { code: 'file_not_found', message: 'File non trovato.' },
+      })),
+    );
     const result = await loadSelectedQuestionsWithSolutions([makeRef()], {} as never);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/pool non trovato/i);
@@ -150,20 +155,10 @@ describe('loadSelectedQuestionsWithSolutions', () => {
       }),
     ];
     await loadSelectedQuestionsWithSolutions(refs, {} as never);
-    expect(mockGetBytes).toHaveBeenCalledTimes(1);
+    expect(mockReadTexts).toHaveBeenCalledTimes(1);
   });
 
-  it('reads multiple distinct pools with bounded concurrency (never more than 4 in flight)', async () => {
-    let inFlight = 0;
-    let maxInFlight = 0;
-    mockGetBytes.mockImplementation(async () => {
-      inFlight += 1;
-      maxInFlight = Math.max(maxInFlight, inFlight);
-      await new Promise((resolve) => setTimeout(resolve, 1));
-      inFlight -= 1;
-      return encoder.encode(POOL_YAML);
-    });
-
+  it('reads multiple distinct pools in one gateway batch', async () => {
     const refs = Array.from({ length: 10 }, (_, i) =>
       makeRef({
         questionIndexEntryId: `qi-${i}`,
@@ -175,8 +170,8 @@ describe('loadSelectedQuestionsWithSolutions', () => {
     const result = await loadSelectedQuestionsWithSolutions(refs, {} as never);
 
     expect(result.ok).toBe(true);
-    expect(mockGetBytes).toHaveBeenCalledTimes(10); // 10 distinct pools, all read
-    expect(maxInFlight).toBeLessThanOrEqual(4); // POOL_READ_CONCURRENCY
+    expect(mockReadTexts).toHaveBeenCalledTimes(1);
+    expect(mockReadTexts.mock.calls[0]?.[0]).toHaveLength(10);
   });
 
   it('never reads the same pool twice even when many refs share it, under concurrency', async () => {
@@ -199,14 +194,21 @@ describe('loadSelectedQuestionsWithSolutions', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.questions).toHaveLength(3);
-    expect(mockGetBytes).toHaveBeenCalledTimes(1);
+    expect(mockReadTexts).toHaveBeenCalledTimes(1);
   });
 
   it('returns a failed result (never a partial success) when one of several pools is missing', async () => {
-    mockGetBytes.mockImplementation(async (arg: { path: string }) => {
-      if (arg.path.includes('missing')) throw new Error('storage/object-not-found');
-      return encoder.encode(POOL_YAML);
-    });
+    mockReadTexts.mockImplementation(async (paths: string[]) =>
+      paths.map((path) =>
+        path.includes('missing')
+          ? {
+              ok: false,
+              path,
+              error: { code: 'file_not_found', message: 'File non trovato.' },
+            }
+          : { ok: true, path, content: POOL_YAML },
+      ),
+    );
 
     const refs = [
       makeRef({
@@ -227,12 +229,8 @@ describe('loadSelectedQuestionsWithSolutions', () => {
     expect(result.error).toMatch(/pool non trovato/i);
   });
 
-  it('never performs a Firestore/Storage write', async () => {
-    // The module only ever imports `getBytes`/`ref` from `firebase/storage`
-    // (see the top-level mock above) — no `uploadBytes`/`setDoc`/`updateDoc`
-    // is even reachable from this function, so a successful call can only
-    // have performed reads.
+  it('never performs a write and uses only the read gateway', async () => {
     await loadSelectedQuestionsWithSolutions([makeRef()], {} as never);
-    expect(mockGetBytes).toHaveBeenCalled();
+    expect(mockReadTexts).toHaveBeenCalledOnce();
   });
 });

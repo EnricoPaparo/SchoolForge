@@ -10,8 +10,7 @@ import {
   where,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
-import type { FirebaseStorage } from 'firebase/storage';
-import { getBytes, ref } from 'firebase/storage';
+import { readTexts } from '../gateway/repositoryGatewayClient.js';
 import { parseLessonMetadata } from '../validation/lessonMetadata.js';
 import { assertLessonContentSize, normalizeLessonContent } from './lessonContentSize.js';
 import type { PublicLessonDoc, PublicLessonsMigrationDoc } from '../../../types/firestore.js';
@@ -86,7 +85,7 @@ export async function isPublicLessonsMigrationComplete(db: Firestore): Promise<b
 export async function backfillPublicLessonsContent(
   ownerUid: string,
   db: Firestore,
-  storage: FirebaseStorage,
+  _legacyStorage?: unknown,
 ): Promise<BackfillSummary> {
   const snap = await getDocs(
     query(collection(db, 'publicLessons'), where('ownerUid', '==', ownerUid)),
@@ -105,6 +104,19 @@ export async function backfillPublicLessonsContent(
   });
   summary.skipped = snap.docs.length - legacyDocs.length;
 
+  const paths = legacyDocs
+    .map((docSnap) => (docSnap.data() as Partial<PublicLessonDoc>).contentPath)
+    .filter((path): path is string => typeof path === 'string' && path.length > 0);
+  let contentResults: Awaited<ReturnType<typeof readTexts>>;
+  try {
+    contentResults = paths.length > 0 ? await readTexts(paths) : [];
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : 'Gateway batch-read non disponibile.';
+    summary.failed.push(...legacyDocs.map((docSnap) => ({ id: docSnap.id, reason })));
+    return summary;
+  }
+  const resultByPath = new Map(contentResults.map((result) => [result.path, result]));
+
   await runWithConcurrency(legacyDocs, BACKFILL_CONCURRENCY, async (docSnap) => {
     const data = docSnap.data() as Partial<PublicLessonDoc>;
     const contentPath = data.contentPath;
@@ -113,8 +125,11 @@ export async function backfillPublicLessonsContent(
       return;
     }
     try {
-      const bytes = await getBytes(ref(storage, contentPath));
-      const raw = new TextDecoder().decode(bytes);
+      const result = resultByPath.get(contentPath);
+      if (!result?.ok) {
+        throw new Error(result?.error.message ?? 'File non trovato dal gateway.');
+      }
+      const raw = result.content;
       const { body } = parseLessonMetadata(raw);
       assertLessonContentSize(body, data.filename ?? docSnap.id);
       await updateDoc(doc(db, 'publicLessons', docSnap.id), { content: body });
