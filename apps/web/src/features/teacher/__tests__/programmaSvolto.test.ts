@@ -67,7 +67,7 @@ describe('generateMarkdown', () => {
   it('renders a readable UDA heading, never the raw technical dir', () => {
     const md = generateMarkdown(PROGRAM, [UDA], [LESSON_COMPLETED]);
     // Legacy UDA (no titolo) → fallback derived from dir "uda-01-reti".
-    expect(md).toContain('## Reti');
+    expect(md).toContain('## UDA 1: Reti');
     expect(md).not.toContain('## uda-01-reti');
   });
 
@@ -167,7 +167,7 @@ describe('generateMarkdown — readable titles (EXP-01)', () => {
 
   it('uses the UDA titolo as heading when present', () => {
     const md = generateMarkdown(PROGRAM, [UDA_WITH_TITLE], [LESSON_COMPLETED]);
-    expect(md).toContain('## Reti di calcolatori');
+    expect(md).toContain('## UDA 1: Reti di calcolatori');
     expect(md).not.toContain('uda-01-reti');
   });
 
@@ -175,7 +175,7 @@ describe('generateMarkdown — readable titles (EXP-01)', () => {
     const legacyUda: UdaItem = { ...UDA, dir: 'uda-00-setup', titolo: null };
     const legacyLesson: LessonItem = { ...LESSON_COMPLETED, udaDir: 'uda-00-setup' };
     const md = generateMarkdown(PROGRAM, [legacyUda], [legacyLesson]);
-    expect(md).toContain('## Setup');
+    expect(md).toContain('## UDA 1: Setup');
     expect(md).not.toContain('uda-00-setup');
   });
 
@@ -217,7 +217,9 @@ describe('generateMarkdown — readable titles (EXP-01)', () => {
     };
     const md = generateMarkdown(PROGRAM, [UDA_WITH_TITLE, udaB], [lessonA, lessonB, lessonBnot]);
     // UDA order preserved: "Reti di calcolatori" before "Sicurezza".
-    expect(md.indexOf('## Reti di calcolatori')).toBeLessThan(md.indexOf('## Sicurezza'));
+    expect(md.indexOf('## UDA 1: Reti di calcolatori')).toBeLessThan(
+      md.indexOf('## UDA 2: Sicurezza'),
+    );
     // Only-completed filter intact: the not-completed VPN lesson is absent.
     expect(md).toContain('- Firewall');
     expect(md).not.toContain('VPN');
@@ -227,7 +229,7 @@ describe('generateMarkdown — readable titles (EXP-01)', () => {
     const md = generateMarkdown(PROGRAM, [UDA_WITH_TITLE], [LESSON_WITH_TITLE]);
     // The same generated string is what CourseWorkspace passes to downloadPdf;
     // it must be accepted by the PDF path without divergence.
-    expect(md).toContain('## Reti di calcolatori');
+    expect(md).toContain('## UDA 1: Reti di calcolatori');
     expect(md).toContain('- Il protocollo HTTP');
     try {
       await downloadPdf(md, 'programma-svolto');

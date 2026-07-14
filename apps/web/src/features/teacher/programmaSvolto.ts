@@ -52,7 +52,9 @@ export function generateMarkdown(
     const uda = udas.find((u) => u.dir === dir);
     // Readable heading: front matter titolo when present, else a label derived
     // from the technical dir (EXP-01) — never the raw "uda-XX-slug".
-    lines.push(`## ${resolveUdaTitle(dir, uda?.titolo)}`);
+    const udaIndex = udaDirs.indexOf(dir);
+    const displayNumber = udaIndex >= 0 ? udaIndex + 1 : allDirs.indexOf(dir) + 1;
+    lines.push(`## UDA ${displayNumber}: ${resolveUdaTitle(dir, uda?.titolo)}`);
     lines.push('');
 
     const hasCompetenze = (uda?.competenze?.length ?? 0) > 0;

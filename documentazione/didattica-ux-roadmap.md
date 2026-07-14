@@ -1,7 +1,7 @@
 # Didattica — Roadmap UX (DUX)
 
 **Versione:** 1.1
-**Stato:** DUX-00→DUX-07B implementati; viste legacy rimosse, Classi assorbita in Studenti, Verifiche uniformata, polish responsive ed editing metadata corso applicati. Resta il Gate GDUX.
+**Stato:** DUX-00→DUX-10A implementati; viste legacy rimosse, Classi assorbita in Studenti, Verifiche uniformata, polish responsive ed editing metadata corso applicati. Resta il Gate GDUX.
 **Dipendenze:** nessuna dipendenza tecnica da M4 (M4-03/M4-04 continuano in parallelo); riusa esclusivamente backend/service/dati già esistenti di RE (Repository Editor) e QE (Question Editor).
 
 ---
@@ -279,7 +279,8 @@ Nessun modulo esistente (Corsi/Lezioni/Domande/Classi) viene dichiarato "rimosso
 | DUX-07B ✅ | Editing dei metadati corso (anno, docente, materia, classe descrittiva, descrizione), con creazione controllata di `programma.md` quando assente. **Implementato.** | DUX-07A | Parser legacy-compatible; Storage prima del batch Firestore (`programmaMeta` + timestamp programma + audit); card e filtri anno aggiornati in memoria; nessuna modifica a Rules, indici o lato studente. |
 | DUX-08 ✅ | Rifinitura azioni lezione (Segna svolta/non svolta + toggle struttura fuori dal menu "Azioni", con icone coerenti; struttura solo su desktop) e wrapping dei titoli lunghi nelle tabelle UDA/lezioni su mobile. **Implementato.** | DUX-07B | Solo UI; nessuna azione duplicata; nessuna modifica a service, Rules, schema, indici o costi; test mirati `CourseWorkspace`. |
 | DUX-09 ✅ | Nuovo corso realmente inizializzato, apertura immediata e polish finale di Didattica/Verifiche e responsive. **Implementato.** | DUX-08, SGW-01 | `programma.md` + import vuoto coerente, batch Firestore, compensazione best-effort, test mirati; Rules e indici invariati. |
-| Gate GDUX | Verifica finale end-to-end di tutta la roadmap Didattica. | DUX-01…09 (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche, vedi §22. |
+| DUX-10A ✅ | Stabilità e coerenza finali: “Nuova UDA” nelle azioni corso, geometria tabelle invariata durante Organizza, intestazioni export `UDA N: Titolo`, radius filtri Verifiche coerente. **Implementato.** | DUX-09 | Solo UI/export; nessuna modifica a service, Rules, schema, query o costi Firebase. |
+| Gate GDUX | Verifica finale end-to-end di tutta la roadmap Didattica. | DUX-01…10A (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche, vedi §22. |
 
 > **DUX-09 completato.** Il flusso “Nuovo corso” crea un import vuoto e un
 > `programma.md` canonico tramite SGW, poi scrive programma/import/audit in un

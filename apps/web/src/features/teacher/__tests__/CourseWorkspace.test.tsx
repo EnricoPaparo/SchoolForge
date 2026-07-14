@@ -767,12 +767,16 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     await renderAndReady();
     expect(screen.getByRole('button', { name: 'Azioni corso' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Azioni UDA' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    expect(screen.getByRole('menuitem', { name: 'Nuova UDA' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
     expect(screen.getByRole('button', { name: 'Azioni UDA' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Azioni corso' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Azioni UDA' }));
-    expect(screen.getByRole('menuitem', { name: 'Nuova UDA' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: 'Nuova lezione' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: 'Nuova UDA' })).toBeNull();
   });
 
   it('closes contextual menus with Escape or an outside pointer and restores trigger focus', async () => {
@@ -894,8 +898,7 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     const onCardPatch = vi.fn();
     mockCreateUda.mockResolvedValue({ udaId: 'uda-new', dir: 'uda-02-nuova', order: 1 });
     await renderAndReady({}, { onCardPatch });
-    fireEvent.click(screen.getByRole('button', { name: 'uda-01-reti' }));
-    clickMenuAction('Azioni UDA', 'Nuova UDA');
+    clickMenuAction('Azioni corso', 'Nuova UDA');
     fireEvent.change(screen.getByLabelText('Titolo UDA'), { target: { value: 'Nuova' } });
     fireEvent.click(screen.getByRole('button', { name: 'Crea UDA' }));
 
@@ -993,8 +996,21 @@ describe('CourseWorkspace — pure updaters & class preservation (DUX-04A fixes)
 
   it('patches the card exactly once when creating a UDA (StrictMode-safe)', async () => {
     mockCreateUda.mockResolvedValue({ udaId: 'uda-new', dir: 'uda-02-nuova', order: 1 });
-    const onCardPatch = await selectUda(vi.fn(), true);
-    clickMenuAction('Azioni UDA', 'Nuova UDA');
+    const onCardPatch = vi.fn();
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti')]);
+    render(
+      <StrictMode>
+        <CourseWorkspace
+          card={card()}
+          ownerUid="owner"
+          onBack={vi.fn()}
+          onCardPatch={onCardPatch}
+        />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Azioni corso' })).toBeTruthy());
+    clickMenuAction('Azioni corso', 'Nuova UDA');
     fireEvent.change(screen.getByLabelText('Titolo UDA'), { target: { value: 'Nuova' } });
     fireEvent.click(screen.getByRole('button', { name: 'Crea UDA' }));
 
@@ -1561,6 +1577,24 @@ describe('CourseWorkspace — Organize mode (DUX-04C)', () => {
       udaId: 'uda-uda-01-reti',
       neighborUdaId: 'uda-uda-02-sic',
     });
+  });
+
+  it('keeps a stable table geometry when entering organize mode', async () => {
+    mockListUdas.mockResolvedValue([
+      uda('uda-01-reti', { order: 0 }),
+      uda('uda-02-sic', { order: 1 }),
+    ]);
+    mockListLessons.mockResolvedValue([]);
+    render(<CourseWorkspace card={card()} ownerUid="owner" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Azioni corso' })).toBeTruthy());
+
+    const table = screen.getByRole('table');
+    expect(table.querySelectorAll('col')).toHaveLength(3);
+    expect(within(table).getAllByRole('row')[1]?.querySelectorAll('td')).toHaveLength(3);
+
+    clickMenuAction('Azioni corso', 'Organizza UDA');
+    expect(table.querySelectorAll('col')).toHaveLength(3);
+    expect(within(table).getAllByRole('row')[1]?.querySelectorAll('td')).toHaveLength(3);
   });
 
   it('reorders lessons only within the UDA via reorderLesson', async () => {
