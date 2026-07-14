@@ -17,6 +17,7 @@ import type {
   PublishedProjectionDoc,
   QuestionEvaluation,
   SubmissionDoc,
+  SubmissionCorrectionStatus,
   VerificationDoc,
   VerificationTeacherQuestionSnapshot,
 } from '../../../types/firestore.js';
@@ -33,6 +34,19 @@ import {
   normalizeQuestionPoints,
 } from './correctionContract.js';
 import { assertCorrectionReturnWithinLimit } from './correctionReturnSize.js';
+import { correctionProgressFromEvaluations } from './submissionCorrectionStatus.js';
+
+function mirrorCorrectionStatus(
+  batch: ReturnType<typeof writeBatch>,
+  submissionId: string,
+  status: SubmissionCorrectionStatus,
+  db: Firestore,
+): void {
+  const updatedAt = serverTimestamp();
+  const update = { correctionStatus: status, correctionStatusUpdatedAt: updatedAt };
+  batch.update(doc(db, 'submissions', submissionId), update);
+  batch.update(doc(db, 'submissionReceipts', submissionId), update);
+}
 
 // ─── Frozen snapshot reads (never the live pool) ────────────────────────────
 
@@ -301,26 +315,35 @@ export async function saveCorrection(
     updatedAt: serverTimestamp(),
   };
 
-  if (!isReopenedCorrection(correction)) {
+  const previousPublicStatus = correctionProgressFromEvaluations(correction.evaluations);
+  const nextPublicStatus = correctionProgressFromEvaluations(nextEvaluations);
+  const publicStatusChanged = previousPublicStatus !== nextPublicStatus;
+
+  if (!isReopenedCorrection(correction) && !publicStatusChanged) {
     await updateDoc(ref, update);
     return result;
   }
 
   const batch = writeBatch(db);
   batch.update(ref, update);
-  const event: CorrectionEventDoc = {
-    correctionId: submissionId,
-    ownerUid: correction.ownerUid,
-    type: 'scoreAdjusted',
-    actorUid: correction.ownerUid,
-    previousStatus: correction.status,
-    nextStatus: correction.status,
-    reason: null,
-    ...(questionDeltas.length > 0 ? { questionDeltas } : {}),
-    ...(generalFeedbackDelta ? { generalFeedbackDelta } : {}),
-    timestamp: serverTimestamp(),
-  };
-  batch.set(doc(collection(db, 'correctionEvents')), event);
+  if (publicStatusChanged) {
+    mirrorCorrectionStatus(batch, submissionId, nextPublicStatus, db);
+  }
+  if (isReopenedCorrection(correction)) {
+    const event: CorrectionEventDoc = {
+      correctionId: submissionId,
+      ownerUid: correction.ownerUid,
+      type: 'scoreAdjusted',
+      actorUid: correction.ownerUid,
+      previousStatus: correction.status,
+      nextStatus: correction.status,
+      reason: null,
+      ...(questionDeltas.length > 0 ? { questionDeltas } : {}),
+      ...(generalFeedbackDelta ? { generalFeedbackDelta } : {}),
+      timestamp: serverTimestamp(),
+    };
+    batch.set(doc(collection(db, 'correctionEvents')), event);
+  }
   await batch.commit();
   return result;
 }
@@ -345,11 +368,14 @@ export async function completeCorrection(submissionId: string, db: Firestore): P
   if (!isCorrectionComplete(correction.evaluations)) {
     throw new Error('Impossibile completare: una o più domande non sono ancora state valutate.');
   }
-  await updateDoc(ref, {
+  const batch = writeBatch(db);
+  batch.update(ref, {
     status: 'completed',
     completedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  mirrorCorrectionStatus(batch, submissionId, 'completed', db);
+  await batch.commit();
 }
 
 // ─── returnCorrection ────────────────────────────────────────────────────────
@@ -452,6 +478,7 @@ export async function returnCorrection(submissionId: string, db: Firestore): Pro
     returnedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  mirrorCorrectionStatus(batch, submissionId, 'returned', db);
   batch.set(doc(db, 'correctionReturns', submissionId), correctionReturn);
   const event: CorrectionEventDoc = {
     correctionId: submissionId,
@@ -498,6 +525,7 @@ export async function reopenCorrection(submissionId: string, db: Firestore): Pro
     reopenCount: correction.reopenCount + 1,
     updatedAt: serverTimestamp(),
   });
+  mirrorCorrectionStatus(batch, submissionId, 'in_progress', db);
   if (wasReturned) {
     batch.update(doc(db, 'correctionReturns', submissionId), {
       visibleToStudent: false,

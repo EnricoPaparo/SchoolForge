@@ -80,6 +80,16 @@ async function seedBase() {
       lastSavedAt: serverTimestamp(),
       submittedAt: Timestamp.now(),
     });
+    await setDoc(doc(db, 'submissionReceipts', SUBMISSION_ID), {
+      submissionId: SUBMISSION_ID,
+      verificationId: VERIFICATION_ID,
+      studentUid: STUDENT_UID,
+      ownerUid: OWNER_UID,
+      verificationTitle: 'Verifica 1',
+      className: 'Classe A',
+      deliveryCode: 'SF-2026-AAAA',
+      submittedAt: Timestamp.now(),
+    });
   });
 }
 

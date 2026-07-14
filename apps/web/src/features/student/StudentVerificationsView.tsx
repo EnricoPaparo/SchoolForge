@@ -22,6 +22,7 @@ import {
   type StudentCorrectionReturnItem,
 } from './studentCorrectionReturnsService.js';
 import styles from './StudentVerificationsView.module.css';
+import { correctionStatusLabel } from '../repository/corrections/submissionCorrectionStatus.js';
 
 type LoadState =
   | { status: 'loading' }
@@ -42,6 +43,13 @@ type ViewState =
   | { mode: 'exam'; item: StudentVerificationItem; submission: SubmissionDoc }
   | { mode: 'confirmation'; receipt: SubmissionReceiptDoc }
   | { mode: 'correction'; submissionId: string; data: StudentCorrectionReturnItem };
+
+function isActiveVerification(item: StudentVerificationItem): boolean {
+  // The service normalizes legacy projections to active. Keeping this
+  // defensive fallback also makes stale in-memory objects fail open only
+  // for reading, never for a document explicitly marked closed.
+  return item.status !== 'closed';
+}
 
 /** it-IT date from a Firestore Timestamp-like value, or null if absent. */
 function formatActivatedAt(ts: unknown): string | null {
@@ -172,7 +180,9 @@ export function StudentVerificationsView({
 
       // Mandatory session resume (D-M3F-14): a draft submission takes over
       // immediately, before the list is ever shown — no click required.
-      const onlineItems = result.verifications.filter((item) => item.onlineEnabled);
+      const onlineItems = result.verifications.filter(
+        (item) => isActiveVerification(item) && item.onlineEnabled,
+      );
       const activeDraft = await findActiveDraftSession(uid, onlineItems, db);
       if (activeDraft) {
         setView({ mode: 'exam', item: activeDraft.item, submission: activeDraft.submission });
@@ -217,6 +227,9 @@ export function StudentVerificationsView({
     try {
       const receipt = await loadReceipt(item.id, uid, db);
       if (receipt) return { kind: 'receipt', receipt };
+      // A closed verification remains visible/downloadable, but must never
+      // probe or resume a draft submission.
+      if (!isActiveVerification(item)) return { kind: 'none' };
       const submission = await loadSubmission(item.id, uid, db);
       if (submission && submission.status === 'draft') return { kind: 'draft' };
       return { kind: 'none' };
@@ -492,7 +505,10 @@ export function StudentVerificationsView({
       <li key={item.id} className={styles.card}>
         <div className={styles.cardHeader}>
           <h3 className={styles.cardTitle}>{item.title}</h3>
-          {item.className && <span className={styles.classBadge}>{item.className}</span>}
+          <div className={styles.cardBadges}>
+            {item.status === 'closed' && <span className={styles.classBadge}>Chiusa</span>}
+            {item.className && <span className={styles.classBadge}>{item.className}</span>}
+          </div>
         </div>
 
         <dl className={styles.cardMeta}>
@@ -527,11 +543,12 @@ export function StudentVerificationsView({
               className={styles.receiptBtn}
               onClick={() => handleShowReceipt(status.receipt)}
             >
-              Consegnata — Codice: {status.receipt.deliveryCode}
+              {correctionStatusLabel(status.receipt.correctionStatus ?? 'submitted')} — Codice:{' '}
+              {status.receipt.deliveryCode}
             </button>
           )}
 
-          {item.onlineEnabled && status?.kind === 'draft' && (
+          {isActiveVerification(item) && item.onlineEnabled && status?.kind === 'draft' && (
             <button
               type="button"
               className="btn-primary"
@@ -541,7 +558,8 @@ export function StudentVerificationsView({
             </button>
           )}
 
-          {item.onlineEnabled &&
+          {isActiveVerification(item) &&
+            item.onlineEnabled &&
             (status === undefined || status.kind === 'none' || status.kind === 'checking') && (
               <button
                 type="button"

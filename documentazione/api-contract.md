@@ -306,7 +306,7 @@ interface PublishedSnapshotItem extends SnapshotItem {
 
 // verifications/{verificationId}/publishedProjection/data — solution-free,
 // scritta all'attivazione (M2/M3-lite). Riusata per il download PDF
-// studente quando la verifica è active+public (M3L-D) e dal canale
+// studente quando la verifica è public (active o closed) e dal canale
 // cartaceo (M2). `classId` e `visibility` sono duplicati qui dal genitore
 // (eccezione deliberata: normalmente questo schema non duplica dati) — una
 // query collectionGroup su questa sotto-collezione, necessaria perché il
@@ -314,9 +314,9 @@ interface PublishedSnapshotItem extends SnapshotItem {
 // è validabile da Firestore solo se i campi controllati dalle Security
 // Rules sono anche i campi su cui la query filtra; un `get()` verso il
 // padre (per leggere `status`) non è validabile in questo contesto. Per lo
-// stesso motivo `visibility` sostituisce anche `status` qui:
-// `setVerificationVisibility` la mirrora, `closeVerification` la forza a
-// `'hidden'`. Non contiene mai `soluzione`, `poolStorageRef`,
+// Da M4-LIFE-01 anche `status` è duplicato nella proiezione: assente sui
+// legacy significa `active`; `closeVerification` lo porta a `closed`
+// preservando `visibility`. Non contiene mai `soluzione`, `poolStorageRef`,
 // `questionLocalId` o `questionIndexEntryId`.
 interface PublishedProjectionDoc {
   ownerUid: string;
@@ -324,6 +324,7 @@ interface PublishedProjectionDoc {
   className: string | null;
   classId: string | null;      // M3L-D — null = verifica mai assegnata a una classe, mai visibile
   visibility: 'hidden' | 'public';
+  status?: 'active' | 'closed'; // legacy assente = active
   questions: PublicVerificationQuestion[];
   activatedAt: Timestamp;
 }
@@ -459,6 +460,7 @@ interface SubmissionMonitorItem {
   lastSavedAt: Timestamp;
   submittedAt: Timestamp | null;
   deliveryCode: string | null;
+  correctionStatus: 'submitted' | 'in_progress' | 'completed' | 'returned';
   attentionEventsCount: number;
   attentionEvents: { type: AttentionEvent['type']; ts: number }[];
 }
@@ -476,6 +478,8 @@ interface SubmissionReceiptDoc {
   className: string | null;
   deliveryCode: string;
   submittedAt: Timestamp;
+  correctionStatus?: 'submitted' | 'in_progress' | 'completed' | 'returned';
+  correctionStatusUpdatedAt?: Timestamp;
 }
 
 // Campo aggiunto a verifications/{verificationId} in M3-full
@@ -498,8 +502,8 @@ interface SubmissionReceiptDoc {
 // SOLO la modifica di studentPdfEnabled/updatedAt — mai status, visibility,
 // config o ownerUid nella stessa scrittura. Una verifica hidden/draft/closed
 // non diventa visibile allo studente solo perché studentPdfEnabled è true:
-// resta comunque necessario status=='active' && visibility=='public' &&
-// classe assegnata compatibile (vedi PublishedProjectionDoc sopra).
+// resta comunque necessario visibility=='public' e classe compatibile.
+// Se closed, il PDF può restare disponibile ma l'online resta sempre negato.
 
 // corrections/{submissionId} — M4-00 (contratto), M4-01 (service+Rules, implementato)
 // submissionId è lo stesso id deterministico di SubmissionDoc/SubmissionReceiptDoc
@@ -714,7 +718,7 @@ Lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applic
 
 | Operazione | Scrittura Firestore |
 |---|---|
-| Leggi consegne | Query `submissions` filtrata per `verificationId` + `ownerUid` (già esistente, `submissionsMonitorService`); stato "Da correggere"/"In correzione"/"Corretta"/"Restituita" derivato lato client da `corrections/{submissionId}` assente o dal suo `status` — nessun documento vuoto creato solo per rappresentare "Da correggere" |
+| Leggi consegne | Query `submissions` filtrata per `verificationId` + `ownerUid`; stato pubblico `submitted`/`in_progress`/`completed`/`returned`, mostrato come Consegnata/In correzione/Corretta/Restituita. Il mirror è aggiornato solo ai cambi di fase, atomicamente anche su `submissionReceipts`; assente sui legacy = `submitted`. |
 | Apri correzione | Se assente, crea `corrections/{submissionId}` con `status: 'in_progress'`, `reopenCount: 0`, `evaluations` inizializzate da `publishedProjection.questions` (`points: null`, `maxPoints` congelato); se presente, legge il documento esistente |
 | Assegna punteggio (primo giro, `reopenCount == 0`) | Aggiorna `corrections/{submissionId}.evaluations[order]` e i totali derivati (`computeCorrectionTotals`); salvataggio esplicito, non ad ogni digitazione; **nessun** `correctionEvents` scritto, per quanti salvataggi avvengano |
 | Completa correzione | Transizione `in_progress → completed`, ammessa solo se `isCorrectionComplete(evaluations)` (mappa non vuota, ogni domanda valutata); imposta `completedAt` |
@@ -877,7 +881,7 @@ Un Google-autenticato non approvato (nessun documento `students/{uid}`, oppure `
 
 **Storage Rules — modello attuale (M3F-08)**: `storage.rules` non chiama mai `firestore.get()`/`firestore.exists()`, e non concede più alcuna lettura sotto `repository/{ownerUid}/**` a un non-owner — Markdown lezione e pool sono entrambi owner-only, senza eccezioni per estensione o `customMetadata`. Il gate di classe/approvazione resta **solo su Firestore** (discovery `programs`→`publicLessons`, sopra), ma dal M3F-08 è anche l'unica strada per ottenere il corpo lezione, perché il client studente non legge mai Storage. Fino a M3F-07 inclusa, un blocco aggiuntivo concedeva la lettura di un file `.md` (non `.pool.md`) a qualunque utente autenticato non-owner — il compromesso storico security-vs-reliability descritto sotto — rimosso da M3F-08. `importRepository` continua a scrivere `customMetadata: { kind, programId, ownerUid, importId }` all'upload, ma nessuna Security Rule lo legge: resta solo per eventuale diagnostica. **Limite residuo chiuso**: un `contentPath` esatto, anche se conosciuto o indovinato, non è più leggibile da nessuno tranne l'owner — vedi `sicurezza.md` §3.2a per il dettaglio e lo storico del compromesso.
 
-**Verifiche studente (M3L-D)**: lo studente scopre le verifiche della propria classe con un'unica query `collectionGroup('publishedProjection')` — il documento padre `verifications/{id}` non è mai letto. `classId` e `visibility` sono duplicati sulla proiezione apposta per questo: Firestore valida una `list`/`collectionGroup` solo se ogni campo su cui la regola autorizza è anche un campo su cui la query filtra (un `get()` verso il padre, necessario per leggere `status`, non è validabile in questo contesto perché il segmento di percorso del padre non è vincolato dalla query) — per questo `visibility` sostituisce anche `status` nella proiezione, mantenuta sincronizzata da `setVerificationVisibility`/`closeVerification`. Il blocco Security Rules usa inoltre un prefisso ricorsivo (`{path=**}/publishedProjection/{docId}`, non `verifications/{verificationId}/publishedProjection/{docId}`): un match a profondità fissa non viene registrato da Firestore come idoneo per una `collectionGroup()` `list`, anche quando la condizione è banale (confermato empiricamente in questo progetto). `firestore.indexes.json` definisce l'indice `COLLECTION_GROUP` necessario su `classId`+`visibility`.
+**Verifiche studente (M3L-D, esteso da M4-LIFE-01)**: lo studente scopre le verifiche della propria classe con un'unica query `collectionGroup('publishedProjection')` filtrata su `classId`+`visibility`; il parent non è mai letto. La proiezione duplica anche `status` per distinguere `active`/`closed` nella UI (legacy assente = `active`). La chiusura preserva `visibility`: una `closed+public` resta consultabile/PDF, mentre le Rules sul parent negano comunque avvio, ripresa, autosave e consegna online. Il match usa il prefisso ricorsivo `{path=**}` necessario alle collection group query e l'indice resta quello già esistente su `classId`+`visibility`.
 
 **Correzioni restituite allo studente (M4-02B)**: `studentCorrectionReturnsService.loadStudentCorrectionReturns` legge tutte e sole le proprie restituzioni visibili con un'unica query `collection('correctionReturns')` filtrata su `studentUid == uid` **e** `visibleToStudent == true` — mai una scansione client-side della collezione, mai un `getDoc` per verifica. Entrambi i filtri sono richiesti dalla stessa regola già usata per `publishedProjection` sopra: la `allow read` esistente su `correctionReturns` (M4-01, invariata da M4-02B) autorizza già esattamente questa combinazione di campi in `resource.data`, quindi non è stata necessaria alcuna modifica a `firestore.rules` né alcun nuovo indice in `firestore.indexes.json` (due soli filtri di uguaglianza non richiedono un indice composito). Deliberatamente **nessun `orderBy` sulla query stessa**: `orderBy` esclude dal risultato ogni documento privo del campo ordinato, il che renderebbe irraggiungibile una `returnedAt` legacy/malformata indipendentemente da un successivo ordinamento lato client — l'ordinamento (`returnedAt` decrescente, mancante/malformato sempre in fondo, mai escluso) avviene quindi esclusivamente in JS. Il workspace di lettura (`StudentCorrectionView`) fa un secondo tipo di lettura, un `getDoc` singolo per submissionId (`loadStudentCorrectionReturn`, usato solo dal pulsante "Ricarica" manuale) — stessa regola, stesso confine: risolve a `null` solo per "documento assente" o `permission-denied` (restituzione appena nascosta/mai appartenuta allo studente), trattato come "non più disponibile"; qualunque altro errore (rete, offline) viene rilanciato, mai confuso con una restituzione nascosta.
 

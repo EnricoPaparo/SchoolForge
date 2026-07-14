@@ -313,6 +313,7 @@ export type ClassDoc = {
 };
 
 export type VerificationStatus = 'draft' | 'active' | 'closed';
+export type PublishedVerificationStatus = Exclude<VerificationStatus, 'draft'>;
 
 /**
  * Independent from `status` (M3-lite). Defaults to `hidden` on activation;
@@ -473,10 +474,10 @@ export type PublicVerificationQuestion = {
  * also a field the query filters on — a cross-document `get()` back to the
  * parent (which works fine for a single-document `get`) fails `list`
  * validation here because the parent path segment isn't constrained by the
- * query. `visibility` therefore also stands in for `status`: it is kept
- * `'hidden'` on activation, mirrored on every `setVerificationVisibility`
- * toggle, and forced back to `'hidden'` on `closeVerification` — a closed
- * verification must never remain publicly readable via a stale mirror.
+ * query. M4-LIFE-01 duplicates `status` too, but only for UI semantics:
+ * legacy missing means `active`, while `closeVerification` writes `closed`
+ * and preserves the independently controlled visibility. Submission Rules
+ * still read the parent and require it to be active.
  * `classId: null` (verification never assigned to a class) is never visible
  * to any student, same as `ProgramDoc.classIds` — never "visible to
  * everyone" by omission.
@@ -497,6 +498,8 @@ export type PublishedProjectionDoc = {
   title: string;
   className: string | null;
   visibility: VerificationVisibility;
+  /** Absent on legacy projections; normalized to `active` by student readers. */
+  status?: PublishedVerificationStatus;
   classId: string | null;
   onlineEnabled?: boolean;
   /**
@@ -594,7 +597,12 @@ export type SubmissionDoc = {
   startedAt: Timestamp;
   lastSavedAt: Timestamp | FieldValue;
   submittedAt: Timestamp | FieldValue | null;
+  /** Teacher-controlled public lifecycle mirror; absent on legacy submissions means `submitted`. */
+  correctionStatus?: SubmissionCorrectionStatus;
+  correctionStatusUpdatedAt?: Timestamp | FieldValue;
 };
+
+export type SubmissionCorrectionStatus = 'submitted' | 'in_progress' | 'completed' | 'returned';
 
 /**
  * Stored at `submissionReceipts/{verificationId}_{studentUid}`.
@@ -614,6 +622,9 @@ export type SubmissionReceiptDoc = {
   className: string | null;
   deliveryCode: string;
   submittedAt: Timestamp | FieldValue;
+  /** Same minimal lifecycle mirror as SubmissionDoc; never contains scores or feedback. */
+  correctionStatus?: SubmissionCorrectionStatus;
+  correctionStatusUpdatedAt?: Timestamp | FieldValue;
 };
 
 // ─── M4-00 — Correction contract ─────────────────────────────────────────────

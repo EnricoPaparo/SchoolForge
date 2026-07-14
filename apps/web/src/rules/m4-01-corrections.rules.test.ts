@@ -169,6 +169,21 @@ async function seedSubmittedSubmission(
   });
 }
 
+async function seedSubmissionReceipt() {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'submissionReceipts', SUBMISSION_ID), {
+      submissionId: SUBMISSION_ID,
+      verificationId: VERIFICATION_ID,
+      studentUid: STUDENT_UID,
+      ownerUid: OWNER_UID,
+      verificationTitle: 'Verifica 1',
+      className: 'Classe A',
+      deliveryCode: 'SF-2026-AAAA',
+      submittedAt: Timestamp.now(),
+    });
+  });
+}
+
 function correctionPayload(overrides: Record<string, unknown> = {}) {
   return {
     submissionId: SUBMISSION_ID,
@@ -1201,6 +1216,53 @@ describe('Firestore rules — correctionReturns student list query', () => {
       getDocs(
         query(collection(studentDb(), 'correctionReturns'), where('studentUid', '==', STUDENT_UID)),
       ),
+    );
+  });
+});
+
+describe('Firestore rules — public correction status mirrors', () => {
+  it('allows the owner to update submission and receipt atomically to the same valid state', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedSubmissionReceipt();
+    await seedCorrection();
+
+    const db = ownerDb();
+    const batch = writeBatch(db);
+    const update = {
+      correctionStatus: 'in_progress',
+      correctionStatusUpdatedAt: serverTimestamp(),
+    };
+    batch.update(doc(db, 'submissions', SUBMISSION_ID), update);
+    batch.update(doc(db, 'submissionReceipts', SUBMISSION_ID), update);
+    await assertSucceeds(batch.commit());
+  });
+
+  it('rejects updating only one of the two mirrors', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedSubmissionReceipt();
+    await seedCorrection();
+
+    await assertFails(
+      updateDoc(doc(ownerDb(), 'submissions', SUBMISSION_ID), {
+        correctionStatus: 'in_progress',
+        correctionStatusUpdatedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('never lets the student alter the correction-state mirror', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedSubmissionReceipt();
+    await seedCorrection();
+
+    await assertFails(
+      updateDoc(doc(studentDb(), 'submissionReceipts', SUBMISSION_ID), {
+        correctionStatus: 'returned',
+        correctionStatusUpdatedAt: serverTimestamp(),
+      }),
     );
   });
 });

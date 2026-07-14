@@ -228,7 +228,7 @@ questions:
 
 **BR-VER-01.** Una verifica percorre gli stati `bozza`, `attiva` (aperta), `chiusa`, `archiviata`. Solo la bozza è modificabile. L'attivazione crea il `publishedSnapshot`, congela configurazione, fonti, regole di selezione e selezione comune; la chiusura impedisce nuovi tentativi (M3-full); l'archiviazione la nasconde dalle normali viste operative senza eliminare consegne o snapshot necessari. Per riusare una prova il docente duplica la bozza in una nuova verifica.
 
-**BR-VER-05 (M3-lite).** Ogni verifica ha, indipendentemente dallo stato, un campo `visibility` con valori `hidden` o `public`. Quando il docente attiva una verifica, `visibility` viene impostata a `hidden` di default: l'attivazione da sola non la rende visibile allo studente. Il docente può pubblicare (`hidden → public`) o nascondere (`public → hidden`) una verifica `attiva` più volte, senza modificarne configurazione o contenuto. Solo una verifica con `status = attiva` **e** `visibility = public` compare nel Portale studente; in tutti gli altri casi (bozza, chiusa, archiviata, oppure attiva ma `hidden`) è invisibile allo studente.
+**BR-VER-05 (M3-lite, esteso da M4-LIFE-01).** Ogni verifica ha un campo `visibility` indipendente con valori `hidden` o `public`. All'attivazione parte `hidden`; il docente può pubblicare o nascondere una verifica `active` o `closed`. Una verifica `closed + public` resta consultabile e scaricabile dallo studente, ma non può mai avviare, riprendere o modificare una submission: le Rules online continuano a richiedere il parent `status == 'active'`. Bozze e verifiche `hidden` non sono visibili.
 
 **BR-VER-02.** Non sono richiesti calendario, durata configurabile, cronometro o chiusura automatica nella V1.
 

@@ -31,6 +31,7 @@ const ITEM_A: StudentVerificationItem = {
   onlineEnabled: true,
   studentPdfEnabled: false,
   ownerUid: 'owner-uid',
+  status: 'active',
 };
 
 const ITEM_B: StudentVerificationItem = {
@@ -43,6 +44,7 @@ const ITEM_B: StudentVerificationItem = {
   onlineEnabled: true,
   studentPdfEnabled: false,
   ownerUid: 'owner-uid',
+  status: 'active',
 };
 
 const DRAFT = {

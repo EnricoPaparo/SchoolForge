@@ -317,7 +317,7 @@ Nuova sezione/tab nella vista dettaglio verifica. Mostra una riga per ogni stude
 
 ### 6.3 Chiusura verifica
 
-Comportamento invariato rispetto a M3-lite: `closeVerification` imposta `status: 'closed'` e `visibility: 'hidden'`. In M3-full aggiunge semantica: le Rules negano automaticamente nuove submission e aggiornamenti di bozze.
+Comportamento aggiornato da M4-LIFE-01: `closeVerification` imposta `status: 'closed'` e preserva `visibility`. Se resta `public`, la verifica è ancora consultabile/PDF; le Rules negano comunque nuove submission e aggiornamenti di bozze perché richiedono il parent `active`.
 
 ---
 

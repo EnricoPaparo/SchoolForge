@@ -276,13 +276,13 @@ La verifica passa allo stato **ATTIVA**. Appare il pulsante **Scarica PDF**.
 
 ### 8b. Pubblicazione / nascondimento della verifica
 
-Una verifica **attiva** ha anche uno stato di visibilità, indipendente dallo stato bozza/attiva/chiusa: **pubblica** o **nascosta**. Solo una verifica attiva **e** pubblica è visibile nel portale studente (§ "Portale studente" più sotto) — attivarla non la pubblica automaticamente.
+Una verifica ha uno stato di visibilità indipendente: **pubblica** o **nascosta**. Attivarla non la pubblica automaticamente; una verifica attiva o chiusa e pubblica è visibile nel portale studente.
 
 Nella riga della verifica (o nel pannello di dettaglio):
 1. Clicca l'icona 👁️/🙈 per alternare **Pubblica allo studente** / **Nascondi allo studente**.
 2. Lo stato compare come badge "pubblica" o "nascosta" nella colonna Stato.
 
-Chiudere la verifica (§ "Eliminazione..." più sotto per lo stato chiusa) forza automaticamente lo stato a nascosta: una verifica chiusa non resta mai visibile allo studente per inerzia.
+Chiudere la verifica preserva la visibilità scelta. Se resta pubblica è consultabile e scaricabile, ma non può più essere avviata o ripresa online.
 
 ### 9. Download PDF docente (anteprima) e PDF studente
 
