@@ -869,6 +869,7 @@ export function ProgramInfoDialog({
           <label className={styles.dialogLabel}>
             Anno scolastico
             <input
+              type="text"
               value={draft.annoScolastico ?? ''}
               placeholder="2025/2026"
               onChange={(event) => updateDraft('annoScolastico', event.target.value)}
@@ -877,6 +878,7 @@ export function ProgramInfoDialog({
           <label className={styles.dialogLabel}>
             Docente
             <input
+              type="text"
               value={draft.docente ?? ''}
               onChange={(event) => updateDraft('docente', event.target.value)}
             />
@@ -884,6 +886,7 @@ export function ProgramInfoDialog({
           <label className={styles.dialogLabel}>
             Materia
             <input
+              type="text"
               value={draft.materia ?? ''}
               onChange={(event) => updateDraft('materia', event.target.value)}
             />
@@ -891,6 +894,7 @@ export function ProgramInfoDialog({
           <label className={styles.dialogLabel}>
             Classe descrittiva
             <input
+              type="text"
               value={draft.classe ?? ''}
               onChange={(event) => updateDraft('classe', event.target.value)}
             />
