@@ -63,6 +63,12 @@ describe('StudentShell', () => {
     expect(labels).toEqual(['Didattica', 'Verifiche']);
   });
 
+  it('places the section navigation inside the single unified header', async () => {
+    render(<StudentShell />);
+    const nav = await screen.findByRole('navigation', { name: 'Sezioni studente' });
+    expect(nav.closest('header')).not.toBeNull();
+  });
+
   it('never shows teacher-only navigation entries', () => {
     render(<StudentShell />);
     for (const teacherLabel of ['Corsi', 'Classi', 'Template']) {
