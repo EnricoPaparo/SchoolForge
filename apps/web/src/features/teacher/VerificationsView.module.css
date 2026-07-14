@@ -345,6 +345,18 @@
   gap: 0.625rem;
 }
 
+.monitorHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.monitorHeader .createTitle {
+  margin: 0;
+}
+
 .sortHeaderButton {
   appearance: none;
   border: 0;

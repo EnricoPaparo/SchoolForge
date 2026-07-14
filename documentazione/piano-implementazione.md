@@ -26,7 +26,7 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 
 **M5 — Correzione AI** è fuori scope V1 ed è pianificato per la V2. Vedi la sezione "V2 — Roadmap futura" in fondo. M5 non fa parte del perimetro né delle dipendenze della V1.
 
-Il Modulo 3 (Portale digitale) è diviso in **M3-lite** e **M3-full**, entrambi completati; Gate G5 superato per M3-full. Dopo M3-lite sono stati completati **RE — Repository Editor** (RE-00 → RE-07) e **QE — Question Editor** (QE-00 → QE-05). **M4 — Correzione ed export è in corso**: M4-00→M4-02B sono completati; restano Registro Correzioni/export e Gate G6.
+Il Modulo 3 (Portale digitale) è diviso in **M3-lite** e **M3-full**, entrambi completati; Gate G5 superato per M3-full. Dopo M3-lite sono stati completati **RE — Repository Editor** (RE-00 → RE-07) e **QE — Question Editor** (QE-00 → QE-05). **M4 — Correzione ed export è in corso**: correzione, restituzione, ciclo di vita, Registro Correzioni e CSV (M4-00→M4-03A) sono completati; restano export PDF/Markdown (M4-03B) e Gate G6.
 
 ---
 
@@ -307,8 +307,9 @@ Il concept UX approvato per accesso dalla tabella **Consegne online**, workspace
 | M4-LIFE-01 ✅ | Ciclo di vita pubblico: verifiche `closed+public` consultabili/PDF ma mai svolgibili; stato correzione Consegnata/In correzione/Corretta/Restituita mirrorato atomicamente su submission+receipt e mostrato nelle UI. | M4-02B | — | Nessuna nuova query/listener; mirror scritto solo ai cambi di fase; legacy normalizzati; Rules Emulator complete verdi. |
 | M4-LIFE-02 ✅ | Eliminazione sicura e completa di una consegna digitale (`deleteSubmissionData`: eventi/return/correction prima, receipt+submission per ultimi, idempotente, chunk ≤400, audit non identificativo `submission.deleted` con solo ownerUid/verificationId/timestamp) e guard applicativo che blocca `deleteVerification` finché esiste almeno una submission collegata (`where verificationId==limit(1)`). Delete owner-only aggiunto alle Rules per submissions/receipts/corrections/correctionReturns/correctionEvents; UI icon-only in Consegne online solo su verifica chiusa con conferma. | M4-LIFE-01 | — | Client-only, nessuna Cloud Function/listener; una lettura mirata per il guard; Rules Emulator (owner/studente/cross-owner) verdi. |
 | M4-MON-01 ✅ | Monitor consegne docente: riepilogo owner-only `correctionSummary` sulla submission, colonne Punteggio/Percentuale, rimozione di Ultimo salvataggio e ordinamento client-side stabile sulle intestazioni utili. | M4-LIFE-02 | — | Nessuna nuova query o listener; un solo aggiornamento submission per salvataggio reale, combinato con il mirror di stato quando necessario; receipt studente priva di punteggio; Rules Emulator e test UI/service verdi. |
-| M4-03 | Popup `Registro Correzioni` (tabella nome/cognome/punteggio/percentuale/data, export PDF/CSV opzionale) e renderer export `Esporta verifiche` (PDF/Markdown/CSV dal modello canonico). Attende H-04 per il formato di default. | M4-02/H-04 | — | Registro consultabile ed esportabile; export contiene tutte e sole le consegne definitive richieste; nessuna persistenza. |
-| M4-04 | Integrazione M4, test E2E correzione/export, evidenze gate G6. | M4-02/M4-02B/M4-03 | — | Ciclo digitale manuale completo. |
+| M4-03A ✅ | La tabella Consegne online esistente è il Registro Correzioni; modello canonico minimale ed export CSV UTF-8/BOM compatibile con Excel italiano, generato nel browser dalle righe già caricate e nell'ordine corrente. | M4-MON-01 | — | Nessuna popup/tabella duplicata, persistenza, query, lettura, scrittura o listener aggiuntivo; dati tecnici, risposte, soluzioni, feedback ed eventi esclusi. Completato. |
+| M4-03B | Export PDF e valutazione dell'utilità reale del Markdown dallo stesso modello canonico. Attende H-04 per il formato predefinito. | M4-03A/H-04 | — | Documento leggibile e coerente con il CSV; generazione client-side, nessuna persistenza. |
+| M4-04 | Integrazione M4, test E2E correzione/export, evidenze gate G6. | M4-02/M4-02B/M4-03B | — | Ciclo digitale manuale completo. |
 
 #### M4-00 — Contratto tecnico minimo della correzione (Completato)
 

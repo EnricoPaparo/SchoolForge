@@ -1,6 +1,6 @@
 # M4 — Concept UX della correzione docente
 
-**Stato:** concept approvato; contratto dati (M4-00), service layer/Security Rules (M4-01) e workspace docente di correzione (M4-02, `CorrectionWorkspace.tsx`) implementati. Registro Correzioni, export aggregati ed eliminazione (M4-03) non ancora implementati.  
+**Stato:** concept approvato; contratto dati, service/Rules, workspace docente, lettura studente, ciclo di vita, eliminazione e Registro Correzioni con export CSV (M4-00→M4-03A) implementati. Export PDF/Markdown (M4-03B) e Gate G6 non ancora completati.
 **Data decisione:** 2026-07-12  
 **Prerequisito:** chiusura di M3-full e superamento del Gate G5 — soddisfatto
 
@@ -57,6 +57,8 @@ Consegne: N · Da correggere: N · Corrette: N · Restituite: N
 Niente griglie di grandi card per ogni studente.
 
 > **Stato implementazione (M4-MON-01):** la tabella Consegne online mostra **Studente**, **Stato**, **Punteggio**, **Percentuale**, **Consegnata**, **Eventi**, **Codice** e **Azioni**. La colonna ridondante **Ultimo salvataggio** è stata rimossa. Le intestazioni utili ordinano le righe in memoria in entrambe le direzioni, con valori mancanti sempre in fondo e ordinamento stabile; non vengono aggiunte query o letture. Punteggio e percentuale provengono dal riepilogo owner-only `SubmissionDoc.correctionSummary`; per consegne non ancora corrette e documenti legacy viene mostrato `—`.
+
+> **Export M4-03A:** questa stessa tabella è il Registro Correzioni — nessuna popup o seconda tabella duplicata. **Esporta CSV** usa esattamente le righe già visibili e il loro ordinamento corrente. Il file è UTF-8 con BOM, separatore `;`, decimali italiani, escaping CSV e protezione dai prefissi formula di Excel; contiene solo studente/email/stato/punteggio/massimo/percentuale/data consegna/codice. UID, risposte, soluzioni, feedback, eventi e id tecnici sono esclusi. Generazione e download avvengono interamente nel browser, senza Firebase.
 
 ## 4. Workspace di correzione
 
@@ -247,7 +249,7 @@ Il modello definitivo dei percorsi, dei tipi e dei valori ammessi è in `documen
 
 1. presenza o meno di un voto distinto dal punteggio;
 2. comportamento dell'eventuale restituzione batch (incluse eventuali azioni batch su `visibleToStudent`/`solutionsVisible`);
-3. formato export predefinito richiesto da H-04;
+3. formato predefinito per PDF/Markdown richiesto da H-04 (il CSV tabellare M4-03A è già disponibile);
 4. eliminazione o anonimizzazione di submission e correzione;
 5. Security Rules esatte per `corrections`/`correctionEvents`/`correctionReturns` (il modello dati che devono applicare è però già definito — vedi §7 e §10.1);
 6. soglia e messaggio UI per correzioni incomplete;

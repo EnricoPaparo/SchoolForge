@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type * as CorrectionRegisterExportModule from '../../repository/corrections/correctionRegisterExport.js';
 
 afterEach(cleanup);
 
@@ -21,6 +22,7 @@ const mockListClasses = vi.fn();
 const mockListStudents = vi.fn();
 const mockWatchSubmissions = vi.fn();
 const mockDeleteSubmissionData = vi.fn();
+const mockDownloadCorrectionRegisterCsv = vi.fn();
 
 const mockLoadSelectedQuestions = vi.fn();
 const mockDownloadStudentPdf = vi.fn();
@@ -63,6 +65,14 @@ vi.mock('../../repository/verifications/submissionsMonitorService.js', () => ({
 vi.mock('../../repository/verifications/deleteSubmissionData.js', () => ({
   deleteSubmissionData: (...args: unknown[]) => mockDeleteSubmissionData(...args),
 }));
+vi.mock('../../repository/corrections/correctionRegisterExport.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof CorrectionRegisterExportModule>();
+  return {
+    ...actual,
+    downloadCorrectionRegisterCsv: (...args: unknown[]) =>
+      mockDownloadCorrectionRegisterCsv(...args),
+  };
+});
 vi.mock('../../repository/classes/classesService.js', () => ({
   listClasses: (...args: unknown[]) => mockListClasses(...args),
 }));
@@ -2022,6 +2032,136 @@ describe('VerificationsView — monitor score and client-side sorting (M4-MON-01
       .slice(1)
       .map((row) => within(row).getAllByRole('cell')[0]?.textContent);
     expect(scoreDescending).toEqual(['Anna', 'Bruno']);
+  });
+});
+
+describe('VerificationsView — correction register CSV (M4-03A)', () => {
+  const selectedVerification = makeDraftVer({
+    status: 'active',
+    onlineEnabled: true,
+    teacherSnapshot: {
+      title: 'Verifica Algebra',
+      classId: 'cls-1',
+      className: 'Classe 3A',
+      programId: 'prog-1',
+      importId: 'imp-1',
+      questionRefs: [sampleQuestionRef],
+      activatedAt: null,
+    },
+  });
+  const students = [
+    {
+      id: 'stud-a',
+      uid: 'stud-a',
+      ownerUid: 'owner-uid',
+      email: 'anna@example.test',
+      displayName: 'Anna',
+      status: 'approved' as const,
+      classId: 'cls-1',
+      createdAt: null,
+      updatedAt: null,
+      lastLoginAt: null,
+    },
+    {
+      id: 'stud-b',
+      uid: 'stud-b',
+      ownerUid: 'owner-uid',
+      email: 'bruno@example.test',
+      displayName: 'Bruno',
+      status: 'approved' as const,
+      classId: 'cls-1',
+      createdAt: null,
+      updatedAt: null,
+      lastLoginAt: null,
+    },
+  ];
+  const submissions = [
+    {
+      studentUid: 'stud-a',
+      status: 'submitted',
+      submittedAt: { seconds: 20, nanoseconds: 0 },
+      deliveryCode: 'SF-A',
+      correctionStatus: 'completed',
+      correctionSummary: { totalPoints: 8.5, maxPoints: 10, percentage: 85 },
+      attentionEventsCount: 0,
+      attentionEvents: [],
+    },
+    {
+      studentUid: 'stud-b',
+      status: 'submitted',
+      submittedAt: { seconds: 10, nanoseconds: 0 },
+      deliveryCode: 'SF-B',
+      correctionStatus: 'in_progress',
+      correctionSummary: { totalPoints: 4, maxPoints: 10, percentage: 40 },
+      attentionEventsCount: 0,
+      attentionEvents: [],
+    },
+  ];
+
+  async function openMonitor(
+    onChange: (callback: (items: unknown[]) => void) => void,
+    studentRows = students,
+  ) {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([selectedVerification]);
+    mockListStudents.mockResolvedValue(studentRows);
+    mockWatchSubmissions.mockImplementation((_v, _o, _d, callback) => {
+      onChange(callback);
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    return screen.findByRole('region', { name: 'Consegne online' });
+  }
+
+  it('keeps export disabled while loading, then enables it for the visible student rows', async () => {
+    let deliver!: (items: unknown[]) => void;
+    const region = await openMonitor((callback) => {
+      deliver = callback;
+    });
+    const exportButton = within(region).getByRole('button', { name: 'Esporta CSV' });
+    expect((exportButton as HTMLButtonElement).disabled).toBe(true);
+    deliver([]);
+    await waitFor(() => expect((exportButton as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it('keeps export disabled when the register has no student rows', async () => {
+    const region = await openMonitor(() => {}, []);
+    expect(
+      (within(region).getByRole('button', { name: 'Esporta CSV' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it('exports the currently sorted rows without performing new reads or listeners', async () => {
+    const region = await openMonitor((callback) => callback(submissions));
+    const table = within(region).getByRole('table');
+    fireEvent.click(within(table).getByRole('button', { name: 'Ordina per punteggio crescente' }));
+    const readsBefore = mockListStudents.mock.calls.length;
+    const listenersBefore = mockWatchSubmissions.mock.calls.length;
+
+    fireEvent.click(within(region).getByRole('button', { name: 'Esporta CSV' }));
+
+    expect(mockDownloadCorrectionRegisterCsv).toHaveBeenCalledOnce();
+    const [csv, filename] = mockDownloadCorrectionRegisterCsv.mock.calls[0] as [string, string];
+    expect(csv.indexOf('Bruno;bruno@example.test')).toBeLessThan(
+      csv.indexOf('Anna;anna@example.test'),
+    );
+    expect(filename).toMatch(/^\d{8}-Classe-3A-Verifica-Algebra-registro-correzioni\.csv$/);
+    expect(mockListStudents).toHaveBeenCalledTimes(readsBefore);
+    expect(mockWatchSubmissions).toHaveBeenCalledTimes(listenersBefore);
+  });
+
+  it('shows an export error without breaking the monitor', async () => {
+    mockDownloadCorrectionRegisterCsv.mockImplementationOnce(() => {
+      throw new Error('download failed');
+    });
+    const region = await openMonitor((callback) => callback(submissions));
+    fireEvent.click(within(region).getByRole('button', { name: 'Esporta CSV' }));
+    expect((await within(region).findByRole('alert')).textContent).toBe(
+      'Impossibile esportare il Registro Correzioni. Riprova.',
+    );
+    expect(within(region).getByRole('table')).toBeTruthy();
   });
 });
 

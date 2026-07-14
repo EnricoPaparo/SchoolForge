@@ -46,6 +46,12 @@ import { IconTrash } from '../../components/icons.js';
 import type { AttentionEvent, VerificationTeacherQuestionSnapshot } from '../../types/firestore.js';
 import { correctionStatusLabel } from '../repository/corrections/submissionCorrectionStatus.js';
 import {
+  buildCorrectionRegisterCsvFilename,
+  buildCorrectionRegisterExportRows,
+  downloadCorrectionRegisterCsv,
+  serializeCorrectionRegisterCsv,
+} from '../repository/corrections/correctionRegisterExport.js';
+import {
   sortSubmissionMonitorRows,
   type SubmissionMonitorSortConfig,
   type SubmissionMonitorSortKey,
@@ -251,6 +257,7 @@ export function VerificationsView() {
   const [monitorStudents, setMonitorStudents] = useState<StudentItem[] | null>(null);
   const [monitorItems, setMonitorItems] = useState<SubmissionMonitorItem[] | null>(null);
   const [monitorError, setMonitorError] = useState<string | null>(null);
+  const [csvExportError, setCsvExportError] = useState<string | null>(null);
   const [monitorSort, setMonitorSort] = useState<SubmissionMonitorSortConfig>({
     key: 'student',
     direction: 'asc',
@@ -314,6 +321,34 @@ export function VerificationsView() {
   function monitorSortIndicator(key: SubmissionMonitorSortKey): string {
     if (monitorSort.key !== key) return '';
     return monitorSort.direction === 'asc' ? ' ↑' : ' ↓';
+  }
+
+  function handleExportCorrectionRegisterCsv(): void {
+    if (!selectedVer || !monitorStudents || sortedMonitorRows.length === 0) return;
+    setCsvExportError(null);
+    try {
+      const emailByUid = new Map(monitorStudents.map((student) => [student.id, student.email]));
+      const rows = buildCorrectionRegisterExportRows(
+        sortedMonitorRows.map((row) => ({
+          studentName: row.studentName,
+          studentEmail: emailByUid.get(row.studentUid) ?? null,
+          submission: row.item,
+        })),
+      );
+      const className =
+        selectedVer.teacherSnapshot?.className ??
+        classes.find((item) => item.id === selectedVer.config.classId)?.name ??
+        null;
+      downloadCorrectionRegisterCsv(
+        serializeCorrectionRegisterCsv(rows),
+        buildCorrectionRegisterCsvFilename({
+          title: selectedVer.config.title,
+          className,
+        }),
+      );
+    } catch {
+      setCsvExportError('Impossibile esportare il Registro Correzioni. Riprova.');
+    }
   }
 
   useEffect(() => {
@@ -467,6 +502,7 @@ export function VerificationsView() {
     setMonitorStudents(null);
     setMonitorItems(null);
     setMonitorError(null);
+    setCsvExportError(null);
     setAttentionDialog(null);
     setSelectedQuestionIds(new Set(v.config.questionRefs.map((r) => r.questionIndexEntryId)));
     setEditDraftTitle(v.config.title);
@@ -1798,8 +1834,27 @@ export function VerificationsView() {
           {/* ── Consegne online monitor (M3F-05) — hidden entirely for draft (M3F-11C) ── */}
           {selectedVer.status !== 'draft' && (
             <div role="region" aria-label="Consegne online" className={styles.monitorPanel}>
-              <h3 className={styles.createTitle}>Consegne online</h3>
+              <div className={styles.monitorHeader}>
+                <h3 className={styles.createTitle}>Consegne online</h3>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={
+                    monitorStudents === null ||
+                    monitorItems === null ||
+                    sortedMonitorRows.length === 0
+                  }
+                  onClick={handleExportCorrectionRegisterCsv}
+                >
+                  Esporta CSV
+                </button>
+              </div>
               <>
+                {csvExportError && (
+                  <p role="alert" className="text-error">
+                    {csvExportError}
+                  </p>
+                )}
                 {monitorError && (
                   <p role="alert" className="text-error">
                     {monitorError}
