@@ -837,6 +837,16 @@ async function returnBatch(
 }
 
 describe('Firestore rules — correctionReturns', () => {
+  it('allows the owner to read a return projection that does not exist yet', async () => {
+    await seedBase();
+    await assertSucceeds(getDoc(doc(ownerDb(), 'correctionReturns', SUBMISSION_ID)));
+  });
+
+  it('never allows a student to probe a missing return projection', async () => {
+    await seedBase();
+    await assertFails(getDoc(doc(studentDb(), 'correctionReturns', SUBMISSION_ID)));
+  });
+
   it('the owner can create a return projection atomically with the completed -> returned transition (returnCorrection)', async () => {
     await seedBase();
     await seedSubmittedSubmission();
