@@ -2,8 +2,10 @@
 .layout {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ── Header ────────────────────────────────────────────────────── */
@@ -202,6 +204,9 @@
 /* ── Main content ──────────────────────────────────────────────── */
 .main {
   flex: 1;
+  min-height: 0;
+  min-width: 0;
+  box-sizing: border-box;
   overflow-y: auto;
   /* Parità con la shell docente (TeacherShell.module.css .main): lo scroller
      interno resta funzionale ma la barra spessa affiancata alla colonna
