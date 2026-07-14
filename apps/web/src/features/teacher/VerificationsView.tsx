@@ -50,7 +50,9 @@ import {
   buildCorrectionRegisterExportRows,
   downloadCorrectionRegisterCsv,
   serializeCorrectionRegisterCsv,
+  type CorrectionRegisterExportRow,
 } from '../repository/corrections/correctionRegisterExport.js';
+import { downloadCorrectionRegisterPdf } from '../repository/corrections/correctionRegisterPdf.js';
 import {
   sortSubmissionMonitorRows,
   type SubmissionMonitorSortConfig,
@@ -258,6 +260,9 @@ export function VerificationsView() {
   const [monitorItems, setMonitorItems] = useState<SubmissionMonitorItem[] | null>(null);
   const [monitorError, setMonitorError] = useState<string | null>(null);
   const [csvExportError, setCsvExportError] = useState<string | null>(null);
+  const [pdfExportError, setPdfExportError] = useState<string | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const exportingPdfRef = useRef(false);
   const [monitorSort, setMonitorSort] = useState<SubmissionMonitorSortConfig>({
     key: 'student',
     direction: 'asc',
@@ -323,31 +328,67 @@ export function VerificationsView() {
     return monitorSort.direction === 'asc' ? ' ↑' : ' ↓';
   }
 
+  /**
+   * Builds the canonical export model from the SORTED monitor rows already in
+   * memory — the single place that maps student/email/submission, shared by the
+   * CSV and PDF exports so neither handler duplicates it. No Firestore read.
+   * Rows preserve the current table order.
+   */
+  function buildCurrentExport(): {
+    rows: CorrectionRegisterExportRow[];
+    title: string;
+    className: string | null;
+  } | null {
+    if (!selectedVer || !monitorStudents || sortedMonitorRows.length === 0) return null;
+    const emailByUid = new Map(monitorStudents.map((student) => [student.id, student.email]));
+    const rows = buildCorrectionRegisterExportRows(
+      sortedMonitorRows.map((row) => ({
+        studentName: row.studentName,
+        studentEmail: emailByUid.get(row.studentUid) ?? null,
+        submission: row.item,
+      })),
+    );
+    const className =
+      selectedVer.teacherSnapshot?.className ??
+      classes.find((item) => item.id === selectedVer.config.classId)?.name ??
+      null;
+    return { rows, title: selectedVer.config.title, className };
+  }
+
   function handleExportCorrectionRegisterCsv(): void {
-    if (!selectedVer || !monitorStudents || sortedMonitorRows.length === 0) return;
+    const model = buildCurrentExport();
+    if (!model) return;
     setCsvExportError(null);
     try {
-      const emailByUid = new Map(monitorStudents.map((student) => [student.id, student.email]));
-      const rows = buildCorrectionRegisterExportRows(
-        sortedMonitorRows.map((row) => ({
-          studentName: row.studentName,
-          studentEmail: emailByUid.get(row.studentUid) ?? null,
-          submission: row.item,
-        })),
-      );
-      const className =
-        selectedVer.teacherSnapshot?.className ??
-        classes.find((item) => item.id === selectedVer.config.classId)?.name ??
-        null;
       downloadCorrectionRegisterCsv(
-        serializeCorrectionRegisterCsv(rows),
-        buildCorrectionRegisterCsvFilename({
-          title: selectedVer.config.title,
-          className,
-        }),
+        serializeCorrectionRegisterCsv(model.rows),
+        buildCorrectionRegisterCsvFilename({ title: model.title, className: model.className }),
       );
     } catch {
       setCsvExportError('Impossibile esportare il Registro Correzioni. Riprova.');
+    }
+  }
+
+  async function handleExportCorrectionRegisterPdf(): Promise<void> {
+    // Synchronous double-click guard (the `exportingPdf` state can be raced
+    // before the re-render).
+    if (exportingPdfRef.current) return;
+    const model = buildCurrentExport();
+    if (!model) return;
+    exportingPdfRef.current = true;
+    setExportingPdf(true);
+    setPdfExportError(null);
+    try {
+      await downloadCorrectionRegisterPdf({
+        verificationTitle: model.title,
+        className: model.className,
+        rows: model.rows,
+      });
+    } catch {
+      setPdfExportError('Impossibile generare il PDF del riepilogo. Riprova.');
+    } finally {
+      exportingPdfRef.current = false;
+      setExportingPdf(false);
     }
   }
 
@@ -1836,23 +1877,43 @@ export function VerificationsView() {
             <div role="region" aria-label="Consegne online" className={styles.monitorPanel}>
               <div className={styles.monitorHeader}>
                 <h3 className={styles.createTitle}>Consegne online</h3>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  disabled={
-                    monitorStudents === null ||
-                    monitorItems === null ||
-                    sortedMonitorRows.length === 0
-                  }
-                  onClick={handleExportCorrectionRegisterCsv}
-                >
-                  Esporta CSV
-                </button>
+                <div className={styles.monitorActions}>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={
+                      monitorStudents === null ||
+                      monitorItems === null ||
+                      sortedMonitorRows.length === 0
+                    }
+                    onClick={handleExportCorrectionRegisterCsv}
+                  >
+                    Esporta CSV
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={
+                      monitorStudents === null ||
+                      monitorItems === null ||
+                      sortedMonitorRows.length === 0 ||
+                      exportingPdf
+                    }
+                    onClick={() => void handleExportCorrectionRegisterPdf()}
+                  >
+                    {exportingPdf ? 'Generazione…' : 'Esporta PDF'}
+                  </button>
+                </div>
               </div>
               <>
                 {csvExportError && (
                   <p role="alert" className="text-error">
                     {csvExportError}
+                  </p>
+                )}
+                {pdfExportError && (
+                  <p role="alert" className="text-error">
+                    {pdfExportError}
                   </p>
                 )}
                 {monitorError && (

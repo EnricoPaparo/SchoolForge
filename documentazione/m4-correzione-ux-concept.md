@@ -1,6 +1,6 @@
 # M4 — Concept UX della correzione docente
 
-**Stato:** concept approvato; contratto dati, service/Rules, workspace docente, lettura studente, ciclo di vita, eliminazione e Registro Correzioni con export CSV (M4-00→M4-03A) implementati. Export PDF/Markdown (M4-03B) e Gate G6 non ancora completati.
+**Stato:** concept approvato; contratto dati, service/Rules, workspace docente, lettura studente, ciclo di vita, eliminazione e Registro Correzioni con export CSV e PDF (M4-00→M4-03B) implementati (Markdown rinviato). M4-04 e Gate G6 non ancora completati.
 **Data decisione:** 2026-07-12  
 **Prerequisito:** chiusura di M3-full e superamento del Gate G5 — soddisfatto
 
@@ -58,7 +58,7 @@ Niente griglie di grandi card per ogni studente.
 
 > **Stato implementazione (M4-MON-01):** la tabella Consegne online mostra **Studente**, **Stato**, **Punteggio**, **Percentuale**, **Consegnata**, **Eventi**, **Codice** e **Azioni**. La colonna ridondante **Ultimo salvataggio** è stata rimossa. Le intestazioni utili ordinano le righe in memoria in entrambe le direzioni, con valori mancanti sempre in fondo e ordinamento stabile; non vengono aggiunte query o letture. Punteggio e percentuale provengono dal riepilogo owner-only `SubmissionDoc.correctionSummary`; per consegne non ancora corrette e documenti legacy viene mostrato `—`.
 
-> **Export M4-03A:** questa stessa tabella è il Registro Correzioni — nessuna popup o seconda tabella duplicata. **Esporta CSV** usa esattamente le righe già visibili e il loro ordinamento corrente. Il file è UTF-8 con BOM, separatore `;`, decimali italiani, escaping CSV e protezione dai prefissi formula di Excel; contiene solo studente/email/stato/punteggio/massimo/percentuale/data consegna/codice. UID, risposte, soluzioni, feedback, eventi e id tecnici sono esclusi. Generazione e download avvengono interamente nel browser, senza Firebase.
+> **Export M4-03A/M4-03B:** questa stessa tabella è il Registro Correzioni — nessuna popup o seconda tabella duplicata. **Esporta CSV** ed **Esporta PDF** usano esattamente le righe già visibili e il loro ordinamento corrente, dallo **stesso** modello canonico (una sola funzione condivisa costruisce le righe; nessun dato ricaricato). Il CSV è UTF-8 con BOM, separatore `;`, decimali italiani, escaping e protezione formula (formato principale per elaborare i dati). Il PDF (A4 landscape, jsPDF via import dinamico, mai nell'entry bundle) è il formato per consultazione e stampa: intestazione con conteggi per stato, tabella multipagina con intestazioni ripetute, footer di pagina, testi lunghi a capo, `Nessuna consegna disponibile.` con zero righe. Entrambi contengono solo studente/email/stato/punteggio/massimo/percentuale/data consegna/codice; UID, submissionId, risposte, soluzioni, feedback, eventi e id tecnici sono esclusi. Generazione e download avvengono interamente nel browser, senza Firebase. **Markdown non implementato** (duplicativo, nessun caso d'uso concreto).
 
 ## 4. Workspace di correzione
 

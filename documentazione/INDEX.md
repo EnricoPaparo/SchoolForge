@@ -4,7 +4,7 @@
 
 **M1 + M2 + M3-lite + RE + QE + M3-full completati. Deploy DEV attivo: https://schoolforge-dev.web.app**
 
-Il flusso docente cartaceo, il portale studente, il Repository Editor e il portale digitale con consegna online (M3-full) sono implementati e completi: sessione obbligatoria, modalità verifica per classe e Gate G5 sono superati — vedi [evidenze/g5-m3-full-checklist-finale.md](evidenze/g5-m3-full-checklist-finale.md). M4 (correzione) è in corso: correzione/restituzione, ciclo di vita, Registro Correzioni ed export CSV (M4-00→M4-03A) completati; PDF/Markdown e Gate G6 restano da completare. M5 (AI) non è implementato.
+Il flusso docente cartaceo, il portale studente, il Repository Editor e il portale digitale con consegna online (M3-full) sono implementati e completi: sessione obbligatoria, modalità verifica per classe e Gate G5 sono superati — vedi [evidenze/g5-m3-full-checklist-finale.md](evidenze/g5-m3-full-checklist-finale.md). M4 (correzione) è in corso: correzione/restituzione, ciclo di vita, Registro Correzioni, export CSV ed export PDF (M4-00→M4-03B) completati (Markdown rinviato); M4-04 e Gate G6 restano da completare. M5 (AI) non è implementato.
 Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente locale e [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) per lo smoke test DEV.
 
 **Didattica (DUX) — implementazione DUX-01–10A completata.** Didattica ha assorbito Corsi/Lezioni/Domande dopo il **Gate di parità PASS** (vedi [evidenze/dux-04d-matrice-parita.md](evidenze/dux-04d-matrice-parita.md)); Classi è una scheda di Studenti, Verifiche è uniformata e metadata corso/anno sono modificabili. Resta Gate GDUX — vedi [didattica-ux-roadmap.md](didattica-ux-roadmap.md).
@@ -15,7 +15,7 @@ Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente l
 
 **Question Editor (QE-00 → QE-05, sezione "Domande") completato** — vedi [question-editor-roadmap.md](question-editor-roadmap.md): editor pool domande Markdown-first, serializzatore YAML, service layer Storage + Firestore, sidebar Corso→UDA→Lezione e form domanda inline.
 
-**M3-full (verifiche online e consegne studenti) è completato** — M3F-00→M3F-11C completati, Gate G5 superato; vedi [m3-full-roadmap.md](m3-full-roadmap.md) per sessione obbligatoria, modalità verifica per classe, protezione lezioni e hardening costi, e [evidenze/g5-m3-full-checklist-finale.md](evidenze/g5-m3-full-checklist-finale.md) per la checklist finale del gate. M4 dipende da M3-full ed è in corso: M4-00→M4-03A sono completati, incluso Registro Correzioni ed export CSV; M4-03B (PDF/Markdown) e M4-04/Gate G6 restano da completare.
+**M3-full (verifiche online e consegne studenti) è completato** — M3F-00→M3F-11C completati, Gate G5 superato; vedi [m3-full-roadmap.md](m3-full-roadmap.md) per sessione obbligatoria, modalità verifica per classe, protezione lezioni e hardening costi, e [evidenze/g5-m3-full-checklist-finale.md](evidenze/g5-m3-full-checklist-finale.md) per la checklist finale del gate. M4 dipende da M3-full ed è in corso: M4-00→M4-03B sono completati, incluso Registro Correzioni, export CSV ed export PDF (Markdown rinviato per assenza di caso d'uso); M4-04/Gate G6 resta da completare.
 
 ## Per iniziare
 

@@ -1,7 +1,7 @@
 # SchoolForge — Contratto API
 
 **Versione:** 3.2
-**Stato:** in vigore — M1, M2, M3-lite, RE (Repository Editor), QE (Question Editor) e M3-full implementati (Gate G5 superato); M4-00→M4-03A implementati, incluso workspace, restituzione studente, Registro Correzioni ed export CSV; PDF/Markdown e Gate G6 restano da completare; M5 resta fuori scope V1
+**Stato:** in vigore — M1, M2, M3-lite, RE (Repository Editor), QE (Question Editor) e M3-full implementati (Gate G5 superato); M4-00→M4-03B implementati, incluso workspace, restituzione studente, Registro Correzioni, export CSV ed export PDF (Markdown rinviato); M4-04 e Gate G6 restano da completare; M5 resta fuori scope V1
 **Autorità:** `analisi-requisiti.md` e `architettura.md`
 
 ---
@@ -725,7 +725,7 @@ Lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applic
 
 ### 3.5 Correzione ed export (Modulo 4, dipende da M3-full — completato)
 
-> Le operazioni seguenti operano sulle consegne digitali di M3-full (`submissions/{id}`, path `${verificationId}_${studentUid}`), quindi non sono utilizzabili con M3-lite. M4-00→M4-03A implementano contratto, service/Rules, workspace, restituzione, ciclo di vita, eliminazione, Registro Correzioni ed export CSV. PDF/Markdown restano M4-03B.
+> Le operazioni seguenti operano sulle consegne digitali di M3-full (`submissions/{id}`, path `${verificationId}_${studentUid}`), quindi non sono utilizzabili con M3-lite. M4-00→M4-03B implementano contratto, service/Rules, workspace, restituzione, ciclo di vita, eliminazione, Registro Correzioni, export CSV ed export PDF. Markdown rinviato (nessun caso d'uso).
 
 | Operazione | Scrittura Firestore |
 |---|---|
@@ -741,7 +741,7 @@ Lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applic
 | Registro Correzioni + CSV (M4-03A) | La tabella Consegne online già caricata è il Registro, senza popup duplicata. `buildCorrectionRegisterExportRows` deriva un modello canonico minimale dalle righe ordinate del monitor; `serializeCorrectionRegisterCsv` genera nel browser CSV UTF-8/BOM con separatore `;`, escaping e protezione formula. Colonne: studente, email, stato, punteggio, massimo, percentuale, data consegna, codice. Nessuna query/scrittura/persistenza; risposte, soluzioni, feedback, eventi, UID e id tecnici esclusi. |
 | Elimina consegna (M4-LIFE-02) | `deleteSubmissionData(submissionId, ownerUid, db)`: elimina in ordine i `correctionEvents` (`where ownerUid== + correctionId==`), poi `correctionReturns/{id}`, `corrections/{id}`, e per ultimi `submissionReceipts/{id}` e `submissions/{id}`. Idempotente e ripetibile (legge prima, elimina solo ciò che esiste), chunk di `delete` a ≤400 mutazioni. Ownership verificata dai documenti eliminati. Al successo, un solo `auditEvents` **non identificativo** (`action: 'submission.deleted'`, `targetId: verificationId`, `actorUid: ownerUid`, timestamp — mai studentUid/submissionId/risposte). Nessuna lettura Storage. UI: azione icon-only in Consegne online, solo su verifica `closed`, con conferma. |
 | Blocco eliminazione verifica (M4-LIFE-02) | Prima di `deleteVerification`, guard applicativo `where('ownerUid','==',ownerUid) + where('verificationId','==',id) + limit(1)` su `submissions`: se esiste una consegna, interrompe **senza scrivere** con «Elimina prima tutte le consegne associate a questa verifica.». Guard applicativo perché le Rules non verificano l'assenza di documenti via query inversa nel modello single-owner. |
-| Export PDF/Markdown | **Pianificato M4-03B** — riuserà il modello canonico introdotto da M4-03A e genererà nel browser senza persistenza. |
+| Export PDF (M4-03B) | `downloadCorrectionRegisterPdf({ verificationTitle, className, rows, generatedAt? })` genera nel browser un PDF A4 landscape stampabile del Riepilogo consegne e correzioni, riusando **le stesse** `CorrectionRegisterExportRow[]` già ordinate del CSV (nessuna riordinatura). jsPDF via `import('jspdf')` dinamico (mai nell'entry bundle), layout tabellare disegnato a mano (no autotable/html2canvas): intestazione con conteggi per stato, colonne studente/email/stato/punteggio/percentuale/data/codice con wrapping, intestazioni ripetute a ogni pagina, footer «Pagina X di Y». Filename `aaaammgg-classe-titolo-riepilogo-correzioni.pdf` (segmento classe omesso se assente) via `sanitizeForFilename`/`formatDateForFilename`. Nessuna query/lettura/scrittura/persistenza; UID, submissionId, risposte, soluzioni, feedback ed eventi esclusi. **Markdown non implementato** (duplicativo, nessun caso d'uso). |
 
 ---
 
