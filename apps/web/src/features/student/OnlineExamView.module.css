@@ -311,6 +311,12 @@
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+/* Annulla + Consegna fill the row equally on desktop; on a very narrow
+   viewport they wrap, each to full width. Text stays centred (base button). */
+.confirmActions > button {
+  flex: 1 1 8rem;
+  justify-content: center;
+}
 
 @media (max-width: 640px) {
   .controlRow {

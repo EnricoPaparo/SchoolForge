@@ -79,5 +79,6 @@
 }
 
 .backBtn {
-  align-self: flex-start;
+  width: 100%;
+  justify-content: center;
 }

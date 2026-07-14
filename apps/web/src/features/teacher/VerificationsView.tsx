@@ -540,8 +540,11 @@ export function VerificationsView() {
       setShowActivateConfirm(false);
       const updated = await listVerifications(ownerUid, db);
       setVerifications(updated);
-      const refreshed = updated.find((v) => v.id === selectedVer.id);
-      if (refreshed) setSelectedVer(refreshed);
+      // Success: close the draft detail and return to the list, which now
+      // shows the just-activated verification with its refreshed status. On
+      // error we fall through to the catch and stay in the detail with the
+      // error visible.
+      setSelectedVer(null);
     } catch (err) {
       setActivateError(err instanceof Error ? err.message : "Errore durante l'attivazione.");
     } finally {
