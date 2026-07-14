@@ -8,7 +8,16 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+} from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
 
@@ -173,6 +182,16 @@ describe('Firestore rules — Modalità verifica (M3F-07): programs blocked', ()
     await assertFails(getDoc(doc(studentDb(), 'programs/p1')));
   });
 
+  it('denies a crafted programs list query while exam mode applies', async () => {
+    await seed({ examMode: { enabled: true, scope: 'classes', classIds: ['class-a'] } });
+
+    await assertFails(
+      getDocs(
+        query(collection(studentDb(), 'programs'), where('classIds', 'array-contains', 'class-a')),
+      ),
+    );
+  });
+
   it('allows programs read when examMode is absent (backward compatible default)', async () => {
     await seed({ examMode: null });
 
@@ -215,6 +234,14 @@ describe('Firestore rules — Modalità verifica (M3F-07): publicLessons blocked
     await seed({ examMode: { enabled: true, scope: 'all', classIds: [] } });
 
     await assertFails(getDoc(doc(studentDb(), 'publicLessons/l1')));
+  });
+
+  it('denies a crafted publicLessons list query while exam mode applies', async () => {
+    await seed({ examMode: { enabled: true, scope: 'classes', classIds: ['class-a'] } });
+
+    await assertFails(
+      getDocs(query(collection(studentDb(), 'publicLessons'), where('programId', '==', 'p1'))),
+    );
   });
 
   it('the owner can still read publicLessons while exam mode is globally active', async () => {

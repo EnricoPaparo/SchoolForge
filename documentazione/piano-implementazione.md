@@ -403,6 +403,17 @@ Redesign UX approvato che unifica le attuali sezioni Corsi, Lezioni e Domande in
 
 ---
 
+## 12b.1 Didattica studente — SDUX
+
+Specifica e confini in [`student-didattica-ux-roadmap.md`](student-didattica-ux-roadmap.md).
+
+| ID | Outcome e scope | Dipende da | Evidenza DoD |
+|---|---|---|---|
+| SDUX-01 ✅ | Libreria corsi e workspace corso/UDA/lezione read-only su `programs` autorizzati + `publicLessons`; nessun service docente, pool o Storage; regressioni Rules contro chiamate manomesse. | DUX-10A, M3F-08 | Test UI e Rules mirati; typecheck/build; nessuna Rule più permissiva. |
+| SDUX-02 | Smoke DEV desktop/mobile e Gate Modalità verifica: smontaggio immediato della Didattica aperta, query negate server-side, ripristino senza nuovo login. | SDUX-01 | Checklist manuale con studente reale + suite Rules M3F-07. |
+
+---
+
 ## 12c. SGW — Repository Storage Gateway same-origin (SGW-00 → 03)
 
 > Fase infrastrutturale approvata, specifica completa in [`storage-gateway-roadmap.md`](storage-gateway-roadmap.md). Instrada gli accessi Storage del docente dietro `/api/repository/*` → Hosting rewrite → **una** Cloud Function HTTPS 2ª gen → Admin SDK → Storage, per renderli affidabili anche su Brave mobile. **Stato: SGW-01 e SGW-02A completati e verificati su DEV; SGW-02B batch-read implementato nel codice e in attesa di deploy/smoke; restano SGW-02C batch-write import e SGW-03.**

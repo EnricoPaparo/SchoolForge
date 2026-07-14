@@ -71,7 +71,7 @@ Nessun indice esiste per `verifications`/`programs`/`classes`/`students` filtrat
 
 ### Apertura portale studente
 - `StudentShell` monta 1× **L** su `settings/studentAccess` (exam mode).
-- `StudentVerificationsView`/`StudentLessonsView` leggono le rispettive proiezioni filtrate (`publicLessons` per `classId`, `publishedProjection` via collectionGroup con indice dedicato) — filtrate lato server, coerente con gli indici dichiarati.
+- `StudentVerificationsView`/`StudentDidatticaView` leggono le rispettive proiezioni filtrate (`publicLessons` per `classId`, `publishedProjection` via collectionGroup con indice dedicato) — filtrate lato server, coerente con gli indici dichiarati.
 
 ### Visualizzazione Lezioni (docente)
 - `listPrograms`, `listUdas`, `listLessons` — tutte `getDocs` non filtrate/non limitate su sotto-collezioni per import; costo proporzionale al numero di UDA/lezioni nell'import selezionato (tipicamente decine, non migliaia).

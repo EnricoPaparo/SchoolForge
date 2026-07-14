@@ -54,13 +54,13 @@ mockWatchStudentAccessSettings.mockImplementation(
 );
 
 describe('StudentShell', () => {
-  it('renders exactly the Lezioni and Verifiche sections, nothing else', async () => {
+  it('renders exactly the Didattica and Verifiche sections, nothing else', async () => {
     render(<StudentShell />);
     const nav = await screen.findByRole('navigation', { name: 'Sezioni studente' });
     const labels = within(nav)
       .getAllByRole('button')
       .map((btn) => btn.textContent?.replace(/[^\p{L}]/gu, '') ?? '');
-    expect(labels).toEqual(['Lezioni', 'Verifiche']);
+    expect(labels).toEqual(['Didattica', 'Verifiche']);
   });
 
   it('never shows teacher-only navigation entries', () => {
@@ -70,7 +70,7 @@ describe('StudentShell', () => {
     }
   });
 
-  it('shows the Lezioni section content by default', async () => {
+  it('shows the Didattica section content by default', async () => {
     render(<StudentShell />);
     await waitFor(() => expect(screen.getByText(/Nessuna classe assegnata/)).toBeTruthy());
   });
@@ -81,7 +81,7 @@ describe('StudentShell', () => {
     await waitFor(() => expect(screen.getByText(/Nessuna classe assegnata/)).toBeTruthy());
   });
 
-  it('integration: an approved student with a class sees real lesson content wired through Lezioni', async () => {
+  it('integration: an approved student with a class sees real lesson content wired through Didattica', async () => {
     mockLoadStudentLessons.mockResolvedValueOnce({
       status: 'ok',
       programs: [{ id: 'prog-a', title: 'Informatica', classIds: ['class-a'] }],
@@ -194,7 +194,7 @@ describe('StudentShell — mandatory exam session (M3F-06)', () => {
     submittedAt: null,
   };
 
-  it('a draft submission found on mount (e.g. after a refresh) mounts the exam directly, with no Lezioni/Verifiche nav', async () => {
+  it('a draft submission found on mount (e.g. after a refresh) mounts the exam directly, with no Didattica/Verifiche nav', async () => {
     mockLoadStudentVerifications.mockResolvedValue({
       status: 'ok',
       verifications: [ONLINE_VERIFICATION],
@@ -205,11 +205,11 @@ describe('StudentShell — mandatory exam session (M3F-06)', () => {
 
     await waitFor(() => expect(screen.getByTestId('online-exam-view')).toBeTruthy());
     expect(screen.queryByRole('navigation', { name: 'Sezioni studente' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Lezioni' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Didattica' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Verifiche' })).toBeNull();
 
     // The header (account menu) stays available — it is not app navigation
-    // to Lezioni/Verifiche and does not bypass the mandatory session.
+    // to Didattica/Verifiche and does not bypass the mandatory session.
     expect(screen.getByRole('button', { name: /Account:/ })).toBeTruthy();
   });
 
@@ -225,7 +225,7 @@ describe('StudentShell — mandatory exam session (M3F-06)', () => {
 });
 
 describe('StudentShell — Modalità verifica (M3F-07)', () => {
-  it('hides the "Lezioni" nav entry and shows Verifiche when exam mode applies to the student\'s class', async () => {
+  it('hides the "Didattica" nav entry and shows Verifiche when exam mode applies to the student\'s class', async () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-1' });
     mockWatchStudentAccessSettings.mockImplementation(
       (_db: unknown, onChange: (settings: { examMode: unknown }) => void) => {
@@ -238,12 +238,12 @@ describe('StudentShell — Modalità verifica (M3F-07)', () => {
     render(<StudentShell />);
 
     const nav = await screen.findByRole('navigation', { name: 'Sezioni studente' });
-    expect(within(nav).queryByRole('button', { name: 'Lezioni' })).toBeNull();
+    expect(within(nav).queryByRole('button', { name: 'Didattica' })).toBeNull();
     expect(within(nav).getByRole('button', { name: 'Verifiche' })).toBeTruthy();
     await waitFor(() => expect(screen.getByText(/Nessuna classe assegnata/)).toBeTruthy());
   });
 
-  it('unmounts StudentLessonsView immediately and switches to Verifiche when exam mode turns on while Lezioni is open', async () => {
+  it('unmounts StudentDidatticaView immediately and switches to Verifiche when exam mode turns on while Didattica is open', async () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-1' });
     mockLoadStudentLessons.mockResolvedValueOnce({
       status: 'ok',
@@ -266,10 +266,10 @@ describe('StudentShell — Modalità verifica (M3F-07)', () => {
     });
 
     await waitFor(() => expect(screen.queryByText('Informatica')).toBeNull());
-    expect(screen.queryByRole('button', { name: 'Lezioni' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Didattica' })).toBeNull();
   });
 
-  it('does not hide Lezioni for a class not covered by a classes-scoped exam mode', async () => {
+  it('does not hide Didattica for a class not covered by a classes-scoped exam mode', async () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-2' });
     mockWatchStudentAccessSettings.mockImplementation(
       (_db: unknown, onChange: (settings: { examMode: unknown }) => void) => {
@@ -282,10 +282,10 @@ describe('StudentShell — Modalità verifica (M3F-07)', () => {
     render(<StudentShell />);
 
     const nav = await screen.findByRole('navigation', { name: 'Sezioni studente' });
-    expect(within(nav).getByRole('button', { name: 'Lezioni' })).toBeTruthy();
+    expect(within(nav).getByRole('button', { name: 'Didattica' })).toBeTruthy();
   });
 
-  it('restores Lezioni without a new login once the teacher disables exam mode', async () => {
+  it('restores Didattica without a new login once the teacher disables exam mode', async () => {
     mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-1' });
     let pushSettings: ((settings: { examMode: unknown }) => void) | undefined;
     mockWatchStudentAccessSettings.mockImplementation(
@@ -297,11 +297,13 @@ describe('StudentShell — Modalità verifica (M3F-07)', () => {
     );
     render(<StudentShell />);
     const nav = await screen.findByRole('navigation', { name: 'Sezioni studente' });
-    expect(within(nav).queryByRole('button', { name: 'Lezioni' })).toBeNull();
+    expect(within(nav).queryByRole('button', { name: 'Didattica' })).toBeNull();
 
     pushSettings?.({ examMode: { enabled: false, scope: 'all', classIds: [], enabledAt: null } });
 
-    await waitFor(() => expect(within(nav).getByRole('button', { name: 'Lezioni' })).toBeTruthy());
+    await waitFor(() =>
+      expect(within(nav).getByRole('button', { name: 'Didattica' })).toBeTruthy(),
+    );
   });
 
   it('an in-progress exam session stays prioritized and is never interrupted by exam mode turning on', async () => {

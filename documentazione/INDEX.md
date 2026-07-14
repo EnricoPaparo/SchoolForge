@@ -9,6 +9,8 @@ Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente l
 
 **Didattica (DUX) — implementazione DUX-01–10A completata.** Didattica ha assorbito Corsi/Lezioni/Domande dopo il **Gate di parità PASS** (vedi [evidenze/dux-04d-matrice-parita.md](evidenze/dux-04d-matrice-parita.md)); Classi è una scheda di Studenti, Verifiche è uniformata e metadata corso/anno sono modificabili. Resta Gate GDUX — vedi [didattica-ux-roadmap.md](didattica-ux-roadmap.md).
 
+**Didattica studente (SDUX) — SDUX-01 implementato.** La vecchia lista Lezioni è sostituita da libreria corsi e workspace corso/UDA/lezione read-only, costruiti esclusivamente sulle proiezioni pubbliche. Nessun componente/service docente, pool o accesso Storage entra nel percorso studente. Resta SDUX-02 (smoke DEV responsive + Gate Modalità verifica) — vedi [student-didattica-ux-roadmap.md](student-didattica-ux-roadmap.md).
+
 **Repository Editor (RE-00 → RE-07) completato** — vedi [repository-editor-roadmap.md](repository-editor-roadmap.md) per la roadmap e [evidenze/repository-editor-checklist-manuale.md](evidenze/repository-editor-checklist-manuale.md) per la checklist manuale DEV. Nessuna fase RE obbligatoria successiva.
 
 **Question Editor (QE-00 → QE-05, sezione "Domande") completato** — vedi [question-editor-roadmap.md](question-editor-roadmap.md): editor pool domande Markdown-first, serializzatore YAML, service layer Storage + Firestore, sidebar Corso→UDA→Lezione e form domanda inline.

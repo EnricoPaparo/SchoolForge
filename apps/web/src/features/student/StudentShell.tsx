@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
 import { db } from '../../lib/firebase.js';
 import logoScritta from '../../assets/logo-scritta-schoolforge.png';
-import { StudentLessonsView } from './StudentLessonsView.js';
+import { StudentDidatticaView } from './StudentDidatticaView.js';
 import { StudentVerificationsView } from './StudentVerificationsView.js';
 import { resolveActiveSession } from './examSessionService.js';
 import { getOwnStudentDoc } from '../repository/students/studentsService.js';
@@ -13,7 +13,7 @@ import styles from './StudentShell.module.css';
 type Section = 'lezioni' | 'verifiche';
 
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
-  { id: 'lezioni', label: 'Lezioni', icon: '📖' },
+  { id: 'lezioni', label: 'Didattica', icon: '📖' },
   { id: 'verifiche', label: 'Verifiche', icon: '📝' },
 ];
 
@@ -91,9 +91,9 @@ export function StudentShell() {
 
   const examModeActive = isExamModeActiveForClass(examModeSettings, myClassId);
 
-  // A blocked class must never keep showing Lezioni once the teacher
+  // A blocked class must never keep showing Didattica once the teacher
   // activates Modalità verifica — force the section switch immediately,
-  // unmounting StudentLessonsView (and any lesson content in the DOM) on
+  // unmounting StudentDidatticaView (and any lesson content in the DOM) on
   // the very next render. A mandatory exam session (examInProgress) always
   // wins regardless — it already forces 'verifiche' on its own.
   useEffect(() => {
@@ -205,7 +205,7 @@ export function StudentShell() {
 
           <main className={styles.main}>
             {activeSection === 'lezioni' && !examModeActive ? (
-              <StudentLessonsView />
+              <StudentDidatticaView />
             ) : (
               <StudentVerificationsView
                 onSessionActiveChange={setExamInProgress}
