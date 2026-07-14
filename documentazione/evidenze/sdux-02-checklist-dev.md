@@ -48,6 +48,11 @@ Per ogni riga: annotare **PASS/FAIL** e note.
 
 ## 3. Modalità verifica
 
+> **Conferma DEV:** il docente ha confermato manualmente su DEV che la
+> Modalità verifica si comporta correttamente (attivazione blocca la Didattica
+> studente, disattivazione la ripristina). Gli altri punti della checklist
+> restano da confermare separatamente.
+
 | # | Passo | Risultato atteso | Esito | Note |
 |---|---|---|---|---|
 | 3.1 | Con Didattica visibile, il docente **attiva** Modalità verifica per la classe dello studente (scope=classes o all) | Sullo schermo studente: la sezione passa subito a **Verifiche**; `StudentDidatticaView` smontata; contenuto lezione **sparito dal DOM**; voce **Didattica** non presente/non utilizzabile | | |

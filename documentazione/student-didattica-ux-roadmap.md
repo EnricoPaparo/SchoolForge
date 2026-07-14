@@ -42,6 +42,9 @@ Offrire allo studente la stessa architettura visiva della Didattica docente — 
 - **Modalità verifica** verificata via test `StudentShell`: attivazione →
   smonta `StudentDidatticaView` e passa a Verifiche; classe non coinvolta resta
   autorizzata; disattivazione → Didattica di nuovo disponibile senza nuovo login.
+  **Confermata anche manualmente dal docente su DEV** (attivazione blocca,
+  disattivazione ripristina); gli altri punti del Gate manuale restano da
+  confermare separatamente.
 - **Copertura Rules** confermata (nessun gap, Rules invariate): lettura
   pubblica solo per approvato+classe compatibile; pending/blocked/senza-classe,
   classe incompatibile e programma senza `classIds` negati; update/delete/create

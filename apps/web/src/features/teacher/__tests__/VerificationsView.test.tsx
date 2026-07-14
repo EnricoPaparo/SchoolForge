@@ -514,6 +514,54 @@ describe('VerificationsView', () => {
     );
   });
 
+  it('returns to the list after a successful activation, showing the refreshed status', async () => {
+    setupDefaults();
+    const activeVer = makeDraftVer({
+      status: 'active',
+      visibility: 'public',
+      config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] },
+    });
+    mockListVerifications.mockResolvedValueOnce([makeDraftVer()]).mockResolvedValue([activeVer]);
+    mockActivateVerification.mockResolvedValue(undefined);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
+    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
+
+    // Back on the list: the draft detail is closed (no activate button) and the
+    // list surface (new-verification title input) is present again.
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /attiva verifica/i })).toBeNull(),
+    );
+    expect(screen.getByPlaceholderText('Titolo nuova verifica')).toBeTruthy();
+    // The row now reflects the refreshed active status.
+    expect(screen.getByText('pubblica')).toBeTruthy();
+  });
+
+  it('stays in the detail with the error visible when activation fails', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    mockActivateVerification.mockRejectedValue(new Error('Attivazione fallita'));
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByRole('button', { name: /attiva verifica/i }));
+    await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
+    fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
+
+    // Error shown, still in the detail: the confirm panel remains open and the
+    // list surface (new-verification title input) is absent.
+    await waitFor(() => expect(screen.getByText('Attivazione fallita')).toBeTruthy());
+    expect(screen.getByRole('region', { name: /conferma attivazione/i })).toBeTruthy();
+    expect(screen.queryByPlaceholderText('Titolo nuova verifica')).toBeNull();
+  });
+
   it('publishes a hidden active verification to the student on toggle click', async () => {
     setupDefaults();
     const activeVer = makeDraftVer({ status: 'active', visibility: 'hidden' });
