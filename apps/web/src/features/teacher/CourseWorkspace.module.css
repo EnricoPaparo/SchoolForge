@@ -489,6 +489,41 @@
   color: var(--color-primary);
   background: var(--color-primary-light);
 }
+.rowStaticLabel {
+  display: block;
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: auto;
+}
+.dataTable .orderCell {
+  padding-inline: 0.15rem;
+  text-align: center;
+}
+.rowAffordance {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 /* DUX-08 — long UDA/lesson titles wrap inside their own column instead of
    pushing the metric columns out or forcing horizontal scroll. */
 .titleCell {
@@ -593,7 +628,7 @@
     width: 3.75rem;
   }
   .orderColumn {
-    width: 4.25rem;
+    width: 4.75rem;
   }
   .tab {
     min-width: 0;

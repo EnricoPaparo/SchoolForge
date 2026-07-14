@@ -1454,6 +1454,14 @@ export function CourseWorkspace({
                     >
                       Modifica metadati corso
                     </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!card.hasImport}
+                      onClick={() => openDialog({ kind: 'newUda' })}
+                    >
+                      Nuova UDA
+                    </button>
                     {card.hasImport && tree && tree.udas.length > 1 && (
                       <button type="button" role="menuitem" onClick={enterOrganize}>
                         Organizza UDA
@@ -1515,13 +1523,6 @@ export function CourseWorkspace({
                       onClick={() => openDialog({ kind: 'newLesson' })}
                     >
                       Nuova lezione
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => openDialog({ kind: 'newUda' })}
-                    >
-                      Nuova UDA
                     </button>
                     <button
                       type="button"
@@ -1976,13 +1977,13 @@ function CourseOverview({
             <colgroup>
               <col className={styles.udaTitleColumn} />
               <col className={styles.progressColumn} />
-              {organizing && <col className={styles.orderColumn} />}
+              <col className={styles.orderColumn} />
             </colgroup>
             <thead>
               <tr>
                 <th>UDA</th>
                 <th>Lezioni svolte</th>
-                {organizing && <th>Ordine</th>}
+                <th>{organizing ? 'Ordine' : <span className={styles.srOnly}>Apri</span>}</th>
               </tr>
             </thead>
             <tbody>
@@ -1993,7 +1994,7 @@ function CourseOverview({
                   <tr key={uda.id}>
                     <td className={styles.titleCell}>
                       {organizing ? (
-                        uda.dir
+                        <span className={styles.rowStaticLabel}>{uda.dir}</span>
                       ) : (
                         <button
                           type="button"
@@ -2006,8 +2007,8 @@ function CourseOverview({
                       )}
                     </td>
                     <td>{`${done}/${udaLessons.length}`}</td>
-                    {organizing && (
-                      <td>
+                    <td className={styles.orderCell}>
+                      {organizing ? (
                         <ReorderControls
                           label={uda.dir}
                           isFirst={index === 0}
@@ -2016,8 +2017,12 @@ function CourseOverview({
                           onUp={() => onMoveUda(index, -1)}
                           onDown={() => onMoveUda(index, 1)}
                         />
-                      </td>
-                    )}
+                      ) : (
+                        <span className={styles.rowAffordance} aria-hidden="true">
+                          ›
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -2087,14 +2092,14 @@ function UdaOverview({
               <col className={styles.lessonTitleColumn} />
               <col className={styles.lessonStatusColumn} />
               <col className={styles.questionsColumn} />
-              {organizing && <col className={styles.orderColumn} />}
+              <col className={styles.orderColumn} />
             </colgroup>
             <thead>
               <tr>
                 <th>Lezione</th>
                 <th>Stato</th>
                 <th>Domande</th>
-                {organizing && <th>Ordine</th>}
+                <th>{organizing ? 'Ordine' : <span className={styles.srOnly}>Apri</span>}</th>
               </tr>
             </thead>
             <tbody>
@@ -2104,7 +2109,7 @@ function UdaOverview({
                   <tr key={lesson.id}>
                     <td className={styles.titleCell}>
                       {organizing ? (
-                        title
+                        <span className={styles.rowStaticLabel}>{title}</span>
                       ) : (
                         <button
                           type="button"
@@ -2118,8 +2123,8 @@ function UdaOverview({
                     </td>
                     <td>{lesson.completed ? 'Svolta' : 'Da svolgere'}</td>
                     <td>{lesson.questionCount}</td>
-                    {organizing && (
-                      <td>
+                    <td className={styles.orderCell}>
+                      {organizing ? (
                         <ReorderControls
                           label={title}
                           isFirst={index === 0}
@@ -2128,8 +2133,12 @@ function UdaOverview({
                           onUp={() => onMoveLesson(index, -1)}
                           onDown={() => onMoveLesson(index, 1)}
                         />
-                      </td>
-                    )}
+                      ) : (
+                        <span className={styles.rowAffordance} aria-hidden="true">
+                          ›
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}

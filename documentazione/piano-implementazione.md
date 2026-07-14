@@ -377,7 +377,7 @@ Il concept UX approvato per accesso dalla tabella **Consegne online**, workspace
 
 Redesign UX approvato che unifica le attuali sezioni Corsi, Lezioni e Domande in un unico workspace docente "Didattica", con Classi assorbita in Studenti come tab. Specifica completa, decisioni UX, invarianti di sicurezza/costo e prototipo statico standalone sono in [`didattica-ux-roadmap.md`](didattica-ux-roadmap.md). Riusa esclusivamente i service/dati già esistenti di RE/QE — nessuna nuova Cloud Function, nessuna Security Rule più permissiva, nessun nuovo documento Firestore di statistiche.
 
-**Stato: DUX-00→07B completati.** Didattica ha sostituito Corsi/Lezioni/Domande dopo il Gate di parità; Classi è stata assorbita in Studenti, Verifiche è uniformata e la shell finale applica header unico, Template restaurato e aurora sobria. Il polish responsive e l'editing metadata corso sono completati; resta il Gate GDUX.
+**Stato: DUX-00→10A completati.** Didattica ha sostituito Corsi/Lezioni/Domande dopo il Gate di parità; Classi è stata assorbita in Studenti, Verifiche è uniformata e la shell finale applica header unico, Template restaurato e aurora sobria. Il polish responsive e l'editing metadata corso sono completati; resta il Gate GDUX.
 
 | ID | Outcome e scope | Dipende da | Evidenza DoD |
 |---|---|---|---|
@@ -398,7 +398,8 @@ Redesign UX approvato che unifica le attuali sezioni Corsi, Lezioni e Domande in
 | DUX-07A ✅ | Polish responsive finale di Didattica, Studenti/Classi e tabella Verifiche. **Implementato.** | DUX-06C | Focus lezione contestuale, struttura senza overflow, indicatori svolta/pool separati, controlli mobile stabili; solo UI, nessuna modifica a Rules/schema/query. |
 | DUX-07B ✅ | Editing metadati corso e anno scolastico, con gestione esplicita del caso `programma.md` assente. **Implementato.** | DUX-07A | `programma.md` preservato o creato nell'import attivo; proiezione `programmaMeta`, timestamp e audit aggiornati in batch; UI aggiornata senza reload completo; Rules invariate. |
 | DUX-09 ✅ | Rifiniture finali Didattica e Verifiche: nuovo corso inizializzato con import vuoto e `programma.md`, apertura immediata, tabelle più leggibili, filtri compatti e correzioni responsive. **Implementato.** | DUX-08, SGW-01 | Test mirati service/UI, typecheck e build; nessuna modifica a Rules o indici. |
-| Gate GDUX | Verifica finale end-to-end della roadmap Didattica. | DUX-01…09 (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche. |
+| DUX-10A ✅ | Coerenza azioni e stabilità visuale: “Nuova UDA” a livello corso, tabelle ferme entrando in Organizza, export UDA numerato e radius filtri Verifiche corretto. **Implementato.** | DUX-09 | Test mirati `CourseWorkspace`/`programmaSvolto`; nessuna modifica a service, Rules, schema o indici. |
+| Gate GDUX | Verifica finale end-to-end della roadmap Didattica. | DUX-01…10A (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche. |
 
 ---
 

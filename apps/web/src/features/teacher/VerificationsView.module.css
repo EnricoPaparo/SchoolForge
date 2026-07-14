@@ -554,7 +554,7 @@
 .filterSearch {
   padding: 0.4rem 0.6rem;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: calc(var(--radius) + 2px);
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
