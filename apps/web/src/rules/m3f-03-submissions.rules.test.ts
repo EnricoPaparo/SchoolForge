@@ -623,12 +623,12 @@ describe('Firestore rules — submissions/receipts reads and isolation', () => {
     await assertFails(getDoc(doc(otherOwnerDb, 'submissionReceipts', SUBMISSION_ID)));
   });
 
-  it('nobody can delete a submission, not even the owner', async () => {
+  it('the owner can delete a submission (M4-LIFE-02), the student can never', async () => {
     await seed({ studentStatus: 'approved' });
     await seedSubmitted();
 
-    await assertFails(deleteDoc(doc(ownerDb(), 'submissions', SUBMISSION_ID)));
     await assertFails(deleteDoc(doc(studentDb(), 'submissions', SUBMISSION_ID)));
+    await assertSucceeds(deleteDoc(doc(ownerDb(), 'submissions', SUBMISSION_ID)));
   });
 });
 

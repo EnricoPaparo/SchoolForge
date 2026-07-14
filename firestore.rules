@@ -596,8 +596,11 @@ service cloud.firestore {
       // will list by ownerUid + verificationId).
       allow read: if isOwner() && resource.data.ownerUid == request.auth.uid;
 
-      // No deletion in M3F-03 (M4 may add archiving later).
-      allow delete: if false;
+      // M4-LIFE-02 — owner-only deletion of a submission and its personal data.
+      // Ownership is checked from the document being deleted itself
+      // (resource.data.ownerUid), never a sibling that could vanish in the same
+      // pass. The student can never delete a submission.
+      allow delete: if isOwner() && resource.data.ownerUid == request.auth.uid;
     }
 
     // --- submissionReceipts/{verificationId}_{studentUid} (M3-full, M3F-03) ---
@@ -668,7 +671,8 @@ service cloud.firestore {
              == request.resource.data.correctionStatus
         && getAfter(/databases/$(database)/documents/submissions/$(submissionId))
              .data.correctionStatusUpdatedAt == request.time;
-      allow delete: if false;
+      // M4-LIFE-02 — owner-only receipt deletion (verified from the deleted doc).
+      allow delete: if isOwner() && resource.data.ownerUid == request.auth.uid;
     }
 
     match /auditEvents/{docId} {
@@ -778,7 +782,8 @@ service cloud.firestore {
       // the single trusted teacher account through settings/owner; create and
       // update keep their stricter identity checks above.
       allow read: if isOwner();
-      allow delete: if false;
+      // M4-LIFE-02 — owner-only correction deletion (verified from the deleted doc).
+      allow delete: if isOwner() && resource.data.ownerUid == request.auth.uid;
     }
 
     // --- correctionEvents/{eventId} (M4-01) ---
@@ -810,7 +815,11 @@ service cloud.firestore {
              == correctionDataAfter(request.resource.data.correctionId).status;
 
       allow read: if isOwner() && resource.data.ownerUid == request.auth.uid;
-      allow update, delete: if false;
+      // Still append-only (no update). M4-LIFE-02 — owner-only deletion, so a
+      // submission's correction history can be erased with its personal data;
+      // verified from the deleted event's own ownerUid.
+      allow update: if false;
+      allow delete: if isOwner() && resource.data.ownerUid == request.auth.uid;
     }
 
     // --- correctionReturns/{submissionId} (M4-01) ---
@@ -894,7 +903,9 @@ service cloud.firestore {
         && resource.data.studentUid == request.auth.uid
         && resource.data.visibleToStudent == true;
 
-      allow delete: if false;
+      // M4-LIFE-02 — owner-only deletion (verified from the deleted doc). The
+      // student can only ever read their own visible return, never delete it.
+      allow delete: if isOwner() && resource.data.ownerUid == request.auth.uid;
     }
 
     // deliveryAttempts: owner can read (for corrections/export); writes via Cloud Functions (M3)

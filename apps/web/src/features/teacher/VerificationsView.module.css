@@ -360,6 +360,45 @@
   color: var(--color-error);
 }
 
+/* ── Delete-submission confirm dialog (M4-LIFE-02) ─────────────────── */
+.deleteBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9, 13, 20, 0.6);
+  padding: 1rem;
+}
+
+.deleteDialog {
+  width: 100%;
+  max-width: 30rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 1.25rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.deleteDialogTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.deleteDialogBody {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
 /* ── Create form ──────────────────────────────────────────────────── */
 .createTitle {
   font-size: 0.75rem;

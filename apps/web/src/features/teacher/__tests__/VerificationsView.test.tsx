@@ -20,6 +20,7 @@ const mockGetImportMeta = vi.fn();
 const mockListClasses = vi.fn();
 const mockListStudents = vi.fn();
 const mockWatchSubmissions = vi.fn();
+const mockDeleteSubmissionData = vi.fn();
 
 const mockLoadSelectedQuestions = vi.fn();
 const mockDownloadStudentPdf = vi.fn();
@@ -58,6 +59,9 @@ vi.mock('../../repository/verifications/questionIndexService.js', () => ({
 }));
 vi.mock('../../repository/verifications/submissionsMonitorService.js', () => ({
   watchSubmissions: (...args: unknown[]) => mockWatchSubmissions(...args),
+}));
+vi.mock('../../repository/verifications/deleteSubmissionData.js', () => ({
+  deleteSubmissionData: (...args: unknown[]) => mockDeleteSubmissionData(...args),
 }));
 vi.mock('../../repository/classes/classesService.js', () => ({
   listClasses: (...args: unknown[]) => mockListClasses(...args),
@@ -1906,6 +1910,129 @@ describe('VerificationsView — correction workspace action (M4-02)', () => {
 
     fireEvent.click(within(workspace).getByText('Chiudi workspace'));
     await waitFor(() => expect(screen.getByLabelText('Consegne online')).toBeTruthy());
+  });
+});
+
+describe('VerificationsView — delete submission (M4-LIFE-02)', () => {
+  const submittedItem = {
+    studentUid: 'stud-a',
+    status: 'submitted',
+    lastSavedAt: null,
+    submittedAt: null,
+    deliveryCode: 'SF-1',
+    correctionStatus: 'to_correct',
+    attentionEventsCount: 0,
+    attentionEvents: [],
+  };
+
+  const oneApprovedStudent = [
+    {
+      id: 'stud-a',
+      ownerUid: 'owner-uid',
+      uid: 'stud-a',
+      email: 'a@x.it',
+      displayName: 'Anna Bianchi',
+      status: 'approved' as const,
+      classId: 'cls-1',
+      createdAt: null,
+      updatedAt: null,
+      lastLoginAt: null,
+    },
+  ];
+
+  function verWithStatus(status: 'active' | 'closed') {
+    return makeDraftVer({
+      status,
+      onlineEnabled: true,
+      teacherSnapshot: {
+        title: 'Verifica Algebra',
+        classId: 'cls-1',
+        className: 'Classe 3A',
+        programId: 'prog-1',
+        importId: 'imp-1',
+        questionRefs: [sampleQuestionRef],
+        activatedAt: null,
+      },
+    });
+  }
+
+  async function renderMonitor(status: 'active' | 'closed', items: unknown[]) {
+    mockListVerifications.mockResolvedValue([verWithStatus(status)]);
+    mockListStudents.mockResolvedValue(oneApprovedStudent);
+    mockWatchSubmissions.mockImplementation((_v, _o, _d, onChange) => {
+      onChange(items);
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => expect(screen.getByLabelText('Consegne online')).toBeTruthy());
+  }
+
+  it('does NOT offer delete while the verification is still active', async () => {
+    setupDefaults();
+    await renderMonitor('active', [submittedItem]);
+    expect(screen.queryByLabelText('Elimina consegna — Anna Bianchi')).toBeNull();
+  });
+
+  it('offers delete for an existing submission once the verification is closed', async () => {
+    setupDefaults();
+    await renderMonitor('closed', [submittedItem]);
+    expect(screen.getByLabelText('Elimina consegna — Anna Bianchi')).toBeTruthy();
+  });
+
+  it('requires explicit confirmation listing everything that will be removed', async () => {
+    setupDefaults();
+    await renderMonitor('closed', [submittedItem]);
+    fireEvent.click(screen.getByLabelText('Elimina consegna — Anna Bianchi'));
+
+    expect(
+      screen.getByRole('alertdialog', { name: /conferma eliminazione consegna/i }),
+    ).toBeTruthy();
+    expect(screen.getByText(/consegna, le risposte, la correzione, la restituzione/i)).toBeTruthy();
+    expect(mockDeleteSubmissionData).not.toHaveBeenCalled();
+  });
+
+  it('a double click on confirm triggers exactly one deletion', async () => {
+    setupDefaults();
+    let resolve: () => void = () => {};
+    mockDeleteSubmissionData.mockImplementation(() => new Promise<void>((r) => (resolve = r)));
+    await renderMonitor('closed', [submittedItem]);
+    fireEvent.click(screen.getByLabelText('Elimina consegna — Anna Bianchi'));
+
+    const confirm = screen.getByRole('button', { name: 'Elimina consegna' });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    resolve();
+
+    await waitFor(() => expect(mockDeleteSubmissionData).toHaveBeenCalledTimes(1));
+    expect(mockDeleteSubmissionData).toHaveBeenCalledWith('ver-1_stud-a', 'owner-uid', {});
+  });
+
+  it('on success removes the submission row data (delete + correction actions gone)', async () => {
+    setupDefaults();
+    mockDeleteSubmissionData.mockResolvedValue(undefined);
+    await renderMonitor('closed', [submittedItem]);
+    fireEvent.click(screen.getByLabelText('Elimina consegna — Anna Bianchi'));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina consegna' }));
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText('Elimina consegna — Anna Bianchi')).toBeNull(),
+    );
+    expect(screen.queryByLabelText('Apri correzione — Anna Bianchi')).toBeNull();
+  });
+
+  it('on error keeps the row and shows a readable message', async () => {
+    setupDefaults();
+    mockDeleteSubmissionData.mockRejectedValue(new Error('Rete non disponibile'));
+    await renderMonitor('closed', [submittedItem]);
+    fireEvent.click(screen.getByLabelText('Elimina consegna — Anna Bianchi'));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina consegna' }));
+
+    await waitFor(() => expect(screen.getByText(/rete non disponibile/i)).toBeTruthy());
+    // Dialog still open, row still deletable after closing the dialog.
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    expect(screen.getByLabelText('Elimina consegna — Anna Bianchi')).toBeTruthy();
   });
 });
 

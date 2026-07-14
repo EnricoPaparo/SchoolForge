@@ -33,6 +33,7 @@ export type AuditAction =
   | 'verification.studentPdfEnabledChanged'
   | 'verification.closed'
   | 'verification.deleted'
+  | 'submission.deleted'
   | 'studentAccess.updated'
   | 'studentAccess.examModeUpdated'
   | 'student.approved'

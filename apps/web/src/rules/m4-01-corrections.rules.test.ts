@@ -590,12 +590,13 @@ describe('Firestore rules — corrections update and transitions', () => {
     );
   });
 
-  it('nobody can delete a correction, not even the owner', async () => {
+  it('the owner can delete a correction (M4-LIFE-02); a student cannot', async () => {
     await seedBase();
     await seedSubmittedSubmission();
     await seedCorrection();
 
-    await assertFails(deleteDoc(doc(ownerDb(), 'corrections', SUBMISSION_ID)));
+    await assertFails(deleteDoc(doc(studentDb(), 'corrections', SUBMISSION_ID)));
+    await assertSucceeds(deleteDoc(doc(ownerDb(), 'corrections', SUBMISSION_ID)));
   });
 });
 
@@ -707,7 +708,7 @@ describe('Firestore rules — correctionEvents', () => {
     await assertFails(getDoc(doc(studentDb(), 'correctionEvents', 'event-1')));
   });
 
-  it('append-only: nobody can update or delete an existing event, not even the owner', async () => {
+  it('append-only: an event can never be updated; the owner may delete it (M4-LIFE-02), a student cannot', async () => {
     await seedBase();
     await seedSubmittedSubmission();
     await seedCorrection();
@@ -718,7 +719,8 @@ describe('Firestore rules — correctionEvents', () => {
     await assertFails(
       updateDoc(doc(ownerDb(), 'correctionEvents', 'event-1'), { reason: 'tampered' }),
     );
-    await assertFails(deleteDoc(doc(ownerDb(), 'correctionEvents', 'event-1')));
+    await assertFails(deleteDoc(doc(studentDb(), 'correctionEvents', 'event-1')));
+    await assertSucceeds(deleteDoc(doc(ownerDb(), 'correctionEvents', 'event-1')));
   });
 
   it('rejects an event with an arbitrary (non-server) timestamp', async () => {
@@ -1074,13 +1076,14 @@ describe('Firestore rules — correctionReturns', () => {
     );
   });
 
-  it('nobody can delete a return projection, not even the owner', async () => {
+  it('the owner can delete a return projection (M4-LIFE-02); a student cannot', async () => {
     await seedBase();
     await seedSubmittedSubmission();
     await seedCompletedCorrection();
     await seedReturn();
 
-    await assertFails(deleteDoc(doc(ownerDb(), 'correctionReturns', SUBMISSION_ID)));
+    await assertFails(deleteDoc(doc(studentDb(), 'correctionReturns', SUBMISSION_ID)));
+    await assertSucceeds(deleteDoc(doc(ownerDb(), 'correctionReturns', SUBMISSION_ID)));
   });
 
   it('the owner can always read the return projection', async () => {

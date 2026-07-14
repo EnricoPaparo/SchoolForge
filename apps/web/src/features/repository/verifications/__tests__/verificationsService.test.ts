@@ -27,6 +27,7 @@ vi.mock('firebase/firestore', () => ({
   getDoc: (...args: unknown[]) => mockGetDoc(...args),
   query: (...args: unknown[]) => mockQuery(...args),
   where: (...args: unknown[]) => mockWhere(...args),
+  limit: (n: number) => ({ limit: n }),
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
   deleteDoc: (...args: unknown[]) => mockDeleteDoc(...args),
   runTransaction: (...args: unknown[]) => mockRunTransaction(...args),
@@ -970,9 +971,10 @@ describe('closeVerification', () => {
 // ─── deleteVerification ────────────────────────────────────────────────────────
 
 describe('deleteVerification', () => {
-  it('deletes the document and writes an audit event when status is closed', async () => {
+  it('deletes the document and writes an audit event when status is closed (no linked submissions)', async () => {
     const closedDoc: Partial<VerificationDoc> = { status: 'closed', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => closedDoc });
+    mockGetDocs.mockResolvedValue({ empty: true, docs: [] });
 
     await deleteVerification('ver-id', OWNER_UID, fakeDb);
 
@@ -984,9 +986,10 @@ describe('deleteVerification', () => {
     expect(auditData.targetId).toBe('ver-id');
   });
 
-  it('deletes the document and writes an audit event when status is draft', async () => {
+  it('deletes the document and writes an audit event when status is draft (no linked submissions)', async () => {
     const draftDoc: Partial<VerificationDoc> = { status: 'draft', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => draftDoc });
+    mockGetDocs.mockResolvedValue({ empty: true, docs: [] });
 
     await deleteVerification('ver-id', OWNER_UID, fakeDb);
 
@@ -1003,5 +1006,21 @@ describe('deleteVerification', () => {
       'Verifica non eliminabile: deve essere in bozza o chiusa',
     );
     expect(mockDeleteDoc).not.toHaveBeenCalled();
+  });
+
+  it('refuses to delete a closed verification that still owns a submission, writing nothing', async () => {
+    const closedDoc: Partial<VerificationDoc> = { status: 'closed', config: VALID_CONFIG };
+    mockGetDoc.mockResolvedValue({ data: () => closedDoc });
+    // Preflight query finds a linked submission.
+    mockGetDocs.mockResolvedValue({ empty: false, docs: [{ id: 'v1_s1', data: () => ({}) }] });
+
+    await expect(deleteVerification('ver-id', OWNER_UID, fakeDb)).rejects.toThrow(
+      /Elimina prima tutte le consegne/i,
+    );
+    expect(mockDeleteDoc).not.toHaveBeenCalled();
+    expect(mockSetDoc).not.toHaveBeenCalled();
+    // The preflight query is targeted (ownerUid + verificationId), never a full scan.
+    expect(mockWhere).toHaveBeenCalledWith('ownerUid', '==', OWNER_UID);
+    expect(mockWhere).toHaveBeenCalledWith('verificationId', '==', 'ver-id');
   });
 });

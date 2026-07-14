@@ -41,6 +41,8 @@ import { useAuth } from '../../lib/auth.js';
 import { QuestionPicker } from './QuestionPicker.js';
 import { AttentionEventsDialog } from './AttentionEventsDialog.js';
 import { CorrectionWorkspace } from './CorrectionWorkspace.js';
+import { deleteSubmissionData } from '../repository/verifications/deleteSubmissionData.js';
+import { IconTrash } from '../../components/icons.js';
 import type { AttentionEvent, VerificationTeacherQuestionSnapshot } from '../../types/firestore.js';
 import { correctionStatusLabel } from '../repository/corrections/submissionCorrectionStatus.js';
 import styles from './VerificationsView.module.css';
@@ -231,6 +233,14 @@ export function VerificationsView() {
     studentName: string;
     events: AttentionEvent[];
   } | null>(null);
+
+  // ── Delete submission (M4-LIFE-02) ────────────────────────────────
+  const [submissionDeleteTarget, setSubmissionDeleteTarget] = useState<{
+    studentUid: string;
+    studentName: string;
+  } | null>(null);
+  const [deletingSubmission, setDeletingSubmission] = useState(false);
+  const [submissionDeleteError, setSubmissionDeleteError] = useState<string | null>(null);
 
   // ── Correction workspace (M4-02) ──────────────────────────────────
   const [correctionTarget, setCorrectionTarget] = useState<{
@@ -822,6 +832,28 @@ export function VerificationsView() {
 
   function handleOpenAttentionEvents(studentName: string, events: AttentionEvent[]) {
     setAttentionDialog({ studentName, events });
+  }
+
+  async function handleConfirmDeleteSubmission() {
+    if (!selectedVer || !submissionDeleteTarget || deletingSubmission) return;
+    const { studentUid } = submissionDeleteTarget;
+    const submissionId = `${selectedVer.id}_${studentUid}`;
+    setDeletingSubmission(true);
+    setSubmissionDeleteError(null);
+    try {
+      await deleteSubmissionData(submissionId, ownerUid, db);
+      // Update local state without reopening the monitor listener: drop the
+      // deleted student's row data. The still-open watchSubmissions listener
+      // converges to the same result.
+      setMonitorItems((prev) => prev?.filter((m) => m.studentUid !== studentUid) ?? prev);
+      setSubmissionDeleteTarget(null);
+    } catch (err) {
+      setSubmissionDeleteError(
+        err instanceof Error ? err.message : 'Errore durante l’eliminazione della consegna.',
+      );
+    } finally {
+      setDeletingSubmission(false);
+    }
   }
 
   function handleStartClose(id: string) {
@@ -1775,24 +1807,45 @@ export function VerificationsView() {
                                   {item?.deliveryCode ?? '—'}
                                 </td>
                                 <td className={`${styles.td} ${styles.metaCell}`}>
-                                  {item?.status === 'submitted' ? (
-                                    <button
-                                      type="button"
-                                      className={styles.iconBtn}
-                                      title="Apri correzione"
-                                      aria-label={`Apri correzione — ${studentName}`}
-                                      onClick={() =>
-                                        setCorrectionTarget({
-                                          submissionId: `${selectedVer.id}_${s.id}`,
-                                          studentName,
-                                        })
-                                      }
-                                    >
-                                      ✏️
-                                    </button>
-                                  ) : (
-                                    '—'
-                                  )}
+                                  <div className={styles.actionsWrapper}>
+                                    {item?.status === 'submitted' ? (
+                                      <button
+                                        type="button"
+                                        className={styles.iconBtn}
+                                        title="Apri correzione"
+                                        aria-label={`Apri correzione — ${studentName}`}
+                                        onClick={() =>
+                                          setCorrectionTarget({
+                                            submissionId: `${selectedVer.id}_${s.id}`,
+                                            studentName,
+                                          })
+                                        }
+                                      >
+                                        ✏️
+                                      </button>
+                                    ) : (
+                                      !(item && selectedVer.status === 'closed') && '—'
+                                    )}
+                                    {/* Delete a submission — only for a real,
+                                        existing submission on a CLOSED verification. */}
+                                    {item && selectedVer.status === 'closed' && (
+                                      <button
+                                        type="button"
+                                        className={styles.iconBtn}
+                                        title="Elimina consegna"
+                                        aria-label={`Elimina consegna — ${studentName}`}
+                                        disabled={deletingSubmission}
+                                        onClick={() =>
+                                          setSubmissionDeleteTarget({
+                                            studentUid: s.id,
+                                            studentName,
+                                          })
+                                        }
+                                      >
+                                        <IconTrash />
+                                      </button>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -1813,6 +1866,49 @@ export function VerificationsView() {
           events={attentionDialog.events}
           onClose={() => setAttentionDialog(null)}
         />
+      )}
+
+      {submissionDeleteTarget && (
+        <div className={styles.deleteBackdrop}>
+          <div
+            role="alertdialog"
+            aria-label="Conferma eliminazione consegna"
+            className={styles.deleteDialog}
+          >
+            <p className={styles.deleteDialogTitle}>
+              Eliminare la consegna di <strong>{submissionDeleteTarget.studentName}</strong>?
+            </p>
+            <p className={styles.deleteDialogBody}>
+              Verranno eliminati definitivamente: la consegna, le risposte, la correzione, la
+              restituzione e lo storico della correzione. L’operazione è irreversibile.
+            </p>
+            {submissionDeleteError && (
+              <p role="alert" className="text-error">
+                {submissionDeleteError}
+              </p>
+            )}
+            <div className={styles.confirmRow}>
+              <button
+                type="button"
+                className="btn-danger"
+                disabled={deletingSubmission}
+                onClick={() => void handleConfirmDeleteSubmission()}
+              >
+                {deletingSubmission ? 'Eliminazione…' : 'Elimina consegna'}
+              </button>
+              <button
+                type="button"
+                disabled={deletingSubmission}
+                onClick={() => {
+                  setSubmissionDeleteTarget(null);
+                  setSubmissionDeleteError(null);
+                }}
+              >
+                Annulla
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );
