@@ -94,7 +94,7 @@
 }
 
 .yearColumn {
-  width: 7%;
+  width: 9%;
 }
 
 .statusColumn {
@@ -106,7 +106,7 @@
 }
 
 .actionsColumn {
-  width: 27%;
+  width: 25%;
 }
 
 .createRowInline {
@@ -246,6 +246,11 @@
 .metaCell {
   color: var(--color-text-muted);
   font-size: 0.8125rem;
+}
+
+.yearCell {
+  padding-inline: 0.4rem;
+  white-space: nowrap;
 }
 
 .iconBtn {

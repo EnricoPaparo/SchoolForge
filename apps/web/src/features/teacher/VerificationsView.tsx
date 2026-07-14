@@ -1082,7 +1082,7 @@ export function VerificationsView() {
                     ))}
                   </select>
                 </td>
-                <td className={`${styles.td} ${styles.metaCell}`}>—</td>
+                <td className={`${styles.td} ${styles.metaCell} ${styles.yearCell}`}>—</td>
                 <td className={styles.td}>
                   <span className={`${styles.badge} ${styles.badgeNew}`}>Nuova</span>
                 </td>
@@ -1324,7 +1324,9 @@ export function VerificationsView() {
                       </td>
                       <td className={`${styles.td} ${styles.metaCell}`}>{programTitle}</td>
                       <td className={`${styles.td} ${styles.metaCell}`}>{className}</td>
-                      <td className={`${styles.td} ${styles.metaCell}`}>{annoScolastico}</td>
+                      <td className={`${styles.td} ${styles.metaCell} ${styles.yearCell}`}>
+                        {annoScolastico}
+                      </td>
                       <td className={styles.td}>
                         <StatusBadge status={v.status} visibility={v.visibility} />
                         {v.status === 'active' && (
