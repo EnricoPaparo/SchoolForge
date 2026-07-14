@@ -1913,6 +1913,118 @@ describe('VerificationsView — correction workspace action (M4-02)', () => {
   });
 });
 
+describe('VerificationsView — monitor score and client-side sorting (M4-MON-01)', () => {
+  it('shows the compact columns, formats scores and toggles an accessible ordering', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer({
+        status: 'active',
+        onlineEnabled: true,
+        teacherSnapshot: {
+          title: 'Verifica Algebra',
+          classId: 'cls-1',
+          className: 'Classe 3A',
+          programId: 'prog-1',
+          importId: 'imp-1',
+          questionRefs: [sampleQuestionRef],
+          activatedAt: null,
+        },
+      }),
+    ]);
+    mockListStudents.mockResolvedValue([
+      {
+        id: 'stud-a',
+        ownerUid: 'owner-uid',
+        uid: 'stud-a',
+        email: 'anna@example.test',
+        displayName: 'Anna',
+        status: 'approved',
+        classId: 'cls-1',
+        createdAt: null,
+        updatedAt: null,
+        lastLoginAt: null,
+      },
+      {
+        id: 'stud-b',
+        ownerUid: 'owner-uid',
+        uid: 'stud-b',
+        email: 'bruno@example.test',
+        displayName: 'Bruno',
+        status: 'approved',
+        classId: 'cls-1',
+        createdAt: null,
+        updatedAt: null,
+        lastLoginAt: null,
+      },
+    ]);
+    mockWatchSubmissions.mockImplementation((_v, _o, _d, onChange) => {
+      onChange([
+        {
+          studentUid: 'stud-a',
+          status: 'submitted',
+          submittedAt: { seconds: 20, nanoseconds: 0 },
+          deliveryCode: 'SF-A',
+          correctionStatus: 'completed',
+          correctionSummary: { totalPoints: 8.5, maxPoints: 10, percentage: 85 },
+          attentionEventsCount: 2,
+          attentionEvents: [],
+        },
+        {
+          studentUid: 'stud-b',
+          status: 'submitted',
+          submittedAt: { seconds: 10, nanoseconds: 0 },
+          deliveryCode: 'SF-B',
+          correctionStatus: 'in_progress',
+          correctionSummary: { totalPoints: 4, maxPoints: 10, percentage: 40 },
+          attentionEventsCount: 0,
+          attentionEvents: [],
+        },
+      ]);
+      return vi.fn();
+    });
+
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    const region = await screen.findByRole('region', { name: 'Consegne online' });
+    const table = within(region).getByRole('table');
+
+    expect(within(table).queryByText('Ultimo salvataggio')).toBeNull();
+    expect(within(table).getByText('8,5 / 10')).toBeTruthy();
+    expect(within(table).getByText('85%')).toBeTruthy();
+    expect(within(table).getByText('Corretta')).toBeTruthy();
+
+    const studentHeader = within(table).getByRole('columnheader', { name: /studente/i });
+    expect(studentHeader.getAttribute('aria-sort')).toBe('ascending');
+    const initialNames = within(table)
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('cell')[0]?.textContent);
+    expect(initialNames).toEqual(['Anna', 'Bruno']);
+
+    fireEvent.click(within(table).getByRole('button', { name: 'Ordina per punteggio crescente' }));
+    expect(
+      within(table)
+        .getByRole('columnheader', { name: /punteggio/i })
+        .getAttribute('aria-sort'),
+    ).toBe('ascending');
+    const scoreAscending = within(table)
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('cell')[0]?.textContent);
+    expect(scoreAscending).toEqual(['Bruno', 'Anna']);
+
+    fireEvent.click(
+      within(table).getByRole('button', { name: 'Ordina per punteggio decrescente' }),
+    );
+    const scoreDescending = within(table)
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('cell')[0]?.textContent);
+    expect(scoreDescending).toEqual(['Anna', 'Bruno']);
+  });
+});
+
 describe('VerificationsView — delete submission (M4-LIFE-02)', () => {
   const submittedItem = {
     studentUid: 'stud-a',

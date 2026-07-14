@@ -45,6 +45,11 @@ import { deleteSubmissionData } from '../repository/verifications/deleteSubmissi
 import { IconTrash } from '../../components/icons.js';
 import type { AttentionEvent, VerificationTeacherQuestionSnapshot } from '../../types/firestore.js';
 import { correctionStatusLabel } from '../repository/corrections/submissionCorrectionStatus.js';
+import {
+  sortSubmissionMonitorRows,
+  type SubmissionMonitorSortConfig,
+  type SubmissionMonitorSortKey,
+} from '../repository/verifications/submissionMonitorSort.js';
 import styles from './VerificationsView.module.css';
 
 /** Extracts the epoch seconds from a Firestore Timestamp-like value, or null if absent. */
@@ -61,6 +66,23 @@ function formatTimestamp(ts: unknown): string {
     dateStyle: 'short',
     timeStyle: 'short',
   });
+}
+
+const scoreNumberFormatter = new Intl.NumberFormat('it-IT', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+
+function formatScore(item: SubmissionMonitorItem | null): string {
+  const summary = item?.correctionSummary;
+  if (!summary || item?.correctionStatus === 'submitted') return '—';
+  return `${scoreNumberFormatter.format(summary.totalPoints)} / ${scoreNumberFormatter.format(summary.maxPoints)}`;
+}
+
+function formatPercentage(item: SubmissionMonitorItem | null): string {
+  const summary = item?.correctionSummary;
+  if (!summary || summary.percentage === null || item?.correctionStatus === 'submitted') return '—';
+  return `${summary.percentage}%`;
 }
 
 // ── Archive filters (VUX-01) ──────────────────────────────────────────────
@@ -229,6 +251,10 @@ export function VerificationsView() {
   const [monitorStudents, setMonitorStudents] = useState<StudentItem[] | null>(null);
   const [monitorItems, setMonitorItems] = useState<SubmissionMonitorItem[] | null>(null);
   const [monitorError, setMonitorError] = useState<string | null>(null);
+  const [monitorSort, setMonitorSort] = useState<SubmissionMonitorSortConfig>({
+    key: 'student',
+    direction: 'asc',
+  });
   const [attentionDialog, setAttentionDialog] = useState<{
     studentName: string;
     events: AttentionEvent[];
@@ -247,6 +273,48 @@ export function VerificationsView() {
     submissionId: string;
     studentName: string;
   } | null>(null);
+
+  const sortedMonitorRows = useMemo(() => {
+    if (!monitorStudents || !monitorItems) return [];
+    const rows = monitorStudents.map((student) => {
+      const item = monitorItems.find((candidate) => candidate.studentUid === student.id) ?? null;
+      const stateLabel = !item
+        ? 'Non iniziata'
+        : item.status === 'submitted'
+          ? correctionStatusLabel(item.correctionStatus)
+          : 'In corso';
+      return {
+        studentUid: student.id,
+        studentName: student.displayName ?? student.email,
+        stateLabel,
+        item,
+      };
+    });
+    return sortSubmissionMonitorRows(rows, monitorSort);
+  }, [monitorStudents, monitorItems, monitorSort]);
+
+  function toggleMonitorSort(key: SubmissionMonitorSortKey): void {
+    setMonitorSort((current) => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }));
+  }
+
+  function monitorSortAria(key: SubmissionMonitorSortKey): 'ascending' | 'descending' | 'none' {
+    if (monitorSort.key !== key) return 'none';
+    return monitorSort.direction === 'asc' ? 'ascending' : 'descending';
+  }
+
+  function monitorSortLabel(key: SubmissionMonitorSortKey, label: string): string {
+    const nextDirection =
+      monitorSort.key === key && monitorSort.direction === 'asc' ? 'decrescente' : 'crescente';
+    return `Ordina per ${label.toLocaleLowerCase('it-IT')} ${nextDirection}`;
+  }
+
+  function monitorSortIndicator(key: SubmissionMonitorSortKey): string {
+    if (monitorSort.key !== key) return '';
+    return monitorSort.direction === 'asc' ? ' ↑' : ' ↓';
+  }
 
   useEffect(() => {
     void loadAll();
@@ -1755,31 +1823,87 @@ export function VerificationsView() {
                       <table className={styles.table}>
                         <thead>
                           <tr>
-                            <th className={styles.th}>Studente</th>
-                            <th className={styles.th}>Stato</th>
-                            <th className={styles.th}>Ultimo salvataggio</th>
-                            <th className={styles.th}>Consegnata il</th>
-                            <th className={styles.th}>Eventi</th>
+                            <th className={styles.th} aria-sort={monitorSortAria('student')}>
+                              <button
+                                type="button"
+                                className={styles.sortHeaderButton}
+                                aria-label={monitorSortLabel('student', 'Studente')}
+                                onClick={() => toggleMonitorSort('student')}
+                              >
+                                Studente{monitorSortIndicator('student')}
+                              </button>
+                            </th>
+                            <th className={styles.th} aria-sort={monitorSortAria('status')}>
+                              <button
+                                type="button"
+                                className={styles.sortHeaderButton}
+                                aria-label={monitorSortLabel('status', 'Stato')}
+                                onClick={() => toggleMonitorSort('status')}
+                              >
+                                Stato{monitorSortIndicator('status')}
+                              </button>
+                            </th>
+                            <th className={styles.th} aria-sort={monitorSortAria('score')}>
+                              <button
+                                type="button"
+                                className={styles.sortHeaderButton}
+                                aria-label={monitorSortLabel('score', 'Punteggio')}
+                                onClick={() => toggleMonitorSort('score')}
+                              >
+                                Punteggio{monitorSortIndicator('score')}
+                              </button>
+                            </th>
+                            <th className={styles.th} aria-sort={monitorSortAria('percentage')}>
+                              <button
+                                type="button"
+                                className={styles.sortHeaderButton}
+                                aria-label={monitorSortLabel('percentage', 'Percentuale')}
+                                onClick={() => toggleMonitorSort('percentage')}
+                              >
+                                Percentuale{monitorSortIndicator('percentage')}
+                              </button>
+                            </th>
+                            <th className={styles.th} aria-sort={monitorSortAria('submittedAt')}>
+                              <button
+                                type="button"
+                                className={styles.sortHeaderButton}
+                                aria-label={monitorSortLabel('submittedAt', 'Consegnata il')}
+                                onClick={() => toggleMonitorSort('submittedAt')}
+                              >
+                                Consegnata il{monitorSortIndicator('submittedAt')}
+                              </button>
+                            </th>
+                            <th className={styles.th} aria-sort={monitorSortAria('events')}>
+                              <button
+                                type="button"
+                                className={styles.sortHeaderButton}
+                                aria-label={monitorSortLabel('events', 'Eventi')}
+                                onClick={() => toggleMonitorSort('events')}
+                              >
+                                Eventi{monitorSortIndicator('events')}
+                              </button>
+                            </th>
                             <th className={styles.th}>Codice</th>
-                            <th className={styles.th}>Correzione</th>
+                            <th className={styles.th}>Azioni</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {monitorStudents.map((s) => {
-                            const item = monitorItems?.find((m) => m.studentUid === s.id);
-                            const stateLabel = !item
-                              ? 'Non iniziata'
-                              : item.status === 'submitted'
-                                ? correctionStatusLabel(item.correctionStatus)
-                                : 'In corso';
-                            const studentName = s.displayName ?? s.email;
+                          {sortedMonitorRows.map((row) => {
+                            const item = row.item;
+                            const stateLabel = row.stateLabel;
+                            const studentName = row.studentName;
                             const eventsCount = item?.attentionEventsCount ?? 0;
                             return (
-                              <tr key={s.id} className={styles.row}>
+                              <tr key={row.studentUid} className={styles.row}>
                                 <td className={styles.td}>{studentName}</td>
-                                <td className={styles.td}>{stateLabel}</td>
-                                <td className={`${styles.td} ${styles.metaCell}`}>
-                                  {item ? formatTimestamp(item.lastSavedAt) : '—'}
+                                <td className={`${styles.td} ${styles.monitorStatusCell}`}>
+                                  {stateLabel}
+                                </td>
+                                <td className={`${styles.td} ${styles.scoreCell}`}>
+                                  {formatScore(item)}
+                                </td>
+                                <td className={`${styles.td} ${styles.percentageCell}`}>
+                                  {formatPercentage(item)}
                                 </td>
                                 <td className={`${styles.td} ${styles.metaCell}`}>
                                   {item ? formatTimestamp(item.submittedAt) : '—'}
@@ -1816,7 +1940,7 @@ export function VerificationsView() {
                                         aria-label={`Apri correzione — ${studentName}`}
                                         onClick={() =>
                                           setCorrectionTarget({
-                                            submissionId: `${selectedVer.id}_${s.id}`,
+                                            submissionId: `${selectedVer.id}_${row.studentUid}`,
                                             studentName,
                                           })
                                         }
@@ -1837,7 +1961,7 @@ export function VerificationsView() {
                                         disabled={deletingSubmission}
                                         onClick={() =>
                                           setSubmissionDeleteTarget({
-                                            studentUid: s.id,
+                                            studentUid: row.studentUid,
                                             studentName,
                                           })
                                         }

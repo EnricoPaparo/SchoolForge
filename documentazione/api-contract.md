@@ -402,7 +402,13 @@ interface VerificationTeacherSnapshot {
 // Il docente (ownerUid) può leggere tutte le submission delle proprie verifiche;
 // lo studente legge/scrive la propria submission solo finché è draft. Dopo
 // submitted legge solo submissionReceipts/{submissionId}.
-// Nessuno cancella submission in M3-full (M4 aggiungerà l'archiviazione).
+// M4-LIFE-02 consente all'owner l'eliminazione completa e controllata.
+interface SubmissionCorrectionSummary {
+  totalPoints: number;
+  maxPoints: number;
+  percentage: number | null; // null solo quando maxPoints == 0
+}
+
 interface SubmissionDoc {
   submissionId: string;            // == Firestore doc id deterministico: `${verificationId}_${studentUid}`
   verificationId: string;
@@ -423,6 +429,10 @@ interface SubmissionDoc {
   startedAt: Timestamp;
   lastSavedAt: Timestamp;
   submittedAt: Timestamp | null;
+  // Proiezione owner-only aggiornata dalla correzione; assente sui legacy e
+  // finché non esiste almeno un salvataggio/completamento della correzione.
+  correctionSummary?: SubmissionCorrectionSummary;
+  correctionSummaryUpdatedAt?: Timestamp;
 }
 
 type AnswerValue =
@@ -461,6 +471,7 @@ interface SubmissionMonitorItem {
   submittedAt: Timestamp | null;
   deliveryCode: string | null;
   correctionStatus: 'submitted' | 'in_progress' | 'completed' | 'returned';
+  correctionSummary: SubmissionCorrectionSummary | null;
   attentionEventsCount: number;
   attentionEvents: { type: AttentionEvent['type']; ts: number }[];
 }
@@ -718,9 +729,9 @@ Lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applic
 
 | Operazione | Scrittura Firestore |
 |---|---|
-| Leggi consegne | Query `submissions` filtrata per `verificationId` + `ownerUid`; stato pubblico `submitted`/`in_progress`/`completed`/`returned`, mostrato come Consegnata/In correzione/Corretta/Restituita. Il mirror è aggiornato solo ai cambi di fase, atomicamente anche su `submissionReceipts`; assente sui legacy = `submitted`. |
+| Leggi consegne | Query/listener `submissions` già esistente, filtrato per `verificationId` + `ownerUid`; stato pubblico `submitted`/`in_progress`/`completed`/`returned`, mostrato come Consegnata/In correzione/Corretta/Restituita. Il monitor espone anche `correctionSummary` owner-only per Punteggio/Percentuale; valori assenti o ancora `submitted` = `—`. Le righe sono ordinate in memoria per studente, stato, punteggio, percentuale, data consegna o eventi: nessuna query/lettura aggiuntiva. Il mirror di stato è aggiornato solo ai cambi di fase, atomicamente anche su `submissionReceipts`; assente sui legacy = `submitted`. |
 | Apri correzione | Se assente, crea `corrections/{submissionId}` con `status: 'in_progress'`, `reopenCount: 0`, `evaluations` inizializzate da `publishedProjection.questions` (`points: null`, `maxPoints` congelato); se presente, legge il documento esistente |
-| Assegna punteggio (primo giro, `reopenCount == 0`) | Aggiorna `corrections/{submissionId}.evaluations[order]` e i totali derivati (`computeCorrectionTotals`); salvataggio esplicito, non ad ogni digitazione; **nessun** `correctionEvents` scritto, per quanti salvataggi avvengano |
+| Assegna punteggio (primo giro, `reopenCount == 0`) | Aggiorna `corrections/{submissionId}.evaluations[order]` e i totali derivati (`computeCorrectionTotals`); nello stesso batch aggiorna `submissions/{submissionId}.correctionSummary` + `correctionSummaryUpdatedAt`, combinandoli nell'unico update della submission quando cambia anche lo stato. Salvataggio esplicito, non ad ogni digitazione; **nessun** `correctionEvents` scritto, per quanti salvataggi avvengano. `submissionReceipts` non riceve mai punteggio/percentuale. |
 | Completa correzione | Transizione `in_progress → completed`, ammessa solo se `isCorrectionComplete(evaluations)` (mappa non vuota, ogni domanda valutata); imposta `completedAt` |
 | Restituisci | Transizione `completed → returned`; scrive `correctionReturns/{submissionId}` con `questions[]` autosufficiente (testo, opzioni, risposta consegnata, punti sempre definiti, `visibleToStudent: true`, `solutionsVisible: false`) nella stessa `writeBatch`; imposta `returnedAt`; appende `correctionEvents` (`type: 'returned'`) |
 | Riapri | Transizione `completed \| returned → in_progress`; azzera `completedAt`/`returnedAt`; incrementa `reopenCount`; appende `correctionEvents` (`type: 'reopened'`, senza `questionDeltas` se nessuna domanda è stata ancora ritoccata) |

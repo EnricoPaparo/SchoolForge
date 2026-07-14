@@ -186,6 +186,40 @@ describe('StudentCorrectionView — question navigation and content', () => {
     expect(screen.getByText('Risposta corretta attesa.')).toBeTruthy();
   });
 
+  it('shows every correct answer of a returned multiple-choice question', () => {
+    const item: StudentCorrectionReturnItem = {
+      ...BASE_ITEM,
+      solutionsVisible: true,
+      questions: [
+        {
+          order: 0,
+          tipo: 'chiusa_multipla',
+          testo: 'Seleziona i protocolli applicativi.',
+          opzioni: [
+            { id: 'a', testo: 'HTTP' },
+            { id: 'b', testo: 'TCP' },
+            { id: 'c', testo: 'DNS' },
+          ],
+          studentAnswer: { tipo: 'chiusa_multipla', selectedIds: ['a'] },
+          points: 1,
+          maxPoints: 2,
+          correctAnswer: ['a', 'c'],
+        },
+      ],
+    };
+
+    render(
+      <StudentCorrectionView
+        submissionId="v1_student-uid"
+        initialData={item}
+        db={fakeDb}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('HTTP, DNS')).toBeTruthy();
+  });
+
   it('renders multiple-choice options without a correct/incorrect colour hint', () => {
     render(
       <StudentCorrectionView

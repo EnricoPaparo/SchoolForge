@@ -80,6 +80,7 @@ describe('watchSubmissions', () => {
         deliveryCode: 'SF-2026-A1B2',
         attentionEventsCount: 2,
         correctionStatus: 'submitted',
+        correctionSummary: null,
         attentionEvents: [
           { type: 'tab_blur', ts: 1 },
           { type: 'copy_attempt', ts: 2 },
@@ -90,6 +91,41 @@ describe('watchSubmissions', () => {
     expect(mapped).not.toHaveProperty('answers');
     expect(mapped).not.toHaveProperty('flagged');
     expect(mapped.attentionEvents).not.toBe(submission.attentionEvents);
+  });
+
+  it('forwards the optional owner-only correction summary without adding reads', () => {
+    const submission = {
+      submissionId: 'ver-1_stud-1',
+      verificationId: 'ver-1',
+      studentUid: 'stud-1',
+      ownerUid: 'owner-1',
+      status: 'submitted',
+      answers: {},
+      flagged: {},
+      attentionEvents: [],
+      deliveryCode: 'SF-2026-A1B2',
+      verificationTitle: 'Verifica 1',
+      className: 'Classe A',
+      startedAt: {} as never,
+      lastSavedAt: {} as never,
+      submittedAt: {} as never,
+      correctionStatus: 'in_progress',
+      correctionSummary: { totalPoints: 7.25, maxPoints: 10, percentage: 73 },
+    } satisfies SubmissionDoc;
+    const onChange = vi.fn();
+    mockOnSnapshot.mockImplementation((_q: unknown, next: (snap: unknown) => void) => {
+      next({ docs: [{ data: () => submission }] });
+      return mockUnsubscribe;
+    });
+
+    watchSubmissions('ver-1', 'owner-1', fakeDb, onChange, vi.fn());
+
+    expect(onChange.mock.calls[0][0][0].correctionSummary).toEqual({
+      totalPoints: 7.25,
+      maxPoints: 10,
+      percentage: 73,
+    });
+    expect(mockWhere).toHaveBeenCalledTimes(2);
   });
 
   it('returns an empty attentionEvents array when the submission has none', () => {
