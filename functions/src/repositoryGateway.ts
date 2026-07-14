@@ -5,10 +5,10 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import {
-  extractSubpath,
+  createStoragePort,
   handleGateway,
+  parseRoute,
   type GatewayInput,
-  type StoragePort,
 } from './repositoryGatewayCore.js';
 
 /**
@@ -22,50 +22,27 @@ import {
  */
 
 /**
- * Regione della Function. **Da confermare** contro la location effettiva del
- * bucket di `schoolforge-dev` prima del primo deploy: se il bucket non è in
- * `us-central1`, questo valore va allineato per evitare egress cross-region.
- * `us-central1` è il default Firebase, usato qui come placeholder esplicito.
+ * Regione della Function. **Verificata** contro la location del bucket di
+ * `schoolforge-dev` (`gcloud storage buckets describe
+ * gs://schoolforge-dev.firebasestorage.app` → `location: US-CENTRAL1`,
+ * `location_type: region`): la Function gira nella stessa region del bucket per
+ * evitare egress cross-region.
  */
 export const GATEWAY_REGION = 'us-central1';
 
 if (getApps().length === 0) initializeApp();
 
-function adminStoragePort(): StoragePort {
-  const bucket = getStorage().bucket();
-  return {
-    read: async (path) => {
-      const file = bucket.file(path);
-      const [exists] = await file.exists();
-      if (!exists) return { exists: false };
-      const [buf] = await file.download();
-      return { exists: true, content: buf.toString('utf-8') };
-    },
-    write: async (path, buf) => {
-      await bucket.file(path).save(buf, {
-        contentType: 'text/markdown; charset=utf-8',
-        resumable: false,
-      });
-    },
-    delete: async (path) => {
-      const file = bucket.file(path);
-      const [exists] = await file.exists();
-      if (!exists) return false;
-      await file.delete();
-      return true;
-    },
-  };
-}
-
 export const repositoryGateway = onRequest(
   { region: GATEWAY_REGION, minInstances: 0, maxInstances: 3, cors: false },
   async (req, res) => {
     const started = Date.now();
-    const subpath = extractSubpath(req.path);
+    // Il traffico è same-origin: nessuna cache delle risposte del gateway.
+    res.set('Cache-Control', 'no-store');
+    const route = parseRoute(req.path);
     const result = await handleGateway(
       {
         method: req.method,
-        subpath,
+        route,
         contentType: req.get('content-type') ?? undefined,
         authHeader: req.get('authorization') ?? undefined,
         body: req.body as GatewayInput['body'],
@@ -76,12 +53,12 @@ export const repositoryGateway = onRequest(
           const snap = await getFirestore().doc('settings/owner').get();
           return snap.exists ? ((snap.data()?.ownerUid as string | undefined) ?? null) : null;
         },
-        storage: adminStoragePort(),
+        storage: createStoragePort(getStorage().bucket()),
       },
     );
     // Log minimale e NON sensibile: nessun path, token, contenuto, pool o soluzione.
     logger.info('repositoryGateway', {
-      op: subpath,
+      route: route ?? 'unknown',
       status: result.status,
       durationMs: Date.now() - started,
     });

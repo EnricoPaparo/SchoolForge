@@ -102,10 +102,11 @@ Decisioni fissate:
   singolo docente).
 - **`maxInstances` basso e documentato**: valore iniziale **3** (app a docente
   singolo, concorrenza reale minima); alzabile solo con evidenza di throttling.
-- **Regione coerente con bucket/progetto**: la Function va **fissata nella
-  stessa region del bucket Storage** per evitare egress cross-region.
-  *(Decisione aperta: confermare la location effettiva del bucket di
-  `schoolforge-dev` e pinnarla — vedi §"Decisioni aperte".)*
+- **Regione `us-central1`, verificata**: la Function gira nella stessa region
+  del bucket Storage per evitare egress cross-region. Location confermata dal
+  docente con `gcloud storage buckets describe
+  gs://schoolforge-dev.firebasestorage.app` → `location: US-CENTRAL1`,
+  `location_type: region`.
 - **Autenticazione** tramite **Firebase ID token** (header `Authorization:
   Bearer <idToken>`), verificato server-side con l'Admin SDK.
 - Accesso **esclusivamente al docente owner** del portale.
@@ -312,18 +313,18 @@ qui come opzione, non come requisito SGW-01.
   sull'Hosting emulator, che applica il rewrite verso la Functions emulator; la
   Function usa l'Admin SDK contro gli emulator Firestore/Storage. Così il flusso
   gateway è testabile **senza** toccare Storage reale.
-- **Ordine delle rewrite in `firebase.json`** (modello target — **non
-  applicato** in SGW-00): la rotta specifica **prima** della SPA:
+- **Ordine delle rewrite in `firebase.json`** (applicato in SGW-01): la rotta
+  specifica **prima** della SPA, in forma esplicita con `functionId` + `region`:
 
   ```jsonc
   "rewrites": [
-    { "source": "/api/repository/**", "function": "repositoryGateway" },
+    {
+      "source": "/api/repository/**",
+      "function": { "functionId": "repositoryGateway", "region": "us-central1" }
+    },
     { "source": "**", "destination": "/index.html" }
   ]
   ```
-
-  L'attuale `firebase.json` ha **solo** la SPA rewrite `**` → `/index.html`:
-  la rotta `/api/repository/**` **non esiste ancora** e va aggiunta in SGW-01.
 - **Configurazione DEV**: progetto `schoolforge-dev` (già su piano **Blaze**,
   requisito della 2ª gen). Region della Function pinnata a quella del bucket.
 - **Deploy**: SGW-01 fa il **primo deploy solo su DEV**
@@ -353,7 +354,7 @@ qui come opzione, non come requisito SGW-01.
   dimensioni, metodi, token) — `functions/src/repositoryGatewayCore.test.ts` +
   adapter test.
 - ⏳ **Deploy DEV** + **smoke Brave** su editing/pool — **da eseguire** (vedi
-  §Task 6 per i comandi; region da confermare prima).
+  §Task 6 per i comandi; region `us-central1` già confermata).
 - Copre le righe **1–7** dell'inventario.
 
 ### SGW-02 — Batch + prefissi + accessi residui
@@ -406,8 +407,8 @@ Acceptance criteria da implementare in una PR UX separata (**DUX-09**):
 
 ## Decisioni ancora aperte
 
-1. **Region esatta** della Function: da pinnare alla location del bucket di
-   `schoolforge-dev` (confermare la location effettiva prima di SGW-01).
+1. **Region**: ~~da confermare~~ **confermata `us-central1`** (location del
+   bucket `schoolforge-dev`, `location_type: region`).
 2. **Prefisso rotta**: `/api/repository/*` confermato; eventuale versione
    (`/api/repository/v1/*`) da decidere in SGW-01.
 3. **`maxInstances`** iniziale a 3: rivedere solo con evidenza di throttling.

@@ -5,7 +5,10 @@
     "rewrites": [
       {
         "source": "/api/repository/**",
-        "function": "repositoryGateway"
+        "function": {
+          "functionId": "repositoryGateway",
+          "region": "us-central1"
+        }
       },
       {
         "source": "**",

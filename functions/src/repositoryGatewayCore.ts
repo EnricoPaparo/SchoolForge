@@ -1,8 +1,9 @@
 /**
  * SGW-01 — logica pura del Repository Storage Gateway, senza dipendenze
- * `firebase-admin`/`firebase-functions`: autorizzazione, validazione path e
- * contenuto, routing e handler core con I/O iniettato. Testabile in isolamento;
- * il wiring runtime (Admin SDK, `onRequest`) è in `repositoryGateway.ts`.
+ * `firebase-admin`/`firebase-functions`: routing, autorizzazione, validazione
+ * path/contenuto, handler core e storage port su un bucket duck-typed. Testabile
+ * in isolamento; il wiring runtime (Admin SDK, `onRequest`) è in
+ * `repositoryGateway.ts`.
  */
 
 /** Limite dimensione per file (coerente con `MAX_LESSON_CONTENT_BYTES`). */
@@ -20,45 +21,98 @@ export class GatewayError extends Error {
   }
 }
 
-const REPOSITORY_PATH_RE = /^repository\/([^/]+)\/imports\/([^/]+)\/.+$/;
+export type Route = 'read' | 'write' | 'delete';
 
 /**
- * Valida e normalizza un path repository. Ammette **solo**
- * `repository/{uid}/imports/{importId}/…` con `uid` == utente autenticato,
- * estensione `.md`/`.pool.md`, e rifiuta ogni forma ambigua/pericolosa.
+ * Routing rigoroso: accetta **solo** `/api/repository/{read|write|delete}`
+ * (con un eventuale singolo slash finale tollerato). Qualsiasi prefisso,
+ * suffisso o segmento aggiuntivo → `null` (l'handler risponde 404 senza toccare
+ * Storage). Rifiuta `/repository/read`, `/evil/repository/read`,
+ * `/api/repository/read/extra`, alias non documentati.
+ */
+export function parseRoute(requestPath: string): Route | null {
+  if (typeof requestPath !== 'string') return null;
+  const normalized = requestPath.endsWith('/') ? requestPath.slice(0, -1) : requestPath;
+  const match = /^\/api\/repository\/(read|write|delete)$/.exec(normalized);
+  return match ? (match[1] as Route) : null;
+}
+
+/**
+ * Content-Type rigoroso: il media type deve essere **esattamente**
+ * `application/json` (case-insensitive, spazi normalizzati), con eventuali
+ * parametri (es. `; charset=utf-8`). Rifiuta `text/application/json`,
+ * `application/json-malicious`, `text/plain`.
+ */
+export function isJsonContentType(contentType: string | undefined): boolean {
+  if (!contentType) return false;
+  const mediaType = contentType.split(';', 1)[0]!.trim().toLowerCase();
+  return mediaType === 'application/json';
+}
+
+// Allowlist dei segmenti del path. `uid`/`importId` sono identificatori tecnici
+// (niente punti); i segmenti file/cartella ammettono il punto per le estensioni.
+const OWNER_ID_RE = /^[A-Za-z0-9_-]+$/;
+const FILE_SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * Validazione esplicita (allowlist) del path, compatibile con i percorsi
+ * realmente prodotti da SchoolForge: `repository/{ownerUid}/imports/{importId}/…`
+ * con `programma.md` alla root dell'import o file dentro le cartelle UDA.
+ * Rifiuta spazi, `:`, query/fragment, emoji/Unicode arbitrario, `.`/`..`,
+ * slash doppio, backslash, percent-encoding, controllo e URL. Solo `.md`/`.pool.md`.
  */
 export function validateRepositoryPath(rawPath: unknown, uid: string): string {
   if (typeof rawPath !== 'string' || rawPath.length === 0) {
     throw new GatewayError('invalid_path', 'Path mancante o non valido.', 400);
   }
   const path = rawPath;
-  // Caratteri di controllo / NUL.
+
+  // Difesa in profondità su forme pericolose (ridondante con l'allowlist, ma
+  // dà messaggi mirati e chiude subito i casi ovvi).
   // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f]/.test(path)) {
     throw new GatewayError('invalid_path', 'Path con caratteri di controllo.', 400);
   }
-  // Traversal, slash ambigue, backslash, path assoluto.
-  if (path.includes('..') || path.includes('//') || path.includes('\\') || path.startsWith('/')) {
-    throw new GatewayError('invalid_path', 'Path con sequenze non ammesse.', 400);
-  }
-  // Percent-encoding.
   if (/%[0-9a-fA-F]{2}/.test(path)) {
     throw new GatewayError('invalid_path', 'Path con percent-encoding non ammesso.', 400);
   }
-  // URL / schema (http://, gs://, ecc.).
-  if (/[a-z][a-z0-9+.-]*:\/\//i.test(path)) {
-    throw new GatewayError('invalid_path', 'Path con URL non ammesso.', 400);
+
+  const segments = path.split('/');
+  // Slash doppio, iniziale o finale → segmento vuoto.
+  if (segments.some((s) => s.length === 0)) {
+    throw new GatewayError('invalid_path', 'Path con slash ambigue o vuote.', 400);
   }
-  const match = REPOSITORY_PATH_RE.exec(path);
-  if (!match) {
+  // repository / {ownerUid} / imports / {importId} / …almeno un segmento.
+  if (segments.length < 5) {
     throw new GatewayError(
       'invalid_path',
       'Il path deve essere sotto repository/{uid}/imports/{importId}/…',
       400,
     );
   }
-  if (match[1] !== uid) {
+  if (segments[0] !== 'repository' || segments[2] !== 'imports') {
+    throw new GatewayError(
+      'invalid_path',
+      'Il path deve essere sotto repository/{uid}/imports/{importId}/…',
+      400,
+    );
+  }
+  if (!OWNER_ID_RE.test(segments[1]!)) {
+    throw new GatewayError('invalid_path', 'ownerUid del path non valido.', 400);
+  }
+  if (segments[1] !== uid) {
     throw new GatewayError('not_owner', 'Il path non appartiene all’utente autenticato.', 403);
+  }
+  if (!OWNER_ID_RE.test(segments[3]!)) {
+    throw new GatewayError('invalid_path', 'importId del path non valido.', 400);
+  }
+  for (const segment of segments.slice(4)) {
+    if (segment === '.' || segment === '..' || segment.includes('..')) {
+      throw new GatewayError('invalid_path', 'Path con segmenti relativi non ammessi.', 400);
+    }
+    if (!FILE_SEGMENT_RE.test(segment)) {
+      throw new GatewayError('invalid_path', 'Path con caratteri non ammessi.', 400);
+    }
   }
   if (!path.endsWith('.pool.md') && !path.endsWith('.md')) {
     throw new GatewayError('unsupported_extension', 'Sono ammessi solo file .md o .pool.md.', 415);
@@ -66,10 +120,28 @@ export function validateRepositoryPath(rawPath: unknown, uid: string): string {
   return path;
 }
 
-/** Valida il contenuto: stringa UTF-8, entro `MAX_FILE_BYTES`. */
+/** True se la stringa contiene surrogati UTF-16 isolati (UTF-8 non codificabile). */
+export function hasLoneSurrogate(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(i + 1);
+      if (Number.isNaN(next) || next < 0xdc00 || next > 0xdfff) return true;
+      i++;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Valida il contenuto: stringa UTF-8 codificabile, entro `MAX_FILE_BYTES`. */
 export function validateContent(content: unknown): Buffer {
   if (typeof content !== 'string') {
     throw new GatewayError('invalid_content', 'Contenuto mancante o non stringa.', 400);
+  }
+  if (hasLoneSurrogate(content)) {
+    throw new GatewayError('invalid_utf8', 'Contenuto con surrogati UTF-16 isolati.', 400);
   }
   const buf = Buffer.from(content, 'utf-8');
   if (buf.byteLength > MAX_FILE_BYTES) {
@@ -80,14 +152,6 @@ export function validateContent(content: unknown): Buffer {
     );
   }
   return buf;
-}
-
-/** Estrae la sotto-rotta (`read`/`write`/`delete`) dal path della richiesta. */
-export function extractSubpath(requestPath: string): string {
-  const segments = requestPath.split('/').filter(Boolean);
-  const idx = segments.lastIndexOf('repository');
-  if (idx >= 0 && idx + 1 < segments.length) return segments[idx + 1]!;
-  return segments[segments.length - 1] ?? '';
 }
 
 export type AuthDeps = {
@@ -134,9 +198,76 @@ export type StoragePort = {
   delete: (path: string) => Promise<boolean>;
 };
 
+/** Riconosce un errore Google Cloud Storage "oggetto non trovato" (HTTP 404). */
+export function isStorageNotFound(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 404;
+}
+
+/**
+ * File/bucket duck-typed: solo ciò che serve al gateway, così è mockabile e
+ * compatibile con il `Bucket`/`File` reale dell'Admin SDK. Metodi in forma
+ * shorthand (parametri bivarianti) per accettare le firme più larghe del SDK.
+ */
+export interface FileLike {
+  download(): Promise<[Uint8Array]>;
+  save(data: Uint8Array, options?: unknown): Promise<unknown>;
+  delete(): Promise<unknown>;
+}
+export interface BucketLike {
+  file(path: string): FileLike;
+}
+
+/**
+ * Storage port su un bucket: **una sola** operazione per read/delete (nessun
+ * `exists()` seguito da `download()`/`delete()` → niente doppie operazioni
+ * fatturabili né race "esiste, poi scompare"). Il 404 è gestito in modo mirato;
+ * la lettura decodifica in UTF-8 con `fatal: true`, così un oggetto non UTF-8
+ * valido produce un errore strutturato invece di testo corrotto.
+ */
+export function createStoragePort(bucket: BucketLike): StoragePort {
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  return {
+    read: async (path) => {
+      try {
+        const [bytes] = await bucket.file(path).download();
+        let content: string;
+        try {
+          content = decoder.decode(bytes);
+        } catch {
+          throw new GatewayError(
+            'invalid_stored_utf8',
+            'Il contenuto del file non è UTF-8 valido.',
+            422,
+          );
+        }
+        return { exists: true, content };
+      } catch (err) {
+        if (err instanceof GatewayError) throw err;
+        if (isStorageNotFound(err)) return { exists: false };
+        throw err;
+      }
+    },
+    write: async (path, buf) => {
+      await bucket.file(path).save(buf, {
+        contentType: 'text/markdown; charset=utf-8',
+        resumable: false,
+      });
+    },
+    delete: async (path) => {
+      try {
+        await bucket.file(path).delete();
+        return true;
+      } catch (err) {
+        if (isStorageNotFound(err)) return false;
+        throw err;
+      }
+    },
+  };
+}
+
 export type GatewayInput = {
   method: string;
-  subpath: string;
+  route: Route | null;
   contentType: string | undefined;
   authHeader: string | undefined;
   body: { path?: unknown; content?: unknown } | undefined;
@@ -149,8 +280,10 @@ function errorResult(status: number, code: string, message: string): GatewayResu
 }
 
 /**
- * Core dell'handler, puro rispetto a I/O (dipendenze iniettate). Ritorna
- * status + body JSON; non logga mai token, contenuti, pool o soluzioni.
+ * Core dell'handler, puro rispetto a I/O (dipendenze iniettate). Ordine:
+ * metodo → rotta (404 endpoint sconosciuto, senza toccare Storage) →
+ * Content-Type → autorizzazione → validazione path → dispatch. Ritorna status +
+ * body JSON; non logga mai token, contenuti, pool o soluzioni.
  */
 export async function handleGateway(
   input: GatewayInput,
@@ -160,7 +293,10 @@ export async function handleGateway(
     if (input.method !== 'POST') {
       return errorResult(405, 'method_not_allowed', 'Metodo non consentito.');
     }
-    if (!input.contentType || !input.contentType.includes('application/json')) {
+    if (input.route === null) {
+      return errorResult(404, 'not_found', 'Endpoint non trovato.');
+    }
+    if (!isJsonContentType(input.contentType)) {
       return errorResult(
         415,
         'unsupported_media_type',
@@ -170,21 +306,19 @@ export async function handleGateway(
     const uid = await authorizeOwner(input.authHeader, deps);
     const path = validateRepositoryPath(input.body?.path, uid);
 
-    if (input.subpath === 'read') {
+    if (input.route === 'read') {
       const result = await deps.storage.read(path);
       if (!result.exists) return errorResult(404, 'file_not_found', 'File non trovato.');
       return { status: 200, body: { path, content: result.content ?? '', encoding: 'utf-8' } };
     }
-    if (input.subpath === 'write') {
+    if (input.route === 'write') {
       const buf = validateContent(input.body?.content);
       await deps.storage.write(path, buf);
       return { status: 200, body: { path, bytes: buf.byteLength } };
     }
-    if (input.subpath === 'delete') {
-      const existed = await deps.storage.delete(path);
-      return { status: 200, body: { path, deleted: existed } };
-    }
-    return errorResult(404, 'not_found', 'Endpoint non trovato.');
+    // input.route === 'delete'
+    const existed = await deps.storage.delete(path);
+    return { status: 200, body: { path, deleted: existed } };
   } catch (err) {
     if (err instanceof GatewayError) {
       return errorResult(err.status, err.code, err.message);
