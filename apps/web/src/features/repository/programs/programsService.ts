@@ -22,6 +22,8 @@ import type {
   ProgrammaMeta,
   UdaDoc,
 } from '../../../types/firestore.js';
+import { composeMarkdownWithFrontMatter } from '../validation/frontMatter.js';
+import { deleteFile, writeText } from '../gateway/repositoryGatewayClient.js';
 
 export type ProgramItem = { id: string } & ProgramDoc;
 export type UdaItem = { id: string } & UdaDoc;
@@ -85,6 +87,100 @@ export async function createProgram(
     timestamp: serverTimestamp(),
   });
   return ref.id;
+}
+
+export type InitializedProgram = {
+  programId: string;
+  importId: string;
+  annoScolastico: string;
+};
+
+function normalizeSchoolYear(value: string): string {
+  const year = value.trim();
+  const match = /^(\d{4})\/(\d{4})$/.exec(year);
+  if (!match || Number(match[2]) !== Number(match[1]) + 1) {
+    throw new Error('Anno scolastico non valido. Usa il formato AAAA/AAAA.');
+  }
+  return year;
+}
+
+/**
+ * Creates a course that is immediately usable by the Repository Editor.
+ * The canonical `programma.md` is written through SGW first, then program,
+ * empty committed import and audit are created atomically in one Firestore
+ * batch. If Firestore fails, the just-created file is removed best-effort.
+ */
+export async function createInitializedProgram(
+  title: string,
+  annoScolastico: string,
+  ownerUid: string,
+  db: Firestore,
+): Promise<InitializedProgram> {
+  const cleanTitle = title.trim();
+  if (!cleanTitle) throw new Error('Il titolo del corso è obbligatorio.');
+  const cleanYear = normalizeSchoolYear(annoScolastico);
+
+  const programRef = doc(collection(db, 'programs'));
+  const programId = programRef.id;
+  const importId = crypto.randomUUID();
+  const importRef = doc(db, 'programs', programId, 'imports', importId);
+  const storagePath = `repository/${ownerUid}/imports/${importId}/programma.md`;
+  const programmaMeta: ProgrammaMeta = {
+    annoScolastico: cleanYear,
+    docente: null,
+    materia: null,
+    classe: null,
+    descrizione: null,
+  };
+  const markdown = composeMarkdownWithFrontMatter(
+    { titolo: cleanTitle, anno_scolastico: cleanYear },
+    '',
+  );
+
+  try {
+    await writeText(storagePath, markdown);
+  } catch {
+    throw new Error('Impossibile inizializzare il file programma.md. Riprova.');
+  }
+
+  try {
+    const batch = writeBatch(db);
+    batch.set(programRef, {
+      ownerUid,
+      title: cleanTitle,
+      activeImportId: importId,
+      classIds: [],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    batch.set(importRef, {
+      ownerUid,
+      programId,
+      importId,
+      programmaTitle: cleanTitle,
+      status: 'committed',
+      importedAt: serverTimestamp(),
+      udaCount: 0,
+      lessonCount: 0,
+      questionCount: 0,
+      poolIssues: [],
+      programmaMeta,
+    });
+    batch.set(doc(collection(db, 'auditEvents')), {
+      actorUid: ownerUid,
+      action: 'program.created',
+      targetId: programId,
+      outcome: 'success',
+      reason: null,
+      timestamp: serverTimestamp(),
+    });
+    await batch.commit();
+  } catch {
+    await deleteFile(storagePath).catch(() => undefined);
+    throw new Error('Impossibile completare la creazione del corso. Riprova.');
+  }
+
+  return { programId, importId, annoScolastico: cleanYear };
 }
 
 /**

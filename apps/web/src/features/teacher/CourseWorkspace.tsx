@@ -1973,6 +1973,11 @@ function CourseOverview({
             </p>
           )}
           <table className={styles.dataTable}>
+            <colgroup>
+              <col className={styles.udaTitleColumn} />
+              <col className={styles.progressColumn} />
+              {organizing && <col className={styles.orderColumn} />}
+            </colgroup>
             <thead>
               <tr>
                 <th>UDA</th>
@@ -2078,6 +2083,12 @@ function UdaOverview({
             </p>
           )}
           <table className={styles.dataTable}>
+            <colgroup>
+              <col className={styles.lessonTitleColumn} />
+              <col className={styles.lessonStatusColumn} />
+              <col className={styles.questionsColumn} />
+              {organizing && <col className={styles.orderColumn} />}
+            </colgroup>
             <thead>
               <tr>
                 <th>Lezione</th>
@@ -2215,7 +2226,19 @@ function LessonDetail({
   return (
     <div>
       <div className={styles.lessonHead}>
-        <h3 className={styles.sectionTitle}>{title}</h3>
+        <h3 className={`${styles.sectionTitle} ${styles.lessonMainTitle}`}>
+          {title}
+          {lesson.completed && (
+            <span
+              className={styles.lessonMainCompleted}
+              role="img"
+              aria-label="Lezione svolta"
+              title="Lezione svolta"
+            >
+              <IconFileCheck size={17} />
+            </span>
+          )}
+        </h3>
         {metadata.sottotitolo && <p className={styles.lessonSubtitle}>{metadata.sottotitolo}</p>}
       </div>
 

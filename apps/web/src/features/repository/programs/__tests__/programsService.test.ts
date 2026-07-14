@@ -9,6 +9,7 @@ const mockDeleteDoc = vi.fn();
 const mockSetDoc = vi.fn();
 const mockUpdateDoc = vi.fn();
 const mockBatchDelete = vi.fn();
+const mockBatchSet = vi.fn();
 const mockBatchCommit = vi.fn();
 const mockWriteBatch = vi.fn();
 
@@ -44,8 +45,17 @@ vi.mock('firebase/storage', () => ({
   deleteObject: (...args: unknown[]) => mockDeleteObject(...args),
 }));
 
+const mockWriteText = vi.fn();
+const mockDeleteFile = vi.fn();
+
+vi.mock('../../gateway/repositoryGatewayClient.js', () => ({
+  writeText: (...args: unknown[]) => mockWriteText(...args),
+  deleteFile: (...args: unknown[]) => mockDeleteFile(...args),
+}));
+
 import {
   createProgram,
+  createInitializedProgram,
   deleteProgram,
   listLessons,
   listPrograms,
@@ -69,7 +79,13 @@ beforeEach(() => {
   mockCollection.mockImplementation(pathStub);
   mockDoc.mockImplementation(pathStub);
   mockBatchCommit.mockResolvedValue(undefined);
-  mockWriteBatch.mockReturnValue({ delete: mockBatchDelete, commit: mockBatchCommit });
+  mockWriteBatch.mockReturnValue({
+    set: mockBatchSet,
+    delete: mockBatchDelete,
+    commit: mockBatchCommit,
+  });
+  mockWriteText.mockResolvedValue(undefined);
+  mockDeleteFile.mockResolvedValue(undefined);
   mockUpdateDoc.mockResolvedValue(undefined);
   mockSetDoc.mockResolvedValue(undefined);
 });
@@ -108,6 +124,67 @@ describe('createProgram', () => {
     expect(id).toBe('new-program-id');
     const [, data] = mockSetDoc.mock.calls[0];
     expect(data.classIds).toEqual([]);
+  });
+});
+
+describe('createInitializedProgram', () => {
+  it('writes programma.md and atomically creates an immediately usable empty import', async () => {
+    mockDoc.mockReturnValueOnce({ id: 'new-program-id' }).mockImplementation(pathStub);
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('11111111-1111-4111-8111-111111111111');
+
+    const result = await createInitializedProgram(
+      '  Nuovo corso  ',
+      '2025/2026',
+      'owner-uid',
+      fakeDb,
+    );
+
+    expect(result).toEqual({
+      programId: 'new-program-id',
+      importId: '11111111-1111-4111-8111-111111111111',
+      annoScolastico: '2025/2026',
+    });
+    expect(mockWriteText).toHaveBeenCalledWith(
+      'repository/owner-uid/imports/11111111-1111-4111-8111-111111111111/programma.md',
+      expect.stringContaining('anno_scolastico: 2025/2026'),
+    );
+    expect(mockBatchSet).toHaveBeenCalledTimes(3);
+    expect(mockBatchSet.mock.calls[0]?.[1]).toMatchObject({
+      ownerUid: 'owner-uid',
+      title: 'Nuovo corso',
+      activeImportId: '11111111-1111-4111-8111-111111111111',
+      classIds: [],
+    });
+    expect(mockBatchSet.mock.calls[1]?.[1]).toMatchObject({
+      status: 'committed',
+      udaCount: 0,
+      lessonCount: 0,
+      questionCount: 0,
+      programmaMeta: { annoScolastico: '2025/2026' },
+    });
+    expect(mockBatchCommit).toHaveBeenCalledOnce();
+  });
+
+  it('removes programma.md best-effort when the Firestore batch fails', async () => {
+    mockDoc.mockReturnValueOnce({ id: 'new-program-id' }).mockImplementation(pathStub);
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('22222222-2222-4222-8222-222222222222');
+    mockBatchCommit.mockRejectedValueOnce(new Error('commit failed'));
+
+    await expect(
+      createInitializedProgram('Nuovo corso', '2025/2026', 'owner-uid', fakeDb),
+    ).rejects.toThrow('Impossibile completare la creazione del corso');
+
+    expect(mockDeleteFile).toHaveBeenCalledWith(
+      'repository/owner-uid/imports/22222222-2222-4222-8222-222222222222/programma.md',
+    );
+  });
+
+  it('rejects a non-consecutive school year before any write', async () => {
+    await expect(
+      createInitializedProgram('Nuovo corso', '2025/2027', 'owner-uid', fakeDb),
+    ).rejects.toThrow('Anno scolastico non valido');
+    expect(mockWriteText).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
   });
 });
 

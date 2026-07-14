@@ -96,6 +96,83 @@ export function TitleDialog({
   );
 }
 
+export function NewCourseDialog({
+  initialYear,
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  initialYear: string;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: (title: string, annoScolastico: string) => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [year, setYear] = useState(initialYear);
+  const yearMatch = /^(\d{4})\/(\d{4})$/.exec(year.trim());
+  const yearIsValid = yearMatch != null && Number(yearMatch[2]) === Number(yearMatch[1]) + 1;
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const cleanTitle = title.trim();
+    const cleanYear = year.trim();
+    const match = /^(\d{4})\/(\d{4})$/.exec(cleanYear);
+    if (!cleanTitle || !match || Number(match[2]) !== Number(match[1]) + 1) return;
+    onConfirm(cleanTitle, cleanYear);
+  }
+
+  return (
+    <DialogShell title="Nuovo corso" onCancel={onCancel}>
+      <form onSubmit={submit} className={styles.dialogForm}>
+        <label className={styles.dialogLabel}>
+          Titolo del corso
+          <input
+            type="text"
+            autoFocus
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            aria-label="Titolo del corso"
+          />
+        </label>
+        <label className={styles.dialogLabel}>
+          Anno scolastico
+          <input
+            type="text"
+            inputMode="numeric"
+            placeholder="2025/2026"
+            value={year}
+            onChange={(e) => setYear(e.target.value)}
+            aria-label="Anno scolastico"
+            aria-describedby="new-course-year-hint"
+          />
+        </label>
+        <p id="new-course-year-hint" className={styles.dialogHint}>
+          Formato AAAA/AAAA, per esempio 2025/2026.
+        </p>
+        {error && (
+          <p role="alert" className="text-error">
+            {error}
+          </p>
+        )}
+        <div className={styles.dialogActions}>
+          <button type="button" onClick={onCancel} disabled={busy}>
+            Annulla
+          </button>
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={busy || title.trim() === '' || !yearIsValid}
+          >
+            {busy ? 'Creazione…' : 'Crea'}
+          </button>
+        </div>
+      </form>
+    </DialogShell>
+  );
+}
+
 export function ImportDialog({
   busy,
   error,

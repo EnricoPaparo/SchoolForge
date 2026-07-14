@@ -1055,7 +1055,7 @@ export function VerificationsView() {
                     value={newProgramId}
                     onChange={(e) => setNewProgramId(e.target.value)}
                   >
-                    <option value="">— Seleziona corso —</option>
+                    <option value="">Corso</option>
                     {programs.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.title}
@@ -1092,9 +1092,10 @@ export function VerificationsView() {
                     type="submit"
                     form="new-verification-form"
                     className="btn-success"
+                    aria-label="Crea verifica"
                     disabled={creating || !newTitle.trim() || !newProgramId}
                   >
-                    {creating ? 'Creazione…' : 'Crea verifica'}
+                    {creating ? 'Creazione…' : 'Crea'}
                   </button>
                 </td>
               </tr>
@@ -1314,8 +1315,10 @@ export function VerificationsView() {
                         </button>
                         {v.status !== 'draft' && (
                           <span className={styles.verTimestamps}>
-                            Attivata: {formatTimestamp(v.activatedAt)}
-                            {v.status === 'closed' && <> · Chiusa: {formatTimestamp(v.closedAt)}</>}
+                            <span>Attivata: {formatTimestamp(v.activatedAt)}</span>
+                            {v.status === 'closed' && (
+                              <span>Chiusa: {formatTimestamp(v.closedAt)}</span>
+                            )}
                           </span>
                         )}
                       </td>
