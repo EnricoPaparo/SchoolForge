@@ -13,8 +13,6 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import type { DocumentReference, Firestore } from 'firebase/firestore';
-import { deleteObject, listAll, ref } from 'firebase/storage';
-import type { FirebaseStorage } from 'firebase/storage';
 import type {
   ImportDoc,
   LessonDoc,
@@ -23,7 +21,7 @@ import type {
   UdaDoc,
 } from '../../../types/firestore.js';
 import { composeMarkdownWithFrontMatter } from '../validation/frontMatter.js';
-import { deleteFile, writeText } from '../gateway/repositoryGatewayClient.js';
+import { deleteFile, deleteImportPrefix, writeText } from '../gateway/repositoryGatewayClient.js';
 
 export type ProgramItem = { id: string } & ProgramDoc;
 export type UdaItem = { id: string } & UdaDoc;
@@ -328,6 +326,7 @@ export const PROGRAM_DELETE_BLOCKED_MESSAGE =
   'Impossibile eliminare il corso: esistono verifiche associate. Elimina prima le verifiche collegate.';
 
 const BATCH_DELETE_CHUNK_SIZE = 400;
+const PREFIX_DELETE_CONCURRENCY = 3;
 
 async function deleteDocsInBatches(db: Firestore, refs: DocumentReference[]): Promise<void> {
   for (let i = 0; i < refs.length; i += BATCH_DELETE_CHUNK_SIZE) {
@@ -335,15 +334,6 @@ async function deleteDocsInBatches(db: Firestore, refs: DocumentReference[]): Pr
     refs.slice(i, i + BATCH_DELETE_CHUNK_SIZE).forEach((docRef) => batch.delete(docRef));
     await batch.commit();
   }
-}
-
-/** Recursively deletes every file under a Storage path prefix. */
-async function deleteStoragePrefix(storage: FirebaseStorage, path: string): Promise<void> {
-  const listing = await listAll(ref(storage, path));
-  await Promise.all(listing.items.map((item) => deleteObject(item)));
-  await Promise.all(
-    listing.prefixes.map((prefix) => deleteStoragePrefix(storage, prefix.fullPath)),
-  );
 }
 
 /**
@@ -359,7 +349,6 @@ export async function deleteProgram(
   programId: string,
   ownerUid: string,
   db: Firestore,
-  storage: FirebaseStorage,
 ): Promise<void> {
   // A targeted, server-side existence check (PERF-SEC-01B-3): only asks
   // "does at least one verification reference this program?" via
@@ -375,32 +364,45 @@ export async function deleteProgram(
     throw new Error(PROGRAM_DELETE_BLOCKED_MESSAGE);
   }
 
-  const importsSnap = await getDocs(collection(db, 'programs', programId, 'imports'));
+  const [importsSnap, publicLessonsSnap] = await Promise.all([
+    getDocs(collection(db, 'programs', programId, 'imports')),
+    getDocs(query(collection(db, 'publicLessons'), where('programId', '==', programId))),
+  ]);
 
-  for (const importDoc of importsSnap.docs) {
-    const importId = importDoc.id;
-    const importBasePath = `programs/${programId}/imports/${importId}`;
-    const [udasSnap, lessonsSnap, questionIndexSnap] = await Promise.all([
-      getDocs(collection(db, importBasePath, 'udas')),
-      getDocs(collection(db, importBasePath, 'lessons')),
-      getDocs(collection(db, importBasePath, 'questionIndex')),
-    ]);
+  const imports = await Promise.all(
+    importsSnap.docs.map(async (importDoc) => {
+      const importId = importDoc.id;
+      const importBasePath = `programs/${programId}/imports/${importId}`;
+      const [udasSnap, lessonsSnap, questionIndexSnap] = await Promise.all([
+        getDocs(collection(db, importBasePath, 'udas')),
+        getDocs(collection(db, importBasePath, 'lessons')),
+        getDocs(collection(db, importBasePath, 'questionIndex')),
+      ]);
+      return { importId, importBasePath, udasSnap, lessonsSnap, questionIndexSnap };
+    }),
+  );
 
+  // Una sola richiesta gateway per import: niente listAll/deleteObject ricorsivi
+  // dal browser e nessun retry Storage SDK di ~120 s su Brave.
+  for (let i = 0; i < imports.length; i += PREFIX_DELETE_CONCURRENCY) {
+    await Promise.all(
+      imports
+        .slice(i, i + PREFIX_DELETE_CONCURRENCY)
+        .map(({ importId }) => deleteImportPrefix(`repository/${ownerUid}/imports/${importId}`)),
+    );
+  }
+
+  for (const { importBasePath, udasSnap, lessonsSnap, questionIndexSnap } of imports) {
     await deleteDocsInBatches(db, [
       ...udasSnap.docs.map((d) => d.ref),
       ...lessonsSnap.docs.map((d) => d.ref),
       ...questionIndexSnap.docs.map((d) => d.ref),
       doc(db, importBasePath),
     ]);
-
-    await deleteStoragePrefix(storage, `repository/${ownerUid}/imports/${importId}`);
   }
 
   // Never leave a student-visible publicLessons projection pointing at a
   // program that no longer exists.
-  const publicLessonsSnap = await getDocs(
-    query(collection(db, 'publicLessons'), where('programId', '==', programId)),
-  );
   await deleteDocsInBatches(
     db,
     publicLessonsSnap.docs.map((d) => d.ref),

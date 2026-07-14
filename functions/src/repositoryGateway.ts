@@ -16,7 +16,7 @@ import {
  *
  * Wiring runtime: monta la logica pura di `repositoryGatewayCore.ts` sull'Admin
  * SDK e su `onRequest`. Una sola Function dietro il rewrite Hosting
- * `/api/repository/**`, rotte `read`/`write`/`delete`. L'Admin SDK **bypassa le
+ * `/api/repository/**`, rotte `read`/`write`/`delete`/`delete-prefix`. L'Admin SDK **bypassa le
  * Storage Rules**: l'autorizzazione/validazione equivalente o più stretta è nel
  * core. Questo è solo il codice: il deploy DEV e lo smoke Brave restano da fare.
  */

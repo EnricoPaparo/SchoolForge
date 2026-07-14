@@ -234,7 +234,7 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
     setBusy(true);
     setDialogError(null);
     try {
-      await deleteProgram(programId, ownerUid, db, storage);
+      await deleteProgram(programId, ownerUid, db);
       setDialog({ kind: 'none' });
       await load();
     } catch (err) {

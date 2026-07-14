@@ -8,6 +8,7 @@ import {
   isStorageNotFound,
   parseRoute,
   validateContent,
+  validateImportPrefix,
   validateRepositoryPath,
   GatewayError,
   MAX_FILE_BYTES,
@@ -34,6 +35,11 @@ function memoryStorage(
       const existed = files.has(path);
       files.delete(path);
       return existed;
+    },
+    deletePrefix: async (path) => {
+      for (const key of [...files.keys()]) {
+        if (key.startsWith(`${path}/`)) files.delete(key);
+      }
     },
   };
 }
@@ -63,10 +69,11 @@ function req(over: Partial<Parameters<typeof handleGateway>[0]> = {}) {
 }
 
 describe('parseRoute (routing rigoroso)', () => {
-  it('accepts exactly /api/repository/{read,write,delete}', () => {
+  it('accepts exactly the four documented repository routes', () => {
     expect(parseRoute('/api/repository/read')).toBe('read');
     expect(parseRoute('/api/repository/write')).toBe('write');
     expect(parseRoute('/api/repository/delete')).toBe('delete');
+    expect(parseRoute('/api/repository/delete-prefix')).toBe('delete-prefix');
     expect(parseRoute('/api/repository/read/')).toBe('read'); // single trailing slash tolerated
   });
 
@@ -82,6 +89,30 @@ describe('parseRoute (routing rigoroso)', () => {
     ]) {
       expect(parseRoute(p)).toBeNull();
     }
+  });
+});
+
+describe('validateImportPrefix (root import rigorosa)', () => {
+  const valid = `repository/${UID}/imports/imp-1`;
+
+  it('accepts only the exact authenticated import root', () => {
+    expect(validateImportPrefix(valid, UID)).toBe(valid);
+  });
+
+  it.each([
+    `repository/${UID}/imports`,
+    `repository/${UID}/imports/imp-1/uda-01`,
+    `repository/${UID}/imports/imp-1/`,
+    `repository/${UID}/imports/../imp-1`,
+    `repository/${UID}/other/imp-1`,
+  ])('rejects an unsafe or non-exact prefix: %s', (path) => {
+    expect(() => validateImportPrefix(path, UID)).toThrow(GatewayError);
+  });
+
+  it('rejects another owner with not_owner', () => {
+    expect(() => validateImportPrefix('repository/other/imports/imp-1', UID)).toThrowError(
+      expect.objectContaining({ code: 'not_owner' }),
+    );
   });
 });
 
@@ -191,6 +222,10 @@ describe('createStoragePort (una sola operazione, 404 mirato)', () => {
     const deletes: string[] = [];
     const notFound = () => Object.assign(new Error('Not Found'), { code: 404 });
     const bucket: BucketLike = {
+      deleteFiles: async ({ prefix }) => {
+        deletes.push(prefix);
+        return undefined;
+      },
       file: (path: string) => ({
         download: async () => {
           downloads.push(path);
@@ -240,6 +275,13 @@ describe('createStoragePort (una sola operazione, 404 mirato)', () => {
     );
   });
 
+  it('deletePrefix: delegates once with a trailing slash', async () => {
+    const { bucket, deletes } = mockBucket({});
+    const port = createStoragePort(bucket);
+    await port.deletePrefix(`repository/${UID}/imports/imp-1`);
+    expect(deletes).toEqual([`repository/${UID}/imports/imp-1/`]);
+  });
+
   it('isStorageNotFound only matches code 404', () => {
     expect(isStorageNotFound({ code: 404 })).toBe(true);
     expect(isStorageNotFound({ code: 500 })).toBe(false);
@@ -270,7 +312,7 @@ describe('authorizeOwner', () => {
 });
 
 describe('handleGateway', () => {
-  it('read/write/delete happy paths', async () => {
+  it('read/write/delete/delete-prefix happy paths', async () => {
     const d = deps();
     const read = await handleGateway(req(), d);
     expect(read.status).toBe(200);
@@ -288,6 +330,14 @@ describe('handleGateway', () => {
     expect(del.body).toMatchObject({ deleted: true });
     const del2 = await handleGateway(req({ route: 'delete', body: { path: OK_PATH } }), d);
     expect(del2.body).toMatchObject({ deleted: false });
+
+    const importRoot = `repository/${UID}/imports/imp-1`;
+    const prefixDelete = await handleGateway(
+      req({ route: 'delete-prefix', body: { path: importRoot } }),
+      d,
+    );
+    expect(prefixDelete).toMatchObject({ status: 200, body: { path: importRoot, deleted: true } });
+    expect((d.storage as ReturnType<typeof memoryStorage>).files.size).toBe(0);
   });
 
   it('read: 404 file_not_found for an absent file', async () => {

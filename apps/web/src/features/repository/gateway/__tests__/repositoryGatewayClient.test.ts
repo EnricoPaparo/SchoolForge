@@ -14,6 +14,7 @@ let mockCurrentUser: { getIdToken: () => Promise<string> } | null;
 import {
   GatewayError,
   deleteFile,
+  deleteImportPrefix,
   isFileNotFound,
   readText,
   writeText,
@@ -52,13 +53,15 @@ describe('repositoryGatewayClient adapter', () => {
     expect(JSON.parse(init.body)).toEqual({ path: 'repository/uid/imports/imp/x.md' });
   });
 
-  it('writeText and deleteFile hit their endpoints and resolve on OK', async () => {
+  it('writeText, deleteFile and deleteImportPrefix hit their endpoints', async () => {
     const fetchSpy = fetchOk({ ok: true });
     vi.stubGlobal('fetch', fetchSpy);
     await expect(writeText('repository/uid/imports/imp/x.md', 'body')).resolves.toBeUndefined();
     await expect(deleteFile('repository/uid/imports/imp/x.md')).resolves.toBeUndefined();
+    await expect(deleteImportPrefix('repository/uid/imports/imp')).resolves.toBeUndefined();
     expect(fetchSpy.mock.calls[0][0]).toBe('/api/repository/write');
     expect(fetchSpy.mock.calls[1][0]).toBe('/api/repository/delete');
+    expect(fetchSpy.mock.calls[2][0]).toBe('/api/repository/delete-prefix');
   });
 
   it('translates a structured gateway error into a GatewayError (code + status)', async () => {

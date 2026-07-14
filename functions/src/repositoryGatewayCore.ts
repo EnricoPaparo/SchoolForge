@@ -21,10 +21,11 @@ export class GatewayError extends Error {
   }
 }
 
-export type Route = 'read' | 'write' | 'delete';
+export type Route = 'read' | 'write' | 'delete' | 'delete-prefix';
 
 /**
- * Routing rigoroso: accetta **solo** `/api/repository/{read|write|delete}`
+ * Routing rigoroso: accetta **solo**
+ * `/api/repository/{read|write|delete|delete-prefix}`
  * (con un eventuale singolo slash finale tollerato). Qualsiasi prefisso,
  * suffisso o segmento aggiuntivo → `null` (l'handler risponde 404 senza toccare
  * Storage). Rifiuta `/repository/read`, `/evil/repository/read`,
@@ -33,7 +34,7 @@ export type Route = 'read' | 'write' | 'delete';
 export function parseRoute(requestPath: string): Route | null {
   if (typeof requestPath !== 'string') return null;
   const normalized = requestPath.endsWith('/') ? requestPath.slice(0, -1) : requestPath;
-  const match = /^\/api\/repository\/(read|write|delete)$/.exec(normalized);
+  const match = /^\/api\/repository\/(read|write|delete|delete-prefix)$/.exec(normalized);
   return match ? (match[1] as Route) : null;
 }
 
@@ -120,6 +121,35 @@ export function validateRepositoryPath(rawPath: unknown, uid: string): string {
   return path;
 }
 
+/**
+ * Valida il solo prefisso eliminabile in blocco: la root esatta di un import.
+ * Non accetta file, sottocartelle o prefissi più ampi, così una chiamata non
+ * può cancellare altri import o l'intero repository del docente.
+ */
+export function validateImportPrefix(rawPath: unknown, uid: string): string {
+  if (typeof rawPath !== 'string' || rawPath.length === 0) {
+    throw new GatewayError('invalid_path', 'Prefisso mancante o non valido.', 400);
+  }
+  const segments = rawPath.split('/');
+  if (
+    segments.length !== 4 ||
+    segments[0] !== 'repository' ||
+    segments[2] !== 'imports' ||
+    !OWNER_ID_RE.test(segments[1] ?? '') ||
+    !OWNER_ID_RE.test(segments[3] ?? '')
+  ) {
+    throw new GatewayError(
+      'invalid_path',
+      'Il prefisso deve essere repository/{uid}/imports/{importId}.',
+      400,
+    );
+  }
+  if (segments[1] !== uid) {
+    throw new GatewayError('not_owner', 'Il prefisso non appartiene all’utente autenticato.', 403);
+  }
+  return rawPath;
+}
+
 /** True se la stringa contiene surrogati UTF-16 isolati (UTF-8 non codificabile). */
 export function hasLoneSurrogate(text: string): boolean {
   for (let i = 0; i < text.length; i++) {
@@ -196,6 +226,8 @@ export type StoragePort = {
   write: (path: string, buf: Buffer) => Promise<void>;
   /** Ritorna `true` se il file esisteva (per la risposta idempotente). */
   delete: (path: string) => Promise<boolean>;
+  /** Elimina tutti gli oggetti sotto la root esatta di un import. */
+  deletePrefix: (path: string) => Promise<void>;
 };
 
 /** Riconosce un errore Google Cloud Storage "oggetto non trovato" (HTTP 404). */
@@ -215,6 +247,7 @@ export interface FileLike {
 }
 export interface BucketLike {
   file(path: string): FileLike;
+  deleteFiles(options: { prefix: string }): Promise<unknown>;
 }
 
 /**
@@ -262,6 +295,9 @@ export function createStoragePort(bucket: BucketLike): StoragePort {
         throw err;
       }
     },
+    deletePrefix: async (path) => {
+      await bucket.deleteFiles({ prefix: `${path}/` });
+    },
   };
 }
 
@@ -304,7 +340,10 @@ export async function handleGateway(
       );
     }
     const uid = await authorizeOwner(input.authHeader, deps);
-    const path = validateRepositoryPath(input.body?.path, uid);
+    const path =
+      input.route === 'delete-prefix'
+        ? validateImportPrefix(input.body?.path, uid)
+        : validateRepositoryPath(input.body?.path, uid);
 
     if (input.route === 'read') {
       const result = await deps.storage.read(path);
@@ -315,6 +354,10 @@ export async function handleGateway(
       const buf = validateContent(input.body?.content);
       await deps.storage.write(path, buf);
       return { status: 200, body: { path, bytes: buf.byteLength } };
+    }
+    if (input.route === 'delete-prefix') {
+      await deps.storage.deletePrefix(path);
+      return { status: 200, body: { path, deleted: true } };
     }
     // input.route === 'delete'
     const existed = await deps.storage.delete(path);
