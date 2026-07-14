@@ -535,6 +535,9 @@ describe('completeCorrection', () => {
     const [, update] = mockBatchUpdate.mock.calls[0]!;
     expect(update.status).toBe('completed');
     expect(update.completedAt).toBeDefined();
+    const [, submissionUpdate] = mockBatchUpdate.mock.calls[1]!;
+    expect(submissionUpdate).not.toHaveProperty('correctionSummary');
+    expect(submissionUpdate).not.toHaveProperty('correctionSummaryUpdatedAt');
   });
 });
 

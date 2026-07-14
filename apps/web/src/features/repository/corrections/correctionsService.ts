@@ -399,7 +399,6 @@ export async function completeCorrection(submissionId: string, db: Firestore): P
   });
   mirrorCorrectionProgress(batch, submissionId, db, {
     status: 'completed',
-    summary: correctionSummary(correction),
   });
   await batch.commit();
 }
