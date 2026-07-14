@@ -22,7 +22,7 @@ Il flusso completo è operativo e testato (suite automatica estesa + smoke test 
 | Repository Editor (RE) | ✅ funzionante — crea/modifica/riordina/elimina (con blocco protetto) UDA e lezioni, export ZIP coerente e reimportabile |
 | Question Editor (QE) — sezione "Domande" | ✅ funzionante — crea/modifica/elimina pool e domande Markdown-first, questionIndex coerente, picker aggiornato |
 | Portale digitale con consegna online (M3-full) | ✅ completato — avvio online, bozza, consegna immutabile, modalità verifica, monitor docente; Gate G5 superato |
-| Correzione e export risultati (M4) | 🚧 in corso — correzione/restituzione, ciclo di vita, Registro Correzioni ed export CSV (M4-00→M4-03A) completati; PDF/Markdown e Gate G6 ancora da completare |
+| Correzione e export risultati (M4) | 🚧 in corso — correzione/restituzione, ciclo di vita, Registro Correzioni, export CSV ed export PDF (M4-00→M4-03B) completati; Markdown rinviato, M4-04 e Gate G6 ancora da completare |
 | Correzione AI (M5) | ❌ fuori scope V1 |
 
 **Stato:** Repository Editor (RE-00 → RE-07), Question Editor (QE-00 → QE-05) e M3-full sono completi e stabili per uso DEV/manuale; Gate G5 superato per M3-full. Vedi `documentazione/repository-editor-roadmap.md`, `documentazione/question-editor-roadmap.md`, `documentazione/m3-full-roadmap.md` e `documentazione/evidenze/g5-m3-full-checklist-finale.md`.
@@ -74,12 +74,12 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 4. **RE — Repository Editor** ✅: creare/modificare/eliminare/riordinare UDA e lezioni, inclusi front matter e corpo Markdown, senza AI e senza CMS complesso; export ZIP coerente e reimportabile.
 5. **QE — Question Editor (sezione "Domande")** ✅: crea, modifica ed elimina domande e pool Markdown-first (`.pool.md`) direttamente dal portale, aggiornando `questionIndex` su Firestore senza reimport ZIP. Vedi [question-editor-roadmap.md](documentazione/question-editor-roadmap.md).
 6. **M3-full — Verifiche online e consegne studenti** ✅: avvio online, bozza, consegna immutabile, codice consegna e monitor docente; sessione obbligatoria, modalità verifica per classe e protezione effettiva delle lezioni. Gate G5 superato. Vedi [m3-full-roadmap.md](documentazione/m3-full-roadmap.md) e [evidenze/g5-m3-full-checklist-finale.md](documentazione/evidenze/g5-m3-full-checklist-finale.md).
-7. **M4 — Correzione ed export** 🚧 *(dipende da M3-full, completato)*: correzione manuale, restituzione studente, ciclo di vita, Registro Correzioni ed export CSV (M4-00→M4-03A) completati. Export PDF/Markdown e Gate G6 restano da completare.
+7. **M4 — Correzione ed export** 🚧 *(dipende da M3-full, completato)*: correzione manuale, restituzione studente, ciclo di vita, Registro Correzioni, export CSV ed export PDF (M4-00→M4-03B) completati (Markdown rinviato). M4-04 e Gate G6 restano da completare.
 8. **M5 — Correzione AI** *(fuori scope V1 / pianificato per V2)*: proposte assistite, approvazione massiva, correzione automatica opt-in.
 9. **Didattica (DUX)** ✅ *(DUX-00→10A implementati; Gate GDUX pendente)*: workspace docente unico che ha assorbito Corsi, Lezioni e Domande riusando service e dati RE/QE; include libreria corsi, editor contenuti/pool, organizzazione, filtri e UI responsive. Vedi [didattica-ux-roadmap.md](documentazione/didattica-ux-roadmap.md).
 10. **Didattica studente (SDUX)** 🚧: SDUX-01 implementa libreria corsi e consultazione corso/UDA/lezione in sola lettura, senza componenti/service docente, pool o Storage; SDUX-02 chiuderà smoke DEV e Gate Modalità verifica.
 
-V1 comprende M1, M2, M3-lite, RE, QE e M3-full (tutti implementati, Gate G5 superato per M3-full). M4 è in corso: correzione/restituzione, ciclo di vita, Registro Correzioni ed export CSV (M4-00→M4-03A) completati; PDF/Markdown e Gate G6 restano da completare. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2. Didattica DUX-00→10A è implementata; resta il Gate GDUX.
+V1 comprende M1, M2, M3-lite, RE, QE e M3-full (tutti implementati, Gate G5 superato per M3-full). M4 è in corso: correzione/restituzione, ciclo di vita, Registro Correzioni, export CSV ed export PDF (M4-00→M4-03B) completati (Markdown rinviato); M4-04 e Gate G6 restano da completare. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 è rinviato alla V2. Didattica DUX-00→10A è implementata; resta il Gate GDUX.
 
 ## Architettura in sintesi
 

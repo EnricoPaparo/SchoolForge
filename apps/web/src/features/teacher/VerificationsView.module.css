@@ -356,6 +356,15 @@
 .monitorHeader .createTitle {
   margin: 0;
 }
+/* Esporta CSV + Esporta PDF wrap together, tidily, on a narrow viewport. */
+.monitorActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.monitorActions button {
+  flex: 0 0 auto;
+}
 
 .sortHeaderButton {
   appearance: none;

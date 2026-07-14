@@ -23,6 +23,7 @@ const mockListStudents = vi.fn();
 const mockWatchSubmissions = vi.fn();
 const mockDeleteSubmissionData = vi.fn();
 const mockDownloadCorrectionRegisterCsv = vi.fn();
+const mockDownloadCorrectionRegisterPdf = vi.fn();
 
 const mockLoadSelectedQuestions = vi.fn();
 const mockDownloadStudentPdf = vi.fn();
@@ -73,6 +74,9 @@ vi.mock('../../repository/corrections/correctionRegisterExport.js', async (impor
       mockDownloadCorrectionRegisterCsv(...args),
   };
 });
+vi.mock('../../repository/corrections/correctionRegisterPdf.js', () => ({
+  downloadCorrectionRegisterPdf: (...args: unknown[]) => mockDownloadCorrectionRegisterPdf(...args),
+}));
 vi.mock('../../repository/classes/classesService.js', () => ({
   listClasses: (...args: unknown[]) => mockListClasses(...args),
 }));
@@ -2162,6 +2166,77 @@ describe('VerificationsView — correction register CSV (M4-03A)', () => {
       'Impossibile esportare il Registro Correzioni. Riprova.',
     );
     expect(within(region).getByRole('table')).toBeTruthy();
+  });
+
+  // ── PDF export (M4-03B) ──────────────────────────────────────────────
+  it('keeps Esporta PDF disabled while loading, then enables it for the visible rows', async () => {
+    let deliver!: (items: unknown[]) => void;
+    const region = await openMonitor((callback) => {
+      deliver = callback;
+    });
+    const pdfButton = within(region).getByRole('button', { name: 'Esporta PDF' });
+    expect((pdfButton as HTMLButtonElement).disabled).toBe(true);
+    deliver([]);
+    await waitFor(() =>
+      expect(
+        (within(region).getByRole('button', { name: 'Esporta PDF' }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+  });
+
+  it('keeps Esporta PDF disabled when there are no student rows', async () => {
+    const region = await openMonitor(() => {}, []);
+    expect(
+      (within(region).getByRole('button', { name: 'Esporta PDF' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it('enables Esporta PDF with rows and exports them in the current sort order, no new reads/listeners', async () => {
+    mockDownloadCorrectionRegisterPdf.mockResolvedValue(undefined);
+    const region = await openMonitor((callback) => callback(submissions));
+    const table = within(region).getByRole('table');
+    fireEvent.click(within(table).getByRole('button', { name: 'Ordina per punteggio crescente' }));
+    const readsBefore = mockListStudents.mock.calls.length;
+    const listenersBefore = mockWatchSubmissions.mock.calls.length;
+
+    fireEvent.click(within(region).getByRole('button', { name: 'Esporta PDF' }));
+
+    await waitFor(() => expect(mockDownloadCorrectionRegisterPdf).toHaveBeenCalledOnce());
+    const [params] = mockDownloadCorrectionRegisterPdf.mock.calls[0] as [
+      { rows: { studentName: string }[]; verificationTitle: string; className: string | null },
+    ];
+    // Rows are the sorted rows: Bruno before Anna after the ascending-score sort.
+    const names = params.rows.map((r) => r.studentName);
+    expect(names.indexOf('Bruno')).toBeLessThan(names.indexOf('Anna'));
+    expect(params.verificationTitle).toBe('Verifica Algebra');
+    expect(mockListStudents).toHaveBeenCalledTimes(readsBefore);
+    expect(mockWatchSubmissions).toHaveBeenCalledTimes(listenersBefore);
+  });
+
+  it('prevents a double click from generating the PDF twice', async () => {
+    let resolve: () => void = () => {};
+    mockDownloadCorrectionRegisterPdf.mockImplementation(
+      () => new Promise<void>((r) => (resolve = r)),
+    );
+    const region = await openMonitor((callback) => callback(submissions));
+    const pdfButton = within(region).getByRole('button', { name: /Esporta PDF|Generazione/ });
+    fireEvent.click(pdfButton);
+    fireEvent.click(pdfButton);
+    resolve();
+    await waitFor(() => expect(mockDownloadCorrectionRegisterPdf).toHaveBeenCalledOnce());
+  });
+
+  it('shows a PDF error without breaking the monitor; CSV still works', async () => {
+    mockDownloadCorrectionRegisterPdf.mockRejectedValueOnce(new Error('pdf failed'));
+    const region = await openMonitor((callback) => callback(submissions));
+    fireEvent.click(within(region).getByRole('button', { name: 'Esporta PDF' }));
+    expect((await within(region).findByRole('alert')).textContent).toBe(
+      'Impossibile generare il PDF del riepilogo. Riprova.',
+    );
+    expect(within(region).getByRole('table')).toBeTruthy();
+    // CSV export still works after a PDF failure.
+    fireEvent.click(within(region).getByRole('button', { name: 'Esporta CSV' }));
+    expect(mockDownloadCorrectionRegisterCsv).toHaveBeenCalledOnce();
   });
 });
 
