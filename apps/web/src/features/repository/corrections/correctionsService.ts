@@ -30,6 +30,7 @@ import {
   INITIAL_CORRECTION_STATUS,
   isCorrectionComplete,
   isReopenedCorrection,
+  normalizeQuestionPoints,
 } from './correctionContract.js';
 import { assertCorrectionReturnWithinLimit } from './correctionReturnSize.js';
 
@@ -42,7 +43,7 @@ import { assertCorrectionReturnWithinLimit } from './correctionReturnSize.js';
  * (D-M4-07 in `m4-correzione-ux-concept.md`), never `teacherSnapshot`,
  * which may be absent on verifications activated before the SEC-02 fix.
  */
-async function loadPublishedProjectionQuestions(
+export async function loadPublishedProjectionQuestions(
   verificationId: string,
   db: Firestore,
 ): Promise<PublicVerificationQuestion[]> {
@@ -102,17 +103,29 @@ async function loadTeacherSnapshotQuestions(
  * `status`/`ownerUid`/`verificationId`/`studentUid`) and the verification's
  * `publishedProjection` (frozen at activation).
  */
+export type OpenCorrectionResult = {
+  correction: CorrectionDoc;
+  /**
+   * The published projection questions read while creating the correction, or
+   * `null` when an existing correction was returned via the fast path (no
+   * projection read happened). Lets the workspace loader reuse this single
+   * read for legacy question text instead of reading the projection twice on
+   * the first open (Task 2.8 — no duplicate projection read per open).
+   */
+  projectionQuestions: PublicVerificationQuestion[] | null;
+};
+
 export async function openOrLoadCorrection(
   submissionId: string,
   ownerUid: string,
   db: Firestore,
-): Promise<CorrectionDoc> {
+): Promise<OpenCorrectionResult> {
   const ref = doc(db, 'corrections', submissionId);
 
   // Fast path: already exists — pure read, no write attempted at all.
   const existing = await getDoc(ref);
   if (existing.exists()) {
-    return existing.data() as CorrectionDoc;
+    return { correction: existing.data() as CorrectionDoc, projectionQuestions: null };
   }
 
   const submissionSnap = await getDoc(doc(db, 'submissions', submissionId));
@@ -142,7 +155,7 @@ export async function openOrLoadCorrection(
   return runTransaction(db, async (transaction) => {
     const snap = await transaction.get(ref);
     if (snap.exists()) {
-      return snap.data() as CorrectionDoc;
+      return { correction: snap.data() as CorrectionDoc, projectionQuestions };
     }
     const payload: CorrectionDoc = {
       submissionId,
@@ -162,7 +175,7 @@ export async function openOrLoadCorrection(
       reopenCount: INITIAL_CORRECTION_REOPEN_COUNT,
     };
     transaction.set(ref, payload);
-    return payload;
+    return { correction: payload, projectionQuestions };
   });
 }
 
@@ -226,12 +239,16 @@ export async function saveCorrection(input: SaveCorrectionInput, db: Firestore):
   for (const key of existingKeys) {
     const previous = correction.evaluations[key]!;
     const next = incoming[key]!;
-    if (next.points !== null) {
-      assertValidQuestionPoints(next.points, previous.maxPoints);
+    // Validate (quarter-point multiple in range) then snap to the exact
+    // quarter, clearing any floating-point noise before it is persisted.
+    let points = next.points;
+    if (points !== null) {
+      assertValidQuestionPoints(points, previous.maxPoints);
+      points = normalizeQuestionPoints(points);
     }
     nextEvaluations[key] = {
       order: previous.order,
-      points: next.points,
+      points,
       maxPoints: previous.maxPoints,
       ...(next.feedback !== undefined ? { feedback: next.feedback } : {}),
     };

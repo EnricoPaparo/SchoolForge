@@ -13,6 +13,10 @@ import {
   isReopenedCorrection,
   isValidCorrectionStatusTransition,
   isValidQuestionPoints,
+  isQuarterPointStep,
+  normalizeQuestionPoints,
+  parseQuestionPointsInput,
+  QUESTION_POINTS_STEP,
   MIN_QUESTION_POINTS,
 } from '../correctionContract.js';
 
@@ -45,6 +49,64 @@ describe('isValidQuestionPoints / assertValidQuestionPoints', () => {
     expect(() => assertValidQuestionPoints(11, 10)).toThrow(/Punteggio non valido/);
     expect(() => assertValidQuestionPoints(-0.01, 10)).toThrow(/Punteggio non valido/);
     expect(() => assertValidQuestionPoints(5, 10)).not.toThrow();
+  });
+
+  it('accepts only exact quarter-point multiples in range', () => {
+    expect(QUESTION_POINTS_STEP).toBe(0.25);
+    for (const v of [0, 0.25, 0.5, 1.75, 4]) {
+      expect(isValidQuestionPoints(v, 4)).toBe(true);
+    }
+    for (const v of [0.1, 1.2, 3.99]) {
+      expect(isValidQuestionPoints(v, 4)).toBe(false);
+    }
+    // Out-of-range, negative, NaN, Infinity remain invalid.
+    expect(isValidQuestionPoints(4.25, 4)).toBe(false);
+    expect(isValidQuestionPoints(-0.25, 4)).toBe(false);
+    expect(isValidQuestionPoints(Number.NaN, 4)).toBe(false);
+    expect(isValidQuestionPoints(Number.POSITIVE_INFINITY, 4)).toBe(false);
+  });
+});
+
+describe('isQuarterPointStep (float-safe)', () => {
+  it('recognises quarter multiples without floating-point fragility', () => {
+    expect(isQuarterPointStep(0)).toBe(true);
+    expect(isQuarterPointStep(0.25)).toBe(true);
+    expect(isQuarterPointStep(0.75)).toBe(true); // 0.25*3 === 0.7500000000000001
+    expect(isQuarterPointStep(1.75)).toBe(true);
+    expect(isQuarterPointStep(0.1)).toBe(false);
+    expect(isQuarterPointStep(0.3)).toBe(false);
+    expect(isQuarterPointStep(Number.NaN)).toBe(false);
+    expect(isQuarterPointStep(Number.POSITIVE_INFINITY)).toBe(false);
+  });
+});
+
+describe('normalizeQuestionPoints', () => {
+  it('snaps a valid quarter to its exact representation, clearing float noise', () => {
+    expect(normalizeQuestionPoints(0.25 * 3)).toBe(0.75);
+    expect(normalizeQuestionPoints(1.75)).toBe(1.75);
+    expect(normalizeQuestionPoints(2)).toBe(2);
+  });
+});
+
+describe('parseQuestionPointsInput (comma or dot)', () => {
+  it('treats an empty field as not-evaluated (null)', () => {
+    expect(parseQuestionPointsInput('')).toBeNull();
+    expect(parseQuestionPointsInput('   ')).toBeNull();
+  });
+
+  it('accepts both comma and dot decimal separators', () => {
+    expect(parseQuestionPointsInput('1,25')).toBe(1.25);
+    expect(parseQuestionPointsInput('1.25')).toBe(1.25);
+    expect(parseQuestionPointsInput(' 3 ')).toBe(3);
+    expect(parseQuestionPointsInput('0,5')).toBe(0.5);
+  });
+
+  it('returns NaN for anything that is not a plain decimal (never a silent 0)', () => {
+    expect(Number.isNaN(parseQuestionPointsInput('abc') as number)).toBe(true);
+    expect(Number.isNaN(parseQuestionPointsInput('1,2,3') as number)).toBe(true);
+    expect(Number.isNaN(parseQuestionPointsInput('1.2.3') as number)).toBe(true);
+    expect(Number.isNaN(parseQuestionPointsInput('-1') as number)).toBe(true);
+    expect(Number.isNaN(parseQuestionPointsInput('1e3') as number)).toBe(true);
   });
 });
 

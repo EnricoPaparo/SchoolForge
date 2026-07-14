@@ -243,9 +243,15 @@ describe('openOrLoadCorrection', () => {
   it('returns the existing correction without writing when one already exists', async () => {
     seedCorrection();
 
-    const result = await openOrLoadCorrection(SUBMISSION_ID, OWNER_UID, fakeDb);
+    const { correction, projectionQuestions } = await openOrLoadCorrection(
+      SUBMISSION_ID,
+      OWNER_UID,
+      fakeDb,
+    );
 
-    expect(result.status).toBe('in_progress');
+    expect(correction.status).toBe('in_progress');
+    // Fast path: no projection was read for an already-existing correction.
+    expect(projectionQuestions).toBeNull();
     expect(mockRunTransaction).not.toHaveBeenCalled();
     expect(mockSetDoc).not.toHaveBeenCalled();
   });
@@ -261,16 +267,22 @@ describe('openOrLoadCorrection', () => {
       return fn(tx);
     });
 
-    const result = await openOrLoadCorrection(SUBMISSION_ID, OWNER_UID, fakeDb);
+    const { correction, projectionQuestions } = await openOrLoadCorrection(
+      SUBMISSION_ID,
+      OWNER_UID,
+      fakeDb,
+    );
 
-    expect(result.status).toBe('in_progress');
-    expect(result.reopenCount).toBe(0);
-    expect(result.evaluations).toEqual({
+    expect(correction.status).toBe('in_progress');
+    expect(correction.reopenCount).toBe(0);
+    expect(correction.evaluations).toEqual({
       '0': { order: 0, points: null, maxPoints: 10 },
       '1': { order: 1, points: null, maxPoints: 5 },
     });
-    expect(result.completedAt).toBeNull();
-    expect(result.returnedAt).toBeNull();
+    expect(correction.completedAt).toBeNull();
+    expect(correction.returnedAt).toBeNull();
+    // The projection read during creation is surfaced for the loader to reuse.
+    expect(projectionQuestions).toHaveLength(2);
   });
 
   it('is idempotent against two near-simultaneous opens (transaction re-checks existence)', async () => {
@@ -285,9 +297,9 @@ describe('openOrLoadCorrection', () => {
       return fn(tx);
     });
 
-    const result = await openOrLoadCorrection(SUBMISSION_ID, OWNER_UID, fakeDb);
+    const { correction } = await openOrLoadCorrection(SUBMISSION_ID, OWNER_UID, fakeDb);
 
-    expect(result).toEqual(alreadyCreated);
+    expect(correction).toEqual(alreadyCreated);
   });
 
   it('rejects when the submission does not exist', async () => {

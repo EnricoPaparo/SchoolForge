@@ -125,18 +125,31 @@ function makeCorrection(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** Canonical questions the loader would build from a verification's snapshot. */
+function questionsFromVerification(verification: {
+  teacherSnapshot?: { questions?: Record<string, unknown>[] };
+}) {
+  const snapshotQuestions = verification.teacherSnapshot?.questions ?? [];
+  return [...snapshotQuestions]
+    .sort((a, b) => (a.order as number) - (b.order as number))
+    .map((q) => ({ ...q, solutionUnavailable: false }));
+}
+
 function makeWorkspaceData(
   overrides: {
     submission?: Record<string, unknown>;
     verification?: Record<string, unknown>;
     correction?: Record<string, unknown>;
     correctionReturn?: Record<string, unknown> | null;
+    questions?: Record<string, unknown>[];
   } = {},
 ) {
+  const verification = makeVerification(overrides.verification);
   return {
     submission: makeSubmission(overrides.submission),
-    verification: makeVerification(overrides.verification),
+    verification,
     correction: makeCorrection(overrides.correction),
+    questions: overrides.questions ?? questionsFromVerification(verification),
     correctionReturn: overrides.correctionReturn ?? null,
   };
 }
@@ -194,6 +207,40 @@ describe('CorrectionWorkspace — loading and data', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(mockLoadCorrectionWorkspace).toHaveBeenCalledTimes(1);
   });
+
+  it('legacy verification: shows question text but declares the solution unavailable', async () => {
+    setupDefaults();
+    mockLoadCorrectionWorkspace.mockResolvedValue(
+      makeWorkspaceData({
+        questions: [
+          {
+            order: 0,
+            tipo: 'aperta',
+            maxPoints: 10,
+            testo: 'Domanda storica.',
+            soluzione: null,
+            solutionUnavailable: true,
+          },
+          {
+            order: 1,
+            tipo: 'aperta',
+            maxPoints: 5,
+            testo: 'Seconda domanda storica.',
+            soluzione: null,
+            solutionUnavailable: true,
+          },
+        ],
+      }),
+    );
+    renderWorkspace();
+
+    // Question text from the projection is visible.
+    await waitFor(() => expect(screen.getByText('Domanda storica.')).toBeTruthy());
+    // The solution is explicitly declared unavailable, never reconstructed.
+    expect(
+      screen.getByText(/soluzione non disponibile per questa verifica precedente/i),
+    ).toBeTruthy();
+  });
 });
 
 describe('CorrectionWorkspace — scoring input', () => {
@@ -220,8 +267,50 @@ describe('CorrectionWorkspace — scoring input', () => {
     const pointsInput = screen.getByLabelText('Punteggio per la domanda 1');
     fireEvent.change(pointsInput, { target: { value: '999' } });
 
-    expect(await screen.findByText(/deve essere un numero tra 0 e 10/i)).toBeTruthy();
+    expect(await screen.findByText(/deve essere un multiplo di 0\.25 tra 0 e 10/i)).toBeTruthy();
     expect(screen.getByText('Salva correzione').closest('button')).toHaveProperty('disabled', true);
+  });
+
+  it('accepts a comma decimal separator so a normally-typed Italian score is savable', async () => {
+    setupDefaults();
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByText('Spiega il TCP.')).toBeTruthy());
+
+    const pointsInput = screen.getByLabelText('Punteggio per la domanda 1');
+    fireEvent.change(pointsInput, { target: { value: '7,5' } });
+
+    // No validation error, and Salva is enabled — the old Number("7,5")=NaN
+    // path would have flagged this and blocked saving.
+    expect(screen.queryByText(/deve essere un multiplo/i)).toBeNull();
+    expect(screen.getByText('Salva correzione').closest('button')).toHaveProperty(
+      'disabled',
+      false,
+    );
+  });
+
+  it('rejects a non-quarter score (0,1) and disables save', async () => {
+    setupDefaults();
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByText('Spiega il TCP.')).toBeTruthy());
+
+    const pointsInput = screen.getByLabelText('Punteggio per la domanda 1');
+    fireEvent.change(pointsInput, { target: { value: '0,1' } });
+
+    expect(await screen.findByText(/deve essere un multiplo di 0\.25/i)).toBeTruthy();
+    expect(screen.getByText('Salva correzione').closest('button')).toHaveProperty('disabled', true);
+  });
+
+  it('the + stepper increments the score by a quarter point', async () => {
+    setupDefaults();
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByText('Spiega il TCP.')).toBeTruthy());
+
+    const inc = screen.getByLabelText(/Aumenta di 0\.25 il punteggio della domanda 1/i);
+    fireEvent.click(inc);
+    fireEvent.click(inc);
+
+    const pointsInput = screen.getByLabelText('Punteggio per la domanda 1') as HTMLInputElement;
+    expect(pointsInput.value).toBe('0.5');
   });
 
   it('updates the summary panel live as scores are edited, before saving', async () => {

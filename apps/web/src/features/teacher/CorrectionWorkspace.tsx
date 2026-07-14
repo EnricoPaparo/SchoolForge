@@ -3,12 +3,16 @@ import { db } from '../../lib/firebase.js';
 import {
   isValidQuestionPoints,
   computeCorrectionTotals,
+  normalizeQuestionPoints,
+  parseQuestionPointsInput,
+  QUESTION_POINTS_STEP,
   type CorrectionUiStatus,
   deriveCorrectionUiStatus,
 } from '../repository/corrections/correctionContract.js';
 import {
   loadCorrectionWorkspace,
   type CorrectionWorkspaceData,
+  type CorrectionWorkspaceQuestion,
 } from '../repository/corrections/correctionWorkspaceLoader.js';
 import {
   completeCorrection,
@@ -18,11 +22,7 @@ import {
   setReturnVisibleToStudent,
   setSolutionsVisible,
 } from '../repository/corrections/correctionsService.js';
-import type {
-  AnswerValue,
-  QuestionEvaluation,
-  VerificationTeacherQuestionSnapshot,
-} from '../../types/firestore.js';
+import type { AnswerValue, QuestionEvaluation } from '../../types/firestore.js';
 import styles from './CorrectionWorkspace.module.css';
 
 export type CorrectionWorkspaceProps = {
@@ -54,11 +54,17 @@ function toEditableState(correction: CorrectionWorkspaceData['correction']): Edi
   return { evaluations, generalFeedback: correction.generalFeedback ?? '' };
 }
 
-function parsePoints(pointsText: string): number | null {
-  const trimmed = pointsText.trim();
-  if (trimmed === '') return null;
-  const parsed = Number(trimmed);
-  return Number.isNaN(parsed) ? Number.NaN : parsed;
+/**
+ * Score input → number, accepting both `1,25` and `1.25` (shared contract
+ * helper). Empty = `null` (not evaluated); unparseable = `NaN` (flagged
+ * invalid). Replaces the old `Number(text)` that turned `"1,25"` into `NaN`
+ * and made normally-typed Italian scores unsavable.
+ */
+const parsePoints = parseQuestionPointsInput;
+
+/** Formats a normalized quarter score for the input field (dot separator, no trailing zeros). */
+function formatPoints(points: number): string {
+  return String(normalizeQuestionPoints(points));
 }
 
 function isAnswerFilled(answer: AnswerValue | undefined): boolean {
@@ -199,9 +205,24 @@ export function CorrectionWorkspace({
     const parsed = parsePoints(edit.evaluations[key]?.pointsText ?? '');
     if (parsed === null) return null;
     if (Number.isNaN(parsed) || !isValidQuestionPoints(parsed, maxPoints)) {
-      return `Deve essere un numero tra 0 e ${maxPoints}.`;
+      return `Deve essere un multiplo di ${QUESTION_POINTS_STEP} tra 0 e ${maxPoints}.`;
     }
     return null;
+  }
+
+  /**
+   * Increment/decrement the current score by a quarter point, clamped to
+   * `[0, maxPoints]` and snapped to an exact quarter. An empty or invalid
+   * field starts from 0 so the stepper always lands on a valid value.
+   */
+  function stepPoints(order: number, direction: 1 | -1) {
+    const key = String(order);
+    const maxPoints = data?.correction.evaluations[key]?.maxPoints ?? 0;
+    const parsed = parsePoints(edit?.evaluations[key]?.pointsText ?? '');
+    const base = parsed === null || Number.isNaN(parsed) ? 0 : parsed;
+    const nextRaw = normalizeQuestionPoints(base) + direction * QUESTION_POINTS_STEP;
+    const clamped = Math.min(Math.max(nextRaw, 0), maxPoints);
+    updatePoints(order, formatPoints(clamped));
   }
 
   const orders = data
@@ -391,9 +412,7 @@ export function CorrectionWorkspace({
   }
   const liveTotals = computeCorrectionTotals(liveEvaluations);
 
-  const teacherQuestions: VerificationTeacherQuestionSnapshot[] =
-    verification.teacherSnapshot?.questions ?? [];
-  const currentQuestion = teacherQuestions.find((q) => q.order === currentOrder);
+  const currentQuestion = data.questions.find((q) => q.order === currentOrder);
   const currentAnswer = submission.answers[String(currentOrder)];
   const currentIndex = orders.indexOf(currentOrder);
   const currentEdit = edit.evaluations[String(currentOrder)];
@@ -489,28 +508,49 @@ export function CorrectionWorkspace({
 
           <div className={styles.block}>
             <span className={styles.blockLabel}>Soluzione (visibile solo al docente)</span>
-            {currentQuestion ? (
+            {currentQuestion && !currentQuestion.solutionUnavailable ? (
               renderSolution(currentQuestion)
             ) : (
-              <span className={styles.solutionUnavailable}>Soluzione non disponibile.</span>
+              <span className={styles.solutionUnavailable}>
+                Soluzione non disponibile per questa verifica precedente allo snapshot con
+                soluzioni.
+              </span>
             )}
           </div>
 
           <div className={styles.block}>
             <span className={styles.blockLabel}>Valutazione</span>
             <div className={styles.scoreRow}>
-              <input
-                type="number"
-                inputMode="decimal"
-                className={styles.pointsInput}
-                aria-label={`Punteggio per la domanda ${currentOrder + 1}`}
-                value={currentEdit?.pointsText ?? ''}
-                placeholder="—"
-                min={0}
-                max={currentMaxPoints}
-                disabled={correction.status !== 'in_progress' || busy !== null}
-                onChange={(e) => updatePoints(currentOrder, e.target.value)}
-              />
+              <div className={styles.pointsControl}>
+                <button
+                  type="button"
+                  className={styles.stepBtn}
+                  aria-label={`Diminuisci di ${QUESTION_POINTS_STEP} il punteggio della domanda ${currentOrder + 1}`}
+                  disabled={correction.status !== 'in_progress' || busy !== null}
+                  onClick={() => stepPoints(currentOrder, -1)}
+                >
+                  −
+                </button>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  className={styles.pointsInput}
+                  aria-label={`Punteggio per la domanda ${currentOrder + 1}`}
+                  value={currentEdit?.pointsText ?? ''}
+                  placeholder="—"
+                  disabled={correction.status !== 'in_progress' || busy !== null}
+                  onChange={(e) => updatePoints(currentOrder, e.target.value)}
+                />
+                <button
+                  type="button"
+                  className={styles.stepBtn}
+                  aria-label={`Aumenta di ${QUESTION_POINTS_STEP} il punteggio della domanda ${currentOrder + 1}`}
+                  disabled={correction.status !== 'in_progress' || busy !== null}
+                  onClick={() => stepPoints(currentOrder, 1)}
+                >
+                  +
+                </button>
+              </div>
               <span className={styles.maxPoints}>/ {currentMaxPoints} punti</span>
             </div>
             {currentPointsError && (
@@ -747,7 +787,7 @@ export function CorrectionWorkspace({
 }
 
 function renderAnswer(
-  question: VerificationTeacherQuestionSnapshot | undefined,
+  question: CorrectionWorkspaceQuestion | undefined,
   answer: AnswerValue | undefined,
 ) {
   if (!isAnswerFilled(answer)) {
@@ -793,14 +833,15 @@ function renderAnswer(
   );
 }
 
-function renderSolution(question: VerificationTeacherQuestionSnapshot) {
+function renderSolution(question: CorrectionWorkspaceQuestion) {
+  const soluzione = question.soluzione ?? '';
   if (question.tipo === 'aperta') {
-    return <p className={styles.solutionBox}>{question.soluzione as string}</p>;
+    return <p className={styles.solutionBox}>{soluzione as string}</p>;
   }
   if (!question.opzioni) {
-    return <p className={styles.solutionBox}>{String(question.soluzione)}</p>;
+    return <p className={styles.solutionBox}>{String(soluzione)}</p>;
   }
-  const correctIds = Array.isArray(question.soluzione) ? question.soluzione : [question.soluzione];
+  const correctIds = Array.isArray(soluzione) ? soluzione : [soluzione];
   const correctTexts = question.opzioni
     .filter((o) => correctIds.includes(o.id))
     .map((o) => o.testo);
