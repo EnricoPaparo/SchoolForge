@@ -154,10 +154,44 @@ function makeWorkspaceData(
   };
 }
 
+/**
+ * Echoes the persisted, normalized result `saveCorrection` now returns, built
+ * from the save input (default question maxPoints: order 0 → 10, order 1 → 5).
+ */
+function saveResultFromInput(input: {
+  evaluations: Record<string, { points: number | null; feedback?: string }>;
+  generalFeedback: string | null;
+}) {
+  const maxByKey: Record<string, number> = { '0': 10, '1': 5 };
+  const evaluations: Record<string, unknown> = {};
+  let totalPoints = 0;
+  let maxPoints = 0;
+  for (const [key, v] of Object.entries(input.evaluations)) {
+    const mp = maxByKey[key] ?? 0;
+    evaluations[key] = {
+      order: Number(key),
+      points: v.points,
+      maxPoints: mp,
+      ...(v.feedback !== undefined ? { feedback: v.feedback } : {}),
+    };
+    if (v.points !== null) totalPoints += v.points;
+    maxPoints += mp;
+  }
+  return {
+    evaluations,
+    generalFeedback: input.generalFeedback,
+    totalPoints,
+    maxPoints,
+    percentage: maxPoints > 0 ? Math.round((totalPoints / maxPoints) * 100) : null,
+  };
+}
+
 function setupDefaults() {
   vi.clearAllMocks();
   mockLoadCorrectionWorkspace.mockResolvedValue(makeWorkspaceData());
-  mockSaveCorrection.mockResolvedValue(undefined);
+  mockSaveCorrection.mockImplementation(async (input: Parameters<typeof saveResultFromInput>[0]) =>
+    saveResultFromInput(input),
+  );
   mockCompleteCorrection.mockResolvedValue(undefined);
   mockReturnCorrection.mockResolvedValue(undefined);
   mockReopenCorrection.mockResolvedValue(undefined);
@@ -240,6 +274,122 @@ describe('CorrectionWorkspace — loading and data', () => {
     expect(
       screen.getByText(/soluzione non disponibile per questa verifica precedente/i),
     ).toBeTruthy();
+  });
+});
+
+describe('CorrectionWorkspace — question metadata (difficoltà/peso/max)', () => {
+  it('shows frozen difficulty, weight and max points when present', async () => {
+    setupDefaults();
+    mockLoadCorrectionWorkspace.mockResolvedValue(
+      makeWorkspaceData({
+        questions: [
+          {
+            order: 0,
+            tipo: 'aperta',
+            maxPoints: 6,
+            difficolta: 2,
+            peso: 3,
+            testo: 'Spiega il TCP.',
+            soluzione: 'x',
+            solutionUnavailable: false,
+          },
+          {
+            order: 1,
+            tipo: 'aperta',
+            maxPoints: 5,
+            difficolta: 1,
+            peso: 1,
+            testo: 'Seconda.',
+            soluzione: 'y',
+            solutionUnavailable: false,
+          },
+        ],
+        correction: {
+          evaluations: {
+            '0': { order: 0, points: null, maxPoints: 6 },
+            '1': { order: 1, points: null, maxPoints: 5 },
+          },
+        },
+      }),
+    );
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByText('Spiega il TCP.')).toBeTruthy());
+
+    expect(document.body.textContent).toMatch(
+      /Difficoltà\s*2\s*·\s*Peso\s*3\s*·\s*Max\s*6\s*punti/,
+    );
+  });
+
+  it('shows an em dash for difficulty/weight on a legacy question, keeping max points', async () => {
+    setupDefaults();
+    mockLoadCorrectionWorkspace.mockResolvedValue(
+      makeWorkspaceData({
+        questions: [
+          {
+            order: 0,
+            tipo: 'aperta',
+            maxPoints: 10,
+            testo: 'Domanda legacy.',
+            soluzione: null,
+            solutionUnavailable: true,
+          },
+        ],
+        correction: {
+          evaluations: { '0': { order: 0, points: null, maxPoints: 10 } },
+        },
+      }),
+    );
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByText('Domanda legacy.')).toBeTruthy());
+
+    expect(document.body.textContent).toMatch(
+      /Difficoltà\s*—\s*·\s*Peso\s*—\s*·\s*Max\s*10\s*punti/,
+    );
+  });
+});
+
+describe('CorrectionWorkspace — multiple correct answers', () => {
+  it('marks every correct option and lists all correct answers in the solution', async () => {
+    setupDefaults();
+    mockLoadCorrectionWorkspace.mockResolvedValue(
+      makeWorkspaceData({
+        questions: [
+          {
+            order: 0,
+            tipo: 'chiusa_multipla',
+            maxPoints: 4,
+            testo: 'Quali sono corretti?',
+            opzioni: [
+              { id: 'a', testo: 'Alpha' },
+              { id: 'b', testo: 'Beta' },
+              { id: 'c', testo: 'Gamma' },
+              { id: 'd', testo: 'Delta' },
+            ],
+            soluzione: ['a', 'c'],
+            solutionUnavailable: false,
+          },
+        ],
+        submission: {
+          answers: { '0': { tipo: 'chiusa_multipla', selectedIds: ['a', 'b'] } },
+        },
+        correction: {
+          evaluations: { '0': { order: 0, points: null, maxPoints: 4 } },
+        },
+      }),
+    );
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByText('Quali sono corretti?')).toBeTruthy());
+
+    // Selected+correct (a), selected+wrong (b), correct-not-selected (c).
+    expect(screen.getByText(/selezionata, corretta/i)).toBeTruthy();
+    expect(screen.getByText(/selezionata, errata/i)).toBeTruthy();
+    expect(screen.getByText(/corretta, non selezionata/i)).toBeTruthy();
+
+    // The Soluzione block lists BOTH correct answers, not just the first.
+    const solutionLabel = screen.getByText('Soluzione (visibile solo al docente)');
+    const solutionBlock = solutionLabel.parentElement as HTMLElement;
+    expect(within(solutionBlock).getByText(/Alpha/)).toBeTruthy();
+    expect(within(solutionBlock).getByText(/Gamma/)).toBeTruthy();
   });
 });
 
@@ -473,7 +623,7 @@ describe('CorrectionWorkspace — explicit save', () => {
     expect(mockSaveCorrection).not.toHaveBeenCalled();
   });
 
-  it('saves exactly the edited evaluations and general feedback, then reloads', async () => {
+  it('saves exactly the edited evaluations and general feedback, confirms, and does NOT re-read Firestore', async () => {
     setupDefaults();
     renderWorkspace();
     await waitFor(() => expect(screen.getByText('Spiega il TCP.')).toBeTruthy());
@@ -485,21 +635,6 @@ describe('CorrectionWorkspace — explicit save', () => {
       target: { value: 'Buon lavoro' },
     });
 
-    mockLoadCorrectionWorkspace.mockResolvedValueOnce(
-      makeWorkspaceData({
-        correction: {
-          evaluations: {
-            '0': { order: 0, points: 8, maxPoints: 10 },
-            '1': { order: 1, points: null, maxPoints: 5 },
-          },
-          totalPoints: 8,
-          maxPoints: 15,
-          percentage: 53,
-          generalFeedback: 'Buon lavoro',
-        },
-      }),
-    );
-
     fireEvent.click(screen.getByText('Salva correzione'));
 
     await waitFor(() => expect(mockSaveCorrection).toHaveBeenCalledTimes(1));
@@ -509,8 +644,97 @@ describe('CorrectionWorkspace — explicit save', () => {
     expect(input.evaluations['1']).toEqual({ points: null });
     expect(input.generalFeedback).toBe('Buon lavoro');
 
-    await waitFor(() => expect(mockLoadCorrectionWorkspace).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.queryByText('Modifiche non salvate')).toBeNull());
+    // Persistent, discreet confirmation and cleared dirty state.
+    await waitFor(() => expect(screen.getByText(/correzione salvata/i)).toBeTruthy());
+    expect(screen.queryByText('Modifiche non salvate')).toBeNull();
+    // No post-save Firestore re-read: the loader ran only for the initial mount.
+    expect(mockLoadCorrectionWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the busy state after a successful save so the button is usable again', async () => {
+    setupDefaults();
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByText('Spiega il TCP.')).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('Punteggio per la domanda 1'), {
+      target: { value: '8' },
+    });
+    fireEvent.click(screen.getByText('Salva correzione'));
+
+    // After the save resolves the label is back to "Salva correzione" (not stuck
+    // on "Salvataggio…"), and editing again re-enables it.
+    await waitFor(() => expect(screen.getByText('Salva correzione')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Punteggio per la domanda 1'), {
+      target: { value: '9' },
+    });
+    await waitFor(() =>
+      expect(screen.getByText('Salva correzione').closest('button')).toHaveProperty(
+        'disabled',
+        false,
+      ),
+    );
+  });
+
+  it('persists and reports comma + quarter scores normalized (7,5 → 7.5)', async () => {
+    setupDefaults();
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByText('Spiega il TCP.')).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('Punteggio per la domanda 1'), {
+      target: { value: '7,5' },
+    });
+    fireEvent.click(screen.getByText('Salva correzione'));
+
+    await waitFor(() => expect(mockSaveCorrection).toHaveBeenCalledTimes(1));
+    expect(mockSaveCorrection.mock.calls[0]![0].evaluations['0']).toEqual({ points: 7.5 });
+    // The field reflects the normalized persisted value.
+    const input = screen.getByLabelText('Punteggio per la domanda 1') as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe('7.5'));
+  });
+
+  it('on a failed save, releases busy and keeps local edits', async () => {
+    setupDefaults();
+    mockSaveCorrection.mockRejectedValue(new Error('Rete non disponibile'));
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByText('Spiega il TCP.')).toBeTruthy());
+
+    const scoreInput = screen.getByLabelText('Punteggio per la domanda 1') as HTMLInputElement;
+    fireEvent.change(scoreInput, { target: { value: '8' } });
+    fireEvent.click(screen.getByText('Salva correzione'));
+
+    await waitFor(() => expect(screen.getByText(/rete non disponibile/i)).toBeTruthy());
+    // Busy released (label back), local edit preserved, still dirty.
+    expect(screen.getByText('Salva correzione')).toBeTruthy();
+    expect(scoreInput.value).toBe('8');
+    expect(screen.getByText('Modifiche non salvate')).toBeTruthy();
+  });
+
+  it('a double click triggers exactly one write', async () => {
+    setupDefaults();
+    let resolveSave: (v: unknown) => void = () => {};
+    mockSaveCorrection.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    renderWorkspace();
+    await waitFor(() => expect(screen.getByText('Spiega il TCP.')).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('Punteggio per la domanda 1'), {
+      target: { value: '8' },
+    });
+    const saveBtn = screen.getByText('Salva correzione');
+    fireEvent.click(saveBtn);
+    fireEvent.click(saveBtn);
+
+    resolveSave(
+      saveResultFromInput({
+        evaluations: { '0': { points: 8 }, '1': { points: null } },
+        generalFeedback: null,
+      }),
+    );
+    await waitFor(() => expect(mockSaveCorrection).toHaveBeenCalledTimes(1));
   });
 });
 

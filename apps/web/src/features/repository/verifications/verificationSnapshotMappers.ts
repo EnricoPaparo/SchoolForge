@@ -25,6 +25,9 @@ export function toTeacherQuestionSnapshot(
     order,
     tipo: q.tipo,
     maxPoints: q.ref.maxPoints,
+    // Frozen from the already-loaded selection ref — no extra pool/Storage read.
+    difficolta: q.ref.difficolta,
+    peso: q.ref.peso,
     testo: q.testo,
     ...(q.opzioni ? { opzioni: q.opzioni } : {}),
     soluzione: q.soluzione,
