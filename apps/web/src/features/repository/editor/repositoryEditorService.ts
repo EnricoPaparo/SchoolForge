@@ -12,8 +12,8 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import type { DocumentReference, Firestore } from 'firebase/firestore';
-import { deleteObject, getBytes, ref, uploadBytes } from 'firebase/storage';
 import type { FirebaseStorage } from 'firebase/storage';
+import { deleteFile, readText, writeText } from '../gateway/repositoryGatewayClient.js';
 import { parse as parseYaml } from 'yaml';
 import {
   composeMarkdownWithFrontMatter,
@@ -39,17 +39,14 @@ import {
   type VerificationForRepositoryGuard,
 } from './repositoryEditorGuards.js';
 
-async function fetchStorageText(storagePath: string, storage: FirebaseStorage): Promise<string> {
-  const bytes = await getBytes(ref(storage, storagePath));
-  return new TextDecoder().decode(bytes);
+// SGW-01: gli accessi Storage singolo-file passano dal gateway same-origin, non
+// più da `firebase/storage` diretto (che su Brave fallisce con timeout ~120 s).
+async function fetchStorageText(storagePath: string): Promise<string> {
+  return readText(storagePath);
 }
 
-async function writeStorageText(
-  storagePath: string,
-  content: string,
-  storage: FirebaseStorage,
-): Promise<void> {
-  await uploadBytes(ref(storage, storagePath), new TextEncoder().encode(content));
+async function writeStorageText(storagePath: string, content: string): Promise<void> {
+  await writeText(storagePath, content);
 }
 
 /**
@@ -70,12 +67,11 @@ function readRawFrontMatter(content: string): EditableFrontMatter {
 }
 
 function isStorageObjectNotFound(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'storage/object-not-found'
-  );
+  // Post SGW-01 the gateway reports an absent file as `file_not_found`; the
+  // legacy `storage/object-not-found` is kept for any rollback to direct SDK.
+  if (typeof error !== 'object' || error === null || !('code' in error)) return false;
+  const code = (error as { code?: unknown }).code;
+  return code === 'file_not_found' || code === 'storage/object-not-found';
 }
 
 function normalizeProgramMetadata(fields: ProgrammaMeta): ProgrammaMeta {
@@ -105,7 +101,7 @@ export async function updateProgramMetadata(params: {
   db: Firestore;
   storage: FirebaseStorage;
 }): Promise<ProgrammaMeta> {
-  const { programId, importId, ownerUid, db, storage } = params;
+  const { programId, importId, ownerUid, db } = params;
   const fields = normalizeProgramMetadata(params.fields);
   const importRef = doc(db, 'programs', programId, 'imports', importId);
   const importSnap = await getDoc(importRef);
@@ -118,7 +114,7 @@ export async function updateProgramMetadata(params: {
   const storagePath = `repository/${ownerUid}/imports/${importId}/programma.md`;
   let currentContent = '';
   try {
-    currentContent = await fetchStorageText(storagePath, storage);
+    currentContent = await fetchStorageText(storagePath);
   } catch (error) {
     if (!isStorageObjectNotFound(error)) {
       throw new Error('Impossibile leggere il file programma.md da Storage.');
@@ -136,7 +132,7 @@ export async function updateProgramMetadata(params: {
   const nextContent = replaceFrontMatter(currentContent, nextFrontMatter);
 
   try {
-    await writeStorageText(storagePath, nextContent, storage);
+    await writeStorageText(storagePath, nextContent);
   } catch {
     throw new Error('Impossibile aggiornare il file programma.md su Storage.');
   }
@@ -293,7 +289,7 @@ export async function updateUdaMetadata(params: {
   db: Firestore;
   storage: FirebaseStorage;
 }): Promise<void> {
-  const { programId, importId, udaId, fields, ownerUid, db, storage } = params;
+  const { programId, importId, udaId, fields, ownerUid, db } = params;
   const udaRef = doc(db, 'programs', programId, 'imports', importId, 'udas', udaId);
   const snap = await getDoc(udaRef);
   if (!snap.exists()) throw new Error('UDA non trovata.');
@@ -301,18 +297,14 @@ export async function updateUdaMetadata(params: {
   const storagePath = `${uda.storageBasePath}/${uda.filename}`;
 
   try {
-    const currentContent = await fetchStorageText(storagePath, storage);
+    const currentContent = await fetchStorageText(storagePath);
     const nextFrontMatter: EditableFrontMatter = {
       ...readRawFrontMatter(currentContent),
       descrizione: fields.descrizione,
       competenze: fields.competenze,
       obiettivi: fields.obiettivi,
     };
-    await writeStorageText(
-      storagePath,
-      replaceFrontMatter(currentContent, nextFrontMatter),
-      storage,
-    );
+    await writeStorageText(storagePath, replaceFrontMatter(currentContent, nextFrontMatter));
   } catch {
     throw new Error('Impossibile aggiornare il file della UDA su Storage.');
   }
@@ -349,7 +341,7 @@ export async function updateLessonMetadata(params: {
   db: Firestore;
   storage: FirebaseStorage;
 }): Promise<void> {
-  const { programId, importId, lessonId, fields, ownerUid, db, storage } = params;
+  const { programId, importId, lessonId, fields, ownerUid, db } = params;
   const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
   const snap = await getDoc(lessonRef);
   if (!snap.exists()) throw new Error('Lezione non trovata.');
@@ -358,16 +350,12 @@ export async function updateLessonMetadata(params: {
   const frontMatterPatch = lessonFrontMatterFields(fields);
 
   try {
-    const currentContent = await fetchStorageText(lesson.storageRef, storage);
+    const currentContent = await fetchStorageText(lesson.storageRef);
     const nextFrontMatter: EditableFrontMatter = {
       ...readRawFrontMatter(currentContent),
       ...frontMatterPatch,
     };
-    await writeStorageText(
-      lesson.storageRef,
-      replaceFrontMatter(currentContent, nextFrontMatter),
-      storage,
-    );
+    await writeStorageText(lesson.storageRef, replaceFrontMatter(currentContent, nextFrontMatter));
   } catch {
     throw new Error('Impossibile aggiornare il file della lezione su Storage.');
   }
@@ -403,7 +391,7 @@ export async function updateLessonMarkdownBody(params: {
   db: Firestore;
   storage: FirebaseStorage;
 }): Promise<void> {
-  const { programId, importId, lessonId, body, ownerUid, db, storage } = params;
+  const { programId, importId, lessonId, body, ownerUid, db } = params;
   const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
   const snap = await getDoc(lessonRef);
   if (!snap.exists()) throw new Error('Lezione non trovata.');
@@ -412,13 +400,13 @@ export async function updateLessonMarkdownBody(params: {
   let metadata: LessonMetadata;
   let publicBody: string;
   try {
-    const currentContent = await fetchStorageText(lesson.storageRef, storage);
+    const currentContent = await fetchStorageText(lesson.storageRef);
     const nextContent = composeMarkdownWithFrontMatter(readRawFrontMatter(currentContent), body);
     const parsed = parseLessonMetadata(nextContent);
     metadata = parsed.metadata;
     publicBody = parsed.body;
     assertLessonContentSize(publicBody, lesson.filename);
-    await writeStorageText(lesson.storageRef, nextContent, storage);
+    await writeStorageText(lesson.storageRef, nextContent);
   } catch (err) {
     if (err instanceof Error && err.message.includes('supera il limite')) throw err;
     throw new Error('Impossibile aggiornare il file della lezione su Storage.');
@@ -466,7 +454,7 @@ export async function createLesson(params: {
   db: Firestore;
   storage: FirebaseStorage;
 }): Promise<{ lessonId: string; filename: string }> {
-  const { programId, importId, udaId, udaDir, ownerUid, fields, db, storage } = params;
+  const { programId, importId, udaId, udaDir, ownerUid, fields, db } = params;
   const titolo = fields.titolo.trim();
   if (!titolo) throw new Error('Il titolo della lezione è obbligatorio.');
 
@@ -499,7 +487,7 @@ export async function createLesson(params: {
     const content = composeMarkdownWithFrontMatter(lessonFrontMatterFields(metadata), fields.body);
     publicBody = parseLessonMetadata(content).body;
     assertLessonContentSize(publicBody, filename);
-    await writeStorageText(storageRef, content, storage);
+    await writeStorageText(storageRef, content);
   } catch (err) {
     if (err instanceof Error && err.message.includes('supera il limite')) throw err;
     throw new Error('Impossibile creare il file della lezione su Storage.');
@@ -575,7 +563,7 @@ export async function createUda(params: {
   db: Firestore;
   storage: FirebaseStorage;
 }): Promise<{ udaId: string; dir: string; order: number }> {
-  const { programId, importId, ownerUid, fields, db, storage } = params;
+  const { programId, importId, ownerUid, fields, db } = params;
   const titolo = fields.titolo.trim();
   if (!titolo) throw new Error('Il titolo della UDA è obbligatorio.');
 
@@ -607,7 +595,7 @@ export async function createUda(params: {
 
   try {
     const content = composeMarkdownWithFrontMatter(udaFrontMatterFields(titolo, metadata), '');
-    await writeStorageText(`${storageBasePath}/${filename}`, content, storage);
+    await writeStorageText(`${storageBasePath}/${filename}`, content);
   } catch {
     throw new Error('Impossibile creare il file della UDA su Storage.');
   }
@@ -824,13 +812,13 @@ export async function getLessonDeleteBlockers(
   );
 }
 
-/** Deletes a Storage object, tolerating one that's already gone. */
-async function deleteStorageObjectIfExists(storage: FirebaseStorage, path: string): Promise<void> {
-  try {
-    await deleteObject(ref(storage, path));
-  } catch (err) {
-    if ((err as { code?: string }).code !== 'storage/object-not-found') throw err;
-  }
+/**
+ * Deletes a single Storage file via the gateway. The gateway delete is
+ * idempotent (an already-absent file is a no-op, not an error), so no
+ * object-not-found handling is needed here anymore (SGW-01).
+ */
+async function deleteStorageObjectIfExists(path: string): Promise<void> {
+  await deleteFile(path);
 }
 
 const DELETE_BATCH_CHUNK_SIZE = 400;
@@ -885,7 +873,7 @@ export async function deleteLesson(params: {
   db: Firestore;
   storage: FirebaseStorage;
 }): Promise<void> {
-  const { programId, importId, udaId, lessonId, ownerUid, db, storage } = params;
+  const { programId, importId, udaId, lessonId, ownerUid, db } = params;
   const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
   const snap = await getDoc(lessonRef);
   if (!snap.exists()) throw new Error('Lezione non trovata.');
@@ -910,9 +898,9 @@ export async function deleteLesson(params: {
   );
 
   try {
-    await deleteStorageObjectIfExists(storage, lesson.storageRef);
+    await deleteStorageObjectIfExists(lesson.storageRef);
     if (lesson.poolStorageRef) {
-      await deleteStorageObjectIfExists(storage, lesson.poolStorageRef);
+      await deleteStorageObjectIfExists(lesson.poolStorageRef);
     }
   } catch {
     throw new Error('Impossibile eliminare il file della lezione su Storage.');
@@ -952,7 +940,7 @@ export async function deleteUda(params: {
   db: Firestore;
   storage: FirebaseStorage;
 }): Promise<void> {
-  const { programId, importId, udaId, ownerUid, db, storage } = params;
+  const { programId, importId, udaId, ownerUid, db } = params;
   const udaRef = doc(db, 'programs', programId, 'imports', importId, 'udas', udaId);
   const udaSnap = await getDoc(udaRef);
   if (!udaSnap.exists()) throw new Error('UDA non trovata.');
@@ -979,7 +967,7 @@ export async function deleteUda(params: {
         .filter((path): path is string => Boolean(path)),
     ];
     await runWithConcurrency(storagePaths, STORAGE_DELETE_CONCURRENCY, (path) =>
-      deleteStorageObjectIfExists(storage, path),
+      deleteStorageObjectIfExists(path),
     );
   } catch {
     throw new Error('Impossibile eliminare i file della UDA su Storage.');

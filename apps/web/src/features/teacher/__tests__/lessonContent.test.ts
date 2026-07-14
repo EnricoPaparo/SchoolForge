@@ -3,20 +3,18 @@ import type { FirebaseStorage } from 'firebase/storage';
 import type { Firestore } from 'firebase/firestore';
 import { fetchLessonContent, fetchPublicLessonContent } from '../lessonContent.js';
 
-vi.mock('firebase/storage', () => ({
-  getBytes: vi.fn(),
-  ref: vi.fn(),
-}));
 vi.mock('firebase/firestore', () => ({
   getDoc: vi.fn(),
   doc: vi.fn(),
 }));
+// SGW-01: il fallback legacy legge dal gateway adapter, non piu getBytes.
+const mockReadText = vi.fn();
+vi.mock('../../repository/gateway/repositoryGatewayClient.js', () => ({
+  readText: (...args: unknown[]) => mockReadText(...args),
+}));
 
-import { getBytes, ref } from 'firebase/storage';
 import { getDoc, doc } from 'firebase/firestore';
 
-const mockGetBytes = getBytes as ReturnType<typeof vi.fn>;
-const mockRef = ref as ReturnType<typeof vi.fn>;
 const mockGetDoc = getDoc as ReturnType<typeof vi.fn>;
 const mockDoc = doc as ReturnType<typeof vi.fn>;
 
@@ -25,7 +23,6 @@ const mockDb = {} as Firestore;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockRef.mockReturnValue({});
   mockDoc.mockReturnValue({});
 });
 
@@ -93,34 +90,24 @@ describe('fetchPublicLessonContent (MOB-01C)', () => {
     const err = Object.assign(new Error('permission denied'), { code: 'permission-denied' });
     mockGetDoc.mockRejectedValue(err);
     await expect(fetchPublicLessonContent(VALID, mockDb)).rejects.toBe(err);
-    expect(mockGetBytes).not.toHaveBeenCalled();
+    expect(mockReadText).not.toHaveBeenCalled();
   });
 });
 
-describe('fetchLessonContent', () => {
-  it('returns decoded markdown string on success', async () => {
-    const content = '# Hello\nContent here';
-    mockGetBytes.mockResolvedValue(new TextEncoder().encode(content));
+describe('fetchLessonContent (fallback legacy via gateway, SGW-01)', () => {
+  it('returns the content read from the gateway for the given storageRef', async () => {
+    mockReadText.mockResolvedValue('# Hello\nContent here');
 
     const result = await fetchLessonContent('some/path/lesson.md', mockStorage);
-    expect(result).toBe(content);
-    expect(mockRef).toHaveBeenCalledWith(mockStorage, 'some/path/lesson.md');
-    expect(mockGetBytes).toHaveBeenCalled();
+    expect(result).toBe('# Hello\nContent here');
+    expect(mockReadText).toHaveBeenCalledWith('some/path/lesson.md');
   });
 
-  it('throws when getBytes fails', async () => {
-    mockGetBytes.mockRejectedValue(new Error('Storage unavailable'));
+  it('propagates a gateway error unchanged', async () => {
+    mockReadText.mockRejectedValue(new Error('Storage unavailable'));
 
     await expect(fetchLessonContent('some/path/lesson.md', mockStorage)).rejects.toThrow(
       'Storage unavailable',
     );
-  });
-
-  it('does not use fetch', async () => {
-    const fetchSpy = vi.spyOn(global, 'fetch');
-    mockGetBytes.mockResolvedValue(new TextEncoder().encode('content'));
-
-    await fetchLessonContent('some/path/lesson.md', mockStorage);
-    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

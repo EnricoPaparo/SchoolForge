@@ -4,6 +4,10 @@
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
       {
+        "source": "/api/repository/**",
+        "function": "repositoryGateway"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
@@ -18,7 +22,8 @@
   },
   "functions": {
     "source": "functions",
-    "runtime": "nodejs20"
+    "runtime": "nodejs20",
+    "predeploy": ["pnpm --filter @schoolforge/functions build"]
   },
   "emulators": {
     "auth": {

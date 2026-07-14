@@ -9,8 +9,13 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import type { DocumentReference, Firestore, WriteBatch } from 'firebase/firestore';
-import { deleteObject, getBytes, ref, uploadBytes } from 'firebase/storage';
 import type { FirebaseStorage } from 'firebase/storage';
+import {
+  deleteFile,
+  isFileNotFound,
+  readText,
+  writeText,
+} from '../gateway/repositoryGatewayClient.js';
 import { parsePool, serializePool } from '@schoolforge/lesson-contract';
 import type { ParsedPool, PoolValidationError } from '@schoolforge/lesson-contract';
 import { buildQuestionPreview, toDocId } from '../import/buildImportPayload.js';
@@ -139,7 +144,7 @@ export async function loadPool(params: {
   db: Firestore;
   storage: FirebaseStorage;
 }): Promise<LoadPoolResult> {
-  const { programId, importId, lessonId, db, storage } = params;
+  const { programId, importId, lessonId, db } = params;
 
   const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
   const snap = await getDoc(lessonRef);
@@ -152,10 +157,10 @@ export async function loadPool(params: {
 
   let content: string;
   try {
-    const bytes = await getBytes(ref(storage, lesson.poolStorageRef));
-    content = new TextDecoder().decode(bytes);
+    // SGW-01: lettura pool via gateway same-origin (non più getBytes diretto).
+    content = await readText(lesson.poolStorageRef);
   } catch (err) {
-    if ((err as { code?: string }).code === 'storage/object-not-found') {
+    if (isFileNotFound(err)) {
       return { status: 'absent' };
     }
     throw new Error('Impossibile leggere il file pool da Storage.');
@@ -197,7 +202,7 @@ export async function savePool(params: {
   db: Firestore;
   storage: FirebaseStorage;
 }): Promise<void> {
-  const { programId, importId, lessonId, pool, ownerUid, db, storage } = params;
+  const { programId, importId, lessonId, pool, ownerUid, db } = params;
 
   const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
   const snap = await getDoc(lessonRef);
@@ -208,7 +213,8 @@ export async function savePool(params: {
   const serialized = serializePool(pool);
 
   try {
-    await uploadBytes(ref(storage, poolStorageRef), new TextEncoder().encode(serialized));
+    // SGW-01: scrittura pool via gateway same-origin.
+    await writeText(poolStorageRef, serialized);
   } catch {
     throw new Error('Impossibile scrivere il file pool su Storage.');
   }
@@ -290,7 +296,7 @@ export async function deletePool(params: {
   // verifications guard query below no longer filters by it (PERF-SEC-01B-3
   // — see comment above; SchoolForge is single-owner per deployment, so an
   // ownerUid filter here would not narrow the query further).
-  const { programId, importId, lessonId, db, storage } = params;
+  const { programId, importId, lessonId, db } = params;
 
   const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
   const snap = await getDoc(lessonRef);
@@ -327,11 +333,10 @@ export async function deletePool(params: {
   if (blockers.length > 0) throw new PoolDeleteBlockedError(blockers);
 
   try {
-    await deleteObject(ref(storage, poolStorageRef));
-  } catch (err) {
-    if ((err as { code?: string }).code !== 'storage/object-not-found') {
-      throw new Error('Impossibile eliminare il file pool da Storage.');
-    }
+    // SGW-01: eliminazione pool via gateway (delete idempotente lato gateway).
+    await deleteFile(poolStorageRef);
+  } catch {
+    throw new Error('Impossibile eliminare il file pool da Storage.');
   }
 
   try {

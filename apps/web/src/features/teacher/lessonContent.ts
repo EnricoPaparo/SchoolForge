@@ -1,9 +1,9 @@
 import { doc, getDoc } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
-import { getBytes, ref } from 'firebase/storage';
 import type { FirebaseStorage } from 'firebase/storage';
 import type { PublicLessonDoc } from '../../types/firestore.js';
 import { normalizeLessonContent } from '../repository/programs/lessonContentSize.js';
+import { readText } from '../repository/gateway/repositoryGatewayClient.js';
 
 /** Which source served (or failed to serve) the lesson body — for diagnostics. */
 export type LessonContentSource = 'firestore' | 'storage';
@@ -52,15 +52,16 @@ export async function fetchPublicLessonContent(
 
 /**
  * Reads a lesson's Markdown from Storage via `getBytes` (XHR under the hood).
- * On failure it lets the ORIGINAL Firebase `StorageError` propagate unchanged
- * — never re-wrapping it in a generic `Error` — so the caller can classify its
- * `code` / HTTP status for diagnostics (MOB-01B).
+ * SGW-01: il fallback legacy legge ora dal **gateway same-origin** (non più
+ * `getBytes` diretto, che su Brave fallisce con timeout ~120 s). L'errore del
+ * gateway (`GatewayError`, con `code`/`status`) propaga invariato, così il
+ * chiamante può classificarlo per la diagnostica (MOB-01B). Il secondo
+ * parametro `_storage` è mantenuto per compatibilità di firma ma non è più
+ * usato (l'accesso Storage diretto resta solo come rollback esplicito).
  */
 export async function fetchLessonContent(
   storageRef: string,
-  storage: FirebaseStorage,
+  _storage: FirebaseStorage,
 ): Promise<string> {
-  const fileRef = ref(storage, storageRef);
-  const bytes = await getBytes(fileRef);
-  return new TextDecoder().decode(bytes);
+  return readText(storageRef);
 }

@@ -1,12 +1,18 @@
 # Repository Storage Gateway — roadmap e contratto (SGW)
 
-> **Stato: TARGET approvato, NON ancora implementato (SGW-00).**
-> Il modello **attuale** è accesso **diretto** a Firebase Storage dal browser,
-> **parzialmente incompatibile con Brave mobile**. Il modello **target** qui
-> descritto (gateway HTTPS same-origin + Cloud Function + Admin SDK) è
-> **approvato come contratto** ma **non esiste ancora** codice, Function,
-> rewrite o dipendenza. Nessuna affermazione in questo documento va letta come
-> "già disponibile".
+> **Stato: SGW-01 implementato nel codice (deploy DEV e smoke Brave ancora da
+> eseguire); SGW-02 ancora pendente.**
+> Il codice del gateway esiste ora nel repo: la Cloud Function
+> `repositoryGateway` (`functions/src/repositoryGateway.ts` +
+> `repositoryGatewayCore.ts`), il client adapter
+> (`apps/web/src/features/repository/gateway/repositoryGatewayClient.ts`), il
+> rewrite `/api/repository/**` in `firebase.json` e la migrazione delle
+> operazioni **singolo-file** (editing lezioni/UDA, pool, fallback lezione).
+> **Non è ancora stato fatto alcun deploy né alcuno smoke Brave**: finché non
+> avvengono davvero, il comportamento su Brave mobile resta **non verificato in
+> produzione**. Le operazioni **batch/prefix** (import/export/eliminazioni di
+> prefisso/backfill/domande verifiche) restano **accesso diretto a Storage**
+> fino a **SGW-02**.
 
 ## 0. Perché (contesto verificato su DEV)
 
@@ -334,18 +340,20 @@ qui come opzione, non come requisito SGW-01.
 
 ## Task 7 — Roadmap implementativa
 
-### SGW-01 — Fondamenta + operazioni singole
-- Cloud Function `repositoryGateway` (2ª gen) + **client adapter** (unico punto
-  che parla col gateway).
-- Endpoint **read / write / delete singolo** (§3.1–3.3).
-- Migrazione di: **contenuto/metadata lezioni e UDA**
+### SGW-01 — Fondamenta + operazioni singole — **codice implementato; deploy/smoke da fare**
+- ✅ Cloud Function `repositoryGateway` (2ª gen) + **client adapter** (unico
+  punto che parla col gateway).
+- ✅ Endpoint **read / write / delete singolo** (§3.1–3.3).
+- ✅ Migrazione di: **contenuto/metadata lezioni e UDA**
   (`repositoryEditorService` `fetchStorageText`/`writeStorageText`/delete) e
   **lettura/salvataggio/eliminazione pool** (`poolEditorService`
   `loadPool`/`savePool`/`deletePool`); **fallback lettura lezione**
   (`lessonContent.fetchLessonContent`).
-- **Test di sicurezza** del gateway (owner, path traversal, estensioni,
-  dimensioni, metodi, token).
-- **Deploy DEV** + **smoke Brave** su editing/pool.
+- ✅ **Test di sicurezza** del gateway (owner, path traversal, estensioni,
+  dimensioni, metodi, token) — `functions/src/repositoryGatewayCore.test.ts` +
+  adapter test.
+- ⏳ **Deploy DEV** + **smoke Brave** su editing/pool — **da eseguire** (vedi
+  §Task 6 per i comandi; region da confermare prima).
 - Copre le righe **1–7** dell'inventario.
 
 ### SGW-02 — Batch + prefissi + accessi residui

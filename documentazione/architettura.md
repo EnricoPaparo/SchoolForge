@@ -201,7 +201,7 @@ In entrambi i casi, "agli utenti autenticati non-owner" della prima versione di 
 
 **Decisione (approvata, NON ancora implementata).** Instradare tutti questi accessi attraverso un **gateway HTTPS same-origin**: `web app → /api/repository/* → Hosting rewrite → Cloud Function HTTPS 2ª gen → Admin SDK → Cloud Storage`. Autenticazione con Firebase ID token, accesso **solo al docente owner**, path obbligatoriamente sotto `repository/{ownerUid}/imports/…`, solo Markdown/pool UTF-8, nessun endpoint generico o student-facing. Poiché l'Admin SDK **bypassa le Storage Rules**, il gateway applica autonomamente vincoli equivalenti o più stretti. `minInstances: 0`, `maxInstances` basso, region pinnata al bucket. La consultazione ordinaria della lezione **resta Firestore-first**.
 
-**Stato.** Contratto completo, API, sicurezza, costi, emulatori e roadmap SGW-01/02/03 in [storage-gateway-roadmap.md](storage-gateway-roadmap.md). **Nessuna Cloud Function, rewrite `/api/repository/**`, dipendenza o codice gateway esiste ancora**: `functions/src/index.ts` è vuoto e `functions/package.json` non include `firebase-functions`/`firebase-admin`.
+**Stato.** Contratto completo, API, sicurezza, costi, emulatori e roadmap SGW-01/02/03 in [storage-gateway-roadmap.md](storage-gateway-roadmap.md). **SGW-01 è implementato nel codice** (Function `repositoryGateway` in `functions/`, client adapter in `apps/web/.../gateway/`, rewrite `/api/repository/**` in `firebase.json`, migrazione delle operazioni singolo-file: editing lezioni/UDA, pool, fallback lezione), **ma non ancora deployato né sottoposto a smoke Brave**. Le operazioni batch/prefix restano accesso Storage diretto fino a **SGW-02**.
 
 ---
 

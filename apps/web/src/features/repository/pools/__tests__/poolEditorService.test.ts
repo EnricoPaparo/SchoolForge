@@ -36,15 +36,15 @@ vi.mock('firebase/firestore', () => ({
   writeBatch: (...args: unknown[]) => mockWriteBatch(...args),
 }));
 
-const mockGetBytes = vi.fn();
-const mockUploadBytes = vi.fn();
-const mockDeleteObject = vi.fn();
+const mockReadText = vi.fn();
+const mockWriteText = vi.fn();
+const mockDeleteFile = vi.fn();
 
-vi.mock('firebase/storage', () => ({
-  ref: (_storage: unknown, path: string) => ({ __storagePath: path }),
-  getBytes: (...args: unknown[]) => mockGetBytes(...args),
-  uploadBytes: (...args: unknown[]) => mockUploadBytes(...args),
-  deleteObject: (...args: unknown[]) => mockDeleteObject(...args),
+vi.mock('../../gateway/repositoryGatewayClient.js', () => ({
+  readText: (...args: unknown[]) => mockReadText(...args),
+  writeText: (...args: unknown[]) => mockWriteText(...args),
+  deleteFile: (...args: unknown[]) => mockDeleteFile(...args),
+  isFileNotFound: (e: unknown) => (e as { code?: string })?.code === 'file_not_found',
 }));
 
 import { deletePool, loadPool, PoolDeleteBlockedError, savePool } from '../poolEditorService.js';
@@ -92,16 +92,16 @@ function missingSnap() {
   return { exists: () => false };
 }
 
-function encode(s: string): Uint8Array {
-  return new TextEncoder().encode(s);
+function encode(s: string): string {
+  return s;
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockSetDoc.mockResolvedValue(undefined);
   mockUpdateDoc.mockResolvedValue(undefined);
-  mockUploadBytes.mockResolvedValue(undefined);
-  mockDeleteObject.mockResolvedValue(undefined);
+  mockWriteText.mockResolvedValue(undefined);
+  mockDeleteFile.mockResolvedValue(undefined);
   mockGetDocs.mockResolvedValue({ docs: [] });
   mockBatchCommit.mockResolvedValue(undefined);
   mockWriteBatch.mockReturnValue({
@@ -127,7 +127,7 @@ describe('loadPool', () => {
         storage: fakeStorage,
       }),
     ).rejects.toThrow('Lezione non trovata.');
-    expect(mockGetBytes).not.toHaveBeenCalled();
+    expect(mockReadText).not.toHaveBeenCalled();
   });
 
   it('returns absent when poolStatus is absent', async () => {
@@ -143,13 +143,13 @@ describe('loadPool', () => {
       storage: fakeStorage,
     });
     expect(result).toEqual({ status: 'absent' });
-    expect(mockGetBytes).not.toHaveBeenCalled();
+    expect(mockReadText).not.toHaveBeenCalled();
   });
 
   it('returns absent when Storage file is missing (storage/object-not-found)', async () => {
     mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
-    const storageErr = Object.assign(new Error('not found'), { code: 'storage/object-not-found' });
-    mockGetBytes.mockRejectedValueOnce(storageErr);
+    const storageErr = Object.assign(new Error('not found'), { code: 'file_not_found' });
+    mockReadText.mockRejectedValueOnce(storageErr);
 
     const result = await loadPool({
       programId: PROGRAM_ID,
@@ -163,7 +163,7 @@ describe('loadPool', () => {
 
   it('rethrows unexpected Storage errors', async () => {
     mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
-    mockGetBytes.mockRejectedValueOnce(new Error('network error'));
+    mockReadText.mockRejectedValueOnce(new Error('network error'));
 
     await expect(
       loadPool({
@@ -178,7 +178,7 @@ describe('loadPool', () => {
 
   it('returns valid pool when file parses correctly', async () => {
     mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
-    mockGetBytes.mockResolvedValueOnce(encode(VALID_POOL_MD));
+    mockReadText.mockResolvedValueOnce(encode(VALID_POOL_MD));
 
     const result = await loadPool({
       programId: PROGRAM_ID,
@@ -197,7 +197,7 @@ describe('loadPool', () => {
   it('returns invalid with errors and rawContent when pool file fails validation', async () => {
     mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
     const badPool = `---\nschema: schoolforge-pool/v1\nquestions:\n  - id: q1\n    tipo: INVALID\n    difficolta: 2\n    peso: 2\n    testo: x\n    soluzione: x\n---`;
-    mockGetBytes.mockResolvedValueOnce(encode(badPool));
+    mockReadText.mockResolvedValueOnce(encode(badPool));
 
     const result = await loadPool({
       programId: PROGRAM_ID,
@@ -259,7 +259,7 @@ describe('savePool', () => {
         storage: fakeStorage,
       }),
     ).rejects.toThrow('Lezione non trovata.');
-    expect(mockUploadBytes).not.toHaveBeenCalled();
+    expect(mockWriteText).not.toHaveBeenCalled();
   });
 
   it('writes serialized pool to Storage', async () => {
@@ -276,13 +276,9 @@ describe('savePool', () => {
       storage: fakeStorage,
     });
 
-    expect(mockUploadBytes).toHaveBeenCalledOnce();
-    const [refArg, bytesArg] = mockUploadBytes.mock.calls[0] as [
-      { __storagePath: string },
-      Uint8Array,
-    ];
-    expect(refArg.__storagePath).toBe(POOL_STORAGE_REF);
-    const written = new TextDecoder().decode(bytesArg);
+    expect(mockWriteText).toHaveBeenCalledOnce();
+    const [pathArg, written] = mockWriteText.mock.calls[0] as [string, string];
+    expect(pathArg).toBe(POOL_STORAGE_REF);
     expect(written).toContain('schema: schoolforge-pool/v1');
     expect(written).toContain('q1');
     expect(written).toContain('q2');
@@ -417,7 +413,7 @@ describe('savePool', () => {
 
   it('does not touch Firestore when Storage upload fails', async () => {
     mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
-    mockUploadBytes.mockRejectedValueOnce(new Error('network error'));
+    mockWriteText.mockRejectedValueOnce(new Error('network error'));
 
     await expect(
       savePool({
@@ -450,7 +446,7 @@ describe('savePool', () => {
         storage: fakeStorage,
       }),
     ).rejects.toThrow('Firestore');
-    expect(mockUploadBytes).toHaveBeenCalledOnce();
+    expect(mockWriteText).toHaveBeenCalledOnce();
   });
 
   it('computes poolStorageRef from storageRef when lesson has no poolStorageRef yet', async () => {
@@ -472,8 +468,8 @@ describe('savePool', () => {
       storage: fakeStorage,
     });
 
-    const [refArg] = mockUploadBytes.mock.calls[0] as [{ __storagePath: string }];
-    expect(refArg.__storagePath).toBe(POOL_STORAGE_REF);
+    const [pathArg] = mockWriteText.mock.calls[0] as [string];
+    expect(pathArg).toBe(POOL_STORAGE_REF);
   });
 });
 
@@ -493,7 +489,7 @@ describe('deletePool', () => {
         storage: fakeStorage,
       }),
     ).rejects.toThrow('Lezione non trovata.');
-    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockDeleteFile).not.toHaveBeenCalled();
   });
 
   it('is a no-op when pool is already absent', async () => {
@@ -509,7 +505,7 @@ describe('deletePool', () => {
       db: fakeDb,
       storage: fakeStorage,
     });
-    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockDeleteFile).not.toHaveBeenCalled();
     expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
 
@@ -553,7 +549,7 @@ describe('deletePool', () => {
         storage: fakeStorage,
       }),
     ).rejects.toBeInstanceOf(PoolDeleteBlockedError);
-    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockDeleteFile).not.toHaveBeenCalled();
   });
 
   it('does not block deletion when only active/closed verifications reference the pool', async () => {
@@ -573,7 +569,7 @@ describe('deletePool', () => {
       db: fakeDb,
       storage: fakeStorage,
     });
-    expect(mockDeleteObject).toHaveBeenCalledOnce();
+    expect(mockDeleteFile).toHaveBeenCalledOnce();
   });
 
   it('narrows the guard query to status=draft + config.programId + config.importId, not an owner-wide scan', async () => {
@@ -608,16 +604,15 @@ describe('deletePool', () => {
       storage: fakeStorage,
     });
 
-    expect(mockDeleteObject).toHaveBeenCalledOnce();
-    const [refArg] = mockDeleteObject.mock.calls[0] as [{ __storagePath: string }];
-    expect(refArg.__storagePath).toBe(POOL_STORAGE_REF);
+    expect(mockDeleteFile).toHaveBeenCalledOnce();
+    const [pathArg] = mockDeleteFile.mock.calls[0] as [string];
+    expect(pathArg).toBe(POOL_STORAGE_REF);
   });
 
   it('tolerates an already-missing Storage file (storage/object-not-found)', async () => {
     mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
     mockGetDocs.mockResolvedValueOnce({ docs: [] }).mockResolvedValueOnce({ docs: [] });
-    const storageErr = Object.assign(new Error('not found'), { code: 'storage/object-not-found' });
-    mockDeleteObject.mockRejectedValueOnce(storageErr);
+    mockDeleteFile.mockResolvedValueOnce(undefined);
 
     await expect(
       deletePool({
@@ -687,6 +682,6 @@ describe('deletePool', () => {
         storage: fakeStorage,
       }),
     ).rejects.toThrow('Firestore');
-    expect(mockDeleteObject).toHaveBeenCalledOnce();
+    expect(mockDeleteFile).toHaveBeenCalledOnce();
   });
 });

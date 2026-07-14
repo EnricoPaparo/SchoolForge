@@ -39,15 +39,15 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: () => mockServerTimestamp(),
 }));
 
-const mockGetBytes = vi.fn();
-const mockUploadBytes = vi.fn();
-const mockDeleteObject = vi.fn();
+const mockReadText = vi.fn();
+const mockWriteText = vi.fn();
+const mockDeleteFile = vi.fn();
 
-vi.mock('firebase/storage', () => ({
-  ref: (_storage: unknown, path: string) => ({ __storagePath: path }),
-  getBytes: (...args: unknown[]) => mockGetBytes(...args),
-  uploadBytes: (...args: unknown[]) => mockUploadBytes(...args),
-  deleteObject: (...args: unknown[]) => mockDeleteObject(...args),
+// SGW-01: il service usa il gateway adapter, non piu firebase/storage diretto.
+vi.mock('../../gateway/repositoryGatewayClient.js', () => ({
+  readText: (...args: unknown[]) => mockReadText(...args),
+  writeText: (...args: unknown[]) => mockWriteText(...args),
+  deleteFile: (...args: unknown[]) => mockDeleteFile(...args),
 }));
 
 import {
@@ -73,21 +73,23 @@ const fakeDb = {} as Firestore;
 const fakeStorage = {} as FirebaseStorage;
 const OWNER_UID = 'owner-uid';
 
-function encode(content: string): Uint8Array {
-  return new TextEncoder().encode(content);
+// readText now returns a string, so `text` is an identity helper kept to
+// minimise churn at the call sites that previously wrapped bytes.
+function text(content: string): string {
+  return content;
 }
 
 function writtenContent(): string {
-  const call = mockUploadBytes.mock.calls[0] as [unknown, Uint8Array];
-  return new TextDecoder().decode(call[1]);
+  const call = mockWriteText.mock.calls[0] as [string, string];
+  return call[1];
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockSetDoc.mockResolvedValue(undefined);
   mockUpdateDoc.mockResolvedValue(undefined);
-  mockUploadBytes.mockResolvedValue(undefined);
-  mockDeleteObject.mockResolvedValue(undefined);
+  mockWriteText.mockResolvedValue(undefined);
+  mockDeleteFile.mockResolvedValue(undefined);
   mockGetDocs.mockResolvedValue({ docs: [] });
   mockBatchCommit.mockResolvedValue(undefined);
   mockWriteBatch.mockReturnValue({
@@ -116,8 +118,8 @@ describe('updateProgramMetadata', () => {
 
   it('preserves body and unrelated front matter, then commits projection and audit once', async () => {
     existingImport();
-    mockGetBytes.mockResolvedValueOnce(
-      encode('---\ntitolo: Corso legacy\ncustom: valore\n---\n\nCorpo da preservare.'),
+    mockReadText.mockResolvedValueOnce(
+      text('---\ntitolo: Corso legacy\ncustom: valore\n---\n\nCorpo da preservare.'),
     );
 
     const saved = await updateProgramMetadata({
@@ -152,7 +154,7 @@ describe('updateProgramMetadata', () => {
 
   it('creates programma.md when the import exists but the Storage object is absent', async () => {
     existingImport();
-    mockGetBytes.mockRejectedValueOnce({ code: 'storage/object-not-found' });
+    mockReadText.mockRejectedValueOnce({ code: 'file_not_found' });
 
     await updateProgramMetadata({
       programId: 'prog-1',
@@ -163,16 +165,16 @@ describe('updateProgramMetadata', () => {
       storage: fakeStorage,
     });
 
-    expect(mockUploadBytes.mock.calls[0]?.[0]).toEqual({
-      __storagePath: 'repository/owner-uid/imports/imp-1/programma.md',
-    });
+    expect(mockWriteText.mock.calls[0]?.[0]).toEqual(
+      'repository/owner-uid/imports/imp-1/programma.md',
+    );
     expect(writtenContent()).toContain('anno_scolastico: 2026/2027');
     expect(writtenContent()).toContain('descrizione: Corso aggiornato');
   });
 
   it('does not open a Firestore batch when Storage cannot be read', async () => {
     existingImport();
-    mockGetBytes.mockRejectedValueOnce(new Error('network down'));
+    mockReadText.mockRejectedValueOnce(new Error('network down'));
 
     await expect(
       updateProgramMetadata({
@@ -184,13 +186,13 @@ describe('updateProgramMetadata', () => {
         storage: fakeStorage,
       }),
     ).rejects.toThrow('Impossibile leggere il file programma.md da Storage.');
-    expect(mockUploadBytes).not.toHaveBeenCalled();
+    expect(mockWriteText).not.toHaveBeenCalled();
     expect(mockWriteBatch).not.toHaveBeenCalled();
   });
 
   it('reports a distinct partial-sync error when Firestore fails after Storage', async () => {
     existingImport();
-    mockGetBytes.mockResolvedValueOnce(encode('Corpo.'));
+    mockReadText.mockResolvedValueOnce(text('Corpo.'));
     mockBatchCommit.mockRejectedValueOnce(new Error('firestore down'));
 
     await expect(
@@ -203,7 +205,7 @@ describe('updateProgramMetadata', () => {
         storage: fakeStorage,
       }),
     ).rejects.toThrow('aggiornato su Storage ma i metadati non sono stati sincronizzati');
-    expect(mockUploadBytes).toHaveBeenCalledOnce();
+    expect(mockWriteText).toHaveBeenCalledOnce();
   });
 });
 
@@ -230,7 +232,7 @@ describe('updateUdaMetadata', () => {
         storage: fakeStorage,
       }),
     ).rejects.toThrow('UDA non trovata.');
-    expect(mockGetBytes).not.toHaveBeenCalled();
+    expect(mockReadText).not.toHaveBeenCalled();
   });
 
   it('rewrites front matter preserving titolo and the body, then updates Firestore and audit', async () => {
@@ -245,7 +247,7 @@ obiettivi:
 ---
 
 Corpo della UDA, invariato.`;
-    mockGetBytes.mockResolvedValueOnce(encode(currentContent));
+    mockReadText.mockResolvedValueOnce(text(currentContent));
 
     await updateUdaMetadata({
       programId: 'prog-1',
@@ -285,7 +287,7 @@ Corpo della UDA, invariato.`;
 
   it('throws a Storage-specific error and never touches Firestore when the Storage write fails', async () => {
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => UDA_DOC });
-    mockGetBytes.mockRejectedValueOnce(new Error('network down'));
+    mockReadText.mockRejectedValueOnce(new Error('network down'));
 
     await expect(
       updateUdaMetadata({
@@ -304,7 +306,7 @@ Corpo della UDA, invariato.`;
 
   it('throws a distinct, Firestore-specific error when Storage succeeded but the metadata update fails', async () => {
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => UDA_DOC });
-    mockGetBytes.mockResolvedValueOnce(encode('---\ntitolo: "Reti"\n---\n\nCorpo.'));
+    mockReadText.mockResolvedValueOnce(text('---\ntitolo: "Reti"\n---\n\nCorpo.'));
     mockUpdateDoc.mockRejectedValueOnce(new Error('permission-denied'));
 
     await expect(
@@ -318,7 +320,7 @@ Corpo della UDA, invariato.`;
         storage: fakeStorage,
       }),
     ).rejects.toThrow(/aggiornato su Storage ma i metadati non sono stati salvati/);
-    expect(mockUploadBytes).toHaveBeenCalled();
+    expect(mockWriteText).toHaveBeenCalled();
     expect(mockSetDoc).not.toHaveBeenCalled();
   });
 });
@@ -345,7 +347,7 @@ describe('updateLessonMetadata', () => {
     mockGetDoc
       .mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC }) // lesson doc
       .mockResolvedValueOnce({ exists: () => true }); // publicLessons doc
-    mockGetBytes.mockResolvedValueOnce(encode('---\ntitolo: "Vecchio"\n---\n\nCorpo lezione.'));
+    mockReadText.mockResolvedValueOnce(text('---\ntitolo: "Vecchio"\n---\n\nCorpo lezione.'));
 
     await updateLessonMetadata({
       programId: 'prog-1',
@@ -376,7 +378,7 @@ describe('updateLessonMetadata', () => {
     mockGetDoc
       .mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC })
       .mockResolvedValueOnce({ exists: () => false });
-    mockGetBytes.mockResolvedValueOnce(encode('Corpo senza front matter.'));
+    mockReadText.mockResolvedValueOnce(text('Corpo senza front matter.'));
 
     await updateLessonMetadata({
       programId: 'prog-1',
@@ -409,7 +411,7 @@ describe('updateLessonMetadata', () => {
         storage: fakeStorage,
       }),
     ).rejects.toThrow('Lezione non trovata.');
-    expect(mockGetBytes).not.toHaveBeenCalled();
+    expect(mockReadText).not.toHaveBeenCalled();
   });
 });
 
@@ -437,7 +439,7 @@ describe('updateLessonMarkdownBody', () => {
         storage: fakeStorage,
       }),
     ).rejects.toThrow('Lezione non trovata.');
-    expect(mockGetBytes).not.toHaveBeenCalled();
+    expect(mockReadText).not.toHaveBeenCalled();
   });
 
   it('preserves existing front matter, replaces only the body, and resyncs Firestore + publicLessons', async () => {
@@ -452,7 +454,7 @@ concetti_chiave:
 ---
 
 Vecchio corpo della lezione.`;
-    mockGetBytes.mockResolvedValueOnce(encode(currentContent));
+    mockReadText.mockResolvedValueOnce(text(currentContent));
 
     await updateLessonMarkdownBody({
       programId: 'prog-1',
@@ -496,7 +498,7 @@ Vecchio corpo della lezione.`;
     mockGetDoc
       .mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC })
       .mockResolvedValueOnce({ exists: () => true });
-    mockGetBytes.mockResolvedValueOnce(encode('---\ntitolo: "HTTP"\n---\n\nVecchio corpo.'));
+    mockReadText.mockResolvedValueOnce(text('---\ntitolo: "HTTP"\n---\n\nVecchio corpo.'));
 
     await updateLessonMarkdownBody({
       programId: 'prog-1',
@@ -517,7 +519,7 @@ Vecchio corpo della lezione.`;
 
   it('rejects a body exceeding the size limit before writing anything', async () => {
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
-    mockGetBytes.mockResolvedValueOnce(encode('---\ntitolo: "HTTP"\n---\n\nVecchio corpo.'));
+    mockReadText.mockResolvedValueOnce(text('---\ntitolo: "HTTP"\n---\n\nVecchio corpo.'));
 
     await expect(
       updateLessonMarkdownBody({
@@ -530,7 +532,7 @@ Vecchio corpo della lezione.`;
         storage: fakeStorage,
       }),
     ).rejects.toThrow(/supera il limite/);
-    expect(mockUploadBytes).not.toHaveBeenCalled();
+    expect(mockWriteText).not.toHaveBeenCalled();
     expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
 
@@ -546,7 +548,7 @@ concetti_chiave:
 ---
 
 Vecchio corpo.`;
-    mockGetBytes.mockResolvedValueOnce(encode(currentContent));
+    mockReadText.mockResolvedValueOnce(text(currentContent));
 
     await updateLessonMarkdownBody({
       programId: 'prog-1',
@@ -570,7 +572,7 @@ Vecchio corpo.`;
     mockGetDoc
       .mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC })
       .mockResolvedValueOnce({ exists: () => false });
-    mockGetBytes.mockResolvedValueOnce(encode('Corpo senza front matter.'));
+    mockReadText.mockResolvedValueOnce(text('Corpo senza front matter.'));
 
     await updateLessonMarkdownBody({
       programId: 'prog-1',
@@ -590,7 +592,7 @@ Vecchio corpo.`;
 
   it('throws a Storage-specific error and never touches Firestore when the Storage write fails', async () => {
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
-    mockGetBytes.mockRejectedValueOnce(new Error('network down'));
+    mockReadText.mockRejectedValueOnce(new Error('network down'));
 
     await expect(
       updateLessonMarkdownBody({
@@ -609,7 +611,7 @@ Vecchio corpo.`;
 
   it('throws a distinct error when Storage succeeds but the Firestore resync fails', async () => {
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
-    mockGetBytes.mockResolvedValueOnce(encode('---\ntitolo: "HTTP"\n---\n\nCorpo.'));
+    mockReadText.mockResolvedValueOnce(text('---\ntitolo: "HTTP"\n---\n\nCorpo.'));
     mockUpdateDoc.mockRejectedValueOnce(new Error('permission-denied'));
 
     await expect(
@@ -623,7 +625,7 @@ Vecchio corpo.`;
         storage: fakeStorage,
       }),
     ).rejects.toThrow(/aggiornato su Storage ma i metadati non sono stati sincronizzati/);
-    expect(mockUploadBytes).toHaveBeenCalled();
+    expect(mockWriteText).toHaveBeenCalled();
     expect(mockSetDoc).not.toHaveBeenCalled();
   });
 });
@@ -652,7 +654,7 @@ describe('createLesson', () => {
       }),
     ).rejects.toThrow('Il titolo della lezione è obbligatorio.');
     expect(mockGetDocs).not.toHaveBeenCalled();
-    expect(mockUploadBytes).not.toHaveBeenCalled();
+    expect(mockWriteText).not.toHaveBeenCalled();
   });
 
   it('numbers the first lesson of a UDA as 001 with order 0', async () => {
@@ -787,13 +789,13 @@ describe('createLesson', () => {
         storage: fakeStorage,
       }),
     ).rejects.toThrow(/supera il limite/);
-    expect(mockUploadBytes).not.toHaveBeenCalled();
+    expect(mockWriteText).not.toHaveBeenCalled();
     expect(mockSetDoc).not.toHaveBeenCalled();
   });
 
   it('throws a Storage-specific error and never touches Firestore when the Storage write fails', async () => {
     mockGetDocs.mockResolvedValueOnce({ docs: [] });
-    mockUploadBytes.mockRejectedValueOnce(new Error('network down'));
+    mockWriteText.mockRejectedValueOnce(new Error('network down'));
 
     await expect(
       createLesson({
@@ -829,7 +831,7 @@ describe('createLesson', () => {
     ).rejects.toThrow(
       'Il file della lezione è stato creato su Storage ma non è stato possibile salvare i metadati su Firestore. Riprova.',
     );
-    expect(mockUploadBytes).toHaveBeenCalled();
+    expect(mockWriteText).toHaveBeenCalled();
   });
 });
 
@@ -853,7 +855,7 @@ describe('createUda', () => {
       }),
     ).rejects.toThrow('Il titolo della UDA è obbligatorio.');
     expect(mockGetDocs).not.toHaveBeenCalled();
-    expect(mockUploadBytes).not.toHaveBeenCalled();
+    expect(mockWriteText).not.toHaveBeenCalled();
   });
 
   it('numbers the first UDA of a program as 01 with order 0', async () => {
@@ -977,7 +979,7 @@ describe('createUda', () => {
 
   it('throws a Storage-specific error and never touches Firestore when the Storage write fails', async () => {
     mockGetDocs.mockResolvedValueOnce({ docs: [] });
-    mockUploadBytes.mockRejectedValueOnce(new Error('network down'));
+    mockWriteText.mockRejectedValueOnce(new Error('network down'));
 
     await expect(
       createUda({
@@ -1008,7 +1010,7 @@ describe('createUda', () => {
     ).rejects.toThrow(
       'Il file della UDA è stato creato su Storage ma non è stato possibile salvare i metadati su Firestore. Riprova.',
     );
-    expect(mockUploadBytes).toHaveBeenCalled();
+    expect(mockWriteText).toHaveBeenCalled();
   });
 });
 
@@ -1480,7 +1482,7 @@ describe('deleteLesson', () => {
     expect((error as InstanceType<typeof RepositoryDeleteBlockedError>).blockers).toEqual([
       { verificationId: 'v1', title: 'Verifica v1', status: 'draft' },
     ]);
-    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockDeleteFile).not.toHaveBeenCalled();
     expect(mockWriteBatch).not.toHaveBeenCalled();
     expect(mockUpdateDoc).not.toHaveBeenCalled();
     expect(mockSetDoc).not.toHaveBeenCalled();
@@ -1505,12 +1507,10 @@ describe('deleteLesson', () => {
       storage: fakeStorage,
     });
 
-    expect(mockDeleteObject).toHaveBeenCalledWith({
-      __storagePath: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-001-http.md',
-    });
-    expect(mockDeleteObject).toHaveBeenCalledWith({
-      __storagePath: 'repository/.../lezione-002-tcp.pool.md',
-    });
+    expect(mockDeleteFile).toHaveBeenCalledWith(
+      'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-001-http.md',
+    );
+    expect(mockDeleteFile).toHaveBeenCalledWith('repository/.../lezione-002-tcp.pool.md');
     expect(mockBatchDelete).toHaveBeenCalledWith({
       __path: 'programs/prog-1/imports/imp-1/lessons/lesson-1',
     });
@@ -1526,10 +1526,11 @@ describe('deleteLesson', () => {
     );
   });
 
-  it('tolerates a Storage file that is already gone', async () => {
+  it('tolerates a Storage file that is already gone (gateway delete is idempotent)', async () => {
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
     mockGetDocs.mockResolvedValueOnce({ docs: [] }).mockResolvedValueOnce({ docs: [] });
-    mockDeleteObject.mockRejectedValueOnce({ code: 'storage/object-not-found' });
+    // The gateway resolves even when the file is already absent (deleted:false).
+    mockDeleteFile.mockResolvedValueOnce(undefined);
 
     await expect(
       deleteLesson({
@@ -1547,7 +1548,7 @@ describe('deleteLesson', () => {
   it('throws a Storage-specific error and never touches Firestore when a real Storage failure occurs', async () => {
     mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC });
     mockGetDocs.mockResolvedValueOnce({ docs: [] });
-    mockDeleteObject.mockRejectedValueOnce(new Error('permission-denied'));
+    mockDeleteFile.mockRejectedValueOnce(new Error('permission-denied'));
 
     await expect(
       deleteLesson({
@@ -1635,7 +1636,7 @@ describe('deleteUda', () => {
     }).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(RepositoryDeleteBlockedError);
-    expect(mockDeleteObject).not.toHaveBeenCalled();
+    expect(mockDeleteFile).not.toHaveBeenCalled();
     expect(mockWriteBatch).not.toHaveBeenCalled();
   });
 
@@ -1660,14 +1661,12 @@ describe('deleteUda', () => {
       storage: fakeStorage,
     });
 
-    expect(mockDeleteObject).toHaveBeenCalledWith({
-      __storagePath: 'repository/owner-uid/imports/imp-1/uda-01-reti/uda-01-reti.md',
-    });
-    expect(mockDeleteObject).toHaveBeenCalledWith({ __storagePath: LESSON_1.storageRef });
-    expect(mockDeleteObject).toHaveBeenCalledWith({ __storagePath: LESSON_2.storageRef });
-    expect(mockDeleteObject).toHaveBeenCalledWith({
-      __storagePath: LESSON_2.poolStorageRef,
-    });
+    expect(mockDeleteFile).toHaveBeenCalledWith(
+      'repository/owner-uid/imports/imp-1/uda-01-reti/uda-01-reti.md',
+    );
+    expect(mockDeleteFile).toHaveBeenCalledWith(LESSON_1.storageRef);
+    expect(mockDeleteFile).toHaveBeenCalledWith(LESSON_2.storageRef);
+    expect(mockDeleteFile).toHaveBeenCalledWith(LESSON_2.poolStorageRef);
     expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'lessons/lesson-1' });
     expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'lessons/lesson-2' });
     expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'questionIndex/q1' });
@@ -1688,7 +1687,7 @@ describe('deleteUda', () => {
       .mockResolvedValueOnce({ docs: [] })
       .mockResolvedValueOnce({ docs: [] })
       .mockResolvedValueOnce({ docs: [] });
-    mockDeleteObject.mockRejectedValueOnce(new Error('permission-denied'));
+    mockDeleteFile.mockRejectedValueOnce(new Error('permission-denied'));
 
     await expect(
       deleteUda({
