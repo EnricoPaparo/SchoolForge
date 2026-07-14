@@ -264,6 +264,16 @@ async function seedReturn(overrides: Record<string, unknown> = {}) {
 // ─── corrections: create ─────────────────────────────────────────────────────
 
 describe('Firestore rules — corrections create', () => {
+  it('allows the owner to read a not-yet-created deterministic correction path', async () => {
+    await seedBase();
+    await assertSucceeds(getDoc(doc(ownerDb(), 'corrections', SUBMISSION_ID)));
+  });
+
+  it('never allows a student to probe a missing correction path', async () => {
+    await seedBase();
+    await assertFails(getDoc(doc(studentDb(), 'corrections', SUBMISSION_ID)));
+  });
+
   it('the owner can create a correction for their own submitted submission', async () => {
     await seedBase();
     await seedSubmittedSubmission();
