@@ -8,12 +8,63 @@ import type {
 export const MIN_QUESTION_POINTS = 0;
 
 /**
+ * D-M4-05: every score is a multiple of a quarter point. This is the single
+ * source of truth for the step, shared by the validator, the normalizer and
+ * the workspace increment/decrement controls.
+ */
+export const QUESTION_POINTS_STEP = 0.25;
+
+/**
+ * D-M4-05: whether `points` is an exact multiple of `QUESTION_POINTS_STEP`.
+ * Compared in the integer domain (`points * 4`) so ordinary floating-point
+ * noise (e.g. `0.1 + 0.2`, or `0.25 * 3 === 0.7500000000000001`) never makes
+ * a legitimate quarter fail — a fragile `points % 0.25 === 0` would. Values
+ * like `0`, `0.25`, `1.75`, `4` pass; `0.1`, `1.2`, `3.99` do not.
+ */
+export function isQuarterPointStep(points: number): boolean {
+  if (!Number.isFinite(points)) return false;
+  const quarters = points * 4;
+  return Math.abs(quarters - Math.round(quarters)) < 1e-9;
+}
+
+/**
+ * D-M4-05: snaps a value that is already a valid quarter to its exact
+ * representation, clearing floating-point noise before persistence
+ * (`Math.round(points * 4) / 4`). Callers validate with
+ * `isValidQuestionPoints` first — this never turns an invalid score into a
+ * valid one, it only cleans a value that already passed validation.
+ */
+export function normalizeQuestionPoints(points: number): number {
+  return Math.round(points * 4) / 4;
+}
+
+/**
+ * Parses a teacher-entered score, accepting both the Italian comma and the
+ * dot as decimal separator (`"1,25"` and `"1.25"` are equivalent). Returns
+ * `null` for an empty field ("not evaluated"), or `NaN` for anything that is
+ * not a plain decimal number — the caller treats `NaN` as an explicit
+ * validation error, never as a silent `0`. This is the ONLY place score
+ * input text is turned into a number: a bare `Number("1,25")` yields `NaN`,
+ * which is exactly the bug that made normally-typed Italian scores unsavable.
+ */
+export function parseQuestionPointsInput(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+  const normalized = trimmed.replace(',', '.');
+  // A single optional decimal separator, digits only — no signs, no spaces,
+  // no thousands separators, no second comma/dot.
+  if (!/^\d+(\.\d+)?$/.test(normalized)) return Number.NaN;
+  const parsed = Number(normalized);
+  return Number.isNaN(parsed) ? Number.NaN : parsed;
+}
+
+/**
  * D-M4-05: a score is valid only when both `points` and `maxPoints` are
- * finite numbers, `maxPoints` is not negative, and `points` falls within
- * `[0, maxPoints]`. Partial/decimal credit (e.g. `1.5`) is allowed — this
- * codebase never mandates integer points, only the range. A malformed
- * `maxPoints` (negative, `NaN`, `Infinity`) is rejected the same as an
- * out-of-range `points` — it can never be satisfied by any valid score.
+ * finite numbers, `maxPoints` is not negative, `points` falls within
+ * `[0, maxPoints]`, AND `points` is an exact multiple of a quarter point
+ * (`isQuarterPointStep`). A malformed `maxPoints` (negative, `NaN`,
+ * `Infinity`) is rejected the same as an out-of-range `points` — it can
+ * never be satisfied by any valid score.
  */
 export function isValidQuestionPoints(points: number, maxPoints: number): boolean {
   return (
@@ -21,7 +72,8 @@ export function isValidQuestionPoints(points: number, maxPoints: number): boolea
     Number.isFinite(maxPoints) &&
     maxPoints >= MIN_QUESTION_POINTS &&
     points >= MIN_QUESTION_POINTS &&
-    points <= maxPoints
+    points <= maxPoints &&
+    isQuarterPointStep(points)
   );
 }
 
@@ -34,8 +86,8 @@ export function isValidQuestionPoints(points: number, maxPoints: number): boolea
 export function assertValidQuestionPoints(points: number, maxPoints: number): void {
   if (!isValidQuestionPoints(points, maxPoints)) {
     throw new Error(
-      `Punteggio non valido: ${points}. Deve essere un numero compreso tra ` +
-        `${MIN_QUESTION_POINTS} e ${maxPoints}.`,
+      `Punteggio non valido: ${points}. Deve essere un multiplo di ` +
+        `${QUESTION_POINTS_STEP} compreso tra ${MIN_QUESTION_POINTS} e ${maxPoints}.`,
     );
   }
 }

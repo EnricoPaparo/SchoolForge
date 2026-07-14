@@ -277,8 +277,70 @@
   gap: 0.625rem;
 }
 
-.pointsInput {
-  width: 5rem;
+/* Points control (UI-POLISH / M4): a single rounded field grouping −, the
+   value, and +, styled to match SchoolForge text fields (surface, border,
+   radius, focus ring) instead of the native grey number spinner. */
+.pointsControl {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.pointsControl:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
+}
+
+.stepBtn {
+  flex: 0 0 auto;
+  min-width: 2.25rem;
+  min-height: 2.35rem;
+  padding: 0 0.6rem;
+  border: none;
+  border-radius: 0;
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stepBtn:hover:not(:disabled) {
+  background: var(--color-surface-subtle);
+  border-color: transparent;
+}
+
+.stepBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Scoped under .pointsControl so it beats the global input[type='text']
+   base style (which would otherwise force width:100%, a border and a
+   surface background on this borderless inner field). */
+.pointsControl .pointsInput {
+  display: block;
+  width: 4rem;
+  min-width: 0;
+  padding: 0 0.35rem;
+  text-align: center;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.pointsControl .pointsInput:focus,
+.pointsControl .pointsInput:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border: none;
 }
 
 .maxPoints {

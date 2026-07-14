@@ -8,6 +8,7 @@ let store: Record<string, FakeDocEntry> = {};
 const mockGetDoc = vi.fn();
 const mockDoc = vi.fn();
 const mockOpenOrLoadCorrection = vi.fn();
+const mockLoadPublishedProjectionQuestions = vi.fn();
 
 vi.mock('firebase/firestore', () => ({
   doc: (...args: unknown[]) => mockDoc(...args),
@@ -16,6 +17,8 @@ vi.mock('firebase/firestore', () => ({
 
 vi.mock('../correctionsService.js', () => ({
   openOrLoadCorrection: (...args: unknown[]) => mockOpenOrLoadCorrection(...args),
+  loadPublishedProjectionQuestions: (...args: unknown[]) =>
+    mockLoadPublishedProjectionQuestions(...args),
 }));
 
 import type { Firestore } from 'firebase/firestore';
@@ -95,11 +98,43 @@ function seedVerification() {
   });
 }
 
+function seedVerificationLegacy() {
+  seedDoc(`verifications/${VERIFICATION_ID}`, {
+    exists: true,
+    data: {
+      ownerUid: OWNER_UID,
+      status: 'active',
+      config: {
+        title: 'Verifica 1',
+        classId: 'a',
+        programId: 'p1',
+        importId: 'i1',
+        questionRefs: [],
+      },
+      // Legacy: teacherSnapshot without `questions` (pre snapshot-with-solutions).
+      teacherSnapshot: {
+        title: 'Verifica 1',
+        classId: 'a',
+        className: 'Classe A',
+        programId: 'p1',
+        importId: 'i1',
+        questionRefs: [],
+        activatedAt: { seconds: 1, nanoseconds: 0 },
+      },
+      activatedAt: { seconds: 1, nanoseconds: 0 },
+      closedAt: null,
+    },
+  });
+}
+
 describe('loadCorrectionWorkspace', () => {
   it('assembles submission + verification + correction + null correctionReturn', async () => {
     seedSubmittedSubmission();
     seedVerification();
-    mockOpenOrLoadCorrection.mockResolvedValue({ status: 'in_progress', evaluations: {} });
+    mockOpenOrLoadCorrection.mockResolvedValue({
+      correction: { status: 'in_progress', evaluations: {} },
+      projectionQuestions: null,
+    });
 
     const result = await loadCorrectionWorkspace(SUBMISSION_ID, OWNER_UID, fakeDb);
 
@@ -110,6 +145,77 @@ describe('loadCorrectionWorkspace', () => {
     expect(mockOpenOrLoadCorrection).toHaveBeenCalledWith(SUBMISSION_ID, OWNER_UID, fakeDb);
   });
 
+  it('recent verification: canonical questions carry type, text and frozen solution', async () => {
+    seedSubmittedSubmission();
+    seedVerification();
+    mockOpenOrLoadCorrection.mockResolvedValue({
+      correction: { status: 'in_progress', evaluations: {} },
+      projectionQuestions: null,
+    });
+
+    const result = await loadCorrectionWorkspace(SUBMISSION_ID, OWNER_UID, fakeDb);
+
+    expect(result.questions).toEqual([
+      {
+        order: 0,
+        tipo: 'aperta',
+        maxPoints: 10,
+        testo: 'D1',
+        soluzione: 'sol',
+        solutionUnavailable: false,
+      },
+    ]);
+    // No projection fallback read when the teacher snapshot is present.
+    expect(mockLoadPublishedProjectionQuestions).not.toHaveBeenCalled();
+  });
+
+  it('legacy verification: questions come from the projection (order preserved), solution declared unavailable, no pool/Storage read', async () => {
+    seedSubmittedSubmission();
+    seedVerificationLegacy();
+    // Projection already read while creating the correction — out of order to
+    // prove the loader sorts by `order`.
+    mockOpenOrLoadCorrection.mockResolvedValue({
+      correction: { status: 'in_progress', evaluations: {} },
+      projectionQuestions: [
+        { order: 1, tipo: 'aperta', maxPoints: 5, testo: 'D2' },
+        { order: 0, tipo: 'aperta', maxPoints: 10, testo: 'D1' },
+      ],
+    });
+
+    const result = await loadCorrectionWorkspace(SUBMISSION_ID, OWNER_UID, fakeDb);
+
+    expect(result.questions.map((q) => q.order)).toEqual([0, 1]);
+    expect(result.questions[0]).toEqual({
+      order: 0,
+      tipo: 'aperta',
+      maxPoints: 10,
+      testo: 'D1',
+      soluzione: null,
+      solutionUnavailable: true,
+    });
+    // Reused the create-path projection — no extra projection read, and never
+    // the live pool or Storage.
+    expect(mockLoadPublishedProjectionQuestions).not.toHaveBeenCalled();
+  });
+
+  it('legacy verification on re-open: reads the projection exactly once as a fallback', async () => {
+    seedSubmittedSubmission();
+    seedVerificationLegacy();
+    mockOpenOrLoadCorrection.mockResolvedValue({
+      correction: { status: 'in_progress', evaluations: {} },
+      projectionQuestions: null,
+    });
+    mockLoadPublishedProjectionQuestions.mockResolvedValue([
+      { order: 0, tipo: 'aperta', maxPoints: 10, testo: 'D1' },
+    ]);
+
+    const result = await loadCorrectionWorkspace(SUBMISSION_ID, OWNER_UID, fakeDb);
+
+    expect(result.questions).toHaveLength(1);
+    expect(result.questions[0]!.solutionUnavailable).toBe(true);
+    expect(mockLoadPublishedProjectionQuestions).toHaveBeenCalledTimes(1);
+  });
+
   it('includes the correctionReturn when one already exists', async () => {
     seedSubmittedSubmission();
     seedVerification();
@@ -117,7 +223,10 @@ describe('loadCorrectionWorkspace', () => {
       exists: true,
       data: { visibleToStudent: true, solutionsVisible: false },
     });
-    mockOpenOrLoadCorrection.mockResolvedValue({ status: 'returned', evaluations: {} });
+    mockOpenOrLoadCorrection.mockResolvedValue({
+      correction: { status: 'returned', evaluations: {} },
+      projectionQuestions: null,
+    });
 
     const result = await loadCorrectionWorkspace(SUBMISSION_ID, OWNER_UID, fakeDb);
 
