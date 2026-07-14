@@ -26,7 +26,7 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 
 **M5 — Correzione AI** è fuori scope V1 ed è pianificato per la V2. Vedi la sezione "V2 — Roadmap futura" in fondo. M5 non fa parte del perimetro né delle dipendenze della V1.
 
-Il Modulo 3 (Portale digitale) è diviso in **M3-lite** e **M3-full**, entrambi completati; Gate G5 superato per M3-full. Dopo M3-lite sono stati completati **RE — Repository Editor** (RE-00 → RE-07) e **QE — Question Editor** (QE-00 → QE-05). **M4 — Correzione ed export è in corso**: correzione, restituzione, ciclo di vita, Registro Correzioni, CSV ed export PDF (M4-00→M4-03B) sono completati (Markdown rinviato per assenza di caso d'uso); restano M4-04 e Gate G6.
+Il Modulo 3 (Portale digitale) è diviso in **M3-lite** e **M3-full**, entrambi completati; Gate G5 superato per M3-full. Dopo M3-lite sono stati completati **RE — Repository Editor** (RE-00 → RE-07) e **QE — Question Editor** (QE-00 → QE-05). **M4 — Correzione ed export è completato**: correzione, restituzione, ciclo di vita, Registro Correzioni, CSV ed export PDF (M4-00→M4-04) sono completati (Markdown rinviato per assenza di caso d'uso); **Gate G6 superato** — vedi `documentazione/evidenze/g6-m4-checklist-finale.md`.
 
 ---
 
@@ -105,9 +105,11 @@ Un pacchetto è abbastanza piccolo da essere verificato in una review e abbastan
 | GRE — Repository Editor | RE integrato. | Il docente crea/modifica/elimina/riordina UDA e lezioni, modifica front matter e corpo Markdown, vede anteprima, export ZIP resta portabile, publicLessons resta coerente, eliminazioni bloccate se ci sono verifiche collegate. | QE, M3-full, polish ulteriore o uso operativo stabile. |
 | GQE — Question Editor | QE integrato (QE-01→QE-05). | Il docente crea/modifica/elimina domande nel pool, `questionIndex` aggiornato atomicamente, picker verifiche riflette le modifiche, export ZIP include il pool aggiornato, nessuna regressione sui pool esistenti. | M3-full, polish ulteriore o uso operativo stabile. |
 | G5 — Portale digitale (M3-full) ✅ | G4-lite e GRE superati; M3-full integrato. | Flusso avvio→bozza→consegna; immutabilità post-consegna; unicità submission; verifica chiusa blocca bozze; monitor docente real-time; modalità verifica attiva. **Superato** — vedi gate G5 in `m3-full-roadmap.md §8` e checklist finale in `documentazione/evidenze/g5-m3-full-checklist-finale.md`. | M4. |
-| G6 — Correzione ed export | M4 integrato, G5 (M3-full) superato e H-04 completata. | Punteggi, rettifiche, eliminazione, export PDF/Markdown/CSV da snapshot. | Uso manuale completo — fine V1. |
-| G6 — AI assistita (V2) | M5-A..C integrati e H-05 completata. | Contesto chiuso, audit, proposte assistite per risposta, approvazione massiva. | AI assistita. |
-| G7 — AI automatica (V2) | G6 e H-06 completati. | Opt-in per verifica, audit e rollback. | Correzione automatica. |
+| G6 — Correzione ed export ✅ | M4 integrato, G5 (M3-full) superato e H-04 completata. | Punteggi, rettifiche, eliminazione, export PDF/CSV da snapshot (Markdown rinviato). | **Superato** — vedi `documentazione/evidenze/g6-m4-checklist-finale.md`. Fine V1 lato correzione. |
+| G7 — AI assistita (V2) | M5-A..C integrati e H-05 completata. | Contesto chiuso, audit, proposte assistite per risposta, approvazione massiva. | AI assistita. |
+| G8 — AI automatica (V2) | G7 e H-06 completati. | Opt-in per verifica, audit e rollback. | Correzione automatica. |
+
+> **Numerazione gate (univoca).** `G6` identifica **esclusivamente** il gate finale di M4 (Correzione ed export). I gate AI della V2 sono `G7` (AI assistita) e `G8` (AI automatica): rinumerati da una precedente stesura che riusava `G6`/`G7` anche per l'AI, senza alcuna modifica al loro scope.
 
 C-02 e C-03 riguardano la V2 e non bloccano M1–M4. M3-full è completato (Gate G5 superato); M4 (Correzione ed export) può quindi essere pianificato. Il progetto resta comunque in grado di fermarsi a ogni gate superato mantenendo un prodotto utile.
 
@@ -309,7 +311,7 @@ Il concept UX approvato per accesso dalla tabella **Consegne online**, workspace
 | M4-MON-01 ✅ | Monitor consegne docente: riepilogo owner-only `correctionSummary` sulla submission, colonne Punteggio/Percentuale, rimozione di Ultimo salvataggio e ordinamento client-side stabile sulle intestazioni utili. | M4-LIFE-02 | — | Nessuna nuova query o listener; un solo aggiornamento submission per salvataggio reale, combinato con il mirror di stato quando necessario; receipt studente priva di punteggio; Rules Emulator e test UI/service verdi. |
 | M4-03A ✅ | La tabella Consegne online esistente è il Registro Correzioni; modello canonico minimale ed export CSV UTF-8/BOM compatibile con Excel italiano, generato nel browser dalle righe già caricate e nell'ordine corrente. | M4-MON-01 | — | Nessuna popup/tabella duplicata, persistenza, query, lettura, scrittura o listener aggiuntivo; dati tecnici, risposte, soluzioni, feedback ed eventi esclusi. Completato. |
 | M4-03B ✅ | Export **PDF** stampabile del Riepilogo consegne e correzioni (A4 landscape, jsPDF via import dinamico) dallo **stesso** modello canonico e dalle stesse righe già caricate e ordinate del CSV; intestazione con conteggi, tabella multipagina con intestazioni ripetute e footer di pagina. Markdown **non implementato**: duplicativo e senza caso d'uso concreto (CSV per elaborare i dati, PDF per consultare/stampare), rinviato salvo esigenza esplicita. | M4-03A/H-04 | — | Nessuna query/lettura/scrittura/listener/Storage aggiuntivo; nessuna dipendenza nuova (jsPDF già presente); nessuna persistenza; nessun dato tecnico/risposta/soluzione/feedback/UID esportato. Resta M4-04/Gate G6. |
-| M4-04 | Integrazione M4, test E2E correzione/export, evidenze gate G6. | M4-02/M4-02B/M4-03B | — | Ciclo digitale manuale completo. |
+| M4-04 ✅ | Integrazione finale M4: audit read-first dell'intero flusso, verifica che ogni punto abbia evidenza automatica, checklist finale del gate. Nessuna nuova feature, nessun E2E fragile aggiunto. | M4-02/M4-02B/M4-03B | — | **Gate G6 superato** — evidenze in `documentazione/evidenze/g6-m4-checklist-finale.md`; 320 test M4 verdi. M4 completato. |
 
 #### M4-00 — Contratto tecnico minimo della correzione (Completato)
 
@@ -441,7 +443,7 @@ Specifica e confini in [`student-didattica-ux-roadmap.md`](student-didattica-ux-
 |---|---|---|---|
 | Verifica | Ogni push/PR | Merge | Format, lint, typecheck, unit test e build. |
 | Integrazione | PR verso `main` | Merge | Firebase Emulator Suite: Auth, Firestore, Storage; Functions riservate a M5 (V2) — M3-full (completato) non ne introduce. |
-| E2E | Prima dei gate G2–G7 (inclusi G4-lite e G4) | Gate | Browser test sui flussi del modulo e casi negativi. |
+| E2E | Prima dei gate G2–G8 (inclusi G4-lite e G4) | Gate | Browser test sui flussi del modulo e casi negativi. |
 | Deploy `dev` | Merge su `main` | — | Deploy controllato senza dati reali. |
 | Deploy `prod` | Gate approvato + azione manuale Docente | Go-live | Backup verificato, release notes e smoke test. |
 
@@ -973,9 +975,9 @@ Pacchetti previsti (dettaglio di specifica, non in V1):
 | M5-B | Proposte assistite per item con contesto chiuso. | M5-A | Proposte non alterano correzioni definitive. |
 | M5-C | UI assistita: proposta, approva/modifica/rifiuta, bulk approval con riepilogo. | M5-B | Audit completo; bulk non applica item incompleti. |
 | M5-D | Modalità automatica con opt-in per verifica, regole configurabili, audit e rollback. Richiede C-03 e H-06. | M5-C/H-06 | Non attiva per default; reversibile. |
-| M5-E | Test sicurezza, qualità e costi AI; evidenze G6/G7. | M5-C/M5-D | Nessun web/retrieval; costi osservabili; gate rispettati. |
+| M5-E | Test sicurezza, qualità e costi AI; evidenze G7/G8. | M5-C/M5-D | Nessun web/retrieval; costi osservabili; gate rispettati. |
 
-I gate G6 (AI assistita) e G7 (AI automatica) appartengono alla V2.
+I gate G7 (AI assistita) e G8 (AI automatica) appartengono alla V2.
 
 ### Altre funzionalità rinviate alla V2
 
