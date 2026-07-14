@@ -1,19 +1,19 @@
 # Repository Storage Gateway — roadmap e contratto (SGW)
 
-> **Stato: SGW-01 implementato, deployato su DEV e verificato su Brave mobile;
-> SGW-02A implementato nel codice e in attesa di deploy/smoke DEV; il resto di
-> SGW-02 rimane pendente.**
+> **Stato: SGW-01 e SGW-02A implementati, deployati su DEV e verificati;
+> SGW-02B batch-read implementato nel codice e in attesa di deploy/smoke DEV;
+> resta SGW-02C batch-write per l'import, poi il Gate SGW-03.**
 > Il codice del gateway esiste ora nel repo: la Cloud Function
 > `repositoryGateway` (`functions/src/repositoryGateway.ts` +
 > `repositoryGatewayCore.ts`), il client adapter
 > (`apps/web/src/features/repository/gateway/repositoryGatewayClient.ts`), il
 > rewrite `/api/repository/**` in `firebase.json` e la migrazione delle
 > operazioni **singolo-file** (editing lezioni/UDA, pool, fallback lezione) e,
-> con SGW-02A, la cancellazione della root esatta di un import.
-> Il deploy DEV della Function in `us-central1`, la rewrite Hosting e lo smoke
-> reale su Brave mobile sono completati per SGW-01. Import/export, backfill e
-> caricamenti batch delle domande restano accessi diretti a Storage fino al
-> completamento di SGW-02.
+> con SGW-02A, la cancellazione della root esatta di un import; con SGW-02B,
+> export ZIP, backfill e caricamenti batch dei pool. Il deploy DEV della
+> Function in `us-central1`, la rewrite Hosting e gli smoke reali sono
+> completati fino a SGW-02A. L'import ZIP resta l'unico flusso applicativo con
+> accesso Storage diretto fino a SGW-02C.
 
 ## 0. Perché (contesto verificato su DEV)
 
@@ -26,12 +26,9 @@
 - **MOB-01C** ha risolto **solo** la *consultazione* delle lezioni docente,
   spostandola su `publicLessons.content` (Firestore, un `getDoc`), con Storage
   come fallback legacy.
-- **Restano dipendenti diretti da Firebase Storage** (anche in **scrittura**,
-  quindi bloccabili su Brave): pool (lettura/salvataggio/eliminazione),
-  modifica contenuto/metadata Markdown di lezioni e UDA, import, export,
-  eliminazioni (lezione/UDA/programma), backfill `publicLessons.content`, e il
-  caricamento delle domande in preparazione/attivazione verifica e per il PDF
-  soluzioni.
+- Dopo SGW-01/02A e il codice SGW-02B, **resta dipendente direttamente da
+  Firebase Storage solo l'import ZIP** (`uploadBytes` multipli). È l'ultimo
+  flusso bloccabile su Brave e viene migrato in SGW-02C.
 
 L'obiettivo SGW è instradare **tutti** questi accessi attraverso un endpoint
 **same-origin** (`https://<hosting-domain>/api/repository/*`), servito da
@@ -57,12 +54,12 @@ Verificato con `rg "from 'firebase/storage'"` e
 | 5 | `repository/editor/repositoryEditorService.ts` · `fetchStorageText` (:43) | read | Markdown lezione/UDA | `getBytes` | owner | media (edit) | no | alta | **SGW-01** |
 | 6 | `repository/editor/repositoryEditorService.ts` · `writeStorageText` (:52) | write | Markdown lezione/UDA | `uploadBytes` | owner | media (create/edit/reorder metadata) | no | **alta (scrittura)** | **SGW-01** |
 | 7 | `repository/editor/repositoryEditorService.ts` · delete lezione/UDA (:830) | delete | file lezione/UDA | `deleteObject` | owner | bassa | no | alta | **SGW-01** |
-| 8 | `teacher/exportZip.ts` · `fetchContent`/`buildExportZip` (:15) | read | Markdown UDA+lezioni | `getBytes` (concorrente) | owner | bassa (export) | **sì** | alta | **SGW-02** |
-| 9 | `repository/import/importRepository.ts` (:74) | write | tutti i file Markdown+pool | `uploadBytes` (loop) | owner | bassa (import) | **sì** | **alta (scrittura, molti file)** | **SGW-02** |
-| 10 | `repository/programs/programsService.ts` · `deleteProgram` | delete-prefix | intero prefisso import | gateway `deleteImportPrefix` | owner | rara (elimina programma/import) | **sì (prefix)** | alta | **SGW-02A ✅ codice** |
-| 11 | `repository/programs/publicLessonsBackfillService.ts` (:116) | read | Markdown lezione | `getBytes` (per lezione) | owner | rara (migrazione one-shot) | **sì** | alta | **SGW-02** |
-| 12 | `repository/verifications/loadSelectedQuestions.ts` (:54) | read | pool files (raggruppati) | `getBytes` (concorrenza 4) | owner | media (prep/attivazione verifica, PDF studenti) | **sì** | alta | **SGW-02** |
-| 13 | `repository/verifications/loadSelectedQuestionsWithSolutions.ts` (:72) | read | pool files (raggruppati) | `getBytes` (concorrenza 4) | owner | media (PDF soluzioni docente) | **sì** | alta | **SGW-02** |
+| 8 | `teacher/exportZip.ts` · `buildExportZip` | read | Markdown UDA+lezioni | gateway `readTexts` | owner | bassa (export) | **sì** | risolta nel codice | **SGW-02B ✅ codice** |
+| 9 | `repository/import/importRepository.ts` (:74) | write | tutti i file Markdown+pool | `uploadBytes` (loop) | owner | bassa (import) | **sì** | **alta (scrittura, molti file)** | **SGW-02C** |
+| 10 | `repository/programs/programsService.ts` · `deleteProgram` | delete-prefix | intero prefisso import | gateway `deleteImportPrefix` | owner | rara (elimina programma/import) | **sì (prefix)** | risolta su DEV | **SGW-02A ✅** |
+| 11 | `repository/programs/publicLessonsBackfillService.ts` | read | Markdown lezione | gateway `readTexts` | owner | rara (migrazione one-shot) | **sì** | risolta nel codice | **SGW-02B ✅ codice** |
+| 12 | `repository/verifications/loadSelectedQuestions.ts` | read | pool files (raggruppati) | gateway `readTexts` | owner | media (prep/attivazione verifica, PDF studenti) | **sì** | risolta nel codice | **SGW-02B ✅ codice** |
+| 13 | `repository/verifications/loadSelectedQuestionsWithSolutions.ts` | read | pool files (raggruppati) | gateway `readTexts` | owner | media (PDF soluzioni docente) | **sì** | risolta nel codice | **SGW-02B ✅ codice** |
 
 **Configurazione (non una chiamata dati, resta l'unico punto SDK autorizzato):**
 `apps/web/src/lib/firebase.ts` — `getStorage(app)` + `connectStorageEmulator`.
@@ -77,8 +74,9 @@ gateway (gate `rg` in SGW-02).
   in lettura ai pool.
 - Le operazioni 8–13 sono naturalmente **batch** (più file per una singola
   operazione logica: un export, un import, una cancellazione di prefisso, un
-  backfill, una preparazione verifica). Il gateway le serve con **una sola
-  invocazione** ciascuna (vedi Task 3), non una Function per file.
+  backfill, una preparazione verifica). Il gateway le serve con una singola
+  operazione client e un numero limitato di invocazioni per chunk (vedi Task
+  3), mai una Function per singolo file.
 - Le operazioni 1–7 sono **singolo file** e mappano 1:1 sugli endpoint singoli.
 
 ---
@@ -182,6 +180,10 @@ Per **export** e **preparazione/attivazione verifica** e **PDF soluzioni**.
   `413 total_too_large`, `415`.
 - **File assente**: riportato **per-file** in `files[i].error`, non fa fallire
   l'intera richiesta.
+- **Limite payload**: massimo **20 MB UTF-8** complessivi per risposta. Il
+  server legge al massimo 8 oggetti in parallelo; il client divide liste oltre
+  300 path e, su `413 total_too_large`, dimezza automaticamente il chunk
+  mantenendo l'ordine originale.
 - **Atomicità**: **non garantita** tra file (lettura → nessuna mutazione).
 - **Retry/Idempotenza**: sì.
 - **Costo**: 1 invocazione + N operazioni classe B + egress = somma dimensioni.
@@ -276,7 +278,8 @@ qui come opzione, non come requisito SGW-01.
 - **Niente retry infiniti**: il gateway non ritenta all'infinito; il client usa
   **retry manuale** (pulsante "Riprova", pattern MOB-01B) o un retry
   **strettamente limitato** (≤ 1) sulle operazioni idempotenti.
-- **Import/export in batch**: una sola invocazione per operazione logica.
+- **Import/export in batch**: una operazione client; una o poche invocazioni
+  gateway per chunk, mai una invocazione per file.
 - **Consultazione lezione normale resta Firestore-first** (`publicLessons.content`,
   MOB-01C): il gateway **non** viene usato per la lettura ordinaria della
   lezione, solo per editing/pool/import/export/verifica/backfill.
@@ -367,18 +370,20 @@ qui come opzione, non come requisito SGW-01.
   chiamata gateway per import. Create/salvataggi UDA/lezioni accorpano inoltre
   documenti tecnici, proiezioni e audit in un solo batch Firestore.
   `minInstances: 0` resta invariato: nessun costo fisso, possibile cold start.
-- Endpoint **batch-read / batch-write / delete-prefix** (§3.4–3.6).
-- Migrazione di: **import** (`importRepository`), **export** (`exportZip`),
-  ~~**eliminazioni/prefix delete** (`programsService`)~~ **completato in
-  SGW-02A**, quindi
-  **backfill** (`publicLessonsBackfillService`), **`loadSelectedQuestions`** e
-  **`loadSelectedQuestionsWithSolutions`**, e **ogni altro accesso Storage
-  residuo**.
+- ✅ **SGW-02B codice**: endpoint owner-only `batch-read`; massimo 300 path e
+  20 MB, risultati per-file ordinati, assenze isolate, letture server con
+  concorrenza 8. Il client `readTexts` deduplica, mantiene l'ordine, effettua
+  chunking e split adattivo su payload troppo grande. Migrati **export ZIP**,
+  **backfill**, **`loadSelectedQuestions`** e
+  **`loadSelectedQuestionsWithSolutions`** senza accessi Storage diretti.
+- ⏳ **SGW-02C**: endpoint `batch-write` e migrazione del solo accesso residuo,
+  **import ZIP** (`importRepository`).
 - **Gate `rg`**: nessuna operazione Storage diretta nel frontend fuori
   dall'adapter/configurazione autorizzata
   (`rg "getBytes\(|uploadBytes\(|deleteObject\(|listAll\(" apps/web/src`
   deve restare vuoto fuori da `lib/firebase.ts` e dall'adapter).
-- SGW-02A copre la riga **10**; restano le righe **8, 9, 11, 12, 13**.
+- SGW-02A copre la riga **10**; SGW-02B copre **8, 11, 12, 13**; resta solo la
+  riga **9** per SGW-02C.
 
 #### Misura strutturale SGW-02A (round-trip, non tempi reali)
 

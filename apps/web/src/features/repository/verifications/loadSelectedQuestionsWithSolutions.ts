@@ -1,18 +1,14 @@
-import { getBytes, ref } from 'firebase/storage';
-import type { FirebaseStorage } from 'firebase/storage';
 import { parsePool } from '@schoolforge/lesson-contract';
 import type { QuestionOption } from '@schoolforge/lesson-contract';
 import type { VerificationQuestionRef } from '../../../types/firestore.js';
-import { mapWithConcurrency } from './mapWithConcurrency.js';
-
-const POOL_READ_CONCURRENCY = 4;
+import { readTexts } from '../gateway/repositoryGatewayClient.js';
 
 /**
  * Question data for the teacher-only solutions PDF. Unlike `LoadedQuestion`
  * (student-facing), this includes `soluzione` — the textual answer for
  * `aperta`, or the correct option id(s) for `chiusa_singola`/`chiusa_multipla`.
- * Fetched fresh from the pool in Storage at download time; never persisted
- * to Firestore.
+ * Fetched fresh from the pool through the same-origin repository gateway at
+ * download time; never persisted to Firestore.
  */
 export type LoadedQuestionWithSolution = {
   ref: VerificationQuestionRef;
@@ -28,27 +24,21 @@ export type LoadQuestionsWithSolutionsResult =
 
 /**
  * Loads question text, options and solution for each selected ref, for the
- * teacher-only "solutions PDF". Fetches pool files from Firebase Storage and
- * parses them at call time — solutions are never stored anywhere besides
- * the pool files themselves.
- *
- * Distinct pool files are read with the same bounded concurrency (at most
- * `POOL_READ_CONCURRENCY` Storage reads in flight) as `loadSelectedQuestions`
- * — see PERF-09 / PERF-SEC-01B-2 — instead of one `getBytes` at a time.
- * The number of Storage reads is unchanged (still one per distinct pool
- * file); only the wall-clock time to fetch them drops.
+ * teacher-only "solutions PDF". Fetches all distinct pool files through the
+ * batch-read gateway and parses them at call time — solutions are never stored
+ * anywhere besides the pool files themselves.
  *
  * Returns refs in the same order as the input array.
  */
 export async function loadSelectedQuestionsWithSolutions(
   questionRefs: VerificationQuestionRef[],
-  storage: FirebaseStorage,
+  _legacyStorage?: unknown,
 ): Promise<LoadQuestionsWithSolutionsResult> {
   if (questionRefs.length === 0) {
     return { ok: false, error: 'Nessuna domanda selezionata.' };
   }
 
-  // Group refs by poolStorageRef to minimise Storage reads
+  // Group refs by poolStorageRef to avoid duplicate file reads in the gateway batch.
   const byPool = new Map<string, VerificationQuestionRef[]>();
   for (const r of questionRefs) {
     const arr = byPool.get(r.poolStorageRef) ?? [];
@@ -58,40 +48,26 @@ export async function loadSelectedQuestionsWithSolutions(
 
   const resultMap = new Map<string, LoadedQuestionWithSolution>();
 
-  // Reads distinct pool files with bounded concurrency (PERF-09 /
-  // PERF-SEC-01B-2) instead of one `getBytes` at a time — the pools are
-  // still deduplicated by `poolStorageRef` above, so a ref repeated across
-  // many questions is still fetched exactly once. Matches the same
-  // POOL_READ_CONCURRENCY=4 pattern as `loadSelectedQuestions.ts`.
-  const loadedPools = await mapWithConcurrency(
-    Array.from(byPool.entries()),
-    POOL_READ_CONCURRENCY,
-    async ([poolRef, refs]) => {
-      let content: string;
-      try {
-        const bytes = await getBytes(ref(storage, poolRef));
-        content = new TextDecoder().decode(bytes);
-      } catch {
-        return { ok: false as const, error: `Pool non trovato: ${poolRef}` };
-      }
-
-      const parsed = parsePool(content, poolRef);
-      if (!parsed.ok) {
-        return { ok: false as const, error: `Pool non valido: ${poolRef}` };
-      }
-
-      return {
-        ok: true as const,
-        poolRef,
-        refs,
-        questionMap: new Map(parsed.pool.questions.map((q) => [q.id, q])),
-      };
-    },
+  let batchResults: Awaited<ReturnType<typeof readTexts>>;
+  try {
+    batchResults = await readTexts([...byPool.keys()]);
+  } catch {
+    return { ok: false, error: 'Impossibile caricare i pool con le soluzioni.' };
+  }
+  const contentByPath = new Map(
+    batchResults.filter((result) => result.ok).map((result) => [result.path, result.content]),
   );
 
-  for (const loaded of loadedPools) {
-    if (!loaded.ok) return { ok: false, error: loaded.error };
-    const { poolRef, refs, questionMap } = loaded;
+  for (const [poolRef, refs] of byPool.entries()) {
+    const content = contentByPath.get(poolRef);
+    if (content === undefined) {
+      return { ok: false, error: `Pool non trovato: ${poolRef}` };
+    }
+    const parsed = parsePool(content, poolRef);
+    if (!parsed.ok) {
+      return { ok: false as const, error: `Pool non valido: ${poolRef}` };
+    }
+    const questionMap = new Map(parsed.pool.questions.map((q) => [q.id, q]));
 
     for (const r of refs) {
       const q = questionMap.get(r.questionLocalId);

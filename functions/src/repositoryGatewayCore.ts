@@ -8,6 +8,9 @@
 
 /** Limite dimensione per file (coerente con `MAX_LESSON_CONTENT_BYTES`). */
 export const MAX_FILE_BYTES = 700_000;
+export const MAX_BATCH_READ_FILES = 300;
+export const MAX_BATCH_READ_TOTAL_BYTES = 20_000_000;
+const BATCH_READ_CONCURRENCY = 8;
 
 /** Errore applicativo del gateway: `code` + `status` HTTP. */
 export class GatewayError extends Error {
@@ -21,11 +24,11 @@ export class GatewayError extends Error {
   }
 }
 
-export type Route = 'read' | 'write' | 'delete' | 'delete-prefix';
+export type Route = 'read' | 'write' | 'delete' | 'delete-prefix' | 'batch-read';
 
 /**
  * Routing rigoroso: accetta **solo**
- * `/api/repository/{read|write|delete|delete-prefix}`
+ * `/api/repository/{read|write|delete|delete-prefix|batch-read}`
  * (con un eventuale singolo slash finale tollerato). Qualsiasi prefisso,
  * suffisso o segmento aggiuntivo → `null` (l'handler risponde 404 senza toccare
  * Storage). Rifiuta `/repository/read`, `/evil/repository/read`,
@@ -34,7 +37,9 @@ export type Route = 'read' | 'write' | 'delete' | 'delete-prefix';
 export function parseRoute(requestPath: string): Route | null {
   if (typeof requestPath !== 'string') return null;
   const normalized = requestPath.endsWith('/') ? requestPath.slice(0, -1) : requestPath;
-  const match = /^\/api\/repository\/(read|write|delete|delete-prefix)$/.exec(normalized);
+  const match = /^\/api\/repository\/(read|write|delete|delete-prefix|batch-read)$/.exec(
+    normalized,
+  );
   return match ? (match[1] as Route) : null;
 }
 
@@ -148,6 +153,25 @@ export function validateImportPrefix(rawPath: unknown, uid: string): string {
     throw new GatewayError('not_owner', 'Il prefisso non appartiene all’utente autenticato.', 403);
   }
   return rawPath;
+}
+
+/** Valida una richiesta batch-read, preservando ordine e unicità dei path. */
+export function validateBatchReadPaths(rawPaths: unknown, uid: string): string[] {
+  if (!Array.isArray(rawPaths) || rawPaths.length === 0) {
+    throw new GatewayError('invalid_paths', 'La lista dei path è mancante o vuota.', 400);
+  }
+  if (rawPaths.length > MAX_BATCH_READ_FILES) {
+    throw new GatewayError(
+      'too_many_files',
+      `Sono ammessi al massimo ${MAX_BATCH_READ_FILES} file per richiesta.`,
+      400,
+    );
+  }
+  const paths = rawPaths.map((path) => validateRepositoryPath(path, uid));
+  if (new Set(paths).size !== paths.length) {
+    throw new GatewayError('duplicate_path', 'La lista contiene path duplicati.', 400);
+  }
+  return paths;
 }
 
 /** True se la stringa contiene surrogati UTF-16 isolati (UTF-8 non codificabile). */
@@ -306,7 +330,7 @@ export type GatewayInput = {
   route: Route | null;
   contentType: string | undefined;
   authHeader: string | undefined;
-  body: { path?: unknown; content?: unknown } | undefined;
+  body: { path?: unknown; paths?: unknown; content?: unknown } | undefined;
 };
 
 export type GatewayResult = { status: number; body: unknown };
@@ -340,6 +364,42 @@ export async function handleGateway(
       );
     }
     const uid = await authorizeOwner(input.authHeader, deps);
+    if (input.route === 'batch-read') {
+      const paths = validateBatchReadPaths(input.body?.paths, uid);
+      const files: Array<
+        | { path: string; content: string; encoding: 'utf-8' }
+        | { path: string; error: { code: 'file_not_found'; message: string } }
+      > = [];
+      let totalBytes = 0;
+
+      for (let i = 0; i < paths.length; i += BATCH_READ_CONCURRENCY) {
+        const chunk = paths.slice(i, i + BATCH_READ_CONCURRENCY);
+        const results = await Promise.all(
+          chunk.map(async (path) => ({ path, result: await deps.storage.read(path) })),
+        );
+        for (const { path, result } of results) {
+          if (!result.exists) {
+            files.push({
+              path,
+              error: { code: 'file_not_found', message: 'File non trovato.' },
+            });
+            continue;
+          }
+          const content = result.content ?? '';
+          totalBytes += Buffer.byteLength(content, 'utf-8');
+          if (totalBytes > MAX_BATCH_READ_TOTAL_BYTES) {
+            throw new GatewayError(
+              'total_too_large',
+              `La risposta supera il limite di ${MAX_BATCH_READ_TOTAL_BYTES} byte.`,
+              413,
+            );
+          }
+          files.push({ path, content, encoding: 'utf-8' });
+        }
+      }
+      return { status: 200, body: { files } };
+    }
+
     const path =
       input.route === 'delete-prefix'
         ? validateImportPrefix(input.body?.path, uid)

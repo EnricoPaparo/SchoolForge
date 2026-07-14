@@ -56,7 +56,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [repository-editor-roadmap.md](repository-editor-roadmap.md) | Roadmap Repository Editor (RE-00–RE-07, implementato). | Per consultare decisioni tecniche e scope dell'editor UDA/lezioni. |
 | [question-editor-roadmap.md](question-editor-roadmap.md) | Roadmap Question Editor (QE-00–QE-05, completato): editor pool domande Markdown-first, senza reimport ZIP. | Per consultare contratto, decisioni e implementazione della sezione "Domande". |
 | [m3-full-roadmap.md](m3-full-roadmap.md) | Specifica M3-full: verifiche online, consegne, monitor, sessione obbligatoria e modalità verifica. Roadmap M3F-00–M3F-11C, completata — Gate G5 superato. | Per consultare il modello dati/Rules di M3-full o lo stato del Gate G5. |
-| [storage-gateway-roadmap.md](storage-gateway-roadmap.md) | Contratto e roadmap del **Repository Storage Gateway** same-origin (SGW-00–03). **SGW-01 implementato, deployato su DEV e verificato su Brave; SGW-02/03 pendenti.** | Per capire il gateway, gli accessi Storage ancora diretti e i prossimi passi. |
+| [storage-gateway-roadmap.md](storage-gateway-roadmap.md) | Contratto e roadmap del **Repository Storage Gateway** same-origin (SGW-00–03). **SGW-01/02A verificati su DEV; SGW-02B batch-read implementato nel codice; restano SGW-02C import e SGW-03.** | Per capire il gateway, l'ultimo accesso Storage diretto e i prossimi passi. |
 | [didattica-ux-roadmap.md](didattica-ux-roadmap.md) | Specifica UX del redesign "Didattica" (DUX-00–10A + Gate GDUX). **DUX-01–10A completati; Gate GDUX pendente.** | Per consultare architettura informativa, invarianti di sicurezza/costo e prossimo Gate. |
 
 ## Evidenze

@@ -25,10 +25,9 @@ vi.mock('../programs/programsService.js', () => ({
   listLessons: (...args: unknown[]) => mockListLessons(...args),
 }));
 
-// Mock firebase/storage so exportZip can be imported without real Firebase
-vi.mock('firebase/storage', () => ({
-  getBytes: vi.fn(),
-  ref: vi.fn(),
+const mockReadTexts = vi.fn();
+vi.mock('../gateway/repositoryGatewayClient.js', () => ({
+  readTexts: (...args: unknown[]) => mockReadTexts(...args),
 }));
 
 // Mock jszip so we don't need a real zip in tests
@@ -85,18 +84,15 @@ const POOL_LESSON = {
 // ─── 1. Pool files excluded from ZIP ─────────────────────────────────────────
 
 describe('Security: pool files excluded from ZIP', () => {
-  it('does not call fetchContent for .pool.md lesson files', async () => {
+  it('does not request or add .pool.md lesson files', async () => {
     const { exportZip } = await import('../../teacher/exportZip.js');
 
     mockListUdas.mockResolvedValue([]);
     mockListLessons.mockResolvedValue([NORMAL_LESSON, POOL_LESSON]);
 
-    // fetchContent inside exportZip uses getBytes — since jszip is mocked and
-    // we only care that the .pool.md storageRef is never passed to the
-    // file() call, we track calls to zip.file() to verify .pool.md is absent.
-    const { ref, getBytes } = await import('firebase/storage');
-    vi.mocked(ref).mockReturnValue({} as ReturnType<typeof ref>);
-    vi.mocked(getBytes).mockResolvedValue(new TextEncoder().encode('lesson content').buffer);
+    mockReadTexts.mockImplementation(async (paths: string[]) =>
+      paths.map((path) => ({ ok: true, path, content: 'lesson content' })),
+    );
 
     // Create a fake anchor element for the download trigger
     const mockAnchor = { href: '', download: '', click: vi.fn() };
@@ -104,7 +100,9 @@ describe('Security: pool files excluded from ZIP', () => {
 
     await exportZip(PROGRAM as never, {} as never, {} as never);
 
-    // zip.file() should have been called only for the normal lesson, not for pool lesson
+    expect(mockReadTexts).toHaveBeenCalledWith([NORMAL_LESSON.storageRef]);
+
+    // zip.file() should have been called only for the normal lesson, not for pool lesson.
     const zipFileCalls = mockZipFile.mock.calls as [string, string][];
     const addedPaths = zipFileCalls.map(([path]) => path);
     expect(addedPaths.some((p) => p.endsWith('.pool.md'))).toBe(false);

@@ -2,13 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { loadSelectedQuestions } from '../loadSelectedQuestions.js';
 import type { VerificationQuestionRef } from '../../../../types/firestore.js';
 
-const mockGetBytes = vi.fn();
-vi.mock('firebase/storage', () => ({
-  getBytes: (...args: unknown[]) => mockGetBytes(...args),
-  ref: (_storage: unknown, path: string) => ({ path }),
+const mockReadTexts = vi.fn();
+vi.mock('../../gateway/repositoryGatewayClient.js', () => ({
+  readTexts: (...args: unknown[]) => mockReadTexts(...args),
 }));
-
-const encoder = new TextEncoder();
 
 const POOL_YAML = `---
 schema: schoolforge-pool/v1
@@ -60,7 +57,9 @@ const makeRef = (overrides: Partial<VerificationQuestionRef> = {}): Verification
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockGetBytes.mockResolvedValue(encoder.encode(POOL_YAML));
+  mockReadTexts.mockImplementation(async (paths: string[]) =>
+    paths.map((path) => ({ ok: true, path, content: POOL_YAML })),
+  );
 });
 
 describe('loadSelectedQuestions', () => {
@@ -70,8 +69,14 @@ describe('loadSelectedQuestions', () => {
     if (!result.ok) expect(result.error).toMatch(/nessuna domanda/i);
   });
 
-  it('returns error when pool file is not found in Storage', async () => {
-    mockGetBytes.mockRejectedValue(new Error('storage/object-not-found'));
+  it('returns error when the gateway reports a missing pool', async () => {
+    mockReadTexts.mockImplementation(async (paths: string[]) =>
+      paths.map((path) => ({
+        ok: false,
+        path,
+        error: { code: 'file_not_found', message: 'File non trovato.' },
+      })),
+    );
     const result = await loadSelectedQuestions([makeRef()], {} as never);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/pool non trovato/i);
@@ -176,6 +181,7 @@ describe('loadSelectedQuestions', () => {
       }),
     ];
     await loadSelectedQuestions(refs, {} as never);
-    expect(mockGetBytes).toHaveBeenCalledTimes(1);
+    expect(mockReadTexts).toHaveBeenCalledTimes(1);
+    expect(mockReadTexts).toHaveBeenCalledWith([makeRef().poolStorageRef]);
   });
 });
