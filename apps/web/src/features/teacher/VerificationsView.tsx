@@ -1146,6 +1146,7 @@ export function VerificationsView() {
       {!selectedVer && (
         <form
           id="new-verification-form"
+          className={styles.newVerificationForm}
           aria-label="Nuova verifica"
           onSubmit={(e) => void handleCreate(e)}
         />
