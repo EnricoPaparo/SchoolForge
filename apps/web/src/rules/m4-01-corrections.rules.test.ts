@@ -1224,6 +1224,40 @@ describe('Firestore rules — correctionReturns student list query', () => {
 });
 
 describe('Firestore rules — public correction status mirrors', () => {
+  it('allows the exact completeCorrection batch without a redundant score-summary rewrite', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedSubmissionReceipt();
+    await seedCorrection({
+      evaluations: {
+        '0': { order: 0, points: 8, maxPoints: 10 },
+        '1': { order: 1, points: 4, maxPoints: 5 },
+      },
+      totalPoints: 12,
+      maxPoints: 15,
+      percentage: 80,
+    });
+
+    const db = ownerDb();
+    const batch = writeBatch(db);
+    const statusUpdatedAt = serverTimestamp();
+    batch.update(doc(db, 'corrections', SUBMISSION_ID), {
+      status: 'completed',
+      completedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    batch.update(doc(db, 'submissions', SUBMISSION_ID), {
+      correctionStatus: 'completed',
+      correctionStatusUpdatedAt: statusUpdatedAt,
+    });
+    batch.update(doc(db, 'submissionReceipts', SUBMISSION_ID), {
+      correctionStatus: 'completed',
+      correctionStatusUpdatedAt: statusUpdatedAt,
+    });
+
+    await assertSucceeds(batch.commit());
+  });
+
   it('allows the owner to update submission and receipt atomically to the same valid state', async () => {
     await seedBase();
     await seedSubmittedSubmission();

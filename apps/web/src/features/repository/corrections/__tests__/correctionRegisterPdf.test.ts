@@ -149,7 +149,7 @@ describe('downloadCorrectionRegisterPdf', () => {
       ],
     });
     const text = allText();
-    expect(text).toContain('SchoolForge');
+    expect(text).not.toContain('SchoolForge');
     expect(text).toContain('Riepilogo consegne e correzioni');
     expect(text).toContain('Verifica Reti');
     expect(text).toContain('Classe: Classe 3A');

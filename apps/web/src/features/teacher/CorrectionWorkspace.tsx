@@ -350,7 +350,20 @@ export function CorrectionWorkspace({
     setActionError(null);
     try {
       await completeCorrection(submissionId, db);
-      await refresh();
+      // The atomic write is the source of truth for this deterministic
+      // transition. Do not turn a successful completion into a false error
+      // because a second, unrelated workspace reload is slow or denied.
+      // Scores/feedback are unchanged; only the local workflow status moves.
+      if (mountedRef.current) {
+        setData((current) =>
+          current
+            ? {
+                ...current,
+                correction: { ...current.correction, status: 'completed' },
+              }
+            : current,
+        );
+      }
       setConfirmComplete(false);
     } catch (err) {
       if (mountedRef.current) setActionError(saveErrorMessage(err));

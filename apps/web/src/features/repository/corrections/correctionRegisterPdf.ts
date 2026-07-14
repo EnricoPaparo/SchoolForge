@@ -104,13 +104,13 @@ type Column = { key: keyof RenderRow; header: string; width: number; align: 'lef
 
 // Widths sum to CONTENT_WIDTH (761.89).
 const COLUMNS: Column[] = [
-  { key: 'studentName', header: 'Studente', width: 150, align: 'left' },
-  { key: 'studentEmail', header: 'Email', width: 190.89, align: 'left' },
-  { key: 'statusLabel', header: 'Stato', width: 90, align: 'left' },
-  { key: 'score', header: 'Punteggio', width: 80, align: 'right' },
-  { key: 'percentage', header: 'Percentuale', width: 75, align: 'right' },
+  { key: 'studentName', header: 'Studente', width: 165, align: 'left' },
+  { key: 'studentEmail', header: 'Email', width: 205, align: 'left' },
+  { key: 'statusLabel', header: 'Stato', width: 75, align: 'left' },
+  { key: 'score', header: 'Punteggio', width: 78, align: 'right' },
+  { key: 'percentage', header: 'Percentuale', width: 70, align: 'right' },
   { key: 'submittedAt', header: 'Consegnata il', width: 110, align: 'left' },
-  { key: 'deliveryCode', header: 'Codice', width: 66, align: 'left' },
+  { key: 'deliveryCode', header: 'Codice', width: 58.89, align: 'left' },
 ];
 
 const CELL_PADDING = 4;
@@ -163,12 +163,9 @@ function drawHeaderBlock(
   let y = MARGIN;
   doc.setTextColor(0);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text('SchoolForge', MARGIN, y);
-  y += 18;
-  doc.setFontSize(13);
+  doc.setFontSize(15);
   doc.text('Riepilogo consegne e correzioni', MARGIN, y);
-  y += 16;
+  y += 18;
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);

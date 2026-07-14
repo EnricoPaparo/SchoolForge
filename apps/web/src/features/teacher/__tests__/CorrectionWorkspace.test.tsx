@@ -793,13 +793,11 @@ describe('CorrectionWorkspace — completion gate', () => {
     expect(mockCompleteCorrection).not.toHaveBeenCalled();
 
     const dialog = await screen.findByRole('alertdialog', { name: /conferma completamento/i });
-    mockLoadCorrectionWorkspace.mockResolvedValueOnce(
-      makeWorkspaceData({ correction: { status: 'completed' } }),
-    );
     fireEvent.click(within(dialog).getByText('Conferma'));
 
     await waitFor(() => expect(mockCompleteCorrection).toHaveBeenCalledWith(SUBMISSION_ID, {}));
     await waitFor(() => expect(screen.getByText('Corretta')).toBeTruthy());
+    expect(mockLoadCorrectionWorkspace).toHaveBeenCalledTimes(1);
   });
 });
 
