@@ -94,7 +94,7 @@ const STATUS_CLASSES: Record<CorrectionUiStatus, string> = {
 function saveErrorMessage(err: unknown): string {
   const code = (err as { code?: string } | null)?.code;
   if (code === 'permission-denied') {
-    return 'Operazione non consentita: la correzione potrebbe essere stata modificata altrove. Ricarica.';
+    return 'Operazione non consentita da Firebase. Ricarica la pagina; se il problema persiste, verifica le autorizzazioni del progetto.';
   }
   return err instanceof Error ? err.message : "Errore durante l'operazione. Riprova.";
 }

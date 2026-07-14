@@ -722,7 +722,14 @@ service cloud.firestore {
               )
         );
 
-      allow read: if isOwner() && resource.data.ownerUid == request.auth.uid;
+      // The owner must also be able to read this deterministic path before
+      // the correction exists: openOrLoadCorrection uses the missing read to
+      // decide whether it must create the first correction. Checking
+      // resource.data.ownerUid here makes a missing document unreadable and
+      // turns every first open into permission-denied. isOwner() already pins
+      // the single trusted teacher account through settings/owner; create and
+      // update keep their stricter identity checks above.
+      allow read: if isOwner();
       allow delete: if false;
     }
 
