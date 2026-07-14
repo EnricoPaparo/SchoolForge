@@ -79,7 +79,7 @@ Le fixture seguenti restano specifica di un eventuale M3-full e non si applicano
 | G4-lite | Login Google risolve TeacherShell/StudentShell; un Google-autenticato non-owner legge `publicLessons`/verifiche `attiva`+`public` solo se `students/{uid}.status == "approved"` e `settings/studentAccess.studentPortalEnabled == true` (mai per la sola autenticazione; `pending`/`blocked`/assente negano sempre); nessun accesso anonimo; pool/soluzioni/`questionIndex`/documenti tecnici mai raggiungibili dallo studente; PDF studente senza soluzioni; nessuna Cloud Function. | Login Google reale (account personale e, se disponibile, Workspace for Education) su mobile e desktop; nessun menu docente visibile allo studente. |
 | G4 (M3-full, specifica rinviata) | Gateway: participant lock nome+cognome, cookie, nessun write Firestore dal portale, snapshot senza soluzioni, log accesso; bozza/ripresa/consegna; reset auditato; consegna immutabile. | Mobile, tastiera, fullscreen/warning; nessuna soluzione visibile a studente. |
 | G5 | Percentuale e rettifiche; eliminazione dati; export PDF/MD/CSV da snapshot; consegna modificata lezione. | Revisione documento export nei tre formati; caricamento manuale Drive. |
-| G6/G7 (V2) | Contesto AI chiuso; audit; bulk approval; opt-in automatico; C-03 gate. | Revisione didattica e policy. |
+| G7/G8 (V2) | Contesto AI chiuso; audit; bulk approval; opt-in automatico; C-03 gate. | Revisione didattica e policy. |
 
 ---
 
@@ -206,4 +206,4 @@ Ogni PR esegue format, lint, typecheck, unit e contract test. Le PR verso `main`
 
 ## 7. Dati, costi e report
 
-Le fixture sono sintetiche. I test Firebase usano emulatori salvo le prove manuali esplicitamente richieste dal gate. Il provider AI usa mock fino a G6 (V2). Ogni run salva risultati, versioni e `requestId` senza contenuti studenti.
+Le fixture sono sintetiche. I test Firebase usano emulatori salvo le prove manuali esplicitamente richieste dal gate. Il provider AI usa mock fino a G7 (V2). Ogni run salva risultati, versioni e `requestId` senza contenuti studenti.

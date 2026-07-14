@@ -1,7 +1,7 @@
 # SchoolForge — Contratto API
 
 **Versione:** 3.2
-**Stato:** in vigore — M1, M2, M3-lite, RE (Repository Editor), QE (Question Editor) e M3-full implementati (Gate G5 superato); M4-00→M4-03B implementati, incluso workspace, restituzione studente, Registro Correzioni, export CSV ed export PDF (Markdown rinviato); M4-04 e Gate G6 restano da completare; M5 resta fuori scope V1
+**Stato:** in vigore — M1, M2, M3-lite, RE (Repository Editor), QE (Question Editor) e M3-full implementati (Gate G5 superato); M4-00→M4-04 implementati, incluso workspace, restituzione studente, Registro Correzioni, export CSV ed export PDF (Markdown rinviato); **Gate G6 superato** (vedi `evidenze/g6-m4-checklist-finale.md`); M5 resta fuori scope V1
 **Autorità:** `analisi-requisiti.md` e `architettura.md`
 
 ---

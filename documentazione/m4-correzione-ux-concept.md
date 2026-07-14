@@ -1,6 +1,6 @@
 # M4 — Concept UX della correzione docente
 
-**Stato:** concept approvato; contratto dati, service/Rules, workspace docente, lettura studente, ciclo di vita, eliminazione e Registro Correzioni con export CSV e PDF (M4-00→M4-03B) implementati (Markdown rinviato). M4-04 e Gate G6 non ancora completati.
+**Stato:** concept approvato e **implementato integralmente**; contratto dati, service/Rules, workspace docente, lettura studente, ciclo di vita, eliminazione e Registro Correzioni con export CSV e PDF (M4-00→M4-04, Markdown rinviato). **Gate G6 superato** — evidenze in `evidenze/g6-m4-checklist-finale.md`. M5/AI non implementato (V2).
 **Data decisione:** 2026-07-12  
 **Prerequisito:** chiusura di M3-full e superamento del Gate G5 — soddisfatto
 
