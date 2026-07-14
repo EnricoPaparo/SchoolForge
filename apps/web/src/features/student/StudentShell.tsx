@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { IconBookOpen, IconChevronDown, IconClipboardCheck } from '../../components/icons.js';
 import { useAuth } from '../../lib/auth.js';
 import { db } from '../../lib/firebase.js';
 import logoScritta from '../../assets/logo-scritta-schoolforge.png';
@@ -12,10 +13,14 @@ import styles from './StudentShell.module.css';
 
 type Section = 'lezioni' | 'verifiche';
 
-const SECTIONS: { id: Section; label: string; icon: string }[] = [
-  { id: 'lezioni', label: 'Didattica', icon: '📖' },
-  { id: 'verifiche', label: 'Verifiche', icon: '📝' },
+const SECTIONS: { id: Section; label: string }[] = [
+  { id: 'lezioni', label: 'Didattica' },
+  { id: 'verifiche', label: 'Verifiche' },
 ];
+
+function SectionIcon({ section }: { section: Section }) {
+  return section === 'lezioni' ? <IconBookOpen size={17} /> : <IconClipboardCheck size={17} />;
+}
 
 /**
  * Read-only student portal (M3-lite). Mounted for any authenticated Google
@@ -41,6 +46,8 @@ export function StudentShell() {
   const [examModeSettings, setExamModeSettings] = useState<unknown>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const mobileNavRef = useRef<HTMLDivElement>(null);
 
   const uid = user?.uid;
   useEffect(() => {
@@ -104,14 +111,20 @@ export function StudentShell() {
   const initials = displayName.charAt(0).toUpperCase();
 
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen && !mobileNavOpen) return;
     function handlePointerDown(e: MouseEvent | TouchEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
       }
+      if (mobileNavRef.current && !mobileNavRef.current.contains(e.target as Node)) {
+        setMobileNavOpen(false);
+      }
     }
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') setMenuOpen(false);
+      if (e.key === 'Escape') {
+        setMenuOpen(false);
+        setMobileNavOpen(false);
+      }
     }
     document.addEventListener('mousedown', handlePointerDown);
     document.addEventListener('touchstart', handlePointerDown);
@@ -121,12 +134,80 @@ export function StudentShell() {
       document.removeEventListener('touchstart', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [menuOpen]);
+  }, [menuOpen, mobileNavOpen]);
+
+  const availableSections = SECTIONS.filter(({ id }) => id !== 'lezioni' || !examModeActive);
+  const currentSection =
+    availableSections.find(({ id }) => id === activeSection) ?? availableSections[0] ?? SECTIONS[1];
+
+  function selectSection(section: Section) {
+    setActiveSection(section);
+    setMobileNavOpen(false);
+  }
 
   return (
     <div className={styles.layout}>
       <header className={styles.header}>
         <img src={logoScritta} alt="SchoolForge" className={styles.logo} />
+
+        {sessionChecked && !examInProgress && (
+          <>
+            <nav aria-label="Sezioni studente" className={styles.nav}>
+              {availableSections.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={styles.navBtn}
+                  onClick={() => selectSection(id)}
+                  aria-current={activeSection === id ? 'page' : undefined}
+                  title={label}
+                >
+                  <span className={styles.navIcon} aria-hidden="true">
+                    <SectionIcon section={id} />
+                  </span>
+                  <span className={styles.navLabel}>{label}</span>
+                </button>
+              ))}
+            </nav>
+
+            <div className={styles.mobileNav} ref={mobileNavRef}>
+              <button
+                type="button"
+                className={styles.mobileNavToggle}
+                aria-label={`Sezione corrente: ${currentSection.label}. Apri menu sezioni`}
+                aria-haspopup="menu"
+                aria-expanded={mobileNavOpen}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setMobileNavOpen((open) => !open);
+                }}
+              >
+                <SectionIcon section={currentSection.id} />
+                <span>{currentSection.label}</span>
+                <span className={styles.mobileNavCaret} aria-hidden="true">
+                  <IconChevronDown size={14} />
+                </span>
+              </button>
+              {mobileNavOpen && (
+                <div className={styles.mobileNavMenu} role="menu" aria-label="Cambia sezione">
+                  {availableSections.map(({ id, label }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="menuitem"
+                      aria-current={activeSection === id ? 'page' : undefined}
+                      onClick={() => selectSection(id)}
+                    >
+                      <SectionIcon section={id} />
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
         <div className={styles.userMenu} ref={menuRef}>
           <button
             type="button"
@@ -134,7 +215,10 @@ export function StudentShell() {
             aria-label={`Account: ${displayName}`}
             aria-expanded={menuOpen}
             aria-haspopup="true"
-            onClick={() => setMenuOpen((o) => !o)}
+            onClick={() => {
+              setMobileNavOpen(false);
+              setMenuOpen((o) => !o);
+            }}
           >
             <span className={styles.avatar}>{initials}</span>
           </button>
@@ -180,40 +264,16 @@ export function StudentShell() {
           </p>
         </main>
       ) : (
-        <>
-          {!examInProgress && (
-            <nav aria-label="Sezioni studente" className={styles.nav}>
-              {SECTIONS.filter(({ id }) => id !== 'lezioni' || !examModeActive).map(
-                ({ id, label, icon }) => (
-                  <button
-                    key={id}
-                    type="button"
-                    className={styles.navBtn}
-                    onClick={() => setActiveSection(id)}
-                    aria-current={activeSection === id ? 'page' : undefined}
-                    title={label}
-                  >
-                    <span className={styles.navIcon} aria-hidden="true">
-                      {icon}
-                    </span>
-                    <span className={styles.navLabel}>{label}</span>
-                  </button>
-                ),
-              )}
-            </nav>
+        <main className={styles.main}>
+          {activeSection === 'lezioni' && !examModeActive ? (
+            <StudentDidatticaView />
+          ) : (
+            <StudentVerificationsView
+              onSessionActiveChange={setExamInProgress}
+              examModeActive={examModeActive}
+            />
           )}
-
-          <main className={styles.main}>
-            {activeSection === 'lezioni' && !examModeActive ? (
-              <StudentDidatticaView />
-            ) : (
-              <StudentVerificationsView
-                onSessionActiveChange={setExamInProgress}
-                examModeActive={examModeActive}
-              />
-            )}
-          </main>
-        </>
+        </main>
       )}
     </div>
   );
