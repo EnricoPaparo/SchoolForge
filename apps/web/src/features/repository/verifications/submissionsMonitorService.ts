@@ -31,6 +31,7 @@ export type SubmissionMonitorItem = {
   submittedAt: SubmissionDoc['submittedAt'];
   deliveryCode: SubmissionDoc['deliveryCode'];
   correctionStatus: NonNullable<SubmissionDoc['correctionStatus']>;
+  correctionSummary: SubmissionDoc['correctionSummary'] | null;
   attentionEventsCount: number;
   /** Sanitized: `type` + `ts` only, same shape as `AttentionEvent` — never answers/flagged. */
   attentionEvents: AttentionEvent[];
@@ -45,6 +46,7 @@ function toMonitorItem(data: SubmissionDoc): SubmissionMonitorItem {
     submittedAt: data.submittedAt,
     deliveryCode: data.deliveryCode,
     correctionStatus: normalizeSubmissionCorrectionStatus(data.correctionStatus),
+    correctionSummary: data.correctionSummary ?? null,
     attentionEventsCount: attentionEvents.length,
     attentionEvents,
   };

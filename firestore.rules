@@ -160,6 +160,24 @@ service cloud.firestore {
       return status in ['submitted', 'in_progress', 'completed', 'returned'];
     }
 
+    function isValidSubmissionCorrectionSummary(summary) {
+      return summary is map
+        && summary.keys().hasOnly(['totalPoints', 'maxPoints', 'percentage'])
+        && summary.keys().hasAll(['totalPoints', 'maxPoints', 'percentage'])
+        && summary.totalPoints is number
+        && summary.maxPoints is number
+        && summary.totalPoints >= 0
+        && summary.maxPoints >= 0
+        && summary.totalPoints <= summary.maxPoints
+        && (
+          (summary.maxPoints == 0 && summary.percentage == null)
+          || (summary.maxPoints > 0
+              && summary.percentage is int
+              && summary.percentage >= 0
+              && summary.percentage <= 100)
+        );
+    }
+
     function publicCorrectionStatusMatchesCorrection(submissionId, status) {
       let correctionStatus = correctionDataAfter(submissionId).status;
       return (correctionStatus == 'in_progress'
@@ -557,25 +575,50 @@ service cloud.firestore {
               )
         );
 
-      // The owner may update only the public correction-state mirror on an
-      // already submitted delivery. The sibling receipt must receive the
-      // identical value in the same atomic commit, and the value must agree
-      // with the canonical correction workflow after that commit.
+      // The owner may update the public correction-state mirror and/or the
+      // owner-only score summary on an already submitted delivery. A state
+      // change must still be mirrored to the sibling receipt in the same
+      // commit. The score summary deliberately stays only on submissions.
       allow update: if isOwner()
         && resource.data.ownerUid == request.auth.uid
         && resource.data.status == 'submitted'
         && request.resource.data.status == 'submitted'
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['correctionStatus', 'correctionStatusUpdatedAt'])
-        && isValidSubmissionCorrectionStatus(request.resource.data.correctionStatus)
-        && request.resource.data.correctionStatusUpdatedAt == request.time
-        && publicCorrectionStatusMatchesCorrection(
-             submissionId, request.resource.data.correctionStatus)
-        && getAfter(/databases/$(database)/documents/submissionReceipts/$(submissionId))
-             .data.get('correctionStatus', 'submitted')
-             == request.resource.data.correctionStatus
-        && getAfter(/databases/$(database)/documents/submissionReceipts/$(submissionId))
-             .data.correctionStatusUpdatedAt == request.time;
+             .hasOnly([
+               'correctionStatus', 'correctionStatusUpdatedAt',
+               'correctionSummary', 'correctionSummaryUpdatedAt'
+             ])
+        && request.resource.data.diff(resource.data).affectedKeys().hasAny([
+             'correctionStatus', 'correctionStatusUpdatedAt',
+             'correctionSummary', 'correctionSummaryUpdatedAt'
+           ])
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['correctionStatus', 'correctionStatusUpdatedAt'])
+          || (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasAll(['correctionStatus', 'correctionStatusUpdatedAt'])
+            && isValidSubmissionCorrectionStatus(request.resource.data.correctionStatus)
+            && request.resource.data.correctionStatusUpdatedAt == request.time
+            && publicCorrectionStatusMatchesCorrection(
+                 submissionId, request.resource.data.correctionStatus)
+            && getAfter(/databases/$(database)/documents/submissionReceipts/$(submissionId))
+                 .data.get('correctionStatus', 'submitted')
+                 == request.resource.data.correctionStatus
+            && getAfter(/databases/$(database)/documents/submissionReceipts/$(submissionId))
+                 .data.correctionStatusUpdatedAt == request.time
+          )
+        )
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['correctionSummary', 'correctionSummaryUpdatedAt'])
+          || (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasAll(['correctionSummary', 'correctionSummaryUpdatedAt'])
+            && isValidSubmissionCorrectionSummary(request.resource.data.correctionSummary)
+            && request.resource.data.correctionSummaryUpdatedAt == request.time
+          )
+        );
 
       // Get (M3F-04 preflight): startSubmission()/loadSubmission() call
       // getDoc() on the deterministic path BEFORE the document necessarily

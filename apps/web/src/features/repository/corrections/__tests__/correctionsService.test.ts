@@ -437,6 +437,13 @@ describe('saveCorrection', () => {
     expect(mockWriteBatch).toHaveBeenCalledTimes(1);
     expect(mockBatchUpdate).toHaveBeenCalledTimes(3);
     expect(mockBatchSet).not.toHaveBeenCalled();
+    const submissionUpdate = mockBatchUpdate.mock.calls.find(
+      ([ref]) => (ref as { __path?: string }).__path === `submissions/${SUBMISSION_ID}`,
+    )?.[1];
+    expect(submissionUpdate).toMatchObject({
+      correctionStatus: 'in_progress',
+      correctionSummary: { totalPoints: 10, maxPoints: 15, percentage: 67 },
+    });
   });
 
   it('writes an atomic scoreAdjusted event with a minimal delta after a reopen', async () => {
@@ -458,7 +465,7 @@ describe('saveCorrection', () => {
     );
 
     expect(mockWriteBatch).toHaveBeenCalledTimes(1);
-    expect(mockBatchUpdate).toHaveBeenCalledTimes(1);
+    expect(mockBatchUpdate).toHaveBeenCalledTimes(2);
     expect(mockBatchSet).toHaveBeenCalledTimes(1);
     expect(mockBatchCommit).toHaveBeenCalledTimes(1);
     expect(mockUpdateDoc).not.toHaveBeenCalled();
@@ -466,6 +473,13 @@ describe('saveCorrection', () => {
     const [, event] = mockBatchSet.mock.calls[0]!;
     expect(event.type).toBe('scoreAdjusted');
     expect(event.questionDeltas).toEqual([{ order: 0, previousPoints: 5, nextPoints: 8 }]);
+    const submissionUpdate = mockBatchUpdate.mock.calls.find(
+      ([ref]) => (ref as { __path?: string }).__path === `submissions/${SUBMISSION_ID}`,
+    )?.[1];
+    expect(submissionUpdate).toMatchObject({
+      correctionSummary: { totalPoints: 10, maxPoints: 15, percentage: 67 },
+    });
+    expect(submissionUpdate).not.toHaveProperty('correctionStatus');
   });
 
   it('rejects saving on a completed correction', async () => {

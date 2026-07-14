@@ -578,6 +578,12 @@ export type AttentionEvent = {
  * teacher monitor and future correction flow. They are not exposed to students
  * after submission because students read only the matching SubmissionReceiptDoc.
  */
+export type SubmissionCorrectionSummary = {
+  totalPoints: number;
+  maxPoints: number;
+  percentage: number | null;
+};
+
 export type SubmissionDoc = {
   submissionId: string; // == Firestore doc id: `${verificationId}_${studentUid}`
   verificationId: string;
@@ -601,6 +607,9 @@ export type SubmissionDoc = {
   /** Teacher-controlled public lifecycle mirror; absent on legacy submissions means `submitted`. */
   correctionStatus?: SubmissionCorrectionStatus;
   correctionStatusUpdatedAt?: Timestamp | FieldValue;
+  /** Owner-only monitor mirror. Never copied to the student-readable receipt. */
+  correctionSummary?: SubmissionCorrectionSummary;
+  correctionSummaryUpdatedAt?: Timestamp | FieldValue;
 };
 
 export type SubmissionCorrectionStatus = 'submitted' | 'in_progress' | 'completed' | 'returned';

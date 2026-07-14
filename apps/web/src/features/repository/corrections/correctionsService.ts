@@ -18,6 +18,7 @@ import type {
   QuestionEvaluation,
   SubmissionDoc,
   SubmissionCorrectionStatus,
+  SubmissionCorrectionSummary,
   VerificationDoc,
   VerificationTeacherQuestionSnapshot,
 } from '../../../types/firestore.js';
@@ -36,16 +37,42 @@ import {
 import { assertCorrectionReturnWithinLimit } from './correctionReturnSize.js';
 import { correctionProgressFromEvaluations } from './submissionCorrectionStatus.js';
 
-function mirrorCorrectionStatus(
+function mirrorCorrectionProgress(
   batch: ReturnType<typeof writeBatch>,
   submissionId: string,
-  status: SubmissionCorrectionStatus,
   db: Firestore,
+  options: {
+    status?: SubmissionCorrectionStatus;
+    summary?: SubmissionCorrectionSummary;
+  },
 ): void {
   const updatedAt = serverTimestamp();
-  const update = { correctionStatus: status, correctionStatusUpdatedAt: updatedAt };
-  batch.update(doc(db, 'submissions', submissionId), update);
-  batch.update(doc(db, 'submissionReceipts', submissionId), update);
+  const submissionUpdate: Record<string, unknown> = {};
+  if (options.status) {
+    submissionUpdate.correctionStatus = options.status;
+    submissionUpdate.correctionStatusUpdatedAt = updatedAt;
+  }
+  if (options.summary) {
+    submissionUpdate.correctionSummary = options.summary;
+    submissionUpdate.correctionSummaryUpdatedAt = updatedAt;
+  }
+  batch.update(doc(db, 'submissions', submissionId), submissionUpdate);
+  if (options.status) {
+    batch.update(doc(db, 'submissionReceipts', submissionId), {
+      correctionStatus: options.status,
+      correctionStatusUpdatedAt: updatedAt,
+    });
+  }
+}
+
+function correctionSummary(
+  totals: Pick<SubmissionCorrectionSummary, 'totalPoints' | 'maxPoints' | 'percentage'>,
+): SubmissionCorrectionSummary {
+  return {
+    totalPoints: totals.totalPoints,
+    maxPoints: totals.maxPoints,
+    percentage: totals.percentage,
+  };
 }
 
 // ─── Frozen snapshot reads (never the live pool) ────────────────────────────
@@ -319,16 +346,12 @@ export async function saveCorrection(
   const nextPublicStatus = correctionProgressFromEvaluations(nextEvaluations);
   const publicStatusChanged = previousPublicStatus !== nextPublicStatus;
 
-  if (!isReopenedCorrection(correction) && !publicStatusChanged) {
-    await updateDoc(ref, update);
-    return result;
-  }
-
   const batch = writeBatch(db);
   batch.update(ref, update);
-  if (publicStatusChanged) {
-    mirrorCorrectionStatus(batch, submissionId, nextPublicStatus, db);
-  }
+  mirrorCorrectionProgress(batch, submissionId, db, {
+    ...(publicStatusChanged ? { status: nextPublicStatus } : {}),
+    summary: correctionSummary(totals),
+  });
   if (isReopenedCorrection(correction)) {
     const event: CorrectionEventDoc = {
       correctionId: submissionId,
@@ -374,7 +397,10 @@ export async function completeCorrection(submissionId: string, db: Firestore): P
     completedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
-  mirrorCorrectionStatus(batch, submissionId, 'completed', db);
+  mirrorCorrectionProgress(batch, submissionId, db, {
+    status: 'completed',
+    summary: correctionSummary(correction),
+  });
   await batch.commit();
 }
 
@@ -478,7 +504,10 @@ export async function returnCorrection(submissionId: string, db: Firestore): Pro
     returnedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
-  mirrorCorrectionStatus(batch, submissionId, 'returned', db);
+  mirrorCorrectionProgress(batch, submissionId, db, {
+    status: 'returned',
+    summary: correctionSummary(correction),
+  });
   batch.set(doc(db, 'correctionReturns', submissionId), correctionReturn);
   const event: CorrectionEventDoc = {
     correctionId: submissionId,
@@ -525,7 +554,7 @@ export async function reopenCorrection(submissionId: string, db: Firestore): Pro
     reopenCount: correction.reopenCount + 1,
     updatedAt: serverTimestamp(),
   });
-  mirrorCorrectionStatus(batch, submissionId, 'in_progress', db);
+  mirrorCorrectionProgress(batch, submissionId, db, { status: 'in_progress' });
   if (wasReturned) {
     batch.update(doc(db, 'correctionReturns', submissionId), {
       visibleToStudent: false,

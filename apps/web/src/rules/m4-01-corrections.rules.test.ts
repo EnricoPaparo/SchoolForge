@@ -1268,4 +1268,77 @@ describe('Firestore rules — public correction status mirrors', () => {
       }),
     );
   });
+
+  it('allows the owner to write a valid score summary only on the submitted submission', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+
+    await assertSucceeds(
+      updateDoc(doc(ownerDb(), 'submissions', SUBMISSION_ID), {
+        correctionSummary: { totalPoints: 7.25, maxPoints: 10, percentage: 73 },
+        correctionSummaryUpdatedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('allows one atomic submission update to combine status and summary while the receipt mirrors only status', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedSubmissionReceipt();
+    await seedCorrection();
+
+    const db = ownerDb();
+    const batch = writeBatch(db);
+    const statusUpdate = {
+      correctionStatus: 'in_progress',
+      correctionStatusUpdatedAt: serverTimestamp(),
+    };
+    batch.update(doc(db, 'submissions', SUBMISSION_ID), {
+      ...statusUpdate,
+      correctionSummary: { totalPoints: 7.25, maxPoints: 15, percentage: 48 },
+      correctionSummaryUpdatedAt: serverTimestamp(),
+    });
+    batch.update(doc(db, 'submissionReceipts', SUBMISSION_ID), statusUpdate);
+    await assertSucceeds(batch.commit());
+  });
+
+  it.each([
+    [{ totalPoints: -1, maxPoints: 10, percentage: 0 }],
+    [{ totalPoints: 11, maxPoints: 10, percentage: 100 }],
+    [{ totalPoints: 1, maxPoints: -1, percentage: 0 }],
+    [{ totalPoints: 1, maxPoints: 10, percentage: -1 }],
+    [{ totalPoints: 1, maxPoints: 10, percentage: 101 }],
+    [{ totalPoints: 0, maxPoints: 0, percentage: 0 }],
+    [{ totalPoints: '1', maxPoints: 10, percentage: 10 }],
+    [{ totalPoints: 1, maxPoints: 10, percentage: null }],
+  ])('rejects an invalid score summary %#', async (correctionSummary) => {
+    await seedBase();
+    await seedSubmittedSubmission();
+
+    await assertFails(
+      updateDoc(doc(ownerDb(), 'submissions', SUBMISSION_ID), {
+        correctionSummary,
+        correctionSummaryUpdatedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('rejects summary writes from the student, another account, or with unrelated fields', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    const patch = {
+      correctionSummary: { totalPoints: 5, maxPoints: 10, percentage: 50 },
+      correctionSummaryUpdatedAt: serverTimestamp(),
+    };
+
+    await assertFails(updateDoc(doc(studentDb(), 'submissions', SUBMISSION_ID), patch));
+    const otherOwnerDb = testEnv.authenticatedContext(OTHER_OWNER_UID).firestore();
+    await assertFails(updateDoc(doc(otherOwnerDb, 'submissions', SUBMISSION_ID), patch));
+    await assertFails(
+      updateDoc(doc(ownerDb(), 'submissions', SUBMISSION_ID), {
+        ...patch,
+        deliveryCode: 'tampered',
+      }),
+    );
+  });
 });
