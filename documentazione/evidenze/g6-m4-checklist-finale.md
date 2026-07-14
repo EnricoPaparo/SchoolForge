@@ -1,7 +1,7 @@
 # Gate G6 — M4 (Correzione ed export): checklist finale di chiusura
 
 **Data:** 15 luglio 2026
-**Ambito:** M4-00, M4-01, M4-02, M4-02B, M4-LIFE-01, M4-LIFE-02, M4-MON-01, M4-03A, M4-03B e l'integrazione finale M4-04. Ultimo fix incluso: PR #170 (merge `1e81cdc`).
+**Ambito:** M4-00, M4-01, M4-02, M4-02B, M4-LIFE-01, M4-LIFE-02, M4-MON-01, M4-03A, M4-03B e l'integrazione finale M4-04. Ultimi fix inclusi: PR #170 (completamento senza falso errore, merge `1e81cdc`) e PR #173 (rifinitura parità studente/correzioni + larghezze colonne PDF, merge `9ec72f6`). La PR #173 è una rifinitura UI/PDF (CSS di `StudentCorrectionView`/`CorrectionWorkspace`/`VerificationsView` e larghezze/`wrap` delle colonne del PDF): non cambia le colonne, i campi esportati né le categorie di evidenza qui elencate; i test mirati M4 restano verdi e coprono anche la modifica al renderer PDF.
 **Verdetto:** **Gate G6 superato.**
 
 Questo documento consolida le evidenze già prodotte — automatiche (CI/test) e manuali (smoke DEV del docente) — senza introdurre nuove funzionalità né nuove misurazioni. Richiama `m4-correzione-ux-concept.md` (concept e §10 decisioni) e non lo sostituisce.
@@ -57,7 +57,7 @@ pnpm --filter @schoolforge/web exec vitest run \
   src/features/teacher/__tests__/VerificationsView.test.tsx \
   src/features/student/__tests__/StudentCorrectionView.test.tsx \
   src/features/student/__tests__/studentCorrectionReturnsService.test.ts
-# → 320 test verdi (12 file)
+# → 321 test verdi (12 file)
 pnpm test:rules   # include m4-01-corrections, m4-life-02-delete, m4-correction-save integration
 ```
 

@@ -1,7 +1,7 @@
 # SchoolForge — Sicurezza e protezione dei dati
 
 **Versione:** 3.0
-**Stato:** in vigore — controlli implementati da F-04 in avanti (M1, M2, M3-lite, RE, M3-full); M3-full completato con Gate G5 superato (vedi `documentazione/evidenze/g5-m3-full-checklist-finale.md`); M4-00→M4-03B implementati, incluso Registro Correzioni ed export CSV/PDF locali owner-only — Markdown rinviato, M4-04, Gate G6 e M5 restano non completati/rinviati
+**Stato:** in vigore — controlli implementati da F-04 in avanti (M1, M2, M3-lite, RE, M3-full); M3-full completato con Gate G5 superato (vedi `documentazione/evidenze/g5-m3-full-checklist-finale.md`); M4-00→M4-04 completati, incluso Registro Correzioni ed export CSV/PDF locali owner-only (Markdown rinviato), **Gate G6 superato** (vedi `documentazione/evidenze/g6-m4-checklist-finale.md`); M5 (AI) resta non implementato/rinviato alla V2
 
 ---
 
@@ -229,5 +229,5 @@ Questa sezione andrà rivista quando M3-full sarà pianificato in dettaglio, val
 | GRE (Repository Editor) | Creazione/modifica/riordino/eliminazione di UDA/lezioni non introducono nuove Security Rule (owner-only preesistente); eliminazione bloccata lato client se esiste una verifica collegata (§5.2, limite noto: solo client-side); riordino non rinomina mai file Storage; export ZIP resta Markdown-first, portabile e con `order` coerente al reimport. |
 | G4 (gateway Cloud Functions, modello scartato) | Non implementato: M3-full non usa gateway, participant lock nome+cognome, cookie HttpOnly né log nome+IP. Nota storica, vedi §4. |
 | G5 — Portale digitale (M3-full) ✅ | Superato. Submission unica e immutabile post-consegna; studente post-consegna legge solo la receipt; verifica chiusa blocca bozze; modalità verifica nega realmente la lettura delle lezioni via Security Rules; nessuna Cloud Function. Evidenze in `documentazione/evidenze/g5-m3-full-checklist-finale.md` e `m3-full-roadmap.md §8`. |
-| G6 (M4, M4-00→M4-03A implementati — PDF/Markdown e gate finale non ancora) | Correzione, audit, eliminazione ed export solo docente; export non persistito; richiede G5 (M3-full, superato). Contratto, service/Rules, workspace docente, lettura studente, ciclo di vita, Registro Correzioni e CSV sono implementati. Restano M4-03B e le evidenze finali M4-04/Gate G6. |
+| G6 (M4 — Correzione ed export) ✅ superato | Correzione, audit, eliminazione ed export solo docente; export non persistito; richiede G5 (M3-full, superato). Contratto, service/Rules, workspace docente, lettura studente, ciclo di vita, Registro Correzioni ed export CSV/PDF sono implementati (M4-00→M4-04; Markdown rinviato). Evidenze finali in `documentazione/evidenze/g6-m4-checklist-finale.md`. |
 | G7/G8 (V2) | C-02 risolta / C-03; AI senza web; audit completo; opt-in; rollback verificato. |
