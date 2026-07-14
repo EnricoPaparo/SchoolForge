@@ -395,6 +395,19 @@ describe('VerificationsView', () => {
     );
   });
 
+  it('excludes programs without an active import from the creation picker', async () => {
+    setupDefaults();
+    mockListPrograms.mockResolvedValue([
+      sampleProgram,
+      { ...sampleProgram, id: 'prog-empty', title: 'Corso vuoto', activeImportId: null },
+    ]);
+    render(<VerificationsView />);
+
+    const picker = await screen.findByLabelText(/programma nuova verifica/i);
+    expect(within(picker).getByRole('option', { name: 'Matematica' })).toBeTruthy();
+    expect(within(picker).queryByRole('option', { name: 'Corso vuoto' })).toBeNull();
+  });
+
   it('loads question index when a draft verification is opened', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]);

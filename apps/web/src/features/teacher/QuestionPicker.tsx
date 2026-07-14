@@ -99,102 +99,106 @@ export function QuestionPicker({ entries, selectedIds, onChange }: Props) {
   return (
     <div className={styles.container}>
       <div className={styles.filterBar}>
-        <div className={`${styles.filterField} ${styles.filterFieldSearch}`}>
-          <label className={styles.filterLabel} htmlFor="qp-search">
-            Cerca
-          </label>
-          <input
-            id="qp-search"
-            type="text"
-            className={styles.filterInput}
-            placeholder="Cerca nel testo domanda, UDA o lezione"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            aria-label="Cerca domande"
-          />
+        <div className={styles.filterRowPrimary}>
+          <div className={`${styles.filterField} ${styles.filterFieldSearch}`}>
+            <label className={styles.filterLabel} htmlFor="qp-search">
+              Cerca
+            </label>
+            <input
+              id="qp-search"
+              type="text"
+              className={styles.filterInput}
+              placeholder="Cerca nel testo domanda, UDA o lezione"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Cerca domande"
+            />
+          </div>
+
+          <div className={styles.filterField}>
+            <label className={styles.filterLabel} htmlFor="qp-difficolta">
+              Difficoltà
+            </label>
+            <select
+              id="qp-difficolta"
+              className={styles.filterInput}
+              value={difficoltaFilter}
+              onChange={(e) => setDifficoltaFilter(e.target.value)}
+              aria-label="Filtra per difficoltà"
+            >
+              <option value="">Tutte</option>
+              {difficoltaOptions.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className={styles.filterField}>
+            <label className={styles.filterLabel} htmlFor="qp-tipo">
+              Tipo
+            </label>
+            <select
+              id="qp-tipo"
+              className={styles.filterInput}
+              value={tipoFilter}
+              onChange={(e) => setTipoFilter(e.target.value as QuestionIndexEntry['tipo'] | '')}
+              aria-label="Filtra per tipo"
+            >
+              <option value="">Tutti</option>
+              {tipoOptions.map((tipo) => (
+                <option key={tipo} value={tipo}>
+                  {TIPO_LABELS[tipo]}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <div className={styles.filterField}>
-          <label className={styles.filterLabel} htmlFor="qp-uda">
-            UDA
-          </label>
-          <select
-            id="qp-uda"
-            className={styles.filterInput}
-            value={udaFilter}
-            onChange={(e) => {
-              setUdaFilter(e.target.value);
-              setLessonFilter('');
-            }}
-            aria-label="Filtra per UDA"
-          >
-            <option value="">Tutte</option>
-            {udaOptions.map((uda) => (
-              <option key={uda} value={uda}>
-                {uda}
-              </option>
-            ))}
-          </select>
-        </div>
+        <div className={styles.filterRowScope}>
+          <div className={styles.filterField}>
+            <label className={styles.filterLabel} htmlFor="qp-uda">
+              UDA
+            </label>
+            <select
+              id="qp-uda"
+              className={styles.filterInput}
+              value={udaFilter}
+              onChange={(e) => {
+                setUdaFilter(e.target.value);
+                setLessonFilter('');
+              }}
+              aria-label="Filtra per UDA"
+            >
+              <option value="">Tutte</option>
+              {udaOptions.map((uda) => (
+                <option key={uda} value={uda}>
+                  {uda}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <div className={styles.filterField}>
-          <label className={styles.filterLabel} htmlFor="qp-lesson">
-            Lezione
-          </label>
-          <select
-            id="qp-lesson"
-            className={styles.filterInput}
-            value={lessonFilter}
-            onChange={(e) => setLessonFilter(e.target.value)}
-            aria-label="Filtra per lezione"
-          >
-            <option value="">Tutte</option>
-            {lessonOptions.map((lesson) => (
-              <option key={lesson} value={lesson}>
-                {lesson}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className={styles.filterField}>
-          <label className={styles.filterLabel} htmlFor="qp-tipo">
-            Tipo
-          </label>
-          <select
-            id="qp-tipo"
-            className={styles.filterInput}
-            value={tipoFilter}
-            onChange={(e) => setTipoFilter(e.target.value as QuestionIndexEntry['tipo'] | '')}
-            aria-label="Filtra per tipo"
-          >
-            <option value="">Tutti</option>
-            {tipoOptions.map((tipo) => (
-              <option key={tipo} value={tipo}>
-                {TIPO_LABELS[tipo]}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className={styles.filterField}>
-          <label className={styles.filterLabel} htmlFor="qp-difficolta">
-            Difficoltà
-          </label>
-          <select
-            id="qp-difficolta"
-            className={styles.filterInput}
-            value={difficoltaFilter}
-            onChange={(e) => setDifficoltaFilter(e.target.value)}
-            aria-label="Filtra per difficoltà"
-          >
-            <option value="">Tutte</option>
-            {difficoltaOptions.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
+          <div className={styles.filterField}>
+            <label className={styles.filterLabel} htmlFor="qp-lesson">
+              Lezione
+            </label>
+            <select
+              id="qp-lesson"
+              className={styles.filterInput}
+              value={lessonFilter}
+              onChange={(e) => setLessonFilter(e.target.value)}
+              aria-label="Filtra per lezione"
+            >
+              <option value="">Tutte</option>
+              {lessonOptions.map((lesson) => (
+                <option key={lesson} value={lesson}>
+                  {lesson}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 

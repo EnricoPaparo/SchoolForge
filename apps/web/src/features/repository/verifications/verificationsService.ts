@@ -15,6 +15,8 @@ import type { Firestore } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
 import type { ClassItem } from '../classes/classesService.js';
 import type {
+  ImportDoc,
+  ProgramDoc,
   VerificationConfig,
   VerificationDoc,
   VerificationQuestionRef,
@@ -93,6 +95,36 @@ export async function createVerification(
   ownerUid: string,
   db: Firestore,
 ): Promise<string> {
+  if (!config.programId || !config.importId) {
+    throw new Error('Seleziona un corso pronto con una importazione attiva.');
+  }
+
+  // The picker is only a convenience: verify the relationship again at write
+  // time so stale tabs or legacy empty programs cannot create orphan drafts.
+  const [programSnap, importSnap] = await Promise.all([
+    getDoc(doc(db, 'programs', config.programId)),
+    getDoc(doc(db, 'programs', config.programId, 'imports', config.importId)),
+  ]);
+  if (!programSnap.exists()) {
+    throw new Error('Il corso selezionato non esiste più.');
+  }
+  const program = programSnap.data() as ProgramDoc;
+  if (program.ownerUid !== ownerUid || program.activeImportId !== config.importId) {
+    throw new Error('Il corso selezionato non ha più questa importazione attiva.');
+  }
+  if (!importSnap.exists()) {
+    throw new Error("L'importazione attiva del corso non esiste più.");
+  }
+  const activeImport = importSnap.data() as ImportDoc;
+  if (
+    activeImport.ownerUid !== ownerUid ||
+    activeImport.programId !== config.programId ||
+    activeImport.importId !== config.importId ||
+    activeImport.status !== 'committed'
+  ) {
+    throw new Error("L'importazione attiva del corso non è valida.");
+  }
+
   const ref = doc(collection(db, 'verifications'));
   const auditRef = doc(collection(db, 'auditEvents'));
   const fullConfig: VerificationConfig = {
