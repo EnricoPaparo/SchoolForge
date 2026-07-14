@@ -12,37 +12,24 @@
     linear-gradient(145deg, #070a11 0%, #101827 48%, #171126 100%);
 }
 
-/* Reprises the app header's graphic treatment (Teacher/StudentShell .header):
-   the same blue/azure field with a light warm-orange accent, plus the header's
-   signature blue→orange gradient rule as a top accent bar. Kept on a dark,
-   opaque-enough surface so the wordmark, the body text and the Google button
-   preserve high contrast — the card echoes the header without turning bright
-   or heavy. */
+/* Reuse the authenticated header palette as a full light surface. The login
+   card deliberately has no decorative accent rule: the wordmark is the visual
+   focus and the card should feel like the same product shell, not a dark modal. */
 .card {
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(circle at 88% 6%, rgba(251, 146, 60, 0.1), transparent 42%),
-    linear-gradient(155deg, rgba(56, 189, 248, 0.12), transparent 46%), rgba(20, 26, 36, 0.9);
-  border: 1px solid var(--color-border);
+    radial-gradient(circle at 92% 12%, rgba(255, 255, 255, 0.52), transparent 34%),
+    linear-gradient(105deg, #ccd9ea 0%, #b9c9e7 42%, #a5b6df 72%, #b29dce 100%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-lg);
   box-shadow:
-    0 28px 70px -24px rgba(0, 0, 0, 0.9),
-    0 0 46px rgba(59, 130, 246, 0.12);
+    0 28px 70px -24px rgba(0, 0, 0, 0.72),
+    0 0 42px rgba(96, 165, 250, 0.12);
   padding: 2.75rem 2.25rem;
   width: 100%;
   max-width: 380px;
   backdrop-filter: blur(12px);
-}
-
-.card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--color-brand-blue), var(--color-brand-orange));
 }
 
 .logo {
@@ -51,7 +38,7 @@
   height: auto;
   margin: 0 auto 2.25rem;
   object-fit: contain;
-  filter: drop-shadow(0 0 14px rgba(255, 255, 255, 0.58)) drop-shadow(0 3px 8px rgba(0, 0, 0, 0.55));
+  filter: drop-shadow(0 3px 7px rgba(15, 23, 42, 0.2));
 }
 
 .googleBtn {
@@ -62,10 +49,10 @@
   width: 100%;
   padding: 0.5625rem 1rem;
   font-size: 0.9375rem;
-  font-weight: 500;
-  color: var(--color-text);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  font-weight: 600;
+  color: #172033;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(71, 85, 105, 0.36);
   border-radius: var(--radius);
   cursor: pointer;
   transition:
@@ -74,8 +61,18 @@
 }
 
 .googleBtn:hover:not(:disabled) {
-  background: var(--color-surface-subtle);
-  border-color: var(--color-primary);
+  background: rgba(255, 255, 255, 0.92);
+  border-color: #2563eb;
+}
+
+.googleBtn:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.34);
+  outline-offset: 2px;
+}
+
+.googleBtn:disabled {
+  cursor: wait;
+  opacity: 0.68;
 }
 
 .errorMsg {
