@@ -36,6 +36,14 @@
       ]
     },
     {
+      "collectionGroup": "correctionEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerUid", "order": "ASCENDING" },
+        { "fieldPath": "correctionId", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "verifications",
       "queryScope": "COLLECTION",
       "fields": [

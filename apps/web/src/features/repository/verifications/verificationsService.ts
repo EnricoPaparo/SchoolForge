@@ -4,6 +4,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   query,
   runTransaction,
   serverTimestamp,
@@ -613,6 +614,25 @@ export async function deleteVerification(
   const data = snap.data() as VerificationDoc | undefined;
   if (!data || (data.status !== 'draft' && data.status !== 'closed')) {
     throw new Error('Verifica non eliminabile: deve essere in bozza o chiusa');
+  }
+  // M4-LIFE-02 — application-level guard (single-owner model): a verification
+  // that still owns at least one submission cannot be deleted; the docente must
+  // delete its submissions first (deleteSubmissionData). One targeted, indexed
+  // read (limit 1) — never a full-collection scan. This is deliberately an
+  // application guard, not a Firestore rule: Rules cannot verify the ABSENCE of
+  // documents in another collection via an inverse query, so a `verifications`
+  // delete rule can't gate on "no submissions reference me". Aborts before any
+  // write when a submission exists.
+  const linkedSubmissions = await getDocs(
+    query(
+      collection(db, 'submissions'),
+      where('ownerUid', '==', ownerUid),
+      where('verificationId', '==', verificationId),
+      limit(1),
+    ),
+  );
+  if (!linkedSubmissions.empty) {
+    throw new Error('Elimina prima tutte le consegne associate a questa verifica.');
   }
   await deleteDoc(doc(db, 'verifications', verificationId));
   await setDoc(doc(collection(db, 'auditEvents')), {
