@@ -40,3 +40,19 @@ mostra anche la voce **`Sorgente`** (`Firestore publicLessons` /
 
 La proiezione non contiene pool né dati privati: Storage resta owner-only e il
 comportamento studente è invariato.
+
+## Flussi ancora dipendenti da Storage diretto (Brave a rischio)
+
+MOB-01C ha risolto **solo** la consultazione della lezione. Restano **diretti**
+su Firebase Storage — e quindi potenzialmente **bloccabili su Brave mobile,
+anche in scrittura**: pool (lettura/salvataggio/eliminazione), modifica
+contenuto/metadata Markdown di lezioni e UDA, import, export, eliminazioni,
+backfill `publicLessons.content`, e il caricamento domande in
+preparazione/attivazione verifica e per il PDF soluzioni.
+
+La soluzione **approvata ma non ancora implementata** è il **Repository Storage
+Gateway same-origin** (`/api/repository/*` → Hosting rewrite → Cloud Function →
+Admin SDK → Storage): contratto in
+[storage-gateway-roadmap.md](../storage-gateway-roadmap.md) (**SGW**). Finché
+SGW non è implementato, questi flussi vanno considerati **non affidabili su
+Brave mobile**.

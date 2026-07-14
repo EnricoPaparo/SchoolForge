@@ -399,6 +399,21 @@ Redesign UX approvato che unifica le attuali sezioni Corsi, Lezioni e Domande in
 | DUX-07B ✅ | Editing metadati corso e anno scolastico, con gestione esplicita del caso `programma.md` assente. **Implementato.** | DUX-07A | `programma.md` preservato o creato nell'import attivo; proiezione `programmaMeta`, timestamp e audit aggiornati in batch; UI aggiornata senza reload completo; Rules invariate. |
 | Gate GDUX | Verifica finale end-to-end della roadmap Didattica. | DUX-01…07B (incl. 04A–D) | Checklist manuale DEV + evidenze automatiche. |
 
+> **Backlog DUX-09 (registrato, non implementato):** rifiniture Didattica (ricerca con placeholder `Cerca…`, "Nuovo corso" che inizializza e apre subito senza sparire per il filtro anno, più spazio ai titoli, spunta verde svolta) e Verifiche (toolbar filtri uguale a Didattica, placeholder `Corso`/`Nessuna`, colonne Classe/Anno dimensionate, pulsante `Crea` con aria-label `Crea verifica` che non allarga Azioni, righe `Attivata:`/`Chiusa:` separate e omesse se assenti). Acceptance criteria completi in [`storage-gateway-roadmap.md`](storage-gateway-roadmap.md) §Task 8.
+
+---
+
+## 12c. SGW — Repository Storage Gateway same-origin (SGW-00 → 03)
+
+> Fase infrastrutturale approvata, specifica completa in [`storage-gateway-roadmap.md`](storage-gateway-roadmap.md). Instrada gli accessi Storage del docente dietro `/api/repository/*` → Hosting rewrite → **una** Cloud Function HTTPS 2ª gen → Admin SDK → Storage, per renderli affidabili anche su Brave mobile (dove le richieste dirette falliscono con `storage/retry-limit-exceeded`). **Stato: SGW-00 (solo documentazione) — nessuna Function/rewrite/dipendenza esiste ancora.** Richiede attività **Docente** (deploy su DEV, budget alert, conferma region bucket).
+
+| ID | Outcome e scope | Dipende da | Evidenza DoD |
+|---|---|---|---|
+| SGW-00 | Contratto definitivo del gateway: inventario Storage, API `/api/repository/*`, sicurezza (Admin SDK bypassa le Rules → vincoli equivalenti/più stretti), costi/prestazioni, emulatori/deploy, roadmap SGW-01/02/03, backlog DUX-09. Solo documentazione. | MOB-01C | Questo documento + `storage-gateway-roadmap.md`; nessuna modifica a codice/Rules/`firebase.json`/dipendenze. |
+| SGW-01 | Function `repositoryGateway` + client adapter; read/write/delete singolo; migrazione contenuto/metadata lezioni e UDA e pool (load/save/delete); test sicurezza; deploy DEV + smoke Brave. | SGW-00 | Editing e pool passano dal gateway; test owner/path/estensioni/limiti; smoke Brave su editing/pool. Richiede Docente (deploy DEV). |
+| SGW-02 | Batch import/export, delete-prefix, backfill, `loadSelectedQuestions`(+solutions), ogni accesso Storage residuo; gate `rg` (nessuna operazione Storage diretta nel frontend fuori dall'adapter). | SGW-01 | Import/export/eliminazioni/verifiche dal gateway; `rg` pulito; smoke Brave completo. |
+| SGW-03 / Gate | Smoke completo Brave/Safari/desktop, sicurezza, prestazioni, costi, rollback; documentazione da "target" a "implementato". | SGW-02 | Checklist DEV multi-browser + evidenze; doc aggiornata. Richiede Docente. |
+
 ---
 
 ## 13. Qualità, CI/CD e costi

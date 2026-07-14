@@ -391,4 +391,14 @@ Rimandabili senza pacchetto dedicato, a beneficio marginale ai volumi attuali: *
 
 **Limiti dell'audit**: nessuna misura da un progetto Firebase reale attivo (Firebase Console non consultata in questa sessione); le stime di costo sono conteggi di operazioni dedotti dal codice, non osservazioni; le tariffe Blaze citate sono parametriche e vanno riverificate sulla pagina ufficiale prima di qualunque decisione di budget; non è stata misurata la dimensione reale dei documenti Firestore su dati di produzione; PERF-10 (code-splitting) è una stima qualitativa, non una misura quantitativa dell'impatto per ruolo.
 
+## 5. Nota SGW — costi/prestazioni del gateway (TARGET, non ancora implementato)
+
+Il **Repository Storage Gateway** (contratto in [storage-gateway-roadmap.md](storage-gateway-roadmap.md)) sposterà tutte le operazioni Storage marcate **S** in §4 dietro **una** Cloud Function HTTPS 2ª gen. Impatto costi/prestazioni da tenere presente quando verrà implementato (SGW-01+):
+
+- **Nessun costo zero garantito**: la 2ª gen aggiunge invocazioni Function, tempo/CPU/memoria, possibili costi di build/immagine (Cloud Run/Artifact Registry) ed egress dei contenuti dalla Function al browser. Le quote gratuite coprono verosimilmente un docente singolo, ma vanno riverificate con un **budget alert** sul progetto.
+- **`minInstances: 0`** (scale-to-zero, come il resto del sistema) e **`maxInstances` basso** (iniziale 3): nessun costo a riposo, cold start accettabile.
+- **Una chiamata per operazione logica**: import/export/verifiche restano **batch** (1 invocazione + N operazioni Storage), non una Function per file — coerente con il principio "niente polling, niente retry infiniti" già adottato (MOB-01B/01C).
+- **Consultazione lezione resta Firestore-first** (`publicLessons.content`): il gateway **non** viene usato per la lettura ordinaria, quindi non aggiunge invocazioni sul flusso più frequente.
+- **Metriche/soglie**: invocazioni/giorno, errori 4xx/5xx, latenza p50/p95, cold start, operazioni Storage A/B, egress GB; superamento del budget alert o egress in crescita non spiegata → rivalutare l'architettura. Nessuna misura reale disponibile in SGW-00.
+
 **Link PR draft**: https://github.com/EnricoPaparo/SchoolForge/pull/110 (aggiornata da questo commit, resta draft).

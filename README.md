@@ -25,6 +25,8 @@ Il flusso completo è operativo e testato (suite automatica estesa + smoke test 
 | Correzione AI (M5) | ❌ fuori scope V1 |
 
 **Stato:** Repository Editor (RE-00 → RE-07), Question Editor (QE-00 → QE-05) e M3-full sono completi e stabili per uso DEV/manuale; Gate G5 superato per M3-full. Vedi `documentazione/repository-editor-roadmap.md`, `documentazione/question-editor-roadmap.md`, `documentazione/m3-full-roadmap.md` e `documentazione/evidenze/g5-m3-full-checklist-finale.md`.
+
+**Compatibilità Storage / Brave (in progettazione).** Oggi la web app accede a Firebase Storage **direttamente** dal browser: su **Brave mobile** queste richieste dirette falliscono (`storage/retry-limit-exceeded`, HTTP 0, ~120 s). MOB-01C ha già spostato la *consultazione* delle lezioni su Firestore (`publicLessons.content`); restano diretti pool, editing Markdown, import/export, eliminazioni, backfill e caricamento domande verifiche. È **approvato ma non ancora implementato** un **Repository Storage Gateway same-origin** (`/api/repository/*` → Hosting rewrite → Cloud Function → Admin SDK → Storage): contratto in `documentazione/storage-gateway-roadmap.md` (SGW). Le Cloud Functions per il gateway **non esistono ancora**.
 Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartaceo.md) per la guida operativa.
 
 ## Principi non negoziabili

@@ -44,6 +44,10 @@ M3-lite non introduce Cloud Functions. Nella baseline corrente le Cloud Function
 
 La specifica corrente di **M3-full** è client-only: usa Firebase SDK + Security Rules, `submissions/{id}` e `submissionReceipts/{id}`. Non introduce `startDigitalAttempt`/`continueDigitalAttempt`, cookie HttpOnly o Cloud Functions dedicate. Le uniche Cloud Functions previste restano quelle AI in M5/V2.
 
+#### Repository Storage Gateway (SGW) — TARGET, non ancora implementato
+
+Per rendere gli accessi Storage del docente affidabili anche su Brave mobile è **approvato ma non ancora implementato** un gateway HTTPS same-origin: `POST /api/repository/{read|write|delete|batch-read|batch-write|delete-prefix}` → Hosting rewrite → **una** Cloud Function HTTPS 2ª gen (`repositoryGateway`) → Admin SDK → Storage. Autenticato con Firebase ID token, **solo owner**, solo Markdown/pool UTF-8 sotto `repository/{ownerUid}/imports/…`, con validazione path e limiti dimensione/numero file server-side. Il contratto completo (endpoint, request/response, status/error, limiti, atomicità, idempotenza, costi) è in [storage-gateway-roadmap.md](storage-gateway-roadmap.md) §Task 3. **Allo stato attuale queste Function non esistono** (`functions/src/index.ts` è vuoto); la web app accede a Storage **direttamente**.
+
 ### 1.3 Convenzioni risposta
 
 Tutte le Cloud Functions restituiscono:
