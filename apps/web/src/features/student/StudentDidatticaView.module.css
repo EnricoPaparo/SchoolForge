@@ -83,6 +83,12 @@
   box-shadow: var(--shadow-md);
   transform: translateY(-1px);
 }
+@media (prefers-reduced-motion: reduce) {
+  .card:hover,
+  .card:focus-within {
+    transform: none;
+  }
+}
 .cardOpen {
   position: absolute;
   inset: 0;

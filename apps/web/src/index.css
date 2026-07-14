@@ -63,6 +63,22 @@
   margin: 0;
 }
 
+/* Accessibility: honour the OS "reduce motion" setting. Neutralises
+   transitions, animations and smooth scrolling app-wide; component-level
+   hover lifts (e.g. card `transform`) are additionally flattened next to
+   their own rules. Purely a comfort adjustment — no state or layout
+   depends on motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
