@@ -1973,61 +1973,63 @@ function CourseOverview({
               {reorderError}
             </p>
           )}
-          <table className={styles.dataTable}>
-            <colgroup>
-              <col className={styles.udaTitleColumn} />
-              <col className={styles.progressColumn} />
-              <col className={styles.orderColumn} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>UDA</th>
-                <th>Lezioni svolte</th>
-                <th>{organizing ? 'Ordine' : <span className={styles.srOnly}>Apri</span>}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tree.udas.map((uda, index) => {
-                const udaLessons = lessonsByUda.get(uda.dir) ?? [];
-                const done = udaLessons.filter((l) => l.completed).length;
-                return (
-                  <tr key={uda.id}>
-                    <td className={styles.titleCell}>
-                      {organizing ? (
-                        <span className={styles.rowStaticLabel}>{uda.dir}</span>
-                      ) : (
-                        <button
-                          type="button"
-                          className={styles.rowOpenBtn}
-                          aria-label={`Apri UDA ${uda.dir}`}
-                          onClick={() => onSelectUda(uda.dir)}
-                        >
-                          {uda.dir}
-                        </button>
-                      )}
-                    </td>
-                    <td>{`${done}/${udaLessons.length}`}</td>
-                    <td className={styles.orderCell}>
-                      {organizing ? (
-                        <ReorderControls
-                          label={uda.dir}
-                          isFirst={index === 0}
-                          isLast={index === tree.udas.length - 1}
-                          disabled={reorderBusy}
-                          onUp={() => onMoveUda(index, -1)}
-                          onDown={() => onMoveUda(index, 1)}
-                        />
-                      ) : (
-                        <span className={styles.rowAffordance} aria-hidden="true">
-                          ›
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className={styles.overviewPanel}>
+            <table className={styles.dataTable}>
+              <colgroup>
+                <col className={styles.udaTitleColumn} />
+                <col className={styles.progressColumn} />
+                <col className={styles.orderColumn} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>UDA</th>
+                  <th>Lezioni svolte</th>
+                  <th>{organizing ? 'Ordine' : <span className={styles.srOnly}>Apri</span>}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tree.udas.map((uda, index) => {
+                  const udaLessons = lessonsByUda.get(uda.dir) ?? [];
+                  const done = udaLessons.filter((l) => l.completed).length;
+                  return (
+                    <tr key={uda.id}>
+                      <td className={styles.titleCell}>
+                        {organizing ? (
+                          <span className={styles.rowStaticLabel}>{uda.dir}</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className={styles.rowOpenBtn}
+                            aria-label={`Apri UDA ${uda.dir}`}
+                            onClick={() => onSelectUda(uda.dir)}
+                          >
+                            {uda.dir}
+                          </button>
+                        )}
+                      </td>
+                      <td>{`${done}/${udaLessons.length}`}</td>
+                      <td className={styles.orderCell}>
+                        {organizing ? (
+                          <ReorderControls
+                            label={uda.dir}
+                            isFirst={index === 0}
+                            isLast={index === tree.udas.length - 1}
+                            disabled={reorderBusy}
+                            onUp={() => onMoveUda(index, -1)}
+                            onDown={() => onMoveUda(index, 1)}
+                          />
+                        ) : (
+                          <span className={styles.rowAffordance} aria-hidden="true">
+                            ›
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </div>
@@ -2087,63 +2089,65 @@ function UdaOverview({
               {reorderError}
             </p>
           )}
-          <table className={styles.dataTable}>
-            <colgroup>
-              <col className={styles.lessonTitleColumn} />
-              <col className={styles.lessonStatusColumn} />
-              <col className={styles.questionsColumn} />
-              <col className={styles.orderColumn} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Lezione</th>
-                <th>Stato</th>
-                <th>Domande</th>
-                <th>{organizing ? 'Ordine' : <span className={styles.srOnly}>Apri</span>}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lessons.map((lesson, index) => {
-                const { title } = resolveLessonTitle(lesson.filename, lesson.titolo);
-                return (
-                  <tr key={lesson.id}>
-                    <td className={styles.titleCell}>
-                      {organizing ? (
-                        <span className={styles.rowStaticLabel}>{title}</span>
-                      ) : (
-                        <button
-                          type="button"
-                          className={styles.rowOpenBtn}
-                          aria-label={`Apri lezione ${title}`}
-                          onClick={() => onOpenLesson(lesson)}
-                        >
-                          {title}
-                        </button>
-                      )}
-                    </td>
-                    <td>{lesson.completed ? 'Svolta' : 'Da svolgere'}</td>
-                    <td>{lesson.questionCount}</td>
-                    <td className={styles.orderCell}>
-                      {organizing ? (
-                        <ReorderControls
-                          label={title}
-                          isFirst={index === 0}
-                          isLast={index === lessons.length - 1}
-                          disabled={reorderBusy}
-                          onUp={() => onMoveLesson(index, -1)}
-                          onDown={() => onMoveLesson(index, 1)}
-                        />
-                      ) : (
-                        <span className={styles.rowAffordance} aria-hidden="true">
-                          ›
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className={styles.overviewPanel}>
+            <table className={styles.dataTable}>
+              <colgroup>
+                <col className={styles.lessonTitleColumn} />
+                <col className={styles.lessonStatusColumn} />
+                <col className={styles.questionsColumn} />
+                <col className={styles.orderColumn} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Lezione</th>
+                  <th>Stato</th>
+                  <th>Domande</th>
+                  <th>{organizing ? 'Ordine' : <span className={styles.srOnly}>Apri</span>}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lessons.map((lesson, index) => {
+                  const { title } = resolveLessonTitle(lesson.filename, lesson.titolo);
+                  return (
+                    <tr key={lesson.id}>
+                      <td className={styles.titleCell}>
+                        {organizing ? (
+                          <span className={styles.rowStaticLabel}>{title}</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className={styles.rowOpenBtn}
+                            aria-label={`Apri lezione ${title}`}
+                            onClick={() => onOpenLesson(lesson)}
+                          >
+                            {title}
+                          </button>
+                        )}
+                      </td>
+                      <td>{lesson.completed ? 'Svolta' : 'Da svolgere'}</td>
+                      <td>{lesson.questionCount}</td>
+                      <td className={styles.orderCell}>
+                        {organizing ? (
+                          <ReorderControls
+                            label={title}
+                            isFirst={index === 0}
+                            isLast={index === lessons.length - 1}
+                            disabled={reorderBusy}
+                            onUp={() => onMoveLesson(index, -1)}
+                            onDown={() => onMoveLesson(index, 1)}
+                          />
+                        ) : (
+                          <span className={styles.rowAffordance} aria-hidden="true">
+                            ›
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </div>

@@ -431,6 +431,24 @@
   gap: 0.5rem;
 }
 
+/* ── Overview panel (SDUX-02A) ──────────────────────────────────────────────
+   Porta lato docente lo stesso trattamento a "pannello leggermente più chiaro"
+   della panoramica studente (StudentDidatticaView .courseContent): superficie
+   appena più chiara del fondo, bordo sottile coerente, radius e padding
+   equivalenti. Avvolge SOLO le tabelle strutturali di panoramica (UDA/lezioni),
+   non il corpo Markdown, la toolbar, la sidebar, il menu Azioni o l'editor. */
+.overviewPanel {
+  min-width: 0;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  overflow-x: hidden;
+}
+.overviewPanel > .dataTable {
+  font-size: 0.8125rem;
+}
+
 /* ── Data table ─────────────────────────────────────────────────────────── */
 .dataTable {
   width: 100%;

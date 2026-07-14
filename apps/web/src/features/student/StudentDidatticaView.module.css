@@ -93,11 +93,24 @@
   border: 0;
   border-radius: var(--radius-lg);
 }
-.cardOpen:hover {
+/* La card studente riusa lo stesso pattern overlay della card docente
+   (DidatticaView.module.css): serve `:not(:disabled)` per battere in
+   specificità la regola globale `button:hover:not(:disabled)` (index.css),
+   che altrimenti dipinge un fondo opaco sopra al testo sottostante facendolo
+   sparire. In più il contenuto viene alzato sopra l'overlay (z-index) e reso
+   non interattivo (pointer-events: none) così tutta la card resta cliccabile. */
+.cardOpen:hover:not(:disabled) {
   background: transparent;
   border-color: transparent;
 }
+.card:has(.cardOpen:hover) .cardTitle,
+.card:has(.cardOpen:focus-visible) .cardTitle {
+  color: var(--color-primary);
+}
 .cardHead {
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
   display: flex;
   align-items: center;
   gap: 0.65rem;
@@ -115,6 +128,9 @@
   overflow-wrap: anywhere;
 }
 .cardStats {
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
   display: flex;
   gap: 1.25rem;
   color: var(--color-text-muted);

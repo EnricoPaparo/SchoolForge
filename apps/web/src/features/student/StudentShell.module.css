@@ -203,10 +203,21 @@
 .main {
   flex: 1;
   overflow-y: auto;
+  /* Parità con la shell docente (TeacherShell.module.css .main): lo scroller
+     interno resta funzionale ma la barra spessa affiancata alla colonna
+     centrata di 1100px viene nascosta visivamente. Lo scroll resta completo
+     (mouse/touch/trackpad/tastiera); NON è overflow: hidden. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   padding: 1.75rem 2rem;
   max-width: 1100px;
   width: 100%;
   margin: 0 auto;
+}
+
+.main::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 @media (max-width: 640px) {
