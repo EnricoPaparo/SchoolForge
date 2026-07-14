@@ -212,7 +212,24 @@ export type SaveCorrectionInput = {
  *   (delta-only, via `computeQuestionEvaluationDeltas`/
  *   `computeGeneralFeedbackDelta`) are written atomically in one `writeBatch`.
  */
-export async function saveCorrection(input: SaveCorrectionInput, db: Firestore): Promise<void> {
+/**
+ * The normalized, persisted correction state `saveCorrection` returns, so the
+ * caller can update its baseline/dirty/totals/navigator from exactly what was
+ * written — no post-save Firestore re-read. Contains only workflow/scoring
+ * fields the workspace already renders; never a solution, answer or PII.
+ */
+export type SaveCorrectionResult = {
+  evaluations: Record<string, QuestionEvaluation>;
+  generalFeedback: string | null;
+  totalPoints: number;
+  maxPoints: number;
+  percentage: number | null;
+};
+
+export async function saveCorrection(
+  input: SaveCorrectionInput,
+  db: Firestore,
+): Promise<SaveCorrectionResult> {
   const { submissionId, evaluations: incoming, generalFeedback } = input;
   const ref = doc(db, 'corrections', submissionId);
   const snap = await getDoc(ref);
@@ -254,6 +271,15 @@ export async function saveCorrection(input: SaveCorrectionInput, db: Firestore):
     };
   }
 
+  const totals = computeCorrectionTotals(nextEvaluations);
+  const result: SaveCorrectionResult = {
+    evaluations: nextEvaluations,
+    generalFeedback,
+    totalPoints: totals.totalPoints,
+    maxPoints: totals.maxPoints,
+    percentage: totals.percentage,
+  };
+
   const questionDeltas = computeQuestionEvaluationDeltas(correction.evaluations, nextEvaluations);
   const generalFeedbackDelta = computeGeneralFeedbackDelta(
     correction.generalFeedback,
@@ -261,10 +287,11 @@ export async function saveCorrection(input: SaveCorrectionInput, db: Firestore):
   );
 
   if (questionDeltas.length === 0 && !generalFeedbackDelta) {
-    return; // nothing actually changed — no write at all
+    // Nothing actually changed — no write at all. The already-persisted state
+    // is exactly `result`, so the caller can still refresh its baseline.
+    return result;
   }
 
-  const totals = computeCorrectionTotals(nextEvaluations);
   const update: Record<string, unknown> = {
     evaluations: nextEvaluations,
     generalFeedback,
@@ -276,7 +303,7 @@ export async function saveCorrection(input: SaveCorrectionInput, db: Firestore):
 
   if (!isReopenedCorrection(correction)) {
     await updateDoc(ref, update);
-    return;
+    return result;
   }
 
   const batch = writeBatch(db);
@@ -295,6 +322,7 @@ export async function saveCorrection(input: SaveCorrectionInput, db: Firestore):
   };
   batch.set(doc(collection(db, 'correctionEvents')), event);
   await batch.commit();
+  return result;
 }
 
 // ─── completeCorrection ──────────────────────────────────────────────────────

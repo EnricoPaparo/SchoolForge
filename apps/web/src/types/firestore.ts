@@ -364,6 +364,15 @@ export type VerificationTeacherQuestionSnapshot = {
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
   maxPoints: number;
   testo: string;
+  /**
+   * Difficulty/weight frozen from the selected `VerificationQuestionRef` at
+   * activation, shown in the teacher correction workspace. Optional: absent on
+   * verifications activated before this snapshot carried them (legacy) — the
+   * workspace shows "—" and never reconstructs them from the live pool. Kept
+   * owner-only here; deliberately NOT copied into the public projection.
+   */
+  difficolta?: 1 | 2 | 3;
+  peso?: 1 | 2 | 3;
   /** Present only for chiusa_singola / chiusa_multipla. id + testo only. */
   opzioni?: { id: string; testo: string }[];
   /** string for aperta/chiusa_singola, string[] for chiusa_multipla. */

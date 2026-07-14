@@ -32,12 +32,14 @@ const LOADED: LoadedQuestionWithSolution = {
 };
 
 describe('toTeacherQuestionSnapshot', () => {
-  it('maps a LoadedQuestionWithSolution into the frozen snapshot shape, including soluzione', () => {
+  it('maps a LoadedQuestionWithSolution into the frozen snapshot shape, including soluzione, difficoltà and peso', () => {
     const snap = toTeacherQuestionSnapshot(LOADED, 2);
     expect(snap).toEqual({
       order: 2,
       tipo: 'chiusa_singola',
       maxPoints: 3,
+      difficolta: 2,
+      peso: 1,
       testo: 'Domanda?',
       opzioni: [
         { id: 'a', testo: 'A' },
@@ -45,6 +47,32 @@ describe('toTeacherQuestionSnapshot', () => {
       ],
       soluzione: 'a',
     });
+  });
+
+  it('freezes difficoltà and peso from the selection ref (no extra pool read)', () => {
+    const snap = toTeacherQuestionSnapshot(
+      { ...LOADED, ref: { ...REF, difficolta: 3, peso: 2 } },
+      0,
+    );
+    expect(snap.difficolta).toBe(3);
+    expect(snap.peso).toBe(2);
+  });
+
+  it('preserves ALL correct answers of a chiusa_multipla (array, not reduced to the first)', () => {
+    const multipla: LoadedQuestionWithSolution = {
+      ref: { ...REF, tipo: 'chiusa_multipla' },
+      testo: 'Quali sono corretti?',
+      tipo: 'chiusa_multipla',
+      opzioni: [
+        { id: 'a', testo: 'A' },
+        { id: 'b', testo: 'B' },
+        { id: 'c', testo: 'C' },
+        { id: 'd', testo: 'D' },
+      ],
+      soluzione: ['a', 'c'],
+    };
+    const snap = toTeacherQuestionSnapshot(multipla, 0);
+    expect(snap.soluzione).toEqual(['a', 'c']);
   });
 
   it('omits opzioni for an aperta question', () => {

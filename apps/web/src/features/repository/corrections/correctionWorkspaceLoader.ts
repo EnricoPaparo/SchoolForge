@@ -24,6 +24,9 @@ export type CorrectionWorkspaceQuestion = {
   order: number;
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
   maxPoints: number;
+  /** Frozen difficulty/weight from the teacher snapshot; absent on legacy verifications. */
+  difficolta?: 1 | 2 | 3;
+  peso?: 1 | 2 | 3;
   testo: string;
   opzioni?: { id: string; testo: string }[];
   soluzione: string | string[] | null;
@@ -54,6 +57,8 @@ function fromTeacherSnapshot(
       order: q.order,
       tipo: q.tipo,
       maxPoints: q.maxPoints,
+      ...(q.difficolta !== undefined ? { difficolta: q.difficolta } : {}),
+      ...(q.peso !== undefined ? { peso: q.peso } : {}),
       testo: q.testo,
       ...(q.opzioni ? { opzioni: q.opzioni } : {}),
       soluzione: q.soluzione,

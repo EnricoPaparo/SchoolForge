@@ -21,6 +21,7 @@ import {
   saveCorrection,
   setReturnVisibleToStudent,
   setSolutionsVisible,
+  type SaveCorrectionResult,
 } from '../repository/corrections/correctionsService.js';
 import type { AnswerValue, QuestionEvaluation } from '../../types/firestore.js';
 import styles from './CorrectionWorkspace.module.css';
@@ -65,6 +66,23 @@ const parsePoints = parseQuestionPointsInput;
 /** Formats a normalized quarter score for the input field (dot separator, no trailing zeros). */
 function formatPoints(points: number): string {
   return String(normalizeQuestionPoints(points));
+}
+
+/**
+ * Builds the editable state from the normalized result `saveCorrection` just
+ * persisted — so the workspace refreshes its baseline/points-text from exactly
+ * what Firestore now holds, without a re-read. `points` is already normalized
+ * (e.g. a `"7,5"` input comes back as `7.5`).
+ */
+function editableFromResult(result: SaveCorrectionResult): EditableState {
+  const evaluations: Record<string, EditableEvaluation> = {};
+  for (const [key, evaluation] of Object.entries(result.evaluations)) {
+    evaluations[key] = {
+      pointsText: evaluation.points === null ? '' : formatPoints(evaluation.points),
+      feedback: evaluation.feedback ?? '',
+    };
+  }
+  return { evaluations, generalFeedback: result.generalFeedback ?? '' };
 }
 
 function isAnswerFilled(answer: AnswerValue | undefined): boolean {
@@ -131,10 +149,15 @@ export function CorrectionWorkspace({
     'save' | 'complete' | 'return' | 'reopen' | 'visibility' | 'solutions' | null
   >(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
   const [confirmComplete, setConfirmComplete] = useState(false);
   const [confirmReopen, setConfirmReopen] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const mountedRef = useRef(true);
+  // Synchronous re-entrancy guard: two rapid clicks both pass the `busy` check
+  // before React re-renders, so a ref (set before the first await) is what
+  // actually prevents a concurrent second write.
+  const savingRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -254,13 +277,22 @@ export function CorrectionWorkspace({
   }
 
   async function handleSave() {
-    if (!data || !edit || hasAnyPointsError || busy) return;
+    if (!data || !edit || hasAnyPointsError) return;
+    // Synchronous guard: prevents a second concurrent write from a double click
+    // (the `busy` state check alone can be raced before the re-render).
+    if (savingRef.current) return;
+    savingRef.current = true;
+    // The exact edit we are persisting. If the docente keeps typing while the
+    // write is in flight, `edit` becomes a new object (updatePoints/Feedback
+    // create fresh state), so we can tell afterwards whether to adopt the
+    // normalized persisted text or keep their newer, unsaved changes.
+    const editToSave = edit;
     setBusy('save');
     setActionError(null);
     try {
       const evaluations: Record<string, { points: number | null; feedback?: string }> = {};
       for (const key of Object.keys(data.correction.evaluations)) {
-        const entry = edit.evaluations[key]!;
+        const entry = editToSave.evaluations[key]!;
         const points = parsePoints(entry.pointsText);
         const feedback = entry.feedback.trim();
         evaluations[key] = {
@@ -268,8 +300,12 @@ export function CorrectionWorkspace({
           ...(feedback !== '' ? { feedback } : {}),
         };
       }
-      const generalFeedback = edit.generalFeedback.trim();
-      await saveCorrection(
+      const generalFeedback = editToSave.generalFeedback.trim();
+      // A successful write is a successful save — full stop. We update baseline,
+      // totals and the navigator from the NORMALIZED result the service returns,
+      // never a second Firestore read (which, if slow or failing, used to leave
+      // the button stuck on "Salvataggio…" even though the write had succeeded).
+      const saved = await saveCorrection(
         {
           submissionId,
           evaluations,
@@ -277,10 +313,34 @@ export function CorrectionWorkspace({
         },
         db,
       );
-      await refresh();
+      if (!mountedRef.current) return;
+      const persisted = editableFromResult(saved);
+      baselineRef.current = persisted;
+      // Reflect persisted scores in totals/navigator without a re-read.
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              correction: {
+                ...prev.correction,
+                evaluations: saved.evaluations,
+                generalFeedback: saved.generalFeedback,
+                totalPoints: saved.totalPoints,
+                maxPoints: saved.maxPoints,
+                percentage: saved.percentage,
+              },
+            }
+          : prev,
+      );
+      // Adopt the normalized text only if nothing was typed during the save; a
+      // newer edit is never clobbered by this now-stale result.
+      setEdit((current) => (current === editToSave ? persisted : current));
+      setSaveStatus('saved');
     } catch (err) {
+      // A failed write keeps every local edit intact — nothing is reset here.
       if (mountedRef.current) setActionError(saveErrorMessage(err));
     } finally {
+      savingRef.current = false;
       if (mountedRef.current) setBusy(null);
     }
   }
@@ -496,6 +556,11 @@ export function CorrectionWorkspace({
             </span>
           </div>
 
+          <p className={styles.questionMeta}>
+            Difficoltà {currentQuestion?.difficolta ?? '—'} · Peso {currentQuestion?.peso ?? '—'} ·
+            Max {currentMaxPoints} punti
+          </p>
+
           <p className={styles.questionText}>
             {currentQuestion?.testo ??
               'Contenuto della domanda non disponibile (verifica precedente allo snapshot con soluzioni).'}
@@ -561,8 +626,8 @@ export function CorrectionWorkspace({
             <textarea
               className={styles.feedbackTextarea}
               rows={2}
-              aria-label={`Feedback per la domanda ${currentOrder + 1}`}
-              placeholder="Feedback per questa domanda (opzionale)"
+              aria-label={`Correzione per la domanda ${currentOrder + 1} (opzionale)`}
+              placeholder="Correzione (opzionale)"
               value={currentEdit?.feedback ?? ''}
               disabled={correction.status !== 'in_progress' || busy !== null}
               onChange={(e) => updateFeedback(currentOrder, e.target.value)}
@@ -652,6 +717,13 @@ export function CorrectionWorkspace({
                 >
                   Completa correzione
                 </button>
+                <p className={styles.saveStatus} aria-live="polite" role="status">
+                  {busy === 'save'
+                    ? 'Salvataggio…'
+                    : saveStatus === 'saved' && !dirty
+                      ? '✓ Correzione salvata'
+                      : ''}
+                </p>
               </>
             )}
 
@@ -804,8 +876,13 @@ function renderAnswer(
     return <p className={styles.answerBox}>{selectedIds.filter(Boolean).join(', ')}</p>;
   }
 
+  // Single option list with icon-based status (never colour alone): the
+  // student's selection is highlighted in blue; correctness is shown by a
+  // green ✓ or red ✕, each carrying screen-reader text. All correct options
+  // are marked, not just the first — `soluzione` is the full string[] for
+  // chiusa_multipla.
   return (
-    <div className={styles.optionsList}>
+    <ul className={styles.optionsList}>
       {question.opzioni.map((o) => {
         const isSelected =
           answer.tipo === 'chiusa_singola'
@@ -818,18 +895,33 @@ function renderAnswer(
             ? question.soluzione === o.id
             : Array.isArray(question.soluzione) && question.soluzione.includes(o.id);
         const cls = [styles.optionRow];
-        if (isSelected && isCorrect) cls.push(styles.optionCorrect, styles.optionSelected);
-        else if (isSelected && !isCorrect) cls.push(styles.optionSelectedWrong);
-        else if (isCorrect) cls.push(styles.optionCorrect);
+        if (isSelected) cls.push(styles.optionSelected);
+        let icon: string | null = null;
+        let statusText = '';
+        if (isCorrect) {
+          icon = '✓';
+          statusText = isSelected ? 'selezionata, corretta' : 'corretta, non selezionata';
+        } else if (isSelected) {
+          icon = '✕';
+          statusText = 'selezionata, errata';
+          cls.push(styles.optionSelectedWrong);
+        }
         return (
-          <div key={o.id} className={cls.join(' ')}>
-            {o.testo}
-            {isSelected && ' — selezionata'}
-            {isCorrect && ' (corretta)'}
-          </div>
+          <li key={o.id} className={cls.join(' ')}>
+            <span
+              className={`${styles.optionIcon} ${
+                icon === '✓' ? styles.optionIconCorrect : icon === '✕' ? styles.optionIconWrong : ''
+              }`}
+              aria-hidden="true"
+            >
+              {icon}
+            </span>
+            <span className={styles.optionText}>{o.testo}</span>
+            {statusText && <span className={styles.srOnly}> — {statusText}</span>}
+          </li>
         );
       })}
-    </div>
+    </ul>
   );
 }
 
