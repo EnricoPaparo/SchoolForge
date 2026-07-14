@@ -100,17 +100,23 @@ const MARGIN = 40;
 const CONTENT_WIDTH = PAGE.width - MARGIN * 2;
 const FOOTER_Y = PAGE.height - 24;
 
-type Column = { key: keyof RenderRow; header: string; width: number; align: 'left' | 'right' };
+type Column = {
+  key: keyof RenderRow;
+  header: string;
+  width: number;
+  align: 'left' | 'right';
+  wrap?: boolean;
+};
 
 // Widths sum to CONTENT_WIDTH (761.89).
 const COLUMNS: Column[] = [
-  { key: 'studentName', header: 'Studente', width: 165, align: 'left' },
-  { key: 'studentEmail', header: 'Email', width: 205, align: 'left' },
-  { key: 'statusLabel', header: 'Stato', width: 75, align: 'left' },
+  { key: 'studentName', header: 'Studente', width: 160, align: 'left' },
+  { key: 'studentEmail', header: 'Email', width: 195, align: 'left' },
+  { key: 'statusLabel', header: 'Stato', width: 68, align: 'left' },
   { key: 'score', header: 'Punteggio', width: 78, align: 'right' },
   { key: 'percentage', header: 'Percentuale', width: 70, align: 'right' },
-  { key: 'submittedAt', header: 'Consegnata il', width: 110, align: 'left' },
-  { key: 'deliveryCode', header: 'Codice', width: 58.89, align: 'left' },
+  { key: 'submittedAt', header: 'Consegnata il', width: 105, align: 'left' },
+  { key: 'deliveryCode', header: 'Codice', width: 85.89, align: 'left', wrap: false },
 ];
 
 const CELL_PADDING = 4;
@@ -222,9 +228,12 @@ function drawTableHeader(doc: PdfDoc, y: number): number {
 function drawRows(doc: PdfDoc, rows: readonly RenderRow[], startY: number): void {
   let y = startY;
   const wrapped = rows.map((row) => {
-    const cells = COLUMNS.map((col) =>
-      doc.splitTextToSize(String(row[col.key]), col.width - CELL_PADDING * 2),
-    );
+    const cells = COLUMNS.map((col) => {
+      const value = String(row[col.key]);
+      return col.wrap === false
+        ? [value]
+        : doc.splitTextToSize(value, col.width - CELL_PADDING * 2);
+    });
     const height = Math.max(...cells.map((lines) => lines.length)) * LINE_HEIGHT + ROW_V_PADDING;
     return { cells, height };
   });

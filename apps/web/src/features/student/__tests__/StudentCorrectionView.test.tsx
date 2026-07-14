@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StudentCorrectionView } from '../StudentCorrectionView.js';
 import type { StudentCorrectionReturnItem } from '../studentCorrectionReturnsService.js';
@@ -217,7 +217,12 @@ describe('StudentCorrectionView — question navigation and content', () => {
       />,
     );
 
-    expect(screen.getByText('HTTP, DNS')).toBeTruthy();
+    const solutionLabel = screen.getByText('Soluzione');
+    const solutionBlock = solutionLabel.parentElement as HTMLElement;
+    const solutionList = within(solutionBlock).getByRole('list');
+    expect(within(solutionList).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(solutionList).getByText('HTTP')).toBeTruthy();
+    expect(within(solutionList).getByText('DNS')).toBeTruthy();
   });
 
   it('renders multiple-choice options without a correct/incorrect colour hint', () => {

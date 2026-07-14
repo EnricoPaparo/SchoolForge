@@ -950,5 +950,11 @@ function renderSolution(question: CorrectionWorkspaceQuestion) {
   const correctTexts = question.opzioni
     .filter((o) => correctIds.includes(o.id))
     .map((o) => o.testo);
-  return <p className={styles.solutionBox}>{correctTexts.join(', ')}</p>;
+  return (
+    <ul className={`${styles.solutionBox} ${styles.solutionList}`}>
+      {correctTexts.map((text, index) => (
+        <li key={`${index}-${text}`}>{text}</li>
+      ))}
+    </ul>
+  );
 }

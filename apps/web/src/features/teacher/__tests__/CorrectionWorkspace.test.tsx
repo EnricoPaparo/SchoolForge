@@ -388,8 +388,10 @@ describe('CorrectionWorkspace — multiple correct answers', () => {
     // The Soluzione block lists BOTH correct answers, not just the first.
     const solutionLabel = screen.getByText('Soluzione (visibile solo al docente)');
     const solutionBlock = solutionLabel.parentElement as HTMLElement;
-    expect(within(solutionBlock).getByText(/Alpha/)).toBeTruthy();
-    expect(within(solutionBlock).getByText(/Gamma/)).toBeTruthy();
+    const solutionList = within(solutionBlock).getByRole('list');
+    expect(within(solutionList).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(solutionList).getByText('Alpha')).toBeTruthy();
+    expect(within(solutionList).getByText('Gamma')).toBeTruthy();
   });
 });
 

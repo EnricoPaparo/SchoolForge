@@ -1983,10 +1983,10 @@ export function VerificationsView() {
                               <button
                                 type="button"
                                 className={styles.sortHeaderButton}
-                                aria-label={monitorSortLabel('submittedAt', 'Consegnata il')}
+                                aria-label={monitorSortLabel('submittedAt', 'Consegna')}
                                 onClick={() => toggleMonitorSort('submittedAt')}
                               >
-                                Consegnata il{monitorSortIndicator('submittedAt')}
+                                Consegna{monitorSortIndicator('submittedAt')}
                               </button>
                             </th>
                             <th className={styles.th} aria-sort={monitorSortAria('events')}>

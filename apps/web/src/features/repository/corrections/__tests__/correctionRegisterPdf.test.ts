@@ -7,6 +7,7 @@ type TextCall = { text: string; x: number; y: number };
 
 class FakeDoc {
   textCalls: TextCall[] = [];
+  splitTextCalls: Array<{ text: string; maxWidth: number }> = [];
   addPageCount = 0;
   pages = 1;
   saved: string | null = null;
@@ -26,6 +27,7 @@ class FakeDoc {
     this.pages += 1;
   }
   splitTextToSize(text: string, maxWidth: number): string[] {
+    this.splitTextCalls.push({ text, maxWidth });
     const maxChars = Math.max(4, Math.floor(maxWidth / 6));
     if (text.length <= maxChars) return [text];
     const words = text.split(' ');
@@ -224,6 +226,18 @@ describe('downloadCorrectionRegisterPdf', () => {
     expect(calls.some((c) => c.text.includes('Verifica'))).toBe(true);
     // The email was split: a fragment carries its tail beyond the '@'.
     expect(calls.some((c) => c.text.includes('istituto'))).toBe(true);
+  });
+
+  it('keeps the fixed-format delivery code on one line', async () => {
+    const deliveryCode = 'SF-2026-AAAA';
+    await downloadCorrectionRegisterPdf({
+      verificationTitle: 'V',
+      className: null,
+      rows: [row({ deliveryCode })],
+    });
+
+    expect(lastDoc?.textCalls.filter((call) => call.text === deliveryCode)).toHaveLength(1);
+    expect(lastDoc?.splitTextCalls.some((call) => call.text === deliveryCode)).toBe(false);
   });
 
   it('breaks to a new page for a large dataset and repeats the table header', async () => {
