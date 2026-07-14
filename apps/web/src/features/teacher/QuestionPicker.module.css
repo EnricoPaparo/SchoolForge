@@ -6,9 +6,7 @@
 }
 
 .filterBar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  display: grid;
   gap: 0.625rem;
   padding: 0.75rem;
   background: var(--color-surface-subtle);
@@ -16,16 +14,31 @@
   border-radius: var(--radius);
 }
 
+.filterRowPrimary,
+.filterRowScope {
+  display: grid;
+  gap: 0.625rem;
+  align-items: end;
+  min-width: 0;
+}
+
+.filterRowPrimary {
+  grid-template-columns: minmax(0, 2fr) repeat(2, minmax(140px, 1fr));
+}
+
+.filterRowScope {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .filterField {
   display: flex;
   flex-direction: column;
   gap: 0.1875rem;
-  min-width: 140px;
+  min-width: 0;
 }
 
 .filterFieldSearch {
-  flex: 1;
-  min-width: 200px;
+  min-width: 0;
 }
 
 .filterLabel {
@@ -37,6 +50,10 @@
 }
 
 .filterInput {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 2rem;
   padding: 0.3125rem 0.5rem;
   font-size: 0.8125rem;
   border: 1px solid var(--color-border);
@@ -65,6 +82,11 @@
 }
 
 @media (max-width: 640px) {
+  .filterRowPrimary,
+  .filterRowScope {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .toolbarRow {
     flex-direction: column;
     align-items: stretch;

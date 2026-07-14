@@ -492,8 +492,12 @@ export function VerificationsView() {
     setCreating(true);
     setCreateError(null);
     try {
-      const program = programs.find((p) => p.id === newProgramId);
-      const importId = program?.activeImportId ?? '';
+      const program = readyPrograms.find((p) => p.id === newProgramId);
+      if (!program?.activeImportId) {
+        setCreateError('Seleziona un corso pronto con una importazione attiva.');
+        return;
+      }
+      const importId = program.activeImportId;
       const newId = await createVerification(
         { title, classId: newClassId || null, programId: newProgramId, importId },
         ownerUid,
@@ -508,8 +512,8 @@ export function VerificationsView() {
       if (created) {
         await handleSelectVer(created);
       }
-    } catch {
-      setCreateError('Impossibile creare la verifica.');
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Impossibile creare la verifica.');
     } finally {
       setCreating(false);
     }
@@ -868,6 +872,10 @@ export function VerificationsView() {
 
   // ── Derived: filter options + filtered/sorted list (VUX-01) ──────
   const programTitleById = useMemo(() => new Map(programs.map((p) => [p.id, p.title])), [programs]);
+  const readyPrograms = useMemo(
+    () => programs.filter((program) => Boolean(program.activeImportId)),
+    [programs],
+  );
   const classNameById = useMemo(() => new Map(classes.map((c) => [c.id, c.name])), [classes]);
 
   const verList = verifications ?? [];
@@ -1055,8 +1063,10 @@ export function VerificationsView() {
                     value={newProgramId}
                     onChange={(e) => setNewProgramId(e.target.value)}
                   >
-                    <option value="">Corso</option>
-                    {programs.map((p) => (
+                    <option value="">
+                      {readyPrograms.length === 0 ? 'Nessun corso pronto' : 'Corso'}
+                    </option>
+                    {readyPrograms.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.title}
                       </option>

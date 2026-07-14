@@ -174,6 +174,20 @@ describe('listActiveOnlineVerificationClassIds', () => {
 
 describe('createVerification', () => {
   it('creates draft with empty questionRefs and writes audit event', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ ownerUid: OWNER_UID, activeImportId: 'i1' }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          ownerUid: OWNER_UID,
+          programId: 'p1',
+          importId: 'i1',
+          status: 'committed',
+        }),
+      });
     const id = await createVerification(
       { title: 'Verifica 1', classId: null, programId: 'p1', importId: 'i1' },
       OWNER_UID,
@@ -197,6 +211,54 @@ describe('createVerification', () => {
     const [, auditData] = mockBatchSet.mock.calls[1];
     expect(auditData.action).toBe('verification.created');
     expect(auditData.actorUid).toBe(OWNER_UID);
+  });
+
+  it('rejects an empty or stale course before opening a write batch', async () => {
+    await expect(
+      createVerification(
+        { title: 'Verifica 1', classId: null, programId: 'p1', importId: '' },
+        OWNER_UID,
+        fakeDb,
+      ),
+    ).rejects.toThrow('corso pronto');
+    expect(mockGetDoc).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the selected import is no longer active', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ ownerUid: OWNER_UID, activeImportId: 'new-import' }),
+      })
+      .mockResolvedValueOnce({ exists: () => true, data: () => ({}) });
+
+    await expect(
+      createVerification(
+        { title: 'Verifica 1', classId: null, programId: 'p1', importId: 'old-import' },
+        OWNER_UID,
+        fakeDb,
+      ),
+    ).rejects.toThrow('non ha più questa importazione attiva');
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing active import document', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ ownerUid: OWNER_UID, activeImportId: 'i1' }),
+      })
+      .mockResolvedValueOnce({ exists: () => false });
+
+    await expect(
+      createVerification(
+        { title: 'Verifica 1', classId: null, programId: 'p1', importId: 'i1' },
+        OWNER_UID,
+        fakeDb,
+      ),
+    ).rejects.toThrow("L'importazione attiva del corso non esiste più");
+    expect(mockWriteBatch).not.toHaveBeenCalled();
   });
 });
 
