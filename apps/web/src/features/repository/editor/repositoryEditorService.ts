@@ -572,6 +572,7 @@ export async function createLesson(params: {
       filename,
       contentPath: storageRef,
       order,
+      completed: false,
       createdAt: serverTimestamp(),
       content: publicBody,
       ...metadata,

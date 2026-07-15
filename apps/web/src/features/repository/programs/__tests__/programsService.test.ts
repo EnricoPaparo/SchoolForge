@@ -10,6 +10,7 @@ const mockSetDoc = vi.fn();
 const mockUpdateDoc = vi.fn();
 const mockBatchDelete = vi.fn();
 const mockBatchSet = vi.fn();
+const mockBatchUpdate = vi.fn();
 const mockBatchCommit = vi.fn();
 const mockWriteBatch = vi.fn();
 
@@ -53,6 +54,7 @@ import {
   listPrograms,
   listUdas,
   setProgramClassIds,
+  setLessonCompleted,
   PROGRAM_DELETE_BLOCKED_MESSAGE,
 } from '../programsService.js';
 import type { Firestore } from 'firebase/firestore';
@@ -71,6 +73,7 @@ beforeEach(() => {
   mockBatchCommit.mockResolvedValue(undefined);
   mockWriteBatch.mockReturnValue({
     set: mockBatchSet,
+    update: mockBatchUpdate,
     delete: mockBatchDelete,
     commit: mockBatchCommit,
   });
@@ -102,6 +105,34 @@ describe('listPrograms — legacy classIds normalization', () => {
 
     const [program] = await listPrograms(fakeDb);
     expect(program.classIds).toEqual(['class-1']);
+  });
+});
+
+describe('setLessonCompleted', () => {
+  it('updates the technical lesson, public projection and audit in one batch', async () => {
+    await setLessonCompleted(
+      'program-1',
+      'import-1',
+      'lesson-1',
+      'import-1_lesson-1',
+      true,
+      'owner-1',
+      fakeDb,
+    );
+
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      { __path: 'programs/program-1/imports/import-1/lessons/lesson-1' },
+      expect.objectContaining({ completed: true }),
+    );
+    expect(mockBatchUpdate).toHaveBeenCalledWith(
+      { __path: 'publicLessons/import-1_lesson-1' },
+      { completed: true },
+    );
+    expect(mockBatchSet).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ action: 'lesson.completed', targetId: 'lesson-1' }),
+    );
+    expect(mockBatchCommit).toHaveBeenCalledOnce();
   });
 });
 

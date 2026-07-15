@@ -36,6 +36,7 @@ const LESSON_1 = {
   concettiChiave: ['internet', 'rete'],
   obiettivi: ['Comprendere il Web'],
   order: 0,
+  completed: true,
   content: '# Titolo\n\nContenuto della lezione.',
 };
 const LESSON_2 = {
@@ -46,6 +47,7 @@ const LESSON_2 = {
   titolo: 'Il Web',
   path: 'uda-02-web/lezione-002.md',
   contentPath: 'repository/owner-uid/imports/imp-1/uda-02-web/lezione-002.md',
+  completed: false,
 };
 
 function loadWithData() {
@@ -91,9 +93,14 @@ describe('StudentDidatticaView — SDUX-01', () => {
   it('opens a course, then an UDA and a lesson from the public projection', async () => {
     loadWithData();
     render(<StudentDidatticaView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Apri corso Informatica' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
     expect(screen.getByRole('region', { name: 'Corso Informatica' })).toBeTruthy();
-    expect(screen.getByText('2 UDA · 2 lezioni')).toBeTruthy();
+    expect(screen.getByText('2 UDA · 1/2 lezioni svolte')).toBeTruthy();
+    expect(
+      screen
+        .getByRole('progressbar', { name: 'Avanzamento lezioni' })
+        .getAttribute('aria-valuenow'),
+    ).toBe('50');
     const structure = screen.getByRole('complementary', { name: 'Struttura del corso' });
     fireEvent.click(within(structure).getByRole('button', { name: /Reti/ }));
     fireEvent.click(within(structure).getByRole('button', { name: /Internet e reti/ }));

@@ -32,13 +32,19 @@ const fakeDb = {} as Firestore;
 const OWNER_UID = 'owner-uid';
 
 function docsFor(items: { id: string; data: Record<string, unknown> }[]) {
-  return { docs: items.map((item) => ({ id: item.id, data: () => item.data })) };
+  return {
+    docs: items.map((item) => ({
+      id: item.id,
+      data: () => ({ programId: 'program-1', importId: 'import-1', ...item.data }),
+    })),
+  };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockUpdateDoc.mockResolvedValue(undefined);
   mockSetDoc.mockResolvedValue(undefined);
+  mockGetDoc.mockResolvedValue({ exists: () => true, data: () => ({ completed: false }) });
   mockReadTexts.mockImplementation(async (paths: string[]) =>
     paths.map((path) => ({ ok: true, path, content: 'Corpo.' })),
   );
@@ -67,11 +73,11 @@ describe('backfillPublicLessonsContent', () => {
     expect(summary).toEqual({ analyzed: 1, migrated: 1, skipped: 0, failed: [] });
     expect(mockUpdateDoc).toHaveBeenCalledWith(
       { __path: 'publicLessons/l1' },
-      { content: 'Corpo.' },
+      { content: 'Corpo.', completed: false },
     );
     expect(mockSetDoc).toHaveBeenCalledWith(
       { __path: 'settings/publicLessonsMigration' },
-      expect.objectContaining({ publicLessonsContentVersion: 1 }),
+      expect.objectContaining({ publicLessonsContentVersion: 2 }),
     );
   });
 
@@ -85,6 +91,7 @@ describe('backfillPublicLessonsContent', () => {
             contentPath: 'repository/x/l1.md',
             filename: 'l1.md',
             content: 'Già migrato.',
+            completed: false,
           },
         },
       ]),
@@ -145,6 +152,7 @@ describe('backfillPublicLessonsContent', () => {
             contentPath: 'repository/x/l1.md',
             filename: 'l1.md',
             content: 'Corpo.',
+            completed: false,
           },
         },
       ]),
@@ -168,6 +176,7 @@ describe('backfillPublicLessonsContent', () => {
             contentPath: 'repository/x/l2.md',
             filename: 'l2.md',
             content: 'Già ok.',
+            completed: false,
           },
         },
       ]),
@@ -181,6 +190,35 @@ describe('backfillPublicLessonsContent', () => {
     expect(summary).toEqual({ analyzed: 2, migrated: 1, skipped: 1, failed: [] });
     expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
   });
+
+  it('backfills completion from the matching technical lesson without reading Storage', async () => {
+    mockGetDocs.mockResolvedValueOnce(
+      docsFor([
+        {
+          id: 'import-1_l1',
+          data: {
+            ownerUid: OWNER_UID,
+            contentPath: 'repository/x/l1.md',
+            filename: 'l1.md',
+            content: 'Già migrato.',
+          },
+        },
+      ]),
+    );
+    mockGetDoc.mockResolvedValueOnce({ exists: () => true, data: () => ({ completed: true }) });
+
+    const summary = await backfillPublicLessonsContent(OWNER_UID, fakeDb);
+
+    expect(summary).toEqual({ analyzed: 1, migrated: 1, skipped: 0, failed: [] });
+    expect(mockReadTexts).not.toHaveBeenCalled();
+    expect(mockGetDoc).toHaveBeenCalledWith({
+      __path: 'programs/program-1/imports/import-1/lessons/l1',
+    });
+    expect(mockUpdateDoc).toHaveBeenCalledWith(
+      { __path: 'publicLessons/import-1_l1' },
+      { completed: true },
+    );
+  });
 });
 
 describe('isPublicLessonsMigrationComplete', () => {
@@ -193,7 +231,7 @@ describe('isPublicLessonsMigrationComplete', () => {
   it('returns true when the marker carries the current version', async () => {
     mockGetDoc.mockResolvedValueOnce({
       exists: () => true,
-      data: () => ({ publicLessonsContentVersion: 1 }),
+      data: () => ({ publicLessonsContentVersion: 2 }),
     });
 
     expect(await isPublicLessonsMigrationComplete(fakeDb)).toBe(true);
@@ -202,7 +240,7 @@ describe('isPublicLessonsMigrationComplete', () => {
   it('returns false for an unrecognized version value', async () => {
     mockGetDoc.mockResolvedValueOnce({
       exists: () => true,
-      data: () => ({ publicLessonsContentVersion: 2 }),
+      data: () => ({ publicLessonsContentVersion: 1 }),
     });
 
     expect(await isPublicLessonsMigrationComplete(fakeDb)).toBe(false);

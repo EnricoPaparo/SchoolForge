@@ -307,15 +307,18 @@ export async function setLessonCompleted(
   programId: string,
   importId: string,
   lessonId: string,
+  publicLessonId: string,
   completed: boolean,
   ownerUid: string,
   db: Firestore,
 ): Promise<void> {
-  await updateDoc(doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId), {
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId), {
     completed,
     completedAt: completed ? serverTimestamp() : null,
   });
-  await setDoc(doc(collection(db, 'auditEvents')), {
+  batch.update(doc(db, 'publicLessons', publicLessonId), { completed });
+  batch.set(doc(collection(db, 'auditEvents')), {
     actorUid: ownerUid,
     action: 'lesson.completed',
     targetId: lessonId,
@@ -323,6 +326,7 @@ export async function setLessonCompleted(
     reason: completed ? 'marked as completed' : 'marked as not completed',
     timestamp: serverTimestamp(),
   });
+  await batch.commit();
 }
 
 export const PROGRAM_DELETE_BLOCKED_MESSAGE =
