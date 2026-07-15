@@ -968,7 +968,8 @@ M3F-10 è completato; M3F-11 (con i sotto-pacchetti M3F-11A/B/C sotto) è comple
 | ID | Outcome e scope | Dipende da | Stato |
 |---|---|---|---|
 | HARD-00 ✅ | Audit generale finale V1 read-only (aree A–K): auth/Rules, ciclo di vita dati, concorrenza, costi/prestazioni, frontend, privacy/residenza, supply-chain/config, operatività, accessibilità, coerenza doc↔codice. Verdetto **READY FOR REMEDIATION** — 0 P0, 0 P1, 3 P2, 5 P3. Nessun codice/Rules/config modificati. | GDUX, G6 | **Audit svolto** — vedi [`hardening-audit-v1.md`](hardening-audit-v1.md). |
-| HARD-01 | Operatività & configurazione (P2): runbook budget alert/backup/incidente (F01), security header + cache Hosting (F03), riconciliazione region/residenza dati (F02). Prevalentemente documentazione/config. | HARD-00 | Non implementato. |
+| HARD-01A ✅ | Runbook operativo V1 + protezione minima costi + piano backup/ripristino (F01): `runbook-operativo-v1.md` (deploy/rollback/budget/backup/ripristino/incidenti/checklist mensile) e Human Gate `evidenze/hard-01a-human-gate.md`. **F01 = MITIGATED — documentazione pronta, configurazione manuale pending** (budget alert DEV e politiche restano azioni manuali del docente). Nessun codice/Rules/config/deploy. | HARD-00 | **Documentazione pronta; Human Gate pending.** |
+| HARD-01B | Security header + cache Hosting (F03) e riconciliazione region/residenza dati (F02). | HARD-00 | Non implementato. |
 | HARD-02 | Accessibilità & resilienza (P3): audit a11y end-to-end docente+studente (F08), chunking import >500 mutazioni (F06). | HARD-00 | Non implementato. |
 | HARD-03 | Costi a lungo termine (P3, condizionato a misura reale): paginazione storico `verifications` (F05), valutazione App Check (F04). | HARD-01 | Non implementato. |
 | Gate GHARD | Verifica finale di chiusura hardening. Criteri in `hardening-audit-v1.md §11`; evidenze future in `evidenze/ghard-checklist-finale.md`. | HARD-01…03 | Non aperto. |
