@@ -66,22 +66,22 @@ Obiettivo: scritture tecniche in chunk ≤ **400** mutazioni, nuove proiezioni p
 
 1. **STAGING (chunked, invisibile).** Genera `newImportId`. Carica Storage. Scrivi in chunk ≤400: import metadata (`status:'staging'`), UDA, lezioni, questionIndex, **e** le nuove `publicLessons` con **ID import-scoped** `${newImportId}_${lessonId}` e campo `importId=newImportId`. Sono invisibili perché la query studente filtra `importId == program.activeImportId` (ancora il vecchio).
 2. **SWITCH (atomico, piccolo).** Una `runTransaction`/batch di **≤3 mutazioni**: `programs/{id}.activeImportId = newImportId` (+ `updatedAt`), `imports/{newId}.status='active'`, `auditEvents` (import.committed). Da questo istante lo studente vede **solo** il nuovo import; il vecchio diventa **immediatamente invisibile** (filtro `importId`), senza cancellare nulla.
-3. **CLEANUP (successivo, chunked, best-effort).** Marca il vecchio import `status:'superseded'`, poi elimina in chunk ≤400 le sue `publicLessons` (`programId==X && importId==oldId`) e — se si vuole liberare storage — i suoi doc tecnici e file Storage. Un errore qui **non** invalida l'import già attivo (le stale sono già invisibili): stato `cleanup_pending`, ritentabile.
+3. **CLEANUP (successivo, chunked, best-effort).** Elimina in chunk ≤400 **soltanto** le `publicLessons` del vecchio import (`programId==X && importId==oldId`) e marca **best-effort** il vecchio import `status:'superseded'` **se il documento esiste**. **NON** elimina UDA, lezioni, questionIndex né file Storage del vecchio import (vedi §7 «Cleanup»). Un errore qui **non** invalida l'import già attivo (le stale sono già invisibili grazie al gate `activeImportId` lato Rules): l'import resta `committed` con un `cleanupPending` non bloccante, ritentabile e idempotente.
 
-Proprietà chiave: **solo lo switch è atomico**; staging e cleanup sono **chunked ed eventual-consistent** ma non producono mai visibilità parziale, perché la visibilità dipende **esclusivamente** da `activeImportId` + filtro `importId`.
+Proprietà chiave: **solo lo switch è atomico**; staging e cleanup sono **chunked ed eventual-consistent** ma non producono mai visibilità parziale, perché la visibilità dipende **esclusivamente** da `activeImportId` (imposto sia dalla query sia dalle **Security Rules**, §7).
 
 ---
 
 ## 4. Alternative valutate
 
 ### A — `publicLessons` con ID import-scoped + query vincolata ad `activeImportId` **(RACCOMANDATA)**
-- **Sicurezza:** invariata. La regola resta il gate classe via `get(program).classIds`; il filtro `importId` **restringe** i risultati (non allarga). Nessun dato in più esposto.
-- **Atomicità logica:** ottima. Old/new coesistono con **ID distinti** → nessuna collisione; lo switch è 1 sola scrittura decisiva (`activeImportId`). Nessuna finestra parziale.
-- **Compatibilità legacy:** buona con accorgimento. Le `publicLessons` legacy hanno `id=lessonId` ma **hanno già il campo `importId`** (`PublicLessonDoc.importId`, `types/firestore.ts`); la query `importId==activeImportId` le seleziona per campo, indipendentemente dall'ID. Il primo re-import normalizza allo schema import-scoped e il cleanup rimuove le legacy.
-- **Rules/query/indici:** query studente aggiunge `where('importId','==', activeImportId)` → serve **1 indice composito** `publicLessons(programId ASC, importId ASC)` (oggi assente). **Nessuna modifica Rules necessaria** per la lettura (l'`importId` non è gated; il filtro è ammesso). Hardening opzionale: aggiungere alla regola `resource.data.importId == get(program).activeImportId` per negare query dirette su import non attivi (difesa in profondità).
-- **Costo R/W:** lettura studente **+1 read** del program doc già effettuata in discovery (nessun costo extra). Scritture: come oggi (1 publicLessons per lezione) ma **chunked**; il cleanup aggiunge L₀ delete differiti (già presenti oggi come delete in transazione).
-- **Complessità:** media. Richiede: cambio convenzione ID `publicLessons`, aggiornare l'**addressing per-id nell'editor/backfill** (vedi §7 legacy: `repositoryEditorService.ts` indirizza `doc(db,'publicLessons', lessonId)` in ~8 punti; dovrà usare `${activeImportId}_${lessonId}` con **fallback legacy** a `lessonId`), nuovo indice.
-- **Rischio orfani:** basso e **innocuo**. Le stale post-switch sono invisibili (filtro) e ripulibili in chunk; un cleanup fallito lascia solo storage residuo, mai incoerenza.
+- **Sicurezza:** il gate classe (`get(program).classIds`) resta, **e** la regola di lettura non-owner di `publicLessons` viene **rafforzata obbligatoriamente** (non opzionale) con `resource.data.importId == get(program).activeImportId`: staging e import stale/superseded sono negati anche a `get` diretto con ID noto o a query manomessa. La query UI `programId+importId` **non è** un confine di sicurezza: il confine è la Rule server-side. L'owner mantiene la lettura completa (attivo/staging/stale).
+- **Atomicità logica:** ottima. Old/new coesistono con **ID distinti** → nessuna collisione; lo switch è 1 sola scrittura decisiva (`activeImportId`), che ridefinisce simultaneamente sia la visibilità della query sia quella imposta dalle Rules. Nessuna finestra parziale.
+- **Compatibilità legacy:** buona. Le `publicLessons` legacy hanno `id=lessonId` ma **hanno già il campo `importId`** (`PublicLessonDoc.importId`); query e Rules ragionano per campo `importId`, non per prefisso ID. Il primo re-import normalizza allo schema import-scoped; le legacy dell'import precedente vengono ripulite dal cleanup (solo `publicLessons`).
+- **Rules/query/indici:** query studente aggiunge `where('importId','==', activeImportId)` → serve **1 indice composito** `publicLessons(programId ASC, importId ASC)` (oggi assente). **Modifica Rules obbligatoria** (vedi §7): la lettura non-owner richiede `importId == program.activeImportId`.
+- **Costo R/W:** la Rule aggiunge **1 `get(program)` server-side per documento valutato** in lettura (cross-doc get, come già fa il gate `classIds` odierno — che legge lo stesso program doc; le due `get` sullo stesso path sono memoizzate entro la stessa valutazione). Lato client, `activeImportId` è già disponibile dal program doc letto in discovery: nessuna read extra. Scritture: come oggi (1 publicLessons per lezione) ma **chunked**.
+- **Complessità:** media. Richiede: campo `LessonDoc.publicLessonId`, un **helper puro** di risoluzione riferimento (§7), il nuovo indice e la Rule rafforzata.
+- **Rischio orfani:** basso e **innocuo**. Le stale post-switch sono invisibili (query **e** Rules) e ripulibili in chunk; un cleanup fallito lascia solo `publicLessons` residue invisibili, mai incoerenza — e **mai** tocca dati tecnici/Storage.
 
 ### B — Staging collection separata (`publicLessonsStaging`)
 - **Sicurezza:** richiede **regole duplicate** per la staging (o owner-only + copia allo switch). Superficie in più.
@@ -105,7 +105,9 @@ Proprietà chiave: **solo lo switch è atomico**; staging e cleanup sono **chunk
 
 > **Alternativa A — `publicLessons` con ID import-scoped + query studente vincolata ad `activeImportId`.**
 
-**Motivazione:** è l'unica che (1) consente scritture chunked ≤400 mantenendo old/new **coesistenti senza collisione**, (2) riduce l'atto atomico a **una singola decisione** (`activeImportId`), (3) rende il vecchio import invisibile **all'istante** dello switch senza cancellare nulla, (4) resta **client-only, senza nuove Cloud Function né collezioni/dipendenze**, (5) è **retro-compatibile** con le `publicLessons` legacy grazie al campo `importId` già presente. B raddoppia le scritture e ripropone il limite allo switch; C viola l'atomicità studente; D non risolve. **Guardia interinale opzionale:** finché A non è implementata, adottare D come fail-fast (`> ~450` mutazioni stimate → messaggio "import troppo grande, suddividilo") per evitare fallimenti opachi a metà.
+**Motivazione:** è l'unica che (1) consente scritture chunked ≤400 mantenendo old/new **coesistenti senza collisione**, (2) riduce l'atto atomico a **una singola decisione** (`activeImportId`), (3) rende il vecchio import invisibile **all'istante** dello switch senza cancellare nulla, (4) resta **client-only, senza nuove Cloud Function né collezioni/dipendenze**, (5) è **retro-compatibile** con le `publicLessons` legacy grazie al campo `importId` già presente. B raddoppia le scritture e ripropone il limite allo switch; C viola l'atomicità studente; D non risolve.
+
+**Requisito di sicurezza vincolante:** la soluzione include una **modifica Rules obbligatoria** — la lettura non-owner di `publicLessons` deve richiedere `resource.data.importId == get(program).activeImportId` (§7). Senza di essa la sola query UI non impedirebbe a uno studente di leggere, via `get` diretto o query manomessa, una proiezione di un import staging o stale. **Guardia interinale opzionale:** finché A non è implementata, adottare D come fail-fast (`> ~450` mutazioni stimate → messaggio "import troppo grande, suddividilo") per evitare fallimenti opachi a metà.
 
 ---
 
@@ -121,9 +123,9 @@ staging ──(switch atomico)──▶ active ──(nuovo import attivato)─�
 
 - **staging** — dati tecnici + `publicLessons` scritti (chunked), **invisibili** (`activeImportId` ancora il precedente).
 - **active** — è l'import puntato da `program.activeImportId`. Esattamente uno per programma.
-- **superseded** — ex-active dopo uno switch successivo; le sue `publicLessons` sono invisibili e in attesa di cleanup (`cleanup_pending` implicito = esiste un import `superseded` con proiezioni residue).
+- **superseded** — ex-active dopo uno switch successivo; le sue `publicLessons` sono invisibili (Rules + query) e in attesa di cleanup. Il marcamento `superseded` è **best-effort e solo se il documento import esiste**.
 
-Non servono altri stati: `cleanup_pending` è rappresentato dalla presenza di un import `superseded` con `publicLessons` residue, ripulibili idempotentemente. `activeImportId` resta l'**unica fonte di verità** per la visibilità.
+Non servono altri stati: la condizione «cleanup non completato» è rappresentata da un flag di risultato **`cleanupPending`** non bloccante (l'import resta `committed`) e/o dalla presenza di `publicLessons` residue di un import non più attivo, ripulibili idempotentemente. `activeImportId` resta l'**unica fonte di verità** per la visibilità, imposta sia dalla query sia dalle Rules.
 
 ---
 
@@ -133,17 +135,57 @@ Non servono altri stati: `cleanup_pending` è rappresentato dalla presenza di un
   - `programs/{programId}` — invariato (`activeImportId` è già lo switch).
   - `imports/{importId}.status` — dominio esteso a `'staging' | 'active' | 'superseded'` (era `'committed'`; `'committed'`/assente = legacy trattato come `active` se è l'`activeImportId`, altrimenti `superseded`).
   - `publicLessons/{docId}` — **campi invariati** (`importId` già presente). Cambia **solo la convenzione ID** per le nuove scritture.
-- **Convenzione ID `publicLessons`:** nuovo = **`${importId}_${lessonId}`** (con `lessonId = ${udaId}_${toDocId(filename)}`). Legacy = `lessonId`. La distinzione è trasparente alla query (che filtra per campo `importId`, non per prefisso ID).
+- **Convenzione ID `publicLessons`:** nuovo = **`${importId}_${lessonId}`** (con `lessonId = ${udaId}_${toDocId(filename)}`). Legacy = `lessonId`. La distinzione è trasparente a query e Rules (ragionano per campo `importId`, non per prefisso ID).
 - **Query studente:** `where('programId','==',X)` **AND** `where('importId','==', program.activeImportId)`. Il program doc è già letto in discovery (`loadStudentLessons`), quindi `activeImportId` è disponibile senza read aggiuntive.
-- **Modifiche Rules:** **nessuna richiesta** per la correttezza (l'`importId` non è gated; aggiungere un filtro di uguaglianza è ammesso dalla regola esistente su `publicLessons`). **Opzionale (hardening):** nella regola `publicLessons` aggiungere `&& resource.data.importId == get(.../programs/$(resource.data.programId)).data.activeImportId` per impedire la lettura diretta di proiezioni non attive. Da valutare in implementazione; non necessaria per il protocollo.
+
+- **Modifiche Rules (OBBLIGATORIE).** Nella regola di lettura **non-owner** di `publicLessons`, oltre al gate classe/modalità-verifica esistente, aggiungere il vincolo:
+  ```
+  resource.data.importId ==
+    get(/databases/$(database)/documents/programs/$(resource.data.programId)).data.activeImportId
+  ```
+  L'**owner** mantiene la lettura completa (attivo, staging e stale) tramite il ramo `isOwner()` invariato. Motivazione: la query UI `programId+importId` **non è un confine di sicurezza**; senza il controllo server-side uno studente che conosce l'ID potrebbe leggere via `get` diretto — o via query manomessa senza filtro `importId` — una `publicLesson` di un import **staging** o **stale/superseded**. Con questo vincolo, staging e vecchi import sono inaccessibili al non-owner **sia** per `get` diretto **sia** per `list`. Il gate classe (`isClassmateOf` su `program.classIds`) e la **modalità verifica** restano applicati come oggi.
+
 - **Indici:** **nuovo indice composito** `publicLessons (programId ASC, importId ASC)` in `firestore.indexes.json`. L'override `publicLessons.content` (escluso dall'indicizzazione) resta invariato.
-- **Compatibilità/fallback legacy:** (a) query per-campo `importId` funziona sulle legacy senza modifiche; (b) `repositoryEditorService.ts` indirizza `publicLessons` per **ID diretto = lessonId** in ~8 punti (`:288,370,426,549,757-758,951,1019`) e `publicLessonsBackfillService.ts` per `docSnap.id` — l'implementazione dovrà calcolare `${activeImportId}_${lessonId}` **con fallback a `lessonId`** se il doc import-scoped non esiste (lezione importata prima di HARD-02B). Il primo re-import normalizza e il cleanup elimina le legacy.
-- **Retry:** idempotente. Un import ritentato genera un nuovo `newImportId` (staging pulito) — non riusa uno staging fallito. Il cleanup è idempotente (delete per `programId+importId`).
-- **Dopo refresh/crash:** `activeImportId` è la verità. Crash in **staging** → orfano invisibile (nessun effetto studente), ripulibile. Crash **dopo lo switch, in cleanup** → import attivo e corretto; stale invisibili; cleanup ripetibile. Nessuno stato intermedio espone dati parziali.
-- **Messaggi UI minimi:** durante staging "Preparazione import…"; allo switch "Attivazione…"; su fallimento pre-switch "Import non applicato: il corso precedente è intatto."; su cleanup fallito nessun errore bloccante (log/avviso soft "pulizia rinviata"). Con la guardia D: "Import troppo grande: suddividilo in più import."
-- **Chunk massimo:** **400 mutazioni** per `writeBatch` (riuso di `BATCH_CHUNK_SIZE=400` e `commitOpsInChunks` già presenti in `poolEditorService.ts` — margine prudente sotto 500).
-- **Ordine dei commit:** (1) Storage upload; (2) chunk tecnici (importMeta `staging`, UDA, lessons, questionIndex); (3) chunk `publicLessons` nuove (import-scoped, invisibili); (4) **switch atomico** (`activeImportId` + `status:'active'` + audit); (5) cleanup chunked (superseded).
+
+- **Addressing `publicLessons` e legacy (contratto preciso).**
+  - Aggiungere a `LessonDoc` un campo **opzionale** `publicLessonId?: string`. Nuovi import e nuove lezioni lo salvano = **`${importId}_${lessonId}`**. Una lezione creata dentro un import **legacy** può già ricevere un `publicLessonId` import-scoped.
+  - Un **unico helper puro** risolve il riferimento: `resolvePublicLessonId(lesson) = lesson.publicLessonId ?? lessonId`. **Nessuna** doppia `get` sistematica «prova nuovo ID, poi vecchio ID»: il fallback è deciso dal campo, non da un tentativo su Firestore.
+  - Punti che devono usare l'helper (tutti **ricevono/leggono già il `LessonDoc`** prima di toccare `publicLessons`, quindi hanno `publicLessonId` senza read extra):
+    | Funzione (`repositoryEditorService.ts`) | Come ottiene il `LessonDoc` | Uso `publicLessons` |
+    |---|---|---|
+    | lesson-completion / «segna svolta» (`:288`) | `getDoc(lessonRef)` a monte | `update` |
+    | `updateLessonMetadata` (`:359`, ref `:370`) | `getDoc(lessonRef)` (`:371`) | `update` |
+    | `updateLessonMarkdownBody` (`:415`, ref `:426`) | `getDoc(lessonRef)` (`:427`) | `update` |
+    | `createLesson` (`:484`, set `:549`) | crea il `LessonDoc` → genera `publicLessonId` | `set` (scrive anche `publicLessonId` sul `LessonDoc`) |
+    | `reorderLesson` (`:720`, ref `:757-758`) | `LessonDoc` della lezione e del vicino | `update order` (self + neighbor) |
+    | `deleteLesson` (`:906`, del `:951`) | `LessonDoc` in scope | `delete` |
+    | `deleteUda` (`:974`, del `:1019`) | mappa sui `LessonDoc` dell'UDA | `delete` (per ogni lezione) |
+  - `publicLessonsBackfillService.ts` **continua a lavorare sui doc trovati dalla query** (`docSnap.ref`/`docSnap.id`): non calcola ID, quindi resta invariato e compatibile con entrambe le convenzioni.
+  - `programsService.ts` (`deleteProgram`) trova le `publicLessons` per **query** `where('programId','==',X)` e le cancella per `ref`: nessun addressing per-ID, invariato.
+  - Nessuna **migrazione obbligatoria** delle lezioni vecchie: il primo re-import normalizza le nuove; le vecchie restano leggibili via helper (fallback a `lessonId`).
+
+- **Cleanup (contratto).** Il cleanup automatico post-switch **DEVE**: (a) eliminare in chunk ≤400 **solo** le `publicLessons` del vecchio import (`programId==X && importId==oldId`); (b) marcare **best-effort** il vecchio `imports/{oldId}.status='superseded'` **se il documento esiste**. **NON DEVE** eliminare UDA, lezioni, questionIndex o file Storage del vecchio import. Motivazione: verifiche attive, riferimenti legacy o manutenzione possono dipendere dall'import tecnico precedente; la loro eliminazione richiede i controlli applicativi già presenti nei **flussi di cancellazione espliciti e guardati** (`deleteProgram`/`deleteUda`/`deleteLesson`, con guard verifiche). **HARD-02B non cambia retention né semantica delle cancellazioni**; qualunque eliminazione futura dei dati tecnici resta un'azione esplicita e guardata, **fuori scope**.
+
+- **Stato e risultato (formalizzati).**
+  - **Errore pre-switch** (staging/upload) → import **non applicato**: `activeImportId` invariato, corso precedente **intatto**; risultato = errore, nessun rollback finto (lo staging orfano è invisibile e ripulibile).
+  - **Switch riuscito** → risultato **sempre `committed`**.
+  - **Errore cleanup post-switch** → **non** trasformare il risultato in errore: resta `committed`, con un **`cleanupPending: true`** (warning non bloccante), senza fingere un rollback.
+  - **Retry cleanup** idempotente (delete per `programId+importId`, ripetibile senza effetti collaterali).
+
+- **Retry (import):** un import ritentato genera un nuovo `newImportId` (staging pulito) — non riusa uno staging fallito.
+- **Dopo refresh/crash:** `activeImportId` è la verità (query **e** Rules). Crash in **staging** → orfano invisibile, ripulibile. Crash **dopo lo switch, in cleanup** → import attivo e corretto (`committed`), stale invisibili, cleanup ripetibile. Nessuno stato intermedio espone dati parziali.
+- **Messaggi UI minimi:** staging "Preparazione import…"; switch "Attivazione…"; fallimento pre-switch "Import non applicato: il corso precedente è intatto."; cleanup fallito → nessun errore bloccante, avviso soft "pulizia rinviata" (coerente con `cleanupPending`). Con la guardia D: "Import troppo grande: suddividilo in più import."
+- **Chunk massimo:** **400 mutazioni** per `writeBatch` (riuso di `BATCH_CHUNK_SIZE=400` e `commitOpsInChunks` già presenti in `poolEditorService.ts`).
+- **Ordine dei commit:** (1) Storage upload; (2) chunk tecnici (importMeta `staging`, UDA, lessons **con `publicLessonId`**, questionIndex); (3) chunk `publicLessons` nuove (import-scoped, invisibili); (4) **switch atomico** (`activeImportId` + `imports/{newId}.status='active'` + audit); (5) cleanup chunked (solo `publicLessons` stale + best-effort `superseded`).
 - **Atomico vs eventual-consistent:** **atomico solo lo switch** (passo 4, ≤3 mutazioni). Staging (2–3) e cleanup (5) sono **chunked/eventual-consistent** e non producono mai visibilità parziale.
+
+- **Ordine di rollout futuro (HARD-02B, nessun deploy in questa PR).**
+  1. deploy dell'**indice composito** `publicLessons(programId, importId)`;
+  2. **attendere** che l'indice sia *Ready*;
+  3. deploy delle **Rules** compatibili (vincolo `importId == activeImportId` per il non-owner);
+  4. deploy **Hosting** con la nuova query/protocollo (`publicLessonId`, staging→switch→cleanup);
+  5. **smoke DEV**.
+  L'ordine evita finestre in cui il client interroga con un filtro non ancora indicizzato o Rules non ancora allineate.
 
 ---
 
@@ -161,10 +203,32 @@ Non servono altri stati: `cleanup_pending` è rappresentato dalla presenza di un
 | 8 | Nessuna proiezione parziale leggibile dallo studente | In ogni istante la query `programId+importId==active` restituisce un insieme coerente. |
 | 9 | Vecchio import leggibile **prima** dello switch | Query studente = vecchio import completo. |
 | 10 | Nuovo import leggibile **dopo** lo switch | Query studente = nuovo import completo; vecchio invisibile all'istante. |
-| 11 | Documenti legacy (`id=lessonId`, `status` assente) | Query per campo `importId` li seleziona; editor/backfill con fallback a `lessonId`; re-import normalizza. |
+| 11 | Documenti legacy (`id=lessonId`, senza `publicLessonId`) | Query per campo `importId` li seleziona; helper risolve a `lessonId`; re-import normalizza. |
 | 12 | Nessuna mutazione persa o duplicata | Conteggio doc scritti == payload; chunk senza sovrapposizioni. |
 
-Test da riusare/estendere: `import.rules.test.ts`, i test service dell'import e `poolEditorService.test.ts` (chunking già coperto). **Nessun** E2E fragile o duplicato.
+**Addressing `publicLessonId` (service):**
+| 13 | Editor su lezione **nuova** (con `publicLessonId`) | create/modifica metadati/modifica body/riordino/eliminazione risolvono `${importId}_${lessonId}` **senza doppie letture** (nessun tentativo "prova nuovo poi vecchio"). |
+| 14 | Stessi flussi su lezione **legacy** (senza `publicLessonId`) | Helper cade su `lessonId`; operazioni corrette; nessuna get superflua. |
+| 15 | `createLesson` dentro import legacy | La nuova lezione riceve un `publicLessonId` import-scoped; `publicLessons` scritta con quell'ID. |
+
+**Cleanup (retention):**
+| 16 | Cleanup post-switch | Elimina **solo** le `publicLessons` del vecchio import; **non** cancella UDA/lezioni/questionIndex né file Storage; marca `superseded` best-effort se il doc esiste. |
+| 17 | Cleanup fallito | Risultato resta **`committed`** con `cleanupPending: true` (nessun errore, nessun rollback finto); retry idempotente. |
+
+**Security Rules (matrice dedicata, con `@firebase/rules-unit-testing`):**
+| 18 | Studente legge `publicLesson` dell'import **attivo** | Consentito. |
+| 19 | Studente legge `publicLesson` **staging** | **Negato**. |
+| 20 | Studente legge `publicLesson` **superseded/stale** | **Negato**. |
+| 21 | `get` diretto con ID noto (import non attivo) | **Negato**. |
+| 22 | Query senza filtro `importId` | **Negata** (la Rule richiede `importId == activeImportId`). |
+| 23 | Query `programId + activeImportId` | **Consentita**. |
+| 24 | Owner legge attivo, staging **e** stale | Consentito (ramo `isOwner`). |
+| 25 | Class gate e modalità verifica | Restano applicati (studente di altra classe / classe in modalità verifica → negato, come oggi). |
+
+**Rollout:**
+| 26 | Ordine di rilascio documentato | indice → indice Ready → Rules → Hosting → smoke DEV (§7). |
+
+Test da riusare/estendere: `import.rules.test.ts` (nuovi casi 18–25 con `@firebase/rules-unit-testing`), i test service dell'import/editor e `poolEditorService.test.ts` (chunking già coperto). **Nessun** E2E fragile o duplicato.
 
 ---
 
@@ -179,5 +243,5 @@ Registrato per completezza (vedi anche `evidenze/hard-02a-a11y-audit.md`): lo **
 - **Conteggio attuale:** Batch A = `1+U+L+Q`; Transazione B = `2+L₀+L`. Overflow: Q (batch A) su import ricchi di pool; L₀+L (transazione B) sui re-import grandi.
 - **Rischio preciso:** fallimento atomico a soglia (import bloccato) + orfani Storage/Firestore innocui; il chunking ingenuo esporrebbe proiezioni parziali allo studente per collisione di ID.
 - **Raccomandazione netta:** Alternativa **A** (ID `publicLessons` import-scoped + query su `activeImportId`), con guardia interinale D opzionale.
-- **Impatto:** query studente +filtro `importId`; **1 nuovo indice** `publicLessons(programId,importId)`; **nessuna modifica Rules** obbligatoria (hardening opzionale); editor/backfill da rendere import-scoped con fallback legacy; nessuna nuova collezione/Function/dipendenza.
+- **Impatto:** query studente +filtro `importId`; **1 nuovo indice** `publicLessons(programId,importId)`; **modifica Rules OBBLIGATORIA** — lettura non-owner richiede `resource.data.importId == get(program).activeImportId` (staging/stale negati anche a `get` diretto), owner invariato; campo `LessonDoc.publicLessonId` + **helper puro** di risoluzione (fallback a `lessonId`, nessuna doppia get); **cleanup solo delle `publicLessons`** (mai UDA/lezioni/questionIndex/Storage); risultato `committed` con `cleanupPending` non bloccante su cleanup fallito; **ordine di rollout** indice→Ready→Rules→Hosting→smoke; nessuna nuova collezione/Function/dipendenza.
 - **Stato HARD-F06:** **progettazione completata (design-ready)**; implementazione = HARD-02B (fase successiva), fuori da questa PR.
