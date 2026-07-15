@@ -29,6 +29,7 @@ describe('Firebase Hosting security headers', () => {
   it('imposta i security header globali su "**"', () => {
     expect(valueOf('**', 'X-Content-Type-Options')).toBe('nosniff');
     expect(valueOf('**', 'X-Frame-Options')).toBe('DENY');
+    expect(valueOf('**', 'Cross-Origin-Opener-Policy')).toBe('same-origin-allow-popups');
     expect(valueOf('**', 'Referrer-Policy')).toBe('strict-origin-when-cross-origin');
   });
 

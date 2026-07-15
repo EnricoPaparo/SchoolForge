@@ -13,7 +13,7 @@ Aggiorna lo **Stato** di ogni voce da `PENDING` a `PASS`/`FAIL` (con data); se `
 
 | # | Controllo | Come verificarlo | Stato |
 |---|---|---|---|
-| 1 | Security header presenti sulla risposta Hosting | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` presenti su `/` e su un asset `/assets/*` | **PENDING** |
+| 1 | Security header presenti sulla risposta Hosting | `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy: same-origin-allow-popups`, `Referrer-Policy`, `Permissions-Policy` presenti su `/` e su un asset `/assets/*` | **PENDING** |
 | 2 | CSP enforced presente | Header `Content-Security-Policy` presente (non `-Report-Only`) con `default-src 'self'` e `frame-ancestors 'none'` | **PENDING** |
 | 3 | Login Google docente | `signInWithPopup` completa; il docente entra in TeacherShell; nessun blocco su `*.firebaseapp.com`/`accounts.google.com` | **PENDING** |
 | 4 | Login Google studente | Studente approvato entra in StudentShell; nessun errore auth/CSP | **PENDING** |
@@ -34,4 +34,4 @@ Aggiorna lo **Stato** di ogni voce da `PENDING` a `PASS`/`FAIL` (con data); se `
 
 > **Nota immagini/CSP:** le immagini nelle lezioni ammesse dalla CSP sono solo same-origin/importate, `data:`, `blob:` o foto profilo Google (`*.googleusercontent.com`). Le immagini remote arbitrarie di terze parti restano **intenzionalmente bloccate** per privacy e sicurezza; `img-src` non va ampliato a `https:`/`*` senza una decisione futura esplicita. Se una lezione mostra un'immagine mancante, verificare che la sorgente sia importata nel repository (non un hotlink esterno), non allargare la CSP.
 
-> Esito parziale dello smoke: Google Auth ha richiesto `https://apis.google.com` in `script-src`; l'origine ufficiale è stata aggiunta dopo che la CSP enforced ne ha confermato la necessità. Restano da verificare eventuali redirect di download Storage verso host non inclusi in `connect-src` ed eventuale `blob:`/`worker-src` per i generatori PDF.
+> Esito parziale dello smoke: Google Auth ha richiesto `https://apis.google.com` in `script-src`; l'origine ufficiale è stata aggiunta dopo che la CSP enforced ne ha confermato la necessità. Il successivo warning su `window.closed` della popup è gestito con `Cross-Origin-Opener-Policy: same-origin-allow-popups`, senza introdurre COEP/CORP. Restano da verificare eventuali redirect di download Storage verso host non inclusi in `connect-src` ed eventuale `blob:`/`worker-src` per i generatori PDF.
