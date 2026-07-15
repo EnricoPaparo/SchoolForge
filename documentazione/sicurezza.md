@@ -185,7 +185,7 @@ Questa sezione andrà rivista quando M3-full sarà pianificato in dettaglio, val
 - Log e telemetria non contengono risposte, dati personali completi o punteggi non necessari.
 - Il docente può eliminare una consegna digitale (M3-full): dati personali e correzioni sono rimossi; resta audit non identificativo.
 - `Esporta verifiche` è disponibile solo al docente e generato on-demand nel browser; dipende da consegne M3-full.
-- Firestore/Storage/Functions applicativi usano Milano `europe-west8`; Hosting/Auth non sono dichiarati Italia-only.
+- **Residenza dati (HARD-F02):** regione target PROD **UE** (Milano `europe-west8` ove supportato), da decidere e co-locare prima del provisioning PROD; su DEV Storage e Function gateway sono in `us-central1` (verificato) e la regione Firestore DEV non è ancora verificata — dettaglio in `evidenze/hard-01c-region-matrix.md`. Hosting/Auth non sono dichiarati Italia-only.
 - (M3-full, specifica rinviata) il sistema registrerebbe, a fini di audit, nome dichiarato (`Cognome Nome`), IP, user-agent e timestamp per ogni tentativo digitale; dati auto-dichiarati, non verificati. Non applicabile a M3-lite.
 
 ---
@@ -221,7 +221,7 @@ Difesa in profondità a livello di trasporto, configurata **solo** in `firebase.
 
 **Cache** (`hosting.headers`, l'ultima regola che matcha vince): shell SPA (`index.html`, servito su ogni route) → `Cache-Control: no-cache` (rivalidazione obbligatoria, niente SPA vecchia bloccata dopo un deploy); `/assets/**` (bundle Vite con hash) → `public, max-age=31536000, immutable`. Il gateway `/api/repository/**` ha un **blocco dedicato** `Cache-Control: no-store` a livello Hosting: contenendo operazioni autenticate e dati sensibili, non si dipende dall'interazione tra il `no-cache` globale di Hosting e il `no-store` restituito dalla Cloud Function — Hosting stesso impone `no-store`.
 
-> **Stato:** **MITIGATED — configurazione pronta, deploy e smoke DEV pending.** Da verificare su DEV dopo il deploy (login Google, rendering, download, verifica online, Fullscreen) — checklist `evidenze/hard-01b-dev-smoke.md`. COOP è impostato su `same-origin-allow-popups`, valore compatibile con `signInWithPopup`; COEP/CORP non sono introdotti.
+> **Stato:** **RESOLVED (15/07/2026).** Deployato su `schoolforge-dev` (PR #179/#180/#181) e verificato: header/cache via HTTP reale (shell `no-cache` + CSP enforced + `nosniff` + `X-Frame-Options: DENY` + COOP `same-origin-allow-popups`; `/assets/*` `immutable`; `/api/repository/*` `no-store`) e flussi applicativi (login Google docente/studente, lezioni, salvataggio Didattica, gateway, download PDF/CSV/ZIP, verifica online con Fullscreen) confermati manualmente dal docente su DEV — checklist `evidenze/hard-01b-dev-smoke.md` (12/12 PASS). COOP è impostato su `same-origin-allow-popups`, compatibile con `signInWithPopup`; COEP/CORP non sono introdotti. I warning COOP di Chrome sul polling `window.closed` della popup Auth sono rumore browser noto, non violazioni CSP né finding aperti.
 
 ---
 

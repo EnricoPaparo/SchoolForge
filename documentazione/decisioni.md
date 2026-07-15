@@ -29,7 +29,7 @@ Legenda stato:
 | D-05 | Nessun invio email agli studenti | ✅ Chiusa | analisi-requisiti.md | Il canale cartaceo genera il PDF nel browser; nessun provider email. |
 | D-06 | PDF ed export generati nel browser | ✅ Chiusa | analisi-requisiti.md | `@react-pdf/renderer` nel client; nessuna Cloud Function per i documenti. |
 | D-07 | Classi come lista configurabile | ✅ Chiusa | analisi-requisiti.md | Lista classi gestita dal docente, usata in verifiche e portale. |
-| D-08 | C-01 formalizzata | ✅ Chiusa | analisi-requisiti.md | Firebase, dati in `europe-west8`, RPO best-effort con export manuale, RTO best-effort. |
+| D-08 | C-01 formalizzata | ✅ Chiusa | analisi-requisiti.md | Firebase, dati in `europe-west8` (target UE, regione storicamente decisa), RPO best-effort con export manuale, RTO best-effort. *(Nota HARD-F02: su DEV Storage/Function reali sono in `us-central1`; il target UE resta valido per PROD — vedi `evidenze/hard-01c-region-matrix.md`.)* |
 | D-09 | Kit di avvio e dashboard di prontezza | ✅ Chiusa | brief.md, analisi-requisiti.md | M1 include template scaricabili e dashboard su validità, pool e domande eleggibili; nessun editor o generazione contenuti. |
 | D-10 | Il Portale digitale (M3) è diviso in M3-lite e M3-full | ✅ Chiusa | brief.md, analisi-requisiti.md | M3-lite è il portale studente autenticato Google, read-only (Lezioni + Verifiche, solo download PDF studente). M3-full è la consegna online con tentativi, lock, gateway server-side e viene rinviata a una fase successiva. M3-lite precede M3-full nella roadmap. |
 | D-11 | Studenti autenticati con Google, nessun account custom | ✅ Chiusa | brief.md, analisi-requisiti.md | Da M3-lite gli studenti accedono con Firebase Authentication provider Google, sia con account Google personali sia con Google Workspace for Education. Nessuna registrazione interna, nessuna email inviata dal sistema, nessun account SchoolForge separato. Sostituisce l'impostazione precedente di nome+cognome autodichiarati e link pubblico anonimo per l'accesso in lettura di M3-lite; il modello autodichiarato/anonimo resta descritto solo come specifica di M3-full, non ancora deciso se sarà mantenuto. |
@@ -64,7 +64,7 @@ Legenda stato:
 
 | ID | Titolo | Stato | Documento | Sintesi decisione |
 |---|---|---|---|---|
-| C-01 | Provider, regione, backup, RPO/RTO | ✅ Chiusa | brief.md | Firebase su progetto del Docente; dati in `europe-west8`; backup come redundancy Storage nativa più export Firestore manuale on-demand dalle impostazioni; RPO best-effort; RTO best-effort. |
+| C-01 | Provider, regione, backup, RPO/RTO | ✅ Chiusa | brief.md | Firebase su progetto del Docente; dati in `europe-west8` (target UE deciso storicamente); backup come redundancy Storage nativa più export Firestore manuale on-demand dalle impostazioni; RPO best-effort; RTO best-effort. *(Nota HARD-F02: la regione reale su DEV è `us-central1` per Storage/Function e non verificata per Firestore; il target UE resta valido per PROD — `evidenze/hard-01c-region-matrix.md`.)* |
 | C-02 | Provider AI e modello di default | ⏳ V2 | brief.md | **Risolta per V2:** OpenAI API (default `gpt-4o-mini`) oppure Anthropic Claude API (default `claude-haiku-4-5-20251001`); il Docente configura la chiave API nelle impostazioni. Applica solo a M5. |
 | C-03 | Regola didattica correzione automatica | ⏳ V2 | brief.md | Regola d'uso della modalità automatica AI; decisione rimandata alla V2 insieme a M5. |
 
