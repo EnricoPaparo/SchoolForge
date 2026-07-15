@@ -11,6 +11,7 @@ import {
   updateVerificationConfig,
   type VerificationItem,
 } from '../repository/verifications/verificationsService.js';
+import { cleanupOrphanVerificationProjections } from '../repository/verifications/orphanProjectionCleanup.js';
 import {
   listQuestionIndex,
   type QuestionIndexEntry,
@@ -529,6 +530,14 @@ export function VerificationsView() {
       setVerifications(verList);
       setPrograms(progList);
       setClasses(classList);
+      // One-time repair for projections left by the old non-cascading delete
+      // flow. It is deliberately non-blocking: the teacher archive is usable
+      // even if maintenance must retry on the next visit.
+      void cleanupOrphanVerificationProjections(
+        ownerUid,
+        new Set(verList.map((item) => item.id)),
+        db,
+      ).catch(() => undefined);
     } catch {
       setLoadError('Impossibile caricare i dati.');
     }

@@ -229,6 +229,45 @@ describe('settings/publicLessonsMigration', () => {
   });
 });
 
+// ─── settings/verificationProjectionMigration (orphan cleanup marker) ───────
+
+describe('settings/verificationProjectionMigration', () => {
+  it('allows the owner to write and read the marker', async () => {
+    await seedOwner();
+    const db = testEnv.authenticatedContext(OWNER_UID).firestore();
+    const ref = doc(db, 'settings/verificationProjectionMigration');
+    await assertSucceeds(
+      setDoc(ref, {
+        cleanupVersion: 1,
+        completedAt: new Date(),
+      }),
+    );
+    await assertSucceeds(getDoc(ref));
+  });
+
+  it('denies a different authenticated user from reading or writing the marker', async () => {
+    await seedOwner();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'settings/verificationProjectionMigration'), {
+        cleanupVersion: 1,
+        completedAt: new Date(),
+      });
+    });
+    const db = testEnv.authenticatedContext(OTHER_UID).firestore();
+    const ref = doc(db, 'settings/verificationProjectionMigration');
+    await assertFails(getDoc(ref));
+    await assertFails(setDoc(ref, { cleanupVersion: 1, completedAt: new Date() }));
+  });
+
+  it('denies an unauthenticated user from reading or writing the marker', async () => {
+    await seedOwner();
+    const db = testEnv.unauthenticatedContext().firestore();
+    const ref = doc(db, 'settings/verificationProjectionMigration');
+    await assertFails(getDoc(ref));
+    await assertFails(setDoc(ref, { cleanupVersion: 1, completedAt: new Date() }));
+  });
+});
+
 // ─── programs (owner data) ───────────────────────────────────────────────────
 
 describe('programs', () => {

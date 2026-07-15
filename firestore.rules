@@ -276,6 +276,13 @@ service cloud.firestore {
       allow read, write: if isOwner();
     }
 
+    // --- settings/verificationProjectionMigration ---
+    // Owner-only one-time marker for the cleanup of student projections left
+    // orphaned by the historical non-cascading verification delete flow.
+    match /settings/verificationProjectionMigration {
+      allow read, write: if isOwner();
+    }
+
     // --- students/{uid} (M3-lite approval roster) ---
     // uid == the student's own Firebase Auth uid. A Google-authenticated
     // non-owner with no document here is treated as 'pending' for
