@@ -119,7 +119,7 @@ Classificazione: **P0** perdita dati/accesso critico/segreto esposto · **P1** r
 
 ---
 **HARD-F08 — Nessun audit di accessibilità end-to-end formale.**
-- **Stato (dopo HARD-02A):** **audit svolto — READY FOR REMEDIATION.** Verifica a11y end-to-end (statica + test esistenti) dei flussi docente e studente in `evidenze/hard-02a-a11y-audit.md`: 0 P0, 0 P1, **1 P2** (dialog condiviso `DialogShell` senza Escape/focus-trap/restore) + P3 di polish. Fondamenta solide (landmark, focus-visible, tabs ARIA con frecce, exam view etichettata, reduced-motion). Resta il perimetro **HARD-02A-FIX** (P2-01) + smoke a11y manuale su DEV (contrasto/zoom/reflow/screen-reader non verificabili in sessione).
+- **Stato (dopo HARD-02A + HARD-02A-FIX):** **audit svolto; unico P2 risolto.** Verifica a11y end-to-end in `evidenze/hard-02a-a11y-audit.md`: 0 P0, 0 P1, 1 P2 (`DialogShell` senza Escape/focus-trap/restore) — **P2-01 RESOLVED (15/07/2026)**: Escape (gated su `busy`) + focus trap + ripristino focus + `aria-labelledby` centralizzati in `DialogShell`, test `__tests__/workspaceDialogs.test.tsx`. Restano solo P3 di polish (accettati) e lo **smoke a11y manuale su DEV** (contrasto/zoom/reflow/screen-reader non verificabili in sessione).
 - **Area:** J. **Evidenza:** il Gate GDUX (`gdux-checklist-finale.md`) copre a11y a livello di componente; HARD-02A aggiunge la passata end-to-end formale. **Confidenza:** alta.
 
 ## 6. Cost model (quattro scenari)

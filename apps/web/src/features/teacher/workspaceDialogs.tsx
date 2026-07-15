@@ -1,4 +1,12 @@
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import { db, storage } from '../../lib/firebase.js';
 import { getImportMeta } from '../repository/programs/programsService.js';
 import { listClasses, type ClassItem } from '../repository/classes/classesService.js';
@@ -14,25 +22,114 @@ import styles from './DidatticaView.module.css';
  * never grow two independent versions of the same operation (DUX-04A).
  */
 
+/** Visible, non-disabled focusable descendants, in DOM order. */
+function focusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((el) => !el.hasAttribute('disabled'));
+}
+
+/**
+ * Shared modal shell for every Didattica dialog (DUX-04A). Centralizes the
+ * accessibility behavior so no individual dialog re-implements it (HARD-02A-FIX,
+ * finding P2-01):
+ * - `role="dialog"` + `aria-modal="true"` + `aria-labelledby` on the title;
+ * - initial focus into the dialog (preserves a child `autoFocus` if present,
+ *   otherwise focuses the first focusable, otherwise the dialog itself);
+ * - focus trap on Tab / Shift+Tab, keeping focus inside the modal;
+ * - focus restored to whatever element opened the dialog, on close/unmount;
+ * - Escape closes — but NOT while `busy` (a non-interruptible operation is in
+ *   progress); the backdrop click is likewise ignored while `busy`.
+ *
+ * `busy` is optional and defaults to `false`, so existing callers that don't
+ * pass it keep the previous closable behavior. Idempotent and Strict-Mode safe:
+ * the mount effect only reads/sets focus and its cleanup restores focus, so a
+ * double mount/unmount in development converges to the correct final state and
+ * leaves no listener behind (the key handler is a React prop, not a global
+ * listener).
+ */
 export function DialogShell({
   title,
   children,
   onCancel,
+  busy = false,
 }: {
   title: string;
   children: ReactNode;
   onCancel: () => void;
+  busy?: boolean;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    // Remember the element that had focus when the dialog opened, then move
+    // focus inside. If a child already grabbed focus via `autoFocus`, keep it.
+    triggerRef.current = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    if (dialog) {
+      const alreadyInside =
+        document.activeElement instanceof HTMLElement && dialog.contains(document.activeElement)
+          ? document.activeElement
+          : null;
+      (alreadyInside ?? focusableElements(dialog)[0] ?? dialog).focus();
+    }
+    return () => {
+      // Restore focus to the opener; a no-op if it was removed from the DOM.
+      triggerRef.current?.focus?.();
+    };
+  }, []);
+
+  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'Escape') {
+      if (!busy) onCancel();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusables = focusableElements(dialog);
+    if (focusables.length === 0) {
+      e.preventDefault();
+      dialog.focus();
+      return;
+    }
+    const first = focusables[0]!;
+    const last = focusables[focusables.length - 1]!;
+    const active = document.activeElement;
+    const outside = !(active instanceof HTMLElement) || !dialog.contains(active);
+    if (e.shiftKey && (active === first || outside)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || outside)) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
   return (
-    <div className={styles.backdrop} onClick={onCancel}>
+    <div
+      className={styles.backdrop}
+      onClick={() => {
+        if (!busy) onCancel();
+      }}
+    >
       <div
+        ref={dialogRef}
         className={styles.dialog}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
       >
-        <h3 className={styles.dialogTitle}>{title}</h3>
+        <h3 id={titleId} className={styles.dialogTitle}>
+          {title}
+        </h3>
         {children}
       </div>
     </div>
@@ -66,7 +163,7 @@ export function TitleDialog({
     onConfirm(t);
   }
   return (
-    <DialogShell title={title} onCancel={onCancel}>
+    <DialogShell title={title} onCancel={onCancel} busy={busy}>
       <form onSubmit={submit} className={styles.dialogForm}>
         <label className={styles.dialogLabel}>
           {label}
@@ -124,7 +221,7 @@ export function NewCourseDialog({
   }
 
   return (
-    <DialogShell title="Nuovo corso" onCancel={onCancel}>
+    <DialogShell title="Nuovo corso" onCancel={onCancel} busy={busy}>
       <form onSubmit={submit} className={styles.dialogForm}>
         <label className={styles.dialogLabel}>
           Titolo del corso
@@ -193,7 +290,7 @@ export function ImportDialog({
     onConfirm(t, file);
   }
   return (
-    <DialogShell title="Importa un nuovo corso da ZIP" onCancel={onCancel}>
+    <DialogShell title="Importa un nuovo corso da ZIP" onCancel={onCancel} busy={busy}>
       <form onSubmit={submit} className={styles.dialogForm}>
         <label className={styles.dialogLabel}>
           Titolo del corso
@@ -265,7 +362,7 @@ export function ImportIntoCourseDialog({
     onConfirm(file);
   }
   return (
-    <DialogShell title={`Importa ZIP in "${courseTitle}"`} onCancel={onCancel}>
+    <DialogShell title={`Importa ZIP in "${courseTitle}"`} onCancel={onCancel} busy={busy}>
       <form onSubmit={submit} className={styles.dialogForm}>
         <label className={styles.dialogLabel}>
           File ZIP
@@ -321,7 +418,7 @@ export function ConfirmDialog({
   onConfirm: () => void;
 }) {
   return (
-    <DialogShell title={title} onCancel={onCancel}>
+    <DialogShell title={title} onCancel={onCancel} busy={busy}>
       <p className={styles.dialogMessage}>{message}</p>
       {extra}
       {error && (
@@ -392,7 +489,7 @@ export function UdaMetadataDialog({
   }
 
   return (
-    <DialogShell title={title} onCancel={onCancel}>
+    <DialogShell title={title} onCancel={onCancel} busy={busy}>
       <form onSubmit={submit} className={styles.dialogForm}>
         <label className={styles.dialogLabel}>
           Descrizione
@@ -469,7 +566,7 @@ export function NewUdaDialog({
   }
 
   return (
-    <DialogShell title="Nuova UDA" onCancel={onCancel}>
+    <DialogShell title="Nuova UDA" onCancel={onCancel} busy={busy}>
       <form onSubmit={submit} className={styles.dialogForm}>
         <label className={styles.dialogLabel}>
           Titolo
@@ -570,7 +667,7 @@ export function NewLessonDialog({
   }
 
   return (
-    <DialogShell title="Nuova lezione" onCancel={onCancel}>
+    <DialogShell title="Nuova lezione" onCancel={onCancel} busy={busy}>
       <form onSubmit={submit} className={styles.dialogForm}>
         <label className={styles.dialogLabel}>
           Titolo
@@ -684,7 +781,7 @@ export function ClassesDialog({
   }
 
   return (
-    <DialogShell title="Classi assegnate" onCancel={onCancel}>
+    <DialogShell title="Classi assegnate" onCancel={onCancel} busy={busy}>
       {classes === null ? (
         <p aria-busy="true" className="state-loading">
           Caricamento classi…
@@ -820,7 +917,7 @@ export function ProgramInfoDialog({
   }
 
   return (
-    <DialogShell title="Informazioni corso" onCancel={onClose}>
+    <DialogShell title="Informazioni corso" onCancel={onClose} busy={busy}>
       <dl className={styles.infoList}>
         <dt>Import</dt>
         <dd>{importId ? 'Attivo' : 'Nessuno'}</dd>

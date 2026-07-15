@@ -60,7 +60,8 @@ Classificazione: **P0** blocco totale/rischio grave · **P1** flusso essenziale 
 - **Problema:** `DialogShell` imposta correttamente `role="dialog"`, `aria-modal="true"`, `aria-label` e mette a fuoco il primo campo (`autoFocus`), ma **non** intercetta `Escape`, **non** confina il focus dentro il modale (Tab può raggiungere il contenuto dietro) e **non** ripristina il focus sul trigger alla chiusura. Incoerenza interna: `AttentionEventsDialog.tsx:88-110` implementa invece trap + Escape completi, e i dialog di `VerificationsView` hanno il test di Escape (`VerificationsView.test:2497`).
 - **Riproduzione:** apri un dialog Didattica (es. «Elimina corso» / «Nuova UDA»); premi **Esc** → non si chiude; premi **Tab** ripetutamente → il focus esce dietro il backdrop invece di ciclare tra i controlli del dialog.
 - **Impatto:** barriera per utenti solo-tastiera/screen reader (WCAG 2.1.2 No Keyboard Trap è rispettato, ma 2.4.3 Focus Order e la best practice APG «modal» no). **Workaround esistente:** l'`autoFocus` porta dentro il dialog, il pulsante «Annulla» è raggiungibile con Tab e il click sul backdrop (mouse) chiude → non è un blocco totale, da qui P2.
-- **Correzione minima suggerita (HARD-02A-FIX, non applicata qui):** aggiungere in `DialogShell` un `useEffect` con handler `Escape → onCancel`, un focus trap (ciclo Tab/Shift+Tab tra i focusable) e il ripristino del focus sull'elemento attivo precedente — riusando il pattern già presente in `AttentionEventsDialog`. Un solo punto centrale copre tutti i dialog. Test mirato: Escape chiude, Tab cicla, focus ripristinato.
+- **Stato:** ✅ **RESOLVED (HARD-02A-FIX, 15/07/2026).** Correzione **centralizzata** in `DialogShell` (`workspaceDialogs.tsx`): `aria-labelledby` sul titolo, focus iniziale dentro al dialog (preservando l'`autoFocus` del figlio), **focus trap** su Tab/Shift+Tab, **ripristino del focus** sul trigger alla chiusura/unmount, **Escape → onCancel** solo quando non `busy`, e backdrop click ignorato durante `busy` (nuova prop opzionale `busy`, default `false`, retro-compatibile). Nessuna logica duplicata nei singoli dialog. Copre tutti i 10 dialog Didattica (vedi §sotto). Coperto da test mirati `__tests__/workspaceDialogs.test.tsx` (9 test: Escape chiude/non-chiude-se-busy, backdrop non-chiude-se-busy, trap Tab/Shift+Tab, ripristino focus + cleanup, aria-labelledby, azione confirm reale) — 1280/1280 test verdi, nessuna regressione.
+- **Dialog coperti dalla correzione condivisa:** `ConfirmDialog`, `TitleDialog`, `NewCourseDialog`, `ImportDialog`, `ImportIntoCourseDialog`, `UdaMetadataDialog`, `NewUdaDialog`, `NewLessonDialog`, `ClassesDialog`, `ProgramInfoDialog` (tutti via `DialogShell`). `AttentionEventsDialog` e i dialog di `VerificationsView` avevano già trap+Escape propri (invariati).
 
 ### P3
 
@@ -83,14 +84,14 @@ Classificazione: **P0** blocco totale/rischio grave · **P1** flusso essenziale 
 
 ## 6. Verdetto
 
-> **READY FOR REMEDIATION.**
+> **READY FOR REMEDIATION** (audit originale) → **P2-01 RESOLVED da HARD-02A-FIX (15/07/2026).**
 
-Nessun P0/P1: tutti i flussi essenziali docente e studente sono accessibili da tastiera con semantica corretta. Resta **1 finding P2** (dialog condiviso senza Escape/trap/restore) e finding P3 di polish. Non è un **PASS** pulito per via del P2; non è **BLOCKED** perché nessuna barriera impedisce l'uso.
+Nessun P0/P1: tutti i flussi essenziali docente e studente sono accessibili da tastiera con semantica corretta. L'unico **P2** (dialog condiviso senza Escape/trap/restore) è stato **risolto e testato** in HARD-02A-FIX (vedi P2-01 sopra). Restano solo finding **P3 di polish**, esplicitamente accettati come residui.
 
-### Perimetro minimo HARD-02A-FIX (proposto, non eseguito)
-1. **P2-01:** centralizzare in `DialogShell` Escape-to-close + focus trap + focus restore (riuso del pattern `AttentionEventsDialog`), con un test mirato. Un'unica modifica risolve tutti i dialog Didattica.
-2. *(opzionale P3)* `aria-invalid`/`aria-describedby` sui campi in errore; `scope="col"` sulle `<th>`.
-3. **Smoke a11y manuale su DEV** (tastiera + screen reader + zoom/reflow) per chiudere i punti [da confermare] del §5.
+### Perimetro HARD-02A-FIX — esito
+1. **P2-01 ✅ RISOLTO:** centralizzato in `DialogShell` Escape-to-close (gated su `busy`) + focus trap + focus restore + `aria-labelledby`, con test mirati `__tests__/workspaceDialogs.test.tsx`. Un'unica modifica copre tutti i 10 dialog Didattica.
+2. *(P3, non incluso in questa PR — residuo accettato)* `aria-invalid`/`aria-describedby` sui campi in errore; `scope="col"` sulle `<th>`.
+3. *(residuo)* **Smoke a11y manuale su DEV** (tastiera + screen reader + zoom/reflow) per chiudere i punti [da confermare] del §5 — non automatizzabile in sessione.
 
 **Prossimo pacchetto consigliato:** **HARD-02A-FIX** (P2-01, piccolo e centralizzato) seguito da **HARD-02B/F06** (chunking import) e dallo smoke a11y manuale; poi il **Gate GHARD**.
 </content>
