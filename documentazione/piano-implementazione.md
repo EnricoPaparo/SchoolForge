@@ -24,7 +24,7 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 | M3-full — Verifiche online e consegne studenti ✅ | Avvio online, salvataggio bozza, consegna immutabile, codice consegna, modalità verifica (deterrenza leggera), monitor consegne docente. Nessuna Cloud Function. Completato — Gate G5 superato, vedi `m3-full-roadmap.md` e `documentazione/evidenze/g5-m3-full-checklist-finale.md`. | Sì |
 | M4 — Correzione ed export | Punteggi, percentuali, rettifiche, eliminazione e `Esporta verifiche` in PDF/Markdown/CSV. Dipende da M3-full. | Sì |
 
-**M5 — Correzione AI** è fuori scope V1 ed è pianificato per la V2. Vedi la sezione "V2 — Roadmap futura" in fondo. M5 non fa parte del perimetro né delle dipendenze della V1.
+**M5 — Correzione assistita da IA**: la progettazione **M5-00** è completata (contratto, UX batch, sicurezza, cost model — [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md)); l'implementazione (M5-01→M5-05, Gate G7) non è ancora avviata. Vedi l'Appendice C in fondo. M5 non fa parte del perimetro della V1.
 
 Il Modulo 3 (Portale digitale) è diviso in **M3-lite** e **M3-full**, entrambi completati; Gate G5 superato per M3-full. Dopo M3-lite sono stati completati **RE — Repository Editor** (RE-00 → RE-07) e **QE — Question Editor** (QE-00 → QE-05). **M4 — Correzione ed export è completato**: correzione, restituzione, ciclo di vita, Registro Correzioni, CSV ed export PDF (M4-00→M4-04) sono completati (Markdown rinviato per assenza di caso d'uso); **Gate G6 superato** — vedi `documentazione/evidenze/g6-m4-checklist-finale.md`.
 
@@ -46,8 +46,8 @@ Il Modulo 3 (Portale digitale) è diviso in **M3-lite** e **M3-full**, entrambi 
 | H-02 | Creare Firestore e bucket PROD nella regione **UE** scelta (target Milano `europe-west8` ove supportato), co-locando Firestore/Storage/Functions. **Nota:** DEV è finito in `us-central1`; la scelta regione PROD è decisione HARD-F02 (`evidenze/hard-01c-human-gate.md`). | Prima del primo deploy dati PROD. | Può eseguire la configurazione tecnica se H-01 è completata. |
 | H-03 | Configurare budget e avvisi di spesa; verificare l'export Firestore manuale dalle impostazioni. | Prima di dati reali, gate G1. | Può assistere con accesso autorizzato; il Docente verifica l'esito. |
 | H-04 | Formati `Esporta verifiche` — **risolta**: **CSV** = formato principale per elaborare i dati (M4-03A); **PDF** = formato per consultazione e stampa (M4-03B); **Markdown** rinviato e non necessario per Gate G6, salvo una futura esigenza esplicita. | Risolta con M4-03A/M4-03B. | Renderer CSV e PDF implementati; Markdown non implementato per assenza di caso d'uso. |
-| H-05 (V2) | Confermare provider AI e modello (C-02 risolta: OpenAI `gpt-4o-mini` o Anthropic Claude `claude-haiku-4-5-20251001`) e condizioni d'uso. | V2, prima di M5-A. | No, è C-02. |
-| H-06 (V2) | Decidere regola didattica della correzione automatica. | V2, prima di M5-D. | No, è C-03. |
+| H-05 (M5) | **Aperta.** Confermare **provider AI e modello** (C-02) verificando disponibilità e costo attuali sulla documentazione ufficiale; contratto provider-agnostic, nessun default fissato. Include anche **budget per operazione**, **budget giornaliero** e **retention audit** (HG-M5-1..4, vedi [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) §15). | Prima di M5-01/M5-05. | No, è C-02 + soglie di spesa. |
+| H-06 (rinviata) | Decidere regola didattica della **correzione automatica** (C-03). Fuori dalla linea M5-00→M5-05 (Gate G8). | Rinviata, prima di un eventuale G8. | No, è C-03. |
 
 ---
 
@@ -106,8 +106,8 @@ Un pacchetto è abbastanza piccolo da essere verificato in una review e abbastan
 | GQE — Question Editor | QE integrato (QE-01→QE-05). | Il docente crea/modifica/elimina domande nel pool, `questionIndex` aggiornato atomicamente, picker verifiche riflette le modifiche, export ZIP include il pool aggiornato, nessuna regressione sui pool esistenti. | M3-full, polish ulteriore o uso operativo stabile. |
 | G5 — Portale digitale (M3-full) ✅ | G4-lite e GRE superati; M3-full integrato. | Flusso avvio→bozza→consegna; immutabilità post-consegna; unicità submission; verifica chiusa blocca bozze; monitor docente real-time; modalità verifica attiva. **Superato** — vedi gate G5 in `m3-full-roadmap.md §8` e checklist finale in `documentazione/evidenze/g5-m3-full-checklist-finale.md`. | M4. |
 | G6 — Correzione ed export ✅ | M4 integrato, G5 (M3-full) superato e H-04 completata. | Punteggi, rettifiche, eliminazione, export PDF/CSV da snapshot (Markdown rinviato). | **Superato** — vedi `documentazione/evidenze/g6-m4-checklist-finale.md`. Fine V1 lato correzione. |
-| G7 — AI assistita (V2) | M5-A..C integrati e H-05 completata. | Contesto chiuso, audit, proposte assistite per risposta, approvazione massiva. | AI assistita. |
-| G8 — AI automatica (V2) | G7 e H-06 completati. | Opt-in per verifica, audit e rollback. | Correzione automatica. |
+| G7 — IA assistita (M5) | M5-01..05 integrati e H-05 completata. | Contesto chiuso, audit minimale, batch «Correggi con IA» che scrive bozze nelle `evaluations`, chiuse deterministiche, validazione punteggi server-side. | IA assistita (nessuna correzione/restituzione automatica). |
+| G8 — IA automatica (rinviata) | G7 e H-06 completati. | Opt-in per verifica, audit e rollback. | Correzione automatica. **Fuori dalla linea M5-00→M5-05.** |
 
 > **Numerazione gate (univoca).** `G6` identifica **esclusivamente** il gate finale di M4 (Correzione ed export). I gate AI della V2 sono `G7` (AI assistita) e `G8` (AI automatica): rinumerati da una precedente stesura che riusava `G6`/`G7` anche per l'AI, senza alcuna modifica al loro scope.
 
@@ -310,7 +310,7 @@ Il concept UX approvato per accesso dalla tabella **Consegne online**, workspace
 | M4-LIFE-02 ✅ | Eliminazione sicura e completa di una consegna digitale (`deleteSubmissionData`: eventi/return/correction prima, receipt+submission per ultimi, idempotente, chunk ≤400, audit non identificativo `submission.deleted` con solo ownerUid/verificationId/timestamp) e guard applicativo che blocca `deleteVerification` finché esiste almeno una submission collegata (`where verificationId==limit(1)`). Delete owner-only aggiunto alle Rules per submissions/receipts/corrections/correctionReturns/correctionEvents; UI icon-only in Consegne online solo su verifica chiusa con conferma. | M4-LIFE-01 | — | Client-only, nessuna Cloud Function/listener; una lettura mirata per il guard; Rules Emulator (owner/studente/cross-owner) verdi. |
 | M4-MON-01 ✅ | Monitor consegne docente: riepilogo owner-only `correctionSummary` sulla submission, colonne Punteggio/Percentuale, rimozione di Ultimo salvataggio e ordinamento client-side stabile sulle intestazioni utili. | M4-LIFE-02 | — | Nessuna nuova query o listener; un solo aggiornamento submission per salvataggio reale, combinato con il mirror di stato quando necessario; receipt studente priva di punteggio; Rules Emulator e test UI/service verdi. |
 | M4-03A ✅ | La tabella Consegne online esistente è il Registro Correzioni; modello canonico minimale ed export CSV UTF-8/BOM compatibile con Excel italiano, generato nel browser dalle righe già caricate e nell'ordine corrente. | M4-MON-01 | — | Nessuna popup/tabella duplicata, persistenza, query, lettura, scrittura o listener aggiuntivo; dati tecnici, risposte, soluzioni, feedback ed eventi esclusi. Completato. |
-| M4-03B ✅ | Export **PDF** stampabile del Riepilogo consegne e correzioni (A4 landscape, jsPDF via import dinamico) dallo **stesso** modello canonico e dalle stesse righe già caricate e ordinate del CSV; intestazione con conteggi, tabella multipagina con intestazioni ripetute e footer di pagina. Markdown **non implementato**: duplicativo e senza caso d'uso concreto (CSV per elaborare i dati, PDF per consultare/stampare), rinviato salvo esigenza esplicita. | M4-03A/H-04 | — | Nessuna query/lettura/scrittura/listener/Storage aggiuntivo; nessuna dipendenza nuova (jsPDF già presente); nessuna persistenza; nessun dato tecnico/risposta/soluzione/feedback/UID esportato. Resta M4-04/Gate G6. |
+| M4-03B ✅ | Export **PDF** stampabile del Riepilogo consegne e correzioni (A4 landscape, jsPDF via import dinamico) dallo **stesso** modello canonico e dalle stesse righe già caricate e ordinate del CSV; intestazione con conteggi, tabella multipagina con intestazioni ripetute e footer di pagina. Markdown **non implementato**: duplicativo e senza caso d'uso concreto (CSV per elaborare i dati, PDF per consultare/stampare), rinviato salvo esigenza esplicita. | M4-03A/H-04 | — | Nessuna query/lettura/scrittura/listener/Storage aggiuntivo; nessuna dipendenza nuova (jsPDF già presente); nessuna persistenza; nessun dato tecnico/risposta/soluzione/feedback/UID esportato. |
 | M4-04 ✅ | Integrazione finale M4: audit read-first dell'intero flusso, verifica che ogni punto abbia evidenza automatica, checklist finale del gate. Nessuna nuova feature, nessun E2E fragile aggiunto. | M4-02/M4-02B/M4-03B | — | **Gate G6 superato** — evidenze in `documentazione/evidenze/g6-m4-checklist-finale.md`; 320 test M4 verdi. M4 completato. |
 
 #### M4-00 — Contratto tecnico minimo della correzione (Completato)
@@ -375,7 +375,7 @@ Il concept UX approvato per accesso dalla tabella **Consegne online**, workspace
 
 ---
 
-> **M5 — Correzione AI** è spostato interamente alla V2. I pacchetti M5-A..E non fanno parte della V1: sono dettagliati nella sezione "V2 — Roadmap futura" in fondo a questo documento.
+> **M5 — Correzione assistita da IA** è fuori dal perimetro V1. La roadmap **M5-00→M5-05** (che supera la vecchia sequenza M5-A..E) è nell'Appendice C in fondo a questo documento; il contratto completo è in [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md). Solo **M5-00** (progettazione) è completato.
 
 ---
 
@@ -981,23 +981,24 @@ M3F-10 è completato; M3F-11 (con i sotto-pacchetti M3F-11A/B/C sotto) è comple
 
 ---
 
-## Appendice C — V2 — Roadmap futura
+## Appendice C — Modulo 5 — Correzione assistita da IA (roadmap M5-00→M5-05)
 
-La V2 introduce il **Modulo 5 — Correzione AI**, fuori dal perimetro V1. Dipende da M4 completato e dalle decisioni C-02 (risolta) e C-03.
+Il **Modulo 5** aggiunge una sola azione batch **«Correggi con IA»** che pre-compila come **bozza** le `evaluations` di correzioni `in_progress` (chiuse deterministiche a 0 token, aperte assistite con **una richiesta per consegna**), restando dentro il flusso M4 esistente. **Nessuna correzione automatica**, **nessuna restituzione automatica**, nessuna «proposta IA» persistente. Contratto completo, UX batch, sicurezza, privacy e cost model in **[m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md)** (M5-00).
 
-**C-02 risolta:** il provider AI è OpenAI API (modello di default `gpt-4o-mini`) oppure Anthropic Claude API (modello di default `claude-haiku-4-5-20251001`); il Docente configura la chiave API nelle impostazioni. La chiave vive in Secret Manager / Firebase Functions config.
+> Questa roadmap **supera** la vecchia sequenza generica M5-A..E e i contratti stale `proposeCorrection`/`approveCorrection`/`bulkApproveCorrections`/`enableAutomaticCorrection`.
 
-Pacchetti previsti (dettaglio di specifica, non in V1):
+**Provider/modello e budget = Human Gate aperti** (§15 del doc M5): il contratto è **provider-agnostic**; provider e modello vanno confermati verificando disponibilità e costo attuali sulla documentazione ufficiale, senza fissare qui un default potenzialmente obsoleto. La chiave API vive **solo** in Secret Manager, letta unicamente dalla Cloud Function.
 
 | ID | Outcome e scope | Dipende da | Evidenza DoD |
 |---|---|---|---|
-| M5-A | `AiGateway`, feature flag, Secret Manager, policy C-02, audit e mock provider. | G5/H-05 | Nessun invio AI senza feature flag e chiave valida. |
-| M5-B | Proposte assistite per item con contesto chiuso. | M5-A | Proposte non alterano correzioni definitive. |
-| M5-C | UI assistita: proposta, approva/modifica/rifiuta, bulk approval con riepilogo. | M5-B | Audit completo; bulk non applica item incompleti. |
-| M5-D | Modalità automatica con opt-in per verifica, regole configurabili, audit e rollback. Richiede C-03 e H-06. | M5-C/H-06 | Non attiva per default; reversibile. |
-| M5-E | Test sicurezza, qualità e costi AI; evidenze G7/G8. | M5-C/M5-D | Nessun web/retrieval; costi osservabili; gate rispettati. |
+| **M5-00** ✅ | Contratto tecnico, UX batch, sicurezza, privacy e cost model. **Solo documentazione** ([m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md)). | M4 (G6) | Doc presente e coerente; roadmap M5-A..E superata; `pnpm format:check` verde; nessuna modifica a codice/Rules/schema. |
+| M5-01 | Due Function `onCall` `aiCorrectionPreview`/`aiCorrectionRun` (scale-to-zero), **feature flag**, interfaccia provider-agnostic `AiGrader` + **provider mock** deterministico. Può preparare la struttura Secret Manager ma **non richiede né finge una secret reale**; **nessuna chiamata esterna**. | M5-00 | Nessun invio senza flag; solo mock, nessuna chiamata esterna; modalità mock non confondibile col reale; gateway rifiuta non-owner. |
+| M5-02 | Valutazione **deterministica** delle chiuse + **IA** per le aperte (via mock), validazione output/punteggi (0..maxPoints, step 0,25), idempotenza `requestId`, audit minimale. **Senza UI completa.** | M5-01 | Chiuse a 0 token; solo aperte `null` valutate; output non valido scartato senza corrompere la correzione; retry idempotente; audit senza contenuti. |
+| M5-03 | **UI batch:** checkbox per riga, **toolbar** «Correggi con IA» (unico pulsante), **conferma** con selezionate/correggibili/escluse+motivo/aperte/chiuse/stima/modello, **risultato finale** (riuscite/escluse/fallite). Colonna **«Valutate»** `n/m` al posto di «Punteggio». | M5-02 | Un solo pulsante sopra la tabella; nessun successo parziale nascosto. |
+| M5-04 | **Azioni massive** Completa / Riapri / Restituisci sulle sole righe selezionate ed eleggibili, con riepilogo e risultato; riuso dei service M4. | M5-03 | Completa solo su interamente valutate; Riapri su completed/returned; Restituisci su completed; nessuna restituzione automatica. |
+| M5-05 | **Provider reale su DEV**, smoke, verifica audit/costi/sicurezza. **Gate G7.** | M5-04, HG-M5-1/2/3/4 | Provider reale solo su DEV dietro flag; costi entro soglie; nessun web/retrieval/tool; evidenze G7. |
 
-I gate G7 (AI assistita) e G8 (AI automatica) appartengono alla V2.
+I gate **G7** (IA assistita) e **G8** (IA automatica) restano invariati per scope. **G8 e la correzione automatica sono fuori** dalla linea M5-00→M5-05.
 
 ### Altre funzionalità rinviate alla V2
 

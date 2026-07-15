@@ -4,7 +4,7 @@
 
 **M1 + M2 + M3-lite + RE + QE + M3-full completati. Deploy DEV attivo: https://schoolforge-dev.web.app**
 
-Il flusso docente cartaceo, il portale studente, il Repository Editor e il portale digitale con consegna online (M3-full) sono implementati e completi: sessione obbligatoria, modalità verifica per classe e Gate G5 sono superati — vedi [evidenze/g5-m3-full-checklist-finale.md](evidenze/g5-m3-full-checklist-finale.md). M4 (correzione) è completato: correzione/restituzione, ciclo di vita, Registro Correzioni, export CSV ed export PDF (M4-00→M4-04, Markdown rinviato); **Gate G6 superato** (vedi [evidenze/g6-m4-checklist-finale.md](evidenze/g6-m4-checklist-finale.md)). M5 (AI) non è implementato.
+Il flusso docente cartaceo, il portale studente, il Repository Editor e il portale digitale con consegna online (M3-full) sono implementati e completi: sessione obbligatoria, modalità verifica per classe e Gate G5 sono superati — vedi [evidenze/g5-m3-full-checklist-finale.md](evidenze/g5-m3-full-checklist-finale.md). M4 (correzione) è completato: correzione/restituzione, ciclo di vita, Registro Correzioni, export CSV ed export PDF (M4-00→M4-04, Markdown rinviato); **Gate G6 superato** (vedi [evidenze/g6-m4-checklist-finale.md](evidenze/g6-m4-checklist-finale.md)). **M5 (correzione assistita da IA): progettazione M5-00 completata** (contratto, UX batch, sicurezza, cost model — [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md)); implementazione non avviata.
 Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente locale e [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) per lo smoke test DEV.
 
 **Didattica (DUX) — implementazione DUX-01–10A completata.** Didattica ha assorbito Corsi/Lezioni/Domande dopo il **Gate di parità PASS** (vedi [evidenze/dux-04d-matrice-parita.md](evidenze/dux-04d-matrice-parita.md)); Classi è una scheda di Studenti, Verifiche è uniformata e metadata corso/anno sono modificabili. **Gate GDUX superato (PASS)** — vedi [evidenze/gdux-checklist-finale.md](evidenze/gdux-checklist-finale.md) e [didattica-ux-roadmap.md](didattica-ux-roadmap.md).
@@ -38,7 +38,7 @@ SchoolForge è un repository didattico Markdown-first per un solo docente. Se è
 
 ## Per sviluppare un modulo
 
-Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica del pacchetto (scope, file, dipendenze, evidenze DoD). Passa poi a [api-contract.md](api-contract.md) per i tipi e i contratti delle Cloud Functions, e infine a [test-strategy.md](test-strategy.md) per sapere cosa testare e con quali fixture. La V1 copre i moduli M1–M4; M5 (Correzione AI) è rinviato alla V2.
+Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica del pacchetto (scope, file, dipendenze, evidenze DoD). Passa poi a [api-contract.md](api-contract.md) per i tipi e i contratti delle Cloud Functions, e infine a [test-strategy.md](test-strategy.md) per sapere cosa testare e con quali fixture. La V1 copre i moduli M1–M4. **M5 (correzione assistita da IA)** è progettato a livello **M5-00** — contratto, UX batch, sicurezza e cost model in [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md); l'implementazione (M5-01→M5-05, Gate G7) non è ancora avviata.
 
 ## File di riferimento rapido
 
@@ -62,6 +62,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [m3-full-roadmap.md](m3-full-roadmap.md) | Specifica M3-full: verifiche online, consegne, monitor, sessione obbligatoria e modalità verifica. Roadmap M3F-00–M3F-11C, completata — Gate G5 superato. | Per consultare il modello dati/Rules di M3-full o lo stato del Gate G5. |
 | [storage-gateway-roadmap.md](storage-gateway-roadmap.md) | Contratto e roadmap del **Repository Storage Gateway** same-origin (SGW-00–03). **SGW-01/02A verificati su DEV; SGW-02B batch-read implementato nel codice; restano SGW-02C import e SGW-03.** | Per capire il gateway, l'ultimo accesso Storage diretto e i prossimi passi. |
 | [didattica-ux-roadmap.md](didattica-ux-roadmap.md) | Specifica UX del redesign "Didattica" (DUX-00–10A + Gate GDUX). **DUX-01–10A completati; Gate GDUX superato (PASS)** — vedi [evidenze/gdux-checklist-finale.md](evidenze/gdux-checklist-finale.md). | Per consultare architettura informativa, invarianti di sicurezza/costo e prossimo Gate. |
+| [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) | **M5-00** — contratto, UX batch («Correggi con IA»), sicurezza, privacy, cost model e roadmap M5-00→M5-05 della correzione assistita da IA. **Solo progettazione**; implementazione non avviata. Supera la vecchia roadmap M5-A..E. | Per consultare il contratto IA/gateway, i limiti di costo e gli Human Gate aperti. |
 
 ## Evidenze
 

@@ -52,7 +52,7 @@ Legenda stato:
 | ADR-06b | M3-lite: ruolo risolto da Google Auth, nessun link pubblico anonimo | ✅ Chiusa | architettura.md | Il portale studente M3-lite non usa token pubblici né dati autodichiarati: l'accesso richiede login Google e il ruolo è risolto confrontando `uid` con `ownerUid`. |
 | ADR-07 | Snapshot pubblicato e al tentativo (M3-full) | ⏳ Rinviata (M3-full) | architettura.md | Snapshot privato di fonti/regole/candidati creato all'attivazione; snapshot con soluzioni private creato all'avvio digitale. Riguarda solo la consegna online di M3-full; M3-lite riusa la proiezione pubblica già introdotta in M2 per il download del PDF studente. |
 | ADR-08 | PDF generati nel browser | ✅ Chiusa | architettura.md | Nessun PDF su server o Storage, in nessun canale (cartaceo, M3-lite o M3-full). |
-| ADR-09 | Secret Manager solo per AI | ✅ Chiusa | architettura.md | Introdotto solo in M5 (V2) per la chiave API AI. |
+| ADR-09 | Secret Manager solo per IA | ✅ Chiusa | architettura.md | Introdotto solo in M5 (dal pacchetto M5-01) per la chiave API del provider IA, letta unicamente dalla Cloud Function `aiCorrectionRun`. |
 | ADR-10 | Export globale da snapshot digitali (M3-full → M4) | ⏳ Rinviata (M3-full) | architettura.md | `Esporta verifiche` legge consegne definitive e snapshot; richiede consegne digitali di M3-full, non prodotte da M3-lite. |
 | ADR-11 | Visibilità atomica dell'import | ✅ Chiusa | architettura.md | Storage e indici sono preparati sotto `importId`; una transazione aggiorna `activeImportId` solo a import completo. |
 | ADR-12 | Proiezioni read-only per lo studente (M3-lite) | ✅ Chiusa | architettura.md | Lo studente non legge mai i documenti tecnici del docente (`lessons` con `poolPath`, `questionIndex`, `publishedSnapshot`). Legge solo proiezioni pubbliche dedicate senza pool, soluzioni o percorsi tecnici sensibili. |
@@ -65,8 +65,8 @@ Legenda stato:
 | ID | Titolo | Stato | Documento | Sintesi decisione |
 |---|---|---|---|---|
 | C-01 | Provider, regione, backup, RPO/RTO | ✅ Chiusa | brief.md | Firebase su progetto del Docente; dati in `europe-west8` (target UE deciso storicamente); backup come redundancy Storage nativa più export Firestore manuale on-demand dalle impostazioni; RPO best-effort; RTO best-effort. *(Nota HARD-F02: su DEV Storage/Function sono in `us-central1`, mentre Firestore è stata verificata in `europe-west8`; il target UE resta valido per PROD — `evidenze/hard-01c-region-matrix.md`.)* |
-| C-02 | Provider AI e modello di default | ⏳ V2 | brief.md | **Risolta per V2:** OpenAI API (default `gpt-4o-mini`) oppure Anthropic Claude API (default `claude-haiku-4-5-20251001`); il Docente configura la chiave API nelle impostazioni. Applica solo a M5. |
-| C-03 | Regola didattica correzione automatica | ⏳ V2 | brief.md | Regola d'uso della modalità automatica AI; decisione rimandata alla V2 insieme a M5. |
+| C-02 | Provider IA e modello | ⏳ **Aperta (Human Gate M5)** | brief.md, m5-ai-assisted-roadmap.md | Contratto **provider-agnostic** (M5-00): provider e modello **non sono fissati**; vanno confermati dal Docente verificando disponibilità e costo attuali sulla documentazione ufficiale, senza adottare come default un modello potenzialmente obsoleto. Comprende anche i tetti di spesa (budget per operazione, budget giornaliero) e la retention dei metadati di audit — HG-M5-1..4. Applica solo a M5. |
+| C-03 | Regola didattica correzione automatica | ⏳ Rinviata (G8) | brief.md | Regola d'uso della modalità automatica IA; **fuori** dalla linea M5-00→M5-05 (correzione assistita). Rimandata a un eventuale Gate G8. |
 
 ---
 

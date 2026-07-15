@@ -1,7 +1,7 @@
 # SchoolForge — Sicurezza e protezione dei dati
 
 **Versione:** 3.0
-**Stato:** in vigore — controlli implementati da F-04 in avanti (M1, M2, M3-lite, RE, M3-full); M3-full completato con Gate G5 superato (vedi `documentazione/evidenze/g5-m3-full-checklist-finale.md`); M4-00→M4-03B implementati, incluso Registro Correzioni ed export CSV/PDF locali owner-only — Markdown rinviato, M4-04, Gate G6 e M5 restano non completati/rinviati
+**Stato:** in vigore — controlli implementati da F-04 in avanti (M1, M2, M3-lite, RE, M3-full); M3-full completato con Gate G5 superato (vedi `documentazione/evidenze/g5-m3-full-checklist-finale.md`); M4-00→M4-04 completati, incluso Registro Correzioni ed export **CSV e PDF** locali owner-only — export **Markdown rinviato**; **Gate G6 superato**; **M5 (correzione assistita da IA) progettato a livello M5-00** (§8, [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md)), implementazione non avviata
 
 ---
 
@@ -29,8 +29,8 @@ Il modello precedente (studente non autenticato, nome+cognome autodichiarati, lo
 | Import didattico | Pubblicazione parziale tra Storage e Firestore | Upload sotto `importId` isolato, staging chunked invisibile (i doc portano il nuovo `importId`, non ancora `activeImportId`), poi **switch atomico** del solo `activeImportId` (HARD-02B-2). La visibilità dipende esclusivamente da `activeImportId` (query + Rules): lo staging non è mai leggibile dallo studente, il cleanup differito tocca solo le `publicLessons` del vecchio import. |
 | Verifica attiva | Modifica retroattiva di fonti/regole | Snapshot pubblicato immutabile all'attivazione; per modificare si duplica la bozza. |
 | Markdown | XSS o asset non sicuri | Parser condiviso, sanitizzazione e whitelist rendering, applicati identicamente a docente e studente. |
-| AI (V2) | Dati non autorizzati o prompt injection | C-02 risolta, contesto chiuso, nessun web/tool, feature flag, audit. |
-| Segreti AI (V2) | Esposizione in Git/client/log | Secret Manager (solo M5/V2), accesso minimo, rotazione. |
+| IA (M5, progettata) | Dati non autorizzati o prompt injection | Autorizzazione **per ID** (rilettura server-side), contesto chiuso, contenuto studente non attendibile, nessun web/tool, feature flag, validazione output, audit senza contenuti (§8). |
+| Segreti IA (M5) | Esposizione in Git/client/log | Secret Manager (dal M5-01), accesso minimo, rotazione; chiave mai lato client/Firestore/log. |
 
 Le minacce seguenti si applicano a **M3-full** (specifica in `m3-full-roadmap.md`):
 
@@ -225,13 +225,18 @@ Difesa in profondità a livello di trasporto, configurata **solo** in `firebase.
 
 ---
 
-## 8. AI — Modulo 5 (fuori scope V1 / pianificato per V2)
+## 8. IA — Modulo 5 (correzione assistita; **progettazione M5-00, non implementato**)
 
-- Prima di M5 (in V2): C-02 risolta (OpenAI `gpt-4o-mini` oppure Anthropic Claude `claude-haiku-4-5-20251001`, chiave configurata dal docente) e feature flag `aiEnabled = true`.
-- Contesto AI: solo lezione sorgente, domanda snapshot, soluzione, risposta studente e nota docente.
-- Vietati: browsing web, retrieval, tool esterni, attivazione verifiche, invio email, cancellazione dati.
-- La correzione automatica richiede anche C-03, opt-in per verifica, audit e possibilità di rettifica.
-- La chiave API AI vive in Secret Manager / Firebase Functions config; non raggiunge mai client, Firestore, Markdown o Git.
+Contratto completo e mitigazioni in [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) (§11). Sintesi degli invarianti di sicurezza:
+
+- **Feature flag** globale e, prima dell'attivazione, **provider/modello confermati** (C-02, Human Gate aperto — contratto **provider-agnostic**, nessun default fissato qui).
+- **Gateway server-side owner-only:** verifica del Firebase ID token e che il chiamante sia l'owner (stesso pattern del `repositoryGateway`).
+- **Autorizzazione per ID, mai per testo:** il client invia solo ID (`verificationId`, `submissionIds`, `requestId`); il server rilegge submission, snapshot e soluzioni via Admin SDK. Il client non può iniettare testi arbitrari come parte della verifica.
+- **Contesto IA chiuso:** solo domanda snapshot, soluzione/criterio, `maxPoints` e risposta studente; nessun dato personale (nome/email) inviato al provider.
+- **Contenuto studente = non attendibile e potenzialmente ostile:** trattato come dato con delimitatori, mai come istruzione. **Vietati** browsing web, retrieval, tool esterni, code execution; l'IA non attiva verifiche, non invia email, non cancella dati, non completa/restituisce correzioni.
+- **Validazione output server-side:** schema rigido + punteggi `0..maxPoints` multipli di 0,25 (regole di `correctionContract.ts`); output non valido scartato senza corrompere la correzione; idempotenza via `requestId`.
+- **Chiave API** solo in **Secret Manager**, letta unicamente dalla Cloud Function; **mai** in client, Firestore, Markdown, Git o log. **Nessun** log contiene risposte, soluzioni o dati personali.
+- **La correzione automatica** (C-03, Gate G8) resta **fuori** dalla linea M5-00→M5-05.
 
 ---
 
@@ -256,5 +261,5 @@ Difesa in profondità a livello di trasporto, configurata **solo** in `firebase.
 | GRE (Repository Editor) | Creazione/modifica/riordino/eliminazione di UDA/lezioni non introducono nuove Security Rule (owner-only preesistente); eliminazione bloccata lato client se esiste una verifica collegata (§5.2, limite noto: solo client-side); riordino non rinomina mai file Storage; export ZIP resta Markdown-first, portabile e con `order` coerente al reimport. |
 | G4 (gateway Cloud Functions, modello scartato) | Non implementato: M3-full non usa gateway, participant lock nome+cognome, cookie HttpOnly né log nome+IP. Nota storica, vedi §4. |
 | G5 — Portale digitale (M3-full) ✅ | Superato. Submission unica e immutabile post-consegna; studente post-consegna legge solo la receipt; verifica chiusa blocca bozze; modalità verifica nega realmente la lettura delle lezioni via Security Rules; nessuna Cloud Function. Evidenze in `documentazione/evidenze/g5-m3-full-checklist-finale.md` e `m3-full-roadmap.md §8`. |
-| G6 (M4, M4-00→M4-03A implementati — PDF/Markdown e gate finale non ancora) | Correzione, audit, eliminazione ed export solo docente; export non persistito; richiede G5 (M3-full, superato). Contratto, service/Rules, workspace docente, lettura studente, ciclo di vita, Registro Correzioni e CSV sono implementati. Restano M4-03B e le evidenze finali M4-04/Gate G6. |
+| G6 (M4, M4-00→M4-04 completati — **Gate G6 superato**) | Correzione, audit, eliminazione ed export solo docente; export non persistito; richiede G5 (M3-full, superato). Contratto, service/Rules, workspace docente, lettura studente, ciclo di vita, Registro Correzioni ed export **CSV e PDF** sono implementati; export **Markdown rinviato** per assenza di caso d'uso. Evidenze in `evidenze/g6-m4-checklist-finale.md`. |
 | G7/G8 (V2) | C-02 risolta / C-03; AI senza web; audit completo; opt-in; rollback verificato. |
