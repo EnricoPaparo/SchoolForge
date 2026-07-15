@@ -5,7 +5,7 @@
 
 > **Convenzioni.** I comandi shell sono pensati per essere **copiabili in PowerShell (Windows)** oltre che in bash/zsh: usano solo la Firebase CLI / gcloud, che sono identiche tra le shell. Dove serve una variabile o un percorso, si usa un **file** (`.env.local`) invece di export di shell, così non cambia nulla tra PowerShell e bash. Ogni passaggio che **non** ha un comando CLI verificato è marcato **[Console]** ed è da fare a mano dall'interfaccia web.
 >
-> **Stato ambienti oggi.** `.firebaserc` definisce **solo** l'alias `dev → schoolforge-dev`. L'alias/progetto **`prod` non è ancora configurato**: PROD non è pubblicamente operativo e non lo sarà finché il **Gate GHARD** non è superato. Ovunque sotto, "PROD" indica un progetto futuro del docente (es. `schoolforge-prod`, **da creare**), non una risorsa esistente.
+> **Stato ambienti oggi.** Il progetto Firebase **`schoolforge-prod` esiste già**. Tuttavia `.firebaserc` espone attualmente **solo** l'alias `dev → schoolforge-dev`: l'**alias `prod` non è configurato**. Il **provisioning effettivo** dei servizi PROD (app web, Authentication, Firestore, Storage, Functions, Hosting) **non è verificato** e **nessun deploy PROD è stato eseguito**. PROD **non è operativo né autorizzato** finché il **Gate GHARD** non è superato. Ovunque sotto, "PROD" indica il progetto `schoolforge-prod` esistente ma **con servizi/configurazione/deploy da verificare prima dell'uso**.
 >
 > **Nota residenza dati (HARD-F02, aperta).** La region reale delle risorse **non** è ancora riconciliata con la documentazione (vedi `hardening-audit-v1.md` §5 HARD-F02): su DEV il bucket Storage risulta `us-central1`, mentre parte della documentazione dichiara `europe-west8`/Milano. Questo runbook **non** assume una region specifica; la scelta/verifica della region è parte di HARD-01 (F02), non di questo task.
 
@@ -15,14 +15,15 @@
 
 | | **DEV** | **PROD** |
 |---|---|---|
-| Progetto Firebase | `schoolforge-dev` (esistente) | progetto del docente, **da creare** (es. `schoolforge-prod`) |
-| Alias `.firebaserc` | `dev` (presente) | **non configurato** |
+| Progetto Firebase | `schoolforge-dev` — **esistente e operativo** | `schoolforge-prod` — **progetto esistente**; servizi/configurazione/deploy **da verificare prima dell'uso** |
+| Alias `.firebaserc` | `dev` (presente) | **alias `prod` non configurato** |
 | URL | https://schoolforge-dev.web.app | n/d finché non rilasciato |
-| Piano | Blaze | Blaze (da configurare prima del rilascio) |
+| Piano | Blaze | Blaze (budget da configurare prima del rilascio) |
 | Dati | **solo fixture sintetiche** | dati reali di studenti (PII) |
-| Prove distruttive | **consentite** (è il posto giusto) | **vietate** |
+| Prove distruttive | **consentite** su dati di test sacrificabili (vedi sotto) | **vietate** |
 
 - **Cosa si testa su DEV:** deploy, Rules, indici, import ZIP, verifiche online di prova, smoke docente/studente, restore drill, prove di budget alert. Tutto ciò che è distruttivo o sperimentale va **solo** su DEV.
+- **Prove distruttive — solo DEV, con cautela:** consentite **esclusivamente su DEV**, **solo su dati di test sacrificabili**, e **dopo un export/backup** quando l'operazione può coinvolgere dati ancora utili (§5). **Mai** eseguire cancellazioni massive indiscriminate sul dataset DEV corrente: anche su DEV, distruggere alla cieca lo stato attuale può cancellare fixture o prove in corso che servono ancora.
 - **Divieto su PROD:** nessuna prova distruttiva, nessun import "di test", nessuna cancellazione massiva esplorativa, nessun esperimento su Rules non validato prima su DEV.
 - **Cosa NON copiare tra ambienti (mai):**
   - `.env.local` (config client di un ambiente) verso l'altro — ogni ambiente ha la sua config Firebase e il suo bucket;
