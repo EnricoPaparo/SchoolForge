@@ -5,11 +5,12 @@
 
 Solo il docente può completare queste voci (richiedono CLI/Console o una decisione). Finché non sono tutte `DONE`, HARD-F02 resta **MITIGATED** (contraddizione documentale eliminata, ma verifica/decisione ancora aperte). Aggiorna lo **Stato** da `PENDING` a `DONE` (con data) e annota l'evidenza minima — **nessun** billing ID, project number sensibile o segreto.
 
-### 1. Verifica regione Firestore DEV — **Stato: PENDING**
+### 1. Verifica regione Firestore DEV — **Stato: DONE (15/07/2026)**
 - **Come:** `gcloud firestore databases describe --project schoolforge-dev --format='value(locationId)'` (oppure Firebase/GCP Console → Firestore → Impostazioni → Location).
-- **Cosa registrare:** la `locationId` reale del database Firestore DEV, aggiornando la matrice (`hard-01c-region-matrix.md`) da **NON VERIFICATA** al valore effettivo.
+- **Risultato registrato:** `locationId = europe-west8`; matrice `hard-01c-region-matrix.md` aggiornata con l'evidenza effettiva.
 - **Perché:** la documentazione dichiarava `europe-west8` senza evidenza; va confermato o corretto con un dato reale.
 - **Evidenza minima:** "Firestore DEV location = &lt;valore&gt;, verificata il GG/MM/AAAA".
+- **Evidenza registrata:** `npx firebase firestore:databases:get "(default)" --project schoolforge-dev` → `Location: europe-west8` (15/07/2026).
 
 ### 2. Decisione regione PROD (UE) + co-locazione — **Stato: PENDING**
 - **Come:** decisione del docente, da prendere **prima** di qualsiasi provisioning PROD.
@@ -26,6 +27,6 @@ Solo il docente può completare queste voci (richiedono CLI/Console o una decisi
 
 ## Esito del gate
 
-- **Stato attuale (15/07/2026):** voce 3 **DONE** (politica dati/provisioning PROD confermata); restano **PENDING** la voce 1 (verifica location Firestore DEV) e la voce 2 (scelta definitiva regione UE per Firestore/Storage/Functions PROD).
-- **Finché le voci 1 e 2 non sono `DONE`:** HARD-F02 = **MITIGATED** — contraddizione documentale eliminata; **blocker PROD** (scelta regione UE) e **verifica Firestore DEV** ancora aperti.
+- **Stato attuale (15/07/2026):** voci 1 e 3 **DONE**; resta **PENDING** solo la voce 2 (scelta definitiva regione UE per Firestore/Storage/Functions PROD).
+- **Finché la voce 2 non è `DONE`:** HARD-F02 = **MITIGATED** — contraddizione documentale eliminata e regione Firestore DEV verificata; resta il solo **blocker PROD** sulla scelta della regione UE.
 - **HARD-F02 → RESOLVED** solo quando: la regione Firestore DEV è verificata e registrata **e** la decisione di regione UE per PROD è presa e documentata. Il provisioning PROD effettivo non è richiesto per RESOLVED, ma la **decisione** di regione UE sì.

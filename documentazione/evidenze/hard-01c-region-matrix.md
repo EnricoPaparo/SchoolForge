@@ -18,7 +18,7 @@
 |---|---|---|---|---|
 | Firebase project | Esistente/operativo | — | `.firebaserc` (alias `dev → schoolforge-dev`); deploy DEV attivo `https://schoolforge-dev.web.app` | — |
 | Authentication | Esistente/operativo | Globale (Auth non ha regione dati configurabile per progetto) | Login Google verificato in `evidenze/hard-01b-dev-smoke.md`; `apps/web/src/lib/auth.tsx` | — |
-| Firestore | Esistente/operativo | **NON VERIFICATA** in questa sessione | Nessuna CLI (`firebase`/`gcloud`) disponibile qui → non confermabile; la documentazione dichiarava `europe-west8` **senza** evidenza reale | **Sì**: verificare la regione reale (gcloud/Console) e registrarla |
+| Firestore | Esistente/operativo | **`europe-west8`** (verificata) | `npx firebase firestore:databases:get "(default)" --project schoolforge-dev` → `Location: europe-west8` (15/07/2026) | — |
 | Storage | Esistente/operativo | **`us-central1`** (verificata) | `functions/src/repositoryGateway.ts:25-29` cita `gcloud storage buckets describe gs://schoolforge-dev.firebasestorage.app → location: US-CENTRAL1` | — |
 | Functions (`repositoryGateway`) | Esistente/operativo | **`us-central1`** (verificata) | `functions/src/repositoryGateway.ts:31` `GATEWAY_REGION = 'us-central1'`; `firebase.json:10` rewrite region `us-central1`; co-locata col bucket per evitare egress cross-region | — |
 | Hosting | Esistente/operativo | CDN globale (nessuna regione singola) | `firebase.json` (`hosting`); URL DEV attivo | — |
@@ -47,11 +47,11 @@
 
 Le seguenti affermazioni assolute/non verificate sono state corrette (vedi diff della PR):
 - `README.md`, `architettura.md`, `sicurezza.md`: la dicitura «Firestore, Storage e Functions usano Milano `europe-west8`» come stato di fatto era **falsa per DEV** (Storage/Function `us-central1`) e **non verificata** per Firestore. Riformulate come **target UE per PROD** + **stato reale DEV** con rinvio a questa matrice.
-- La regione Firestore non è più dichiarata come fatto senza evidenza: è marcata **NON VERIFICATA** finché non confermata.
+- La regione Firestore DEV è ora supportata da evidenza CLI: **`europe-west8`**.
 - PROD non è dichiarato «a Milano» come se fosse operativo: è un progetto esistente **non ancora provisionato**, con regione **da decidere (UE)**.
 
 ## Limiti dell'audit
 
-- **Nessuna CLI Firebase/gcloud disponibile in questa sessione**: la regione **Firestore DEV** non è stata verificabile ed è marcata **NON VERIFICATA** (non inventata). Va confermata dal docente con `gcloud firestore databases describe --project schoolforge-dev` o dalla Console.
+- La regione **Firestore DEV** è stata verificata dopo l'audit iniziale tramite Firebase CLI ed è registrata come **`europe-west8`**; non è stata apportata alcuna modifica al database.
 - Lo stato di provisioning **PROD** non è ispezionabile da qui (nessuna Console/CLI); riportato come **non verificato/non provisionato** in base al contesto dichiarato.
 </content>
