@@ -80,7 +80,7 @@ L'implementazione deve consentire al docente di:
 
 **Decisione.** M3-lite non usa Cloud Functions: la StudentShell legge Firestore e Cloud Storage direttamente dal client, entro Security Rules che distinguono `ownerUid` da qualunque altro utente autenticato. Le Cloud Functions restano riservate a:
 - un eventuale gateway M3-full (specifica rinviata): `startDigitalAttempt`/`continueDigitalAttempt` per creare participant lock, tentativo, snapshot con soluzioni private, log accesso e token opaco di sessione, e per gestire ripresa/bozza/consegna autorizzate da un cookie HttpOnly;
-- il modulo AI (M5/V2): chiama il provider AI con contesto chiuso e registra l'audit.
+- il modulo IA (M5): il gateway `aiCorrectionGateway` chiama il provider con **contesto chiuso** (solo ID autorizzati, rilettura server-side) e registra un audit minimale — contratto **provider-agnostic**, progettato in [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) (M5-00), non ancora implementato.
 
 Le operazioni docente (import, pubblicazione, correzione, export) e le letture studente di M3-lite usano Firebase SDK direttamente dal client con Security Rules.
 
@@ -134,7 +134,7 @@ Un eventuale M3-full (specifica rinviata) selezionerebbe dal `publishedSnapshot`
 
 ### ADR-09 — Secret Manager solo per M5
 
-**Decisione.** Secret Manager non è usato nei Moduli 1–4. Viene introdotto in M5 esclusivamente per la chiave API del provider AI.
+**Decisione.** Secret Manager non è usato nei Moduli 1–4. Viene introdotto in **M5** (dal pacchetto M5-01) esclusivamente per la chiave API del provider IA, letta solo dalla Cloud Function `aiCorrectionGateway` e mai lato client/repo/Firestore/log (vedi [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) §11).
 
 **Motivazione.** Senza invio email e senza operazioni server-side che richiedano credenziali esterne nei primi quattro moduli, Secret Manager non ha giustificazione fino all'AI (M5/V2).
 
@@ -215,10 +215,10 @@ flowchart LR
     SPA -->|"login Google"| A["Firebase Authentication"]
     SPA -->|"Security Rules\nownerUid vs studente"| F["Cloud Firestore\nstati, dati operativi\nproiezioni read-only\n(corpo lezione in publicLessons.content)"]
     SPA -->|"Security Rules"| CS["Cloud Storage\nMarkdown, asset\n(owner-only: lezioni e pool\nmai leggibili dallo studente)"]
-    SPA -.->|"M5 AI (V2)\nnessuna Function in M3-lite"| CF["Cloud Functions v2\n(solo M5, ed eventuale M3-full)"]
+    SPA -.->|"M5 IA (progettato M5-00)\nnessuna Function in M3-lite"| CF["Cloud Functions v2\n(solo M5, ed eventuale M3-full)"]
 
     CF --> F
-    CF -. "Modulo 5" .-> AI["AiGateway\nprovider AI"]
+    CF -. "Modulo 5" .-> AI["aiCorrectionGateway\nprovider IA (agnostico)"]
 
     SPA --> PDF["@react-pdf/renderer\nnel browser"]
     PDF --> DL["Download\nnessuna persistenza"]

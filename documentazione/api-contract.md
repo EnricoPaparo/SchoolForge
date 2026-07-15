@@ -40,9 +40,9 @@ M3-lite non introduce Cloud Functions. Nella baseline corrente le Cloud Function
 
 | Funzione | Modulo | Motivo |
 |---|---|---|
-| `proposeCorrection`, `approveCorrection`, `bulkApproveCorrections`, `enableAutomaticCorrection` | M5 (V2) | Richiedono chiave API AI in Secret Manager. |
+| `aiCorrectionGateway` (gateway IA; **progettato M5-00, non implementato**) | M5 | Richiede chiave API provider in Secret Manager; contratto provider-agnostic in §5. |
 
-La specifica corrente di **M3-full** è client-only: usa Firebase SDK + Security Rules, `submissions/{id}` e `submissionReceipts/{id}`. Non introduce `startDigitalAttempt`/`continueDigitalAttempt`, cookie HttpOnly o Cloud Functions dedicate. Le uniche Cloud Functions previste restano quelle AI in M5/V2.
+La specifica corrente di **M3-full** è client-only: usa Firebase SDK + Security Rules, `submissions/{id}` e `submissionReceipts/{id}`. Non introduce `startDigitalAttempt`/`continueDigitalAttempt`, cookie HttpOnly o Cloud Functions dedicate. La Cloud Function IA prevista (`aiCorrectionGateway`) appartiene al Modulo 5 (§5) ed è **solo progettata**.
 
 #### Repository Storage Gateway (SGW) — TARGET, non ancora implementato
 
@@ -856,18 +856,17 @@ La Function confronta l'hash del cookie, la scadenza e lo stato `in_progress` de
 
 ---
 
-## 5. Cloud Functions AI — Modulo 5 (fuori scope V1 / pianificato per V2)
+## 5. Gateway IA — Modulo 5 (correzione assistita; **progettazione M5-00, non implementato**)
 
-Disponibili solo in V2, con C-02 risolta (provider AI configurato dal docente) e feature flag `aiEnabled = true`.
+Contratto **provider-agnostic** e **design-only** — vedi [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md). Nessuna di queste Function esiste ancora; il modello **supera** i contratti precedenti (`proposeCorrection`/`approveCorrection`/`bulkApproveCorrections`/`enableAutomaticCorrection`) e la nozione di «proposta IA» persistente.
 
-| Funzione | Request | Response |
+Un'unica Cloud Function scale-to-zero, protetta da Firebase ID token con `ownerUid` verificato server-side e attiva solo dietro feature flag:
+
+| Funzione | Request (**solo ID, mai testi**) | Response |
 |---|---|---|
-| `proposeCorrection` | `{ attemptId, itemId }` | `{ proposal: { score, comment, explanation } }` |
-| `approveCorrection` | `{ attemptId, itemId, score, comment }` | `{ correctionId }` |
-| `bulkApproveCorrections` | `{ attemptId, approvals: [{ itemId, score, comment }] }` | `{ applied: number, skipped: number }` |
-| `enableAutomaticCorrection` | `{ verificationId, confirmation: true }` | `{ enabled: boolean }` — richiede anche C-03 |
+| `aiCorrectionGateway` | `{ verificationId, submissionIds: string[], requestId }` | `{ results: [{ submissionId, outcome: 'succeeded'\|'partial'\|'failed', openGraded: number, openSkipped: number, closedGraded: number, tokensEstimated, costEstimated, reason? }] }` |
 
-Tutte richiedono Firebase ID token con `ownerUid` verificato server-side.
+Comportamento (contratto M5): rilegge server-side submission + `publishedProjection`/`teacherSnapshot` via Admin SDK (verifica ownership); valuta le **chiuse** in modo **deterministico** (0 token); invia **una richiesta provider per consegna** con tutte le **aperte** eleggibili (`points === null`); valida l'output con schema rigido e i punteggi con le stesse regole di `correctionContract.ts` (`0..maxPoints`, step 0,25); scrive i risultati nelle `evaluations` di `corrections/{submissionId}` **lasciando `status == 'in_progress'`** (mai `completed`/`returned`); registra un audit **minimale senza contenuti**. Idempotente su `requestId`; non sovrascrive domande già valutate. La chiave del provider vive solo in **Secret Manager**, mai lato client/repo/Firestore/log. **Nessuna** correzione automatica, **nessuna** restituzione automatica, **nessun** web/retrieval/tool.
 
 ---
 
