@@ -225,6 +225,11 @@ describe('DidatticaView — open course', () => {
     expect(row.queryByText('Apri corso')).toBeNull();
     expect(row.queryByText('Rinomina corso')).toBeNull();
     expect(row.queryByText('Elimina corso')).toBeNull();
+
+    // The visible title is itself a second, direct entry point to the same
+    // workspace; the icon action remains available alongside it.
+    fireEvent.click(row.getByRole('button', { name: 'Con Azioni' }));
+    expect(screen.getByText('WORKSPACE: Con Azioni')).toBeTruthy();
   });
 });
 

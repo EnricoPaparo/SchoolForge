@@ -310,18 +310,7 @@ export function OnlineExamView({
 
   return (
     <section aria-label={`Verifica online — ${title}`} className={styles.container}>
-      {/*
-        M3F-11B: header row + question navigator are unified into a single
-        sticky container instead of two independently `position: sticky`
-        elements. Two sticky siblings each computing their own `top` (the
-        navigator previously used a hardcoded `calc(3.75rem + 0.5rem)` guess
-        at the header's height) drift apart the moment the header's own
-        height changes — e.g. examStatus/examActions wrapping to an extra
-        line on a narrow viewport — leaving a gap or overlap between the
-        two rows. A single sticky panel with two rows inside it has no such
-        seam: the gap between rows is normal in-flow spacing, identical at
-        the top of the page and mid-scroll, on every browser.
-      */}
+      {/* Header and navigator stay unified, but scroll in normal page flow. */}
       <div className={styles.controlPanel}>
         <div className={styles.controlRow}>
           <div className={styles.examHeaderInfo}>

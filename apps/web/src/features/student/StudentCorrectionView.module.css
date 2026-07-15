@@ -1,5 +1,5 @@
 /* ── Student correction return view (M4-02B) — mirrors OnlineExamView's
-   and the docente CorrectionWorkspace's visual language (sticky header,
+   and the docente CorrectionWorkspace's visual language (header,
    question navigator, question card) so a returned result feels
    consistent with the rest of the student portal, adapted read-only:
    no score input, no navItemEvaluated colour (nothing here is "correct"
@@ -13,9 +13,6 @@
 }
 
 .controlPanel {
-  position: sticky;
-  top: 0;
-  z-index: 10;
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
