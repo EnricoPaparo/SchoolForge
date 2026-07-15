@@ -17,14 +17,7 @@ import {
 import { describeImportValidationError } from './importValidationMessage.js';
 import { CourseWorkspace } from './CourseWorkspace.js';
 import { TitleDialog, NewCourseDialog, ImportDialog, ConfirmDialog } from './workspaceDialogs.js';
-import {
-  IconBookOpen,
-  IconPencil,
-  IconPlus,
-  IconSearch,
-  IconTrash,
-  IconUpload,
-} from '../../components/icons.js';
+import { IconPlus, IconSearch, IconUpload } from '../../components/icons.js';
 import styles from './DidatticaView.module.css';
 
 const YEAR_ALL = '__all__';
@@ -600,7 +593,7 @@ function CourseRow({ card, onOpen, onRename, onDelete }: CourseRowProps) {
             aria-label={`Apri il corso ${card.title}`}
             onClick={onOpen}
           >
-            <IconBookOpen size={15} />
+            <span aria-hidden="true">📂</span>
           </button>
           <button
             type="button"
@@ -609,7 +602,7 @@ function CourseRow({ card, onOpen, onRename, onDelete }: CourseRowProps) {
             aria-label={`Rinomina corso — ${card.title}`}
             onClick={onRename}
           >
-            <IconPencil size={15} />
+            <span aria-hidden="true">✏️</span>
           </button>
           <button
             type="button"
@@ -618,7 +611,7 @@ function CourseRow({ card, onOpen, onRename, onDelete }: CourseRowProps) {
             aria-label={`Elimina corso — ${card.title}`}
             onClick={onDelete}
           >
-            <IconTrash size={15} />
+            <span aria-hidden="true">🗑️</span>
           </button>
         </div>
       </td>
