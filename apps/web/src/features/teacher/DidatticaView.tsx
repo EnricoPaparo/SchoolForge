@@ -17,7 +17,14 @@ import {
 import { describeImportValidationError } from './importValidationMessage.js';
 import { CourseWorkspace } from './CourseWorkspace.js';
 import { TitleDialog, NewCourseDialog, ImportDialog, ConfirmDialog } from './workspaceDialogs.js';
-import { IconPlus, IconSearch, IconUpload } from '../../components/icons.js';
+import {
+  IconBookOpen,
+  IconPencil,
+  IconPlus,
+  IconSearch,
+  IconTrash,
+  IconUpload,
+} from '../../components/icons.js';
 import styles from './DidatticaView.module.css';
 
 const YEAR_ALL = '__all__';
@@ -48,7 +55,6 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
   const [classFilter, setClassFilter] = useState<string>(YEAR_ALL);
   const [search, setSearch] = useState('');
 
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>({ kind: 'none' });
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
@@ -119,15 +125,6 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
     if (!ownerUid) return;
     void load();
   }, [ownerUid]);
-
-  useEffect(() => {
-    if (!menuOpenId) return;
-    function onDocClick() {
-      setMenuOpenId(null);
-    }
-    document.addEventListener('click', onDocClick);
-    return () => document.removeEventListener('click', onDocClick);
-  }, [menuOpenId]);
 
   // ── Derived: filter options + filtered cards ────────────────────────────
   const years = useMemo(() => (cards ? distinctYears(cards) : []), [cards]);
@@ -460,29 +457,61 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
           )}
         </div>
       ) : (
-        <ul className={styles.grid}>
-          {filtered.map((card) => (
-            <CourseCardView
-              key={card.programId}
-              card={card}
-              menuOpen={menuOpenId === card.programId}
-              onToggleMenu={() =>
-                setMenuOpenId((cur) => (cur === card.programId ? null : card.programId))
-              }
-              onOpen={() => setOpenProgramId(card.programId)}
-              onRename={() => {
-                setMenuOpenId(null);
-                setDialogError(null);
-                setDialog({ kind: 'rename', programId: card.programId, current: card.title });
-              }}
-              onDelete={() => {
-                setMenuOpenId(null);
-                setDialogError(null);
-                setDialog({ kind: 'delete', programId: card.programId, title: card.title });
-              }}
-            />
-          ))}
-        </ul>
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <colgroup>
+              <col className={styles.titleColumn} />
+              <col className={styles.udaColumn} />
+              <col className={styles.lessonsColumn} />
+              <col className={styles.questionsColumn} />
+              <col className={styles.yearColumn} />
+              <col className={styles.classesColumn} />
+              <col className={styles.actionsColumn} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th className={styles.th} scope="col">
+                  Titolo
+                </th>
+                <th className={styles.th} scope="col">
+                  UDA
+                </th>
+                <th className={styles.th} scope="col">
+                  Lezioni
+                </th>
+                <th className={styles.th} scope="col">
+                  Domande
+                </th>
+                <th className={styles.th} scope="col">
+                  Anno
+                </th>
+                <th className={styles.th} scope="col">
+                  Classi
+                </th>
+                <th className={styles.th} scope="col">
+                  Azioni
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((card) => (
+                <CourseRow
+                  key={card.programId}
+                  card={card}
+                  onOpen={() => setOpenProgramId(card.programId)}
+                  onRename={() => {
+                    setDialogError(null);
+                    setDialog({ kind: 'rename', programId: card.programId, current: card.title });
+                  }}
+                  onDelete={() => {
+                    setDialogError(null);
+                    setDialog({ kind: 'delete', programId: card.programId, title: card.title });
+                  }}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {dialog.kind === 'new' && (
@@ -533,108 +562,67 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
   );
 }
 
-// ── Card ──────────────────────────────────────────────────────────────────
+// ── Course table row ──────────────────────────────────────────────────────
 
-type CourseCardViewProps = {
+type CourseRowProps = {
   card: CourseCard;
-  menuOpen: boolean;
-  onToggleMenu: () => void;
   onOpen: () => void;
   onRename: () => void;
   onDelete: () => void;
 };
 
-function CourseCardView({
-  card,
-  menuOpen,
-  onToggleMenu,
-  onOpen,
-  onRename,
-  onDelete,
-}: CourseCardViewProps) {
-  const pct = card.lessonsTotal > 0 ? Math.round((card.lessonsDone / card.lessonsTotal) * 100) : 0;
+function CourseRow({ card, onOpen, onRename, onDelete }: CourseRowProps) {
   const yearLabel = card.annoScolastico ?? 'Senza anno';
+  const classesLabel = card.classNames.length > 0 ? card.classNames.join(', ') : 'Nessuna';
 
   return (
-    <li className={styles.cardWrap}>
-      {/* Card non interattiva (article): l'apertura passa da un vero <button>
-          e il menu ⋯ è un bottone fratello — nessun controllo annidato. */}
-      <article className={styles.card}>
-        <button
-          type="button"
-          className={styles.cardOpen}
-          aria-label={`Apri il corso ${card.title}`}
-          onClick={onOpen}
-        />
-        <div className={styles.cardHead}>
-          <h3 className={styles.cardTitle} title={card.title}>
-            {card.title}
-          </h3>
-          <div className={styles.menuWrap} onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              className={styles.menuBtn}
-              aria-haspopup="true"
-              aria-expanded={menuOpen}
-              aria-label={`Azioni corso — ${card.title}`}
-              onClick={onToggleMenu}
-            >
-              ⋯
-            </button>
-            {menuOpen && (
-              <div className={styles.menu} role="menu">
-                <button type="button" role="menuitem" onClick={onOpen}>
-                  Apri corso
-                </button>
-                <button type="button" role="menuitem" onClick={onRename}>
-                  Rinomina
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={styles.menuDanger}
-                  onClick={onDelete}
-                >
-                  Elimina corso
-                </button>
-              </div>
-            )}
-          </div>
+    <tr className={styles.row}>
+      <td className={styles.td}>
+        <span className={styles.courseTitle} title={card.title}>
+          {card.title}
+        </span>
+      </td>
+      <td className={`${styles.td} ${styles.numericCell}`}>{card.udaCount}</td>
+      <td className={`${styles.td} ${styles.numericCell}`}>
+        {card.lessonsDone}/{card.lessonsTotal}
+      </td>
+      <td className={`${styles.td} ${styles.numericCell}`}>{card.questionsTotal}</td>
+      <td className={styles.td}>{yearLabel}</td>
+      <td className={styles.td} title={classesLabel}>
+        <span className={styles.classesText}>{classesLabel}</span>
+      </td>
+      <td className={styles.tdActions}>
+        <div className={styles.rowActions}>
+          <button
+            type="button"
+            className={styles.iconBtn}
+            title="Apri corso"
+            aria-label={`Apri il corso ${card.title}`}
+            onClick={onOpen}
+          >
+            <IconBookOpen size={15} />
+          </button>
+          <button
+            type="button"
+            className={styles.iconBtn}
+            title="Rinomina corso"
+            aria-label={`Rinomina corso — ${card.title}`}
+            onClick={onRename}
+          >
+            <IconPencil size={15} />
+          </button>
+          <button
+            type="button"
+            className={styles.iconBtn}
+            title="Elimina corso"
+            aria-label={`Elimina corso — ${card.title}`}
+            onClick={onDelete}
+          >
+            <IconTrash size={15} />
+          </button>
         </div>
-
-        <div className={styles.cardMeta}>
-          <span className={styles.pill}>{yearLabel}</span>
-          {card.classNames.length > 0 ? (
-            card.classNames.map((name) => (
-              <span key={name} className={styles.pill}>
-                {name}
-              </span>
-            ))
-          ) : (
-            <span className={styles.pill}>Nessuna classe</span>
-          )}
-        </div>
-
-        <div className={styles.cardStats}>
-          <div>
-            <strong>{card.udaCount}</strong>UDA
-          </div>
-          <div>
-            <strong>
-              {card.lessonsDone}/{card.lessonsTotal}
-            </strong>
-            lezioni
-          </div>
-          <div>
-            <strong>{card.questionsTotal}</strong>domande
-          </div>
-        </div>
-
-        <div className={styles.progressTrack} role="img" aria-label={`Avanzamento lezioni ${pct}%`}>
-          <div className={styles.progressFill} style={{ width: `${pct}%` }} />
-        </div>
-      </article>
-    </li>
+      </td>
+    </tr>
   );
 }
 

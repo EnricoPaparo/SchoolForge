@@ -82,19 +82,18 @@ describe('DidatticaView — loading and rendering', () => {
     expect(screen.getByText(/caricamento/i)).toBeTruthy();
   });
 
-  it('renders a card with all the required metrics', async () => {
+  it('renders a compact course table with all the required metrics', async () => {
     mockLoadCourseLibrary.mockResolvedValue([card()]);
     renderView();
 
     await waitFor(() => expect(screen.getByText('Sistemi e Reti')).toBeTruthy());
-    // Scope to the card so year/class text isn't confused with the filter options.
-    const article = within(screen.getByRole('article'));
-    expect(article.getByText('2025/2026')).toBeTruthy();
-    expect(article.getByText('4A INF')).toBeTruthy();
-    expect(article.getByText('3')).toBeTruthy(); // UDA
-    expect(article.getByText('9/12')).toBeTruthy(); // lezioni svolte/totali
-    expect(article.getByText('41')).toBeTruthy(); // domande
-    expect(article.getByRole('img', { name: /avanzamento lezioni 75%/i })).toBeTruthy();
+    const row = within(screen.getByRole('row', { name: /sistemi e reti/i }));
+    expect(row.getByText('2025/2026')).toBeTruthy();
+    expect(row.getByText('4A INF')).toBeTruthy();
+    expect(row.getByText('3')).toBeTruthy(); // UDA
+    expect(row.getByText('9/12')).toBeTruthy(); // lezioni svolte/totali
+    expect(row.getByText('41')).toBeTruthy(); // domande
+    expect(row.getByRole('button', { name: /apri il corso sistemi e reti/i })).toBeTruthy();
   });
 
   it('shows a readable error when loading fails', async () => {
@@ -213,19 +212,19 @@ describe('DidatticaView — open course', () => {
     expect((screen.getByLabelText('Cerca corso') as HTMLInputElement).value).toBe('reti');
   });
 
-  it('exposes rename/delete in the ⋯ menu as sibling controls (no nested buttons)', async () => {
-    mockLoadCourseLibrary.mockResolvedValue([card({ title: 'Con Menu' })]);
+  it('exposes open, rename and delete as icon-only row actions', async () => {
+    mockLoadCourseLibrary.mockResolvedValue([card({ title: 'Con Azioni' })]);
     renderView();
 
-    await waitFor(() => expect(screen.getByText('Con Menu')).toBeTruthy());
-    // The open button must not contain the menu button (no nested interactive).
-    const openBtn = screen.getByRole('button', { name: /apri il corso con menu/i });
-    expect(openBtn.querySelector('button')).toBeNull();
-
-    fireEvent.click(screen.getByRole('button', { name: /azioni corso — con menu/i }));
-    const menu = screen.getByRole('menu');
-    expect(within(menu).getByText('Rinomina')).toBeTruthy();
-    expect(within(menu).getByText('Elimina corso')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Con Azioni')).toBeTruthy());
+    const row = within(screen.getByRole('row', { name: /con azioni/i }));
+    expect(row.getByRole('button', { name: /apri il corso con azioni/i })).toBeTruthy();
+    expect(row.getByRole('button', { name: /rinomina corso — con azioni/i })).toBeTruthy();
+    expect(row.getByRole('button', { name: /elimina corso — con azioni/i })).toBeTruthy();
+    // Visual labels stay icon-only; accessible names come from aria-label/title.
+    expect(row.queryByText('Apri corso')).toBeNull();
+    expect(row.queryByText('Rinomina corso')).toBeNull();
+    expect(row.queryByText('Elimina corso')).toBeNull();
   });
 });
 
@@ -292,11 +291,11 @@ describe('DidatticaView — create and import refresh the library', () => {
     expect(input.programmaTitle).toBe('Importato');
     // The committed result is self-contained: no fragile post-commit read.
     expect(mockLoadCourseLibrary).toHaveBeenCalledOnce();
-    const article = within(screen.getByRole('article'));
-    expect(article.getByText('2025/2026')).toBeTruthy();
-    expect(article.getByText('2')).toBeTruthy();
-    expect(article.getByText('0/5')).toBeTruthy();
-    expect(article.getByText('10')).toBeTruthy();
+    const row = within(screen.getByRole('row', { name: /importato/i }));
+    expect(row.getByText('2025/2026')).toBeTruthy();
+    expect(row.getByText('2')).toBeTruthy();
+    expect(row.getByText('0/5')).toBeTruthy();
+    expect(row.getByText('10')).toBeTruthy();
   });
 
   it('reveals a committed import even when the previous year filter would hide it', async () => {
