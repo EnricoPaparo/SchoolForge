@@ -57,7 +57,10 @@ describe('loadStudentLessons — program filtering', () => {
       if (q.__collRef.__collection === 'programs') {
         return Promise.resolve(
           docsFor('programs', [
-            { id: 'p1', data: { title: 'Informatica', classIds: ['class-a'] } },
+            {
+              id: 'p1',
+              data: { title: 'Informatica', classIds: ['class-a'], activeImportId: 'i1' },
+            },
           ]),
         );
       }
@@ -67,7 +70,9 @@ describe('loadStudentLessons — program filtering', () => {
     const result = await loadStudentLessons(STUDENT_UID, fakeDb);
     expect(result.status).toBe('ok');
     if (result.status !== 'ok') return;
-    expect(result.programs).toEqual([{ id: 'p1', title: 'Informatica', classIds: ['class-a'] }]);
+    expect(result.programs).toEqual([
+      { id: 'p1', title: 'Informatica', classIds: ['class-a'], activeImportId: 'i1' },
+    ]);
   });
 
   it('does not include a program with no classIds (query-level filter already excludes it)', async () => {
@@ -110,7 +115,10 @@ describe('loadStudentLessons — lesson sorting', () => {
       if (q.__collRef.__collection === 'programs') {
         return Promise.resolve(
           docsFor('programs', [
-            { id: 'p1', data: { title: 'Informatica', classIds: ['class-a'] } },
+            {
+              id: 'p1',
+              data: { title: 'Informatica', classIds: ['class-a'], activeImportId: 'i1' },
+            },
           ]),
         );
       }
@@ -175,7 +183,10 @@ describe('loadStudentLessons — lesson sorting', () => {
       if (q.__collRef.__collection === 'programs') {
         return Promise.resolve(
           docsFor('programs', [
-            { id: 'p1', data: { title: 'Informatica', classIds: ['class-a'] } },
+            {
+              id: 'p1',
+              data: { title: 'Informatica', classIds: ['class-a'], activeImportId: 'i1' },
+            },
           ]),
         );
       }
@@ -213,7 +224,10 @@ describe('loadStudentLessons — M3F-08 content projection', () => {
       if (q.__collRef.__collection === 'programs') {
         return Promise.resolve(
           docsFor('programs', [
-            { id: 'p1', data: { title: 'Informatica', classIds: ['class-a'] } },
+            {
+              id: 'p1',
+              data: { title: 'Informatica', classIds: ['class-a'], activeImportId: 'i1' },
+            },
           ]),
         );
       }
@@ -263,5 +277,54 @@ describe('loadStudentLessons — M3F-08 content projection', () => {
     const result = await loadStudentLessons(STUDENT_UID, fakeDb);
     if (result.status !== 'ok') throw new Error('expected ok');
     expect(result.lessonsByProgram['p1']![0]!.content).toBeNull();
+  });
+});
+
+describe('loadStudentLessons — active import gating (HARD-02B-1)', () => {
+  it('does not query publicLessons for a program without activeImportId, returning an empty list', async () => {
+    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
+    const publicLessonsCalls: unknown[] = [];
+    mockGetDocs.mockImplementation((q: { __collRef: { __collection: string } }) => {
+      if (q.__collRef.__collection === 'programs') {
+        return Promise.resolve(
+          docsFor('programs', [
+            { id: 'p1', data: { title: 'X', classIds: ['class-a'], activeImportId: null } },
+          ]),
+        );
+      }
+      publicLessonsCalls.push(q);
+      return Promise.resolve(docsFor('publicLessons', []));
+    });
+
+    const result = await loadStudentLessons(STUDENT_UID, fakeDb);
+    if (result.status !== 'ok') throw new Error('expected ok');
+    expect(result.lessonsByProgram['p1']).toEqual([]);
+    expect(publicLessonsCalls).toHaveLength(0);
+  });
+
+  it('queries publicLessons filtered by programId AND activeImportId', async () => {
+    mockGetOwnStudentDoc.mockResolvedValue({ classId: 'class-a' });
+    let capturedClauses: { field: string; op: string; value: unknown }[] = [];
+    mockGetDocs.mockImplementation(
+      (q: { __collRef: { __collection: string }; __clauses?: unknown[] }) => {
+        if (q.__collRef.__collection === 'programs') {
+          return Promise.resolve(
+            docsFor('programs', [
+              { id: 'p1', data: { title: 'X', classIds: ['class-a'], activeImportId: 'i2' } },
+            ]),
+          );
+        }
+        capturedClauses = (q.__clauses ?? []) as typeof capturedClauses;
+        return Promise.resolve(docsFor('publicLessons', []));
+      },
+    );
+
+    await loadStudentLessons(STUDENT_UID, fakeDb);
+    expect(capturedClauses).toEqual(
+      expect.arrayContaining([
+        { field: 'programId', op: '==', value: 'p1' },
+        { field: 'importId', op: '==', value: 'i2' },
+      ]),
+    );
   });
 });

@@ -59,6 +59,14 @@
         { "fieldPath": "config.programId", "order": "ASCENDING" },
         { "fieldPath": "config.importId", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "publicLessons",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programId", "order": "ASCENDING" },
+        { "fieldPath": "importId", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

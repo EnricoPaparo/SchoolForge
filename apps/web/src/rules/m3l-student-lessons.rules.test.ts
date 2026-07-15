@@ -299,15 +299,24 @@ describe('Firestore rules — publicLessons student read (M3L-C)', () => {
     await assertSucceeds(getDoc(doc(studentDb(), 'publicLessons/l1')));
   });
 
-  it('an approved student can list publicLessons for a compatible program', async () => {
+  it('an approved student can list publicLessons for a compatible program (programId + activeImportId)', async () => {
     await seed({
       studentStatus: 'approved',
       studentClassId: 'class-a',
       programClassIds: ['class-a'],
     });
 
+    // HARD-02B-1: the list MUST constrain importId (the rule requires
+    // importId == program.activeImportId); a programId-only list is denied
+    // (see the active-import-gate describe block below).
     await assertSucceeds(
-      getDocs(query(collection(studentDb(), 'publicLessons'), where('programId', '==', 'p1'))),
+      getDocs(
+        query(
+          collection(studentDb(), 'publicLessons'),
+          where('programId', '==', 'p1'),
+          where('importId', '==', 'i1'),
+        ),
+      ),
     );
   });
 
@@ -408,5 +417,101 @@ describe('Firestore rules — publicLessons student read (M3L-C)', () => {
     });
 
     await assertFails(deleteDoc(doc(studentDb(), 'publicLessons/l1')));
+  });
+});
+
+describe('Firestore rules — publicLessons active-import gate (HARD-02B-1)', () => {
+  // Adds a projection for program p1 under an arbitrary importId (used to
+  // simulate a stale/superseded or staging import that is NOT program.activeImportId 'i1').
+  async function addProjection(id: string, importId: string) {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'publicLessons', id), {
+        ownerUid: OWNER_UID,
+        programId: 'p1',
+        importId,
+        udaId: 'uda-1',
+        udaDir: 'uda-01-reti',
+        path: 'uda-01-reti/lezione-002.md',
+        filename: 'lezione-002.md',
+        contentPath: `repository/owner-uid/imports/${importId}/uda-01-reti/lezione-002.md`,
+        createdAt: null,
+      });
+    });
+  }
+
+  const approvedInClassA = {
+    studentStatus: 'approved' as const,
+    studentClassId: 'class-a',
+    programClassIds: ['class-a'],
+  };
+
+  it('reads the projection of the ACTIVE import for the student class', async () => {
+    await seed(approvedInClassA); // l1.importId === program.activeImportId === 'i1'
+    await assertSucceeds(getDoc(doc(studentDb(), 'publicLessons/l1')));
+  });
+
+  it('denies a direct get on a STALE projection (importId !== activeImportId)', async () => {
+    await seed(approvedInClassA);
+    await addProjection('l-stale', 'i0');
+    await assertFails(getDoc(doc(studentDb(), 'publicLessons/l-stale')));
+  });
+
+  it('denies a direct get on a STAGING projection (importId !== activeImportId)', async () => {
+    await seed(approvedInClassA);
+    await addProjection('l-staging', 'i2');
+    await assertFails(getDoc(doc(studentDb(), 'publicLessons/l-staging')));
+  });
+
+  it('denies a list filtered only by programId when a non-active projection exists', async () => {
+    await seed(approvedInClassA);
+    await addProjection('l-stale', 'i0');
+    await assertFails(
+      getDocs(query(collection(studentDb(), 'publicLessons'), where('programId', '==', 'p1'))),
+    );
+  });
+
+  it('allows a list filtered by programId AND activeImportId', async () => {
+    await seed(approvedInClassA);
+    await addProjection('l-stale', 'i0');
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(studentDb(), 'publicLessons'),
+          where('programId', '==', 'p1'),
+          where('importId', '==', 'i1'),
+        ),
+      ),
+    );
+  });
+
+  it('still denies the active projection to a student of another class', async () => {
+    await seed({
+      studentStatus: 'approved',
+      studentClassId: 'class-z',
+      programClassIds: ['class-a'],
+    });
+    await assertFails(getDoc(doc(studentDb(), 'publicLessons/l1')));
+  });
+
+  it('still denies the active projection under exam mode for the student class', async () => {
+    await seed(approvedInClassA);
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'settings/studentAccess'), {
+        ownerUid: OWNER_UID,
+        studentPortalEnabled: true,
+        newStudentRequestsEnabled: false,
+        examMode: { enabled: true, scope: 'all' },
+      });
+    });
+    await assertFails(getDoc(doc(studentDb(), 'publicLessons/l1')));
+  });
+
+  it('owner reads active, stale and staging projections alike', async () => {
+    await seed({ programClassIds: [] });
+    await addProjection('l-stale', 'i0');
+    await addProjection('l-staging', 'i2');
+    await assertSucceeds(getDoc(doc(ownerDb(), 'publicLessons/l1')));
+    await assertSucceeds(getDoc(doc(ownerDb(), 'publicLessons/l-stale')));
+    await assertSucceeds(getDoc(doc(ownerDb(), 'publicLessons/l-staging')));
   });
 });

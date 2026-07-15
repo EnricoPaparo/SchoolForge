@@ -4,7 +4,10 @@ import type { PublicLessonDoc, ProgramDoc } from '../../../types/firestore.js';
 import { getOwnStudentDoc } from '../students/studentsService.js';
 import { normalizeLessonContent } from './lessonContentSize.js';
 
-export type StudentProgram = Pick<ProgramDoc, 'title' | 'classIds'> & { id: string };
+export type StudentProgram = Pick<ProgramDoc, 'title' | 'classIds'> & {
+  id: string;
+  activeImportId: string | null;
+};
 /**
  * `content` is normalized to `string | null` (never `undefined`): a legacy
  * `publicLessons` doc written before M3F-08 has no `content` field, and the
@@ -49,15 +52,33 @@ export async function loadStudentLessons(
   const programs: StudentProgram[] = programsSnap.docs
     .map((d) => {
       const data = d.data() as ProgramDoc;
-      return { id: d.id, title: data.title, classIds: data.classIds ?? [] };
+      return {
+        id: d.id,
+        title: data.title,
+        classIds: data.classIds ?? [],
+        activeImportId: data.activeImportId ?? null,
+      };
     })
     .sort((a, b) => a.title.localeCompare(b.title));
 
   const lessonsByProgram: Record<string, StudentLesson[]> = {};
   await Promise.all(
     programs.map(async (program) => {
+      // A program with no active import has no visible projection: skip the
+      // query entirely (an empty lesson list), rather than reading stale/legacy
+      // projections that no longer belong to any active import. The Security
+      // Rule enforces the same `importId == activeImportId` constraint
+      // server-side (HARD-02B-1).
+      if (!program.activeImportId) {
+        lessonsByProgram[program.id] = [];
+        return;
+      }
       const lessonsSnap = await getDocs(
-        query(collection(db, 'publicLessons'), where('programId', '==', program.id)),
+        query(
+          collection(db, 'publicLessons'),
+          where('programId', '==', program.id),
+          where('importId', '==', program.activeImportId),
+        ),
       );
       lessonsByProgram[program.id] = lessonsSnap.docs
         .map((d) => {

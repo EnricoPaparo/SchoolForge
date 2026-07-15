@@ -88,6 +88,18 @@ service cloud.firestore {
         );
     }
 
+    // --- publicLessons active-import helper (HARD-02B-1) ---
+    // Cross-document read of the parent program's `activeImportId`. A projection
+    // is visible to a student only when its own `importId` equals this value, so
+    // staging or superseded/stale projections are never readable by a non-owner
+    // — not even via a direct get() with a known id. get() is memoized within a
+    // single rule evaluation, so reusing this alongside the classIds get() on
+    // the same program path does not add a billed read.
+    function programActiveImportId(programId) {
+      return get(/databases/$(database)/documents/programs/$(programId)).data
+        .get('activeImportId', null);
+    }
+
     // --- M3-full submission helpers (M3F-03) ---
     // Cross-document get() bypasses the read rules on /verifications/{docId}
     // itself (a student is never allowed a direct read there) — get()/exists()
@@ -353,10 +365,20 @@ service cloud.firestore {
     // lesson is never visible to a student whose class is currently
     // blocked, even though the underlying program document might otherwise
     // still list their classId.
+    // HARD-02B-1: a non-owner may read a projection ONLY if its own
+    // `importId` equals the parent program's current `activeImportId`. This is
+    // the security boundary (the UI query filter is not): staging and
+    // superseded/stale projections are denied to students even on a direct
+    // get() with a known id, and a list query MUST constrain `importId`
+    // (Firestore validates a list only against fields the query filters on —
+    // the student query filters programId AND importId, see
+    // studentLessonsService.ts). The owner keeps full read (active, staging and
+    // legacy/stale alike) via the isOwner() branch.
     match /publicLessons/{lessonId} {
       allow read: if isOwner()
         || (
           exists(/databases/$(database)/documents/programs/$(resource.data.programId))
+          && resource.data.importId == programActiveImportId(resource.data.programId)
           && isClassmateOf(
                get(/databases/$(database)/documents/programs/$(resource.data.programId))
                  .data.get('classIds', []))

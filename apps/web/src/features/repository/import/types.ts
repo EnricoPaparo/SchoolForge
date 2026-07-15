@@ -49,6 +49,8 @@ export interface LessonPayload {
   data: {
     ownerUid: string;
     importId: string;
+    /** Import-scoped id of this lesson's publicLessons projection (HARD-02B-1). */
+    publicLessonId: string;
     udaDir: string;
     path: string;
     filename: string;
