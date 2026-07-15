@@ -5,9 +5,9 @@
 
 > **Convenzioni.** I comandi shell sono pensati per essere **copiabili in PowerShell (Windows)** oltre che in bash/zsh: usano solo la Firebase CLI / gcloud, che sono identiche tra le shell. Dove serve una variabile o un percorso, si usa un **file** (`.env.local`) invece di export di shell, così non cambia nulla tra PowerShell e bash. Ogni passaggio che **non** ha un comando CLI verificato è marcato **[Console]** ed è da fare a mano dall'interfaccia web.
 >
-> **Stato ambienti oggi.** Il progetto Firebase **`schoolforge-prod` esiste già**. Tuttavia `.firebaserc` espone attualmente **solo** l'alias `dev → schoolforge-dev`: l'**alias `prod` non è configurato**. Il **provisioning effettivo** dei servizi PROD (app web, Authentication, Firestore, Storage, Functions, Hosting) **non è verificato** e **nessun deploy PROD è stato eseguito**. PROD **non è operativo né autorizzato** finché il **Gate GHARD** non è superato. Ovunque sotto, "PROD" indica il progetto `schoolforge-prod` esistente ma **con servizi/configurazione/deploy da verificare prima dell'uso**.
+> **Stato ambienti oggi.** Il progetto Firebase **`schoolforge-prod` esiste già**, ma `.firebaserc` espone solo `dev → schoolforge-dev`: l'alias `prod` non è configurato, i servizi PROD non sono verificati e nessun deploy PROD è stato eseguito. Il Gate GHARD è superato, ma **non autorizza automaticamente PROD**: provisioning e deploy richiedono una futura autorizzazione esplicita. Ovunque sotto, "PROD" indica il progetto esistente ma non operativo.
 >
-> **Nota residenza dati (HARD-F02, aperta).** La region reale delle risorse **non** è ancora riconciliata con la documentazione (vedi `hardening-audit-v1.md` §5 HARD-F02): su DEV il bucket Storage risulta `us-central1`, mentre parte della documentazione dichiara `europe-west8`/Milano. Questo runbook **non** assume una region specifica; la scelta/verifica della region è parte di HARD-01 (F02), non di questo task.
+> **Nota residenza dati (HARD-F02, risolto).** DEV: Firestore `europe-west8`, Storage/Function `us-central1`. PROD: target `europe-west8` con co-locazione, da verificare prima del provisioning; nessun dato DEV sarà migrato. Il Gate GHARD non autorizza automaticamente servizi o deploy PROD.
 
 ---
 

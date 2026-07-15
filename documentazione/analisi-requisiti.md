@@ -398,7 +398,7 @@ Il Modulo 3 è diviso in **M3-lite** (§10.1, deciso e in arrivo) e **M3-full** 
 
 **NFR-INT-02.** I log di audit non sono modificabili dalla UI ordinaria e non devono contenere la risposta completa dello studente.
 
-**NFR-INT-03.** Regione **target** per PROD: Firestore, Storage e Functions in **UE** (Milano `europe-west8` ove il servizio lo supporta), da co-locare prima del provisioning. Stato reale su DEV: Storage e Function gateway in `us-central1` (verificato), regione Firestore DEV non ancora verificata — riconciliazione tracciata come HARD-F02 (`evidenze/hard-01c-region-matrix.md`).
+**NFR-INT-03.** Target PROD: Firestore, Storage e Functions in `europe-west8`, co-locati previa verifica di supporto. DEV usa Storage/Function `us-central1` e Firestore `europe-west8` (verificati). Nessun dato DEV viene migrato; HARD-F02 è risolto (`evidenze/hard-01c-region-matrix.md`).
 
 **NFR-INT-04.** I Markdown e gli asset in Cloud Storage sono portabili e protetti dalla ridondanza nativa di Storage; non è previsto un job di backup dedicato. Firestore è esportabile on-demand tramite un comando manuale dalla pagina impostazioni. RPO best-effort (export manuale); RTO non garantito in V1.
 

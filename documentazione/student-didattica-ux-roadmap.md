@@ -1,6 +1,6 @@
 # SDUX — Didattica studente
 
-**Stato:** SDUX-01 implementato; **SDUX-02 hardening automatico completato** (preflight import, parità responsive verificata via codice/test, copertura Rules confermata, checklist DEV predisposta). **Gate manuale DEV ancora da confermare dal docente** — vedi [evidenze/sdux-02-checklist-dev.md](evidenze/sdux-02-checklist-dev.md).
+**Stato:** SDUX-01 e SDUX-02 completati; hardening automatico e smoke manuale DEV confermati dal docente, inclusa Modalità verifica — vedi [evidenze/sdux-02-checklist-dev.md](evidenze/sdux-02-checklist-dev.md).
 
 ## Obiettivo
 
@@ -26,7 +26,7 @@ Offrire allo studente la stessa architettura visiva della Didattica docente — 
 - nessuna scheda Domande, azione CRUD, import/export, riordino o accesso Storage;
 - renderer Markdown spostato fra i componenti condivisi, così il portale studente non importa codice docente.
 
-## SDUX-02 — Hardening automatico completato; Gate manuale DEV pendente
+## SDUX-02 — Hardening e Gate manuale DEV completati
 
 **Hardening automatico (completato in questa fase, senza modifiche a codice/Rules):**
 

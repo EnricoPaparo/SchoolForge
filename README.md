@@ -18,11 +18,12 @@ Il flusso completo è operativo e testato (suite automatica estesa + smoke test 
 | PDF studente senza soluzioni (generato nel browser) | ✅ funzionante |
 | Dashboard prontezza repository | ✅ funzionante |
 | Portale studente Google, read-only (M3-lite) | ✅ funzionante — login Google, StudentShell, Lezioni e Verifiche filtrate per classe, approvazione studenti, PDF verifica studente |
-| Didattica studente read-only (SDUX) | 🚧 SDUX-01 implementato — libreria corsi + workspace corso/UDA/lezione su sole proiezioni pubbliche; resta smoke/Gate SDUX-02 |
+| Didattica studente read-only (SDUX) | ✅ libreria corsi + workspace corso/UDA/lezione su sole proiezioni pubbliche; modalità verifica e flussi DEV verificati |
 | Repository Editor (RE) | ✅ funzionante — crea/modifica/riordina/elimina (con blocco protetto) UDA e lezioni, export ZIP coerente e reimportabile |
 | Question Editor (QE) — sezione "Domande" | ✅ funzionante — crea/modifica/elimina pool e domande Markdown-first, questionIndex coerente, picker aggiornato |
 | Portale digitale con consegna online (M3-full) | ✅ completato — avvio online, bozza, consegna immutabile, modalità verifica, monitor docente; Gate G5 superato |
 | Correzione e export risultati (M4) | ✅ completato — correzione/restituzione, ciclo di vita, Registro Correzioni, export CSV ed export PDF (M4-00→M4-04); Markdown rinviato; **Gate G6 superato** (vedi `documentazione/evidenze/g6-m4-checklist-finale.md`) |
+| Hardening finale V1 | ✅ **Gate GHARD superato** — 0 P0/P1, P2 risolti, residui P3 accettati |
 | Correzione AI (M5) | ❌ fuori scope V1 |
 
 **Stato:** Repository Editor (RE-00 → RE-07), Question Editor (QE-00 → QE-05) e M3-full sono completi e stabili per uso DEV/manuale; Gate G5 superato per M3-full. Vedi `documentazione/repository-editor-roadmap.md`, `documentazione/question-editor-roadmap.md`, `documentazione/m3-full-roadmap.md` e `documentazione/evidenze/g5-m3-full-checklist-finale.md`.
@@ -64,7 +65,8 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 | [Question Editor](documentazione/question-editor-roadmap.md) | Roadmap QE-00–QE-05: editor pool domande Markdown-first, senza reimport ZIP. |
 | [M3-full](documentazione/m3-full-roadmap.md) | Specifica M3-full (verifiche online, consegne, monitor e modalità verifica): modello dati, Security Rules, UX, roadmap M3F-00→M3F-11. |
 | [Didattica (DUX)](documentazione/didattica-ux-roadmap.md) | Redesign UX del workspace docente: Didattica ha assorbito Corsi/Lezioni/Domande, Classi è ora una scheda di Studenti, Verifiche usa la creazione inline e la shell adotta header unico, Template restaurato e aurora sobria. **DUX-00→10A completati; Gate GDUX superato (PASS)** — vedi [evidenze/gdux-checklist-finale.md](documentazione/evidenze/gdux-checklist-finale.md). |
-| [Didattica studente (SDUX)](documentazione/student-didattica-ux-roadmap.md) | Versione read-only della Didattica su proiezioni pubbliche: **SDUX-01 implementato; smoke e Gate Modalità verifica SDUX-02 pendenti.** |
+| [Didattica studente (SDUX)](documentazione/student-didattica-ux-roadmap.md) | Versione read-only della Didattica su proiezioni pubbliche: implementata e verificata su DEV, inclusa Modalità verifica. |
+| [Gate GHARD](documentazione/evidenze/ghard-checklist-finale.md) | Chiusura hardening V1: finding, evidenze automatiche/manuali, rischi residui accettati e confine PROD. |
 
 ## Moduli di delivery
 
@@ -77,7 +79,7 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 7. **M4 — Correzione ed export** ✅ *(dipende da M3-full, completato)*: correzione manuale, restituzione studente, ciclo di vita, Registro Correzioni, export CSV ed export PDF (M4-00→M4-04, Markdown rinviato). **Gate G6 superato** — vedi [evidenze/g6-m4-checklist-finale.md](documentazione/evidenze/g6-m4-checklist-finale.md).
 8. **M5 — Correzione AI** *(fuori scope V1 / pianificato per V2)*: proposte assistite, approvazione massiva, correzione automatica opt-in.
 9. **Didattica (DUX)** ✅ *(DUX-00→10A implementati; Gate GDUX superato)*: workspace docente unico che ha assorbito Corsi, Lezioni e Domande riusando service e dati RE/QE; include libreria corsi, editor contenuti/pool, organizzazione, filtri e UI responsive. Gate GDUX superato — vedi [evidenze/gdux-checklist-finale.md](documentazione/evidenze/gdux-checklist-finale.md). Vedi [didattica-ux-roadmap.md](documentazione/didattica-ux-roadmap.md).
-10. **Didattica studente (SDUX)** 🚧: SDUX-01 implementa libreria corsi e consultazione corso/UDA/lezione in sola lettura, senza componenti/service docente, pool o Storage; SDUX-02 chiuderà smoke DEV e Gate Modalità verifica.
+10. **Didattica studente (SDUX)** ✅: libreria corsi e consultazione corso/UDA/lezione in sola lettura, senza componenti/service docente, pool o Storage; Modalità verifica e flussi DEV verificati.
 
 V1 comprende M1, M2, M3-lite, RE, QE e M3-full (tutti implementati, Gate G5 superato per M3-full). M4 è completato: correzione/restituzione, ciclo di vita, Registro Correzioni, export CSV ed export PDF (M4-00→M4-04, Markdown rinviato); **Gate G6 superato**. Il progetto può fermarsi dopo ogni modulo mantenendo un prodotto utile. M5 (AI) resta non implementato, rinviato alla V2. Didattica DUX-00→10A è implementata e il Gate GDUX è superato (PASS).
 
@@ -101,7 +103,7 @@ PDF generati nel browser (@react-pdf/renderer) — nessun server coinvolto, ness
 
 ## Firebase ed esercizio
 
-Il Docente possiede progetto e billing Firebase. **Regioni (residenza dati):** su DEV (`schoolforge-dev`) Storage e la Function gateway sono in `us-central1` (verificato), mentre la regione Firestore DEV non è ancora verificata; per **PROD** la regione target è **UE** (da decidere e co-locare prima del provisioning). Dettaglio e stato in [`documentazione/evidenze/hard-01c-region-matrix.md`](documentazione/evidenze/hard-01c-region-matrix.md) (finding HARD-F02). I Markdown e gli asset in Cloud Storage sono portabili e protetti dalla ridondanza nativa di Storage; Firestore è esportabile on-demand dalle impostazioni. RPO V1: best-effort (export manuale del Docente), RTO non garantito. Vedi C-01.
+Il Docente possiede progetto e billing Firebase. **Regioni:** DEV usa Firestore `europe-west8` e Storage/Function gateway `us-central1` (verificati); il target PROD è `europe-west8` con co-locazione, previa verifica di compatibilità prima del provisioning. Nessun dato DEV sarà migrato. Dettaglio in [`documentazione/evidenze/hard-01c-region-matrix.md`](documentazione/evidenze/hard-01c-region-matrix.md). RPO V1: best-effort (export manuale), RTO non garantito. Vedi C-01.
 
 ## Prossimo passo
 
@@ -112,3 +114,5 @@ Il Docente possiede progetto e billing Firebase. **Regioni (residenza dati):** s
 **M4 — Correzione ed export — completato (Gate G6 superato).** Il docente corregge, completa e restituisce; lo studente consulta la propria restituzione. La tabella Consegne online è il Registro Correzioni ed esporta CSV e PDF interamente nel browser (M4-00→M4-04; Markdown rinviato). Concept UX in [documentazione/m4-correzione-ux-concept.md](documentazione/m4-correzione-ux-concept.md); evidenze del gate in [documentazione/evidenze/g6-m4-checklist-finale.md](documentazione/evidenze/g6-m4-checklist-finale.md). **M5 — Correzione AI** resta non implementato, rinviato alla V2.
 
 **Didattica (DUX) — DUX-00→10A implementati.** Il workspace docente unificato ha sostituito Corsi/Lezioni/Domande; Classi è stata assorbita in Studenti, Verifiche è stata uniformata e la shell finale usa header unico responsive, Template a griglia e aurora statica. Sono inclusi editing coordinato dei metadata corso/anno e stabilità finale di azioni, tabelle ed export. **Gate GDUX superato (PASS)** — vedi [documentazione/evidenze/gdux-checklist-finale.md](documentazione/evidenze/gdux-checklist-finale.md). Vedi [documentazione/didattica-ux-roadmap.md](documentazione/didattica-ux-roadmap.md) e il prototipo [documentazione/prototipi/didattica-workspace.html](documentazione/prototipi/didattica-workspace.html).
+
+**Hardening V1 — completato.** Gate GHARD superato: operatività/costi, regioni, security header, accessibilità e import resiliente verificati; residui P3 accettati con soglie. Prossimo sviluppo: **M5-00**, contratto minimale per la correzione AI assistita e batch.
