@@ -1,7 +1,7 @@
 # M5 — Correzione assistita da IA · Roadmap e contratto (M5-00)
 
 **Data:** 15 luglio 2026 · **Fase:** M5-00 — **solo contratto, cost model e documentazione**.
-**Natura:** progettazione evidence-based. **Nessuna implementazione** in questa fase: nessuna Cloud Function, nessun provider AI, nessuna UI applicativa, nessun nuovo documento Firestore, nessuna Security Rule, nessun indice, nessuna dipendenza, nessun deploy.
+**Natura:** progettazione evidence-based. **Nessuna implementazione** in questa fase: nessuna Cloud Function, nessun provider IA, nessuna UI applicativa, nessun nuovo documento Firestore, nessuna Security Rule, nessun indice, nessuna dipendenza, nessun deploy.
 **Codice ispezionato (sola lettura):** `types/firestore.ts` (`SubmissionDoc`, `CorrectionDoc`, `QuestionEvaluation`, `CorrectionEventDoc`, `CorrectionReturnDoc`), `features/repository/corrections/*` (`correctionContract.ts`, `correctionsService.ts`, `correctionWorkspaceLoader.ts`, `correctionRegisterExport.ts`), `features/repository/verifications/submissionsMonitorService.ts`, `features/teacher/VerificationsView.tsx` (tabella «Consegne online» + apertura `CorrectionWorkspace`), `firestore.rules` (matrice `corrections`/`correctionEvents`/`correctionReturns`).
 
 > **Questa fase supera** la vecchia roadmap generica **M5-A..E** e i contratti stale `proposeCorrection`/`approveCorrection`/`bulkApproveCorrections`/`enableAutomaticCorrection` (che ipotizzavano una «proposta IA» persistente e una correzione automatica). Il nuovo modello è: **una sola azione batch «Correggi con IA» che scrive direttamente nelle `evaluations` di correzioni `in_progress`**, restando bozze modificabili dal docente. Vedi §14 (provider-agnostic) e §16 (roadmap M5-00→M5-05).
@@ -40,18 +40,20 @@ La tabella «Consegne online» (oggi in `VerificationsView.tsx`, alimentata da `
 
 ### 2.2 Passi del comando «Correggi con IA»
 1. Il docente seleziona una o più consegne e preme **Correggi con IA** (unico pulsante, in toolbar).
-2. **Preflight (client + server-side di stima):** la UI calcola l'insieme eleggibile e mostra un **dialog di conferma** con:
+2. **Preflight/preview (chiamata server-side, senza provider):** una prima invocazione Function `onCall` calcola l'insieme eleggibile server-side (§4) e restituisce alla UI i dati per un **dialog di conferma** con:
    - consegne **selezionate** (n.);
-   - consegne **realmente correggibili** (n.);
-   - consegne **escluse** e **motivo** (per consegna: es. «non consegnata», «già completata», «nessuna domanda aperta da valutare», «oltre i limiti di dimensione»);
+   - consegne **realmente elaborabili** (n.);
+   - consegne **escluse** e **motivo** (per consegna: es. «non consegnata», «già completata», «nessuna domanda ancora valutabile», «oltre i limiti di dimensione»);
    - **domande aperte** che saranno inviate all'IA (n.);
    - **domande chiuse** che saranno valutate **deterministicamente** (n., 0 token);
+   - **consegne con sole chiuse** elaborabili (n., 0 chiamate provider);
    - **stima token/costo** (input+output) e **costo massimo stimato** dell'operazione;
    - **modello/provider** utilizzato (dal feature flag/config server; §14–§15).
+   Il **preflight non chiama il provider e non consuma token** (§4, §12).
 3. Il docente **conferma** o annulla. Nessuna spesa avviene prima della conferma.
-4. Alla conferma, per ogni consegna eleggibile il server:
-   - valuta le **chiuse** in modo deterministico;
-   - invia **una sola richiesta provider per consegna** con **tutte** le aperte eleggibili;
+4. Alla conferma, una **seconda invocazione Function** `onCall` esegue l'operazione. Il server **ripete tutte le verifiche di eleggibilità** (§4): se i dati di una consegna sono cambiati dopo il preview, quella consegna è **esclusa con motivo** e **non** elaborata con una stima ormai vecchia. Per ogni consegna eleggibile confermata:
+   - valuta le **chiuse** in modo deterministico (§5.1);
+   - se e solo se restano **aperte** eleggibili, invia **una sola richiesta provider per consegna** con **tutte** quelle aperte; una consegna con **sole chiuse** non genera **alcuna** chiamata provider;
    - valida l'output (§7–§8) e scrive i risultati nelle `evaluations` della correzione `in_progress` (creandola se assente, in stato `in_progress`).
 5. **Risultato finale** mostrato al docente: **riuscite / escluse / fallite**, per consegna, con motivo sintetico. **Nessun successo parziale è nascosto**: una consegna in cui alcune aperte falliscono resta con quelle domande **non valutate** (`points: null`) e viene segnalata come parzialmente riuscita.
 6. Le correzioni restano **`in_progress`**: il docente le apre, rivede, modifica, completa o restituisce con il flusso M4 esistente.
@@ -66,13 +68,15 @@ Riutilizzano i **service M4 esistenti** (`completeCorrection`, `reopenCorrection
 Gli stati di dominio **non cambiano**: `SubmissionDoc.status` (`draft|submitted`), `CorrectionDoc.status` (`in_progress|completed|returned`), e la UI status `Da correggere` derivata (`deriveCorrectionUiStatus`) quando non esiste ancora una `CorrectionDoc`. M5 **non introduce nuovi stati**.
 
 ### 3.1 Eleggibilità «Correggi con IA» (per consegna)
-Una consegna è **correggibile con IA** se e solo se:
+Una consegna è **elaborabile** dal comando se e solo se:
 - la submission è `status == 'submitted'` (mai una bozza studente);
 - la correzione, se esiste, è `status == 'in_progress'` (mai `completed`/`returned` → prima va riaperta con l'azione dedicata);
-- esiste **almeno una domanda aperta non ancora valutata** (`tipo == 'aperta'` e `evaluations[order].points === null`);
+- esiste **almeno una domanda ancora valutabile**, cioè `evaluations[order].points === null`, **di qualunque tipo** — aperta **oppure** chiusa;
 - rientra nei **limiti prudenti** di dimensione (§12): caratteri risposta, numero domande, token stimati.
 
-Sono **escluse con motivo**: non consegnate; già `completed`/`returned`; senza aperte da valutare (solo chiuse → valutate deterministicamente ma nessuna chiamata IA); oltre i limiti.
+**Consegne con sole domande chiuse non valutate sono elaborabili** (decisione approvata): vengono valutate **deterministicamente** (§5.1), con **zero chiamate provider** e **zero token**, e il risultato è salvato nella normale correzione `in_progress`. La presenza di domande aperte **non** è un prerequisito.
+
+Sono **escluse con motivo** solo quando: non consegnate; correzione già `completed`/`returned`; **nessuna domanda ancora valutabile** (ogni `order` ha già `points !== null`); oltre i limiti prudenti (§12).
 
 ### 3.2 Regola di non-sovrascrittura
 - Una domanda **già valutata** (dal docente o da una precedente esecuzione IA — `points !== null`) **non viene mai sovrascritta**.
@@ -91,24 +95,40 @@ Sono **escluse con motivo**: non consegnate; già `completed`/`returned`; senza 
 
 Tre livelli, con confini netti; il provider è dietro il gateway e **non è mai** raggiungibile dal client.
 
+**Decisione architetturale (M5-00, vincolante).** Il gateway è realizzato con **Cloud Functions v2 `onCall`**, con **due chiamate server-side** per ogni operazione batch:
+1. **`aiCorrectionPreview`** — chiamata di **preflight/preview** eseguita **prima** della conferma. Calcola eleggibilità, conteggi e stima token/costo. **Non chiama il provider** e **non consuma token IA**.
+2. **`aiCorrectionRun`** — chiamata di **esecuzione** eseguita **dopo** la conferma. Ricontrolla l'eleggibilità e applica le valutazioni.
+
+Quindi **esattamente 2 invocazioni Function per operazione batch** (preview + run). Durante l'esecuzione: **al massimo una chiamata provider per ogni consegna che contiene domande aperte eleggibili**; consegne con **sole chiuse** → **nessuna** chiamata provider. Il gateway processa le consegne con **concorrenza limitata e configurabile** (§9).
+
 ```
  UI (VerificationsView, batch toolbar)
-   │  selezione + preflight (stima locale) + conferma
+   │  1) selezione → aiCorrectionPreview (onCall)  ── nessun provider, 0 token
    ▼
- Cloud Function `aiCorrectionGateway` (HTTPS onCall/onRequest, scale-to-zero)
+ aiCorrectionPreview (Cloud Function v2 onCall, scale-to-zero)
+   │  verifica ID token→owner; rilegge submission+projection/snapshot (Admin SDK)
+   │  calcola eleggibilità + conteggi aperte/chiuse + stima token/costo
+   ▼
+ UI  ── dialog di conferma (selezionate/elaborabili/escluse+motivo/aperte/chiuse/stima/modello)
+   │  2) conferma → aiCorrectionRun (onCall), stesso requestId
+   ▼
+ aiCorrectionRun (Cloud Function v2 onCall, scale-to-zero)
    │  1. verifica Firebase ID token → owner
-   │  2. legge server-side (Admin SDK) submission + publishedProjection/teacherSnapshot
-   │  3. valuta chiuse (deterministico) + costruisce input chiuso per le aperte
-   │  4. UNA richiesta provider per consegna → output strutturato
-   │  5. valida output (schema rigido + range punteggi)
-   │  6. scrive evaluations nella CorrectionDoc in_progress (Admin SDK, batch)
-   │  7. scrive audit minimale
+   │  2. crea/aggiorna aiCorrectionRuns/{requestId} (idempotenza + stato + audit)
+   │  3. RILEGGE server-side submission + publishedProjection/teacherSnapshot
+   │  4. RIPETE l'eleggibilità (§3): consegna con dati cambiati dal preview → esclusa con motivo
+   │  5. valuta chiuse (deterministico, 0 token) — §5.1
+   │  6. SOLO se restano aperte eleggibili: UNA richiesta provider per consegna
+   │  7. valida output (schema rigido + range punteggi 0..maxPoints, step 0,25)
+   │  8. scrive evaluations nella CorrectionDoc in_progress (Admin SDK, batch)
+   │  9. aggiorna aiCorrectionRuns/{requestId} (conteggi/costi/esito) — §10
    ▼
  Firestore: corrections/{submissionId} (in_progress, evaluations aggiornate)
-            aiCorrectionAudit/{...} (metadati operazione, MAI contenuti)
+            aiCorrectionRuns/{requestId}  (stato+idempotenza+audit, MAI contenuti)
 ```
 
-- **La UI non invia mai testi** (risposte/domande/soluzioni) al gateway: invia **solo ID autorizzati** (`verificationId`, elenco di `submissionId`, `requestId`, eventuali `order` target). Il gateway **rilegge server-side** submission, snapshot e soluzioni tramite quegli ID, verificando ownership. Questo impedisce al client di far passare testo arbitrario spacciandolo per parte della verifica (§11).
+- **La UI non invia mai testi** (risposte/domande/soluzioni) al gateway: invia **solo ID autorizzati** (`verificationId`, elenco di `submissionId`, `requestId`, eventuali `order` target). Entrambe le Function **rileggono server-side** submission, snapshot e soluzioni tramite quegli ID, verificando ownership. Questo impedisce al client di far passare testo arbitrario spacciandolo per parte della verifica (§11).
+- **Ricontrollo al `run`:** l'eleggibilità è verificata **di nuovo** al momento dell'esecuzione, non fidandosi del preview: una consegna i cui dati sono cambiati (es. domanda valutata nel frattempo, correzione completata, submission non più coerente) è **esclusa con motivo** e non elaborata con una stima ormai vecchia.
 - **La scrittura sulle `evaluations` passa per le stesse invarianti M4** (`assertValidQuestionPoints`, `computeCorrectionTotals`, transizioni). Il gateway **non** completa né restituisce: lascia `status == 'in_progress'`.
 - **Riuso, non duplicazione:** il gateway server-side replica le regole pure di `correctionContract.ts` (range, step 0,25, `isCorrectionComplete`) come **unico** punto di validazione server; la UI continua a usare i service M4 client per Completa/Riapri/Restituisci.
 
@@ -117,10 +137,15 @@ Tre livelli, con confini netti; il provider è dietro il gateway e **non è mai*
 ## 5. Domande chiuse deterministiche e aperte assistite
 
 ### 5.1 Chiuse — deterministico, 0 token
-Le domande `chiusa_singola`/`chiusa_multipla` hanno soluzione nota nello snapshot docente (`teacherSnapshot`/`publishedSnapshot`). La correttezza è calcolabile **localmente sul server** confrontando `SubmissionDoc.answers[order]` con la soluzione frozen:
-- match esatto (singola) / insiemistico (multipla, con eventuale penalità come da regola prodotto già usata altrove) → `points` deterministico in `[0, maxPoints]`, multiplo di 0,25;
-- **nessuna chiamata provider**, **nessun token**.
-Le chiuse sono valutate solo se `points === null` (non sovrascrive il docente).
+Le domande `chiusa_singola`/`chiusa_multipla` hanno soluzione nota nello snapshot docente (`teacherSnapshot`/`publishedSnapshot`). La correttezza è calcolabile **localmente sul server** confrontando `SubmissionDoc.answers[order]` con la soluzione frozen. **Regola minimale M5 (tutto-o-niente):**
+- **`chiusa_singola`:** risposta **esatta** → `maxPoints`; qualunque altra risposta (errata o vuota) → `0`.
+- **`chiusa_multipla`:** **confronto insiemistico esatto**, indipendente dall'ordine, tra l'insieme delle opzioni selezionate e l'insieme corretto:
+  - insieme **esattamente uguale** → `maxPoints`;
+  - risposta **incompleta**, contenente **opzioni errate**, o **vuota** → `0`.
+- **Nessuna penalità né punteggio parziale** in M5. Un eventuale scoring parziale futuro è **fuori scope** e richiede una **decisione prodotto separata**.
+- **Nessuna chiamata provider**, **nessun token**.
+
+Le chiuse sono valutate **solo se** `points === null` (non sovrascrive mai il docente né una valutazione precedente).
 
 ### 5.2 Aperte — assistite dall'IA
 Solo le aperte con `points === null` sono inviate al provider, **tutte in un'unica richiesta per consegna**. L'input è **chiuso** (§6): testo domanda, criterio/soluzione di riferimento, `maxPoints`, risposta studente — nient'altro. L'output è **strutturato e validato** (§7–§8).
@@ -202,7 +227,7 @@ Comportamento su output non conforme:
 
 ## 9. Idempotenza, retry, timeout e successi parziali
 
-- **`requestId` per operazione/consegna:** ogni chiamata batch genera un `requestId`; il gateway lo registra nell'audit. Un retry con lo **stesso** `requestId` non deve produrre doppie valutazioni: la scrittura è **idempotente** perché (a) non sovrascrive domande già valutate (§3.2) e (b) l'audit consente di riconoscere un'operazione già applicata.
+- **`requestId` per operazione:** ogni operazione batch genera un `requestId`, materializzato in **`aiCorrectionRuns/{requestId}`** (§10). Un retry con lo **stesso** `requestId` non deve produrre doppie valutazioni: la scrittura è **idempotente** perché (a) non sovrascrive domande già valutate (§3.2) e (b) il documento `aiCorrectionRuns/{requestId}` consente di riconoscere un'operazione già applicata.
 - **Retry:** consentito a livello di **singola consegna** fallita; poiché l'IA valuta solo `points === null`, un retry completa solo ciò che manca, senza rifare il lavoro già scritto.
 - **Timeout:** timeout provider prudente per richiesta; allo scadere la consegna è **fallita** (nessuna scrittura parziale della singola richiesta) e ritentabile.
 - **Successo parziale:** se in una consegna alcune aperte sono valutate e altre no, le valutate vengono scritte, le altre restano `null`; la consegna è marcata **parzialmente riuscita** nel risultato. **Mai** nascondere un successo o un fallimento parziale.
@@ -210,19 +235,31 @@ Comportamento su output non conforme:
 
 ---
 
-## 10. Audit minimale senza duplicazione dei contenuti
+## 10. `aiCorrectionRuns/{requestId}` — stato, idempotenza, audit e utilizzo
 
-Serve una traccia dell'operazione IA, **senza** duplicare risposte, soluzioni o feedback completi.
+Serve **un solo** documento operativo (futuro, **non creato in M5-00**), identificato dal `requestId` dell'operazione batch, che funge **contemporaneamente** da:
+- **stato dell'operazione batch** (in corso / completata / fallita);
+- **idempotency record** (un retry con lo stesso `requestId` riconosce l'operazione già applicata — §9);
+- **audit minimale** dell'operazione IA;
+- **contatore di utilizzo/costo**.
 
-Documento di audit (nome indicativo `aiCorrectionAudit/{autoId}`, **non creato in M5-00**), campi minimi:
-- `ownerUid`, `actorUid`, `requestId`, `timestamp`;
-- `verificationId`, `submissionId`;
-- `model`/`provider` usati;
-- **conteggi**: aperte inviate, aperte valutate, aperte scartate, chiuse deterministiche;
-- **token stimati/effettivi** e **costo stimato**;
-- **esito** per consegna (`succeeded|partial|failed`) e **motivo** sintetico degli scarti (codice, non testo).
+**`aiCorrectionRuns/{requestId}`** — **una sola collezione**, nessuna seconda collezione di audit IA, nessuna «proposta IA» persistente.
 
-**Vietato** nell'audit: testo delle risposte, testo delle soluzioni, feedback completo, dati personali. L'audit è owner-only. La granularità dettagliata (punteggio per domanda) vive già nelle `evaluations` della correzione: l'audit **non** la duplica.
+**Può contenere soltanto:**
+- `ownerUid`, `actorUid`;
+- `verificationId`;
+- `requestId`;
+- `status` della run;
+- `timestamp` (creazione/aggiornamento);
+- `provider`/`model`;
+- **conteggi** (aperte inviate/valutate/scartate, chiuse deterministiche, consegne elaborate/escluse/fallite);
+- **token/costo stimati ed effettivi**;
+- **esito sintetico per consegna** (`succeeded|partial|failed`);
+- **codici errore non sensibili**.
+
+**Non deve mai contenere:** testo delle risposte, testo delle domande, soluzioni, feedback, prompt, output grezzo del provider, nome/email dello studente.
+
+Il documento è **owner-only**. La granularità dettagliata (punteggio per domanda) vive già nelle `evaluations` della correzione: `aiCorrectionRuns` **non** la duplica.
 
 ---
 
@@ -247,12 +284,12 @@ Simboli: **C** = consegne eleggibili in un batch; **A** = aperte eleggibili medi
 | **Token (stima)** | Per consegna ≈ `T_in = overhead_prompt + Σ(len(domanda)+len(soluzione)+len(risposta))` e `T_out ≈ A × (token_punteggio + token_feedback)`. Il preflight stima e mostra input+output e un **costo massimo**. |
 | **Chiuse** | **0 token**: valutazione deterministica server-side. |
 | **Letture Firestore** | Per consegna: 1 submission + projection/snapshot (riletti server-side) + eventuale correction esistente. Nessun listener, nessun polling. |
-| **Scritture Firestore** | Per consegna: 1 update `corrections/{id}` (evaluations, batch) + 1 doc audit. Le altre azioni batch (Completa/Riapri/Restituisci) usano le scritture M4 già esistenti. |
-| **Invocazioni Cloud Functions** | 1 invocazione gateway per operazione batch (che itera le consegne server-side) **oppure** 1 per consegna, da decidere in M5-01/02; in entrambi i casi **scale-to-zero**, nessuna istanza sempre attiva. |
+| **Scritture Firestore** | Per consegna: 1 update `corrections/{id}` (evaluations, batch). Per operazione: 1 documento `aiCorrectionRuns/{requestId}` (creato e poi aggiornato con stato/conteggi/costi/esito). Le altre azioni batch (Completa/Riapri/Restituisci) usano le scritture M4 già esistenti. |
+| **Invocazioni Cloud Functions** | **Esattamente 2 per operazione batch**: 1 `aiCorrectionPreview` (preflight, **0 token**) + 1 `aiCorrectionRun` (esecuzione, itera le consegne server-side con concorrenza limitata). Cloud Functions v2 `onCall`, **scale-to-zero**, nessuna istanza sempre attiva. |
 | **Limiti batch (prudenti, valori definitivi = Human Gate §15)** | max **consegne per operazione**, max **aperte per consegna**, max **caratteri per risposta**, max **token per consegna**, max **token per operazione**. |
 | **Soglie di sicurezza spesa** | **budget massimo per singola operazione** e **budget giornaliero**: preflight blocca se la stima supera il tetto per operazione; il gateway rifiuta se il cumulato giornaliero supera il tetto. Valori definitivi = **Human Gate** (§15). |
 
-**Principi di costo:** scale-to-zero; nessun listener/polling aggiuntivo; una chiamata per consegna salvo impossibilità motivata; preflight e stima **prima** della conferma; feature flag per **disattivare completamente M5**; provider/modello **sostituibili** senza cambiare il dominio applicativo.
+**Principi di costo:** scale-to-zero; nessun listener/polling aggiuntivo; **al massimo una chiamata provider per consegna** (0 per consegne con sole chiuse); 2 invocazioni Function per operazione (preview senza token + run); concorrenza limitata e configurabile; preflight e stima **prima** della conferma; feature flag per **disattivare completamente M5**; provider/modello **sostituibili** senza cambiare il dominio applicativo.
 
 ---
 
@@ -261,7 +298,7 @@ Simboli: **C** = consegne eleggibili in un batch; **A** = aperte eleggibili medi
 | Dato | Persistenza |
 |---|---|
 | Punteggi/feedback generati dall'IA | **Persistiti** nelle normali `evaluations` di `corrections/{submissionId}` (bozza `in_progress`, modificabile). **Nessuna** struttura «proposta IA» separata. |
-| Audit operazione IA | **Persistito** (metadati/conteggi/costi/esito, §10), **senza** contenuti. |
+| `aiCorrectionRuns/{requestId}` (stato+idempotenza+audit+utilizzo) | **Persistito** (metadati/conteggi/costi/esito, §10), **senza** contenuti. |
 | Prompt costruito, risposta grezza del provider, testo risposte studente inviato | **Transitori**: vivono solo nell'esecuzione della Function, **non** salvati, **non** loggati. |
 | Stima costo/preflight | **Transitoria** (UI); solo i conteggi/costi finali finiscono nell'audit. |
 | Stato correzione | Invariato: resta `in_progress` fino ad azione umana esplicita. |
@@ -287,7 +324,7 @@ Questi punti **non** sono decisi in M5-00 e **non** vanno inventati:
 | HG-M5-1 | **Provider e modello** | Contratto provider-agnostic (§14). La scelta richiede conferma del docente e verifica di **disponibilità e costo attuali** su documentazione ufficiale. Nessun default fissato. Candidati di categoria «piccolo/economico» sono ammessi solo come esempi da verificare, non come default. |
 | HG-M5-2 | **Budget massimo per singola operazione** | Tetto di spesa oltre cui il preflight blocca la conferma. Valore da approvare. |
 | HG-M5-3 | **Budget giornaliero** | Tetto cumulato oltre cui il gateway rifiuta nuove operazioni. Valore da approvare. |
-| HG-M5-4 | **Retention minima dei metadati di audit** | Per quanto tempo conservare i doc di audit IA (solo metadati/conteggi/costi). Valore da approvare. |
+| HG-M5-4 | **Retention minima dei metadati di audit** | Per quanto tempo conservare i documenti `aiCorrectionRuns` (solo metadati/conteggi/costi). Valore da approvare. |
 
 Ulteriori limiti prudenti (max consegne/aperte/caratteri/token per operazione, §12) hanno **default prudenti proposti** ma i valori definitivi possono essere confermati insieme a HG-M5-2/3.
 
@@ -298,12 +335,14 @@ Ulteriori limiti prudenti (max consegne/aperte/caratteri/token per operazione, �
 | Pacchetto | Scope | Dipende da |
 |---|---|---|
 | **M5-00** *(questo doc)* | Contratto tecnico, UX batch, sicurezza, privacy, cost model. **Solo documentazione.** | M4 completato (Gate G6) |
-| **M5-01** | **Gateway** `aiCorrectionGateway` (Cloud Function scale-to-zero), **feature flag** globale, **Secret Manager** per la chiave, interfaccia `AiGrader` + **provider mock** deterministico. Nessuna UI applicativa. | M5-00, HG-M5-1 (per struttura config) |
-| **M5-02** | Valutazione **deterministica** delle chiuse + **IA** per le aperte (via mock), con validazione output/punteggi, idempotenza `requestId`, audit minimale. **Senza UI completa** (invocabile in test/dietro flag). | M5-01 |
-| **M5-03** | **UI batch:** checkbox per riga, **toolbar** con «Correggi con IA», **dialog di conferma** con stima costi, **risultato finale** (riuscite/escluse/fallite). Colonna **«Valutate»** al posto di «Punteggio». | M5-02 |
-| **M5-04** | **Azioni massive** Completa / Riapri / Restituisci sulle sole righe selezionate ed eleggibili, con riepilogo e risultato; riuso dei service M4. | M5-03 |
-| **M5-05** | **Provider reale su DEV**, smoke test, verifica audit/costi/sicurezza, **Gate G7** (IA assistita). | M5-04, HG-M5-1/2/3/4 |
+| **M5-01** | Le due Cloud Function v2 `onCall` **`aiCorrectionPreview`**/**`aiCorrectionRun`** (scale-to-zero), **feature flag** globale, interfaccia **provider-agnostic** `AiGrader` + **provider mock** deterministico. Può **preparare** la struttura di config/Secret Manager ma **non richiede né finge una secret reale**. **Nessuna** chiamata esterna. Nessuna UI applicativa. | M5-00 |
+| **M5-02** | Valutazione **deterministica** delle chiuse (incl. consegne con **sole chiuse**) + **IA** per le aperte **via mock**, con validazione output/punteggi, idempotenza `requestId`, `aiCorrectionRuns`. **Senza UI completa** (invocabile in test/dietro flag). **Nessuna** chiamata esterna (solo mock). | M5-01 |
+| **M5-03** | **UI batch:** checkbox per riga, **toolbar** con «Correggi con IA», **dialog di conferma** con stima costi, **risultato finale** (riuscite/escluse/fallite). Colonna **«Valutate»** al posto di «Punteggio». Sviluppabile e testabile **con il mock**. | M5-02 |
+| **M5-04** | **Azioni massive** Completa / Riapri / Restituisci sulle sole righe selezionate ed eleggibili, con riepilogo e risultato; riuso dei service M4. Sviluppabile e testabile **con il mock**. | M5-03 |
+| **M5-05** | **Provider reale su DEV**, smoke test, verifica audit/costi/sicurezza, **Gate G7** (IA assistita). **Prerequisiti bloccanti:** provider/modello, chiave in Secret Manager e budget reali. | M5-04, **HG-M5-1/2/3/4 (bloccanti qui)** |
 
+> **M5-01→M5-04 si sviluppano e testano interamente con il provider mock deterministico**, senza provider/modello reale, senza chiave reale e **senza alcuna chiamata esterna**. Provider, modello, Secret Manager e budget reali diventano **bloccanti solo prima di M5-05**. La Function in **modalità mock** deve essere **impossibile da confondere** con il provider reale (config esplicita, nessun fallback silenzioso al provider reale).
+>
 > **Gate G8** e la **correzione automatica** restano **fuori** da questa linea.
 
 ---
@@ -311,11 +350,11 @@ Ulteriori limiti prudenti (max consegne/aperte/caratteri/token per operazione, �
 ## 17. Criteri di accettazione per pacchetto
 
 - **M5-00 (DoD):** documento presente e coerente; vecchia roadmap M5-A..E e contratti stale superati; README/INDEX/piano/api-contract/architettura/sicurezza/decisioni allineati senza dichiarare implementato ciò che non lo è; `pnpm format:check` verde. Nessuna modifica a codice/Rules/schema/dipendenze.
-- **M5-01:** nessun invio possibile senza feature flag attivo e chiave valida; chiave assente dal client/repo/Firestore/log; provider mock sostituibile all'interfaccia `AiGrader`; gateway rifiuta chiamanti non-owner.
-- **M5-02:** chiuse valutate a 0 token; aperte valutate solo se `points === null`; ogni `points` scritto rispetta `0..maxPoints` e step 0,25; output non valido scartato senza corrompere la correzione; `requestId` rende il retry idempotente; audit senza contenuti.
-- **M5-03:** un solo pulsante «Correggi con IA» sopra la tabella; nessun pulsante per riga; conferma con selezionate/correggibili/escluse+motivo/aperte/chiuse/stima/modello; risultato finale con riuscite/escluse/fallite senza nascondere successi parziali; colonna «Valutate» `n/m`.
-- **M5-04:** Completa solo su interamente valutate e valide; Riapri solo su completed/returned; Restituisci solo su completed; ogni azione con riepilogo+risultato; nessuna restituzione automatica.
-- **M5-05:** provider reale solo su DEV dietro flag; smoke su casi reali; audit/costi osservabili entro le soglie; nessun web/retrieval/tool; evidenze per **G7**.
+- **M5-01:** due Function `onCall` `aiCorrectionPreview`/`aiCorrectionRun`; nessun invio possibile senza feature flag attivo; **provider mock deterministico** sostituibile all'interfaccia `AiGrader`; **nessuna secret reale richiesta né finta**, **nessuna chiamata esterna**; modalità mock non confondibile col provider reale; gateway rifiuta chiamanti non-owner.
+- **M5-02:** chiuse valutate a 0 token, **incluse le consegne con sole chiuse**; chiuse tutto-o-niente (§5.1); aperte valutate solo se `points === null`; ogni `points` scritto rispetta `0..maxPoints` e step 0,25; output non valido scartato senza corrompere la correzione; `requestId` rende il retry idempotente via `aiCorrectionRuns`; nessun contenuto in `aiCorrectionRuns`; **solo mock, nessuna chiamata esterna**.
+- **M5-03:** un solo pulsante «Correggi con IA» sopra la tabella; nessun pulsante per riga; conferma con selezionate/elaborabili/escluse+motivo/aperte/chiuse/consegne-sole-chiuse/stima/modello; risultato finale con riuscite/escluse/fallite senza nascondere successi parziali; colonna «Valutate» `n/m`; testabile con mock.
+- **M5-04:** Completa solo su interamente valutate e valide; Riapri solo su completed/returned; Restituisci solo su completed; ogni azione con riepilogo+risultato; nessuna restituzione automatica; testabile con mock.
+- **M5-05:** provider reale solo su DEV dietro flag; **prerequisiti bloccanti HG-M5-1/2/3/4 soddisfatti**; smoke su casi reali; audit/costi osservabili entro le soglie; nessun web/retrieval/tool; evidenze per **G7**.
 
 ---
 

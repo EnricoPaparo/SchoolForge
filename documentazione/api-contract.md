@@ -40,9 +40,9 @@ M3-lite non introduce Cloud Functions. Nella baseline corrente le Cloud Function
 
 | Funzione | Modulo | Motivo |
 |---|---|---|
-| `aiCorrectionGateway` (gateway IA; **progettato M5-00, non implementato**) | M5 | Richiede chiave API provider in Secret Manager; contratto provider-agnostic in §5. |
+| `aiCorrectionPreview` + `aiCorrectionRun` (gateway IA; **progettati M5-00, non implementati**) | M5 | Due Function `onCall` (preview senza provider + run); chiave provider in Secret Manager; contratto provider-agnostic in §5. |
 
-La specifica corrente di **M3-full** è client-only: usa Firebase SDK + Security Rules, `submissions/{id}` e `submissionReceipts/{id}`. Non introduce `startDigitalAttempt`/`continueDigitalAttempt`, cookie HttpOnly o Cloud Functions dedicate. La Cloud Function IA prevista (`aiCorrectionGateway`) appartiene al Modulo 5 (§5) ed è **solo progettata**.
+La specifica corrente di **M3-full** è client-only: usa Firebase SDK + Security Rules, `submissions/{id}` e `submissionReceipts/{id}`. Non introduce `startDigitalAttempt`/`continueDigitalAttempt`, cookie HttpOnly o Cloud Functions dedicate. Le Cloud Function IA previste (`aiCorrectionPreview`/`aiCorrectionRun`) appartengono al Modulo 5 (§5) e sono **solo progettate**.
 
 #### Repository Storage Gateway (SGW) — TARGET, non ancora implementato
 
@@ -860,13 +860,14 @@ La Function confronta l'hash del cookie, la scadenza e lo stato `in_progress` de
 
 Contratto **provider-agnostic** e **design-only** — vedi [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md). Nessuna di queste Function esiste ancora; il modello **supera** i contratti precedenti (`proposeCorrection`/`approveCorrection`/`bulkApproveCorrections`/`enableAutomaticCorrection`) e la nozione di «proposta IA» persistente.
 
-Un'unica Cloud Function scale-to-zero, protetta da Firebase ID token con `ownerUid` verificato server-side e attiva solo dietro feature flag:
+**Due** Cloud Functions v2 `onCall` scale-to-zero (**2 invocazioni per operazione batch**: preview + run), protette da Firebase ID token con `ownerUid` verificato server-side e attive solo dietro feature flag:
 
 | Funzione | Request (**solo ID, mai testi**) | Response |
 |---|---|---|
-| `aiCorrectionGateway` | `{ verificationId, submissionIds: string[], requestId }` | `{ results: [{ submissionId, outcome: 'succeeded'\|'partial'\|'failed', openGraded: number, openSkipped: number, closedGraded: number, tokensEstimated, costEstimated, reason? }] }` |
+| `aiCorrectionPreview` (preflight, **0 token, nessun provider**) | `{ verificationId, submissionIds: string[], requestId }` | `{ eligible: string[], excluded: [{ submissionId, reason }], openToGrade: number, closedToGrade: number, closedOnlySubmissions: number, tokensEstimated, costEstimated, model }` |
+| `aiCorrectionRun` (esecuzione, dopo conferma) | `{ verificationId, submissionIds: string[], requestId }` | `{ results: [{ submissionId, outcome: 'succeeded'\|'partial'\|'failed', openGraded: number, openSkipped: number, closedGraded: number, tokensEstimated, tokensActual, costEstimated, costActual, reason? }] }` |
 
-Comportamento (contratto M5): rilegge server-side submission + `publishedProjection`/`teacherSnapshot` via Admin SDK (verifica ownership); valuta le **chiuse** in modo **deterministico** (0 token); invia **una richiesta provider per consegna** con tutte le **aperte** eleggibili (`points === null`); valida l'output con schema rigido e i punteggi con le stesse regole di `correctionContract.ts` (`0..maxPoints`, step 0,25); scrive i risultati nelle `evaluations` di `corrections/{submissionId}` **lasciando `status == 'in_progress'`** (mai `completed`/`returned`); registra un audit **minimale senza contenuti**. Idempotente su `requestId`; non sovrascrive domande già valutate. La chiave del provider vive solo in **Secret Manager**, mai lato client/repo/Firestore/log. **Nessuna** correzione automatica, **nessuna** restituzione automatica, **nessun** web/retrieval/tool.
+Comportamento (contratto M5): `aiCorrectionPreview` calcola eleggibilità/conteggi/stima **senza** chiamare il provider. `aiCorrectionRun` rilegge server-side submission + `publishedProjection`/`teacherSnapshot` via Admin SDK (verifica ownership), **ripete l'eleggibilità** (consegna con dati cambiati dal preview → esclusa con motivo), valuta le **chiuse** in modo **deterministico** (0 token; **anche consegne con sole chiuse**), invia **al massimo una richiesta provider per consegna** con tutte le **aperte** eleggibili (`points === null`; consegne con sole chiuse → nessuna chiamata), valida l'output con schema rigido e i punteggi con le regole di `correctionContract.ts` (`0..maxPoints`, step 0,25), scrive i risultati nelle `evaluations` di `corrections/{submissionId}` **lasciando `status == 'in_progress'`** (mai `completed`/`returned`). Stato/idempotenza/audit/utilizzo in **`aiCorrectionRuns/{requestId}`** (una sola collezione, **mai contenuti**). Idempotente su `requestId`; non sovrascrive domande già valutate. La chiave del provider vive solo in **Secret Manager**, mai lato client/repo/Firestore/log. **Nessuna** correzione automatica, **nessuna** restituzione automatica, **nessun** web/retrieval/tool.
 
 ---
 
