@@ -128,6 +128,14 @@ export interface LessonDoc {
   udaDir: string;
   path: string;
   filename: string;
+  /**
+   * Import-scoped id of this lesson's `publicLessons` projection
+   * (`${importId}_${lessonId}`), written from HARD-02B-1 onward. Absent on
+   * lessons imported before HARD-02B-1: those projections use the bare
+   * `lessonId` and are resolved via `resolvePublicLessonId` (never a second
+   * Firestore lookup). See `programs/publicLessonId.ts`.
+   */
+  publicLessonId?: string;
   /** Stable display order inside the UDA. Import assigns this from filename order. */
   order?: number;
   poolStatus: 'absent' | 'valid' | 'invalid';

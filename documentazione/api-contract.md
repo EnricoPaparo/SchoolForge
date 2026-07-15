@@ -176,6 +176,7 @@ interface Lesson {
   id: string;
   udaId: string;
   importId: string;
+  publicLessonId?: string;     // HARD-02B-1: id import-scoped della proiezione publicLessons; assente sui dati legacy (→ bare lessonId)
   udaDir: string;
   path: string;
   filename: string;
@@ -193,16 +194,20 @@ interface Lesson {
   obiettivi?: string[];
 }
 
-// publicLessons/{lessonId} — proiezione read-only (M3-lite)
-// Scritta dal client docente nello stesso flusso che scrive `lessons`,
-// sotto lo stesso importId isolato (vedi BR-REP-03). Non contiene alcun
-// riferimento al pool. Leggibile SOLO da uno studente approvato
-// (students/{uid}.status == 'approved') con il portale attivo
-// (settings/studentAccess.studentPortalEnabled == true) E il cui classId
-// è incluso nella classIds del programma padre (M3L-C, letto via get() sul
-// programma) — l'autenticazione Google da sola non è sufficiente, e nemmeno
-// l'approvazione da sola: senza una classe compatibile la lettura è negata
-// (§3.4a, §6).
+// publicLessons/{publicLessonId} — proiezione read-only (M3-lite)
+// ID: da HARD-02B-1 import-scoped `${importId}_${lessonId}` (memorizzato anche
+// in `LessonDoc.publicLessonId`); i documenti precedenti usano il bare
+// `lessonId` (risolti via `resolvePublicLessonId`, senza doppia get). Scritta
+// dal client docente nello stesso flusso che scrive `lessons`, sotto lo stesso
+// importId isolato (vedi BR-REP-03). Non contiene alcun riferimento al pool.
+// Leggibile SOLO da uno studente approvato (students/{uid}.status ==
+// 'approved') con il portale attivo (settings/studentAccess.studentPortalEnabled
+// == true), il cui classId è incluso nella classIds del programma padre (M3L-C,
+// letto via get() sul programma) E il cui `importId` è uguale a
+// `programs/{programId}.activeImportId` (HARD-02B-1): staging e import
+// stale/superseded non sono leggibili dallo studente nemmeno con get diretto, e
+// la query studente DEVE filtrare programId + importId. L'owner legge tutte le
+// proiezioni. Autenticazione/approvazione da sole non bastano (§3.4a, §6).
 interface PublicLesson {
   id: string;
   ownerUid: string;

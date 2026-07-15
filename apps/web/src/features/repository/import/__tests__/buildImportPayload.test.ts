@@ -577,7 +577,7 @@ describe('buildImportPayload — publicLessons (M3-lite student projection)', ()
     expect(payload.publicLessons).toHaveLength(payload.lessons.length);
   });
 
-  it('shares the same id as the corresponding technical lesson entry', () => {
+  it('uses the import-scoped publicLessonId shared by the technical lesson and its projection (HARD-02B-1)', () => {
     const files = buildAllFiles();
     const validation = validateImport('Informatica', files);
     const payload = buildImportPayload({
@@ -589,9 +589,36 @@ describe('buildImportPayload — publicLessons (M3-lite student projection)', ()
       files,
     });
 
-    const lessonIds = payload.lessons.map((l) => l.id).sort();
+    // Each technical lesson stores an import-scoped publicLessonId and the
+    // matching projection is keyed by exactly that value.
+    for (const lesson of payload.lessons) {
+      expect(lesson.data.publicLessonId).toBe(`${IMPORT_ID}_${lesson.id}`);
+    }
     const publicLessonIds = payload.publicLessons.map((p) => p.id).sort();
-    expect(publicLessonIds).toEqual(lessonIds);
+    const expectedIds = payload.lessons.map((l) => `${IMPORT_ID}_${l.id}`).sort();
+    expect(publicLessonIds).toEqual(expectedIds);
+  });
+
+  it('gives the same lesson a different publicLessonId across two imports', () => {
+    const files = buildAllFiles();
+    const validation = validateImport('Informatica', files);
+    const build = (importId: string) =>
+      buildImportPayload({
+        validation,
+        programmaTitle: 'Informatica',
+        ownerUid: OWNER_UID,
+        programId: PROGRAM_ID,
+        importId,
+        files,
+      });
+    const a = build('import-A');
+    const b = build('import-B');
+    // Same technical lessonId, distinct import-scoped projection ids → no
+    // collision between two imports of the same program.
+    expect(a.lessons[0]!.id).toBe(b.lessons[0]!.id);
+    expect(a.publicLessons[0]!.id).toBe(`import-A_${a.lessons[0]!.id}`);
+    expect(b.publicLessons[0]!.id).toBe(`import-B_${b.lessons[0]!.id}`);
+    expect(a.publicLessons[0]!.id).not.toBe(b.publicLessons[0]!.id);
   });
 
   it('carries ownerUid, programId, importId, udaId and a lesson-only contentPath', () => {

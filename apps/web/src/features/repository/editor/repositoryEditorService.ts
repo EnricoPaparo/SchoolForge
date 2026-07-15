@@ -23,6 +23,7 @@ import {
 } from '../validation/frontMatter.js';
 import { parseLessonMetadata } from '../validation/lessonMetadata.js';
 import { assertLessonContentSize } from '../programs/lessonContentSize.js';
+import { newPublicLessonId, resolvePublicLessonId } from '../programs/publicLessonId.js';
 import { toDocId } from '../import/buildImportPayload.js';
 import type { LessonMetadata, UdaMetadata } from '../validation/types.js';
 import type {
@@ -265,8 +266,10 @@ type LessonDocPatch = Pick<
 
 /**
  * Updates the technical lesson document and, if a projection already exists
- * for it, the matching `publicLessons` entry (same document id — see
- * `buildImportPayload`). Shared by every save path that ends up with a
+ * for it, the matching `publicLessons` entry. The projection id is resolved by
+ * the caller via `resolvePublicLessonId` (HARD-02B-1): import-scoped
+ * `${importId}_${lessonId}` for lessons imported/created from HARD-02B-1 on,
+ * the legacy bare `lessonId` otherwise. Shared by every save path that ends up with a
  * didactic metadata patch to persist, whether the teacher edited the
  * metadata directly (`updateLessonMetadata`) or only the body
  * (`updateLessonMarkdownBody`, where the patch is just a resync of whatever
@@ -278,6 +281,7 @@ async function syncLessonMetadataDocs(
   db: Firestore,
   lessonRef: DocumentReference,
   lessonId: string,
+  publicLessonId: string,
   publicLessonExists: boolean,
   docPatch: LessonDocPatch,
   ownerUid: string,
@@ -285,7 +289,7 @@ async function syncLessonMetadataDocs(
 ): Promise<void> {
   const batch = writeBatch(db);
   batch.update(lessonRef, docPatch);
-  const publicLessonRef = doc(db, 'publicLessons', lessonId);
+  const publicLessonRef = doc(db, 'publicLessons', publicLessonId);
   if (publicLessonExists) {
     const publicPatch =
       publicContent === undefined ? docPatch : { ...docPatch, content: publicContent };
@@ -367,10 +371,14 @@ export async function updateLessonMetadata(params: {
 }): Promise<void> {
   const { programId, importId, lessonId, fields, ownerUid, db } = params;
   const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
-  const publicLessonRef = doc(db, 'publicLessons', lessonId);
-  const [snap, publicLessonSnap] = await Promise.all([getDoc(lessonRef), getDoc(publicLessonRef)]);
+  // Read the technical lesson first (already required for storageRef), then
+  // resolve the projection id from it — no extra read: legacy docs resolve to
+  // lessonId, new docs to the stored import-scoped publicLessonId.
+  const snap = await getDoc(lessonRef);
   if (!snap.exists()) throw new Error('Lezione non trovata.');
   const lesson = snap.data() as LessonDoc;
+  const publicLessonId = resolvePublicLessonId(lesson, lessonId);
+  const publicLessonSnap = await getDoc(doc(db, 'publicLessons', publicLessonId));
 
   const frontMatterPatch = lessonFrontMatterFields(fields);
 
@@ -390,6 +398,7 @@ export async function updateLessonMetadata(params: {
       db,
       lessonRef,
       lessonId,
+      publicLessonId,
       publicLessonSnap.exists(),
       fields,
       ownerUid,
@@ -423,10 +432,11 @@ export async function updateLessonMarkdownBody(params: {
 }): Promise<void> {
   const { programId, importId, lessonId, body, ownerUid, db } = params;
   const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
-  const publicLessonRef = doc(db, 'publicLessons', lessonId);
-  const [snap, publicLessonSnap] = await Promise.all([getDoc(lessonRef), getDoc(publicLessonRef)]);
+  const snap = await getDoc(lessonRef);
   if (!snap.exists()) throw new Error('Lezione non trovata.');
   const lesson = snap.data() as LessonDoc;
+  const publicLessonId = resolvePublicLessonId(lesson, lessonId);
+  const publicLessonSnap = await getDoc(doc(db, 'publicLessons', publicLessonId));
 
   let metadata: LessonMetadata;
   let publicBody: string;
@@ -448,6 +458,7 @@ export async function updateLessonMarkdownBody(params: {
       db,
       lessonRef,
       lessonId,
+      publicLessonId,
       publicLessonSnap.exists(),
       metadata,
       ownerUid,
@@ -509,6 +520,10 @@ export async function createLesson(params: {
   const path = `${udaDir}/${filename}`;
   const storageRef = `repository/${ownerUid}/imports/${importId}/${path}`;
   const lessonId = `${udaId}_${toDocId(filename.replace(/\.md$/, ''))}`;
+  // A lesson created inside a legacy import still gets an import-scoped
+  // publicLessons id (HARD-02B-1) — the projection collection is program-wide,
+  // so new writes always follow the new convention.
+  const publicLessonId = newPublicLessonId(importId, lessonId);
   const order = maxOrder + 1;
 
   const metadata: LessonMetadata = {
@@ -535,6 +550,7 @@ export async function createLesson(params: {
     batch.set(doc(lessonsRef, lessonId), {
       ownerUid,
       importId,
+      publicLessonId,
       udaDir,
       path,
       filename,
@@ -546,7 +562,7 @@ export async function createLesson(params: {
       ...metadata,
     } satisfies LessonDoc);
 
-    batch.set(doc(db, 'publicLessons', lessonId), {
+    batch.set(doc(db, 'publicLessons', publicLessonId), {
       ownerUid,
       programId,
       importId,
@@ -712,8 +728,8 @@ export async function reorderUda(params: {
  * adjacent-move-only, Storage-untouched reasoning as `reorderUda`). Rejects
  * a cross-UDA swap: the UI only ever offers a neighbor from the same
  * lesson list, so this is a defensive guard, not a normal path. When a
- * `publicLessons` projection exists for either lesson (same document id as
- * the technical lesson doc — see `buildImportPayload`), its `order` is
+ * `publicLessons` projection exists for either lesson (id resolved via
+ * `resolvePublicLessonId` — HARD-02B-1), its `order` is
  * updated in the same batch, so the student-facing list never drifts from
  * the teacher-facing one.
  */
@@ -754,8 +770,12 @@ export async function reorderLesson(params: {
     batch.update(lessonRef, { order });
     batch.update(neighborRef, { order: neighborOrder });
 
-    const publicLessonRef = doc(db, 'publicLessons', lessonId);
-    const neighborPublicLessonRef = doc(db, 'publicLessons', neighborLessonId);
+    const publicLessonRef = doc(db, 'publicLessons', resolvePublicLessonId(lesson, lessonId));
+    const neighborPublicLessonRef = doc(
+      db,
+      'publicLessons',
+      resolvePublicLessonId(neighbor, neighborLessonId),
+    );
     const [publicLessonSnap, neighborPublicLessonSnap] = await Promise.all([
       getDoc(publicLessonRef),
       getDoc(neighborPublicLessonRef),
@@ -948,7 +968,7 @@ export async function deleteLesson(params: {
   try {
     await deleteDocRefsInBatches(db, [
       lessonRef,
-      doc(db, 'publicLessons', lessonId),
+      doc(db, 'publicLessons', resolvePublicLessonId(lesson, lessonId)),
       ...questionIndexSnap.docs.map((d) => d.ref),
     ]);
     await updateDoc(doc(db, 'programs', programId, 'imports', importId, 'udas', udaId), {
@@ -1016,7 +1036,9 @@ export async function deleteUda(params: {
     await deleteDocRefsInBatches(db, [
       ...lessonsSnap.docs.map((d) => d.ref),
       ...questionIndexSnap.docs.map((d) => d.ref),
-      ...lessons.map((lesson) => doc(db, 'publicLessons', lesson.id)),
+      ...lessons.map((lesson) =>
+        doc(db, 'publicLessons', resolvePublicLessonId(lesson, lesson.id)),
+      ),
       udaRef,
     ]);
   } catch {

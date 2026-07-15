@@ -1,6 +1,7 @@
 import { parsePool } from '@schoolforge/lesson-contract';
 import { parseLessonMetadata } from '../validation/lessonMetadata.js';
 import { assertLessonContentSize } from '../programs/lessonContentSize.js';
+import { newPublicLessonId } from '../programs/publicLessonId.js';
 import type { ImportValidationResult, RawFile } from '../validation/types.js';
 import type { ImportPayload } from './types.js';
 
@@ -65,6 +66,7 @@ export function buildImportPayload(params: {
       // Scoped by udaId: lesson numbering restarts per UDA, so two UDAs can
       // legitimately share a lesson filename (e.g. both have a "lezione-001-...").
       const lessonId = `${udaId}_${toDocId(lesson.filename.replace(/\.md$/, ''))}`;
+      const publicLessonId = newPublicLessonId(importId, lessonId);
       const storageRef = `repository/${ownerUid}/imports/${importId}/${lesson.path}`;
       const poolPath = lesson.path.replace(/\.md$/, '.pool.md');
       const poolStorageRef =
@@ -110,6 +112,7 @@ export function buildImportPayload(params: {
         data: {
           ownerUid,
           importId,
+          publicLessonId,
           udaDir: uda.dir,
           path: lesson.path,
           filename: lesson.filename,
@@ -140,7 +143,7 @@ export function buildImportPayload(params: {
       assertLessonContentSize(lessonBody, lesson.filename);
 
       publicLessons.push({
-        id: lessonId,
+        id: publicLessonId,
         data: {
           ownerUid,
           programId,

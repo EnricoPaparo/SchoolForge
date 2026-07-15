@@ -383,6 +383,31 @@ describe('updateLessonMetadata', () => {
     );
   });
 
+  it('resolves the import-scoped publicLessonId when present, without a double lookup (HARD-02B-1)', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ ...LESSON_DOC, publicLessonId: 'imp-1_lesson-1' }),
+      }) // lesson doc (carries the import-scoped id)
+      .mockResolvedValueOnce({ exists: () => true }); // projection existence
+    mockReadText.mockResolvedValueOnce(text('---\ntitolo: "Vecchio"\n---\n\nCorpo lezione.'));
+
+    await updateLessonMetadata({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      lessonId: 'lesson-1',
+      fields: FIELDS,
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    expect(mockUpdateDoc).toHaveBeenCalledWith({ __path: 'publicLessons/imp-1_lesson-1' }, FIELDS);
+    // Exactly two reads: technical lesson + projection existence. No
+    // "try new id, then legacy id" fallback lookup.
+    expect(mockGetDoc).toHaveBeenCalledTimes(2);
+  });
+
   it('skips the publicLessons update when no projection exists for this lesson', async () => {
     mockGetDoc
       .mockResolvedValueOnce({ exists: () => true, data: () => LESSON_DOC })
@@ -695,12 +720,14 @@ describe('createLesson', () => {
         poolStatus: 'absent',
         questionCount: 0,
         poolStorageRef: null,
+        // HARD-02B-1: the technical lesson stores the import-scoped projection id.
+        publicLessonId: 'imp-1_uda-01_lezione-001-introduzione-all-http',
         storageRef:
           'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-001-introduzione-all-http.md',
       }),
     );
     expect(mockSetDoc).toHaveBeenCalledWith(
-      { __path: 'publicLessons/uda-01_lezione-001-introduzione-all-http' },
+      { __path: 'publicLessons/imp-1_uda-01_lezione-001-introduzione-all-http' },
       expect.objectContaining({
         programId: 'prog-1',
         udaId: 'uda-01',
@@ -778,7 +805,7 @@ describe('createLesson', () => {
     });
 
     expect(mockSetDoc).toHaveBeenCalledWith(
-      { __path: 'publicLessons/uda-01_lezione-001-http' },
+      { __path: 'publicLessons/imp-1_uda-01_lezione-001-http' },
       expect.objectContaining({ content: 'Corpo della nuova lezione.' }),
     );
   });
@@ -1533,6 +1560,27 @@ describe('deleteLesson', () => {
       { __path: 'auditEvents/auto-id' },
       expect.objectContaining({ action: 'lesson.deleted', targetId: 'lesson-1' }),
     );
+  });
+
+  it('deletes the import-scoped projection id when the lesson has a publicLessonId (HARD-02B-1)', async () => {
+    mockGetDoc.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({ ...LESSON_DOC, publicLessonId: 'imp-1_lesson-1' }),
+    });
+    mockGetDocs.mockResolvedValueOnce({ docs: [] }).mockResolvedValueOnce({ docs: [] });
+
+    await deleteLesson({
+      programId: 'prog-1',
+      importId: 'imp-1',
+      udaId: 'uda-01',
+      lessonId: 'lesson-1',
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    expect(mockBatchDelete).toHaveBeenCalledWith({ __path: 'publicLessons/imp-1_lesson-1' });
+    expect(mockBatchDelete).not.toHaveBeenCalledWith({ __path: 'publicLessons/lesson-1' });
   });
 
   it('tolerates a Storage file that is already gone (gateway delete is idempotent)', async () => {
