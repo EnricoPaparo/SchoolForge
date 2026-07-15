@@ -223,22 +223,38 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
         return;
       }
       // result.status === 'committed' — the atomic switch already succeeded:
-      // the import is live. From here NOTHING (a failed library refresh, any UI
-      // update) may downgrade this to a blocking error, so close the dialog and
-      // run the refresh best-effort, outside the general catch.
+      // the import is live. Build the card immediately from the committed
+      // result: relying on a second Firestore read made a successful new course
+      // disappear when that read failed, while keeping the previous year/class
+      // filters could hide it even when the refresh succeeded.
+      const importedCard: CourseCard = {
+        programId: result.programId,
+        title: title.trim(),
+        annoScolastico: result.annoScolastico,
+        classIds: [],
+        classNames: [],
+        udaCount: result.udaCount,
+        lessonsTotal: result.lessonCount,
+        lessonsDone: 0,
+        questionsTotal: result.questionCount,
+        hasImport: true,
+        activeImportId: result.importId,
+      };
+      setCards((prev) => {
+        const withoutImported = (prev ?? []).filter((card) => card.programId !== result.programId);
+        return [...withoutImported, importedCard];
+      });
+      // A new import must be visible regardless of the filters selected before
+      // opening the dialog. The teacher can restore narrower filters afterward.
+      setYearFilter(YEAR_ALL);
+      setClassFilter(YEAR_ALL);
+      setSearch('');
       setDialog({ kind: 'none' });
       const notices: string[] = [];
       if (result.cleanupPending) {
         // Import applicato e corretto; solo la pulizia delle vecchie
         // proiezioni è stata rinviata (non bloccante, ritentabile).
         notices.push('Import completato. Pulizia delle vecchie proiezioni rinviata.');
-      }
-      try {
-        await load();
-      } catch {
-        notices.push(
-          'Import completato. Alcuni dati visualizzati verranno aggiornati al prossimo caricamento.',
-        );
       }
       if (notices.length > 0) setImportNotice(notices.join(' '));
     } catch (err) {

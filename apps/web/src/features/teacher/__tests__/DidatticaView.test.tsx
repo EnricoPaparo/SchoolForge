@@ -258,16 +258,18 @@ describe('DidatticaView — create and import refresh the library', () => {
   });
 
   it('imports a new course from ZIP (create + import) and refreshes', async () => {
-    mockLoadCourseLibrary
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([card({ programId: 'p9', title: 'Importato' })]);
+    mockLoadCourseLibrary.mockResolvedValueOnce([]);
     mockCreateProgram.mockResolvedValue('p9');
     mockReadZipFile.mockResolvedValue([{ path: 'programma.md', text: '' }]);
     mockImportRepository.mockResolvedValue({
       status: 'committed',
+      programId: 'p9',
+      importId: 'i9',
       udaCount: 2,
       lessonCount: 5,
       questionCount: 10,
+      annoScolastico: '2025/2026',
+      cleanupPending: false,
     });
     renderView();
 
@@ -288,7 +290,47 @@ describe('DidatticaView — create and import refresh the library', () => {
     ];
     expect(input.programId).toBe('p9');
     expect(input.programmaTitle).toBe('Importato');
-    expect(mockLoadCourseLibrary).toHaveBeenCalledTimes(2);
+    // The committed result is self-contained: no fragile post-commit read.
+    expect(mockLoadCourseLibrary).toHaveBeenCalledOnce();
+    const article = within(screen.getByRole('article'));
+    expect(article.getByText('2025/2026')).toBeTruthy();
+    expect(article.getByText('2')).toBeTruthy();
+    expect(article.getByText('0/5')).toBeTruthy();
+    expect(article.getByText('10')).toBeTruthy();
+  });
+
+  it('reveals a committed import even when the previous year filter would hide it', async () => {
+    mockLoadCourseLibrary.mockResolvedValue([
+      card({ programId: 'old', title: 'Corso corrente', annoScolastico: '2025/2026' }),
+    ]);
+    mockCreateProgram.mockResolvedValue('p-old-year');
+    mockReadZipFile.mockResolvedValue([{ path: 'programma.md', text: '' }]);
+    mockImportRepository.mockResolvedValue({
+      status: 'committed',
+      programId: 'p-old-year',
+      importId: 'i-old-year',
+      udaCount: 1,
+      lessonCount: 2,
+      questionCount: 3,
+      annoScolastico: '2024/2025',
+      cleanupPending: false,
+    });
+    renderView();
+
+    await waitFor(() => expect(screen.getByText('Corso corrente')).toBeTruthy());
+    fireEvent.click(screen.getByText('Importa ZIP'));
+    fireEvent.change(screen.getByLabelText('Titolo del corso'), {
+      target: { value: 'Corso importato 2024' },
+    });
+    const file = new File(['zip-bytes'], 'corso.zip', { type: 'application/zip' });
+    fireEvent.change(screen.getByLabelText('File ZIP del corso'), { target: { files: [file] } });
+    fireEvent.click(screen.getByText('Importa'));
+
+    await waitFor(() => expect(screen.getByText('Corso importato 2024')).toBeTruthy());
+    expect((screen.getByLabelText('Filtro anno scolastico') as HTMLSelectElement).value).toBe(
+      '__all__',
+    );
+    expect(mockLoadCourseLibrary).toHaveBeenCalledOnce();
   });
 
   it('shows the validation error and keeps the dialog open when the ZIP is invalid', async () => {
