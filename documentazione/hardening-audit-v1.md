@@ -119,7 +119,8 @@ Classificazione: **P0** perdita dati/accesso critico/segreto esposto · **P1** r
 
 ---
 **HARD-F08 — Nessun audit di accessibilità end-to-end formale.**
-- **Area:** J. **Evidenza:** il Gate GDUX (`gdux-checklist-finale.md`) copre a11y a livello di componente (ruoli/contrasto progettati e in parte testati) ma dichiara esplicitamente l'assenza di un audit end-to-end. Nessun blocco funzionale noto. **Soluzione minima (futura):** passata tastiera/focus/screen-reader/contrasto su docente e studente in HARD-02. **Confidenza:** alta.
+- **Stato (dopo HARD-02A):** **audit svolto — READY FOR REMEDIATION.** Verifica a11y end-to-end (statica + test esistenti) dei flussi docente e studente in `evidenze/hard-02a-a11y-audit.md`: 0 P0, 0 P1, **1 P2** (dialog condiviso `DialogShell` senza Escape/focus-trap/restore) + P3 di polish. Fondamenta solide (landmark, focus-visible, tabs ARIA con frecce, exam view etichettata, reduced-motion). Resta il perimetro **HARD-02A-FIX** (P2-01) + smoke a11y manuale su DEV (contrasto/zoom/reflow/screen-reader non verificabili in sessione).
+- **Area:** J. **Evidenza:** il Gate GDUX (`gdux-checklist-finale.md`) copre a11y a livello di componente; HARD-02A aggiunge la passata end-to-end formale. **Confidenza:** alta.
 
 ## 6. Cost model (quattro scenari)
 
@@ -158,7 +159,7 @@ Pacchetti indipendenti, ciascuno approvabile da solo. **Nessuno** introduce funz
   - **HARD-01A** (✅ **RESOLVED**) — **F01**: runbook operativo, budget alert DEV, backup/ripristino, incidenti. Vedi `runbook-operativo-v1.md` e `evidenze/hard-01a-human-gate.md`.
   - **HARD-01B** (✅ **COMPLETATO; F03 RESOLVED 15/07/2026**) — **F03**: security header + strategia cache in `firebase.json` (incl. COOP `same-origin-allow-popups` e `script-src https://apis.google.com`), guardrail statico `hostingHeaders.test.ts`, deployato e verificato su DEV. Vedi `evidenze/hard-01b-dev-smoke.md`.
   - **HARD-01C** (**MITIGATED — resta il blocker PROD**) — **F02**: matrice regioni e riconciliazione documentale (contraddizione «tutto a Milano» corretta) in `evidenze/hard-01c-region-matrix.md`; Firestore DEV verificata in `europe-west8`, resta la decisione della regione UE per il provisioning PROD ex novo (`evidenze/hard-01c-human-gate.md`).
-- **HARD-02 — Accessibilità & resilienza (P3).** **F08** (passata a11y end-to-end docente+studente) e **F06** (chunking import >500 mutazioni con atomicità logica preservata). Rischio medio (F06 tocca `importRepository.ts`).
+- **HARD-02 — Accessibilità & resilienza (P3).** **HARD-02A** (✅ audit a11y end-to-end, `evidenze/hard-02a-a11y-audit.md` — READY FOR REMEDIATION, 1 P2); **HARD-02A-FIX** (Escape/focus-trap/restore in `DialogShell` + smoke a11y manuale DEV); **F06** / HARD-02B (chunking import >500 mutazioni con atomicità logica preservata, tocca `importRepository.ts`).
 - **HARD-03 — Costi a lungo termine (P3, condizionato a misura).** **F05** (paginazione storico `verifications` con UX dedicata) e valutazione **F04** (App Check) — entrambi **solo se** una misura reale in Firebase Console mostra un impatto concreto; altrimenti restano deferral.
 
 ## 10. Ordine di intervento e dipendenze
@@ -175,7 +176,7 @@ Il Gate **GHARD** si considera superabile quando:
 
 1. **Nessun P0/P1 aperto** (già soddisfatto oggi).
 2. **F01 chiuso** ✅ (HARD-01A, 15/07/2026): budget alert configurato e documentato; cadenza di export/backup e procedura di ripristino scritte; procedura account owner compromesso scritta.
-3. **F02 risolto** (HARD-01C, MITIGATED): documentazione già corretta con lo stato reale; per RESOLVED restano la verifica della regione Firestore DEV e la decisione di regione UE per il provisioning PROD ex novo — vedi `evidenze/hard-01c-region-matrix.md` e `evidenze/hard-01c-human-gate.md`.
+3. **F02 risolto** (HARD-01C, MITIGATED): documentazione già corretta con lo stato reale; la regione **Firestore DEV è stata verificata** (`europe-west8`, PR #183). Per RESOLVED resta **solo** la decisione della regione UE per il provisioning PROD ex novo — vedi `evidenze/hard-01c-region-matrix.md` e `evidenze/hard-01c-human-gate.md`.
 4. **F03 applicato** ✅ (HARD-01B, 15/07/2026): security header presenti su Hosting e smoke DEV che conferma login/rendering/PDF non rotti — vedi `evidenze/hard-01b-dev-smoke.md`.
 5. **P3 residui** (F04–F08) esplicitamente accettati o pianificati con soglia, non silenziosamente ignorati.
 6. **CI verde** invariata; `format:check`/`build` puliti; nessuna regressione nei test esistenti.
