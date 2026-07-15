@@ -204,6 +204,7 @@ Difesa in profondità a livello di trasporto, configurata **solo** in `firebase.
 |---|---|---|
 | `X-Content-Type-Options` | `nosniff` | Blocca il MIME-sniffing. |
 | `X-Frame-Options` | `DENY` | Anti-clickjacking (ridondante con `frame-ancestors 'none'`, per browser datati). |
+| `Cross-Origin-Opener-Policy` | `same-origin-allow-popups` | Mantiene la comunicazione con la popup cross-origin di Google Auth ed evita warning/rotture su `window.closed`, senza usare `unsafe-none`. |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` | Non perde path/query cross-origin. |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self)` | Disabilita sensori/pagamenti non usati; **mantiene** Fullscreen same-origin per la Modalità verifica; clipboard non ristretta. |
 | `Content-Security-Policy` | vedi sotto | Confina origini di script/stili/connessioni/frame. |
@@ -220,7 +221,7 @@ Difesa in profondità a livello di trasporto, configurata **solo** in `firebase.
 
 **Cache** (`hosting.headers`, l'ultima regola che matcha vince): shell SPA (`index.html`, servito su ogni route) → `Cache-Control: no-cache` (rivalidazione obbligatoria, niente SPA vecchia bloccata dopo un deploy); `/assets/**` (bundle Vite con hash) → `public, max-age=31536000, immutable`. Il gateway `/api/repository/**` ha un **blocco dedicato** `Cache-Control: no-store` a livello Hosting: contenendo operazioni autenticate e dati sensibili, non si dipende dall'interazione tra il `no-cache` globale di Hosting e il `no-store` restituito dalla Cloud Function — Hosting stesso impone `no-store`.
 
-> **Stato:** **MITIGATED — configurazione pronta, deploy e smoke DEV pending.** Da verificare su DEV dopo il deploy (login Google, rendering, download, verifica online, Fullscreen) — checklist `evidenze/hard-01b-dev-smoke.md`. Non COOP/COEP/CORP: non introdotti, per non rompere `signInWithPopup`, foto profilo o risorse Firebase.
+> **Stato:** **MITIGATED — configurazione pronta, deploy e smoke DEV pending.** Da verificare su DEV dopo il deploy (login Google, rendering, download, verifica online, Fullscreen) — checklist `evidenze/hard-01b-dev-smoke.md`. COOP è impostato su `same-origin-allow-popups`, valore compatibile con `signInWithPopup`; COEP/CORP non sono introdotti.
 
 ---
 
