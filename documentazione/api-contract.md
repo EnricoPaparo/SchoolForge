@@ -40,9 +40,9 @@ M3-lite non introduce Cloud Functions. Nella baseline corrente le Cloud Function
 
 | Funzione | Modulo | Motivo |
 |---|---|---|
-| `aiCorrectionPreview` + `aiCorrectionRun` (gateway IA; **progettati M5-00, non implementati**) | M5 | Due Function `onCall` (preview senza provider + run); chiave provider in Secret Manager; contratto provider-agnostic in §5. |
+| `aiCorrectionPreview` + `aiCorrectionRun` (gateway IA; **M5-01 implementato in mock**) | M5 | Due Function `onCall` in modalità mock deterministica (0 token, nessuna scrittura); comportamento pieno e chiave provider in Secret Manager da M5-02/M5-05; contratto in §5. |
 
-La specifica corrente di **M3-full** è client-only: usa Firebase SDK + Security Rules, `submissions/{id}` e `submissionReceipts/{id}`. Non introduce `startDigitalAttempt`/`continueDigitalAttempt`, cookie HttpOnly o Cloud Functions dedicate. Le Cloud Function IA previste (`aiCorrectionPreview`/`aiCorrectionRun`) appartengono al Modulo 5 (§5) e sono **solo progettate**.
+La specifica corrente di **M3-full** è client-only: usa Firebase SDK + Security Rules, `submissions/{id}` e `submissionReceipts/{id}`. Non introduce `startDigitalAttempt`/`continueDigitalAttempt`, cookie HttpOnly o Cloud Functions dedicate. Le Cloud Function IA (`aiCorrectionPreview`/`aiCorrectionRun`) appartengono al Modulo 5 (§5); **M5-01** le ha implementate in **modalità mock** (0 token, nessuna scrittura), il comportamento pieno è M5-02.
 
 #### Repository Storage Gateway (SGW) — TARGET, non ancora implementato
 
@@ -856,9 +856,11 @@ La Function confronta l'hash del cookie, la scadenza e lo stato `in_progress` de
 
 ---
 
-## 5. Gateway IA — Modulo 5 (correzione assistita; **progettazione M5-00, non implementato**)
+## 5. Gateway IA — Modulo 5 (correzione assistita; **M5-01 implementato in modalità mock; comportamento pieno M5-02**)
 
-Contratto **provider-agnostic** e **design-only** — vedi [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md). Nessuna di queste Function esiste ancora; il modello **supera** i contratti precedenti (`proposeCorrection`/`approveCorrection`/`bulkApproveCorrections`/`enableAutomaticCorrection`) e la nozione di «proposta IA» persistente.
+Contratto **provider-agnostic** — vedi [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md). Supera i contratti precedenti (`proposeCorrection`/`approveCorrection`/`bulkApproveCorrections`/`enableAutomaticCorrection`) e la nozione di «proposta IA» persistente.
+
+**Stato:** **M5-01** ha implementato le due Function `onCall` in **modalità mock deterministica** — verificano autenticazione owner, feature flag (`disabled|mock`, default `disabled`) e forma dell'input, e restituiscono un risultato **mock** chiaramente identificato; `aiCorrectionRun` **non scrive nulla** (`written: false`), **zero token, nessuna chiamata esterna**. Le **response tipizzate qui sotto descrivono il contratto pieno di M5-02** (eleggibilità reale, scoring, scritture): in M5-01 le due Function restituiscono invece un payload mock (`{ mode: 'mock', phase, requestId, verificationId, submissionCount, tokensEstimated: 0, note, [written: false] }`).
 
 **Due** Cloud Functions v2 `onCall` scale-to-zero (**2 invocazioni per operazione batch**: preview + run), protette da Firebase ID token con `ownerUid` verificato server-side e attive solo dietro feature flag:
 
