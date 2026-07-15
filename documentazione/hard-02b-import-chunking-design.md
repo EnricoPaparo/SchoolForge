@@ -1,6 +1,8 @@
 # HARD-02B-00 — Progettazione del chunking resiliente dell'import ZIP (finding HARD-F06)
 
 **Data:** 15 luglio 2026 · **Ambito:** HARD-F06 (import ZIP e swap `publicLessons` non gestiscono il limite di 500 mutazioni per batch/transazione).
+
+> **STATO IMPLEMENTAZIONE — HARD-F06 RESOLVED (15/07/2026).** Questo documento è la progettazione (fase 02B-00). La fondazione è **HARD-02B-1** (ID import-scoped, query, Rules, indice) e il chunking/staging/switch/cleanup è **HARD-02B-2**. Riepilogo implementazione in fondo (§11). Codice: `repository/firestoreChunks.ts` (helper condiviso), `import/importRepository.ts` (protocollo staging→switch→cleanup), `import/stalePublicLessonsCleanup.ts` (cleanup idempotente + retry).
 **Natura:** **fase di contratto e progettazione**, evidence-based. **Nessuna implementazione**, nessuna modifica a codice TS/TSX, Rules o indici; nessuna migrazione; nessun deploy. Client-only, nessuna nuova Cloud Function, nessuna nuova dipendenza.
 **Codice analizzato:** `import/importRepository.ts`, `import/buildImportPayload.ts`, `import/types.ts`, `programs/studentLessonsService.ts`, `programs/programsService.ts`, `programs/publicLessonsBackfillService.ts`, `editor/repositoryEditorService.ts`, `pools/poolEditorService.ts`, `types/firestore.ts`, `firestore.rules`, `firestore.indexes.json`.
 
@@ -244,4 +246,32 @@ Registrato per completezza (vedi anche `evidenze/hard-02a-a11y-audit.md`): lo **
 - **Rischio preciso:** fallimento atomico a soglia (import bloccato) + orfani Storage/Firestore innocui; il chunking ingenuo esporrebbe proiezioni parziali allo studente per collisione di ID.
 - **Raccomandazione netta:** Alternativa **A** (ID `publicLessons` import-scoped + query su `activeImportId`), con guardia interinale D opzionale.
 - **Impatto:** query studente +filtro `importId`; **1 nuovo indice** `publicLessons(programId,importId)`; **modifica Rules OBBLIGATORIA** — lettura non-owner richiede `resource.data.importId == get(program).activeImportId` (staging/stale negati anche a `get` diretto), owner invariato; campo `LessonDoc.publicLessonId` + **helper puro** di risoluzione (fallback a `lessonId`, nessuna doppia get); **cleanup solo delle `publicLessons`** (mai UDA/lezioni/questionIndex/Storage); risultato `committed` con `cleanupPending` non bloccante su cleanup fallito; **ordine di rollout** indice→Ready→Rules→Hosting→smoke; nessuna nuova collezione/Function/dipendenza.
-- **Stato HARD-F06:** **HARD-02B-1 implementato** (fondazione compatibile e sicura): ID `publicLessons` import-scoped via `LessonDoc.publicLessonId` + helper puro `publicLessonId.ts`, editor/import/createLesson aggiornati (fallback legacy, nessuna doppia get), query studente `programId + activeImportId` (skip se assente), **Rules obbligatorie** `importId == activeImportId` per il non-owner, indice `publicLessons(programId, importId)`. Transazione import ancora **atomica** (nessun chunking). **HARD-F06 NON ancora RESOLVED**: resta **HARD-02B-2** (chunking ≤400, macchina a stati staging/active/superseded, switch atomico, cleanup differito delle sole `publicLessons`).
+- **Stato HARD-F06:** ✅ **RESOLVED (15/07/2026)** — vedi §11.
+
+---
+
+## 11. Riepilogo implementazione (HARD-02B-2) e costo/perf
+
+### 11.1 Cosa è stato implementato
+- **Helper condiviso** `apps/web/src/features/repository/firestoreChunks.ts`: `BATCH_CHUNK_SIZE = 400`, `commitOpsInChunks` (chunk sequenziali, un `writeBatch` per chunk), `deleteDocRefsInBatches`. **Unica** implementazione: `poolEditorService.ts` è stato migrato a importarla (rimozione della copia locale, meccanica e coperta dai test esistenti di `poolEditorService`).
+- **`importRepository.ts`** riscritto nel protocollo vincolante: (A) genera `newImportId`; (B) valida l'intero ZIP prima di toccare `activeImportId`; (C) upload Storage; (D) chunk-write ≤400 dei doc tecnici (`importMeta` con `status:'staging'`, UDA, lezioni con `publicLessonId`, questionIndex); (E) chunk-write ≤400 delle nuove `publicLessons` (invisibili, `importId == newImportId`); (F) **switch atomico** — una `runTransaction` con **solo** `program.activeImportId = newImportId`, `imports/{newId}.status = 'active'`, audit; (G) **cleanup differito** delle sole `publicLessons` del vecchio import. Durante C–E `activeImportId` non è mai toccato.
+- **`stalePublicLessonsCleanup.ts`**: `cleanupStalePublicLessons` (delete chunked di `publicLessons` con `programId+oldImportId`; `superseded` best-effort solo se il doc import esiste; mai UDA/lezioni/questionIndex/Storage) e `retryStalePublicLessonsCleanup` (retry esplicito, idempotente, **nessun** polling/listener/scheduler/Function).
+- **Macchina a stati** `ImportDoc.status: 'staging' | 'active' | 'superseded'` (+ `'committed'` legacy accettato). `createInitializedProgram` scrive `active`; `verificationsService` accetta `active`/`committed`. Nessuna migrazione automatica.
+- **Risultato tipizzato** (`ImportRepositoryResult`): `committed` + `cleanupPending: boolean`; `not_applied` (errore pre-switch, messaggio «Import non applicato: il corso precedente è rimasto intatto.»); `validation_failed`. UI (`DidatticaView`/`CourseWorkspace`): messaggi distinti pre/post-switch, avviso soft «Import completato. Pulizia delle vecchie proiezioni rinviata.» su `cleanupPending`, **guardia doppio-click** (`busy`/`wsBusy`) e guardia unmount (`mountedRef`).
+
+### 11.2 Costo / performance (indicativo)
+Sia **U** UDA, **L** lezioni, **Q** domande, **L₀** lezioni dell'import precedente.
+
+| Scenario | Mutazioni tecniche (D) | `publicLessons` (E) | Switch (F) | Cleanup (G) | # `writeBatch` totali |
+|---|---|---|---|---|---|
+| Import piccolo (U=2,L=3,Q=4) | 10 | 3 | 1 tx | L₀ delete | 2 batch + 1 tx + ⌈L₀/400⌉ |
+| Import a soglia (~400 mut. tecniche) | 400 | L | 1 tx | L₀ | 1 batch (D) + ⌈L/400⌉ (E) + 1 tx + ⌈L₀/400⌉ |
+| Import 401 mut. tecniche | 401 | L | 1 tx | L₀ | 2 batch (D) + … |
+| Import grande (L=600) | 601 | 600 | 1 tx | L₀ | ⌈601/400⌉=2 + ⌈600/400⌉=2 + 1 tx + ⌈L₀/400⌉ |
+
+- Il chunking **non riduce il numero economico di scritture** (una scrittura per documento resta una scrittura): riduce il **rischio di fallimento a soglia** (nessun batch > 500) e i **round-trip di rete** (una commit per chunk invece di N `setDoc`).
+- **Nessuna lettura continua / listener / polling** introdotti. Il cleanup **legge ed elimina solo** le `publicLessons` del vecchio import (`programId+oldImportId`, 1 query + ⌈L₀/400⌉ delete-batch) e legge 1 volta il doc import per il marcamento best-effort.
+- Lo **switch** è l'unico atto atomico: ≤3 mutazioni in una transazione, indipendente da U/L/Q — mai a rischio di soglia.
+
+### 11.3 Ordine di rollout (invariato, nessun deploy in questa PR)
+indice `publicLessons(programId,importId)` → indice *Ready* → Rules (`importId == activeImportId`) → Hosting (query/protocollo) → smoke DEV.

@@ -121,7 +121,10 @@ export async function createVerification(
     activeImport.ownerUid !== ownerUid ||
     activeImport.programId !== config.programId ||
     activeImport.importId !== config.importId ||
-    activeImport.status !== 'committed'
+    // HARD-02B-2: new imports are promoted to 'active' by the atomic switch;
+    // legacy imports carried 'committed'. Both denote a live active import
+    // here (activeImportId match is already asserted above).
+    (activeImport.status !== 'active' && activeImport.status !== 'committed')
   ) {
     throw new Error("L'importazione attiva del corso non è valida.");
   }

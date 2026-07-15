@@ -157,7 +157,7 @@ describe('buildImportPayload — structure', () => {
     expect(payload.importMeta.udaCount).toBe(1);
     expect(payload.importMeta.lessonCount).toBe(3);
     expect(payload.importMeta.questionCount).toBe(2); // only valid pool
-    expect(payload.importMeta.status).toBe('committed');
+    expect(payload.importMeta.status).toBe('staging');
     expect(payload.importMeta.ownerUid).toBe(OWNER_UID);
     expect(payload.importMeta.programId).toBe(PROGRAM_ID);
     expect(payload.importMeta.importId).toBe(IMPORT_ID);

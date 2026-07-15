@@ -270,6 +270,9 @@ export function CourseWorkspace({
   const [wsDialog, setWsDialog] = useState<WsDialog>({ kind: 'none' });
   const [wsBusy, setWsBusy] = useState(false);
   const [wsError, setWsError] = useState<string | null>(null);
+  // Non-blocking notice after a successful re-import whose deferred
+  // publicLessons cleanup was postponed (cleanupPending) — HARD-02B-2.
+  const [wsNotice, setWsNotice] = useState<string | null>(null);
   const [udaBlockers, setUdaBlockers] = useState<RepositoryDeleteBlocker[] | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -634,6 +637,7 @@ export function CourseWorkspace({
   }
 
   function handleImportCourse(file: File) {
+    setWsNotice(null);
     void withBusy(async () => {
       try {
         const files = await readZipFile(file);
@@ -646,6 +650,18 @@ export function CourseWorkspace({
           setWsError(describeImportValidationError(result.validationIssues));
           return;
         }
+        if (result.status === 'not_applied') {
+          // Errore prima dello switch atomico: nessuno switch, corso precedente
+          // intatto e ancora visibile. Nessun rollback finto.
+          setWsError(result.message);
+          return;
+        }
+        // result.status === 'committed'
+        setWsNotice(
+          result.cleanupPending
+            ? 'Import completato. Pulizia delle vecchie proiezioni rinviata.'
+            : null,
+        );
         // Structure fully changed: reload only this course's metadata + tree by
         // patching the card's active import (the tree effect reloads UDA/lezioni).
         const meta = await getImportMeta(card.programId, result.importId, db);
@@ -1192,6 +1208,12 @@ export function CourseWorkspace({
         </button>
         <h2 className={styles.title}>{card.title}</h2>
       </header>
+
+      {wsNotice && (
+        <p role="status" className="text-muted">
+          {wsNotice}
+        </p>
+      )}
 
       <div className={styles.summaryStrip}>
         <span className={styles.pill}>{yearLabel}</span>

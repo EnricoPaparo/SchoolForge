@@ -639,8 +639,8 @@ interface AuditEvent {
 
 | Operazione | Scrittura Firestore | Storage |
 |---|---|---|
-| Importa Markdown/asset | Prepara `programs/{programId}/imports/{importId}` con UDA, lezioni e `questionIndex`; transazione finale aggiorna `activeImportId` e audit | Scrivi in `repository/imports/{programId}/{importId}/{udaId}/` |
-| Sostituisci file | Esegue un nuovo import isolato, poi committa il nuovo `activeImportId` | Nessun overwrite dell'import attivo |
+| Importa Markdown/asset | **Staging chunked** (≤400 mut./`writeBatch`, sequenziale — HARD-02B-2): scrive `imports/{importId}` (`status:'staging'`), UDA, lezioni, `questionIndex` e le nuove `publicLessons` (import-scoped, invisibili). Poi **switch atomico** (≤3 mutazioni: `activeImportId`+`imports/{id}.status='active'`+audit). Poi **cleanup differito** delle sole `publicLessons` del vecchio import. | Scrivi in `repository/imports/{programId}/{importId}/{udaId}/` |
+| Sostituisci file | Esegue un nuovo import isolato (staging invisibile), poi switch atomico su `activeImportId`; il vecchio import diventa subito invisibile senza cancellare nulla | Nessun overwrite dell'import attivo |
 | Elimina file/cartella | Crea un nuovo import completo senza i file, poi committa il puntatore | Gli import non attivi sono eliminabili con lifecycle/scarto docente |
 | Programma svolto | Leggi `programs`, `udas`, `lessons` (flag svolto) | — |
 | Export ZIP | Leggi struttura + download file Storage | — |
@@ -677,7 +677,7 @@ Implementato in `apps/web/src/features/repository/editor/repositoryEditorService
 
 Riordino ed eliminazione non toccano mai Storage per il riordino, e l'eliminazione non modifica mai automaticamente le verifiche esistenti — il docente deve prima rimuoverle o modificarle.
 
-L'import scrive, nella stessa transazione di commit, sia il documento tecnico `lessons/{id}` sia la proiezione pubblica `publicLessons/{id}` (M3-lite, §3.5), quest'ultima già con `content` (corpo Markdown estratto da `parseLessonMetadata`, validato con `assertLessonContentSize` — M3F-08): entrambi puntano allo stesso `activeImportId` e diventano visibili insieme.
+L'import scrive il documento tecnico `lessons/{id}` e la proiezione pubblica `publicLessons/{id}` (M3-lite, §3.5), quest'ultima già con `content` (corpo Markdown estratto da `parseLessonMetadata`, validato con `assertLessonContentSize` — M3F-08). Da **HARD-02B-2** l'import non è più una singola transazione atomica: le scritture avvengono in **chunk ≤400 mutazioni** durante una fase di **staging invisibile** (i doc portano il nuovo `importId`, non ancora `activeImportId`), seguita da uno **switch atomico** che promuove `programs/{id}.activeImportId` al nuovo import (≤3 mutazioni). La proiezione diventa visibile allo studente **solo** allo switch, perché la visibilità dipende esclusivamente da `activeImportId` (query + Security Rules): durante lo staging lo studente continua a vedere l'import precedente, mai una proiezione parziale. Le vecchie `publicLessons` sono rimosse da un **cleanup differito, idempotente e best-effort** (`stalePublicLessonsCleanup.ts`) che tocca **solo** le `publicLessons` del vecchio import — mai UDA/lezioni/questionIndex/Storage; un cleanup fallito lascia l'import `committed` con `cleanupPending: true` (le residue sono già invisibili). Un errore **prima** dello switch → `not_applied`: `activeImportId` invariato, corso precedente intatto, nessun rollback finto. Helper di chunking condiviso in `repository/firestoreChunks.ts`.
 
 ### 3.2 Verifiche
 

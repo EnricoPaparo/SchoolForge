@@ -156,7 +156,10 @@ export async function createInitializedProgram(
       programId,
       importId,
       programmaTitle: cleanTitle,
-      status: 'committed',
+      // Created already active: this import is the program's activeImportId in
+      // the same batch (HARD-02B-2 state machine — no staging phase for an
+      // empty, initialized program).
+      status: 'active',
       importedAt: serverTimestamp(),
       udaCount: 0,
       lessonCount: 0,

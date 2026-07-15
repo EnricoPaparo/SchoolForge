@@ -87,7 +87,16 @@ export interface ImportDoc {
   programId: string;
   importId: string;
   programmaTitle: string;
-  status: 'committed';
+  /**
+   * Import lifecycle state (HARD-02B-2 / HARD-F06). `'staging'` while the
+   * import is being written (invisible — `program.activeImportId` still
+   * points at the previous import), `'active'` once the atomic switch
+   * promotes it, `'superseded'` (best-effort) once a later import replaces
+   * it. Legacy imports carried `'committed'` (or had no status) and are
+   * treated as `'active'` when they equal `program.activeImportId`, else
+   * `'superseded'`. No automatic migration is performed.
+   */
+  status: 'staging' | 'active' | 'superseded' | 'committed';
   importedAt: Timestamp;
   udaCount: number;
   lessonCount: number;

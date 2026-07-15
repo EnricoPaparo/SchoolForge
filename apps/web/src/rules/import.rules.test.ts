@@ -304,7 +304,9 @@ describe('importRepository — valid import', () => {
     );
     expect(importSnap.exists()).toBe(true);
     const data = importSnap.data()!;
-    expect(data.status).toBe('committed');
+    // HARD-02B-2: import is written 'staging' then promoted to 'active' by the
+    // atomic switch (was 'committed' before the state machine existed).
+    expect(data.status).toBe('active');
     expect(data.udaCount).toBe(1);
     expect(data.lessonCount).toBe(2);
     expect(data.questionCount).toBe(2);
