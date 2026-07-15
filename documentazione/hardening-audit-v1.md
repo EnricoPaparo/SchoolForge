@@ -88,7 +88,7 @@ Classificazione: **P0** perdita dati/accesso critico/segreto esposto · **P1** r
 
 ---
 **HARD-F03 — Configurazione: nessun security header né policy di cache su Firebase Hosting.**
-- **Stato (dopo HARD-01B):** **MITIGATED — configurazione pronta, deploy e smoke DEV pending.** Aggiunto in `firebase.json` il blocco `headers` (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy, CSP enforced) e la strategia cache (`no-cache` sulla shell, `immutable` su `/assets/**`); guardrail statico in `apps/web/src/hostingHeaders.test.ts`. **Non RESOLVED** finché header e login Google non sono verificati su DEV dopo il deploy — checklist in `evidenze/hard-01b-dev-smoke.md`.
+- **Stato (dopo HARD-01B):** **RESOLVED (15/07/2026).** Aggiunto in `firebase.json` il blocco `headers` (X-Content-Type-Options, X-Frame-Options, Cross-Origin-Opener-Policy `same-origin-allow-popups`, Referrer-Policy, Permissions-Policy, CSP enforced con `script-src` che include `https://apis.google.com`) e la strategia cache (`no-cache` sulla shell, `immutable` su `/assets/**`, `no-store` su `/api/repository/**`); guardrail statico in `apps/web/src/hostingHeaders.test.ts`. Deployato su `schoolforge-dev` (PR #179/#180/#181) e verificato: header/cache via HTTP reale, flussi applicativi (login Google docente/studente, lezioni, salvataggio Didattica, gateway, download PDF/CSV/ZIP, verifica online) confermati manualmente dal docente su DEV. I warning COOP di Chrome sul polling della popup Auth sono rumore browser noto, non violazioni CSP. Evidenze in `evidenze/hard-01b-dev-smoke.md` (12/12 PASS).
 - **Area:** H (config) / difesa in profondità.
 - **Evidenza:** `firebase.json` (hosting) non ha alcun blocco `headers`: nessun `X-Content-Type-Options: nosniff`, `X-Frame-Options`/`frame-ancestors`, `Referrer-Policy`, `Content-Security-Policy`, né `Cache-Control` per gli asset con hash in `/assets/*`.
 - **Scenario concreto:** l'app monta HTML sanificato da Markdown (`MarkdownRenderer`), quindi il vettore XSS principale è già mitigato da DOMPurify; l'assenza di CSP resta però una mancanza di **difesa in profondità** (una singola svista futura nella sanificazione non avrebbe un secondo argine), e l'assenza di `nosniff`/`frame-ancestors` lascia aperti MIME-sniffing e framing/clickjacking. La mancanza di `Cache-Control immutable` sugli asset con hash è una piccola inefficienza di banda su Hosting.
@@ -156,7 +156,7 @@ Pacchetti indipendenti, ciascuno approvabile da solo. **Nessuno** introduce funz
 
 - **HARD-01 — Operatività & configurazione (P2).** Suddiviso in tre sotto-pacchetti indipendenti:
   - **HARD-01A** (✅ **RESOLVED**) — **F01**: runbook operativo, budget alert DEV, backup/ripristino, incidenti. Vedi `runbook-operativo-v1.md` e `evidenze/hard-01a-human-gate.md`.
-  - **HARD-01B** (**MITIGATED — deploy/smoke DEV pending**) — **F03**: security header + strategia cache in `firebase.json`, guardrail statico `hostingHeaders.test.ts`. Vedi `evidenze/hard-01b-dev-smoke.md`.
+  - **HARD-01B** (✅ **COMPLETATO; F03 RESOLVED 15/07/2026**) — **F03**: security header + strategia cache in `firebase.json` (incl. COOP `same-origin-allow-popups` e `script-src https://apis.google.com`), guardrail statico `hostingHeaders.test.ts`, deployato e verificato su DEV. Vedi `evidenze/hard-01b-dev-smoke.md`.
   - **HARD-01C** (aperto) — **F02**: verifica region reale su PROD e riconciliazione doc/residenza dati (decisione del docente, tocca solo documentazione + eventuale re-provisioning Console).
 - **HARD-02 — Accessibilità & resilienza (P3).** **F08** (passata a11y end-to-end docente+studente) e **F06** (chunking import >500 mutazioni con atomicità logica preservata). Rischio medio (F06 tocca `importRepository.ts`).
 - **HARD-03 — Costi a lungo termine (P3, condizionato a misura).** **F05** (paginazione storico `verifications` con UX dedicata) e valutazione **F04** (App Check) — entrambi **solo se** una misura reale in Firebase Console mostra un impatto concreto; altrimenti restano deferral.
@@ -174,9 +174,9 @@ Nessun ordine di deploy speciale (interventi di config/doc + un eventuale codice
 Il Gate **GHARD** si considera superabile quando:
 
 1. **Nessun P0/P1 aperto** (già soddisfatto oggi).
-2. **F01 chiuso**: budget alert configurato e documentato; cadenza di export/backup e procedura di ripristino scritte; procedura account owner compromesso scritta.
-3. **F02 risolto**: region reali di Firestore/Storage/Functions verificate su PROD e coerenti con la documentazione (o documentazione corretta con l'implicazione di residenza esplicitata e accettata).
-4. **F03 applicato**: security header presenti su Hosting e smoke DEV che conferma login/rendering/PDF non rotti.
+2. **F01 chiuso** ✅ (HARD-01A, 15/07/2026): budget alert configurato e documentato; cadenza di export/backup e procedura di ripristino scritte; procedura account owner compromesso scritta.
+3. **F02 risolto** (HARD-01C, aperto): region reali di Firestore/Storage/Functions verificate su PROD e coerenti con la documentazione (o documentazione corretta con l'implicazione di residenza esplicitata e accettata).
+4. **F03 applicato** ✅ (HARD-01B, 15/07/2026): security header presenti su Hosting e smoke DEV che conferma login/rendering/PDF non rotti — vedi `evidenze/hard-01b-dev-smoke.md`.
 5. **P3 residui** (F04–F08) esplicitamente accettati o pianificati con soglia, non silenziosamente ignorati.
 6. **CI verde** invariata; `format:check`/`build` puliti; nessuna regressione nei test esistenti.
 7. Evidenze registrate in una checklist finale `evidenze/ghard-checklist-finale.md`, con distinzione automatica/manuale DEV/limite residuo (stesso metodo di g5/g6/gdux).
