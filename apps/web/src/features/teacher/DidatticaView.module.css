@@ -245,6 +245,8 @@
   background: transparent;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
+  font-size: 0.875rem;
+  line-height: 1;
 }
 
 .iconBtn:hover:not(:disabled) {
