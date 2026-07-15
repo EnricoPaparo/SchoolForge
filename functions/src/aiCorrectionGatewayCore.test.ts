@@ -134,6 +134,26 @@ describe('validateAiCorrectionRequest', () => {
     );
   });
 
+  it('accepts the canonical payload with exactly the three allowed fields', () => {
+    const r = validateAiCorrectionRequest({
+      verificationId: VERIF,
+      submissionIds: [subId('s1')],
+      requestId: REQ,
+    });
+    expect(Object.keys(r).sort()).toEqual(['requestId', 'submissionIds', 'verificationId']);
+  });
+
+  it.each([
+    ['extra studentAnswer', validRequest({ studentAnswer: 'la mia risposta' })],
+    ['extra questionText', validRequest({ questionText: 'testo domanda' })],
+    ['extra arbitrary object', validRequest({ extra: { foo: 'bar' } })],
+    ['extra scalar field', validRequest({ studentEmail: 'a@b.c' })],
+  ])('rejects a closed-payload violation: %s', (_label, input) => {
+    expect(() => validateAiCorrectionRequest(input)).toThrowError(
+      expect.objectContaining({ code: 'invalid_input' }),
+    );
+  });
+
   it('rejects duplicate submissionIds', () => {
     expect(() =>
       validateAiCorrectionRequest(validRequest({ submissionIds: [subId('s1'), subId('s1')] })),

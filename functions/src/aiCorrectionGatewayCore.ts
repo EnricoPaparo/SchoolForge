@@ -134,6 +134,10 @@ function isSafeId(value: unknown): value is string {
 /**
  * Validazione rigorosa e **solo di forma** dell'input (nessuna lettura
  * Firestore, nessuna eleggibilità — quella è M5-02). Verifica:
+ * - il payload contiene **esclusivamente** `verificationId`, `submissionIds`,
+ *   `requestId`: qualunque proprietà aggiuntiva è rifiutata, così il contratto
+ *   «il client passa solo ID» è effettivo (nessun testo di domanda, risposta,
+ *   soluzione, nome o email può transitare);
  * - `verificationId` e `requestId` ben formati;
  * - `submissionIds` array non vuoto, entro il limite, senza duplicati, ogni id
  *   ben formato e **appartenente** alla verifica (`{verificationId}_{...}`),
@@ -141,9 +145,18 @@ function isSafeId(value: unknown): value is string {
  * Rifiuta tipi errati, id malformati, duplicati e superamento limite con codici
  * stabili e messaggi non sensibili.
  */
+const ALLOWED_REQUEST_KEYS = ['verificationId', 'submissionIds', 'requestId'] as const;
+
 export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest {
   if (typeof input !== 'object' || input === null) {
     throw new AiGatewayError('invalid_input', 'Payload mancante o non valido.');
+  }
+  // Payload realmente chiuso: nessuna proprietà oltre ai tre ID ammessi.
+  const allowed = new Set<string>(ALLOWED_REQUEST_KEYS);
+  for (const key of Object.keys(input as Record<string, unknown>)) {
+    if (!allowed.has(key)) {
+      throw new AiGatewayError('invalid_input', 'Il payload contiene proprietà non ammesse.');
+    }
   }
   const { verificationId, submissionIds, requestId } = input as Record<string, unknown>;
 
