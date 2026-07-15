@@ -201,6 +201,7 @@ export async function importRepository(
     udaCount: payload.importMeta.udaCount,
     lessonCount: payload.importMeta.lessonCount,
     questionCount: payload.importMeta.questionCount,
+    annoScolastico: payload.importMeta.programmaMeta?.annoScolastico ?? null,
     cleanupPending,
   };
 }

@@ -18,6 +18,8 @@ export type ImportRepositoryResult =
       udaCount: number;
       lessonCount: number;
       questionCount: number;
+      /** School year already parsed during validation; no post-commit read is needed by the UI. */
+      annoScolastico: string | null;
       /**
        * `true` when the atomic switch succeeded (import is live and correct)
        * but the deferred, best-effort cleanup of the previous import's stale
