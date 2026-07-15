@@ -9,7 +9,7 @@ Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente l
 
 **Didattica (DUX) — implementazione DUX-01–10A completata.** Didattica ha assorbito Corsi/Lezioni/Domande dopo il **Gate di parità PASS** (vedi [evidenze/dux-04d-matrice-parita.md](evidenze/dux-04d-matrice-parita.md)); Classi è una scheda di Studenti, Verifiche è uniformata e metadata corso/anno sono modificabili. **Gate GDUX superato (PASS)** — vedi [evidenze/gdux-checklist-finale.md](evidenze/gdux-checklist-finale.md) e [didattica-ux-roadmap.md](didattica-ux-roadmap.md).
 
-**Hardening finale (HARD) — HARD-00 audit svolto.** Audit generale finale V1 read-only completato: verdetto **READY FOR REMEDIATION** (0 P0, 0 P1, 3 P2, 5 P3), nessun codice/Rules/config modificato — vedi [hardening-audit-v1.md](hardening-audit-v1.md). **HARD-01A svolto:** runbook operativo [runbook-operativo-v1.md](runbook-operativo-v1.md) e Human Gate [evidenze/hard-01a-human-gate.md](evidenze/hard-01a-human-gate.md) — finding HARD-F01 **MITIGATED — documentazione pronta, configurazione manuale pending**. I restanti pacchetti HARD (01B con F02/F03, 02, 03) e il Gate GHARD **non sono ancora implementati**.
+**Hardening finale (HARD) — HARD-00 audit svolto.** Audit generale finale V1 read-only completato: verdetto **READY FOR REMEDIATION** (0 P0, 0 P1, 3 P2, 5 P3), nessun codice/Rules/config modificato — vedi [hardening-audit-v1.md](hardening-audit-v1.md). **HARD-01A completato:** runbook operativo [runbook-operativo-v1.md](runbook-operativo-v1.md) e Human Gate [evidenze/hard-01a-human-gate.md](evidenze/hard-01a-human-gate.md) — finding HARD-F01 **RESOLVED (15/07/2026)**. I restanti pacchetti HARD (01B con F02/F03, 02, 03) e il Gate GHARD **non sono ancora implementati**.
 
 **Didattica studente (SDUX) — SDUX-01 implementato.** La vecchia lista Lezioni è sostituita da libreria corsi e workspace corso/UDA/lezione read-only, costruiti esclusivamente sulle proiezioni pubbliche. Nessun componente/service docente, pool o accesso Storage entra nel percorso studente. Resta SDUX-02 (smoke DEV responsive + Gate Modalità verifica) — vedi [student-didattica-ux-roadmap.md](student-didattica-ux-roadmap.md).
 
@@ -77,7 +77,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 - [evidenze/gdux-checklist-finale.md](evidenze/gdux-checklist-finale.md) — checklist finale del Gate GDUX (refactor Didattica/UX): matrice 14 punti di verifica, conferme manuali DEV, limiti residui, verdetto **superato (PASS)**.
 - [hardening-audit-v1.md](hardening-audit-v1.md) — **HARD-00**: audit generale finale V1 read-only (aree A–K), matrice superfici, finding P0/P1/P2/P3, cost model dei quattro scenari, roadmap HARD-01/02/03 e criteri Gate GHARD. Verdetto **READY FOR REMEDIATION**.
 - [runbook-operativo-v1.md](runbook-operativo-v1.md) — **HARD-01A**: runbook operativo V1 per il singolo docente — ambienti DEV/PROD, deploy, rollback, budget e controllo costi, backup/export, ripristino, incidenti (owner/costi/dati), checklist mensile.
-- [evidenze/hard-01a-human-gate.md](evidenze/hard-01a-human-gate.md) — **HARD-01A** Human Gate: checklist delle azioni manuali del docente (budget alert DEV, politiche backup, rollback/incidente letti) per chiudere HARD-F01. Stato iniziale voci: `PENDING`.
+- [evidenze/hard-01a-human-gate.md](evidenze/hard-01a-human-gate.md) — **HARD-01A** Human Gate: checklist delle azioni manuali del docente (budget alert DEV, politiche backup, rollback/incidente letti). **PASS il 15/07/2026; HARD-F01 risolto.**
 
 ## Diagrammi
 

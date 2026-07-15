@@ -153,7 +153,8 @@ Vedi §8 (incidente costi/traffico). In sintesi: identifica il servizio, riduci 
 
 ### 5.1 DEV
 - **Nessun backup schedulato obbligatorio** (dati sintetici, ricreabili).
-- **Export puntuale consigliato prima di:** una migrazione dati, una cancellazione massiva, una modifica strutturale (Rules/schema) che potrebbe corrompere lo stato.
+- **Nessun dato DEV viene migrato o copiato in PROD:** PROD partirà da una base pulita e indipendente.
+- Un export DEV è **facoltativo** prima di una migrazione, cancellazione massiva o modifica strutturale: serve solo se il docente vuole conservare dati DEV ancora utili (verifiche, consegne o correzioni di prova). Se tali dati sono sacrificabili, il docente accetta esplicitamente di poterli perdere.
 
 ### 5.2 PROD (piano da attivare **prima** del rilascio)
 - Da definire e **approvare dal docente** prima di aprire PROD: cadenza, retention e relativi **costi di storage degli export** (gli export occupano spazio su un bucket GCS → costo).
