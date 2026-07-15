@@ -196,6 +196,32 @@ Questa sezione andrà rivista quando M3-full sarà pianificato in dettaglio, val
 - Il pool non è mai esposto nel rendering della lezione o nella proiezione del Portale.
 - Il package interno `lesson-contract` (`packages/lesson-contract`, non pubblicato su npm) è l'unico parser autorizzato; qualsiasi estensione non dichiarata viene rifiutata.
 
+### 7.1 Security header e CSP di Hosting (HARD-01B, F03)
+
+Difesa in profondità a livello di trasporto, configurata **solo** in `firebase.json` (`hosting.headers`), applicata a ogni risposta Hosting (`source: "**"`). Enforced, non report-only. Guardrail statico di non-regressione in `apps/web/src/hostingHeaders.test.ts`.
+
+| Header | Valore | Motivo |
+|---|---|---|
+| `X-Content-Type-Options` | `nosniff` | Blocca il MIME-sniffing. |
+| `X-Frame-Options` | `DENY` | Anti-clickjacking (ridondante con `frame-ancestors 'none'`, per browser datati). |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Non perde path/query cross-origin. |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=(), fullscreen=(self)` | Disabilita sensori/pagamenti non usati; **mantiene** Fullscreen same-origin per la Modalità verifica; clipboard non ristretta. |
+| `Content-Security-Policy` | vedi sotto | Confina origini di script/stili/connessioni/frame. |
+
+**CSP** (una sola riga in `firebase.json`), con motivazione per ogni origine non-`self`:
+
+- `default-src 'self'` · `base-uri 'self'` · `object-src 'none'` · `frame-ancestors 'none'` · `form-action 'self'` — baseline restrittiva.
+- `script-src 'self'` — solo i bundle Vite con hash serviti dallo stesso origin. **Nessun** `unsafe-inline`/`unsafe-eval`; nessuno script esterno (niente analytics/ads).
+- `style-src 'self' 'unsafe-inline'` — `'unsafe-inline'` **necessario** per gli inline `style={{…}}` di React (stili dinamici in `CourseWorkspace`/`DidatticaView`); ammesso solo su `style-src`, mai su `script-src`.
+- `img-src 'self' data: blob: https://*.googleusercontent.com` — `data:` favicon SVG e immagini generate (canvas PDF); `blob:` immagini da Blob; `*.googleusercontent.com` foto profilo Google del docente/studente.
+- `font-src 'self' data:` — font locali ed eventuali font embedded via `data:` nel CSS.
+- `connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebasestorage.googleapis.com https://storage.googleapis.com` — `'self'` copre il gateway same-origin `/api/repository/**`; `identitytoolkit`+`securetoken` = Firebase Auth (login e refresh token); `firestore.googleapis.com` = Firestore (WebChannel su HTTPS, nessun `wss` necessario); `firebasestorage`+`storage.googleapis.com` = download/upload Storage e relativi redirect.
+- `frame-src https://*.firebaseapp.com https://accounts.google.com` — iframe/handler di Firebase Auth (`*.firebaseapp.com`) e superficie di scelta account/consenso Google usata da `signInWithPopup`.
+
+**Cache** (`hosting.headers`, l'ultima regola che matcha vince): shell SPA (`index.html`, servito su ogni route) → `Cache-Control: no-cache` (rivalidazione obbligatoria, niente SPA vecchia bloccata dopo un deploy); `/assets/**` (bundle Vite con hash) → `public, max-age=31536000, immutable`. Nessuna cache pubblica aggressiva su `/api/repository/**` (il gateway impone già `no-store` lato Function).
+
+> **Stato:** **MITIGATED — configurazione pronta, deploy e smoke DEV pending.** Da verificare su DEV dopo il deploy (login Google, rendering, download, verifica online, Fullscreen) — checklist `evidenze/hard-01b-dev-smoke.md`. Non COOP/COEP/CORP: non introdotti, per non rompere `signInWithPopup`, foto profilo o risorse Firebase.
+
 ---
 
 ## 8. AI — Modulo 5 (fuori scope V1 / pianificato per V2)
