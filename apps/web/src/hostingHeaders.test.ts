@@ -63,6 +63,7 @@ describe('Firebase Hosting security headers', () => {
 
   it('consente le origini necessarie a Firebase Auth, Firestore, Storage e foto profilo', () => {
     const csp = valueOf('**', 'Content-Security-Policy') ?? '';
+    expect(csp).toMatch(/script-src[^;]*https:\/\/apis\.google\.com/);
     expect(csp).toContain('https://identitytoolkit.googleapis.com');
     expect(csp).toContain('https://securetoken.googleapis.com');
     expect(csp).toContain('https://firestore.googleapis.com');

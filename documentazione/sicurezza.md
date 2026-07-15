@@ -211,7 +211,7 @@ Difesa in profondità a livello di trasporto, configurata **solo** in `firebase.
 **CSP** (una sola riga in `firebase.json`), con motivazione per ogni origine non-`self`:
 
 - `default-src 'self'` · `base-uri 'self'` · `object-src 'none'` · `frame-ancestors 'none'` · `form-action 'self'` — baseline restrittiva.
-- `script-src 'self'` — solo i bundle Vite con hash serviti dallo stesso origin. **Nessun** `unsafe-inline`/`unsafe-eval`; nessuno script esterno (niente analytics/ads).
+- `script-src 'self' https://apis.google.com` — bundle Vite con hash serviti dallo stesso origin e loader ufficiale richiesto da Firebase Google Auth (`signInWithPopup`), confermato dallo smoke DEV. **Nessun** `unsafe-inline`/`unsafe-eval`; nessun'altra origine script (niente analytics/ads).
 - `style-src 'self' 'unsafe-inline'` — `'unsafe-inline'` **necessario** per gli inline `style={{…}}` di React (stili dinamici in `CourseWorkspace`/`DidatticaView`); ammesso solo su `style-src`, mai su `script-src`.
 - `img-src 'self' data: blob: https://*.googleusercontent.com` — immagini delle lezioni ammesse solo se **same-origin/importate** (`'self'`), `data:` (favicon SVG e immagini generate per il canvas PDF), `blob:` (immagini da Blob) o **foto profilo Google** (`*.googleusercontent.com`). Immagini remote arbitrarie di terze parti restano **intenzionalmente bloccate** per privacy e sicurezza: `img-src` **non** viene ampliato a `https:` o `*` senza una decisione futura esplicita.
 - `font-src 'self' data:` — font locali ed eventuali font embedded via `data:` nel CSS.
