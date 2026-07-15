@@ -23,13 +23,15 @@ Aggiorna lo **Stato** di ogni voce da `PENDING` a `PASS`/`FAIL` (con data); se `
 | 8 | Download PDF / CSV / ZIP | Generazione browser-side e download via Blob non bloccati (verifica PDF, Registro Correzioni CSV, export ZIP) | **PENDING** |
 | 9 | Avvio/svolgimento/consegna verifica online | Avvio sessione, autosave, Fullscreen (Modalità verifica) attivo, consegna completata | **PENDING** |
 | 10 | Nessun errore CSP inatteso in Console | Nessuna violazione CSP durante i flussi 3–9 | **PENDING** |
-| 11 | Gateway repository funzionante | Chiamate `/api/repository/read|write|delete|batch-read` ok; risposta con `Cache-Control: no-store` | **PENDING** |
-| 12 | Cache corretta | `index.html` → `Cache-Control: no-cache`; `/assets/*` → `public, max-age=31536000, immutable` | **PENDING** |
+| 11 | Gateway repository funzionante | Chiamate `/api/repository/read\|write\|delete\|batch-read` ok; risposta con `Cache-Control: no-store` (imposto sia dal blocco Hosting dedicato `/api/repository/**` sia dalla Function) | **PENDING** |
+| 12 | Cache corretta | `index.html` → `Cache-Control: no-cache`; `/assets/*` → `public, max-age=31536000, immutable`; `/api/repository/*` → `no-store` | **PENDING** |
 
 ## Esito
 
 - **Finché tutte le voci non sono `PASS`:** HARD-F03 = **MITIGATED — configurazione pronta, deploy e smoke DEV pending**.
 - **Quando tutte le voci sono `PASS`:** HARD-F03 può essere marcato **RESOLVED** e citato come evidenza per il Gate GHARD.
 - **Se una voce `FAIL`:** annota la direttiva CSP/header responsabile e correggi in `firebase.json` (es. origine mancante in `connect-src`/`frame-src`) prima di ridichiarare MITIGATED.
+
+> **Nota immagini/CSP:** le immagini nelle lezioni ammesse dalla CSP sono solo same-origin/importate, `data:`, `blob:` o foto profilo Google (`*.googleusercontent.com`). Le immagini remote arbitrarie di terze parti restano **intenzionalmente bloccate** per privacy e sicurezza; `img-src` non va ampliato a `https:`/`*` senza una decisione futura esplicita. Se una lezione mostra un'immagine mancante, verificare che la sorgente sia importata nel repository (non un hotlink esterno), non allargare la CSP.
 
 > Rischi noti da confermare in smoke (se `FAIL`, aggiungere l'origine e ri-testare): eventuale necessità di `https://apis.google.com` in `script-src` per alcuni flussi Auth; eventuale redirect di download Storage verso un host non incluso in `connect-src`; eventuale `blob:`/`worker-src` per generatori PDF. Nessuno di questi è risultato necessario dall'analisi statica, ma vanno confermati con il deploy reale.

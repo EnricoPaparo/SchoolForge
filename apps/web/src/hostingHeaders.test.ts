@@ -81,9 +81,15 @@ describe('Firebase Hosting cache policy', () => {
     expect(valueOf('/assets/**', 'Cache-Control')).toBe('public, max-age=31536000, immutable');
   });
 
+  it('il gateway /api/repository/** ha un blocco dedicato con Cache-Control: no-store', () => {
+    // Non ci si affida all'interazione tra il no-cache globale di Hosting e il
+    // no-store restituito dalla Cloud Function: Hosting stesso impone no-store.
+    const block = headerBlocks.find((b) => b.source === '/api/repository/**');
+    expect(block, 'atteso un blocco headers per "/api/repository/**"').toBeDefined();
+    expect(valueOf('/api/repository/**', 'Cache-Control')).toBe('no-store');
+  });
+
   it('nessuna regola applica una cache pubblica aggressiva al gateway /api/repository/**', () => {
-    // Il gateway imposta già Cache-Control: no-store lato Function; qui verifichiamo
-    // che nessuna regola Hosting gli assegni una cache pubblica immutabile.
     for (const block of headerBlocks) {
       const cache = block.headers.find((h) => h.key.toLowerCase() === 'cache-control')?.value ?? '';
       const matchesApi = block.source === '**' || block.source.includes('/api/');
