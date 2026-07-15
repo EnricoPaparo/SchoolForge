@@ -418,8 +418,9 @@ export async function completeCorrection(submissionId: string, db: Firestore): P
  * `assertCorrectionReturnWithinLimit` before writing — a projection that
  * would be too large fails loudly, never silently truncated.
  *
- * Correction update, projection create/overwrite, and the `'returned'`
- * `correctionEvents` entry are written atomically in a single `writeBatch`.
+ * Correction update, submission/receipt status mirrors, projection
+ * create/overwrite, and the `'returned'` `correctionEvents` entry are written
+ * atomically in a single `writeBatch`.
  */
 export async function returnCorrection(submissionId: string, db: Firestore): Promise<void> {
   const ref = doc(db, 'corrections', submissionId);
@@ -503,9 +504,12 @@ export async function returnCorrection(submissionId: string, db: Firestore): Pro
     returnedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  // completeCorrection already persisted the final score summary. Rewriting
+  // that identical map here would leave only correctionSummaryUpdatedAt in
+  // Firestore's affectedKeys(), which the paired-field Rules correctly deny.
+  // Returning changes only the public workflow status.
   mirrorCorrectionProgress(batch, submissionId, db, {
     status: 'returned',
-    summary: correctionSummary(correction),
   });
   batch.set(doc(db, 'correctionReturns', submissionId), correctionReturn);
   const event: CorrectionEventDoc = {
