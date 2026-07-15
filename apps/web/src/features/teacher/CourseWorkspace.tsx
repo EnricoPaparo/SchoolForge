@@ -52,6 +52,7 @@ import type { RepositoryDeleteBlocker } from '../repository/editor/repositoryEdi
 import { importRepository } from '../repository/import/importRepository.js';
 import { readZipFile } from '../repository/import/readZipFile.js';
 import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
+import { resolvePublicLessonId } from '../repository/programs/publicLessonId.js';
 import {
   EMPTY_LESSON_METADATA,
   parseLessonMetadata,
@@ -1021,7 +1022,15 @@ export function CourseWorkspace({
     setCompletedError(null);
     void (async () => {
       try {
-        await setLessonCompleted(card.programId, importId, lesson.id, next, ownerUid, db);
+        await setLessonCompleted(
+          card.programId,
+          importId,
+          lesson.id,
+          resolvePublicLessonId(lesson, lesson.id),
+          next,
+          ownerUid,
+          db,
+        );
         if (!mountedRef.current) return;
         // Deterministic next tree + pure setTree; patch the card's lessonsDone
         // once, outside the updater (Strict Mode-safe).

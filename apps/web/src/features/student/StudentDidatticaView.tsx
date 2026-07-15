@@ -185,7 +185,13 @@ export function StudentDidatticaView() {
                 return (
                   <tr key={program.id} className={styles.courseRow}>
                     <td className={styles.titleCell} title={program.title}>
-                      <span>{program.title}</span>
+                      <button
+                        type="button"
+                        className={styles.courseTitle}
+                        onClick={() => openCourse(program.id)}
+                      >
+                        {program.title}
+                      </button>
                     </td>
                     <td className={styles.numericCell}>{udaCount}</td>
                     <td className={styles.numericCell}>{lessons.length}</td>
@@ -236,6 +242,9 @@ function StudentCourseWorkspace({
       : null;
   const selectedUda =
     selection.kind === 'uda' ? selection.udaDir : (selectedLesson?.udaDir ?? null);
+  const completedLessons = lessons.filter((lesson) => lesson.completed).length;
+  const completionPercentage =
+    lessons.length > 0 ? Math.round((completedLessons / lessons.length) * 100) : 0;
 
   function selectUda(udaDir: string) {
     onSelectionChange({ kind: 'uda', udaDir });
@@ -256,8 +265,18 @@ function StudentCourseWorkspace({
         <div className={styles.courseHeading}>
           <h2>{program.title}</h2>
           <p>
-            {udaDirs.length} UDA · {lessons.length} lezioni
+            {udaDirs.length} UDA · {completedLessons}/{lessons.length} lezioni svolte
           </p>
+          <div
+            className={styles.progressTrack}
+            role="progressbar"
+            aria-label="Avanzamento lezioni"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={completionPercentage}
+          >
+            <div className={styles.progressFill} style={{ width: `${completionPercentage}%` }} />
+          </div>
         </div>
       </header>
 

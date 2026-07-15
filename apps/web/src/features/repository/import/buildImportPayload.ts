@@ -159,6 +159,7 @@ export function buildImportPayload(params: {
           concettiChiave: lesson.metadata.concettiChiave,
           obiettivi: lesson.metadata.obiettivi,
           order: lessonIndex,
+          completed: false,
           content: lessonBody,
         },
       });

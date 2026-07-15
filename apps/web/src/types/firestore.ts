@@ -231,6 +231,8 @@ export interface PublicLessonDoc {
   concettiChiave?: string[];
   obiettivi?: string[];
   order?: number;
+  /** Teacher-managed completion state; absent on legacy projections means false. */
+  completed?: boolean;
   content?: string;
 }
 
@@ -242,13 +244,11 @@ export interface PublicLessonDoc {
  * only by `publicLessonsBackfillService.backfillPublicLessonsContent`, and
  * only after a run whose `failed` array is empty: any failure leaves the
  * document untouched (or absent), so the trigger stays visible and the
- * backfill can be rerun. There is currently only one migration this marker
- * tracks, so `publicLessonsContentVersion` is always `1` once set — a
- * future unrelated migration would use a different settings document, not
- * a second field here.
+ * backfill can be rerun. Version 2 also synchronizes the teacher-managed
+ * lesson completion flag used by the read-only student progress bar.
  */
 export interface PublicLessonsMigrationDoc {
-  publicLessonsContentVersion: 1;
+  publicLessonsContentVersion: 2;
   completedAt: Timestamp | FieldValue;
 }
 

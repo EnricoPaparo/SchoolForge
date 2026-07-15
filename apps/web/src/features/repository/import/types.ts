@@ -117,6 +117,7 @@ export interface PublicLessonPayload {
     concettiChiave: string[];
     obiettivi: string[];
     order: number;
+    completed: boolean;
     /** The lesson body Markdown itself — see PublicLessonDoc.content. */
     content: string;
   };
