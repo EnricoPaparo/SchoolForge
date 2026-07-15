@@ -82,6 +82,10 @@ Classificazione: **P0** blocco totale/rischio grave · **P1** flusso essenziale 
 - **Verificato [statico/auto]:** presenza e correttezza di ruoli/nomi/landmark/tabs/tabelle/focus ring/reduced-motion; gestione Escape e focus dei **menu contestuali** e dei dialog **AttentionEventsDialog/VerificationsView** (test); etichettatura completa dell'exam view; immagini decorative vs informative.
 - **Non verificato [da confermare]:** contrasto reale, zoom 200%, reflow 320px, screen reader (NVDA/VoiceOver), orientamento mobile fisico, resa fullscreen, e la resa effettiva di `prefers-reduced-motion`. Da coprire con uno smoke a11y manuale su DEV (tastiera + AT), non con nuovi test E2E fragili.
 
+### 5.1 Smoke a11y manuale su DEV — esito
+
+**PASS (dichiarato dal docente, 15/07/2026).** Verificati manualmente sui dialog Didattica dopo il deploy di HARD-02A-FIX: **Escape** chiude un dialog chiudibile; **Tab / Shift+Tab** restano confinati nel modale (focus trap ciclico); alla chiusura il **focus torna al trigger**; durante un'operazione **`busy`** il dialog non si chiude (né Escape né backdrop). **P2-01 confermato RESOLVED anche manualmente.** I finding **P3** (`aria-invalid`/`aria-describedby`, `scope="col"`) restano polish non bloccante, non implementati in questa fase.
+
 ## 6. Verdetto
 
 > **READY FOR REMEDIATION** (audit originale) → **P2-01 RESOLVED da HARD-02A-FIX (15/07/2026).**
