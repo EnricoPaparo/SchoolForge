@@ -1,6 +1,5 @@
 import {
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -637,8 +636,14 @@ export async function deleteVerification(
   if (!linkedSubmissions.empty) {
     throw new Error('Elimina prima tutte le consegne associate a questa verifica.');
   }
-  await deleteDoc(doc(db, 'verifications', verificationId));
-  await setDoc(doc(collection(db, 'auditEvents')), {
+  // Firestore does not cascade-delete subcollections. Remove the student
+  // projection in the same atomic batch as the parent; otherwise a
+  // collectionGroup('publishedProjection') query can keep discovering a
+  // verification that no longer exists in the teacher archive.
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'verifications', verificationId, 'publishedProjection', 'data'));
+  batch.delete(doc(db, 'verifications', verificationId));
+  batch.set(doc(collection(db, 'auditEvents')), {
     actorUid: ownerUid,
     action: 'verification.deleted',
     targetId: verificationId,
@@ -646,4 +651,5 @@ export async function deleteVerification(
     reason: null,
     timestamp: serverTimestamp(),
   });
+  await batch.commit();
 }

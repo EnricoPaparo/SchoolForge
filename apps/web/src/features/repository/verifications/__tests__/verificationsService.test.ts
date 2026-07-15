@@ -6,7 +6,6 @@ vi.mock('../../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
 const mockGetDocs = vi.fn();
 const mockGetDoc = vi.fn();
 const mockSetDoc = vi.fn();
-const mockDeleteDoc = vi.fn();
 const mockDoc = vi.fn();
 const mockCollection = vi.fn();
 const mockQuery = vi.fn((...args: unknown[]) => ({ args }));
@@ -14,9 +13,11 @@ const mockWhere = vi.fn((...args: unknown[]) => ({ where: args }));
 const mockServerTimestamp = vi.fn(() => ({ _type: 'serverTimestamp' }));
 const mockRunTransaction = vi.fn();
 const mockBatchSet = vi.fn();
+const mockBatchDelete = vi.fn();
 const mockBatchCommit = vi.fn();
 const mockWriteBatch = vi.fn((_db?: unknown) => ({
   set: mockBatchSet,
+  delete: mockBatchDelete,
   commit: mockBatchCommit,
 }));
 
@@ -29,7 +30,6 @@ vi.mock('firebase/firestore', () => ({
   where: (...args: unknown[]) => mockWhere(...args),
   limit: (n: number) => ({ limit: n }),
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
-  deleteDoc: (...args: unknown[]) => mockDeleteDoc(...args),
   runTransaction: (...args: unknown[]) => mockRunTransaction(...args),
   writeBatch: (db: unknown) => mockWriteBatch(db),
   serverTimestamp: () => mockServerTimestamp(),
@@ -93,7 +93,6 @@ beforeEach(() => {
   mockDoc.mockReturnValue(fakeDocRef);
   mockCollection.mockReturnValue({ id: 'verifications' });
   mockSetDoc.mockResolvedValue(undefined);
-  mockDeleteDoc.mockResolvedValue(undefined);
   mockBatchCommit.mockResolvedValue(undefined);
 });
 
@@ -971,41 +970,44 @@ describe('closeVerification', () => {
 // ─── deleteVerification ────────────────────────────────────────────────────────
 
 describe('deleteVerification', () => {
-  it('deletes the document and writes an audit event when status is closed (no linked submissions)', async () => {
+  it('atomically deletes parent and student projection and writes an audit event when closed', async () => {
     const closedDoc: Partial<VerificationDoc> = { status: 'closed', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => closedDoc });
     mockGetDocs.mockResolvedValue({ empty: true, docs: [] });
 
     await deleteVerification('ver-id', OWNER_UID, fakeDb);
 
-    expect(mockDeleteDoc).toHaveBeenCalledTimes(1);
-    expect(mockSetDoc).toHaveBeenCalledTimes(1); // audit event only
-    const [, auditData] = mockSetDoc.mock.calls[0];
+    expect(mockWriteBatch).toHaveBeenCalledTimes(1);
+    expect(mockBatchDelete).toHaveBeenCalledTimes(2);
+    expect(mockBatchSet).toHaveBeenCalledTimes(1); // audit event only
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+    const [, auditData] = mockBatchSet.mock.calls[0];
     expect(auditData.action).toBe('verification.deleted');
     expect(auditData.actorUid).toBe(OWNER_UID);
     expect(auditData.targetId).toBe('ver-id');
   });
 
-  it('deletes the document and writes an audit event when status is draft (no linked submissions)', async () => {
+  it('atomically deletes parent and projection and writes an audit event when draft', async () => {
     const draftDoc: Partial<VerificationDoc> = { status: 'draft', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => draftDoc });
     mockGetDocs.mockResolvedValue({ empty: true, docs: [] });
 
     await deleteVerification('ver-id', OWNER_UID, fakeDb);
 
-    expect(mockDeleteDoc).toHaveBeenCalledTimes(1);
-    const [, auditData] = mockSetDoc.mock.calls[0];
+    expect(mockBatchDelete).toHaveBeenCalledTimes(2);
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+    const [, auditData] = mockBatchSet.mock.calls[0];
     expect(auditData.action).toBe('verification.deleted');
   });
 
-  it('rejects when status is active, without calling deleteDoc', async () => {
+  it('rejects when status is active, without opening a batch', async () => {
     const activeDoc: Partial<VerificationDoc> = { status: 'active', config: VALID_CONFIG };
     mockGetDoc.mockResolvedValue({ data: () => activeDoc });
 
     await expect(deleteVerification('ver-id', OWNER_UID, fakeDb)).rejects.toThrow(
       'Verifica non eliminabile: deve essere in bozza o chiusa',
     );
-    expect(mockDeleteDoc).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
   });
 
   it('refuses to delete a closed verification that still owns a submission, writing nothing', async () => {
@@ -1017,8 +1019,8 @@ describe('deleteVerification', () => {
     await expect(deleteVerification('ver-id', OWNER_UID, fakeDb)).rejects.toThrow(
       /Elimina prima tutte le consegne/i,
     );
-    expect(mockDeleteDoc).not.toHaveBeenCalled();
-    expect(mockSetDoc).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+    expect(mockBatchSet).not.toHaveBeenCalled();
     // The preflight query is targeted (ownerUid + verificationId), never a full scan.
     expect(mockWhere).toHaveBeenCalledWith('ownerUid', '==', OWNER_UID);
     expect(mockWhere).toHaveBeenCalledWith('verificationId', '==', 'ver-id');
