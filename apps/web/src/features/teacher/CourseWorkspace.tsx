@@ -8,13 +8,20 @@ import {
 import { db, storage } from '../../lib/firebase.js';
 import {
   IconBookOpen,
+  IconArrowUpDown,
   IconCircleQuestion,
+  IconDownload,
   IconFileCheck,
   IconFileText,
+  IconGraduationCap,
   IconLayers,
   IconMoreHorizontal,
   IconPanelLeft,
+  IconPencil,
+  IconPlus,
   IconTriangleAlert,
+  IconTrash,
+  IconUpload,
 } from '../../components/icons.js';
 import type { CourseCard } from '../repository/programs/courseLibrary.js';
 import {
@@ -1451,6 +1458,7 @@ export function CourseWorkspace({
                       role="menuitem"
                       onClick={() => openDialog({ kind: 'renameCourse' })}
                     >
+                      <IconPencil size={15} />
                       Modifica titolo
                     </button>
                     <button
@@ -1458,6 +1466,7 @@ export function CourseWorkspace({
                       role="menuitem"
                       onClick={() => openDialog({ kind: 'importCourse' })}
                     >
+                      <IconUpload size={15} />
                       Importa ZIP
                     </button>
                     <button
@@ -1466,6 +1475,7 @@ export function CourseWorkspace({
                       disabled={!card.hasImport}
                       onClick={() => void handleExportZip()}
                     >
+                      <IconDownload size={15} />
                       Esporta ZIP
                     </button>
                     <button
@@ -1474,6 +1484,7 @@ export function CourseWorkspace({
                       disabled={!card.hasImport}
                       onClick={() => void handleProgrammaSvolto('md')}
                     >
+                      <IconFileText size={15} />
                       Programma svolto (MD)
                     </button>
                     <button
@@ -1482,6 +1493,7 @@ export function CourseWorkspace({
                       disabled={!card.hasImport}
                       onClick={() => void handleProgrammaSvolto('pdf')}
                     >
+                      <IconFileCheck size={15} />
                       Programma svolto (PDF)
                     </button>
                     <button
@@ -1489,6 +1501,7 @@ export function CourseWorkspace({
                       role="menuitem"
                       onClick={() => openDialog({ kind: 'classes' })}
                     >
+                      <IconGraduationCap size={15} />
                       Classi assegnate
                     </button>
                     <button
@@ -1496,6 +1509,7 @@ export function CourseWorkspace({
                       role="menuitem"
                       onClick={() => openDialog({ kind: 'info' })}
                     >
+                      <IconBookOpen size={15} />
                       Modifica metadati corso
                     </button>
                     <button
@@ -1504,10 +1518,12 @@ export function CourseWorkspace({
                       disabled={!card.hasImport}
                       onClick={() => openDialog({ kind: 'newUda' })}
                     >
+                      <IconPlus size={15} />
                       Nuova UDA
                     </button>
                     {card.hasImport && tree && tree.udas.length > 1 && (
                       <button type="button" role="menuitem" onClick={enterOrganize}>
+                        <IconArrowUpDown size={15} />
                         Organizza UDA
                       </button>
                     )}
@@ -1517,6 +1533,7 @@ export function CourseWorkspace({
                       className={styles.menuDanger}
                       onClick={() => openDialog({ kind: 'deleteCourse' })}
                     >
+                      <IconTrash size={15} />
                       Elimina corso
                     </button>
                   </div>
@@ -1566,6 +1583,7 @@ export function CourseWorkspace({
                       role="menuitem"
                       onClick={() => openDialog({ kind: 'newLesson' })}
                     >
+                      <IconPlus size={15} />
                       Nuova lezione
                     </button>
                     <button
@@ -1573,10 +1591,12 @@ export function CourseWorkspace({
                       role="menuitem"
                       onClick={() => openDialog({ kind: 'editUda', udaId: selectedUda.id })}
                     >
+                      <IconPencil size={15} />
                       Modifica metadata
                     </button>
                     {(lessonsByUda.get(selectedUda.dir) ?? []).length > 1 && (
                       <button type="button" role="menuitem" onClick={enterOrganize}>
+                        <IconArrowUpDown size={15} />
                         Organizza lezioni
                       </button>
                     )}
@@ -1586,6 +1606,7 @@ export function CourseWorkspace({
                       className={styles.menuDanger}
                       onClick={() => openDialog({ kind: 'deleteUda', udaId: selectedUda.id })}
                     >
+                      <IconTrash size={15} />
                       Elimina UDA
                     </button>
                   </div>
@@ -1643,6 +1664,7 @@ export function CourseWorkspace({
                         (editingContent && activeTab === 'contenuto') || lessonContent == null
                       }
                     >
+                      <IconPencil size={15} />
                       Modifica contenuto
                     </button>
                     <button
@@ -1660,6 +1682,7 @@ export function CourseWorkspace({
                         (editingInfo && activeTab === 'informazioni') || lessonContent == null
                       }
                     >
+                      <IconBookOpen size={15} />
                       Modifica informazioni
                     </button>
                     <button
@@ -1671,6 +1694,7 @@ export function CourseWorkspace({
                       }}
                       disabled={pdfBusy || lessonContent == null}
                     >
+                      <IconDownload size={15} />
                       {pdfBusy ? 'PDF…' : 'Scarica PDF'}
                     </button>
                     <button
@@ -1681,6 +1705,7 @@ export function CourseWorkspace({
                         openDialog({ kind: 'deleteLesson', lessonId: selectedLesson.id })
                       }
                     >
+                      <IconTrash size={15} />
                       Elimina lezione
                     </button>
                   </div>

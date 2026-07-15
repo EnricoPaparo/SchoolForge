@@ -665,15 +665,15 @@ describe('OnlineExamView — fullscreen recovery (M3F-11A)', () => {
   });
 });
 
-describe('OnlineExamView — unified sticky control panel (M3F-11B)', () => {
+describe('OnlineExamView — unified in-flow control panel', () => {
   it('wraps the header row and the question navigator inside a single shared container', () => {
     renderView();
     const nav = screen.getByRole('navigation', { name: 'Navigatore domande' });
     const title = screen.getByText('Verifica Reti');
 
     // Both the title (header row) and the navigator (second row) must
-    // share the same nearest positioned/sticky ancestor — one panel, not
-    // two independent sticky elements with a hardcoded offset between them.
+    // share one panel in normal document flow, rather than two independent
+    // controls with positioning offsets between them.
     const panel = nav.parentElement;
     expect(panel).toBeTruthy();
     expect(panel?.contains(title)).toBe(true);

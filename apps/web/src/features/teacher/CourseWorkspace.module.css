@@ -331,6 +331,11 @@
   padding: 0.25rem;
 }
 .menu button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  width: 100%;
   text-align: left;
   border: none;
   background: transparent;
@@ -339,6 +344,9 @@
   cursor: pointer;
   font-size: 0.8125rem;
   color: var(--color-text);
+}
+.menu button svg {
+  flex: 0 0 auto;
 }
 .menu button:hover:not(:disabled) {
   background: var(--color-surface);

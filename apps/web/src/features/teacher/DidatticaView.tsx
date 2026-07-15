@@ -571,9 +571,14 @@ function CourseRow({ card, onOpen, onRename, onDelete }: CourseRowProps) {
   return (
     <tr className={styles.row}>
       <td className={styles.td}>
-        <span className={styles.courseTitle} title={card.title}>
+        <button
+          type="button"
+          className={styles.courseTitle}
+          title={`Apri ${card.title}`}
+          onClick={onOpen}
+        >
           {card.title}
-        </span>
+        </button>
       </td>
       <td className={`${styles.td} ${styles.numericCell}`}>{card.udaCount}</td>
       <td className={`${styles.td} ${styles.numericCell}`}>

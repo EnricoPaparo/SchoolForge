@@ -1,5 +1,5 @@
 /* ── Correction workspace (M4-02) — mirrors OnlineExamView's visual
-   language (sticky control panel, question navigator, question cards)
+   language (control panel, question navigator, question cards)
    so the docente sees the same shell the student saw while taking the
    exam, adapted with a compact summary panel instead of a flag toggle. */
 .container {
@@ -11,9 +11,6 @@
 }
 
 .controlPanel {
-  position: sticky;
-  top: 0;
-  z-index: 10;
   display: flex;
   flex-direction: column;
   gap: 0.625rem;

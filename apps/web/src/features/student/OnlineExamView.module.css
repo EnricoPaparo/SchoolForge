@@ -7,23 +7,15 @@
   min-width: 0;
 }
 
-/* ── Sticky control panel (M3F-11B) ───────────────────────────────
-   Header row + question navigator used to be two independent
-   `position: sticky` elements, the navigator's `top` guessing the
-   header's height with a hardcoded `calc()`. That guess drifts the
-   instant the header wraps onto an extra line (narrow viewport, long
-   title, a save error), leaving a gap or overlap between the two. A
-   single sticky container with the two rows inside it in normal flow
-   has no seam to drift: the gap is ordinary flow spacing, identical
-   at the top of the page and mid-scroll, on Chrome/Brave/Safari alike.
+/* ── Exam control panel (M3F-11B) ─────────────────────────────────
+   Header row + question navigator share a single panel and remain in
+   normal document flow: the whole panel now scrolls naturally with the
+   questions instead of covering content while the student moves down.
    Background is the approved slightly-raised panel surface
    (`--color-surface-raised`, a solid hex — fully opaque, not translucent)
    so it reads as the same visual family as Didattica panels/tables and
    question text never shows through while scrolled underneath. */
 .controlPanel {
-  position: sticky;
-  top: 0;
-  z-index: 10;
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
