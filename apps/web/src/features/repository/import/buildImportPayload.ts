@@ -173,7 +173,9 @@ export function buildImportPayload(params: {
       programId,
       importId,
       programmaTitle,
-      status: 'committed',
+      // Written as staging (invisible) and promoted to 'active' by the atomic
+      // switch in importRepository — see HARD-02B-2 / HARD-F06.
+      status: 'staging',
       udaCount: udas.length,
       lessonCount: lessons.length,
       questionCount: questionIndex.length,

@@ -52,6 +52,9 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
   const [dialog, setDialog] = useState<Dialog>({ kind: 'none' });
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  // Non-blocking notice after a successful import whose deferred publicLessons
+  // cleanup was postponed (cleanupPending) — HARD-02B-2.
+  const [importNotice, setImportNotice] = useState<string | null>(null);
 
   // Legacy publicLessons.content backfill (M3F-08), moved here from LessonsView
   // in DUX-04D. Owner-only, discreet: visibility is a single cheap read of the
@@ -188,8 +191,13 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
   }
 
   async function handleImport(title: string, file: File) {
+    // Re-entry guard: block a second concurrent import (double-click on the
+    // submit / a stale in-flight call) — the chunked staging→switch→cleanup
+    // pipeline must never run twice in parallel for the same action.
+    if (busy) return;
     setBusy(true);
     setDialogError(null);
+    setImportNotice(null);
     try {
       // "Importa un nuovo corso da ZIP" = crea il programma e poi importa il
       // contenuto al suo interno, componendo i service esistenti
@@ -207,9 +215,35 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
         await load();
         return;
       }
+      if (result.status === 'not_applied') {
+        // Errore prima dello switch atomico: nessuno switch è avvenuto, il
+        // corso precedente è intatto. Nessun rollback finto.
+        setDialogError(result.message);
+        await load();
+        return;
+      }
+      // result.status === 'committed' — the atomic switch already succeeded:
+      // the import is live. From here NOTHING (a failed library refresh, any UI
+      // update) may downgrade this to a blocking error, so close the dialog and
+      // run the refresh best-effort, outside the general catch.
       setDialog({ kind: 'none' });
-      await load();
+      const notices: string[] = [];
+      if (result.cleanupPending) {
+        // Import applicato e corretto; solo la pulizia delle vecchie
+        // proiezioni è stata rinviata (non bloccante, ritentabile).
+        notices.push('Import completato. Pulizia delle vecchie proiezioni rinviata.');
+      }
+      try {
+        await load();
+      } catch {
+        notices.push(
+          'Import completato. Alcuni dati visualizzati verranno aggiornati al prossimo caricamento.',
+        );
+      }
+      if (notices.length > 0) setImportNotice(notices.join(' '));
     } catch (err) {
+      // Guards only the pre-commit steps (createProgram, readZipFile,
+      // importRepository). A committed import never reaches here as an error.
       setDialogError(err instanceof Error ? err.message : "Errore durante l'importazione.");
     } finally {
       setBusy(false);
@@ -297,6 +331,11 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
 
   return (
     <section aria-label="Didattica" className={styles.container}>
+      {importNotice && (
+        <p role="status" className={styles.migrationSummary}>
+          {importNotice}
+        </p>
+      )}
       {migrationComplete === false && (
         <div role="status" className={styles.migrationNotice}>
           <p>Proiezioni lezione legacy da sincronizzare (manutenzione una tantum).</p>

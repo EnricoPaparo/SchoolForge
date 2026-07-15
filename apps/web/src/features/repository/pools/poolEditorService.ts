@@ -1,14 +1,5 @@
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  updateDoc,
-  where,
-  writeBatch,
-} from 'firebase/firestore';
-import type { DocumentReference, Firestore, WriteBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import type { Firestore } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
 import {
   deleteFile,
@@ -19,6 +10,8 @@ import {
 import { parsePool, serializePool } from '@schoolforge/lesson-contract';
 import type { ParsedPool, PoolValidationError } from '@schoolforge/lesson-contract';
 import { buildQuestionPreview, toDocId } from '../import/buildImportPayload.js';
+import { commitOpsInChunks, deleteDocRefsInBatches } from '../firestoreChunks.js';
+import type { BatchOp } from '../firestoreChunks.js';
 import type { LessonDoc, QuestionIndexEntry, VerificationDoc } from '../../../types/firestore.js';
 
 // ── Result types ──────────────────────────────────────────────────────────────
@@ -81,48 +74,10 @@ function buildQuestionIndexEntry(
   };
 }
 
-const BATCH_CHUNK_SIZE = 400;
-
-async function deleteDocRefsInBatches(db: Firestore, refs: DocumentReference[]): Promise<void> {
-  for (let i = 0; i < refs.length; i += BATCH_CHUNK_SIZE) {
-    const batch = writeBatch(db);
-    refs.slice(i, i + BATCH_CHUNK_SIZE).forEach((r) => batch.delete(r));
-    await batch.commit();
-  }
-}
-
-/**
- * A single mutation to apply to a `WriteBatch` (set/update/delete), deferred
- * so an arbitrary mix of mutation kinds can be chunked and committed
- * uniformly — see `commitOpsInChunks`.
- */
-type BatchOp = (batch: WriteBatch) => void;
-
-/**
- * Commits an arbitrary list of `BatchOp`s in chunks of at most
- * `BATCH_CHUNK_SIZE` (a prudent margin under Firestore's 500-mutation
- * writeBatch limit), one `writeBatch` per chunk. Chunks are committed
- * sequentially — not `Promise.all`'d — so a failure is deterministic (it
- * always happens at a specific chunk boundary, never as a burst of
- * concurrent in-flight batches) and so this never fires more concurrent
- * writes than a single chunk's worth at a time.
- *
- * Residual risk: Firestore only guarantees atomicity *within* one batch.
- * If a pool has more mutations than fit in a single chunk, a failure after
- * chunk N-1 commits but before chunk N does leaves the first N-1 chunks'
- * mutations durably applied and the rest not yet applied — there is no
- * cross-chunk rollback. This is an explicit, documented trade-off (see
- * `savePool`), not a regression: the previous one-`setDoc`-per-question
- * loop had the same "partial completion on failure" property, just with
- * far more round-trips before a failure could occur.
- */
-async function commitOpsInChunks(db: Firestore, ops: BatchOp[]): Promise<void> {
-  for (let i = 0; i < ops.length; i += BATCH_CHUNK_SIZE) {
-    const batch = writeBatch(db);
-    ops.slice(i, i + BATCH_CHUNK_SIZE).forEach((op) => op(batch));
-    await batch.commit();
-  }
-}
+// Chunked-write helpers (BATCH_CHUNK_SIZE, commitOpsInChunks,
+// deleteDocRefsInBatches) live in ../firestoreChunks.js — a single shared
+// implementation reused by the pool editor and the import pipeline. See that
+// module's doc comments for the cross-chunk atomicity trade-off.
 
 // ── loadPool ──────────────────────────────────────────────────────────────────
 

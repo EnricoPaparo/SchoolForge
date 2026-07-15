@@ -146,7 +146,7 @@ describe('createInitializedProgram', () => {
       classIds: [],
     });
     expect(mockBatchSet.mock.calls[1]?.[1]).toMatchObject({
-      status: 'committed',
+      status: 'active',
       udaCount: 0,
       lessonCount: 0,
       questionCount: 0,

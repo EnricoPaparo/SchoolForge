@@ -966,6 +966,48 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     );
   });
 
+  it('keeps a committed import successful when the post-switch metadata re-read fails', async () => {
+    const onCardPatch = vi.fn();
+    mockReadZipFile.mockResolvedValue([{ path: 'programma.md', text: '' }]);
+    mockImportRepository.mockResolvedValue({
+      status: 'committed',
+      importId: 'imp2',
+      udaCount: 3,
+      lessonCount: 9,
+      questionCount: 20,
+      cleanupPending: false,
+    });
+    // The atomic switch already succeeded; only the post-switch metadata
+    // re-read fails. This must NOT surface as an import error.
+    mockGetImportMeta.mockRejectedValue(new Error('firestore transient'));
+    await renderAndReady({}, { onCardPatch });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Importa ZIP' }));
+    const file = new File(['z'], 'c.zip', { type: 'application/zip' });
+    fireEvent.change(screen.getByLabelText('File ZIP del corso'), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Importa' }));
+
+    await waitFor(() => expect(mockGetImportMeta).toHaveBeenCalledOnce());
+    // Card patched from ImportRepositoryResult (success preserved).
+    await waitFor(() =>
+      expect(onCardPatch).toHaveBeenCalledWith(
+        'p1',
+        expect.objectContaining({ activeImportId: 'imp2', udaCount: 3, questionsTotal: 20 }),
+      ),
+    );
+    // No blocking error, dialog closed, only a non-blocking deferred-refresh notice.
+    expect(screen.queryByText("Errore durante l'importazione")).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Importa' })).toBeNull();
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'Import completato. Alcuni dati visualizzati verranno aggiornati al prossimo caricamento.',
+        ),
+      ).toBeTruthy(),
+    );
+  });
+
   it('deletes the course and notifies the parent', async () => {
     const onCourseDeleted = vi.fn();
     mockDeleteProgram.mockResolvedValue(undefined);

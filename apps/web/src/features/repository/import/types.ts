@@ -18,10 +18,33 @@ export type ImportRepositoryResult =
       udaCount: number;
       lessonCount: number;
       questionCount: number;
+      /**
+       * `true` when the atomic switch succeeded (import is live and correct)
+       * but the deferred, best-effort cleanup of the previous import's stale
+       * `publicLessons` did not complete. The import is NOT failed — the stale
+       * projections are already invisible (query + Rules gate on
+       * `activeImportId`). Cleanup is idempotent and retryable via
+       * `retryStalePublicLessonsCleanup`. `false` when cleanup completed (or
+       * there was nothing to clean up). See HARD-02B-2 / HARD-F06.
+       */
+      cleanupPending: boolean;
     }
   | {
       status: 'validation_failed';
       validationIssues: ValidationIssue[];
+    }
+  | {
+      /**
+       * A failure occurred BEFORE the atomic switch (validation-passing ZIP,
+       * but Storage upload or chunked staging writes failed). The import was
+       * NOT applied: `activeImportId` is unchanged, the previous course is
+       * intact and still visible, and any staged orphan docs are invisible
+       * (they carry the new, not-yet-active importId) and separately
+       * cleanable. No fake rollback is performed. Retrying generates a fresh
+       * importId. See HARD-02B-2 / HARD-F06.
+       */
+      status: 'not_applied';
+      message: string;
     };
 
 // ─── Internal payload (pure, no Firebase types) ───────────────────────────────
@@ -121,7 +144,15 @@ export interface ImportMetaPayload {
   programId: string;
   importId: string;
   programmaTitle: string;
-  status: 'committed';
+  /**
+   * Import lifecycle state (HARD-02B-2). New imports are written as
+   * `'staging'` (invisible: `activeImportId` still points at the previous
+   * import), promoted to `'active'` by the atomic switch, and best-effort
+   * marked `'superseded'` by the cleanup of a later import. Legacy imports
+   * carried `'committed'` (or no status) and are treated as `'active'` when
+   * they match `program.activeImportId`, else `'superseded'`.
+   */
+  status: 'staging' | 'active' | 'superseded';
   udaCount: number;
   lessonCount: number;
   questionCount: number;
