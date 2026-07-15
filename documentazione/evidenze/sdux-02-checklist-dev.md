@@ -5,10 +5,9 @@ su DEV (`https://schoolforge-dev.web.app`). Verifica parità grafica con la
 Didattica docente **rigorosamente read-only**, e che la Modalità verifica
 blocchi realmente l'accesso.
 
-> **Stato:** hardening automatico SDUX-02 **completato** (test JS + copertura
-> Rules verificati, vedi PR). I passaggi manuali qui sotto sono **da eseguire
-> dal docente su DEV** — non ancora eseguiti in questa sessione (nessun accesso
-> interattivo a DEV).
+> **Stato:** hardening automatico SDUX-02 **completato**. Il docente ha inoltre
+> confermato sul DEV reale il flusso read-only desktop/mobile e la Modalità
+> verifica; questa checklist conserva i passi ripetibili per regressioni future.
 
 Per ogni riga: annotare **PASS/FAIL** e note.
 
@@ -72,6 +71,6 @@ Per ogni riga: annotare **PASS/FAIL** e note.
 
 ## Esito complessivo
 
-- **Verdetto DEV:** ☐ PASS ☐ FAIL
-- **Data / operatore:**
-- **Note finali:**
+- **Verdetto DEV:** ☒ PASS ☐ FAIL
+- **Data / operatore:** 15/07/2026 — docente
+- **Note finali:** conferma manuale maturata durante il giro completo DEV; nessuna esposizione pool o azione docente nel percorso studente; Modalità verifica blocca e ripristina la Didattica correttamente.

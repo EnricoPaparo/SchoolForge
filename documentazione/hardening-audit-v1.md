@@ -1,7 +1,7 @@
 # HARD-00 — Audit generale finale V1 (read-only, evidence-based)
 
 **Data:** 15 luglio 2026
-**Ambito:** intera V1 su `main` (`f297c61`) — M1, M2, M3-lite, RE, QE, M3-full, M4; Gate G5/G6/GDUX superati. M5/AI fuori scope.
+**Ambito:** intera V1 — M1, M2, M3-lite, RE, QE, M3-full, M4 e DUX; Gate G5/G6/GDUX superati. M5/AI fuori scope.
 **Natura:** audit di solo-lettura. **Nessun** file di codice, Security Rule, indice, schema, dipendenza o configurazione è stato modificato; nessun deploy. I finding qui elencati **non** sono corretti in questa fase (per mandato).
 **Rapporto con audit precedenti:** questo documento **non duplica** `performance-security-audit.md` (PERF-SEC-01A/01B, costi/prestazioni/Rules su M1→M3-full) né le checklist di gate (`g5`, `g6`, `gdux`, `v1-checklist-finale`). Le assume come baseline verificata, ne conferma o riclassifica i residui aperti alla luce di M4/DUX/SDUX ora inclusi, e aggiunge le aree finora non coperte da un audit dedicato: **operatività, supply-chain/configurazione, privacy/residenza dati, accessibilità, coerenza documentazione↔codice**.
 
@@ -11,15 +11,15 @@
 
 SchoolForge arriva alla soglia V1 in stato **solido e coerente con i suoi obiettivi dichiarati** (minimale, single-owner, client-only, costi bassi, nessun polling). La revisione statica di `firestore.rules`, `storage.rules` e del Cloud Function gateway non ha trovato alcun gap di autorizzazione *non enforced*: isolamento studente, immutabilità post-consegna, ID deterministici legati a `request.auth.uid`, transizioni di stato atomiche via `getAfter()`, impossibilità di auto-promozione/auto-approvazione e blocco dell'enumerazione via `list` sono verificati a livello di regola (§A/§B). L'unico accesso privilegiato che bypassa le Storage Rules — il `repositoryGateway` (Admin SDK) — è protetto da verifica ID-token **owner-only** con allowlist di path e difesa dal traversal equivalente o più stretta delle Rules (`repositoryGatewayCore.ts`).
 
-I finding aperti **non** riguardano la correttezza o la sicurezza dei dati, ma tre categorie: **operatività** (assenza di runbook/backup automatico/budget alert documentati), **residenza dati** (documentazione che dichiara `europe-west8`/Milano mentre bucket e Function reali risultano `us-central1`), e **hardening di configurazione** (nessun security header su Hosting). Il resto sono deferral già noti e classificati (paginazione storico, chunking import, banda monitor) e polish non bloccante.
+I tre P2 iniziali riguardavano operatività, residenza dati e hardening Hosting: sono stati risolti da HARD-01A/B/C. Anche il fix a11y P2 e il chunking resiliente dell'import sono completati. Restano soltanto deferral P3 espliciti e condizionati a misure reali.
 
 **Nessun finding P0. Nessun finding P1.** Finding: **3 P2**, **5 P3**.
 
 ## 2. Verdetto complessivo
 
-> **READY FOR REMEDIATION.**
+> **GATE GHARD: PASS (15/07/2026).**
 
-L'audit è completo; i finding sono noti, circoscritti e proporzionati. Nessun P0/P1 impedisce il rilascio DEV/uso personale. Si può procedere con **HARD-01** (pacchetto minimo di operatività/config, §9). Non è **READY FOR FINAL GATE** perché restano 3 P2 che meritano un piccolo intervento prima del Gate GHARD; non è **BLOCKED** perché nessun rischio critico è presente.
+L'audit e le remediation minime sono completi. Non restano P0/P1; i tre P2 iniziali sono risolti; i residui P3 sono accettati con soglie esplicite. Le evidenze finali sono in `evidenze/ghard-checklist-finale.md`. Il pass autorizza la chiusura della V1 su DEV e l'avvio progettuale di M5; **non** autorizza provisioning o deploy PROD.
 
 ## 3. Punti solidi (verificati)
 
@@ -78,7 +78,7 @@ Classificazione: **P0** perdita dati/accesso critico/segreto esposto · **P1** r
 
 ---
 **HARD-F02 — Privacy/residenza dati: la documentazione dichiara `europe-west8` (Milano) ma bucket Storage e Function gateway reali sono `us-central1`.**
-- **Stato (dopo HARD-01C):** **MITIGATED — contraddizione documentale eliminata; resta il blocker PROD.** Le affermazioni assolute «tutto a Milano `europe-west8`» in `README.md`/`architettura.md`/`sicurezza.md` sono state corrette con lo stato reale: DEV Storage/Function `us-central1`, Firestore DEV **`europe-west8` verificata via Firebase CLI**, target PROD **UE**; matrice in `evidenze/hard-01c-region-matrix.md`. **Non RESOLVED**: resta la decisione della regione UE per il provisioning PROD ex novo — vedi `evidenze/hard-01c-human-gate.md`. Nessun servizio creato, nessun dato migrato.
+- **Stato (dopo HARD-01C):** **RESOLVED (15/07/2026).** Stato DEV riconciliato (Storage/Function `us-central1`, Firestore `europe-west8` verificata); target PROD **`europe-west8`**, co-locazione e stop-on-incompatibility formalizzati; nessun dato DEV sarà migrato. Nessun servizio PROD creato, abilitato o fatturato.
 - **Area:** G (privacy) / K (coerenza).
 - **Evidenza:** `architettura.md:26,249,250,536` e `README.md:104` affermano Firestore/Storage/Functions in `europe-west8` (Milano); `functions/src/repositoryGateway.ts:26-31` documenta invece, con output `gcloud storage buckets describe … → location: US-CENTRAL1`, che il bucket DEV e la Function girano in `us-central1`. Il gateway trasporta contenuti lezione/pool; i dati personali studente (nome, cognome, email, risposte, punteggi, attention events) risiedono in Firestore, la cui region non è stata verificabile in questa sessione ma è dichiarata anch'essa Milano.
 - **Scenario concreto:** una scuola italiana adotta SchoolForge assumendo — dalla documentazione — residenza UE dei dati personali degli studenti; i dati (o almeno Storage/Function) sono in realtà negli USA. Contraddizione doc↔codice e potenziale questione di residenza/GDPR per PII di minori.
@@ -122,7 +122,7 @@ Classificazione: **P0** perdita dati/accesso critico/segreto esposto · **P1** r
 
 ---
 **HARD-F08 — Nessun audit di accessibilità end-to-end formale.**
-- **Stato (dopo HARD-02A + HARD-02A-FIX):** **audit svolto; unico P2 risolto.** Verifica a11y end-to-end in `evidenze/hard-02a-a11y-audit.md`: 0 P0, 0 P1, 1 P2 (`DialogShell` senza Escape/focus-trap/restore) — **P2-01 RESOLVED (15/07/2026)**: Escape (gated su `busy`) + focus trap + ripristino focus + `aria-labelledby` centralizzati in `DialogShell`, test `__tests__/workspaceDialogs.test.tsx`. Restano solo P3 di polish (accettati) e lo **smoke a11y manuale su DEV** (contrasto/zoom/reflow/screen-reader non verificabili in sessione).
+- **Stato (dopo HARD-02A + HARD-02A-FIX):** **audit svolto; unico P2 risolto.** `DialogShell` gestisce Escape, focus trap, ripristino focus e `aria-labelledby`; test dedicati verdi e smoke manuale DEV PASS. Restano solo P3 di polish accettati.
 - **Area:** J. **Evidenza:** il Gate GDUX (`gdux-checklist-finale.md`) copre a11y a livello di componente; HARD-02A aggiunge la passata end-to-end formale. **Confidenza:** alta.
 
 ## 6. Cost model (quattro scenari)
@@ -161,15 +161,15 @@ Pacchetti indipendenti, ciascuno approvabile da solo. **Nessuno** introduce funz
 - **HARD-01 — Operatività & configurazione (P2).** Suddiviso in tre sotto-pacchetti indipendenti:
   - **HARD-01A** (✅ **RESOLVED**) — **F01**: runbook operativo, budget alert DEV, backup/ripristino, incidenti. Vedi `runbook-operativo-v1.md` e `evidenze/hard-01a-human-gate.md`.
   - **HARD-01B** (✅ **COMPLETATO; F03 RESOLVED 15/07/2026**) — **F03**: security header + strategia cache in `firebase.json` (incl. COOP `same-origin-allow-popups` e `script-src https://apis.google.com`), guardrail statico `hostingHeaders.test.ts`, deployato e verificato su DEV. Vedi `evidenze/hard-01b-dev-smoke.md`.
-  - **HARD-01C** (**MITIGATED — resta il blocker PROD**) — **F02**: matrice regioni e riconciliazione documentale (contraddizione «tutto a Milano» corretta) in `evidenze/hard-01c-region-matrix.md`; Firestore DEV verificata in `europe-west8`, resta la decisione della regione UE per il provisioning PROD ex novo (`evidenze/hard-01c-human-gate.md`).
+  - **HARD-01C** (✅ **RESOLVED**) — **F02**: matrice regioni e riconciliazione documentale; Firestore DEV verificata in `europe-west8`; target PROD `europe-west8` e co-locazione formalizzati; nessun dato DEV migrato (`evidenze/hard-01c-human-gate.md`).
 - **HARD-02 — Accessibilità & resilienza (P3).** **HARD-02A** (✅ audit a11y end-to-end, `evidenze/hard-02a-a11y-audit.md` — READY FOR REMEDIATION, 1 P2); **HARD-02A-FIX** (Escape/focus-trap/restore in `DialogShell` + smoke a11y manuale DEV); **F06** / HARD-02B (✅ **RESOLVED 15/07/2026**: 02B-00 design → 02B-1 fondazione import-scoped → 02B-2 chunking ≤400 staging→switch atomico→cleanup differito, tocca `importRepository.ts`, helper condiviso `firestoreChunks.ts`, cleanup `stalePublicLessonsCleanup.ts`).
 - **HARD-03 — Costi a lungo termine (P3, condizionato a misura).** **F05** (paginazione storico `verifications` con UX dedicata) e valutazione **F04** (App Check) — entrambi **solo se** una misura reale in Firebase Console mostra un impatto concreto; altrimenti restano deferral.
 
 ## 10. Ordine di intervento e dipendenze
 
-1. **HARD-01** per primo: massimo rapporto beneficio/rischio, sblocca il Gate GHARD (budget alert e residenza sono i due elementi che un rilascio "serio" richiede). F02 dipende da una verifica in Console (owner), non da codice.
-2. **HARD-02** dopo: indipendente da HARD-01; F06 è l'unico che tocca codice applicativo e va progettato, non applicato meccanicamente.
-3. **HARD-03** per ultimo e **condizionato**: non intervenire senza una misura reale che confermi il beneficio (evita di nascondere verifiche dietro paginazione o di aggiungere App Check sproporzionato).
+1. **HARD-01 completato:** operatività, Hosting e regioni risolti.
+2. **HARD-02 completato:** fix a11y e import resiliente applicati.
+3. **HARD-03 rinviato e condizionato:** non intervenire senza una misura reale che confermi il beneficio.
 
 Nessun ordine di deploy speciale (interventi di config/doc + un eventuale codice import isolato); nessuna migrazione dati richiesta.
 
@@ -179,11 +179,11 @@ Il Gate **GHARD** si considera superabile quando:
 
 1. **Nessun P0/P1 aperto** (già soddisfatto oggi).
 2. **F01 chiuso** ✅ (HARD-01A, 15/07/2026): budget alert configurato e documentato; cadenza di export/backup e procedura di ripristino scritte; procedura account owner compromesso scritta.
-3. **F02 risolto** (HARD-01C, MITIGATED): documentazione già corretta con lo stato reale; la regione **Firestore DEV è stata verificata** (`europe-west8`, PR #183). Per RESOLVED resta **solo** la decisione della regione UE per il provisioning PROD ex novo — vedi `evidenze/hard-01c-region-matrix.md` e `evidenze/hard-01c-human-gate.md`.
+3. **F02 risolto** ✅ (HARD-01C, 15/07/2026): regioni DEV verificate e documentate; target PROD `europe-west8`, co-locazione e provisioning ex novo senza dati DEV formalizzati.
 4. **F03 applicato** ✅ (HARD-01B, 15/07/2026): security header presenti su Hosting e smoke DEV che conferma login/rendering/PDF non rotti — vedi `evidenze/hard-01b-dev-smoke.md`.
 5. **P3 residui** (F04–F08) esplicitamente accettati o pianificati con soglia, non silenziosamente ignorati.
 6. **CI verde** invariata; `format:check`/`build` puliti; nessuna regressione nei test esistenti.
-7. Evidenze registrate in una checklist finale `evidenze/ghard-checklist-finale.md`, con distinzione automatica/manuale DEV/limite residuo (stesso metodo di g5/g6/gdux).
+7. **Evidenze registrate** ✅ in `evidenze/ghard-checklist-finale.md`, con distinzione automatica/manuale DEV/limite residuo.
 
 ## 12. Limiti dell'audit
 

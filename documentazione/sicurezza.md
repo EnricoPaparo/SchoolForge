@@ -185,7 +185,7 @@ Questa sezione andrà rivista quando M3-full sarà pianificato in dettaglio, val
 - Log e telemetria non contengono risposte, dati personali completi o punteggi non necessari.
 - Il docente può eliminare una consegna digitale (M3-full): dati personali e correzioni sono rimossi; resta audit non identificativo.
 - `Esporta verifiche` è disponibile solo al docente e generato on-demand nel browser; dipende da consegne M3-full.
-- **Residenza dati (HARD-F02):** regione target PROD **UE** (Milano `europe-west8` ove supportato), da decidere e co-locare prima del provisioning PROD; su DEV Storage e Function gateway sono in `us-central1` (verificato) e la regione Firestore DEV non è ancora verificata — dettaglio in `evidenze/hard-01c-region-matrix.md`. Hosting/Auth non sono dichiarati Italia-only.
+- **Residenza dati (HARD-F02, risolto):** DEV usa Firestore `europe-west8` e Storage/Function gateway `us-central1` (verificati); target PROD `europe-west8` con co-locazione, previa verifica di supporto. Nessun dato DEV sarà migrato. Hosting/Auth non sono dichiarati Italia-only.
 - (M3-full, specifica rinviata) il sistema registrerebbe, a fini di audit, nome dichiarato (`Cognome Nome`), IP, user-agent e timestamp per ogni tentativo digitale; dati auto-dichiarati, non verificati. Non applicabile a M3-lite.
 
 ---

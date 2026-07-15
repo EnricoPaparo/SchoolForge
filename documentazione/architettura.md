@@ -23,7 +23,7 @@ Il progetto non richiede Google Workspace for Education per il Docente né Googl
 
 ### 1.1 Localizzazione
 
-La regione **target** per l'ambiente di produzione è **UE** (Milano `europe-west8` dove supportato), da scegliere e co-locare per Firestore, Storage e Functions **prima** del provisioning PROD. **Stato reale attuale (DEV `schoolforge-dev`):** Cloud Storage e la Function gateway sono in `us-central1` (verificato — vedi `evidenze/hard-01c-region-matrix.md`); la regione di Cloud Firestore DEV **non è ancora verificata**. Firebase Hosting usa una CDN globale; Firebase Authentication ha proprie caratteristiche di localizzazione. L'architettura non dichiara che ogni richiesta avvenga esclusivamente in Italia. La riconciliazione regioni/residenza dati è tracciata come finding **HARD-F02** (pacchetto HARD-01C).
+La regione target PROD è **`europe-west8` (Milano)**, con Firestore, Storage e Functions co-locati, previa verifica di supporto prima del provisioning. **Stato DEV:** Cloud Storage e Function gateway sono in `us-central1`; Cloud Firestore è in `europe-west8` (tutto verificato — vedi `evidenze/hard-01c-region-matrix.md`). Firebase Hosting usa una CDN globale; Firebase Authentication ha proprie caratteristiche di localizzazione. Nessun dato DEV sarà migrato in PROD. **HARD-F02 è risolto.**
 
 ### 1.2 Esito atteso
 
@@ -246,7 +246,7 @@ flowchart LR
 | Applicazione web | Firebase Hosting | SPA TypeScript, HTTPS, code splitting `/teacher` e `/exam`. |
 | Identità docente | Firebase Authentication | Provider configurabile; `ownerUid` verificato nelle Security Rules. |
 | Backend (limitato) | Cloud Functions v2 | TypeScript; target PROD **UE**, ma la Function gateway su DEV è in `us-central1` (co-locata col bucket) — vedi `evidenze/hard-01c-region-matrix.md`. |
-| Dati operativi | Cloud Firestore Native | Regione target PROD **UE**; regione Firestore DEV **non ancora verificata** (HARD-F02). |
+| Dati operativi | Cloud Firestore Native | Firestore DEV `europe-west8` verificata; target PROD `europe-west8`, da verificare prima del provisioning. |
 | File | Cloud Storage | Bucket privato; su DEV in `us-central1` (verificato); target PROD **UE**. Versioning per backup. |
 | Segreti | Secret Manager | Solo da M5 (V2): chiave API provider AI. |
 | Osservabilità | Cloud Logging e Error Reporting | Log strutturati senza risposte o PDF. |
@@ -533,7 +533,7 @@ SchoolForge/
 L'implementazione è conforme solo se dimostra che:
 
 1. solo il `ownerUid` configurato scrive dati applicativi privati;
-2. la regione target di PROD per Firestore, Storage e Functions è **UE** (Milano `europe-west8` ove supportato), da co-locare prima del provisioning; su DEV Storage/Function sono in `us-central1` e la regione Firestore DEV è da verificare (HARD-F02, `evidenze/hard-01c-region-matrix.md`);
+2. la regione target PROD per Firestore, Storage e Functions è `europe-west8`, da co-locare e verificare prima del provisioning; su DEV Storage/Function sono in `us-central1` e Firestore è in `europe-west8` (HARD-F02 risolto, `evidenze/hard-01c-region-matrix.md`);
 3. Markdown e asset restano esportabili e leggibili fuori da SchoolForge;
 4. il ruolo utente è risolto correttamente (docente vs studente) e nessun accesso anonimo è possibile in M3-lite;
 5. lo studente legge solo proiezioni pubbliche read-only, mai pool, soluzioni, `questionIndex` o documenti tecnici del docente;
