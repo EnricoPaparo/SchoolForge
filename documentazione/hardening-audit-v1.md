@@ -111,7 +111,8 @@ Classificazione: **P0** perdita dati/accesso critico/segreto esposto · **P1** r
 
 ---
 **HARD-F06 — Import ZIP + swap `publicLessons` non gestiscono il limite di 500 mutazioni per batch/transazione (carry-over PERF-03).**
-- **Area:** D/E. **Evidenza:** `import/importRepository.ts` (batch/transazione non chunked; cfr. PERF-03). **Scenario:** import di un intero anno in un colpo → possibile fallimento runtime, non osservato. **Soluzione minima:** chunking del batch import preservando l'atomicità logica percepita. **Confidenza:** media.
+- **Area:** D/E. **Evidenza:** `import/importRepository.ts` (batch A = `1+U+L+Q`; transazione B = `2+L₀+L`; nessun chunking). **Scenario:** import di un intero anno con molti pool → fallimento a soglia.
+- **Stato (dopo HARD-02B-00):** **design-ready.** Progettazione tecnica completata in `hard-02b-import-chunking-design.md`: soluzione raccomandata = `publicLessons` con **ID import-scoped** + query studente vincolata ad `activeImportId` (staging invisibile → switch atomico ≤3 mutazioni → cleanup chunked), chunk ≤400, macchina a stati `staging→active→superseded`, +1 indice `publicLessons(programId,importId)`, **modifica Rules obbligatoria** (lettura non-owner richiede `importId == program.activeImportId`; owner invariato), campo `LessonDoc.publicLessonId` + helper puro di risoluzione, **cleanup solo delle `publicLessons`** (mai dati tecnici/Storage), risultato `committed` + `cleanupPending` non bloccante, ordine di rollout indice→Rules→Hosting→smoke. **Implementazione = HARD-02B** (fase successiva). **Confidenza:** alta.
 
 ---
 **HARD-F07 — Monitor consegne trasferisce documenti submission interi, incluse le risposte (carry-over PERF-07).**
