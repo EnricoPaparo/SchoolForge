@@ -7,7 +7,9 @@ import { doc, getDoc, serverTimestamp, setDoc, Timestamp } from 'firebase/firest
 import type { Firestore } from 'firebase/firestore';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
+  completeCorrection,
   openOrLoadCorrection,
+  returnCorrection,
   saveCorrection,
 } from '../features/repository/corrections/correctionsService.js';
 
@@ -48,6 +50,14 @@ async function seedBase() {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     await setDoc(doc(db, 'settings/owner'), { ownerUid: OWNER_UID });
+    await setDoc(doc(db, 'verifications', VERIFICATION_ID), {
+      ownerUid: OWNER_UID,
+      status: 'closed',
+      teacherSnapshot: {
+        title: 'Verifica 1',
+        className: 'Classe A',
+      },
+    });
     await setDoc(doc(db, `verifications/${VERIFICATION_ID}/publishedProjection/data`), {
       ownerUid: OWNER_UID,
       title: 'Verifica 1',
@@ -122,5 +132,30 @@ describe('M4 correction save — real service against the emulator', () => {
     expect(saved.evaluations['1'].points).toBe(2);
     expect(saved.generalFeedback).toBe('Nel complesso ok');
     expect(saved.totalPoints).toBe(9.5);
+  });
+
+  it('completes and returns through the real service batch under the deployed rules shape', async () => {
+    await seedBase();
+    const db = ownerDb();
+
+    await openOrLoadCorrection(SUBMISSION_ID, OWNER_UID, db);
+    await saveCorrection(
+      {
+        submissionId: SUBMISSION_ID,
+        evaluations: {
+          '0': { points: 7.5, feedback: 'Buono' },
+          '1': { points: 2 },
+        },
+        generalFeedback: 'Nel complesso ok',
+      },
+      db,
+    );
+    await completeCorrection(SUBMISSION_ID, db);
+    await returnCorrection(SUBMISSION_ID, db);
+
+    const correction = await getDoc(doc(db, 'corrections', SUBMISSION_ID));
+    const returned = await getDoc(doc(db, 'correctionReturns', SUBMISSION_ID));
+    expect(correction.data()?.status).toBe('returned');
+    expect(returned.data()?.visibleToStudent).toBe(true);
   });
 });
