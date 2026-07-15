@@ -64,7 +64,7 @@ Legenda stato:
 
 | ID | Titolo | Stato | Documento | Sintesi decisione |
 |---|---|---|---|---|
-| C-01 | Provider, regione, backup, RPO/RTO | ✅ Chiusa | brief.md | Firebase su progetto del Docente; dati in `europe-west8` (target UE deciso storicamente); backup come redundancy Storage nativa più export Firestore manuale on-demand dalle impostazioni; RPO best-effort; RTO best-effort. *(Nota HARD-F02: la regione reale su DEV è `us-central1` per Storage/Function e non verificata per Firestore; il target UE resta valido per PROD — `evidenze/hard-01c-region-matrix.md`.)* |
+| C-01 | Provider, regione, backup, RPO/RTO | ✅ Chiusa | brief.md | Firebase su progetto del Docente; dati in `europe-west8` (target UE deciso storicamente); backup come redundancy Storage nativa più export Firestore manuale on-demand dalle impostazioni; RPO best-effort; RTO best-effort. *(Nota HARD-F02: su DEV Storage/Function sono in `us-central1`, mentre Firestore è stata verificata in `europe-west8`; il target UE resta valido per PROD — `evidenze/hard-01c-region-matrix.md`.)* |
 | C-02 | Provider AI e modello di default | ⏳ V2 | brief.md | **Risolta per V2:** OpenAI API (default `gpt-4o-mini`) oppure Anthropic Claude API (default `claude-haiku-4-5-20251001`); il Docente configura la chiave API nelle impostazioni. Applica solo a M5. |
 | C-03 | Regola didattica correzione automatica | ⏳ V2 | brief.md | Regola d'uso della modalità automatica AI; decisione rimandata alla V2 insieme a M5. |
 
