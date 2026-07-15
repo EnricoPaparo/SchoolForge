@@ -128,7 +128,11 @@
 
 /* ── Tabella corsi ───────────────────────────────────────────────── */
 .tableWrap {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
+  overscroll-behavior-inline: contain;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -137,38 +141,38 @@
 
 .table {
   width: 100%;
-  min-width: 760px;
+  min-width: 838px;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.875rem;
 }
 
 .titleColumn {
-  width: 30%;
+  width: 220px;
 }
 
 .udaColumn {
-  width: 7%;
+  width: 60px;
 }
 
 .lessonsColumn {
-  width: 10%;
+  width: 85px;
 }
 
 .questionsColumn {
-  width: 10%;
+  width: 90px;
 }
 
 .yearColumn {
-  width: 13%;
+  width: 105px;
 }
 
 .classesColumn {
-  width: 18%;
+  width: 150px;
 }
 
 .actionsColumn {
-  width: 12%;
+  width: 128px;
 }
 
 .th {

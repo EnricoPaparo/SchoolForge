@@ -73,17 +73,19 @@ describe('StudentDidatticaView — SDUX-01', () => {
     );
   });
 
-  it('renders a card library and filters it by course title', async () => {
+  it('renders the read-only course table and filters it by course title', async () => {
     loadWithData();
     render(<StudentDidatticaView />);
-    const list = await screen.findByRole('list', { name: 'Corsi disponibili' });
-    expect(within(list).getByText('Informatica')).toBeTruthy();
-    expect(within(list).getByText('Matematica')).toBeTruthy();
+    const table = await screen.findByRole('table', { name: 'Corsi disponibili' });
+    expect(within(table).getByText('Informatica')).toBeTruthy();
+    expect(within(table).getByText('Matematica')).toBeTruthy();
+    expect(within(table).getByRole('columnheader', { name: 'UDA' })).toBeTruthy();
+    expect(within(table).getByRole('columnheader', { name: 'Lezioni' })).toBeTruthy();
     fireEvent.change(screen.getByRole('searchbox', { name: 'Cerca corso' }), {
       target: { value: 'mate' },
     });
-    expect(within(list).queryByText('Informatica')).toBeNull();
-    expect(within(list).getByText('Matematica')).toBeTruthy();
+    expect(within(table).queryByText('Informatica')).toBeNull();
+    expect(within(table).getByText('Matematica')).toBeTruthy();
   });
 
   it('opens a course, then an UDA and a lesson from the public projection', async () => {
@@ -138,7 +140,7 @@ describe('StudentDidatticaView — SDUX-01', () => {
     render(<StudentDidatticaView />);
     fireEvent.click(await screen.findByRole('button', { name: 'Apri corso Informatica' }));
     fireEvent.click(screen.getByRole('button', { name: '← Libreria' }));
-    expect(screen.getByRole('list', { name: 'Corsi disponibili' })).toBeTruthy();
+    expect(screen.getByRole('table', { name: 'Corsi disponibili' })).toBeTruthy();
     expect(mockLoadStudentLessons).toHaveBeenCalledTimes(1);
   });
 });

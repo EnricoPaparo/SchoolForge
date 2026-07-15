@@ -162,36 +162,50 @@ export function StudentDidatticaView() {
           </button>
         </div>
       ) : (
-        <ul className={styles.grid} aria-label="Corsi disponibili">
-          {filteredPrograms.map((program) => {
-            const lessons = state.lessonsByProgram[program.id] ?? [];
-            const udaCount = new Set(lessons.map((lesson) => lesson.udaDir)).size;
-            return (
-              <li key={program.id} className={styles.cardWrap}>
-                <article className={styles.card}>
-                  <button
-                    type="button"
-                    className={styles.cardOpen}
-                    aria-label={`Apri corso ${program.title}`}
-                    onClick={() => openCourse(program.id)}
-                  />
-                  <div className={styles.cardHead}>
-                    <IconBookOpen />
-                    <h2 className={styles.cardTitle}>{program.title}</h2>
-                  </div>
-                  <div className={styles.cardStats} aria-hidden="true">
-                    <span>
-                      <strong>{udaCount}</strong> UDA
-                    </span>
-                    <span>
-                      <strong>{lessons.length}</strong> lezioni
-                    </span>
-                  </div>
-                </article>
-              </li>
-            );
-          })}
-        </ul>
+        <div className={styles.tableWrap}>
+          <table className={styles.table} aria-label="Corsi disponibili">
+            <colgroup>
+              <col className={styles.titleColumn} />
+              <col className={styles.udaColumn} />
+              <col className={styles.lessonsColumn} />
+              <col className={styles.actionsColumn} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col">Titolo</th>
+                <th scope="col">UDA</th>
+                <th scope="col">Lezioni</th>
+                <th scope="col">Azioni</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredPrograms.map((program) => {
+                const lessons = state.lessonsByProgram[program.id] ?? [];
+                const udaCount = new Set(lessons.map((lesson) => lesson.udaDir)).size;
+                return (
+                  <tr key={program.id} className={styles.courseRow}>
+                    <td className={styles.titleCell} title={program.title}>
+                      <span>{program.title}</span>
+                    </td>
+                    <td className={styles.numericCell}>{udaCount}</td>
+                    <td className={styles.numericCell}>{lessons.length}</td>
+                    <td className={styles.actionsCell}>
+                      <button
+                        type="button"
+                        className={styles.openButton}
+                        title="Apri corso"
+                        aria-label={`Apri corso ${program.title}`}
+                        onClick={() => openCourse(program.id)}
+                      >
+                        <span aria-hidden="true">📂</span>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );
