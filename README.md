@@ -101,7 +101,7 @@ PDF generati nel browser (@react-pdf/renderer) — nessun server coinvolto, ness
 
 ## Firebase ed esercizio
 
-Il Docente possiede progetto e billing Firebase. Firestore, Storage e Functions usano Milano `europe-west8` dove supportato. I Markdown e gli asset in Cloud Storage sono portabili e protetti dalla ridondanza nativa di Storage; Firestore è esportabile on-demand dalle impostazioni. RPO V1: best-effort (export manuale del Docente), RTO non garantito. Vedi C-01.
+Il Docente possiede progetto e billing Firebase. **Regioni (residenza dati):** su DEV (`schoolforge-dev`) Storage e la Function gateway sono in `us-central1` (verificato), mentre la regione Firestore DEV non è ancora verificata; per **PROD** la regione target è **UE** (da decidere e co-locare prima del provisioning). Dettaglio e stato in [`documentazione/evidenze/hard-01c-region-matrix.md`](documentazione/evidenze/hard-01c-region-matrix.md) (finding HARD-F02). I Markdown e gli asset in Cloud Storage sono portabili e protetti dalla ridondanza nativa di Storage; Firestore è esportabile on-demand dalle impostazioni. RPO V1: best-effort (export manuale del Docente), RTO non garantito. Vedi C-01.
 
 ## Prossimo passo
 
