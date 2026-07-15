@@ -222,15 +222,28 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
         await load();
         return;
       }
-      // result.status === 'committed'
+      // result.status === 'committed' — the atomic switch already succeeded:
+      // the import is live. From here NOTHING (a failed library refresh, any UI
+      // update) may downgrade this to a blocking error, so close the dialog and
+      // run the refresh best-effort, outside the general catch.
       setDialog({ kind: 'none' });
+      const notices: string[] = [];
       if (result.cleanupPending) {
         // Import applicato e corretto; solo la pulizia delle vecchie
         // proiezioni è stata rinviata (non bloccante, ritentabile).
-        setImportNotice('Import completato. Pulizia delle vecchie proiezioni rinviata.');
+        notices.push('Import completato. Pulizia delle vecchie proiezioni rinviata.');
       }
-      await load();
+      try {
+        await load();
+      } catch {
+        notices.push(
+          'Import completato. Alcuni dati visualizzati verranno aggiornati al prossimo caricamento.',
+        );
+      }
+      if (notices.length > 0) setImportNotice(notices.join(' '));
     } catch (err) {
+      // Guards only the pre-commit steps (createProgram, readZipFile,
+      // importRepository). A committed import never reaches here as an error.
       setDialogError(err instanceof Error ? err.message : "Errore durante l'importazione.");
     } finally {
       setBusy(false);

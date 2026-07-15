@@ -656,16 +656,13 @@ export function CourseWorkspace({
           setWsError(result.message);
           return;
         }
-        // result.status === 'committed'
-        setWsNotice(
-          result.cleanupPending
-            ? 'Import completato. Pulizia delle vecchie proiezioni rinviata.'
-            : null,
-        );
-        // Structure fully changed: reload only this course's metadata + tree by
-        // patching the card's active import (the tree effect reloads UDA/lezioni).
-        const meta = await getImportMeta(card.programId, result.importId, db);
-        if (!mountedRef.current) return;
+        // result.status === 'committed' — the atomic switch already succeeded:
+        // the import is live and correct. From here on NOTHING (a failed
+        // metadata re-read, a card patch, any UI refresh) may downgrade this
+        // to a blocking error — that would falsely tell the teacher the import
+        // failed when it did not. Patch the card immediately from the data
+        // already in ImportRepositoryResult, then treat getImportMeta as a
+        // pure best-effort refinement of annoScolastico.
         onCardPatch?.(card.programId, {
           activeImportId: result.importId,
           hasImport: true,
@@ -673,11 +670,36 @@ export function CourseWorkspace({
           lessonsTotal: result.lessonCount,
           lessonsDone: 0,
           questionsTotal: result.questionCount,
-          annoScolastico: meta?.annoScolastico ?? null,
         });
         setSelection({ kind: 'course' });
         closeDialog();
+
+        let refreshDeferred = false;
+        try {
+          const meta = await getImportMeta(card.programId, result.importId, db);
+          if (!mountedRef.current) return;
+          onCardPatch?.(card.programId, { annoScolastico: meta?.annoScolastico ?? null });
+        } catch {
+          // Post-switch metadata re-read failed — import stays a success; the
+          // displayed annoScolastico will simply refresh on next load.
+          refreshDeferred = true;
+        }
+
+        if (!mountedRef.current) return;
+        const notices: string[] = [];
+        if (result.cleanupPending) {
+          notices.push('Import completato. Pulizia delle vecchie proiezioni rinviata.');
+        }
+        if (refreshDeferred) {
+          notices.push(
+            'Import completato. Alcuni dati visualizzati verranno aggiornati al prossimo caricamento.',
+          );
+        }
+        setWsNotice(notices.length > 0 ? notices.join(' ') : null);
       } catch (err) {
+        // This catch now guards ONLY the pre-commit steps (readZipFile,
+        // importRepository, and the committed-branch card patch/close, which do
+        // not throw). A committed import never reaches here as an error.
         if (mountedRef.current)
           setWsError(err instanceof Error ? err.message : "Errore durante l'importazione.");
       }
