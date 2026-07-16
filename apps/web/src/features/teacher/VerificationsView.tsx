@@ -37,11 +37,17 @@ import {
   toPdfQuestion,
   toPdfQuestionWithSolution,
 } from '../repository/verifications/verificationSnapshotMappers.js';
-import { db, storage } from '../../lib/firebase.js';
+import { db, functions, storage } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import { QuestionPicker } from './QuestionPicker.js';
 import { AttentionEventsDialog } from './AttentionEventsDialog.js';
 import { CorrectionWorkspace } from './CorrectionWorkspace.js';
+import { AiBatchCorrectionDialog } from './AiBatchCorrectionDialog.js';
+import { createAiCorrectionCallables } from '../repository/corrections/aiCorrectionClient.js';
+import {
+  loadCorrectionProgressByStudent,
+  type CorrectionProgress,
+} from '../repository/corrections/correctionProgressService.js';
 import { deleteSubmissionData } from '../repository/verifications/deleteSubmissionData.js';
 import { IconTrash } from '../../components/icons.js';
 import type { AttentionEvent, VerificationTeacherQuestionSnapshot } from '../../types/firestore.js';
@@ -75,17 +81,6 @@ function formatTimestamp(ts: unknown): string {
     dateStyle: 'short',
     timeStyle: 'short',
   });
-}
-
-const scoreNumberFormatter = new Intl.NumberFormat('it-IT', {
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 2,
-});
-
-function formatScore(item: SubmissionMonitorItem | null): string {
-  const summary = item?.correctionSummary;
-  if (!summary || item?.correctionStatus === 'submitted') return '—';
-  return `${scoreNumberFormatter.format(summary.totalPoints)} / ${scoreNumberFormatter.format(summary.maxPoints)}`;
 }
 
 function formatPercentage(item: SubmissionMonitorItem | null): string {
@@ -287,6 +282,17 @@ export function VerificationsView() {
     studentName: string;
   } | null>(null);
 
+  // ── Batch AI correction (M5-03, mock) ─────────────────────────────
+  // Selezione stabile per studentUid (non per indice), così resta valida
+  // durante ordinamento e aggiornamenti live della tabella.
+  const [aiSelectedUids, setAiSelectedUids] = useState<Set<string>>(new Set());
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  // «Valutate» n/totale per studentUid: singola lettura mirata (no listener).
+  const [correctionProgress, setCorrectionProgress] = useState<Map<string, CorrectionProgress>>(
+    new Map(),
+  );
+  const aiCallables = useMemo(() => createAiCorrectionCallables(functions), []);
+
   const sortedMonitorRows = useMemo(() => {
     if (!monitorStudents || !monitorItems) return [];
     const rows = monitorStudents.map((student) => {
@@ -305,6 +311,47 @@ export function VerificationsView() {
     });
     return sortSubmissionMonitorRows(rows, monitorSort);
   }, [monitorStudents, monitorItems, monitorSort]);
+
+  // ── Batch AI selection helpers (M5-03) ────────────────────────────
+  const selectableUids = useMemo(
+    () => sortedMonitorRows.filter((r) => r.item?.status === 'submitted').map((r) => r.studentUid),
+    [sortedMonitorRows],
+  );
+  const allSelectableSelected =
+    selectableUids.length > 0 && selectableUids.every((uid) => aiSelectedUids.has(uid));
+  const aiSelectedSubmissionIds = useMemo(
+    () => (selectedVer ? [...aiSelectedUids].map((uid) => `${selectedVer.id}_${uid}`) : []),
+    [aiSelectedUids, selectedVer],
+  );
+
+  function toggleRowSelected(uid: string): void {
+    setAiSelectedUids((prev) => {
+      const next = new Set(prev);
+      if (next.has(uid)) next.delete(uid);
+      else next.add(uid);
+      return next;
+    });
+  }
+
+  function toggleSelectAll(): void {
+    setAiSelectedUids(() =>
+      selectableUids.every((uid) => aiSelectedUids.has(uid)) ? new Set() : new Set(selectableUids),
+    );
+  }
+
+  function formatValutate(studentUid: string): string {
+    const p = correctionProgress.get(studentUid);
+    return p && p.total > 0 ? `${p.evaluated}/${p.total}` : '—';
+  }
+
+  async function refreshCorrectionProgress(): Promise<void> {
+    if (!selectedVer) return;
+    try {
+      setCorrectionProgress(await loadCorrectionProgressByStudent(selectedVer.id, db));
+    } catch {
+      /* non-blocking: la tabella resta usabile con i dati precedenti */
+    }
+  }
 
   function toggleMonitorSort(key: SubmissionMonitorSortKey): void {
     setMonitorSort((current) => ({
@@ -487,6 +534,16 @@ export function VerificationsView() {
     setMonitorError(null);
     setMonitorStudents(null);
     setMonitorItems(null);
+    setAiSelectedUids(new Set());
+    setCorrectionProgress(new Map());
+
+    // «Valutate»: singola lettura mirata delle correzioni della verifica
+    // (owner-only per Rules, nessun listener, nessun polling).
+    loadCorrectionProgressByStudent(v.id, db)
+      .then((progress) => {
+        if (!cancelled) setCorrectionProgress(progress);
+      })
+      .catch(() => undefined);
 
     const classId = v.teacherSnapshot?.classId ?? v.config.classId;
     listStudents(ownerUid, db)
@@ -1888,6 +1945,17 @@ export function VerificationsView() {
               <div className={styles.monitorHeader}>
                 <h3 className={styles.createTitle}>Consegne online</h3>
                 <div className={styles.monitorActions}>
+                  {/* M5-03: unica azione IA batch, sopra la tabella. Nessun
+                      pulsante IA sulle singole righe. */}
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={aiSelectedUids.size === 0 || aiDialogOpen}
+                    onClick={() => setAiDialogOpen(true)}
+                  >
+                    Correggi con IA
+                    {aiSelectedUids.size > 0 ? ` (${aiSelectedUids.size})` : ''}
+                  </button>
                   <button
                     type="button"
                     className="btn-primary"
@@ -1949,6 +2017,15 @@ export function VerificationsView() {
                       <table className={styles.table}>
                         <thead>
                           <tr>
+                            <th className={styles.th}>
+                              <input
+                                type="checkbox"
+                                aria-label="Seleziona tutte le consegne"
+                                checked={allSelectableSelected}
+                                disabled={selectableUids.length === 0}
+                                onChange={toggleSelectAll}
+                              />
+                            </th>
                             <th className={styles.th} aria-sort={monitorSortAria('student')}>
                               <button
                                 type="button"
@@ -1969,16 +2046,7 @@ export function VerificationsView() {
                                 Stato{monitorSortIndicator('status')}
                               </button>
                             </th>
-                            <th className={styles.th} aria-sort={monitorSortAria('score')}>
-                              <button
-                                type="button"
-                                className={styles.sortHeaderButton}
-                                aria-label={monitorSortLabel('score', 'Punteggio')}
-                                onClick={() => toggleMonitorSort('score')}
-                              >
-                                Punteggio{monitorSortIndicator('score')}
-                              </button>
-                            </th>
+                            <th className={styles.th}>Valutate</th>
                             <th className={styles.th} aria-sort={monitorSortAria('percentage')}>
                               <button
                                 type="button"
@@ -2019,14 +2087,24 @@ export function VerificationsView() {
                             const stateLabel = row.stateLabel;
                             const studentName = row.studentName;
                             const eventsCount = item?.attentionEventsCount ?? 0;
+                            const selectable = item?.status === 'submitted';
                             return (
                               <tr key={row.studentUid} className={styles.row}>
+                                <td className={styles.td}>
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Seleziona consegna — ${studentName}`}
+                                    checked={aiSelectedUids.has(row.studentUid)}
+                                    disabled={!selectable}
+                                    onChange={() => toggleRowSelected(row.studentUid)}
+                                  />
+                                </td>
                                 <td className={styles.td}>{studentName}</td>
                                 <td className={`${styles.td} ${styles.monitorStatusCell}`}>
                                   {stateLabel}
                                 </td>
                                 <td className={`${styles.td} ${styles.scoreCell}`}>
-                                  {formatScore(item)}
+                                  {formatValutate(row.studentUid)}
                                 </td>
                                 <td className={`${styles.td} ${styles.percentageCell}`}>
                                   {formatPercentage(item)}
@@ -2115,6 +2193,22 @@ export function VerificationsView() {
           studentName={attentionDialog.studentName}
           events={attentionDialog.events}
           onClose={() => setAttentionDialog(null)}
+        />
+      )}
+
+      {aiDialogOpen && selectedVer && (
+        <AiBatchCorrectionDialog
+          verificationId={selectedVer.id}
+          submissionIds={aiSelectedSubmissionIds}
+          callables={aiCallables}
+          onClose={() => setAiDialogOpen(false)}
+          onApplied={() => {
+            // Aggiornamento minimale: lo stato/percentuale si aggiornano già dal
+            // listener del monitor (mirror correctionSummary); «Valutate» via
+            // una singola rilettura mirata. La selezione viene svuotata.
+            void refreshCorrectionProgress();
+            setAiSelectedUids(new Set());
+          }}
         />
       )}
 
