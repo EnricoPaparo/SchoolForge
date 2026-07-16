@@ -30,7 +30,7 @@ const mockDownloadStudentPdf = vi.fn();
 const mockLoadSelectedQuestionsWithSolutions = vi.fn();
 const mockDownloadTeacherSolutionsPdf = vi.fn();
 
-vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
+vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
 vi.mock('../../repository/verifications/loadSelectedQuestions.js', () => ({
   loadSelectedQuestions: (...args: unknown[]) => mockLoadSelectedQuestions(...args),
 }));
@@ -86,6 +86,33 @@ vi.mock('../../repository/programs/programsService.js', () => ({
 }));
 vi.mock('../../repository/students/studentsService.js', () => ({
   listStudents: (...args: unknown[]) => mockListStudents(...args),
+}));
+// M5-03 — «Valutate» targeted read + batch AI dialog. Defaults keep unrelated
+// suites unaffected (empty progress → "—", dialog is a passive stub).
+const mockLoadCorrectionProgressByStudent = vi.fn(
+  async (..._args: unknown[]) => new Map<string, unknown>(),
+);
+vi.mock('../../repository/corrections/correctionProgressService.js', () => ({
+  loadCorrectionProgressByStudent: (...args: unknown[]) =>
+    mockLoadCorrectionProgressByStudent(...args),
+}));
+const mockAiDialog = vi.fn();
+vi.mock('../AiBatchCorrectionDialog.js', () => ({
+  AiBatchCorrectionDialog: (props: {
+    submissionIds: string[];
+    onClose: () => void;
+    onApplied: (result: unknown) => void;
+  }) => {
+    mockAiDialog(props);
+    return (
+      <div data-testid="ai-batch-dialog">
+        <span>IDs: {props.submissionIds.join(',')}</span>
+        <button type="button" onClick={props.onClose}>
+          Chiudi IA
+        </button>
+      </div>
+    );
+  },
 }));
 // CorrectionWorkspace (M4-02) has its own dedicated test suite — mocked here
 // so this file stays focused on how VerificationsView opens it (which
@@ -2004,38 +2031,43 @@ describe('VerificationsView — monitor score and client-side sorting (M4-MON-01
     const table = within(region).getByRole('table');
 
     expect(within(table).queryByText('Ultimo salvataggio')).toBeNull();
-    expect(within(table).getByText('8,5 / 10')).toBeTruthy();
+    // M5-03: the score column is replaced by «Valutate» (n/total, sourced from a
+    // targeted corrections read — absent here, so "—"); percentage stays separate.
+    expect(within(table).getByRole('columnheader', { name: 'Valutate' })).toBeTruthy();
     expect(within(table).getByText('85%')).toBeTruthy();
     expect(within(table).getByText('Corretta')).toBeTruthy();
 
     const studentHeader = within(table).getByRole('columnheader', { name: /studente/i });
     expect(studentHeader.getAttribute('aria-sort')).toBe('ascending');
+    // Cell 0 is the M5-03 selection checkbox; the student name is cell 1.
     const initialNames = within(table)
       .getAllByRole('row')
       .slice(1)
-      .map((row) => within(row).getAllByRole('cell')[0]?.textContent);
+      .map((row) => within(row).getAllByRole('cell')[1]?.textContent);
     expect(initialNames).toEqual(['Anna', 'Bruno']);
 
-    fireEvent.click(within(table).getByRole('button', { name: 'Ordina per punteggio crescente' }));
+    fireEvent.click(
+      within(table).getByRole('button', { name: 'Ordina per percentuale crescente' }),
+    );
     expect(
       within(table)
-        .getByRole('columnheader', { name: /punteggio/i })
+        .getByRole('columnheader', { name: /percentuale/i })
         .getAttribute('aria-sort'),
     ).toBe('ascending');
-    const scoreAscending = within(table)
+    const pctAscending = within(table)
       .getAllByRole('row')
       .slice(1)
-      .map((row) => within(row).getAllByRole('cell')[0]?.textContent);
-    expect(scoreAscending).toEqual(['Bruno', 'Anna']);
+      .map((row) => within(row).getAllByRole('cell')[1]?.textContent);
+    expect(pctAscending).toEqual(['Bruno', 'Anna']);
 
     fireEvent.click(
-      within(table).getByRole('button', { name: 'Ordina per punteggio decrescente' }),
+      within(table).getByRole('button', { name: 'Ordina per percentuale decrescente' }),
     );
-    const scoreDescending = within(table)
+    const pctDescending = within(table)
       .getAllByRole('row')
       .slice(1)
-      .map((row) => within(row).getAllByRole('cell')[0]?.textContent);
-    expect(scoreDescending).toEqual(['Anna', 'Bruno']);
+      .map((row) => within(row).getAllByRole('cell')[1]?.textContent);
+    expect(pctDescending).toEqual(['Anna', 'Bruno']);
   });
 });
 
@@ -2140,7 +2172,9 @@ describe('VerificationsView — correction register CSV (M4-03A)', () => {
   it('exports the currently sorted rows without performing new reads or listeners', async () => {
     const region = await openMonitor((callback) => callback(submissions));
     const table = within(region).getByRole('table');
-    fireEvent.click(within(table).getByRole('button', { name: 'Ordina per punteggio crescente' }));
+    fireEvent.click(
+      within(table).getByRole('button', { name: 'Ordina per percentuale crescente' }),
+    );
     const readsBefore = mockListStudents.mock.calls.length;
     const listenersBefore = mockWatchSubmissions.mock.calls.length;
 
@@ -2195,7 +2229,9 @@ describe('VerificationsView — correction register CSV (M4-03A)', () => {
     mockDownloadCorrectionRegisterPdf.mockResolvedValue(undefined);
     const region = await openMonitor((callback) => callback(submissions));
     const table = within(region).getByRole('table');
-    fireEvent.click(within(table).getByRole('button', { name: 'Ordina per punteggio crescente' }));
+    fireEvent.click(
+      within(table).getByRole('button', { name: 'Ordina per percentuale crescente' }),
+    );
     const readsBefore = mockListStudents.mock.calls.length;
     const listenersBefore = mockWatchSubmissions.mock.calls.length;
 
@@ -2852,5 +2888,159 @@ describe('VerificationsView — school year + archive filters (VUX-01)', () => {
     await waitFor(() =>
       expect(within(screen.getByRole('table')).getByText('2025/2026')).toBeTruthy(),
     );
+  });
+});
+
+describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)', () => {
+  const activeVer = () =>
+    makeDraftVer({
+      status: 'active',
+      onlineEnabled: true,
+      teacherSnapshot: {
+        title: 'Verifica Algebra',
+        classId: 'cls-1',
+        className: 'Classe 3A',
+        programId: 'prog-1',
+        importId: 'imp-1',
+        questionRefs: [sampleQuestionRef],
+        activatedAt: null,
+      },
+    });
+
+  const twoApproved = [
+    {
+      id: 'stud-a',
+      ownerUid: 'owner-uid',
+      uid: 'stud-a',
+      email: 'anna@example.test',
+      displayName: 'Anna',
+      status: 'approved' as const,
+      classId: 'cls-1',
+      createdAt: null,
+      updatedAt: null,
+      lastLoginAt: null,
+    },
+    {
+      id: 'stud-b',
+      ownerUid: 'owner-uid',
+      uid: 'stud-b',
+      email: 'bruno@example.test',
+      displayName: 'Bruno',
+      status: 'approved' as const,
+      classId: 'cls-1',
+      createdAt: null,
+      updatedAt: null,
+      lastLoginAt: null,
+    },
+  ];
+
+  const twoSubmissions = [
+    {
+      studentUid: 'stud-a',
+      status: 'submitted',
+      submittedAt: { seconds: 20, nanoseconds: 0 },
+      deliveryCode: 'SF-A',
+      correctionStatus: 'in_progress',
+      correctionSummary: { totalPoints: 8.5, maxPoints: 10, percentage: 85 },
+      attentionEventsCount: 0,
+      attentionEvents: [],
+    },
+    {
+      studentUid: 'stud-b',
+      status: 'draft',
+      submittedAt: null,
+      deliveryCode: null,
+      attentionEventsCount: 0,
+      attentionEvents: [],
+    },
+  ];
+
+  async function openWith(items: unknown[], progress?: Map<string, unknown>) {
+    mockListVerifications.mockResolvedValue([activeVer()]);
+    mockListStudents.mockResolvedValue(twoApproved);
+    if (progress) mockLoadCorrectionProgressByStudent.mockResolvedValue(progress as never);
+    mockWatchSubmissions.mockImplementation((_v, _o, _d, onChange) => {
+      onChange(items);
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    return screen.findByRole('region', { name: 'Consegne online' });
+  }
+
+  it('disables «Correggi con IA» until a row is selected and there is no per-row AI button', async () => {
+    setupDefaults();
+    const region = await openWith(twoSubmissions);
+    const button = within(region).getByRole('button', { name: /Correggi con IA/ });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    // No per-row AI button.
+    expect(within(region).queryByRole('button', { name: /Correggi con IA — /i })).toBeNull();
+
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    expect(within(region).getByRole('button', { name: /Correggi con IA \(1\)/ })).toBeTruthy();
+  });
+
+  it('disables the checkbox for a non-submitted row and select-all covers only submitted rows', async () => {
+    setupDefaults();
+    const region = await openWith(twoSubmissions);
+    const brunoBox = within(region).getByRole('checkbox', {
+      name: 'Seleziona consegna — Bruno',
+    }) as HTMLInputElement;
+    expect(brunoBox.disabled).toBe(true);
+
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona tutte le consegne' }));
+    // Only Anna (submitted) becomes selected.
+    expect(within(region).getByRole('button', { name: /Correggi con IA \(1\)/ })).toBeTruthy();
+  });
+
+  it('keeps the selection stable (by id) across a re-sort', async () => {
+    setupDefaults();
+    // Two submitted rows so both are selectable and sortable.
+    const bothSubmitted = [
+      twoSubmissions[0],
+      {
+        ...twoSubmissions[1],
+        status: 'submitted',
+        submittedAt: { seconds: 10, nanoseconds: 0 },
+        deliveryCode: 'SF-B',
+        correctionStatus: 'in_progress',
+        correctionSummary: { totalPoints: 4, maxPoints: 10, percentage: 40 },
+      },
+    ];
+    const region = await openWith(bothSubmitted);
+    const table = within(region).getByRole('table');
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
+    fireEvent.click(
+      within(table).getByRole('button', { name: 'Ordina per percentuale crescente' }),
+    );
+    // Anna is still the only selected row after re-sorting.
+    expect(within(region).getByRole('button', { name: /Correggi con IA \(1\)/ })).toBeTruthy();
+    const annaBox = within(region).getByRole('checkbox', {
+      name: 'Seleziona consegna — Anna',
+    }) as HTMLInputElement;
+    expect(annaBox.checked).toBe(true);
+  });
+
+  it('opens the dialog with the deterministic submissionIds of the selection', async () => {
+    setupDefaults();
+    const region = await openWith(twoSubmissions);
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
+    fireEvent.click(within(region).getByRole('button', { name: /Correggi con IA/ }));
+    const dialog = await screen.findByTestId('ai-batch-dialog');
+    expect(within(dialog).getByText('IDs: ver-1_stud-a')).toBeTruthy();
+  });
+
+  it('renders «Valutate» as n/total from the targeted read, and «—» when absent', async () => {
+    setupDefaults();
+    const region = await openWith(
+      twoSubmissions,
+      new Map([['stud-a', { evaluated: 2, total: 3 }]]),
+    );
+    const table = within(region).getByRole('table');
+    await waitFor(() => expect(within(table).getByText('2/3')).toBeTruthy());
+    // Bruno has no correction doc → "—".
+    expect(within(table).getAllByText('—').length).toBeGreaterThan(0);
   });
 });
