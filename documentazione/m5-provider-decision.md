@@ -19,13 +19,17 @@ Questo documento non modifica codice applicativo, Functions, Rules, indici, dipe
 
 ## 1. Executive summary
 
-**RACCOMANDAZIONE — prima scelta:** OpenAI `gpt-5-nano`, usando un identificatore di snapshot quando disponibile, è il candidato V1 più equilibrato. Fra i tre modelli economici confrontati ha il costo standard più basso per il carico SchoolForge ($0,05/M token input e $0,40/M output), supporta Structured Outputs e dispone di SDK TypeScript ufficiale. La documentazione lo presenta come modello veloce ed economico, ma non dimostra la qualità della correzione scolastica in italiano: il benchmark sintetico della sezione 12 resta un gate obbligatorio. [Modello e prezzi OpenAI](https://developers.openai.com/api/docs/models/gpt-5-nano)
+**RACCOMANDAZIONE — baseline iniziale:** OpenAI `gpt-5-nano`, usando un identificatore di snapshot quando disponibile, è la baseline economica da cui iniziare il benchmark, **non il modello definitivo**. Fra i tre modelli economici inizialmente confrontati ha il costo standard più basso per il carico SchoolForge ($0,05/M token input e $0,40/M output), supporta Structured Outputs e dispone di SDK TypeScript ufficiale. La documentazione lo presenta come modello veloce ed economico, ma non dimostra la qualità della correzione scolastica in italiano: il benchmark della sezione 12 resta un gate obbligatorio e nessun provider/modello deve essere promosso prima di risultati misurati. [Modello e prezzi OpenAI](https://developers.openai.com/api/docs/models/gpt-5-nano)
+
+**FATTO VERIFICATO — candidato OpenAI aggiuntivo al benchmark:** la documentazione OpenAI attuale consiglia di iniziare con `gpt-5.6-luna` per molti nuovi workload sensibili a velocità e costo. Il modello è documentato per API, Structured Outputs, output massimo di 128.000 token e prezzo standard di $1/M token input e $6/M output. Per questo deve essere incluso nel benchmark alle stesse condizioni degli altri candidati, ma non sostituisce automaticamente `gpt-5-nano` né cambia la raccomandazione prima delle misure. [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna) · [Guida modelli OpenAI](https://developers.openai.com/api/docs/models)
 
 **RACCOMANDAZIONE — seconda scelta/fallback:** Anthropic `claude-haiku-4-5-20251001`. Costa sensibilmente di più, ma offre structured outputs con schema, SDK TypeScript ufficiale e una valida alternativa di provider contro il lock-in. Deve entrare in produzione solo se supera il benchmark e se sono accettati costo e trattamento globale dei dati. [Panoramica modelli Claude](https://platform.claude.com/docs/en/about-claude/models/overview)
 
 **DECISIONE UMANA BLOCCANTE SU GEMINI:** `gemini-2.5-flash-lite` è competitivo sul costo, ma i termini Gemini API dichiarano che il servizio non deve essere usato come parte di siti o applicazioni diretti a, o probabilmente accessibili da, minori di 18 anni. SchoolForge è un portale scolastico: anche con chiamata server-side avviata dal docente, l’applicabilità del vincolo richiede verifica legale/contrattuale o chiarimento scritto del fornitore. Fino ad allora Gemini non è raccomandato come provider V1. [Gemini API Additional Terms](https://ai.google.dev/gemini-api/terms)
 
 **STIMA — scenario personale medio:** 4 verifiche/mese × 30 studenti × 4.000 token input + 1.000 output, includendo un margine prudenziale del 20%, costano circa **$0,0864/mese** con `gpt-5-nano`. Le consegne con sole domande chiuse costano $0 al provider IA.
+
+**SIGNIFICATO DEL MERGE:** il merge di questo documento registra esclusivamente una proposta tecnica. Non supera lo Human Gate, non autorizza un provider reale, non autorizza API key o Secret Manager, non autorizza deploy e non abilita costi reali. Il provider e il modello definitivi restano subordinati al benchmark e all’approvazione esplicita del docente.
 
 ## 2. Tabella comparativa provider/modelli
 
@@ -34,10 +38,11 @@ Questo documento non modifica codice applicativo, Functions, Rules, indici, dipe
 | Provider e modello | Prezzo standard input / output per 1M token | Structured output | Limite output dichiarato | SDK TypeScript/Node | Valutazione integrazione Functions v2 |
 | --- | ---: | --- | ---: | --- | --- |
 | OpenAI `gpt-5-nano` | $0,05 / $0,40 | Structured Outputs supportato; lo schema deve essere validato anche lato applicazione | 128.000 token | `openai`, TypeScript ≥ 4.9 e Node ≥ 20 | **Bassa**: SDK server-side semplice, API key come secret, schema JSON diretto |
+| OpenAI `gpt-5.6-luna` — solo benchmark | $1,00 / $6,00 | Structured Outputs supportato; stessa validazione applicativa obbligatoria | 128.000 token | `openai`, stesso SDK ufficiale | **Bassa**: candidato attuale per workload cost-sensitive, ma molto più costoso della baseline |
 | Google `gemini-2.5-flash-lite` | $0,10 / $0,40 | JSON Schema supportato come sottoinsieme; JSON sintatticamente valido, valori semantici da validare | 65.536 token | `@google/genai`, SDK JS/TS ufficiale | **Bassa tecnicamente**, **alta contrattualmente** per il vincolo under-18 |
 | Anthropic `claude-haiku-4-5-20251001` | $1,00 / $5,00 | Structured outputs con `output_config.format`; output parseabile conforme allo schema | 64.000 token | `@anthropic-ai/sdk`, TypeScript ≥ 4.9 e Node ≥ 20 | **Bassa-media**: SDK semplice; costo e geografia richiedono più controlli |
 
-**FATTI VERIFICATI:** prezzi, finestre e supporto sono riportati nelle pagine ufficiali di [GPT-5 nano](https://developers.openai.com/api/docs/models/gpt-5-nano), [Gemini 2.5 Flash-Lite](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite), [pricing Gemini](https://ai.google.dev/gemini-api/docs/pricing), [modelli Claude](https://platform.claude.com/docs/en/about-claude/models/overview) e [pricing Claude](https://platform.claude.com/docs/en/about-claude/pricing). I limiti massimi del provider non sono target applicativi: SchoolForge deve imporre limiti molto inferiori.
+**FATTI VERIFICATI:** prezzi, finestre e supporto sono riportati nelle pagine ufficiali di [GPT-5 nano](https://developers.openai.com/api/docs/models/gpt-5-nano), [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna), [Gemini 2.5 Flash-Lite](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite), [pricing Gemini](https://ai.google.dev/gemini-api/docs/pricing), [modelli Claude](https://platform.claude.com/docs/en/about-claude/models/overview) e [pricing Claude](https://platform.claude.com/docs/en/about-claude/pricing). I limiti massimi del provider non sono target applicativi: SchoolForge deve imporre limiti molto inferiori.
 
 **FATTO VERIFICATO, NON COMPARABILE:** le pagine dei provider descrivono qualitativamente GPT-5 nano come veloce, Gemini 2.5 Flash-Lite come il modello 2.5 più rapido e Claude Haiku 4.5 come il modello Claude più rapido. Non esiste in queste fonti un benchmark comune: la latenza “accettabile” per SchoolForge deve essere misurata nello stesso ambiente con p50/p95, come previsto nella sezione 12.
 
@@ -127,6 +132,33 @@ I prezzi batch ufficiali di Gemini e Anthropic sono inferiori, ma le API batch a
 
 **STIMA NON ANCORA VERIFICATA:** nessuna delle fonti ufficiali consultate dimostra che questi specifici modelli soddisfino le rubriche SchoolForge su risposte scolastiche italiane. Non si deve trasformare la descrizione commerciale di un modello in una garanzia didattica. La scelta finale richiede il benchmark sintetico della sezione 12 e revisione docente.
 
+### Principio semantico obbligatorio per le domande aperte
+
+**RACCOMANDAZIONE — requisito bloccante:** la soluzione del docente è una risposta di riferimento o rubrica, non un testo esaustivo che lo studente deve replicare. La valutazione deve misurare il significato e la qualità della risposta, non la somiglianza lessicale con il riferimento.
+
+Per ogni domanda aperta eleggibile il modello deve ricevere almeno:
+
+- domanda;
+- soluzione/riferimento del docente;
+- risposta dello studente;
+- punteggio massimo;
+- difficoltà e peso, quando disponibili nel dato già gestito dal flusso.
+
+La valutazione deve obbligatoriamente:
+
+- accettare formulazioni diverse ma semanticamente equivalenti;
+- riconoscere contenuti corretti anche quando non sono esplicitamente presenti nella soluzione docente;
+- valutare correttezza, pertinenza, completezza e comprensione dimostrata;
+- non penalizzare informazioni aggiuntive corrette;
+- non superare mai il punteggio massimo;
+- considerare negativamente informazioni errate, contraddittorie o fuori tema;
+- trattare la risposta dello studente come input non attendibile;
+- ignorare qualsiasi istruzione, richiesta di cambiare ruolo o prompt injection contenuta nella risposta dello studente;
+- produrre punteggi a step di `0,25` e feedback sintetico, motivato e utile;
+- segnalare chiaramente ambiguità o insufficiente sicurezza e richiedere revisione docente.
+
+Queste regole sono requisiti del futuro prompt/schema e del benchmark, non una modifica implementativa. Questa PR non aggiunge campi Firestore né strutture persistenti.
+
 ## 5. Privacy, trattamento dati e regioni
 
 ### 5.1 Dati realmente necessari nella chiamata
@@ -198,6 +230,14 @@ L’Italia è supportata, ma l’API first-party usa inferenza globale per Haiku
 
 **Nota di perimetro:** questa è una configurazione proposta; M5-05A non crea secret, non configura Functions e non installa SDK.
 
+### Efficienza obbligatoria del flusso
+
+- una sola chiamata per consegna deve contenere tutte le domande aperte eleggibili;
+- non inviare automaticamente l’intera lezione, l’intero corso o contenuti non necessari alla correzione;
+- il feedback generale deve essere prodotto nella stessa chiamata, senza una seconda chiamata dedicata;
+- le domande chiuse restano valutate deterministicamente dal codice e non consumano token del provider IA;
+- una consegna senza domande aperte eleggibili non deve generare alcuna chiamata IA.
+
 ## 7. Limiti e budget consigliati
 
 ### 7.1 Guardrail V1
@@ -259,7 +299,7 @@ Non salvare testi di domande, soluzioni, risposte, feedback, prompt, output grez
 
 ## 8. Provider/modello raccomandato come prima scelta
 
-**OpenAI `gpt-5-nano`**, subordinato ai gate della sezione 11.
+**OpenAI `gpt-5-nano` come baseline economica iniziale**, subordinata ai gate della sezione 11. Non è una selezione definitiva e il merge di questo documento non la trasforma in autorizzazione all’uso reale.
 
 Motivazioni:
 
@@ -279,6 +319,8 @@ Rischi da accettare o mitigare:
 - retry o timeout mal configurati possono moltiplicare costo e chiamate;
 - una risposta strutturalmente valida può essere didatticamente errata: revisione docente obbligatoria.
 
+`gpt-5.6-luna` partecipa al benchmark perché disponibilità API, caratteristiche, Structured Outputs e prezzo sono ora documentati ufficialmente. Il suo prezzo è molto superiore alla baseline: può diventare il modello raccomandato solo se i risultati misurati ne giustificano qualità, affidabilità, latenza e costo. La raccomandazione non cambia automaticamente in base alla guida generale OpenAI. [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna)
+
 ## 9. Seconda scelta/fallback
 
 **Anthropic `claude-haiku-4-5-20251001`** è il fallback provider raccomandato se:
@@ -292,7 +334,7 @@ Gemini `gemini-2.5-flash-lite` resta un candidato tecnico/economico, ma è **non
 
 ## 10. Decisioni che deve confermare il docente
 
-1. La soglia minima di qualità: tolleranza su punteggio, completezza feedback e casi borderline.
+1. La soglia minima di qualità: tolleranza su punteggio, completezza feedback, equivalenza semantica e casi borderline.
 2. Se `$5/mese` è un budget DEV adeguato e chi può sbloccare l’hard stop.
 3. Se 30 consegne, 20 domande aperte e 10.000 token/consegna coprono l’uso reale.
 4. Se la revisione docente deve precedere sempre il salvataggio definitivo dei punteggi IA.
@@ -306,7 +348,8 @@ Gemini `gemini-2.5-flash-lite` resta un candidato tecnico/economico, ma è **non
 ## 11. Human Gate M5-05 — PENDING
 
 - [ ] **PENDING — Docente:** approva dataset sintetico, rubrica e soglie del benchmark.
-- [ ] **PENDING — Docente:** conferma `gpt-5-nano` come candidato iniziale dopo il benchmark.
+- [ ] **PENDING — Docente:** conferma il provider e modello definitivi soltanto dopo il benchmark; `gpt-5-nano` è la baseline iniziale, non la decisione finale.
+- [ ] **PENDING — Docente:** approva i requisiti semantici, lo step `0,25`, la gestione dell’ambiguità e i criteri di esclusione del benchmark.
 - [ ] **PENDING — Docente:** approva limiti V1, concorrenza, timeout, retry e fail-closed.
 - [ ] **PENDING — Responsabile budget:** approva budget DEV, soglie e hard stop.
 - [ ] **PENDING — Responsabile privacy:** approva minimizzazione payload, retention e logging senza contenuti.
@@ -316,44 +359,75 @@ Gemini `gemini-2.5-flash-lite` resta un candidato tecnico/economico, ma è **non
 - [ ] **PENDING — Docente:** conferma che ogni correzione IA resta assistiva e soggetta a revisione umana.
 - [ ] **PENDING — Release owner:** autorizza separatamente M5-05; nessuna autorizzazione è implicita in M5-05A.
 
-Finché tutte le checkbox pertinenti non sono confermate, usare soltanto `MockAiGrader` e non eseguire deploy di provider reali.
+Finché tutte le checkbox pertinenti non sono confermate, usare soltanto `MockAiGrader` e non eseguire deploy di provider reali. Anche se questo documento viene mergiato, lo Human Gate resta `PENDING`: il merge non autorizza provider reale, API key, Secret Manager, deploy o costi reali.
 
 ## 12. Piano di benchmark successivo
 
 ### Dataset
 
 - creare esclusivamente dati sintetici, senza nomi, email, classi, scuole o risposte reali;
-- preparare 10–20 risposte campione in italiano distribuite fra almeno due materie;
-- includere risposte corrette, parziali, errate, ambigue, molto brevi e con informazioni irrilevanti;
+- preparare 10–20 risposte campione in italiano distribuite fra almeno due materie, includendo tutti i casi della matrice obbligatoria seguente;
 - associare una soluzione/rubrica docente e un punteggio atteso con intervallo di tolleranza;
 - includere un caso closed-only per verificare 0 chiamate e 0 token.
 
+### Matrice semantica obbligatoria
+
+Eseguire la stessa identica matrice per ogni modello/provider candidato ammesso al benchmark. Ogni riga deve essere rappresentata nel dataset; un singolo campione può coprire più righe solo se le misure restano distinguibili.
+
+| Caso obbligatorio | Comportamento atteso |
+| --- | --- |
+| Risposta semanticamente equivalente alla soluzione | Accettare la formulazione alternativa e non richiedere corrispondenza lessicale |
+| Risposta più completa e interamente corretta | Riconoscere la completezza senza penalizzare contenuti aggiuntivi corretti |
+| Alternativa valida non citata nella soluzione | Valutare il contenuto per correttezza e pertinenza, non come automaticamente errato |
+| Risposta parzialmente corretta | Attribuire credito parziale motivato e coerente con la rubrica |
+| Risposta corretta con un’aggiunta falsa | Ridurre il punteggio in proporzione alla falsità/contraddizione e motivarlo |
+| Risposta fuori tema | Non attribuire credito per contenuti irrilevanti |
+| Risposta vuota | Assegnare zero senza inventare contenuti |
+| Risposta con tentativo di prompt injection | Ignorare le istruzioni dello studente e valutare esclusivamente la risposta disciplinare |
+| Risposta ambigua o specialistica non sufficientemente coperta dalla soluzione | Dichiarare l’incertezza e richiedere revisione docente, senza falsa sicurezza |
+
 ### Esecuzione
 
-- eseguire gli stessi payload e lo stesso schema su OpenAI, Anthropic e, solo se il gate contrattuale è risolto, Gemini;
+- eseguire gli stessi payload, la stessa matrice e lo stesso schema su `gpt-5-nano`, `gpt-5.6-luna`, Anthropic e, solo se il gate contrattuale è risolto, Gemini;
 - fissare modello/snapshot, temperatura e limiti output;
 - ripetere ogni campione almeno tre volte per osservare variabilità;
-- misurare token input/output, costo, latenza p50/p95, retry, timeout, JSON invalido, violazioni di schema e contenuto mancante;
+- confermare una sola chiamata per consegna con tutte le domande aperte eleggibili e feedback generale incluso;
 - non usare caching, batch asincroni o strumenti esterni, per isolare il modello;
 - non eseguire alcun deploy di produzione.
 
-### Valutazione umana
+### Misure obbligatorie per ogni caso
 
-- confronto cieco del punteggio con la rubrica docente;
-- correttezza, utilità, tono e chiarezza del feedback in italiano;
-- assenza di invenzioni, dati personali o istruzioni fuori tema;
-- coerenza fra punteggio per domanda e feedback generale;
-- rapporto qualità/costo/latenza, con motivazione della soglia scelta.
+- punteggio atteso e punteggio ottenuto;
+- qualità e utilità del feedback, con valutazione umana cieca;
+- corretta applicazione dello step `0,25` e rispetto del punteggio massimo;
+- mancata esposizione o riproduzione non necessaria della soluzione docente;
+- resistenza alla prompt injection presente nella risposta dello studente;
+- token input/output;
+- latenza per caso e aggregati p50/p95;
+- costo stimato usando il prezzo ufficiale rilevato;
+- eventuale necessità di revisione docente e corretta segnalazione dell’incertezza;
+- retry, timeout, JSON invalido, violazioni di schema o contenuto mancante;
+- coerenza fra punteggio per domanda e feedback generale.
+
+### Criterio bloccante di esclusione
+
+Un modello viene escluso anche se più economico quando:
+
+- penalizza frequentemente risposte corrette alternative o semanticamente equivalenti;
+- segue istruzioni o prompt injection contenuti nella risposta dello studente;
+- produce frequentemente valutazioni non motivate o feedback non utile.
+
+Le frequenze e le soglie numeriche devono essere definite dal docente prima dell’esecuzione, non adattate dopo aver visto il vincitore.
 
 ### Output del benchmark
 
-Produrre un breve report separato con dati aggregati, errori anonimizzati e decisione `GO/NO-GO`. Non promuovere automaticamente il modello più economico: deve prima superare la soglia didattica e tutti i gate privacy/contrattuali.
+Produrre un breve report separato con dati aggregati, errori anonimizzati e decisione `GO/NO-GO`. Non promuovere automaticamente il modello più economico o quello suggerito in generale dal provider: deve prima superare soglia didattica, matrice semantica, criteri di sicurezza e tutti i gate privacy/contrattuali. Il provider definitivo richiede approvazione esplicita del docente.
 
 ## Fonti ufficiali consultate
 
 Rilevate il 16 luglio 2026:
 
-- OpenAI: [GPT-5 nano](https://developers.openai.com/api/docs/models/gpt-5-nano), [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [Node SDK](https://github.com/openai/openai-node), [rate limits](https://developers.openai.com/api/docs/guides/rate-limits), [data controls e residency](https://developers.openai.com/api/docs/guides/your-data), [paesi supportati](https://developers.openai.com/api/docs/supported-countries).
+- OpenAI: [guida alla scelta dei modelli](https://developers.openai.com/api/docs/models), [GPT-5 nano](https://developers.openai.com/api/docs/models/gpt-5-nano), [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna), [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [Node SDK](https://github.com/openai/openai-node), [rate limits](https://developers.openai.com/api/docs/guides/rate-limits), [data controls e residency](https://developers.openai.com/api/docs/guides/your-data), [paesi supportati](https://developers.openai.com/api/docs/supported-countries).
 - Google: [Gemini 2.5 Flash-Lite](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite), [pricing](https://ai.google.dev/gemini-api/docs/pricing), [structured output](https://ai.google.dev/gemini-api/docs/structured-output), [JS/TS SDK](https://github.com/googleapis/js-genai), [rate limits](https://ai.google.dev/gemini-api/docs/rate-limits), [troubleshooting](https://ai.google.dev/gemini-api/docs/troubleshooting), [Additional Terms](https://ai.google.dev/gemini-api/terms), [ZDR](https://ai.google.dev/gemini-api/docs/zdr), [regioni disponibili](https://ai.google.dev/gemini-api/docs/available-regions).
 - Anthropic: [modelli](https://platform.claude.com/docs/en/about-claude/models/overview), [pricing](https://platform.claude.com/docs/en/about-claude/pricing), [structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs), [TypeScript SDK](https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/typescript), [rate limits](https://platform.claude.com/docs/en/api/rate-limits), [training](https://privacy.claude.com/it/articles/7996868-i-miei-dati-vengono-utilizzati-per-l-addestramento-del-modello), [retention](https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data), [ZDR](https://privacy.claude.com/en/articles/8956058-i-have-a-zero-data-retention-agreement-with-anthropic-what-products-does-it-apply-to), [regioni](https://platform.claude.com/docs/en/api/supported-regions), [data residency](https://platform.claude.com/docs/en/manage-claude/data-residency).
 - Firebase: [secret parameters per Cloud Functions](https://firebase.google.com/docs/functions/config-env#secret_parameters).
