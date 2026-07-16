@@ -1216,7 +1216,15 @@ export function VerificationsView() {
         submissionId={correctionTarget.submissionId}
         ownerUid={ownerUid}
         studentName={correctionTarget.studentName}
-        onClose={() => setCorrectionTarget(null)}
+        onClose={() => {
+          setCorrectionTarget(null);
+          // Il workspace salva direttamente la correction, mentre la tabella
+          // mantiene una fotografia mirata del progresso. Aggiornala al
+          // ritorno così «Valutate» e le azioni batch (incluso «Azzera»)
+          // riflettono subito l'ultimo salvataggio, senza refresh pagina né
+          // listener permanente.
+          void refreshCorrectionProgress();
+        }}
       />
     );
   }
