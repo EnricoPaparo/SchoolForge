@@ -2,49 +2,351 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import type { CallableRequest, FunctionsErrorCode } from 'firebase-functions/v2/https';
 import * as logger from 'firebase-functions/logger';
 import { getApps, initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import type { Firestore, Transaction } from 'firebase-admin/firestore';
 import {
   AiGatewayError,
-  handlePreview,
-  handleRun,
+  MockAiGrader,
   resolveAiFeatureMode,
-  type AiCorrectionHandlerDeps,
-  type AiCorrectionPreviewResponse,
-  type AiCorrectionRunResponse,
+  type AiCorrectionAuthDeps,
   type AiGatewayErrorCode,
 } from './aiCorrectionGatewayCore.js';
+import {
+  runExecution,
+  runPreview,
+  type CommitSubmissionInput,
+  type CommitSubmissionResult,
+  type CorrectionData,
+  type EngineWritePorts,
+  type ExistingEvaluation,
+  type PersistedRun,
+  type SubmissionData,
+  type TeacherQuestion,
+  type ValidatedScore,
+  type VerificationData,
+} from './aiCorrectionEngine.js';
 
 /**
- * M5-01 — wiring runtime del gateway della correzione assistita da IA.
+ * M5-02 — wiring runtime del motore della correzione assistita da IA.
  *
- * Due Cloud Functions v2 `onCall`, scale-to-zero, che montano la logica pura di
- * `aiCorrectionGatewayCore.ts` sull'Admin SDK. In M5-01 il gateway è **solo
- * predisposto**: `aiCorrectionPreview` restituisce un risultato mock, e
- * `aiCorrectionRun` non scrive nulla su Firestore. Modalità **mock**
- * deterministica: nessun provider reale, nessuna API key, nessuna chiamata di
- * rete, **zero token**. Provider/modello/Secret Manager/budget reali sono
- * bloccanti solo per M5-05. Nessun deploy in questa PR.
+ * Due Cloud Functions v2 `onCall`, scale-to-zero, che montano il motore puro di
+ * `aiCorrectionEngine.ts` sull'Admin SDK: preflight reale (`aiCorrectionPreview`)
+ * ed esecuzione con scritture atomiche per consegna e idempotenza
+ * (`aiCorrectionRun`). **Solo `MockAiGrader`**: nessun provider reale, nessuna
+ * API key, nessuna chiamata di rete, **costo 0**. Nessun deploy in questa PR.
  */
 
-/**
- * Stessa region del resto del progetto (`repositoryGateway`): il modulo IA non
- * introduce nuove region.
- */
 export const AI_GATEWAY_REGION = 'us-central1';
 
 if (getApps().length === 0) initializeApp();
 
-/**
- * Fonte autoritativa dell'owner: `settings/owner.ownerUid` (mai
- * `settings/ownerPublic`, mai dati del client). Sola **lettura** — M5-01 non
- * effettua scritture Firestore.
- */
-async function getOwnerUid(): Promise<string | null> {
-  const snap = await getFirestore().doc('settings/owner').get();
+// ── Porte Admin SDK ───────────────────────────────────────────────────────────
+
+async function getOwnerUid(db: Firestore): Promise<string | null> {
+  const snap = await db.doc('settings/owner').get();
   return snap.exists ? ((snap.data()?.ownerUid as string | undefined) ?? null) : null;
 }
 
-/** Mappa i codici stabili dell'app ai codici `HttpsError` di Callable. */
+function loadVerification(db: Firestore) {
+  return async (verificationId: string): Promise<VerificationData | null> => {
+    const snap = await db.doc(`verifications/${verificationId}`).get();
+    if (!snap.exists) return null;
+    const data = snap.data() as Record<string, unknown>;
+    const teacherSnapshot = data.teacherSnapshot as { questions?: unknown[] } | null | undefined;
+    const rawQuestions = Array.isArray(teacherSnapshot?.questions)
+      ? teacherSnapshot!.questions
+      : null;
+    const teacherQuestions: TeacherQuestion[] | null = rawQuestions
+      ? rawQuestions.map((q) => {
+          const question = q as Record<string, unknown>;
+          return {
+            order: question.order as number,
+            tipo: question.tipo as TeacherQuestion['tipo'],
+            maxPoints: question.maxPoints as number,
+            testo: (question.testo as string) ?? '',
+            soluzione: question.soluzione as string | string[],
+          };
+        })
+      : null;
+    return {
+      ownerUid: (data.ownerUid as string) ?? '',
+      status: (data.status as string) ?? '',
+      teacherQuestions,
+    };
+  };
+}
+
+function loadSubmission(db: Firestore) {
+  return async (submissionId: string): Promise<SubmissionData | null> => {
+    const snap = await db.doc(`submissions/${submissionId}`).get();
+    if (!snap.exists) return null;
+    const data = snap.data() as Record<string, unknown>;
+    return {
+      ownerUid: (data.ownerUid as string) ?? '',
+      verificationId: (data.verificationId as string) ?? '',
+      studentUid: (data.studentUid as string) ?? '',
+      status: (data.status as string) ?? '',
+      answers: (data.answers as SubmissionData['answers']) ?? {},
+    };
+  };
+}
+
+function toCorrectionData(data: Record<string, unknown>): CorrectionData {
+  return {
+    status: data.status as CorrectionData['status'],
+    evaluations: (data.evaluations as Record<string, ExistingEvaluation>) ?? {},
+    reopenCount: (data.reopenCount as number) ?? 0,
+  };
+}
+
+function loadCorrection(db: Firestore) {
+  return async (submissionId: string): Promise<CorrectionData | null> => {
+    const snap = await db.doc(`corrections/${submissionId}`).get();
+    if (!snap.exists) return null;
+    return toCorrectionData(snap.data() as Record<string, unknown>);
+  };
+}
+
+function computeTotals(evaluations: Record<string, ExistingEvaluation>): {
+  totalPoints: number;
+  maxPoints: number;
+  percentage: number | null;
+} {
+  let totalPoints = 0;
+  let maxPoints = 0;
+  for (const e of Object.values(evaluations)) {
+    if (e.points !== null) totalPoints += e.points;
+    maxPoints += e.maxPoints;
+  }
+  return {
+    totalPoints,
+    maxPoints,
+    percentage: maxPoints > 0 ? Math.round((totalPoints / maxPoints) * 100) : null,
+  };
+}
+
+function progressStatus(
+  evaluations: Record<string, ExistingEvaluation>,
+): 'submitted' | 'in_progress' {
+  return Object.values(evaluations).some((e) => e.points !== null) ? 'in_progress' : 'submitted';
+}
+
+function applyProposed(
+  evaluations: Record<string, ExistingEvaluation>,
+  proposed: Map<number, ValidatedScore>,
+): number[] {
+  const written: number[] = [];
+  for (const [order, score] of proposed) {
+    const key = order.toString();
+    const current = evaluations[key];
+    if (!current || current.points !== null) continue; // mai sovrascrivere
+    evaluations[key] = {
+      order: current.order,
+      maxPoints: current.maxPoints,
+      points: score.points,
+      ...(score.feedback !== undefined ? { feedback: score.feedback } : {}),
+    };
+    written.push(order);
+  }
+  return written;
+}
+
+function commitSubmission(db: Firestore) {
+  return async (input: CommitSubmissionInput): Promise<CommitSubmissionResult> => {
+    const correctionRef = db.doc(`corrections/${input.submissionId}`);
+    const submissionRef = db.doc(`submissions/${input.submissionId}`);
+    const receiptRef = db.doc(`submissionReceipts/${input.submissionId}`);
+
+    return db.runTransaction(async (tx: Transaction): Promise<CommitSubmissionResult> => {
+      const snap = await tx.get(correctionRef);
+      const now = FieldValue.serverTimestamp();
+
+      if (!snap.exists) {
+        // Crea in_progress con lo scheletro congelato, poi applica le proposte.
+        const evaluations: Record<string, ExistingEvaluation> = {};
+        for (const q of input.skeleton) {
+          evaluations[q.order.toString()] = {
+            order: q.order,
+            points: null,
+            maxPoints: q.maxPoints,
+          };
+        }
+        const written = applyProposed(evaluations, input.proposed);
+        const totals = computeTotals(evaluations);
+        tx.set(correctionRef, {
+          submissionId: input.submissionId,
+          verificationId: input.verificationId,
+          studentUid: input.studentUid,
+          ownerUid: input.ownerUid,
+          status: 'in_progress',
+          evaluations,
+          generalFeedback: null,
+          totalPoints: totals.totalPoints,
+          maxPoints: totals.maxPoints,
+          percentage: totals.percentage,
+          createdAt: now,
+          updatedAt: now,
+          completedAt: null,
+          returnedAt: null,
+          reopenCount: 0,
+        });
+        writeMirror(tx, {
+          submissionRef,
+          receiptRef,
+          totals,
+          status: progressStatus(evaluations),
+          now,
+        });
+        return { result: 'written', writtenOrders: written };
+      }
+
+      const correction = toCorrectionData(snap.data() as Record<string, unknown>);
+      if (correction.status !== 'in_progress') {
+        return { result: 'changed', writtenOrders: [] };
+      }
+
+      const evaluations: Record<string, ExistingEvaluation> = { ...correction.evaluations };
+      const written = applyProposed(evaluations, input.proposed);
+      const totals = computeTotals(evaluations);
+      tx.update(correctionRef, {
+        evaluations,
+        totalPoints: totals.totalPoints,
+        maxPoints: totals.maxPoints,
+        percentage: totals.percentage,
+        updatedAt: now,
+      });
+      writeMirror(tx, {
+        submissionRef,
+        receiptRef,
+        totals,
+        status: progressStatus(evaluations),
+        now,
+      });
+
+      // Semantica M4: su correction riaperta (reopenCount > 0), un cambiamento
+      // reale scrive un evento append-only 'scoreAdjusted' con delta minimale.
+      if (correction.reopenCount > 0 && written.length > 0) {
+        const eventRef = db.collection('correctionEvents').doc();
+        tx.set(eventRef, {
+          correctionId: input.submissionId,
+          ownerUid: input.ownerUid,
+          type: 'scoreAdjusted',
+          actorUid: input.actorUid,
+          previousStatus: 'in_progress',
+          nextStatus: 'in_progress',
+          reason: null,
+          questionDeltas: written.map((order) => ({
+            order,
+            previousPoints: null,
+            nextPoints: evaluations[order.toString()]!.points,
+          })),
+          timestamp: now,
+        });
+      }
+
+      return { result: 'written', writtenOrders: written };
+    });
+  };
+}
+
+function writeMirror(
+  tx: Transaction,
+  args: {
+    submissionRef: FirebaseFirestore.DocumentReference;
+    receiptRef: FirebaseFirestore.DocumentReference;
+    totals: { totalPoints: number; maxPoints: number; percentage: number | null };
+    status: 'submitted' | 'in_progress';
+    now: FirebaseFirestore.FieldValue;
+  },
+): void {
+  tx.update(args.submissionRef, {
+    correctionStatus: args.status,
+    correctionStatusUpdatedAt: args.now,
+    correctionSummary: {
+      totalPoints: args.totals.totalPoints,
+      maxPoints: args.totals.maxPoints,
+      percentage: args.totals.percentage,
+    },
+    correctionSummaryUpdatedAt: args.now,
+  });
+  tx.set(
+    args.receiptRef,
+    { correctionStatus: args.status, correctionStatusUpdatedAt: args.now },
+    { merge: true },
+  );
+}
+
+function beginRun(db: Firestore): EngineWritePorts['beginRun'] {
+  return async (requestId, meta) => {
+    const ref = db.doc(`aiCorrectionRuns/${requestId}`);
+    return db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const now = FieldValue.serverTimestamp();
+      if (!snap.exists) {
+        tx.set(ref, {
+          requestId,
+          ownerUid: meta.ownerUid,
+          actorUid: meta.actorUid,
+          verificationId: meta.verificationId,
+          mode: 'mock',
+          provider: 'mock',
+          status: 'running',
+          selectionHash: meta.selectionHash,
+          submissionCount: meta.submissionCount,
+          tokensEstimated: 0,
+          tokensActual: 0,
+          cost: 0,
+          createdAt: now,
+          updatedAt: now,
+        });
+        return { state: 'created' as const };
+      }
+      const data = snap.data() as Record<string, unknown>;
+      if (data.selectionHash !== meta.selectionHash) return { state: 'conflict' as const };
+      return {
+        state: 'existing' as const,
+        existing: {
+          status: data.status as PersistedRun['status'],
+          selectionHash: data.selectionHash as string,
+          response: data.response as PersistedRun['response'],
+        },
+      };
+    });
+  };
+}
+
+function finishRun(db: Firestore): EngineWritePorts['finishRun'] {
+  return async (requestId, run) => {
+    await db.doc(`aiCorrectionRuns/${requestId}`).set(
+      {
+        status: run.status,
+        updatedAt: FieldValue.serverTimestamp(),
+        // Solo metadata: conteggi, token, esito sintetico per consegna (id +
+        // outcome + counts). Nessun testo/risposta/soluzione/feedback/nome/email.
+        counts: run.response?.counts ?? null,
+        tokensEstimated: run.response?.tokensEstimated ?? 0,
+        tokensActual: run.response?.tokensActual ?? 0,
+        cost: 0,
+        response: run.response ?? null,
+      },
+      { merge: true },
+    );
+  };
+}
+
+function buildWritePorts(db: Firestore): EngineWritePorts {
+  return {
+    loadVerification: loadVerification(db),
+    loadSubmission: loadSubmission(db),
+    loadCorrection: loadCorrection(db),
+    beginRun: beginRun(db),
+    finishRun: finishRun(db),
+    commitSubmission: commitSubmission(db),
+  };
+}
+
+// ── Errori → HttpsError ───────────────────────────────────────────────────────
+
 function toHttpsError(err: AiGatewayError): HttpsError {
   const map: Record<AiGatewayErrorCode, FunctionsErrorCode> = {
     unauthenticated: 'unauthenticated',
@@ -53,34 +355,32 @@ function toHttpsError(err: AiGatewayError): HttpsError {
     invalid_input: 'invalid-argument',
     batch_limit_exceeded: 'resource-exhausted',
   };
-  // `details` porta solo il codice stabile, mai contenuti sensibili.
   return new HttpsError(map[err.code], err.message, { code: err.code });
 }
 
-function buildDeps(request: CallableRequest): AiCorrectionHandlerDeps {
+function authDeps(request: CallableRequest, db: Firestore): AiCorrectionAuthDeps {
   return {
     callerUid: request.auth?.uid ?? null,
-    getOwnerUid,
-    // La modalità è risolta SOLO da configurazione server-side (env della
-    // Function), mai da input del client. Default sicuro `disabled`.
+    getOwnerUid: () => getOwnerUid(db),
     featureMode: resolveAiFeatureMode(process.env),
   };
 }
 
-async function runPhase<T extends AiCorrectionPreviewResponse | AiCorrectionRunResponse>(
+async function run<T>(
   phase: 'preview' | 'run',
   request: CallableRequest,
-  handler: (rawInput: unknown, deps: AiCorrectionHandlerDeps) => Promise<T>,
+  handler: (db: Firestore) => Promise<T>,
 ): Promise<T> {
   const started = Date.now();
-  const deps = buildDeps(request);
+  const db = getFirestore();
+  const featureMode = resolveAiFeatureMode(process.env);
   try {
-    const result = await handler(request.data, deps);
-    // Log minimale e NON sensibile: nessun id di verifica/consegna, nessun
-    // contenuto. Solo fase, modalità, esito e durata.
+    const result = await handler(db);
+    // Log minimale e NON sensibile: nessun id di verifica/consegna/studente,
+    // nessun contenuto. Solo fase, modalità, esito, durata.
     logger.info('aiCorrectionGateway', {
       phase,
-      mode: deps.featureMode,
+      mode: featureMode,
       outcome: 'ok',
       durationMs: Date.now() - started,
     });
@@ -89,13 +389,12 @@ async function runPhase<T extends AiCorrectionPreviewResponse | AiCorrectionRunR
     if (err instanceof AiGatewayError) {
       logger.info('aiCorrectionGateway', {
         phase,
-        mode: deps.featureMode,
+        mode: featureMode,
         outcome: err.code,
         durationMs: Date.now() - started,
       });
       throw toHttpsError(err);
     }
-    // Errore inatteso: non esporre dettagli.
     logger.error('aiCorrectionGateway', {
       phase,
       outcome: 'internal',
@@ -107,10 +406,20 @@ async function runPhase<T extends AiCorrectionPreviewResponse | AiCorrectionRunR
 
 export const aiCorrectionPreview = onCall(
   { region: AI_GATEWAY_REGION, minInstances: 0, maxInstances: 3 },
-  (request) => runPhase('preview', request, handlePreview),
+  (request) =>
+    run('preview', request, (db) =>
+      runPreview(request.data, { ...authDeps(request, db), ports: buildWritePorts(db) }),
+    ),
 );
 
 export const aiCorrectionRun = onCall(
   { region: AI_GATEWAY_REGION, minInstances: 0, maxInstances: 3 },
-  (request) => runPhase('run', request, handleRun),
+  (request) =>
+    run('run', request, (db) =>
+      runExecution(request.data, {
+        ...authDeps(request, db),
+        ports: buildWritePorts(db),
+        grader: new MockAiGrader(),
+      }),
+    ),
 );

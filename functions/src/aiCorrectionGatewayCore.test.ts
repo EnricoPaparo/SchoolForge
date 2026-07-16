@@ -1,14 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AiGatewayError,
+  authorizeAndValidate,
   authorizeOwnerCall,
-  handlePreview,
-  handleRun,
   MockAiGrader,
   MAX_SUBMISSIONS_PER_OPERATION,
   resolveAiFeatureMode,
   validateAiCorrectionRequest,
-  type AiCorrectionHandlerDeps,
+  type AiCorrectionAuthDeps,
   type AiFeatureMode,
   type AiGraderInput,
 } from './aiCorrectionGatewayCore.js';
@@ -30,7 +29,7 @@ function validRequest(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function deps(overrides: Partial<AiCorrectionHandlerDeps> = {}): AiCorrectionHandlerDeps {
+function deps(overrides: Partial<AiCorrectionAuthDeps> = {}): AiCorrectionAuthDeps {
   return {
     callerUid: OWNER,
     getOwnerUid: async () => OWNER,
@@ -177,85 +176,50 @@ describe('validateAiCorrectionRequest', () => {
   });
 });
 
-// ── handlePreview / handleRun: auth → flag → input ordering ───────────────────
+// ── authorizeAndValidate: auth → flag → input ordering ───────────────────────
 
-describe('handlePreview / handleRun — authorization and flag gating', () => {
-  for (const [name, handler] of [
-    ['handlePreview', handlePreview],
-    ['handleRun', handleRun],
-  ] as const) {
-    it(`${name}: rejects an unauthenticated caller`, async () => {
-      await expect(handler(validRequest(), deps({ callerUid: null }))).rejects.toMatchObject({
-        code: 'unauthenticated',
-      });
-    });
-
-    it(`${name}: rejects a non-owner caller`, async () => {
-      await expect(handler(validRequest(), deps({ callerUid: 'intruder' }))).rejects.toMatchObject({
-        code: 'not_owner',
-      });
-    });
-
-    it(`${name}: rejects when the feature is disabled`, async () => {
-      await expect(
-        handler(validRequest(), deps({ featureMode: 'disabled' })),
-      ).rejects.toMatchObject({ code: 'feature_disabled' });
-    });
-
-    it(`${name}: does not reveal the flag to a non-owner (owner checked first)`, async () => {
-      // Non-owner + disabled flag → must surface not_owner, never feature_disabled.
-      await expect(
-        handler(validRequest(), deps({ callerUid: 'intruder', featureMode: 'disabled' })),
-      ).rejects.toMatchObject({ code: 'not_owner' });
-    });
-
-    it(`${name}: rejects invalid input once authorized and enabled`, async () => {
-      await expect(handler(validRequest({ submissionIds: [] }), deps())).rejects.toMatchObject({
-        code: 'invalid_input',
-      });
-    });
-  }
-});
-
-// ── mock mode responses ──────────────────────────────────────────────────────
-
-describe('handlePreview — mock mode', () => {
-  it('returns a clearly-identified mock preview with zero tokens', async () => {
-    const res = await handlePreview(validRequest(), deps());
-    expect(res).toMatchObject({
-      mode: 'mock',
-      phase: 'preview',
-      requestId: REQ,
-      verificationId: VERIF,
-      submissionCount: 2,
-      tokensEstimated: 0,
-    });
-    expect(res.note).toMatch(/mock/i);
-  });
-});
-
-describe('handleRun — mock mode', () => {
-  it('returns a mock run result and writes nothing (written: false)', async () => {
-    const res = await handleRun(validRequest(), deps());
-    expect(res).toMatchObject({
-      mode: 'mock',
-      phase: 'run',
-      requestId: REQ,
-      verificationId: VERIF,
-      submissionCount: 2,
-      tokensEstimated: 0,
-      written: false,
-    });
-    expect(res.note).toMatch(/mock/i);
+describe('authorizeAndValidate — shared preview/run gate', () => {
+  it('rejects an unauthenticated caller', async () => {
+    await expect(
+      authorizeAndValidate(validRequest(), deps({ callerUid: null })),
+    ).rejects.toMatchObject({ code: 'unauthenticated' });
   });
 
-  it('performs no Firestore write: deps expose only an owner read, never a write port', async () => {
-    // Structural proof: the only Firestore-touching dependency handed to the
-    // handler is getOwnerUid (a read). There is no write capability to call.
-    const getOwnerUid = vi.fn(async () => OWNER);
-    const res = await handleRun(validRequest(), deps({ getOwnerUid }));
-    expect(getOwnerUid).toHaveBeenCalledTimes(1);
-    expect(res.written).toBe(false);
+  it('rejects a non-owner caller', async () => {
+    await expect(
+      authorizeAndValidate(validRequest(), deps({ callerUid: 'intruder' })),
+    ).rejects.toMatchObject({ code: 'not_owner' });
+  });
+
+  it('rejects when the feature is disabled', async () => {
+    await expect(
+      authorizeAndValidate(validRequest(), deps({ featureMode: 'disabled' })),
+    ).rejects.toMatchObject({ code: 'feature_disabled' });
+  });
+
+  it('does not reveal the flag to a non-owner (owner checked first)', async () => {
+    // Non-owner + disabled flag → must surface not_owner, never feature_disabled.
+    await expect(
+      authorizeAndValidate(
+        validRequest(),
+        deps({ callerUid: 'intruder', featureMode: 'disabled' }),
+      ),
+    ).rejects.toMatchObject({ code: 'not_owner' });
+  });
+
+  it('rejects invalid input once authorized and enabled', async () => {
+    await expect(
+      authorizeAndValidate(validRequest({ submissionIds: [] }), deps()),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+  });
+
+  it('returns the validated closed payload for the owner with mock enabled', async () => {
+    const r = await authorizeAndValidate(validRequest(), deps());
+    expect(r).toEqual({
+      verificationId: VERIF,
+      submissionIds: [subId('s1'), subId('s2')],
+      requestId: REQ,
+    });
   });
 });
 
@@ -308,12 +272,11 @@ describe('MockAiGrader', () => {
   });
 });
 
-// ── no external network from the handlers ─────────────────────────────────────
+// ── no external network from the shared gate ─────────────────────────────────
 
 describe('no external network', () => {
-  it('handlePreview and handleRun never call fetch', async () => {
-    await handlePreview(validRequest(), deps());
-    await handleRun(validRequest(), deps());
+  it('authorizeAndValidate never calls fetch', async () => {
+    await authorizeAndValidate(validRequest(), deps());
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

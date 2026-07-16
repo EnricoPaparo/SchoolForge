@@ -78,31 +78,8 @@ export interface AiCorrectionRequest {
   requestId: string;
 }
 
-interface AiCorrectionResponseBase {
-  /** Sempre `'mock'` in M5-01: nessun provider reale. */
-  mode: 'mock';
-  requestId: string;
-  verificationId: string;
-  submissionCount: number;
-  /** M5-01 non consuma token IA. */
-  tokensEstimated: 0;
-  /** Marcatore inequivocabile: questa risposta proviene dal gateway mock M5-01. */
-  note: string;
-}
-
-export interface AiCorrectionPreviewResponse extends AiCorrectionResponseBase {
-  phase: 'preview';
-}
-
-export interface AiCorrectionRunResponse extends AiCorrectionResponseBase {
-  phase: 'run';
-  /**
-   * Sempre `false` in M5-01: `aiCorrectionRun` non scrive alcuna valutazione
-   * né alcun documento Firestore. La persistenza (evaluations,
-   * `aiCorrectionRuns/{requestId}`) arriva in M5-02.
-   */
-  written: false;
-}
+// Le response di preview/run (contratto pieno M5-02) sono definite in
+// `aiCorrectionEngine.ts`, che orchestra eleggibilità, scoring e scritture.
 
 // ── Limiti prudenti (guardie tecniche, non budget definitivi) ────────────────
 
@@ -306,70 +283,27 @@ export class MockAiGrader implements AiGrader {
   }
 }
 
-// ── Handler preview / run ────────────────────────────────────────────────────
+// ── Gate condiviso preview / run ─────────────────────────────────────────────
 
-export interface AiCorrectionHandlerDeps extends OwnerAuthDeps {
+export interface AiCorrectionAuthDeps extends OwnerAuthDeps {
   featureMode: AiFeatureMode;
 }
 
 /**
- * Ordine dei controlli (comune a preview e run): **autenticazione → owner →
- * feature flag → forma dell'input**. Così un chiamante non autenticato o non
- * owner non apprende nemmeno lo stato del feature flag.
+ * Gate condiviso da `aiCorrectionPreview` e `aiCorrectionRun`. Ordine dei
+ * controlli: **autenticazione → owner → feature flag → forma dell'input**.
+ * Così un chiamante non autenticato o non owner non apprende nemmeno lo stato
+ * del feature flag. Restituisce la request validata (payload realmente chiuso).
+ * L'orchestrazione reale (eleggibilità, scoring, scritture, idempotenza) è in
+ * `aiCorrectionEngine.ts`.
  */
-async function authorizeAndValidate(
+export async function authorizeAndValidate(
   rawInput: unknown,
-  deps: AiCorrectionHandlerDeps,
+  deps: AiCorrectionAuthDeps,
 ): Promise<AiCorrectionRequest> {
   await authorizeOwnerCall(deps);
   if (deps.featureMode === 'disabled') {
     throw new AiGatewayError('feature_disabled', 'Il modulo di correzione IA è disattivato.');
   }
   return validateAiCorrectionRequest(rawInput);
-}
-
-/**
- * `aiCorrectionPreview` (M5-01): verifica autenticazione, owner, flag e forma
- * dell'input, poi restituisce un risultato **mock** chiaramente identificato.
- * **Nessuna** eleggibilità, **nessuna** stima reale, **nessun** provider,
- * **zero token**. La stima/preflight reale è M5-02.
- */
-export async function handlePreview(
-  rawInput: unknown,
-  deps: AiCorrectionHandlerDeps,
-): Promise<AiCorrectionPreviewResponse> {
-  const request = await authorizeAndValidate(rawInput, deps);
-  return {
-    mode: 'mock',
-    phase: 'preview',
-    requestId: request.requestId,
-    verificationId: request.verificationId,
-    submissionCount: request.submissionIds.length,
-    tokensEstimated: 0,
-    note: 'M5-01 mock: gateway predisposto, nessuna valutazione eseguita; eleggibilità e stima reali in M5-02.',
-  };
-}
-
-/**
- * `aiCorrectionRun` (M5-01): verifica autenticazione, owner, flag, input e
- * `requestId`, ma **non scrive alcuna valutazione** e **non tocca Firestore**
- * (`written: false`). La logica completa — eleggibilità, scoring delle chiuse,
- * valutazione delle aperte via `AiGrader`, idempotenza e
- * `aiCorrectionRuns/{requestId}` — è M5-02.
- */
-export async function handleRun(
-  rawInput: unknown,
-  deps: AiCorrectionHandlerDeps,
-): Promise<AiCorrectionRunResponse> {
-  const request = await authorizeAndValidate(rawInput, deps);
-  return {
-    mode: 'mock',
-    phase: 'run',
-    requestId: request.requestId,
-    verificationId: request.verificationId,
-    submissionCount: request.submissionIds.length,
-    tokensEstimated: 0,
-    written: false,
-    note: 'M5-01 mock: nessuna scrittura e nessuna valutazione; scoring, persistenza e aiCorrectionRuns in M5-02.',
-  };
 }
