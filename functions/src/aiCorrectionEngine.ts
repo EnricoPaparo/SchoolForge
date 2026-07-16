@@ -29,6 +29,8 @@ import {
   type AiGrader,
   type AiGraderInput,
 } from './aiCorrectionGatewayCore.js';
+import { isRealProviderEnabled, type AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
+import { enforceOperationLimits, type OperationLimitInput } from './aiCorrectionLimits.js';
 
 // ── Limiti prudenti (guardie tecniche, non budget definitivi HG-M5-2/3) ──────
 
@@ -620,12 +622,67 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+// ── Guardrail server-side del provider reale (M5-05D1) ────────────────────────
+
+/**
+ * Porta che legge la configurazione runtime `settings/aiConfig` (Admin SDK, una
+ * `get` puntuale per operazione, nessun listener). È iniettata: il motore resta
+ * puro. Ritorna `null` se il documento è assente/malformato (fail-closed).
+ */
+export type LoadRuntimeConfig = () => Promise<AiRuntimeConfig | null>;
+
+/** Conteggi/stime per consegna eleggibile, per l'enforcement dei limiti DEV. */
+interface EligiblePreflightItem {
+  openQuestionCount: number;
+  estimatedTokens: number;
+}
+
+/**
+ * Guardrail **obbligatorio** eseguito solo sul percorso del provider **reale**
+ * (`featureMode === 'openai'`), nel preflight, **prima** di lease/grader/scrittura:
+ *
+ * 1. **Kill switch senza deploy**: legge `settings/aiConfig`; se assente,
+ *    malformato o `enabled=false` ⇒ `feature_disabled` (nessun fallback silente
+ *    al mock). Nessuna configurazione sensibile è mai esposta al client.
+ * 2. **Limiti prudenziali DEV** applicati server-side sulla selezione eleggibile.
+ *
+ * Mock e modalità `disabled` non passano di qui: restano a costo zero e
+ * deterministiche, con comportamento invariato.
+ */
+async function enforceRealProviderPreflight(
+  loadRuntimeConfig: LoadRuntimeConfig | undefined,
+  eligible: EligiblePreflightItem[],
+): Promise<void> {
+  const config = (await loadRuntimeConfig?.()) ?? null;
+  if (!isRealProviderEnabled(config)) {
+    throw new AiGatewayError(
+      'feature_disabled',
+      'Il provider IA reale non è abilitato dalla configurazione runtime.',
+    );
+  }
+  const input: OperationLimitInput = {
+    eligibleSubmissionCount: eligible.length,
+    perSubmission: eligible.map((e) => ({
+      openQuestionCount: e.openQuestionCount,
+      estimatedTokens: e.estimatedTokens,
+    })),
+    totalEstimatedTokens: eligible.reduce((sum, e) => sum + e.estimatedTokens, 0),
+  };
+  enforceOperationLimits(config.limits, input);
+}
+
 // ── Preview ───────────────────────────────────────────────────────────────────
 
 export interface PreviewDeps extends AiCorrectionAuthDeps {
   ports: EngineReadPorts;
   /** Validazione opzionale della configurazione provider, dopo auth/feature gate. */
   validateProviderConfiguration?: () => void;
+  /**
+   * M5-05D1 — lettura della config runtime `settings/aiConfig` (kill switch +
+   * limiti). Richiesta **solo** sul percorso provider reale; assente ⇒ trattata
+   * come config assente ⇒ provider reale disabilitato (fail-closed).
+   */
+  loadRuntimeConfig?: LoadRuntimeConfig;
 }
 
 /**
@@ -644,6 +701,7 @@ export async function runPreview(
 
   const counts: AiCorrectionCounts = emptyCounts(request.submissionIds.length);
   const excluded: { submissionId: string; reason: ExclusionCode }[] = [];
+  const eligiblePreflight: EligiblePreflightItem[] = [];
   let tokensEstimated = 0;
 
   const classifications = await mapWithConcurrency(
@@ -691,7 +749,19 @@ export async function runPreview(
     // Token aperte + quota per il feedback generale (M5-04B) **solo** se ci sono
     // aperte: le consegne con sole chiuse generano il feedback in modo
     // deterministico, senza provider → 0 token. Identica a run.
-    tokensEstimated += openTokens + (e.openOrders.length > 0 ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0);
+    const submissionEstimatedTokens =
+      openTokens + (e.openOrders.length > 0 ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0);
+    tokensEstimated += submissionEstimatedTokens;
+    eligiblePreflight.push({
+      openQuestionCount: e.openOrders.length,
+      estimatedTokens: submissionEstimatedTokens,
+    });
+  }
+
+  // M5-05D1 — solo provider reale: kill switch da config runtime + limiti DEV
+  // applicati nel preflight, prima di qualsiasi elaborazione. Mock: nessun gate.
+  if (deps.featureMode === 'openai') {
+    await enforceRealProviderPreflight(deps.loadRuntimeConfig, eligiblePreflight);
   }
 
   return {
@@ -712,6 +782,12 @@ export interface RunDeps extends AiCorrectionAuthDeps {
   ports: EngineWritePorts;
   /** Factory lazy per validare secret/config solo dopo auth, prima di ogni scrittura. */
   grader: AiGrader | (() => AiGrader);
+  /**
+   * M5-05D1 — lettura della config runtime `settings/aiConfig` (kill switch +
+   * limiti). Richiesta **solo** sul percorso provider reale; assente ⇒ trattata
+   * come config assente ⇒ provider reale disabilitato (fail-closed).
+   */
+  loadRuntimeConfig?: LoadRuntimeConfig;
 }
 
 /**
@@ -731,6 +807,52 @@ export async function runExecution(
   const ownerUid = deps.callerUid!;
   const selectionHash = computeSelectionHash(request.verificationId, request.submissionIds);
   const executionId = randomUUID();
+
+  // M5-05D1 — guardrail del provider **reale** eseguito nel preflight, **prima**
+  // di acquisire la lease, chiamare il grader o scrivere: kill switch da
+  // `settings/aiConfig` (fail-closed, nessun fallback silente al mock) + limiti
+  // prudenziali DEV sulla selezione eleggibile. Solo per `openai`: mock e
+  // `disabled` non entrano qui e restano a costo zero, invariati. Il costo di
+  // questa classificazione anticipata (una lettura per consegna) è limitato al
+  // percorso provider reale, non al mock.
+  if (mode === 'openai') {
+    const preflightVerification = await deps.ports.loadVerification(request.verificationId);
+    const preflightQuestions = resolveTeacherQuestions(preflightVerification, ownerUid);
+    const eligiblePreflight = await mapWithConcurrency(
+      request.submissionIds,
+      SUBMISSION_CONCURRENCY,
+      async (submissionId): Promise<EligiblePreflightItem | null> => {
+        const [submission, correction] = await Promise.all([
+          deps.ports.loadSubmission(submissionId),
+          deps.ports.loadCorrection(submissionId),
+        ]);
+        const classification = classifySubmission({
+          submissionId,
+          expectedOwner: ownerUid,
+          expectedVerificationId: request.verificationId,
+          teacherQuestions: preflightQuestions,
+          submission,
+          correction,
+        });
+        if (classification.status !== 'eligible') return null;
+        const e = classification.eligible;
+        const openTokens = estimateOpenTokensForSubmission(
+          preflightQuestions ?? [],
+          e.openOrders,
+          submission?.answers ?? {},
+        );
+        return {
+          openQuestionCount: e.openOrders.length,
+          estimatedTokens:
+            openTokens + (e.openOrders.length > 0 ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0),
+        };
+      },
+    );
+    await enforceRealProviderPreflight(
+      deps.loadRuntimeConfig,
+      eligiblePreflight.filter((x): x is EligiblePreflightItem => x !== null),
+    );
+  }
 
   // Idempotenza concorrente: acquisisci la lease sul run doc (transazione).
   const begin = await deps.ports.beginRun(request.requestId, {

@@ -29,7 +29,10 @@ export type AiGatewayErrorCode =
   | 'feature_disabled'
   | 'provider_config_invalid'
   | 'invalid_input'
-  | 'batch_limit_exceeded';
+  | 'batch_limit_exceeded'
+  // M5-05D1 — guardrail server-side prima dell'attivazione del provider reale.
+  | 'limit_exceeded'
+  | 'budget_exceeded';
 
 export class AiGatewayError extends Error {
   readonly code: AiGatewayErrorCode;

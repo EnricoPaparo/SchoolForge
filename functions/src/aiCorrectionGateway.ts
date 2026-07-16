@@ -12,6 +12,7 @@ import {
   type AiGatewayErrorCode,
 } from './aiCorrectionGatewayCore.js';
 import { createConfiguredAiGrader, requireConfiguredOpenAiModel } from './aiCorrectionProvider.js';
+import { parseAiRuntimeConfig, type AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import {
   runExecution,
   runPreview,
@@ -48,6 +49,19 @@ if (getApps().length === 0) initializeApp();
 async function getOwnerUid(db: Firestore): Promise<string | null> {
   const snap = await db.doc('settings/owner').get();
   return snap.exists ? ((snap.data()?.ownerUid as string | undefined) ?? null) : null;
+}
+
+/**
+ * M5-05D1 — porta di lettura della configurazione runtime `settings/aiConfig`
+ * (Admin SDK, **una `get` puntuale** per operazione, nessun listener/polling). Il
+ * documento è validato fail-closed: assente/malformato ⇒ `null` ⇒ provider reale
+ * disabilitato. Non è mai esposto al client (regole Firestore server-only).
+ */
+function loadRuntimeConfig(db: Firestore) {
+  return async (): Promise<AiRuntimeConfig | null> => {
+    const snap = await db.doc('settings/aiConfig').get();
+    return snap.exists ? parseAiRuntimeConfig(snap.data()) : null;
+  };
 }
 
 function loadVerification(db: Firestore) {
@@ -444,6 +458,8 @@ function toHttpsError(err: AiGatewayError): HttpsError {
     provider_config_invalid: 'failed-precondition',
     invalid_input: 'invalid-argument',
     batch_limit_exceeded: 'resource-exhausted',
+    limit_exceeded: 'resource-exhausted',
+    budget_exceeded: 'resource-exhausted',
   };
   return new HttpsError(map[err.code], err.message, { code: err.code });
 }
@@ -516,6 +532,7 @@ export const aiCorrectionPreview = onCall(
         ...authDeps(request, db),
         ports: buildWritePorts(db),
         validateProviderConfiguration: validatePreviewProviderConfiguration,
+        loadRuntimeConfig: loadRuntimeConfig(db),
       }),
     ),
 );
@@ -532,6 +549,7 @@ export const aiCorrectionRun = onCall(
       runExecution(request.data, {
         ...authDeps(request, db),
         ports: buildWritePorts(db),
+        loadRuntimeConfig: loadRuntimeConfig(db),
         grader: () =>
           createConfiguredAiGrader({
             mode: resolveAiFeatureMode(process.env),
