@@ -8,7 +8,13 @@ const mockSignOut = vi.fn();
 let mockUser: { uid: string; email: string; displayName: string | null; photoURL?: string | null } =
   { uid: 'owner-uid', email: 'teacher@test.com', displayName: null };
 
-vi.mock('../../../lib/firebase.js', () => ({ app: {}, auth: {}, db: {}, storage: {} }));
+vi.mock('../../../lib/firebase.js', () => ({
+  app: {},
+  auth: {},
+  db: {},
+  storage: {},
+  functions: {},
+}));
 vi.mock('../templateKit.js', () => ({
   TEMPLATES: [],
   downloadTemplate: vi.fn(),
