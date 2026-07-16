@@ -252,12 +252,23 @@ export function IconUpload(props: IconProps = {}) {
   );
 }
 
-/** Eraser — azzera correzione (M5-04C) */
+/** Eraser — azzera correzione (M5-04C), bicolore come le azioni tabellari. */
 export function IconEraser(props: IconProps = {}) {
   return icon(
     <>
-      <path d="M7 21h13" />
-      <path d="M20 13.5 12.5 21H7l-3.5-3.5a2 2 0 0 1 0-2.83l8.5-8.5a2 2 0 0 1 2.83 0l3.34 3.34a2 2 0 0 1 0 2.83z" />
+      <path
+        d="m4.3 14.6 8.9-8.9a2 2 0 0 1 2.8 0l2.3 2.3a2 2 0 0 1 0 2.8l-8.5 8.5H7.2l-2.9-2.9a1.3 1.3 0 0 1 0-1.8Z"
+        fill="#fb7185"
+        stroke="#fecdd3"
+        strokeWidth="1.2"
+      />
+      <path
+        d="m11 7.9 4.9 4.9 2.4-2.4a2 2 0 0 0 0-2.8L16 5.3a2 2 0 0 0-2.8 0Z"
+        fill="#60a5fa"
+        stroke="#bfdbfe"
+        strokeWidth="1.2"
+      />
+      <path d="M8.5 19.3H20" stroke="currentColor" strokeWidth="1.6" />
     </>,
     props,
   );

@@ -2232,7 +2232,7 @@ export function VerificationsView() {
                                         return p && isClearable(p) ? (
                                           <button
                                             type="button"
-                                            className={`${styles.iconBtn} ${styles.iconBtnEraser}`}
+                                            className={styles.iconBtn}
                                             title="Azzera correzione"
                                             aria-label={`Azzera correzione — ${studentName}`}
                                             onClick={() =>

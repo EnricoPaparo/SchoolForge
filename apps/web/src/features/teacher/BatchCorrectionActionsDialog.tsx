@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Firestore } from 'firebase/firestore';
 import { DialogShell } from './workspaceDialogs.js';
 import {
@@ -66,7 +66,11 @@ export function BatchCorrectionActionsDialog({
   onApplied: () => void;
 }) {
   const meta = META[action];
-  const eligibility = useMemo(() => computeEligibility(action, rows), [action, rows]);
+  // Congela il preflight all'apertura del dialog. Dopo un batch riuscito il
+  // refresh del chiamante cambia intenzionalmente lo stato delle righe (per
+  // esempio in_progress → completed): ricalcolare qui l'eleggibilità farebbe
+  // ricontare la stessa consegna sia tra le riuscite sia tra le escluse.
+  const [eligibility] = useState(() => computeEligibility(action, rows));
   const [phase, setPhase] = useState<Phase>('confirm');
   const [results, setResults] = useState<BatchRowResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
