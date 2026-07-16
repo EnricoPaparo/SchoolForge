@@ -271,10 +271,6 @@
   border-color: var(--color-primary);
 }
 
-.iconBtnEraser {
-  color: var(--color-warning);
-}
-
 .eventsBtn {
   background: none;
   border: none;

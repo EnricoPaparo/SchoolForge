@@ -3385,7 +3385,8 @@ describe('VerificationsView — Azzera correzione (M5-04C)', () => {
 
     expect(eraser.getAttribute('title')).toBe('Azzera correzione');
     expect(eraser.getAttribute('aria-label')).toBe('Azzera correzione — Anna');
-    expect(eraser.className).toMatch(/iconBtnEraser/);
+    expect(eraser.querySelector('svg [fill="#fb7185"]')).not.toBeNull();
+    expect(eraser.querySelector('svg [fill="#60a5fa"]')).not.toBeNull();
     expect((eraser as HTMLButtonElement).disabled).toBe(false);
     eraser.focus();
     expect(document.activeElement).toBe(eraser);

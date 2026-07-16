@@ -96,6 +96,41 @@ describe('BatchCorrectionActionsDialog (M5-04)', () => {
     expect(onApplied).toHaveBeenCalledWith();
   });
 
+  it('keeps the initial exclusion count after a successful row changes status', async () => {
+    mockRun.mockResolvedValue([
+      { studentUid: 'a', submissionId: 'v_a', outcome: 'succeeded' } satisfies BatchRowResult,
+    ]);
+    const initialRows = [row('a', prog({ status: 'in_progress' }))];
+    const { rerender } = render(
+      <BatchCorrectionActionsDialog
+        action="complete"
+        rows={initialRows}
+        db={fakeDb}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Completa 1 correzioni' }));
+    await screen.findByText('Operazione completata.');
+
+    // Simula la rilettura del parent: la riga completata non è più eleggibile
+    // per "Completa", ma non deve essere conteggiata anche come esclusa.
+    rerender(
+      <BatchCorrectionActionsDialog
+        action="complete"
+        rows={[row('a', prog({ status: 'completed' }))]}
+        db={fakeDb}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('Riuscite: 1')).toBeTruthy();
+    expect(screen.getByText('Escluse: 0')).toBeTruthy();
+    expect(screen.getByText('Fallite: 0')).toBeTruthy();
+  });
+
   it('cancels without ever calling the service', async () => {
     const onClose = vi.fn();
     render(
