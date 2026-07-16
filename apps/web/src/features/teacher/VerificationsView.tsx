@@ -2077,11 +2077,15 @@ export function VerificationsView() {
                   monitorStudents !== null &&
                   monitorStudents.length > 0 &&
                   monitorItems !== null && (
-                    <div className={styles.tableWrap}>
+                    <div className={`${styles.tableWrap} ${styles.submissionsTableWrap}`}>
                       <table className={styles.table}>
+                        <colgroup>
+                          <col className={styles.selectionColumn} />
+                          <col span={8} />
+                        </colgroup>
                         <thead>
                           <tr>
-                            <th className={styles.th}>
+                            <th className={`${styles.th} ${styles.selectionHeader}`}>
                               <input
                                 type="checkbox"
                                 aria-label="Seleziona tutte le consegne"
@@ -2154,7 +2158,7 @@ export function VerificationsView() {
                             const selectable = item?.status === 'submitted';
                             return (
                               <tr key={row.studentUid} className={styles.row}>
-                                <td className={styles.td}>
+                                <td className={`${styles.td} ${styles.selectionCell}`}>
                                   <input
                                     type="checkbox"
                                     aria-label={`Seleziona consegna — ${studentName}`}

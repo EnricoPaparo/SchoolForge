@@ -3029,9 +3029,32 @@ describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)
     // No per-row AI button.
     expect(within(region).queryByRole('button', { name: /Correggi con IA — /i })).toBeNull();
 
-    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
+    const annaBox = within(region).getByRole('checkbox', {
+      name: 'Seleziona consegna — Anna',
+    }) as HTMLInputElement;
+    fireEvent.click(annaBox);
+    expect(annaBox.checked).toBe(true);
     expect((button as HTMLButtonElement).disabled).toBe(false);
     expect(within(region).getByRole('button', { name: /Correggi con IA \(1\)/ })).toBeTruthy();
+  });
+
+  it('uses a compact semantic selection column and keeps the Actions column rendered', async () => {
+    setupDefaults();
+    const region = await openWith(twoSubmissions);
+    const table = within(region).getByRole('table');
+    const selectAll = within(table).getByRole('checkbox', {
+      name: 'Seleziona tutte le consegne',
+    });
+    const annaBox = within(table).getByRole('checkbox', {
+      name: 'Seleziona consegna — Anna',
+    });
+
+    expect(selectAll.closest('th')?.className).toMatch(/selectionHeader/);
+    expect(annaBox.closest('td')?.className).toMatch(/selectionCell/);
+    expect(table.querySelector('colgroup col')?.className).toMatch(/selectionColumn/);
+    expect(table.parentElement?.className).toMatch(/submissionsTableWrap/);
+    expect(within(table).getByRole('columnheader', { name: 'Azioni' })).toBeTruthy();
+    expect(within(table).getByRole('button', { name: 'Apri correzione — Anna' })).toBeTruthy();
   });
 
   it('disables the checkbox for a non-submitted row and select-all covers only submitted rows', async () => {
@@ -3042,8 +3065,19 @@ describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)
     }) as HTMLInputElement;
     expect(brunoBox.disabled).toBe(true);
 
-    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona tutte le consegne' }));
+    const selectAll = within(region).getByRole('checkbox', {
+      name: 'Seleziona tutte le consegne',
+    }) as HTMLInputElement;
+    fireEvent.click(selectAll);
     // Only Anna (submitted) becomes selected.
+    expect(selectAll.checked).toBe(true);
+    expect(
+      (
+        within(region).getByRole('checkbox', {
+          name: 'Seleziona consegna — Anna',
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(true);
     expect(within(region).getByRole('button', { name: /Correggi con IA \(1\)/ })).toBeTruthy();
   });
 
