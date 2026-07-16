@@ -16,7 +16,7 @@
  * sono rilette server-side dalle porte.
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   authorizeAndValidate,
   AiGatewayError,
@@ -62,6 +62,11 @@ export const GENERAL_FEEDBACK_TOKEN_ESTIMATE = Math.ceil(
  * abbandonati per crash/timeout). Prudente e configurabile.
  */
 export const RUN_LEASE_MS = 2 * 60 * 1000;
+/** Contratto privacy-minimal dei nuovi `aiCorrectionRuns`. */
+export const AI_RUN_CONTRACT_VERSION = 2 as const;
+/** Retention DEV tecnica provvisoria, in attesa di conferma HG-M5-4. */
+export const RUN_RETENTION_DAYS = 30;
+export const RUN_RETENTION_MS = RUN_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 // ── Tipi di dominio (locali al package functions, no dipendenze da apps/web) ──
 
@@ -496,17 +501,17 @@ export function validateGraderOutput(
   return valid;
 }
 
-// ── Hash deterministico della selezione (per idempotenza, non contenuti) ──────
+// ── Selezione canonica e hash (per idempotenza, non contenuti) ───────────────
 
-/** FNV-1a 32-bit in hex — deterministico, puro, nessuna dipendenza. */
+/** Ordine canonico server-side, indipendente dall'ordine delle checkbox. */
+export function canonicalizeSubmissionIds(submissionIds: readonly string[]): string[] {
+  return [...submissionIds].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/** SHA-256 del contesto verifica + insieme canonico; nessun ID è persistito. */
 export function computeSelectionHash(verificationId: string, submissionIds: string[]): string {
-  const canonical = `${verificationId}\n${[...submissionIds].sort().join('\n')}`;
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < canonical.length; i++) {
-    hash ^= canonical.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0');
+  const canonical = JSON.stringify([verificationId, canonicalizeSubmissionIds(submissionIds)]);
+  return createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
 
 // ── Porte (implementate con Admin SDK nel wiring) ─────────────────────────────
@@ -540,25 +545,40 @@ export interface EngineReadPorts {
   loadCorrection: (submissionId: string) => Promise<CorrectionData | null>;
 }
 
+export interface PersistedSubmissionResult {
+  ordinal: number;
+  status: SubmissionOutcome;
+  reasonCode?: ExclusionCode;
+}
+
 export interface PersistedRun {
+  runContractVersion: typeof AI_RUN_CONTRACT_VERSION;
   status: RunStatus;
   selectionHash: string;
-  response?: AiCorrectionRunResponse;
+  mode: AiEnabledFeatureMode;
+  counts: AiCorrectionRunResponse['counts'];
+  tokensEstimated: number;
+  tokensActual: number;
+  costActual: 0;
+  resultOrdinals: PersistedSubmissionResult[];
 }
 
 /** Metadata (solo) scritti alla creazione del run doc. */
 export interface BeginRunMeta {
-  ownerUid: string;
-  actorUid: string;
-  verificationId: string;
   selectionHash: string;
   submissionCount: number;
   provider: string;
   model?: string;
+  configVersion?: string;
+  priceListVersion?: string;
   /** Identificatore del tentativo che prova ad acquisire la lease. */
   executionId: string;
   /** Durata della lease (ms) da applicare in caso di acquisizione. */
   leaseMs: number;
+  /** Clock server-side iniettato per lease e retention deterministiche nei test. */
+  nowMs: number;
+  /** Scadenza tecnica DEV; non implica cancellazione finché TTL non è configurato. */
+  expireAtMs: number;
 }
 
 /**
@@ -566,7 +586,7 @@ export interface BeginRunMeta {
  * - `acquired`: questo tentativo possiede ora la lease (`executionId`) — può
  *   elaborare. Avviene quando il run è assente **o** era `running` con lease
  *   **scaduta** (takeover di un run abbandonato).
- * - `completed`: run già concluso con response persistita → replay idempotente.
+ * - `completed`: run già concluso con risultato ordinale → replay idempotente.
  * - `locked`: run `running` con lease **valida** posseduta da un altro
  *   tentativo → NON elaborare (niente grader, niente commit).
  * - `conflict`: stesso `requestId`, selezione diversa.
@@ -575,7 +595,8 @@ export type BeginRunResult =
   | { state: 'acquired'; executionId: string }
   | { state: 'completed'; existing: PersistedRun }
   | { state: 'locked' }
-  | { state: 'conflict' };
+  | { state: 'conflict' }
+  | { state: 'legacy' };
 
 export interface EngineWritePorts extends EngineReadPorts {
   /**
@@ -830,6 +851,83 @@ export interface RunDeps extends AiCorrectionAuthDeps {
    * come config assente ⇒ provider reale disabilitato (fail-closed).
    */
   loadRuntimeConfig?: LoadRuntimeConfig;
+  /** Clock server-side iniettabile; default `Date.now`. */
+  now?: () => number;
+}
+
+function persistRunResponse(
+  response: AiCorrectionRunResponse,
+  selectionHash: string,
+  ordinalBySubmissionId: ReadonlyMap<string, number>,
+): PersistedRun {
+  return {
+    runContractVersion: AI_RUN_CONTRACT_VERSION,
+    status: response.status,
+    selectionHash,
+    mode: response.mode,
+    counts: response.counts,
+    tokensEstimated: response.tokensEstimated,
+    tokensActual: response.tokensActual,
+    costActual: 0,
+    resultOrdinals: response.results.map((result) => {
+      const ordinal = ordinalBySubmissionId.get(result.submissionId);
+      if (ordinal === undefined) {
+        throw new AiGatewayError('invalid_input', 'Risultato non associabile alla selezione.');
+      }
+      return {
+        ordinal,
+        status: result.outcome,
+        ...(result.reason ? { reasonCode: result.reason } : {}),
+      };
+    }),
+  };
+}
+
+function replayPersistedRun(
+  request: AiCorrectionRequest,
+  persisted: PersistedRun,
+): AiCorrectionRunResponse | null {
+  if (persisted.resultOrdinals.length !== request.submissionIds.length) return null;
+  const seen = new Set<number>();
+  const results: SubmissionResult[] = [];
+  for (const result of persisted.resultOrdinals) {
+    if (
+      !Number.isInteger(result.ordinal) ||
+      result.ordinal < 0 ||
+      result.ordinal >= request.submissionIds.length ||
+      seen.has(result.ordinal)
+    ) {
+      return null;
+    }
+    seen.add(result.ordinal);
+    results.push({
+      submissionId: request.submissionIds[result.ordinal]!,
+      outcome: result.status,
+      closedGraded: 0,
+      openGraded: 0,
+      openSkipped: 0,
+      closedSkipped: 0,
+      alreadyIgnored: 0,
+      ...(result.reasonCode ? { reason: result.reasonCode } : {}),
+    });
+  }
+  results.sort(
+    (a, b) =>
+      request.submissionIds.indexOf(a.submissionId) - request.submissionIds.indexOf(b.submissionId),
+  );
+  return {
+    mode: persisted.mode,
+    phase: 'run',
+    requestId: request.requestId,
+    verificationId: request.verificationId,
+    status: persisted.status,
+    idempotentReplay: true,
+    counts: persisted.counts,
+    tokensEstimated: persisted.tokensEstimated,
+    tokensActual: persisted.tokensActual,
+    costActual: 0,
+    results,
+  };
 }
 
 /**
@@ -843,11 +941,19 @@ export async function runExecution(
   rawInput: unknown,
   deps: RunDeps,
 ): Promise<AiCorrectionRunResponse> {
-  const request = await authorizeAndValidate(rawInput, deps);
+  const validatedRequest = await authorizeAndValidate(rawInput, deps);
+  const request: AiCorrectionRequest = {
+    ...validatedRequest,
+    submissionIds: canonicalizeSubmissionIds(validatedRequest.submissionIds),
+  };
   const mode: AiEnabledFeatureMode = deps.featureMode === 'openai' ? 'openai' : 'mock';
   const ownerUid = deps.callerUid!;
   const selectionHash = computeSelectionHash(request.verificationId, request.submissionIds);
+  const ordinalBySubmissionId = new Map(
+    request.submissionIds.map((submissionId, ordinal) => [submissionId, ordinal]),
+  );
   const executionId = randomUUID();
+  const nowMs = (deps.now ?? Date.now)();
 
   // M5-05D1 — guardrail del provider **reale** eseguito nel preflight, **prima**
   // di acquisire la lease, chiamare il grader o scrivere: kill switch da
@@ -871,22 +977,38 @@ export async function runExecution(
 
   // Idempotenza concorrente: acquisisci la lease sul run doc (transazione).
   const begin = await deps.ports.beginRun(request.requestId, {
-    ownerUid,
-    actorUid: ownerUid,
-    verificationId: request.verificationId,
     selectionHash,
     submissionCount: request.submissionIds.length,
     provider: grader.id,
     ...(grader.model ? { model: grader.model } : {}),
+    ...(runtimeConfig?.configVersion ? { configVersion: runtimeConfig.configVersion } : {}),
+    ...(runtimeConfig?.priceListVersion
+      ? { priceListVersion: runtimeConfig.priceListVersion }
+      : {}),
     executionId,
     leaseMs: RUN_LEASE_MS,
+    nowMs,
+    expireAtMs: nowMs + RUN_RETENTION_MS,
   });
   if (begin.state === 'conflict') {
     throw new AiGatewayError('invalid_input', 'requestId già usato con una selezione diversa.');
   }
+  if (begin.state === 'legacy') {
+    throw new AiGatewayError(
+      'invalid_input',
+      'requestId associato a un run legacy non ricostruibile: genera un nuovo requestId.',
+    );
+  }
   if (begin.state === 'completed') {
-    // Run già concluso → risultato idempotente senza rielaborare.
-    return { ...begin.existing.response!, idempotentReplay: true };
+    // Ricostruisce ordinal → submissionId esclusivamente dalla selezione corrente.
+    const replay = replayPersistedRun(request, begin.existing);
+    if (!replay) {
+      throw new AiGatewayError(
+        'invalid_input',
+        'Run persistito non ricostruibile in sicurezza: genera un nuovo requestId.',
+      );
+    }
+    return replay;
   }
   if (begin.state === 'locked') {
     // Un altro tentativo possiede una lease valida: NON richiamare grader né
@@ -1018,7 +1140,10 @@ export async function runExecution(
   };
 
   // Finalizza solo se questo executionId possiede ancora la lease.
-  await deps.ports.finishRun(request.requestId, { status, selectionHash, response, executionId });
+  await deps.ports.finishRun(request.requestId, {
+    ...persistRunResponse(response, selectionHash, ordinalBySubmissionId),
+    executionId,
+  });
   return response;
 }
 
