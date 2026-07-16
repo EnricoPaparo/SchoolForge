@@ -1,6 +1,6 @@
 # M5 — Correzione assistita da IA · Roadmap e contratto (M5-00)
 
-**Data:** 16 luglio 2026 · **Fase:** M5-00→M5-04C implementati; **M5-05A/B preparati**; **M5-05C implementato** con adapter e harness, provider reale ancora disabilitato.
+**Data:** 16 luglio 2026 · **Fase:** M5-00→M5-04C implementati; **M5-05A/B preparati**; **M5-05C implementato** con adapter e harness; **M5-05D1 implementato** (guardrail server-side: config/kill switch + limiti DEV nel preflight), provider reale ancora disabilitato.
 **Natura:** roadmap incrementale evidence-based. M5-01→M5-04C hanno costruito e integrato il flusso mock; M5-05A/B hanno preparato decisione e dataset; M5-05C aggiunge adapter e harness senza attivare il provider. **Nessuna API key, chiamata reale, costo o deploy; M5 e G7 non sono completati.**
 **Codice ispezionato (sola lettura):** `types/firestore.ts` (`SubmissionDoc`, `CorrectionDoc`, `QuestionEvaluation`, `CorrectionEventDoc`, `CorrectionReturnDoc`), `features/repository/corrections/*` (`correctionContract.ts`, `correctionsService.ts`, `correctionWorkspaceLoader.ts`, `correctionRegisterExport.ts`), `features/repository/verifications/submissionsMonitorService.ts`, `features/teacher/VerificationsView.tsx` (tabella «Consegne online» + apertura `CorrectionWorkspace`), `firestore.rules` (matrice `corrections`/`correctionEvents`/`correctionReturns`).
 
@@ -429,6 +429,25 @@ Ulteriori limiti prudenti (max consegne/aperte/caratteri/token per operazione, �
 
 **Stato operativo:** provider reale disabilitato, nessuna API key, nessuna chiamata reale, nessun costo e nessun deploy. Human Gate M5-05 e Gate G7 restano aperti; attivazione DEV, benchmark reale, budget/hard stop e decisione finale appartengono a M5-05D.
 
+### 16.8 Stato M5-05D1 (implementato) — guardrail server-side, provider reale ancora non attivabile
+
+Prima parte di M5-05D: i **guardrail server-side obbligatori** che devono precedere qualsiasi attivazione del provider reale. Il provider **resta disabilitato**; nessuna API key è letta, nessuna chiamata reale è eseguita, nessun deploy. Mock e modalità `disabled` sono **invariati** e restano deterministici a costo zero; le domande chiuse restano a 0 token/costo.
+
+**Wired (attivo a runtime, testato senza rete/emulatore):**
+
+- **Configurazione runtime `settings/aiConfig`** (`aiCorrectionRuntimeConfig.ts`): parsing **fail-closed** (`enabled`, `provider: 'openai'`, `model`, `environment: 'dev'`, `limits`, `budget.monthlyUsd`, `configVersion`, `priceListVersion`). Documento assente, incompleto, invalido o con coppia `model`/`priceListVersion` sconosciuta ⇒ provider reale **disabilitato**. `settings/aiConfig.model` è l'unica fonte del modello; `OPENAI_MODEL` non viene usata. La config è letta solo server-side con una `get` puntuale, nessun listener/polling, mai esposta al client.
+- **Kill switch senza deploy e ordine fail-closed**: sul percorso `openai` l'ordine è **auth/owner → config runtime → kill switch → classificazione/limiti → lettura secret e costruzione grader → lease/scritture**. Config non abilitata ⇒ `feature_disabled` prima di leggere `OPENAI_API_KEY`, costruire transport/provider, classificare, acquisire lease o scrivere. La preview applica lo stesso ordine e non consulta environment per il modello.
+- **Hard ceiling DEV** (`aiCorrectionLimits.ts` e parser config): Firestore può impostare valori uguali o più restrittivi, mai superiori a 30 consegne/operazione, 20 aperte/consegna, 10 000 token stimati/consegna, 300 000 token stimati/operazione, concorrenza 3, timeout 60 000 ms, retry 1 e budget mensile 5 USD. I primi quattro limiti sono applicati nel preflight; superamento ⇒ `limit_exceeded`.
+
+**Preparato e testato (moduli puri, non ancora collegati al runtime):**
+
+- **Listino prezzi versionato + costi** (`aiCorrectionCost.ts`): il listino production contiene solo lo snapshot immutabile verificato `gpt-5-nano-2025-08-07` ($0,05/M input, $0,40/M output), fonte ufficiale [OpenAI GPT-5 nano](https://developers.openai.com/api/docs/models/gpt-5-nano), verifica 2026-07-16. Il lookup è usato esclusivamente per validare la coppia modello/listino; calcolo costi, prenotazioni e riconciliazione restano puri/non wired.
+- **Ledger di budget mensile** (`aiCorrectionBudget.ts`): prenotazione atomica per `requestId`, riconciliazione idempotente che libera l'eccedenza, recovery via scadenza (nessun job esterno), hard stop al 100%, stati 50/80/100.
+
+**Letture reali sul percorso `openai` (oltre alla lettura owner di autenticazione):** preview = 1 config + 1 verifica + 1 submission e 1 correction per ID selezionato. Run = lo stesso preflight (1 config + 1 verifica + 2 letture per ID), riusato dopo la lease senza rileggere verifica/submission/correction; `beginRun` legge il run doc una volta, ogni `commitSubmission` rilegge transazionalmente la correction elaborata per proteggere dalle race e `finishRun` rilegge il run doc una volta. Rispetto al run precedente, D1 aggiunge la sola lettura config; mock non aggiunge letture. Nessun nuovo indice o schema client.
+
+**Resta a M5-05D (non implementato):** collegamento al runtime del costo effettivo nella risposta/`aiCorrectionRuns`; transazione Firestore del ledger di budget con prenotazione/riconciliazione reali; retry applicativo con backoff+jitter iniettabile e `Retry-After`; hardening privacy di `aiCorrectionRuns` (rimozione `submissionId`/UID, mapping ordinale idempotente, `expireAt`/TTL) e relative Firestore Rules server-only; dialog UI definitivo; benchmark reale; **Human Gate HG-M5-1/2/3/4 e Gate G7**. **Il provider reale non è ancora attivabile e M5 non è completo.**
+
 ---
 
 ## 17. Criteri di accettazione per pacchetto
@@ -442,6 +461,7 @@ Ulteriori limiti prudenti (max consegne/aperte/caratteri/token per operazione, �
 - **M5-04C:** chiusa_singola canonica `["a"]` e legacy `"a"` → max; errata/non-fornita → 0; soluzione malformata → non valutabile (mai zero); chiusa_multipla con la formula reward/penalty (esempi 4/6/1/0/0), ordine/duplicati irrilevanti, ID sconosciuti penalizzati, sempre `0..max` e multiplo di 0,25; feedback deterministici solo-conteggi senza ID/soluzioni; **0 grader/token/costo** per le chiuse; feedback generale sui totali finali coi parziali; `clearCorrection` atomico (azzera punti+feedback+generale, ricalcola totali, mirror, `in_progress`, un solo evento `correctionCleared`, no-op se nulla, rifiuta completed/returned, nessuna scrittura parziale su race); UI gomma per riga con conferma distruttiva, selezione preservata, IA rilanciabile; Rules `correctionCleared` owner-only append-only con test mirati; nessuna migrazione degli zeri persistiti.
 - **M5-05:** provider reale solo su DEV dietro flag; **prerequisiti bloccanti HG-M5-1/2/3/4 soddisfatti**; smoke su casi reali; audit/costi osservabili entro le soglie; nessun web/retrieval/tool; evidenze per **G7**.
 - **M5-05C:** adapter OpenAI e harness testabili senza rete; default `disabled`; `mock` invariato; `openai` fail-closed senza modello/secret; Structured Outputs + validazione applicativa; timeout 60 s, retry massimo 1 senza moltiplicazione SDK; nessun secret creato, chiamata reale, costo, deploy o superamento di Human Gate/G7.
+- **M5-05D1:** config runtime `settings/aiConfig` fail-closed e unica fonte del modello; ordine auth/owner → config/kill switch → classificazione/limiti → secret/grader → lease; hard ceiling DEV 30 consegne, 20 aperte, 10 000 token/consegna, 300 000 token/operazione, concorrenza 3, timeout 60 s, retry 1, budget 5 USD; allowlist production limitata allo snapshot verificato `gpt-5-nano-2025-08-07`; calcolo costi e ledger budget restano **puri/non wired**; mock e sole-chiuse invariati a 0 token/costo; nessun secret reale, chiamata, costo, deploy o superamento Human Gate/G7. **Provider reale non ancora attivabile.**
 
 ---
 

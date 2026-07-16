@@ -28,6 +28,7 @@ import {
   type ValidatedScore,
   type VerificationData,
 } from './aiCorrectionEngine.js';
+import { OPENAI_PRODUCTION_MODEL } from './aiCorrectionCost.js';
 
 const OWNER = 'owner-uid';
 const VERIF = 'verif-1';
@@ -102,15 +103,20 @@ class FakeStore implements EngineWritePorts {
   events: unknown[] = [];
 
   loadVerificationCalls = 0;
+  loadSubmissionCalls = 0;
+  loadCorrectionCalls = 0;
   commitCalls = 0;
 
   loadVerification = async (): Promise<VerificationData | null> => {
     this.loadVerificationCalls++;
     return this.verification;
   };
-  loadSubmission = async (id: string): Promise<SubmissionData | null> =>
-    this.submissions.get(id) ?? null;
+  loadSubmission = async (id: string): Promise<SubmissionData | null> => {
+    this.loadSubmissionCalls++;
+    return this.submissions.get(id) ?? null;
+  };
   loadCorrection = async (id: string): Promise<CorrectionData | null> => {
+    this.loadCorrectionCalls++;
     const c = this.corrections.get(id);
     return c
       ? { status: c.status, evaluations: { ...c.evaluations }, reopenCount: c.reopenCount }
@@ -244,6 +250,28 @@ class FakeStore implements EngineWritePorts {
     });
   }
 }
+
+// M5-05D1 — config runtime valida e abilitata, per esercitare il percorso del
+// provider reale nei test (kill switch + limiti DEV superati).
+const ENABLED_RUNTIME_CONFIG = {
+  enabled: true,
+  provider: 'openai' as const,
+  model: OPENAI_PRODUCTION_MODEL,
+  environment: 'dev' as const,
+  limits: {
+    maxSubmissionsPerOperation: 30,
+    maxOpenQuestionsPerSubmission: 20,
+    maxEstimatedTokensPerSubmission: 10_000,
+    maxEstimatedTokensPerOperation: 300_000,
+    maxProviderConcurrency: 3,
+    attemptTimeoutMs: 60_000,
+    maxApplicationRetries: 1,
+  },
+  budget: { monthlyUsd: 5 },
+  configVersion: 'cfg-test',
+  priceListVersion: 'v1-2026-07-16',
+};
+const enabledConfigPort = async () => ENABLED_RUNTIME_CONFIG;
 
 function baseDeps(store: FakeStore, grader: AiGrader) {
   return {
@@ -544,6 +572,125 @@ function seedOneOpenOneClosed(store: FakeStore, student = 's1') {
   });
 }
 
+// ── M5-05D1: guardrail server-side del provider reale ─────────────────────────
+
+describe('M5-05D1 — kill switch + limiti sul percorso provider reale', () => {
+  it('run: openai con config assente/disabilitata è bloccato (fail-closed, no lease, no grader)', async () => {
+    for (const port of [
+      undefined,
+      async () => null,
+      async () => ({ ...ENABLED_RUNTIME_CONFIG, enabled: false }),
+    ]) {
+      const store = new FakeStore();
+      seedOneOpenOneClosed(store, 's1');
+      const grader = { id: 'openai', model: 'm', grade: vi.fn() } as unknown as AiGrader;
+      const graderFactory = vi.fn(() => grader);
+      await expect(
+        runExecution(req([sid('s1')]), {
+          ...baseDeps(store, grader),
+          grader: graderFactory,
+          featureMode: 'openai',
+          loadRuntimeConfig: port,
+        }),
+      ).rejects.toMatchObject({ code: 'feature_disabled' });
+      expect(store.runs.size).toBe(0); // nessuna lease acquisita
+      expect(store.commitCalls).toBe(0);
+      expect(store.loadVerificationCalls).toBe(0); // config precede classificazione
+      expect(graderFactory).not.toHaveBeenCalled();
+      expect(grader.grade as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+    }
+  });
+
+  it('run: openai abilitato entro i limiti procede e valuta', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const grader = new MockAiGrader();
+    const graderFactory = vi.fn(() => grader);
+    const res = await runExecution(req([sid('s1')]), {
+      ...baseDeps(store, grader),
+      grader: graderFactory,
+      featureMode: 'openai',
+      loadRuntimeConfig: enabledConfigPort,
+    });
+    expect(res.mode).toBe('openai');
+    expect(res.results[0]!.outcome).toBe('succeeded');
+    expect(graderFactory).toHaveBeenCalledTimes(1);
+    expect(graderFactory).toHaveBeenCalledWith(ENABLED_RUNTIME_CONFIG);
+    // Il preflight viene riusato dopo la lease: nessuna seconda lettura della
+    // verifica/submission/correction prima del commit transazionale.
+    expect(store.loadVerificationCalls).toBe(1);
+    expect(store.loadSubmissionCalls).toBe(1);
+    expect(store.loadCorrectionCalls).toBe(1);
+  });
+
+  it('run: openai oltre il limite di consegne è rifiutato prima della lease', async () => {
+    const store = new FakeStore();
+    const ids: string[] = [];
+    store.verification = {
+      ownerUid: OWNER,
+      status: 'active',
+      teacherQuestions: [tq(0, 'chiusa_singola', 2, 'a')],
+    };
+    for (let i = 0; i < 31; i++) {
+      const s = `s${i}`;
+      ids.push(sid(s));
+      store.submissions.set(sid(s), {
+        ownerUid: OWNER,
+        verificationId: VERIF,
+        studentUid: s,
+        status: 'submitted',
+        answers: { '0': { tipo: 'chiusa_singola', selectedId: 'a' } },
+      });
+    }
+    const graderFactory = vi.fn(() => new MockAiGrader());
+    await expect(
+      runExecution(
+        { verificationId: VERIF, submissionIds: ids, requestId: REQ },
+        {
+          ...baseDeps(store, new MockAiGrader()),
+          grader: graderFactory,
+          featureMode: 'openai',
+          loadRuntimeConfig: enabledConfigPort,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'limit_exceeded' });
+    expect(store.runs.size).toBe(0);
+    expect(store.commitCalls).toBe(0);
+    expect(graderFactory).not.toHaveBeenCalled();
+  });
+
+  it('preview: openai disabilitato è bloccato; abilitato passa', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    await expect(
+      runPreview(req([sid('s1')]), {
+        ...baseDeps(store, new MockAiGrader()),
+        featureMode: 'openai',
+      }),
+    ).rejects.toMatchObject({ code: 'feature_disabled' });
+    expect(store.loadVerificationCalls).toBe(0);
+    expect(store.loadSubmissionCalls).toBe(0);
+    expect(store.loadCorrectionCalls).toBe(0);
+
+    const res = await runPreview(req([sid('s1')]), {
+      ...baseDeps(store, new MockAiGrader()),
+      featureMode: 'openai',
+      loadRuntimeConfig: enabledConfigPort,
+    });
+    expect(res.mode).toBe('openai');
+    expect(res.counts.eligible).toBe(1);
+  });
+
+  it('mock resta invariato: nessun gate, nessuna config richiesta, costo zero', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const res = await runExecution(req([sid('s1')]), baseDeps(store, new MockAiGrader()));
+    expect(res.mode).toBe('mock');
+    expect(res.costActual).toBe(0);
+    expect(res.results[0]!.outcome).toBe('succeeded');
+  });
+});
+
 describe('runPreview', () => {
   it('rejects unauthenticated / non-owner / disabled without reading data', async () => {
     const store = new FakeStore();
@@ -610,19 +757,23 @@ describe('runExecution — closed scoring + open grading', () => {
   it('resolves OpenAI configuration after auth but before run metadata or provider calls', async () => {
     const store = new FakeStore();
     const providerCall = vi.fn();
+    const graderFactory = vi.fn(() => {
+      throw new AiGatewayError('provider_config_invalid', 'Configurazione mancante.');
+    });
     await expect(
       runExecution(req([sid('s1')]), {
         callerUid: OWNER,
         getOwnerUid: async () => OWNER,
         featureMode: 'openai',
         ports: store,
-        grader: () => {
-          throw new AiGatewayError('provider_config_invalid', 'Configurazione mancante.');
-        },
+        loadRuntimeConfig: enabledConfigPort,
+        grader: graderFactory,
       }),
     ).rejects.toMatchObject({ code: 'provider_config_invalid' });
     expect(store.runs.size).toBe(0);
     expect(store.commitCalls).toBe(0);
+    expect(graderFactory).toHaveBeenCalledTimes(1);
+    expect(graderFactory).toHaveBeenCalledWith(ENABLED_RUNTIME_CONFIG);
     expect(providerCall).not.toHaveBeenCalled();
   });
 
@@ -640,6 +791,7 @@ describe('runExecution — closed scoring + open grading', () => {
     const result = await runExecution(req([sid('s1')]), {
       ...baseDeps(store, grader),
       featureMode: 'openai',
+      loadRuntimeConfig: enabledConfigPort,
     });
 
     expect(result.results[0]).toMatchObject({ outcome: 'failed', closedGraded: 0, openGraded: 0 });
