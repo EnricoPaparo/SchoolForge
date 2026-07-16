@@ -3345,9 +3345,16 @@ describe('VerificationsView — Azzera correzione (M5-04C)', () => {
   it('shows the eraser action only for an in_progress correction with content', async () => {
     setupDefaults();
     const region = await openWith(submissions('in_progress'), clearableProgress);
-    await waitFor(() =>
-      expect(within(region).getByRole('button', { name: 'Azzera correzione — Anna' })).toBeTruthy(),
-    );
+    const eraser = await within(region).findByRole('button', {
+      name: 'Azzera correzione — Anna',
+    });
+
+    expect(eraser.getAttribute('title')).toBe('Azzera correzione');
+    expect(eraser.getAttribute('aria-label')).toBe('Azzera correzione — Anna');
+    expect(eraser.className).toMatch(/iconBtnEraser/);
+    expect((eraser as HTMLButtonElement).disabled).toBe(false);
+    eraser.focus();
+    expect(document.activeElement).toBe(eraser);
   });
 
   it('does NOT show the eraser when there is nothing to clear', async () => {

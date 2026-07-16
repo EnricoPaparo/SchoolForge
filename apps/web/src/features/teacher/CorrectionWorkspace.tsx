@@ -92,6 +92,25 @@ function isAnswerFilled(answer: AnswerValue | undefined): boolean {
   return answer.selectedIds.length > 0;
 }
 
+/**
+ * Normalizes the frozen solution of a single-choice question for UI rendering.
+ * Accepts the canonical one-item array and the legacy non-empty string; every
+ * unavailable or malformed shape stays unknown so the renderer never invents
+ * correctness. This is display-only and does not alter scoring or persistence.
+ */
+export function normalizeSingleChoiceSolutionId(solution: unknown): string | null {
+  if (typeof solution === 'string') return solution.length > 0 ? solution : null;
+  if (
+    Array.isArray(solution) &&
+    solution.length === 1 &&
+    typeof solution[0] === 'string' &&
+    solution[0].length > 0
+  ) {
+    return solution[0];
+  }
+  return null;
+}
+
 function formatTimestamp(ts: unknown): string {
   if (!ts || typeof ts !== 'object' || !('seconds' in ts)) return '—';
   const seconds = (ts as { seconds: number }).seconds;
@@ -889,6 +908,9 @@ function renderAnswer(
     return <p className={styles.answerBox}>{selectedIds.filter(Boolean).join(', ')}</p>;
   }
 
+  const singleSolutionId =
+    question.tipo === 'chiusa_singola' ? normalizeSingleChoiceSolutionId(question.soluzione) : null;
+
   // Single option list with icon-based status (never colour alone): the
   // student's selection is highlighted in blue; correctness is shown by a
   // green ✓ or red ✕, each carrying screen-reader text. All correct options
@@ -905,7 +927,7 @@ function renderAnswer(
               : false;
         const isCorrect =
           question.tipo === 'chiusa_singola'
-            ? question.soluzione === o.id
+            ? singleSolutionId === o.id
             : Array.isArray(question.soluzione) && question.soluzione.includes(o.id);
         const cls = [styles.optionRow];
         if (isSelected) cls.push(styles.optionSelected);
@@ -915,15 +937,26 @@ function renderAnswer(
           icon = '✓';
           statusText = isSelected ? 'selezionata, corretta' : 'corretta, non selezionata';
         } else if (isSelected) {
-          icon = '✕';
-          statusText = 'selezionata, errata';
-          cls.push(styles.optionSelectedWrong);
+          if (question.tipo === 'chiusa_singola' && singleSolutionId === null) {
+            icon = '?';
+            statusText = 'selezionata, correttezza non disponibile';
+          } else {
+            icon = '✕';
+            statusText = 'selezionata, errata';
+            cls.push(styles.optionSelectedWrong);
+          }
         }
         return (
           <li key={o.id} className={cls.join(' ')}>
             <span
               className={`${styles.optionIcon} ${
-                icon === '✓' ? styles.optionIconCorrect : icon === '✕' ? styles.optionIconWrong : ''
+                icon === '✓'
+                  ? styles.optionIconCorrect
+                  : icon === '✕'
+                    ? styles.optionIconWrong
+                    : icon === '?'
+                      ? styles.optionIconUnavailable
+                      : ''
               }`}
               aria-hidden="true"
             >
@@ -942,6 +975,24 @@ function renderSolution(question: CorrectionWorkspaceQuestion) {
   const soluzione = question.soluzione ?? '';
   if (question.tipo === 'aperta') {
     return <p className={styles.solutionBox}>{soluzione as string}</p>;
+  }
+  if (question.tipo === 'chiusa_singola') {
+    const correctId = normalizeSingleChoiceSolutionId(question.soluzione);
+    if (correctId === null) {
+      return <span className={styles.solutionUnavailable}>Soluzione non disponibile.</span>;
+    }
+    if (!question.opzioni) {
+      return <p className={styles.solutionBox}>{correctId}</p>;
+    }
+    const correctOption = question.opzioni.find((option) => option.id === correctId);
+    if (!correctOption) {
+      return <span className={styles.solutionUnavailable}>Soluzione non disponibile.</span>;
+    }
+    return (
+      <ul className={`${styles.solutionBox} ${styles.solutionList}`}>
+        <li>{correctOption.testo}</li>
+      </ul>
+    );
   }
   if (!question.opzioni) {
     return <p className={styles.solutionBox}>{String(soluzione)}</p>;
