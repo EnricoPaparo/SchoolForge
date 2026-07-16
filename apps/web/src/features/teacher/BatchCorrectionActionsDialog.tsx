@@ -11,7 +11,8 @@ import {
 } from '../repository/corrections/batchCorrectionActions.js';
 
 /**
- * M5-04 — dialog di conferma per le azioni massive Completa/Riapri/Restituisci.
+ * M5-04 — dialog di conferma per le azioni massive
+ * Completa/Riapri/Restituisci/Azzera.
  *
  * Calcola un riepilogo preliminare di eleggibilità (funzioni pure su dati già
  * letti), mostra la conseguenza dell'azione, e alla conferma invoca il service
@@ -25,25 +26,42 @@ type Phase = 'confirm' | 'running' | 'result';
 
 const META: Record<
   BatchAction,
-  { title: string; confirmLabel: (n: number) => string; consequence: string }
+  {
+    title: string;
+    confirmLabel: (n: number) => string;
+    consequence: string;
+    zeroEligible: string;
+    destructive?: boolean;
+  }
 > = {
   complete: {
     title: 'Completa correzioni',
     confirmLabel: (n) => `Completa ${n} correzioni`,
     consequence:
       'Le consegne selezionate passeranno a «Corretta». I punteggi non vengono modificati.',
+    zeroEligible: 'Nessuna consegna selezionata è eleggibile per questa azione.',
   },
   reopen: {
     title: 'Riapri correzioni',
     confirmLabel: (n) => `Riapri ${n} correzioni`,
     consequence:
       'Le consegne torneranno «In correzione». Una correzione già restituita sarà temporaneamente nascosta allo studente finché non verrà restituita di nuovo.',
+    zeroEligible: 'Nessuna consegna selezionata è eleggibile per questa azione.',
   },
   return: {
     title: 'Restituisci correzioni',
     confirmLabel: (n) => `Restituisci ${n} correzioni`,
     consequence:
       'Le consegne diventeranno immediatamente visibili allo studente. Le soluzioni restano nascoste.',
+    zeroEligible: 'Nessuna consegna selezionata è eleggibile per questa azione.',
+  },
+  clear: {
+    title: 'Azzera correzioni',
+    confirmLabel: (n) => `Azzera ${n} correzioni`,
+    consequence:
+      'Verranno rimossi punteggi, correzioni delle singole domande e feedback generale. Le consegne e le risposte degli studenti non verranno modificate.',
+    zeroEligible: 'Nessuna correzione selezionata può essere azzerata.',
+    destructive: true,
   },
 };
 
@@ -124,7 +142,7 @@ export function BatchCorrectionActionsDialog({
           {eligibility.eligible.length === 0 ? (
             <>
               <p role="alert" className="text-error">
-                Nessuna consegna selezionata è eleggibile per questa azione.
+                {meta.zeroEligible}
               </p>
               <div className="dialog-actions">
                 <button type="button" onClick={onClose}>
@@ -137,7 +155,11 @@ export function BatchCorrectionActionsDialog({
               <button type="button" onClick={onClose}>
                 Annulla
               </button>
-              <button type="button" className="btn-primary" onClick={() => void confirm()}>
+              <button
+                type="button"
+                className={meta.destructive ? 'btn-danger' : 'btn-primary'}
+                onClick={() => void confirm()}
+              >
                 {meta.confirmLabel(eligibility.eligible.length)}
               </button>
             </div>

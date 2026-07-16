@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mockComplete = vi.fn();
 const mockReopen = vi.fn();
 const mockReturn = vi.fn();
+const mockClear = vi.fn();
 
 vi.mock('../correctionsService.js', () => ({
   completeCorrection: (...args: unknown[]) => mockComplete(...args),
   reopenCorrection: (...args: unknown[]) => mockReopen(...args),
   returnCorrection: (...args: unknown[]) => mockReturn(...args),
+  clearCorrection: (...args: unknown[]) => mockClear(...args),
 }));
 
 import type { Firestore } from 'firebase/firestore';
@@ -46,6 +48,7 @@ beforeEach(() => {
   mockComplete.mockResolvedValue(undefined);
   mockReopen.mockResolvedValue(undefined);
   mockReturn.mockResolvedValue(undefined);
+  mockClear.mockResolvedValue({ cleared: true });
 });
 
 describe('classifyRow (M5-04 eligibility)', () => {
@@ -79,6 +82,20 @@ describe('classifyRow (M5-04 eligibility)', () => {
     expect(classifyRow('return', row('c', progress({ status: 'in_progress' })))).toBe(
       'not_completed',
     );
+  });
+
+  it('clear: only in_progress corrections containing points or feedback', () => {
+    expect(classifyRow('clear', row('a', progress({ status: 'in_progress' })))).toBeNull();
+    expect(
+      classifyRow('clear', row('b', progress({ status: 'in_progress', hasContent: false }))),
+    ).toBe('nothing_to_clear');
+    expect(classifyRow('clear', row('c', progress({ status: 'completed' })))).toBe(
+      'clear_requires_reopen',
+    );
+    expect(classifyRow('clear', row('d', progress({ status: 'returned' })))).toBe(
+      'clear_requires_reopen',
+    );
+    expect(classifyRow('clear', row('e', undefined))).toBe('nothing_to_clear');
   });
 });
 
@@ -158,6 +175,38 @@ describe('runBatchCorrectionAction', () => {
     expect(peak).toBeLessThanOrEqual(3);
     expect(mockReopen).toHaveBeenCalledTimes(9);
   });
+
+  it('clear runs at most three operations concurrently and isolates a row failure', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    mockClear.mockImplementation(
+      (id: string) =>
+        new Promise((resolve, reject) => {
+          inFlight++;
+          peak = Math.max(peak, inFlight);
+          setTimeout(() => {
+            inFlight--;
+            if (id === 'v_s2') reject(new Error('errore mirato'));
+            else resolve({ cleared: true });
+          }, 5);
+        }),
+    );
+    const rows = Array.from({ length: 7 }, (_, i) => ({
+      studentUid: `s${i}`,
+      studentName: `S${i}`,
+      submissionId: `v_s${i}`,
+    }));
+
+    const results = await runBatchCorrectionAction('clear', rows, fakeDb);
+
+    expect(peak).toBeLessThanOrEqual(3);
+    expect(mockClear).toHaveBeenCalledTimes(7);
+    expect(results.filter((result) => result.outcome === 'succeeded')).toHaveLength(6);
+    expect(results.find((result) => result.studentUid === 's2')).toMatchObject({
+      outcome: 'failed',
+      error: 'errore mirato',
+    });
+  });
 });
 
 describe('describeBatchExclusion', () => {
@@ -169,11 +218,13 @@ describe('describeBatchExclusion', () => {
       'not_completed',
       'not_completed_or_returned',
       'already_returned',
+      'clear_requires_reopen',
+      'nothing_to_clear',
     ] as const;
     for (const r of reasons) expect(describeBatchExclusion(r).length).toBeGreaterThan(0);
   });
 });
 
-// Type-only guard: BatchAction stays a 3-value union.
-const _actions: BatchAction[] = ['complete', 'reopen', 'return'];
+// Type-only guard: all supported batch actions remain explicit.
+const _actions: BatchAction[] = ['complete', 'reopen', 'return', 'clear'];
 void _actions;
