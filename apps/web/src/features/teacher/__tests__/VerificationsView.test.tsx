@@ -1959,6 +1959,22 @@ describe('VerificationsView — correction workspace action (M4-02)', () => {
 
   it('opens the correction workspace with the deterministic submissionId and student name, and returns to the table on close', async () => {
     setupDefaults();
+    mockLoadCorrectionProgressByStudent.mockResolvedValueOnce(new Map()).mockResolvedValueOnce(
+      new Map([
+        [
+          'stud-a',
+          {
+            status: 'in_progress',
+            evaluated: 1,
+            total: 3,
+            totalPoints: 2,
+            maxPoints: 6,
+            percentage: 33,
+            hasContent: true,
+          },
+        ],
+      ]),
+    );
     await renderSelectedWithMonitor([
       {
         studentUid: 'stud-a',
@@ -1981,6 +1997,18 @@ describe('VerificationsView — correction workspace action (M4-02)', () => {
 
     fireEvent.click(within(workspace).getByText('Chiudi workspace'));
     await waitFor(() => expect(screen.getByLabelText('Consegne online')).toBeTruthy());
+    await waitFor(() => expect(mockLoadCorrectionProgressByStudent).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('1/3')).toBeTruthy();
+
+    const monitor = screen.getByLabelText('Consegne online');
+    fireEvent.click(
+      within(monitor).getByRole('checkbox', { name: 'Seleziona consegna — Anna Bianchi' }),
+    );
+    fireEvent.click(within(monitor).getByRole('button', { name: 'Azzera' }));
+    expect(mockBatchDialog.mock.calls.at(-1)?.[0].rows[0].progress).toMatchObject({
+      evaluated: 1,
+      hasContent: true,
+    });
   });
 });
 
