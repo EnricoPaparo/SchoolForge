@@ -59,6 +59,8 @@ export interface AiRunSubmissionResult {
   closedGraded: number;
   openGraded: number;
   openSkipped: number;
+  /** Chiuse non valutate perché soluzione/opzioni malformate (M5-04C). */
+  closedSkipped?: number;
   alreadyIgnored: number;
   reason?: AiExclusionReason;
 }

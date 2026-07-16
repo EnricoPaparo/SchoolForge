@@ -39,6 +39,7 @@ vi.mock('firebase/firestore', () => ({
 import type { Firestore } from 'firebase/firestore';
 import type { CorrectionDoc, CorrectionReturnDoc } from '../../../../types/firestore.js';
 import {
+  clearCorrection,
   completeCorrection,
   openOrLoadCorrection,
   reopenCorrection,
@@ -654,6 +655,113 @@ describe('reopenCorrection', () => {
     await expect(reopenCorrection(SUBMISSION_ID, fakeDb)).rejects.toThrow(
       /Transizione di stato correzione non valida/,
     );
+  });
+});
+
+// ─── clearCorrection (M5-04C) ────────────────────────────────────────────────
+
+describe('clearCorrection', () => {
+  type Write = { path: string; data: Record<string, unknown> };
+  function wireTransaction(): { updates: Write[]; sets: Write[] } {
+    const updates: Write[] = [];
+    const sets: Write[] = [];
+    mockRunTransaction.mockImplementation(async (_db: unknown, fn: (tx: unknown) => unknown) => {
+      const tx = {
+        get: async (ref: FakeRef) => {
+          const e = store[ref.__path];
+          return { exists: () => !!e?.exists, data: () => e?.data };
+        },
+        update: (ref: FakeRef, data: Record<string, unknown>) =>
+          updates.push({ path: ref.__path, data }),
+        set: (ref: FakeRef, data: Record<string, unknown>) => sets.push({ path: ref.__path, data }),
+      };
+      return fn(tx);
+    });
+    return { updates, sets };
+  }
+
+  it('clears points and per-question feedback, nulls generalFeedback, keeps identity and in_progress', async () => {
+    seedCorrection({
+      status: 'in_progress',
+      evaluations: {
+        '0': { order: 0, points: 7, maxPoints: 10, feedback: 'Risposta corretta.' },
+        '1': { order: 1, points: 3, maxPoints: 5, feedback: '2 su 3.' },
+      },
+      generalFeedback: '[mock] qualcosa',
+      totalPoints: 10,
+      maxPoints: 15,
+      percentage: 67,
+    });
+    const { updates, sets } = wireTransaction();
+
+    const res = await clearCorrection(SUBMISSION_ID, fakeDb);
+
+    expect(res).toEqual({
+      cleared: true,
+      status: 'in_progress',
+      summary: { totalPoints: 0, maxPoints: 15, percentage: 0 },
+    });
+    const correctionUpdate = updates.find((u) => u.path === `corrections/${SUBMISSION_ID}`)!;
+    // Identity/structure preserved; points nulled; feedback removed; general nulled.
+    expect(correctionUpdate.data.evaluations).toEqual({
+      '0': { order: 0, points: null, maxPoints: 10 },
+      '1': { order: 1, points: null, maxPoints: 5 },
+    });
+    expect(correctionUpdate.data.generalFeedback).toBeNull();
+    expect(correctionUpdate.data.totalPoints).toBe(0);
+    expect(correctionUpdate.data.status).toBeUndefined(); // status not rewritten (stays in_progress)
+    // Mirror updated on submission + receipt (status back to a not-evaluated state).
+    const submissionUpdate = updates.find((u) => u.path === `submissions/${SUBMISSION_ID}`)!;
+    expect(submissionUpdate.data.correctionStatus).toBe('submitted');
+    expect(submissionUpdate.data.correctionSummary).toEqual({
+      totalPoints: 0,
+      maxPoints: 15,
+      percentage: 0,
+    });
+    expect(updates.some((u) => u.path === `submissionReceipts/${SUBMISSION_ID}`)).toBe(true);
+    // Exactly one minimal audit event, no sensitive content.
+    const events = sets.filter((s) => s.path.startsWith('correctionEvents/'));
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).toMatchObject({
+      correctionId: SUBMISSION_ID,
+      type: 'correctionCleared',
+      previousStatus: 'in_progress',
+      nextStatus: 'in_progress',
+      reason: null,
+    });
+    expect(Object.keys(events[0]!.data)).not.toContain('evaluations');
+    expect(Object.keys(events[0]!.data)).not.toContain('questionDeltas');
+  });
+
+  it('is a no-op (no writes, no event) when there is nothing to clear', async () => {
+    seedCorrection({
+      status: 'in_progress',
+      evaluations: {
+        '0': { order: 0, points: null, maxPoints: 10 },
+        '1': { order: 1, points: null, maxPoints: 5 },
+      },
+      generalFeedback: null,
+    });
+    const { updates, sets } = wireTransaction();
+
+    const res = await clearCorrection(SUBMISSION_ID, fakeDb);
+
+    expect(res.cleared).toBe(false);
+    expect(updates).toHaveLength(0);
+    expect(sets).toHaveLength(0);
+  });
+
+  it('rejects when the correction is not in_progress (completed/returned)', async () => {
+    seedCorrection({ status: 'completed' });
+    wireTransaction();
+    await expect(clearCorrection(SUBMISSION_ID, fakeDb)).rejects.toThrow(/riapri prima/i);
+  });
+
+  it('rejects without writes when the correction does not exist', async () => {
+    const { updates, sets } = wireTransaction();
+    await expect(clearCorrection(SUBMISSION_ID, fakeDb)).rejects.toThrow(/non trovata/i);
+    expect(updates).toHaveLength(0);
+    expect(sets).toHaveLength(0);
   });
 });
 

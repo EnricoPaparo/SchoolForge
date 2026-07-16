@@ -790,7 +790,7 @@ export type QuestionEvaluationDelta = {
  * the specific fields that changed. Never the full `evaluations` map or
  * the submission. Never updated or deleted once written.
  */
-export type CorrectionEventType = 'reopened' | 'scoreAdjusted' | 'returned';
+export type CorrectionEventType = 'reopened' | 'scoreAdjusted' | 'returned' | 'correctionCleared';
 
 /** Stored at `correctionEvents/{eventId}` — `eventId` is an auto-generated id, not deterministic (many events per correction). */
 export type CorrectionEventDoc = {

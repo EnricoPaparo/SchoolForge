@@ -70,8 +70,18 @@ export interface TeacherQuestion {
   tipo: QuestionTipo;
   maxPoints: number;
   testo: string;
-  /** string per aperta/chiusa_singola, string[] per chiusa_multipla. */
+  /**
+   * Formato canonico (lesson-contract): **array** — `["id"]` per chiusa_singola,
+   * `["id", ...]` per chiusa_multipla. Formato **legacy** tollerato: stringa
+   * singola per chiusa_singola. La normalizzazione avviene nello scoring; i dati
+   * persistiti **non** vengono mai modificati (nessuna migrazione automatica).
+   */
   soluzione: string | string[];
+  /**
+   * ID di **tutte** le opzioni (dal `teacherSnapshot` congelato), necessari allo
+   * scoring parziale delle chiuse multiple (M5-04C). Assente per le aperte.
+   */
+  optionIds?: string[];
 }
 
 export type SubmissionAnswer =
@@ -129,6 +139,8 @@ export interface SubmissionResult {
   closedGraded: number;
   openGraded: number;
   openSkipped: number;
+  /** Chiuse non valutate perché soluzione/opzioni malformate (M5-04C). */
+  closedSkipped: number;
   alreadyIgnored: number;
   reason?: ExclusionCode;
 }
@@ -192,30 +204,118 @@ export function sameIdSet(a: readonly string[], b: readonly string[]): boolean {
   return true;
 }
 
+/** Arrotonda al multiplo di 0,25 più vicino e clampa in `[0, max]`. */
+function roundToQuarterClamped(value: number, max: number): number {
+  const quarters = Math.round(value * 4);
+  const points = quarters / 4;
+  return Math.min(Math.max(points, 0), max);
+}
+
 /**
- * Scoring **deterministico** delle domande chiuse (regola M5, tutto-o-niente):
- * - `chiusa_singola`: `selectedId` esattamente uguale alla soluzione →
- *   `maxPoints`; errata, `null` o risposta di tipo incoerente → `0`.
- * - `chiusa_multipla`: confronto insiemistico esatto con la soluzione →
- *   `maxPoints`; insieme diverso (incompleto, con extra, errato o vuoto) → `0`.
- * **Nessun** punteggio parziale, **nessuna** penalità, **zero** chiamate al
- * grader. Ritorna sempre un valore in `[0, maxPoints]`.
+ * Normalizza la soluzione di una **chiusa singola** (M5-04C, root cause):
+ * - canonico `["id"]` → `"id"`;
+ * - legacy `"id"` (stringa non vuota) → `"id"`;
+ * - assente, vuota, con più di un elemento o malformata → `null` (**non
+ *   valutabile**: mai uno zero ingiusto). Non modifica i dati persistiti.
+ */
+export function normalizeSingleSolution(soluzione: unknown): string | null {
+  if (typeof soluzione === 'string') return soluzione.length > 0 ? soluzione : null;
+  if (
+    Array.isArray(soluzione) &&
+    soluzione.length === 1 &&
+    typeof soluzione[0] === 'string' &&
+    soluzione[0].length > 0
+  ) {
+    return soluzione[0];
+  }
+  return null;
+}
+
+/**
+ * Normalizza la soluzione di una **chiusa multipla**: array di ID non vuoti
+ * (deduplicati). Formato non-array, vuoto o con elementi non stringa → `null`
+ * (**non valutabile**). Non modifica i dati persistiti.
+ */
+export function normalizeMultiSolution(soluzione: unknown): string[] | null {
+  if (!Array.isArray(soluzione)) return null;
+  if (!soluzione.every((s) => typeof s === 'string')) return null;
+  const ids = [...new Set((soluzione as string[]).filter((s) => s.length > 0))];
+  return ids.length > 0 ? ids : null;
+}
+
+/**
+ * Esito dello scoring di una domanda chiusa (M5-04C): valutabile con punti +
+ * feedback deterministico, oppure **non valutabile** (soluzione/opzioni
+ * malformate) → la domanda resta `points: null`, mai uno zero ingiusto.
+ */
+export type ClosedScoreResult =
+  | { evaluable: true; points: number; feedback: string }
+  | { evaluable: false };
+
+/**
+ * Scoring **deterministico** delle domande chiuse (M5-04C), **zero** grader/
+ * token/costo, sempre `points ∈ [0, maxPoints]` e multiplo di 0,25, con
+ * **feedback** sintetico basato solo sui conteggi (mai ID o testi di soluzione).
+ *
+ * - **chiusa_singola** (tutto-o-niente): `selectedId` = soluzione normalizzata →
+ *   `maxPoints`; diverso → `0`; non compilata → `0`. Soluzione malformata → non
+ *   valutabile.
+ * - **chiusa_multipla** (punteggio **parziale** equo): premia le corrette e
+ *   penalizza le errate — `reward = correctSelected/correctTotal`,
+ *   `penalty = wrongTotal>0 ? wrongSelected/wrongTotal : 0`,
+ *   `raw = clamp(reward − penalty, 0, 1)`, `points = round₀.₂₅(maxPoints·raw)`.
+ *   ID sconosciuti/duplicati/ordine non danno vantaggi. Soluzione/opzioni
+ *   incoerenti → non valutabile.
  */
 export function scoreClosedQuestion(
   question: TeacherQuestion,
   answer: SubmissionAnswer | undefined,
-): number {
+): ClosedScoreResult {
   if (question.tipo === 'chiusa_singola') {
-    const solution = typeof question.soluzione === 'string' ? question.soluzione : null;
+    const solution = normalizeSingleSolution(question.soluzione);
+    if (solution === null) return { evaluable: false };
     const selected = answer && answer.tipo === 'chiusa_singola' ? answer.selectedId : null;
-    return solution !== null && selected !== null && selected === solution ? question.maxPoints : 0;
+    if (selected === null) return { evaluable: true, points: 0, feedback: 'Risposta non fornita.' };
+    return selected === solution
+      ? { evaluable: true, points: question.maxPoints, feedback: 'Risposta corretta.' }
+      : { evaluable: true, points: 0, feedback: 'Risposta non corretta.' };
   }
+
   if (question.tipo === 'chiusa_multipla') {
-    const solution = Array.isArray(question.soluzione) ? question.soluzione : [];
-    const selected = answer && answer.tipo === 'chiusa_multipla' ? answer.selectedIds : [];
-    return solution.length > 0 && sameIdSet(solution, selected) ? question.maxPoints : 0;
+    const correctIds = normalizeMultiSolution(question.soluzione);
+    const optionIds = normalizeMultiSolution(question.optionIds);
+    // Opzioni assenti/malformate, o soluzione non contenuta nelle opzioni →
+    // dati incoerenti → non valutabile (mai uno zero ingiusto).
+    if (correctIds === null || optionIds === null) return { evaluable: false };
+    const optionSet = new Set(optionIds);
+    if (!correctIds.every((id) => optionSet.has(id))) return { evaluable: false };
+
+    const selected = new Set(answer && answer.tipo === 'chiusa_multipla' ? answer.selectedIds : []);
+    if (selected.size === 0)
+      return { evaluable: true, points: 0, feedback: 'Risposta non fornita.' };
+
+    const correctSet = new Set(correctIds);
+    let correctSelected = 0;
+    let wrongSelected = 0;
+    for (const id of selected) {
+      if (correctSet.has(id)) correctSelected++;
+      else wrongSelected++; // ID errati, sconosciuti o manipolati: selezione errata
+    }
+    const correctTotal = correctSet.size;
+    const wrongTotal = optionSet.size - correctTotal;
+    const rewardRatio = correctSelected / correctTotal;
+    const penaltyRatio = wrongTotal > 0 ? wrongSelected / wrongTotal : 0;
+    const rawRatio = Math.min(Math.max(rewardRatio - penaltyRatio, 0), 1);
+    const points = roundToQuarterClamped(question.maxPoints * rawRatio, question.maxPoints);
+
+    const feedback =
+      correctSelected === correctTotal && wrongSelected === 0
+        ? 'Tutte le risposte corrette sono state selezionate.'
+        : `${correctSelected} ${correctSelected === 1 ? 'risposta corretta' : 'risposte corrette'} su ${correctTotal}; ${wrongSelected} ${wrongSelected === 1 ? 'selezione errata' : 'selezioni errate'}.`;
+    return { evaluable: true, points, feedback };
   }
-  return 0;
+
+  return { evaluable: false };
 }
 
 // ── Eleggibilità ──────────────────────────────────────────────────────────────
@@ -676,6 +776,7 @@ export async function runExecution(
             closedGraded: 0,
             openGraded: 0,
             openSkipped: 0,
+            closedSkipped: 0,
             alreadyIgnored: 0,
             reason: classification.code,
           },
@@ -822,15 +923,22 @@ async function gradeEligible(
     ) + (hasOpen ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0);
   let openTokensActual = 0;
 
-  // 1) Chiuse: scoring deterministico. Accumula i punti chiusi per il totale
-  //    finale usato dal feedback generale.
+  // 1) Chiuse: scoring deterministico con feedback (M5-04C), zero grader.
+  //    Accumula i punti chiusi per il totale finale del feedback generale.
+  //    Una chiusa con soluzione/opzioni malformate è **non valutabile**: resta
+  //    `points: null` (mai zero ingiusto) e conta come `closedSkipped`.
   let closedPoints = 0;
+  let closedSkipped = 0;
   for (const order of eligible.closedOrders) {
     const q = ctx.byOrder.get(order);
     if (!q) continue;
-    const points = scoreClosedQuestion(q, ctx.submission.answers[order.toString()]);
-    closedPoints += points;
-    proposed.set(order, { points });
+    const res = scoreClosedQuestion(q, ctx.submission.answers[order.toString()]);
+    if (!res.evaluable) {
+      closedSkipped++;
+      continue;
+    }
+    closedPoints += res.points;
+    proposed.set(order, { points: res.points, feedback: res.feedback });
   }
 
   // Punti già fissati prima della valutazione delle aperte (M5-04B): domande già
@@ -878,6 +986,7 @@ async function gradeEligible(
             closedGraded: 0,
             openGraded: 0,
             openSkipped: eligible.openOrders.length,
+            closedSkipped: 0,
             alreadyIgnored: eligible.alreadyGraded,
             reason: 'write_error',
           },
@@ -927,6 +1036,7 @@ async function gradeEligible(
         closedGraded: 0,
         openGraded: 0,
         openSkipped,
+        closedSkipped,
         alreadyIgnored: eligible.alreadyGraded,
         reason: 'write_error',
       },
@@ -943,6 +1053,7 @@ async function gradeEligible(
         closedGraded: 0,
         openGraded: 0,
         openSkipped: 0,
+        closedSkipped: 0,
         alreadyIgnored: eligible.alreadyGraded,
         reason: 'changed_since_preview',
       },
@@ -977,6 +1088,7 @@ async function gradeEligible(
       closedGraded,
       openGraded,
       openSkipped,
+      closedSkipped,
       alreadyIgnored: eligible.alreadyGraded,
     },
     openTokensEstimated,

@@ -578,6 +578,111 @@ export async function reopenCorrection(submissionId: string, db: Firestore): Pro
   await batch.commit();
 }
 
+// ─── clearCorrection (M5-04C) ────────────────────────────────────────────────
+
+export interface ClearCorrectionResult {
+  /** `false` = no-op: non c'era nulla da azzerare (nessuna scrittura). */
+  cleared: boolean;
+  /** Stato invariato: la correzione resta `in_progress`. */
+  status: 'in_progress';
+  /** Summary normalizzato appena scritto (nessuna rilettura post-write). */
+  summary: SubmissionCorrectionSummary;
+}
+
+/** `true` se la correzione contiene qualcosa da azzerare (punti/feedback). */
+function hasSomethingToClear(correction: CorrectionDoc): boolean {
+  const evaluations = Object.values(correction.evaluations ?? {});
+  const hasPoints = evaluations.some((e) => e.points !== null);
+  const hasQuestionFeedback = evaluations.some(
+    (e) => typeof e.feedback === 'string' && e.feedback.length > 0,
+  );
+  const hasGeneral =
+    typeof correction.generalFeedback === 'string' && correction.generalFeedback.trim().length > 0;
+  return hasPoints || hasQuestionFeedback || hasGeneral;
+}
+
+/**
+ * M5-04C — «Azzera correzione»: riporta una correzione `in_progress` allo stato
+ * non valutato, **atomicamente**. Azzera tutti i `points` (a `null`), rimuove i
+ * feedback per domanda e il `generalFeedback`, ricalcola i totali con l'helper
+ * canonico e aggiorna il mirror `correctionSummary`/`correctionStatus` della
+ * submission e del receipt, **mantenendo** `status: 'in_progress'`. Non tocca la
+ * consegna dello studente, le `answers`, il receipt (oltre al mirror), gli
+ * attentionEvents né alcuna `CorrectionReturnDoc`; non cancella documenti; non
+ * riapre automaticamente. Scrive **un solo** evento `correctionCleared`
+ * (metadata) nella stessa transazione. Se non c'è nulla da azzerare è un
+ * **no-op** leggibile: nessuna scrittura, nessun evento. Rifiuta senza scritture
+ * parziali se la correzione non esiste o non è più `in_progress` (transazione).
+ */
+export async function clearCorrection(
+  submissionId: string,
+  db: Firestore,
+): Promise<ClearCorrectionResult> {
+  const ref = doc(db, 'corrections', submissionId);
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) {
+      throw new Error('Impossibile azzerare: correzione non trovata.');
+    }
+    const correction = snap.data() as CorrectionDoc;
+    if (correction.status !== 'in_progress') {
+      throw new Error('Impossibile azzerare: riapri prima la correzione.');
+    }
+
+    if (!hasSomethingToClear(correction)) {
+      // No-op: nulla da azzerare → nessuna scrittura, nessun evento.
+      return {
+        cleared: false,
+        status: 'in_progress',
+        summary: correctionSummary(computeCorrectionTotals(correction.evaluations)),
+      };
+    }
+
+    const cleared: Record<string, QuestionEvaluation> = {};
+    for (const [key, evaluation] of Object.entries(correction.evaluations)) {
+      // Preserva order e maxPoints; azzera points e rimuove il feedback.
+      cleared[key] = { order: evaluation.order, points: null, maxPoints: evaluation.maxPoints };
+    }
+    const totals = computeCorrectionTotals(cleared);
+    const summary = correctionSummary(totals);
+    const status = correctionProgressFromEvaluations(cleared); // 'submitted' (nessun points)
+    const now = serverTimestamp();
+
+    tx.update(ref, {
+      evaluations: cleared,
+      generalFeedback: null,
+      totalPoints: totals.totalPoints,
+      maxPoints: totals.maxPoints,
+      percentage: totals.percentage,
+      updatedAt: now,
+    });
+    tx.update(doc(db, 'submissions', submissionId), {
+      correctionStatus: status,
+      correctionStatusUpdatedAt: now,
+      correctionSummary: summary,
+      correctionSummaryUpdatedAt: now,
+    });
+    tx.update(doc(db, 'submissionReceipts', submissionId), {
+      correctionStatus: status,
+      correctionStatusUpdatedAt: now,
+    });
+
+    const event: CorrectionEventDoc = {
+      correctionId: submissionId,
+      ownerUid: correction.ownerUid,
+      type: 'correctionCleared',
+      actorUid: correction.ownerUid,
+      previousStatus: 'in_progress',
+      nextStatus: 'in_progress',
+      reason: null,
+      timestamp: now,
+    };
+    tx.set(doc(collection(db, 'correctionEvents')), event);
+
+    return { cleared: true, status: 'in_progress', summary };
+  });
+}
+
 // ─── Return-projection visibility toggles ───────────────────────────────────
 
 /**

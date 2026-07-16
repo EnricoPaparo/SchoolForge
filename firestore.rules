@@ -223,7 +223,10 @@ service cloud.firestore {
               && (previousStatus == 'completed' || previousStatus == 'returned')
               && nextStatus == 'in_progress')
         || (type == 'returned' && previousStatus == 'completed' && nextStatus == 'returned')
-        || (type == 'scoreAdjusted' && previousStatus == 'in_progress' && nextStatus == 'in_progress');
+        || (type == 'scoreAdjusted' && previousStatus == 'in_progress' && nextStatus == 'in_progress')
+        // M5-04C: azzeramento della correzione — resta 'in_progress' (mai
+        // completa/restituisce automaticamente).
+        || (type == 'correctionCleared' && previousStatus == 'in_progress' && nextStatus == 'in_progress');
     }
 
     // --- settings/owner ---
@@ -876,7 +879,7 @@ service cloud.firestore {
              'correctionId', 'ownerUid', 'type', 'actorUid', 'previousStatus', 'nextStatus',
              'reason', 'timestamp'
            ])
-        && request.resource.data.type in ['reopened', 'scoreAdjusted', 'returned']
+        && request.resource.data.type in ['reopened', 'scoreAdjusted', 'returned', 'correctionCleared']
         && request.resource.data.timestamp == request.time
         && isValidCorrectionEventTypeStatus(
              request.resource.data.type,

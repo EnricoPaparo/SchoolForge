@@ -23,6 +23,12 @@ export interface CorrectionProgress {
   maxPoints: number;
   /** Percentuale derivata; `null` solo quando `maxPoints === 0`. */
   percentage: number | null;
+  /**
+   * `true` se c'è qualcosa da azzerare (M5-04C): almeno un `points !== null`,
+   * oppure un feedback per domanda, oppure `generalFeedback` non vuoto. Deriva
+   * dalla **stessa** lettura owner-only, senza query aggiuntive.
+   */
+  hasContent: boolean;
 }
 
 /** `true` quando la correzione ha almeno una domanda e tutte sono valutate. */
@@ -30,10 +36,21 @@ export function isFullyEvaluated(progress: CorrectionProgress): boolean {
   return progress.total > 0 && progress.evaluated === progress.total;
 }
 
+/** `true` se la correzione è azzerabile ora (in_progress e con contenuto). */
+export function isClearable(progress: CorrectionProgress): boolean {
+  return progress.status === 'in_progress' && progress.hasContent;
+}
+
 function progressOf(data: CorrectionDoc): CorrectionProgress {
   const values = Object.values(data.evaluations ?? {});
   let evaluated = 0;
-  for (const e of values) if (e.points !== null) evaluated++;
+  let hasFeedback = false;
+  for (const e of values) {
+    if (e.points !== null) evaluated++;
+    if (typeof e.feedback === 'string' && e.feedback.length > 0) hasFeedback = true;
+  }
+  const hasGeneral =
+    typeof data.generalFeedback === 'string' && data.generalFeedback.trim().length > 0;
   return {
     status: data.status,
     evaluated,
@@ -41,6 +58,7 @@ function progressOf(data: CorrectionDoc): CorrectionProgress {
     totalPoints: data.totalPoints,
     maxPoints: data.maxPoints,
     percentage: data.percentage,
+    hasContent: evaluated > 0 || hasFeedback || hasGeneral,
   };
 }
 

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type * as CorrectionRegisterExportModule from '../../repository/corrections/correctionRegisterExport.js';
+import type * as CorrectionProgressModule from '../../repository/corrections/correctionProgressService.js';
 
 afterEach(cleanup);
 
@@ -92,9 +93,35 @@ vi.mock('../../repository/students/studentsService.js', () => ({
 const mockLoadCorrectionProgressByStudent = vi.fn(
   async (..._args: unknown[]) => new Map<string, unknown>(),
 );
-vi.mock('../../repository/corrections/correctionProgressService.js', () => ({
-  loadCorrectionProgressByStudent: (...args: unknown[]) =>
-    mockLoadCorrectionProgressByStudent(...args),
+vi.mock('../../repository/corrections/correctionProgressService.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof CorrectionProgressModule>();
+  return {
+    ...actual, // keep real isClearable / isFullyEvaluated (pure helpers)
+    loadCorrectionProgressByStudent: (...args: unknown[]) =>
+      mockLoadCorrectionProgressByStudent(...args),
+  };
+});
+const mockClearCorrectionDialog = vi.fn();
+vi.mock('../ClearCorrectionDialog.js', () => ({
+  ClearCorrectionDialog: (props: {
+    submissionId: string;
+    studentName: string;
+    onClose: () => void;
+    onCleared: () => void;
+  }) => {
+    mockClearCorrectionDialog(props);
+    return (
+      <div data-testid="clear-correction-dialog">
+        <span>clear: {props.submissionId}</span>
+        <button type="button" onClick={props.onCleared}>
+          Conferma azzera
+        </button>
+        <button type="button" onClick={props.onClose}>
+          Chiudi azzera
+        </button>
+      </div>
+    );
+  },
 }));
 const mockAiDialog = vi.fn();
 vi.mock('../AiBatchCorrectionDialog.js', () => ({
@@ -3237,5 +3264,127 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci (M5-04
       // Decorative inline SVG icon rendered inside the button.
       expect(btn.querySelector('svg')).not.toBeNull();
     }
+  });
+});
+
+describe('VerificationsView — Azzera correzione (M5-04C)', () => {
+  const activeVer = () =>
+    makeDraftVer({
+      status: 'active',
+      onlineEnabled: true,
+      teacherSnapshot: {
+        title: 'Verifica Algebra',
+        classId: 'cls-1',
+        className: 'Classe 3A',
+        programId: 'prog-1',
+        importId: 'imp-1',
+        questionRefs: [sampleQuestionRef],
+        activatedAt: null,
+      },
+    });
+
+  const approved = [
+    {
+      id: 'stud-a',
+      ownerUid: 'owner-uid',
+      uid: 'stud-a',
+      email: 'anna@example.test',
+      displayName: 'Anna',
+      status: 'approved' as const,
+      classId: 'cls-1',
+      createdAt: null,
+      updatedAt: null,
+      lastLoginAt: null,
+    },
+  ];
+
+  function submissions(correctionStatus: string) {
+    return [
+      {
+        studentUid: 'stud-a',
+        status: 'submitted',
+        submittedAt: { seconds: 20, nanoseconds: 0 },
+        deliveryCode: 'SF-A',
+        correctionStatus,
+        correctionSummary: { totalPoints: 6, maxPoints: 10, percentage: 60 },
+        attentionEventsCount: 0,
+        attentionEvents: [],
+      },
+    ];
+  }
+
+  async function openWith(items: unknown[], progress: Map<string, unknown>) {
+    mockListVerifications.mockResolvedValue([activeVer()]);
+    mockListStudents.mockResolvedValue(approved);
+    mockLoadCorrectionProgressByStudent.mockResolvedValue(progress as never);
+    mockWatchSubmissions.mockImplementation((_v, _o, _d, onChange) => {
+      onChange(items);
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    return screen.findByRole('region', { name: 'Consegne online' });
+  }
+
+  const clearableProgress = new Map<string, unknown>([
+    [
+      'stud-a',
+      {
+        status: 'in_progress',
+        evaluated: 2,
+        total: 3,
+        totalPoints: 6,
+        maxPoints: 10,
+        percentage: 60,
+        hasContent: true,
+      },
+    ],
+  ]);
+
+  it('shows the eraser action only for an in_progress correction with content', async () => {
+    setupDefaults();
+    const region = await openWith(submissions('in_progress'), clearableProgress);
+    await waitFor(() =>
+      expect(within(region).getByRole('button', { name: 'Azzera correzione — Anna' })).toBeTruthy(),
+    );
+  });
+
+  it('does NOT show the eraser when there is nothing to clear', async () => {
+    setupDefaults();
+    const emptyProgress = new Map<string, unknown>([
+      [
+        'stud-a',
+        {
+          status: 'in_progress',
+          evaluated: 0,
+          total: 3,
+          totalPoints: 0,
+          maxPoints: 10,
+          percentage: 0,
+          hasContent: false,
+        },
+      ],
+    ]);
+    const region = await openWith(submissions('submitted'), emptyProgress);
+    // Give the async progress read a tick, then assert absence.
+    await waitFor(() => expect(within(region).getByRole('table')).toBeTruthy());
+    expect(within(region).queryByRole('button', { name: 'Azzera correzione — Anna' })).toBeNull();
+  });
+
+  it('opens the confirm dialog and, after clearing, performs one targeted re-read', async () => {
+    setupDefaults();
+    const region = await openWith(submissions('in_progress'), clearableProgress);
+    const eraser = await within(region).findByRole('button', {
+      name: 'Azzera correzione — Anna',
+    });
+    const readsBefore = mockLoadCorrectionProgressByStudent.mock.calls.length;
+    fireEvent.click(eraser);
+    const dialog = await screen.findByTestId('clear-correction-dialog');
+    expect(within(dialog).getByText('clear: ver-1_stud-a')).toBeTruthy();
+    fireEvent.click(within(dialog).getByText('Conferma azzera'));
+    await waitFor(() =>
+      expect(mockLoadCorrectionProgressByStudent.mock.calls.length).toBe(readsBefore + 1),
+    );
   });
 });

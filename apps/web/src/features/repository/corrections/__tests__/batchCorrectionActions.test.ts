@@ -32,6 +32,7 @@ function progress(over: Partial<CorrectionProgress>): CorrectionProgress {
     totalPoints: 8,
     maxPoints: 10,
     percentage: 80,
+    hasContent: true,
     ...over,
   };
 }

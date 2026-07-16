@@ -753,6 +753,62 @@ describe('Firestore rules — correctionEvents', () => {
     );
   });
 
+  // ─── M5-04C: correctionCleared ─────────────────────────────────────────────
+  it('allows a correctionCleared event (in_progress → in_progress) on an in_progress correction', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCorrection({ status: 'in_progress' });
+
+    await assertSucceeds(
+      setDoc(
+        doc(ownerDb(), 'correctionEvents', 'event-1'),
+        eventPayload({
+          type: 'correctionCleared',
+          previousStatus: 'in_progress',
+          nextStatus: 'in_progress',
+        }),
+      ),
+    );
+  });
+
+  it('rejects a correctionCleared event from a non-owner', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCorrection({ status: 'in_progress' });
+    const otherOwnerDb = testEnv
+      .authenticatedContext(OTHER_OWNER_UID)
+      .firestore() as unknown as Firestore;
+
+    await assertFails(
+      setDoc(
+        doc(otherOwnerDb, 'correctionEvents', 'event-1'),
+        eventPayload({
+          type: 'correctionCleared',
+          previousStatus: 'in_progress',
+          nextStatus: 'in_progress',
+        }),
+      ),
+    );
+  });
+
+  it('rejects a correctionCleared event with an arbitrary (non-server) timestamp', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCorrection({ status: 'in_progress' });
+
+    await assertFails(
+      setDoc(
+        doc(ownerDb(), 'correctionEvents', 'event-1'),
+        eventPayload({
+          type: 'correctionCleared',
+          previousStatus: 'in_progress',
+          nextStatus: 'in_progress',
+          timestamp: Timestamp.fromMillis(0),
+        }),
+      ),
+    );
+  });
+
   it.each([
     [
       'scoreAdjusted claiming a status change',
@@ -769,6 +825,14 @@ describe('Firestore rules — correctionEvents', () => {
     [
       'reopened whose nextStatus is not in_progress',
       { type: 'reopened', previousStatus: 'completed', nextStatus: 'completed' },
+    ],
+    [
+      'correctionCleared with a non-in_progress previousStatus',
+      { type: 'correctionCleared', previousStatus: 'completed', nextStatus: 'in_progress' },
+    ],
+    [
+      'correctionCleared claiming a status change',
+      { type: 'correctionCleared', previousStatus: 'in_progress', nextStatus: 'completed' },
     ],
   ])(
     'rejects an incoherent type/previousStatus/nextStatus combination (%s)',
