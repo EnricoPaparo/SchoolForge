@@ -115,22 +115,22 @@ vi.mock('../AiBatchCorrectionDialog.js', () => ({
   },
 }));
 // M5-04 — batch actions dialog stub: exposes the received rows and lets a test
-// drive onApplied with an arbitrary set of "succeeded" uids.
+// drive onApplied (M5-04A: onApplied carries no uids — selection is persistent).
 const mockBatchDialog = vi.fn();
 vi.mock('../BatchCorrectionActionsDialog.js', () => ({
   BatchCorrectionActionsDialog: (props: {
     action: string;
     rows: { studentUid: string }[];
     onClose: () => void;
-    onApplied: (succeededUids: string[]) => void;
+    onApplied: () => void;
   }) => {
     mockBatchDialog(props);
     return (
       <div data-testid="batch-actions-dialog">
         <span>action: {props.action}</span>
         <span>rows: {props.rows.map((r) => r.studentUid).join(',')}</span>
-        <button type="button" onClick={() => props.onApplied([props.rows[0]!.studentUid])}>
-          Applica primo
+        <button type="button" onClick={() => props.onApplied()}>
+          Applica
         </button>
         <button type="button" onClick={props.onClose}>
           Chiudi azioni
@@ -3179,26 +3179,63 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci (M5-04
     expect(within(dialog).getByText('rows: stud-a')).toBeTruthy();
   });
 
-  it('after applying, deselects succeeded rows and performs one targeted re-read', async () => {
+  it('M5-04A: keeps the full selection after applying and performs one targeted re-read', async () => {
     setupDefaults();
     const region = await openWith();
-    // Select both submitted rows.
     fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona tutte le consegne' }));
     expect(within(region).getByRole('button', { name: /Correggi con IA \(2\)/ })).toBeTruthy();
 
     const readsBefore = mockLoadCorrectionProgressByStudent.mock.calls.length;
     fireEvent.click(within(region).getByRole('button', { name: 'Completa' }));
     const dialog = await screen.findByTestId('batch-actions-dialog');
-    // Stub applies success for the first row only (stud-a).
-    fireEvent.click(within(dialog).getByText('Applica primo'));
+    fireEvent.click(within(dialog).getByText('Applica'));
 
-    // Exactly one extra targeted re-read after the batch.
+    // Exactly one extra targeted re-read after the batch (no reload/polling).
     await waitFor(() =>
       expect(mockLoadCorrectionProgressByStudent.mock.calls.length).toBe(readsBefore + 1),
     );
-    // stud-a deselected, stud-b still selected → count drops to 1.
-    await waitFor(() =>
-      expect(within(region).getByRole('button', { name: /Correggi con IA \(1\)/ })).toBeTruthy(),
-    );
+    // Selection is unchanged: both rows stay selected (persistent selection).
+    expect(within(region).getByRole('button', { name: /Correggi con IA \(2\)/ })).toBeTruthy();
+    for (const name of ['Anna', 'Bruno']) {
+      const box = within(region).getByRole('checkbox', {
+        name: `Seleziona consegna — ${name}`,
+      }) as HTMLInputElement;
+      expect(box.checked).toBe(true);
+    }
+  });
+
+  it('M5-04A: keeps the selection when the dialog is dismissed without applying', async () => {
+    setupDefaults();
+    const region = await openWith();
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona tutte le consegne' }));
+    fireEvent.click(within(region).getByRole('button', { name: 'Riapri' }));
+    const dialog = await screen.findByTestId('batch-actions-dialog');
+    fireEvent.click(within(dialog).getByText('Chiudi azioni'));
+    // Selection untouched.
+    expect(within(region).getByRole('button', { name: /Correggi con IA \(2\)/ })).toBeTruthy();
+  });
+
+  it('M5-04A: manual selection and deselection still work', async () => {
+    setupDefaults();
+    const region = await openWith();
+    const anna = within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' });
+    fireEvent.click(anna);
+    expect(within(region).getByRole('button', { name: /Correggi con IA \(1\)/ })).toBeTruthy();
+    fireEvent.click(anna);
+    // Back to no selection → the counted suffix disappears and buttons disable.
+    expect(within(region).queryByRole('button', { name: /Correggi con IA \(/ })).toBeNull();
+    expect(
+      (within(region).getByRole('button', { name: 'Completa' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it('M5-04A: the four toolbar buttons each render an icon before their accessible label', async () => {
+    setupDefaults();
+    const region = await openWith();
+    for (const name of ['Correggi con IA', 'Completa', 'Riapri', 'Restituisci']) {
+      const btn = within(region).getByRole('button', { name: new RegExp(`^${name}`) });
+      // Decorative inline SVG icon rendered inside the button.
+      expect(btn.querySelector('svg')).not.toBeNull();
+    }
   });
 });

@@ -235,6 +235,29 @@ button.btn-success:hover:not(:disabled) {
   border-color: var(--color-success-btn-hover);
 }
 
+/* ── Dialog action row (M5-04A) ──────────────────────────────────────
+   Riga condivisa Annulla + azione principale nei dialog batch
+   (AiBatchCorrectionDialog, BatchCorrectionActionsDialog): gap coerente,
+   pulsanti mai attaccati, stessa altezza (button base), responsive.
+   Sotto un breakpoint stretto i pulsanti diventano full-width impilati. */
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.dialog-actions button {
+  min-width: 7.5rem;
+}
+@media (max-width: 30rem) {
+  .dialog-actions button {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+}
+
 /* ── Base inputs ───────────────────────────────────────────────── */
 input[type='text'],
 input[type='email'],

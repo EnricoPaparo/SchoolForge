@@ -143,6 +143,27 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     expect(screen.getByText('Modalità mock — costo reale 0')).toBeTruthy();
   });
 
+  it('renders Annulla and the primary action inside a shared .dialog-actions row', async () => {
+    const { callables } = makeCallables(
+      () => Promise.resolve(makePreview()),
+      () => Promise.resolve(makeRun()),
+    );
+    render(
+      <AiBatchCorrectionDialog
+        verificationId={VERIFICATION_ID}
+        submissionIds={SUBMISSION_IDS}
+        callables={callables}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+    const primary = await screen.findByRole('button', { name: /Correggi 2 consegne con IA/ });
+    const cancel = screen.getByRole('button', { name: 'Annulla' });
+    const actions = cancel.closest('.dialog-actions');
+    expect(actions).not.toBeNull();
+    expect(actions).toBe(primary.closest('.dialog-actions'));
+  });
+
   it('confirms with a single run call using the same requestId, showing tokensActual/cost 0', async () => {
     const { callables, previewSpy, runSpy } = makeCallables(
       () => Promise.resolve(makePreview()),
