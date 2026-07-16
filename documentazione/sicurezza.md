@@ -1,7 +1,7 @@
 # SchoolForge — Sicurezza e protezione dei dati
 
 **Versione:** 3.0
-**Stato:** in vigore — controlli implementati da F-04 in avanti (M1, M2, M3-lite, RE, M3-full); M3-full completato con Gate G5 superato (vedi `documentazione/evidenze/g5-m3-full-checklist-finale.md`); M4-00→M4-04 completati, incluso Registro Correzioni ed export **CSV e PDF** locali owner-only — export **Markdown rinviato**; **Gate G6 superato**; **M5 (correzione assistita da IA): M5-00 progettato, M5-01 implementato** (gateway server-side `onCall` in **modalità mock**, 0 token, nessuna scrittura) (§8, [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md)); M5-02→M5-05 non avviati
+**Stato:** in vigore — controlli implementati da F-04 in avanti (M1, M2, M3-lite, RE, M3-full); M3-full completato con Gate G5 superato (vedi `documentazione/evidenze/g5-m3-full-checklist-finale.md`); M4-00→M4-04 completati, incluso Registro Correzioni ed export **CSV e PDF** locali owner-only — export **Markdown rinviato**; **Gate G6 superato**; **M5 (correzione assistita da IA): M5-00 progettato, M5-01+M5-02 implementati** (motore server-side `onCall` in **modalità mock**: scoring chiuse deterministico, aperte via `MockAiGrader`, scritture atomiche M4 via Admin SDK, idempotenza `aiCorrectionRuns`; 0 token reali, nessuna chiamata esterna) (§8, [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md)); M5-03→M5-05 non avviati
 
 ---
 
@@ -225,9 +225,9 @@ Difesa in profondità a livello di trasporto, configurata **solo** in `firebase.
 
 ---
 
-## 8. IA — Modulo 5 (correzione assistita; **M5-01 implementato in mock; comportamento pieno M5-02**)
+## 8. IA — Modulo 5 (correzione assistita; **M5-01+M5-02 implementati in mock; provider reale M5-05**)
 
-Contratto completo e mitigazioni in [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) (§11). **Stato M5-01:** le due Function `onCall` `aiCorrectionPreview`/`aiCorrectionRun` esistono in **modalità mock deterministica** — autorizzazione owner-only, feature flag `disabled|mock` (default `disabled`, solo server-side), validazione input rigorosa (solo ID), **zero token, nessuna chiamata esterna, nessuna scrittura Firestore**. Sintesi degli invarianti di sicurezza (M5-01 già applicati dove pertinenti; il resto è M5-02/M5-05):
+Contratto completo e mitigazioni in [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) (§11). **Stato M5-01+M5-02:** le due Function `onCall` `aiCorrectionPreview`/`aiCorrectionRun` implementano il motore in **modalità mock deterministica** — autorizzazione owner-only, feature flag `disabled|mock` (default `disabled`, solo server-side), validazione input rigorosa (solo ID), rilettura server-side di verifica/snapshot/submission (mai testi dal client), scoring chiuse deterministico, aperte via `MockAiGrader` con validazione output, scritture atomiche M4 via Admin SDK (mai sovrascrittura), idempotenza `aiCorrectionRuns` (solo metadata). **Zero token reali, costo 0, nessuna chiamata esterna.** Sintesi degli invarianti di sicurezza (già applicati; provider reale/Secret/budget = M5-05):
 
 - **Feature flag** globale `disabled|mock` risolto **solo** da configurazione server-side (`AI_CORRECTION_MODE`), default sicuro `disabled`, nessun fallback implicito verso un provider reale (che non è nel codice fino a M5-05). Provider/modello reali = C-02, Human Gate aperto — contratto **provider-agnostic**.
 - **Gateway server-side owner-only:** verifica dell'uid dal token Firebase e confronto con `settings/owner` (stesso pattern del `repositoryGateway`) — **implementato in M5-01**.
