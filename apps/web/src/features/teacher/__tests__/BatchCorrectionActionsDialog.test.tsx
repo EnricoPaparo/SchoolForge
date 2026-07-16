@@ -135,7 +135,7 @@ describe('BatchCorrectionActionsDialog (M5-04)', () => {
     const onClose = vi.fn();
     render(
       <BatchCorrectionActionsDialog
-        action="complete"
+        action="clear"
         rows={[row('a', prog({ status: 'in_progress' }))]}
         db={fakeDb}
         onClose={onClose}
@@ -147,19 +147,48 @@ describe('BatchCorrectionActionsDialog (M5-04)', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('protects against a double click', async () => {
-    let resolveRun!: (r: BatchRowResult[]) => void;
-    mockRun.mockReturnValue(new Promise<BatchRowResult[]>((r) => (resolveRun = r)));
+  it('shows the destructive clear summary and readable exclusion reasons', () => {
     render(
       <BatchCorrectionActionsDialog
-        action="reopen"
-        rows={[row('a', prog({ status: 'completed' }))]}
+        action="clear"
+        rows={[
+          row('a', prog({ status: 'in_progress', hasContent: true })),
+          row('b', prog({ status: 'completed' })),
+          row('c', prog({ status: 'returned' })),
+          row('d', prog({ status: 'in_progress', hasContent: false })),
+        ]}
         db={fakeDb}
         onClose={() => {}}
         onApplied={() => {}}
       />,
     );
-    const confirm = screen.getByRole('button', { name: 'Riapri 1 correzioni' });
+
+    expect(screen.getByText('Azzera correzioni')).toBeTruthy();
+    expect(screen.getByText('Consegne selezionate: 4')).toBeTruthy();
+    expect(screen.getByText('Eleggibili: 1')).toBeTruthy();
+    expect(screen.getByText('Escluse: 3')).toBeTruthy();
+    expect(screen.getByText(/rimossi punteggi, correzioni delle singole domande/)).toBeTruthy();
+    fireEvent.click(screen.getByText('Consegne escluse (3)'));
+    expect(screen.getAllByText(/Riapri prima la correzione/)).toHaveLength(2);
+    expect(screen.getByText(/Nessuna correzione da azzerare/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Azzera 1 correzioni' }).className).toContain(
+      'btn-danger',
+    );
+  });
+
+  it('protects against a double click', async () => {
+    let resolveRun!: (r: BatchRowResult[]) => void;
+    mockRun.mockReturnValue(new Promise<BatchRowResult[]>((r) => (resolveRun = r)));
+    render(
+      <BatchCorrectionActionsDialog
+        action="clear"
+        rows={[row('a', prog({ status: 'in_progress', hasContent: true }))]}
+        db={fakeDb}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+    const confirm = screen.getByRole('button', { name: 'Azzera 1 correzioni' });
     fireEvent.click(confirm);
     fireEvent.click(confirm);
     resolveRun([{ studentUid: 'a', submissionId: 'v_a', outcome: 'succeeded' }]);
@@ -181,6 +210,21 @@ describe('BatchCorrectionActionsDialog (M5-04)', () => {
       screen.getByText('Nessuna consegna selezionata è eleggibile per questa azione.'),
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Completa \d+ correzioni/ })).toBeNull();
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('clear with no eligible correction performs zero service calls', () => {
+    render(
+      <BatchCorrectionActionsDialog
+        action="clear"
+        rows={[row('a', prog({ status: 'in_progress', hasContent: false }))]}
+        db={fakeDb}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+    expect(screen.getByText('Nessuna correzione selezionata può essere azzerata.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Azzera \d+ correzioni/ })).toBeNull();
     expect(mockRun).not.toHaveBeenCalled();
   });
 

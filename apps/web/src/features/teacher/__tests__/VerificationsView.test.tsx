@@ -96,33 +96,11 @@ const mockLoadCorrectionProgressByStudent = vi.fn(
 vi.mock('../../repository/corrections/correctionProgressService.js', async (importOriginal) => {
   const actual = await importOriginal<typeof CorrectionProgressModule>();
   return {
-    ...actual, // keep real isClearable / isFullyEvaluated (pure helpers)
+    ...actual, // keep real pure progress helpers
     loadCorrectionProgressByStudent: (...args: unknown[]) =>
       mockLoadCorrectionProgressByStudent(...args),
   };
 });
-const mockClearCorrectionDialog = vi.fn();
-vi.mock('../ClearCorrectionDialog.js', () => ({
-  ClearCorrectionDialog: (props: {
-    submissionId: string;
-    studentName: string;
-    onClose: () => void;
-    onCleared: () => void;
-  }) => {
-    mockClearCorrectionDialog(props);
-    return (
-      <div data-testid="clear-correction-dialog">
-        <span>clear: {props.submissionId}</span>
-        <button type="button" onClick={props.onCleared}>
-          Conferma azzera
-        </button>
-        <button type="button" onClick={props.onClose}>
-          Chiudi azzera
-        </button>
-      </div>
-    );
-  },
-}));
 const mockAiDialog = vi.fn();
 vi.mock('../AiBatchCorrectionDialog.js', () => ({
   AiBatchCorrectionDialog: (props: {
@@ -3131,7 +3109,7 @@ describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)
   });
 });
 
-describe('VerificationsView — batch actions Completa/Riapri/Restituisci (M5-04)', () => {
+describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera (M5-04)', () => {
   const activeVer = () =>
     makeDraftVer({
       status: 'active',
@@ -3211,15 +3189,15 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci (M5-04
     return screen.findByRole('region', { name: 'Consegne online' });
   }
 
-  it('disables the three batch buttons until a row is selected, with no per-row buttons', async () => {
+  it('disables the four batch buttons until a row is selected, with no per-row buttons', async () => {
     setupDefaults();
     const region = await openWith();
-    for (const name of ['Completa', 'Riapri', 'Restituisci']) {
+    for (const name of ['Completa', 'Riapri', 'Restituisci', 'Azzera']) {
       const btn = within(region).getByRole('button', { name }) as HTMLButtonElement;
       expect(btn.disabled).toBe(true);
     }
     fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
-    for (const name of ['Completa', 'Riapri', 'Restituisci']) {
+    for (const name of ['Completa', 'Riapri', 'Restituisci', 'Azzera']) {
       const btn = within(region).getByRole('button', { name }) as HTMLButtonElement;
       expect(btn.disabled).toBe(false);
     }
@@ -3227,6 +3205,7 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci (M5-04
     const rows = within(within(region).getByRole('table')).getAllByRole('row').slice(1);
     for (const r of rows) {
       expect(within(r).queryByRole('button', { name: 'Completa' })).toBeNull();
+      expect(within(r).queryByRole('button', { name: /Azzera correzione/ })).toBeNull();
     }
   });
 
@@ -3238,6 +3217,12 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci (M5-04
     const dialog = await screen.findByTestId('batch-actions-dialog');
     expect(within(dialog).getByText('action: return')).toBeTruthy();
     expect(within(dialog).getByText('rows: stud-a')).toBeTruthy();
+    for (const name of ['Correggi con IA', 'Completa', 'Riapri', 'Restituisci', 'Azzera']) {
+      expect(
+        (within(region).getByRole('button', { name: new RegExp(`^${name}`) }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+    }
   });
 
   it('M5-04A: keeps the full selection after applying and performs one targeted re-read', async () => {
@@ -3247,8 +3232,9 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci (M5-04
     expect(within(region).getByRole('button', { name: /Correggi con IA \(2\)/ })).toBeTruthy();
 
     const readsBefore = mockLoadCorrectionProgressByStudent.mock.calls.length;
-    fireEvent.click(within(region).getByRole('button', { name: 'Completa' }));
+    fireEvent.click(within(region).getByRole('button', { name: 'Azzera' }));
     const dialog = await screen.findByTestId('batch-actions-dialog');
+    expect(within(dialog).getByText('action: clear')).toBeTruthy();
     fireEvent.click(within(dialog).getByText('Applica'));
 
     // Exactly one extra targeted re-read after the batch (no reload/polling).
@@ -3290,10 +3276,10 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci (M5-04
     ).toBe(true);
   });
 
-  it('M5-04A: the four toolbar buttons each render an icon before their accessible label', async () => {
+  it('M5-04A: all toolbar buttons render an icon before their accessible label', async () => {
     setupDefaults();
     const region = await openWith();
-    for (const name of ['Correggi con IA', 'Completa', 'Riapri', 'Restituisci']) {
+    for (const name of ['Correggi con IA', 'Completa', 'Riapri', 'Restituisci', 'Azzera']) {
       const btn = within(region).getByRole('button', { name: new RegExp(`^${name}`) });
       // Decorative inline SVG icon rendered inside the button.
       expect(btn.querySelector('svg')).not.toBeNull();
@@ -3376,23 +3362,20 @@ describe('VerificationsView — Azzera correzione (M5-04C)', () => {
     ],
   ]);
 
-  it('shows the eraser action only for an in_progress correction with content', async () => {
+  it('moves the eraser from the row to the batch toolbar', async () => {
     setupDefaults();
     const region = await openWith(submissions('in_progress'), clearableProgress);
-    const eraser = await within(region).findByRole('button', {
-      name: 'Azzera correzione — Anna',
-    });
-
-    expect(eraser.getAttribute('title')).toBe('Azzera correzione');
-    expect(eraser.getAttribute('aria-label')).toBe('Azzera correzione — Anna');
+    expect(within(region).queryByRole('button', { name: 'Azzera correzione — Anna' })).toBeNull();
+    const eraser = within(region).getByRole('button', { name: 'Azzera' });
+    expect((eraser as HTMLButtonElement).disabled).toBe(true);
+    expect(eraser.className).toContain('btn-danger');
     expect(eraser.querySelector('svg [fill="#fb7185"]')).not.toBeNull();
     expect(eraser.querySelector('svg [fill="#60a5fa"]')).not.toBeNull();
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
     expect((eraser as HTMLButtonElement).disabled).toBe(false);
-    eraser.focus();
-    expect(document.activeElement).toBe(eraser);
   });
 
-  it('does NOT show the eraser when there is nothing to clear', async () => {
+  it('passes an empty selected correction to the shared dialog for a readable exclusion', async () => {
     setupDefaults();
     const emptyProgress = new Map<string, unknown>([
       [
@@ -3409,24 +3392,28 @@ describe('VerificationsView — Azzera correzione (M5-04C)', () => {
       ],
     ]);
     const region = await openWith(submissions('submitted'), emptyProgress);
-    // Give the async progress read a tick, then assert absence.
-    await waitFor(() => expect(within(region).getByRole('table')).toBeTruthy());
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
+    fireEvent.click(within(region).getByRole('button', { name: 'Azzera' }));
+    const dialog = await screen.findByTestId('batch-actions-dialog');
+    expect(within(dialog).getByText('action: clear')).toBeTruthy();
+    expect(within(dialog).getByText('rows: stud-a')).toBeTruthy();
     expect(within(region).queryByRole('button', { name: 'Azzera correzione — Anna' })).toBeNull();
   });
 
-  it('opens the confirm dialog and, after clearing, performs one targeted re-read', async () => {
+  it('after batch clear performs one targeted re-read and keeps the selection', async () => {
     setupDefaults();
     const region = await openWith(submissions('in_progress'), clearableProgress);
-    const eraser = await within(region).findByRole('button', {
-      name: 'Azzera correzione — Anna',
-    });
+    const checkbox = within(region).getByRole('checkbox', {
+      name: 'Seleziona consegna — Anna',
+    }) as HTMLInputElement;
+    fireEvent.click(checkbox);
     const readsBefore = mockLoadCorrectionProgressByStudent.mock.calls.length;
-    fireEvent.click(eraser);
-    const dialog = await screen.findByTestId('clear-correction-dialog');
-    expect(within(dialog).getByText('clear: ver-1_stud-a')).toBeTruthy();
-    fireEvent.click(within(dialog).getByText('Conferma azzera'));
+    fireEvent.click(within(region).getByRole('button', { name: 'Azzera' }));
+    const dialog = await screen.findByTestId('batch-actions-dialog');
+    fireEvent.click(within(dialog).getByText('Applica'));
     await waitFor(() =>
       expect(mockLoadCorrectionProgressByStudent.mock.calls.length).toBe(readsBefore + 1),
     );
+    expect(checkbox.checked).toBe(true);
   });
 });

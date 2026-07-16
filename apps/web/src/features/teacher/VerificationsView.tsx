@@ -47,10 +47,8 @@ import { BatchCorrectionActionsDialog } from './BatchCorrectionActionsDialog.js'
 import { createAiCorrectionCallables } from '../repository/corrections/aiCorrectionClient.js';
 import {
   loadCorrectionProgressByStudent,
-  isClearable,
   type CorrectionProgress,
 } from '../repository/corrections/correctionProgressService.js';
-import { ClearCorrectionDialog } from './ClearCorrectionDialog.js';
 import type {
   BatchAction,
   BatchSelectedRow,
@@ -295,19 +293,12 @@ export function VerificationsView() {
     submissionId: string;
     studentName: string;
   } | null>(null);
-  // M5-04C — «Azzera correzione»: consegna target del dialog di conferma.
-  const [clearTarget, setClearTarget] = useState<{
-    submissionId: string;
-    studentName: string;
-    studentUid: string;
-  } | null>(null);
-
   // ── Batch AI correction (M5-03, mock) ─────────────────────────────
   // Selezione stabile per studentUid (non per indice), così resta valida
   // durante ordinamento e aggiornamenti live della tabella.
   const [aiSelectedUids, setAiSelectedUids] = useState<Set<string>>(new Set());
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
-  // M5-04: azione massiva in conferma (Completa/Riapri/Restituisci) o null.
+  // M5-04: azione massiva in conferma (Completa/Riapri/Restituisci/Azzera) o null.
   const [batchAction, setBatchAction] = useState<BatchAction | null>(null);
   // «Valutate» n/totale per studentUid: singola lettura mirata (no listener).
   const [correctionProgress, setCorrectionProgress] = useState<Map<string, CorrectionProgress>>(
@@ -2011,7 +2002,7 @@ export function VerificationsView() {
                 </div>
               </div>
               {/* M5-04A: barra azioni batch sulle righe selezionate — icone
-                  coerenti, dimensioni uniformi, griglia responsive (4 col →
+                  coerenti, dimensioni uniformi, griglia responsive (5 col →
                   2 col → 1 col). Nessun pulsante sulle singole righe. */}
               <div
                 className={styles.batchToolbar}
@@ -2033,12 +2024,13 @@ export function VerificationsView() {
                     { action: 'complete', label: 'Completa', Icon: IconCircleCheck },
                     { action: 'reopen', label: 'Riapri', Icon: IconRotateCcw },
                     { action: 'return', label: 'Restituisci', Icon: IconSend },
+                    { action: 'clear', label: 'Azzera', Icon: IconEraser },
                   ] as const
                 ).map(({ action, label, Icon }) => (
                   <button
                     key={action}
                     type="button"
-                    className="btn-primary"
+                    className={action === 'clear' ? 'btn-danger' : 'btn-primary'}
                     disabled={aiSelectedUids.size === 0 || aiDialogOpen || batchAction !== null}
                     onClick={() => setBatchAction(action)}
                   >
@@ -2222,31 +2214,6 @@ export function VerificationsView() {
                                     ) : (
                                       !(item && selectedVer.status === 'closed') && '—'
                                     )}
-                                    {/* M5-04C: «Azzera correzione» — solo se
-                                        esiste una correzione in_progress con
-                                        qualcosa da azzerare. Per completed/
-                                        returned il docente riapre prima. */}
-                                    {item?.status === 'submitted' &&
-                                      (() => {
-                                        const p = correctionProgress.get(row.studentUid);
-                                        return p && isClearable(p) ? (
-                                          <button
-                                            type="button"
-                                            className={styles.iconBtn}
-                                            title="Azzera correzione"
-                                            aria-label={`Azzera correzione — ${studentName}`}
-                                            onClick={() =>
-                                              setClearTarget({
-                                                submissionId: `${selectedVer.id}_${row.studentUid}`,
-                                                studentName,
-                                                studentUid: row.studentUid,
-                                              })
-                                            }
-                                          >
-                                            <IconEraser />
-                                          </button>
-                                        ) : null;
-                                      })()}
                                     {/* Delete a submission — only for a real,
                                         existing submission on a CLOSED verification. */}
                                     {item && selectedVer.status === 'closed' && (
@@ -2316,21 +2283,6 @@ export function VerificationsView() {
             // percentuale. La selezione resta INVARIATA (né riuscite né fallite
             // vengono deselezionate): il docente può concatenare azioni sullo
             // stesso gruppo. La selezione cambia solo manualmente.
-            void refreshCorrectionProgress();
-          }}
-        />
-      )}
-
-      {clearTarget && (
-        <ClearCorrectionDialog
-          submissionId={clearTarget.submissionId}
-          studentName={clearTarget.studentName}
-          db={db}
-          onClose={() => setClearTarget(null)}
-          onCleared={() => {
-            // M5-04C: una sola rilettura mirata aggiorna «Valutate»/stato/
-            // percentuale (la riga torna «non valutata»). La selezione della
-            // consegna resta INVARIATA: si può subito rilanciare «Correggi con IA».
             void refreshCorrectionProgress();
           }}
         />

@@ -6,7 +6,8 @@ import type { CorrectionDoc, CorrectionStatus } from '../../../types/firestore.j
  * Progresso di una correzione per la tabella «Consegne online» (M5-03/M5-04):
  * quante domande sono valutate su quante totali (colonna «Valutate»), più lo
  * `status` e i totali già derivati sul documento correzione — usati da M5-04
- * per calcolare l'eleggibilità delle azioni massive (Completa/Riapri/Restituisci)
+ * per calcolare l'eleggibilità delle azioni massive
+ * (Completa/Riapri/Restituisci/Azzera)
  * **senza** letture aggiuntive. Tutto proviene dalla stessa singola query
  * owner-only di M5-03.
  */

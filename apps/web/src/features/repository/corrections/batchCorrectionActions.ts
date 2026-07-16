@@ -1,18 +1,23 @@
 import type { Firestore } from 'firebase/firestore';
 import { mapWithConcurrency } from '../verifications/mapWithConcurrency.js';
-import { completeCorrection, reopenCorrection, returnCorrection } from './correctionsService.js';
+import {
+  clearCorrection,
+  completeCorrection,
+  reopenCorrection,
+  returnCorrection,
+} from './correctionsService.js';
 import { isFullyEvaluated, type CorrectionProgress } from './correctionProgressService.js';
 
 /**
  * M5-04 — azioni massive sulle correzioni selezionate: **Completa**, **Riapri**,
- * **Restituisci**. La UI calcola un riepilogo preliminare di eleggibilità (qui,
- * funzioni pure), ma la validazione **definitiva** resta ai service M4
- * (`completeCorrection`/`reopenCorrection`/`returnCorrection`), che questo modulo
- * si limita a invocare — **una volta per consegna**, con concorrenza limitata.
- * Nessuna Cloud Function, nessuna modifica alle `evaluations`, nessun provider IA.
+ * **Restituisci** e **Azzera**. La UI calcola un riepilogo preliminare di
+ * eleggibilità con funzioni pure, ma la validazione **definitiva** resta ai
+ * service M4 (`completeCorrection`/`reopenCorrection`/`returnCorrection`/
+ * `clearCorrection`), che questo modulo invoca **una volta per consegna**, con
+ * concorrenza limitata. Nessuna Cloud Function e nessun provider IA.
  */
 
-export type BatchAction = 'complete' | 'reopen' | 'return';
+export type BatchAction = 'complete' | 'reopen' | 'return' | 'clear';
 
 /** Motivo sintetico di esclusione (nessun dato sensibile). */
 export type BatchExclusionReason =
@@ -21,7 +26,9 @@ export type BatchExclusionReason =
   | 'not_fully_evaluated'
   | 'not_completed'
   | 'not_completed_or_returned'
-  | 'already_returned';
+  | 'already_returned'
+  | 'clear_requires_reopen'
+  | 'nothing_to_clear';
 
 export interface BatchSelectedRow {
   studentUid: string;
@@ -61,7 +68,7 @@ export function classifyRow(
   row: BatchSelectedRow,
 ): BatchExclusionReason | null {
   const p = row.progress;
-  if (!p) return 'no_correction';
+  if (!p) return action === 'clear' ? 'nothing_to_clear' : 'no_correction';
   switch (action) {
     case 'complete':
       if (p.status !== 'in_progress') return 'not_in_progress';
@@ -73,6 +80,10 @@ export function classifyRow(
     case 'return':
       if (p.status === 'returned') return 'already_returned';
       if (p.status !== 'completed') return 'not_completed';
+      return null;
+    case 'clear':
+      if (p.status !== 'in_progress') return 'clear_requires_reopen';
+      if (!p.hasContent) return 'nothing_to_clear';
       return null;
   }
 }
@@ -107,10 +118,11 @@ export interface BatchRowResult {
   error?: string;
 }
 
-const SERVICE: Record<BatchAction, (submissionId: string, db: Firestore) => Promise<void>> = {
+const SERVICE: Record<BatchAction, (submissionId: string, db: Firestore) => Promise<unknown>> = {
   complete: completeCorrection,
   reopen: reopenCorrection,
   return: returnCorrection,
+  clear: clearCorrection,
 };
 
 /**
@@ -156,5 +168,9 @@ export function describeBatchExclusion(reason: BatchExclusionReason): string {
       return 'Non è completata né restituita';
     case 'already_returned':
       return 'Già restituita';
+    case 'clear_requires_reopen':
+      return 'Riapri prima la correzione';
+    case 'nothing_to_clear':
+      return 'Nessuna correzione da azzerare';
   }
 }
