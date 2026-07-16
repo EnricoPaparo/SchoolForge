@@ -2228,7 +2228,7 @@ export function VerificationsView() {
                                         return p && isClearable(p) ? (
                                           <button
                                             type="button"
-                                            className={styles.iconBtn}
+                                            className={`${styles.iconBtn} ${styles.iconBtnEraser}`}
                                             title="Azzera correzione"
                                             aria-label={`Azzera correzione — ${studentName}`}
                                             onClick={() =>

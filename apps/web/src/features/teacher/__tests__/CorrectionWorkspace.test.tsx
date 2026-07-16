@@ -211,6 +211,44 @@ function renderWorkspace(onClose = vi.fn()) {
   return { onClose };
 }
 
+async function renderSingleChoice(solution: string | string[] | null, selectedId: string) {
+  setupDefaults();
+  mockLoadCorrectionWorkspace.mockResolvedValue(
+    makeWorkspaceData({
+      questions: [
+        {
+          order: 0,
+          tipo: 'chiusa_singola',
+          maxPoints: 3,
+          testo: 'Quale opzione è corretta?',
+          opzioni: [
+            { id: 'a', testo: 'Alpha' },
+            { id: 'b', testo: 'Beta' },
+          ],
+          soluzione: solution,
+          solutionUnavailable: false,
+        },
+      ],
+      submission: {
+        answers: { '0': { tipo: 'chiusa_singola', selectedId } },
+      },
+      correction: {
+        evaluations: { '0': { order: 0, points: null, maxPoints: 3 } },
+      },
+    }),
+  );
+  renderWorkspace();
+  await waitFor(() => expect(screen.getByText('Quale opzione è corretta?')).toBeTruthy());
+
+  const answerLabel = screen.getByText('Risposta consegnata');
+  const answerBlock = answerLabel.parentElement as HTMLElement;
+  const alphaRow = within(answerBlock).getByText('Alpha').closest('li') as HTMLElement;
+  const betaRow = within(answerBlock).getByText('Beta').closest('li') as HTMLElement;
+  const solutionLabel = screen.getByText('Soluzione (visibile solo al docente)');
+  const solutionBlock = solutionLabel.parentElement as HTMLElement;
+  return { alphaRow, betaRow, solutionBlock };
+}
+
 describe('CorrectionWorkspace — loading and data', () => {
   it('shows a loading state, then question text/answer/solution once loaded', async () => {
     setupDefaults();
@@ -345,6 +383,51 @@ describe('CorrectionWorkspace — question metadata (difficoltà/peso/max)', () 
     expect(document.body.textContent).toMatch(
       /Difficoltà\s*—\s*·\s*Peso\s*—\s*·\s*Max\s*10\s*punti/,
     );
+  });
+});
+
+describe('CorrectionWorkspace — single-choice solution rendering', () => {
+  it('renders a canonical one-item array as selected and correct, without a false red cross', async () => {
+    const { alphaRow, solutionBlock } = await renderSingleChoice(['a'], 'a');
+
+    expect(within(alphaRow).getByText(/selezionata, corretta/i)).toBeTruthy();
+    expect(alphaRow.className).toMatch(/optionSelected/);
+    expect(within(alphaRow).getByText('✓').className).toMatch(/optionIconCorrect/);
+    expect(document.body.textContent).not.toContain('✕');
+    expect(within(solutionBlock).getByText('Alpha')).toBeTruthy();
+    expect(within(solutionBlock).queryByText(/^a$/)).toBeNull();
+  });
+
+  it('distinguishes the canonical correct option from the selected wrong option', async () => {
+    const { alphaRow, betaRow } = await renderSingleChoice(['a'], 'b');
+
+    expect(within(alphaRow).getByText(/corretta, non selezionata/i)).toBeTruthy();
+    expect(within(alphaRow).getByText('✓').className).toMatch(/optionIconCorrect/);
+    expect(within(betaRow).getByText(/selezionata, errata/i)).toBeTruthy();
+    expect(betaRow.className).toMatch(/optionSelectedWrong/);
+    expect(within(betaRow).getByText('✕').className).toMatch(/optionIconWrong/);
+  });
+
+  it('renders a legacy string solution exactly like the canonical format', async () => {
+    const { alphaRow, solutionBlock } = await renderSingleChoice('a', 'a');
+
+    expect(within(alphaRow).getByText(/selezionata, corretta/i)).toBeTruthy();
+    expect(alphaRow.className).toMatch(/optionSelected/);
+    expect(within(alphaRow).getByText('✓').className).toMatch(/optionIconCorrect/);
+    expect(document.body.textContent).not.toContain('✕');
+    expect(within(solutionBlock).getByText('Alpha')).toBeTruthy();
+    expect(within(solutionBlock).queryByText(/^a$/)).toBeNull();
+  });
+
+  it('renders malformed single-choice solutions as neutral and unavailable', async () => {
+    const { alphaRow, betaRow, solutionBlock } = await renderSingleChoice(['a', 'b'], 'b');
+
+    expect(within(betaRow).getByText(/selezionata, correttezza non disponibile/i)).toBeTruthy();
+    expect(betaRow.className).not.toMatch(/optionSelectedWrong/);
+    expect(within(betaRow).getByText('?').className).toMatch(/optionIconUnavailable/);
+    expect(document.body.textContent).not.toContain('✕');
+    expect(within(alphaRow).queryByText(/corretta, non selezionata/i)).toBeNull();
+    expect(within(solutionBlock).getByText('Soluzione non disponibile.')).toBeTruthy();
   });
 });
 
