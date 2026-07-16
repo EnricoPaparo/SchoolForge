@@ -43,11 +43,16 @@ import { QuestionPicker } from './QuestionPicker.js';
 import { AttentionEventsDialog } from './AttentionEventsDialog.js';
 import { CorrectionWorkspace } from './CorrectionWorkspace.js';
 import { AiBatchCorrectionDialog } from './AiBatchCorrectionDialog.js';
+import { BatchCorrectionActionsDialog } from './BatchCorrectionActionsDialog.js';
 import { createAiCorrectionCallables } from '../repository/corrections/aiCorrectionClient.js';
 import {
   loadCorrectionProgressByStudent,
   type CorrectionProgress,
 } from '../repository/corrections/correctionProgressService.js';
+import type {
+  BatchAction,
+  BatchSelectedRow,
+} from '../repository/corrections/batchCorrectionActions.js';
 import { deleteSubmissionData } from '../repository/verifications/deleteSubmissionData.js';
 import { IconTrash } from '../../components/icons.js';
 import type { AttentionEvent, VerificationTeacherQuestionSnapshot } from '../../types/firestore.js';
@@ -287,6 +292,8 @@ export function VerificationsView() {
   // durante ordinamento e aggiornamenti live della tabella.
   const [aiSelectedUids, setAiSelectedUids] = useState<Set<string>>(new Set());
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  // M5-04: azione massiva in conferma (Completa/Riapri/Restituisci) o null.
+  const [batchAction, setBatchAction] = useState<BatchAction | null>(null);
   // «Valutate» n/totale per studentUid: singola lettura mirata (no listener).
   const [correctionProgress, setCorrectionProgress] = useState<Map<string, CorrectionProgress>>(
     new Map(),
@@ -322,6 +329,22 @@ export function VerificationsView() {
   const aiSelectedSubmissionIds = useMemo(
     () => (selectedVer ? [...aiSelectedUids].map((uid) => `${selectedVer.id}_${uid}`) : []),
     [aiSelectedUids, selectedVer],
+  );
+  // M5-04: righe selezionate arricchite col progresso già letto (stesso dato di
+  // «Valutate», nessuna lettura aggiuntiva) per calcolare l'eleggibilità.
+  const batchSelectedRows = useMemo<BatchSelectedRow[]>(
+    () =>
+      selectedVer
+        ? sortedMonitorRows
+            .filter((r) => aiSelectedUids.has(r.studentUid))
+            .map((r) => ({
+              studentUid: r.studentUid,
+              studentName: r.studentName,
+              submissionId: `${selectedVer.id}_${r.studentUid}`,
+              progress: correctionProgress.get(r.studentUid),
+            }))
+        : [],
+    [selectedVer, sortedMonitorRows, aiSelectedUids, correctionProgress],
   );
 
   function toggleRowSelected(uid: string): void {
@@ -1956,6 +1979,23 @@ export function VerificationsView() {
                     Correggi con IA
                     {aiSelectedUids.size > 0 ? ` (${aiSelectedUids.size})` : ''}
                   </button>
+                  {/* M5-04: azioni massive sulle righe selezionate. Nessun
+                      pulsante sulle singole righe. */}
+                  {(['complete', 'reopen', 'return'] as const).map((action) => (
+                    <button
+                      key={action}
+                      type="button"
+                      className="btn-primary"
+                      disabled={aiSelectedUids.size === 0 || aiDialogOpen || batchAction !== null}
+                      onClick={() => setBatchAction(action)}
+                    >
+                      {action === 'complete'
+                        ? 'Completa'
+                        : action === 'reopen'
+                          ? 'Riapri'
+                          : 'Restituisci'}
+                    </button>
+                  ))}
                   <button
                     type="button"
                     className="btn-primary"
@@ -2208,6 +2248,26 @@ export function VerificationsView() {
             // una singola rilettura mirata. La selezione viene svuotata.
             void refreshCorrectionProgress();
             setAiSelectedUids(new Set());
+          }}
+        />
+      )}
+
+      {batchAction && selectedVer && (
+        <BatchCorrectionActionsDialog
+          action={batchAction}
+          rows={batchSelectedRows}
+          db={db}
+          onClose={() => setBatchAction(null)}
+          onApplied={(succeededUids) => {
+            // Una sola rilettura mirata: «Valutate»/stato/percentuale si
+            // aggiornano; le righe riuscite vengono deselezionate, le fallite
+            // restano selezionate per un eventuale nuovo tentativo.
+            void refreshCorrectionProgress();
+            setAiSelectedUids((prev) => {
+              const next = new Set(prev);
+              for (const uid of succeededUids) next.delete(uid);
+              return next;
+            });
           }}
         />
       )}

@@ -114,6 +114,31 @@ vi.mock('../AiBatchCorrectionDialog.js', () => ({
     );
   },
 }));
+// M5-04 — batch actions dialog stub: exposes the received rows and lets a test
+// drive onApplied with an arbitrary set of "succeeded" uids.
+const mockBatchDialog = vi.fn();
+vi.mock('../BatchCorrectionActionsDialog.js', () => ({
+  BatchCorrectionActionsDialog: (props: {
+    action: string;
+    rows: { studentUid: string }[];
+    onClose: () => void;
+    onApplied: (succeededUids: string[]) => void;
+  }) => {
+    mockBatchDialog(props);
+    return (
+      <div data-testid="batch-actions-dialog">
+        <span>action: {props.action}</span>
+        <span>rows: {props.rows.map((r) => r.studentUid).join(',')}</span>
+        <button type="button" onClick={() => props.onApplied([props.rows[0]!.studentUid])}>
+          Applica primo
+        </button>
+        <button type="button" onClick={props.onClose}>
+          Chiudi azioni
+        </button>
+      </div>
+    );
+  },
+}));
 // CorrectionWorkspace (M4-02) has its own dedicated test suite — mocked here
 // so this file stays focused on how VerificationsView opens it (which
 // submissions get the action, what props it receives), not its internals.
@@ -3042,5 +3067,138 @@ describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)
     await waitFor(() => expect(within(table).getByText('2/3')).toBeTruthy());
     // Bruno has no correction doc → "—".
     expect(within(table).getAllByText('—').length).toBeGreaterThan(0);
+  });
+});
+
+describe('VerificationsView — batch actions Completa/Riapri/Restituisci (M5-04)', () => {
+  const activeVer = () =>
+    makeDraftVer({
+      status: 'active',
+      onlineEnabled: true,
+      teacherSnapshot: {
+        title: 'Verifica Algebra',
+        classId: 'cls-1',
+        className: 'Classe 3A',
+        programId: 'prog-1',
+        importId: 'imp-1',
+        questionRefs: [sampleQuestionRef],
+        activatedAt: null,
+      },
+    });
+
+  const twoApproved = [
+    {
+      id: 'stud-a',
+      ownerUid: 'owner-uid',
+      uid: 'stud-a',
+      email: 'anna@example.test',
+      displayName: 'Anna',
+      status: 'approved' as const,
+      classId: 'cls-1',
+      createdAt: null,
+      updatedAt: null,
+      lastLoginAt: null,
+    },
+    {
+      id: 'stud-b',
+      ownerUid: 'owner-uid',
+      uid: 'stud-b',
+      email: 'bruno@example.test',
+      displayName: 'Bruno',
+      status: 'approved' as const,
+      classId: 'cls-1',
+      createdAt: null,
+      updatedAt: null,
+      lastLoginAt: null,
+    },
+  ];
+
+  const bothSubmitted = [
+    {
+      studentUid: 'stud-a',
+      status: 'submitted',
+      submittedAt: { seconds: 20, nanoseconds: 0 },
+      deliveryCode: 'SF-A',
+      correctionStatus: 'in_progress',
+      correctionSummary: { totalPoints: 8.5, maxPoints: 10, percentage: 85 },
+      attentionEventsCount: 0,
+      attentionEvents: [],
+    },
+    {
+      studentUid: 'stud-b',
+      status: 'submitted',
+      submittedAt: { seconds: 10, nanoseconds: 0 },
+      deliveryCode: 'SF-B',
+      correctionStatus: 'in_progress',
+      correctionSummary: { totalPoints: 4, maxPoints: 10, percentage: 40 },
+      attentionEventsCount: 0,
+      attentionEvents: [],
+    },
+  ];
+
+  async function openWith(progress?: Map<string, unknown>) {
+    mockListVerifications.mockResolvedValue([activeVer()]);
+    mockListStudents.mockResolvedValue(twoApproved);
+    if (progress) mockLoadCorrectionProgressByStudent.mockResolvedValue(progress as never);
+    mockWatchSubmissions.mockImplementation((_v, _o, _d, onChange) => {
+      onChange(bothSubmitted);
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    return screen.findByRole('region', { name: 'Consegne online' });
+  }
+
+  it('disables the three batch buttons until a row is selected, with no per-row buttons', async () => {
+    setupDefaults();
+    const region = await openWith();
+    for (const name of ['Completa', 'Riapri', 'Restituisci']) {
+      const btn = within(region).getByRole('button', { name }) as HTMLButtonElement;
+      expect(btn.disabled).toBe(true);
+    }
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
+    for (const name of ['Completa', 'Riapri', 'Restituisci']) {
+      const btn = within(region).getByRole('button', { name }) as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+    }
+    // No per-row batch buttons.
+    const rows = within(within(region).getByRole('table')).getAllByRole('row').slice(1);
+    for (const r of rows) {
+      expect(within(r).queryByRole('button', { name: 'Completa' })).toBeNull();
+    }
+  });
+
+  it('opens the dialog with the selected rows and the chosen action', async () => {
+    setupDefaults();
+    const region = await openWith();
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
+    fireEvent.click(within(region).getByRole('button', { name: 'Restituisci' }));
+    const dialog = await screen.findByTestId('batch-actions-dialog');
+    expect(within(dialog).getByText('action: return')).toBeTruthy();
+    expect(within(dialog).getByText('rows: stud-a')).toBeTruthy();
+  });
+
+  it('after applying, deselects succeeded rows and performs one targeted re-read', async () => {
+    setupDefaults();
+    const region = await openWith();
+    // Select both submitted rows.
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona tutte le consegne' }));
+    expect(within(region).getByRole('button', { name: /Correggi con IA \(2\)/ })).toBeTruthy();
+
+    const readsBefore = mockLoadCorrectionProgressByStudent.mock.calls.length;
+    fireEvent.click(within(region).getByRole('button', { name: 'Completa' }));
+    const dialog = await screen.findByTestId('batch-actions-dialog');
+    // Stub applies success for the first row only (stud-a).
+    fireEvent.click(within(dialog).getByText('Applica primo'));
+
+    // Exactly one extra targeted re-read after the batch.
+    await waitFor(() =>
+      expect(mockLoadCorrectionProgressByStudent.mock.calls.length).toBe(readsBefore + 1),
+    );
+    // stud-a deselected, stud-b still selected → count drops to 1.
+    await waitFor(() =>
+      expect(within(region).getByRole('button', { name: /Correggi con IA \(1\)/ })).toBeTruthy(),
+    );
   });
 });
