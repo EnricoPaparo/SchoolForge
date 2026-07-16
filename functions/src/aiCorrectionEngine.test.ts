@@ -44,8 +44,16 @@ function tq(
   tipo: TeacherQuestion['tipo'],
   maxPoints: number,
   soluzione: string | string[],
+  optionIds?: string[],
 ): TeacherQuestion {
-  return { order, tipo, maxPoints, testo: `${Q_MARK}-${order}`, soluzione };
+  return {
+    order,
+    tipo,
+    maxPoints,
+    testo: `${Q_MARK}-${order}`,
+    soluzione,
+    ...(optionIds ? { optionIds } : {}),
+  };
 }
 
 /** Fedele alla porta reale (aiCorrectionGateway): applica il feedback generale
@@ -259,51 +267,126 @@ afterEach(() => vi.unstubAllGlobals());
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
-describe('scoreClosedQuestion — chiusa_singola', () => {
-  const q = tq(0, 'chiusa_singola', 2, 'opt-b');
-  it('correct → maxPoints', () => {
-    expect(scoreClosedQuestion(q, { tipo: 'chiusa_singola', selectedId: 'opt-b' })).toBe(2);
+describe('scoreClosedQuestion — chiusa_singola (M5-04C)', () => {
+  // Root cause: canonical solution is an ARRAY of one id — ["a"] — not "a".
+  const canonical = tq(0, 'chiusa_singola', 2, ['a']);
+  const legacy = tq(0, 'chiusa_singola', 2, 'a');
+
+  it('canonical ["a"] + selectedId "a" → maxPoints (regression)', () => {
+    const r = scoreClosedQuestion(canonical, { tipo: 'chiusa_singola', selectedId: 'a' });
+    expect(r).toEqual({ evaluable: true, points: 2, feedback: 'Risposta corretta.' });
   });
-  it('wrong → 0', () => {
-    expect(scoreClosedQuestion(q, { tipo: 'chiusa_singola', selectedId: 'opt-a' })).toBe(0);
+  it('legacy string "a" + selectedId "a" → maxPoints', () => {
+    const r = scoreClosedQuestion(legacy, { tipo: 'chiusa_singola', selectedId: 'a' });
+    expect(r).toEqual({ evaluable: true, points: 2, feedback: 'Risposta corretta.' });
   });
-  it('empty (null) → 0', () => {
-    expect(scoreClosedQuestion(q, { tipo: 'chiusa_singola', selectedId: null })).toBe(0);
+  it('wrong → 0 with feedback', () => {
+    const r = scoreClosedQuestion(canonical, { tipo: 'chiusa_singola', selectedId: 'b' });
+    expect(r).toEqual({ evaluable: true, points: 0, feedback: 'Risposta non corretta.' });
   });
-  it('missing answer → 0', () => {
-    expect(scoreClosedQuestion(q, undefined)).toBe(0);
+  it('not answered → 0 with "Risposta non fornita."', () => {
+    expect(scoreClosedQuestion(canonical, { tipo: 'chiusa_singola', selectedId: null })).toEqual({
+      evaluable: true,
+      points: 0,
+      feedback: 'Risposta non fornita.',
+    });
+    expect(scoreClosedQuestion(canonical, undefined)).toEqual({
+      evaluable: true,
+      points: 0,
+      feedback: 'Risposta non fornita.',
+    });
+  });
+  it('malformed solution → non-evaluable (no unjust zero)', () => {
+    for (const bad of [[], ['a', 'b'], [''], [1] as unknown as string[], '', undefined, null]) {
+      const q = { ...canonical, soluzione: bad as string | string[] };
+      expect(scoreClosedQuestion(q, { tipo: 'chiusa_singola', selectedId: 'a' })).toEqual({
+        evaluable: false,
+      });
+    }
   });
 });
 
-describe('scoreClosedQuestion — chiusa_multipla', () => {
-  const q = tq(0, 'chiusa_multipla', 3, ['a', 'b', 'c']);
-  it('exact set → maxPoints', () => {
-    expect(scoreClosedQuestion(q, { tipo: 'chiusa_multipla', selectedIds: ['a', 'b', 'c'] })).toBe(
-      3,
-    );
+describe('scoreClosedQuestion — chiusa_multipla partial scoring (M5-04C)', () => {
+  // Mandated example: 3 correct (a,b,c), 2 wrong (d,e), maxPoints = 6.
+  const q = tq(0, 'chiusa_multipla', 6, ['a', 'b', 'c'], ['a', 'b', 'c', 'd', 'e']);
+  const pts = (selectedIds: string[]) => {
+    const r = scoreClosedQuestion(q, { tipo: 'chiusa_multipla', selectedIds });
+    if (!r.evaluable) throw new Error('expected evaluable');
+    return r.points;
+  };
+
+  it('all and only correct → maxPoints', () => {
+    expect(pts(['a', 'b', 'c'])).toBe(6);
   });
-  it('reordered set → maxPoints', () => {
-    expect(scoreClosedQuestion(q, { tipo: 'chiusa_multipla', selectedIds: ['c', 'a', 'b'] })).toBe(
-      3,
-    );
+  it('2 correct, 0 wrong → 4', () => {
+    expect(pts(['a', 'b'])).toBe(4);
   });
-  it('incomplete → 0', () => {
-    expect(scoreClosedQuestion(q, { tipo: 'chiusa_multipla', selectedIds: ['a', 'b'] })).toBe(0);
+  it('2 correct, 1 wrong → 1', () => {
+    expect(pts(['a', 'b', 'd'])).toBe(1);
   });
-  it('extra option → 0', () => {
-    expect(
-      scoreClosedQuestion(q, { tipo: 'chiusa_multipla', selectedIds: ['a', 'b', 'c', 'd'] }),
-    ).toBe(0);
+  it('all five options → 0', () => {
+    expect(pts(['a', 'b', 'c', 'd', 'e'])).toBe(0);
   });
-  it('wrong → 0', () => {
-    expect(scoreClosedQuestion(q, { tipo: 'chiusa_multipla', selectedIds: ['x', 'y', 'z'] })).toBe(
+  it('none selected → 0 with "Risposta non fornita."', () => {
+    const r = scoreClosedQuestion(q, { tipo: 'chiusa_multipla', selectedIds: [] });
+    expect(r).toEqual({ evaluable: true, points: 0, feedback: 'Risposta non fornita.' });
+  });
+  it('order and duplicate ids are irrelevant', () => {
+    expect(pts(['c', 'a', 'b'])).toBe(6);
+    expect(pts(['a', 'a', 'b', 'b'])).toBe(4);
+  });
+  it('unknown/manipulated ids count as wrong selections', () => {
+    // 2 correct + 1 unknown id → same as 2 correct + 1 wrong → 1.
+    expect(pts(['a', 'b', 'zzz'])).toBe(1);
+  });
+  it('always within [0, maxPoints] and a multiple of 0.25', () => {
+    for (const sel of [['a'], ['a', 'd'], ['a', 'b', 'c', 'd'], ['d', 'e'], ['a', 'b', 'c']]) {
+      const p = pts(sel);
+      expect(p).toBeGreaterThanOrEqual(0);
+      expect(p).toBeLessThanOrEqual(6);
+      expect(Math.abs(p * 4 - Math.round(p * 4))).toBeLessThan(1e-9);
+    }
+  });
+  it('deterministic count-based feedback with the mandated wording', () => {
+    const r = scoreClosedQuestion(q, { tipo: 'chiusa_multipla', selectedIds: ['a', 'b', 'd'] });
+    if (!r.evaluable) throw new Error('evaluable');
+    expect(r.feedback).toBe('2 risposte corrette su 3; 1 selezione errata.');
+  });
+  it('feedback never leaks option ids (distinctive ids)', () => {
+    const qd = tq(
       0,
+      'chiusa_multipla',
+      6,
+      ['SOLID_ONE', 'SOLID_TWO', 'SOLID_THREE'],
+      ['SOLID_ONE', 'SOLID_TWO', 'SOLID_THREE', 'WRONG_ONE', 'WRONG_TWO'],
     );
+    const r = scoreClosedQuestion(qd, {
+      tipo: 'chiusa_multipla',
+      selectedIds: ['SOLID_ONE', 'SOLID_TWO', 'WRONG_ONE'],
+    });
+    if (!r.evaluable) throw new Error('evaluable');
+    for (const id of ['SOLID_ONE', 'SOLID_TWO', 'SOLID_THREE', 'WRONG_ONE', 'WRONG_TWO']) {
+      expect(r.feedback).not.toContain(id);
+    }
   });
-  it('empty → 0', () => {
-    expect(scoreClosedQuestion(q, { tipo: 'chiusa_multipla', selectedIds: [] })).toBe(0);
+  it('all correct → dedicated positive feedback', () => {
+    const r = scoreClosedQuestion(q, { tipo: 'chiusa_multipla', selectedIds: ['a', 'b', 'c'] });
+    if (!r.evaluable) throw new Error('evaluable');
+    expect(r.feedback).toBe('Tutte le risposte corrette sono state selezionate.');
   });
-  it('sameIdSet dedupes', () => {
+  it('missing/malformed options or solution → non-evaluable', () => {
+    const noOptions = tq(0, 'chiusa_multipla', 6, ['a', 'b']); // no optionIds
+    expect(scoreClosedQuestion(noOptions, { tipo: 'chiusa_multipla', selectedIds: ['a'] })).toEqual(
+      {
+        evaluable: false,
+      },
+    );
+    const solOutsideOptions = tq(0, 'chiusa_multipla', 6, ['a', 'z'], ['a', 'b', 'c']);
+    expect(
+      scoreClosedQuestion(solOutsideOptions, { tipo: 'chiusa_multipla', selectedIds: ['a'] }),
+    ).toEqual({ evaluable: false });
+  });
+  it('sameIdSet dedupes (helper)', () => {
     expect(sameIdSet(['a', 'a', 'b'], ['b', 'a'])).toBe(true);
   });
 });
@@ -980,6 +1063,56 @@ describe('runExecution — general feedback (M5-04B)', () => {
     // 4/4 → maximum → positive feedback, deterministic and mock-marked.
     expect(gf).toBe(buildMockGeneralFeedback(4, 4));
     expect(gf).toContain('[mock]');
+  });
+
+  it('M5-04C: a partial multipla is stored with its points+feedback and drives the final totals', async () => {
+    const store = new FakeStore();
+    store.verification = {
+      ownerUid: OWNER,
+      status: 'active',
+      // Single multipla: 3 correct (a,b,c) + 2 wrong (d,e), max 6.
+      teacherQuestions: [tq(0, 'chiusa_multipla', 6, ['a', 'b', 'c'], ['a', 'b', 'c', 'd', 'e'])],
+    };
+    store.submissions.set(sid('s1'), {
+      ownerUid: OWNER,
+      verificationId: VERIF,
+      studentUid: 's1',
+      status: 'submitted',
+      answers: { '0': { tipo: 'chiusa_multipla', selectedIds: ['a', 'b'] } }, // 2/3, 0 wrong → 4
+    });
+    const grader = fullMarkGrader();
+    const res = await runExecution(req([sid('s1')]), baseDeps(store, grader));
+    expect(res.status).toBe('completed');
+    expect(grader.grade).not.toHaveBeenCalled();
+    const correction = store.corrections.get(sid('s1'))!;
+    expect(correction.evaluations['0']!.points).toBe(4); // partial credit
+    expect(correction.evaluations['0']!.feedback).toBe(
+      '2 risposte corrette su 3; 0 selezioni errate.',
+    );
+    // General feedback uses the FINAL total incl. the partial multipla (4/6).
+    expect(store.generalFeedbacks.get(sid('s1'))).toBe(buildMockGeneralFeedback(4, 6));
+  });
+
+  it('M5-04C: a malformed closed solution leaves the question unevaluated (partial), no unjust zero', async () => {
+    const store = new FakeStore();
+    store.verification = {
+      ownerUid: OWNER,
+      status: 'active',
+      // chiusa_singola with a malformed 2-element solution → non-evaluable.
+      teacherQuestions: [tq(0, 'chiusa_singola', 2, ['a', 'b'])],
+    };
+    store.submissions.set(sid('s1'), {
+      ownerUid: OWNER,
+      verificationId: VERIF,
+      studentUid: 's1',
+      status: 'submitted',
+      answers: { '0': { tipo: 'chiusa_singola', selectedId: 'a' } },
+    });
+    const res = await runExecution(req([sid('s1')]), baseDeps(store, new MockAiGrader()));
+    // Nothing gradable was written → partial, and the question stays null (no 0).
+    expect(res.results[0]).toMatchObject({ outcome: 'partial', closedSkipped: 1, closedGraded: 0 });
+    const correction = store.corrections.get(sid('s1'));
+    expect(correction?.evaluations['0']?.points ?? null).toBeNull();
   });
 
   it('maximum result yields a coherent positive general feedback', async () => {

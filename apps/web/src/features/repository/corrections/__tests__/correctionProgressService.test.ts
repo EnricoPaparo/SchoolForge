@@ -28,6 +28,10 @@ describe('loadCorrectionProgressByStudent (M5-03 «Valutate»)', () => {
       docsFrom([
         {
           studentUid: 's1',
+          status: 'in_progress',
+          totalPoints: 2,
+          maxPoints: 6,
+          percentage: 33,
           evaluations: {
             q1: { points: 2, maxPoints: 2 },
             q2: { points: null, maxPoints: 3 },
@@ -36,6 +40,11 @@ describe('loadCorrectionProgressByStudent (M5-03 «Valutate»)', () => {
         },
         {
           studentUid: 's2',
+          status: 'in_progress',
+          totalPoints: 0,
+          maxPoints: 4,
+          percentage: 0,
+          generalFeedback: null,
           evaluations: {
             q1: { points: null, maxPoints: 2 },
             q2: { points: null, maxPoints: 2 },
@@ -45,8 +54,53 @@ describe('loadCorrectionProgressByStudent (M5-03 «Valutate»)', () => {
     );
 
     const map = await loadCorrectionProgressByStudent('ver1', fakeDb);
-    expect(map.get('s1')).toEqual({ evaluated: 2, total: 3 });
-    expect(map.get('s2')).toEqual({ evaluated: 0, total: 2 });
+    // s1 has evaluated questions → hasContent true.
+    expect(map.get('s1')).toEqual({
+      status: 'in_progress',
+      evaluated: 2,
+      total: 3,
+      totalPoints: 2,
+      maxPoints: 6,
+      percentage: 33,
+      hasContent: true,
+    });
+    // s2 has no points, no feedback, no generalFeedback → hasContent false.
+    expect(map.get('s2')).toEqual({
+      status: 'in_progress',
+      evaluated: 0,
+      total: 2,
+      totalPoints: 0,
+      maxPoints: 4,
+      percentage: 0,
+      hasContent: false,
+    });
+  });
+
+  it('marks hasContent true when only a per-question or general feedback is present', async () => {
+    mockGetDocs.mockResolvedValueOnce(
+      docsFrom([
+        {
+          studentUid: 'sfeed',
+          status: 'in_progress',
+          totalPoints: 0,
+          maxPoints: 2,
+          percentage: 0,
+          evaluations: { q1: { points: null, maxPoints: 2, feedback: 'nota' } },
+        },
+        {
+          studentUid: 'sgen',
+          status: 'in_progress',
+          totalPoints: 0,
+          maxPoints: 2,
+          percentage: 0,
+          generalFeedback: '[mock] commento',
+          evaluations: { q1: { points: null, maxPoints: 2 } },
+        },
+      ]),
+    );
+    const map = await loadCorrectionProgressByStudent('ver1', fakeDb);
+    expect(map.get('sfeed')!.hasContent).toBe(true);
+    expect(map.get('sgen')!.hasContent).toBe(true);
   });
 
   it('returns an empty map when there are no corrections', async () => {

@@ -252,6 +252,17 @@ export function IconUpload(props: IconProps = {}) {
   );
 }
 
+/** Eraser — azzera correzione (M5-04C) */
+export function IconEraser(props: IconProps = {}) {
+  return icon(
+    <>
+      <path d="M7 21h13" />
+      <path d="M20 13.5 12.5 21H7l-3.5-3.5a2 2 0 0 1 0-2.83l8.5-8.5a2 2 0 0 1 2.83 0l3.34 3.34a2 2 0 0 1 0 2.83z" />
+    </>,
+    props,
+  );
+}
+
 /** Sparkles — AI-assisted actions (Correggi con IA) */
 export function IconSparkles(props: IconProps = {}) {
   return icon(
