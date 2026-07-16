@@ -3,16 +3,15 @@
  *
  * Orchestrazione pura (nessuna dipendenza `firebase-admin`/`firebase-functions`):
  * eleggibilità per consegna, scoring **deterministico** delle domande chiuse,
- * valutazione delle aperte tramite l'interfaccia `AiGrader` (in M5-02 solo
- * `MockAiGrader`), validazione rigorosa dell'output, merge nelle `evaluations`
+ * valutazione delle aperte tramite l'interfaccia `AiGrader`, validazione
+ * rigorosa dell'output, merge nelle `evaluations`
  * senza sovrascrivere valutazioni esistenti, idempotenza via
  * `aiCorrectionRuns/{requestId}`. Tutti gli accessi Firestore passano da un
  * insieme di **porte** iniettate (implementate con l'Admin SDK nel wiring),
  * così il motore è testabile in isolamento senza rete né emulatore.
  *
- * Vincoli M5-02: solo provider mock, **zero token reali**, **costo 0**,
- * **nessuna chiamata esterna**, **nessun** completamento/restituzione
- * automatici. Non si fida mai di testi/dati del client: il client invia solo
+ * Il motore resta provider-agnostic e non effettua **nessun** completamento o
+ * restituzione automatica. Non si fida mai di testi/dati del client: il client invia solo
  * `verificationId`/`submissionIds`/`requestId`; domande, risposte e soluzioni
  * sono rilette server-side dalle porte.
  */
@@ -26,6 +25,7 @@ import {
   MAX_GENERAL_FEEDBACK_CHARS,
   type AiCorrectionAuthDeps,
   type AiCorrectionRequest,
+  type AiEnabledFeatureMode,
   type AiGrader,
   type AiGraderInput,
 } from './aiCorrectionGatewayCore.js';
@@ -156,7 +156,7 @@ export interface AiCorrectionCounts {
 }
 
 export interface AiCorrectionPreviewResponse {
-  mode: 'mock';
+  mode: AiEnabledFeatureMode;
   phase: 'preview';
   requestId: string;
   verificationId: string;
@@ -167,7 +167,7 @@ export interface AiCorrectionPreviewResponse {
 }
 
 export interface AiCorrectionRunResponse {
-  mode: 'mock';
+  mode: AiEnabledFeatureMode;
   phase: 'run';
   requestId: string;
   verificationId: string;
@@ -551,6 +551,8 @@ export interface BeginRunMeta {
   verificationId: string;
   selectionHash: string;
   submissionCount: number;
+  provider: string;
+  model?: string;
   /** Identificatore del tentativo che prova ad acquisire la lease. */
   executionId: string;
   /** Durata della lease (ms) da applicare in caso di acquisizione. */
@@ -622,6 +624,8 @@ async function mapWithConcurrency<T, R>(
 
 export interface PreviewDeps extends AiCorrectionAuthDeps {
   ports: EngineReadPorts;
+  /** Validazione opzionale della configurazione provider, dopo auth/feature gate. */
+  validateProviderConfiguration?: () => void;
 }
 
 /**
@@ -634,6 +638,7 @@ export async function runPreview(
   deps: PreviewDeps,
 ): Promise<AiCorrectionPreviewResponse> {
   const request = await authorizeAndValidate(rawInput, deps);
+  deps.validateProviderConfiguration?.();
   const verification = await deps.ports.loadVerification(request.verificationId);
   const teacherQuestions = resolveTeacherQuestions(verification, deps.callerUid);
 
@@ -690,7 +695,7 @@ export async function runPreview(
   }
 
   return {
-    mode: 'mock',
+    mode: deps.featureMode === 'openai' ? 'openai' : 'mock',
     phase: 'preview',
     requestId: request.requestId,
     verificationId: request.verificationId,
@@ -705,7 +710,8 @@ export async function runPreview(
 
 export interface RunDeps extends AiCorrectionAuthDeps {
   ports: EngineWritePorts;
-  grader: AiGrader;
+  /** Factory lazy per validare secret/config solo dopo auth, prima di ogni scrittura. */
+  grader: AiGrader | (() => AiGrader);
 }
 
 /**
@@ -720,6 +726,8 @@ export async function runExecution(
   deps: RunDeps,
 ): Promise<AiCorrectionRunResponse> {
   const request = await authorizeAndValidate(rawInput, deps);
+  const grader = typeof deps.grader === 'function' ? deps.grader() : deps.grader;
+  const mode: AiEnabledFeatureMode = deps.featureMode === 'openai' ? 'openai' : 'mock';
   const ownerUid = deps.callerUid!;
   const selectionHash = computeSelectionHash(request.verificationId, request.submissionIds);
   const executionId = randomUUID();
@@ -731,6 +739,8 @@ export async function runExecution(
     verificationId: request.verificationId,
     selectionHash,
     submissionCount: request.submissionIds.length,
+    provider: grader.id,
+    ...(grader.model ? { model: grader.model } : {}),
     executionId,
     leaseMs: RUN_LEASE_MS,
   });
@@ -744,7 +754,7 @@ export async function runExecution(
   if (begin.state === 'locked') {
     // Un altro tentativo possiede una lease valida: NON richiamare grader né
     // commitSubmission. Ritorna un esito "in corso" senza rielaborare.
-    return lockedResponse(request);
+    return lockedResponse(request, mode);
   }
   // begin.state === 'acquired' → questo executionId possiede la lease.
 
@@ -790,7 +800,7 @@ export async function runExecution(
         submission: submission!,
         teacherQuestions: teacherQuestions ?? [],
         byOrder,
-        grader: deps.grader,
+        grader,
         commit: deps.ports.commitSubmission,
       });
     },
@@ -844,7 +854,7 @@ export async function runExecution(
         : 'completed';
 
   const response: AiCorrectionRunResponse = {
-    mode: 'mock',
+    mode,
     phase: 'run',
     requestId: request.requestId,
     verificationId: request.verificationId,
@@ -876,9 +886,12 @@ interface GradeOutcome {
  * nessuna rielaborazione, nessuna scrittura. `idempotentReplay: true` segnala al
  * chiamante che questa invocazione non ha elaborato.
  */
-function lockedResponse(request: AiCorrectionRequest): AiCorrectionRunResponse {
+function lockedResponse(
+  request: AiCorrectionRequest,
+  mode: AiEnabledFeatureMode,
+): AiCorrectionRunResponse {
   return {
-    mode: 'mock',
+    mode,
     phase: 'run',
     requestId: request.requestId,
     verificationId: request.verificationId,
@@ -1001,7 +1014,23 @@ async function gradeEligible(
         new Map(eligible.openOrders.map((o) => [o, ctx.byOrder.get(o)!.maxPoints])),
       );
     } catch {
-      validated = new Map(); // output non ottenibile → tutte le aperte restano null
+      // Errore di trasporto/parsing/validazione dell'adapter: fail atomico per
+      // l'intera consegna. Anche le chiuse calcolate in memoria non vengono
+      // persistite, così non esiste una scrittura parziale mascherata.
+      return {
+        result: {
+          submissionId,
+          outcome: 'failed',
+          closedGraded: 0,
+          openGraded: 0,
+          openSkipped: eligible.openOrders.length,
+          closedSkipped: 0,
+          alreadyIgnored: eligible.alreadyGraded,
+          reason: 'write_error',
+        },
+        openTokensEstimated,
+        openTokensActual,
+      };
     }
     for (const order of eligible.openOrders) {
       const score = validated.get(order);

@@ -59,21 +59,13 @@ describe('resolveAiFeatureMode', () => {
     expect(resolveAiFeatureMode({ AI_CORRECTION_MODE: undefined })).toBe('disabled');
   });
 
-  it('enables mock only for the exact string "mock"', () => {
+  it('enables only the exact mock and openai modes', () => {
     expect(resolveAiFeatureMode({ AI_CORRECTION_MODE: 'mock' })).toBe('mock');
+    expect(resolveAiFeatureMode({ AI_CORRECTION_MODE: 'openai' })).toBe('openai');
   });
 
   it('treats any unrecognized value as disabled (no implicit fallback to a real provider)', () => {
-    for (const v of [
-      'MOCK',
-      'real',
-      'openai',
-      'anthropic',
-      'gemini',
-      'enabled',
-      'true',
-      ' mock ',
-    ]) {
+    for (const v of ['MOCK', 'real', 'anthropic', 'gemini', 'enabled', 'true', ' mock ']) {
       expect(resolveAiFeatureMode({ AI_CORRECTION_MODE: v })).toBe('disabled');
     }
   });

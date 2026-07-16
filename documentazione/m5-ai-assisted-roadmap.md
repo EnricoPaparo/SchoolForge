@@ -1,7 +1,7 @@
 # M5 — Correzione assistita da IA · Roadmap e contratto (M5-00)
 
-**Data:** 15 luglio 2026 · **Fase:** M5-00 (contratto/cost model/documentazione) **completata**; **M5-01 implementato** (gateway server-side minimale, **solo mock**).
-**Natura:** progettazione evidence-based. **M5-00** non ha toccato codice. **M5-01** ha aggiunto due Cloud Functions v2 `onCall` (`aiCorrectionPreview`/`aiCorrectionRun`) in **modalità mock deterministica** — **nessun provider reale, nessuna API key, nessuna chiamata di rete, zero token, nessuna scrittura Firestore, nessuna UI** — vedi §16 (M5-01). Il resto della roadmap (M5-02→M5-05) **non** è implementato.
+**Data:** 16 luglio 2026 · **Fase:** M5-00→M5-04C implementati; **M5-05A/B preparati**; **M5-05C implementato** con adapter e harness, provider reale ancora disabilitato.
+**Natura:** roadmap incrementale evidence-based. M5-01→M5-04C hanno costruito e integrato il flusso mock; M5-05A/B hanno preparato decisione e dataset; M5-05C aggiunge adapter e harness senza attivare il provider. **Nessuna API key, chiamata reale, costo o deploy; M5 e G7 non sono completati.**
 **Codice ispezionato (sola lettura):** `types/firestore.ts` (`SubmissionDoc`, `CorrectionDoc`, `QuestionEvaluation`, `CorrectionEventDoc`, `CorrectionReturnDoc`), `features/repository/corrections/*` (`correctionContract.ts`, `correctionsService.ts`, `correctionWorkspaceLoader.ts`, `correctionRegisterExport.ts`), `features/repository/verifications/submissionsMonitorService.ts`, `features/teacher/VerificationsView.tsx` (tabella «Consegne online» + apertura `CorrectionWorkspace`), `firestore.rules` (matrice `corrections`/`correctionEvents`/`correctionReturns`).
 
 > **Questa fase supera** la vecchia roadmap generica **M5-A..E** e i contratti stale `proposeCorrection`/`approveCorrection`/`bulkApproveCorrections`/`enableAutomaticCorrection` (che ipotizzavano una «proposta IA» persistente e una correzione automatica). Il nuovo modello è: **una sola azione batch «Correggi con IA» che scrive direttamente nelle `evaluations` di correzioni `in_progress`**, restando bozze modificabili dal docente. Vedi §14 (provider-agnostic) e §16 (roadmap M5-00→M5-05).
@@ -364,7 +364,7 @@ Ulteriori limiti prudenti (max consegne/aperte/caratteri/token per operazione, �
 
 **Forma di `aiCorrectionRuns/{requestId}` (M5-02).** Documento **owner-only**, **solo metadata**: `ownerUid`/`actorUid`, `verificationId`, `requestId`, `mode`/`provider: 'mock'`, `status`, timestamp, **`selectionHash`** (hash deterministico FNV-1a della selezione, mai risposte/contenuti), **`executionId`** + **`leaseExpiresAt`** (lease di concorrenza), conteggi, `tokensEstimated`/`tokensActual`, `cost: 0`, ed **esito sintetico per consegna** (submissionId + outcome + conteggi + eventuale codice motivo). **Vietati** e assenti: testi di domande, risposte, soluzioni, feedback, prompt, output grezzo, nomi, email. **Retention: ancora non decisa** — è l'Human Gate **HG-M5-4** (da definire prima di M5-05); nessun valore è fissato qui. La collezione **non** è pensata per lettura diretta dal client: il risultato è restituito dalla Function.
 
-**Resta a M5-05 (non implementato):** provider reale su DEV + Secret Manager + budget + Gate G7 = **M5-05** (HG-M5-1/2/3/4 bloccanti). **M5-03 e M5-04 sono implementati** (UI batch «Correggi con IA» + azioni massive Completa/Riapri/Restituisci). **M5 non è completo.**
+**Resta a M5-05D (non implementato):** configurazione/attivazione reale su DEV, benchmark effettivo, budget/hard stop e Gate G7 (HG-M5-1/2/3/4 bloccanti). **M5 non è completo.**
 
 ### 16.3 Stato M5-03 (implementato)
 
@@ -387,7 +387,7 @@ Ulteriori limiti prudenti (max consegne/aperte/caratteri/token per operazione, �
 - **Rifinitura UX (M5-04A)**: riga azioni condivisa nei dialog (`.dialog-actions`: gap coerente, pulsanti mai attaccati, responsive full-width sotto breakpoint stretto); toolbar batch con **icone coerenti** (`IconSparkles`/`IconCircleCheck`/`IconRotateCcw`/`IconSend`, dal set interno `components/icons.tsx`, nessuna libreria) e **dimensioni uniformi** su griglia responsive 4 → 2 → 1 colonne.
 - **Invarianti**: nessuna modifica alle `evaluations`; nessuna restituzione automatica dopo «Correggi con IA»; nessuna nuova Cloud Function; nessuna modifica ad `aiCorrectionPreview`/`aiCorrectionRun`; **nessuna** modifica alle Security Rules (i service M4 scrivono già entro le Rules esistenti); nessun listener/polling; nessuna lettura/scrittura Firestore aggiuntiva; nessun provider reale o chiamata esterna.
 
-**Resta a M5-05** (non implementato): provider reale su DEV dietro flag, Secret Manager, budget, smoke, audit/costi entro soglie, **Gate G7** (HG-M5-1/2/3/4 bloccanti). **M5 non è completo.**
+**Resta a M5-05D** (non implementato): attivazione reale su DEV, secret valorizzato, benchmark, budget, smoke, audit/costi entro soglie e **Gate G7**. **M5 non è completo.**
 
 ### 16.5 Stato M5-04B (implementato) — feedback generale della consegna
 
@@ -400,7 +400,7 @@ Ulteriori limiti prudenti (max consegne/aperte/caratteri/token per operazione, �
 - **Privacy**: il testo del feedback **non** è mai scritto in `aiCorrectionRuns` (solo metadata).
 - **Invarianti**: nessuna nuova Cloud Function, nessuna nuova chiamata IA (una sola per consegna), nessuna modifica a Rules/indici/schema, nessuna nuova dipendenza, nessun provider reale.
 
-**Resta a M5-05** (non implementato): provider reale su DEV, Secret Manager, budget, Gate G7. **M5 non è completo.**
+**Resta a M5-05D** (non implementato): attivazione reale su DEV, secret valorizzato, benchmark, budget e Gate G7. **M5 non è completo.**
 
 ### 16.6 Stato M5-04C (implementato) — scoring chiuse + «Azzera correzione»
 
@@ -414,7 +414,20 @@ Ulteriori limiti prudenti (max consegne/aperte/caratteri/token per operazione, �
 
 **Invarianti M5-04C:** nessun cambiamento al provider (solo mock), nessuna nuova dipendenza, nessuna modifica a indici/schema; la sola modifica alle Rules è il nuovo evento `correctionCleared` (append-only, owner-only, `in_progress → in_progress`, timestamp server). Nessuna modifica alla consegna dello studente né al modello di visibilità.
 
-**Resta a M5-05** (non implementato): provider reale su DEV, Secret Manager, budget, Gate G7. **M5 non è completo.**
+**Resta a M5-05D** (non implementato): attivazione reale su DEV, secret valorizzato, benchmark, budget e Gate G7. **M5 non è completo.**
+
+---
+
+### 16.7 Stato M5-05C (implementato) — adapter OpenAI e benchmark harness disabilitati
+
+- `OpenAiGrader` implementa `AiGrader` usando l'SDK Node/TypeScript ufficiale e la Responses API con Structured Outputs (`text.format`, JSON Schema strict). Costruzione del payload, trasporto e validazione applicativa restano separati; il transport è iniettato nei test.
+- Modalità server-side esplicite: `disabled|mock|openai`, con default `disabled` e nessun fallback silenzioso. `openai` richiede modello esplicito e secret disponibile; configurazione incompleta produce `provider_config_invalid` prima di run metadata, scritture o chiamate provider.
+- Il binding Functions v2 `OPENAI_API_KEY` è associato soltanto ad `aiCorrectionRun`. Questa fase **non crea né valorizza il secret**, non configura un modello, non abilita `openai` e non esegue deploy.
+- Una richiesta contiene tutte e sole le aperte eleggibili della consegna. Sono esclusi nomi, email, UID, classe, corso/lezione completa e domande chiuse; il feedback generale resta nella stessa risposta.
+- Timeout massimo 60 secondi per tentativo; retry SDK disattivati; al massimo un retry applicativo per errori transitori. Output OpenAI incompleto, malformato o fuori range è rifiutato prima di merge e scrittura; anche le chiuse calcolate in memoria non vengono persistite in quella consegna.
+- `m5BenchmarkHarness.ts` legge il dataset sintetico M5, usa i raggruppamenti `benchmarkSubmissions`, accetta un `AiGrader` iniettato e produce un report in memoria con punteggi, feedback, latenza, usage e flag di output invalido. Non promuove modelli e non modifica gli intervalli attesi.
+
+**Stato operativo:** provider reale disabilitato, nessuna API key, nessuna chiamata reale, nessun costo e nessun deploy. Human Gate M5-05 e Gate G7 restano aperti; attivazione DEV, benchmark reale, budget/hard stop e decisione finale appartengono a M5-05D.
 
 ---
 
@@ -428,6 +441,7 @@ Ulteriori limiti prudenti (max consegne/aperte/caratteri/token per operazione, �
 - **M5-04B:** feedback generale prodotto nella **stessa** chiamata delle aperte (nessuna seconda chiamata), ≤ 700 caratteri, nessun dato personale, tono professionale; applicato al campo `generalFeedback` esistente **solo** se la consegna è interamente valutata e il docente non ne ha già uno (mai sovrascritto); sole chiuse → deterministico senza grader, **0 token/costo**; totali finali; **validazione atomica**: output del feedback invalido → intero output del grader scartato (niente punteggi/feedback/commit, consegna `failed`), nessuna scrittura parziale, le altre consegne proseguono; quota token per il feedback solo per consegne con aperte (preview = run); mock a `tokensActual`/`costActual` 0; nessun contenuto in `aiCorrectionRuns`; nessuna modifica a Rules/indici/schema.
 - **M5-04C:** chiusa_singola canonica `["a"]` e legacy `"a"` → max; errata/non-fornita → 0; soluzione malformata → non valutabile (mai zero); chiusa_multipla con la formula reward/penalty (esempi 4/6/1/0/0), ordine/duplicati irrilevanti, ID sconosciuti penalizzati, sempre `0..max` e multiplo di 0,25; feedback deterministici solo-conteggi senza ID/soluzioni; **0 grader/token/costo** per le chiuse; feedback generale sui totali finali coi parziali; `clearCorrection` atomico (azzera punti+feedback+generale, ricalcola totali, mirror, `in_progress`, un solo evento `correctionCleared`, no-op se nulla, rifiuta completed/returned, nessuna scrittura parziale su race); UI gomma per riga con conferma distruttiva, selezione preservata, IA rilanciabile; Rules `correctionCleared` owner-only append-only con test mirati; nessuna migrazione degli zeri persistiti.
 - **M5-05:** provider reale solo su DEV dietro flag; **prerequisiti bloccanti HG-M5-1/2/3/4 soddisfatti**; smoke su casi reali; audit/costi osservabili entro le soglie; nessun web/retrieval/tool; evidenze per **G7**.
+- **M5-05C:** adapter OpenAI e harness testabili senza rete; default `disabled`; `mock` invariato; `openai` fail-closed senza modello/secret; Structured Outputs + validazione applicativa; timeout 60 s, retry massimo 1 senza moltiplicazione SDK; nessun secret creato, chiamata reale, costo, deploy o superamento di Human Gate/G7.
 
 ---
 

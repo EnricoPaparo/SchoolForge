@@ -1,7 +1,7 @@
 # SchoolForge — Sicurezza e protezione dei dati
 
 **Versione:** 3.0
-**Stato:** in vigore — controlli implementati da F-04 in avanti (M1, M2, M3-lite, RE, M3-full); M3-full completato con Gate G5 superato (vedi `documentazione/evidenze/g5-m3-full-checklist-finale.md`); M4-00→M4-04 completati, incluso Registro Correzioni ed export **CSV e PDF** locali owner-only — export **Markdown rinviato**; **Gate G6 superato**; **M5 (correzione assistita da IA): M5-00 progettato, M5-01+M5-02+M5-03+M5-04 implementati** (motore server-side `onCall` in **modalità mock**: scoring chiuse deterministico, aperte via `MockAiGrader`, scritture atomiche M4 via Admin SDK, idempotenza `aiCorrectionRuns`; 0 token reali, nessuna chiamata esterna; **M5-03/M5-04** UI batch client-only: «Correggi con IA» + azioni massive Completa/Riapri/Restituisci con riuso dei service M4, nessuna Rule modificata) (§8, [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md)); M5-05 non avviato — M5 non completo
+**Stato:** in vigore — Gate G5 e G6 superati; M5-00→M5-04C implementati. M5-05A/B sono preparati e M5-05C aggiunge adapter OpenAI e harness, ma il provider reale resta disabilitato: nessuna key, chiamata, costo o deploy; Human Gate e G7 ancora aperti (§8, [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md)). **M5 non è completo.**
 
 ---
 
@@ -30,7 +30,7 @@ Il modello precedente (studente non autenticato, nome+cognome autodichiarati, lo
 | Verifica attiva | Modifica retroattiva di fonti/regole | Snapshot pubblicato immutabile all'attivazione; per modificare si duplica la bozza. |
 | Markdown | XSS o asset non sicuri | Parser condiviso, sanitizzazione e whitelist rendering, applicati identicamente a docente e studente. |
 | IA (M5, progettata) | Dati non autorizzati o prompt injection | Autorizzazione **per ID** (rilettura server-side), contesto chiuso, contenuto studente non attendibile, nessun web/tool, feature flag, validazione output, audit senza contenuti (§8). |
-| Segreti IA (M5) | Esposizione in Git/client/log | Secret Manager (dal M5-01), accesso minimo, rotazione; chiave mai lato client/Firestore/log. |
+| Segreti IA (M5) | Esposizione in Git/client/log | Binding Secret Manager predisposto in M5-05C, nessun valore creato; accesso futuro minimo e chiave mai lato client/Firestore/log. |
 
 Le minacce seguenti si applicano a **M3-full** (specifica in `m3-full-roadmap.md`):
 
@@ -226,17 +226,20 @@ Difesa in profondità a livello di trasporto, configurata **solo** in `firebase.
 
 ---
 
-## 8. IA — Modulo 5 (correzione assistita; **M5-01+M5-02+M5-03+M5-04 implementati in mock; provider reale M5-05**)
+## 8. IA — Modulo 5 (correzione assistita; **M5-05C implementato, provider reale disabilitato**)
 
 Contratto completo e mitigazioni in [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) (§11). **Stato M5-01+M5-02:** le due Function `onCall` `aiCorrectionPreview`/`aiCorrectionRun` implementano il motore in **modalità mock deterministica** — autorizzazione owner-only, feature flag `disabled|mock` (default `disabled`, solo server-side), validazione input rigorosa (solo ID), rilettura server-side di verifica/snapshot/submission (mai testi dal client), scoring chiuse deterministico, aperte via `MockAiGrader` con validazione output, scritture atomiche M4 via Admin SDK (mai sovrascrittura), idempotenza `aiCorrectionRuns` (solo metadata). **Stato M5-03:** UI batch client-only (`apps/web`) che consuma solo le callable mock — il client costruisce il **payload chiuso** (`buildRequest`: solo `verificationId`/`submissionIds`/`requestId`, mai testi/risposte/soluzioni/nomi/email), non legge mai direttamente `aiCorrectionRuns`, «Valutate» arriva da una singola lettura mirata owner-only delle `corrections` (nessuna Rule modificata, nessun listener/polling), errori mostrati senza dettagli sensibili. **Stato M5-04:** azioni massive Completa/Riapri/Restituisci client-only che **riusano** i service M4 (`completeCorrection`/`reopenCorrection`/`returnCorrection`) — nessuna nuova Cloud Function, **nessuna modifica alle Security Rules** (le scritture passano dalle Rules M4 già esistenti), nessuna modifica alle `evaluations`, nessuna restituzione automatica; eleggibilità calcolata sulla stessa lettura owner-only, concorrenza limitata a 3, un errore per-riga non blocca le altre. **Zero token reali, costo 0, nessuna chiamata esterna.** Sintesi degli invarianti di sicurezza (già applicati; provider reale/Secret/budget = M5-05):
 
-- **Feature flag** globale `disabled|mock` risolto **solo** da configurazione server-side (`AI_CORRECTION_MODE`), default sicuro `disabled`, nessun fallback implicito verso un provider reale (che non è nel codice fino a M5-05). Provider/modello reali = C-02, Human Gate aperto — contratto **provider-agnostic**.
+**M5-05C** aggiunge adapter OpenAI e harness sintetico testabili senza rete, ma lascia il provider reale disabilitato: nessuna key, configurazione, chiamata o deploy; Human Gate e G7 restano aperti.
+
+- **Feature flag** globale `disabled|mock|openai` risolto **solo** da configurazione server-side (`AI_CORRECTION_MODE`), default sicuro `disabled`, nessun fallback implicito. `openai` richiede modello e secret validi; in caso contrario fallisce prima di run metadata, scritture o chiamate. Provider/modello definitivi = Human Gate aperto.
 - **Gateway server-side owner-only:** verifica dell'uid dal token Firebase e confronto con `settings/owner` (stesso pattern del `repositoryGateway`) — **implementato in M5-01**.
 - **Autorizzazione per ID, mai per testo:** il client invia solo ID (`verificationId`, `submissionIds`, `requestId`); il server rilegge submission, snapshot e soluzioni via Admin SDK. Il client non può iniettare testi arbitrari come parte della verifica.
 - **Contesto IA chiuso:** solo domanda snapshot, soluzione/criterio, `maxPoints` e risposta studente; nessun dato personale (nome/email) inviato al provider.
 - **Contenuto studente = non attendibile e potenzialmente ostile:** trattato come dato con delimitatori, mai come istruzione. **Vietati** browsing web, retrieval, tool esterni, code execution; l'IA non attiva verifiche, non invia email, non cancella dati, non completa/restituisce correzioni.
 - **Validazione output server-side:** schema rigido + punteggi `0..maxPoints` multipli di 0,25 (regole di `correctionContract.ts`); output non valido scartato senza corrompere la correzione; idempotenza via `requestId`.
-- **Chiave API** solo in **Secret Manager**, letta unicamente dalla Cloud Function; **mai** in client, Firestore, Markdown, Git o log. **Nessun** log contiene risposte, soluzioni o dati personali.
+- **Chiave API:** M5-05C predispone il solo binding `OPENAI_API_KEY` su `aiCorrectionRun`; nessun secret è creato o valorizzato. La chiave non è mai letta da client, Firestore o file versionati e non è mai stampata. Prompt/output grezzi non entrano in Firestore o log.
+- **Trasporto OpenAI:** Responses API senza tool, web, retrieval o file; Structured Outputs strict più validazione applicativa; timeout 60 s per tentativo; retry SDK disattivati e massimo un retry applicativo per errori transitori. Test e harness usano transport/grader fake senza rete.
 - **La correzione automatica** (C-03, Gate G8) resta **fuori** dalla linea M5-00→M5-05.
 
 ---
