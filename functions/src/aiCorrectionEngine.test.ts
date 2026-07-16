@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  AiGatewayError,
   MockAiGrader,
   buildMockGeneralFeedback,
   type AiGrader,
@@ -606,6 +607,46 @@ describe('runPreview', () => {
 // ── runExecution ──────────────────────────────────────────────────────────────
 
 describe('runExecution — closed scoring + open grading', () => {
+  it('resolves OpenAI configuration after auth but before run metadata or provider calls', async () => {
+    const store = new FakeStore();
+    const providerCall = vi.fn();
+    await expect(
+      runExecution(req([sid('s1')]), {
+        callerUid: OWNER,
+        getOwnerUid: async () => OWNER,
+        featureMode: 'openai',
+        ports: store,
+        grader: () => {
+          throw new AiGatewayError('provider_config_invalid', 'Configurazione mancante.');
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'provider_config_invalid' });
+    expect(store.runs.size).toBe(0);
+    expect(store.commitCalls).toBe(0);
+    expect(providerCall).not.toHaveBeenCalled();
+  });
+
+  it('does not persist deterministic closed scores when the provider adapter rejects', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const grader: AiGrader = {
+      id: 'openai',
+      model: 'test-model',
+      grade: vi.fn(async () => {
+        throw new Error('invalid structured output');
+      }),
+    };
+
+    const result = await runExecution(req([sid('s1')]), {
+      ...baseDeps(store, grader),
+      featureMode: 'openai',
+    });
+
+    expect(result.results[0]).toMatchObject({ outcome: 'failed', closedGraded: 0, openGraded: 0 });
+    expect(store.commitCalls).toBe(0);
+    expect(store.corrections.has(sid('s1'))).toBe(false);
+  });
+
   it('grades closed deterministically and open via a single grader call per submission', async () => {
     const store = new FakeStore();
     store.verification = {

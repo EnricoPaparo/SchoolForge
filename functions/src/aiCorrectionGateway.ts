@@ -1,16 +1,17 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import type { CallableRequest, FunctionsErrorCode } from 'firebase-functions/v2/https';
 import * as logger from 'firebase-functions/logger';
+import { defineSecret } from 'firebase-functions/params';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import type { Firestore, Transaction } from 'firebase-admin/firestore';
 import {
   AiGatewayError,
-  MockAiGrader,
   resolveAiFeatureMode,
   type AiCorrectionAuthDeps,
   type AiGatewayErrorCode,
 } from './aiCorrectionGatewayCore.js';
+import { createConfiguredAiGrader, requireConfiguredOpenAiModel } from './aiCorrectionProvider.js';
 import {
   runExecution,
   runPreview,
@@ -32,11 +33,13 @@ import {
  * Due Cloud Functions v2 `onCall`, scale-to-zero, che montano il motore puro di
  * `aiCorrectionEngine.ts` sull'Admin SDK: preflight reale (`aiCorrectionPreview`)
  * ed esecuzione con scritture atomiche per consegna e idempotenza
- * (`aiCorrectionRun`). **Solo `MockAiGrader`**: nessun provider reale, nessuna
- * API key, nessuna chiamata di rete, **costo 0**. Nessun deploy in questa PR.
+ * (`aiCorrectionRun`). M5-05C mantiene il default `disabled`, conserva il mock
+ * e predispone OpenAI con configurazione fail-closed e secret binding non
+ * valorizzato. Nessuna API key, chiamata reale o deploy in questa PR.
  */
 
 export const AI_GATEWAY_REGION = 'us-central1';
+export const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
 
 if (getApps().length === 0) initializeApp();
 
@@ -345,8 +348,9 @@ function beginRun(db: Firestore): EngineWritePorts['beginRun'] {
             ownerUid: meta.ownerUid,
             actorUid: meta.actorUid,
             verificationId: meta.verificationId,
-            mode: 'mock',
-            provider: 'mock',
+            mode: meta.provider,
+            provider: meta.provider,
+            ...(meta.model ? { model: meta.model } : {}),
             status: 'running',
             selectionHash: meta.selectionHash,
             submissionCount: meta.submissionCount,
@@ -437,6 +441,7 @@ function toHttpsError(err: AiGatewayError): HttpsError {
     unauthenticated: 'unauthenticated',
     not_owner: 'permission-denied',
     feature_disabled: 'failed-precondition',
+    provider_config_invalid: 'failed-precondition',
     invalid_input: 'invalid-argument',
     batch_limit_exceeded: 'resource-exhausted',
   };
@@ -449,6 +454,20 @@ function authDeps(request: CallableRequest, db: Firestore): AiCorrectionAuthDeps
     getOwnerUid: () => getOwnerUid(db),
     featureMode: resolveAiFeatureMode(process.env),
   };
+}
+
+function readOpenAiSecret(): string | undefined {
+  try {
+    return OPENAI_API_KEY.value();
+  } catch {
+    return undefined;
+  }
+}
+
+function validatePreviewProviderConfiguration(): void {
+  if (resolveAiFeatureMode(process.env) === 'openai') {
+    requireConfiguredOpenAiModel(process.env.OPENAI_MODEL);
+  }
 }
 
 async function run<T>(
@@ -493,18 +512,33 @@ export const aiCorrectionPreview = onCall(
   { region: AI_GATEWAY_REGION, minInstances: 0, maxInstances: 3 },
   (request) =>
     run('preview', request, (db) =>
-      runPreview(request.data, { ...authDeps(request, db), ports: buildWritePorts(db) }),
+      runPreview(request.data, {
+        ...authDeps(request, db),
+        ports: buildWritePorts(db),
+        validateProviderConfiguration: validatePreviewProviderConfiguration,
+      }),
     ),
 );
 
 export const aiCorrectionRun = onCall(
-  { region: AI_GATEWAY_REGION, minInstances: 0, maxInstances: 3 },
+  {
+    region: AI_GATEWAY_REGION,
+    minInstances: 0,
+    maxInstances: 3,
+    secrets: [OPENAI_API_KEY],
+  },
   (request) =>
     run('run', request, (db) =>
       runExecution(request.data, {
         ...authDeps(request, db),
         ports: buildWritePorts(db),
-        grader: new MockAiGrader(),
+        grader: () =>
+          createConfiguredAiGrader({
+            mode: resolveAiFeatureMode(process.env),
+            openAiModel: process.env.OPENAI_MODEL,
+            openAiApiKey:
+              resolveAiFeatureMode(process.env) === 'openai' ? readOpenAiSecret() : undefined,
+          }),
       }),
     ),
 );

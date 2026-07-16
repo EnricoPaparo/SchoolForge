@@ -80,7 +80,7 @@ L'implementazione deve consentire al docente di:
 
 **Decisione.** M3-lite non usa Cloud Functions: la StudentShell legge Firestore e Cloud Storage direttamente dal client, entro Security Rules che distinguono `ownerUid` da qualunque altro utente autenticato. Le Cloud Functions restano riservate a:
 - un eventuale gateway M3-full (specifica rinviata): `startDigitalAttempt`/`continueDigitalAttempt` per creare participant lock, tentativo, snapshot con soluzioni private, log accesso e token opaco di sessione, e per gestire ripresa/bozza/consegna autorizzate da un cookie HttpOnly;
-- il modulo IA (M5): due Function `onCall` `aiCorrectionPreview`/`aiCorrectionRun` (preview senza provider + esecuzione) chiamano il provider con **contesto chiuso** (solo ID autorizzati, rilettura server-side) e registrano stato/audit minimale in `aiCorrectionRuns/{requestId}` — contratto **provider-agnostic** ([m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md)). **M5-01+M5-02 implementati in modalità mock** (owner-only, feature flag, scoring chiuse deterministico, aperte via `MockAiGrader`, scritture atomiche M4, idempotenza `aiCorrectionRuns`; 0 token, nessuna scrittura in preview, nessuna chiamata esterna); provider reale in M5-05.
+- il modulo IA (M5): due Function `onCall` `aiCorrectionPreview`/`aiCorrectionRun` (preview senza provider + esecuzione) usano un contratto **provider-agnostic** e contesto chiuso. **M5-05C** aggiunge `OpenAiGrader` e il benchmark harness dietro `disabled|mock|openai`, default `disabled`; nessun modello/secret reale è configurato e nessuna chiamata esterna è stata eseguita. `MockAiGrader` resta disponibile e il provider reale richiede Human Gate/G7.
 
 Le operazioni docente (import, pubblicazione, correzione, export) e le letture studente di M3-lite usano Firebase SDK direttamente dal client con Security Rules.
 
@@ -134,7 +134,7 @@ Un eventuale M3-full (specifica rinviata) selezionerebbe dal `publishedSnapshot`
 
 ### ADR-09 — Secret Manager solo per M5
 
-**Decisione.** Secret Manager non è usato nei Moduli 1–4. Viene introdotto in **M5** (dal pacchetto M5-01) esclusivamente per la chiave API del provider IA, letta solo dalla Cloud Function `aiCorrectionRun` e mai lato client/repo/Firestore/log (vedi [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) §11).
+**Decisione.** Secret Manager non è usato nei Moduli 1–4. M5-05C predispone soltanto il binding Functions v2 `OPENAI_API_KEY`, associato esclusivamente ad `aiCorrectionRun`; non crea né valorizza il secret. Se in futuro autorizzata, la chiave sarà letta solo dalla Function e mai da client/repo/Firestore/log.
 
 **Motivazione.** Senza invio email e senza operazioni server-side che richiedano credenziali esterne nei primi quattro moduli, Secret Manager non ha giustificazione fino all'AI (M5/V2).
 
@@ -427,10 +427,8 @@ M3-lite non usa Cloud Functions. Le uniche Cloud Function della baseline corrent
 
 | Funzione | Attore | Scopo |
 |---|---|---|
-| `proposeCorrection` (M5/V2) | SPA docente | Invia contesto chiuso ad AiGateway, salva proposta e audit. |
-| `approveCorrection` (M5/V2) | SPA docente | Applica proposta al record di correzione. |
-| `bulkApproveCorrections` (M5/V2) | SPA docente | Approva batch di proposte con riepilogo esclusioni. |
-| `enableAutomaticCorrection` (M5/V2) | SPA docente | Opt-in per verifica, richiede C-03 e conferma. |
+| `aiCorrectionPreview` (M5/V2) | SPA docente | Preflight owner-only, eleggibilità e stima; nessun grader, nessun token. |
+| `aiCorrectionRun` (M5/V2) | SPA docente | Chiuse deterministiche e aperte tramite `AiGrader`; default disabilitato, provider reale non autorizzato. |
 
 [→ Sequenza correzione AI (V2)](diagrammi/sequence-correzione-ai.md)
 
@@ -452,7 +450,7 @@ Le Security Rules negano allo studente ogni accesso diretto ai documenti tecnici
 - Lo studente legge solo le proiezioni pubbliche dedicate (`publicLessons`; `verifications`/`publishedProjection` quando `state == 'attiva' && visibility == 'public'`).
 - Il renderer Markdown applica sanitizzazione/whitelist; i pool non sono resi visibili nel percorso di fruizione, né docente né studente.
 - Risposte, punteggi e dati personali non sono inseriti nei log tecnici.
-- La chiave API AI (V2) vive in Secret Manager e non raggiunge browser, Firestore, Markdown o repository Git.
+- La futura chiave API AI può vivere solo in Secret Manager e non raggiunge browser, Firestore, Markdown o repository Git; M5-05C predispone il binding ma non crea né valorizza il secret.
 - (M3-full, specifica rinviata) un eventuale token pubblico di verifica non sarebbe enumerabile; il token di sessione digitale sarebbe un cookie `Secure`, `HttpOnly`, `SameSite=Strict`, a vita limitata, con solo l'hash in Firestore; il participant lock userebbe verifica e nome+cognome normalizzati con audit nome/IP/user-agent/timestamp. Nessuno di questi controlli è necessario in M3-lite, che non ha link pubblici né tentativi.
 
 ### 9.2 Backup
@@ -552,5 +550,5 @@ C-02 e C-03 riguardano il Modulo 5 (AI), spostato interamente alla V2; non blocc
 
 | ID | Decisione | Stato |
 |---|---|---|
-| C-02 | Provider AI e modello di default. | Risolta (V2): OpenAI `gpt-4o-mini` o Anthropic Claude `claude-haiku-4-5-20251001`, chiave configurata dal docente. |
+| C-02 | Provider AI e modello di default. | **Aperta:** `gpt-5-nano` è baseline economica del benchmark, non scelta definitiva; nessuna chiave configurata. Decisione subordinata a benchmark e approvazione docente. |
 | C-03 | Regola didattica per correzione automatica. | Rinviata alla V2. |

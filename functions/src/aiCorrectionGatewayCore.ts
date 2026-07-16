@@ -1,8 +1,8 @@
 /**
  * M5-01 — logica pura del gateway della correzione assistita da IA, senza
  * dipendenze `firebase-admin`/`firebase-functions`: feature flag, validazione
- * input, interfaccia provider-agnostic `AiGrader` con l'unica implementazione
- * `MockAiGrader` deterministica, autorizzazione owner e handler `preview`/`run`.
+ * input, interfaccia provider-agnostic `AiGrader`, implementazione mock,
+ * autorizzazione owner e contratti condivisi con l'adapter OpenAI M5-05C.
  *
  * Ambito M5-01 (vedi `documentazione/m5-ai-assisted-roadmap.md`): il gateway è
  * solo **predisposto**. `aiCorrectionPreview` restituisce un risultato **mock**
@@ -27,6 +27,7 @@ export type AiGatewayErrorCode =
   | 'unauthenticated'
   | 'not_owner'
   | 'feature_disabled'
+  | 'provider_config_invalid'
   | 'invalid_input'
   | 'batch_limit_exceeded';
 
@@ -42,27 +43,26 @@ export class AiGatewayError extends Error {
 // ── Feature flag ────────────────────────────────────────────────────────────
 
 /**
- * Modalità del modulo IA, **esplicita**. Non esiste alcun valore che attivi un
- * provider reale in M5-01: l'unico valore operativo è `'mock'`. Il default è
- * `'disabled'` (sicuro) e **non** esiste un fallback implicito verso un
- * provider reale — quel provider non è nemmeno presente nel codice (arriva in
- * M5-05). La modalità è risolta **solo** da configurazione server-side, mai da
- * input del client.
+ * Modalità del modulo IA, **esplicita**. Il default è `'disabled'` e non esiste
+ * alcun fallback implicito: `'mock'` e `'openai'` devono essere selezionati
+ * esattamente da configurazione server-side, mai da input del client.
  */
-export type AiFeatureMode = 'disabled' | 'mock';
+export type AiFeatureMode = 'disabled' | 'mock' | 'openai';
+export type AiEnabledFeatureMode = Exclude<AiFeatureMode, 'disabled'>;
 
 /**
  * Risolve la modalità dalla configurazione server (variabili d'ambiente della
- * Function). Solo il valore **esatto** `'mock'` abilita la modalità mock;
- * `'disabled'`, l'assenza di valore e **qualsiasi altro valore non
- * riconosciuto** danno `'disabled'` (default sicuro, nessun fallback implicito
- * verso un provider reale). Non c'è alcun valore che selezioni un provider
- * reale: è impossibile, in M5-01, confondere `mock` con un provider reale.
+ * Function). Solo i valori esatti `'mock'` e `'openai'` sono operativi;
+ * `'disabled'`, l'assenza e qualunque valore non riconosciuto danno il default
+ * sicuro `'disabled'`.
  */
 export function resolveAiFeatureMode(env: {
   AI_CORRECTION_MODE?: string | undefined;
 }): AiFeatureMode {
-  return env.AI_CORRECTION_MODE === 'mock' ? 'mock' : 'disabled';
+  if (env.AI_CORRECTION_MODE === 'mock' || env.AI_CORRECTION_MODE === 'openai') {
+    return env.AI_CORRECTION_MODE;
+  }
+  return 'disabled';
 }
 
 // ── Contratto request/response ──────────────────────────────────────────────
@@ -212,6 +212,9 @@ export interface AiGraderQuestion {
   questionText: string;
   referenceSolution: string;
   studentAnswer: string;
+  /** Metadati didattici opzionali, inviati solo quando sono già disponibili. */
+  difficulty?: number;
+  weight?: number;
 }
 
 /**
@@ -259,7 +262,7 @@ export interface AiGraderOutput {
    * in `tokensActual`. `MockAiGrader` **non** lo popola → in modalità mock
    * `tokensActual` resta **0** (nessun token reale consumato).
    */
-  usage?: { tokens: number };
+  usage?: { tokens: number; inputTokens?: number; outputTokens?: number };
 }
 
 /** Lunghezza massima del feedback generale della consegna (M5-04B). */
@@ -304,13 +307,15 @@ export function validateGeneralFeedback(value: unknown): string | null {
 }
 
 /**
- * Interfaccia **provider-agnostic**: il dominio non conosce il provider. In
- * M5-01 esiste **solo** `MockAiGrader`; gli adapter reali (OpenAI/Anthropic/
- * Gemini) **non** sono introdotti (arrivano in M5-05 dietro Human Gate).
+ * Interfaccia **provider-agnostic**: il dominio non conosce il provider.
+ * `MockAiGrader` resta disponibile; M5-05C aggiunge `OpenAiGrader` in un modulo
+ * separato, dietro configurazione fail-closed e Human Gate ancora aperto.
  */
 export interface AiGrader {
   /** Identificatore inequivocabile dell'implementazione, es. `'mock'`. */
   readonly id: string;
+  /** Modello configurato, se il grader usa un provider reale. */
+  readonly model?: string;
   grade(input: AiGraderInput): Promise<AiGraderOutput>;
 }
 
