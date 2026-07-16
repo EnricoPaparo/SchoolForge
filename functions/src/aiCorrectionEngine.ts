@@ -583,8 +583,10 @@ export async function runPreview(
     counts.openToGrade += e.openOrders.length;
     counts.alreadyGradedIgnored += e.alreadyGraded;
     if (e.openOrders.length === 0 && e.closedOrders.length > 0) counts.closedOnlySubmissions++;
-    // Token aperte + quota per il feedback generale (una per consegna, M5-04B).
-    tokensEstimated += openTokens + GENERAL_FEEDBACK_TOKEN_ESTIMATE;
+    // Token aperte + quota per il feedback generale (M5-04B) **solo** se ci sono
+    // aperte: le consegne con sole chiuse generano il feedback in modo
+    // deterministico, senza provider → 0 token. Identica a run.
+    tokensEstimated += openTokens + (e.openOrders.length > 0 ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0);
   }
 
   return {
@@ -808,13 +810,16 @@ async function gradeEligible(
   },
 ): Promise<GradeOutcome> {
   const proposed = new Map<number, ValidatedScore>();
-  // Token aperte + quota per il feedback generale (M5-04B): identica a preview.
+  // Token aperte + quota per il feedback generale (M5-04B) **solo** se ci sono
+  // domande aperte (il feedback delle consegne con sole chiuse è deterministico,
+  // non passa dal provider → 0 token). Identica a preview.
+  const hasOpen = eligible.openOrders.length > 0;
   const openTokensEstimated =
     estimateOpenTokensForSubmission(
       ctx.teacherQuestions,
       eligible.openOrders,
       ctx.submission.answers,
-    ) + GENERAL_FEEDBACK_TOKEN_ESTIMATE;
+    ) + (hasOpen ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0);
   let openTokensActual = 0;
 
   // 1) Chiuse: scoring deterministico. Accumula i punti chiusi per il totale
@@ -858,15 +863,34 @@ async function gradeEligible(
       const output = await ctx.grader.grade(graderInput);
       // Usage REALE del provider, se riportato (0 col mock).
       openTokensActual = output.usage?.tokens ?? 0;
+      // M5-04B (validazione ATOMICA): con domande aperte il feedback generale è
+      // **richiesto**. Se è assente, non stringa, vuoto o supera i 700 caratteri
+      // l'**intero** output del grader per questa consegna è invalido: nessun
+      // punteggio IA, nessun feedback, **nessun** commitSubmission → la consegna
+      // è riportata `failed` (contratto batch esistente) senza scritture parziali.
+      // Le altre consegne proseguono; le valutazioni già presenti restano intatte.
+      generalFeedback = validateGeneralFeedback(output.generalFeedback);
+      if (generalFeedback === null) {
+        return {
+          result: {
+            submissionId,
+            outcome: 'failed',
+            closedGraded: 0,
+            openGraded: 0,
+            openSkipped: eligible.openOrders.length,
+            alreadyIgnored: eligible.alreadyGraded,
+            reason: 'write_error',
+          },
+          openTokensEstimated,
+          openTokensActual,
+        };
+      }
       validated = validateGraderOutput(
         output,
         ctx.request.requestId,
         new Set(eligible.openOrders),
         new Map(eligible.openOrders.map((o) => [o, ctx.byOrder.get(o)!.maxPoints])),
       );
-      // Feedback generale validato server-side (stringa non vuota ≤ 700). Un
-      // valore invalido → null (omesso), senza intaccare i punteggi per domanda.
-      generalFeedback = validateGeneralFeedback(output.generalFeedback);
     } catch {
       validated = new Map(); // output non ottenibile → tutte le aperte restano null
     }

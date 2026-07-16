@@ -290,10 +290,11 @@ export function buildMockGeneralFeedback(totalPoints: number, maxPoints: number)
 
 /**
  * Valida **server-side** il feedback generale prodotto dal grader senza mai
- * fidarsene. Ritorna la stringa valida oppure `null` (feedback omesso): deve
- * essere una stringa non vuota di al più {@link MAX_GENERAL_FEEDBACK_CHARS}
- * caratteri. Un valore invalido non corrompe la correzione: i punteggi per
- * domanda restano validi e vengono scritti comunque, il feedback è solo omesso.
+ * fidarsene: ritorna la stringa valida (non vuota, ≤ {@link
+ * MAX_GENERAL_FEEDBACK_CHARS} caratteri) oppure `null`. Quando la consegna ha
+ * domande aperte il feedback è **richiesto**: un `null` qui rende invalido
+ * l'**intero** output del grader per quella consegna (validazione **atomica**),
+ * quindi nessun punteggio e nessun feedback vengono scritti — vedi il motore.
  */
 export function validateGeneralFeedback(value: unknown): string | null {
   if (typeof value !== 'string') return null;

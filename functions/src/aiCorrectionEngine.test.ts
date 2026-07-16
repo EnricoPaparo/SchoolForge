@@ -14,7 +14,6 @@ import {
   sameIdSet,
   scoreClosedQuestion,
   validateGraderOutput,
-  GENERAL_FEEDBACK_TOKEN_ESTIMATE,
   RUN_LEASE_MS,
   type BeginRunResult,
   type CommitSubmissionInput,
@@ -515,9 +514,9 @@ describe('runPreview', () => {
     const res = await runPreview(req([sid('s1')]), baseDeps(store, new MockAiGrader()));
     expect(res.counts.closedOnlySubmissions).toBe(1);
     expect(res.counts.openToGrade).toBe(0);
-    // M5-04B: nessun token per le aperte (non ce ne sono), ma una quota per il
-    // feedback generale della consegna.
-    expect(res.tokensEstimated).toBe(GENERAL_FEEDBACK_TOKEN_ESTIMATE);
+    // M5-04B: sole domande chiuse → feedback deterministico, nessun provider →
+    // **zero** token stimati.
+    expect(res.tokensEstimated).toBe(0);
   });
 });
 
@@ -551,6 +550,7 @@ describe('runExecution — closed scoring + open grading', () => {
         Promise.resolve({
           requestId: input.requestId,
           results: input.questions.map((q) => ({ order: q.order, points: q.maxPoints })),
+          generalFeedback: '[mock] ok',
         }),
     );
     const grader = { id: 'mock', grade } as unknown as AiGrader;
@@ -606,6 +606,7 @@ describe('runExecution — closed scoring + open grading', () => {
       grade: async (i: { requestId: string }) => ({
         requestId: i.requestId,
         results: [{ order: 1, points: 2 }],
+        generalFeedback: '[mock] ok',
       }),
     } as unknown as AiGrader;
 
@@ -641,6 +642,7 @@ describe('runExecution — closed scoring + open grading', () => {
           { order: 0, points: 1 },
           { order: 1, points: 99 },
         ], // order 1 out of range
+        generalFeedback: '[mock] ok',
       }),
     } as unknown as AiGrader;
 
@@ -970,6 +972,8 @@ describe('runExecution — general feedback (M5-04B)', () => {
     const res = await runExecution(req([sid('s1')]), baseDeps(store, grader));
     expect(res.status).toBe('completed');
     expect(grader.grade).not.toHaveBeenCalled(); // no open questions → no grader call
+    // Closed-only → deterministic feedback, no provider → zero tokens/cost.
+    expect(res.tokensEstimated).toBe(0);
     expect(res.tokensActual).toBe(0);
     expect(res.costActual).toBe(0);
     const gf = store.generalFeedbacks.get(sid('s1'));
@@ -988,27 +992,117 @@ describe('runExecution — general feedback (M5-04B)', () => {
     expect(partial).toContain('complessivo');
   });
 
-  it('rejects an over-limit / invalid general feedback without partial writes', async () => {
-    const store = new FakeStore();
-    seedOneOpenOneClosed(store, 's1');
-    // Grader grades every question (submission becomes complete) but returns an
-    // over-limit general feedback → feedback omitted, per-question scores intact.
+  // M5-04B (atomicità): con domande aperte il feedback generale è RICHIESTO. Un
+  // output di feedback invalido rende invalido l'INTERO output del grader per
+  // quella consegna: nessun punteggio, nessun feedback, nessun commitSubmission,
+  // consegna `failed`, nessuna scrittura parziale.
+  /** Grader a punteggio pieno con un generalFeedback arbitrario (o assente). */
+  function graderWithFeedback(gf: unknown, present = true) {
     const grade = vi.fn(
       (input: { requestId: string; questions: { order: number; maxPoints: number }[] }) =>
         Promise.resolve({
           requestId: input.requestId,
           results: input.questions.map((q) => ({ order: q.order, points: q.maxPoints })),
-          generalFeedback: 'x'.repeat(701),
+          ...(present ? { generalFeedback: gf } : {}),
         }),
     );
+    return { id: 'mock', grade } as unknown as AiGrader & { grade: ReturnType<typeof vi.fn> };
+  }
+
+  const invalidFeedbackCases: { name: string; grader: () => AiGrader }[] = [
+    { name: 'missing feedback', grader: () => graderWithFeedback(undefined, false) },
+    { name: 'non-string feedback', grader: () => graderWithFeedback(42) },
+    { name: 'empty feedback', grader: () => graderWithFeedback('   ') },
+    { name: 'over-limit feedback', grader: () => graderWithFeedback('x'.repeat(701)) },
+  ];
+
+  for (const { name, grader } of invalidFeedbackCases) {
+    it(`rejects the whole grader output atomically — ${name} — no partial writes`, async () => {
+      const store = new FakeStore();
+      seedOneOpenOneClosed(store, 's1');
+      const res = await runExecution(req([sid('s1')]), baseDeps(store, grader()));
+      // Submission failed, NOT completed.
+      expect(res.status).toBe('failed');
+      expect(res.results[0]).toMatchObject({ outcome: 'failed' });
+      expect(res.results[0]!.reason).toBeDefined();
+      // commitSubmission never called → no scores, no feedback written.
+      expect(store.commitCalls).toBe(0);
+      expect(store.corrections.get(sid('s1'))).toBeUndefined();
+      expect(store.generalFeedbacks.get(sid('s1')) ?? null).toBeNull();
+    });
+  }
+
+  it('an invalid grader output on one submission does not block the others (same batch)', async () => {
+    const store = new FakeStore();
+    store.verification = {
+      ownerUid: OWNER,
+      status: 'active',
+      teacherQuestions: [tq(0, 'chiusa_singola', 2, 'a'), tq(1, 'aperta', 2, SOL_MARK)],
+    };
+    // s1's open answer is 'BAD' → the grader returns an over-limit feedback for it;
+    // s2 gets a valid feedback.
+    store.submissions.set(sid('s1'), {
+      ownerUid: OWNER,
+      verificationId: VERIF,
+      studentUid: 's1',
+      status: 'submitted',
+      answers: {
+        '0': { tipo: 'chiusa_singola', selectedId: 'a' },
+        '1': { tipo: 'aperta', testo: 'BAD' },
+      },
+    });
+    store.submissions.set(sid('s2'), {
+      ownerUid: OWNER,
+      verificationId: VERIF,
+      studentUid: 's2',
+      status: 'submitted',
+      answers: {
+        '0': { tipo: 'chiusa_singola', selectedId: 'a' },
+        '1': { tipo: 'aperta', testo: ANS_MARK },
+      },
+    });
+    const grade = vi.fn(
+      (input: {
+        requestId: string;
+        questions: { order: number; maxPoints: number; studentAnswer: string }[];
+      }) => {
+        const bad = input.questions.some((q) => q.studentAnswer === 'BAD');
+        return Promise.resolve({
+          requestId: input.requestId,
+          results: input.questions.map((q) => ({ order: q.order, points: q.maxPoints })),
+          generalFeedback: bad ? 'x'.repeat(701) : '[mock] ok',
+        });
+      },
+    );
     const grader = { id: 'mock', grade } as unknown as AiGrader;
-    const res = await runExecution(req([sid('s1')]), baseDeps(store, grader));
-    expect(res.status).toBe('completed'); // scores still written
+    const res = await runExecution(req([sid('s1'), sid('s2')]), baseDeps(store, grader));
+    // One failed, one succeeded → partial batch.
+    expect(res.status).toBe('partial');
+    expect(store.corrections.get(sid('s1'))).toBeUndefined(); // failed → untouched
+    expect(store.corrections.get(sid('s2'))).toBeDefined(); // graded normally
+  });
+
+  it('does not touch an existing teacher-graded question when the grader output is invalid', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    // Pre-existing correction: q0 graded by the teacher (0.25), q1 open still null.
+    store.corrections.set(sid('s1'), {
+      status: 'in_progress',
+      reopenCount: 0,
+      evaluations: {
+        '0': { order: 0, points: 0.25, maxPoints: 2 },
+        '1': { order: 1, points: null, maxPoints: 2 },
+      },
+    });
+    const res = await runExecution(
+      req([sid('s1')]),
+      baseDeps(store, graderWithFeedback('x'.repeat(701))),
+    );
+    expect(res.status).toBe('failed');
+    // Teacher's evaluation preserved, nothing overwritten.
     const correction = store.corrections.get(sid('s1'))!;
-    expect(correction.evaluations['0']!.points).toBe(2);
-    expect(correction.evaluations['1']!.points).toBe(2);
-    // Invalid feedback rejected → not written.
-    expect(store.generalFeedbacks.get(sid('s1')) ?? null).toBeNull();
+    expect(correction.evaluations['0']!.points).toBe(0.25);
+    expect(correction.evaluations['1']!.points).toBeNull();
   });
 
   it('uses the FINAL totals (prior + closed + open) for the feedback', async () => {
