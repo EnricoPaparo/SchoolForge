@@ -21,6 +21,9 @@ import { randomUUID } from 'node:crypto';
 import {
   authorizeAndValidate,
   AiGatewayError,
+  buildMockGeneralFeedback,
+  validateGeneralFeedback,
+  MAX_GENERAL_FEEDBACK_CHARS,
   type AiCorrectionAuthDeps,
   type AiCorrectionRequest,
   type AiGrader,
@@ -41,6 +44,15 @@ export const MAX_MOCK_FEEDBACK_CHARS = 2_000;
 export const CHARS_PER_TOKEN = 4;
 /** Overhead fisso di token per domanda aperta (prompt/struttura). */
 export const OPEN_QUESTION_TOKEN_OVERHEAD = 8;
+/**
+ * Quota di token stimata per l'**output del feedback generale** (M5-04B),
+ * aggiunta una volta per consegna elaborabile. Deriva dal limite di lunghezza
+ * (≤ 700 caratteri) diviso per {@link CHARS_PER_TOKEN}. Aggiunta **identica** in
+ * preview e run, così le due stime coincidono.
+ */
+export const GENERAL_FEEDBACK_TOKEN_ESTIMATE = Math.ceil(
+  MAX_GENERAL_FEEDBACK_CHARS / CHARS_PER_TOKEN,
+);
 /**
  * Durata della **lease** su `aiCorrectionRuns/{requestId}` (ms). Un tentativo
  * `running` con lease valida possiede l'esecuzione ed esclude i concorrenti; una
@@ -217,6 +229,10 @@ export interface EligibleSubmission {
   openOrders: number[];
   /** Quante domande hanno già `points !== null` (ignorate, mai sovrascritte). */
   alreadyGraded: number;
+  /** Somma dei punti delle domande già valutate (per il totale finale, M5-04B). */
+  alreadyGradedPoints: number;
+  /** Punteggio massimo totale della consegna (tutte le domande, M5-04B). */
+  totalMaxPoints: number;
   /** Scheletro completo (tutte le domande) per creare la correction se assente. */
   skeleton: { order: number; maxPoints: number }[];
 }
@@ -258,9 +274,11 @@ export function classifySubmission(params: {
   }
 
   const skeleton = teacherQuestions.map((q) => ({ order: q.order, maxPoints: q.maxPoints }));
+  const totalMaxPoints = teacherQuestions.reduce((sum, q) => sum + q.maxPoints, 0);
   const closedOrders: number[] = [];
   const openOrders: number[] = [];
   let alreadyGraded = 0;
+  let alreadyGradedPoints = 0;
   let openCharTotal = 0;
 
   for (const q of teacherQuestions) {
@@ -268,6 +286,7 @@ export function classifySubmission(params: {
     const existing = correction?.evaluations[key];
     if (existing && existing.points !== null) {
       alreadyGraded++;
+      alreadyGradedPoints += existing.points;
       continue; // già valutata: mai sovrascritta
     }
     if (q.tipo === 'aperta') {
@@ -300,6 +319,8 @@ export function classifySubmission(params: {
       closedOrders,
       openOrders,
       alreadyGraded,
+      alreadyGradedPoints,
+      totalMaxPoints,
       skeleton,
     },
   };
@@ -397,6 +418,12 @@ export interface CommitSubmissionInput {
   skeleton: { order: number; maxPoints: number }[];
   /** order → punteggio proposto (chiuse + aperte validate). */
   proposed: Map<number, ValidatedScore>;
+  /**
+   * Feedback generale candidato (M5-04B), o `null`. La porta lo scrive nel campo
+   * `generalFeedback` **solo se**, dopo il merge, la consegna risulta interamente
+   * valutata **e** il docente non ne ha già scritto uno (mai sovrascritto).
+   */
+  proposedGeneralFeedback: string | null;
 }
 
 export interface CommitSubmissionResult {
@@ -556,7 +583,8 @@ export async function runPreview(
     counts.openToGrade += e.openOrders.length;
     counts.alreadyGradedIgnored += e.alreadyGraded;
     if (e.openOrders.length === 0 && e.closedOrders.length > 0) counts.closedOnlySubmissions++;
-    tokensEstimated += openTokens;
+    // Token aperte + quota per il feedback generale (una per consegna, M5-04B).
+    tokensEstimated += openTokens + GENERAL_FEEDBACK_TOKEN_ESTIMATE;
   }
 
   return {
@@ -780,24 +808,35 @@ async function gradeEligible(
   },
 ): Promise<GradeOutcome> {
   const proposed = new Map<number, ValidatedScore>();
-  const openTokensEstimated = estimateOpenTokensForSubmission(
-    ctx.teacherQuestions,
-    eligible.openOrders,
-    ctx.submission.answers,
-  );
+  // Token aperte + quota per il feedback generale (M5-04B): identica a preview.
+  const openTokensEstimated =
+    estimateOpenTokensForSubmission(
+      ctx.teacherQuestions,
+      eligible.openOrders,
+      ctx.submission.answers,
+    ) + GENERAL_FEEDBACK_TOKEN_ESTIMATE;
   let openTokensActual = 0;
 
-  // 1) Chiuse: scoring deterministico.
+  // 1) Chiuse: scoring deterministico. Accumula i punti chiusi per il totale
+  //    finale usato dal feedback generale.
+  let closedPoints = 0;
   for (const order of eligible.closedOrders) {
     const q = ctx.byOrder.get(order);
     if (!q) continue;
-    proposed.set(order, {
-      points: scoreClosedQuestion(q, ctx.submission.answers[order.toString()]),
-    });
+    const points = scoreClosedQuestion(q, ctx.submission.answers[order.toString()]);
+    closedPoints += points;
+    proposed.set(order, { points });
   }
 
-  // 2) Aperte: una sola chiamata grader per consegna, poi validazione.
+  // Punti già fissati prima della valutazione delle aperte (M5-04B): domande già
+  // valutate + chiuse appena assegnate. Il grader ci somma i punti delle aperte
+  // per ottenere il totale finale, senza una seconda chiamata.
+  const priorPoints = eligible.alreadyGradedPoints + closedPoints;
+
+  // 2) Aperte: una sola chiamata grader per consegna, poi validazione. Il grader
+  //    produce anche il feedback generale (M5-04B) nella STESSA chiamata.
   let openSkipped = 0;
+  let generalFeedback: string | null = null;
   if (eligible.openOrders.length > 0) {
     const graderInput: AiGraderInput = {
       requestId: ctx.request.requestId,
@@ -812,6 +851,7 @@ async function gradeEligible(
           studentAnswer: answer && answer.tipo === 'aperta' ? answer.testo : '',
         };
       }),
+      submissionContext: { priorPoints, totalMaxPoints: eligible.totalMaxPoints },
     };
     let validated = new Map<number, ValidatedScore>();
     try {
@@ -824,6 +864,9 @@ async function gradeEligible(
         new Set(eligible.openOrders),
         new Map(eligible.openOrders.map((o) => [o, ctx.byOrder.get(o)!.maxPoints])),
       );
+      // Feedback generale validato server-side (stringa non vuota ≤ 700). Un
+      // valore invalido → null (omesso), senza intaccare i punteggi per domanda.
+      generalFeedback = validateGeneralFeedback(output.generalFeedback);
     } catch {
       validated = new Map(); // output non ottenibile → tutte le aperte restano null
     }
@@ -832,6 +875,11 @@ async function gradeEligible(
       if (score) proposed.set(order, score);
       else openSkipped++;
     }
+  } else {
+    // Consegna con SOLE domande chiuse: nessuna chiamata al grader. Il feedback
+    // generale è costruito in modo deterministico dai totali finali (stessa
+    // funzione pura del mock), a token/costo reali 0.
+    generalFeedback = buildMockGeneralFeedback(priorPoints, eligible.totalMaxPoints);
   }
 
   // 3) Scrittura atomica per consegna (merge non distruttivo).
@@ -845,6 +893,7 @@ async function gradeEligible(
       actorUid: ctx.ownerUid,
       skeleton: eligible.skeleton,
       proposed,
+      proposedGeneralFeedback: generalFeedback,
     });
   } catch {
     return {

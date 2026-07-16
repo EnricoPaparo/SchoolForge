@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MockAiGrader, type AiGrader, type AiGraderOutput } from './aiCorrectionGatewayCore.js';
+import {
+  MockAiGrader,
+  buildMockGeneralFeedback,
+  type AiGrader,
+  type AiGraderOutput,
+} from './aiCorrectionGatewayCore.js';
 import {
   classifySubmission,
   computeSelectionHash,
@@ -9,6 +14,7 @@ import {
   sameIdSet,
   scoreClosedQuestion,
   validateGraderOutput,
+  GENERAL_FEEDBACK_TOKEN_ESTIMATE,
   RUN_LEASE_MS,
   type BeginRunResult,
   type CommitSubmissionInput,
@@ -43,12 +49,31 @@ function tq(
   return { order, tipo, maxPoints, testo: `${Q_MARK}-${order}`, soluzione };
 }
 
+/** Fedele alla porta reale (aiCorrectionGateway): applica il feedback generale
+ *  solo se la consegna è interamente valutata e il docente non ne ha già uno. */
+function fullyEvaluated(evaluations: Record<string, ExistingEvaluation>): boolean {
+  const values = Object.values(evaluations);
+  return values.length > 0 && values.every((e) => e.points !== null);
+}
+function resolveGeneralFeedback(
+  evaluations: Record<string, ExistingEvaluation>,
+  existing: string | null,
+  candidate: string | null,
+): string | null {
+  if (typeof existing === 'string' && existing.trim().length > 0) return existing;
+  if (candidate !== null && fullyEvaluated(evaluations)) return candidate;
+  return existing;
+}
+
 // ── In-memory ports (faithful implementation of the wiring contract) ──────────
 
 class FakeStore implements EngineWritePorts {
   verification: VerificationData | null = null;
   submissions = new Map<string, SubmissionData>();
   corrections = new Map<string, CorrectionData>();
+  // M5-04B: `generalFeedback` per consegna (fedele al campo CorrectionDoc). Può
+  // essere pre-seedato per simulare un testo scritto dal docente.
+  generalFeedbacks = new Map<string, string | null>();
   runs = new Map<
     string,
     {
@@ -147,6 +172,10 @@ class FakeStore implements EngineWritePorts {
         evaluations,
         reopenCount: 0,
       });
+      this.generalFeedbacks.set(
+        input.submissionId,
+        resolveGeneralFeedback(evaluations, null, input.proposedGeneralFeedback),
+      );
       this.setMirror(input.submissionId, evaluations);
       return { result: 'written', writtenOrders: written };
     }
@@ -154,6 +183,11 @@ class FakeStore implements EngineWritePorts {
     const evaluations = { ...existing.evaluations };
     const written = this.apply(evaluations, input.proposed);
     existing.evaluations = evaluations;
+    const existingGf = this.generalFeedbacks.get(input.submissionId) ?? null;
+    this.generalFeedbacks.set(
+      input.submissionId,
+      resolveGeneralFeedback(evaluations, existingGf, input.proposedGeneralFeedback),
+    );
     this.setMirror(input.submissionId, evaluations);
     if (existing.reopenCount > 0 && written.length > 0) {
       this.events.push({
@@ -481,7 +515,9 @@ describe('runPreview', () => {
     const res = await runPreview(req([sid('s1')]), baseDeps(store, new MockAiGrader()));
     expect(res.counts.closedOnlySubmissions).toBe(1);
     expect(res.counts.openToGrade).toBe(0);
-    expect(res.tokensEstimated).toBe(0);
+    // M5-04B: nessun token per le aperte (non ce ne sono), ma una quota per il
+    // feedback generale della consegna.
+    expect(res.tokensEstimated).toBe(GENERAL_FEEDBACK_TOKEN_ESTIMATE);
   });
 });
 
@@ -832,5 +868,189 @@ describe('runExecution — privacy of aiCorrectionRuns', () => {
     seedOneOpenOneClosed(store, 's1');
     await runExecution(req([sid('s1')]), baseDeps(store, new MockAiGrader()));
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ── M5-04B: feedback generale della consegna ─────────────────────────────────
+describe('runExecution — general feedback (M5-04B)', () => {
+  /** Grader spia che valuta ogni domanda al massimo e produce un feedback generale. */
+  function fullMarkGrader() {
+    const grade = vi.fn(
+      (input: {
+        requestId: string;
+        questions: { order: number; maxPoints: number }[];
+        submissionContext?: { priorPoints: number; totalMaxPoints: number };
+      }) =>
+        Promise.resolve({
+          requestId: input.requestId,
+          results: input.questions.map((q) => ({ order: q.order, points: q.maxPoints })),
+          generalFeedback: buildMockGeneralFeedback(
+            (input.submissionContext?.priorPoints ?? 0) +
+              input.questions.reduce((s, q) => s + q.maxPoints, 0),
+            input.submissionContext?.totalMaxPoints ?? 0,
+          ),
+        }),
+    );
+    return { id: 'mock', grade } as unknown as AiGrader & {
+      grade: ReturnType<typeof vi.fn>;
+    };
+  }
+
+  it('writes a general feedback for a fully-graded submission with open questions', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const grader = fullMarkGrader();
+    const res = await runExecution(req([sid('s1')]), baseDeps(store, grader));
+    expect(res.status).toBe('completed');
+    const gf = store.generalFeedbacks.get(sid('s1'));
+    expect(typeof gf).toBe('string');
+    expect(gf).toContain('[mock]');
+    expect(gf!.length).toBeLessThanOrEqual(700);
+  });
+
+  it('produces the general feedback in the SAME grader call (no second call)', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const grader = fullMarkGrader();
+    await runExecution(req([sid('s1')]), baseDeps(store, grader));
+    expect(grader.grade).toHaveBeenCalledTimes(1);
+    // The grader received the score context to compute the final total.
+    expect(grader.grade.mock.calls[0]![0].submissionContext).toBeDefined();
+  });
+
+  it('never overwrites a non-empty teacher-written general feedback', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    // Correction already open with q0 graded and a teacher feedback present.
+    store.corrections.set(sid('s1'), {
+      status: 'in_progress',
+      reopenCount: 0,
+      evaluations: {
+        '0': { order: 0, points: 2, maxPoints: 2 },
+        '1': { order: 1, points: null, maxPoints: 2 },
+      },
+    });
+    store.generalFeedbacks.set(sid('s1'), 'Commento del docente da preservare');
+    await runExecution(req([sid('s1')]), baseDeps(store, fullMarkGrader()));
+    // Now fully graded, but the teacher text stays untouched.
+    expect(store.generalFeedbacks.get(sid('s1'))).toBe('Commento del docente da preservare');
+  });
+
+  it('does NOT generate a general feedback when the correction stays incomplete', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    // Grader returns nothing valid → open question stays null → incomplete.
+    const grade = vi.fn((input: { requestId: string }) =>
+      Promise.resolve({ requestId: input.requestId, results: [], generalFeedback: '[mock] x' }),
+    );
+    const grader = { id: 'mock', grade } as unknown as AiGrader;
+    const res = await runExecution(req([sid('s1')]), baseDeps(store, grader));
+    expect(res.status).toBe('partial');
+    expect(store.generalFeedbacks.get(sid('s1')) ?? null).toBeNull();
+  });
+
+  it('closed-only: deterministic general feedback with zero grader calls and zero tokens', async () => {
+    const store = new FakeStore();
+    store.verification = {
+      ownerUid: OWNER,
+      status: 'active',
+      teacherQuestions: [tq(0, 'chiusa_singola', 2, 'a'), tq(1, 'chiusa_singola', 2, 'b')],
+    };
+    store.submissions.set(sid('s1'), {
+      ownerUid: OWNER,
+      verificationId: VERIF,
+      studentUid: 's1',
+      status: 'submitted',
+      answers: {
+        '0': { tipo: 'chiusa_singola', selectedId: 'a' },
+        '1': { tipo: 'chiusa_singola', selectedId: 'b' },
+      },
+    });
+    const grader = fullMarkGrader();
+    const res = await runExecution(req([sid('s1')]), baseDeps(store, grader));
+    expect(res.status).toBe('completed');
+    expect(grader.grade).not.toHaveBeenCalled(); // no open questions → no grader call
+    expect(res.tokensActual).toBe(0);
+    expect(res.costActual).toBe(0);
+    const gf = store.generalFeedbacks.get(sid('s1'));
+    // 4/4 → maximum → positive feedback, deterministic and mock-marked.
+    expect(gf).toBe(buildMockGeneralFeedback(4, 4));
+    expect(gf).toContain('[mock]');
+  });
+
+  it('maximum result yields a coherent positive general feedback', async () => {
+    const full = buildMockGeneralFeedback(10, 10);
+    expect(full).toContain('pieno');
+    expect(full.length).toBeLessThanOrEqual(700);
+    // A partial result is phrased differently (motivation + advice).
+    const partial = buildMockGeneralFeedback(4, 10);
+    expect(partial).not.toBe(full);
+    expect(partial).toContain('complessivo');
+  });
+
+  it('rejects an over-limit / invalid general feedback without partial writes', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    // Grader grades every question (submission becomes complete) but returns an
+    // over-limit general feedback → feedback omitted, per-question scores intact.
+    const grade = vi.fn(
+      (input: { requestId: string; questions: { order: number; maxPoints: number }[] }) =>
+        Promise.resolve({
+          requestId: input.requestId,
+          results: input.questions.map((q) => ({ order: q.order, points: q.maxPoints })),
+          generalFeedback: 'x'.repeat(701),
+        }),
+    );
+    const grader = { id: 'mock', grade } as unknown as AiGrader;
+    const res = await runExecution(req([sid('s1')]), baseDeps(store, grader));
+    expect(res.status).toBe('completed'); // scores still written
+    const correction = store.corrections.get(sid('s1'))!;
+    expect(correction.evaluations['0']!.points).toBe(2);
+    expect(correction.evaluations['1']!.points).toBe(2);
+    // Invalid feedback rejected → not written.
+    expect(store.generalFeedbacks.get(sid('s1')) ?? null).toBeNull();
+  });
+
+  it('uses the FINAL totals (prior + closed + open) for the feedback', async () => {
+    const store = new FakeStore();
+    store.verification = {
+      ownerUid: OWNER,
+      status: 'active',
+      teacherQuestions: [tq(0, 'chiusa_singola', 2, 'a'), tq(1, 'aperta', 2, SOL_MARK)],
+    };
+    store.submissions.set(sid('s1'), {
+      ownerUid: OWNER,
+      verificationId: VERIF,
+      studentUid: 's1',
+      status: 'submitted',
+      answers: {
+        '0': { tipo: 'chiusa_singola', selectedId: 'a' }, // correct → 2
+        '1': { tipo: 'aperta', testo: ANS_MARK },
+      },
+    });
+    const grader = fullMarkGrader(); // open q1 → 2
+    await runExecution(req([sid('s1')]), baseDeps(store, grader));
+    // Final total = 2 (closed) + 2 (open) = 4 / 4 → the grader saw priorPoints=2
+    // (closed) and totalMax=4, producing the maximum-result feedback.
+    expect(store.generalFeedbacks.get(sid('s1'))).toBe(buildMockGeneralFeedback(4, 4));
+  });
+
+  it('mock keeps tokensActual and costActual at zero', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const res = await runExecution(req([sid('s1')]), baseDeps(store, new MockAiGrader()));
+    expect(res.tokensActual).toBe(0);
+    expect(res.costActual).toBe(0);
+  });
+
+  it('never persists the general feedback text in aiCorrectionRuns', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    await runExecution(req([sid('s1')]), baseDeps(store, new MockAiGrader()));
+    const serialized = JSON.stringify(store.runs.get(REQ));
+    // The run doc holds metadata only — never the feedback text ([mock] marker).
+    expect(serialized).not.toContain('[mock]');
+    expect(serialized).not.toContain('Punteggio complessivo');
+    expect(serialized).not.toContain('Risultato pieno');
   });
 });

@@ -131,6 +131,28 @@ function progressStatus(
   return Object.values(evaluations).some((e) => e.points !== null) ? 'in_progress' : 'submitted';
 }
 
+/** `true` quando la consegna ha almeno una domanda e tutte sono valutate. */
+function isFullyEvaluated(evaluations: Record<string, ExistingEvaluation>): boolean {
+  const values = Object.values(evaluations);
+  return values.length > 0 && values.every((e) => e.points !== null);
+}
+
+/**
+ * Decide il feedback generale da scrivere (M5-04B): il candidato **solo se** la
+ * consegna è ora interamente valutata **e** il testo docente esistente è vuoto
+ * (mai sovrascritto). Altrimenti mantiene il valore esistente (o `null`).
+ */
+function resolveGeneralFeedback(
+  evaluations: Record<string, ExistingEvaluation>,
+  existing: string | null,
+  candidate: string | null,
+): string | null {
+  const docenteHasText = typeof existing === 'string' && existing.trim().length > 0;
+  if (docenteHasText) return existing;
+  if (candidate !== null && isFullyEvaluated(evaluations)) return candidate;
+  return existing;
+}
+
 function applyProposed(
   evaluations: Record<string, ExistingEvaluation>,
   proposed: Map<number, ValidatedScore>,
@@ -173,6 +195,13 @@ function commitSubmission(db: Firestore) {
         }
         const written = applyProposed(evaluations, input.proposed);
         const totals = computeTotals(evaluations);
+        // M5-04B: nuovo doc → nessun testo docente; scrivi il feedback generale
+        // candidato solo se la consegna è già interamente valutata.
+        const generalFeedback = resolveGeneralFeedback(
+          evaluations,
+          null,
+          input.proposedGeneralFeedback,
+        );
         tx.set(correctionRef, {
           submissionId: input.submissionId,
           verificationId: input.verificationId,
@@ -180,7 +209,7 @@ function commitSubmission(db: Firestore) {
           ownerUid: input.ownerUid,
           status: 'in_progress',
           evaluations,
-          generalFeedback: null,
+          generalFeedback,
           totalPoints: totals.totalPoints,
           maxPoints: totals.maxPoints,
           percentage: totals.percentage,
@@ -200,7 +229,8 @@ function commitSubmission(db: Firestore) {
         return { result: 'written', writtenOrders: written };
       }
 
-      const correction = toCorrectionData(snap.data() as Record<string, unknown>);
+      const rawCorrection = snap.data() as Record<string, unknown>;
+      const correction = toCorrectionData(rawCorrection);
       if (correction.status !== 'in_progress') {
         return { result: 'changed', writtenOrders: [] };
       }
@@ -208,12 +238,26 @@ function commitSubmission(db: Firestore) {
       const evaluations: Record<string, ExistingEvaluation> = { ...correction.evaluations };
       const written = applyProposed(evaluations, input.proposed);
       const totals = computeTotals(evaluations);
+      // M5-04B: applica il feedback generale candidato solo se la consegna è ora
+      // interamente valutata e il docente non ne ha già scritto uno. Il campo è
+      // incluso nell'update solo quando cambia davvero, così non genera scritture
+      // superflue né sovrascrive il testo docente.
+      const existingGeneralFeedback =
+        typeof rawCorrection.generalFeedback === 'string' ? rawCorrection.generalFeedback : null;
+      const nextGeneralFeedback = resolveGeneralFeedback(
+        evaluations,
+        existingGeneralFeedback,
+        input.proposedGeneralFeedback,
+      );
       tx.update(correctionRef, {
         evaluations,
         totalPoints: totals.totalPoints,
         maxPoints: totals.maxPoints,
         percentage: totals.percentage,
         updatedAt: now,
+        ...(nextGeneralFeedback !== existingGeneralFeedback
+          ? { generalFeedback: nextGeneralFeedback }
+          : {}),
       });
       writeMirror(tx, {
         submissionRef,
