@@ -356,6 +356,31 @@
   gap: 0.625rem;
 }
 
+.submissionsTableWrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.selectionColumn,
+.selectionHeader,
+.selectionCell {
+  width: 2.5rem;
+  min-width: 2.5rem;
+  max-width: 2.5rem;
+}
+
+.selectionHeader,
+.selectionCell {
+  padding-inline: 0.375rem;
+  text-align: center;
+}
+
+.selectionHeader input,
+.selectionCell input {
+  display: block;
+  margin-inline: auto;
+}
+
 .monitorHeader {
   display: flex;
   align-items: center;
