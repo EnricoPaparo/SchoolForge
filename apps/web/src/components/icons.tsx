@@ -251,3 +251,36 @@ export function IconUpload(props: IconProps = {}) {
     props,
   );
 }
+
+/** Sparkles — AI-assisted actions (Correggi con IA) */
+export function IconSparkles(props: IconProps = {}) {
+  return icon(
+    <>
+      <path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3z" />
+      <path d="M19 14l.7 1.8L21.5 16.5l-1.8.7L19 19l-.7-1.8L16.5 16.5l1.8-.7L19 14z" />
+    </>,
+    props,
+  );
+}
+
+/** Counter-clockwise circular arrow — reopen a correction (Riapri) */
+export function IconRotateCcw(props: IconProps = {}) {
+  return icon(
+    <>
+      <polyline points="3 4 3 10 9 10" />
+      <path d="M3.5 15a9 9 0 1 0 2.1-9.4L3 10" />
+    </>,
+    props,
+  );
+}
+
+/** Paper plane — return to student (Restituisci) */
+export function IconSend(props: IconProps = {}) {
+  return icon(
+    <>
+      <line x1="22" y1="2" x2="11" y2="13" />
+      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+    </>,
+    props,
+  );
+}

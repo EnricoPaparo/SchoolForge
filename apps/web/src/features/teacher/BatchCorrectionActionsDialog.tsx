@@ -58,7 +58,12 @@ export function BatchCorrectionActionsDialog({
   rows: BatchSelectedRow[];
   db: Firestore;
   onClose: () => void;
-  onApplied: (succeededUids: string[]) => void;
+  /**
+   * Notifica al chiamante che il batch è stato eseguito, così può fare la
+   * singola rilettura mirata. **Non** trasporta gli uid riusciti: da M5-04A la
+   * selezione è persistente e cambia solo manualmente dal docente.
+   */
+  onApplied: () => void;
 }) {
   const meta = META[action];
   const eligibility = useMemo(() => computeEligibility(action, rows), [action, rows]);
@@ -76,7 +81,7 @@ export function BatchCorrectionActionsDialog({
       const res = await runBatchCorrectionAction(action, eligibility.eligible, db);
       setResults(res);
       setPhase('result');
-      onApplied(res.filter((r) => r.outcome === 'succeeded').map((r) => r.studentUid));
+      onApplied();
     } catch (err) {
       // runBatchCorrectionAction non rilancia per-riga; un throw qui è
       // eccezionale (es. errore interno). Consenti un nuovo tentativo.

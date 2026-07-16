@@ -373,6 +373,29 @@
   flex: 0 0 auto;
 }
 
+/* M5-04A — barra azioni batch sopra la tabella: pulsanti di dimensione
+   uniforme (icona + testo centrati), griglia responsive 4 → 2 → 1 colonne,
+   nessun overflow orizzontale (minmax(0, 1fr)). */
+.batchToolbar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.batchToolbar button {
+  width: 100%;
+}
+@media (max-width: 48rem) {
+  .batchToolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 24rem) {
+  .batchToolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
 .sortHeaderButton {
   appearance: none;
   border: 0;

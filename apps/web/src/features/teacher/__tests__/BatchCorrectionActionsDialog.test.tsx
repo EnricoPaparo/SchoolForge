@@ -89,8 +89,10 @@ describe('BatchCorrectionActionsDialog (M5-04)', () => {
     expect(screen.getByText('Riuscite: 1')).toBeTruthy();
     expect(screen.getByText('Fallite: 1')).toBeTruthy();
     expect(screen.getByText(/Studente b — non valutata/)).toBeTruthy();
-    // onApplied riceve solo gli uid riusciti (per deselezione mirata).
-    expect(onApplied).toHaveBeenCalledWith(['a']);
+    // M5-04A: onApplied notifica soltanto (nessun uid): la selezione è
+    // persistente e non viene toccata dal dialog.
+    expect(onApplied).toHaveBeenCalledTimes(1);
+    expect(onApplied).toHaveBeenCalledWith();
   });
 
   it('cancels without ever calling the service', async () => {
@@ -144,5 +146,23 @@ describe('BatchCorrectionActionsDialog (M5-04)', () => {
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Completa \d+ correzioni/ })).toBeNull();
     expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('renders Annulla and the primary action inside a shared .dialog-actions row', () => {
+    render(
+      <BatchCorrectionActionsDialog
+        action="return"
+        rows={[row('a', prog({ status: 'completed' }))]}
+        db={fakeDb}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+    const cancel = screen.getByRole('button', { name: 'Annulla' });
+    const primary = screen.getByRole('button', { name: 'Restituisci 1 correzioni' });
+    const actions = cancel.closest('.dialog-actions');
+    // Both buttons share the same action row (spacing handled by the shared class).
+    expect(actions).not.toBeNull();
+    expect(actions).toBe(primary.closest('.dialog-actions'));
   });
 });

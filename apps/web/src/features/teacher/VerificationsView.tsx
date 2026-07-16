@@ -54,7 +54,13 @@ import type {
   BatchSelectedRow,
 } from '../repository/corrections/batchCorrectionActions.js';
 import { deleteSubmissionData } from '../repository/verifications/deleteSubmissionData.js';
-import { IconTrash } from '../../components/icons.js';
+import {
+  IconTrash,
+  IconSparkles,
+  IconCircleCheck,
+  IconRotateCcw,
+  IconSend,
+} from '../../components/icons.js';
 import type { AttentionEvent, VerificationTeacherQuestionSnapshot } from '../../types/firestore.js';
 import { correctionStatusLabel } from '../repository/corrections/submissionCorrectionStatus.js';
 import {
@@ -1968,34 +1974,6 @@ export function VerificationsView() {
               <div className={styles.monitorHeader}>
                 <h3 className={styles.createTitle}>Consegne online</h3>
                 <div className={styles.monitorActions}>
-                  {/* M5-03: unica azione IA batch, sopra la tabella. Nessun
-                      pulsante IA sulle singole righe. */}
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    disabled={aiSelectedUids.size === 0 || aiDialogOpen}
-                    onClick={() => setAiDialogOpen(true)}
-                  >
-                    Correggi con IA
-                    {aiSelectedUids.size > 0 ? ` (${aiSelectedUids.size})` : ''}
-                  </button>
-                  {/* M5-04: azioni massive sulle righe selezionate. Nessun
-                      pulsante sulle singole righe. */}
-                  {(['complete', 'reopen', 'return'] as const).map((action) => (
-                    <button
-                      key={action}
-                      type="button"
-                      className="btn-primary"
-                      disabled={aiSelectedUids.size === 0 || aiDialogOpen || batchAction !== null}
-                      onClick={() => setBatchAction(action)}
-                    >
-                      {action === 'complete'
-                        ? 'Completa'
-                        : action === 'reopen'
-                          ? 'Riapri'
-                          : 'Restituisci'}
-                    </button>
-                  ))}
                   <button
                     type="button"
                     className="btn-primary"
@@ -2022,6 +2000,43 @@ export function VerificationsView() {
                     {exportingPdf ? 'Generazione…' : 'Esporta PDF'}
                   </button>
                 </div>
+              </div>
+              {/* M5-04A: barra azioni batch sulle righe selezionate — icone
+                  coerenti, dimensioni uniformi, griglia responsive (4 col →
+                  2 col → 1 col). Nessun pulsante sulle singole righe. */}
+              <div
+                className={styles.batchToolbar}
+                role="group"
+                aria-label="Azioni sulle consegne selezionate"
+              >
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={aiSelectedUids.size === 0 || aiDialogOpen || batchAction !== null}
+                  onClick={() => setAiDialogOpen(true)}
+                >
+                  <IconSparkles />
+                  Correggi con IA
+                  {aiSelectedUids.size > 0 ? ` (${aiSelectedUids.size})` : ''}
+                </button>
+                {(
+                  [
+                    { action: 'complete', label: 'Completa', Icon: IconCircleCheck },
+                    { action: 'reopen', label: 'Riapri', Icon: IconRotateCcw },
+                    { action: 'return', label: 'Restituisci', Icon: IconSend },
+                  ] as const
+                ).map(({ action, label, Icon }) => (
+                  <button
+                    key={action}
+                    type="button"
+                    className="btn-primary"
+                    disabled={aiSelectedUids.size === 0 || aiDialogOpen || batchAction !== null}
+                    onClick={() => setBatchAction(action)}
+                  >
+                    <Icon />
+                    {label}
+                  </button>
+                ))}
               </div>
               <>
                 {csvExportError && (
@@ -2243,11 +2258,11 @@ export function VerificationsView() {
           callables={aiCallables}
           onClose={() => setAiDialogOpen(false)}
           onApplied={() => {
-            // Aggiornamento minimale: lo stato/percentuale si aggiornano già dal
-            // listener del monitor (mirror correctionSummary); «Valutate» via
-            // una singola rilettura mirata. La selezione viene svuotata.
+            // M5-04A: aggiornamento minimale (stato/percentuale dal listener del
+            // monitor, «Valutate» da una singola rilettura mirata). La selezione
+            // NON viene toccata: resta invariata per poter concatenare azioni
+            // sullo stesso gruppo (Correggi con IA → Completa → Restituisci).
             void refreshCorrectionProgress();
-            setAiSelectedUids(new Set());
           }}
         />
       )}
@@ -2258,16 +2273,12 @@ export function VerificationsView() {
           rows={batchSelectedRows}
           db={db}
           onClose={() => setBatchAction(null)}
-          onApplied={(succeededUids) => {
-            // Una sola rilettura mirata: «Valutate»/stato/percentuale si
-            // aggiornano; le righe riuscite vengono deselezionate, le fallite
-            // restano selezionate per un eventuale nuovo tentativo.
+          onApplied={() => {
+            // M5-04A: una sola rilettura mirata aggiorna «Valutate»/stato/
+            // percentuale. La selezione resta INVARIATA (né riuscite né fallite
+            // vengono deselezionate): il docente può concatenare azioni sullo
+            // stesso gruppo. La selezione cambia solo manualmente.
             void refreshCorrectionProgress();
-            setAiSelectedUids((prev) => {
-              const next = new Set(prev);
-              for (const uid of succeededUids) next.delete(uid);
-              return next;
-            });
           }}
         />
       )}
