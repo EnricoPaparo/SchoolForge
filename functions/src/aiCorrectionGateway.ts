@@ -11,7 +11,7 @@ import {
   type AiCorrectionAuthDeps,
   type AiGatewayErrorCode,
 } from './aiCorrectionGatewayCore.js';
-import { createConfiguredAiGrader, requireConfiguredOpenAiModel } from './aiCorrectionProvider.js';
+import { createConfiguredAiGrader } from './aiCorrectionProvider.js';
 import { parseAiRuntimeConfig, type AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import {
   runExecution,
@@ -480,12 +480,6 @@ function readOpenAiSecret(): string | undefined {
   }
 }
 
-function validatePreviewProviderConfiguration(): void {
-  if (resolveAiFeatureMode(process.env) === 'openai') {
-    requireConfiguredOpenAiModel(process.env.OPENAI_MODEL);
-  }
-}
-
 async function run<T>(
   phase: 'preview' | 'run',
   request: CallableRequest,
@@ -531,7 +525,6 @@ export const aiCorrectionPreview = onCall(
       runPreview(request.data, {
         ...authDeps(request, db),
         ports: buildWritePorts(db),
-        validateProviderConfiguration: validatePreviewProviderConfiguration,
         loadRuntimeConfig: loadRuntimeConfig(db),
       }),
     ),
@@ -545,18 +538,24 @@ export const aiCorrectionRun = onCall(
     secrets: [OPENAI_API_KEY],
   },
   (request) =>
-    run('run', request, (db) =>
-      runExecution(request.data, {
-        ...authDeps(request, db),
+    run('run', request, (db) => {
+      const auth = authDeps(request, db);
+      return runExecution(request.data, {
+        ...auth,
         ports: buildWritePorts(db),
         loadRuntimeConfig: loadRuntimeConfig(db),
-        grader: () =>
-          createConfiguredAiGrader({
-            mode: resolveAiFeatureMode(process.env),
-            openAiModel: process.env.OPENAI_MODEL,
-            openAiApiKey:
-              resolveAiFeatureMode(process.env) === 'openai' ? readOpenAiSecret() : undefined,
-          }),
-      }),
-    ),
+        grader: (runtimeConfig) => {
+          const mode = auth.featureMode;
+          return createConfiguredAiGrader({
+            mode,
+            // `settings/aiConfig.model` è l'unica fonte autoritativa. Nessun
+            // fallback o override da OPENAI_MODEL/process.env.
+            openAiModel: runtimeConfig?.model,
+            // Questa lettura avviene solo quando il motore invoca la factory,
+            // dopo config/kill switch/classificazione/limiti.
+            openAiApiKey: mode === 'openai' ? readOpenAiSecret() : undefined,
+          });
+        },
+      });
+    }),
 );

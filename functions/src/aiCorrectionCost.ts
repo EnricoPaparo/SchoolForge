@@ -21,16 +21,26 @@ export interface ModelPrice {
   outputPerMillionUsd: number;
 }
 
+/** Unico snapshot ammesso dal listino production M5-05D1. */
+export const OPENAI_PRODUCTION_MODEL = 'gpt-5-nano-2025-08-07';
+
 /**
- * Listini **immutabili** e versionati. Fonte: `documentazione/m5-provider-decision.md`
- * (prezzi di listino rilevati il 16/07/2026, USD). Un nuovo prezzo = nuova
- * versione; una versione non è mai modificata in loco.
+ * Fonte ufficiale: https://developers.openai.com/api/docs/models/gpt-5-nano
+ * Verificata il 2026-07-16. La pagina documenta sia lo snapshot immutabile sia
+ * i prezzi standard di $0.05/M input e $0.40/M output.
+ */
+export const OPENAI_PRICE_SOURCE = 'https://developers.openai.com/api/docs/models/gpt-5-nano';
+export const OPENAI_PRICE_VERIFIED_ON = '2026-07-16';
+
+/**
+ * Listini production **immutabili** e versionati. Contengono solo coppie
+ * OpenAI modello-snapshot/prezzo verificate dalla fonte ufficiale indicata
+ * sopra. Un nuovo modello o prezzo richiede una nuova versione: una versione
+ * pubblicata non viene mai modificata in loco.
  */
 export const PRICE_LISTS: Readonly<Record<string, Readonly<Record<string, ModelPrice>>>> = {
   'v1-2026-07-16': {
-    'gpt-5-nano': { inputPerMillionUsd: 0.05, outputPerMillionUsd: 0.4 },
-    'gpt-5.6-luna': { inputPerMillionUsd: 1.0, outputPerMillionUsd: 6.0 },
-    'claude-haiku-4-5-20251001': { inputPerMillionUsd: 1.0, outputPerMillionUsd: 5.0 },
+    [OPENAI_PRODUCTION_MODEL]: { inputPerMillionUsd: 0.05, outputPerMillionUsd: 0.4 },
   },
 };
 

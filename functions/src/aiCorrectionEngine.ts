@@ -602,7 +602,7 @@ export interface EngineWritePorts extends EngineReadPorts {
 // ── Concorrenza limitata ──────────────────────────────────────────────────────
 
 /** Grado di parallelismo prudente sul processing delle consegne. */
-export const SUBMISSION_CONCURRENCY = 5;
+export const SUBMISSION_CONCURRENCY = 3;
 
 async function mapWithConcurrency<T, R>(
   items: T[],
@@ -637,6 +637,19 @@ interface EligiblePreflightItem {
   estimatedTokens: number;
 }
 
+interface ClassifiedPreflightItem {
+  submissionId: string;
+  submission: SubmissionData | null;
+  classification: Classification;
+  openTokens: number;
+}
+
+interface OperationPreflight {
+  teacherQuestions: TeacherQuestion[] | null;
+  classifications: ClassifiedPreflightItem[];
+  eligibleLimits: EligiblePreflightItem[];
+}
+
 /**
  * Guardrail **obbligatorio** eseguito solo sul percorso del provider **reale**
  * (`featureMode === 'openai'`), nel preflight, **prima** di lease/grader/scrittura:
@@ -649,10 +662,9 @@ interface EligiblePreflightItem {
  * Mock e modalità `disabled` non passano di qui: restano a costo zero e
  * deterministiche, con comportamento invariato.
  */
-async function enforceRealProviderPreflight(
+async function loadEnabledRealProviderConfig(
   loadRuntimeConfig: LoadRuntimeConfig | undefined,
-  eligible: EligiblePreflightItem[],
-): Promise<void> {
+): Promise<AiRuntimeConfig> {
   const config = (await loadRuntimeConfig?.()) ?? null;
   if (!isRealProviderEnabled(config)) {
     throw new AiGatewayError(
@@ -660,6 +672,13 @@ async function enforceRealProviderPreflight(
       'Il provider IA reale non è abilitato dalla configurazione runtime.',
     );
   }
+  return config;
+}
+
+function enforceRealProviderLimits(
+  config: AiRuntimeConfig,
+  eligible: EligiblePreflightItem[],
+): void {
   const input: OperationLimitInput = {
     eligibleSubmissionCount: eligible.length,
     perSubmission: eligible.map((e) => ({
@@ -671,12 +690,58 @@ async function enforceRealProviderPreflight(
   enforceOperationLimits(config.limits, input);
 }
 
+async function buildOperationPreflight(
+  request: AiCorrectionRequest,
+  ownerUid: string,
+  ports: EngineReadPorts,
+): Promise<OperationPreflight> {
+  const verification = await ports.loadVerification(request.verificationId);
+  const teacherQuestions = resolveTeacherQuestions(verification, ownerUid);
+  const classifications = await mapWithConcurrency(
+    request.submissionIds,
+    SUBMISSION_CONCURRENCY,
+    async (submissionId): Promise<ClassifiedPreflightItem> => {
+      const [submission, correction] = await Promise.all([
+        ports.loadSubmission(submissionId),
+        ports.loadCorrection(submissionId),
+      ]);
+      const classification = classifySubmission({
+        submissionId,
+        expectedOwner: ownerUid,
+        expectedVerificationId: request.verificationId,
+        teacherQuestions,
+        submission,
+        correction,
+      });
+      const openTokens =
+        classification.status === 'eligible'
+          ? estimateOpenTokensForSubmission(
+              teacherQuestions ?? [],
+              classification.eligible.openOrders,
+              submission?.answers ?? {},
+            )
+          : 0;
+      return { submissionId, submission, classification, openTokens };
+    },
+  );
+  const eligibleLimits = classifications
+    .filter((item) => item.classification.status === 'eligible')
+    .map((item) => {
+      const eligible = (item.classification as { status: 'eligible'; eligible: EligibleSubmission })
+        .eligible;
+      return {
+        openQuestionCount: eligible.openOrders.length,
+        estimatedTokens:
+          item.openTokens + (eligible.openOrders.length > 0 ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0),
+      };
+    });
+  return { teacherQuestions, classifications, eligibleLimits };
+}
+
 // ── Preview ───────────────────────────────────────────────────────────────────
 
 export interface PreviewDeps extends AiCorrectionAuthDeps {
   ports: EngineReadPorts;
-  /** Validazione opzionale della configurazione provider, dopo auth/feature gate. */
-  validateProviderConfiguration?: () => void;
   /**
    * M5-05D1 — lettura della config runtime `settings/aiConfig` (kill switch +
    * limiti). Richiesta **solo** sul percorso provider reale; assente ⇒ trattata
@@ -695,46 +760,20 @@ export async function runPreview(
   deps: PreviewDeps,
 ): Promise<AiCorrectionPreviewResponse> {
   const request = await authorizeAndValidate(rawInput, deps);
-  deps.validateProviderConfiguration?.();
-  const verification = await deps.ports.loadVerification(request.verificationId);
-  const teacherQuestions = resolveTeacherQuestions(verification, deps.callerUid);
+  // Dopo auth/owner, la config runtime è la prima autorità del provider reale.
+  // Config assente/invalida/disabilitata termina qui, prima di classificazione.
+  const runtimeConfig =
+    deps.featureMode === 'openai'
+      ? await loadEnabledRealProviderConfig(deps.loadRuntimeConfig)
+      : null;
+  const preflight = await buildOperationPreflight(request, deps.callerUid!, deps.ports);
 
   const counts: AiCorrectionCounts = emptyCounts(request.submissionIds.length);
   const excluded: { submissionId: string; reason: ExclusionCode }[] = [];
   const eligiblePreflight: EligiblePreflightItem[] = [];
   let tokensEstimated = 0;
 
-  const classifications = await mapWithConcurrency(
-    request.submissionIds,
-    SUBMISSION_CONCURRENCY,
-    async (submissionId) => {
-      const [submission, correction] = await Promise.all([
-        deps.ports.loadSubmission(submissionId),
-        deps.ports.loadCorrection(submissionId),
-      ]);
-      const classification = classifySubmission({
-        submissionId,
-        expectedOwner: deps.callerUid!,
-        expectedVerificationId: request.verificationId,
-        teacherQuestions,
-        submission,
-        correction,
-      });
-      // Stima token con la formula deterministica (domanda+soluzione+risposta):
-      // la stessa usata dal run, così preview e run coincidono a parità di dati.
-      const openTokens =
-        classification.status === 'eligible'
-          ? estimateOpenTokensForSubmission(
-              teacherQuestions ?? [],
-              classification.eligible.openOrders,
-              submission?.answers ?? {},
-            )
-          : 0;
-      return { submissionId, classification, openTokens };
-    },
-  );
-
-  for (const { submissionId, classification, openTokens } of classifications) {
+  for (const { submissionId, classification, openTokens } of preflight.classifications) {
     if (classification.status === 'excluded') {
       counts.excluded++;
       excluded.push({ submissionId, reason: classification.code });
@@ -760,8 +799,8 @@ export async function runPreview(
 
   // M5-05D1 — solo provider reale: kill switch da config runtime + limiti DEV
   // applicati nel preflight, prima di qualsiasi elaborazione. Mock: nessun gate.
-  if (deps.featureMode === 'openai') {
-    await enforceRealProviderPreflight(deps.loadRuntimeConfig, eligiblePreflight);
+  if (runtimeConfig) {
+    enforceRealProviderLimits(runtimeConfig, eligiblePreflight);
   }
 
   return {
@@ -780,8 +819,11 @@ export async function runPreview(
 
 export interface RunDeps extends AiCorrectionAuthDeps {
   ports: EngineWritePorts;
-  /** Factory lazy per validare secret/config solo dopo auth, prima di ogni scrittura. */
-  grader: AiGrader | (() => AiGrader);
+  /**
+   * Factory lazy: sul percorso reale riceve l'unica config runtime già
+   * validata, ed è invocata solo dopo kill switch, classificazione e limiti.
+   */
+  grader: AiGrader | ((runtimeConfig: AiRuntimeConfig | null) => AiGrader);
   /**
    * M5-05D1 — lettura della config runtime `settings/aiConfig` (kill switch +
    * limiti). Richiesta **solo** sul percorso provider reale; assente ⇒ trattata
@@ -802,7 +844,6 @@ export async function runExecution(
   deps: RunDeps,
 ): Promise<AiCorrectionRunResponse> {
   const request = await authorizeAndValidate(rawInput, deps);
-  const grader = typeof deps.grader === 'function' ? deps.grader() : deps.grader;
   const mode: AiEnabledFeatureMode = deps.featureMode === 'openai' ? 'openai' : 'mock';
   const ownerUid = deps.callerUid!;
   const selectionHash = computeSelectionHash(request.verificationId, request.submissionIds);
@@ -815,44 +856,18 @@ export async function runExecution(
   // `disabled` non entrano qui e restano a costo zero, invariati. Il costo di
   // questa classificazione anticipata (una lettura per consegna) è limitato al
   // percorso provider reale, non al mock.
-  if (mode === 'openai') {
-    const preflightVerification = await deps.ports.loadVerification(request.verificationId);
-    const preflightQuestions = resolveTeacherQuestions(preflightVerification, ownerUid);
-    const eligiblePreflight = await mapWithConcurrency(
-      request.submissionIds,
-      SUBMISSION_CONCURRENCY,
-      async (submissionId): Promise<EligiblePreflightItem | null> => {
-        const [submission, correction] = await Promise.all([
-          deps.ports.loadSubmission(submissionId),
-          deps.ports.loadCorrection(submissionId),
-        ]);
-        const classification = classifySubmission({
-          submissionId,
-          expectedOwner: ownerUid,
-          expectedVerificationId: request.verificationId,
-          teacherQuestions: preflightQuestions,
-          submission,
-          correction,
-        });
-        if (classification.status !== 'eligible') return null;
-        const e = classification.eligible;
-        const openTokens = estimateOpenTokensForSubmission(
-          preflightQuestions ?? [],
-          e.openOrders,
-          submission?.answers ?? {},
-        );
-        return {
-          openQuestionCount: e.openOrders.length,
-          estimatedTokens:
-            openTokens + (e.openOrders.length > 0 ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0),
-        };
-      },
-    );
-    await enforceRealProviderPreflight(
-      deps.loadRuntimeConfig,
-      eligiblePreflight.filter((x): x is EligiblePreflightItem => x !== null),
-    );
+  // Ordine fail-closed reale: auth/owner → config/kill switch → classificazione
+  // e limiti → secret/grader → lease. Il risultato della classificazione viene
+  // riusato dopo la lease; commitSubmission mantiene la rilettura transazionale
+  // della correction per proteggere dalle race.
+  const runtimeConfig =
+    mode === 'openai' ? await loadEnabledRealProviderConfig(deps.loadRuntimeConfig) : null;
+  const preflight =
+    mode === 'openai' ? await buildOperationPreflight(request, ownerUid, deps.ports) : null;
+  if (runtimeConfig && preflight) {
+    enforceRealProviderLimits(runtimeConfig, preflight.eligibleLimits);
   }
+  const grader = typeof deps.grader === 'function' ? deps.grader(runtimeConfig) : deps.grader;
 
   // Idempotenza concorrente: acquisisci la lease sul run doc (transazione).
   const begin = await deps.ports.beginRun(request.requestId, {
@@ -880,26 +895,39 @@ export async function runExecution(
   }
   // begin.state === 'acquired' → questo executionId possiede la lease.
 
-  const verification = await deps.ports.loadVerification(request.verificationId);
-  const teacherQuestions = resolveTeacherQuestions(verification, ownerUid);
+  const verification = preflight ? null : await deps.ports.loadVerification(request.verificationId);
+  const teacherQuestions = preflight
+    ? preflight.teacherQuestions
+    : resolveTeacherQuestions(verification, ownerUid);
   const byOrder = new Map((teacherQuestions ?? []).map((q) => [q.order, q]));
+  const preflightBySubmission = new Map(
+    preflight?.classifications.map((item) => [item.submissionId, item]) ?? [],
+  );
 
   const outcomes = await mapWithConcurrency(
     request.submissionIds,
     SUBMISSION_CONCURRENCY,
     async (submissionId): Promise<GradeOutcome> => {
-      const [submission, correction] = await Promise.all([
-        deps.ports.loadSubmission(submissionId),
-        deps.ports.loadCorrection(submissionId),
-      ]);
-      const classification = classifySubmission({
-        submissionId,
-        expectedOwner: ownerUid,
-        expectedVerificationId: request.verificationId,
-        teacherQuestions,
-        submission,
-        correction,
-      });
+      const cached = preflightBySubmission.get(submissionId);
+      const [submission, classification] = cached
+        ? [cached.submission, cached.classification]
+        : await (async (): Promise<[SubmissionData | null, Classification]> => {
+            const [loadedSubmission, correction] = await Promise.all([
+              deps.ports.loadSubmission(submissionId),
+              deps.ports.loadCorrection(submissionId),
+            ]);
+            return [
+              loadedSubmission,
+              classifySubmission({
+                submissionId,
+                expectedOwner: ownerUid,
+                expectedVerificationId: request.verificationId,
+                teacherQuestions,
+                submission: loadedSubmission,
+                correction,
+              }),
+            ];
+          })();
       if (classification.status === 'excluded') {
         return {
           result: {

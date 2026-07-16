@@ -13,6 +13,8 @@
  * porta iniettata (una `get` puntuale per operazione, nessun listener/polling).
  */
 
+import { lookupModelPrice } from './aiCorrectionCost.js';
+
 /** Limiti prudenziali DEV applicati server-side nel preflight (M5-05D1 §2). */
 export interface AiRuntimeLimits {
   maxSubmissionsPerOperation: number;
@@ -68,18 +70,18 @@ function positiveFinite(value: unknown, max: number): number | null {
 function parseLimits(raw: unknown): AiRuntimeLimits | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const r = raw as Record<string, unknown>;
-  const maxSubmissionsPerOperation = posInt(r.maxSubmissionsPerOperation, 1_000);
-  const maxOpenQuestionsPerSubmission = posInt(r.maxOpenQuestionsPerSubmission, 200);
-  const maxEstimatedTokensPerSubmission = posInt(r.maxEstimatedTokensPerSubmission, 1_000_000);
-  const maxEstimatedTokensPerOperation = posInt(r.maxEstimatedTokensPerOperation, 50_000_000);
-  const maxProviderConcurrency = posInt(r.maxProviderConcurrency, 20);
-  const attemptTimeoutMs = posInt(r.attemptTimeoutMs, 120_000);
-  // 0 retry è ammesso; il tetto è basso per sicurezza costi.
+  const maxSubmissionsPerOperation = posInt(r.maxSubmissionsPerOperation, 30);
+  const maxOpenQuestionsPerSubmission = posInt(r.maxOpenQuestionsPerSubmission, 20);
+  const maxEstimatedTokensPerSubmission = posInt(r.maxEstimatedTokensPerSubmission, 10_000);
+  const maxEstimatedTokensPerOperation = posInt(r.maxEstimatedTokensPerOperation, 300_000);
+  const maxProviderConcurrency = posInt(r.maxProviderConcurrency, 3);
+  const attemptTimeoutMs = posInt(r.attemptTimeoutMs, 60_000);
+  // 0 retry è ammesso; 1 è l'hard ceiling DEV.
   const maxApplicationRetries =
     typeof r.maxApplicationRetries === 'number' &&
     Number.isInteger(r.maxApplicationRetries) &&
     r.maxApplicationRetries >= 0 &&
-    r.maxApplicationRetries <= 3
+    r.maxApplicationRetries <= 1
       ? r.maxApplicationRetries
       : null;
   if (
@@ -120,12 +122,16 @@ export function parseAiRuntimeConfig(raw: unknown): AiRuntimeConfig | null {
   if (typeof r.model !== 'string' || !MODEL_ID_RE.test(r.model)) return null;
   if (typeof r.configVersion !== 'string' || !VERSION_RE.test(r.configVersion)) return null;
   if (typeof r.priceListVersion !== 'string' || !VERSION_RE.test(r.priceListVersion)) return null;
+  // Modello e listino sono una coppia unica e autoritativa. Un alias mobile,
+  // un modello non verificato o una versione sconosciuta disabilitano il
+  // provider prima di leggere il secret o costruire il transport.
+  if (lookupModelPrice(r.priceListVersion, r.model) === null) return null;
 
   const limits = parseLimits(r.limits);
   if (limits === null) return null;
 
   if (typeof r.budget !== 'object' || r.budget === null) return null;
-  const monthlyUsd = positiveFinite((r.budget as Record<string, unknown>).monthlyUsd, 10_000);
+  const monthlyUsd = positiveFinite((r.budget as Record<string, unknown>).monthlyUsd, 5);
   if (monthlyUsd === null) return null;
 
   return {

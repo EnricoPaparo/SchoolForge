@@ -4,6 +4,8 @@ import { DEV_LIMITS, enforceOperationLimits } from './aiCorrectionLimits.js';
 import { AiGatewayError } from './aiCorrectionGatewayCore.js';
 import {
   DEFAULT_PRICE_LIST_VERSION,
+  OPENAI_PRODUCTION_MODEL,
+  PRICE_LISTS,
   lookupModelPrice,
   tokenCostMicroUsd,
   microUsdToUsd,
@@ -23,7 +25,7 @@ import {
 const VALID_CONFIG_RAW = {
   enabled: true,
   provider: 'openai',
-  model: 'gpt-5-nano',
+  model: OPENAI_PRODUCTION_MODEL,
   environment: 'dev',
   limits: { ...DEV_LIMITS },
   budget: { monthlyUsd: 5 },
@@ -36,7 +38,7 @@ describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
     const cfg = parseAiRuntimeConfig(VALID_CONFIG_RAW);
     expect(cfg).not.toBeNull();
     expect(isRealProviderEnabled(cfg)).toBe(true);
-    expect(cfg!.model).toBe('gpt-5-nano');
+    expect(cfg!.model).toBe(OPENAI_PRODUCTION_MODEL);
     expect(cfg!.budget.monthlyUsd).toBe(5);
   });
 
@@ -69,19 +71,38 @@ describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
     }
   });
 
-  it('allows maxApplicationRetries = 0 but rejects > 3', () => {
+  it('rejects an unknown model/priceListVersion pair before provider construction', () => {
+    expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, model: 'gpt-5-nano' })).toBeNull();
     expect(
-      parseAiRuntimeConfig({
-        ...VALID_CONFIG_RAW,
-        limits: { ...DEV_LIMITS, maxApplicationRetries: 0 },
-      }),
-    ).not.toBeNull();
-    expect(
-      parseAiRuntimeConfig({
-        ...VALID_CONFIG_RAW,
-        limits: { ...DEV_LIMITS, maxApplicationRetries: 4 },
-      }),
+      parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, priceListVersion: 'v2-unknown' }),
     ).toBeNull();
+  });
+
+  it.each([
+    ['maxSubmissionsPerOperation', 30, 29, 31],
+    ['maxOpenQuestionsPerSubmission', 20, 19, 21],
+    ['maxEstimatedTokensPerSubmission', 10_000, 9_999, 10_001],
+    ['maxEstimatedTokensPerOperation', 300_000, 299_999, 300_001],
+    ['maxProviderConcurrency', 3, 2, 4],
+    ['attemptTimeoutMs', 60_000, 59_999, 60_001],
+    ['maxApplicationRetries', 1, 0, 2],
+  ] as const)(
+    '%s: ceiling and lower values are valid; a higher value is invalid',
+    (key, cap, lower, over) => {
+      const withValue = (value: number) => ({
+        ...VALID_CONFIG_RAW,
+        limits: { ...DEV_LIMITS, [key]: value },
+      });
+      expect(parseAiRuntimeConfig(withValue(cap))).not.toBeNull();
+      expect(parseAiRuntimeConfig(withValue(lower))).not.toBeNull();
+      expect(parseAiRuntimeConfig(withValue(over))).toBeNull();
+    },
+  );
+
+  it('monthlyUsd: 5 and lower positive values are valid; above 5 is invalid', () => {
+    expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, budget: { monthlyUsd: 5 } })).not.toBeNull();
+    expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, budget: { monthlyUsd: 1 } })).not.toBeNull();
+    expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, budget: { monthlyUsd: 5.01 } })).toBeNull();
   });
 });
 
@@ -131,7 +152,7 @@ describe('enforceOperationLimits (M5-05D1)', () => {
 
 describe('cost (M5-05D1)', () => {
   it('looks up the versioned model price and computes micro-USD exactly', () => {
-    const price = lookupModelPrice(DEFAULT_PRICE_LIST_VERSION, 'gpt-5-nano');
+    const price = lookupModelPrice(DEFAULT_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL);
     expect(price).toEqual({ inputPerMillionUsd: 0.05, outputPerMillionUsd: 0.4 });
     // 4000 in * $0.05/M + 1000 out * $0.40/M = 200 + 400 = 600 µUSD = $0.0006.
     expect(tokenCostMicroUsd(4000, 1000, price!, 'nearest')).toBe(600);
@@ -144,13 +165,19 @@ describe('cost (M5-05D1)', () => {
     expect(tokenCostMicroUsd(4001, 0, price, 'nearest')).toBe(200);
   });
   it('returns null for unknown version/model', () => {
-    expect(lookupModelPrice('nope', 'gpt-5-nano')).toBeNull();
+    expect(lookupModelPrice('nope', OPENAI_PRODUCTION_MODEL)).toBeNull();
     expect(lookupModelPrice(DEFAULT_PRICE_LIST_VERSION, 'nope')).toBeNull();
   });
   it('zero tokens → zero cost (mock / closed-only)', () => {
-    const price = lookupModelPrice(DEFAULT_PRICE_LIST_VERSION, 'gpt-5-nano')!;
+    const price = lookupModelPrice(DEFAULT_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL)!;
     expect(tokenCostMicroUsd(0, 0, price, 'ceil')).toBe(0);
     expect(tokenCostMicroUsd(0, 0, price, 'nearest')).toBe(0);
+  });
+
+  it('production list contains only the verified immutable OpenAI snapshot', () => {
+    expect(Object.keys(PRICE_LISTS[DEFAULT_PRICE_LIST_VERSION]!)).toEqual([
+      OPENAI_PRODUCTION_MODEL,
+    ]);
   });
 });
 

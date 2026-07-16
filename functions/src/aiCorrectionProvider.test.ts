@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MockAiGrader, resolveAiFeatureMode } from './aiCorrectionGatewayCore.js';
 import { createConfiguredAiGrader } from './aiCorrectionProvider.js';
+import { OPENAI_PRODUCTION_MODEL } from './aiCorrectionCost.js';
 import type { OpenAiTransport } from './openAiGrader.js';
 
 describe('AI provider configuration', () => {
@@ -25,15 +26,21 @@ describe('AI provider configuration', () => {
     expect(createOpenAiTransport).not.toHaveBeenCalled();
   });
 
-  it('creates OpenAiGrader only for explicit, valid configuration', () => {
+  it('uses the explicit runtime model even when OPENAI_MODEL differs', () => {
+    vi.stubEnv('OPENAI_MODEL', 'environment-must-not-win');
     const transport = { send: vi.fn() } as unknown as OpenAiTransport;
     const createOpenAiTransport = vi.fn(() => transport);
     const grader = createConfiguredAiGrader(
-      { mode: 'openai', openAiModel: 'gpt-5-nano', openAiApiKey: 'test-only-secret' },
+      {
+        mode: 'openai',
+        openAiModel: OPENAI_PRODUCTION_MODEL,
+        openAiApiKey: 'test-only-secret',
+      },
       { createOpenAiTransport },
     );
     expect(grader.id).toBe('openai');
-    expect(grader.model).toBe('gpt-5-nano');
+    expect(grader.model).toBe(OPENAI_PRODUCTION_MODEL);
     expect(createOpenAiTransport).toHaveBeenCalledWith('test-only-secret');
+    vi.unstubAllEnvs();
   });
 });

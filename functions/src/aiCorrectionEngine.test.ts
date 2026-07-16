@@ -28,6 +28,7 @@ import {
   type ValidatedScore,
   type VerificationData,
 } from './aiCorrectionEngine.js';
+import { OPENAI_PRODUCTION_MODEL } from './aiCorrectionCost.js';
 
 const OWNER = 'owner-uid';
 const VERIF = 'verif-1';
@@ -102,15 +103,20 @@ class FakeStore implements EngineWritePorts {
   events: unknown[] = [];
 
   loadVerificationCalls = 0;
+  loadSubmissionCalls = 0;
+  loadCorrectionCalls = 0;
   commitCalls = 0;
 
   loadVerification = async (): Promise<VerificationData | null> => {
     this.loadVerificationCalls++;
     return this.verification;
   };
-  loadSubmission = async (id: string): Promise<SubmissionData | null> =>
-    this.submissions.get(id) ?? null;
+  loadSubmission = async (id: string): Promise<SubmissionData | null> => {
+    this.loadSubmissionCalls++;
+    return this.submissions.get(id) ?? null;
+  };
   loadCorrection = async (id: string): Promise<CorrectionData | null> => {
+    this.loadCorrectionCalls++;
     const c = this.corrections.get(id);
     return c
       ? { status: c.status, evaluations: { ...c.evaluations }, reopenCount: c.reopenCount }
@@ -250,7 +256,7 @@ class FakeStore implements EngineWritePorts {
 const ENABLED_RUNTIME_CONFIG = {
   enabled: true,
   provider: 'openai' as const,
-  model: 'gpt-5-nano',
+  model: OPENAI_PRODUCTION_MODEL,
   environment: 'dev' as const,
   limits: {
     maxSubmissionsPerOperation: 30,
@@ -578,15 +584,19 @@ describe('M5-05D1 — kill switch + limiti sul percorso provider reale', () => {
       const store = new FakeStore();
       seedOneOpenOneClosed(store, 's1');
       const grader = { id: 'openai', model: 'm', grade: vi.fn() } as unknown as AiGrader;
+      const graderFactory = vi.fn(() => grader);
       await expect(
         runExecution(req([sid('s1')]), {
           ...baseDeps(store, grader),
+          grader: graderFactory,
           featureMode: 'openai',
           loadRuntimeConfig: port,
         }),
       ).rejects.toMatchObject({ code: 'feature_disabled' });
       expect(store.runs.size).toBe(0); // nessuna lease acquisita
       expect(store.commitCalls).toBe(0);
+      expect(store.loadVerificationCalls).toBe(0); // config precede classificazione
+      expect(graderFactory).not.toHaveBeenCalled();
       expect(grader.grade as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
     }
   });
@@ -595,13 +605,22 @@ describe('M5-05D1 — kill switch + limiti sul percorso provider reale', () => {
     const store = new FakeStore();
     seedOneOpenOneClosed(store, 's1');
     const grader = new MockAiGrader();
+    const graderFactory = vi.fn(() => grader);
     const res = await runExecution(req([sid('s1')]), {
       ...baseDeps(store, grader),
+      grader: graderFactory,
       featureMode: 'openai',
       loadRuntimeConfig: enabledConfigPort,
     });
     expect(res.mode).toBe('openai');
     expect(res.results[0]!.outcome).toBe('succeeded');
+    expect(graderFactory).toHaveBeenCalledTimes(1);
+    expect(graderFactory).toHaveBeenCalledWith(ENABLED_RUNTIME_CONFIG);
+    // Il preflight viene riusato dopo la lease: nessuna seconda lettura della
+    // verifica/submission/correction prima del commit transazionale.
+    expect(store.loadVerificationCalls).toBe(1);
+    expect(store.loadSubmissionCalls).toBe(1);
+    expect(store.loadCorrectionCalls).toBe(1);
   });
 
   it('run: openai oltre il limite di consegne è rifiutato prima della lease', async () => {
@@ -623,11 +642,13 @@ describe('M5-05D1 — kill switch + limiti sul percorso provider reale', () => {
         answers: { '0': { tipo: 'chiusa_singola', selectedId: 'a' } },
       });
     }
+    const graderFactory = vi.fn(() => new MockAiGrader());
     await expect(
       runExecution(
         { verificationId: VERIF, submissionIds: ids, requestId: REQ },
         {
           ...baseDeps(store, new MockAiGrader()),
+          grader: graderFactory,
           featureMode: 'openai',
           loadRuntimeConfig: enabledConfigPort,
         },
@@ -635,6 +656,7 @@ describe('M5-05D1 — kill switch + limiti sul percorso provider reale', () => {
     ).rejects.toMatchObject({ code: 'limit_exceeded' });
     expect(store.runs.size).toBe(0);
     expect(store.commitCalls).toBe(0);
+    expect(graderFactory).not.toHaveBeenCalled();
   });
 
   it('preview: openai disabilitato è bloccato; abilitato passa', async () => {
@@ -646,6 +668,9 @@ describe('M5-05D1 — kill switch + limiti sul percorso provider reale', () => {
         featureMode: 'openai',
       }),
     ).rejects.toMatchObject({ code: 'feature_disabled' });
+    expect(store.loadVerificationCalls).toBe(0);
+    expect(store.loadSubmissionCalls).toBe(0);
+    expect(store.loadCorrectionCalls).toBe(0);
 
     const res = await runPreview(req([sid('s1')]), {
       ...baseDeps(store, new MockAiGrader()),
@@ -732,19 +757,23 @@ describe('runExecution — closed scoring + open grading', () => {
   it('resolves OpenAI configuration after auth but before run metadata or provider calls', async () => {
     const store = new FakeStore();
     const providerCall = vi.fn();
+    const graderFactory = vi.fn(() => {
+      throw new AiGatewayError('provider_config_invalid', 'Configurazione mancante.');
+    });
     await expect(
       runExecution(req([sid('s1')]), {
         callerUid: OWNER,
         getOwnerUid: async () => OWNER,
         featureMode: 'openai',
         ports: store,
-        grader: () => {
-          throw new AiGatewayError('provider_config_invalid', 'Configurazione mancante.');
-        },
+        loadRuntimeConfig: enabledConfigPort,
+        grader: graderFactory,
       }),
     ).rejects.toMatchObject({ code: 'provider_config_invalid' });
     expect(store.runs.size).toBe(0);
     expect(store.commitCalls).toBe(0);
+    expect(graderFactory).toHaveBeenCalledTimes(1);
+    expect(graderFactory).toHaveBeenCalledWith(ENABLED_RUNTIME_CONFIG);
     expect(providerCall).not.toHaveBeenCalled();
   });
 
