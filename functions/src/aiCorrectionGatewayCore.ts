@@ -214,9 +214,24 @@ export interface AiGraderQuestion {
   studentAnswer: string;
 }
 
+/**
+ * Contesto della consegna per il **feedback generale** (M5-04B): punti già
+ * fissati prima della valutazione delle aperte (chiuse deterministiche + domande
+ * già valutate) e punteggio massimo totale della consegna. Consente al grader di
+ * calcolare il **totale finale** (`priorPoints` + somma dei punti delle aperte)
+ * nella **stessa** chiamata, senza una seconda invocazione. Facoltativo: se
+ * assente il grader usa `priorPoints = 0` e il massimo delle sole domande
+ * ricevute.
+ */
+export interface AiGraderSubmissionContext {
+  priorPoints: number;
+  totalMaxPoints: number;
+}
+
 export interface AiGraderInput {
   requestId: string;
   questions: AiGraderQuestion[];
+  submissionContext?: AiGraderSubmissionContext;
 }
 
 /** Output strutturato e tipizzato per una singola domanda. */
@@ -230,12 +245,62 @@ export interface AiGraderOutput {
   requestId: string;
   results: AiGraderQuestionResult[];
   /**
+   * Feedback **generale** della consegna (M5-04B): motivazione sintetica del
+   * punteggio + consiglio concreto (o complimento se il risultato è massimo).
+   * Prodotto nella **stessa** chiamata delle aperte, mai in una seconda. Tono
+   * professionale, nessun dato personale, ≤ 700 caratteri. Il chiamante lo
+   * applica al campo `generalFeedback` della correzione **solo** se la consegna
+   * risulta interamente valutata e il docente non ne ha già scritto uno.
+   */
+  generalFeedback?: string;
+  /**
    * Consumo **reale** di token riportato dal provider, se disponibile. Prepara
    * il contratto per un provider reale (M5-05): il chiamante somma questo valore
    * in `tokensActual`. `MockAiGrader` **non** lo popola → in modalità mock
    * `tokensActual` resta **0** (nessun token reale consumato).
    */
   usage?: { tokens: number };
+}
+
+/** Lunghezza massima del feedback generale della consegna (M5-04B). */
+export const MAX_GENERAL_FEEDBACK_CHARS = 700;
+
+function formatPoints(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '');
+}
+
+/**
+ * Costruisce il **feedback generale deterministico** (M5-04B) a partire dai
+ * **totali finali** della consegna. Usato sia dal `MockAiGrader` (consegne con
+ * aperte) sia dal motore per le consegne con **sole chiuse** (nessuna chiamata
+ * al grader): stessa funzione pura → stesso testo a parità di numeri. È marcato
+ * `[mock]`, non contiene alcun dato personale (solo numeri), tono professionale
+ * e non giudicante, sempre ≤ 700 caratteri. Se il risultato è massimo formula un
+ * complimento con un suggerimento di approfondimento; altrimenti motiva il
+ * punteggio e propone un passo concreto per colmare le lacune.
+ */
+export function buildMockGeneralFeedback(totalPoints: number, maxPoints: number): string {
+  const pct = maxPoints > 0 ? Math.round((totalPoints / maxPoints) * 100) : 0;
+  const score = `${formatPoints(totalPoints)}/${formatPoints(maxPoints)} (${pct}%)`;
+  if (maxPoints > 0 && totalPoints >= maxPoints) {
+    return `[mock] Risultato pieno: ${score}. La prova mostra piena padronanza degli argomenti richiesti. Per continuare a crescere, puoi approfondire gli stessi temi affrontando esempi più articolati o qualche caso limite.`;
+  }
+  return `[mock] Punteggio complessivo ${score}. Il risultato riflette una preparazione ancora parziale sugli argomenti della prova. Per colmare le lacune, rivedi i concetti collegati alle domande con punteggio più basso e prova a rifare esercizi analoghi, un passo alla volta.`;
+}
+
+/**
+ * Valida **server-side** il feedback generale prodotto dal grader senza mai
+ * fidarsene: ritorna la stringa valida (non vuota, ≤ {@link
+ * MAX_GENERAL_FEEDBACK_CHARS} caratteri) oppure `null`. Quando la consegna ha
+ * domande aperte il feedback è **richiesto**: un `null` qui rende invalido
+ * l'**intero** output del grader per quella consegna (validazione **atomica**),
+ * quindi nessun punteggio e nessun feedback vengono scritti — vedi il motore.
+ */
+export function validateGeneralFeedback(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  if (value.trim().length === 0) return null;
+  if (value.length > MAX_GENERAL_FEEDBACK_CHARS) return null;
+  return value;
 }
 
 /**
@@ -286,7 +351,16 @@ export class MockAiGrader implements AiGrader {
         feedback: '[mock] valutazione simulata deterministica (M5)',
       };
     });
-    return Promise.resolve({ requestId: input.requestId, results });
+    // Feedback generale (M5-04B): totale finale = punti già fissati (chiuse +
+    // già valutate, via submissionContext) + punti delle aperte appena valutate.
+    // Nessuna seconda chiamata, nessuna rete, nessuna casualità: puro.
+    const openPoints = results.reduce((sum, r) => sum + r.points, 0);
+    const priorPoints = input.submissionContext?.priorPoints ?? 0;
+    const totalMaxPoints =
+      input.submissionContext?.totalMaxPoints ??
+      input.questions.reduce((sum, q) => sum + q.maxPoints, 0);
+    const generalFeedback = buildMockGeneralFeedback(priorPoints + openPoints, totalMaxPoints);
+    return Promise.resolve({ requestId: input.requestId, results, generalFeedback });
   }
 }
 

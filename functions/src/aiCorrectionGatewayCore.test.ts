@@ -3,10 +3,13 @@ import {
   AiGatewayError,
   authorizeAndValidate,
   authorizeOwnerCall,
+  buildMockGeneralFeedback,
   MockAiGrader,
+  MAX_GENERAL_FEEDBACK_CHARS,
   MAX_SUBMISSIONS_PER_OPERATION,
   resolveAiFeatureMode,
   validateAiCorrectionRequest,
+  validateGeneralFeedback,
   type AiCorrectionAuthDeps,
   type AiFeatureMode,
   type AiGraderInput,
@@ -269,6 +272,53 @@ describe('MockAiGrader', () => {
   it('makes no network call', async () => {
     await new MockAiGrader().grade(input);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('produces a deterministic, mock-marked general feedback (M5-04B)', async () => {
+    const out = await new MockAiGrader().grade({
+      ...input,
+      submissionContext: { priorPoints: 1, totalMaxPoints: 6 },
+    });
+    expect(typeof out.generalFeedback).toBe('string');
+    expect(out.generalFeedback).toContain('[mock]');
+    expect(out.generalFeedback!.length).toBeLessThanOrEqual(MAX_GENERAL_FEEDBACK_CHARS);
+    // No personal data (only numbers/marker) and no echo of the student answer.
+    expect(out.generalFeedback).not.toContain('A0');
+    expect(out.generalFeedback).not.toContain('A1');
+  });
+});
+
+describe('buildMockGeneralFeedback (M5-04B)', () => {
+  it('is deterministic and never exceeds the char limit', () => {
+    expect(buildMockGeneralFeedback(4, 10)).toBe(buildMockGeneralFeedback(4, 10));
+    for (const [t, m] of [
+      [0, 10],
+      [4, 10],
+      [10, 10],
+      [7.25, 9.5],
+      [0, 0],
+    ] as const) {
+      expect(buildMockGeneralFeedback(t, m).length).toBeLessThanOrEqual(MAX_GENERAL_FEEDBACK_CHARS);
+    }
+  });
+
+  it('phrases a maximum result as a compliment, a partial one as motivation + advice', () => {
+    expect(buildMockGeneralFeedback(10, 10)).toContain('pieno');
+    expect(buildMockGeneralFeedback(4, 10)).toContain('complessivo');
+    expect(buildMockGeneralFeedback(10, 10)).not.toBe(buildMockGeneralFeedback(4, 10));
+  });
+});
+
+describe('validateGeneralFeedback (M5-04B)', () => {
+  it('accepts a non-empty string within the limit', () => {
+    expect(validateGeneralFeedback('Buon lavoro complessivo.')).toBe('Buon lavoro complessivo.');
+  });
+  it('rejects non-strings, empty/blank, and over-limit values', () => {
+    expect(validateGeneralFeedback(42)).toBeNull();
+    expect(validateGeneralFeedback(undefined)).toBeNull();
+    expect(validateGeneralFeedback('')).toBeNull();
+    expect(validateGeneralFeedback('   ')).toBeNull();
+    expect(validateGeneralFeedback('x'.repeat(MAX_GENERAL_FEEDBACK_CHARS + 1))).toBeNull();
   });
 });
 
