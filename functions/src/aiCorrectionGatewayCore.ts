@@ -229,6 +229,13 @@ export interface AiGraderQuestionResult {
 export interface AiGraderOutput {
   requestId: string;
   results: AiGraderQuestionResult[];
+  /**
+   * Consumo **reale** di token riportato dal provider, se disponibile. Prepara
+   * il contratto per un provider reale (M5-05): il chiamante somma questo valore
+   * in `tokensActual`. `MockAiGrader` **non** lo popola → in modalità mock
+   * `tokensActual` resta **0** (nessun token reale consumato).
+   */
+  usage?: { tokens: number };
 }
 
 /**

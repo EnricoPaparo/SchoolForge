@@ -282,55 +282,87 @@ function beginRun(db: Firestore): EngineWritePorts['beginRun'] {
     return db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       const now = FieldValue.serverTimestamp();
-      if (!snap.exists) {
-        tx.set(ref, {
-          requestId,
-          ownerUid: meta.ownerUid,
-          actorUid: meta.actorUid,
-          verificationId: meta.verificationId,
-          mode: 'mock',
-          provider: 'mock',
-          status: 'running',
-          selectionHash: meta.selectionHash,
-          submissionCount: meta.submissionCount,
-          tokensEstimated: 0,
-          tokensActual: 0,
-          cost: 0,
-          createdAt: now,
-          updatedAt: now,
-        });
-        return { state: 'created' as const };
-      }
+      const nowMs = Date.now();
+      const acquire = () => {
+        // Acquisisce/rinnova la lease per questo executionId.
+        tx.set(
+          ref,
+          {
+            requestId,
+            ownerUid: meta.ownerUid,
+            actorUid: meta.actorUid,
+            verificationId: meta.verificationId,
+            mode: 'mock',
+            provider: 'mock',
+            status: 'running',
+            selectionHash: meta.selectionHash,
+            submissionCount: meta.submissionCount,
+            executionId: meta.executionId,
+            leaseExpiresAt: nowMs + meta.leaseMs,
+            updatedAt: now,
+            ...(snap.exists
+              ? {}
+              : { createdAt: now, tokensEstimated: 0, tokensActual: 0, cost: 0 }),
+          },
+          { merge: true },
+        );
+        return { state: 'acquired' as const, executionId: meta.executionId };
+      };
+
+      if (!snap.exists) return acquire();
+
       const data = snap.data() as Record<string, unknown>;
       if (data.selectionHash !== meta.selectionHash) return { state: 'conflict' as const };
-      return {
-        state: 'existing' as const,
-        existing: {
-          status: data.status as PersistedRun['status'],
-          selectionHash: data.selectionHash as string,
-          response: data.response as PersistedRun['response'],
-        },
-      };
+
+      const status = data.status as PersistedRun['status'];
+      const response = data.response as PersistedRun['response'];
+      if ((status === 'completed' || status === 'partial' || status === 'failed') && response) {
+        return {
+          state: 'completed' as const,
+          existing: { status, selectionHash: data.selectionHash as string, response },
+        };
+      }
+
+      // status === 'running' (o terminale senza response): lease valida → locked;
+      // lease scaduta o assente → takeover.
+      const leaseExpiresAt = typeof data.leaseExpiresAt === 'number' ? data.leaseExpiresAt : 0;
+      if (status === 'running' && leaseExpiresAt > nowMs) {
+        return { state: 'locked' as const };
+      }
+      return acquire();
     });
   };
 }
 
 function finishRun(db: Firestore): EngineWritePorts['finishRun'] {
   return async (requestId, run) => {
-    await db.doc(`aiCorrectionRuns/${requestId}`).set(
-      {
-        status: run.status,
-        updatedAt: FieldValue.serverTimestamp(),
-        // Solo metadata: conteggi, token, esito sintetico per consegna (id +
-        // outcome + counts). Nessun testo/risposta/soluzione/feedback/nome/email.
-        counts: run.response?.counts ?? null,
-        tokensEstimated: run.response?.tokensEstimated ?? 0,
-        tokensActual: run.response?.tokensActual ?? 0,
-        cost: 0,
-        response: run.response ?? null,
-      },
-      { merge: true },
-    );
+    const ref = db.doc(`aiCorrectionRuns/${requestId}`);
+    // Finalizza in transazione SOLO se questo executionId possiede ancora la
+    // lease: un worker vecchio (lease già presa da un tentativo successivo) è un
+    // no-op e non può sovrascrivere il risultato del tentativo corrente.
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return;
+      const data = snap.data() as Record<string, unknown>;
+      if (data.executionId !== run.executionId) return; // takeover avvenuto → no-op
+      tx.set(
+        ref,
+        {
+          status: run.status,
+          updatedAt: FieldValue.serverTimestamp(),
+          // Rilascia la lease: lo stato terminale rende il run non riacquisibile.
+          leaseExpiresAt: 0,
+          // Solo metadata: conteggi, token, esito sintetico per consegna (id +
+          // outcome + counts). Nessun testo/risposta/soluzione/feedback/nome/email.
+          counts: run.response?.counts ?? null,
+          tokensEstimated: run.response?.tokensEstimated ?? 0,
+          tokensActual: run.response?.tokensActual ?? 0,
+          cost: 0,
+          response: run.response ?? null,
+        },
+        { merge: true },
+      );
+    });
   };
 }
 

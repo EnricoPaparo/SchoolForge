@@ -2,11 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MockAiGrader, type AiGrader, type AiGraderOutput } from './aiCorrectionGatewayCore.js';
 import {
   classifySubmission,
+  computeSelectionHash,
+  estimateOpenTokensForSubmission,
   runExecution,
   runPreview,
   sameIdSet,
   scoreClosedQuestion,
   validateGraderOutput,
+  RUN_LEASE_MS,
+  type BeginRunResult,
   type CommitSubmissionInput,
   type CommitSubmissionResult,
   type CorrectionData,
@@ -47,7 +51,13 @@ class FakeStore implements EngineWritePorts {
   corrections = new Map<string, CorrectionData>();
   runs = new Map<
     string,
-    { status: PersistedRun['status']; selectionHash: string; response?: unknown }
+    {
+      status: 'running' | 'completed' | 'partial' | 'failed';
+      selectionHash: string;
+      response?: unknown;
+      executionId?: string;
+      leaseExpiresAt?: number;
+    }
   >();
   mirror = new Map<
     string,
@@ -76,26 +86,50 @@ class FakeStore implements EngineWritePorts {
 
   beginRun: EngineWritePorts['beginRun'] = async (requestId, meta) => {
     const existing = this.runs.get(requestId);
-    if (!existing) {
-      this.runs.set(requestId, { status: 'running', selectionHash: meta.selectionHash });
-      return { state: 'created' };
-    }
-    if (existing.selectionHash !== meta.selectionHash) return { state: 'conflict' };
-    return {
-      state: 'existing',
-      existing: {
-        status: existing.status,
-        selectionHash: existing.selectionHash,
-        response: existing.response as PersistedRun['response'],
-      },
+    const nowMs = Date.now();
+    const acquire = (): BeginRunResult => {
+      this.runs.set(requestId, {
+        ...(existing ?? {}),
+        status: 'running',
+        selectionHash: meta.selectionHash,
+        executionId: meta.executionId,
+        leaseExpiresAt: nowMs + meta.leaseMs,
+      });
+      return { state: 'acquired', executionId: meta.executionId };
     };
+    if (!existing) return acquire();
+    if (existing.selectionHash !== meta.selectionHash) return { state: 'conflict' };
+    if (
+      (existing.status === 'completed' ||
+        existing.status === 'partial' ||
+        existing.status === 'failed') &&
+      existing.response
+    ) {
+      return {
+        state: 'completed',
+        existing: {
+          status: existing.status,
+          selectionHash: existing.selectionHash,
+          response: existing.response as PersistedRun['response'],
+        },
+      };
+    }
+    if (existing.status === 'running' && (existing.leaseExpiresAt ?? 0) > nowMs) {
+      return { state: 'locked' };
+    }
+    return acquire();
   };
 
   finishRun: EngineWritePorts['finishRun'] = async (requestId, run) => {
+    const existing = this.runs.get(requestId);
+    if (!existing) return;
+    if (existing.executionId !== run.executionId) return; // takeover → no-op
     this.runs.set(requestId, {
+      ...existing,
       status: run.status,
       selectionHash: run.selectionHash,
       response: run.response,
+      leaseExpiresAt: 0,
     });
   };
 
@@ -655,6 +689,113 @@ describe('runExecution — idempotency', () => {
     // Same requestId → replay path, no new writes.
     await runExecution(req([sid('s1')]), baseDeps(store, new MockAiGrader()));
     expect(JSON.stringify(store.corrections.get(sid('s1')))).toBe(before);
+  });
+});
+
+describe('runExecution — concurrent idempotency (lease)', () => {
+  it('does not re-grade or re-write while another attempt holds a valid lease', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    // Simulate a first attempt that is still running with a VALID lease.
+    store.runs.set(REQ, {
+      status: 'running',
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')]),
+      executionId: 'other-attempt',
+      leaseExpiresAt: Date.now() + RUN_LEASE_MS,
+    });
+    const grade = vi.fn();
+    const grader = { id: 'mock', grade } as unknown as AiGrader;
+
+    const res = await runExecution(req([sid('s1')]), baseDeps(store, grader));
+    expect(res.status).toBe('running');
+    expect(res.idempotentReplay).toBe(true);
+    expect(grade).not.toHaveBeenCalled(); // no grader invocation
+    expect(store.commitCalls).toBe(0); // no double write
+    // The other attempt still owns the run.
+    expect(store.runs.get(REQ)!.executionId).toBe('other-attempt');
+  });
+
+  it('takes over a run whose lease has expired and processes it', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    store.runs.set(REQ, {
+      status: 'running',
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')]),
+      executionId: 'crashed-attempt',
+      leaseExpiresAt: Date.now() - 1000, // expired
+    });
+    const res = await runExecution(req([sid('s1')]), baseDeps(store, new MockAiGrader()));
+    expect(res.idempotentReplay).toBe(false);
+    expect(store.corrections.has(sid('s1'))).toBe(true); // processed
+    expect(store.runs.get(REQ)!.status).toBe('completed');
+  });
+
+  it('an old worker cannot finalize after a takeover (executionId no longer owns the lease)', async () => {
+    const store = new FakeStore();
+    const selectionHash = computeSelectionHash(VERIF, [sid('s1')]);
+    const meta = {
+      ownerUid: OWNER,
+      actorUid: OWNER,
+      verificationId: VERIF,
+      selectionHash,
+      submissionCount: 1,
+      leaseMs: RUN_LEASE_MS,
+    };
+    // Attempt A acquires the lease.
+    const a = await store.beginRun(REQ, { ...meta, executionId: 'A' });
+    expect(a.state).toBe('acquired');
+    // A's lease expires; attempt B takes over.
+    store.runs.get(REQ)!.leaseExpiresAt = Date.now() - 1;
+    const b = await store.beginRun(REQ, { ...meta, executionId: 'B' });
+    expect(b.state).toBe('acquired');
+    // A (old worker) tries to finalize → must be a no-op.
+    await store.finishRun(REQ, {
+      status: 'completed',
+      selectionHash,
+      response: undefined,
+      executionId: 'A',
+    });
+    expect(store.runs.get(REQ)!.status).toBe('running');
+    expect(store.runs.get(REQ)!.executionId).toBe('B');
+    // B finalizes → applied.
+    await store.finishRun(REQ, {
+      status: 'completed',
+      selectionHash,
+      response: undefined,
+      executionId: 'B',
+    });
+    expect(store.runs.get(REQ)!.status).toBe('completed');
+  });
+});
+
+describe('token estimation and consumption', () => {
+  const questions = [tq(0, 'aperta', 3, SOL_MARK)];
+
+  it('a longer student answer increases tokensEstimated (question + solution + answer)', () => {
+    const short = estimateOpenTokensForSubmission(questions, [0], {
+      '0': { tipo: 'aperta', testo: 'x' },
+    });
+    const long = estimateOpenTokensForSubmission(questions, [0], {
+      '0': { tipo: 'aperta', testo: 'x'.repeat(400) },
+    });
+    expect(long).toBeGreaterThan(short);
+  });
+
+  it('preview and run produce the same tokensEstimated for the same selection', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const preview = await runPreview(req([sid('s1')]), baseDeps(store, new MockAiGrader()));
+    const run = await runExecution(req([sid('s1')]), baseDeps(store, new MockAiGrader()));
+    expect(preview.tokensEstimated).toBeGreaterThan(0);
+    expect(run.tokensEstimated).toBe(preview.tokensEstimated);
+  });
+
+  it('MockAiGrader yields tokensActual == 0 (no real tokens consumed)', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const run = await runExecution(req([sid('s1')]), baseDeps(store, new MockAiGrader()));
+    expect(run.tokensActual).toBe(0);
+    expect(run.costActual).toBe(0);
   });
 });
 

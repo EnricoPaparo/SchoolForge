@@ -17,6 +17,7 @@
  * sono rilette server-side dalle porte.
  */
 
+import { randomUUID } from 'node:crypto';
 import {
   authorizeAndValidate,
   AiGatewayError,
@@ -40,6 +41,13 @@ export const MAX_MOCK_FEEDBACK_CHARS = 2_000;
 export const CHARS_PER_TOKEN = 4;
 /** Overhead fisso di token per domanda aperta (prompt/struttura). */
 export const OPEN_QUESTION_TOKEN_OVERHEAD = 8;
+/**
+ * Durata della **lease** su `aiCorrectionRuns/{requestId}` (ms). Un tentativo
+ * `running` con lease valida possiede l'esecuzione ed esclude i concorrenti; una
+ * lease scaduta può essere rilevata da un nuovo tentativo (recovery di run
+ * abbandonati per crash/timeout). Prudente e configurabile.
+ */
+export const RUN_LEASE_MS = 2 * 60 * 1000;
 
 // ── Tipi di dominio (locali al package functions, no dipendenze da apps/web) ──
 
@@ -297,15 +305,26 @@ export function classifySubmission(params: {
   };
 }
 
-/** Stima deterministica dei token per le sole domande aperte di una consegna. */
-export function estimateOpenTokens(questions: TeacherQuestion[], openOrders: number[]): number {
+/**
+ * Stima **deterministica** dei token per le sole domande aperte di una consegna.
+ * Include **domanda + soluzione di riferimento + risposta dello studente** +
+ * overhead fisso per domanda. È la **stessa** formula usata da preview e run
+ * (`tokensEstimated`), così la stima è identica a parità di selezione e dati.
+ */
+export function estimateOpenTokensForSubmission(
+  questions: TeacherQuestion[],
+  openOrders: number[],
+  answers: Record<string, SubmissionAnswer | undefined>,
+): number {
   const byOrder = new Map(questions.map((q) => [q.order, q]));
   let tokens = 0;
   for (const order of openOrders) {
     const q = byOrder.get(order);
     if (!q) continue;
     const sol = typeof q.soluzione === 'string' ? q.soluzione : '';
-    const chars = q.testo.length + sol.length;
+    const answer = answers[order.toString()];
+    const answerText = answer && answer.tipo === 'aperta' ? answer.testo : '';
+    const chars = q.testo.length + sol.length + answerText.length;
     tokens += Math.ceil(chars / CHARS_PER_TOKEN) + OPEN_QUESTION_TOKEN_OVERHEAD;
   }
   return tokens;
@@ -398,24 +417,48 @@ export interface PersistedRun {
   response?: AiCorrectionRunResponse;
 }
 
+/** Metadata (solo) scritti alla creazione del run doc. */
+export interface BeginRunMeta {
+  ownerUid: string;
+  actorUid: string;
+  verificationId: string;
+  selectionHash: string;
+  submissionCount: number;
+  /** Identificatore del tentativo che prova ad acquisire la lease. */
+  executionId: string;
+  /** Durata della lease (ms) da applicare in caso di acquisizione. */
+  leaseMs: number;
+}
+
+/**
+ * Esito **atomico** di `beginRun` (transazione su `aiCorrectionRuns/{requestId}`):
+ * - `acquired`: questo tentativo possiede ora la lease (`executionId`) — può
+ *   elaborare. Avviene quando il run è assente **o** era `running` con lease
+ *   **scaduta** (takeover di un run abbandonato).
+ * - `completed`: run già concluso con response persistita → replay idempotente.
+ * - `locked`: run `running` con lease **valida** posseduta da un altro
+ *   tentativo → NON elaborare (niente grader, niente commit).
+ * - `conflict`: stesso `requestId`, selezione diversa.
+ */
+export type BeginRunResult =
+  | { state: 'acquired'; executionId: string }
+  | { state: 'completed'; existing: PersistedRun }
+  | { state: 'locked' }
+  | { state: 'conflict' };
+
 export interface EngineWritePorts extends EngineReadPorts {
   /**
-   * Crea `aiCorrectionRuns/{requestId}` in stato `running` se assente
-   * (transazione). Se esiste con selectionHash diverso → `conflict`. Se esiste
-   * → `existing` con il documento persistito (per la risposta idempotente).
+   * Acquisisce/riconosce `aiCorrectionRuns/{requestId}` in **una transazione**
+   * atomica, applicando la semantica di lease descritta in `BeginRunResult`.
    */
-  beginRun: (
-    requestId: string,
-    meta: {
-      ownerUid: string;
-      actorUid: string;
-      verificationId: string;
-      selectionHash: string;
-      submissionCount: number;
-    },
-  ) => Promise<{ state: 'created' | 'existing' | 'conflict'; existing?: PersistedRun }>;
-  /** Aggiorna `aiCorrectionRuns/{requestId}` con stato finale + risultato (solo metadata). */
-  finishRun: (requestId: string, run: PersistedRun) => Promise<void>;
+  beginRun: (requestId: string, meta: BeginRunMeta) => Promise<BeginRunResult>;
+  /**
+   * Finalizza `aiCorrectionRuns/{requestId}` con stato + risultato (solo
+   * metadata) **solo se** `executionId` è ancora il proprietario della lease.
+   * Un worker vecchio (lease già presa da un altro tentativo) è un **no-op** e
+   * non può sovrascrivere il risultato del tentativo successivo.
+   */
+  finishRun: (requestId: string, run: PersistedRun & { executionId: string }) => Promise<void>;
   /**
    * Scrive la correction (create se assente, merge non distruttivo se
    * `in_progress`) e il mirror `submissions/{id}.correctionSummary` in **una
@@ -479,21 +522,29 @@ export async function runPreview(
         deps.ports.loadSubmission(submissionId),
         deps.ports.loadCorrection(submissionId),
       ]);
-      return {
+      const classification = classifySubmission({
         submissionId,
-        classification: classifySubmission({
-          submissionId,
-          expectedOwner: deps.callerUid!,
-          expectedVerificationId: request.verificationId,
-          teacherQuestions,
-          submission,
-          correction,
-        }),
-      };
+        expectedOwner: deps.callerUid!,
+        expectedVerificationId: request.verificationId,
+        teacherQuestions,
+        submission,
+        correction,
+      });
+      // Stima token con la formula deterministica (domanda+soluzione+risposta):
+      // la stessa usata dal run, così preview e run coincidono a parità di dati.
+      const openTokens =
+        classification.status === 'eligible'
+          ? estimateOpenTokensForSubmission(
+              teacherQuestions ?? [],
+              classification.eligible.openOrders,
+              submission?.answers ?? {},
+            )
+          : 0;
+      return { submissionId, classification, openTokens };
     },
   );
 
-  for (const { submissionId, classification } of classifications) {
+  for (const { submissionId, classification, openTokens } of classifications) {
     if (classification.status === 'excluded') {
       counts.excluded++;
       excluded.push({ submissionId, reason: classification.code });
@@ -505,7 +556,7 @@ export async function runPreview(
     counts.openToGrade += e.openOrders.length;
     counts.alreadyGradedIgnored += e.alreadyGraded;
     if (e.openOrders.length === 0 && e.closedOrders.length > 0) counts.closedOnlySubmissions++;
-    tokensEstimated += estimateOpenTokens(teacherQuestions ?? [], e.openOrders);
+    tokensEstimated += openTokens;
   }
 
   return {
@@ -541,38 +592,40 @@ export async function runExecution(
   const request = await authorizeAndValidate(rawInput, deps);
   const ownerUid = deps.callerUid!;
   const selectionHash = computeSelectionHash(request.verificationId, request.submissionIds);
+  const executionId = randomUUID();
 
-  // Idempotenza: crea/riconosci il run doc.
+  // Idempotenza concorrente: acquisisci la lease sul run doc (transazione).
   const begin = await deps.ports.beginRun(request.requestId, {
     ownerUid,
     actorUid: ownerUid,
     verificationId: request.verificationId,
     selectionHash,
     submissionCount: request.submissionIds.length,
+    executionId,
+    leaseMs: RUN_LEASE_MS,
   });
   if (begin.state === 'conflict') {
     throw new AiGatewayError('invalid_input', 'requestId già usato con una selezione diversa.');
   }
-  if (
-    begin.state === 'existing' &&
-    begin.existing &&
-    begin.existing.response &&
-    (begin.existing.status === 'completed' ||
-      begin.existing.status === 'partial' ||
-      begin.existing.status === 'failed')
-  ) {
+  if (begin.state === 'completed') {
     // Run già concluso → risultato idempotente senza rielaborare.
-    return { ...begin.existing.response, idempotentReplay: true };
+    return { ...begin.existing.response!, idempotentReplay: true };
   }
+  if (begin.state === 'locked') {
+    // Un altro tentativo possiede una lease valida: NON richiamare grader né
+    // commitSubmission. Ritorna un esito "in corso" senza rielaborare.
+    return lockedResponse(request);
+  }
+  // begin.state === 'acquired' → questo executionId possiede la lease.
 
   const verification = await deps.ports.loadVerification(request.verificationId);
   const teacherQuestions = resolveTeacherQuestions(verification, ownerUid);
   const byOrder = new Map((teacherQuestions ?? []).map((q) => [q.order, q]));
 
-  const results = await mapWithConcurrency(
+  const outcomes = await mapWithConcurrency(
     request.submissionIds,
     SUBMISSION_CONCURRENCY,
-    async (submissionId): Promise<SubmissionResult> => {
+    async (submissionId): Promise<GradeOutcome> => {
       const [submission, correction] = await Promise.all([
         deps.ports.loadSubmission(submissionId),
         deps.ports.loadCorrection(submissionId),
@@ -587,19 +640,24 @@ export async function runExecution(
       });
       if (classification.status === 'excluded') {
         return {
-          submissionId,
-          outcome: 'excluded',
-          closedGraded: 0,
-          openGraded: 0,
-          openSkipped: 0,
-          alreadyIgnored: 0,
-          reason: classification.code,
+          result: {
+            submissionId,
+            outcome: 'excluded',
+            closedGraded: 0,
+            openGraded: 0,
+            openSkipped: 0,
+            alreadyIgnored: 0,
+            reason: classification.code,
+          },
+          openTokensEstimated: 0,
+          openTokensActual: 0,
         };
       }
       return gradeEligible(submissionId, classification.eligible, {
         request,
         ownerUid,
         submission: submission!,
+        teacherQuestions: teacherQuestions ?? [],
         byOrder,
         grader: deps.grader,
         commit: deps.ports.commitSubmission,
@@ -612,8 +670,12 @@ export async function runExecution(
   counts.succeeded = 0;
   counts.partial = 0;
   counts.failed = 0;
+  let tokensEstimated = 0;
   let tokensActual = 0;
-  for (const r of results) {
+  const results: SubmissionResult[] = [];
+  for (const o of outcomes) {
+    const r = o.result;
+    results.push(r);
     switch (r.outcome) {
       case 'excluded':
         counts.excluded++;
@@ -637,7 +699,10 @@ export async function runExecution(
     if (r.outcome !== 'excluded' && r.openGraded === 0 && r.closedGraded > 0) {
       counts.closedOnlySubmissions++;
     }
-    tokensActual += estimateOpenTokensForResult(r);
+    // `tokensEstimated`: formula deterministica (domanda+soluzione+risposta).
+    // `tokensActual`: usage REALE riportato dal provider — 0 in modalità mock.
+    tokensEstimated += o.openTokensEstimated;
+    tokensActual += o.openTokensActual;
   }
 
   const status: RunStatus =
@@ -655,23 +720,50 @@ export async function runExecution(
     status,
     idempotentReplay: false,
     counts,
-    tokensEstimated: tokensActual,
+    tokensEstimated,
     tokensActual,
     costActual: 0,
     results,
   };
 
-  await deps.ports.finishRun(request.requestId, { status, selectionHash, response });
+  // Finalizza solo se questo executionId possiede ancora la lease.
+  await deps.ports.finishRun(request.requestId, { status, selectionHash, response, executionId });
   return response;
 }
 
-// Il conteggio token effettivo (mock) è deterministico e pari alla stima delle
-// aperte effettivamente inviate al grader (grezze o valutate); qui lo ricaviamo
-// dal risultato per consegna in modo semplice e stabile.
-function estimateOpenTokensForResult(r: SubmissionResult): number {
-  // Mock: nessun token reale; l'accounting deterministico conta le aperte
-  // inviate (valutate + scartate) con l'overhead fisso per domanda.
-  return (r.openGraded + r.openSkipped) * OPEN_QUESTION_TOKEN_OVERHEAD;
+/** Esito interno per consegna: risultato pubblico + accounting token. */
+interface GradeOutcome {
+  result: SubmissionResult;
+  /** Stima deterministica dei token per le aperte di questa consegna. */
+  openTokensEstimated: number;
+  /** Token REALI consumati dal provider (0 in modalità mock). */
+  openTokensActual: number;
+}
+
+/**
+ * Risposta usata quando il run è già posseduto da un tentativo con lease valida:
+ * nessuna rielaborazione, nessuna scrittura. `idempotentReplay: true` segnala al
+ * chiamante che questa invocazione non ha elaborato.
+ */
+function lockedResponse(request: AiCorrectionRequest): AiCorrectionRunResponse {
+  return {
+    mode: 'mock',
+    phase: 'run',
+    requestId: request.requestId,
+    verificationId: request.verificationId,
+    status: 'running',
+    idempotentReplay: true,
+    counts: {
+      ...emptyCounts(request.submissionIds.length),
+      succeeded: 0,
+      partial: 0,
+      failed: 0,
+    },
+    tokensEstimated: 0,
+    tokensActual: 0,
+    costActual: 0,
+    results: [],
+  };
 }
 
 async function gradeEligible(
@@ -681,12 +773,19 @@ async function gradeEligible(
     request: AiCorrectionRequest;
     ownerUid: string;
     submission: SubmissionData;
+    teacherQuestions: TeacherQuestion[];
     byOrder: Map<number, TeacherQuestion>;
     grader: AiGrader;
     commit: EngineWritePorts['commitSubmission'];
   },
-): Promise<SubmissionResult> {
+): Promise<GradeOutcome> {
   const proposed = new Map<number, ValidatedScore>();
+  const openTokensEstimated = estimateOpenTokensForSubmission(
+    ctx.teacherQuestions,
+    eligible.openOrders,
+    ctx.submission.answers,
+  );
+  let openTokensActual = 0;
 
   // 1) Chiuse: scoring deterministico.
   for (const order of eligible.closedOrders) {
@@ -717,6 +816,8 @@ async function gradeEligible(
     let validated = new Map<number, ValidatedScore>();
     try {
       const output = await ctx.grader.grade(graderInput);
+      // Usage REALE del provider, se riportato (0 col mock).
+      openTokensActual = output.usage?.tokens ?? 0;
       validated = validateGraderOutput(
         output,
         ctx.request.requestId,
@@ -747,25 +848,34 @@ async function gradeEligible(
     });
   } catch {
     return {
-      submissionId,
-      outcome: 'failed',
-      closedGraded: 0,
-      openGraded: 0,
-      openSkipped,
-      alreadyIgnored: eligible.alreadyGraded,
-      reason: 'write_error',
+      result: {
+        submissionId,
+        outcome: 'failed',
+        closedGraded: 0,
+        openGraded: 0,
+        openSkipped,
+        alreadyIgnored: eligible.alreadyGraded,
+        reason: 'write_error',
+      },
+      openTokensEstimated,
+      openTokensActual,
     };
   }
 
   if (commit.result === 'changed') {
     return {
-      submissionId,
-      outcome: 'excluded',
-      closedGraded: 0,
-      openGraded: 0,
-      openSkipped: 0,
-      alreadyIgnored: eligible.alreadyGraded,
-      reason: 'changed_since_preview',
+      result: {
+        submissionId,
+        outcome: 'excluded',
+        closedGraded: 0,
+        openGraded: 0,
+        openSkipped: 0,
+        alreadyIgnored: eligible.alreadyGraded,
+        reason: 'changed_since_preview',
+      },
+      // Consegna esclusa (dati cambiati): nessun token contabilizzato.
+      openTokensEstimated: 0,
+      openTokensActual: 0,
     };
   }
 
@@ -788,12 +898,16 @@ async function gradeEligible(
   const outcome: SubmissionOutcome = totalWritten === totalGradable ? 'succeeded' : 'partial';
 
   return {
-    submissionId,
-    outcome,
-    closedGraded,
-    openGraded,
-    openSkipped,
-    alreadyIgnored: eligible.alreadyGraded,
+    result: {
+      submissionId,
+      outcome,
+      closedGraded,
+      openGraded,
+      openSkipped,
+      alreadyIgnored: eligible.alreadyGraded,
+    },
+    openTokensEstimated,
+    openTokensActual,
   };
 }
 
