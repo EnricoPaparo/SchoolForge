@@ -1,12 +1,12 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type * as BatchModule from '../../repository/corrections/batchCorrectionActions.js';
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
 
 const mockRun = vi.fn();
 vi.mock('../../repository/corrections/batchCorrectionActions.js', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('../../repository/corrections/batchCorrectionActions.js')>();
+  const actual = await importOriginal<typeof BatchModule>();
   return { ...actual, runBatchCorrectionAction: (...args: unknown[]) => mockRun(...args) };
 });
 
