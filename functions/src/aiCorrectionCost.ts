@@ -70,3 +70,94 @@ export function tokenCostMicroUsd(
 export function microUsdToUsd(microUsd: number): number {
   return Math.round(microUsd) / USD_MICRO;
 }
+
+// ── M5-05D2B-1 — ripartizione token e costo effettivo/stimato ────────────────
+
+/** Ripartizione token input/output/total. Interi non negativi. */
+export interface TokenBreakdown {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+/** Ripartizione token + costo intero in micro-USD. */
+export interface CostBreakdown extends TokenBreakdown {
+  costMicroUsd: number;
+}
+
+/** Costo/token nullo (mock, sole-chiuse, usage assente): mai un costo inventato. */
+export const ZERO_COST: Readonly<CostBreakdown> = Object.freeze({
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  costMicroUsd: 0,
+});
+
+/** Intero finito e non negativo. */
+export function isNonNegativeInteger(value: unknown): value is number {
+  return (
+    typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 0
+  );
+}
+
+/**
+ * Stima **conservativa** (arrotondamento `ceil`, mai sotto-riservare) del costo
+ * in micro-USD per una ripartizione input/output **stimata**, dati `model` e
+ * `priceListVersion` validati dalla config runtime. Ritorna `null` se la coppia
+ * versione/modello non è nel listino versionato (**fail-closed**: nessun costo
+ * inventato). Valori token non validi sono trattati come 0.
+ */
+export function estimateCostBreakdown(
+  inputTokens: number,
+  outputTokens: number,
+  priceListVersion: string,
+  model: string,
+): CostBreakdown | null {
+  const price = lookupModelPrice(priceListVersion, model);
+  if (!price) return null;
+  const input = isNonNegativeInteger(inputTokens) ? inputTokens : 0;
+  const output = isNonNegativeInteger(outputTokens) ? outputTokens : 0;
+  return {
+    inputTokens: input,
+    outputTokens: output,
+    totalTokens: input + output,
+    costMicroUsd: tokenCostMicroUsd(input, output, price, 'ceil'),
+  };
+}
+
+/**
+ * Normalizza l'usage **effettivo** riportato dal provider in una ripartizione
+ * coerente, o `null` se non è chiaramente esposto/coerente — **nessuna
+ * invenzione**. Richiede `inputTokens` e `outputTokens` interi non negativi e,
+ * se `tokens` (totale) è presente, che sia **esattamente** la loro somma
+ * (coerenza del totale). Usage assente (mock/sole-chiuse) ⇒ `null`.
+ */
+export function normalizeUsageActual(
+  usage: { tokens?: number; inputTokens?: number; outputTokens?: number } | undefined | null,
+): TokenBreakdown | null {
+  if (!usage) return null;
+  const { inputTokens, outputTokens, tokens } = usage;
+  if (!isNonNegativeInteger(inputTokens) || !isNonNegativeInteger(outputTokens)) return null;
+  const totalTokens = inputTokens + outputTokens;
+  if (tokens !== undefined && (!isNonNegativeInteger(tokens) || tokens !== totalTokens))
+    return null;
+  return { inputTokens, outputTokens, totalTokens };
+}
+
+/**
+ * Costo **effettivo** (arrotondamento `nearest`) in micro-USD per una
+ * ripartizione input/output **aggregata e già validata**, dati `model` e
+ * `priceListVersion`. Ritorna `null` se il listino non conosce versione/modello.
+ */
+export function actualCostMicroUsd(
+  inputTokens: number,
+  outputTokens: number,
+  priceListVersion: string,
+  model: string,
+): number | null {
+  const price = lookupModelPrice(priceListVersion, model);
+  if (!price) return null;
+  const input = isNonNegativeInteger(inputTokens) ? inputTokens : 0;
+  const output = isNonNegativeInteger(outputTokens) ? outputTokens : 0;
+  return tokenCostMicroUsd(input, output, price, 'nearest');
+}

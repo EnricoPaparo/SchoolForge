@@ -1,9 +1,11 @@
 import OpenAI from 'openai';
 import {
+  AiGraderInvalidOutputError,
   MAX_GENERAL_FEEDBACK_CHARS,
   type AiGrader,
   type AiGraderInput,
   type AiGraderOutput,
+  type AiGraderUsage,
 } from './aiCorrectionGatewayCore.js';
 
 export const OPENAI_ATTEMPT_TIMEOUT_MS = 60_000;
@@ -281,11 +283,27 @@ function parseAndValidateOutput(
 
 export class OpenAiGrader implements AiGrader {
   readonly id = 'openai';
+  /** Hard cap di output per chiamata: l'output fatturato non può superarlo. */
+  readonly maxOutputTokensPerCall = OPENAI_MAX_OUTPUT_TOKENS;
 
   constructor(
     readonly model: string,
     private readonly transport: OpenAiTransport,
   ) {}
+
+  /**
+   * Upper bound provabile dei token di input fatturabili: la dimensione in
+   * **byte UTF-8** dell'esatta richiesta serializzata (system prompt + schema +
+   * contenuto). Il tokenizer BPE opera su una rappresentazione **byte-level**,
+   * quindi i token di input ≤ byte UTF-8 del payload (un token copre ≥ 1 byte).
+   * `String.length` misura unità UTF-16 e **sottostimerebbe** per emoji, CJK,
+   * caratteri combinati e simboli Unicode: usiamo `Buffer.byteLength(..., 'utf8')`,
+   * prudente (può sovrastimare) ma **mai** inferiore all'input realmente fatturato.
+   */
+  reservationInputTokenUpperBound(input: AiGraderInput): number {
+    if (input.questions.length === 0) return 0;
+    return Buffer.byteLength(JSON.stringify(buildOpenAiGradingRequest(input, this.model)), 'utf8');
+  }
 
   async grade(input: AiGraderInput): Promise<AiGraderOutput> {
     if (input.questions.length === 0) {
@@ -302,19 +320,26 @@ export class OpenAiGrader implements AiGrader {
           timeoutMs: OPENAI_ATTEMPT_TIMEOUT_MS,
           signal: controller.signal,
         });
-        const validated = parseAndValidateOutput(response.outputText, input);
-        return {
-          ...validated,
-          ...(response.usage
-            ? {
-                usage: {
-                  tokens: response.usage.totalTokens,
-                  inputTokens: response.usage.inputTokens,
-                  outputTokens: response.usage.outputTokens,
-                },
-              }
-            : {}),
-        };
+        const usage: AiGraderUsage | undefined = response.usage
+          ? {
+              tokens: response.usage.totalTokens,
+              inputTokens: response.usage.inputTokens,
+              outputTokens: response.usage.outputTokens,
+            }
+          : undefined;
+        let validated;
+        try {
+          validated = parseAndValidateOutput(response.outputText, input);
+        } catch (parseError) {
+          // Output invalido: **non** si ritenta (un retry non lo risolve), ma si
+          // trasporta l'usage eventualmente già **fatturato** dal provider così
+          // il costo viene contabilizzato a valle, senza salvare punteggi/feedback.
+          throw new AiGraderInvalidOutputError(
+            parseError instanceof Error ? parseError.message : 'Output OpenAI non valido.',
+            usage,
+          );
+        }
+        return { ...validated, ...(usage ? { usage } : {}) };
       } catch (error) {
         lastError = error;
         if (!(error instanceof OpenAiTransportError) || !error.transient) throw error;

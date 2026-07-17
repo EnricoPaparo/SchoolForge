@@ -27,10 +27,22 @@ import {
   type PersistedSubmissionResult,
   type SubmissionData,
   type SubmissionOutcome,
+  type ReconcileBudgetInput,
+  type ReserveBudgetInput,
+  type ReserveBudgetResult,
   type TeacherQuestion,
   type ValidatedScore,
   type VerificationData,
 } from './aiCorrectionEngine.js';
+import {
+  emptyLedger,
+  markPending as markPendingLedger,
+  reconcile as reconcileLedger,
+  reserve as reserveLedger,
+  type BudgetLedgerState,
+  type BudgetReservation,
+  type ReservationStatus,
+} from './aiCorrectionBudget.js';
 
 /**
  * M5-02 — wiring runtime del motore della correzione assistita da IA.
@@ -426,15 +438,22 @@ function readPersistedRun(data: Record<string, unknown>): PersistedRun | null {
       ...(result.reasonCode ? { reasonCode: result.reasonCode as ExclusionCode } : {}),
     });
   }
+  const num = (value: unknown): number => (typeof value === 'number' ? value : 0);
   return {
     runContractVersion: AI_RUN_CONTRACT_VERSION,
     status: data.status as PersistedRun['status'],
     selectionHash: data.selectionHash,
     mode: data.mode,
     counts,
-    tokensEstimated: Number(data.tokensEstimated),
-    tokensActual: Number(data.tokensActual),
-    costActual: 0,
+    inputTokensEstimated: num(data.inputTokensEstimated),
+    outputTokensEstimated: num(data.outputTokensEstimated),
+    tokensEstimated: num(data.tokensEstimated),
+    costEstimatedMicroUsd: num(data.costEstimatedMicroUsd),
+    inputTokensActual: num(data.inputTokensActual),
+    outputTokensActual: num(data.outputTokensActual),
+    tokensActual: num(data.tokensActual),
+    costActualMicroUsd: num(data.costActualMicroUsd),
+    costReservationMicroUsd: num(data.costReservationMicroUsd),
     resultOrdinals,
   };
 }
@@ -534,15 +553,141 @@ function finishRun(db: Firestore): EngineWritePorts['finishRun'] {
           // Rilascia la lease: lo stato terminale rende il run non riacquisibile.
           leaseExpiresAt: 0,
           // Solo metadata aggregati + esito ordinale. Nessun ID/UID/contenuto.
-          tokensActual: run.tokensActual,
-          cost: 0,
           mode: run.mode,
           counts: run.counts,
+          // M5-05D2B-1 — token e costo aggregati in micro-USD interi. `cost` resta
+          // per compatibilità storica, allineato a `costActualMicroUsd`.
+          inputTokensEstimated: run.inputTokensEstimated,
+          outputTokensEstimated: run.outputTokensEstimated,
           tokensEstimated: run.tokensEstimated,
+          costEstimatedMicroUsd: run.costEstimatedMicroUsd,
+          inputTokensActual: run.inputTokensActual,
+          outputTokensActual: run.outputTokensActual,
+          tokensActual: run.tokensActual,
+          costActualMicroUsd: run.costActualMicroUsd,
+          costReservationMicroUsd: run.costReservationMicroUsd,
+          cost: run.costActualMicroUsd,
           resultOrdinals: run.resultOrdinals,
         },
         { merge: true },
       );
+    });
+  };
+}
+
+// ── Ledger di budget mensile (M5-05D2B-1) ─────────────────────────────────────
+
+/**
+ * Ricostruisce lo stato **puro** del ledger dal documento `aiBudgetLedger/{mese}`
+ * (o vuoto se assente). Il `budgetMicroUsd` autoritativo viene sempre dalla config
+ * runtime, non dal documento. Le prenotazioni sono mappe `requestId → importo`:
+ * il `requestId` è un UUID opaco, mai un ID/UID/PII.
+ */
+function readLedgerState(
+  snap: FirebaseFirestore.DocumentSnapshot,
+  monthKey: string,
+  budgetMicroUsd: number,
+): BudgetLedgerState {
+  if (!snap.exists) return emptyLedger(monthKey, budgetMicroUsd);
+  const data = snap.data() as Record<string, unknown>;
+  const spentMicroUsd = typeof data.spentMicroUsd === 'number' ? data.spentMicroUsd : 0;
+  const reservations: Record<string, BudgetReservation> = {};
+  const raw = data.reservations;
+  if (raw && typeof raw === 'object') {
+    for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+      const r = value as { microUsd?: unknown; expiresAtMs?: unknown; status?: unknown };
+      if (typeof r?.microUsd === 'number' && typeof r?.expiresAtMs === 'number') {
+        // `status` assente ⇒ trattata come `reserved` (documenti storici).
+        const status: ReservationStatus = r.status === 'pending' ? 'pending' : 'reserved';
+        reservations[id] = { microUsd: r.microUsd, expiresAtMs: r.expiresAtMs, status };
+      }
+    }
+  }
+  return { monthKey, budgetMicroUsd, spentMicroUsd, reservations };
+}
+
+function writeLedgerState(
+  tx: Transaction,
+  ref: FirebaseFirestore.DocumentReference,
+  state: BudgetLedgerState,
+): void {
+  // Sovrascrittura completa (no merge): rimuove davvero le prenotazioni scadute o
+  // riconciliate. Solo importi tecnici aggregati + prenotazioni per requestId.
+  tx.set(ref, {
+    monthKey: state.monthKey,
+    budgetMicroUsd: state.budgetMicroUsd,
+    spentMicroUsd: state.spentMicroUsd,
+    reservations: state.reservations,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+}
+
+/**
+ * Prenotazione **atomica** su singolo documento mensile: la transazione Firestore
+ * serializza le operazioni concorrenti, così due run in parallelo non possono
+ * superare insieme il budget. Idempotente su `requestId` (la logica pura riusa una
+ * prenotazione attiva senza raddoppiare) e con recovery via scadenza.
+ */
+function reserveBudget(db: Firestore): NonNullable<EngineWritePorts['reserveBudget']> {
+  return async (input: ReserveBudgetInput): Promise<ReserveBudgetResult> => {
+    const ref = db.doc(`aiBudgetLedger/${input.monthKey}`);
+    return db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const state = readLedgerState(snap, input.monthKey, input.budgetMicroUsd);
+      const result = reserveLedger(
+        state,
+        input.requestId,
+        input.amountMicroUsd,
+        input.expiresAtMs,
+        input.nowMs,
+      );
+      if (!result.ok) return { ok: false, reason: 'budget_exceeded' };
+      writeLedgerState(tx, ref, result.state);
+      return { ok: true, reservedMicroUsd: result.reservedMicroUsd };
+    });
+  };
+}
+
+/**
+ * Transizione `reserved → pending` in **una** transazione gated dalla titolarità
+ * della lease: legge prima il run doc e procede solo se `executionId` è ancora il
+ * titolare. Ritorna `true` se il worker può procedere alla chiamata provider.
+ */
+function markBudgetInvoked(db: Firestore): NonNullable<EngineWritePorts['markBudgetInvoked']> {
+  return async (input): Promise<boolean> => {
+    const runRef = db.doc(`aiCorrectionRuns/${input.requestId}`);
+    const ledgerRef = db.doc(`aiBudgetLedger/${input.monthKey}`);
+    return db.runTransaction(async (tx) => {
+      const runSnap = await tx.get(runRef);
+      if (!runSnap.exists || runSnap.data()?.executionId !== input.executionId) {
+        return false; // lease persa (takeover) → non elaborare
+      }
+      const ledgerSnap = await tx.get(ledgerRef);
+      const state = readLedgerState(ledgerSnap, input.monthKey, input.budgetMicroUsd);
+      writeLedgerState(tx, ledgerRef, markPendingLedger(state, input.requestId, input.nowMs));
+      return true;
+    });
+  };
+}
+
+/**
+ * Riconciliazione in **una** transazione che legge prima il run doc e procede
+ * **solo** se `executionId` possiede ancora la lease: un worker vecchio dopo un
+ * takeover è un no-op e non tocca la prenotazione del nuovo worker. Idempotente.
+ */
+function reconcileBudget(db: Firestore): NonNullable<EngineWritePorts['reconcileBudget']> {
+  return async (input: ReconcileBudgetInput): Promise<void> => {
+    const runRef = db.doc(`aiCorrectionRuns/${input.requestId}`);
+    const ledgerRef = db.doc(`aiBudgetLedger/${input.monthKey}`);
+    await db.runTransaction(async (tx) => {
+      const runSnap = await tx.get(runRef);
+      if (!runSnap.exists || runSnap.data()?.executionId !== input.executionId) {
+        return; // worker non più titolare della lease → no-op
+      }
+      const ledgerSnap = await tx.get(ledgerRef);
+      const state = readLedgerState(ledgerSnap, input.monthKey, input.budgetMicroUsd);
+      const next = reconcileLedger(state, input.requestId, input.actualMicroUsd, input.nowMs);
+      writeLedgerState(tx, ledgerRef, next);
     });
   };
 }
@@ -555,6 +700,9 @@ function buildWritePorts(db: Firestore): EngineWritePorts {
     beginRun: beginRun(db),
     finishRun: finishRun(db),
     commitSubmission: commitSubmission(db),
+    reserveBudget: reserveBudget(db),
+    markBudgetInvoked: markBudgetInvoked(db),
+    reconcileBudget: reconcileBudget(db),
   };
 }
 
@@ -570,6 +718,7 @@ function toHttpsError(err: AiGatewayError): HttpsError {
     batch_limit_exceeded: 'resource-exhausted',
     limit_exceeded: 'resource-exhausted',
     budget_exceeded: 'resource-exhausted',
+    budget_unavailable: 'unavailable',
   };
   return new HttpsError(map[err.code], err.message, { code: err.code });
 }

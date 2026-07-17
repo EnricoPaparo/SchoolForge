@@ -20,6 +20,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   authorizeAndValidate,
   AiGatewayError,
+  AiGraderInvalidOutputError,
   buildMockGeneralFeedback,
   validateGeneralFeedback,
   MAX_GENERAL_FEEDBACK_CHARS,
@@ -31,6 +32,14 @@ import {
 } from './aiCorrectionGatewayCore.js';
 import { isRealProviderEnabled, type AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import { enforceOperationLimits, type OperationLimitInput } from './aiCorrectionLimits.js';
+import {
+  USD_MICRO,
+  estimateCostBreakdown,
+  actualCostMicroUsd,
+  normalizeUsageActual,
+  microUsdToUsd,
+} from './aiCorrectionCost.js';
+import { monthKeyFromMs } from './aiCorrectionBudget.js';
 
 // ── Limiti prudenti (guardie tecniche, non budget definitivi HG-M5-2/3) ──────
 
@@ -162,18 +171,40 @@ export interface AiCorrectionCounts {
   alreadyGradedIgnored: number;
 }
 
-export interface AiCorrectionPreviewResponse {
+/**
+ * M5-05D2B-1 — ripartizione **stimata** dei token e costo stimato in micro-USD
+ * interi. `tokensEstimated` (totale) è mantenuto per compatibilità e coincide con
+ * `totalTokensEstimated`. `costEstimated` (USD) è la comodità di
+ * visualizzazione, derivata da `costEstimatedMicroUsd`. Mock e sole-chiuse: 0.
+ */
+export interface CostEstimateFields {
+  inputTokensEstimated: number;
+  outputTokensEstimated: number;
+  totalTokensEstimated: number;
+  costEstimatedMicroUsd: number;
+}
+
+/** M5-05D2B-1 — ripartizione **effettiva** dei token e costo reale in micro-USD. */
+export interface CostActualFields {
+  inputTokensActual: number;
+  outputTokensActual: number;
+  totalTokensActual: number;
+  costActualMicroUsd: number;
+}
+
+export interface AiCorrectionPreviewResponse extends CostEstimateFields {
   mode: AiEnabledFeatureMode;
   phase: 'preview';
   requestId: string;
   verificationId: string;
   counts: AiCorrectionCounts;
   tokensEstimated: number;
-  costEstimated: 0;
+  /** USD (compat dialog); micro-USD è la fonte autoritativa. */
+  costEstimated: number;
   excluded: { submissionId: string; reason: ExclusionCode }[];
 }
 
-export interface AiCorrectionRunResponse {
+export interface AiCorrectionRunResponse extends CostEstimateFields, CostActualFields {
   mode: AiEnabledFeatureMode;
   phase: 'run';
   requestId: string;
@@ -187,7 +218,15 @@ export interface AiCorrectionRunResponse {
   };
   tokensEstimated: number;
   tokensActual: number;
-  costActual: 0;
+  /** USD (compat dialog); micro-USD è la fonte autoritativa. */
+  costEstimated: number;
+  costActual: number;
+  /**
+   * M5-05D2B-1 — tetto **conservativo** realmente prenotato sul ledger (micro-USD).
+   * Distinto da `costEstimatedMicroUsd` (stima informativa UI): garantisce
+   * `costActualMicroUsd ≤ costReservationMicroUsd`. 0 su mock/sole-chiuse.
+   */
+  costReservationMicroUsd: number;
   results: SubmissionResult[];
 }
 
@@ -557,9 +596,16 @@ export interface PersistedRun {
   selectionHash: string;
   mode: AiEnabledFeatureMode;
   counts: AiCorrectionRunResponse['counts'];
+  // M5-05D2B-1 — solo metadata aggregati di costo. Nessun ID/UID/PII/contenuto.
+  inputTokensEstimated: number;
+  outputTokensEstimated: number;
   tokensEstimated: number;
+  costEstimatedMicroUsd: number;
+  inputTokensActual: number;
+  outputTokensActual: number;
   tokensActual: number;
-  costActual: 0;
+  costActualMicroUsd: number;
+  costReservationMicroUsd: number;
   resultOrdinals: PersistedSubmissionResult[];
 }
 
@@ -618,6 +664,63 @@ export interface EngineWritePorts extends EngineReadPorts {
    * transazione: se non è più assente/`in_progress` → `changed`.
    */
   commitSubmission: (input: CommitSubmissionInput) => Promise<CommitSubmissionResult>;
+  /**
+   * M5-05D2B-1 — prenota atomicamente `amountMicroUsd` sul ledger mensile
+   * `aiBudgetLedger/{monthKey}` **prima** della chiamata provider. Idempotente su
+   * `requestId` (retry/replay/concorrenza non raddoppiano). Rifiuta
+   * `budget_exceeded` se la disponibilità è insufficiente (hard stop 100%). La
+   * prenotazione scade a `expiresAtMs` (recovery senza scheduler). Richiesta solo
+   * sul percorso provider reale con importo positivo.
+   */
+  reserveBudget?: (input: ReserveBudgetInput) => Promise<ReserveBudgetResult>;
+  /**
+   * M5-05D2B-1 — transizione `reserved → pending` per `requestId`, **subito prima**
+   * della prima chiamata provider, in **una transazione** gated dalla titolarità
+   * della lease (`executionId`). Ritorna `true` se questo worker è ancora il
+   * titolare (può procedere), `false` altrimenti (takeover avvenuto ⇒ non
+   * elaborare). Da qui la prenotazione non è più liberabile per sola scadenza.
+   */
+  markBudgetInvoked?: (input: MarkBudgetInvokedInput) => Promise<boolean>;
+  /**
+   * M5-05D2B-1 — riconcilia la prenotazione di `requestId` col costo **effettivo**
+   * (libera l'eccedenza) in **una transazione** che verifica prima la titolarità
+   * della lease (`executionId`): un worker vecchio dopo un takeover è un **no-op**
+   * e non tocca la prenotazione del nuovo worker. Idempotente.
+   */
+  reconcileBudget?: (input: ReconcileBudgetInput) => Promise<void>;
+}
+
+/** Input di prenotazione budget (transazione su `aiBudgetLedger/{monthKey}`). */
+export interface ReserveBudgetInput {
+  requestId: string;
+  amountMicroUsd: number;
+  budgetMicroUsd: number;
+  monthKey: string;
+  nowMs: number;
+  expiresAtMs: number;
+}
+
+export type ReserveBudgetResult =
+  | { ok: true; reservedMicroUsd: number }
+  | { ok: false; reason: 'budget_exceeded' };
+
+/** Input della transizione `reserved → pending` (gated dall'`executionId`). */
+export interface MarkBudgetInvokedInput {
+  requestId: string;
+  budgetMicroUsd: number;
+  monthKey: string;
+  nowMs: number;
+  executionId: string;
+}
+
+/** Input di riconciliazione budget, con `executionId` per il gate di titolarità. */
+export interface ReconcileBudgetInput {
+  requestId: string;
+  actualMicroUsd: number;
+  budgetMicroUsd: number;
+  monthKey: string;
+  nowMs: number;
+  executionId: string;
 }
 
 // ── Concorrenza limitata ──────────────────────────────────────────────────────
@@ -669,6 +772,12 @@ interface OperationPreflight {
   teacherQuestions: TeacherQuestion[] | null;
   classifications: ClassifiedPreflightItem[];
   eligibleLimits: EligiblePreflightItem[];
+  /**
+   * Ripartizione token **stimata** aggregata sulle consegne eleggibili (input =
+   * prompt: domanda+soluzione+risposta; output = quota feedback generale). Base
+   * **conservativa** della prenotazione budget, calcolata prima della lease.
+   */
+  estimate: { inputTokens: number; outputTokens: number };
 }
 
 /**
@@ -745,18 +854,99 @@ async function buildOperationPreflight(
       return { submissionId, submission, classification, openTokens };
     },
   );
-  const eligibleLimits = classifications
-    .filter((item) => item.classification.status === 'eligible')
-    .map((item) => {
-      const eligible = (item.classification as { status: 'eligible'; eligible: EligibleSubmission })
-        .eligible;
-      return {
-        openQuestionCount: eligible.openOrders.length,
-        estimatedTokens:
-          item.openTokens + (eligible.openOrders.length > 0 ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0),
-      };
+  const eligibleLimits: EligiblePreflightItem[] = [];
+  let inputTokens = 0;
+  let outputTokens = 0;
+  for (const item of classifications) {
+    if (item.classification.status !== 'eligible') continue;
+    const eligible = item.classification.eligible;
+    const hasOpen = eligible.openOrders.length > 0;
+    const outputEstimate = hasOpen ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0;
+    inputTokens += item.openTokens;
+    outputTokens += outputEstimate;
+    eligibleLimits.push({
+      openQuestionCount: eligible.openOrders.length,
+      estimatedTokens: item.openTokens + outputEstimate,
     });
-  return { teacherQuestions, classifications, eligibleLimits };
+  }
+  return {
+    teacherQuestions,
+    classifications,
+    eligibleLimits,
+    estimate: { inputTokens, outputTokens },
+  };
+}
+
+/**
+ * Costruisce l'`AiGraderInput` per le aperte di una consegna. **Unico** punto di
+ * costruzione, riusato sia per il payload reale (grading) sia per il calcolo del
+ * tetto di prenotazione, così il bound stima **l'esatto** payload inviato.
+ */
+function buildGraderInput(
+  requestId: string,
+  openOrders: number[],
+  byOrder: Map<number, TeacherQuestion>,
+  answers: Record<string, SubmissionAnswer | undefined>,
+  priorPoints: number,
+  totalMaxPoints: number,
+): AiGraderInput {
+  return {
+    requestId,
+    questions: openOrders.map((order) => {
+      const q = byOrder.get(order)!;
+      const answer = answers[order.toString()];
+      return {
+        order,
+        maxPoints: q.maxPoints,
+        questionText: q.testo,
+        referenceSolution: typeof q.soluzione === 'string' ? q.soluzione : '',
+        studentAnswer: answer && answer.tipo === 'aperta' ? answer.testo : '',
+      };
+    }),
+    submissionContext: { priorPoints, totalMaxPoints },
+  };
+}
+
+/**
+ * Tetto di prenotazione **conservativo** in micro-USD sul percorso reale: per
+ * ogni consegna con aperte (una chiamata provider) somma il **massimo output**
+ * ammesso dal grader e un **upper bound provabile dell'input** dell'esatto
+ * payload. Arrotondamento `ceil`. Poiché output effettivo ≤ max e input effettivo
+ * ≤ bound, vale sempre `costActualMicroUsd ≤ reservedMicroUsd` per ogni risposta
+ * valida entro i limiti consentiti.
+ */
+function computeReservationBoundMicroUsd(
+  runtimeConfig: AiRuntimeConfig,
+  eligibleWithOpen: ClassifiedPreflightItem[],
+  byOrder: Map<number, TeacherQuestion>,
+  request: AiCorrectionRequest,
+  grader: AiGrader,
+): number {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  for (const item of eligibleWithOpen) {
+    if (item.classification.status !== 'eligible') continue;
+    const eligible = item.classification.eligible;
+    // priorPoints al massimo (numero più lungo) ⇒ resta un upper bound del payload.
+    const graderInput = buildGraderInput(
+      request.requestId,
+      eligible.openOrders,
+      byOrder,
+      item.submission?.answers ?? {},
+      eligible.totalMaxPoints,
+      eligible.totalMaxPoints,
+    );
+    inputTokens += grader.reservationInputTokenUpperBound?.(graderInput) ?? 0;
+    outputTokens += grader.maxOutputTokensPerCall ?? 0;
+  }
+  return (
+    estimateCostBreakdown(
+      inputTokens,
+      outputTokens,
+      runtimeConfig.priceListVersion,
+      runtimeConfig.model,
+    )?.costMicroUsd ?? 0
+  );
 }
 
 // ── Preview ───────────────────────────────────────────────────────────────────
@@ -791,10 +981,8 @@ export async function runPreview(
 
   const counts: AiCorrectionCounts = emptyCounts(request.submissionIds.length);
   const excluded: { submissionId: string; reason: ExclusionCode }[] = [];
-  const eligiblePreflight: EligiblePreflightItem[] = [];
-  let tokensEstimated = 0;
 
-  for (const { submissionId, classification, openTokens } of preflight.classifications) {
+  for (const { submissionId, classification } of preflight.classifications) {
     if (classification.status === 'excluded') {
       counts.excluded++;
       excluded.push({ submissionId, reason: classification.code });
@@ -806,23 +994,19 @@ export async function runPreview(
     counts.openToGrade += e.openOrders.length;
     counts.alreadyGradedIgnored += e.alreadyGraded;
     if (e.openOrders.length === 0 && e.closedOrders.length > 0) counts.closedOnlySubmissions++;
-    // Token aperte + quota per il feedback generale (M5-04B) **solo** se ci sono
-    // aperte: le consegne con sole chiuse generano il feedback in modo
-    // deterministico, senza provider → 0 token. Identica a run.
-    const submissionEstimatedTokens =
-      openTokens + (e.openOrders.length > 0 ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0);
-    tokensEstimated += submissionEstimatedTokens;
-    eligiblePreflight.push({
-      openQuestionCount: e.openOrders.length,
-      estimatedTokens: submissionEstimatedTokens,
-    });
   }
 
   // M5-05D1 — solo provider reale: kill switch da config runtime + limiti DEV
   // applicati nel preflight, prima di qualsiasi elaborazione. Mock: nessun gate.
   if (runtimeConfig) {
-    enforceRealProviderLimits(runtimeConfig, eligiblePreflight);
+    enforceRealProviderLimits(runtimeConfig, preflight.eligibleLimits);
   }
+
+  // M5-05D2B-1 — stima costo con lo **stesso** contratto del run (ripartizione
+  // input/output della sola selezione eleggibile). Mock: 0 (nessun costo, nessuna
+  // prenotazione, nessuna chiamata provider). La preview **non** dichiara un costo
+  // effettivo. A parità di selezione/config coincide col run.
+  const cost = buildCostEstimateFields(runtimeConfig, preflight.estimate);
 
   return {
     mode: deps.featureMode === 'openai' ? 'openai' : 'mock',
@@ -830,9 +1014,44 @@ export async function runPreview(
     requestId: request.requestId,
     verificationId: request.verificationId,
     counts,
-    tokensEstimated,
-    costEstimated: 0,
+    tokensEstimated: cost.totalTokensEstimated,
+    costEstimated: microUsdToUsd(cost.costEstimatedMicroUsd),
+    ...cost,
     excluded,
+  };
+}
+
+/**
+ * Costruisce i campi di stima costo. Sul percorso reale (`runtimeConfig`
+ * presente) usa esclusivamente `model` + `priceListVersion` validati e il listino
+ * versionato; l'arrotondamento è `ceil` (conservativo). Mock/config assente: 0.
+ */
+function buildCostEstimateFields(
+  runtimeConfig: AiRuntimeConfig | null,
+  estimate: { inputTokens: number; outputTokens: number },
+): CostEstimateFields {
+  if (runtimeConfig) {
+    const breakdown = estimateCostBreakdown(
+      estimate.inputTokens,
+      estimate.outputTokens,
+      runtimeConfig.priceListVersion,
+      runtimeConfig.model,
+    );
+    if (breakdown) {
+      return {
+        inputTokensEstimated: breakdown.inputTokens,
+        outputTokensEstimated: breakdown.outputTokens,
+        totalTokensEstimated: breakdown.totalTokens,
+        costEstimatedMicroUsd: breakdown.costMicroUsd,
+      };
+    }
+  }
+  // Mock / sole-chiuse / config assente: token stimati senza costo.
+  return {
+    inputTokensEstimated: estimate.inputTokens,
+    outputTokensEstimated: estimate.outputTokens,
+    totalTokensEstimated: estimate.inputTokens + estimate.outputTokens,
+    costEstimatedMicroUsd: 0,
   };
 }
 
@@ -866,9 +1085,15 @@ function persistRunResponse(
     selectionHash,
     mode: response.mode,
     counts: response.counts,
-    tokensEstimated: response.tokensEstimated,
-    tokensActual: response.tokensActual,
-    costActual: 0,
+    inputTokensEstimated: response.inputTokensEstimated,
+    outputTokensEstimated: response.outputTokensEstimated,
+    tokensEstimated: response.totalTokensEstimated,
+    costEstimatedMicroUsd: response.costEstimatedMicroUsd,
+    inputTokensActual: response.inputTokensActual,
+    outputTokensActual: response.outputTokensActual,
+    tokensActual: response.totalTokensActual,
+    costActualMicroUsd: response.costActualMicroUsd,
+    costReservationMicroUsd: response.costReservationMicroUsd,
     resultOrdinals: response.results.map((result) => {
       const ordinal = ordinalBySubmissionId.get(result.submissionId);
       if (ordinal === undefined) {
@@ -924,8 +1149,18 @@ function replayPersistedRun(
     idempotentReplay: true,
     counts: persisted.counts,
     tokensEstimated: persisted.tokensEstimated,
+    inputTokensEstimated: persisted.inputTokensEstimated,
+    outputTokensEstimated: persisted.outputTokensEstimated,
+    totalTokensEstimated: persisted.tokensEstimated,
+    costEstimatedMicroUsd: persisted.costEstimatedMicroUsd,
+    costEstimated: microUsdToUsd(persisted.costEstimatedMicroUsd),
     tokensActual: persisted.tokensActual,
-    costActual: 0,
+    inputTokensActual: persisted.inputTokensActual,
+    outputTokensActual: persisted.outputTokensActual,
+    totalTokensActual: persisted.tokensActual,
+    costActualMicroUsd: persisted.costActualMicroUsd,
+    costActual: microUsdToUsd(persisted.costActualMicroUsd),
+    costReservationMicroUsd: persisted.costReservationMicroUsd,
     results,
   };
 }
@@ -1036,6 +1271,76 @@ export async function runExecution(
     preflight?.classifications.map((item) => [item.submissionId, item]) ?? [],
   );
 
+  // ── M5-05D2B-1 — contratto economico del percorso provider reale ────────────
+  const reservationMonthKey = monthKeyFromMs(nowMs);
+  const budgetMicroUsd = runtimeConfig
+    ? Math.round(runtimeConfig.budget.monthlyUsd * USD_MICRO)
+    : 0;
+  // Consegne che genereranno **una chiamata provider** (hanno aperte). Le
+  // sole-chiuse non chiamano il provider → costo 0 → nessuna prenotazione.
+  const eligibleWithOpen = (preflight?.classifications ?? []).filter(
+    (item) =>
+      item.classification.status === 'eligible' &&
+      item.classification.eligible.openOrders.length > 0,
+  );
+
+  let budgetReserved = false;
+  let reservationCostMicroUsd = 0;
+  if (runtimeConfig && eligibleWithOpen.length > 0) {
+    // **Fail-closed**: sul percorso reale con lavoro aperto, porte di budget e
+    // bounds del grader sono **obbligatori**. Se mancano si fallisce **prima** di
+    // costruire/chiamare il provider: nessuna correzione, nessun falso successo,
+    // nessuna spesa non tracciata.
+    if (!deps.ports.reserveBudget || !deps.ports.reconcileBudget || !deps.ports.markBudgetInvoked) {
+      throw new AiGatewayError(
+        'budget_unavailable',
+        'Ledger di budget non disponibile: correzione IA reale non eseguibile.',
+      );
+    }
+    if (!grader.maxOutputTokensPerCall || !grader.reservationInputTokenUpperBound) {
+      throw new AiGatewayError(
+        'budget_unavailable',
+        'Il grader non espone un tetto di costo verificabile: prenotazione impossibile.',
+      );
+    }
+    // Tetto **conservativo** realmente prenotato: per ogni chiamata, il massimo
+    // output ammesso + un upper bound provabile dell'input dell'esatto payload.
+    // Distinto dalla stima informativa mostrata all'utente.
+    reservationCostMicroUsd = computeReservationBoundMicroUsd(
+      runtimeConfig,
+      eligibleWithOpen,
+      byOrder,
+      request,
+      grader,
+    );
+    const reservation = await deps.ports.reserveBudget({
+      requestId: request.requestId,
+      amountMicroUsd: reservationCostMicroUsd,
+      budgetMicroUsd,
+      monthKey: reservationMonthKey,
+      nowMs,
+      // La prenotazione scade con la finestra di lease: un crash **prima** del
+      // provider (stato `reserved`) la rende recuperabile senza job esterni.
+      expiresAtMs: nowMs + RUN_LEASE_MS,
+    });
+    if (!reservation.ok) {
+      throw new AiGatewayError('budget_exceeded', 'Budget mensile della correzione IA esaurito.');
+    }
+    budgetReserved = true;
+    // Transizione `reserved → pending` **prima** di qualsiasi chiamata provider:
+    // da qui in poi la prenotazione non è più liberabile silenziosamente per
+    // scadenza (un crash dopo il provider la addebiterà al tetto). Gated
+    // dall'`executionId`: se abbiamo perso la lease non elaboriamo.
+    const stillOwner = await deps.ports.markBudgetInvoked({
+      requestId: request.requestId,
+      budgetMicroUsd,
+      monthKey: reservationMonthKey,
+      nowMs,
+      executionId,
+    });
+    if (!stillOwner) return lockedResponse(request, mode);
+  }
+
   const outcomes = await mapWithConcurrency(
     request.submissionIds,
     SUBMISSION_CONCURRENCY,
@@ -1072,8 +1377,8 @@ export async function runExecution(
             alreadyIgnored: 0,
             reason: classification.code,
           },
-          openTokensEstimated: 0,
-          openTokensActual: 0,
+          estimate: { inputTokens: 0, outputTokens: 0 },
+          actual: { inputTokens: 0, outputTokens: 0 },
         };
       }
       return gradeEligible(submissionId, classification.eligible, {
@@ -1093,8 +1398,10 @@ export async function runExecution(
   counts.succeeded = 0;
   counts.partial = 0;
   counts.failed = 0;
-  let tokensEstimated = 0;
-  let tokensActual = 0;
+  let inputTokensEstimated = 0;
+  let outputTokensEstimated = 0;
+  let inputTokensActual = 0;
+  let outputTokensActual = 0;
   const results: SubmissionResult[] = [];
   for (const o of outcomes) {
     const r = o.result;
@@ -1122,10 +1429,12 @@ export async function runExecution(
     if (r.outcome !== 'excluded' && r.openGraded === 0 && r.closedGraded > 0) {
       counts.closedOnlySubmissions++;
     }
-    // `tokensEstimated`: formula deterministica (domanda+soluzione+risposta).
-    // `tokensActual`: usage REALE riportato dal provider — 0 in modalità mock.
-    tokensEstimated += o.openTokensEstimated;
-    tokensActual += o.openTokensActual;
+    // Stima: formula deterministica (input=prompt, output=quota feedback).
+    // Effettivo: usage REALE del provider — 0 in modalità mock / senza usage.
+    inputTokensEstimated += o.estimate.inputTokens;
+    outputTokensEstimated += o.estimate.outputTokens;
+    inputTokensActual += o.actual.inputTokens;
+    outputTokensActual += o.actual.outputTokens;
   }
 
   const status: RunStatus =
@@ -1135,6 +1444,29 @@ export async function runExecution(
         ? 'partial'
         : 'completed';
 
+  // M5-05D2B-1 — costo **effettivo** dai token realmente riportati dal provider,
+  // `nearest`. Mock/sole-chiuse: 0/0/0 → costo 0 (mai un actual inventato). Anche
+  // un output rifiutato che portava usage fatturabile è già stato contabilizzato
+  // in `actual` a monte, senza salvare punteggi/feedback invalidi.
+  const totalTokensEstimated = inputTokensEstimated + outputTokensEstimated;
+  const totalTokensActual = inputTokensActual + outputTokensActual;
+  const costEstimatedMicroUsd = runtimeConfig
+    ? (estimateCostBreakdown(
+        inputTokensEstimated,
+        outputTokensEstimated,
+        runtimeConfig.priceListVersion,
+        runtimeConfig.model,
+      )?.costMicroUsd ?? 0)
+    : 0;
+  const costActualMicroUsd = runtimeConfig
+    ? (actualCostMicroUsd(
+        inputTokensActual,
+        outputTokensActual,
+        runtimeConfig.priceListVersion,
+        runtimeConfig.model,
+      ) ?? 0)
+    : 0;
+
   const response: AiCorrectionRunResponse = {
     mode,
     phase: 'run',
@@ -1143,11 +1475,38 @@ export async function runExecution(
     status,
     idempotentReplay: false,
     counts,
-    tokensEstimated,
-    tokensActual,
-    costActual: 0,
+    tokensEstimated: totalTokensEstimated,
+    inputTokensEstimated,
+    outputTokensEstimated,
+    totalTokensEstimated,
+    costEstimatedMicroUsd,
+    costEstimated: microUsdToUsd(costEstimatedMicroUsd),
+    tokensActual: totalTokensActual,
+    inputTokensActual,
+    outputTokensActual,
+    totalTokensActual,
+    costActualMicroUsd,
+    costActual: microUsdToUsd(costActualMicroUsd),
+    costReservationMicroUsd: reservationCostMicroUsd,
     results,
   };
+
+  // M5-05D2B-1 — ordine sicuro finale: commit già avvenuti per consegna →
+  // **riconciliazione** budget (libera l'eccedenza prenotata, addebita l'effettivo)
+  // → **finalizzazione** run. Entrambe verificano la titolarità della lease
+  // (`executionId`): un worker vecchio dopo un takeover è un no-op su entrambe e
+  // non tocca la prenotazione/finalizzazione del nuovo worker. La riconciliazione
+  // usa il clock corrente (non un timestamp catturato prima di preflight lenti).
+  if (budgetReserved && deps.ports.reconcileBudget) {
+    await deps.ports.reconcileBudget({
+      requestId: request.requestId,
+      actualMicroUsd: costActualMicroUsd,
+      budgetMicroUsd,
+      monthKey: reservationMonthKey,
+      nowMs: (deps.now ?? Date.now)(),
+      executionId,
+    });
+  }
 
   // Finalizza solo se questo executionId possiede ancora la lease.
   await deps.ports.finishRun(request.requestId, {
@@ -1157,13 +1516,13 @@ export async function runExecution(
   return response;
 }
 
-/** Esito interno per consegna: risultato pubblico + accounting token. */
+/** Esito interno per consegna: risultato pubblico + accounting token stima/effettivo. */
 interface GradeOutcome {
   result: SubmissionResult;
-  /** Stima deterministica dei token per le aperte di questa consegna. */
-  openTokensEstimated: number;
-  /** Token REALI consumati dal provider (0 in modalità mock). */
-  openTokensActual: number;
+  /** Stima deterministica dei token (input=prompt, output=quota feedback). */
+  estimate: { inputTokens: number; outputTokens: number };
+  /** Token REALI consumati dal provider (0/0 in modalità mock o senza usage). */
+  actual: { inputTokens: number; outputTokens: number };
 }
 
 /**
@@ -1189,8 +1548,18 @@ function lockedResponse(
       failed: 0,
     },
     tokensEstimated: 0,
+    inputTokensEstimated: 0,
+    outputTokensEstimated: 0,
+    totalTokensEstimated: 0,
+    costEstimatedMicroUsd: 0,
+    costEstimated: 0,
     tokensActual: 0,
+    inputTokensActual: 0,
+    outputTokensActual: 0,
+    totalTokensActual: 0,
+    costActualMicroUsd: 0,
     costActual: 0,
+    costReservationMicroUsd: 0,
     results: [],
   };
 }
@@ -1213,13 +1582,27 @@ async function gradeEligible(
   // domande aperte (il feedback delle consegne con sole chiuse è deterministico,
   // non passa dal provider → 0 token). Identica a preview.
   const hasOpen = eligible.openOrders.length > 0;
-  const openTokensEstimated =
-    estimateOpenTokensForSubmission(
+  // Stima ripartita: input = prompt (domanda+soluzione+risposta), output = quota
+  // feedback generale (solo se ci sono aperte). Identica a preview.
+  const estimate = {
+    inputTokens: estimateOpenTokensForSubmission(
       ctx.teacherQuestions,
       eligible.openOrders,
       ctx.submission.answers,
-    ) + (hasOpen ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0);
-  let openTokensActual = 0;
+    ),
+    outputTokens: hasOpen ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0,
+  };
+  // Token REALI (0/0 col mock o senza usage). Aggiornati dall'usage del provider,
+  // **anche** se l'output viene poi rifiutato (costo comunque contabilizzato).
+  let actualInput = 0;
+  let actualOutput = 0;
+  const billUsage = (usage: Parameters<typeof normalizeUsageActual>[0]) => {
+    const normalized = normalizeUsageActual(usage);
+    if (normalized) {
+      actualInput = normalized.inputTokens;
+      actualOutput = normalized.outputTokens;
+    }
+  };
 
   // 1) Chiuse: scoring deterministico con feedback (M5-04C), zero grader.
   //    Accumula i punti chiusi per il totale finale del feedback generale.
@@ -1249,31 +1632,28 @@ async function gradeEligible(
   let openSkipped = 0;
   let generalFeedback: string | null = null;
   if (eligible.openOrders.length > 0) {
-    const graderInput: AiGraderInput = {
-      requestId: ctx.request.requestId,
-      questions: eligible.openOrders.map((order) => {
-        const q = ctx.byOrder.get(order)!;
-        const answer = ctx.submission.answers[order.toString()];
-        return {
-          order,
-          maxPoints: q.maxPoints,
-          questionText: q.testo,
-          referenceSolution: typeof q.soluzione === 'string' ? q.soluzione : '',
-          studentAnswer: answer && answer.tipo === 'aperta' ? answer.testo : '',
-        };
-      }),
-      submissionContext: { priorPoints, totalMaxPoints: eligible.totalMaxPoints },
-    };
+    // Stesso costruttore usato per il tetto di prenotazione: il payload reale è
+    // ≤ quello usato per il bound (priorPoints reale ≤ totalMaxPoints), quindi
+    // l'input effettivo non eccede mai il tetto prenotato per la chiamata.
+    const graderInput: AiGraderInput = buildGraderInput(
+      ctx.request.requestId,
+      eligible.openOrders,
+      ctx.byOrder,
+      ctx.submission.answers,
+      priorPoints,
+      eligible.totalMaxPoints,
+    );
     let validated = new Map<number, ValidatedScore>();
     try {
       const output = await ctx.grader.grade(graderInput);
-      // Usage REALE del provider, se riportato (0 col mock).
-      openTokensActual = output.usage?.tokens ?? 0;
+      // Usage REALE del provider, se riportato e coerente (0/0 col mock).
+      billUsage(output.usage);
       // M5-04B (validazione ATOMICA): con domande aperte il feedback generale è
       // **richiesto**. Se è assente, non stringa, vuoto o supera i 700 caratteri
       // l'**intero** output del grader per questa consegna è invalido: nessun
       // punteggio IA, nessun feedback, **nessun** commitSubmission → la consegna
       // è riportata `failed` (contratto batch esistente) senza scritture parziali.
+      // L'usage già consumato resta contabilizzato (billUsage sopra).
       // Le altre consegne proseguono; le valutazioni già presenti restano intatte.
       generalFeedback = validateGeneralFeedback(output.generalFeedback);
       if (generalFeedback === null) {
@@ -1288,8 +1668,8 @@ async function gradeEligible(
             alreadyIgnored: eligible.alreadyGraded,
             reason: 'write_error',
           },
-          openTokensEstimated,
-          openTokensActual,
+          estimate,
+          actual: { inputTokens: actualInput, outputTokens: actualOutput },
         };
       }
       validated = validateGraderOutput(
@@ -1298,10 +1678,14 @@ async function gradeEligible(
         new Set(eligible.openOrders),
         new Map(eligible.openOrders.map((o) => [o, ctx.byOrder.get(o)!.maxPoints])),
       );
-    } catch {
-      // Errore di trasporto/parsing/validazione dell'adapter: fail atomico per
-      // l'intera consegna. Anche le chiuse calcolate in memoria non vengono
-      // persistite, così non esiste una scrittura parziale mascherata.
+    } catch (error) {
+      // Output invalido con usage **già fatturabile**: il costo va contabilizzato
+      // anche se non salviamo punteggi/feedback. Un errore di trasporto/timeout
+      // non porta usage → nessun costo inventato. In entrambi i casi fail atomico:
+      // nemmeno le chiuse calcolate in memoria vengono persistite.
+      if (error instanceof AiGraderInvalidOutputError) {
+        billUsage(error.usage);
+      }
       return {
         result: {
           submissionId,
@@ -1313,8 +1697,8 @@ async function gradeEligible(
           alreadyIgnored: eligible.alreadyGraded,
           reason: 'write_error',
         },
-        openTokensEstimated,
-        openTokensActual,
+        estimate,
+        actual: { inputTokens: actualInput, outputTokens: actualOutput },
       };
     }
     for (const order of eligible.openOrders) {
@@ -1354,8 +1738,8 @@ async function gradeEligible(
         alreadyIgnored: eligible.alreadyGraded,
         reason: 'write_error',
       },
-      openTokensEstimated,
-      openTokensActual,
+      estimate,
+      actual: { inputTokens: actualInput, outputTokens: actualOutput },
     };
   }
 
@@ -1371,9 +1755,10 @@ async function gradeEligible(
         alreadyIgnored: eligible.alreadyGraded,
         reason: 'changed_since_preview',
       },
-      // Consegna esclusa (dati cambiati): nessun token contabilizzato.
-      openTokensEstimated: 0,
-      openTokensActual: 0,
+      // Dati cambiati dopo il preflight: nessuna scrittura, ma se il grader era già
+      // stato chiamato l'usage consumato resta contabilizzato (mai un costo perso).
+      estimate,
+      actual: { inputTokens: actualInput, outputTokens: actualOutput },
     };
   }
 
@@ -1405,8 +1790,8 @@ async function gradeEligible(
       closedSkipped,
       alreadyIgnored: eligible.alreadyGraded,
     },
-    openTokensEstimated,
-    openTokensActual,
+    estimate,
+    actual: { inputTokens: actualInput, outputTokens: actualOutput },
   };
 }
 
