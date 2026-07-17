@@ -16,6 +16,8 @@ export type LoadedQuestionWithSolution = {
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
   opzioni?: QuestionOption[];
   soluzione: string | string[];
+  /** EXAM-UX-03 — solo per `aperta`, solo se impostato nel pool. */
+  maxCharacters?: number;
 };
 
 export type LoadQuestionsWithSolutionsResult =
@@ -83,6 +85,9 @@ export async function loadSelectedQuestionsWithSolutions(
         ...(q.tipo !== 'aperta' && {
           opzioni: q.opzioni.map((o) => ({ id: o.id, testo: o.testo })),
         }),
+        ...(q.tipo === 'aperta' && q.maxCharacters !== undefined
+          ? { maxCharacters: q.maxCharacters }
+          : {}),
       };
       resultMap.set(r.questionIndexEntryId, loadedQuestion);
     }

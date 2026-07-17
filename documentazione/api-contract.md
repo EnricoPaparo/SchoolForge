@@ -340,6 +340,7 @@ interface PublicVerificationQuestion {
   maxPoints: number;
   testo: string;
   opzioni?: { id: string; testo: string }[];  // solo chiusa_singola/chiusa_multipla — id + testo, mai la soluzione
+  maxCharacters?: number;      // EXAM-UX-03 — solo aperta, solo se impostato; assente ⇒ default 2000
 }
 
 // teacherSnapshot (campo su verifications/{id}, owner-only, scritto solo
@@ -364,6 +365,7 @@ interface VerificationTeacherQuestionSnapshot {
   testo: string;
   opzioni?: { id: string; testo: string }[];
   soluzione: string | string[];   // string per aperta/chiusa_singola, string[] per chiusa_multipla
+  maxCharacters?: number;         // EXAM-UX-03 — solo aperta, congelato dal pool all'attivazione se impostato
 }
 
 interface VerificationTeacherSnapshot {
@@ -660,6 +662,8 @@ Il service layer (`poolEditorService.ts`, da creare in QE-02) usa la stessa stra
 | Elimina pool | Elimina tutte le entry `questionIndex` del pool; imposta `lessons/{id}.poolStatus = 'absent'`, `questionCount = 0`; bloccata se esistono bozze che referenziano domande del pool | Elimina il file `.pool.md` |
 
 Il `questionIndex` continua a usare entryId deterministici `${lessonId}_${toDocId(q.id)}`. Modificare `id` di una domanda equivale a eliminare l'entry vecchia e creare quella nuova. Il formato YAML del file `.pool.md` rimane `schoolforge-pool/v1` invariato.
+
+**EXAM-UX-03 — limite caratteri delle risposte aperte + ordine casuale locale.** Il contratto pool aggiunge alla sola domanda **aperta** una proprietà opzionale `maxCharacters?` (chiave sorgente YAML identica al nome del campo, coerente con `maxPoints`): intero **1–10000** quando presente, validato dal contratto (`schoolforge-pool/v1`); assente/nullo/legacy/non valido ⇒ limite **effettivo** di runtime **2000** (`effectiveMaxCharacters`). Non si applica alle chiuse. L'editor mostra il campo «Limite caratteri» solo per le aperte (placeholder 2000, vuoto ammesso → campo assente in persistenza; parse/serialize/import preservano il valore, i pool legacy restano validi). All'**attivazione** il valore è copiato — senza letture o documenti aggiuntivi, mai riscritto dopo — nel `teacherSnapshot` e nella `PublicVerificationQuestion`; snapshot legacy senza campo ⇒ `OnlineExamView` usa 2000. In `OnlineExamView` la textarea aperta imposta `maxLength={effectiveMaxCharacters}` con difesa `slice(0, limit)` in `onChange` e un contatore discreto «n / max caratteri» (`aria-describedby`); un contenuto legacy già salvato oltre il limite resta visibile e non viene troncato al caricamento, ma il nuovo input non può aumentarlo. Nessuna lettura/scrittura Firebase per il contatore, autosave invariato. **Ordine casuale locale**: all'apertura di `OnlineExamView` l'ordine **visivo** delle domande è mescolato con un Fisher–Yates corretto (RNG iniettabile per i test), calcolato **una sola volta** per mount/`verificationId` e stabile durante render/autosave/flag/fullscreen/navigazione; la numerazione e il navigatore seguono l'ordine visivo (prima mostrata = «1»). È un **deterrente leggero**: **non è persistito** (Firestore/session/localStorage) e volutamente **non stabile dopo refresh, chiusura browser o nuovo login**. Risposte e flag restano associati all'`order`/ID **originale** della domanda; `teacherSnapshot`, `publishedProjection`, `submission.answers`, `questionRefs`, correzione docente, restituzione, PDF e scoring usano sempre gli identificatori originali e non sono influenzati dallo shuffle. Non è una nuova versione di verifica: solo ordine visuale.
 
 ### 3.1a Repository Editor (RE-01 → RE-06) — modifiche dirette senza reimport
 

@@ -30,6 +30,8 @@ export function toTeacherQuestionSnapshot(
     peso: q.ref.peso,
     testo: q.testo,
     ...(q.opzioni ? { opzioni: q.opzioni } : {}),
+    // EXAM-UX-03 — frozen at activation for aperta questions that set it.
+    ...(q.maxCharacters !== undefined ? { maxCharacters: q.maxCharacters } : {}),
     soluzione: q.soluzione,
   };
 }
@@ -48,6 +50,9 @@ export function toPublicVerificationQuestion(
     maxPoints: q.maxPoints,
     testo: q.testo,
     ...(q.opzioni ? { opzioni: q.opzioni } : {}),
+    // EXAM-UX-03 — carried to the student projection so OnlineExamView can cap
+    // the answer length; never a solution field, safe to expose.
+    ...(q.maxCharacters !== undefined ? { maxCharacters: q.maxCharacters } : {}),
   };
 }
 

@@ -396,6 +396,12 @@ export type VerificationTeacherQuestionSnapshot = {
   opzioni?: { id: string; testo: string }[];
   /** string for aperta/chiusa_singola, string[] for chiusa_multipla. */
   soluzione: string | string[];
+  /**
+   * EXAM-UX-03 — limite caratteri della risposta aperta, congelato dal pool
+   * all'attivazione. Presente solo per `aperta` e solo se impostato; assente/
+   * legacy ⇒ default effettivo 2000. Mai riscritto dopo l'attivazione.
+   */
+  maxCharacters?: number;
 };
 
 /** Teacher-side full snapshot (owner-only, set at activation) */
@@ -471,6 +477,12 @@ export type PublicVerificationQuestion = {
   testo: string;
   /** Present only for chiusa_singola / chiusa_multipla. id + testo only — no solution marker. */
   opzioni?: { id: string; testo: string }[];
+  /**
+   * EXAM-UX-03 — limite caratteri della risposta aperta (solo `aperta`, solo se
+   * impostato). Copiato dal pool all'attivazione; assente/legacy ⇒ OnlineExamView
+   * usa il default 2000.
+   */
+  maxCharacters?: number;
 };
 
 /**

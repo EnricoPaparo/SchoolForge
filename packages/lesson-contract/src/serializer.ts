@@ -37,7 +37,11 @@ function serializeQuestion(q: PoolQuestion): Record<string, unknown> {
   };
 
   if (q.tipo === 'aperta') {
-    return { ...base, soluzione: q.soluzione };
+    // maxCharacters is written only when explicitly set (keeps legacy pools and
+    // default-limit questions byte-identical on round-trip).
+    return q.maxCharacters === undefined
+      ? { ...base, soluzione: q.soluzione }
+      : { ...base, soluzione: q.soluzione, maxCharacters: q.maxCharacters };
   }
 
   // chiusa_singola and chiusa_multipla

@@ -76,6 +76,11 @@ function emptySubmission(overrides: Partial<SubmissionDoc> = {}): SubmissionDoc 
   };
 }
 
+// EXAM-UX-03 — a near-1 RNG makes Fisher–Yates a no-op (j === i every step), so
+// the visual order equals the original order and existing per-number assertions
+// stay deterministic. Shuffle behaviour itself is covered by dedicated tests.
+const IDENTITY_RNG = () => 1 - 1e-9;
+
 function renderView(overrides: Partial<Parameters<typeof OnlineExamView>[0]> = {}) {
   const onSubmitted = vi.fn();
   const props = {
@@ -87,6 +92,7 @@ function renderView(overrides: Partial<Parameters<typeof OnlineExamView>[0]> = {
     questions: QUESTIONS,
     submission: emptySubmission(),
     onSubmitted,
+    rng: IDENTITY_RNG,
     ...overrides,
   };
   render(<OnlineExamView {...props} />);
@@ -761,5 +767,152 @@ describe('OnlineExamView — cancella risposta (chiusa_singola, M3F-06)', () => 
 
     expect((radios[0] as HTMLInputElement).checked).toBe(false);
     expect((radios[1] as HTMLInputElement).checked).toBe(false);
+  });
+});
+
+// EXAM-UX-03 — a near-0 RNG forces a known non-identity permutation of the 3
+// questions [q0 aperta, q1 singola, q2 multipla] → visual order [q1, q2, q0].
+const REORDER_RNG = () => 0;
+
+describe('OnlineExamView — local question shuffle (EXAM-UX-03)', () => {
+  it('numbers and navigator follow the visual order, not the original order', () => {
+    renderView({ rng: REORDER_RNG });
+    // Visual order [q1 singola, q2 multipla, q0 aperta]: the aperta is now #3.
+    expect(screen.getByLabelText('Risposta alla domanda 3')).toBeTruthy();
+    expect(screen.queryByLabelText('Risposta alla domanda 1')).toBeNull();
+    // Navigator shows 1..3 in the visual order.
+    const nav = screen.getByRole('navigation', { name: 'Navigatore domande' });
+    expect(within(nav).getByText('1')).toBeTruthy();
+    expect(within(nav).getByText('3')).toBeTruthy();
+  });
+
+  it('saves an answer under the ORIGINAL order key, not the visual position', async () => {
+    renderView({ rng: REORDER_RNG });
+    // The aperta (original order 0) is shown at visual position 3.
+    fireEvent.change(screen.getByLabelText('Risposta alla domanda 3'), {
+      target: { value: 'Risposta aperta' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva bozza' }));
+    await waitFor(() => expect(mockSaveDraft).toHaveBeenCalled());
+    const payload = mockSaveDraft.mock.calls[0][0] as {
+      answers: Record<string, unknown>;
+    };
+    // Keyed by the original order "0", never the visual index "2".
+    expect(payload.answers['0']).toEqual({ tipo: 'aperta', testo: 'Risposta aperta' });
+    expect(payload.answers['2']).toBeUndefined();
+  });
+
+  it('saves a flag under the ORIGINAL order key', async () => {
+    renderView({ rng: REORDER_RNG });
+    // Visual position 1 is the chiusa_singola (original order 1).
+    fireEvent.click(screen.getByRole('button', { name: 'Segna la domanda 1 come "da rivedere"' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salva bozza' }));
+    await waitFor(() => expect(mockSaveDraft).toHaveBeenCalled());
+    const payload = mockSaveDraft.mock.calls[0][0] as { flagged: Record<string, boolean> };
+    expect(payload.flagged['1']).toBe(true);
+  });
+
+  it('keeps the same order across a rerender caused by answering', () => {
+    renderView({ rng: REORDER_RNG });
+    // Aperta at #3 before…
+    fireEvent.change(screen.getByLabelText('Risposta alla domanda 3'), {
+      target: { value: 'x' },
+    });
+    // …and still at #3 after the state update (order is stable within the session).
+    expect(screen.getByLabelText('Risposta alla domanda 3')).toBeTruthy();
+    expect(screen.queryByLabelText('Risposta alla domanda 1')).toBeNull();
+  });
+
+  it('a fresh mount can produce a different order', () => {
+    const { unmount } = renderReorder(REORDER_RNG); // aperta at #3
+    expect(screen.getByLabelText('Risposta alla domanda 3')).toBeTruthy();
+    unmount();
+    renderReorder(IDENTITY_RNG); // aperta back at #1
+    expect(screen.getByLabelText('Risposta alla domanda 1')).toBeTruthy();
+  });
+
+  it('never writes the shuffled order into the saved draft', async () => {
+    renderView({ rng: REORDER_RNG });
+    fireEvent.change(screen.getByLabelText('Risposta alla domanda 3'), {
+      target: { value: 'y' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva bozza' }));
+    await waitFor(() => expect(mockSaveDraft).toHaveBeenCalled());
+    const payload = mockSaveDraft.mock.calls[0][0] as Record<string, unknown>;
+    // Only answers/flagged/events travel — no order/shuffle field of any kind.
+    expect(Object.keys(payload).sort()).toEqual(
+      ['answers', 'flagged', 'newAttentionEvents', 'studentUid', 'verificationId'].sort(),
+    );
+    expect(JSON.stringify(payload)).not.toContain('order');
+  });
+});
+
+function renderReorder(rng: () => number) {
+  const result = render(
+    <OnlineExamView
+      verificationId="v1"
+      title="Verifica Reti"
+      className="Classe 3A"
+      ownerUid="owner-uid"
+      studentUid="student-uid"
+      questions={QUESTIONS}
+      submission={emptySubmission()}
+      onSubmitted={vi.fn()}
+      rng={rng}
+    />,
+  );
+  return result;
+}
+
+describe('OnlineExamView — open answer maxCharacters (EXAM-UX-03)', () => {
+  const openOnly = [{ order: 0, tipo: 'aperta' as const, maxPoints: 2, testo: 'Domanda aperta.' }];
+
+  it('applies a custom maxCharacters to the textarea and shows the counter', () => {
+    renderView({ questions: [{ ...openOnly[0], maxCharacters: 50 }], rng: IDENTITY_RNG });
+    const ta = screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement;
+    expect(ta.maxLength).toBe(50);
+    expect(screen.getByText('0 / 50 caratteri')).toBeTruthy();
+  });
+
+  it('defaults to 2000 when maxCharacters is absent (legacy)', () => {
+    renderView({ questions: openOnly, rng: IDENTITY_RNG });
+    const ta = screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement;
+    expect(ta.maxLength).toBe(2000);
+    expect(screen.getByText('0 / 2000 caratteri')).toBeTruthy();
+  });
+
+  it('slices input beyond the limit and updates the counter', () => {
+    renderView({ questions: [{ ...openOnly[0], maxCharacters: 10 }], rng: IDENTITY_RNG });
+    const ta = screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: 'abcdefghijKLMNOP' } }); // 16 chars
+    expect(ta.value).toBe('abcdefghij'); // capped at 10
+    expect(screen.getByText('10 / 10 caratteri')).toBeTruthy();
+  });
+
+  it('leaves a legacy over-limit answer visible without truncating on load', () => {
+    const legacy = 'x'.repeat(30);
+    renderView({
+      questions: [{ ...openOnly[0], maxCharacters: 10 }],
+      submission: emptySubmission({ answers: { '0': { tipo: 'aperta', testo: legacy } } }),
+      rng: IDENTITY_RNG,
+    });
+    const ta = screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement;
+    expect(ta.value).toBe(legacy); // full legacy content still shown
+    expect(screen.getByText('30 / 10 caratteri')).toBeTruthy();
+  });
+
+  it('associates the counter to the textarea via aria-describedby', () => {
+    renderView({ questions: [{ ...openOnly[0], maxCharacters: 50 }], rng: IDENTITY_RNG });
+    const ta = screen.getByLabelText('Risposta alla domanda 1');
+    const describedBy = ta.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)?.textContent).toContain('/ 50 caratteri');
+  });
+
+  it('closed questions have no character counter', () => {
+    renderView({ rng: IDENTITY_RNG }); // default QUESTIONS: q1 singola, q2 multipla
+    expect(screen.queryByText(/caratteri$/)).toBeTruthy(); // the aperta one exists
+    // But exactly one counter (only the single aperta question), not three.
+    expect(screen.getAllByText(/\d+ \/ \d+ caratteri/)).toHaveLength(1);
   });
 });
