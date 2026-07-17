@@ -346,8 +346,13 @@ export type ClosedScoreResult =
  * - **chiusa_singola** (tutto-o-niente): `selectedId` = soluzione normalizzata →
  *   `maxPoints`; diverso → `0`; non compilata → `0`. Soluzione malformata → non
  *   valutabile.
- * - **chiusa_multipla** (punteggio **parziale** equo): premia le corrette e
- *   penalizza le errate — `reward = correctSelected/correctTotal`,
+ * - **chiusa_multipla con UNA sola risposta canonica**: si comporta come una
+ *   scelta singola (tutto-o-niente), anche se il tipo tecnico è multiplo. Solo
+ *   la selezione della sola opzione corretta → `maxPoints`; qualsiasi altra
+ *   selezione (errata, corretta + una o più extra, o più di un'opzione) → `0`.
+ * - **chiusa_multipla con DUE o più risposte canoniche** (punteggio **parziale**
+ *   equo): premia le corrette e penalizza le errate —
+ *   `reward = correctSelected/correctTotal`,
  *   `penalty = wrongTotal>0 ? wrongSelected/wrongTotal : 0`,
  *   `raw = clamp(reward − penalty, 0, 1)`, `points = round₀.₂₅(maxPoints·raw)`.
  *   ID sconosciuti/duplicati/ordine non danno vantaggi. Soluzione/opzioni
@@ -379,6 +384,25 @@ export function scoreClosedQuestion(
     const selected = new Set(answer && answer.tipo === 'chiusa_multipla' ? answer.selectedIds : []);
     if (selected.size === 0)
       return { evaluable: true, points: 0, feedback: 'Risposta non fornita.' };
+
+    // Caso a **soluzione canonica unica**: anche se il tipo tecnico è
+    // `chiusa_multipla`, con UNA sola risposta corretta la domanda si comporta
+    // come una scelta singola tutto-o-niente. Solo la selezione composta
+    // esclusivamente da quell'unica opzione vale `maxPoints`; qualsiasi altra
+    // selezione (errata, corretta + extra, o più di un'opzione) vale 0. Questo
+    // evita che la formula parziale premi «corretta + errata» con credito.
+    if (correctIds.length === 1) {
+      const onlyCorrect = correctIds[0];
+      const hasCorrect = selected.has(onlyCorrect);
+      if (selected.size === 1 && hasCorrect) {
+        return { evaluable: true, points: question.maxPoints, feedback: 'Risposta corretta.' };
+      }
+      const feedback =
+        hasCorrect && selected.size > 1
+          ? 'La risposta corretta è stata selezionata insieme a una o più opzioni errate; la selezione non è quindi valida.'
+          : 'Risposta non corretta.';
+      return { evaluable: true, points: 0, feedback };
+    }
 
     const correctSet = new Set(correctIds);
     let correctSelected = 0;

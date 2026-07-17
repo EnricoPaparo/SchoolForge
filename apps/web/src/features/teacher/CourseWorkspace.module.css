@@ -345,6 +345,16 @@
   font-size: 0.8125rem;
   color: var(--color-text);
 }
+/* Variante portalata su document.body: posizione calcolata a runtime rispetto
+   al trigger, quindi fixed e non più absolute dentro .menuWrap. Sopra il pannello
+   (z 90) ma sotto i modali (z 100). Scroll interno solo se max-height lo impone. */
+.menuPortal {
+  position: fixed;
+  top: auto;
+  left: auto;
+  z-index: 90;
+  overflow-y: auto;
+}
 .menu button svg {
   flex: 0 0 auto;
 }
