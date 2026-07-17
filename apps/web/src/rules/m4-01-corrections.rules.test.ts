@@ -1140,14 +1140,16 @@ describe('Firestore rules — correctionReturns', () => {
     );
   });
 
-  it('the owner can delete a return projection (M4-LIFE-02); a student cannot', async () => {
+  it('nobody can delete a return projection (M5-06B): neither student nor owner', async () => {
     await seedBase();
     await seedSubmittedSubmission();
     await seedCompletedCorrection();
     await seedReturn();
 
+    // M5-06B — a returned projection is permanent evidence and is never deleted
+    // by the normal flow; deletion is denied outright (see firestore.rules).
     await assertFails(deleteDoc(doc(studentDb(), 'correctionReturns', SUBMISSION_ID)));
-    await assertSucceeds(deleteDoc(doc(ownerDb(), 'correctionReturns', SUBMISSION_ID)));
+    await assertFails(deleteDoc(doc(ownerDb(), 'correctionReturns', SUBMISSION_ID)));
   });
 
   it('the owner can always read the return projection', async () => {

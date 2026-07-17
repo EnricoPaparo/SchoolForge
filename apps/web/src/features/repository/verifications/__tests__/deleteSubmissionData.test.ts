@@ -78,11 +78,15 @@ function seed(path: string, data: unknown, ownerUid = OWNER) {
   store[path] = { exists: true, data: { ownerUid, verificationId: VERIF, ...(data as object) } };
 }
 
+/**
+ * A deletable submission: submission + receipt + a `completed` (never returned)
+ * correction + events. No `correctionReturns` and no `returned` mirror, so the
+ * M5-06B preflight lets it through.
+ */
 function seedFullSubmission() {
   seed(`submissions/${SUBMISSION_ID}`, { studentUid: STUDENT, status: 'submitted' });
   seed(`submissionReceipts/${SUBMISSION_ID}`, {});
-  seed(`corrections/${SUBMISSION_ID}`, {});
-  seed(`correctionReturns/${SUBMISSION_ID}`, {});
+  seed(`corrections/${SUBMISSION_ID}`, { status: 'completed' });
   eventDocs = [
     { path: `correctionEvents/e1`, data: { ownerUid: OWNER, correctionId: SUBMISSION_ID } },
     { path: `correctionEvents/e2`, data: { ownerUid: OWNER, correctionId: SUBMISSION_ID } },
@@ -98,11 +102,12 @@ describe('deleteSubmissionData', () => {
     expect(deleted).toEqual([
       'correctionEvents/e1',
       'correctionEvents/e2',
-      `correctionReturns/${SUBMISSION_ID}`,
       `corrections/${SUBMISSION_ID}`,
       `submissionReceipts/${SUBMISSION_ID}`,
       `submissions/${SUBMISSION_ID}`,
     ]);
+    // correctionReturns is never deleted by this flow.
+    expect(deleted).not.toContain(`correctionReturns/${SUBMISSION_ID}`);
     // Submission + receipt come after every dependent.
     expect(deleted.indexOf(`submissions/${SUBMISSION_ID}`)).toBe(deleted.length - 1);
     expect(deleted.indexOf(`submissionReceipts/${SUBMISSION_ID}`)).toBeGreaterThan(
@@ -177,5 +182,91 @@ describe('deleteSubmissionData', () => {
     );
     expect(committedDeletes).toHaveLength(0);
     expect(addedAudits).toHaveLength(0);
+  });
+
+  // ── M5-06B — deletable only before the first return ─────────────────────────
+
+  it('deletes a submission with no correction at all', async () => {
+    seed(`submissions/${SUBMISSION_ID}`, { studentUid: STUDENT, status: 'submitted' });
+    seed(`submissionReceipts/${SUBMISSION_ID}`, {});
+    await deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb);
+    expect(committedDeletes.flat()).toEqual([
+      `submissionReceipts/${SUBMISSION_ID}`,
+      `submissions/${SUBMISSION_ID}`,
+    ]);
+  });
+
+  it('deletes an in_progress correction that was never returned', async () => {
+    seed(`submissions/${SUBMISSION_ID}`, { studentUid: STUDENT, status: 'submitted' });
+    seed(`corrections/${SUBMISSION_ID}`, { status: 'in_progress' });
+    await deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb);
+    expect(committedDeletes.flat()).toContain(`corrections/${SUBMISSION_ID}`);
+    expect(addedAudits).toHaveLength(1);
+  });
+
+  it('deletes a completed correction that was never returned', async () => {
+    seedFullSubmission(); // correction status 'completed'
+    await deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb);
+    expect(committedDeletes.flat()).toContain(`corrections/${SUBMISSION_ID}`);
+  });
+
+  it('blocks before any write when the correction status is returned', async () => {
+    seed(`submissions/${SUBMISSION_ID}`, { studentUid: STUDENT, status: 'submitted' });
+    seed(`corrections/${SUBMISSION_ID}`, { status: 'returned' });
+    await expect(deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb)).rejects.toThrow(
+      /già stata restituita allo studente/i,
+    );
+    expect(committedDeletes).toHaveLength(0);
+    expect(addedAudits).toHaveLength(0);
+  });
+
+  it('blocks when a correctionReturn exists even if hidden (visibleToStudent false)', async () => {
+    seed(`submissions/${SUBMISSION_ID}`, { studentUid: STUDENT, status: 'submitted' });
+    // Correction reopened to in_progress, but the return projection lingers hidden.
+    seed(`corrections/${SUBMISSION_ID}`, { status: 'in_progress' });
+    seed(`correctionReturns/${SUBMISSION_ID}`, { visibleToStudent: false });
+    await expect(deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb)).rejects.toThrow(
+      /già stata restituita allo studente/i,
+    );
+    expect(committedDeletes).toHaveLength(0);
+  });
+
+  it('blocks when the submission public mirror says returned', async () => {
+    seed(`submissions/${SUBMISSION_ID}`, {
+      studentUid: STUDENT,
+      status: 'submitted',
+      correctionStatus: 'returned',
+    });
+    await expect(deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb)).rejects.toThrow(
+      /già stata restituita allo studente/i,
+    );
+    expect(committedDeletes).toHaveLength(0);
+  });
+
+  it('blocks when the receipt public mirror says returned', async () => {
+    seed(`submissions/${SUBMISSION_ID}`, { studentUid: STUDENT, status: 'submitted' });
+    seed(`submissionReceipts/${SUBMISSION_ID}`, { correctionStatus: 'returned' });
+    await expect(deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb)).rejects.toThrow(
+      /già stata restituita allo studente/i,
+    );
+    expect(committedDeletes).toHaveLength(0);
+  });
+
+  it('queries correctionEvents owner-scoped and filtered to this submission only', async () => {
+    seedFullSubmission();
+    await deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb);
+    // The events read is constrained by ownerUid == owner AND correctionId ==
+    // this submission, so events of other corrections are never touched.
+    const queryArg = mockGetDocs.mock.calls[0]?.[0] as { __query?: unknown[] };
+    const filters = (queryArg.__query ?? []).filter(
+      (p): p is { field: string; value: unknown } =>
+        typeof p === 'object' && p !== null && 'field' in p,
+    );
+    expect(filters).toEqual(
+      expect.arrayContaining([
+        { field: 'ownerUid', value: OWNER },
+        { field: 'correctionId', value: SUBMISSION_ID },
+      ]),
+    );
   });
 });
