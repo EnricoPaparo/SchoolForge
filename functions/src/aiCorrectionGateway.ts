@@ -3,7 +3,7 @@ import type { CallableRequest, FunctionsErrorCode } from 'firebase-functions/v2/
 import * as logger from 'firebase-functions/logger';
 import { defineSecret } from 'firebase-functions/params';
 import { getApps, initializeApp } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { Firestore, Transaction } from 'firebase-admin/firestore';
 import {
   AiGatewayError,
@@ -14,15 +14,19 @@ import {
 import { createConfiguredAiGrader } from './aiCorrectionProvider.js';
 import { parseAiRuntimeConfig, type AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import {
+  AI_RUN_CONTRACT_VERSION,
   runExecution,
   runPreview,
   type CommitSubmissionInput,
   type CommitSubmissionResult,
   type CorrectionData,
   type EngineWritePorts,
+  type ExclusionCode,
   type ExistingEvaluation,
   type PersistedRun,
+  type PersistedSubmissionResult,
   type SubmissionData,
+  type SubmissionOutcome,
   type TeacherQuestion,
   type ValidatedScore,
   type VerificationData,
@@ -346,58 +350,158 @@ function writeMirror(
   );
 }
 
+const RUN_STATUSES = new Set(['completed', 'partial', 'failed']);
+const SUBMISSION_OUTCOMES = new Set<SubmissionOutcome>([
+  'succeeded',
+  'partial',
+  'excluded',
+  'failed',
+]);
+const EXCLUSION_CODES = new Set<ExclusionCode>([
+  'not_found',
+  'wrong_owner',
+  'wrong_verification',
+  'not_submitted',
+  'snapshot_unavailable',
+  'correction_not_in_progress',
+  'nothing_to_grade',
+  'too_large',
+  'changed_since_preview',
+  'write_error',
+]);
+const COUNT_KEYS = [
+  'selected',
+  'eligible',
+  'excluded',
+  'closedToGrade',
+  'openToGrade',
+  'closedOnlySubmissions',
+  'alreadyGradedIgnored',
+  'succeeded',
+  'partial',
+  'failed',
+] as const;
+
+/** Legge soltanto il contratto privacy-minimal; qualunque forma dubbia è legacy. */
+function readPersistedRun(data: Record<string, unknown>): PersistedRun | null {
+  if (data.runContractVersion !== AI_RUN_CONTRACT_VERSION) return null;
+  if (typeof data.selectionHash !== 'string' || !/^[a-f0-9]{64}$/.test(data.selectionHash)) {
+    return null;
+  }
+  if (!RUN_STATUSES.has(data.status as string)) return null;
+  if (data.mode !== 'mock' && data.mode !== 'openai') return null;
+  if (typeof data.counts !== 'object' || data.counts === null) return null;
+  const rawCounts = data.counts as Record<string, unknown>;
+  if (COUNT_KEYS.some((key) => !Number.isInteger(rawCounts[key]) || Number(rawCounts[key]) < 0)) {
+    return null;
+  }
+  const counts = Object.fromEntries(
+    COUNT_KEYS.map((key) => [key, Number(rawCounts[key])]),
+  ) as unknown as PersistedRun['counts'];
+  if (
+    !Number.isInteger(data.tokensEstimated) ||
+    Number(data.tokensEstimated) < 0 ||
+    !Number.isInteger(data.tokensActual) ||
+    Number(data.tokensActual) < 0 ||
+    data.cost !== 0 ||
+    !Array.isArray(data.resultOrdinals)
+  ) {
+    return null;
+  }
+  const resultOrdinals: PersistedSubmissionResult[] = [];
+  for (const raw of data.resultOrdinals) {
+    if (typeof raw !== 'object' || raw === null) return null;
+    const result = raw as Record<string, unknown>;
+    if (!Number.isInteger(result.ordinal) || Number(result.ordinal) < 0) return null;
+    if (!SUBMISSION_OUTCOMES.has(result.status as SubmissionOutcome)) return null;
+    if (
+      result.reasonCode !== undefined &&
+      !EXCLUSION_CODES.has(result.reasonCode as ExclusionCode)
+    ) {
+      return null;
+    }
+    resultOrdinals.push({
+      ordinal: Number(result.ordinal),
+      status: result.status as SubmissionOutcome,
+      ...(result.reasonCode ? { reasonCode: result.reasonCode as ExclusionCode } : {}),
+    });
+  }
+  return {
+    runContractVersion: AI_RUN_CONTRACT_VERSION,
+    status: data.status as PersistedRun['status'],
+    selectionHash: data.selectionHash,
+    mode: data.mode,
+    counts,
+    tokensEstimated: Number(data.tokensEstimated),
+    tokensActual: Number(data.tokensActual),
+    costActual: 0,
+    resultOrdinals,
+  };
+}
+
 function beginRun(db: Firestore): EngineWritePorts['beginRun'] {
   return async (requestId, meta) => {
     const ref = db.doc(`aiCorrectionRuns/${requestId}`);
     return db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       const now = FieldValue.serverTimestamp();
-      const nowMs = Date.now();
       const acquire = () => {
         // Acquisisce/rinnova la lease per questo executionId.
-        tx.set(
-          ref,
-          {
-            requestId,
-            ownerUid: meta.ownerUid,
-            actorUid: meta.actorUid,
-            verificationId: meta.verificationId,
+        const lease = {
+          status: 'running',
+          executionId: meta.executionId,
+          leaseExpiresAt: meta.nowMs + meta.leaseMs,
+          updatedAt: now,
+        };
+        if (snap.exists) {
+          tx.update(ref, lease);
+        } else {
+          tx.create(ref, {
+            runContractVersion: AI_RUN_CONTRACT_VERSION,
             mode: meta.provider,
             provider: meta.provider,
             ...(meta.model ? { model: meta.model } : {}),
-            status: 'running',
+            ...(meta.configVersion ? { configVersion: meta.configVersion } : {}),
+            ...(meta.priceListVersion ? { priceListVersion: meta.priceListVersion } : {}),
             selectionHash: meta.selectionHash,
             submissionCount: meta.submissionCount,
-            executionId: meta.executionId,
-            leaseExpiresAt: nowMs + meta.leaseMs,
-            updatedAt: now,
-            ...(snap.exists
-              ? {}
-              : { createdAt: now, tokensEstimated: 0, tokensActual: 0, cost: 0 }),
-          },
-          { merge: true },
-        );
+            ...lease,
+            createdAt: now,
+            expireAt: Timestamp.fromMillis(meta.expireAtMs),
+            tokensEstimated: 0,
+            tokensActual: 0,
+            cost: 0,
+          });
+        }
         return { state: 'acquired' as const, executionId: meta.executionId };
       };
 
       if (!snap.exists) return acquire();
 
       const data = snap.data() as Record<string, unknown>;
+      // Nessuna migrazione o takeover del formato legacy: potrebbe contenere ID
+      // o una response non ricostruibile senza rischiare associazioni errate.
+      if (data.runContractVersion !== AI_RUN_CONTRACT_VERSION) {
+        return { state: 'legacy' as const };
+      }
       if (data.selectionHash !== meta.selectionHash) return { state: 'conflict' as const };
 
       const status = data.status as PersistedRun['status'];
-      const response = data.response as PersistedRun['response'];
-      if ((status === 'completed' || status === 'partial' || status === 'failed') && response) {
+      const terminal = status === 'completed' || status === 'partial' || status === 'failed';
+      if (terminal) {
+        const existing = readPersistedRun(data);
+        if (!existing) return { state: 'legacy' as const };
         return {
           state: 'completed' as const,
-          existing: { status, selectionHash: data.selectionHash as string, response },
+          existing,
         };
       }
+      if (status !== 'running') return { state: 'legacy' as const };
 
-      // status === 'running' (o terminale senza response): lease valida → locked;
+      // status === 'running': lease valida → locked;
       // lease scaduta o assente → takeover.
       const leaseExpiresAt = typeof data.leaseExpiresAt === 'number' ? data.leaseExpiresAt : 0;
-      if (status === 'running' && leaseExpiresAt > nowMs) {
+      if (status === 'running' && leaseExpiresAt > meta.nowMs) {
         return { state: 'locked' as const };
       }
       return acquire();
@@ -415,6 +519,12 @@ function finishRun(db: Firestore): EngineWritePorts['finishRun'] {
       const snap = await tx.get(ref);
       if (!snap.exists) return;
       const data = snap.data() as Record<string, unknown>;
+      if (
+        data.runContractVersion !== AI_RUN_CONTRACT_VERSION ||
+        data.selectionHash !== run.selectionHash
+      ) {
+        return;
+      }
       if (data.executionId !== run.executionId) return; // takeover avvenuto → no-op
       tx.set(
         ref,
@@ -423,13 +533,13 @@ function finishRun(db: Firestore): EngineWritePorts['finishRun'] {
           updatedAt: FieldValue.serverTimestamp(),
           // Rilascia la lease: lo stato terminale rende il run non riacquisibile.
           leaseExpiresAt: 0,
-          // Solo metadata: conteggi, token, esito sintetico per consegna (id +
-          // outcome + counts). Nessun testo/risposta/soluzione/feedback/nome/email.
-          counts: run.response?.counts ?? null,
-          tokensEstimated: run.response?.tokensEstimated ?? 0,
-          tokensActual: run.response?.tokensActual ?? 0,
+          // Solo metadata aggregati + esito ordinale. Nessun ID/UID/contenuto.
+          tokensActual: run.tokensActual,
           cost: 0,
-          response: run.response ?? null,
+          mode: run.mode,
+          counts: run.counts,
+          tokensEstimated: run.tokensEstimated,
+          resultOrdinals: run.resultOrdinals,
         },
         { merge: true },
       );

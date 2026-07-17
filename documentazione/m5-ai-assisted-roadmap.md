@@ -245,21 +245,13 @@ Serve **un solo** documento operativo (futuro, **non creato in M5-00**), identif
 
 **`aiCorrectionRuns/{requestId}`** — **una sola collezione**, nessuna seconda collezione di audit IA, nessuna «proposta IA» persistente.
 
-**Può contenere soltanto:**
-- `ownerUid`, `actorUid`;
-- `verificationId`;
-- `requestId`;
-- `status` della run;
-- `timestamp` (creazione/aggiornamento);
-- `provider`/`model`;
-- **conteggi** (aperte inviate/valutate/scartate, chiuse deterministiche, consegne elaborate/escluse/fallite);
-- **token/costo stimati ed effettivi**;
-- **esito sintetico per consegna** (`succeeded|partial|failed`);
-- **codici errore non sensibili**.
+**Contratto privacy-minimal M5-05D2A. Può contenere soltanto:** versione contratto, stato, `selectionHash` SHA-256, numero di consegne, modalità/provider/modello e versioni config/listino applicabili, lease tecnica (`executionId`/scadenza), timestamp, conteggi aggregati, token/costi, risultati `{ ordinal, status, reasonCode? }` ed `expireAt`.
 
-**Non deve mai contenere:** testo delle risposte, testo delle domande, soluzioni, feedback, prompt, output grezzo del provider, nome/email dello studente.
+**Non contiene:** `submissionId`, `verificationId` in chiaro, UID (`ownerUid`, `actorUid`, `studentUid` o equivalenti), nomi/email, domande, risposte, soluzioni, feedback, prompt, output grezzo, snapshot o altri testi didattici. `requestId` resta soltanto l'ID tecnico del documento e non è duplicato nei campi.
 
-Il documento è **owner-only**. La granularità dettagliata (punteggio per domanda) vive già nelle `evaluations` della correzione: `aiCorrectionRuns` **non** la duplica.
+La selezione è ordinata server-side e l'hash copre `verificationId` + insieme canonico. Gli ordinali derivano da quell'ordine; live e replay associano `ordinal → submissionId` usando esclusivamente la selezione corrente già validata. Un insieme diverso con lo stesso `requestId` è un conflitto. I run legacy privi della versione privacy non vengono migrati, modificati o riutilizzati: il chiamante deve generare un nuovo `requestId`.
+
+La collezione è **server-only**: nessun client, owner incluso, può leggerla o scriverla; l'Admin SDK delle Functions bypassa le Rules. `expireAt` usa una retention DEV tecnica provvisoria di **30 giorni**, in attesa di HG-M5-4. Il campo non cancella alcun documento finché una policy TTL Firebase non viene configurata separatamente; questa PR non configura né deploya la policy.
 
 ---
 
@@ -362,7 +354,7 @@ Ulteriori limiti prudenti (max consegne/aperte/caratteri/token per operazione, �
 - **Token e costo** (mock): `tokensEstimated` è **deterministico** e include **domanda + soluzione di riferimento + risposta dello studente** + overhead per domanda, con la **stessa** formula in preview e run. `tokensActual` proviene dall'**usage reale** riportato dal provider (`AiGraderOutput.usage`) e in modalità **mock è sempre `0`** (nessun token reale consumato). `costEstimated`/`costActual` restano **0** col mock. Il contratto è già predisposto perché un provider reale (M5-05) riporti l'usage effettivo, senza implementarlo ora.
 - **`aiCorrectionRun`** ripete **tutte** le verifiche del preview (nessuna autorizzazione persistente): dati cambiati dal preview → consegna esclusa (`changed_since_preview`). **Nessun** completamento/restituzione automatici. **Zero token reali, nessuna chiamata esterna.**
 
-**Forma di `aiCorrectionRuns/{requestId}` (M5-02).** Documento **owner-only**, **solo metadata**: `ownerUid`/`actorUid`, `verificationId`, `requestId`, `mode`/`provider: 'mock'`, `status`, timestamp, **`selectionHash`** (hash deterministico FNV-1a della selezione, mai risposte/contenuti), **`executionId`** + **`leaseExpiresAt`** (lease di concorrenza), conteggi, `tokensEstimated`/`tokensActual`, `cost: 0`, ed **esito sintetico per consegna** (submissionId + outcome + conteggi + eventuale codice motivo). **Vietati** e assenti: testi di domande, risposte, soluzioni, feedback, prompt, output grezzo, nomi, email. **Retention: ancora non decisa** — è l'Human Gate **HG-M5-4** (da definire prima di M5-05); nessun valore è fissato qui. La collezione **non** è pensata per lettura diretta dal client: il risultato è restituito dalla Function.
+**Forma corrente di `aiCorrectionRuns/{requestId}` (M5-05D2A).** Contratto v2 **server-only e privacy-minimal**: nessun `submissionId`, `verificationId`, UID o testo. Conserva soltanto versione, stato, SHA-256 della selezione canonica, numero/conteggi aggregati, provider/modello/versioni tecniche applicabili, token/costo, lease, timestamp, `expireAt` e risultati `{ ordinal, status, reasonCode? }`. La Function ricostruisce gli ID soltanto nella response live/replay dalla selezione corrente validata. Retention DEV provvisoria 30 giorni, ma nessuna eliminazione avviene finché non viene configurata una policy TTL; HG-M5-4 resta aperto.
 
 **Resta a M5-05D (non implementato):** configurazione/attivazione reale su DEV, benchmark effettivo, budget/hard stop e Gate G7 (HG-M5-1/2/3/4 bloccanti). **M5 non è completo.**
 
@@ -446,7 +438,14 @@ Prima parte di M5-05D: i **guardrail server-side obbligatori** che devono preced
 
 **Letture reali sul percorso `openai` (oltre alla lettura owner di autenticazione):** preview = 1 config + 1 verifica + 1 submission e 1 correction per ID selezionato. Run = lo stesso preflight (1 config + 1 verifica + 2 letture per ID), riusato dopo la lease senza rileggere verifica/submission/correction; `beginRun` legge il run doc una volta, ogni `commitSubmission` rilegge transazionalmente la correction elaborata per proteggere dalle race e `finishRun` rilegge il run doc una volta. Rispetto al run precedente, D1 aggiunge la sola lettura config; mock non aggiunge letture. Nessun nuovo indice o schema client.
 
-**Resta a M5-05D (non implementato):** collegamento al runtime del costo effettivo nella risposta/`aiCorrectionRuns`; transazione Firestore del ledger di budget con prenotazione/riconciliazione reali; retry applicativo con backoff+jitter iniettabile e `Retry-After`; hardening privacy di `aiCorrectionRuns` (rimozione `submissionId`/UID, mapping ordinale idempotente, `expireAt`/TTL) e relative Firestore Rules server-only; dialog UI definitivo; benchmark reale; **Human Gate HG-M5-1/2/3/4 e Gate G7**. **Il provider reale non è ancora attivabile e M5 non è completo.**
+### 16.9 Stato M5-05D2A — privacy e ciclo di vita dei run
+
+- Nuovi `aiCorrectionRuns` nel contratto v2 privacy-minimal: nessun ID di consegna/verifica, UID o contenuto; soltanto metadata aggregati, lease e risultati ordinali.
+- Selezione canonica server-side e SHA-256; replay ricostruito dalla selezione corrente, conflitto su insieme differente. Run legacy non ricostruibili ⇒ nuovo `requestId`, senza migrazione o dual write.
+- `expireAt` server-generated a 30 giorni DEV tramite clock iniettato. È un valore tecnico provvisorio: HG-M5-4 resta aperto e nessuna TTL policy è configurata/deployata.
+- Rules esplicite server-only per `aiCorrectionRuns`, `settings/aiConfig` e `aiBudgetLedger`; nessuna autorizzazione client ampliata.
+
+**Resta a M5-05D2B (non implementato):** costo reale, prenotazione/riconciliazione runtime del budget e retry controllato con backoff/jitter e `Retry-After`. Restano inoltre benchmark reale, TTL policy effettiva, **Human Gate HG-M5-1/2/3/4 e Gate G7**. **Il provider reale è disabilitato e M5 non è completo.**
 
 ---
 
@@ -462,6 +461,7 @@ Prima parte di M5-05D: i **guardrail server-side obbligatori** che devono preced
 - **M5-05:** provider reale solo su DEV dietro flag; **prerequisiti bloccanti HG-M5-1/2/3/4 soddisfatti**; smoke su casi reali; audit/costi osservabili entro le soglie; nessun web/retrieval/tool; evidenze per **G7**.
 - **M5-05C:** adapter OpenAI e harness testabili senza rete; default `disabled`; `mock` invariato; `openai` fail-closed senza modello/secret; Structured Outputs + validazione applicativa; timeout 60 s, retry massimo 1 senza moltiplicazione SDK; nessun secret creato, chiamata reale, costo, deploy o superamento di Human Gate/G7.
 - **M5-05D1:** config runtime `settings/aiConfig` fail-closed e unica fonte del modello; ordine auth/owner → config/kill switch → classificazione/limiti → secret/grader → lease; hard ceiling DEV 30 consegne, 20 aperte, 10 000 token/consegna, 300 000 token/operazione, concorrenza 3, timeout 60 s, retry 1, budget 5 USD; allowlist production limitata allo snapshot verificato `gpt-5-nano-2025-08-07`; calcolo costi e ledger budget restano **puri/non wired**; mock e sole-chiuse invariati a 0 token/costo; nessun secret reale, chiamata, costo, deploy o superamento Human Gate/G7. **Provider reale non ancora attivabile.**
+- **M5-05D2A:** contratto run v2 senza ID/UID/contenuti; selezione canonica + SHA-256, replay ordinale sicuro e legacy fail-safe; `expireAt` 30 giorni DEV provvisorio senza policy TTL; Rules tecniche server-only; budget/costo/retry ancora non wired; nessun provider reale o deploy.
 
 ---
 

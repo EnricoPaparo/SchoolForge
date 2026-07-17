@@ -239,6 +239,22 @@ service cloud.firestore {
       allow update, delete: if isOwner();
     }
 
+    // --- M5 technical configuration and run metadata (server-only) ---
+    // Admin SDK bypasses Rules. No client, including the owner, may inspect or
+    // mutate provider configuration, idempotency leases/results, or budget
+    // ledger documents.
+    match /settings/aiConfig {
+      allow read, write: if false;
+    }
+
+    match /aiCorrectionRuns/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /aiBudgetLedger/{document=**} {
+      allow read, write: if false;
+    }
+
     // --- settings/ownerPublic (M3-lite) ---
     // Holds only `ownerUid`, readable by any authenticated user so the client
     // can resolve TeacherShell vs. StudentShell without exposing settings/owner
