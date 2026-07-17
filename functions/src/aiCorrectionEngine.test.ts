@@ -1,11 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AiGatewayError,
+  AiGraderInvalidOutputError,
   MockAiGrader,
   buildMockGeneralFeedback,
   type AiGrader,
   type AiGraderOutput,
 } from './aiCorrectionGatewayCore.js';
+import { USD_MICRO, OPENAI_PRODUCTION_MODEL } from './aiCorrectionCost.js';
+import {
+  emptyLedger,
+  availableMicroUsd,
+  monthKeyFromMs,
+  reserve as reserveLedger,
+  reconcile as reconcileLedger,
+  type BudgetLedgerState,
+} from './aiCorrectionBudget.js';
 import {
   AI_RUN_CONTRACT_VERSION,
   canonicalizeSubmissionIds,
@@ -94,15 +104,24 @@ class FakeStore implements EngineWritePorts {
       selectionHash: string;
       mode?: PersistedRun['mode'];
       counts?: PersistedRun['counts'];
+      inputTokensEstimated?: number;
+      outputTokensEstimated?: number;
       tokensEstimated?: number;
+      costEstimatedMicroUsd?: number;
+      inputTokensActual?: number;
+      outputTokensActual?: number;
       tokensActual?: number;
-      costActual?: 0;
+      costActualMicroUsd?: number;
       resultOrdinals?: PersistedRun['resultOrdinals'];
       executionId?: string;
       leaseExpiresAt?: number;
       expireAtMs?: number;
     }
   >();
+  // M5-05D2B-1 — ledger di budget mensile in-memory (fedele alla porta reale).
+  ledgers = new Map<string, BudgetLedgerState>();
+  reserveBudgetCalls = 0;
+  reconcileBudgetCalls = 0;
   mirror = new Map<
     string,
     {
@@ -157,9 +176,6 @@ class FakeStore implements EngineWritePorts {
         existing.status === 'failed') &&
       existing.mode &&
       existing.counts &&
-      existing.tokensEstimated !== undefined &&
-      existing.tokensActual !== undefined &&
-      existing.costActual === 0 &&
       existing.resultOrdinals
     ) {
       return {
@@ -170,9 +186,14 @@ class FakeStore implements EngineWritePorts {
           selectionHash: existing.selectionHash,
           mode: existing.mode,
           counts: existing.counts,
-          tokensEstimated: existing.tokensEstimated,
-          tokensActual: existing.tokensActual,
-          costActual: 0,
+          inputTokensEstimated: existing.inputTokensEstimated ?? 0,
+          outputTokensEstimated: existing.outputTokensEstimated ?? 0,
+          tokensEstimated: existing.tokensEstimated ?? 0,
+          costEstimatedMicroUsd: existing.costEstimatedMicroUsd ?? 0,
+          inputTokensActual: existing.inputTokensActual ?? 0,
+          outputTokensActual: existing.outputTokensActual ?? 0,
+          tokensActual: existing.tokensActual ?? 0,
+          costActualMicroUsd: existing.costActualMicroUsd ?? 0,
           resultOrdinals: existing.resultOrdinals,
         },
       };
@@ -194,12 +215,51 @@ class FakeStore implements EngineWritePorts {
       selectionHash: run.selectionHash,
       mode: run.mode,
       counts: run.counts,
+      inputTokensEstimated: run.inputTokensEstimated,
+      outputTokensEstimated: run.outputTokensEstimated,
       tokensEstimated: run.tokensEstimated,
+      costEstimatedMicroUsd: run.costEstimatedMicroUsd,
+      inputTokensActual: run.inputTokensActual,
+      outputTokensActual: run.outputTokensActual,
       tokensActual: run.tokensActual,
-      costActual: run.costActual,
+      costActualMicroUsd: run.costActualMicroUsd,
       resultOrdinals: run.resultOrdinals,
       leaseExpiresAt: 0,
     });
+  };
+
+  // M5-05D2B-1 — porte budget in-memory, fedeli alla transazione reale.
+  reserveBudget: NonNullable<EngineWritePorts['reserveBudget']> = async (input) => {
+    this.reserveBudgetCalls++;
+    const state =
+      this.ledgers.get(input.monthKey) ?? emptyLedger(input.monthKey, input.budgetMicroUsd);
+    const withBudget = { ...state, budgetMicroUsd: input.budgetMicroUsd };
+    const result = reserveLedger(
+      withBudget,
+      input.requestId,
+      input.amountMicroUsd,
+      input.expiresAtMs,
+      input.nowMs,
+    );
+    if (!result.ok) return { ok: false, reason: 'budget_exceeded' };
+    this.ledgers.set(input.monthKey, result.state);
+    return { ok: true, reservedMicroUsd: result.reservedMicroUsd };
+  };
+
+  reconcileBudget: NonNullable<EngineWritePorts['reconcileBudget']> = async (input) => {
+    this.reconcileBudgetCalls++;
+    // Gate di titolarità: solo il proprietario corrente della lease riconcilia.
+    const run = this.runs.get(input.requestId);
+    if (!run || run.executionId !== input.executionId) return;
+    const state = this.ledgers.get(input.monthKey);
+    if (!state) return;
+    const next = reconcileLedger(
+      { ...state, budgetMicroUsd: input.budgetMicroUsd },
+      input.requestId,
+      input.actualMicroUsd,
+      input.nowMs,
+    );
+    this.ledgers.set(input.monthKey, next);
   };
 
   commitSubmission = async (input: CommitSubmissionInput): Promise<CommitSubmissionResult> => {
@@ -1123,9 +1183,14 @@ describe('runExecution — concurrent idempotency (lease)', () => {
         partial: 0,
         failed: 0,
       },
+      inputTokensEstimated: 0,
+      outputTokensEstimated: 0,
       tokensEstimated: 0,
+      costEstimatedMicroUsd: 0,
+      inputTokensActual: 0,
+      outputTokensActual: 0,
       tokensActual: 0,
-      costActual: 0,
+      costActualMicroUsd: 0,
       resultOrdinals: [{ ordinal: 0, status: 'succeeded' }],
       executionId: 'A',
     });
@@ -1149,9 +1214,14 @@ describe('runExecution — concurrent idempotency (lease)', () => {
         partial: 0,
         failed: 0,
       },
+      inputTokensEstimated: 0,
+      outputTokensEstimated: 0,
       tokensEstimated: 0,
+      costEstimatedMicroUsd: 0,
+      inputTokensActual: 0,
+      outputTokensActual: 0,
       tokensActual: 0,
-      costActual: 0,
+      costActualMicroUsd: 0,
       resultOrdinals: [{ ordinal: 0, status: 'succeeded' }],
       executionId: 'B',
     });
@@ -1725,5 +1795,269 @@ describe('runExecution — general feedback (M5-04B)', () => {
     expect(serialized).not.toContain('[mock]');
     expect(serialized).not.toContain('Punteggio complessivo');
     expect(serialized).not.toContain('Risultato pieno');
+  });
+});
+
+// ── M5-05D2B-1 — costo runtime + budget mensile atomico ──────────────────────
+
+/** Grader openai simulato che restituisce l'usage indicato (nessuna rete). */
+function usageGrader(usage: AiGraderOutput['usage']): AiGrader {
+  const mock = new MockAiGrader();
+  return {
+    id: 'openai',
+    model: OPENAI_PRODUCTION_MODEL,
+    grade: async (input) => ({ ...(await mock.grade(input)), ...(usage ? { usage } : {}) }),
+  };
+}
+
+function openaiDeps(store: FakeStore, grader: AiGrader, nowMs: number) {
+  return {
+    ...baseDeps(store, grader),
+    featureMode: 'openai' as const,
+    loadRuntimeConfig: enabledConfigPort,
+    now: () => nowMs,
+  };
+}
+
+describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
+  const NOW = Date.UTC(2026, 6, 16, 12, 0, 0);
+  const MONTH = monthKeyFromMs(NOW);
+  const FIVE_USD = 5 * USD_MICRO;
+
+  it('openai run: actual cost from usage, reserve then reconcile the monthly ledger', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const res = await runExecution(
+      req([sid('s1')]),
+      openaiDeps(store, usageGrader({ inputTokens: 1000, outputTokens: 200, tokens: 1200 }), NOW),
+    );
+    expect(res.mode).toBe('openai');
+    expect(res.inputTokensActual).toBe(1000);
+    expect(res.outputTokensActual).toBe(200);
+    expect(res.totalTokensActual).toBe(1200);
+    // 1000 * 0.05 + 200 * 0.4 = 130 µUSD.
+    expect(res.costActualMicroUsd).toBe(130);
+    expect(res.costEstimatedMicroUsd).toBeGreaterThan(0);
+    expect(store.reserveBudgetCalls).toBe(1);
+    expect(store.reconcileBudgetCalls).toBe(1);
+    const ledger = store.ledgers.get(MONTH)!;
+    expect(ledger.spentMicroUsd).toBe(130);
+    expect(availableMicroUsd(ledger, NOW)).toBe(FIVE_USD - 130);
+    expect(store.runs.get(REQ)!.costActualMicroUsd).toBe(130);
+  });
+
+  it('mock: no reservation, no reconciliation, zero cost', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const res = await runExecution(req([sid('s1')]), baseDeps(store, new MockAiGrader()));
+    expect(res.costActualMicroUsd).toBe(0);
+    expect(res.costEstimatedMicroUsd).toBe(0);
+    expect(store.reserveBudgetCalls).toBe(0);
+    expect(store.reconcileBudgetCalls).toBe(0);
+    expect(store.ledgers.size).toBe(0);
+  });
+
+  it('openai closed-only operation: estimate 0 → no unnecessary reservation, no provider call', async () => {
+    const store = new FakeStore();
+    store.verification = {
+      ownerUid: OWNER,
+      status: 'active',
+      teacherQuestions: [tq(0, 'chiusa_singola', 2, 'a')],
+    };
+    store.submissions.set(sid('s1'), {
+      ownerUid: OWNER,
+      verificationId: VERIF,
+      studentUid: 's1',
+      status: 'submitted',
+      answers: { '0': { tipo: 'chiusa_singola', selectedId: 'a' } },
+    });
+    const grade = vi.fn();
+    const res = await runExecution(
+      req([sid('s1')]),
+      openaiDeps(
+        store,
+        { id: 'openai', model: OPENAI_PRODUCTION_MODEL, grade } as unknown as AiGrader,
+        NOW,
+      ),
+    );
+    expect(res.results[0]!.outcome).toBe('succeeded');
+    expect(res.costEstimatedMicroUsd).toBe(0);
+    expect(store.reserveBudgetCalls).toBe(0);
+    expect(grade).not.toHaveBeenCalled();
+  });
+
+  it('preview and run agree on the estimated cost for the same selection/config', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const preview = await runPreview(req([sid('s1')]), {
+      ...baseDeps(store, new MockAiGrader()),
+      featureMode: 'openai',
+      loadRuntimeConfig: enabledConfigPort,
+    });
+    const run = await runExecution(
+      req([sid('s1')]),
+      openaiDeps(store, usageGrader({ inputTokens: 10, outputTokens: 10, tokens: 20 }), NOW),
+    );
+    expect(preview.costEstimatedMicroUsd).toBeGreaterThan(0);
+    expect(run.costEstimatedMicroUsd).toBe(preview.costEstimatedMicroUsd);
+    expect(preview.inputTokensEstimated).toBe(run.inputTokensEstimated);
+    expect(preview.outputTokensEstimated).toBe(run.outputTokensEstimated);
+    // La preview non prenota budget.
+    expect(store.reserveBudgetCalls).toBe(1); // solo il run
+  });
+
+  it('insufficient budget → budget_exceeded before any provider call or commit', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    store.ledgers.set(MONTH, {
+      monthKey: MONTH,
+      budgetMicroUsd: FIVE_USD,
+      spentMicroUsd: FIVE_USD, // budget esaurito
+      reservations: {},
+    });
+    const grade = vi.fn(new MockAiGrader().grade);
+    await expect(
+      runExecution(
+        req([sid('s1')]),
+        openaiDeps(
+          store,
+          { id: 'openai', model: OPENAI_PRODUCTION_MODEL, grade } as unknown as AiGrader,
+          NOW,
+        ),
+      ),
+    ).rejects.toMatchObject({ code: 'budget_exceeded' });
+    expect(grade).not.toHaveBeenCalled();
+    expect(store.commitCalls).toBe(0);
+    expect(store.reconcileBudgetCalls).toBe(0);
+  });
+
+  it('idempotent replay does not spend twice', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    await runExecution(
+      req([sid('s1')]),
+      openaiDeps(store, usageGrader({ inputTokens: 1000, outputTokens: 200, tokens: 1200 }), NOW),
+    );
+    const spentAfterFirst = store.ledgers.get(MONTH)!.spentMicroUsd;
+    const replay = await runExecution(
+      req([sid('s1')]),
+      openaiDeps(store, usageGrader({ inputTokens: 9999, outputTokens: 9999, tokens: 19998 }), NOW),
+    );
+    expect(replay.idempotentReplay).toBe(true);
+    expect(store.reserveBudgetCalls).toBe(1); // nessuna seconda prenotazione
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(spentAfterFirst);
+  });
+
+  it('locked attempt does not reserve budget or call the provider', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    store.runs.set(REQ, {
+      runContractVersion: AI_RUN_CONTRACT_VERSION,
+      status: 'running',
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')]),
+      mode: 'openai',
+      executionId: 'other',
+      leaseExpiresAt: NOW + RUN_LEASE_MS,
+    });
+    const grade = vi.fn();
+    const res = await runExecution(
+      req([sid('s1')]),
+      openaiDeps(
+        store,
+        { id: 'openai', model: OPENAI_PRODUCTION_MODEL, grade } as unknown as AiGrader,
+        NOW,
+      ),
+    );
+    expect(res.idempotentReplay).toBe(true);
+    expect(res.status).toBe('running');
+    expect(store.reserveBudgetCalls).toBe(0);
+    expect(grade).not.toHaveBeenCalled();
+  });
+
+  it('an old worker after takeover cannot reconcile the new worker reservation', async () => {
+    const store = new FakeStore();
+    store.ledgers.set(MONTH, {
+      monthKey: MONTH,
+      budgetMicroUsd: FIVE_USD,
+      spentMicroUsd: 0,
+      reservations: { [REQ]: { microUsd: 200, expiresAtMs: NOW + RUN_LEASE_MS } },
+    });
+    // Il run doc è ora posseduto dal worker nuovo B.
+    store.runs.set(REQ, {
+      runContractVersion: AI_RUN_CONTRACT_VERSION,
+      status: 'running',
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')]),
+      executionId: 'B',
+      leaseExpiresAt: NOW + RUN_LEASE_MS,
+    });
+    // Il worker vecchio A prova a riconciliare → no-op (non è più titolare).
+    await store.reconcileBudget({
+      requestId: REQ,
+      actualMicroUsd: 999_999,
+      budgetMicroUsd: FIVE_USD,
+      monthKey: MONTH,
+      nowMs: NOW,
+      executionId: 'A',
+    });
+    const ledger = store.ledgers.get(MONTH)!;
+    expect(ledger.spentMicroUsd).toBe(0); // nessun addebito dal worker vecchio
+    expect(ledger.reservations[REQ]).toBeDefined(); // prenotazione del nuovo worker intatta
+  });
+
+  it('bills provider usage even when the output is rejected as invalid (no invalid scores saved)', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const grader: AiGrader = {
+      id: 'openai',
+      model: OPENAI_PRODUCTION_MODEL,
+      grade: async () => {
+        throw new AiGraderInvalidOutputError('bad', {
+          tokens: 600,
+          inputTokens: 500,
+          outputTokens: 100,
+        });
+      },
+    };
+    const res = await runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW));
+    expect(res.results[0]!.outcome).toBe('failed');
+    expect(res.inputTokensActual).toBe(500);
+    expect(res.outputTokensActual).toBe(100);
+    // 500 * 0.05 + 100 * 0.4 = 65 µUSD, contabilizzati anche se l'output è rifiutato.
+    expect(res.costActualMicroUsd).toBe(65);
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(65);
+    // Nessun punteggio/feedback invalido persistito.
+    expect(store.corrections.has(sid('s1'))).toBe(false);
+  });
+
+  it('transport error carries no usage → no invented actual cost', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const grader: AiGrader = {
+      id: 'openai',
+      model: OPENAI_PRODUCTION_MODEL,
+      grade: async () => {
+        throw new Error('network timeout');
+      },
+    };
+    const res = await runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW));
+    expect(res.results[0]!.outcome).toBe('failed');
+    expect(res.costActualMicroUsd).toBe(0);
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(0);
+  });
+
+  it('the ledger holds only technical amounts (no ids / uid / pii / content)', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    await runExecution(
+      req([sid('s1')]),
+      openaiDeps(store, usageGrader({ inputTokens: 1000, outputTokens: 200, tokens: 1200 }), NOW),
+    );
+    const serialized = JSON.stringify([...store.ledgers.values()]);
+    expect(serialized).not.toContain(sid('s1'));
+    expect(serialized).not.toContain(VERIF);
+    expect(serialized).not.toContain(OWNER);
+    expect(serialized).not.toContain(SOL_MARK);
+    expect(serialized).not.toContain(ANS_MARK);
+    expect(serialized).not.toContain('studentUid');
   });
 });

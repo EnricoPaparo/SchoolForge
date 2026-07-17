@@ -268,6 +268,26 @@ export interface AiGraderOutput {
   usage?: { tokens: number; inputTokens?: number; outputTokens?: number };
 }
 
+/** Usage provider-agnostico (token effettivi), riusato dagli errori tecnici. */
+export type AiGraderUsage = { tokens: number; inputTokens?: number; outputTokens?: number };
+
+/**
+ * M5-05D2B-1 — errore di **output invalido** del grader che trasporta l'`usage`
+ * eventualmente **già fatturabile** dal provider. Il provider può aver consumato
+ * (e fatturato) token pur restituendo un output poi rifiutato dalla validazione:
+ * il motore deve **contabilizzare quel costo** senza mai salvare punteggi o
+ * feedback invalidi. Un errore di trasporto/timeout **non** porta usage (nessun
+ * costo inventato). Resta provider-agnostic: nessun dettaglio del provider.
+ */
+export class AiGraderInvalidOutputError extends Error {
+  readonly usage?: AiGraderUsage;
+  constructor(message: string, usage?: AiGraderUsage) {
+    super(message);
+    this.name = 'AiGraderInvalidOutputError';
+    this.usage = usage;
+  }
+}
+
 /** Lunghezza massima del feedback generale della consegna (M5-04B). */
 export const MAX_GENERAL_FEEDBACK_CHARS = 700;
 

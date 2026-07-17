@@ -1,9 +1,11 @@
 import OpenAI from 'openai';
 import {
+  AiGraderInvalidOutputError,
   MAX_GENERAL_FEEDBACK_CHARS,
   type AiGrader,
   type AiGraderInput,
   type AiGraderOutput,
+  type AiGraderUsage,
 } from './aiCorrectionGatewayCore.js';
 
 export const OPENAI_ATTEMPT_TIMEOUT_MS = 60_000;
@@ -302,19 +304,26 @@ export class OpenAiGrader implements AiGrader {
           timeoutMs: OPENAI_ATTEMPT_TIMEOUT_MS,
           signal: controller.signal,
         });
-        const validated = parseAndValidateOutput(response.outputText, input);
-        return {
-          ...validated,
-          ...(response.usage
-            ? {
-                usage: {
-                  tokens: response.usage.totalTokens,
-                  inputTokens: response.usage.inputTokens,
-                  outputTokens: response.usage.outputTokens,
-                },
-              }
-            : {}),
-        };
+        const usage: AiGraderUsage | undefined = response.usage
+          ? {
+              tokens: response.usage.totalTokens,
+              inputTokens: response.usage.inputTokens,
+              outputTokens: response.usage.outputTokens,
+            }
+          : undefined;
+        let validated;
+        try {
+          validated = parseAndValidateOutput(response.outputText, input);
+        } catch (parseError) {
+          // Output invalido: **non** si ritenta (un retry non lo risolve), ma si
+          // trasporta l'usage eventualmente già **fatturato** dal provider così
+          // il costo viene contabilizzato a valle, senza salvare punteggi/feedback.
+          throw new AiGraderInvalidOutputError(
+            parseError instanceof Error ? parseError.message : 'Output OpenAI non valido.',
+            usage,
+          );
+        }
+        return { ...validated, ...(usage ? { usage } : {}) };
       } catch (error) {
         lastError = error;
         if (!(error instanceof OpenAiTransportError) || !error.transient) throw error;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AiGraderInput } from './aiCorrectionGatewayCore.js';
+import { AiGraderInvalidOutputError, type AiGraderInput } from './aiCorrectionGatewayCore.js';
 import {
   OPENAI_ATTEMPT_TIMEOUT_MS,
   OpenAiGrader,
@@ -102,6 +102,27 @@ describe('OpenAiGrader payload and mapping', () => {
     const grader = new OpenAiGrader('gpt-5-nano', { send } as unknown as OpenAiTransport);
     await expect(grader.grade({ requestId: 'empty', questions: [] })).rejects.toThrow();
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('surfaces billable usage on an invalid output without retrying (M5-05D2B-1)', async () => {
+    // Output non valido ma con usage già fatturato: deve arrivare all'engine come
+    // AiGraderInvalidOutputError con l'usage, senza ritentare (retry non risolve).
+    const send = vi.fn(async () => ({
+      outputText: '{ not valid json',
+      usage: { inputTokens: 500, outputTokens: 100, totalTokens: 600 },
+    }));
+    const grader = new OpenAiGrader('gpt-5-nano', { send });
+    await expect(grader.grade(input)).rejects.toBeInstanceOf(AiGraderInvalidOutputError);
+    expect(send).toHaveBeenCalledTimes(1); // nessun retry su output invalido
+    try {
+      await grader.grade(input);
+    } catch (error) {
+      expect((error as AiGraderInvalidOutputError).usage).toEqual({
+        tokens: 600,
+        inputTokens: 500,
+        outputTokens: 100,
+      });
+    }
   });
 });
 

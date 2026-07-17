@@ -9,6 +9,9 @@ import {
   lookupModelPrice,
   tokenCostMicroUsd,
   microUsdToUsd,
+  estimateCostBreakdown,
+  normalizeUsageActual,
+  actualCostMicroUsd,
   USD_MICRO,
 } from './aiCorrectionCost.js';
 import {
@@ -178,6 +181,52 @@ describe('cost (M5-05D1)', () => {
     expect(Object.keys(PRICE_LISTS[DEFAULT_PRICE_LIST_VERSION]!)).toEqual([
       OPENAI_PRODUCTION_MODEL,
     ]);
+  });
+});
+
+// ── Cost/token breakdown effettivo e stimato (M5-05D2B-1) ────────────────────
+
+describe('cost breakdown (M5-05D2B-1)', () => {
+  it('estimateCostBreakdown splits input/output and rounds up (conservativo)', () => {
+    const b = estimateCostBreakdown(1000, 200, DEFAULT_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL);
+    // 1000 * 0.05 + 200 * 0.4 = 50 + 80 = 130 µUSD.
+    expect(b).toEqual({
+      inputTokens: 1000,
+      outputTokens: 200,
+      totalTokens: 1200,
+      costMicroUsd: 130,
+    });
+  });
+
+  it('estimateCostBreakdown returns null for an unknown version/model (fail-closed)', () => {
+    expect(estimateCostBreakdown(1, 1, 'nope', OPENAI_PRODUCTION_MODEL)).toBeNull();
+    expect(estimateCostBreakdown(1, 1, DEFAULT_PRICE_LIST_VERSION, 'nope')).toBeNull();
+  });
+
+  it('normalizeUsageActual accepts coherent usage, rejects incoherent (no invented actual)', () => {
+    expect(normalizeUsageActual({ inputTokens: 300, outputTokens: 100, tokens: 400 })).toEqual({
+      inputTokens: 300,
+      outputTokens: 100,
+      totalTokens: 400,
+    });
+    // Totale incoerente con input+output → null (mai un actual inventato).
+    expect(normalizeUsageActual({ inputTokens: 300, outputTokens: 100, tokens: 999 })).toBeNull();
+    // Split assente (solo totale) → null: non si inventa la ripartizione.
+    expect(normalizeUsageActual({ tokens: 400 })).toBeNull();
+    // Valori negativi/non interi → null.
+    expect(normalizeUsageActual({ inputTokens: -1, outputTokens: 2 })).toBeNull();
+    expect(normalizeUsageActual({ inputTokens: 1.5, outputTokens: 2 })).toBeNull();
+    // Usage assente (mock / sole-chiuse) → null → 0 a valle.
+    expect(normalizeUsageActual(undefined)).toBeNull();
+  });
+
+  it('actualCostMicroUsd uses nearest rounding and knows the versioned price', () => {
+    // 300 * 0.05 + 100 * 0.4 = 15 + 40 = 55 µUSD.
+    expect(actualCostMicroUsd(300, 100, DEFAULT_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL)).toBe(
+      55,
+    );
+    expect(actualCostMicroUsd(0, 0, DEFAULT_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL)).toBe(0);
+    expect(actualCostMicroUsd(1, 1, 'nope', OPENAI_PRODUCTION_MODEL)).toBeNull();
   });
 });
 
