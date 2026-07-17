@@ -68,6 +68,10 @@ Le Security Rules Firestore e Storage sono il perimetro di sicurezza principale,
 
 Le Security Rules esatte vengono scritte e testate con Emulator Suite obbligatoria, incluso il caso studente di M3-lite. Nessuna regola permissiva temporanea è ammessa con dati reali.
 
+### M4-LIFE-03 — cancellazione dopo riapertura
+
+La consegna è protetta soltanto mentre la correzione è attualmente `returned` o la restituzione è visibile. La cancellazione di una precedente restituzione è ammessa esclusivamente per l'owner, quando la projection è nascosta, la correction esistente è davvero `in_progress` e lo stesso batch elimina correction, submission e receipt. Il preflight del service verifica inoltre ownership e mirror: una hide manuale, un mirror `returned`, una correction mancante o incoerente bloccano senza scritture. Per il grafo ordinario la cancellazione è atomica; soltanto una quantità eccezionale di `correctionEvents` richiede chunk preliminari idempotenti.
+
 ### 3.1 Modello di approvazione studente (M3-lite)
 
 - `settings/studentAccess` (owner-only, letta dalle Rules via `get()`/`firestore.get()`, mai direttamente dal client studente): due interruttori globali, `studentPortalEnabled` (deve essere `true` perché **qualunque** lettura studente sia concessa) e `newStudentRequestsEnabled` (riservato a un futuro flusso di richiesta autonoma; non introdotto da questa milestone — oggi solo il docente crea `students/{uid}`).

@@ -2430,6 +2430,13 @@ describe('VerificationsView — delete submission (M4-LIFE-02)', () => {
     expect(mockDeleteSubmissionData).not.toHaveBeenCalled();
   });
 
+  it('explains that a prior hidden return is deleted after a true reopen', async () => {
+    setupDefaults();
+    await renderMonitor('closed', [{ ...submittedItem, correctionStatus: 'in_progress' }]);
+    fireEvent.click(screen.getByLabelText('Elimina consegna — Anna Bianchi'));
+    expect(screen.getByText(/precedente restituzione ora nascosta allo studente/i)).toBeTruthy();
+  });
+
   it('explains that the student can re-attempt when the verification is active', async () => {
     setupDefaults();
     await renderMonitor('active', [submittedItem]);

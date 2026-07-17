@@ -880,7 +880,14 @@ service cloud.firestore {
       // return. in_progress / completed corrections stay deletable.
       allow delete: if isOwner()
         && resource.data.ownerUid == request.auth.uid
-        && resource.data.status != 'returned';
+        && resource.data.status != 'returned'
+        // A hidden prior return is removable only as part of the same
+        // submission-graph deletion. A completed correction that was never
+        // returned keeps the established direct-delete behaviour.
+        && (
+          !exists(/databases/$(database)/documents/correctionReturns/$(submissionId))
+          || !existsAfter(/databases/$(database)/documents/correctionReturns/$(submissionId))
+        );
     }
 
     // --- correctionEvents/{eventId} (M4-01) ---
@@ -1000,14 +1007,19 @@ service cloud.firestore {
         && resource.data.studentUid == request.auth.uid
         && resource.data.visibleToStudent == true;
 
-      // M5-06B — the return projection is permanent evidence that the student
-      // saw a result: once it exists it is NEVER deleted by the normal teacher
-      // flow (reopen only hides it via visibleToStudent). Its existence is
-      // exactly what makes a submission un-deletable, so allowing its deletion
-      // would let the delete flow erase the very signal that must block it.
-      // Deletion is therefore denied outright — students never could delete it
-      // either. (The submission-delete flow never targets this path.)
-      allow delete: if false;
+      // M4-LIFE-03: a projection is removable only with a real reopened
+      // correction and the complete deterministic submission graph. A manual
+      // hide is not enough: the correction must currently be in_progress and
+      // all graph documents must be absent after this same atomic commit.
+      allow delete: if isOwner()
+        && resource.data.ownerUid == request.auth.uid
+        && resource.data.visibleToStudent == false
+        && exists(/databases/$(database)/documents/corrections/$(submissionId))
+        && correctionData(submissionId).ownerUid == request.auth.uid
+        && correctionData(submissionId).status == 'in_progress'
+        && !existsAfter(/databases/$(database)/documents/corrections/$(submissionId))
+        && !existsAfter(/databases/$(database)/documents/submissions/$(submissionId))
+        && !existsAfter(/databases/$(database)/documents/submissionReceipts/$(submissionId));
     }
 
     // deliveryAttempts: owner can read (for corrections/export); writes via Cloud Functions (M3)

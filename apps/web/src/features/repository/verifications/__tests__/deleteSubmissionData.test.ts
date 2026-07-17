@@ -106,7 +106,6 @@ describe('deleteSubmissionData', () => {
       `submissionReceipts/${SUBMISSION_ID}`,
       `submissions/${SUBMISSION_ID}`,
     ]);
-    // correctionReturns is never deleted by this flow.
     expect(deleted).not.toContain(`correctionReturns/${SUBMISSION_ID}`);
     // Submission + receipt come after every dependent.
     expect(deleted.indexOf(`submissions/${SUBMISSION_ID}`)).toBe(deleted.length - 1);
@@ -184,7 +183,7 @@ describe('deleteSubmissionData', () => {
     expect(addedAudits).toHaveLength(0);
   });
 
-  // ── M5-06B — deletable only before the first return ─────────────────────────
+  // ── M4-LIFE-03 — current lifecycle controls deletion ───────────────────────
 
   it('deletes a submission with no correction at all', async () => {
     seed(`submissions/${SUBMISSION_ID}`, { studentUid: STUDENT, status: 'submitted' });
@@ -220,13 +219,40 @@ describe('deleteSubmissionData', () => {
     expect(addedAudits).toHaveLength(0);
   });
 
-  it('blocks when a correctionReturn exists even if hidden (visibleToStudent false)', async () => {
+  it('deletes a genuinely reopened correction and its hidden previous return', async () => {
     seed(`submissions/${SUBMISSION_ID}`, { studentUid: STUDENT, status: 'submitted' });
-    // Correction reopened to in_progress, but the return projection lingers hidden.
+    seed(`corrections/${SUBMISSION_ID}`, { status: 'in_progress' });
+    seed(`correctionReturns/${SUBMISSION_ID}`, { visibleToStudent: false });
+    await deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb);
+    expect(committedDeletes.flat()).toEqual(
+      expect.arrayContaining([
+        `correctionReturns/${SUBMISSION_ID}`,
+        `corrections/${SUBMISSION_ID}`,
+        `submissions/${SUBMISSION_ID}`,
+      ]),
+    );
+  });
+
+  it('blocks a hidden return when its correction is still returned', async () => {
+    seed(`submissions/${SUBMISSION_ID}`, { studentUid: STUDENT, status: 'submitted' });
+    seed(`corrections/${SUBMISSION_ID}`, { status: 'returned' });
+    seed(`correctionReturns/${SUBMISSION_ID}`, { visibleToStudent: false });
+    await expect(deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb)).rejects.toThrow(
+      /Riaprila prima/i,
+    );
+    expect(committedDeletes).toHaveLength(0);
+  });
+
+  it('fails closed when a reopened return has a stale returned mirror', async () => {
+    seed(`submissions/${SUBMISSION_ID}`, {
+      studentUid: STUDENT,
+      status: 'submitted',
+      correctionStatus: 'returned',
+    });
     seed(`corrections/${SUBMISSION_ID}`, { status: 'in_progress' });
     seed(`correctionReturns/${SUBMISSION_ID}`, { visibleToStudent: false });
     await expect(deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb)).rejects.toThrow(
-      /già stata restituita allo studente/i,
+      /Riaprila prima/i,
     );
     expect(committedDeletes).toHaveLength(0);
   });
