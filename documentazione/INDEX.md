@@ -62,10 +62,11 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [m3-full-roadmap.md](m3-full-roadmap.md) | Specifica M3-full: verifiche online, consegne, monitor, sessione obbligatoria e modalità verifica. Roadmap M3F-00–M3F-11C, completata — Gate G5 superato. | Per consultare il modello dati/Rules di M3-full o lo stato del Gate G5. |
 | [storage-gateway-roadmap.md](storage-gateway-roadmap.md) | Contratto e roadmap del **Repository Storage Gateway** same-origin (SGW-00–03). **SGW-01/02A verificati su DEV; SGW-02B batch-read implementato nel codice; restano SGW-02C import e SGW-03.** | Per capire il gateway, l'ultimo accesso Storage diretto e i prossimi passi. |
 | [didattica-ux-roadmap.md](didattica-ux-roadmap.md) | Specifica UX del redesign "Didattica" (DUX-00–10A + Gate GDUX). **DUX-01–10A completati; Gate GDUX superato (PASS)** — vedi [evidenze/gdux-checklist-finale.md](evidenze/gdux-checklist-finale.md). | Per consultare architettura informativa, invarianti di sicurezza/costo e prossimo Gate. |
-| [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) | **M5-00** — contratto, UX batch («Correggi con IA»), sicurezza, privacy, cost model e roadmap M5-00→M5-05 della correzione assistita da IA. **Solo progettazione**; implementazione non avviata. Supera la vecchia roadmap M5-A..E. | Per consultare il contratto IA/gateway, i limiti di costo e gli Human Gate aperti. |
+| [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) | Roadmap M5-00→M5-05: motore mock e UI implementati; adapter/guardrail server-side fino a **M5-05E-1** implementati con provider reale disabilitato. HG-M5-1/2/3/4 approvati; M5 e G7 aperti. | Per consultare contratto IA/gateway, privacy, limiti costo e percorso di attivazione controllata. |
 
 ## Evidenze
 
+- [evidenze/hg-m5-human-gate.md](evidenze/hg-m5-human-gate.md) — approvazione HG-M5-1/2/3/4 del 17 luglio 2026: modello/listino pinned, ceiling costi e retention; non autorizza provider, secret, TTL o deploy.
 - [evidenze/G2-M1.md](evidenze/G2-M1.md) — gate G2: evidenze milestone M1.
 - [evidenze/smoke-mvp-docente-cartaceo.md](evidenze/smoke-mvp-docente-cartaceo.md) — smoke test MVP docente cartaceo (M1+M2, emulatori locali).
 - [evidenze/smoke-dev-deploy.md](evidenze/smoke-dev-deploy.md) — smoke test deploy DEV su Firebase reale. **DEV SMOKE PASS.**

@@ -13,7 +13,11 @@
  * porta iniettata (una `get` puntuale per operazione, nessun listener/polling).
  */
 
-import { lookupModelPrice } from './aiCorrectionCost.js';
+import {
+  DEFAULT_PRICE_LIST_VERSION,
+  OPENAI_PRODUCTION_MODEL,
+  lookupModelPrice,
+} from './aiCorrectionCost.js';
 
 /** Limiti prudenziali DEV applicati server-side nel preflight (M5-05D1 §2). */
 export interface AiRuntimeLimits {
@@ -26,10 +30,10 @@ export interface AiRuntimeLimits {
   maxApplicationRetries: number;
 }
 
-export interface AiRuntimeBudget {
-  /** Budget mensile in USD (DEV: 5). */
-  monthlyUsd: number;
-}
+/** Hard ceiling approvati HG-M5-2/3, non aumentabili via Firestore. */
+export const MAX_OPERATION_COST_MICRO_USD = 250_000;
+export const MAX_DAILY_BUDGET_MICRO_USD = 1_000_000;
+export const MAX_MONTHLY_BUDGET_MICRO_USD = 5_000_000;
 
 /**
  * Documento `settings/aiConfig` validato. `provider` e `environment` sono
@@ -42,7 +46,12 @@ export interface AiRuntimeConfig {
   model: string;
   environment: 'dev';
   limits: AiRuntimeLimits;
-  budget: AiRuntimeBudget;
+  /** Limite per singola operazione, positivo e ≤ 0,25 USD. */
+  maxOperationCostMicroUsd: number;
+  /** Budget giornaliero UTC, positivo e ≤ 1 USD. */
+  dailyBudgetMicroUsd: number;
+  /** Budget mensile UTC, positivo e ≤ 5 USD. */
+  monthlyBudgetMicroUsd: number;
   /** Versione della configurazione (governance/audit). */
   configVersion: string;
   /** Versione del listino prezzi usato per la stima costi (deve esistere). */
@@ -55,13 +64,6 @@ const VERSION_RE = /^[A-Za-z0-9._-]{1,64}$/;
 /** Intero finito e strettamente positivo entro un tetto prudente. */
 function posInt(value: unknown, max: number): number | null {
   if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0 || value > max) {
-    return null;
-  }
-  return value;
-}
-
-function positiveFinite(value: unknown, max: number): number | null {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value > max) {
     return null;
   }
   return value;
@@ -125,14 +127,27 @@ export function parseAiRuntimeConfig(raw: unknown): AiRuntimeConfig | null {
   // Modello e listino sono una coppia unica e autoritativa. Un alias mobile,
   // un modello non verificato o una versione sconosciuta disabilitano il
   // provider prima di leggere il secret o costruire il transport.
-  if (lookupModelPrice(r.priceListVersion, r.model) === null) return null;
+  if (
+    r.model !== OPENAI_PRODUCTION_MODEL ||
+    r.priceListVersion !== DEFAULT_PRICE_LIST_VERSION ||
+    lookupModelPrice(r.priceListVersion, r.model) === null
+  ) {
+    return null;
+  }
 
   const limits = parseLimits(r.limits);
   if (limits === null) return null;
 
-  if (typeof r.budget !== 'object' || r.budget === null) return null;
-  const monthlyUsd = positiveFinite((r.budget as Record<string, unknown>).monthlyUsd, 5);
-  if (monthlyUsd === null) return null;
+  const maxOperationCostMicroUsd = posInt(r.maxOperationCostMicroUsd, MAX_OPERATION_COST_MICRO_USD);
+  const dailyBudgetMicroUsd = posInt(r.dailyBudgetMicroUsd, MAX_DAILY_BUDGET_MICRO_USD);
+  const monthlyBudgetMicroUsd = posInt(r.monthlyBudgetMicroUsd, MAX_MONTHLY_BUDGET_MICRO_USD);
+  if (
+    maxOperationCostMicroUsd === null ||
+    dailyBudgetMicroUsd === null ||
+    monthlyBudgetMicroUsd === null
+  ) {
+    return null;
+  }
 
   return {
     enabled: r.enabled,
@@ -140,7 +155,9 @@ export function parseAiRuntimeConfig(raw: unknown): AiRuntimeConfig | null {
     model: r.model,
     environment: 'dev',
     limits,
-    budget: { monthlyUsd },
+    maxOperationCostMicroUsd,
+    dailyBudgetMicroUsd,
+    monthlyBudgetMicroUsd,
     configVersion: r.configVersion,
     priceListVersion: r.priceListVersion,
   };

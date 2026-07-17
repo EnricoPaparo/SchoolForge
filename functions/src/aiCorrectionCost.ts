@@ -15,22 +15,26 @@
 export const USD_MICRO = 1_000_000;
 
 export interface ModelPrice {
-  /** USD per 1M token di input. */
-  inputPerMillionUsd: number;
-  /** USD per 1M token di output. */
-  outputPerMillionUsd: number;
+  /** micro-USD interi per 1M token di input. */
+  inputMicroUsdPerMillion: number;
+  /** micro-USD interi per 1M token di output. */
+  outputMicroUsdPerMillion: number;
 }
 
-/** Unico snapshot ammesso dal listino production M5-05D1. */
-export const OPENAI_PRODUCTION_MODEL = 'gpt-5-nano-2025-08-07';
+/** Snapshot storico D1, mantenuto soltanto per compatibilità tecnica dei run. */
+export const OPENAI_LEGACY_MODEL = 'gpt-5-nano-2025-08-07';
+
+/** Unico snapshot approvato da HG-M5-1 per la futura configurazione reale. */
+export const OPENAI_PRODUCTION_MODEL = 'gpt-5.4-nano-2026-03-17';
 
 /**
- * Fonte ufficiale: https://developers.openai.com/api/docs/models/gpt-5-nano
- * Verificata il 2026-07-16. La pagina documenta sia lo snapshot immutabile sia
- * i prezzi standard di $0.05/M input e $0.40/M output.
+ * Fonte ufficiale: https://developers.openai.com/api/docs/models/gpt-5.4-nano
+ * Verificata il 2026-07-17. La pagina documenta lo snapshot immutabile,
+ * Responses API, Structured Outputs e prezzi standard $0.20/M input,
+ * $1.25/M output.
  */
-export const OPENAI_PRICE_SOURCE = 'https://developers.openai.com/api/docs/models/gpt-5-nano';
-export const OPENAI_PRICE_VERIFIED_ON = '2026-07-16';
+export const OPENAI_PRICE_SOURCE = 'https://developers.openai.com/api/docs/models/gpt-5.4-nano';
+export const OPENAI_PRICE_VERIFIED_ON = '2026-07-17';
 
 /**
  * Listini production **immutabili** e versionati. Contengono solo coppie
@@ -40,12 +44,21 @@ export const OPENAI_PRICE_VERIFIED_ON = '2026-07-16';
  */
 export const PRICE_LISTS: Readonly<Record<string, Readonly<Record<string, ModelPrice>>>> = {
   'v1-2026-07-16': {
-    [OPENAI_PRODUCTION_MODEL]: { inputPerMillionUsd: 0.05, outputPerMillionUsd: 0.4 },
+    [OPENAI_LEGACY_MODEL]: {
+      inputMicroUsdPerMillion: 50_000,
+      outputMicroUsdPerMillion: 400_000,
+    },
+  },
+  'v2-2026-07-17-hg-m5': {
+    [OPENAI_PRODUCTION_MODEL]: {
+      inputMicroUsdPerMillion: 200_000,
+      outputMicroUsdPerMillion: 1_250_000,
+    },
   },
 };
 
 /** Versione di listino di default per DEV (deve esistere in `PRICE_LISTS`). */
-export const DEFAULT_PRICE_LIST_VERSION = 'v1-2026-07-16';
+export const DEFAULT_PRICE_LIST_VERSION = 'v2-2026-07-17-hg-m5';
 
 /** Prezzo del modello per una versione di listino, o `null` se assente. */
 export function lookupModelPrice(priceListVersion: string, model: string): ModelPrice | null {
@@ -62,7 +75,9 @@ export function tokenCostMicroUsd(
   price: ModelPrice,
   rounding: 'ceil' | 'nearest',
 ): number {
-  const raw = inputTokens * price.inputPerMillionUsd + outputTokens * price.outputPerMillionUsd;
+  const numerator =
+    inputTokens * price.inputMicroUsdPerMillion + outputTokens * price.outputMicroUsdPerMillion;
+  const raw = numerator / 1_000_000;
   return rounding === 'ceil' ? Math.ceil(raw) : Math.round(raw);
 }
 

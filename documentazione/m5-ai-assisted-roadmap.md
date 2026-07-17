@@ -1,6 +1,6 @@
 # M5 — Correzione assistita da IA · Roadmap e contratto (M5-00)
 
-**Data:** 16 luglio 2026 · **Fase:** M5-00→M5-04C implementati; **M5-05A/B preparati**; **M5-05C implementato** con adapter e harness; **M5-05D1** (guardrail server-side), **M5-05D2A** (privacy/ciclo di vita run), **M5-05D2B-1** (costo + budget mensile) e **M5-05D2B-2** (retry controllato con `Retry-After`/backoff/deadline) implementati, provider reale ancora disabilitato.
+**Data:** 17 luglio 2026 · **Fase:** M5-00→M5-04C implementati; **M5-05A/B preparati**; **M5-05C**, **M5-05D1**, **M5-05D2A**, **M5-05D2B-1**, **M5-05D2B-2** e **M5-05E-1** implementati; provider reale ancora disabilitato.
 **Natura:** roadmap incrementale evidence-based. M5-01→M5-04C hanno costruito e integrato il flusso mock; M5-05A/B hanno preparato decisione e dataset; M5-05C aggiunge adapter e harness senza attivare il provider. **Nessuna API key, chiamata reale, costo o deploy; M5 e G7 non sono completati.**
 **Codice ispezionato (sola lettura):** `types/firestore.ts` (`SubmissionDoc`, `CorrectionDoc`, `QuestionEvaluation`, `CorrectionEventDoc`, `CorrectionReturnDoc`), `features/repository/corrections/*` (`correctionContract.ts`, `correctionsService.ts`, `correctionWorkspaceLoader.ts`, `correctionRegisterExport.ts`), `features/repository/verifications/submissionsMonitorService.ts`, `features/teacher/VerificationsView.tsx` (tabella «Consegne online» + apertura `CorrectionWorkspace`), `firestore.rules` (matrice `corrections`/`correctionEvents`/`correctionReturns`).
 
@@ -307,18 +307,18 @@ Simboli: **C** = consegne eleggibili in un batch; **A** = aperte eleggibili medi
 
 ---
 
-## 15. Human Gate necessari (ancora aperti)
+## 15. Human Gate — decisioni approvate, attivazione ancora chiusa
 
-Questi punti **non** sono decisi in M5-00 e **non** vanno inventati:
+Questi punti non erano decisi in M5-00. Il docente li ha approvati il **17 luglio 2026**; l'evidenza autoritativa è [evidenze/hg-m5-human-gate.md](evidenze/hg-m5-human-gate.md). L'approvazione decisionale non attiva il provider e non supera G7.
 
 | # | Decisione | Nota |
 |---|---|---|
-| HG-M5-1 | **Provider e modello** | Contratto provider-agnostic (§14). La scelta richiede conferma del docente e verifica di **disponibilità e costo attuali** su documentazione ufficiale. Nessun default fissato. Candidati di categoria «piccolo/economico» sono ammessi solo come esempi da verificare, non come default. |
-| HG-M5-2 | **Budget massimo per singola operazione** | Tetto di spesa oltre cui il preflight blocca la conferma. Valore da approvare. |
-| HG-M5-3 | **Budget giornaliero** | Tetto cumulato oltre cui il gateway rifiuta nuove operazioni. Valore da approvare. |
-| HG-M5-4 | **Retention minima dei metadati di audit** | Per quanto tempo conservare i documenti `aiCorrectionRuns` (solo metadati/conteggi/costi). Valore da approvare. |
+| HG-M5-1 | **APPROVATO — provider e modello** | OpenAI Responses API, Structured Outputs, snapshot pinned `gpt-5.4-nano-2026-03-17`; alias mobile vietato. |
+| HG-M5-2 | **APPROVATO — budget per operazione** | Hard ceiling 250.000 micro-USD applicato a `costReservationMicroUsd`, comprensivo dei tentativi. |
+| HG-M5-3 | **APPROVATO — budget giornaliero/mensile** | Hard ceiling 1.000.000 micro-USD/giorno UTC e 5.000.000 micro-USD/mese UTC. |
+| HG-M5-4 | **APPROVATO — retention** | `expireAt` server-generated a 30 giorni; policy TTL reale rinviata a M5-05E-2. |
 
-Ulteriori limiti prudenti (max consegne/aperte/caratteri/token per operazione, §12) hanno **default prudenti proposti** ma i valori definitivi possono essere confermati insieme a HG-M5-2/3.
+Restano aperti l'attivazione operativa, Secret Manager, TTL reale, smoke DEV e Gate G7. Gli altri ceiling tecnici DEV (§12) restano non aumentabili dalla configurazione.
 
 ---
 
@@ -354,7 +354,7 @@ Ulteriori limiti prudenti (max consegne/aperte/caratteri/token per operazione, �
 - **Token e costo** (mock): `tokensEstimated` è **deterministico** e include **domanda + soluzione di riferimento + risposta dello studente** + overhead per domanda, con la **stessa** formula in preview e run. `tokensActual` proviene dall'**usage reale** riportato dal provider (`AiGraderOutput.usage`) e in modalità **mock è sempre `0`** (nessun token reale consumato). `costEstimated`/`costActual` restano **0** col mock. Il contratto è già predisposto perché un provider reale (M5-05) riporti l'usage effettivo, senza implementarlo ora.
 - **`aiCorrectionRun`** ripete **tutte** le verifiche del preview (nessuna autorizzazione persistente): dati cambiati dal preview → consegna esclusa (`changed_since_preview`). **Nessun** completamento/restituzione automatici. **Zero token reali, nessuna chiamata esterna.**
 
-**Forma corrente di `aiCorrectionRuns/{requestId}` (M5-05D2A).** Contratto v2 **server-only e privacy-minimal**: nessun `submissionId`, `verificationId`, UID o testo. Conserva soltanto versione, stato, SHA-256 della selezione canonica, numero/conteggi aggregati, provider/modello/versioni tecniche applicabili, token/costo, lease, timestamp, `expireAt` e risultati `{ ordinal, status, reasonCode? }`. La Function ricostruisce gli ID soltanto nella response live/replay dalla selezione corrente validata. Retention DEV provvisoria 30 giorni, ma nessuna eliminazione avviene finché non viene configurata una policy TTL; HG-M5-4 resta aperto.
+**Forma corrente di `aiCorrectionRuns/{requestId}` (M5-05D2A + E-1).** Contratto v2 **server-only e privacy-minimal**: nessun `submissionId`, `verificationId`, UID o testo. Conserva soltanto versione, stato, SHA-256 della selezione canonica, numero/conteggi aggregati, provider/modello/versioni tecniche applicabili, token/costo, lease, timestamp, `expireAt` e risultati `{ ordinal, status, reasonCode? }`. La Function ricostruisce gli ID soltanto nella response live/replay dalla selezione corrente validata. HG-M5-4 ha confermato la retention a 30 giorni; nessuna eliminazione avviene finché M5-05E-2 non configura e deploya la policy TTL.
 
 **Resta a M5-05D (non implementato):** configurazione/attivazione reale su DEV, benchmark effettivo, budget/hard stop e Gate G7 (HG-M5-1/2/3/4 bloccanti). **M5 non è completo.**
 
@@ -482,7 +482,19 @@ Aggiunge il **retry applicativo unico** del provider OpenAI (con backoff, jitter
 
 **Costi Firestore aggiunti:** invariati rispetto a M5-05D2B-1 (il retry avviene **dentro** la stessa chiamata grader: nessuna transazione ledger aggiuntiva, una sola reserve/markInvoked/reconcile per operazione). Nessun listener/polling/scheduler.
 
-**Resta aperto:** benchmark reale e primo smoke DEV, TTL policy effettiva, **Human Gate HG-M5-1/2/3/4 e Gate G7**. **Il provider reale è disabilitato/non attivabile e M5 non è completo.**
+**Stato al termine di D2B-2:** restavano aperti benchmark reale, primo smoke DEV, TTL policy, HG-M5-1/2/3/4 e Gate G7. Le decisioni HG sono state poi approvate in E-1; provider reale e G7 restano disabilitati/aperti.
+
+### 16.12 Stato M5-05E-1 (implementato) — Human Gate e guardrail di costo approvati
+
+Il docente ha approvato il 17 luglio 2026 le decisioni **HG-M5-1/2/3/4**, formalizzate in [evidenze/hg-m5-human-gate.md](evidenze/hg-m5-human-gate.md). L’approvazione è decisionale: provider reale, Secret Manager, chiamate, costi, TTL policy e deploy restano disabilitati/non eseguiti; M5 e Gate G7 restano aperti.
+
+- **Modello/listino:** OpenAI Responses API con Structured Outputs, snapshot pinned `gpt-5.4-nano-2026-03-17`; alias mobile vietato. Listino corrente `v2-2026-07-17-hg-m5`: input 200.000 e output 1.250.000 micro-USD/M token. Il listino v1 resta soltanto storico; la config reale accetta esclusivamente la coppia approvata.
+- **Config fail-closed:** `maxOperationCostMicroUsd` ≤ 250.000, `dailyBudgetMicroUsd` ≤ 1.000.000, `monthlyBudgetMicroUsd` ≤ 5.000.000; tutti obbligatori, interi e positivi. Assenza, tipo errato, zero o superamento ceiling invalidano l’intero documento.
+- **Ordine economico:** auth/owner → config/kill switch → classificazione/limiti → grader e prenotazione comprensiva dei tentativi → hard ceiling operazione → lease → reserve atomica giornaliera+mensile → pending → provider. `operation_budget_exceeded` avviene prima di lease/ledger/provider; `daily_budget_exceeded` e `budget_exceeded` prima del provider.
+- **Ledger:** lo stesso `aiBudgetLedger/{YYYY-MM}` conserva `dailySpentMicroUsd` e prenotazioni con `dayKey` UTC. Spesa, reserved attive e pending concorrono al giorno; le pending scadute restano prudenzialmente contabilizzate. Reconcile usa giorno/mese originali anche oltre mezzanotte.
+- **Retention:** `AI_RUN_RETENTION_DAYS = 30`; `expireAt` server-generated resta testato con clock iniettato. Nessuna cancellazione avviene senza la policy TTL reale.
+
+**Prossimo pacchetto M5-05E-2:** Secret Manager, TTL reale, deploy DEV con kill switch spento, creazione controllata della config Firestore e primo smoke controllato. Nessuna di queste azioni è inclusa in E-1.
 
 ---
 
@@ -522,5 +534,5 @@ Aggiunge il **retry applicativo unico** del provider OpenAI (con backoff, jitter
 - **Chiuse deterministiche (0 token)**, **aperte assistite** con **una richiesta per consegna**, output **strutturato e validato**, punteggi **0..maxPoints** multipli di **0,25**, mai fidandosi dell'output grezzo.
 - **Sicurezza:** chiave solo in Secret Manager, gateway owner-only, autorizzazione **per ID** (rilettura server-side), contenuto studente **non attendibile**, **nessun** web/retrieval/tool, log senza contenuti/PII.
 - **Costo:** scale-to-zero, nessun listener/polling, limiti prudenti, feature flag di spegnimento, provider **sostituibile**.
-- **Human Gate aperti:** provider/modello, budget per operazione, budget giornaliero, retention audit.
+- **Human Gate HG-M5-1/2/3/4 approvati:** la decisione è registrata, ma provider reale, Secret Manager, TTL, smoke DEV e Gate G7 restano disabilitati/aperti.
 - **Roadmap:** M5-00 (questo) → M5-01 gateway/flag/Secret/mock → M5-02 deterministico+IA → M5-03 UI batch → M5-04 azioni massive → M5-05 provider reale DEV + **G7**. **G8/automatica rinviati.**

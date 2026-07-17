@@ -78,6 +78,13 @@ describe('describeAiError', () => {
     expect(describeAiError({ details: { code: 'invalid_input' } })).toBe(
       'Selezione non valida. Riprova.',
     );
+    expect(describeAiError({ details: { code: 'operation_budget_exceeded' } })).toContain(
+      'singola operazione',
+    );
+    expect(describeAiError({ details: { code: 'daily_budget_exceeded' } })).toContain(
+      'budget giornaliero',
+    );
+    expect(describeAiError({ details: { code: 'budget_exceeded' } })).toContain('budget mensile');
   });
 
   it('falls back to a generic message for unknown errors', () => {

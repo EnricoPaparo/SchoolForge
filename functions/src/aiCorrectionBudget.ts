@@ -1,9 +1,9 @@
 /**
- * M5-05D1 / M5-05D2B-1 — ledger di budget mensile della correzione IA, **logica
- * pura**.
+ * M5-05D1 / M5-05D2B-1 / M5-05E-1 — ledger mensile con aggregati giornalieri
+ * UTC della correzione IA, **logica pura**.
  *
- * Contatore mensile in **micro-USD interi** con prenotazioni atomiche keyed by
- * `requestId`. La transazione Firestore su un **singolo** documento
+ * Contatori mensile e giornalieri in **micro-USD interi** con prenotazioni
+ * atomiche keyed by `requestId`. La transazione Firestore su un **singolo** documento
  * (`aiBudgetLedger/{YYYY-MM}`) serializza le operazioni concorrenti, così due run
  * in parallelo non possono superare il budget disponibile.
  *
@@ -33,6 +33,8 @@ export type ReservationStatus = 'reserved' | 'pending';
 export interface BudgetReservation {
   microUsd: number;
   expiresAtMs: number;
+  /** Giorno UTC `YYYY-MM-DD` fissato alla prenotazione. Assente solo nei legacy. */
+  dayKey?: string;
   /** Assente ⇒ trattata come `reserved` (compatibilità coi documenti storici). */
   status?: ReservationStatus;
 }
@@ -40,7 +42,10 @@ export interface BudgetReservation {
 export interface BudgetLedgerState {
   monthKey: string;
   budgetMicroUsd: number;
+  dailyBudgetMicroUsd: number;
   spentMicroUsd: number;
+  /** Spesa riconciliata per giorno UTC; nessun contenuto o identificativo utente. */
+  dailySpentMicroUsd: Record<string, number>;
   reservations: Record<string, BudgetReservation>;
 }
 
@@ -54,9 +59,32 @@ export function monthKeyFromMs(nowMs: number): string {
   return `${y}-${m}`;
 }
 
+/** Chiave giornaliera UTC `YYYY-MM-DD` da un istante epoch-ms. */
+export function dayKeyFromMs(nowMs: number): string {
+  const d = new Date(nowMs);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Bucket prudenziale per importi legacy dei quali non è ricostruibile il giorno. */
+export const LEGACY_UNKNOWN_DAY_KEY = 'legacy-unknown';
+
 /** Ledger vuoto per un mese/budget. */
-export function emptyLedger(monthKey: string, budgetMicroUsd: number): BudgetLedgerState {
-  return { monthKey, budgetMicroUsd, spentMicroUsd: 0, reservations: {} };
+export function emptyLedger(
+  monthKey: string,
+  budgetMicroUsd: number,
+  dailyBudgetMicroUsd = budgetMicroUsd,
+): BudgetLedgerState {
+  return {
+    monthKey,
+    budgetMicroUsd,
+    dailyBudgetMicroUsd,
+    spentMicroUsd: 0,
+    dailySpentMicroUsd: {},
+    reservations: {},
+  };
 }
 
 /**
@@ -85,6 +113,34 @@ export function availableMicroUsd(state: BudgetLedgerState, nowMs: number): numb
   );
 }
 
+/** Prenotazioni che gravano sul giorno richiesto; i legacy senza dayKey gravano su tutti. */
+export function activeReservedDailyMicroUsd(
+  state: BudgetLedgerState,
+  dayKey: string,
+  nowMs: number,
+): number {
+  let total = 0;
+  for (const r of Object.values(state.reservations)) {
+    if (isHeld(r, nowMs) && (r.dayKey === undefined || r.dayKey === dayKey)) total += r.microUsd;
+  }
+  return total;
+}
+
+/** Disponibilità giornaliera UTC, includendo spesa, pending e reserved attive. */
+export function availableDailyMicroUsd(
+  state: BudgetLedgerState,
+  dayKey: string,
+  nowMs: number,
+): number {
+  const spent =
+    (state.dailySpentMicroUsd[dayKey] ?? 0) +
+    (state.dailySpentMicroUsd[LEGACY_UNKNOWN_DAY_KEY] ?? 0);
+  return Math.max(
+    0,
+    state.dailyBudgetMicroUsd - spent - activeReservedDailyMicroUsd(state, dayKey, nowMs),
+  );
+}
+
 /** Stato di utilizzo (per metriche): soglie 50%/80%/100% su spesa+prenotato. */
 export function utilizationState(state: BudgetLedgerState, nowMs: number): BudgetUtilizationState {
   if (state.budgetMicroUsd <= 0) return 'exhausted';
@@ -108,20 +164,23 @@ export function utilizationState(state: BudgetLedgerState, nowMs: number): Budge
 function settleExpired(state: BudgetLedgerState, nowMs: number): BudgetLedgerState {
   const reservations: Record<string, BudgetReservation> = {};
   let spentMicroUsd = state.spentMicroUsd;
+  const dailySpentMicroUsd = { ...state.dailySpentMicroUsd };
   for (const [id, r] of Object.entries(state.reservations)) {
     if (r.expiresAtMs > nowMs) {
       reservations[id] = r; // ancora attiva
     } else if (r.status === 'pending') {
       spentMicroUsd += r.microUsd; // crash dopo il provider → addebita il tetto
+      const dayKey = r.dayKey ?? LEGACY_UNKNOWN_DAY_KEY;
+      dailySpentMicroUsd[dayKey] = (dailySpentMicroUsd[dayKey] ?? 0) + r.microUsd;
     }
     // else: `reserved` scaduta → rilasciata (nessun costo)
   }
-  return { ...state, spentMicroUsd, reservations };
+  return { ...state, spentMicroUsd, dailySpentMicroUsd, reservations };
 }
 
 export type ReserveResult =
   | { ok: true; state: BudgetLedgerState; reservedMicroUsd: number }
-  | { ok: false; reason: 'budget_exceeded' };
+  | { ok: false; reason: 'daily_budget_exceeded' | 'budget_exceeded' };
 
 /**
  * Prenota atomicamente `amountMicroUsd` (tetto **conservativo**) per `requestId`
@@ -136,6 +195,7 @@ export function reserve(
   amountMicroUsd: number,
   expiresAtMs: number,
   nowMs: number,
+  dayKey = dayKeyFromMs(nowMs),
 ): ReserveResult {
   const cleaned = settleExpired(state, nowMs);
   const existing = cleaned.reservations[requestId];
@@ -147,6 +207,9 @@ export function reserve(
     // Nulla da prenotare (nessuna aperta): non tocca il ledger.
     return { ok: true, state: cleaned, reservedMicroUsd: 0 };
   }
+  if (availableDailyMicroUsd(cleaned, dayKey, nowMs) < amountMicroUsd) {
+    return { ok: false, reason: 'daily_budget_exceeded' };
+  }
   if (availableMicroUsd(cleaned, nowMs) < amountMicroUsd) {
     return { ok: false, reason: 'budget_exceeded' };
   }
@@ -157,7 +220,7 @@ export function reserve(
       ...cleaned,
       reservations: {
         ...cleaned.reservations,
-        [requestId]: { microUsd: amountMicroUsd, expiresAtMs, status: 'reserved' },
+        [requestId]: { microUsd: amountMicroUsd, expiresAtMs, dayKey, status: 'reserved' },
       },
     },
   };
@@ -197,12 +260,19 @@ export function reconcile(
   nowMs: number,
 ): BudgetLedgerState {
   const cleaned = settleExpired(state, nowMs);
-  if (!cleaned.reservations[requestId]) return cleaned;
+  const reservation = cleaned.reservations[requestId];
+  if (!reservation) return cleaned;
   const reservations = { ...cleaned.reservations };
   delete reservations[requestId];
+  const settled = Math.max(0, Math.round(actualMicroUsd));
+  const dayKey = reservation.dayKey ?? LEGACY_UNKNOWN_DAY_KEY;
   return {
     ...cleaned,
     reservations,
-    spentMicroUsd: cleaned.spentMicroUsd + Math.max(0, Math.round(actualMicroUsd)),
+    spentMicroUsd: cleaned.spentMicroUsd + settled,
+    dailySpentMicroUsd: {
+      ...cleaned.dailySpentMicroUsd,
+      [dayKey]: (cleaned.dailySpentMicroUsd[dayKey] ?? 0) + settled,
+    },
   };
 }

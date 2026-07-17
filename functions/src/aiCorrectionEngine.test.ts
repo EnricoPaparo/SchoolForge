@@ -9,7 +9,11 @@ import {
   type AiGraderAttemptStats,
   type AiGraderOutput,
 } from './aiCorrectionGatewayCore.js';
-import { USD_MICRO, OPENAI_PRODUCTION_MODEL } from './aiCorrectionCost.js';
+import {
+  DEFAULT_PRICE_LIST_VERSION,
+  USD_MICRO,
+  OPENAI_PRODUCTION_MODEL,
+} from './aiCorrectionCost.js';
 import {
   emptyLedger,
   availableMicroUsd,
@@ -44,7 +48,6 @@ import {
   type ValidatedScore,
   type VerificationData,
 } from './aiCorrectionEngine.js';
-import { OPENAI_PRODUCTION_MODEL } from './aiCorrectionCost.js';
 
 const OWNER = 'owner-uid';
 const VERIF = 'verif-1';
@@ -251,16 +254,22 @@ class FakeStore implements EngineWritePorts {
   reserveBudget: NonNullable<EngineWritePorts['reserveBudget']> = async (input) => {
     this.reserveBudgetCalls++;
     const state =
-      this.ledgers.get(input.monthKey) ?? emptyLedger(input.monthKey, input.budgetMicroUsd);
-    const withBudget = { ...state, budgetMicroUsd: input.budgetMicroUsd };
+      this.ledgers.get(input.monthKey) ??
+      emptyLedger(input.monthKey, input.budgetMicroUsd, input.dailyBudgetMicroUsd);
+    const withBudget = {
+      ...state,
+      budgetMicroUsd: input.budgetMicroUsd,
+      dailyBudgetMicroUsd: input.dailyBudgetMicroUsd,
+    };
     const result = reserveLedger(
       withBudget,
       input.requestId,
       input.amountMicroUsd,
       input.expiresAtMs,
       input.nowMs,
+      input.dayKey,
     );
-    if (!result.ok) return { ok: false, reason: 'budget_exceeded' };
+    if (!result.ok) return { ok: false, reason: result.reason };
     this.ledgers.set(input.monthKey, result.state);
     return { ok: true, reservedMicroUsd: result.reservedMicroUsd };
   };
@@ -275,7 +284,11 @@ class FakeStore implements EngineWritePorts {
       this.ledgers.set(
         input.monthKey,
         markPendingLedger(
-          { ...state, budgetMicroUsd: input.budgetMicroUsd },
+          {
+            ...state,
+            budgetMicroUsd: input.budgetMicroUsd,
+            dailyBudgetMicroUsd: input.dailyBudgetMicroUsd,
+          },
           input.requestId,
           input.nowMs,
         ),
@@ -292,7 +305,11 @@ class FakeStore implements EngineWritePorts {
     const state = this.ledgers.get(input.monthKey);
     if (!state) return;
     const next = reconcileLedger(
-      { ...state, budgetMicroUsd: input.budgetMicroUsd },
+      {
+        ...state,
+        budgetMicroUsd: input.budgetMicroUsd,
+        dailyBudgetMicroUsd: input.dailyBudgetMicroUsd,
+      },
       input.requestId,
       input.actualMicroUsd,
       input.nowMs,
@@ -395,9 +412,11 @@ const ENABLED_RUNTIME_CONFIG = {
     attemptTimeoutMs: 60_000,
     maxApplicationRetries: 1,
   },
-  budget: { monthlyUsd: 5 },
+  maxOperationCostMicroUsd: 250_000,
+  dailyBudgetMicroUsd: 1_000_000,
+  monthlyBudgetMicroUsd: 5_000_000,
   configVersion: 'cfg-test',
-  priceListVersion: 'v1-2026-07-16',
+  priceListVersion: DEFAULT_PRICE_LIST_VERSION,
 };
 const enabledConfigPort = async () => ENABLED_RUNTIME_CONFIG;
 
@@ -1856,7 +1875,7 @@ describe('runExecution — general feedback (M5-04B)', () => {
 
 // M5-05D2B-1 — bounds di riferimento per il grader reale simulato: tetto output
 // per chiamata e upper bound input (stand-in provabile). Con questi, il costo
-// prenotato per chiamata è ceil(50000*0.05 + 2000*0.4) = 3300 µUSD.
+// prenotato per chiamata: 50k input + 2k output = 12 500 µUSD col listino HG-M5-1.
 const TEST_MAX_OUTPUT_TOKENS = 2_000;
 const TEST_INPUT_BOUND = 50_000;
 
@@ -1911,15 +1930,15 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     expect(res.inputTokensActual).toBe(1000);
     expect(res.outputTokensActual).toBe(200);
     expect(res.totalTokensActual).toBe(1200);
-    // 1000 * 0.05 + 200 * 0.4 = 130 µUSD.
-    expect(res.costActualMicroUsd).toBe(130);
+    // 1000 input + 200 output = 450 µUSD col listino HG-M5-1.
+    expect(res.costActualMicroUsd).toBe(450);
     expect(res.costEstimatedMicroUsd).toBeGreaterThan(0);
     expect(store.reserveBudgetCalls).toBe(1);
     expect(store.reconcileBudgetCalls).toBe(1);
     const ledger = store.ledgers.get(MONTH)!;
-    expect(ledger.spentMicroUsd).toBe(130);
-    expect(availableMicroUsd(ledger, NOW)).toBe(FIVE_USD - 130);
-    expect(store.runs.get(REQ)!.costActualMicroUsd).toBe(130);
+    expect(ledger.spentMicroUsd).toBe(450);
+    expect(availableMicroUsd(ledger, NOW)).toBe(FIVE_USD - 450);
+    expect(store.runs.get(REQ)!.costActualMicroUsd).toBe(450);
   });
 
   it('mock: no reservation, no reconciliation, zero cost', async () => {
@@ -1981,7 +2000,9 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     store.ledgers.set(MONTH, {
       monthKey: MONTH,
       budgetMicroUsd: FIVE_USD,
+      dailyBudgetMicroUsd: 1_000_000,
       spentMicroUsd: FIVE_USD, // budget esaurito
+      dailySpentMicroUsd: {},
       reservations: {},
     });
     const grade = vi.fn(new MockAiGrader().grade);
@@ -2034,7 +2055,9 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     store.ledgers.set(MONTH, {
       monthKey: MONTH,
       budgetMicroUsd: FIVE_USD,
+      dailyBudgetMicroUsd: 1_000_000,
       spentMicroUsd: 0,
+      dailySpentMicroUsd: {},
       reservations: { [REQ]: { microUsd: 200, expiresAtMs: NOW + RUN_LEASE_MS } },
     });
     // Il run doc è ora posseduto dal worker nuovo B.
@@ -2050,6 +2073,7 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
       requestId: REQ,
       actualMicroUsd: 999_999,
       budgetMicroUsd: FIVE_USD,
+      dailyBudgetMicroUsd: 1_000_000,
       monthKey: MONTH,
       nowMs: NOW,
       executionId: 'A',
@@ -2073,9 +2097,9 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     expect(res.results[0]!.outcome).toBe('failed');
     expect(res.inputTokensActual).toBe(500);
     expect(res.outputTokensActual).toBe(100);
-    // 500 * 0.05 + 100 * 0.4 = 65 µUSD, contabilizzati anche se l'output è rifiutato.
-    expect(res.costActualMicroUsd).toBe(65);
-    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(65);
+    // 500 input + 100 output = 225 µUSD, contabilizzati anche con output rifiutato.
+    expect(res.costActualMicroUsd).toBe(225);
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(225);
     // Nessun punteggio/feedback invalido persistito.
     expect(store.corrections.has(sid('s1'))).toBe(false);
   });
@@ -2176,6 +2200,59 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     expect(store.commitCalls).toBe(0);
   });
 
+  it('accepts a reservation exactly at the 0.25 USD operation ceiling', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    seedOneOpenOneClosed(store, 's2');
+    const grade = vi.fn(new MockAiGrader().grade);
+    const deps = openaiDeps(store, realGrader(grade, { maxOutput: 100_000, inputBound: 0 }), NOW);
+    deps.loadRuntimeConfig = async () => ({
+      ...ENABLED_RUNTIME_CONFIG,
+      limits: { ...ENABLED_RUNTIME_CONFIG.limits, maxApplicationRetries: 0 },
+    });
+    const result = await runExecution(req([sid('s1'), sid('s2')]), deps);
+    expect(result.costReservationMicroUsd).toBe(250_000);
+    expect(grade).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects above the operation ceiling before lease, ledger, provider, or writes', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    seedOneOpenOneClosed(store, 's2');
+    const grade = vi.fn(new MockAiGrader().grade);
+    const deps = openaiDeps(store, realGrader(grade, { maxOutput: 100_001, inputBound: 0 }), NOW);
+    deps.loadRuntimeConfig = async () => ({
+      ...ENABLED_RUNTIME_CONFIG,
+      limits: { ...ENABLED_RUNTIME_CONFIG.limits, maxApplicationRetries: 0 },
+    });
+    await expect(runExecution(req([sid('s1'), sid('s2')]), deps)).rejects.toMatchObject({
+      code: 'operation_budget_exceeded',
+    });
+    expect(store.runs.size).toBe(0);
+    expect(store.reserveBudgetCalls).toBe(0);
+    expect(store.commitCalls).toBe(0);
+    expect(grade).not.toHaveBeenCalled();
+  });
+
+  it('returns daily_budget_exceeded before provider calls when the UTC day is exhausted', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    store.ledgers.set(MONTH, {
+      monthKey: MONTH,
+      budgetMicroUsd: FIVE_USD,
+      dailyBudgetMicroUsd: USD_MICRO,
+      spentMicroUsd: USD_MICRO,
+      dailySpentMicroUsd: { '2026-07-16': USD_MICRO },
+      reservations: {},
+    });
+    const grade = vi.fn(new MockAiGrader().grade);
+    await expect(
+      runExecution(req([sid('s1')]), openaiDeps(store, realGrader(grade), NOW)),
+    ).rejects.toMatchObject({ code: 'daily_budget_exceeded' });
+    expect(grade).not.toHaveBeenCalled();
+    expect(store.commitCalls).toBe(0);
+  });
+
   // ── Issue 3 — semantica crash-safe della prenotazione ──────────────────────
 
   it('crash before the provider: an expired reserved reservation is recoverable', async () => {
@@ -2185,7 +2262,9 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     store.ledgers.set(MONTH, {
       monthKey: MONTH,
       budgetMicroUsd: FIVE_USD,
+      dailyBudgetMicroUsd: 1_000_000,
       spentMicroUsd: 0,
+      dailySpentMicroUsd: {},
       reservations: { dead: { microUsd: 4 * USD_MICRO, expiresAtMs: NOW - 1, status: 'reserved' } },
     });
     const res = await runExecution(
@@ -2194,7 +2273,7 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     );
     expect(res.results[0]!.outcome).toBe('succeeded');
     // La `reserved` scaduta è stata rilasciata: nessun addebito residuo, solo l'effettivo.
-    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(130);
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(450);
   });
 
   it('crash after the provider: an expired pending reservation is charged, not freed', async () => {
@@ -2204,9 +2283,11 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     store.ledgers.set(MONTH, {
       monthKey: MONTH,
       budgetMicroUsd: FIVE_USD,
+      dailyBudgetMicroUsd: 1_000_000,
       spentMicroUsd: 0,
+      dailySpentMicroUsd: {},
       reservations: {
-        crashed: { microUsd: 3 * USD_MICRO, expiresAtMs: NOW - 1, status: 'pending' },
+        crashed: { microUsd: 300_000, expiresAtMs: NOW - 1, status: 'pending' },
       },
     });
     const res = await runExecution(
@@ -2216,7 +2297,7 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     expect(res.results[0]!.outcome).toBe('succeeded');
     const ledger = store.ledgers.get(MONTH)!;
     // La `pending` scaduta è addebitata al tetto (3 USD) + l'effettivo del nuovo run (130).
-    expect(ledger.spentMicroUsd).toBe(3 * USD_MICRO + 130);
+    expect(ledger.spentMicroUsd).toBe(300_000 + 450);
     expect(ledger.reservations.crashed).toBeUndefined();
   });
 
@@ -2285,9 +2366,9 @@ describe('M5-05D2B-2 — retry accounting + deadline', () => {
       now: () => NOW,
     });
 
-    // Per-attempt bound cost = 3300 µUSD. retry=1 ⇒ 6600, retry=0 ⇒ 3300.
-    expect(res0.costReservationMicroUsd).toBe(3300);
-    expect(res1.costReservationMicroUsd).toBe(6600);
+    // Bound per tentativo 12 500 µUSD. retry=1 ⇒ 25 000, retry=0 ⇒ 12 500.
+    expect(res0.costReservationMicroUsd).toBe(12_500);
+    expect(res1.costReservationMicroUsd).toBe(25_000);
   });
 
   it('settles an uncertain first attempt + successful second: settled = actual + attempt bound ≤ reservation', async () => {
@@ -2307,12 +2388,12 @@ describe('M5-05D2B-2 — retry accounting + deadline', () => {
     const res = await runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW));
 
     expect(res.results[0]!.outcome).toBe('succeeded');
-    // actual noto = 1000/200 → 130 µUSD. Tentativo incerto → bound 3300 µUSD.
-    expect(res.costActualMicroUsd).toBe(130);
-    expect(res.costSettledMicroUsd).toBe(130 + 3300);
+    // Actual noto 1000/200 → 450 µUSD. Tentativo incerto → bound 12 500 µUSD.
+    expect(res.costActualMicroUsd).toBe(450);
+    expect(res.costSettledMicroUsd).toBe(450 + 12_500);
     expect(res.costSettledMicroUsd).toBeLessThanOrEqual(res.costReservationMicroUsd);
     // Il ledger addebita il costo prudenziale (settled), non solo l'effettivo.
-    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(130 + 3300);
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(450 + 12_500);
     // Telemetria retry aggregata e persistita.
     expect(res.retry).toEqual({
       attemptsTotal: 2,
@@ -2327,24 +2408,26 @@ describe('M5-05D2B-2 — retry accounting + deadline', () => {
   it('never lets the settled cost exceed the reservation (capped)', async () => {
     const store = new FakeStore();
     seedOneOpenOneClosed(store, 's1');
-    // Due tentativi incerti: bound 2×3300, ma la prenotazione (retry=1) è 6600.
+    // Due tentativi incerti: bound 2×12 500, prenotazione retry=1 = 25 000.
     const grader = telemetryGrader(
       undefined,
       attemptStats({ attemptsTotal: 2, retriesTotal: 1, unknownBillingAttempts: 2 }),
     );
     const res = await runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW));
-    expect(res.costSettledMicroUsd).toBe(res.costReservationMicroUsd); // 6600, capped
-    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(6600);
+    expect(res.costSettledMicroUsd).toBe(res.costReservationMicroUsd); // 25 000, capped
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(25_000);
   });
 
   it('rejects when the budget cannot cover ALL allowed attempts (zero provider calls)', async () => {
     const store = new FakeStore();
     seedOneOpenOneClosed(store, 's1');
-    // Budget copre un tentativo (3300) ma non due (6600 richiesti da retry=1).
+    // Budget copre un tentativo (12 500) ma non due (25 000 richiesti da retry=1).
     store.ledgers.set(MONTH, {
       monthKey: MONTH,
       budgetMicroUsd: FIVE_USD,
-      spentMicroUsd: FIVE_USD - 3300,
+      dailyBudgetMicroUsd: 1_000_000,
+      spentMicroUsd: FIVE_USD - 12_500,
+      dailySpentMicroUsd: {},
       reservations: {},
     });
     const grade = vi.fn(new MockAiGrader().grade);
