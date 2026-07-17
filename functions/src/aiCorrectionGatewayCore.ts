@@ -75,14 +75,15 @@ export function resolveAiFeatureMode(env: {
 // ── Contratto request/response ──────────────────────────────────────────────
 
 /**
- * Unico payload accettato dal client: **solo ID**. Mai testi di domande,
- * risposte, soluzioni, nomi o email. Il server rilegge tutto il resto
- * server-side (in M5-02).
+ * Payload accettato dal client: ID tecnici e, facoltativamente, una breve
+ * indicazione pedagogica di batch. Mai testi di domande, risposte, soluzioni,
+ * nomi o email. Il server rilegge tutto il resto server-side (in M5-02).
  */
 export interface AiCorrectionRequest {
   verificationId: string;
   submissionIds: string[];
   requestId: string;
+  teacherGuidance?: string;
 }
 
 // Le response di preview/run (contratto pieno M5-02) sono definite in
@@ -96,6 +97,9 @@ export interface AiCorrectionRequest {
  * resta un Human Gate (HG-M5-2, vedi la roadmap). Configurabile in futuro.
  */
 export const MAX_SUBMISSIONS_PER_OPERATION = 200;
+
+/** Indicazione pedagogica facoltativa del docente, valida per l'intero batch. */
+export const MAX_TEACHER_GUIDANCE_CHARS = 200;
 
 /** Lunghezza massima prudente di un identificatore (Firestore doc id tipici). */
 const MAX_ID_LENGTH = 200;
@@ -129,7 +133,13 @@ function isSafeId(value: unknown): value is string {
  * Rifiuta tipi errati, id malformati, duplicati e superamento limite con codici
  * stabili e messaggi non sensibili.
  */
-const ALLOWED_REQUEST_KEYS = ['verificationId', 'submissionIds', 'requestId'] as const;
+// Contratto chiuso: tre ID tecnici e la sola indicazione pedagogica opzionale.
+const ALLOWED_REQUEST_KEYS = [
+  'verificationId',
+  'submissionIds',
+  'requestId',
+  'teacherGuidance',
+] as const;
 
 export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest {
   if (typeof input !== 'object' || input === null) {
@@ -142,7 +152,10 @@ export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest
       throw new AiGatewayError('invalid_input', 'Il payload contiene proprietà non ammesse.');
     }
   }
-  const { verificationId, submissionIds, requestId } = input as Record<string, unknown>;
+  const { verificationId, submissionIds, requestId, teacherGuidance } = input as Record<
+    string,
+    unknown
+  >;
 
   if (!isSafeId(verificationId)) {
     throw new AiGatewayError('invalid_input', 'verificationId mancante o malformato.');
@@ -180,7 +193,20 @@ export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest
     seen.add(id);
   }
 
-  return { verificationId, submissionIds: [...submissionIds], requestId };
+  if (teacherGuidance !== undefined && typeof teacherGuidance !== 'string') {
+    throw new AiGatewayError('invalid_input', 'Indicazioni docente non valide.');
+  }
+  const normalizedGuidance = teacherGuidance?.trim();
+  if (normalizedGuidance && normalizedGuidance.length > MAX_TEACHER_GUIDANCE_CHARS) {
+    throw new AiGatewayError('invalid_input', 'Indicazioni docente troppo lunghe.');
+  }
+
+  return {
+    verificationId,
+    submissionIds: [...submissionIds],
+    requestId,
+    ...(normalizedGuidance ? { teacherGuidance: normalizedGuidance } : {}),
+  };
 }
 
 // ── Autorizzazione owner (per onCall) ────────────────────────────────────────
@@ -242,6 +268,8 @@ export interface AiGraderInput {
   requestId: string;
   questions: AiGraderQuestion[];
   submissionContext?: AiGraderSubmissionContext;
+  /** Istruzione pedagogica di batch, subordinata alle regole applicative. */
+  teacherGuidance?: string;
 }
 
 /** Output strutturato e tipizzato per una singola domanda. */
@@ -250,6 +278,9 @@ export interface AiGraderQuestionResult {
   points: number;
   feedback?: string;
 }
+
+/** Limite applicativo unico del feedback per domanda aperta. */
+export const MAX_QUESTION_FEEDBACK_CHARS = 1_500;
 
 export interface AiGraderOutput {
   requestId: string;

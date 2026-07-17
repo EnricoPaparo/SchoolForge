@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { db } from '../../lib/firebase.js';
 import {
   isValidQuestionPoints,
@@ -120,6 +120,14 @@ function formatTimestamp(ts: unknown): string {
   });
 }
 
+/** Espande una textarea al contenuto senza scrollbar verticale interna. */
+export function resizeTextareaToContent(textarea: HTMLTextAreaElement | null): void {
+  if (!textarea) return;
+  textarea.style.height = 'auto';
+  textarea.style.overflowY = 'hidden';
+  if (textarea.scrollHeight > 0) textarea.style.height = `${textarea.scrollHeight}px`;
+}
+
 const STATUS_LABELS: Record<CorrectionUiStatus, string> = {
   to_correct: 'Da correggere',
   in_progress: 'In correzione',
@@ -177,6 +185,16 @@ export function CorrectionWorkspace({
   // before React re-renders, so a ref (set before the first await) is what
   // actually prevents a concurrent second write.
   const savingRef = useRef(false);
+  const questionFeedbackRef = useRef<HTMLTextAreaElement>(null);
+  const generalFeedbackRef = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    resizeTextareaToContent(questionFeedbackRef.current);
+  }, [currentOrder, edit?.evaluations[String(currentOrder)]?.feedback]);
+
+  useLayoutEffect(() => {
+    resizeTextareaToContent(generalFeedbackRef.current);
+  }, [edit?.generalFeedback]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -656,13 +674,17 @@ export function CorrectionWorkspace({
               </span>
             )}
             <textarea
+              ref={questionFeedbackRef}
               className={styles.feedbackTextarea}
               rows={2}
               aria-label={`Correzione per la domanda ${currentOrder + 1} (opzionale)`}
               placeholder="Correzione (opzionale)"
               value={currentEdit?.feedback ?? ''}
               disabled={correction.status !== 'in_progress' || busy !== null}
-              onChange={(e) => updateFeedback(currentOrder, e.target.value)}
+              onChange={(e) => {
+                resizeTextareaToContent(e.currentTarget);
+                updateFeedback(currentOrder, e.target.value);
+              }}
             />
           </div>
 
@@ -712,13 +734,17 @@ export function CorrectionWorkspace({
           <div className={styles.block}>
             <span className={styles.generalFeedbackLabel}>Feedback generale</span>
             <textarea
+              ref={generalFeedbackRef}
               className={styles.feedbackTextarea}
               rows={3}
               aria-label="Feedback generale"
               placeholder="Feedback generale per lo studente (opzionale)"
               value={edit.generalFeedback}
               disabled={correction.status !== 'in_progress' || busy !== null}
-              onChange={(e) => updateGeneralFeedback(e.target.value)}
+              onChange={(e) => {
+                resizeTextareaToContent(e.currentTarget);
+                updateGeneralFeedback(e.target.value);
+              }}
             />
           </div>
 

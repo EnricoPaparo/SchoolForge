@@ -352,6 +352,10 @@ describe('StudentVerificationsView', () => {
           screen.getByRole('button', { name: /Consegnata — Codice: SF-2026-AAAA/ }),
         ).toBeTruthy(),
       );
+      const receiptButton = screen.getByRole('button', { name: /SF-2026-AAAA/ });
+      expect(receiptButton.getAttribute('title')).toContain('SF-2026-AAAA');
+      const code = receiptButton.querySelector('[title="SF-2026-AAAA"]');
+      expect(code?.className).toContain('receiptCode');
       // The mandatory-session scan (findActiveDraftSession) still calls
       // loadSubmission once up front to rule out a draft — Security Rules
       // deny that get() once the submission is already `submitted`, which

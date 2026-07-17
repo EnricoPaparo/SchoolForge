@@ -25,10 +25,20 @@ vi.mock('../../repository/corrections/correctionsService.js', () => ({
   setSolutionsVisible: (...args: unknown[]) => mockSetSolutionsVisible(...args),
 }));
 
-import { CorrectionWorkspace } from '../CorrectionWorkspace.js';
+import { CorrectionWorkspace, resizeTextareaToContent } from '../CorrectionWorkspace.js';
 
 const OWNER_UID = 'owner-uid';
 const SUBMISSION_ID = 'ver-1_student-1';
+
+describe('CorrectionWorkspace — expanding content', () => {
+  it('auto-resizes feedback textareas without an internal vertical scrollbar', () => {
+    const textarea = document.createElement('textarea');
+    Object.defineProperty(textarea, 'scrollHeight', { value: 240, configurable: true });
+    resizeTextareaToContent(textarea);
+    expect(textarea.style.height).toBe('240px');
+    expect(textarea.style.overflowY).toBe('hidden');
+  });
+});
 
 const teacherQuestions = [
   {

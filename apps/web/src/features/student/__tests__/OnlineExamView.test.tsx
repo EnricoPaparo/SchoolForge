@@ -292,6 +292,37 @@ describe('OnlineExamView — saving', () => {
     }
   });
 
+  it('shows a sanitized notice for blocked paste without changing the answer or saving immediately', () => {
+    let capturedOnEvent: ((type: string) => void) | undefined;
+    let capturedOnPrevented: ((type: string) => void) | undefined;
+    mockAttachDeterrenceListeners.mockImplementation(
+      (
+        onEvent: (type: string) => void,
+        _onFullscreenChange: unknown,
+        onPrevented: (type: string) => void,
+      ) => {
+        capturedOnEvent = onEvent;
+        capturedOnPrevented = onPrevented;
+        return vi.fn();
+      },
+    );
+    renderView();
+    const answer = screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement;
+    fireEvent.change(answer, { target: { value: 'Risposta già inserita.' } });
+    mockSaveDraft.mockClear();
+
+    act(() => {
+      capturedOnEvent?.('paste_attempt');
+      capturedOnPrevented?.('paste_attempt');
+    });
+
+    expect(answer.value).toBe('Risposta già inserita.');
+    expect(
+      screen.getByText('Copia e incolla non sono consentiti durante la verifica.'),
+    ).toBeTruthy();
+    expect(mockSaveDraft).not.toHaveBeenCalled();
+  });
+
   it('M3F-11B: a buffered attention event is included in the next save caused by an answer change', async () => {
     vi.useFakeTimers();
     try {

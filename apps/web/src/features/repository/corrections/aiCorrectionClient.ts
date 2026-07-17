@@ -6,8 +6,8 @@ import type { Functions } from 'firebase/functions';
  * (`aiCorrectionPreview`/`aiCorrectionRun`, motore M5-02, modalità mock o
  * provider OpenAI reale selezionato esclusivamente lato server).
  *
- * Il client invia **esclusivamente** `verificationId`, `submissionIds` e
- * `requestId`: mai testi di domande, risposte, soluzioni, nomi o email. Le
+ * Il client invia ID tecnici e l'eventuale breve indicazione pedagogica di
+ * batch: mai testi di domande, risposte, soluzioni, nomi o email. Le
  * response rispecchiano il contratto del motore (`functions/src/
  * aiCorrectionEngine.ts`). Nessuna lettura diretta di `aiCorrectionRuns`: il
  * risultato è restituito dalla Function.
@@ -37,7 +37,10 @@ export interface AiCorrectionRequest {
   verificationId: string;
   submissionIds: string[];
   requestId: string;
+  teacherGuidance?: string;
 }
+
+export const MAX_TEACHER_GUIDANCE_CHARS = 200;
 
 export interface AiPreviewCounts {
   selected: number;
@@ -96,13 +99,20 @@ export function newRequestId(): string {
   return crypto.randomUUID();
 }
 
-/** Costruisce il payload **chiuso**: solo i tre ID ammessi, mai altri campi. */
+/** Costruisce il payload chiuso con ID e indicazione pedagogica facoltativa. */
 export function buildRequest(
   verificationId: string,
   submissionIds: string[],
   requestId: string,
+  teacherGuidance?: string,
 ): AiCorrectionRequest {
-  return { verificationId, submissionIds: [...submissionIds], requestId };
+  const normalizedGuidance = teacherGuidance?.trim();
+  return {
+    verificationId,
+    submissionIds: [...submissionIds],
+    requestId,
+    ...(normalizedGuidance ? { teacherGuidance: normalizedGuidance } : {}),
+  };
 }
 
 /** Crea i wrapper delle callable su una `Functions` iniettata (testabile). */
