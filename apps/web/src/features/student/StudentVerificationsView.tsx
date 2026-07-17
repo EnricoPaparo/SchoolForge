@@ -541,10 +541,16 @@ export function StudentVerificationsView({
             <button
               type="button"
               className={styles.receiptBtn}
+              aria-label={`${correctionStatusLabel(status.receipt.correctionStatus ?? 'submitted')} — Codice: ${status.receipt.deliveryCode}`}
+              title={`Codice consegna: ${status.receipt.deliveryCode}`}
               onClick={() => handleShowReceipt(status.receipt)}
             >
-              {correctionStatusLabel(status.receipt.correctionStatus ?? 'submitted')} — Codice:{' '}
-              {status.receipt.deliveryCode}
+              <span className={styles.receiptStatus}>
+                {correctionStatusLabel(status.receipt.correctionStatus ?? 'submitted')} — Codice:
+              </span>
+              <span className={styles.receiptCode} title={status.receipt.deliveryCode}>
+                {status.receipt.deliveryCode}
+              </span>
             </button>
           )}
 

@@ -498,6 +498,12 @@ Il docente ha approvato il 17 luglio 2026 le decisioni **HG-M5-1/2/3/4**, formal
 
 ---
 
+### 16.13 Stato M5-06A — calibrazione pedagogica e rifiniture UX
+
+Il grader OpenAI valuta esplicitamente la copertura degli elementi richiesti, senza premiare quasi per intero una risposta che contiene un solo concetto corretto. La soluzione docente resta una rubrica di riferimento non esaustiva; formulazioni equivalenti e conoscenze corrette pertinenti sono ammesse. Il feedback è adattivo: una frase per risposte vuote, casuali o fuori tema; breve e motivato per errori semplici; più articolato per risposte parziali o complesse; sintetico e specifico per risposte eccellenti. Limite tecnico per domanda: 1.500 caratteri; general feedback e validazione atomica restano invariati.
+
+La UI batch accetta `teacherGuidance` opzionale (massimo 200 caratteri), inclusa nello stesso payload di ogni consegna e nella stima/prenotazione. Preview e run condividono valore e `requestId`; una modifica invalida entrambi. Il testo non è persistito nei run o nei ledger e resta subordinato alle istruzioni server-side. Le rifiniture correlate eliminano scrollbar interne nel workspace, comunicano in modo sanitizzato copy/cut/paste bloccati senza nuove scritture immediate e impediscono l'overflow del codice di consegna su viewport strette. Nessuna nuova chiamata IA, Rule, indice, schema o dipendenza.
+
 ## 17. Criteri di accettazione per pacchetto
 
 - **M5-00 (DoD):** documento presente e coerente; vecchia roadmap M5-A..E e contratti stale superati; README/INDEX/piano/api-contract/architettura/sicurezza/decisioni allineati senza dichiarare implementato ciò che non lo è; `pnpm format:check` verde. Nessuna modifica a codice/Rules/schema/dipendenze.

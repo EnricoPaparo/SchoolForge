@@ -490,6 +490,16 @@ describe('canonical selection (M5-05D2A)', () => {
     expect(computeSelectionHash(VERIF, a)).toBe(computeSelectionHash(VERIF, b));
     expect(computeSelectionHash(VERIF, a)).toMatch(/^[a-f0-9]{64}$/);
   });
+
+  it('includes teacher guidance in the request identity without persisting its text', () => {
+    const ids = [sid('s1'), sid('s2')];
+    expect(computeSelectionHash(VERIF, ids, 'Premia il ragionamento.')).toBe(
+      computeSelectionHash(VERIF, ids.reverse(), 'Premia il ragionamento.'),
+    );
+    expect(computeSelectionHash(VERIF, ids, 'Premia il ragionamento.')).not.toBe(
+      computeSelectionHash(VERIF, ids, 'Premia la terminologia.'),
+    );
+  });
 });
 
 describe('scoreClosedQuestion — chiusa_multipla partial scoring (M5-04C)', () => {
@@ -578,7 +588,6 @@ describe('scoreClosedQuestion — chiusa_multipla partial scoring (M5-04C)', () 
 });
 
 describe('scoreClosedQuestion — chiusa_multipla with a SINGLE canonical answer', () => {
-  // Technically chiusa_multipla, but exactly one correct option (a) among four.
   const q = tq(0, 'chiusa_multipla', 1, ['a'], ['a', 'b', 'c', 'd']);
   const score = (selectedIds: string[]) => {
     const r = scoreClosedQuestion(q, { tipo: 'chiusa_multipla', selectedIds });
@@ -589,7 +598,7 @@ describe('scoreClosedQuestion — chiusa_multipla with a SINGLE canonical answer
   it('only the correct option → full maxPoints', () => {
     expect(score(['a'])).toEqual({ evaluable: true, points: 1, feedback: 'Risposta corretta.' });
   });
-  it('correct + one wrong → 0 with the mandated explanation (regression: was 0.75)', () => {
+  it('correct + one wrong → 0 with the mandated explanation', () => {
     expect(score(['a', 'b'])).toEqual({
       evaluable: true,
       points: 0,
@@ -627,12 +636,10 @@ describe('scoreClosedQuestion — chiusa_multipla with a SINGLE canonical answer
     if (!r.evaluable) throw new Error('evaluable');
     for (const id of ['ONLY_RIGHT', 'WRONG_X', 'WRONG_Y']) expect(r.feedback).not.toContain(id);
   });
-  it('malformed single-canonical data stays non-evaluable (no unfair zero)', () => {
-    const noOptions = tq(0, 'chiusa_multipla', 1, ['a']); // no optionIds
+  it('malformed single-canonical data stays non-evaluable', () => {
+    const noOptions = tq(0, 'chiusa_multipla', 1, ['a']);
     expect(scoreClosedQuestion(noOptions, { tipo: 'chiusa_multipla', selectedIds: ['a'] })).toEqual(
-      {
-        evaluable: false,
-      },
+      { evaluable: false },
     );
   });
 });
@@ -1496,6 +1503,37 @@ describe('token estimation and consumption', () => {
     expect(run.tokensEstimated).toBe(preview.tokensEstimated);
   });
 
+  it('includes teacher guidance in preview/run estimates and forwards it to the grader', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const guidance = 'GUIDA_DOCENTE_NON_PERSISTERE';
+    const grade = vi.fn(
+      async (input: { teacherGuidance?: string; questions: TeacherQuestion[] }) => ({
+        results: input.questions.map((question) => ({
+          order: question.order,
+          points: 1,
+          feedback: 'Feedback.',
+        })),
+        generalFeedback: 'Feedback generale.',
+        usage: { tokens: 10 },
+      }),
+    );
+    const grader = { grade };
+    const without = await runPreview(req([sid('s1')]), baseDeps(store, grader));
+    const preview = await runPreview(
+      req([sid('s1')], { teacherGuidance: guidance }),
+      baseDeps(store, grader),
+    );
+    const run = await runExecution(
+      req([sid('s1')], { teacherGuidance: guidance }),
+      baseDeps(store, grader),
+    );
+    expect(preview.tokensEstimated).toBeGreaterThan(without.tokensEstimated);
+    expect(run.tokensEstimated).toBe(preview.tokensEstimated);
+    expect(grade).toHaveBeenCalledWith(expect.objectContaining({ teacherGuidance: guidance }), {});
+    expect(JSON.stringify(store.runs.get(REQ))).not.toContain(guidance);
+  });
+
   it('MockAiGrader yields tokensActual == 0 (no real tokens consumed)', async () => {
     const store = new FakeStore();
     seedOneOpenOneClosed(store, 's1');
@@ -1568,6 +1606,21 @@ describe('runExecution — privacy of aiCorrectionRuns', () => {
       [sid('s1'), 'succeeded', undefined],
       [sid('s2'), 'excluded', 'not_submitted'],
     ]);
+  });
+
+  it('rejects reuse of the same requestId with different teacher guidance', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    await runExecution(
+      req([sid('s1')], { teacherGuidance: 'Valuta il ragionamento.' }),
+      baseDeps(store, new MockAiGrader()),
+    );
+    await expect(
+      runExecution(
+        req([sid('s1')], { teacherGuidance: 'Valuta la terminologia.' }),
+        baseDeps(store, new MockAiGrader()),
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
   });
 
   it('uses the injected clock for a deterministic 30-day expireAt', async () => {

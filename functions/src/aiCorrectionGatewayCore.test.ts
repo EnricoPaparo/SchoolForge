@@ -6,6 +6,7 @@ import {
   buildMockGeneralFeedback,
   MockAiGrader,
   MAX_GENERAL_FEEDBACK_CHARS,
+  MAX_TEACHER_GUIDANCE_CHARS,
   MAX_SUBMISSIONS_PER_OPERATION,
   resolveAiFeatureMode,
   validateAiCorrectionRequest,
@@ -107,6 +108,23 @@ describe('validateAiCorrectionRequest', () => {
     expect(r.verificationId).toBe(VERIF);
     expect(r.submissionIds).toHaveLength(2);
     expect(r.requestId).toBe(REQ);
+  });
+
+  it('accepts, trims and bounds the optional teacher guidance', () => {
+    expect(
+      validateAiCorrectionRequest(validRequest({ teacherGuidance: '  Premia il ragionamento.  ' }))
+        .teacherGuidance,
+    ).toBe('Premia il ragionamento.');
+    expect(
+      validateAiCorrectionRequest(validRequest({ teacherGuidance: '   ' })).teacherGuidance,
+    ).toBeUndefined();
+    expect(() =>
+      validateAiCorrectionRequest({
+        ...validRequest(),
+        teacherGuidance: 'x'.repeat(MAX_TEACHER_GUIDANCE_CHARS + 1),
+      }),
+    ).toThrow();
+    expect(() => validateAiCorrectionRequest(validRequest({ teacherGuidance: 42 }))).toThrow();
   });
 
   it.each([

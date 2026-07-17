@@ -210,6 +210,9 @@
   font-size: 0.875rem;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+  min-width: 0;
+  max-height: none;
+  overflow: visible;
 }
 
 .answerEmpty {
@@ -426,7 +429,9 @@
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  resize: vertical;
+  resize: none;
+  overflow-y: hidden;
+  min-height: 4.5rem;
 }
 
 .questionFooterNav {

@@ -74,6 +74,7 @@ export function OnlineExamView({
   const [sessionEnded, setSessionEnded] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [deterrenceNotice, setDeterrenceNotice] = useState<string | null>(null);
 
   // Refs mirror the state above so the 60s autosave interval (set up once)
   // and the deterrence event handlers (also set up once) always see the
@@ -191,19 +192,27 @@ export function OnlineExamView({
   // logged as a fullscreen_exit attention event.
   const deterrenceCleanupRef = useRef<(() => void) | null>(null);
   useEffect(() => {
-    const cleanup = attachDeterrenceListeners((type: AttentionEventType) => {
-      // Once the 200-event cap is reached, ignored events have nothing new
-      // to save.
-      if (knownEventCountRef.current + bufferedEventsRef.current.length >= 200) return;
-      // M3F-11B: an attention event alone must never mark the draft dirty
-      // or trigger an autosave — it is only buffered here. `persistDraft`
-      // always includes whatever is buffered (see `eventsToSend` below and
-      // in `handleConfirmSubmit`), so the event still reaches Firestore on
-      // the next save caused by an answer/flag change, the next manual
-      // "Salva bozza" click, or the final delivery — never dropped, just
-      // not itself a reason to write.
-      bufferedEventsRef.current = [...bufferedEventsRef.current, { type, ts: Date.now() }];
-    }, setIsFullscreen);
+    const cleanup = attachDeterrenceListeners(
+      (type: AttentionEventType) => {
+        // Once the 200-event cap is reached, ignored events have nothing new
+        // to save.
+        if (knownEventCountRef.current + bufferedEventsRef.current.length >= 200) return;
+        // M3F-11B: an attention event alone must never mark the draft dirty
+        // or trigger an autosave — it is only buffered here. `persistDraft`
+        // always includes whatever is buffered (see `eventsToSend` below and
+        // in `handleConfirmSubmit`), so the event still reaches Firestore on
+        // the next save caused by an answer/flag change, the next manual
+        // "Salva bozza" click, or the final delivery — never dropped, just
+        // not itself a reason to write.
+        bufferedEventsRef.current = [...bufferedEventsRef.current, { type, ts: Date.now() }];
+      },
+      setIsFullscreen,
+      (type) => {
+        if (type === 'copy_attempt' || type === 'cut_attempt' || type === 'paste_attempt') {
+          setDeterrenceNotice('Copia e incolla non sono consentiti durante la verifica.');
+        }
+      },
+    );
     deterrenceCleanupRef.current = cleanup;
     return () => {
       cleanup();
@@ -331,6 +340,11 @@ export function OnlineExamView({
               lastSavedLabel && (
                 <span className={styles.saveStatus}>Bozza salvata alle {lastSavedLabel}</span>
               )
+            )}
+            {deterrenceNotice && (
+              <span role="status" className={styles.deterrenceNotice}>
+                {deterrenceNotice}
+              </span>
             )}
           </div>
 

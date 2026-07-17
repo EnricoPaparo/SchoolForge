@@ -30,6 +30,7 @@ const PREVENTABLE_EVENTS: { type: AttentionEventType; domEvent: string }[] = [
 export function attachDeterrenceListeners(
   onEvent: (type: AttentionEventType) => void,
   onFullscreenChange?: (active: boolean) => void,
+  onPreventedInteraction?: (type: AttentionEventType) => void,
 ): () => void {
   function handleFullscreenChange() {
     onFullscreenChange?.(Boolean(document.fullscreenElement));
@@ -46,6 +47,7 @@ export function attachDeterrenceListeners(
     const handler = (e: Event) => {
       e.preventDefault();
       onEvent(type);
+      onPreventedInteraction?.(type);
     };
     return { domEvent, handler };
   });

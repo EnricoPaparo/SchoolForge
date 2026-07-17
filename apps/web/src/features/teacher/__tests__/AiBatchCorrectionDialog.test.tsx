@@ -111,6 +111,11 @@ function makeCallables(
   };
 }
 
+async function calculatePreview() {
+  fireEvent.click(screen.getByRole('button', { name: 'Calcola anteprima' }));
+  await screen.findByText(/Elaborabili:/);
+}
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -132,7 +137,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
       />,
     );
 
-    await screen.findByText('Elaborabili: 2');
+    await calculatePreview();
     expect(previewSpy).toHaveBeenCalledTimes(1);
     const payload = previewSpy.mock.calls[0][0];
     expect(Object.keys(payload).sort()).toEqual(['requestId', 'submissionIds', 'verificationId']);
@@ -158,7 +163,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
       />,
     );
 
-    await screen.findByText('Elaborabili: 2');
+    await calculatePreview();
     expect(
       screen.getByText('Modalità OpenAI — il costo reale sarà registrato dopo l’esecuzione'),
     ).toBeTruthy();
@@ -180,6 +185,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
         onApplied={() => {}}
       />,
     );
+    await calculatePreview();
     const primary = await screen.findByRole('button', { name: /Correggi 2 consegne con IA/ });
     const cancel = screen.getByRole('button', { name: 'Annulla' });
     const actions = cancel.closest('.dialog-actions');
@@ -203,6 +209,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
       />,
     );
 
+    await calculatePreview();
     const confirm = await screen.findByRole('button', { name: /Correggi 2 consegne con IA/ });
     fireEvent.click(confirm);
 
@@ -213,6 +220,42 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     expect(screen.getByText('Token reali: 0 (mock)')).toBeTruthy();
     expect(screen.getByText('Costo reale: 0 (mock)')).toBeTruthy();
     expect(onApplied).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the same teacher guidance for preview/run and invalidates the request when it changes', async () => {
+    const { callables, previewSpy, runSpy } = makeCallables(
+      () => Promise.resolve(makePreview()),
+      () => Promise.resolve(makeRun()),
+    );
+    render(
+      <AiBatchCorrectionDialog
+        verificationId={VERIFICATION_ID}
+        submissionIds={SUBMISSION_IDS}
+        callables={callables}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+
+    const guidance = screen.getByLabelText('Indicazioni per questa correzione (opzionali)');
+    fireEvent.change(guidance, { target: { value: 'Premia soprattutto il ragionamento.' } });
+    await calculatePreview();
+    const firstRequestId = previewSpy.mock.calls[0][0].requestId;
+
+    fireEvent.change(guidance, { target: { value: 'Premia soprattutto gli esempi pertinenti.' } });
+    expect(screen.getByRole('button', { name: 'Calcola anteprima' })).toBeTruthy();
+    await calculatePreview();
+    expect(previewSpy).toHaveBeenCalledTimes(2);
+    const previewRequest = previewSpy.mock.calls[1][0];
+    expect(previewRequest.requestId).not.toBe(firstRequestId);
+    expect(previewRequest.teacherGuidance).toBe('Premia soprattutto gli esempi pertinenti.');
+
+    fireEvent.click(screen.getByRole('button', { name: /Correggi 2 consegne con IA/ }));
+    await screen.findByText('Correzione completata.');
+    expect(runSpy.mock.calls[0][0]).toMatchObject({
+      requestId: previewRequest.requestId,
+      teacherGuidance: previewRequest.teacherGuidance,
+    });
   });
 
   it('cancels without ever calling run', async () => {
@@ -252,6 +295,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
       />,
     );
 
+    await calculatePreview();
     const confirm = await screen.findByRole('button', { name: /Correggi 2 consegne con IA/ });
     fireEvent.click(confirm);
     fireEvent.click(confirm);
@@ -309,6 +353,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
       />,
     );
 
+    await calculatePreview();
     fireEvent.click(await screen.findByRole('button', { name: /Correggi 2 consegne con IA/ }));
     await screen.findByText('Riuscite: 1');
     expect(screen.getByText('Fallite: 1')).toBeTruthy();
@@ -333,6 +378,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
       />,
     );
 
+    await calculatePreview();
     fireEvent.click(await screen.findByRole('button', { name: /Correggi 2 consegne con IA/ }));
     await screen.findByText(/è già in corso/);
   });
@@ -353,6 +399,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
       />,
     );
 
+    await calculatePreview();
     fireEvent.click(await screen.findByRole('button', { name: /Correggi 2 consegne con IA/ }));
     await screen.findByText('Operazione già eseguita: risultato ripristinato.');
   });
@@ -372,6 +419,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola anteprima' }));
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toBe('Operazione riservata al docente proprietario.');
     expect(runSpy).not.toHaveBeenCalled();
@@ -404,6 +452,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
       />,
     );
 
+    await calculatePreview();
     const confirm = await screen.findByRole('button', { name: /Correggi 0 consegne con IA/ });
     expect((confirm as HTMLButtonElement).disabled).toBe(true);
     const exclusions = screen.getByText('Consegne escluse (1)');

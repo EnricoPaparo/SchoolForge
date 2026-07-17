@@ -25,6 +25,7 @@ import {
   buildMockGeneralFeedback,
   validateGeneralFeedback,
   MAX_GENERAL_FEEDBACK_CHARS,
+  MAX_QUESTION_FEEDBACK_CHARS,
   type AiCorrectionAuthDeps,
   type AiCorrectionRequest,
   type AiEnabledFeatureMode,
@@ -50,8 +51,6 @@ export const MAX_OPEN_QUESTIONS_PER_SUBMISSION = 50;
 export const MAX_ANSWER_CHARS = 20_000;
 /** Max caratteri totali (domande+soluzioni+risposte) delle aperte di una consegna. */
 export const MAX_TOTAL_OPEN_CHARS = 200_000;
-/** Max caratteri ammessi in un feedback prodotto dal grader. */
-export const MAX_MOCK_FEEDBACK_CHARS = 2_000;
 /** Stima token: caratteri per token (approssimazione deterministica). */
 export const CHARS_PER_TOKEN = 4;
 /** Overhead fisso di token per domanda aperta (prompt/struttura). */
@@ -64,6 +63,10 @@ export const OPEN_QUESTION_TOKEN_OVERHEAD = 8;
  */
 export const GENERAL_FEEDBACK_TOKEN_ESTIMATE = Math.ceil(
   MAX_GENERAL_FEEDBACK_CHARS / CHARS_PER_TOKEN,
+);
+/** Quota output stimata per ciascun feedback di domanda aperta. */
+export const QUESTION_FEEDBACK_TOKEN_ESTIMATE = Math.ceil(
+  MAX_QUESTION_FEEDBACK_CHARS / CHARS_PER_TOKEN,
 );
 /**
  * M5-05D2B-2 — timeout esplicito della Function `aiCorrectionRun` (s). Un batch
@@ -385,12 +388,8 @@ export function scoreClosedQuestion(
     if (selected.size === 0)
       return { evaluable: true, points: 0, feedback: 'Risposta non fornita.' };
 
-    // Caso a **soluzione canonica unica**: anche se il tipo tecnico è
-    // `chiusa_multipla`, con UNA sola risposta corretta la domanda si comporta
-    // come una scelta singola tutto-o-niente. Solo la selezione composta
-    // esclusivamente da quell'unica opzione vale `maxPoints`; qualsiasi altra
-    // selezione (errata, corretta + extra, o più di un'opzione) vale 0. Questo
-    // evita che la formula parziale premi «corretta + errata» con credito.
+    // Una sola risposta canonica: comportamento tutto-o-niente anche se il
+    // tipo tecnico è multiplo. «Corretta + extra» non riceve credito parziale.
     if (correctIds.length === 1) {
       const onlyCorrect = correctIds[0];
       const hasCorrect = selected.has(onlyCorrect);
@@ -561,6 +560,11 @@ export function estimateOpenTokensForSubmission(
   return tokens;
 }
 
+/** Quota input della guida docente, ripetuta una volta per chiamata/consegna. */
+export function estimateTeacherGuidanceTokens(teacherGuidance?: string): number {
+  return teacherGuidance ? Math.ceil(teacherGuidance.length / CHARS_PER_TOKEN) : 0;
+}
+
 // ── Validazione output del grader ─────────────────────────────────────────────
 
 export interface ValidatedScore {
@@ -597,7 +601,7 @@ export function validateGraderOutput(
     if (points < 0 || points > maxPoints) continue;
     if (!isQuarterStep(points)) continue;
     if (feedback !== undefined) {
-      if (typeof feedback !== 'string' || feedback.length > MAX_MOCK_FEEDBACK_CHARS) continue;
+      if (typeof feedback !== 'string' || feedback.length > MAX_QUESTION_FEEDBACK_CHARS) continue;
     }
     valid.set(order, { points, ...(feedback !== undefined ? { feedback } : {}) });
   }
@@ -611,9 +615,17 @@ export function canonicalizeSubmissionIds(submissionIds: readonly string[]): str
   return [...submissionIds].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
-/** SHA-256 del contesto verifica + insieme canonico; nessun ID è persistito. */
-export function computeSelectionHash(verificationId: string, submissionIds: string[]): string {
-  const canonical = JSON.stringify([verificationId, canonicalizeSubmissionIds(submissionIds)]);
+/** SHA-256 di verifica, selezione canonica e criteri pedagogici; nessun testo è persistito. */
+export function computeSelectionHash(
+  verificationId: string,
+  submissionIds: string[],
+  teacherGuidance?: string,
+): string {
+  const canonical = JSON.stringify([
+    verificationId,
+    canonicalizeSubmissionIds(submissionIds),
+    teacherGuidance ?? '',
+  ]);
   return createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
 
@@ -932,12 +944,16 @@ async function buildOperationPreflight(
     if (item.classification.status !== 'eligible') continue;
     const eligible = item.classification.eligible;
     const hasOpen = eligible.openOrders.length > 0;
-    const outputEstimate = hasOpen ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0;
-    inputTokens += item.openTokens;
+    const guidanceTokens = hasOpen ? estimateTeacherGuidanceTokens(request.teacherGuidance) : 0;
+    const outputEstimate = hasOpen
+      ? eligible.openOrders.length * QUESTION_FEEDBACK_TOKEN_ESTIMATE +
+        GENERAL_FEEDBACK_TOKEN_ESTIMATE
+      : 0;
+    inputTokens += item.openTokens + guidanceTokens;
     outputTokens += outputEstimate;
     eligibleLimits.push({
       openQuestionCount: eligible.openOrders.length,
-      estimatedTokens: item.openTokens + outputEstimate,
+      estimatedTokens: item.openTokens + guidanceTokens + outputEstimate,
     });
   }
   return {
@@ -960,6 +976,7 @@ function buildGraderInput(
   answers: Record<string, SubmissionAnswer | undefined>,
   priorPoints: number,
   totalMaxPoints: number,
+  teacherGuidance?: string,
 ): AiGraderInput {
   return {
     requestId,
@@ -975,6 +992,7 @@ function buildGraderInput(
       };
     }),
     submissionContext: { priorPoints, totalMaxPoints },
+    ...(teacherGuidance ? { teacherGuidance } : {}),
   };
 }
 
@@ -1024,6 +1042,7 @@ function computeReservationBoundMicroUsd(
       item.submission?.answers ?? {},
       eligible.totalMaxPoints,
       eligible.totalMaxPoints,
+      request.teacherGuidance,
     );
     const bound = perAttemptBoundTokens(grader, graderInput);
     inputTokens += bound.inputTokens * maxAttemptsPerCall;
@@ -1283,7 +1302,11 @@ export async function runExecution(
   };
   const mode: AiEnabledFeatureMode = deps.featureMode === 'openai' ? 'openai' : 'mock';
   const ownerUid = deps.callerUid!;
-  const selectionHash = computeSelectionHash(request.verificationId, request.submissionIds);
+  const selectionHash = computeSelectionHash(
+    request.verificationId,
+    request.submissionIds,
+    request.teacherGuidance,
+  );
   const ordinalBySubmissionId = new Map(
     request.submissionIds.map((submissionId, ordinal) => [submissionId, ordinal]),
   );
@@ -1778,12 +1801,16 @@ async function gradeEligible(
   // Stima ripartita: input = prompt (domanda+soluzione+risposta), output = quota
   // feedback generale (solo se ci sono aperte). Identica a preview.
   const estimate = {
-    inputTokens: estimateOpenTokensForSubmission(
-      ctx.teacherQuestions,
-      eligible.openOrders,
-      ctx.submission.answers,
-    ),
-    outputTokens: hasOpen ? GENERAL_FEEDBACK_TOKEN_ESTIMATE : 0,
+    inputTokens:
+      estimateOpenTokensForSubmission(
+        ctx.teacherQuestions,
+        eligible.openOrders,
+        ctx.submission.answers,
+      ) + (hasOpen ? estimateTeacherGuidanceTokens(ctx.request.teacherGuidance) : 0),
+    outputTokens: hasOpen
+      ? eligible.openOrders.length * QUESTION_FEEDBACK_TOKEN_ESTIMATE +
+        GENERAL_FEEDBACK_TOKEN_ESTIMATE
+      : 0,
   };
   // Token REALI (0/0 col mock o senza usage). Aggiornati dall'usage del provider,
   // **anche** se l'output viene poi rifiutato (costo comunque contabilizzato).
@@ -1835,6 +1862,7 @@ async function gradeEligible(
       ctx.submission.answers,
       priorPoints,
       eligible.totalMaxPoints,
+      ctx.request.teacherGuidance,
     );
     // Tetto **per tentativo** (input upper bound + max output) di questa consegna:
     // base per contabilizzare in modo prudente i tentativi dal costo incerto.

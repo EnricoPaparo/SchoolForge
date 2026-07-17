@@ -4,6 +4,7 @@ import {
   buildRequest,
   describeAiError,
   describeExclusion,
+  MAX_TEACHER_GUIDANCE_CHARS,
   newRequestId,
   type AiCorrectionCallables,
   type AiPreviewResult,
@@ -13,16 +14,17 @@ import {
 /**
  * M5-03/M5-05 — dialog batch «Correggi con IA» (mock o OpenAI reale).
  *
- * Flusso: al montaggio chiama `aiCorrectionPreview` (nessuna scrittura); mostra
+ * Flusso: il docente può inserire un'indicazione pedagogica, poi avvia
+ * `aiCorrectionPreview` (nessuna scrittura); il dialog mostra
  * un riepilogo di conferma con conteggi, esclusioni e stima token/costo, e il
  * banner coerente con la modalità restituita dal server; alla conferma chiama
  * `aiCorrectionRun` con lo **stesso** `requestId` e la **stessa** selezione, e
- * mostra il risultato. Preview e run inviano **solo** `verificationId`,
- * `submissionIds`, `requestId`. Il dialog **non** si chiude da solo finché il
+ * mostra il risultato. Preview e run inviano gli stessi ID e la stessa
+ * indicazione. Il dialog **non** si chiude da solo finché il
  * risultato non è leggibile; nessun polling, nessun listener.
  */
 
-type Phase = 'previewing' | 'confirm' | 'running' | 'result' | 'error';
+type Phase = 'configure' | 'previewing' | 'confirm' | 'running' | 'result' | 'error';
 
 export function AiBatchCorrectionDialog({
   verificationId,
@@ -37,7 +39,8 @@ export function AiBatchCorrectionDialog({
   onClose: () => void;
   onApplied: (result: AiRunResult) => void;
 }) {
-  const [phase, setPhase] = useState<Phase>('previewing');
+  const [phase, setPhase] = useState<Phase>('configure');
+  const [teacherGuidance, setTeacherGuidance] = useState('');
   const [preview, setPreview] = useState<AiPreviewResult | null>(null);
   const [result, setResult] = useState<AiRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,27 +52,36 @@ export function AiBatchCorrectionDialog({
 
   useEffect(() => {
     mountedRef.current = true;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await callables.preview(
-          buildRequest(verificationId, submissionIds, requestIdRef.current),
-        );
-        if (cancelled || !mountedRef.current) return;
-        setPreview(res);
-        setPhase('confirm');
-      } catch (err) {
-        if (cancelled || !mountedRef.current) return;
-        setError(describeAiError(err));
-        setPhase('error');
-      }
-    })();
     return () => {
-      cancelled = true;
       mountedRef.current = false;
     };
-    // Eseguito una sola volta: la selezione è congelata all'apertura del dialog.
   }, []);
+
+  function changeTeacherGuidance(value: string) {
+    setTeacherGuidance(value);
+    setPreview(null);
+    setError(null);
+    runStartedRef.current = false;
+    requestIdRef.current = newRequestId();
+    setPhase('configure');
+  }
+
+  async function requestPreview() {
+    setError(null);
+    setPhase('previewing');
+    try {
+      const res = await callables.preview(
+        buildRequest(verificationId, submissionIds, requestIdRef.current, teacherGuidance),
+      );
+      if (!mountedRef.current) return;
+      setPreview(res);
+      setPhase('confirm');
+    } catch (err) {
+      if (!mountedRef.current) return;
+      setError(describeAiError(err));
+      setPhase('error');
+    }
+  }
 
   async function confirmRun() {
     if (runStartedRef.current) return; // anti doppio-click / doppia invocazione
@@ -77,7 +89,7 @@ export function AiBatchCorrectionDialog({
     setPhase('running');
     try {
       const res = await callables.run(
-        buildRequest(verificationId, submissionIds, requestIdRef.current),
+        buildRequest(verificationId, submissionIds, requestIdRef.current, teacherGuidance),
       );
       if (!mountedRef.current) return;
       setResult(res);
@@ -98,6 +110,37 @@ export function AiBatchCorrectionDialog({
 
   return (
     <DialogShell title="Correggi con IA" onCancel={onClose} busy={busy}>
+      {phase !== 'running' && phase !== 'result' && (
+        <label style={{ display: 'grid', gap: '0.375rem' }}>
+          <span style={{ fontWeight: 700 }}>Indicazioni per questa correzione (opzionali)</span>
+          <textarea
+            aria-label="Indicazioni per questa correzione (opzionali)"
+            aria-describedby="teacher-guidance-help"
+            rows={3}
+            maxLength={MAX_TEACHER_GUIDANCE_CHARS}
+            value={teacherGuidance}
+            disabled={busy}
+            onChange={(event) => changeTeacherGuidance(event.target.value)}
+          />
+          <small id="teacher-guidance-help" style={{ color: 'var(--color-text-muted)' }}>
+            Es. Valuta soprattutto la capacità di applicare il concetto, non la terminologia esatta.
+            {' · '}
+            {teacherGuidance.length}/{MAX_TEACHER_GUIDANCE_CHARS}
+          </small>
+        </label>
+      )}
+
+      {phase === 'configure' && (
+        <div className="dialog-actions">
+          <button type="button" onClick={onClose}>
+            Annulla
+          </button>
+          <button type="button" className="btn-primary" onClick={() => void requestPreview()}>
+            Calcola anteprima
+          </button>
+        </div>
+      )}
+
       {activeMode && (
         <p role="status" style={{ fontWeight: 700 }}>
           {activeMode === 'openai'
@@ -119,7 +162,10 @@ export function AiBatchCorrectionDialog({
           </p>
           <div className="dialog-actions">
             <button type="button" onClick={onClose}>
-              Chiudi
+              Annulla
+            </button>
+            <button type="button" className="btn-primary" onClick={() => void requestPreview()}>
+              Riprova anteprima
             </button>
           </div>
         </>

@@ -95,13 +95,15 @@ describe('attachDeterrenceListeners', () => {
     ['dragstart', 'drag_attempt'],
   ] as const)('prevents default and reports %s -> %s', (domEvent, expectedType) => {
     const onEvent = vi.fn();
-    const cleanup = attachDeterrenceListeners(onEvent);
+    const onPreventedInteraction = vi.fn();
+    const cleanup = attachDeterrenceListeners(onEvent, undefined, onPreventedInteraction);
     const event = new Event(domEvent, { cancelable: true });
 
     document.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(true);
     expect(onEvent).toHaveBeenCalledWith(expectedType);
+    expect(onPreventedInteraction).toHaveBeenCalledWith(expectedType);
     cleanup();
   });
 
