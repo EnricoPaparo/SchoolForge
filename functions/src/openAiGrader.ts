@@ -292,15 +292,17 @@ export class OpenAiGrader implements AiGrader {
   ) {}
 
   /**
-   * Upper bound provabile dei token di input fatturabili: il numero di
-   * **caratteri** dell'esatta richiesta serializzata (system prompt + schema +
-   * contenuto). Un token BPE copre ≥ 1 carattere, quindi i token di input ≤
-   * caratteri del payload: la prenotazione basata su questo valore non è mai
-   * inferiore all'input realmente fatturato per la chiamata permessa.
+   * Upper bound provabile dei token di input fatturabili: la dimensione in
+   * **byte UTF-8** dell'esatta richiesta serializzata (system prompt + schema +
+   * contenuto). Il tokenizer BPE opera su una rappresentazione **byte-level**,
+   * quindi i token di input ≤ byte UTF-8 del payload (un token copre ≥ 1 byte).
+   * `String.length` misura unità UTF-16 e **sottostimerebbe** per emoji, CJK,
+   * caratteri combinati e simboli Unicode: usiamo `Buffer.byteLength(..., 'utf8')`,
+   * prudente (può sovrastimare) ma **mai** inferiore all'input realmente fatturato.
    */
   reservationInputTokenUpperBound(input: AiGraderInput): number {
     if (input.questions.length === 0) return 0;
-    return JSON.stringify(buildOpenAiGradingRequest(input, this.model)).length;
+    return Buffer.byteLength(JSON.stringify(buildOpenAiGradingRequest(input, this.model)), 'utf8');
   }
 
   async grade(input: AiGraderInput): Promise<AiGraderOutput> {

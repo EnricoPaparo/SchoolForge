@@ -56,6 +56,40 @@ describe('OpenAiGrader payload and mapping', () => {
     }
   });
 
+  // M5-05D2B-1 — il tetto di prenotazione input deve essere un upper bound
+  // provabile sui token: il tokenizer BPE è byte-level, quindi il bound è la
+  // dimensione **UTF-8** (byte) dell'esatto payload, non `String.length` (UTF-16),
+  // che sottostimerebbe emoji/CJK/caratteri combinati.
+  it.each([
+    ['ASCII', 'Explain HTTPS in one line.'],
+    ['italiano accentato', 'Spiega perché è così: l’università è già finità.'],
+    ['emoji', 'Ottimo lavoro 👍🏽🚀🎓 continua così 😄'],
+    ['CJK', '请解释一下 HTTPS 的工作原理。'],
+    ['caratteri combinati', 'áèî ç ñ — testo combinato'],
+  ])('reservationInputTokenUpperBound uses UTF-8 byte length (%s)', (_name, answer) => {
+    const unicodeInput: AiGraderInput = {
+      ...input,
+      questions: [{ ...input.questions[0]!, studentAnswer: answer }],
+    };
+    const grader = new OpenAiGrader('gpt-5-nano', { send: vi.fn() });
+    const bound = grader.reservationInputTokenUpperBound(unicodeInput);
+    const serialized = JSON.stringify(buildOpenAiGradingRequest(unicodeInput, 'gpt-5-nano'));
+
+    // È esattamente la dimensione UTF-8 dell'esatto payload serializzato.
+    expect(bound).toBe(Buffer.byteLength(serialized, 'utf8'));
+    // Finito, intero e positivo.
+    expect(Number.isFinite(bound)).toBe(true);
+    expect(Number.isInteger(bound)).toBe(true);
+    expect(bound).toBeGreaterThan(0);
+    expect(bound).toBeGreaterThanOrEqual(serialized.length);
+    // Per contenuto non-ASCII il bound NON coincide con String.length (UTF-16):
+    // i byte UTF-8 sono strettamente di più, quindi il bound è conservativo.
+    if (serialized.split('').some((ch) => ch.charCodeAt(0) > 127)) {
+      expect(bound).toBeGreaterThan(serialized.length);
+    }
+    // Nessuna chiamata provider: è solo un calcolo sul payload.
+  });
+
   it('uses one transport call for all open questions and propagates token usage', async () => {
     const send = vi.fn(async () => ({
       outputText: validOutput(),
