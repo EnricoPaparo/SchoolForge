@@ -15,6 +15,7 @@ import { createConfiguredAiGrader } from './aiCorrectionProvider.js';
 import { parseAiRuntimeConfig, type AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import {
   AI_RUN_CONTRACT_VERSION,
+  AI_RUN_TIMEOUT_SECONDS,
   runExecution,
   runPreview,
   type CommitSubmissionInput,
@@ -25,6 +26,7 @@ import {
   type ExistingEvaluation,
   type PersistedRun,
   type PersistedSubmissionResult,
+  type RunRetryTelemetry,
   type SubmissionData,
   type SubmissionOutcome,
   type ReconcileBudgetInput,
@@ -415,7 +417,8 @@ function readPersistedRun(data: Record<string, unknown>): PersistedRun | null {
     Number(data.tokensEstimated) < 0 ||
     !Number.isInteger(data.tokensActual) ||
     Number(data.tokensActual) < 0 ||
-    data.cost !== 0 ||
+    !Number.isInteger(data.cost) ||
+    Number(data.cost) < 0 ||
     !Array.isArray(data.resultOrdinals)
   ) {
     return null;
@@ -454,7 +457,32 @@ function readPersistedRun(data: Record<string, unknown>): PersistedRun | null {
     tokensActual: num(data.tokensActual),
     costActualMicroUsd: num(data.costActualMicroUsd),
     costReservationMicroUsd: num(data.costReservationMicroUsd),
+    costSettledMicroUsd: num(data.costSettledMicroUsd),
+    retry: readRetryTelemetry(data.retry),
     resultOrdinals,
+  };
+}
+
+/** Legge in modo difensivo la telemetria retry persistita (aggregati non negativi). */
+function readRetryTelemetry(raw: unknown): RunRetryTelemetry {
+  const empty: RunRetryTelemetry = {
+    attemptsTotal: 0,
+    retriesTotal: 0,
+    retryReasonCodes: [],
+    retryDelayTotalMs: 0,
+    unknownBillingAttempts: 0,
+  };
+  if (typeof raw !== 'object' || raw === null) return empty;
+  const r = raw as Record<string, unknown>;
+  const n = (v: unknown): number => (typeof v === 'number' && v >= 0 ? v : 0);
+  return {
+    attemptsTotal: n(r.attemptsTotal),
+    retriesTotal: n(r.retriesTotal),
+    retryReasonCodes: Array.isArray(r.retryReasonCodes)
+      ? r.retryReasonCodes.filter((c): c is string => typeof c === 'string')
+      : [],
+    retryDelayTotalMs: n(r.retryDelayTotalMs),
+    unknownBillingAttempts: n(r.unknownBillingAttempts),
   };
 }
 
@@ -566,6 +594,9 @@ function finishRun(db: Firestore): EngineWritePorts['finishRun'] {
           tokensActual: run.tokensActual,
           costActualMicroUsd: run.costActualMicroUsd,
           costReservationMicroUsd: run.costReservationMicroUsd,
+          // M5-05D2B-2 — costo prudenziale contabilizzato + telemetria retry.
+          costSettledMicroUsd: run.costSettledMicroUsd,
+          retry: run.retry,
           cost: run.costActualMicroUsd,
           resultOrdinals: run.resultOrdinals,
         },
@@ -794,6 +825,9 @@ export const aiCorrectionRun = onCall(
     region: AI_GATEWAY_REGION,
     minInstances: 0,
     maxInstances: 3,
+    // M5-05D2B-2 — timeout **esplicito** coerente con deadline/lease: il retry può
+    // allungare il run, non lo si lascia al default della piattaforma.
+    timeoutSeconds: AI_RUN_TIMEOUT_SECONDS,
     secrets: [OPENAI_API_KEY],
   },
   (request) =>
@@ -813,6 +847,16 @@ export const aiCorrectionRun = onCall(
             // Questa lettura avviene solo quando il motore invoca la factory,
             // dopo config/kill switch/classificazione/limiti.
             openAiApiKey: mode === 'openai' ? readOpenAiSecret() : undefined,
+            // M5-05D2B-2 — retry/timeout dalla config runtime validata (unica fonte
+            // del numero di retry; ceiling DEV: retry ≤ 1, timeout ≤ 60 s).
+            ...(runtimeConfig
+              ? {
+                  retry: {
+                    maxRetries: runtimeConfig.limits.maxApplicationRetries,
+                    attemptTimeoutMs: runtimeConfig.limits.attemptTimeoutMs,
+                  },
+                }
+              : {}),
           });
         },
       });

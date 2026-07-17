@@ -1,14 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AiGraderInvalidOutputError, type AiGraderInput } from './aiCorrectionGatewayCore.js';
 import {
+  AiGraderFailure,
+  AiGraderInvalidOutputError,
+  type AiGraderInput,
+} from './aiCorrectionGatewayCore.js';
+import {
+  DEFAULT_OPENAI_RETRY_POLICY,
   OPENAI_ATTEMPT_TIMEOUT_MS,
   OpenAiGrader,
   OpenAiSdkTransport,
   OpenAiTransportError,
+  abortableSleep,
   buildOpenAiGradingRequest,
+  type OpenAiGraderDeps,
   type OpenAiStructuredRequest,
   type OpenAiTransport,
+  type OpenAiTransportResponse,
 } from './openAiGrader.js';
+import type { RetryPolicy } from './openAiRetryPolicy.js';
 
 const input: AiGraderInput = {
   requestId: 'request-test-001',
@@ -208,5 +217,236 @@ describe('OpenAI timeout and retry boundaries', () => {
       maxRetries: 0,
       signal: controller.signal,
     });
+  });
+});
+
+// ── M5-05D2B-2 — retry applicativo unico (backoff/jitter/Retry-After/deadline) ──
+
+const TEST_POLICY: RetryPolicy = {
+  maxRetries: 1,
+  attemptTimeoutMs: 60_000,
+  baseDelayMs: 500,
+  maxDelayMs: 4_000,
+  maxRetryAfterMs: 8_000,
+};
+
+function okResponse(): OpenAiTransportResponse {
+  return {
+    outputText: validOutput(),
+    usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+  };
+}
+
+/** Grader con transport a sequenza controllata e sleep/random/now iniettati. */
+function retryGrader(
+  steps: Array<() => Promise<OpenAiTransportResponse>>,
+  deps: Partial<OpenAiGraderDeps> = {},
+) {
+  let i = 0;
+  const send = vi.fn(async () => {
+    const step = steps[Math.min(i, steps.length - 1)]!;
+    i++;
+    return step();
+  });
+  const sleep = vi.fn(async () => {});
+  const grader = new OpenAiGrader(
+    'gpt-5-nano',
+    { send },
+    {
+      policy: TEST_POLICY,
+      now: () => 0,
+      sleep,
+      random: () => 0.5,
+      ...deps,
+    },
+  );
+  return { grader, send, sleep };
+}
+
+const fail =
+  (opts: { transient: boolean; status?: number; retryAfterMs?: number; billingRisk?: boolean }) =>
+  () =>
+    Promise.reject(new OpenAiTransportError('boom', opts));
+
+describe('OpenAiGrader — single application retry policy (M5-05D2B-2)', () => {
+  it('retries a transient error once then succeeds, reporting attempt stats', async () => {
+    const { grader, send, sleep } = retryGrader([
+      fail({ transient: true, status: 500, billingRisk: true }),
+      okResponse,
+    ]);
+    const out = await grader.grade(input);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(250, undefined); // backoff 500*0.5
+    expect(out.attempts).toEqual({
+      attemptsTotal: 2,
+      retriesTotal: 1,
+      retryReasonCodes: ['http_5xx'],
+      retryDelayTotalMs: 250,
+      unknownBillingAttempts: 1, // il 5xx può aver generato costo
+    });
+  });
+
+  it.each([
+    ['connection', { transient: true }],
+    ['http 408', { transient: true, status: 408 }],
+    ['http 409', { transient: true, status: 409 }],
+    ['http 429', { transient: true, status: 429 }],
+    ['http 503', { transient: true, status: 503 }],
+  ])('retries %s (transient)', async (_n, opts) => {
+    const { grader, send } = retryGrader([fail(opts), okResponse]);
+    await grader.grade(input);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['http 400', 400],
+    ['http 401', 401],
+    ['http 403', 403],
+    ['http 404', 404],
+    ['http 422', 422],
+  ])('does not retry %s (permanent)', async (_n, status) => {
+    const { grader, send, sleep } = retryGrader([fail({ transient: false, status })]);
+    await expect(grader.grade(input)).rejects.toBeInstanceOf(AiGraderFailure);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('does not retry an unknown (non-transient) error', async () => {
+    const { grader, send } = retryGrader([() => Promise.reject(new Error('mystery'))]);
+    await expect(grader.grade(input)).rejects.toBeInstanceOf(AiGraderFailure);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('config retry=0 makes exactly one attempt (no retry)', async () => {
+    const { grader, send, sleep } = retryGrader(
+      [fail({ transient: true, status: 500 }), okResponse],
+      {
+        policy: { ...TEST_POLICY, maxRetries: 0 },
+      },
+    );
+    await expect(grader.grade(input)).rejects.toBeInstanceOf(AiGraderFailure);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('config retry=1 makes at most two attempts (no third)', async () => {
+    const { grader, send } = retryGrader([
+      fail({ transient: true, status: 500 }),
+      fail({ transient: true, status: 500 }),
+      okResponse,
+    ]);
+    await expect(grader.grade(input)).rejects.toBeInstanceOf(AiGraderFailure);
+    expect(send).toHaveBeenCalledTimes(2); // mai un terzo tentativo
+  });
+
+  it('honors a Retry-After within the cap (sleeps exactly that long)', async () => {
+    const { grader, sleep } = retryGrader([
+      fail({ transient: true, status: 429, retryAfterMs: 2000 }),
+      okResponse,
+    ]);
+    await grader.grade(input);
+    expect(sleep).toHaveBeenCalledWith(2000, undefined);
+  });
+
+  it('stops auto-retry when Retry-After exceeds the cap (manually retryable)', async () => {
+    const { grader, send, sleep } = retryGrader([
+      fail({ transient: true, status: 429, retryAfterMs: 30_000 }),
+    ]);
+    const err = await grader.grade(input).catch((e) => e);
+    expect(err).toBeInstanceOf(AiGraderFailure);
+    expect((err as AiGraderFailure).retryAfterExceeded).toBe(true);
+    expect((err as AiGraderFailure).reasonCode).toBe('retry_after_exceeded');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('does not start a new attempt past the overall deadline (deadline_exceeded)', async () => {
+    // deadline < attemptTimeout ⇒ nemmeno il primo tentativo parte.
+    const { grader, send } = retryGrader([okResponse], { now: () => 0 });
+    const err = await grader.grade(input, { deadlineMs: 1_000 }).catch((e) => e);
+    expect(err).toBeInstanceOf(AiGraderFailure);
+    expect((err as AiGraderFailure).reasonCode).toBe('deadline_exceeded');
+    expect((err as AiGraderFailure).attempts.attemptsTotal).toBe(0);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('does not retry when the remaining deadline cannot fit a second attempt', async () => {
+    // Primo tentativo parte (deadline ≥ attemptTimeout), ma non c'è tempo per il retry.
+    const { grader, send, sleep } = retryGrader([
+      fail({ transient: true, status: 500 }),
+      okResponse,
+    ]);
+    await expect(grader.grade(input, { deadlineMs: 60_100 })).rejects.toBeInstanceOf(
+      AiGraderFailure,
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('classifies billing risk: connection/429 = 0 unknown, 5xx/timeout = 1', async () => {
+    const conn = retryGrader([fail({ transient: true, billingRisk: false }), okResponse]);
+    const c = await conn.grader.grade(input);
+    expect(c.attempts!.unknownBillingAttempts).toBe(0);
+
+    const server = retryGrader([
+      fail({ transient: true, status: 500, billingRisk: true }),
+      okResponse,
+    ]);
+    const s = await server.grader.grade(input);
+    expect(s.attempts!.unknownBillingAttempts).toBe(1);
+  });
+
+  it('propagates billable usage + attempts on invalid output without retrying', async () => {
+    const { grader, send } = retryGrader([
+      () =>
+        Promise.resolve({
+          outputText: '{ bad',
+          usage: { inputTokens: 300, outputTokens: 60, totalTokens: 360 },
+        }),
+    ]);
+    const err = await grader.grade(input).catch((e) => e);
+    expect(err).toBeInstanceOf(AiGraderInvalidOutputError);
+    expect((err as AiGraderInvalidOutputError).usage).toEqual({
+      tokens: 360,
+      inputTokens: 300,
+      outputTokens: 60,
+    });
+    expect((err as AiGraderInvalidOutputError).attempts?.attemptsTotal).toBe(1);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('abortableSleep (M5-05D2B-2)', () => {
+  it('resolves after the delay and leaves no pending timer', async () => {
+    vi.useFakeTimers();
+    const p = abortableSleep(1000);
+    vi.advanceTimersByTime(1000);
+    await expect(p).resolves.toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('rejects immediately if the signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(abortableSleep(1000, controller.signal)).rejects.toThrow();
+  });
+
+  it('rejects and clears the timer when aborted mid-sleep', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const p = abortableSleep(5000, controller.signal);
+    controller.abort();
+    await expect(p).rejects.toThrow();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+});
+
+describe('DEFAULT_OPENAI_RETRY_POLICY', () => {
+  it('caps at one retry and 60s per attempt', () => {
+    expect(DEFAULT_OPENAI_RETRY_POLICY.maxRetries).toBe(1);
+    expect(DEFAULT_OPENAI_RETRY_POLICY.attemptTimeoutMs).toBe(OPENAI_ATTEMPT_TIMEOUT_MS);
   });
 });

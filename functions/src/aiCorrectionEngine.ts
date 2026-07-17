@@ -20,6 +20,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   authorizeAndValidate,
   AiGatewayError,
+  AiGraderFailure,
   AiGraderInvalidOutputError,
   buildMockGeneralFeedback,
   validateGeneralFeedback,
@@ -28,6 +29,7 @@ import {
   type AiCorrectionRequest,
   type AiEnabledFeatureMode,
   type AiGrader,
+  type AiGraderAttemptStats,
   type AiGraderInput,
 } from './aiCorrectionGatewayCore.js';
 import { isRealProviderEnabled, type AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
@@ -65,12 +67,27 @@ export const GENERAL_FEEDBACK_TOKEN_ESTIMATE = Math.ceil(
   MAX_GENERAL_FEEDBACK_CHARS / CHARS_PER_TOKEN,
 );
 /**
- * Durata della **lease** su `aiCorrectionRuns/{requestId}` (ms). Un tentativo
- * `running` con lease valida possiede l'esecuzione ed esclude i concorrenti; una
- * lease scaduta può essere rilevata da un nuovo tentativo (recovery di run
- * abbandonati per crash/timeout). Prudente e configurabile.
+ * M5-05D2B-2 — timeout esplicito della Function `aiCorrectionRun` (s). Un batch
+ * con retry (fino a 2 tentativi × 60 s + backoff) e concorrenza 3 può durare a
+ * lungo: il timeout **non** è lasciato al default. Coerente con deadline/lease.
  */
-export const RUN_LEASE_MS = 2 * 60 * 1000;
+export const AI_RUN_TIMEOUT_SECONDS = 540;
+/**
+ * Deadline **complessiva** monotona dell'invocazione (ms da inizio run): oltre
+ * questa non si inizia alcun nuovo tentativo provider. Lascia margine, entro il
+ * timeout della Function, per riconciliazione budget e finalizzazione del run.
+ */
+export const RUN_OVERALL_DEADLINE_MS = 500_000;
+/** Margine finale riservato a reconcileBudget + finishRun dopo la deadline. */
+export const RUN_FINALIZE_MARGIN_MS = 20_000;
+/**
+ * Durata della **lease** su `aiCorrectionRuns/{requestId}` (ms). Deve **coprire
+ * l'intera invocazione autorizzata** (fino al timeout della Function) così la
+ * lease non scade mentre il worker titolare sta ancora eseguendo un tentativo
+ * consentito; una lease scaduta abilita il takeover di run abbandonati (crash).
+ * M5-05D2B-2 la porta da 2 a 9 minuti perché il retry può allungare il run.
+ */
+export const RUN_LEASE_MS = AI_RUN_TIMEOUT_SECONDS * 1000;
 /** Contratto privacy-minimal dei nuovi `aiCorrectionRuns`. */
 export const AI_RUN_CONTRACT_VERSION = 2 as const;
 /** Retention DEV tecnica provvisoria, in attesa di conferma HG-M5-4. */
@@ -145,7 +162,13 @@ export type ExclusionCode =
   | 'nothing_to_grade'
   | 'too_large'
   | 'changed_since_preview'
-  | 'write_error';
+  | 'write_error'
+  // M5-05D2B-2 — esiti tecnici del provider reale (retry/deadline), privacy-safe.
+  | 'deadline_exceeded'
+  | 'rate_limited'
+  | 'provider_timeout'
+  | 'provider_unavailable'
+  | 'retry_after_exceeded';
 
 export type SubmissionOutcome = 'succeeded' | 'partial' | 'excluded' | 'failed';
 
@@ -227,7 +250,25 @@ export interface AiCorrectionRunResponse extends CostEstimateFields, CostActualF
    * `costActualMicroUsd ≤ costReservationMicroUsd`. 0 su mock/sole-chiuse.
    */
   costReservationMicroUsd: number;
+  /**
+   * M5-05D2B-2 — costo **contabilizzato prudenziale** in micro-USD: costo
+   * effettivo noto + tetto prudente dei tentativi dal costo **incerto** (timeout/
+   * abort/5xx dopo l'invio senza usage noto). È il valore addebitato al ledger.
+   * Invariante: `costActualMicroUsd ≤ costSettledMicroUsd ≤ costReservationMicroUsd`.
+   */
+  costSettledMicroUsd: number;
+  /** M5-05D2B-2 — telemetria tecnica aggregata dei retry (privacy-safe). */
+  retry: RunRetryTelemetry;
   results: SubmissionResult[];
+}
+
+/** Telemetria aggregata dei tentativi/retry di un'operazione (nessun dato personale). */
+export interface RunRetryTelemetry {
+  attemptsTotal: number;
+  retriesTotal: number;
+  retryReasonCodes: string[];
+  retryDelayTotalMs: number;
+  unknownBillingAttempts: number;
 }
 
 export type RunStatus = 'running' | 'completed' | 'partial' | 'failed';
@@ -606,6 +647,9 @@ export interface PersistedRun {
   tokensActual: number;
   costActualMicroUsd: number;
   costReservationMicroUsd: number;
+  // M5-05D2B-2 — costo prudenziale contabilizzato + telemetria retry aggregata.
+  costSettledMicroUsd: number;
+  retry: RunRetryTelemetry;
   resultOrdinals: PersistedSubmissionResult[];
 }
 
@@ -915,12 +959,30 @@ function buildGraderInput(
  * ≤ bound, vale sempre `costActualMicroUsd ≤ reservedMicroUsd` per ogni risposta
  * valida entro i limiti consentiti.
  */
+/** Tetto **per singolo tentativo** (input upper bound + max output) di una consegna. */
+function perAttemptBoundTokens(
+  grader: AiGrader,
+  graderInput: AiGraderInput,
+): { inputTokens: number; outputTokens: number } {
+  return {
+    inputTokens: grader.reservationInputTokenUpperBound?.(graderInput) ?? 0,
+    outputTokens: grader.maxOutputTokensPerCall ?? 0,
+  };
+}
+
+/**
+ * M5-05D2B-2 — il tetto di prenotazione copre **tutti** i tentativi potenzialmente
+ * fatturabili: `maxAttemptsPerCall = maxApplicationRetries + 1`. Con retry=1 la
+ * prenotazione iniziale copre già i due tentativi; non si prenota altro tra primo
+ * e secondo tentativo. Invariante: costo contabilizzato ≤ prenotazione.
+ */
 function computeReservationBoundMicroUsd(
   runtimeConfig: AiRuntimeConfig,
   eligibleWithOpen: ClassifiedPreflightItem[],
   byOrder: Map<number, TeacherQuestion>,
   request: AiCorrectionRequest,
   grader: AiGrader,
+  maxAttemptsPerCall: number,
 ): number {
   let inputTokens = 0;
   let outputTokens = 0;
@@ -936,8 +998,9 @@ function computeReservationBoundMicroUsd(
       eligible.totalMaxPoints,
       eligible.totalMaxPoints,
     );
-    inputTokens += grader.reservationInputTokenUpperBound?.(graderInput) ?? 0;
-    outputTokens += grader.maxOutputTokensPerCall ?? 0;
+    const bound = perAttemptBoundTokens(grader, graderInput);
+    inputTokens += bound.inputTokens * maxAttemptsPerCall;
+    outputTokens += bound.outputTokens * maxAttemptsPerCall;
   }
   return (
     estimateCostBreakdown(
@@ -1072,6 +1135,12 @@ export interface RunDeps extends AiCorrectionAuthDeps {
   loadRuntimeConfig?: LoadRuntimeConfig;
   /** Clock server-side iniettabile; default `Date.now`. */
   now?: () => number;
+  /**
+   * M5-05D2B-2 — segnale di annullamento opzionale dell'intera operazione
+   * (deadline della Function / perdita lease): propagato al grader reale, che non
+   * inizia nuovi tentativi se abortito.
+   */
+  abortSignal?: AbortSignal;
 }
 
 function persistRunResponse(
@@ -1094,6 +1163,8 @@ function persistRunResponse(
     tokensActual: response.totalTokensActual,
     costActualMicroUsd: response.costActualMicroUsd,
     costReservationMicroUsd: response.costReservationMicroUsd,
+    costSettledMicroUsd: response.costSettledMicroUsd,
+    retry: response.retry,
     resultOrdinals: response.results.map((result) => {
       const ordinal = ordinalBySubmissionId.get(result.submissionId);
       if (ordinal === undefined) {
@@ -1161,6 +1232,8 @@ function replayPersistedRun(
     costActualMicroUsd: persisted.costActualMicroUsd,
     costActual: microUsdToUsd(persisted.costActualMicroUsd),
     costReservationMicroUsd: persisted.costReservationMicroUsd,
+    costSettledMicroUsd: persisted.costSettledMicroUsd,
+    retry: persisted.retry,
     results,
   };
 }
@@ -1284,6 +1357,12 @@ export async function runExecution(
       item.classification.eligible.openOrders.length > 0,
   );
 
+  // M5-05D2B-2 — tentativi massimi per chiamata (retry incluso) e deadline
+  // complessiva monotona: nessun tentativo provider inizia oltre la deadline, che
+  // lascia margine a reconcile/finish entro il timeout della Function.
+  const maxAttemptsPerCall = runtimeConfig ? runtimeConfig.limits.maxApplicationRetries + 1 : 1;
+  const runDeadlineMs = nowMs + RUN_OVERALL_DEADLINE_MS - RUN_FINALIZE_MARGIN_MS;
+
   let budgetReserved = false;
   let reservationCostMicroUsd = 0;
   if (runtimeConfig && eligibleWithOpen.length > 0) {
@@ -1312,6 +1391,7 @@ export async function runExecution(
       byOrder,
       request,
       grader,
+      maxAttemptsPerCall,
     );
     const reservation = await deps.ports.reserveBudget({
       requestId: request.requestId,
@@ -1379,6 +1459,8 @@ export async function runExecution(
           },
           estimate: { inputTokens: 0, outputTokens: 0 },
           actual: { inputTokens: 0, outputTokens: 0 },
+          settledBound: { inputTokens: 0, outputTokens: 0 },
+          attempts: EMPTY_ATTEMPT_STATS,
         };
       }
       return gradeEligible(submissionId, classification.eligible, {
@@ -1389,6 +1471,8 @@ export async function runExecution(
         byOrder,
         grader,
         commit: deps.ports.commitSubmission,
+        deadlineMs: runtimeConfig ? runDeadlineMs : undefined,
+        signal: deps.abortSignal,
       });
     },
   );
@@ -1402,6 +1486,16 @@ export async function runExecution(
   let outputTokensEstimated = 0;
   let inputTokensActual = 0;
   let outputTokensActual = 0;
+  // M5-05D2B-2 — token dal costo **incerto** (bound prudente) + telemetria retry.
+  let settledInputTokens = 0;
+  let settledOutputTokens = 0;
+  const retry: RunRetryTelemetry = {
+    attemptsTotal: 0,
+    retriesTotal: 0,
+    retryReasonCodes: [],
+    retryDelayTotalMs: 0,
+    unknownBillingAttempts: 0,
+  };
   const results: SubmissionResult[] = [];
   for (const o of outcomes) {
     const r = o.result;
@@ -1435,6 +1529,13 @@ export async function runExecution(
     outputTokensEstimated += o.estimate.outputTokens;
     inputTokensActual += o.actual.inputTokens;
     outputTokensActual += o.actual.outputTokens;
+    settledInputTokens += o.settledBound.inputTokens;
+    settledOutputTokens += o.settledBound.outputTokens;
+    retry.attemptsTotal += o.attempts.attemptsTotal;
+    retry.retriesTotal += o.attempts.retriesTotal;
+    retry.retryReasonCodes.push(...o.attempts.retryReasonCodes);
+    retry.retryDelayTotalMs += o.attempts.retryDelayTotalMs;
+    retry.unknownBillingAttempts += o.attempts.unknownBillingAttempts;
   }
 
   const status: RunStatus =
@@ -1445,9 +1546,7 @@ export async function runExecution(
         : 'completed';
 
   // M5-05D2B-1 — costo **effettivo** dai token realmente riportati dal provider,
-  // `nearest`. Mock/sole-chiuse: 0/0/0 → costo 0 (mai un actual inventato). Anche
-  // un output rifiutato che portava usage fatturabile è già stato contabilizzato
-  // in `actual` a monte, senza salvare punteggi/feedback invalidi.
+  // `nearest`. Mock/sole-chiuse: 0/0/0 → costo 0 (mai un actual inventato).
   const totalTokensEstimated = inputTokensEstimated + outputTokensEstimated;
   const totalTokensActual = inputTokensActual + outputTokensActual;
   const costEstimatedMicroUsd = runtimeConfig
@@ -1466,6 +1565,22 @@ export async function runExecution(
         runtimeConfig.model,
       ) ?? 0)
     : 0;
+  // M5-05D2B-2 — costo **contabilizzato prudenziale**: effettivo noto + tetto
+  // (`ceil`, conservativo) dei tentativi dal costo incerto, mai oltre la
+  // prenotazione. È il valore che verrà addebitato al ledger.
+  const uncertainBoundMicroUsd = runtimeConfig
+    ? (estimateCostBreakdown(
+        settledInputTokens,
+        settledOutputTokens,
+        runtimeConfig.priceListVersion,
+        runtimeConfig.model,
+      )?.costMicroUsd ?? 0)
+    : 0;
+  const rawSettledMicroUsd = costActualMicroUsd + uncertainBoundMicroUsd;
+  const costSettledMicroUsd =
+    reservationCostMicroUsd > 0
+      ? Math.min(rawSettledMicroUsd, reservationCostMicroUsd)
+      : rawSettledMicroUsd;
 
   const response: AiCorrectionRunResponse = {
     mode,
@@ -1488,6 +1603,8 @@ export async function runExecution(
     costActualMicroUsd,
     costActual: microUsdToUsd(costActualMicroUsd),
     costReservationMicroUsd: reservationCostMicroUsd,
+    costSettledMicroUsd,
+    retry,
     results,
   };
 
@@ -1499,8 +1616,10 @@ export async function runExecution(
   // usa il clock corrente (non un timestamp catturato prima di preflight lenti).
   if (budgetReserved && deps.ports.reconcileBudget) {
     await deps.ports.reconcileBudget({
+      // M5-05D2B-2 — addebita il costo **prudenziale** (effettivo noto + tetto dei
+      // tentativi incerti), mai oltre la prenotazione: mai sottocontabilizzare.
       requestId: request.requestId,
-      actualMicroUsd: costActualMicroUsd,
+      actualMicroUsd: costSettledMicroUsd,
       budgetMicroUsd,
       monthKey: reservationMonthKey,
       nowMs: (deps.now ?? Date.now)(),
@@ -1516,6 +1635,15 @@ export async function runExecution(
   return response;
 }
 
+/** Statistiche tentativi "vuote" (mock/sole-chiuse/escluse: nessun provider). */
+const EMPTY_ATTEMPT_STATS: AiGraderAttemptStats = {
+  attemptsTotal: 0,
+  retriesTotal: 0,
+  retryReasonCodes: [],
+  retryDelayTotalMs: 0,
+  unknownBillingAttempts: 0,
+};
+
 /** Esito interno per consegna: risultato pubblico + accounting token stima/effettivo. */
 interface GradeOutcome {
   result: SubmissionResult;
@@ -1523,6 +1651,13 @@ interface GradeOutcome {
   estimate: { inputTokens: number; outputTokens: number };
   /** Token REALI consumati dal provider (0/0 in modalità mock o senza usage). */
   actual: { inputTokens: number; outputTokens: number };
+  /**
+   * M5-05D2B-2 — tetto prudente dei tentativi dal costo **incerto** di questa
+   * consegna (0/0 se nessun tentativo incerto): `unknownBillingAttempts × bound`.
+   */
+  settledBound: { inputTokens: number; outputTokens: number };
+  /** Statistiche aggregate dei tentativi di questa consegna. */
+  attempts: AiGraderAttemptStats;
 }
 
 /**
@@ -1560,6 +1695,14 @@ function lockedResponse(
     costActualMicroUsd: 0,
     costActual: 0,
     costReservationMicroUsd: 0,
+    costSettledMicroUsd: 0,
+    retry: {
+      attemptsTotal: 0,
+      retriesTotal: 0,
+      retryReasonCodes: [],
+      retryDelayTotalMs: 0,
+      unknownBillingAttempts: 0,
+    },
     results: [],
   };
 }
@@ -1575,9 +1718,14 @@ async function gradeEligible(
     byOrder: Map<number, TeacherQuestion>;
     grader: AiGrader;
     commit: EngineWritePorts['commitSubmission'];
+    deadlineMs?: number;
+    signal?: AbortSignal;
   },
 ): Promise<GradeOutcome> {
   const proposed = new Map<number, ValidatedScore>();
+  // M5-05D2B-2 — telemetria tentativi + tetto prudente dei tentativi incerti.
+  let attempts: AiGraderAttemptStats = EMPTY_ATTEMPT_STATS;
+  let settledBound = { inputTokens: 0, outputTokens: 0 };
   // Token aperte + quota per il feedback generale (M5-04B) **solo** se ci sono
   // domande aperte (il feedback delle consegne con sole chiuse è deterministico,
   // non passa dal provider → 0 token). Identica a preview.
@@ -1643,9 +1791,23 @@ async function gradeEligible(
       priorPoints,
       eligible.totalMaxPoints,
     );
+    // Tetto **per tentativo** (input upper bound + max output) di questa consegna:
+    // base per contabilizzare in modo prudente i tentativi dal costo incerto.
+    const attemptBound = perAttemptBoundTokens(ctx.grader, graderInput);
+    const applyAttempts = (stats: AiGraderAttemptStats | undefined): void => {
+      attempts = stats ?? SINGLE_ATTEMPT_STATS;
+      settledBound = {
+        inputTokens: attempts.unknownBillingAttempts * attemptBound.inputTokens,
+        outputTokens: attempts.unknownBillingAttempts * attemptBound.outputTokens,
+      };
+    };
     let validated = new Map<number, ValidatedScore>();
     try {
-      const output = await ctx.grader.grade(graderInput);
+      const output = await ctx.grader.grade(graderInput, {
+        ...(ctx.deadlineMs !== undefined ? { deadlineMs: ctx.deadlineMs } : {}),
+        ...(ctx.signal ? { signal: ctx.signal } : {}),
+      });
+      applyAttempts(output.attempts);
       // Usage REALE del provider, se riportato e coerente (0/0 col mock).
       billUsage(output.usage);
       // M5-04B (validazione ATOMICA): con domande aperte il feedback generale è
@@ -1670,6 +1832,8 @@ async function gradeEligible(
           },
           estimate,
           actual: { inputTokens: actualInput, outputTokens: actualOutput },
+          settledBound,
+          attempts,
         };
       }
       validated = validateGraderOutput(
@@ -1680,11 +1844,17 @@ async function gradeEligible(
       );
     } catch (error) {
       // Output invalido con usage **già fatturabile**: il costo va contabilizzato
-      // anche se non salviamo punteggi/feedback. Un errore di trasporto/timeout
-      // non porta usage → nessun costo inventato. In entrambi i casi fail atomico:
-      // nemmeno le chiuse calcolate in memoria vengono persistite.
+      // anche se non salviamo punteggi/feedback. Un fallimento finale del provider
+      // (dopo l'eventuale retry) porta usage noto + tentativi incerti prudenziali.
+      // In ogni caso fail atomico: nemmeno le chiuse calcolate vengono persistite.
+      let reason: ExclusionCode = 'write_error';
       if (error instanceof AiGraderInvalidOutputError) {
         billUsage(error.usage);
+        applyAttempts(error.attempts);
+      } else if (error instanceof AiGraderFailure) {
+        billUsage(error.usage);
+        applyAttempts(error.attempts);
+        reason = mapGraderFailureReason(error.reasonCode);
       }
       return {
         result: {
@@ -1695,10 +1865,12 @@ async function gradeEligible(
           openSkipped: eligible.openOrders.length,
           closedSkipped: 0,
           alreadyIgnored: eligible.alreadyGraded,
-          reason: 'write_error',
+          reason,
         },
         estimate,
         actual: { inputTokens: actualInput, outputTokens: actualOutput },
+        settledBound,
+        attempts,
       };
     }
     for (const order of eligible.openOrders) {
@@ -1740,6 +1912,8 @@ async function gradeEligible(
       },
       estimate,
       actual: { inputTokens: actualInput, outputTokens: actualOutput },
+      settledBound,
+      attempts,
     };
   }
 
@@ -1759,6 +1933,8 @@ async function gradeEligible(
       // stato chiamato l'usage consumato resta contabilizzato (mai un costo perso).
       estimate,
       actual: { inputTokens: actualInput, outputTokens: actualOutput },
+      settledBound,
+      attempts,
     };
   }
 
@@ -1792,7 +1968,35 @@ async function gradeEligible(
     },
     estimate,
     actual: { inputTokens: actualInput, outputTokens: actualOutput },
+    settledBound,
+    attempts,
   };
+}
+
+/** Statistiche di un singolo tentativo riuscito (nessun retry, nessun costo incerto). */
+const SINGLE_ATTEMPT_STATS: AiGraderAttemptStats = {
+  attemptsTotal: 1,
+  retriesTotal: 0,
+  retryReasonCodes: [],
+  retryDelayTotalMs: 0,
+  unknownBillingAttempts: 0,
+};
+
+/** Mappa il codice tecnico del fallimento grader in un `ExclusionCode` leggibile. */
+function mapGraderFailureReason(reasonCode: string): ExclusionCode {
+  switch (reasonCode) {
+    case 'deadline_exceeded':
+    case 'aborted':
+      return 'deadline_exceeded';
+    case 'rate_limited':
+      return 'rate_limited';
+    case 'timeout':
+      return 'provider_timeout';
+    case 'retry_after_exceeded':
+      return 'retry_after_exceeded';
+    default:
+      return 'provider_unavailable';
+  }
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────

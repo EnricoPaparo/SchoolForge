@@ -250,7 +250,7 @@ L’Italia è supportata, ma l’API first-party usa inferenza globale per Haiku
 | Token stimati per batch | 300.000 totali | Rifiuto preflight del batch |
 | Concorrenza provider | 3 chiamate | Coda server-side; nessun fan-out illimitato |
 | Timeout per tentativo | 60 secondi | Abort, stato tecnico e nessuna applicazione parziale |
-| Retry massimo | 1 | Solo rete, 408, 429 e 5xx; backoff+jitter; rispettare `Retry-After` |
+| Retry massimo | 1 | Solo rete/408/409/429/≥500; backoff+jitter; rispettare `Retry-After` (cap oltre cui retry manuale). **Implementato in M5-05D2B-2**: SDK `maxRetries: 0`, unica policy applicativa iniettabile, deadline complessiva e accounting prudente dei tentativi incerti. Human Gate **non** superato |
 | Output invalido | 0 retry automatici di riparazione | Fail closed, nessun voto applicato; retry manuale esplicito |
 | Circuit breaker | Globale + per provider | `aiGradingEnabled=false` e provider disabilitabile senza deploy applicativo, se la futura configurazione lo consente |
 
