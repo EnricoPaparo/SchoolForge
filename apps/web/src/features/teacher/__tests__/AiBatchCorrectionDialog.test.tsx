@@ -12,7 +12,7 @@ import type {
 } from '../../repository/corrections/aiCorrectionClient.js';
 
 /**
- * M5-03 — test del dialog batch «Correggi con IA» (solo mock).
+ * M5-03/M5-05 — test del dialog batch «Correggi con IA» (mock e OpenAI).
  *
  * Verifica: payload chiuso (solo i tre ID), preview→conferma→run con lo **stesso**
  * requestId, annulla senza run, singola chiamata a `run` con protezione
@@ -141,6 +141,29 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     expect(typeof payload.requestId).toBe('string');
     expect(payload.requestId.length).toBeGreaterThan(0);
     expect(screen.getByText('Modalità mock — costo reale 0')).toBeTruthy();
+  });
+
+  it('shows the real OpenAI mode and USD estimate without a mock label', async () => {
+    const { callables } = makeCallables(
+      () => Promise.resolve(makePreview({ mode: 'openai', costEstimated: 0.000676 })),
+      () => Promise.resolve(makeRun({ mode: 'openai' })),
+    );
+    render(
+      <AiBatchCorrectionDialog
+        verificationId={VERIFICATION_ID}
+        submissionIds={SUBMISSION_IDS}
+        callables={callables}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+
+    await screen.findByText('Elaborabili: 2');
+    expect(
+      screen.getByText('Modalità OpenAI — il costo reale sarà registrato dopo l’esecuzione'),
+    ).toBeTruthy();
+    expect(screen.getByText('Costo stimato: 0.000676 USD')).toBeTruthy();
+    expect(screen.queryByText('Modalità mock — costo reale 0')).toBeNull();
   });
 
   it('renders Annulla and the primary action inside a shared .dialog-actions row', async () => {
