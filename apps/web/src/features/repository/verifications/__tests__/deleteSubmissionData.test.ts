@@ -148,8 +148,8 @@ describe('deleteSubmissionData', () => {
       data: { ownerUid: OWNER, correctionId: SUBMISSION_ID },
     }));
     await deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb);
-    // 850 events + 1 submission = 851 mutations → 400 + 400 + 51.
-    expect(committedDeletes.map((b) => b.length)).toEqual([400, 400, 51]);
+    // Events are chunked separately; the submission graph is deleted atomically last.
+    expect(committedDeletes.map((b) => b.length)).toEqual([400, 400, 50, 1]);
     for (const batch of committedDeletes) expect(batch.length).toBeLessThanOrEqual(400);
     // Submission is in the LAST chunk.
     expect(committedDeletes.at(-1)).toContain(`submissions/${SUBMISSION_ID}`);
@@ -213,7 +213,7 @@ describe('deleteSubmissionData', () => {
     seed(`submissions/${SUBMISSION_ID}`, { studentUid: STUDENT, status: 'submitted' });
     seed(`corrections/${SUBMISSION_ID}`, { status: 'returned' });
     await expect(deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb)).rejects.toThrow(
-      /già stata restituita allo studente/i,
+      /correzione è restituita allo studente/i,
     );
     expect(committedDeletes).toHaveLength(0);
     expect(addedAudits).toHaveLength(0);
@@ -264,7 +264,7 @@ describe('deleteSubmissionData', () => {
       correctionStatus: 'returned',
     });
     await expect(deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb)).rejects.toThrow(
-      /già stata restituita allo studente/i,
+      /correzione è restituita allo studente/i,
     );
     expect(committedDeletes).toHaveLength(0);
   });
@@ -273,7 +273,7 @@ describe('deleteSubmissionData', () => {
     seed(`submissions/${SUBMISSION_ID}`, { studentUid: STUDENT, status: 'submitted' });
     seed(`submissionReceipts/${SUBMISSION_ID}`, { correctionStatus: 'returned' });
     await expect(deleteSubmissionData(SUBMISSION_ID, OWNER, fakeDb)).rejects.toThrow(
-      /già stata restituita allo studente/i,
+      /correzione è restituita allo studente/i,
     );
     expect(committedDeletes).toHaveLength(0);
   });
