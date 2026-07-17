@@ -504,6 +504,8 @@ Il grader OpenAI valuta esplicitamente la copertura degli elementi richiesti, se
 
 La UI batch accetta `teacherGuidance` opzionale (massimo 200 caratteri), inclusa nello stesso payload di ogni consegna e nella stima/prenotazione. Preview e run condividono valore e `requestId`; una modifica invalida entrambi. Il testo non è persistito nei run o nei ledger e resta subordinato alle istruzioni server-side. Le rifiniture correlate eliminano scrollbar interne nel workspace, comunicano in modo sanitizzato copy/cut/paste bloccati senza nuove scritture immediate e impediscono l'overflow del codice di consegna su viewport strette. Nessuna nuova chiamata IA, Rule, indice, schema o dipendenza.
 
+**M5-06C.** Il dialog separa configurazione, preview bloccata ed esecuzione: le indicazioni sono editabili solo prima della preview, poi mostrate in sola lettura; «Modifica indicazioni» invalida preview e `requestId` e impone un nuovo calcolo. Il run usa lo snapshot esatto confermato. Durante il run compare uno spinner CSS indeterminato accessibile, senza percentuali, polling o listener. Il prompt richiede un feedback generale realmente complessivo, senza concatenare i feedback domanda per domanda; contratto, limite e validazione atomica restano invariati. Nessuna chiamata, lettura o scrittura aggiuntiva.
+
 ## 17. Criteri di accettazione per pacchetto
 
 - **M5-00 (DoD):** documento presente e coerente; vecchia roadmap M5-A..E e contratti stale superati; README/INDEX/piano/api-contract/architettura/sicurezza/decisioni allineati senza dichiarare implementato ciò che non lo è; `pnpm format:check` verde. Nessuna modifica a codice/Rules/schema/dipendenze.
