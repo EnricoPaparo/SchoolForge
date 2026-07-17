@@ -873,8 +873,14 @@ service cloud.firestore {
       // the single trusted teacher account through settings/owner; create and
       // update keep their stricter identity checks above.
       allow read: if isOwner();
-      // M4-LIFE-02 — owner-only correction deletion (verified from the deleted doc).
-      allow delete: if isOwner() && resource.data.ownerUid == request.auth.uid;
+      // M4-LIFE-02 — owner-only correction deletion (verified from the deleted
+      // doc). M5-06B — a correction that has been returned to the student is
+      // permanent: deleting it is denied here (defence in depth behind the
+      // service preflight), so a submission can only be erased before its first
+      // return. in_progress / completed corrections stay deletable.
+      allow delete: if isOwner()
+        && resource.data.ownerUid == request.auth.uid
+        && resource.data.status != 'returned';
     }
 
     // --- correctionEvents/{eventId} (M4-01) ---
@@ -994,9 +1000,14 @@ service cloud.firestore {
         && resource.data.studentUid == request.auth.uid
         && resource.data.visibleToStudent == true;
 
-      // M4-LIFE-02 — owner-only deletion (verified from the deleted doc). The
-      // student can only ever read their own visible return, never delete it.
-      allow delete: if isOwner() && resource.data.ownerUid == request.auth.uid;
+      // M5-06B — the return projection is permanent evidence that the student
+      // saw a result: once it exists it is NEVER deleted by the normal teacher
+      // flow (reopen only hides it via visibleToStudent). Its existence is
+      // exactly what makes a submission un-deletable, so allowing its deletion
+      // would let the delete flow erase the very signal that must block it.
+      // Deletion is therefore denied outright — students never could delete it
+      // either. (The submission-delete flow never targets this path.)
+      allow delete: if false;
     }
 
     // deliveryAttempts: owner can read (for corrections/export); writes via Cloud Functions (M3)

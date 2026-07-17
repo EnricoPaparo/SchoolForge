@@ -1084,8 +1084,22 @@ export function VerificationsView() {
       await deleteSubmissionData(submissionId, ownerUid, db);
       // Update local state without reopening the monitor listener: drop the
       // deleted student's row data. The still-open watchSubmissions listener
-      // converges to the same result.
+      // converges to the same result. Also drop the row from the local
+      // selection and its correction-progress entry so «Valutate» and the batch
+      // actions stay coherent — no full-page reload, no extra listener.
       setMonitorItems((prev) => prev?.filter((m) => m.studentUid !== studentUid) ?? prev);
+      setAiSelectedUids((prev) => {
+        if (!prev.has(studentUid)) return prev;
+        const next = new Set(prev);
+        next.delete(studentUid);
+        return next;
+      });
+      setCorrectionProgress((prev) => {
+        if (!prev.has(studentUid)) return prev;
+        const next = new Map(prev);
+        next.delete(studentUid);
+        return next;
+      });
       setSubmissionDeleteTarget(null);
     } catch (err) {
       setSubmissionDeleteError(
@@ -2222,25 +2236,43 @@ export function VerificationsView() {
                                     ) : (
                                       !(item && selectedVer.status === 'closed') && '—'
                                     )}
-                                    {/* Delete a submission — only for a real,
-                                        existing submission on a CLOSED verification. */}
-                                    {item && selectedVer.status === 'closed' && (
-                                      <button
-                                        type="button"
-                                        className={styles.iconBtn}
-                                        title="Elimina consegna"
-                                        aria-label={`Elimina consegna — ${studentName}`}
-                                        disabled={deletingSubmission}
-                                        onClick={() =>
-                                          setSubmissionDeleteTarget({
-                                            studentUid: row.studentUid,
-                                            studentName,
-                                          })
-                                        }
-                                      >
-                                        <IconTrash />
-                                      </button>
-                                    )}
+                                    {/* M5-06B — delete a real submission on an
+                                        active OR closed verification, as long as
+                                        the correction was never returned. A
+                                        returned submission shows a disabled trash
+                                        with an accessible explanation (keeps the
+                                        Azioni column layout stable). Eligibility
+                                        comes from the row's own correctionStatus
+                                        mirror — no extra per-row read; the service
+                                        preflight is the authoritative gate. */}
+                                    {item &&
+                                      (item.correctionStatus === 'returned' ? (
+                                        <button
+                                          type="button"
+                                          className={styles.iconBtn}
+                                          title="La correzione è già stata restituita: la consegna non è eliminabile."
+                                          aria-label={`Consegna non eliminabile (correzione restituita) — ${studentName}`}
+                                          disabled
+                                        >
+                                          <IconTrash />
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          className={styles.iconBtn}
+                                          title="Elimina consegna"
+                                          aria-label={`Elimina consegna — ${studentName}`}
+                                          disabled={deletingSubmission}
+                                          onClick={() =>
+                                            setSubmissionDeleteTarget({
+                                              studentUid: row.studentUid,
+                                              studentName,
+                                            })
+                                          }
+                                        >
+                                          <IconTrash />
+                                        </button>
+                                      ))}
                                   </div>
                                 </td>
                               </tr>
@@ -2307,8 +2339,13 @@ export function VerificationsView() {
               Eliminare la consegna di <strong>{submissionDeleteTarget.studentName}</strong>?
             </p>
             <p className={styles.deleteDialogBody}>
-              Verranno eliminati definitivamente: la consegna, le risposte, la correzione, la
-              restituzione e lo storico della correzione. L’operazione è irreversibile.
+              Verranno eliminati definitivamente: la consegna, le risposte, la correzione e lo
+              storico della correzione. L’operazione è irreversibile.
+            </p>
+            <p className={styles.deleteDialogBody}>
+              {selectedVer?.status === 'closed'
+                ? 'La verifica resterà chiusa: eliminare la consegna non la riapre né consente un nuovo svolgimento.'
+                : 'Se la verifica è ancora disponibile per la classe, lo studente potrà svolgerla di nuovo finché resta online e visibile.'}
             </p>
             {submissionDeleteError && (
               <p role="alert" className="text-error">

@@ -2390,16 +2390,30 @@ describe('VerificationsView — delete submission (M4-LIFE-02)', () => {
     await waitFor(() => expect(screen.getByLabelText('Consegne online')).toBeTruthy());
   }
 
-  it('does NOT offer delete while the verification is still active', async () => {
+  const returnedItem = { ...submittedItem, correctionStatus: 'returned' };
+
+  it('offers delete for an eligible submission while the verification is still active (M5-06B)', async () => {
     setupDefaults();
     await renderMonitor('active', [submittedItem]);
-    expect(screen.queryByLabelText('Elimina consegna — Anna Bianchi')).toBeNull();
+    expect(screen.getByLabelText('Elimina consegna — Anna Bianchi')).toBeTruthy();
   });
 
   it('offers delete for an existing submission once the verification is closed', async () => {
     setupDefaults();
     await renderMonitor('closed', [submittedItem]);
     expect(screen.getByLabelText('Elimina consegna — Anna Bianchi')).toBeTruthy();
+  });
+
+  it('does NOT offer an actionable delete for a returned submission (disabled, explained)', async () => {
+    setupDefaults();
+    await renderMonitor('active', [returnedItem]);
+    // No enabled "Elimina consegna" affordance…
+    expect(screen.queryByLabelText('Elimina consegna — Anna Bianchi')).toBeNull();
+    // …but a disabled trash with an accessible explanation keeps the column stable.
+    const disabled = screen.getByLabelText(
+      'Consegna non eliminabile (correzione restituita) — Anna Bianchi',
+    ) as HTMLButtonElement;
+    expect(disabled.disabled).toBe(true);
   });
 
   it('requires explicit confirmation listing everything that will be removed', async () => {
@@ -2410,8 +2424,26 @@ describe('VerificationsView — delete submission (M4-LIFE-02)', () => {
     expect(
       screen.getByRole('alertdialog', { name: /conferma eliminazione consegna/i }),
     ).toBeTruthy();
-    expect(screen.getByText(/consegna, le risposte, la correzione, la restituzione/i)).toBeTruthy();
+    expect(
+      screen.getByText(/consegna, le risposte, la correzione e lo storico della correzione/i),
+    ).toBeTruthy();
     expect(mockDeleteSubmissionData).not.toHaveBeenCalled();
+  });
+
+  it('explains that the student can re-attempt when the verification is active', async () => {
+    setupDefaults();
+    await renderMonitor('active', [submittedItem]);
+    fireEvent.click(screen.getByLabelText('Elimina consegna — Anna Bianchi'));
+    expect(
+      screen.getByText(/potrà svolgerla di nuovo finché resta online e visibile/i),
+    ).toBeTruthy();
+  });
+
+  it('explains that a closed verification stays closed', async () => {
+    setupDefaults();
+    await renderMonitor('closed', [submittedItem]);
+    fireEvent.click(screen.getByLabelText('Elimina consegna — Anna Bianchi'));
+    expect(screen.getByText(/la verifica resterà chiusa/i)).toBeTruthy();
   });
 
   it('a double click on confirm triggers exactly one deletion', async () => {
