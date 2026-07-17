@@ -228,14 +228,29 @@ describe('M4-LIFE-03 — delete only after a true reopen', () => {
         verificationId: VERIFICATION_ID,
         studentUid: STUDENT_UID,
         submissionId: SUBMISSION_ID,
-        status: 'in_progress', evaluations: {}, generalFeedback: null,
-        totalPoints: 0, maxPoints: 0, percentage: null,
-        createdAt: Timestamp.now(), updatedAt: Timestamp.now(), completedAt: null, returnedAt: null, reopenCount: 1,
+        status: 'in_progress',
+        evaluations: {},
+        generalFeedback: null,
+        totalPoints: 0,
+        maxPoints: 0,
+        percentage: null,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        completedAt: null,
+        returnedAt: null,
+        reopenCount: 1,
       });
-      await setDoc(doc(db, 'correctionReturns', SUBMISSION_ID), {
-        correctionId: SUBMISSION_ID, ownerUid: OWNER_UID, verificationId: VERIFICATION_ID,
-        studentUid: STUDENT_UID, visibleToStudent: false,
-      }, { merge: true });
+      await setDoc(
+        doc(db, 'correctionReturns', SUBMISSION_ID),
+        {
+          correctionId: SUBMISSION_ID,
+          ownerUid: OWNER_UID,
+          verificationId: VERIFICATION_ID,
+          studentUid: STUDENT_UID,
+          visibleToStudent: false,
+        },
+        { merge: true },
+      );
     });
     const batch = writeBatch(ownerDb());
     batch.delete(doc(ownerDb(), 'correctionReturns', SUBMISSION_ID));
@@ -248,7 +263,11 @@ describe('M4-LIFE-03 — delete only after a true reopen', () => {
   it('rejects deleting a hidden projection without deleting its graph', async () => {
     await seedAll();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'correctionReturns', SUBMISSION_ID), { visibleToStudent: false }, { merge: true });
+      await setDoc(
+        doc(ctx.firestore(), 'correctionReturns', SUBMISSION_ID),
+        { visibleToStudent: false },
+        { merge: true },
+      );
     });
     await assertFails(deleteDoc(doc(ownerDb(), 'correctionReturns', SUBMISSION_ID)));
   });

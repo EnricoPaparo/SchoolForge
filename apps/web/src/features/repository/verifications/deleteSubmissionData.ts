@@ -80,15 +80,9 @@ export async function deleteSubmissionData(
     }
   }
 
-  const correction = correctionSnap.exists()
-    ? (correctionSnap.data() as CorrectionDoc)
-    : undefined;
-  const submission = submissionSnap.exists()
-    ? (submissionSnap.data() as SubmissionDoc)
-    : undefined;
-  const receipt = receiptSnap.exists()
-    ? (receiptSnap.data() as SubmissionReceiptDoc)
-    : undefined;
+  const correction = correctionSnap.exists() ? (correctionSnap.data() as CorrectionDoc) : undefined;
+  const submission = submissionSnap.exists() ? (submissionSnap.data() as SubmissionDoc) : undefined;
+  const receipt = receiptSnap.exists() ? (receiptSnap.data() as SubmissionReceiptDoc) : undefined;
   const correctionReturn = returnSnap.exists()
     ? (returnSnap.data() as { visibleToStudent?: unknown })
     : undefined;
