@@ -171,9 +171,10 @@ export function AiBatchCorrectionDialog({
       )}
 
       {phase === 'previewing' && (
-        <p aria-busy="true" className="state-loading">
-          Analisi delle consegne selezionate…
-        </p>
+        <div role="status" aria-live="polite" aria-busy="true" className="loading-row">
+          <span className="spinner" aria-hidden="true" />
+          <span>Calcolo della stima…</span>
+        </div>
       )}
 
       {phase === 'error' && (
@@ -240,7 +241,7 @@ export function AiBatchCorrectionDialog({
 
       {phase === 'running' && (
         <div role="status" aria-live="polite" aria-busy="true" className={styles.runningStatus}>
-          <span className={styles.spinner} aria-hidden="true" />
+          <span className="spinner" aria-hidden="true" />
           <div>
             <strong>Correzione in corso…</strong>
             <p>
