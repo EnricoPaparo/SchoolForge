@@ -17,10 +17,12 @@ import {
 import {
   availableMicroUsd,
   emptyLedger,
+  markPending,
   monthKeyFromMs,
   reconcile,
   reserve,
   utilizationState,
+  type BudgetLedgerState,
 } from './aiCorrectionBudget.js';
 
 // ── Runtime config (fail-closed + kill switch) ───────────────────────────────
@@ -325,5 +327,56 @@ describe('budget ledger (M5-05D1)', () => {
     const r = reserve(s, 'closed-only', 0, now + HOUR, now);
     expect(r.ok).toBe(true);
     expect((r as { state: typeof s }).state.reservations).toEqual({});
+  });
+});
+
+// ── Macchina a stati crash-safe della prenotazione (M5-05D2B-1) ──────────────
+
+describe('budget reservation state machine (M5-05D2B-1)', () => {
+  const FIVE = 5 * USD_MICRO;
+
+  it('markPending then reconcile within the window charges only the actual', () => {
+    let s = emptyLedger('2026-07', FIVE);
+    s = (reserve(s, 'req', 2 * USD_MICRO, 3_600_000, 0) as { state: typeof s }).state;
+    expect(s.reservations.req!.status).toBe('reserved');
+    s = markPending(s, 'req', 0);
+    expect(s.reservations.req!.status).toBe('pending');
+    s = reconcile(s, 'req', 100, 0);
+    expect(s.spentMicroUsd).toBe(100);
+    expect(s.reservations.req).toBeUndefined();
+  });
+
+  it('an expired RESERVED reservation is released (recoverable, no cost)', () => {
+    const s: BudgetLedgerState = {
+      monthKey: '2026-07',
+      budgetMicroUsd: FIVE,
+      spentMicroUsd: 0,
+      reservations: { dead: { microUsd: 4 * USD_MICRO, expiresAtMs: 500, status: 'reserved' } },
+    };
+    // Non trattiene budget da scaduta; una reserve successiva la rilascia.
+    expect(availableMicroUsd(s, 1000)).toBe(FIVE);
+    const r = reserve(s, 'fresh', 4 * USD_MICRO, 2000, 1000) as { state: BudgetLedgerState };
+    expect(r.state.spentMicroUsd).toBe(0);
+    expect(r.state.reservations.dead).toBeUndefined();
+  });
+
+  it('an expired PENDING reservation is charged at the reserved cap, never freed silently', () => {
+    const s: BudgetLedgerState = {
+      monthKey: '2026-07',
+      budgetMicroUsd: FIVE,
+      spentMicroUsd: 0,
+      reservations: { crashed: { microUsd: 2 * USD_MICRO, expiresAtMs: 500, status: 'pending' } },
+    };
+    // Una `pending` trattiene budget anche da scaduta (costo potenziale).
+    expect(availableMicroUsd(s, 1000)).toBe(FIVE - 2 * USD_MICRO);
+    // Il settlement (dentro reserve) la addebita al tetto, non la libera.
+    const r = reserve(s, 'x', USD_MICRO, 3000, 1000) as { state: BudgetLedgerState };
+    expect(r.state.spentMicroUsd).toBe(2 * USD_MICRO);
+    expect(r.state.reservations.crashed).toBeUndefined();
+  });
+
+  it('markPending is a no-op when the reservation no longer exists', () => {
+    const s = emptyLedger('2026-07', FIVE);
+    expect(markPending(s, 'missing', 0)).toEqual(s);
   });
 });

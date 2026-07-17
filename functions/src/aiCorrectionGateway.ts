@@ -36,10 +36,12 @@ import {
 } from './aiCorrectionEngine.js';
 import {
   emptyLedger,
+  markPending as markPendingLedger,
   reconcile as reconcileLedger,
   reserve as reserveLedger,
   type BudgetLedgerState,
   type BudgetReservation,
+  type ReservationStatus,
 } from './aiCorrectionBudget.js';
 
 /**
@@ -451,6 +453,7 @@ function readPersistedRun(data: Record<string, unknown>): PersistedRun | null {
     outputTokensActual: num(data.outputTokensActual),
     tokensActual: num(data.tokensActual),
     costActualMicroUsd: num(data.costActualMicroUsd),
+    costReservationMicroUsd: num(data.costReservationMicroUsd),
     resultOrdinals,
   };
 }
@@ -562,6 +565,7 @@ function finishRun(db: Firestore): EngineWritePorts['finishRun'] {
           outputTokensActual: run.outputTokensActual,
           tokensActual: run.tokensActual,
           costActualMicroUsd: run.costActualMicroUsd,
+          costReservationMicroUsd: run.costReservationMicroUsd,
           cost: run.costActualMicroUsd,
           resultOrdinals: run.resultOrdinals,
         },
@@ -591,9 +595,11 @@ function readLedgerState(
   const raw = data.reservations;
   if (raw && typeof raw === 'object') {
     for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
-      const r = value as { microUsd?: unknown; expiresAtMs?: unknown };
+      const r = value as { microUsd?: unknown; expiresAtMs?: unknown; status?: unknown };
       if (typeof r?.microUsd === 'number' && typeof r?.expiresAtMs === 'number') {
-        reservations[id] = { microUsd: r.microUsd, expiresAtMs: r.expiresAtMs };
+        // `status` assente ⇒ trattata come `reserved` (documenti storici).
+        const status: ReservationStatus = r.status === 'pending' ? 'pending' : 'reserved';
+        reservations[id] = { microUsd: r.microUsd, expiresAtMs: r.expiresAtMs, status };
       }
     }
   }
@@ -643,6 +649,28 @@ function reserveBudget(db: Firestore): NonNullable<EngineWritePorts['reserveBudg
 }
 
 /**
+ * Transizione `reserved → pending` in **una** transazione gated dalla titolarità
+ * della lease: legge prima il run doc e procede solo se `executionId` è ancora il
+ * titolare. Ritorna `true` se il worker può procedere alla chiamata provider.
+ */
+function markBudgetInvoked(db: Firestore): NonNullable<EngineWritePorts['markBudgetInvoked']> {
+  return async (input): Promise<boolean> => {
+    const runRef = db.doc(`aiCorrectionRuns/${input.requestId}`);
+    const ledgerRef = db.doc(`aiBudgetLedger/${input.monthKey}`);
+    return db.runTransaction(async (tx) => {
+      const runSnap = await tx.get(runRef);
+      if (!runSnap.exists || runSnap.data()?.executionId !== input.executionId) {
+        return false; // lease persa (takeover) → non elaborare
+      }
+      const ledgerSnap = await tx.get(ledgerRef);
+      const state = readLedgerState(ledgerSnap, input.monthKey, input.budgetMicroUsd);
+      writeLedgerState(tx, ledgerRef, markPendingLedger(state, input.requestId, input.nowMs));
+      return true;
+    });
+  };
+}
+
+/**
  * Riconciliazione in **una** transazione che legge prima il run doc e procede
  * **solo** se `executionId` possiede ancora la lease: un worker vecchio dopo un
  * takeover è un no-op e non tocca la prenotazione del nuovo worker. Idempotente.
@@ -673,6 +701,7 @@ function buildWritePorts(db: Firestore): EngineWritePorts {
     finishRun: finishRun(db),
     commitSubmission: commitSubmission(db),
     reserveBudget: reserveBudget(db),
+    markBudgetInvoked: markBudgetInvoked(db),
     reconcileBudget: reconcileBudget(db),
   };
 }
@@ -689,6 +718,7 @@ function toHttpsError(err: AiGatewayError): HttpsError {
     batch_limit_exceeded: 'resource-exhausted',
     limit_exceeded: 'resource-exhausted',
     budget_exceeded: 'resource-exhausted',
+    budget_unavailable: 'unavailable',
   };
   return new HttpsError(map[err.code], err.message, { code: err.code });
 }

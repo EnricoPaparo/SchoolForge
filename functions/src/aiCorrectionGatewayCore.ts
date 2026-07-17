@@ -32,7 +32,9 @@ export type AiGatewayErrorCode =
   | 'batch_limit_exceeded'
   // M5-05D1 — guardrail server-side prima dell'attivazione del provider reale.
   | 'limit_exceeded'
-  | 'budget_exceeded';
+  | 'budget_exceeded'
+  // M5-05D2B-1 — ledger di budget non disponibile sul percorso reale (fail-closed).
+  | 'budget_unavailable';
 
 export class AiGatewayError extends Error {
   readonly code: AiGatewayErrorCode;
@@ -339,6 +341,20 @@ export interface AiGrader {
   readonly id: string;
   /** Modello configurato, se il grader usa un provider reale. */
   readonly model?: string;
+  /**
+   * M5-05D2B-1 — tetto **massimo** di token di OUTPUT per singola chiamata
+   * (hard cap imposto al provider): l'output effettivo non può superarlo. Assente
+   * o 0 quando non applicabile (es. `MockAiGrader`, che non consuma token).
+   */
+  readonly maxOutputTokensPerCall?: number;
+  /**
+   * M5-05D2B-1 — **upper bound provabile** dei token di INPUT effettivamente
+   * fatturabili per l'**esatto** payload che verrà inviato per `input` (system
+   * prompt + schema + contenuto serializzato). Usato per prenotare un tetto
+   * conservativo: la prenotazione non è mai inferiore al costo reale della
+   * chiamata permessa. Assente/0 quando non applicabile (mock).
+   */
+  reservationInputTokenUpperBound?(input: AiGraderInput): number;
   grade(input: AiGraderInput): Promise<AiGraderOutput>;
 }
 

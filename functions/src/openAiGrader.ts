@@ -283,11 +283,25 @@ function parseAndValidateOutput(
 
 export class OpenAiGrader implements AiGrader {
   readonly id = 'openai';
+  /** Hard cap di output per chiamata: l'output fatturato non può superarlo. */
+  readonly maxOutputTokensPerCall = OPENAI_MAX_OUTPUT_TOKENS;
 
   constructor(
     readonly model: string,
     private readonly transport: OpenAiTransport,
   ) {}
+
+  /**
+   * Upper bound provabile dei token di input fatturabili: il numero di
+   * **caratteri** dell'esatta richiesta serializzata (system prompt + schema +
+   * contenuto). Un token BPE copre ≥ 1 carattere, quindi i token di input ≤
+   * caratteri del payload: la prenotazione basata su questo valore non è mai
+   * inferiore all'input realmente fatturato per la chiamata permessa.
+   */
+  reservationInputTokenUpperBound(input: AiGraderInput): number {
+    if (input.questions.length === 0) return 0;
+    return JSON.stringify(buildOpenAiGradingRequest(input, this.model)).length;
+  }
 
   async grade(input: AiGraderInput): Promise<AiGraderOutput> {
     if (input.questions.length === 0) {

@@ -221,6 +221,12 @@ export interface AiCorrectionRunResponse extends CostEstimateFields, CostActualF
   /** USD (compat dialog); micro-USD è la fonte autoritativa. */
   costEstimated: number;
   costActual: number;
+  /**
+   * M5-05D2B-1 — tetto **conservativo** realmente prenotato sul ledger (micro-USD).
+   * Distinto da `costEstimatedMicroUsd` (stima informativa UI): garantisce
+   * `costActualMicroUsd ≤ costReservationMicroUsd`. 0 su mock/sole-chiuse.
+   */
+  costReservationMicroUsd: number;
   results: SubmissionResult[];
 }
 
@@ -599,6 +605,7 @@ export interface PersistedRun {
   outputTokensActual: number;
   tokensActual: number;
   costActualMicroUsd: number;
+  costReservationMicroUsd: number;
   resultOrdinals: PersistedSubmissionResult[];
 }
 
@@ -667,6 +674,14 @@ export interface EngineWritePorts extends EngineReadPorts {
    */
   reserveBudget?: (input: ReserveBudgetInput) => Promise<ReserveBudgetResult>;
   /**
+   * M5-05D2B-1 — transizione `reserved → pending` per `requestId`, **subito prima**
+   * della prima chiamata provider, in **una transazione** gated dalla titolarità
+   * della lease (`executionId`). Ritorna `true` se questo worker è ancora il
+   * titolare (può procedere), `false` altrimenti (takeover avvenuto ⇒ non
+   * elaborare). Da qui la prenotazione non è più liberabile per sola scadenza.
+   */
+  markBudgetInvoked?: (input: MarkBudgetInvokedInput) => Promise<boolean>;
+  /**
    * M5-05D2B-1 — riconcilia la prenotazione di `requestId` col costo **effettivo**
    * (libera l'eccedenza) in **una transazione** che verifica prima la titolarità
    * della lease (`executionId`): un worker vecchio dopo un takeover è un **no-op**
@@ -688,6 +703,15 @@ export interface ReserveBudgetInput {
 export type ReserveBudgetResult =
   | { ok: true; reservedMicroUsd: number }
   | { ok: false; reason: 'budget_exceeded' };
+
+/** Input della transizione `reserved → pending` (gated dall'`executionId`). */
+export interface MarkBudgetInvokedInput {
+  requestId: string;
+  budgetMicroUsd: number;
+  monthKey: string;
+  nowMs: number;
+  executionId: string;
+}
 
 /** Input di riconciliazione budget, con `executionId` per il gate di titolarità. */
 export interface ReconcileBudgetInput {
@@ -853,6 +877,78 @@ async function buildOperationPreflight(
   };
 }
 
+/**
+ * Costruisce l'`AiGraderInput` per le aperte di una consegna. **Unico** punto di
+ * costruzione, riusato sia per il payload reale (grading) sia per il calcolo del
+ * tetto di prenotazione, così il bound stima **l'esatto** payload inviato.
+ */
+function buildGraderInput(
+  requestId: string,
+  openOrders: number[],
+  byOrder: Map<number, TeacherQuestion>,
+  answers: Record<string, SubmissionAnswer | undefined>,
+  priorPoints: number,
+  totalMaxPoints: number,
+): AiGraderInput {
+  return {
+    requestId,
+    questions: openOrders.map((order) => {
+      const q = byOrder.get(order)!;
+      const answer = answers[order.toString()];
+      return {
+        order,
+        maxPoints: q.maxPoints,
+        questionText: q.testo,
+        referenceSolution: typeof q.soluzione === 'string' ? q.soluzione : '',
+        studentAnswer: answer && answer.tipo === 'aperta' ? answer.testo : '',
+      };
+    }),
+    submissionContext: { priorPoints, totalMaxPoints },
+  };
+}
+
+/**
+ * Tetto di prenotazione **conservativo** in micro-USD sul percorso reale: per
+ * ogni consegna con aperte (una chiamata provider) somma il **massimo output**
+ * ammesso dal grader e un **upper bound provabile dell'input** dell'esatto
+ * payload. Arrotondamento `ceil`. Poiché output effettivo ≤ max e input effettivo
+ * ≤ bound, vale sempre `costActualMicroUsd ≤ reservedMicroUsd` per ogni risposta
+ * valida entro i limiti consentiti.
+ */
+function computeReservationBoundMicroUsd(
+  runtimeConfig: AiRuntimeConfig,
+  eligibleWithOpen: ClassifiedPreflightItem[],
+  byOrder: Map<number, TeacherQuestion>,
+  request: AiCorrectionRequest,
+  grader: AiGrader,
+): number {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  for (const item of eligibleWithOpen) {
+    if (item.classification.status !== 'eligible') continue;
+    const eligible = item.classification.eligible;
+    // priorPoints al massimo (numero più lungo) ⇒ resta un upper bound del payload.
+    const graderInput = buildGraderInput(
+      request.requestId,
+      eligible.openOrders,
+      byOrder,
+      item.submission?.answers ?? {},
+      eligible.totalMaxPoints,
+      eligible.totalMaxPoints,
+    );
+    inputTokens += grader.reservationInputTokenUpperBound?.(graderInput) ?? 0;
+    outputTokens += grader.maxOutputTokensPerCall ?? 0;
+  }
+  return (
+    estimateCostBreakdown(
+      inputTokens,
+      outputTokens,
+      runtimeConfig.priceListVersion,
+      runtimeConfig.model,
+    )?.costMicroUsd ?? 0
+  );
+}
+
 // ── Preview ───────────────────────────────────────────────────────────────────
 
 export interface PreviewDeps extends AiCorrectionAuthDeps {
@@ -997,6 +1093,7 @@ function persistRunResponse(
     outputTokensActual: response.outputTokensActual,
     tokensActual: response.totalTokensActual,
     costActualMicroUsd: response.costActualMicroUsd,
+    costReservationMicroUsd: response.costReservationMicroUsd,
     resultOrdinals: response.results.map((result) => {
       const ordinal = ordinalBySubmissionId.get(result.submissionId);
       if (ordinal === undefined) {
@@ -1063,6 +1160,7 @@ function replayPersistedRun(
     totalTokensActual: persisted.tokensActual,
     costActualMicroUsd: persisted.costActualMicroUsd,
     costActual: microUsdToUsd(persisted.costActualMicroUsd),
+    costReservationMicroUsd: persisted.costReservationMicroUsd,
     results,
   };
 }
@@ -1164,38 +1262,6 @@ export async function runExecution(
   }
   // begin.state === 'acquired' → questo executionId possiede la lease.
 
-  // M5-05D2B-1 — prenotazione budget **atomica** PRIMA di qualsiasi chiamata
-  // provider. Base conservativa: stima di costo (ceil) sulla selezione eleggibile
-  // del preflight. Solo percorso reale con importo positivo: mock, `disabled` e
-  // operazioni sole-chiuse (stima 0) NON prenotano (nessuna prenotazione non
-  // necessaria). Budget insufficiente ⇒ `budget_exceeded` prima del grader; la
-  // lease acquisita scade (recovery senza scheduler) e un retry potrà riprovare.
-  const reservationMonthKey = monthKeyFromMs(nowMs);
-  const budgetMicroUsd = runtimeConfig
-    ? Math.round(runtimeConfig.budget.monthlyUsd * USD_MICRO)
-    : 0;
-  const reservationEstimate = buildCostEstimateFields(
-    runtimeConfig,
-    preflight?.estimate ?? { inputTokens: 0, outputTokens: 0 },
-  );
-  let budgetReserved = false;
-  if (runtimeConfig && deps.ports.reserveBudget && reservationEstimate.costEstimatedMicroUsd > 0) {
-    const reservation = await deps.ports.reserveBudget({
-      requestId: request.requestId,
-      amountMicroUsd: reservationEstimate.costEstimatedMicroUsd,
-      budgetMicroUsd,
-      monthKey: reservationMonthKey,
-      nowMs,
-      // La prenotazione scade con la finestra di lease: crash/timeout la rendono
-      // recuperabile senza job esterni.
-      expiresAtMs: nowMs + RUN_LEASE_MS,
-    });
-    if (!reservation.ok) {
-      throw new AiGatewayError('budget_exceeded', 'Budget mensile della correzione IA esaurito.');
-    }
-    budgetReserved = true;
-  }
-
   const verification = preflight ? null : await deps.ports.loadVerification(request.verificationId);
   const teacherQuestions = preflight
     ? preflight.teacherQuestions
@@ -1204,6 +1270,76 @@ export async function runExecution(
   const preflightBySubmission = new Map(
     preflight?.classifications.map((item) => [item.submissionId, item]) ?? [],
   );
+
+  // ── M5-05D2B-1 — contratto economico del percorso provider reale ────────────
+  const reservationMonthKey = monthKeyFromMs(nowMs);
+  const budgetMicroUsd = runtimeConfig
+    ? Math.round(runtimeConfig.budget.monthlyUsd * USD_MICRO)
+    : 0;
+  // Consegne che genereranno **una chiamata provider** (hanno aperte). Le
+  // sole-chiuse non chiamano il provider → costo 0 → nessuna prenotazione.
+  const eligibleWithOpen = (preflight?.classifications ?? []).filter(
+    (item) =>
+      item.classification.status === 'eligible' &&
+      item.classification.eligible.openOrders.length > 0,
+  );
+
+  let budgetReserved = false;
+  let reservationCostMicroUsd = 0;
+  if (runtimeConfig && eligibleWithOpen.length > 0) {
+    // **Fail-closed**: sul percorso reale con lavoro aperto, porte di budget e
+    // bounds del grader sono **obbligatori**. Se mancano si fallisce **prima** di
+    // costruire/chiamare il provider: nessuna correzione, nessun falso successo,
+    // nessuna spesa non tracciata.
+    if (!deps.ports.reserveBudget || !deps.ports.reconcileBudget || !deps.ports.markBudgetInvoked) {
+      throw new AiGatewayError(
+        'budget_unavailable',
+        'Ledger di budget non disponibile: correzione IA reale non eseguibile.',
+      );
+    }
+    if (!grader.maxOutputTokensPerCall || !grader.reservationInputTokenUpperBound) {
+      throw new AiGatewayError(
+        'budget_unavailable',
+        'Il grader non espone un tetto di costo verificabile: prenotazione impossibile.',
+      );
+    }
+    // Tetto **conservativo** realmente prenotato: per ogni chiamata, il massimo
+    // output ammesso + un upper bound provabile dell'input dell'esatto payload.
+    // Distinto dalla stima informativa mostrata all'utente.
+    reservationCostMicroUsd = computeReservationBoundMicroUsd(
+      runtimeConfig,
+      eligibleWithOpen,
+      byOrder,
+      request,
+      grader,
+    );
+    const reservation = await deps.ports.reserveBudget({
+      requestId: request.requestId,
+      amountMicroUsd: reservationCostMicroUsd,
+      budgetMicroUsd,
+      monthKey: reservationMonthKey,
+      nowMs,
+      // La prenotazione scade con la finestra di lease: un crash **prima** del
+      // provider (stato `reserved`) la rende recuperabile senza job esterni.
+      expiresAtMs: nowMs + RUN_LEASE_MS,
+    });
+    if (!reservation.ok) {
+      throw new AiGatewayError('budget_exceeded', 'Budget mensile della correzione IA esaurito.');
+    }
+    budgetReserved = true;
+    // Transizione `reserved → pending` **prima** di qualsiasi chiamata provider:
+    // da qui in poi la prenotazione non è più liberabile silenziosamente per
+    // scadenza (un crash dopo il provider la addebiterà al tetto). Gated
+    // dall'`executionId`: se abbiamo perso la lease non elaboriamo.
+    const stillOwner = await deps.ports.markBudgetInvoked({
+      requestId: request.requestId,
+      budgetMicroUsd,
+      monthKey: reservationMonthKey,
+      nowMs,
+      executionId,
+    });
+    if (!stillOwner) return lockedResponse(request, mode);
+  }
 
   const outcomes = await mapWithConcurrency(
     request.submissionIds,
@@ -1351,6 +1487,7 @@ export async function runExecution(
     totalTokensActual,
     costActualMicroUsd,
     costActual: microUsdToUsd(costActualMicroUsd),
+    costReservationMicroUsd: reservationCostMicroUsd,
     results,
   };
 
@@ -1422,6 +1559,7 @@ function lockedResponse(
     totalTokensActual: 0,
     costActualMicroUsd: 0,
     costActual: 0,
+    costReservationMicroUsd: 0,
     results: [],
   };
 }
@@ -1494,21 +1632,17 @@ async function gradeEligible(
   let openSkipped = 0;
   let generalFeedback: string | null = null;
   if (eligible.openOrders.length > 0) {
-    const graderInput: AiGraderInput = {
-      requestId: ctx.request.requestId,
-      questions: eligible.openOrders.map((order) => {
-        const q = ctx.byOrder.get(order)!;
-        const answer = ctx.submission.answers[order.toString()];
-        return {
-          order,
-          maxPoints: q.maxPoints,
-          questionText: q.testo,
-          referenceSolution: typeof q.soluzione === 'string' ? q.soluzione : '',
-          studentAnswer: answer && answer.tipo === 'aperta' ? answer.testo : '',
-        };
-      }),
-      submissionContext: { priorPoints, totalMaxPoints: eligible.totalMaxPoints },
-    };
+    // Stesso costruttore usato per il tetto di prenotazione: il payload reale è
+    // ≤ quello usato per il bound (priorPoints reale ≤ totalMaxPoints), quindi
+    // l'input effettivo non eccede mai il tetto prenotato per la chiamata.
+    const graderInput: AiGraderInput = buildGraderInput(
+      ctx.request.requestId,
+      eligible.openOrders,
+      ctx.byOrder,
+      ctx.submission.answers,
+      priorPoints,
+      eligible.totalMaxPoints,
+    );
     let validated = new Map<number, ValidatedScore>();
     try {
       const output = await ctx.grader.grade(graderInput);
