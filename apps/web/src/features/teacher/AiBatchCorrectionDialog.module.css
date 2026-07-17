@@ -19,26 +19,5 @@
   align-items: center;
   gap: 0.75rem;
 }
-
-.spinner {
-  width: 1.25rem;
-  height: 1.25rem;
-  flex: 0 0 auto;
-  border: 0.2rem solid var(--color-border);
-  border-top-color: var(--color-primary);
-  border-radius: 50%;
-  animation: ai-correction-spin 0.8s linear infinite;
-}
-
-@keyframes ai-correction-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .spinner {
-    animation: none;
-    border-top-color: var(--color-success);
-  }
-}
+/* Lo spinner è ora la utility condivisa `.spinner` (index.css), coerente tra
+   fase di anteprima ed esecuzione e con prefers-reduced-motion. */

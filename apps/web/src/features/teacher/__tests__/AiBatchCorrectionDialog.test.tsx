@@ -286,6 +286,35 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     expect(screen.getByText('Nessuna indicazione aggiuntiva')).toBeTruthy();
   });
 
+  it('shows an accessible sober loader while the preview is pending (no fake %)', async () => {
+    let resolvePreview!: (result: AiPreviewResult) => void;
+    const { callables } = makeCallables(
+      () => new Promise<AiPreviewResult>((resolve) => (resolvePreview = resolve)),
+      () => Promise.resolve(makeRun()),
+    );
+    render(
+      <AiBatchCorrectionDialog
+        verificationId={VERIFICATION_ID}
+        submissionIds={SUBMISSION_IDS}
+        callables={callables}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola anteprima' }));
+    const status = screen.getByRole('status');
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    expect(status.getAttribute('aria-busy')).toBe('true');
+    expect(status.textContent).toContain('Calcolo della stima…');
+    expect(status.textContent).not.toMatch(/\d+%/);
+
+    resolvePreview(makePreview());
+    await screen.findByText(/Elaborabili:/);
+    // Loader gone once the confirm summary is shown.
+    expect(screen.queryByText('Calcolo della stima…')).toBeNull();
+  });
+
   it('shows an accessible indeterminate spinner while the confirmed run is pending', async () => {
     let resolveRun!: (result: AiRunResult) => void;
     const { callables, runSpy } = makeCallables(
