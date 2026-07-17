@@ -70,6 +70,10 @@ describe('OpenAiGrader payload and mapping', () => {
     expect(OPENAI_GRADING_INSTRUCTIONS).toContain('non un testo esaustivo');
     expect(OPENAI_GRADING_INSTRUCTIONS).toContain('subordinate');
     expect(OPENAI_GRADING_INSTRUCTIONS).toContain('non pertinente');
+    expect(OPENAI_GRADING_INSTRUCTIONS).toContain('risultato complessivo');
+    expect(OPENAI_GRADING_INSTRUCTIONS).toContain(
+      'Non ripetere, concatenare o parafrasare in sequenza',
+    );
     expect(request.max_output_tokens).toBe(OPENAI_MAX_OUTPUT_TOKENS);
     for (const forbidden of ['studentUid', 'ownerUid', 'email', 'classId', 'lesson', 'course']) {
       expect(serialized).not.toContain(forbidden);

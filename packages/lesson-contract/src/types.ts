@@ -23,6 +23,14 @@ interface PoolQuestionBase {
 export interface PoolQuestionAperta extends PoolQuestionBase {
   tipo: 'aperta';
   soluzione: string;
+  /**
+   * EXAM-UX-03 — limite caratteri per la risposta aperta dello studente.
+   * Chiave sorgente YAML identica al nome del campo (`maxCharacters`), coerente
+   * con `maxPoints`. Intero 1–10000 quando presente; assente/legacy ⇒ il default
+   * effettivo di runtime è 2000 (vedi `effectiveMaxCharacters`). Riguarda **solo**
+   * le domande aperte; le chiuse non hanno questo campo.
+   */
+  maxCharacters?: number;
 }
 
 export interface PoolQuestionChiusaSingola extends PoolQuestionBase {

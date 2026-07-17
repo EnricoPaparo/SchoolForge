@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { parsePool, serializePool } from '@schoolforge/lesson-contract';
+import { parsePool, serializePool, normalizeMaxCharacters } from '@schoolforge/lesson-contract';
 import type { ParsedPool, PoolQuestion, PoolValidationError } from '@schoolforge/lesson-contract';
 import type { LessonItem } from '../repository/programs/programsService.js';
 import {
@@ -64,6 +64,11 @@ type QuestionDraft = {
   testo: string;
   /** Used only when tipo === 'aperta'. */
   soluzione: string;
+  /**
+   * EXAM-UX-03 — "Limite caratteri" per la sola domanda aperta. Stringa perché è
+   * un input di testo: vuota = nessun limite esplicito (default 2000 a runtime).
+   */
+  maxCharacters: string;
   /** Used only when tipo !== 'aperta'. */
   opzioni: { id: string; testo: string }[];
   /** Selected option ids. For chiusa_singola at most one; chiusa_multipla any. */
@@ -83,6 +88,7 @@ function initDraft(q: PoolQuestion | null): QuestionDraft {
       peso: '1',
       testo: '',
       soluzione: '',
+      maxCharacters: '',
       opzioni: [{ id: optionIdFromIndex(0), testo: '' }],
       soluzioneIds: [],
     };
@@ -95,6 +101,8 @@ function initDraft(q: PoolQuestion | null): QuestionDraft {
     peso: String(q.peso) as '1' | '2' | '3',
     testo: q.testo,
     soluzione: q.tipo === 'aperta' ? q.soluzione : '',
+    maxCharacters:
+      q.tipo === 'aperta' && q.maxCharacters !== undefined ? String(q.maxCharacters) : '',
     opzioni: isChiusa ? q.opzioni.map((o) => ({ id: o.id, testo: o.testo })) : [],
     soluzioneIds: isChiusa ? (Array.isArray(q.soluzione) ? q.soluzione : [q.soluzione]) : [],
   };
@@ -125,7 +133,12 @@ function draftToRaw(d: QuestionDraft): Record<string, unknown> {
     testo: d.testo,
   };
   if (d.tipo === 'aperta') {
-    return { ...base, soluzione: d.soluzione };
+    // Include maxCharacters only when a valid integer 1..10000 was entered;
+    // empty/invalid ⇒ omit (field stays absent → default 2000 at runtime).
+    const maxCharacters = normalizeMaxCharacters(d.maxCharacters);
+    return maxCharacters === undefined
+      ? { ...base, soluzione: d.soluzione }
+      : { ...base, soluzione: d.soluzione, maxCharacters };
   }
   const { opzioni, selectedSolutionIds } = computeFilledOpzioni(d);
   const soluzione =
@@ -144,6 +157,9 @@ function validateDraft(d: QuestionDraft): string | null {
 
   if (d.tipo === 'aperta') {
     if (d.soluzione.trim() === '') return 'Inserisci la soluzione.';
+    if (d.maxCharacters.trim() !== '' && normalizeMaxCharacters(d.maxCharacters) === undefined) {
+      return 'Il limite caratteri deve essere un intero tra 1 e 10000.';
+    }
     return null;
   }
 
@@ -467,6 +483,28 @@ function QuestionEditorForm({
               rows={2}
               aria-label="Soluzione"
             />
+          </label>
+        )}
+
+        {/* EXAM-UX-03 — limite caratteri risposta (solo aperta) */}
+        {draft.tipo === 'aperta' && (
+          <label className={styles.formLabelBlock}>
+            Limite caratteri
+            <input
+              type="number"
+              className={styles.formInput}
+              value={draft.maxCharacters}
+              onChange={(e) => setField('maxCharacters', e.target.value)}
+              min={1}
+              max={10000}
+              step={1}
+              placeholder="2000"
+              aria-label="Limite caratteri"
+              aria-describedby="maxCharactersHelp"
+            />
+            <span id="maxCharactersHelp" className={styles.formHint}>
+              Se vuoto, verrà applicato il limite predefinito di 2000 caratteri.
+            </span>
           </label>
         )}
 

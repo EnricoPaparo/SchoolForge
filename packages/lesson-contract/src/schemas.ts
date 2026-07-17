@@ -19,6 +19,14 @@ const QuestionBaseSchema = z.object({
 const ApertaSchema = QuestionBaseSchema.extend({
   tipo: z.literal('aperta'),
   soluzione: z.string().min(1, 'soluzione must not be empty'),
+  // EXAM-UX-03 — optional per-question answer length limit (integer 1..10000).
+  // Absent/legacy ⇒ runtime falls back to the 2000-char default.
+  maxCharacters: z
+    .number()
+    .int('maxCharacters must be an integer')
+    .min(1, 'maxCharacters must be at least 1')
+    .max(10000, 'maxCharacters must be at most 10000')
+    .optional(),
 }).strict();
 
 const ChiusaSingolaSchema = QuestionBaseSchema.extend({

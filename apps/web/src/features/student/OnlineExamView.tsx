@@ -15,6 +15,8 @@ import {
   requestFullscreenBestEffort,
 } from './examDeterrence.js';
 import { countFilled, isAnswerFilled } from './examAnswers.js';
+import { shuffleWithRng } from './examShuffle.js';
+import { effectiveMaxCharacters } from '@schoolforge/lesson-contract';
 import styles from './OnlineExamView.module.css';
 
 /** Dirty-only autosave: at most one write every two minutes, never per keystroke. */
@@ -30,6 +32,12 @@ type OnlineExamViewProps = {
   /** The draft submission as loaded/created before this view mounted. */
   submission: SubmissionDoc;
   onSubmitted: (receipt: SubmissionReceiptDoc) => void;
+  /**
+   * EXAM-UX-03 — RNG per lo shuffle locale delle domande. Seam iniettabile per
+   * test deterministici; in produzione è `Math.random` (default), quindi
+   * l'ordine cambia liberamente a ogni mount e non è mai persistito.
+   */
+  rng?: () => number;
 };
 
 function saveErrorMessage(err: unknown): string {
@@ -63,6 +71,7 @@ export function OnlineExamView({
   questions,
   submission,
   onSubmitted,
+  rng = Math.random,
 }: OnlineExamViewProps) {
   const [answers, setAnswersState] = useState<Record<string, AnswerValue>>(submission.answers);
   const [flagged, setFlaggedState] = useState<Record<string, boolean>>(submission.flagged);
@@ -226,6 +235,18 @@ export function OnlineExamView({
   const totalCount = questions.length;
   const controlsLocked = submitting || sessionEnded;
 
+  // EXAM-UX-03 — ordine casuale LOCALE delle domande (deterrente leggero).
+  // Calcolato una sola volta per (mount, verificationId) e memorizzato in un ref:
+  // resta stabile durante render/autosave/flag/fullscreen/navigazione, e si
+  // rigenera solo se cambia il verificationId senza remount. Non viene MAI
+  // persistito (Firestore/session/localStorage). Riordina soltanto la vista: le
+  // risposte e i flag restano legati all'`order` ORIGINALE di ogni domanda.
+  const shuffleRef = useRef<{ id: string; ordered: PublicVerificationQuestion[] } | null>(null);
+  if (!shuffleRef.current || shuffleRef.current.id !== verificationId) {
+    shuffleRef.current = { id: verificationId, ordered: shuffleWithRng(questions, rng) };
+  }
+  const displayQuestions = shuffleRef.current.ordered;
+
   /**
    * Detaches the deterrence listeners first, then exits fullscreen — in
    * that order, and only after a successful delivery — so the resulting
@@ -378,8 +399,9 @@ export function OnlineExamView({
         </div>
 
         <nav aria-label="Navigatore domande" className={styles.questionNav}>
-          {questions.map((q) => {
+          {displayQuestions.map((q, displayIndex) => {
             const key = String(q.order);
+            const displayNumber = displayIndex + 1;
             const isFlagged = !!flagged[key];
             const filled = isAnswerFilled(answers[key]);
             const navState = isFlagged ? 'flagged' : filled ? 'filled' : 'empty';
@@ -395,15 +417,15 @@ export function OnlineExamView({
                 key={q.order}
                 type="button"
                 className={`${styles.navItem} ${navClass}`}
-                title={`Domanda ${q.order + 1} — ${navLabel}`}
-                aria-label={`Vai alla domanda ${q.order + 1} — ${navLabel}`}
+                title={`Domanda ${displayNumber} — ${navLabel}`}
+                aria-label={`Vai alla domanda ${displayNumber} — ${navLabel}`}
                 onClick={() =>
                   document
                     .getElementById(`question-${q.order}`)
                     ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                 }
               >
-                {q.order + 1}
+                {displayNumber}
               </button>
             );
           })}
@@ -411,8 +433,9 @@ export function OnlineExamView({
       </div>
 
       <div className={styles.questionList}>
-        {questions.map((q) => {
+        {displayQuestions.map((q, displayIndex) => {
           const key = String(q.order);
+          const displayNumber = displayIndex + 1;
           const answer = answers[key];
           const filled = isAnswerFilled(answer);
           const isFlagged = !!flagged[key];
@@ -420,7 +443,7 @@ export function OnlineExamView({
           return (
             <article key={q.order} id={`question-${q.order}`} className={styles.questionCard}>
               <div className={styles.questionHeader}>
-                <span className={styles.questionNumber}>#{q.order + 1}</span>
+                <span className={styles.questionNumber}>#{displayNumber}</span>
                 <span className={filled ? styles.statusFilled : styles.statusEmpty}>
                   {filled ? '● Compilata' : '○ Non compilata'}
                 </span>
@@ -431,8 +454,8 @@ export function OnlineExamView({
                   aria-pressed={isFlagged}
                   aria-label={
                     isFlagged
-                      ? `Rimuovi "da rivedere" dalla domanda ${q.order + 1}`
-                      : `Segna la domanda ${q.order + 1} come "da rivedere"`
+                      ? `Rimuovi "da rivedere" dalla domanda ${displayNumber}`
+                      : `Segna la domanda ${displayNumber} come "da rivedere"`
                   }
                   onClick={() => toggleFlag(q.order)}
                   disabled={controlsLocked}
@@ -443,16 +466,39 @@ export function OnlineExamView({
 
               <p className={styles.questionText}>{q.testo}</p>
 
-              {q.tipo === 'aperta' && (
-                <textarea
-                  className={styles.answerTextarea}
-                  value={answer?.tipo === 'aperta' ? answer.testo : ''}
-                  onChange={(e) => setAnswer(q.order, { tipo: 'aperta', testo: e.target.value })}
-                  rows={4}
-                  aria-label={`Risposta alla domanda ${q.order + 1}`}
-                  disabled={controlsLocked}
-                />
-              )}
+              {q.tipo === 'aperta' &&
+                (() => {
+                  // EXAM-UX-03 — limite caratteri effettivo (default 2000 se
+                  // assente/legacy). maxLength è il tetto del browser; lo slice in
+                  // onChange è una difesa minimale contro paste/IME che aggirano
+                  // maxLength. Un dato legacy già salvato oltre il limite resta
+                  // visibile: il nuovo input non può però aumentarlo ulteriormente.
+                  const limit = effectiveMaxCharacters(q.maxCharacters);
+                  const current = answer?.tipo === 'aperta' ? answer.testo : '';
+                  const counterId = `answer-counter-${q.order}`;
+                  return (
+                    <>
+                      <textarea
+                        className={styles.answerTextarea}
+                        value={current}
+                        onChange={(e) =>
+                          setAnswer(q.order, {
+                            tipo: 'aperta',
+                            testo: e.target.value.slice(0, limit),
+                          })
+                        }
+                        rows={4}
+                        maxLength={limit}
+                        aria-label={`Risposta alla domanda ${displayNumber}`}
+                        aria-describedby={counterId}
+                        disabled={controlsLocked}
+                      />
+                      <span id={counterId} className={styles.answerCounter}>
+                        {current.length} / {limit} caratteri
+                      </span>
+                    </>
+                  );
+                })()}
 
               {q.tipo === 'chiusa_singola' && (
                 <>
