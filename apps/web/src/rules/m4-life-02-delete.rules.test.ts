@@ -252,11 +252,12 @@ describe('M4-LIFE-03 — delete only after a true reopen', () => {
         { merge: true },
       );
     });
-    const batch = writeBatch(ownerDb());
-    batch.delete(doc(ownerDb(), 'correctionReturns', SUBMISSION_ID));
-    batch.delete(doc(ownerDb(), 'corrections', SUBMISSION_ID));
-    batch.delete(doc(ownerDb(), 'submissionReceipts', SUBMISSION_ID));
-    batch.delete(doc(ownerDb(), 'submissions', SUBMISSION_ID));
+    const db = ownerDb();
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'correctionReturns', SUBMISSION_ID));
+    batch.delete(doc(db, 'corrections', SUBMISSION_ID));
+    batch.delete(doc(db, 'submissionReceipts', SUBMISSION_ID));
+    batch.delete(doc(db, 'submissions', SUBMISSION_ID));
     await assertSucceeds(batch.commit());
   });
 
