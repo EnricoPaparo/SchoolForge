@@ -779,6 +779,15 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     expect(screen.queryByRole('menuitem', { name: 'Nuova UDA' })).toBeNull();
   });
 
+  it('renders the Actions menu on document.body (outside the scrollable panel)', async () => {
+    await renderAndReady();
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    const menu = screen.getByRole('menu');
+    // Portaled: its parent is <body>, so no scrollable/overflow ancestor of the
+    // workspace can clip it.
+    expect(menu.parentElement).toBe(document.body);
+  });
+
   it('closes contextual menus with Escape or an outside pointer and restores trigger focus', async () => {
     await renderAndReady();
     const trigger = screen.getByRole('button', { name: 'Azioni corso' });

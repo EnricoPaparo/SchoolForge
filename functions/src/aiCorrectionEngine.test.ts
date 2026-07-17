@@ -577,6 +577,66 @@ describe('scoreClosedQuestion — chiusa_multipla partial scoring (M5-04C)', () 
   });
 });
 
+describe('scoreClosedQuestion — chiusa_multipla with a SINGLE canonical answer', () => {
+  // Technically chiusa_multipla, but exactly one correct option (a) among four.
+  const q = tq(0, 'chiusa_multipla', 1, ['a'], ['a', 'b', 'c', 'd']);
+  const score = (selectedIds: string[]) => {
+    const r = scoreClosedQuestion(q, { tipo: 'chiusa_multipla', selectedIds });
+    if (!r.evaluable) throw new Error('expected evaluable');
+    return r;
+  };
+
+  it('only the correct option → full maxPoints', () => {
+    expect(score(['a'])).toEqual({ evaluable: true, points: 1, feedback: 'Risposta corretta.' });
+  });
+  it('correct + one wrong → 0 with the mandated explanation (regression: was 0.75)', () => {
+    expect(score(['a', 'b'])).toEqual({
+      evaluable: true,
+      points: 0,
+      feedback:
+        'La risposta corretta è stata selezionata insieme a una o più opzioni errate; la selezione non è quindi valida.',
+    });
+  });
+  it('correct + several wrong → 0 with the same explanation', () => {
+    expect(score(['a', 'b', 'c']).points).toBe(0);
+    expect(score(['a', 'b', 'c']).feedback).toContain('insieme a una o più opzioni errate');
+  });
+  it('only a wrong option → 0', () => {
+    expect(score(['b'])).toEqual({
+      evaluable: true,
+      points: 0,
+      feedback: 'Risposta non corretta.',
+    });
+  });
+  it('several wrong options, no correct → 0', () => {
+    expect(score(['b', 'c']).points).toBe(0);
+    expect(score(['b', 'c']).feedback).toBe('Risposta non corretta.');
+  });
+  it('no selection → 0 with "Risposta non fornita."', () => {
+    expect(score([])).toEqual({ evaluable: true, points: 0, feedback: 'Risposta non fornita.' });
+  });
+  it('selecting every option gives no advantage → 0', () => {
+    expect(score(['a', 'b', 'c', 'd']).points).toBe(0);
+  });
+  it('feedback never leaks option ids', () => {
+    const qd = tq(0, 'chiusa_multipla', 1, ['ONLY_RIGHT'], ['ONLY_RIGHT', 'WRONG_X', 'WRONG_Y']);
+    const r = scoreClosedQuestion(qd, {
+      tipo: 'chiusa_multipla',
+      selectedIds: ['ONLY_RIGHT', 'WRONG_X'],
+    });
+    if (!r.evaluable) throw new Error('evaluable');
+    for (const id of ['ONLY_RIGHT', 'WRONG_X', 'WRONG_Y']) expect(r.feedback).not.toContain(id);
+  });
+  it('malformed single-canonical data stays non-evaluable (no unfair zero)', () => {
+    const noOptions = tq(0, 'chiusa_multipla', 1, ['a']); // no optionIds
+    expect(scoreClosedQuestion(noOptions, { tipo: 'chiusa_multipla', selectedIds: ['a'] })).toEqual(
+      {
+        evaluable: false,
+      },
+    );
+  });
+});
+
 describe('validateGraderOutput', () => {
   const orders = new Set([0, 1, 2, 3]);
   const maxByOrder = new Map([
