@@ -1,17 +1,94 @@
 import OpenAI from 'openai';
 import {
+  AiGraderFailure,
   AiGraderInvalidOutputError,
   MAX_GENERAL_FEEDBACK_CHARS,
+  type AiGradeContext,
   type AiGrader,
+  type AiGraderAttemptStats,
   type AiGraderInput,
   type AiGraderOutput,
   type AiGraderUsage,
 } from './aiCorrectionGatewayCore.js';
+import {
+  RETRY_BASE_DELAY_MS,
+  RETRY_MAX_DELAY_MS,
+  RETRY_MAX_RETRY_AFTER_MS,
+  decideRetry,
+  parseRetryAfterMs,
+  type RetryPolicy,
+} from './openAiRetryPolicy.js';
 
 export const OPENAI_ATTEMPT_TIMEOUT_MS = 60_000;
+/**
+ * Margine oltre il timeout per-tentativo prima dell'**hard abort** di sicurezza
+ * del loop. Il timeout normale del tentativo è gestito dall'SDK (`timeout`), che
+ * rigetta con `APIConnectionTimeoutError` (transitorio → ritentabile). Questo
+ * timer è solo una rete di sicurezza per un transport che ignorasse il proprio
+ * timeout: scattando **dopo** il timeout SDK, non traveste mai un timeout
+ * (ritentabile) da abort (permanente).
+ */
+const ATTEMPT_HARD_ABORT_MARGIN_MS = 5_000;
 export const OPENAI_MAX_APPLICATION_RETRIES = 1;
 export const OPENAI_MAX_OUTPUT_TOKENS = 2_000;
 const MAX_QUESTION_FEEDBACK_CHARS = 2_000;
+
+/** Policy di retry di default (config restringe `maxRetries`/`attemptTimeoutMs`). */
+export const DEFAULT_OPENAI_RETRY_POLICY: RetryPolicy = {
+  maxRetries: OPENAI_MAX_APPLICATION_RETRIES,
+  attemptTimeoutMs: OPENAI_ATTEMPT_TIMEOUT_MS,
+  baseDelayMs: RETRY_BASE_DELAY_MS,
+  maxDelayMs: RETRY_MAX_DELAY_MS,
+  maxRetryAfterMs: RETRY_MAX_RETRY_AFTER_MS,
+};
+
+/** Deps iniettabili dell'`OpenAiGrader` (test deterministici, nessun timer reale). */
+export interface OpenAiGraderDeps {
+  policy?: RetryPolicy;
+  now?: () => number;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  random?: () => number;
+}
+
+class AbortError extends Error {
+  constructor() {
+    super('aborted');
+    this.name = 'AbortError';
+  }
+}
+
+/** Sleep **annullabile** senza timer pendenti; rifiuta `AbortError` se abortito. */
+export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new AbortError());
+      return;
+    }
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(new AbortError());
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/** Codice tecnico UI stabile dal transport error (nessun dettaglio interno). */
+function uiReasonCode(status: number | undefined, retryAfterExceeded: boolean): string {
+  if (retryAfterExceeded) return 'retry_after_exceeded';
+  if (status === 429) return 'rate_limited';
+  if (status === 408) return 'timeout';
+  if (status !== undefined && status >= 500) return 'provider_unavailable';
+  if (status === undefined) return 'timeout'; // connessione/timeout di trasporto
+  return 'provider_error';
+}
 
 export interface OpenAiStructuredRequest {
   model: string;
@@ -47,12 +124,38 @@ export interface OpenAiTransport {
 export class OpenAiTransportError extends Error {
   readonly transient: boolean;
   readonly status?: number;
+  /** `Retry-After` estratto dagli header (ms), se presente e valido. */
+  readonly retryAfterMs?: number;
+  /**
+   * M5-05D2B-2 — la richiesta **può** aver raggiunto il provider e generato
+   * costo (timeout dopo l'invio, abort dopo l'invio, 5xx/408 ambigui). Se `false`
+   * la richiesta certamente non è arrivata (connessione fallita, 429/409): costo 0.
+   */
+  readonly billingRisk: boolean;
+  /**
+   * M5-05D2B-2 — abort **intenzionale** (`APIUserAbortError`): annullamento
+   * esplicito o lease/deadline persa. È permanente (`transient: false`) e non va
+   * mai ritentato; l'esito verso l'UI è `aborted`.
+   */
+  readonly aborted: boolean;
 
-  constructor(message: string, options: { transient: boolean; status?: number }) {
+  constructor(
+    message: string,
+    options: {
+      transient: boolean;
+      status?: number;
+      retryAfterMs?: number;
+      billingRisk?: boolean;
+      aborted?: boolean;
+    },
+  ) {
     super(message);
     this.name = 'OpenAiTransportError';
     this.transient = options.transient;
     this.status = options.status;
+    if (options.retryAfterMs !== undefined) this.retryAfterMs = options.retryAfterMs;
+    this.billingRisk = options.billingRisk ?? false;
+    this.aborted = options.aborted ?? false;
   }
 }
 
@@ -80,22 +183,61 @@ function isTransientStatus(status: number | undefined): boolean {
   );
 }
 
+/**
+ * `true` se lo status indica che la richiesta **può** aver generato costo pur
+ * fallendo: 408 (il server ha ricevuto la richiesta) e ≥ 500 (ambiguo). 429/409
+ * non elaborano → nessun costo.
+ */
+function statusHasBillingRisk(status: number | undefined): boolean {
+  return status === 408 || (status !== undefined && status >= 500);
+}
+
 function normalizeTransportError(error: unknown): OpenAiTransportError {
   if (error instanceof OpenAiTransportError) return error;
+  // Connessione fallita: la richiesta certamente non è arrivata → nessun costo.
   if (
-    error instanceof OpenAI.APIConnectionError ||
-    error instanceof OpenAI.APIConnectionTimeoutError ||
-    error instanceof OpenAI.APIUserAbortError
+    error instanceof OpenAI.APIConnectionError &&
+    !(error instanceof OpenAI.APIConnectionTimeoutError)
   ) {
-    return new OpenAiTransportError('OpenAI connection failed.', { transient: true });
+    return new OpenAiTransportError('OpenAI connection failed.', {
+      transient: true,
+      billingRisk: false,
+    });
+  }
+  // Abort intenzionale (annullamento esplicito / lease o deadline persa): la
+  // richiesta **potrebbe** essere già partita → billingRisk (accounting prudente).
+  // È **permanente**: mai un retry automatico.
+  if (error instanceof OpenAI.APIUserAbortError) {
+    return new OpenAiTransportError('OpenAI request aborted.', {
+      transient: false,
+      billingRisk: true,
+      aborted: true,
+    });
+  }
+  // Timeout di connessione (nessuna risposta): la richiesta può aver generato
+  // costo → billingRisk. Transitorio → ritentabile secondo la policy.
+  if (error instanceof OpenAI.APIConnectionTimeoutError) {
+    return new OpenAiTransportError('OpenAI request timed out.', {
+      transient: true,
+      billingRisk: true,
+    });
   }
   if (error instanceof OpenAI.APIError) {
+    const retryAfterMs = parseRetryAfterMs(
+      (error as unknown as { headers?: unknown }).headers,
+      Date.now(),
+    );
     return new OpenAiTransportError('OpenAI request failed.', {
       transient: isTransientStatus(error.status),
       ...(error.status === undefined ? {} : { status: error.status }),
+      ...(retryAfterMs === null ? {} : { retryAfterMs }),
+      billingRisk: statusHasBillingRisk(error.status),
     });
   }
-  return new OpenAiTransportError('OpenAI transport failed.', { transient: false });
+  return new OpenAiTransportError('OpenAI transport failed.', {
+    transient: false,
+    billingRisk: false,
+  });
 }
 
 /** Adapter sottile dell'SDK ufficiale. Retry SDK sempre disabilitati. */
@@ -286,10 +428,20 @@ export class OpenAiGrader implements AiGrader {
   /** Hard cap di output per chiamata: l'output fatturato non può superarlo. */
   readonly maxOutputTokensPerCall = OPENAI_MAX_OUTPUT_TOKENS;
 
+  private readonly deps: Required<OpenAiGraderDeps>;
+
   constructor(
     readonly model: string,
     private readonly transport: OpenAiTransport,
-  ) {}
+    deps: OpenAiGraderDeps = {},
+  ) {
+    this.deps = {
+      policy: deps.policy ?? DEFAULT_OPENAI_RETRY_POLICY,
+      now: deps.now ?? Date.now,
+      sleep: deps.sleep ?? abortableSleep,
+      random: deps.random ?? Math.random,
+    };
+  }
 
   /**
    * Upper bound provabile dei token di input fatturabili: la dimensione in
@@ -305,19 +457,62 @@ export class OpenAiGrader implements AiGrader {
     return Buffer.byteLength(JSON.stringify(buildOpenAiGradingRequest(input, this.model)), 'utf8');
   }
 
-  async grade(input: AiGraderInput): Promise<AiGraderOutput> {
+  /**
+   * Esegue la valutazione con l'**unica** policy di retry applicativa (SDK a
+   * `maxRetries: 0`): al massimo `policy.maxRetries` retry (hard ceiling DEV = 1),
+   * su soli errori transitori, con backoff+jitter, rispetto prudente di
+   * `Retry-After` e deadline complessiva. Restituisce le statistiche aggregate dei
+   * tentativi; su fallimento finale lancia `AiGraderFailure` (usage noto + stats),
+   * su output invalido `AiGraderInvalidOutputError` (nessun retry).
+   */
+  async grade(input: AiGraderInput, ctx?: AiGradeContext): Promise<AiGraderOutput> {
     if (input.questions.length === 0) {
       throw new Error('OpenAI grader requires at least one open question.');
     }
     const request = buildOpenAiGradingRequest(input, this.model);
-    let lastError: unknown;
+    const { policy, now, sleep, random } = this.deps;
 
-    for (let attempt = 0; attempt <= OPENAI_MAX_APPLICATION_RETRIES; attempt++) {
+    let attemptsTotal = 0;
+    let retriesTotal = 0;
+    const retryReasonCodes: string[] = [];
+    let retryDelayTotalMs = 0;
+    let unknownBillingAttempts = 0;
+    const stats = (): AiGraderAttemptStats => ({
+      attemptsTotal,
+      retriesTotal,
+      retryReasonCodes: [...retryReasonCodes],
+      retryDelayTotalMs,
+      unknownBillingAttempts,
+    });
+
+    for (let attemptIndex = 0; ; attemptIndex++) {
+      // Deadline complessiva / abort esterno: non iniziare un nuovo tentativo se
+      // non c'è tempo per delay + tentativo, o se la lease/deadline è persa.
+      if (ctx?.signal?.aborted) {
+        throw new AiGraderFailure('Operazione IA annullata.', {
+          attempts: stats(),
+          reasonCode: 'aborted',
+        });
+      }
+      if (ctx?.deadlineMs !== undefined && now() + policy.attemptTimeoutMs > ctx.deadlineMs) {
+        throw new AiGraderFailure('Deadline complessiva della correzione esaurita.', {
+          attempts: stats(),
+          reasonCode: 'deadline_exceeded',
+        });
+      }
+
+      attemptsTotal++;
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), OPENAI_ATTEMPT_TIMEOUT_MS);
+      const onExternalAbort = () => controller.abort();
+      ctx?.signal?.addEventListener('abort', onExternalAbort, { once: true });
+      const timer = setTimeout(
+        () => controller.abort(),
+        policy.attemptTimeoutMs + ATTEMPT_HARD_ABORT_MARGIN_MS,
+      );
+      let transportError: OpenAiTransportError;
       try {
         const response = await this.transport.send(request, {
-          timeoutMs: OPENAI_ATTEMPT_TIMEOUT_MS,
+          timeoutMs: policy.attemptTimeoutMs,
           signal: controller.signal,
         });
         const usage: AiGraderUsage | undefined = response.usage
@@ -332,22 +527,69 @@ export class OpenAiGrader implements AiGrader {
           validated = parseAndValidateOutput(response.outputText, input);
         } catch (parseError) {
           // Output invalido: **non** si ritenta (un retry non lo risolve), ma si
-          // trasporta l'usage eventualmente già **fatturato** dal provider così
-          // il costo viene contabilizzato a valle, senza salvare punteggi/feedback.
+          // trasporta l'usage eventualmente già **fatturato** dal provider così il
+          // costo viene contabilizzato a valle, senza salvare punteggi/feedback.
           throw new AiGraderInvalidOutputError(
             parseError instanceof Error ? parseError.message : 'Output OpenAI non valido.',
             usage,
+            stats(),
           );
         }
-        return { ...validated, ...(usage ? { usage } : {}) };
+        return { ...validated, ...(usage ? { usage } : {}), attempts: stats() };
       } catch (error) {
-        lastError = error;
-        if (!(error instanceof OpenAiTransportError) || !error.transient) throw error;
-        if (attempt >= OPENAI_MAX_APPLICATION_RETRIES) throw error;
+        if (error instanceof AiGraderInvalidOutputError) throw error; // no retry
+        transportError = normalizeTransportError(error);
       } finally {
-        clearTimeout(timeout);
+        clearTimeout(timer);
+        ctx?.signal?.removeEventListener('abort', onExternalAbort);
+      }
+
+      // Tentativo dal costo **incerto**: la richiesta può aver generato costo
+      // (5xx/408, timeout dopo l'invio, abort dopo l'invio). Accounting prudente
+      // **prima** di decidere l'esito, così anche un abort è contabilizzato.
+      if (transportError.billingRisk) unknownBillingAttempts++;
+
+      // Abort intenzionale (annullamento esplicito, deadline o lease persa): è
+      // **permanente** e non va mai ritentato. `APIUserAbortError` è già
+      // classificato non-transitorio con `aborted: true`; copriamo anche il caso
+      // in cui `ctx.signal` risulti abortito con un altro errore di trasporto. Va
+      // distinto dal timeout per-tentativo, che usa il timeout dell'SDK
+      // (`APIConnectionTimeoutError`, transitorio) e **non** è un abort.
+      if (transportError.aborted || ctx?.signal?.aborted) {
+        throw new AiGraderFailure('Operazione IA annullata.', {
+          attempts: stats(),
+          reasonCode: 'aborted',
+        });
+      }
+
+      const remainingMs =
+        ctx?.deadlineMs !== undefined ? ctx.deadlineMs - now() : Number.POSITIVE_INFINITY;
+      const decision = decideRetry({
+        error: transportError,
+        attemptIndex,
+        policy,
+        remainingMs,
+        random,
+      });
+      if (!decision.retry) {
+        throw new AiGraderFailure(transportError.message, {
+          attempts: stats(),
+          reasonCode: uiReasonCode(transportError.status, decision.blockedByRetryAfter ?? false),
+          retryAfterExceeded: decision.blockedByRetryAfter ?? false,
+        });
+      }
+      retriesTotal++;
+      retryReasonCodes.push(decision.reasonCode);
+      retryDelayTotalMs += decision.delayMs;
+      try {
+        await sleep(decision.delayMs, ctx?.signal);
+      } catch {
+        // Abort durante il backoff (deadline/lease persa): nessun altro tentativo.
+        throw new AiGraderFailure('Operazione IA annullata durante il backoff.', {
+          attempts: stats(),
+          reasonCode: 'aborted',
+        });
       }
     }
-    throw lastError;
   }
 }

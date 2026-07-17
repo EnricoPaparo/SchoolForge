@@ -22,7 +22,13 @@ export type AiExclusionReason =
   | 'nothing_to_grade'
   | 'too_large'
   | 'changed_since_preview'
-  | 'write_error';
+  | 'write_error'
+  // M5-05D2B-2 — esiti tecnici del provider reale (retry/deadline).
+  | 'deadline_exceeded'
+  | 'rate_limited'
+  | 'provider_timeout'
+  | 'provider_unavailable'
+  | 'retry_after_exceeded';
 
 export type AiRunStatus = 'running' | 'completed' | 'partial' | 'failed';
 
@@ -134,6 +140,16 @@ export function describeExclusion(reason: AiExclusionReason): string {
       return 'Dati cambiati dopo l’anteprima';
     case 'write_error':
       return 'Errore di scrittura';
+    case 'deadline_exceeded':
+      return 'Tempo massimo dell’operazione superato';
+    case 'rate_limited':
+      return 'Servizio IA momentaneamente occupato';
+    case 'provider_timeout':
+      return 'Timeout del servizio IA';
+    case 'provider_unavailable':
+      return 'Servizio IA non disponibile';
+    case 'retry_after_exceeded':
+      return 'Servizio IA occupato: riprova più tardi';
     default:
       return 'Esclusa';
   }

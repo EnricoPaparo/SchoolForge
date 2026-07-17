@@ -268,10 +268,76 @@ export interface AiGraderOutput {
    * `tokensActual` resta **0** (nessun token reale consumato).
    */
   usage?: { tokens: number; inputTokens?: number; outputTokens?: number };
+  /**
+   * M5-05D2B-2 — statistiche aggregate dei tentativi (retry inclusi). Presente
+   * anche in caso di successo dopo un retry. `MockAiGrader` non la popola.
+   */
+  attempts?: AiGraderAttemptStats;
 }
 
 /** Usage provider-agnostico (token effettivi), riusato dagli errori tecnici. */
 export type AiGraderUsage = { tokens: number; inputTokens?: number; outputTokens?: number };
+
+/**
+ * M5-05D2B-2 — statistiche **tecniche e aggregate** dei tentativi di una singola
+ * chiamata al grader (privacy-safe: nessun dato personale). Servono per
+ * l'accounting prudente e per l'osservabilità del retry.
+ */
+export interface AiGraderAttemptStats {
+  /** Tentativi complessivi effettuati (1 = nessun retry). */
+  attemptsTotal: number;
+  /** Retry effettuati (attemptsTotal − 1). */
+  retriesTotal: number;
+  /** Codici motivo aggregati dei retry (es. `http_429`, `timeout`). */
+  retryReasonCodes: string[];
+  /** Somma dei ritardi di backoff/`Retry-After` effettivamente attesi (ms). */
+  retryDelayTotalMs: number;
+  /**
+   * Tentativi il cui costo è **incerto**: la richiesta può aver raggiunto il
+   * provider (timeout/abort dopo l'invio, 5xx/408) senza usage noto. Il motore li
+   * contabilizza in modo prudente fino al tetto del tentativo (mai sotto).
+   */
+  unknownBillingAttempts: number;
+}
+
+/** Contesto opzionale di una chiamata al grader (deadline complessiva + abort). */
+export interface AiGradeContext {
+  /** Istante assoluto (epoch ms) oltre il quale non iniziare nuovi tentativi. */
+  deadlineMs?: number;
+  /** Segnale di cancellazione esterno (deadline globale / perdita lease). */
+  signal?: AbortSignal;
+}
+
+/**
+ * M5-05D2B-2 — fallimento **finale** del grader dopo l'eventuale retry. Trasporta
+ * l'usage effettivo noto (se un tentativo lo ha riportato), le statistiche
+ * aggregate dei tentativi e un codice motivo tecnico. Provider-agnostic: nessun
+ * dettaglio del provider né dato personale.
+ */
+export class AiGraderFailure extends Error {
+  readonly usage?: AiGraderUsage;
+  readonly attempts: AiGraderAttemptStats;
+  /** Codice tecnico stabile per la UI (es. `rate_limited`, `timeout`, `provider_unavailable`). */
+  readonly reasonCode: string;
+  /** `true` se il retry è stato interrotto perché `Retry-After` supera il cap. */
+  readonly retryAfterExceeded: boolean;
+  constructor(
+    message: string,
+    params: {
+      attempts: AiGraderAttemptStats;
+      reasonCode: string;
+      usage?: AiGraderUsage;
+      retryAfterExceeded?: boolean;
+    },
+  ) {
+    super(message);
+    this.name = 'AiGraderFailure';
+    this.attempts = params.attempts;
+    this.reasonCode = params.reasonCode;
+    if (params.usage !== undefined) this.usage = params.usage;
+    this.retryAfterExceeded = params.retryAfterExceeded ?? false;
+  }
+}
 
 /**
  * M5-05D2B-1 — errore di **output invalido** del grader che trasporta l'`usage`
@@ -283,10 +349,13 @@ export type AiGraderUsage = { tokens: number; inputTokens?: number; outputTokens
  */
 export class AiGraderInvalidOutputError extends Error {
   readonly usage?: AiGraderUsage;
-  constructor(message: string, usage?: AiGraderUsage) {
+  /** Statistiche dei tentativi fino all'output invalido (M5-05D2B-2). */
+  readonly attempts?: AiGraderAttemptStats;
+  constructor(message: string, usage?: AiGraderUsage, attempts?: AiGraderAttemptStats) {
     super(message);
     this.name = 'AiGraderInvalidOutputError';
     this.usage = usage;
+    if (attempts !== undefined) this.attempts = attempts;
   }
 }
 
@@ -355,7 +424,12 @@ export interface AiGrader {
    * chiamata permessa. Assente/0 quando non applicabile (mock).
    */
   reservationInputTokenUpperBound?(input: AiGraderInput): number;
-  grade(input: AiGraderInput): Promise<AiGraderOutput>;
+  /**
+   * Valuta le domande aperte. `ctx` (M5-05D2B-2) porta la deadline complessiva e
+   * un `AbortSignal`: un provider reale non inizia un tentativo oltre la deadline.
+   * `MockAiGrader` ignora `ctx`.
+   */
+  grade(input: AiGraderInput, ctx?: AiGradeContext): Promise<AiGraderOutput>;
 }
 
 /** FNV-1a a 32 bit — hash deterministico e puro, nessuna dipendenza esterna. */

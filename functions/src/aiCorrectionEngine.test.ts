@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AiGatewayError,
+  AiGraderFailure,
   AiGraderInvalidOutputError,
   MockAiGrader,
   buildMockGeneralFeedback,
   type AiGrader,
+  type AiGraderAttemptStats,
   type AiGraderOutput,
 } from './aiCorrectionGatewayCore.js';
 import { USD_MICRO, OPENAI_PRODUCTION_MODEL } from './aiCorrectionCost.js';
@@ -114,6 +116,8 @@ class FakeStore implements EngineWritePorts {
       tokensActual?: number;
       costActualMicroUsd?: number;
       costReservationMicroUsd?: number;
+      costSettledMicroUsd?: number;
+      retry?: PersistedRun['retry'];
       resultOrdinals?: PersistedRun['resultOrdinals'];
       executionId?: string;
       leaseExpiresAt?: number;
@@ -198,6 +202,14 @@ class FakeStore implements EngineWritePorts {
           tokensActual: existing.tokensActual ?? 0,
           costActualMicroUsd: existing.costActualMicroUsd ?? 0,
           costReservationMicroUsd: existing.costReservationMicroUsd ?? 0,
+          costSettledMicroUsd: existing.costSettledMicroUsd ?? 0,
+          retry: existing.retry ?? {
+            attemptsTotal: 0,
+            retriesTotal: 0,
+            retryReasonCodes: [],
+            retryDelayTotalMs: 0,
+            unknownBillingAttempts: 0,
+          },
           resultOrdinals: existing.resultOrdinals,
         },
       };
@@ -228,6 +240,8 @@ class FakeStore implements EngineWritePorts {
       tokensActual: run.tokensActual,
       costActualMicroUsd: run.costActualMicroUsd,
       costReservationMicroUsd: run.costReservationMicroUsd,
+      costSettledMicroUsd: run.costSettledMicroUsd,
+      retry: run.retry,
       resultOrdinals: run.resultOrdinals,
       leaseExpiresAt: 0,
     });
@@ -1214,6 +1228,14 @@ describe('runExecution — concurrent idempotency (lease)', () => {
       tokensActual: 0,
       costActualMicroUsd: 0,
       costReservationMicroUsd: 0,
+      costSettledMicroUsd: 0,
+      retry: {
+        attemptsTotal: 0,
+        retriesTotal: 0,
+        retryReasonCodes: [],
+        retryDelayTotalMs: 0,
+        unknownBillingAttempts: 0,
+      },
       resultOrdinals: [{ ordinal: 0, status: 'succeeded' }],
       executionId: 'A',
     });
@@ -1246,6 +1268,14 @@ describe('runExecution — concurrent idempotency (lease)', () => {
       tokensActual: 0,
       costActualMicroUsd: 0,
       costReservationMicroUsd: 0,
+      costSettledMicroUsd: 0,
+      retry: {
+        attemptsTotal: 0,
+        retriesTotal: 0,
+        retryReasonCodes: [],
+        retryDelayTotalMs: 0,
+        unknownBillingAttempts: 0,
+      },
       resultOrdinals: [{ ordinal: 0, status: 'succeeded' }],
       executionId: 'B',
     });
@@ -2201,5 +2231,226 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     expect(res.status).toBe('running');
     expect(grade).not.toHaveBeenCalled();
     expect(store.commitCalls).toBe(0);
+  });
+});
+
+// ── M5-05D2B-2 — retry: prenotazione ×tentativi, settlement, deadline ─────────
+
+/** Statistiche tentativi con `n` tentativi incerti (fatturabili ma senza usage). */
+function attemptStats(over: Partial<AiGraderAttemptStats> = {}): AiGraderAttemptStats {
+  return {
+    attemptsTotal: 1,
+    retriesTotal: 0,
+    retryReasonCodes: [],
+    retryDelayTotalMs: 0,
+    unknownBillingAttempts: 0,
+    ...over,
+  };
+}
+
+/** Grader openai simulato che riporta usage + statistiche tentativi. */
+function telemetryGrader(usage: AiGraderOutput['usage'], attempts: AiGraderAttemptStats): AiGrader {
+  const mock = new MockAiGrader();
+  return realGrader(async (input) => ({
+    ...(await mock.grade(input)),
+    ...(usage ? { usage } : {}),
+    attempts,
+  }));
+}
+
+const RETRY0_CONFIG = {
+  ...ENABLED_RUNTIME_CONFIG,
+  limits: { ...ENABLED_RUNTIME_CONFIG.limits, maxApplicationRetries: 0 },
+};
+
+describe('M5-05D2B-2 — retry accounting + deadline', () => {
+  const NOW = Date.UTC(2026, 6, 17, 12, 0, 0);
+  const MONTH = monthKeyFromMs(NOW);
+  const FIVE_USD = 5 * USD_MICRO;
+
+  it('reserves for TWO attempts when retry=1, and for ONE when retry=0', async () => {
+    const store1 = new FakeStore();
+    seedOneOpenOneClosed(store1, 's1');
+    const res1 = await runExecution(
+      req([sid('s1')]),
+      openaiDeps(store1, usageGrader({ inputTokens: 10, outputTokens: 10, tokens: 20 }), NOW),
+    );
+
+    const store0 = new FakeStore();
+    seedOneOpenOneClosed(store0, 's1');
+    const res0 = await runExecution(req([sid('s1')]), {
+      ...baseDeps(store0, usageGrader({ inputTokens: 10, outputTokens: 10, tokens: 20 })),
+      featureMode: 'openai',
+      loadRuntimeConfig: async () => RETRY0_CONFIG,
+      now: () => NOW,
+    });
+
+    // Per-attempt bound cost = 3300 µUSD. retry=1 ⇒ 6600, retry=0 ⇒ 3300.
+    expect(res0.costReservationMicroUsd).toBe(3300);
+    expect(res1.costReservationMicroUsd).toBe(6600);
+  });
+
+  it('settles an uncertain first attempt + successful second: settled = actual + attempt bound ≤ reservation', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    // Successo con usage noto, ma un tentativo precedente dal costo incerto.
+    const grader = telemetryGrader(
+      { inputTokens: 1000, outputTokens: 200, tokens: 1200 },
+      attemptStats({
+        attemptsTotal: 2,
+        retriesTotal: 1,
+        retryReasonCodes: ['http_5xx'],
+        retryDelayTotalMs: 250,
+        unknownBillingAttempts: 1,
+      }),
+    );
+    const res = await runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW));
+
+    expect(res.results[0]!.outcome).toBe('succeeded');
+    // actual noto = 1000/200 → 130 µUSD. Tentativo incerto → bound 3300 µUSD.
+    expect(res.costActualMicroUsd).toBe(130);
+    expect(res.costSettledMicroUsd).toBe(130 + 3300);
+    expect(res.costSettledMicroUsd).toBeLessThanOrEqual(res.costReservationMicroUsd);
+    // Il ledger addebita il costo prudenziale (settled), non solo l'effettivo.
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(130 + 3300);
+    // Telemetria retry aggregata e persistita.
+    expect(res.retry).toEqual({
+      attemptsTotal: 2,
+      retriesTotal: 1,
+      retryReasonCodes: ['http_5xx'],
+      retryDelayTotalMs: 250,
+      unknownBillingAttempts: 1,
+    });
+    expect(store.runs.get(REQ)!.retry!.retriesTotal).toBe(1);
+  });
+
+  it('never lets the settled cost exceed the reservation (capped)', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    // Due tentativi incerti: bound 2×3300, ma la prenotazione (retry=1) è 6600.
+    const grader = telemetryGrader(
+      undefined,
+      attemptStats({ attemptsTotal: 2, retriesTotal: 1, unknownBillingAttempts: 2 }),
+    );
+    const res = await runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW));
+    expect(res.costSettledMicroUsd).toBe(res.costReservationMicroUsd); // 6600, capped
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(6600);
+  });
+
+  it('rejects when the budget cannot cover ALL allowed attempts (zero provider calls)', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    // Budget copre un tentativo (3300) ma non due (6600 richiesti da retry=1).
+    store.ledgers.set(MONTH, {
+      monthKey: MONTH,
+      budgetMicroUsd: FIVE_USD,
+      spentMicroUsd: FIVE_USD - 3300,
+      reservations: {},
+    });
+    const grade = vi.fn(new MockAiGrader().grade);
+    await expect(
+      runExecution(req([sid('s1')]), openaiDeps(store, realGrader(grade), NOW)),
+    ).rejects.toMatchObject({ code: 'budget_exceeded' });
+    expect(grade).not.toHaveBeenCalled();
+  });
+
+  it('reserves once even though the grader may retry internally (no second reservation)', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const grader = telemetryGrader(
+      { inputTokens: 10, outputTokens: 10, tokens: 20 },
+      attemptStats({ attemptsTotal: 2, retriesTotal: 1, unknownBillingAttempts: 0 }),
+    );
+    await runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW));
+    expect(store.reserveBudgetCalls).toBe(1);
+    expect(store.markBudgetInvokedCalls).toBe(1);
+    expect(store.reconcileBudgetCalls).toBe(1);
+  });
+
+  it('a provider failure after retries fails the submission with a readable reason', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const grader = realGrader(async () => {
+      throw new AiGraderFailure('rate limited', {
+        attempts: attemptStats({
+          attemptsTotal: 2,
+          retriesTotal: 1,
+          retryReasonCodes: ['http_429'],
+          unknownBillingAttempts: 0,
+        }),
+        reasonCode: 'rate_limited',
+      });
+    });
+    const res = await runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW));
+    expect(res.results[0]).toMatchObject({ outcome: 'failed', reason: 'rate_limited' });
+    expect(store.corrections.has(sid('s1'))).toBe(false);
+    // Nessun costo noto né incerto → ledger a 0.
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(0);
+    expect(res.retry.retriesTotal).toBe(1);
+  });
+
+  it('a deadline-exceeded provider failure marks the submission deadline_exceeded', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const grader = realGrader(async () => {
+      throw new AiGraderFailure('deadline', {
+        attempts: attemptStats({ attemptsTotal: 0 }),
+        reasonCode: 'deadline_exceeded',
+      });
+    });
+    const res = await runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW));
+    expect(res.results[0]).toMatchObject({ outcome: 'failed', reason: 'deadline_exceeded' });
+    expect(store.commitCalls).toBe(0);
+  });
+
+  it('mock keeps retry telemetry empty and never touches the ledger', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const res = await runExecution(req([sid('s1')]), baseDeps(store, new MockAiGrader()));
+    expect(res.retry).toEqual({
+      attemptsTotal: 1,
+      retriesTotal: 0,
+      retryReasonCodes: [],
+      retryDelayTotalMs: 0,
+      unknownBillingAttempts: 0,
+    });
+    expect(res.costSettledMicroUsd).toBe(0);
+    expect(store.reserveBudgetCalls).toBe(0);
+  });
+
+  it('replay does not repeat retries or cost', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const grader = telemetryGrader(
+      { inputTokens: 1000, outputTokens: 200, tokens: 1200 },
+      attemptStats({ attemptsTotal: 2, retriesTotal: 1, unknownBillingAttempts: 1 }),
+    );
+    await runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW));
+    const spent = store.ledgers.get(MONTH)!.spentMicroUsd;
+    const replay = await runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW));
+    expect(replay.idempotentReplay).toBe(true);
+    expect(store.reserveBudgetCalls).toBe(1);
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(spent);
+  });
+
+  it('run doc keeps only aggregated retry metadata (no ids/PII)', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const grader = telemetryGrader(
+      { inputTokens: 1000, outputTokens: 200, tokens: 1200 },
+      attemptStats({
+        attemptsTotal: 2,
+        retriesTotal: 1,
+        retryReasonCodes: ['http_5xx'],
+        unknownBillingAttempts: 1,
+      }),
+    );
+    await runExecution(req([sid('s1')]), openaiDeps(store, grader, NOW));
+    const serialized = JSON.stringify(store.runs.get(REQ));
+    expect(serialized).not.toContain(sid('s1'));
+    expect(serialized).not.toContain(VERIF);
+    expect(serialized).not.toContain(OWNER);
+    expect(serialized).not.toContain(SOL_MARK);
+    expect(serialized).toContain('retriesTotal');
   });
 });
