@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { DialogShell } from './workspaceDialogs.js';
+import styles from './AiBatchCorrectionDialog.module.css';
 import {
   buildRequest,
   describeAiError,
@@ -7,6 +8,7 @@ import {
   MAX_TEACHER_GUIDANCE_CHARS,
   newRequestId,
   type AiCorrectionCallables,
+  type AiCorrectionRequest,
   type AiPreviewResult,
   type AiRunResult,
 } from '../repository/corrections/aiCorrectionClient.js';
@@ -44,10 +46,12 @@ export function AiBatchCorrectionDialog({
   const [preview, setPreview] = useState<AiPreviewResult | null>(null);
   const [result, setResult] = useState<AiRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [previewRequest, setPreviewRequest] = useState<AiCorrectionRequest | null>(null);
   // requestId stabile per l'intera operazione (idempotenza server-side).
   const requestIdRef = useRef<string>(newRequestId());
   // Guardia anti doppio-invio del run.
   const runStartedRef = useRef(false);
+  const previewStartedRef = useRef(false);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -60,6 +64,7 @@ export function AiBatchCorrectionDialog({
   function changeTeacherGuidance(value: string) {
     setTeacherGuidance(value);
     setPreview(null);
+    setPreviewRequest(null);
     setError(null);
     runStartedRef.current = false;
     requestIdRef.current = newRequestId();
@@ -67,30 +72,46 @@ export function AiBatchCorrectionDialog({
   }
 
   async function requestPreview() {
+    if (previewStartedRef.current) return;
+    previewStartedRef.current = true;
     setError(null);
     setPhase('previewing');
+    const request = buildRequest(
+      verificationId,
+      submissionIds,
+      requestIdRef.current,
+      teacherGuidance,
+    );
     try {
-      const res = await callables.preview(
-        buildRequest(verificationId, submissionIds, requestIdRef.current, teacherGuidance),
-      );
+      const res = await callables.preview(request);
       if (!mountedRef.current) return;
+      setPreviewRequest(request);
       setPreview(res);
       setPhase('confirm');
     } catch (err) {
       if (!mountedRef.current) return;
       setError(describeAiError(err));
       setPhase('error');
+    } finally {
+      previewStartedRef.current = false;
     }
   }
 
+  function editTeacherGuidance() {
+    setPreview(null);
+    setPreviewRequest(null);
+    setError(null);
+    runStartedRef.current = false;
+    requestIdRef.current = newRequestId();
+    setPhase('configure');
+  }
+
   async function confirmRun() {
-    if (runStartedRef.current) return; // anti doppio-click / doppia invocazione
+    if (runStartedRef.current || !preview || !previewRequest) return;
     runStartedRef.current = true;
     setPhase('running');
     try {
-      const res = await callables.run(
-        buildRequest(verificationId, submissionIds, requestIdRef.current, teacherGuidance),
-      );
+      const res = await callables.run(previewRequest);
       if (!mountedRef.current) return;
       setResult(res);
       setPhase('result');
@@ -110,7 +131,7 @@ export function AiBatchCorrectionDialog({
 
   return (
     <DialogShell title="Correggi con IA" onCancel={onClose} busy={busy}>
-      {phase !== 'running' && phase !== 'result' && (
+      {phase === 'configure' && (
         <label style={{ display: 'grid', gap: '0.375rem' }}>
           <span style={{ fontWeight: 700 }}>Indicazioni per questa correzione (opzionali)</span>
           <textarea
@@ -141,7 +162,7 @@ export function AiBatchCorrectionDialog({
         </div>
       )}
 
-      {activeMode && (
+      {activeMode && phase !== 'running' && (
         <p role="status" style={{ fontWeight: 700 }}>
           {activeMode === 'openai'
             ? 'Modalità OpenAI — il costo reale sarà registrato dopo l’esecuzione'
@@ -187,6 +208,10 @@ export function AiBatchCorrectionDialog({
               {preview.mode === 'mock' ? ' (mock)' : ' USD'}
             </li>
           </ul>
+          <div className={styles.appliedGuidance}>
+            <strong>Indicazioni applicate</strong>
+            <p>{previewRequest?.teacherGuidance || 'Nessuna indicazione aggiuntiva'}</p>
+          </div>
           {preview.excluded.length > 0 && (
             <details>
               <summary>Consegne escluse ({preview.excluded.length})</summary>
@@ -198,8 +223,8 @@ export function AiBatchCorrectionDialog({
             </details>
           )}
           <div className="dialog-actions">
-            <button type="button" onClick={onClose}>
-              Annulla
+            <button type="button" onClick={editTeacherGuidance}>
+              Modifica indicazioni
             </button>
             <button
               type="button"
@@ -207,16 +232,22 @@ export function AiBatchCorrectionDialog({
               disabled={preview.counts.eligible === 0}
               onClick={() => void confirmRun()}
             >
-              Correggi {preview.counts.eligible} consegne con IA
+              Conferma correzione
             </button>
           </div>
         </>
       )}
 
       {phase === 'running' && (
-        <p aria-busy="true" className="state-loading">
-          Correzione in corso…
-        </p>
+        <div role="status" aria-live="polite" aria-busy="true" className={styles.runningStatus}>
+          <span className={styles.spinner} aria-hidden="true" />
+          <div>
+            <strong>Correzione in corso…</strong>
+            <p>
+              Sto elaborando {preview?.counts.eligible ?? 0} consegne. Non chiudere questa finestra.
+            </p>
+          </div>
+        </div>
       )}
 
       {phase === 'result' && result && (

@@ -171,7 +171,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     expect(screen.queryByText('Modalità mock — costo reale 0')).toBeNull();
   });
 
-  it('renders Annulla and the primary action inside a shared .dialog-actions row', async () => {
+  it('renders edit and confirm inside a shared .dialog-actions row', async () => {
     const { callables } = makeCallables(
       () => Promise.resolve(makePreview()),
       () => Promise.resolve(makeRun()),
@@ -186,9 +186,9 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
       />,
     );
     await calculatePreview();
-    const primary = await screen.findByRole('button', { name: /Correggi 2 consegne con IA/ });
-    const cancel = screen.getByRole('button', { name: 'Annulla' });
-    const actions = cancel.closest('.dialog-actions');
+    const primary = await screen.findByRole('button', { name: 'Conferma correzione' });
+    const edit = screen.getByRole('button', { name: 'Modifica indicazioni' });
+    const actions = edit.closest('.dialog-actions');
     expect(actions).not.toBeNull();
     expect(actions).toBe(primary.closest('.dialog-actions'));
   });
@@ -210,7 +210,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     );
 
     await calculatePreview();
-    const confirm = await screen.findByRole('button', { name: /Correggi 2 consegne con IA/ });
+    const confirm = await screen.findByRole('button', { name: 'Conferma correzione' });
     fireEvent.click(confirm);
 
     await screen.findByText('Correzione completata.');
@@ -242,7 +242,13 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     await calculatePreview();
     const firstRequestId = previewSpy.mock.calls[0][0].requestId;
 
-    fireEvent.change(guidance, { target: { value: 'Premia soprattutto gli esempi pertinenti.' } });
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getByText('Premia soprattutto il ragionamento.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica indicazioni' }));
+    const editableGuidance = screen.getByLabelText('Indicazioni per questa correzione (opzionali)');
+    fireEvent.change(editableGuidance, {
+      target: { value: 'Premia soprattutto gli esempi pertinenti.' },
+    });
     expect(screen.getByRole('button', { name: 'Calcola anteprima' })).toBeTruthy();
     await calculatePreview();
     expect(previewSpy).toHaveBeenCalledTimes(2);
@@ -250,12 +256,64 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     expect(previewRequest.requestId).not.toBe(firstRequestId);
     expect(previewRequest.teacherGuidance).toBe('Premia soprattutto gli esempi pertinenti.');
 
-    fireEvent.click(screen.getByRole('button', { name: /Correggi 2 consegne con IA/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Conferma correzione' }));
     await screen.findByText('Correzione completata.');
     expect(runSpy.mock.calls[0][0]).toMatchObject({
       requestId: previewRequest.requestId,
       teacherGuidance: previewRequest.teacherGuidance,
     });
+  });
+
+  it('shows empty guidance read-only after preview', async () => {
+    const { callables } = makeCallables(
+      () => Promise.resolve(makePreview()),
+      () => Promise.resolve(makeRun()),
+    );
+    render(
+      <AiBatchCorrectionDialog
+        verificationId={VERIFICATION_ID}
+        submissionIds={SUBMISSION_IDS}
+        callables={callables}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+
+    expect(screen.getAllByRole('textbox')).toHaveLength(1);
+    await calculatePreview();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getByText('Indicazioni applicate')).toBeTruthy();
+    expect(screen.getByText('Nessuna indicazione aggiuntiva')).toBeTruthy();
+  });
+
+  it('shows an accessible indeterminate spinner while the confirmed run is pending', async () => {
+    let resolveRun!: (result: AiRunResult) => void;
+    const { callables, runSpy } = makeCallables(
+      () => Promise.resolve(makePreview()),
+      () => new Promise<AiRunResult>((resolve) => (resolveRun = resolve)),
+    );
+    render(
+      <AiBatchCorrectionDialog
+        verificationId={VERIFICATION_ID}
+        submissionIds={SUBMISSION_IDS}
+        callables={callables}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+
+    await calculatePreview();
+    fireEvent.click(screen.getByRole('button', { name: 'Conferma correzione' }));
+    const status = screen.getByRole('status');
+    expect(status.textContent).toContain('Correzione in corso');
+    expect(status.textContent).toContain('Sto elaborando 2 consegne');
+    expect(status.textContent).not.toMatch(/\d+%/);
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(runSpy).toHaveBeenCalledTimes(1);
+
+    resolveRun(makeRun());
+    await screen.findByText('Correzione completata.');
+    expect(screen.queryByText(/Correzione in corso/)).toBeNull();
   });
 
   it('cancels without ever calling run', async () => {
@@ -296,7 +354,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     );
 
     await calculatePreview();
-    const confirm = await screen.findByRole('button', { name: /Correggi 2 consegne con IA/ });
+    const confirm = await screen.findByRole('button', { name: 'Conferma correzione' });
     fireEvent.click(confirm);
     fireEvent.click(confirm);
     resolveRun(makeRun());
@@ -354,7 +412,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     );
 
     await calculatePreview();
-    fireEvent.click(await screen.findByRole('button', { name: /Correggi 2 consegne con IA/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Conferma correzione' }));
     await screen.findByText('Riuscite: 1');
     expect(screen.getByText('Fallite: 1')).toBeTruthy();
     const details = screen.getByText('Dettaglio consegne non elaborate');
@@ -379,7 +437,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     );
 
     await calculatePreview();
-    fireEvent.click(await screen.findByRole('button', { name: /Correggi 2 consegne con IA/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Conferma correzione' }));
     await screen.findByText(/è già in corso/);
   });
 
@@ -400,7 +458,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     );
 
     await calculatePreview();
-    fireEvent.click(await screen.findByRole('button', { name: /Correggi 2 consegne con IA/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Conferma correzione' }));
     await screen.findByText('Operazione già eseguita: risultato ripristinato.');
   });
 
@@ -453,7 +511,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     );
 
     await calculatePreview();
-    const confirm = await screen.findByRole('button', { name: /Correggi 0 consegne con IA/ });
+    const confirm = await screen.findByRole('button', { name: 'Conferma correzione' });
     expect((confirm as HTMLButtonElement).disabled).toBe(true);
     const exclusions = screen.getByText('Consegne escluse (1)');
     fireEvent.click(exclusions);
