@@ -2343,6 +2343,10 @@ export function VerificationsView() {
               storico della correzione. L’operazione è irreversibile.
             </p>
             <p className={styles.deleteDialogBody}>
+              Se la correzione è stata riaperta dopo una restituzione, verrà eliminata anche la
+              precedente restituzione ora nascosta allo studente.
+            </p>
+            <p className={styles.deleteDialogBody}>
               {selectedVer?.status === 'closed'
                 ? 'La verifica resterà chiusa: eliminare la consegna non la riapre né consente un nuovo svolgimento.'
                 : 'Se la verifica è ancora disponibile per la classe, lo studente potrà svolgerla di nuovo finché resta online e visibile.'}

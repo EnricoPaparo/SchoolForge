@@ -8,7 +8,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { deleteDoc, doc, setDoc, Timestamp } from 'firebase/firestore';
+import { deleteDoc, doc, setDoc, Timestamp, writeBatch } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
 
@@ -136,13 +136,9 @@ async function seedAll() {
   });
 }
 
-// correctionReturns is intentionally NOT here: M5-06B denies its deletion to
-// everyone (see the dedicated block below), because its existence is the very
-// signal that a submission is no longer deletable.
 const PATHS: [string, string][] = [
   ['submissions', SUBMISSION_ID],
   ['submissionReceipts', SUBMISSION_ID],
-  ['corrections', SUBMISSION_ID],
   ['correctionEvents', 'evt-1'],
 ];
 
@@ -165,8 +161,8 @@ describe('M4-LIFE-02 — owner-only deletion of submission data', () => {
   }
 });
 
-describe('M5-06B — deletion is denied once the correction was returned', () => {
-  it('no one may delete an existing correctionReturns projection', async () => {
+describe('M4-LIFE-03 — delete only after a true reopen', () => {
+  it('no one may delete a visible correctionReturns projection', async () => {
     await seedAll(); // seeds a correctionReturns/{id}
     await assertFails(deleteDoc(doc(ownerDb(), 'correctionReturns', SUBMISSION_ID)));
     await assertFails(deleteDoc(doc(studentDb(), 'correctionReturns', SUBMISSION_ID)));
@@ -221,5 +217,59 @@ describe('M5-06B — deletion is denied once the correction was returned', () =>
       });
     });
     await assertSucceeds(deleteDoc(doc(ownerDb(), 'corrections', SUBMISSION_ID)));
+  });
+
+  it('allows the owner to atomically delete a genuinely reopened graph', async () => {
+    await seedAll();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'corrections', SUBMISSION_ID), {
+        ownerUid: OWNER_UID,
+        verificationId: VERIFICATION_ID,
+        studentUid: STUDENT_UID,
+        submissionId: SUBMISSION_ID,
+        status: 'in_progress',
+        evaluations: {},
+        generalFeedback: null,
+        totalPoints: 0,
+        maxPoints: 0,
+        percentage: null,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        completedAt: null,
+        returnedAt: null,
+        reopenCount: 1,
+      });
+      await setDoc(
+        doc(db, 'correctionReturns', SUBMISSION_ID),
+        {
+          correctionId: SUBMISSION_ID,
+          ownerUid: OWNER_UID,
+          verificationId: VERIFICATION_ID,
+          studentUid: STUDENT_UID,
+          visibleToStudent: false,
+        },
+        { merge: true },
+      );
+    });
+    const db = ownerDb();
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'correctionReturns', SUBMISSION_ID));
+    batch.delete(doc(db, 'corrections', SUBMISSION_ID));
+    batch.delete(doc(db, 'submissionReceipts', SUBMISSION_ID));
+    batch.delete(doc(db, 'submissions', SUBMISSION_ID));
+    await assertSucceeds(batch.commit());
+  });
+
+  it('rejects deleting a hidden projection without deleting its graph', async () => {
+    await seedAll();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(
+        doc(ctx.firestore(), 'correctionReturns', SUBMISSION_ID),
+        { visibleToStudent: false },
+        { merge: true },
+      );
+    });
+    await assertFails(deleteDoc(doc(ownerDb(), 'correctionReturns', SUBMISSION_ID)));
   });
 });
