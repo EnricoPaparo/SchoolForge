@@ -618,23 +618,51 @@ function readLedgerState(
   snap: FirebaseFirestore.DocumentSnapshot,
   monthKey: string,
   budgetMicroUsd: number,
+  dailyBudgetMicroUsd: number,
 ): BudgetLedgerState {
-  if (!snap.exists) return emptyLedger(monthKey, budgetMicroUsd);
+  if (!snap.exists) return emptyLedger(monthKey, budgetMicroUsd, dailyBudgetMicroUsd);
   const data = snap.data() as Record<string, unknown>;
   const spentMicroUsd = typeof data.spentMicroUsd === 'number' ? data.spentMicroUsd : 0;
+  const dailySpentMicroUsd: Record<string, number> = {};
+  if (data.dailySpentMicroUsd && typeof data.dailySpentMicroUsd === 'object') {
+    for (const [dayKey, value] of Object.entries(
+      data.dailySpentMicroUsd as Record<string, unknown>,
+    )) {
+      if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+        dailySpentMicroUsd[dayKey] = value;
+      }
+    }
+  }
   const reservations: Record<string, BudgetReservation> = {};
   const raw = data.reservations;
   if (raw && typeof raw === 'object') {
     for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
-      const r = value as { microUsd?: unknown; expiresAtMs?: unknown; status?: unknown };
+      const r = value as {
+        microUsd?: unknown;
+        expiresAtMs?: unknown;
+        dayKey?: unknown;
+        status?: unknown;
+      };
       if (typeof r?.microUsd === 'number' && typeof r?.expiresAtMs === 'number') {
         // `status` assente ⇒ trattata come `reserved` (documenti storici).
         const status: ReservationStatus = r.status === 'pending' ? 'pending' : 'reserved';
-        reservations[id] = { microUsd: r.microUsd, expiresAtMs: r.expiresAtMs, status };
+        reservations[id] = {
+          microUsd: r.microUsd,
+          expiresAtMs: r.expiresAtMs,
+          ...(typeof r.dayKey === 'string' ? { dayKey: r.dayKey } : {}),
+          status,
+        };
       }
     }
   }
-  return { monthKey, budgetMicroUsd, spentMicroUsd, reservations };
+  return {
+    monthKey,
+    budgetMicroUsd,
+    dailyBudgetMicroUsd,
+    spentMicroUsd,
+    dailySpentMicroUsd,
+    reservations,
+  };
 }
 
 function writeLedgerState(
@@ -647,7 +675,9 @@ function writeLedgerState(
   tx.set(ref, {
     monthKey: state.monthKey,
     budgetMicroUsd: state.budgetMicroUsd,
+    dailyBudgetMicroUsd: state.dailyBudgetMicroUsd,
     spentMicroUsd: state.spentMicroUsd,
+    dailySpentMicroUsd: state.dailySpentMicroUsd,
     reservations: state.reservations,
     updatedAt: FieldValue.serverTimestamp(),
   });
@@ -664,15 +694,21 @@ function reserveBudget(db: Firestore): NonNullable<EngineWritePorts['reserveBudg
     const ref = db.doc(`aiBudgetLedger/${input.monthKey}`);
     return db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
-      const state = readLedgerState(snap, input.monthKey, input.budgetMicroUsd);
+      const state = readLedgerState(
+        snap,
+        input.monthKey,
+        input.budgetMicroUsd,
+        input.dailyBudgetMicroUsd,
+      );
       const result = reserveLedger(
         state,
         input.requestId,
         input.amountMicroUsd,
         input.expiresAtMs,
         input.nowMs,
+        input.dayKey,
       );
-      if (!result.ok) return { ok: false, reason: 'budget_exceeded' };
+      if (!result.ok) return { ok: false, reason: result.reason };
       writeLedgerState(tx, ref, result.state);
       return { ok: true, reservedMicroUsd: result.reservedMicroUsd };
     });
@@ -694,7 +730,12 @@ function markBudgetInvoked(db: Firestore): NonNullable<EngineWritePorts['markBud
         return false; // lease persa (takeover) → non elaborare
       }
       const ledgerSnap = await tx.get(ledgerRef);
-      const state = readLedgerState(ledgerSnap, input.monthKey, input.budgetMicroUsd);
+      const state = readLedgerState(
+        ledgerSnap,
+        input.monthKey,
+        input.budgetMicroUsd,
+        input.dailyBudgetMicroUsd,
+      );
       writeLedgerState(tx, ledgerRef, markPendingLedger(state, input.requestId, input.nowMs));
       return true;
     });
@@ -716,7 +757,12 @@ function reconcileBudget(db: Firestore): NonNullable<EngineWritePorts['reconcile
         return; // worker non più titolare della lease → no-op
       }
       const ledgerSnap = await tx.get(ledgerRef);
-      const state = readLedgerState(ledgerSnap, input.monthKey, input.budgetMicroUsd);
+      const state = readLedgerState(
+        ledgerSnap,
+        input.monthKey,
+        input.budgetMicroUsd,
+        input.dailyBudgetMicroUsd,
+      );
       const next = reconcileLedger(state, input.requestId, input.actualMicroUsd, input.nowMs);
       writeLedgerState(tx, ledgerRef, next);
     });
@@ -748,6 +794,8 @@ function toHttpsError(err: AiGatewayError): HttpsError {
     invalid_input: 'invalid-argument',
     batch_limit_exceeded: 'resource-exhausted',
     limit_exceeded: 'resource-exhausted',
+    operation_budget_exceeded: 'resource-exhausted',
+    daily_budget_exceeded: 'resource-exhausted',
     budget_exceeded: 'resource-exhausted',
     budget_unavailable: 'unavailable',
   };

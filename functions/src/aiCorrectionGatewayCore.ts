@@ -32,6 +32,8 @@ export type AiGatewayErrorCode =
   | 'batch_limit_exceeded'
   // M5-05D1 — guardrail server-side prima dell'attivazione del provider reale.
   | 'limit_exceeded'
+  | 'operation_budget_exceeded'
+  | 'daily_budget_exceeded'
   | 'budget_exceeded'
   // M5-05D2B-1 — ledger di budget non disponibile sul percorso reale (fail-closed).
   | 'budget_unavailable';

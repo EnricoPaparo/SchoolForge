@@ -15,7 +15,9 @@ import {
   USD_MICRO,
 } from './aiCorrectionCost.js';
 import {
+  availableDailyMicroUsd,
   availableMicroUsd,
+  dayKeyFromMs,
   emptyLedger,
   markPending,
   monthKeyFromMs,
@@ -33,7 +35,9 @@ const VALID_CONFIG_RAW = {
   model: OPENAI_PRODUCTION_MODEL,
   environment: 'dev',
   limits: { ...DEV_LIMITS },
-  budget: { monthlyUsd: 5 },
+  maxOperationCostMicroUsd: 250_000,
+  dailyBudgetMicroUsd: 1_000_000,
+  monthlyBudgetMicroUsd: 5_000_000,
   configVersion: 'cfg-1',
   priceListVersion: DEFAULT_PRICE_LIST_VERSION,
 };
@@ -44,7 +48,9 @@ describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
     expect(cfg).not.toBeNull();
     expect(isRealProviderEnabled(cfg)).toBe(true);
     expect(cfg!.model).toBe(OPENAI_PRODUCTION_MODEL);
-    expect(cfg!.budget.monthlyUsd).toBe(5);
+    expect(cfg!.maxOperationCostMicroUsd).toBe(250_000);
+    expect(cfg!.dailyBudgetMicroUsd).toBe(1_000_000);
+    expect(cfg!.monthlyBudgetMicroUsd).toBe(5_000_000);
   });
 
   it('returns null for absent/non-object', () => {
@@ -66,8 +72,9 @@ describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
       { model: 'bad model!' },
       { configVersion: '' },
       { priceListVersion: 'x y' },
-      { budget: { monthlyUsd: 0 } },
-      { budget: {} },
+      { maxOperationCostMicroUsd: 0 },
+      { dailyBudgetMicroUsd: -1 },
+      { monthlyBudgetMicroUsd: 5_000_001 },
       { limits: { ...DEV_LIMITS, maxProviderConcurrency: 0 } },
       { limits: { ...DEV_LIMITS, attemptTimeoutMs: -1 } },
       { enabled: 'yes' },
@@ -78,6 +85,14 @@ describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
 
   it('rejects an unknown model/priceListVersion pair before provider construction', () => {
     expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, model: 'gpt-5-nano' })).toBeNull();
+    expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, model: 'gpt-5.4-nano' })).toBeNull();
+    expect(
+      parseAiRuntimeConfig({
+        ...VALID_CONFIG_RAW,
+        model: 'gpt-5-nano-2025-08-07',
+        priceListVersion: 'v1-2026-07-16',
+      }),
+    ).toBeNull();
     expect(
       parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, priceListVersion: 'v2-unknown' }),
     ).toBeNull();
@@ -104,11 +119,25 @@ describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
     },
   );
 
-  it('monthlyUsd: 5 and lower positive values are valid; above 5 is invalid', () => {
-    expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, budget: { monthlyUsd: 5 } })).not.toBeNull();
-    expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, budget: { monthlyUsd: 1 } })).not.toBeNull();
-    expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, budget: { monthlyUsd: 5.01 } })).toBeNull();
+  it.each([
+    ['maxOperationCostMicroUsd', 250_000],
+    ['dailyBudgetMicroUsd', 1_000_000],
+    ['monthlyBudgetMicroUsd', 5_000_000],
+  ] as const)('%s: ceiling and lower positive values pass; zero/over fail', (key, ceiling) => {
+    expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, [key]: ceiling })).not.toBeNull();
+    expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, [key]: ceiling - 1 })).not.toBeNull();
+    expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, [key]: 0 })).toBeNull();
+    expect(parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, [key]: ceiling + 1 })).toBeNull();
   });
+
+  it.each(['maxOperationCostMicroUsd', 'dailyBudgetMicroUsd', 'monthlyBudgetMicroUsd'] as const)(
+    'rejects a config with missing %s',
+    (key) => {
+      const raw: Record<string, unknown> = { ...VALID_CONFIG_RAW };
+      delete raw[key];
+      expect(parseAiRuntimeConfig(raw)).toBeNull();
+    },
+  );
 });
 
 // ── DEV limits ───────────────────────────────────────────────────────────────
@@ -158,16 +187,22 @@ describe('enforceOperationLimits (M5-05D1)', () => {
 describe('cost (M5-05D1)', () => {
   it('looks up the versioned model price and computes micro-USD exactly', () => {
     const price = lookupModelPrice(DEFAULT_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL);
-    expect(price).toEqual({ inputPerMillionUsd: 0.05, outputPerMillionUsd: 0.4 });
-    // 4000 in * $0.05/M + 1000 out * $0.40/M = 200 + 400 = 600 µUSD = $0.0006.
-    expect(tokenCostMicroUsd(4000, 1000, price!, 'nearest')).toBe(600);
-    expect(microUsdToUsd(600)).toBe(0.0006);
+    expect(price).toEqual({
+      inputMicroUsdPerMillion: 200_000,
+      outputMicroUsdPerMillion: 1_250_000,
+    });
+    // 4000 in * $0.20/M + 1000 out * $1.25/M = 2050 µUSD.
+    expect(tokenCostMicroUsd(4000, 1000, price!, 'nearest')).toBe(2050);
+    expect(microUsdToUsd(2050)).toBe(0.00205);
   });
   it('ceil rounding for estimates never under-charges', () => {
-    const price = { inputPerMillionUsd: 0.05, outputPerMillionUsd: 0.4 };
-    // 4001 * 0.05 = 200.05 → ceil 201, nearest 200.
-    expect(tokenCostMicroUsd(4001, 0, price, 'ceil')).toBe(201);
-    expect(tokenCostMicroUsd(4001, 0, price, 'nearest')).toBe(200);
+    const price = {
+      inputMicroUsdPerMillion: 200_000,
+      outputMicroUsdPerMillion: 1_250_000,
+    };
+    // 4001 * 200000 / 1M = 800.2 → ceil 801, nearest 800.
+    expect(tokenCostMicroUsd(4001, 0, price, 'ceil')).toBe(801);
+    expect(tokenCostMicroUsd(4001, 0, price, 'nearest')).toBe(800);
   });
   it('returns null for unknown version/model', () => {
     expect(lookupModelPrice('nope', OPENAI_PRODUCTION_MODEL)).toBeNull();
@@ -191,12 +226,12 @@ describe('cost (M5-05D1)', () => {
 describe('cost breakdown (M5-05D2B-1)', () => {
   it('estimateCostBreakdown splits input/output and rounds up (conservativo)', () => {
     const b = estimateCostBreakdown(1000, 200, DEFAULT_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL);
-    // 1000 * 0.05 + 200 * 0.4 = 50 + 80 = 130 µUSD.
+    // 1000 * $0.20/M + 200 * $1.25/M = 450 µUSD.
     expect(b).toEqual({
       inputTokens: 1000,
       outputTokens: 200,
       totalTokens: 1200,
-      costMicroUsd: 130,
+      costMicroUsd: 450,
     });
   });
 
@@ -223,9 +258,9 @@ describe('cost breakdown (M5-05D2B-1)', () => {
   });
 
   it('actualCostMicroUsd uses nearest rounding and knows the versioned price', () => {
-    // 300 * 0.05 + 100 * 0.4 = 15 + 40 = 55 µUSD.
+    // 300 * $0.20/M + 100 * $1.25/M = 185 µUSD.
     expect(actualCostMicroUsd(300, 100, DEFAULT_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL)).toBe(
-      55,
+      185,
     );
     expect(actualCostMicroUsd(0, 0, DEFAULT_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL)).toBe(0);
     expect(actualCostMicroUsd(1, 1, 'nope', OPENAI_PRODUCTION_MODEL)).toBeNull();
@@ -240,6 +275,51 @@ const HOUR = 3_600_000;
 describe('budget ledger (M5-05D1)', () => {
   it('monthKeyFromMs is UTC YYYY-MM', () => {
     expect(monthKeyFromMs(Date.UTC(2026, 6, 16))).toBe('2026-07');
+  });
+
+  it('dayKeyFromMs is UTC and changes exactly at midnight', () => {
+    expect(dayKeyFromMs(Date.UTC(2026, 6, 16, 23, 59, 59, 999))).toBe('2026-07-16');
+    expect(dayKeyFromMs(Date.UTC(2026, 6, 17, 0, 0, 0, 0))).toBe('2026-07-17');
+  });
+
+  it('daily budget accepts under/exact limit and rejects the next micro-USD', () => {
+    const day = '2026-07-16';
+    let state = emptyLedger('2026-07', FIVE_USD, USD_MICRO);
+    state.dailySpentMicroUsd[day] = 999_000;
+    const exact = reserve(state, 'exact', 1_000, 10_000, 0, day);
+    expect(exact.ok).toBe(true);
+    state = (exact as { state: BudgetLedgerState }).state;
+    expect(availableDailyMicroUsd(state, day, 0)).toBe(0);
+    expect(reserve(state, 'over', 1, 10_000, 0, day)).toEqual({
+      ok: false,
+      reason: 'daily_budget_exceeded',
+    });
+  });
+
+  it('two atomic reservations cannot exceed the same daily budget', () => {
+    const day = '2026-07-16';
+    let state = emptyLedger('2026-07', FIVE_USD, USD_MICRO);
+    state = (reserve(state, 'a', 600_000, 10_000, 0, day) as { state: BudgetLedgerState }).state;
+    expect(reserve(state, 'b', 500_000, 10_000, 0, day)).toEqual({
+      ok: false,
+      reason: 'daily_budget_exceeded',
+    });
+  });
+
+  it('reconcile after UTC midnight remains charged to the reservation day', () => {
+    const day1 = '2026-07-16';
+    const startedAt = Date.UTC(2026, 6, 16, 23, 59);
+    const completedAt = Date.UTC(2026, 6, 17, 0, 1);
+    let state = emptyLedger('2026-07', FIVE_USD, USD_MICRO);
+    state = (
+      reserve(state, 'cross-midnight', 10_000, completedAt + 60_000, startedAt, day1) as {
+        state: BudgetLedgerState;
+      }
+    ).state;
+    state = markPending(state, 'cross-midnight', startedAt);
+    state = reconcile(state, 'cross-midnight', 450, completedAt);
+    expect(state.dailySpentMicroUsd[day1]).toBe(450);
+    expect(state.dailySpentMicroUsd['2026-07-17']).toBeUndefined();
   });
 
   it('reserves when budget is sufficient and rejects when insufficient', () => {
@@ -343,6 +423,7 @@ describe('budget reservation state machine (M5-05D2B-1)', () => {
     expect(s.reservations.req!.status).toBe('pending');
     s = reconcile(s, 'req', 100, 0);
     expect(s.spentMicroUsd).toBe(100);
+    expect(s.dailySpentMicroUsd['1970-01-01']).toBe(100);
     expect(s.reservations.req).toBeUndefined();
   });
 
@@ -350,13 +431,23 @@ describe('budget reservation state machine (M5-05D2B-1)', () => {
     const s: BudgetLedgerState = {
       monthKey: '2026-07',
       budgetMicroUsd: FIVE,
+      dailyBudgetMicroUsd: FIVE,
       spentMicroUsd: 0,
-      reservations: { dead: { microUsd: 4 * USD_MICRO, expiresAtMs: 500, status: 'reserved' } },
+      dailySpentMicroUsd: {},
+      reservations: {
+        dead: {
+          microUsd: 4 * USD_MICRO,
+          expiresAtMs: 500,
+          dayKey: '1970-01-01',
+          status: 'reserved',
+        },
+      },
     };
     // Non trattiene budget da scaduta; una reserve successiva la rilascia.
     expect(availableMicroUsd(s, 1000)).toBe(FIVE);
     const r = reserve(s, 'fresh', 4 * USD_MICRO, 2000, 1000) as { state: BudgetLedgerState };
     expect(r.state.spentMicroUsd).toBe(0);
+    expect(r.state.dailySpentMicroUsd).toEqual({});
     expect(r.state.reservations.dead).toBeUndefined();
   });
 
@@ -364,14 +455,24 @@ describe('budget reservation state machine (M5-05D2B-1)', () => {
     const s: BudgetLedgerState = {
       monthKey: '2026-07',
       budgetMicroUsd: FIVE,
+      dailyBudgetMicroUsd: FIVE,
       spentMicroUsd: 0,
-      reservations: { crashed: { microUsd: 2 * USD_MICRO, expiresAtMs: 500, status: 'pending' } },
+      dailySpentMicroUsd: {},
+      reservations: {
+        crashed: {
+          microUsd: 2 * USD_MICRO,
+          expiresAtMs: 500,
+          dayKey: '1970-01-01',
+          status: 'pending',
+        },
+      },
     };
     // Una `pending` trattiene budget anche da scaduta (costo potenziale).
     expect(availableMicroUsd(s, 1000)).toBe(FIVE - 2 * USD_MICRO);
     // Il settlement (dentro reserve) la addebita al tetto, non la libera.
     const r = reserve(s, 'x', USD_MICRO, 3000, 1000) as { state: BudgetLedgerState };
     expect(r.state.spentMicroUsd).toBe(2 * USD_MICRO);
+    expect(r.state.dailySpentMicroUsd['1970-01-01']).toBe(2 * USD_MICRO);
     expect(r.state.reservations.crashed).toBeUndefined();
   });
 

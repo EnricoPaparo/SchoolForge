@@ -35,13 +35,12 @@ import {
 import { isRealProviderEnabled, type AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import { enforceOperationLimits, type OperationLimitInput } from './aiCorrectionLimits.js';
 import {
-  USD_MICRO,
   estimateCostBreakdown,
   actualCostMicroUsd,
   normalizeUsageActual,
   microUsdToUsd,
 } from './aiCorrectionCost.js';
-import { monthKeyFromMs } from './aiCorrectionBudget.js';
+import { dayKeyFromMs, monthKeyFromMs } from './aiCorrectionBudget.js';
 
 // ── Limiti prudenti (guardie tecniche, non budget definitivi HG-M5-2/3) ──────
 
@@ -90,9 +89,9 @@ export const RUN_FINALIZE_MARGIN_MS = 20_000;
 export const RUN_LEASE_MS = AI_RUN_TIMEOUT_SECONDS * 1000;
 /** Contratto privacy-minimal dei nuovi `aiCorrectionRuns`. */
 export const AI_RUN_CONTRACT_VERSION = 2 as const;
-/** Retention DEV tecnica provvisoria, in attesa di conferma HG-M5-4. */
-export const RUN_RETENTION_DAYS = 30;
-export const RUN_RETENTION_MS = RUN_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+/** Retention approvata da HG-M5-4; la policy TTL reale resta separata. */
+export const AI_RUN_RETENTION_DAYS = 30;
+export const RUN_RETENTION_MS = AI_RUN_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 // ── Tipi di dominio (locali al package functions, no dipendenze da apps/web) ──
 
@@ -739,19 +738,22 @@ export interface ReserveBudgetInput {
   requestId: string;
   amountMicroUsd: number;
   budgetMicroUsd: number;
+  dailyBudgetMicroUsd: number;
   monthKey: string;
+  dayKey: string;
   nowMs: number;
   expiresAtMs: number;
 }
 
 export type ReserveBudgetResult =
   | { ok: true; reservedMicroUsd: number }
-  | { ok: false; reason: 'budget_exceeded' };
+  | { ok: false; reason: 'daily_budget_exceeded' | 'budget_exceeded' };
 
 /** Input della transizione `reserved → pending` (gated dall'`executionId`). */
 export interface MarkBudgetInvokedInput {
   requestId: string;
   budgetMicroUsd: number;
+  dailyBudgetMicroUsd: number;
   monthKey: string;
   nowMs: number;
   executionId: string;
@@ -762,6 +764,7 @@ export interface ReconcileBudgetInput {
   requestId: string;
   actualMicroUsd: number;
   budgetMicroUsd: number;
+  dailyBudgetMicroUsd: number;
   monthKey: string;
   nowMs: number;
   executionId: string;
@@ -1282,6 +1285,47 @@ export async function runExecution(
   }
   const grader = typeof deps.grader === 'function' ? deps.grader(runtimeConfig) : deps.grader;
 
+  // M5-05E-1: calcola e applica il tetto prudenziale prima della lease.
+  const preflightTeacherQuestions = preflight?.teacherQuestions ?? null;
+  const preflightByOrder = new Map(
+    (preflightTeacherQuestions ?? []).map((question) => [question.order, question]),
+  );
+  const eligibleWithOpen = (preflight?.classifications ?? []).filter(
+    (item) =>
+      item.classification.status === 'eligible' &&
+      item.classification.eligible.openOrders.length > 0,
+  );
+  const maxAttemptsPerCall = runtimeConfig ? runtimeConfig.limits.maxApplicationRetries + 1 : 1;
+  let reservationCostMicroUsd = 0;
+  if (runtimeConfig && eligibleWithOpen.length > 0) {
+    if (!deps.ports.reserveBudget || !deps.ports.reconcileBudget || !deps.ports.markBudgetInvoked) {
+      throw new AiGatewayError(
+        'budget_unavailable',
+        'Ledger di budget non disponibile: correzione IA reale non eseguibile.',
+      );
+    }
+    if (!grader.maxOutputTokensPerCall || !grader.reservationInputTokenUpperBound) {
+      throw new AiGatewayError(
+        'budget_unavailable',
+        'Il grader non espone un tetto di costo verificabile: prenotazione impossibile.',
+      );
+    }
+    reservationCostMicroUsd = computeReservationBoundMicroUsd(
+      runtimeConfig,
+      eligibleWithOpen,
+      preflightByOrder,
+      request,
+      grader,
+      maxAttemptsPerCall,
+    );
+    if (reservationCostMicroUsd > runtimeConfig.maxOperationCostMicroUsd) {
+      throw new AiGatewayError(
+        'operation_budget_exceeded',
+        'La prenotazione prudenziale supera il limite di costo della singola operazione.',
+      );
+    }
+  }
+
   // Clock della lease letto **qui**, immediatamente prima di `beginRun`, dopo
   // config/kill switch, preflight, limiti e costruzione lazy del grader: se il
   // preflight è lento, `leaseExpiresAt` deve comunque basarsi sull'istante
@@ -1337,73 +1381,48 @@ export async function runExecution(
 
   const verification = preflight ? null : await deps.ports.loadVerification(request.verificationId);
   const teacherQuestions = preflight
-    ? preflight.teacherQuestions
+    ? preflightTeacherQuestions
     : resolveTeacherQuestions(verification, ownerUid);
-  const byOrder = new Map((teacherQuestions ?? []).map((q) => [q.order, q]));
+  const byOrder = preflight
+    ? preflightByOrder
+    : new Map((teacherQuestions ?? []).map((q) => [q.order, q]));
   const preflightBySubmission = new Map(
     preflight?.classifications.map((item) => [item.submissionId, item]) ?? [],
   );
 
   // ── M5-05D2B-1 — contratto economico del percorso provider reale ────────────
   const reservationMonthKey = monthKeyFromMs(nowMs);
-  const budgetMicroUsd = runtimeConfig
-    ? Math.round(runtimeConfig.budget.monthlyUsd * USD_MICRO)
-    : 0;
+  const reservationDayKey = dayKeyFromMs(nowMs);
+  const budgetMicroUsd = runtimeConfig?.monthlyBudgetMicroUsd ?? 0;
+  const dailyBudgetMicroUsd = runtimeConfig?.dailyBudgetMicroUsd ?? 0;
   // Consegne che genereranno **una chiamata provider** (hanno aperte). Le
   // sole-chiuse non chiamano il provider → costo 0 → nessuna prenotazione.
-  const eligibleWithOpen = (preflight?.classifications ?? []).filter(
-    (item) =>
-      item.classification.status === 'eligible' &&
-      item.classification.eligible.openOrders.length > 0,
-  );
-
   // M5-05D2B-2 — tentativi massimi per chiamata (retry incluso) e deadline
   // complessiva monotona: nessun tentativo provider inizia oltre la deadline, che
   // lascia margine a reconcile/finish entro il timeout della Function.
-  const maxAttemptsPerCall = runtimeConfig ? runtimeConfig.limits.maxApplicationRetries + 1 : 1;
   const runDeadlineMs = nowMs + RUN_OVERALL_DEADLINE_MS - RUN_FINALIZE_MARGIN_MS;
 
   let budgetReserved = false;
-  let reservationCostMicroUsd = 0;
   if (runtimeConfig && eligibleWithOpen.length > 0) {
-    // **Fail-closed**: sul percorso reale con lavoro aperto, porte di budget e
-    // bounds del grader sono **obbligatori**. Se mancano si fallisce **prima** di
-    // costruire/chiamare il provider: nessuna correzione, nessun falso successo,
-    // nessuna spesa non tracciata.
-    if (!deps.ports.reserveBudget || !deps.ports.reconcileBudget || !deps.ports.markBudgetInvoked) {
-      throw new AiGatewayError(
-        'budget_unavailable',
-        'Ledger di budget non disponibile: correzione IA reale non eseguibile.',
-      );
-    }
-    if (!grader.maxOutputTokensPerCall || !grader.reservationInputTokenUpperBound) {
-      throw new AiGatewayError(
-        'budget_unavailable',
-        'Il grader non espone un tetto di costo verificabile: prenotazione impossibile.',
-      );
-    }
-    // Tetto **conservativo** realmente prenotato: per ogni chiamata, il massimo
-    // output ammesso + un upper bound provabile dell'input dell'esatto payload.
-    // Distinto dalla stima informativa mostrata all'utente.
-    reservationCostMicroUsd = computeReservationBoundMicroUsd(
-      runtimeConfig,
-      eligibleWithOpen,
-      byOrder,
-      request,
-      grader,
-      maxAttemptsPerCall,
-    );
-    const reservation = await deps.ports.reserveBudget({
+    const reservation = await deps.ports.reserveBudget!({
       requestId: request.requestId,
       amountMicroUsd: reservationCostMicroUsd,
       budgetMicroUsd,
+      dailyBudgetMicroUsd,
       monthKey: reservationMonthKey,
+      dayKey: reservationDayKey,
       nowMs,
       // La prenotazione scade con la finestra di lease: un crash **prima** del
       // provider (stato `reserved`) la rende recuperabile senza job esterni.
       expiresAtMs: nowMs + RUN_LEASE_MS,
     });
     if (!reservation.ok) {
+      if (reservation.reason === 'daily_budget_exceeded') {
+        throw new AiGatewayError(
+          'daily_budget_exceeded',
+          'Budget giornaliero della correzione IA esaurito.',
+        );
+      }
       throw new AiGatewayError('budget_exceeded', 'Budget mensile della correzione IA esaurito.');
     }
     budgetReserved = true;
@@ -1411,9 +1430,10 @@ export async function runExecution(
     // da qui in poi la prenotazione non è più liberabile silenziosamente per
     // scadenza (un crash dopo il provider la addebiterà al tetto). Gated
     // dall'`executionId`: se abbiamo perso la lease non elaboriamo.
-    const stillOwner = await deps.ports.markBudgetInvoked({
+    const stillOwner = await deps.ports.markBudgetInvoked!({
       requestId: request.requestId,
       budgetMicroUsd,
+      dailyBudgetMicroUsd,
       monthKey: reservationMonthKey,
       nowMs,
       executionId,
@@ -1621,6 +1641,7 @@ export async function runExecution(
       requestId: request.requestId,
       actualMicroUsd: costSettledMicroUsd,
       budgetMicroUsd,
+      dailyBudgetMicroUsd,
       monthKey: reservationMonthKey,
       nowMs: (deps.now ?? Date.now)(),
       executionId,

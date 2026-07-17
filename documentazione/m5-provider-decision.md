@@ -1,10 +1,12 @@
 # M5-05A — Decisione provider IA
 
-**Stato:** proposta evidence-based, non autorizza implementazione o deploy
+**Stato:** proposta evidence-based storica; decisione finale HG-M5-1..4 approvata il 17 luglio 2026, provider reale non attivo
 
 **Data della rilevazione:** 16 luglio 2026
 
 **Valuta:** USD, prezzi di listino API; imposte, cambio e costi Firebase esclusi
+
+> **Decisione successiva autoritativa:** il docente ha approvato OpenAI Responses API con snapshot pinned `gpt-5.4-nano-2026-03-17`, listino `v2-2026-07-17-hg-m5`, ceiling costi e retention descritti in [evidenze/hg-m5-human-gate.md](evidenze/hg-m5-human-gate.md). Le raccomandazioni e stime qui sotto restano evidenza del processo di selezione, non configurazione corrente. L'approvazione non abilita provider, secret, chiamate, costi, TTL o deploy.
 
 ## Legenda delle evidenze
 
@@ -345,7 +347,16 @@ Gemini `gemini-2.5-flash-lite` resta un candidato tecnico/economico, ma è **non
 9. Chi è autorizzato ad attivare/disattivare il provider reale e a ruotare la chiave.
 10. Approvazione umana privacy/GDPR, DPA, informativa e processo incident response.
 
-## 11. Human Gate M5-05 — PENDING
+## 11. Human Gate M5-05 — decisioni HG-M5-1..4 APPROVATE; release gate PENDING
+
+Decisioni registrate il **17 luglio 2026** in [evidenze/hg-m5-human-gate.md](evidenze/hg-m5-human-gate.md):
+
+- [x] **APPROVATO — HG-M5-1:** OpenAI Responses API, Structured Outputs, snapshot pinned `gpt-5.4-nano-2026-03-17`, listino `v2-2026-07-17-hg-m5` ($0,20/M input; $1,25/M output).
+- [x] **APPROVATO — HG-M5-2:** hard ceiling per operazione 250.000 micro-USD, applicato alla prenotazione conservativa.
+- [x] **APPROVATO — HG-M5-3:** budget giornaliero UTC 1.000.000 micro-USD e mensile UTC 5.000.000 micro-USD.
+- [x] **APPROVATO — HG-M5-4:** retention run 30 giorni; policy TTL reale rinviata a M5-05E-2.
+
+Queste approvazioni decisionali non attivano il provider e non autorizzano secret, chiamate, costi o deploy. Restano pendenti le verifiche operative/privacy/release elencate sotto e Gate G7.
 
 - [ ] **PENDING — Docente:** approva dataset sintetico, rubrica e soglie del benchmark.
 - [ ] **PENDING — Docente:** conferma il provider e modello definitivi soltanto dopo il benchmark; `gpt-5-nano` è la baseline iniziale, non la decisione finale.
@@ -359,7 +370,7 @@ Gemini `gemini-2.5-flash-lite` resta un candidato tecnico/economico, ma è **non
 - [ ] **PENDING — Docente:** conferma che ogni correzione IA resta assistiva e soggetta a revisione umana.
 - [ ] **PENDING — Release owner:** autorizza separatamente M5-05; nessuna autorizzazione è implicita in M5-05A.
 
-Finché tutte le checkbox pertinenti non sono confermate, usare soltanto `MockAiGrader` e non eseguire deploy di provider reali. Anche se questo documento viene mergiato, lo Human Gate resta `PENDING`: il merge non autorizza provider reale, API key, Secret Manager, deploy o costi reali.
+Finché tutte le checkbox operative pertinenti non sono confermate, usare soltanto `MockAiGrader` e non eseguire deploy di provider reali. Il merge registra le decisioni HG-M5-1..4 ma non autorizza provider reale, API key, Secret Manager, deploy o costi reali.
 
 ## 12. Piano di benchmark successivo
 

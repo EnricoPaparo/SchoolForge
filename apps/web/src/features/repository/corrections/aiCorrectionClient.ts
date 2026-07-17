@@ -171,6 +171,15 @@ export function describeAiError(err: unknown): string {
   if (httpsCode === 'functions/unauthenticated') {
     return 'Sessione scaduta: accedi di nuovo.';
   }
+  if (code === 'operation_budget_exceeded') {
+    return 'Il costo prudenziale supera il limite consentito per una singola operazione.';
+  }
+  if (code === 'daily_budget_exceeded') {
+    return 'Il budget giornaliero per la correzione IA è esaurito. Riprova domani.';
+  }
+  if (code === 'budget_exceeded') {
+    return 'Il budget mensile per la correzione IA è esaurito.';
+  }
   if (code === 'batch_limit_exceeded' || httpsCode === 'functions/resource-exhausted') {
     return 'Troppe consegne selezionate: riduci la selezione.';
   }
