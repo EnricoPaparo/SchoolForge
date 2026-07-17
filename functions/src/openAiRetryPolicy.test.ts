@@ -53,7 +53,7 @@ describe('parseRetryAfterMs', () => {
     const future = new Date(now + 4000).toUTCString();
     expect(parseRetryAfterMs({ 'retry-after': future }, now)).toBe(4000);
   });
-  it('returns null for absent, invalid, negative, NaN, Infinity or huge values', () => {
+  it('returns null for absent, invalid, negative, NaN or Infinity values (→ fallback)', () => {
     expect(parseRetryAfterMs({}, now)).toBeNull();
     expect(parseRetryAfterMs({ 'retry-after': 'soon' }, now)).toBeNull();
     expect(parseRetryAfterMs({ 'retry-after-ms': 'NaN' }, now)).toBeNull();
@@ -63,8 +63,14 @@ describe('parseRetryAfterMs', () => {
     expect(
       parseRetryAfterMs({ 'retry-after': new Date(now - 5000).toUTCString() }, now),
     ).toBeNull();
-    // Oltre il sanity cap (24h) → null.
-    expect(parseRetryAfterMs({ 'retry-after-ms': String(48 * 3600 * 1000) }, now)).toBeNull();
+  });
+  it('keeps a syntactically valid but huge value (clamped to the sanity cap, not null)', () => {
+    // 48h è valido ma enorme: NON deve diventare null (sarebbe scambiato per
+    // header assente → backoff). Resta un numero, clampato al sanity cap (24h),
+    // così decideRetry lo vede oltre il cap automatico e blocca il retry.
+    const parsed = parseRetryAfterMs({ 'retry-after-ms': String(48 * 3600 * 1000) }, now);
+    expect(parsed).toBe(24 * 3600 * 1000);
+    expect(parsed).not.toBeNull();
   });
 });
 
@@ -96,7 +102,12 @@ describe('retryReasonCode', () => {
     expect(retryReasonCode({ transient: true, status: 409 })).toBe('http_409');
     expect(retryReasonCode({ transient: true, status: 429 })).toBe('http_429');
     expect(retryReasonCode({ transient: true, status: 503 })).toBe('http_5xx');
-    expect(retryReasonCode({ transient: true })).toBe('timeout');
+  });
+  it('distinguishes connection (never sent) from timeout (sent, no reply) via billingRisk', () => {
+    // Connessione fallita: mai arrivata → nessun costo → 'connection'.
+    expect(retryReasonCode({ transient: true, billingRisk: false })).toBe('connection');
+    // Timeout dopo l'invio: può aver generato costo → 'timeout'.
+    expect(retryReasonCode({ transient: true, billingRisk: true })).toBe('timeout');
   });
 });
 
@@ -132,6 +143,35 @@ describe('decideRetry', () => {
       error: transient({ status: 429, retryAfterMs: RETRY_MAX_RETRY_AFTER_MS + 1 }),
     });
     expect(d).toEqual({ retry: false, blockedByRetryAfter: true });
+  });
+  it('does not auto-retry a huge-but-valid Retry-After (parsed → clamped → blocked)', () => {
+    // Retry-After enorme ma sintatticamente valido: il parser lo clampa al sanity
+    // cap (24h) e decideRetry lo blocca (oltre il cap automatico) → zero retry,
+    // nessuna attesa assurda, nessun fallback al backoff.
+    const retryAfterMs = parseRetryAfterMs({ 'retry-after-ms': String(48 * 3600 * 1000) }, 0);
+    expect(retryAfterMs).toBe(24 * 3600 * 1000);
+    const d = decideRetry({ ...base, error: transient({ status: 429, retryAfterMs }) });
+    expect(d).toEqual({ retry: false, blockedByRetryAfter: true });
+  });
+  it('does not auto-retry a Retry-After above the auto-limit but below the sanity cap', () => {
+    // 30s: valido, ben sotto il sanity cap ma oltre maxRetryAfterMs → zero retry.
+    const retryAfterMs = parseRetryAfterMs({ 'retry-after': '30' }, 0);
+    expect(retryAfterMs).toBe(30_000);
+    expect(retryAfterMs).toBeGreaterThan(RETRY_MAX_RETRY_AFTER_MS);
+    const d = decideRetry({ ...base, error: transient({ status: 429, retryAfterMs }) });
+    expect(d).toEqual({ retry: false, blockedByRetryAfter: true });
+  });
+  it('falls back to backoff+jitter when the header is invalid (parsed → null)', () => {
+    // Header non valido → parser null → nessun retryAfterMs → backoff.
+    expect(parseRetryAfterMs({ 'retry-after': 'soon' }, 0)).toBeNull();
+    const d = decideRetry({ ...base, error: transient({ status: 500 }) });
+    expect(d).toEqual({ retry: true, delayMs: 250, reasonCode: 'http_5xx' });
+  });
+  it('never retries an intentional abort / non-transient error (permanent)', () => {
+    // Un abort intenzionale è normalizzato a non-transitorio a valle: qui il
+    // contratto puro garantisce zero retry per qualunque errore non transitorio.
+    const d = decideRetry({ ...base, error: { transient: false } });
+    expect(d).toEqual({ retry: false });
   });
   it('does not retry if the deadline cannot fit delay + attempt', () => {
     // remaining appena sotto attemptTimeout + delay.

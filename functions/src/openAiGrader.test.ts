@@ -361,6 +361,40 @@ describe('OpenAiGrader — single application retry policy (M5-05D2B-2)', () => 
     expect(sleep).not.toHaveBeenCalled();
   });
 
+  it('never retries an intentional external abort even if surfaced as transient', async () => {
+    // L'abort intenzionale arriva dall'SDK come APIUserAbortError → normalizzato
+    // transitorio; ma `ctx.signal` è abortito → permanente, zero retry.
+    const controller = new AbortController();
+    const send = vi.fn(async () => {
+      controller.abort();
+      throw new OpenAiTransportError('aborted after send', {
+        transient: true,
+        billingRisk: true,
+      });
+    });
+    const sleep = vi.fn(async () => {});
+    const grader = new OpenAiGrader(
+      'gpt-5-nano',
+      { send },
+      { policy: TEST_POLICY, now: () => 0, sleep, random: () => 0.5 },
+    );
+    const err = await grader.grade(input, { signal: controller.signal }).catch((e) => e);
+    expect(err).toBeInstanceOf(AiGraderFailure);
+    expect((err as AiGraderFailure).reasonCode).toBe('aborted');
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('records distinct connection vs timeout reason codes', async () => {
+    const conn = retryGrader([fail({ transient: true, billingRisk: false }), okResponse]);
+    const c = await conn.grader.grade(input);
+    expect(c.attempts!.retryReasonCodes).toEqual(['connection']);
+
+    const timeout = retryGrader([fail({ transient: true, billingRisk: true }), okResponse]);
+    const t = await timeout.grader.grade(input);
+    expect(t.attempts!.retryReasonCodes).toEqual(['timeout']);
+  });
+
   it('does not start a new attempt past the overall deadline (deadline_exceeded)', async () => {
     // deadline < attemptTimeout ⇒ nemmeno il primo tentativo parte.
     const { grader, send } = retryGrader([okResponse], { now: () => 0 });

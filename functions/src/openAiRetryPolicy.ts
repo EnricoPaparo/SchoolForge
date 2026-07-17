@@ -52,6 +52,13 @@ export interface ClassifiedTransportError {
   transient: boolean;
   status?: number;
   retryAfterMs?: number;
+  /**
+   * `true` se il tentativo **può** aver generato costo pur fallendo (timeout dopo
+   * l'invio, ≥ 500, abort dopo l'invio). Serve, tra l'altro, a distinguere un
+   * errore di **connessione** (mai arrivato, `false`) da un **timeout** (`true`)
+   * quando manca lo status HTTP.
+   */
+  billingRisk?: boolean;
 }
 
 /**
@@ -80,9 +87,19 @@ export function readHeader(headers: unknown, name: string): string | null {
   return null;
 }
 
+/**
+ * Normalizza un valore `Retry-After` in ms **sintatticamente valido**.
+ * - `NaN`/`Infinity`/negativo ⇒ `null` (header non valido → fallback backoff);
+ * - valore finito ≥ 0 ⇒ ritornato, **clampato** al sanity cap (24h).
+ *
+ * NB: un valore enorme ma valido **non** viene trasformato in `null` (che
+ * verrebbe scambiato per header assente e farebbe scattare il backoff). Resta un
+ * numero reale, così `decideRetry` lo confronta con `maxRetryAfterMs` e, essendo
+ * oltre il cap automatico, **blocca** il retry senza attese assurde.
+ */
 function finitePositiveOrNull(value: number): number | null {
-  if (!Number.isFinite(value) || value < 0 || value > RETRY_AFTER_SANITY_MAX_MS) return null;
-  return value;
+  if (!Number.isFinite(value) || value < 0) return null;
+  return Math.min(value, RETRY_AFTER_SANITY_MAX_MS);
 }
 
 /**
@@ -91,8 +108,10 @@ function finitePositiveOrNull(value: number): number | null {
  * 1. `retry-after-ms` (millisecondi interi);
  * 2. `Retry-After` in **secondi** (intero);
  * 3. `Retry-After` come **HTTP-date** (differenza da `nowMs`).
- * Valori assenti, non numerici, `NaN`/`Infinity`, negativi o assurdamente grandi
- * (> 24h) ⇒ `null` (il chiamante userà il backoff applicativo).
+ * Valori assenti, non numerici, `NaN`/`Infinity` o negativi ⇒ `null` (il
+ * chiamante userà il backoff applicativo). Un valore **valido ma enorme** viene
+ * clampato al sanity cap (24h) e restituito come numero: sarà `decideRetry` a
+ * bloccarlo (oltre `maxRetryAfterMs`), senza mai dormire per tempi arbitrari.
  */
 export function parseRetryAfterMs(headers: unknown, nowMs: number): number | null {
   const ms = readHeader(headers, 'retry-after-ms');
@@ -140,8 +159,9 @@ export function retryReasonCode(error: ClassifiedTransportError): RetryReasonCod
       return 'http_429';
     default:
       if (error.status !== undefined && error.status >= 500) return 'http_5xx';
-      // Nessuno status: connessione o timeout di trasporto.
-      return 'timeout';
+      // Nessuno status: distinguiamo connessione (mai arrivata) da timeout
+      // (richiesta partita ma senza risposta) via `billingRisk`.
+      return error.billingRisk ? 'timeout' : 'connection';
   }
 }
 

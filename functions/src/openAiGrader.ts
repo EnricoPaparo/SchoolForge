@@ -512,6 +512,17 @@ export class OpenAiGrader implements AiGrader {
         ctx?.signal?.removeEventListener('abort', onExternalAbort);
       }
 
+      // Abort esterno/intenzionale (deadline o lease persa, annullamento): è
+      // **permanente** e non va mai ritentato, anche se l'SDK lo segnala come
+      // `APIUserAbortError` transitorio. Va distinto dal timeout per-tentativo,
+      // che pure usa `controller.abort()` ma **non** tocca `ctx.signal`.
+      if (ctx?.signal?.aborted) {
+        throw new AiGraderFailure('Operazione IA annullata.', {
+          attempts: stats(),
+          reasonCode: 'aborted',
+        });
+      }
+
       // Tentativo dal costo **incerto**: la richiesta può aver generato costo.
       if (transportError.billingRisk) unknownBillingAttempts++;
 
