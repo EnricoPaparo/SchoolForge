@@ -953,7 +953,6 @@ export async function runExecution(
     request.submissionIds.map((submissionId, ordinal) => [submissionId, ordinal]),
   );
   const executionId = randomUUID();
-  const nowMs = (deps.now ?? Date.now)();
 
   // M5-05D1 — guardrail del provider **reale** eseguito nel preflight, **prima**
   // di acquisire la lease, chiamare il grader o scrivere: kill switch da
@@ -974,6 +973,17 @@ export async function runExecution(
     enforceRealProviderLimits(runtimeConfig, preflight.eligibleLimits);
   }
   const grader = typeof deps.grader === 'function' ? deps.grader(runtimeConfig) : deps.grader;
+
+  // Clock della lease letto **qui**, immediatamente prima di `beginRun`, dopo
+  // config/kill switch, preflight, limiti e costruzione lazy del grader: se il
+  // preflight è lento, `leaseExpiresAt` deve comunque basarsi sull'istante
+  // effettivo di acquisizione (`acquisitionTime + RUN_LEASE_MS`), non sull'inizio
+  // della request — altrimenti la lease nascerebbe già parzialmente consumata,
+  // aprendo a un takeover prematuro e a una doppia elaborazione. Per un nuovo run
+  // anche `expireAt` deriva dallo stesso istante; un takeover successivo non
+  // estende né riscrive l'`expireAt` del documento originale (lo imposta solo la
+  // create). Il clock resta iniettabile per test deterministici.
+  const nowMs = (deps.now ?? Date.now)();
 
   // Idempotenza concorrente: acquisisci la lease sul run doc (transazione).
   const begin = await deps.ports.beginRun(request.requestId, {

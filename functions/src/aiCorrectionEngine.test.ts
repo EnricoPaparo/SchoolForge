@@ -1159,6 +1159,118 @@ describe('runExecution — concurrent idempotency (lease)', () => {
   });
 });
 
+describe('runExecution — lease clock captured at acquisition (M5-05D2A regression)', () => {
+  // Un preflight lento (config/kill switch + classificazione + limiti) non deve
+  // consumare la lease: `leaseExpiresAt` ed `expireAt` devono basarsi sull'istante
+  // effettivo di acquisizione, non sull'inizio della request.
+  it('bases leaseExpiresAt/expireAt on acquisition time even when preflight is slow', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const T0 = Date.UTC(2026, 6, 16, 12, 0, 0);
+    let clock = T0;
+    // Il preflight (qui la lettura config) fa avanzare il clock oltre RUN_LEASE_MS.
+    const SLOW = RUN_LEASE_MS * 3;
+    const slowConfigPort = async () => {
+      clock += SLOW;
+      return ENABLED_RUNTIME_CONFIG;
+    };
+    let capturedNowMs = -1;
+    let capturedExpireAtMs = -1;
+    const originalBeginRun = store.beginRun;
+    store.beginRun = async (requestId, meta) => {
+      capturedNowMs = meta.nowMs;
+      capturedExpireAtMs = meta.expireAtMs;
+      return originalBeginRun(requestId, meta);
+    };
+    const grade = vi.fn(new MockAiGrader().grade);
+    const grader = { id: 'openai', model: 'm', grade } as unknown as AiGrader;
+
+    await runExecution(req([sid('s1')]), {
+      ...baseDeps(store, grader),
+      featureMode: 'openai',
+      loadRuntimeConfig: slowConfigPort,
+      now: () => clock,
+    });
+
+    // Il clock della lease è letto DOPO il preflight lento: acquisizione a T0+SLOW.
+    expect(capturedNowMs).toBe(T0 + SLOW);
+    expect(capturedExpireAtMs).toBe(T0 + SLOW + RUN_RETENTION_MS);
+    // Non è basato sull'inizio della request.
+    expect(capturedNowMs).not.toBe(T0);
+    // La lease appena acquisita scade a acquisitionTime + RUN_LEASE_MS.
+    // (finishRun azzera la lease a fine run: la ricaviamo dal clock catturato.)
+    expect(capturedNowMs + RUN_LEASE_MS).toBe(T0 + SLOW + RUN_LEASE_MS);
+    expect(grade).toHaveBeenCalledTimes(1);
+    expect(store.commitCalls).toBe(1);
+  });
+
+  it('a second worker before the acquisition-based expiry gets locked; no double grader/commit', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    // Worker A ha acquisito la lease all'istante TA (post-preflight).
+    const TA = Date.UTC(2026, 6, 16, 12, 0, 0);
+    store.runs.set(REQ, {
+      runContractVersion: AI_RUN_CONTRACT_VERSION,
+      status: 'running',
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')]),
+      mode: 'openai',
+      executionId: 'A',
+      leaseExpiresAt: TA + RUN_LEASE_MS,
+      expireAtMs: TA + RUN_RETENTION_MS,
+    });
+    const grade = vi.fn();
+    const grader = { id: 'openai', model: 'm', grade } as unknown as AiGrader;
+
+    // Worker B arriva PRIMA della scadenza (basata sull'acquisizione di A).
+    const res = await runExecution(req([sid('s1')]), {
+      ...baseDeps(store, grader),
+      featureMode: 'openai',
+      loadRuntimeConfig: enabledConfigPort,
+      now: () => TA + RUN_LEASE_MS - 1,
+    });
+
+    expect(res.status).toBe('running');
+    expect(res.idempotentReplay).toBe(true);
+    expect(grade).not.toHaveBeenCalled(); // nessuna doppia elaborazione
+    expect(store.commitCalls).toBe(0);
+    expect(store.runs.get(REQ)!.executionId).toBe('A'); // A possiede ancora il run
+    // expireAt non esteso né riscritto dal tentativo locked.
+    expect(store.runs.get(REQ)!.expireAtMs).toBe(TA + RUN_RETENTION_MS);
+  });
+
+  it('takeover after the true expiry processes without extending the original expireAt', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const TA = Date.UTC(2026, 6, 16, 12, 0, 0);
+    store.runs.set(REQ, {
+      runContractVersion: AI_RUN_CONTRACT_VERSION,
+      status: 'running',
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')]),
+      mode: 'openai',
+      executionId: 'crashed-A',
+      leaseExpiresAt: TA + RUN_LEASE_MS,
+      expireAtMs: TA + RUN_RETENTION_MS,
+    });
+    const grade = vi.fn(new MockAiGrader().grade);
+    const grader = { id: 'openai', model: 'm', grade } as unknown as AiGrader;
+
+    // Worker B arriva DOPO la vera scadenza → takeover.
+    const res = await runExecution(req([sid('s1')]), {
+      ...baseDeps(store, grader),
+      featureMode: 'openai',
+      loadRuntimeConfig: enabledConfigPort,
+      now: () => TA + RUN_LEASE_MS + 1,
+    });
+
+    expect(res.idempotentReplay).toBe(false);
+    expect(store.corrections.has(sid('s1'))).toBe(true); // elaborato
+    expect(store.runs.get(REQ)!.status).toBe('completed');
+    expect(grade).toHaveBeenCalledTimes(1);
+    // Il takeover NON estende né riscrive l'expireAt del documento originale.
+    expect(store.runs.get(REQ)!.expireAtMs).toBe(TA + RUN_RETENTION_MS);
+  });
+});
+
 describe('token estimation and consumption', () => {
   const questions = [tq(0, 'aperta', 3, SOL_MARK)];
 
