@@ -3,7 +3,8 @@ import type { Functions } from 'firebase/functions';
 
 /**
  * M5-03 — client tipizzato delle callable del gateway IA
- * (`aiCorrectionPreview`/`aiCorrectionRun`, motore M5-02, modalità mock).
+ * (`aiCorrectionPreview`/`aiCorrectionRun`, motore M5-02, modalità mock o
+ * provider OpenAI reale selezionato esclusivamente lato server).
  *
  * Il client invia **esclusivamente** `verificationId`, `submissionIds` e
  * `requestId`: mai testi di domande, risposte, soluzioni, nomi o email. Le
@@ -49,7 +50,7 @@ export interface AiPreviewCounts {
 }
 
 export interface AiPreviewResult {
-  mode: 'mock';
+  mode: 'mock' | 'openai';
   phase: 'preview';
   requestId: string;
   verificationId: string;
@@ -72,7 +73,7 @@ export interface AiRunSubmissionResult {
 }
 
 export interface AiRunResult {
-  mode: 'mock';
+  mode: 'mock' | 'openai';
   phase: 'run';
   requestId: string;
   verificationId: string;

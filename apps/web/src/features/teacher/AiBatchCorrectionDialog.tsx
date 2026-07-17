@@ -11,11 +11,11 @@ import {
 } from '../repository/corrections/aiCorrectionClient.js';
 
 /**
- * M5-03 — dialog batch «Correggi con IA» (solo mock).
+ * M5-03/M5-05 — dialog batch «Correggi con IA» (mock o OpenAI reale).
  *
  * Flusso: al montaggio chiama `aiCorrectionPreview` (nessuna scrittura); mostra
  * un riepilogo di conferma con conteggi, esclusioni e stima token/costo, e il
- * banner **«Modalità mock — costo reale 0»**; alla conferma chiama
+ * banner coerente con la modalità restituita dal server; alla conferma chiama
  * `aiCorrectionRun` con lo **stesso** `requestId` e la **stessa** selezione, e
  * mostra il risultato. Preview e run inviano **solo** `verificationId`,
  * `submissionIds`, `requestId`. Il dialog **non** si chiude da solo finché il
@@ -94,12 +94,17 @@ export function AiBatchCorrectionDialog({
   }
 
   const busy = phase === 'previewing' || phase === 'running';
+  const activeMode = result?.mode ?? preview?.mode;
 
   return (
     <DialogShell title="Correggi con IA" onCancel={onClose} busy={busy}>
-      <p role="status" style={{ fontWeight: 700 }}>
-        Modalità mock — costo reale 0
-      </p>
+      {activeMode && (
+        <p role="status" style={{ fontWeight: 700 }}>
+          {activeMode === 'openai'
+            ? 'Modalità OpenAI — il costo reale sarà registrato dopo l’esecuzione'
+            : 'Modalità mock — costo reale 0'}
+        </p>
+      )}
 
       {phase === 'previewing' && (
         <p aria-busy="true" className="state-loading">
@@ -131,7 +136,10 @@ export function AiBatchCorrectionDialog({
             <li>Consegne con sole domande chiuse: {preview.counts.closedOnlySubmissions}</li>
             <li>Domande già valutate (ignorate): {preview.counts.alreadyGradedIgnored}</li>
             <li>Token stimati: {preview.tokensEstimated}</li>
-            <li>Costo stimato: {preview.costEstimated} (mock)</li>
+            <li>
+              Costo stimato: {preview.costEstimated}
+              {preview.mode === 'mock' ? ' (mock)' : ' USD'}
+            </li>
           </ul>
           {preview.excluded.length > 0 && (
             <details>
@@ -185,8 +193,14 @@ export function AiBatchCorrectionDialog({
                 <li>Escluse: {result.counts.excluded}</li>
                 <li>Fallite: {result.counts.failed}</li>
                 <li>Token stimati: {result.tokensEstimated}</li>
-                <li>Token reali: {result.tokensActual} (mock)</li>
-                <li>Costo reale: {result.costActual} (mock)</li>
+                <li>
+                  Token reali: {result.tokensActual}
+                  {result.mode === 'mock' ? ' (mock)' : ''}
+                </li>
+                <li>
+                  Costo reale: {result.costActual}
+                  {result.mode === 'mock' ? ' (mock)' : ' USD'}
+                </li>
               </ul>
               {result.results.some((r) => r.reason) && (
                 <details>
