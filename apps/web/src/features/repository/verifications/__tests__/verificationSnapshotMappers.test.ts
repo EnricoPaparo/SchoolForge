@@ -85,6 +85,21 @@ describe('toTeacherQuestionSnapshot', () => {
     const snap = toTeacherQuestionSnapshot(aperta, 0);
     expect(snap).not.toHaveProperty('opzioni');
   });
+
+  it('EXAM-UX-03 — freezes maxCharacters when the aperta question sets it', () => {
+    const aperta: LoadedQuestionWithSolution = {
+      ref: { ...REF, tipo: 'aperta' },
+      testo: 'Spiega.',
+      tipo: 'aperta',
+      soluzione: 'Risposta libera.',
+      maxCharacters: 500,
+    };
+    expect(toTeacherQuestionSnapshot(aperta, 0).maxCharacters).toBe(500);
+  });
+
+  it('EXAM-UX-03 — omits maxCharacters when absent (legacy)', () => {
+    expect(toTeacherQuestionSnapshot(LOADED, 0)).not.toHaveProperty('maxCharacters');
+  });
 });
 
 describe('toPublicVerificationQuestion', () => {
@@ -108,6 +123,20 @@ describe('toPublicVerificationQuestion', () => {
     });
     expect(pub).not.toHaveProperty('soluzione');
     expect(JSON.stringify(pub)).not.toMatch(/poolStorageRef|questionLocalId|questionIndexEntryId/);
+  });
+
+  it('EXAM-UX-03 — carries maxCharacters into the student projection when set', () => {
+    const withLimit: VerificationTeacherQuestionSnapshot = {
+      order: 0,
+      tipo: 'aperta',
+      maxPoints: 2,
+      testo: 'Spiega.',
+      soluzione: 'x',
+      maxCharacters: 800,
+    };
+    expect(toPublicVerificationQuestion(withLimit).maxCharacters).toBe(800);
+    // Legacy snapshot without the field stays clean.
+    expect(toPublicVerificationQuestion(snap)).not.toHaveProperty('maxCharacters');
   });
 });
 

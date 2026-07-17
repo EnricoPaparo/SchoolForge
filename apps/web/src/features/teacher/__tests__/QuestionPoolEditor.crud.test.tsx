@@ -271,6 +271,53 @@ describe('QuestionPoolEditor — question add / edit / delete', () => {
     expect(call.pool.questions.some((q) => q.id === 'q3')).toBe(true);
   });
 
+  it('EXAM-UX-03 — shows "Limite caratteri" only for aperta questions', async () => {
+    await openNew(); // defaults to aperta
+    expect(screen.getByLabelText('Limite caratteri')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Tipo domanda'), {
+      target: { value: 'chiusa_singola' },
+    });
+    expect(screen.queryByLabelText('Limite caratteri')).toBeNull();
+  });
+
+  it('EXAM-UX-03 — persists a custom maxCharacters on an aperta question', async () => {
+    await openNew();
+    fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q3' } });
+    fireEvent.change(screen.getByLabelText('Testo domanda'), { target: { value: 'Spiega TCP.' } });
+    fireEvent.change(screen.getByLabelText('Soluzione'), { target: { value: 'Un protocollo.' } });
+    fireEvent.change(screen.getByLabelText('Limite caratteri'), { target: { value: '500' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+    await waitFor(() => expect(mockSavePool).toHaveBeenCalledOnce());
+    const call = mockSavePool.mock.calls[0][0] as {
+      pool: { questions: { id: string; maxCharacters?: number }[] };
+    };
+    expect(call.pool.questions.find((q) => q.id === 'q3')?.maxCharacters).toBe(500);
+  });
+
+  it('EXAM-UX-03 — leaving "Limite caratteri" empty saves no field (default applies)', async () => {
+    await openNew();
+    fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q3' } });
+    fireEvent.change(screen.getByLabelText('Testo domanda'), { target: { value: 'Spiega.' } });
+    fireEvent.change(screen.getByLabelText('Soluzione'), { target: { value: 'x' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+    await waitFor(() => expect(mockSavePool).toHaveBeenCalledOnce());
+    const call = mockSavePool.mock.calls[0][0] as {
+      pool: { questions: { id: string; maxCharacters?: number }[] };
+    };
+    expect(call.pool.questions.find((q) => q.id === 'q3')).not.toHaveProperty('maxCharacters');
+  });
+
+  it('EXAM-UX-03 — rejects an invalid maxCharacters (0) without saving', async () => {
+    await openNew();
+    fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q3' } });
+    fireEvent.change(screen.getByLabelText('Testo domanda'), { target: { value: 'Spiega.' } });
+    fireEvent.change(screen.getByLabelText('Soluzione'), { target: { value: 'x' } });
+    fireEvent.change(screen.getByLabelText('Limite caratteri'), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+    await screen.findByText(/limite caratteri deve essere un intero tra 1 e 10000/i);
+    expect(mockSavePool).not.toHaveBeenCalled();
+  });
+
   it('rejects a duplicate question ID', async () => {
     await openNew();
     fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q1' } });
