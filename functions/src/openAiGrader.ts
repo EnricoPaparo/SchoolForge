@@ -20,6 +20,15 @@ import {
 } from './openAiRetryPolicy.js';
 
 export const OPENAI_ATTEMPT_TIMEOUT_MS = 60_000;
+/**
+ * Margine oltre il timeout per-tentativo prima dell'**hard abort** di sicurezza
+ * del loop. Il timeout normale del tentativo è gestito dall'SDK (`timeout`), che
+ * rigetta con `APIConnectionTimeoutError` (transitorio → ritentabile). Questo
+ * timer è solo una rete di sicurezza per un transport che ignorasse il proprio
+ * timeout: scattando **dopo** il timeout SDK, non traveste mai un timeout
+ * (ritentabile) da abort (permanente).
+ */
+const ATTEMPT_HARD_ABORT_MARGIN_MS = 5_000;
 export const OPENAI_MAX_APPLICATION_RETRIES = 1;
 export const OPENAI_MAX_OUTPUT_TOKENS = 2_000;
 const MAX_QUESTION_FEEDBACK_CHARS = 2_000;
@@ -123,10 +132,22 @@ export class OpenAiTransportError extends Error {
    * la richiesta certamente non è arrivata (connessione fallita, 429/409): costo 0.
    */
   readonly billingRisk: boolean;
+  /**
+   * M5-05D2B-2 — abort **intenzionale** (`APIUserAbortError`): annullamento
+   * esplicito o lease/deadline persa. È permanente (`transient: false`) e non va
+   * mai ritentato; l'esito verso l'UI è `aborted`.
+   */
+  readonly aborted: boolean;
 
   constructor(
     message: string,
-    options: { transient: boolean; status?: number; retryAfterMs?: number; billingRisk?: boolean },
+    options: {
+      transient: boolean;
+      status?: number;
+      retryAfterMs?: number;
+      billingRisk?: boolean;
+      aborted?: boolean;
+    },
   ) {
     super(message);
     this.name = 'OpenAiTransportError';
@@ -134,6 +155,7 @@ export class OpenAiTransportError extends Error {
     this.status = options.status;
     if (options.retryAfterMs !== undefined) this.retryAfterMs = options.retryAfterMs;
     this.billingRisk = options.billingRisk ?? false;
+    this.aborted = options.aborted ?? false;
   }
 }
 
@@ -182,12 +204,19 @@ function normalizeTransportError(error: unknown): OpenAiTransportError {
       billingRisk: false,
     });
   }
-  // Timeout di connessione o abort dopo l'invio: la richiesta può aver generato
-  // costo → billingRisk (accounting prudente a valle).
-  if (
-    error instanceof OpenAI.APIConnectionTimeoutError ||
-    error instanceof OpenAI.APIUserAbortError
-  ) {
+  // Abort intenzionale (annullamento esplicito / lease o deadline persa): la
+  // richiesta **potrebbe** essere già partita → billingRisk (accounting prudente).
+  // È **permanente**: mai un retry automatico.
+  if (error instanceof OpenAI.APIUserAbortError) {
+    return new OpenAiTransportError('OpenAI request aborted.', {
+      transient: false,
+      billingRisk: true,
+      aborted: true,
+    });
+  }
+  // Timeout di connessione (nessuna risposta): la richiesta può aver generato
+  // costo → billingRisk. Transitorio → ritentabile secondo la policy.
+  if (error instanceof OpenAI.APIConnectionTimeoutError) {
     return new OpenAiTransportError('OpenAI request timed out.', {
       transient: true,
       billingRisk: true,
@@ -476,7 +505,10 @@ export class OpenAiGrader implements AiGrader {
       const controller = new AbortController();
       const onExternalAbort = () => controller.abort();
       ctx?.signal?.addEventListener('abort', onExternalAbort, { once: true });
-      const timer = setTimeout(() => controller.abort(), policy.attemptTimeoutMs);
+      const timer = setTimeout(
+        () => controller.abort(),
+        policy.attemptTimeoutMs + ATTEMPT_HARD_ABORT_MARGIN_MS,
+      );
       let transportError: OpenAiTransportError;
       try {
         const response = await this.transport.send(request, {
@@ -512,19 +544,23 @@ export class OpenAiGrader implements AiGrader {
         ctx?.signal?.removeEventListener('abort', onExternalAbort);
       }
 
-      // Abort esterno/intenzionale (deadline o lease persa, annullamento): è
-      // **permanente** e non va mai ritentato, anche se l'SDK lo segnala come
-      // `APIUserAbortError` transitorio. Va distinto dal timeout per-tentativo,
-      // che pure usa `controller.abort()` ma **non** tocca `ctx.signal`.
-      if (ctx?.signal?.aborted) {
+      // Tentativo dal costo **incerto**: la richiesta può aver generato costo
+      // (5xx/408, timeout dopo l'invio, abort dopo l'invio). Accounting prudente
+      // **prima** di decidere l'esito, così anche un abort è contabilizzato.
+      if (transportError.billingRisk) unknownBillingAttempts++;
+
+      // Abort intenzionale (annullamento esplicito, deadline o lease persa): è
+      // **permanente** e non va mai ritentato. `APIUserAbortError` è già
+      // classificato non-transitorio con `aborted: true`; copriamo anche il caso
+      // in cui `ctx.signal` risulti abortito con un altro errore di trasporto. Va
+      // distinto dal timeout per-tentativo, che usa il timeout dell'SDK
+      // (`APIConnectionTimeoutError`, transitorio) e **non** è un abort.
+      if (transportError.aborted || ctx?.signal?.aborted) {
         throw new AiGraderFailure('Operazione IA annullata.', {
           attempts: stats(),
           reasonCode: 'aborted',
         });
       }
-
-      // Tentativo dal costo **incerto**: la richiesta può aver generato costo.
-      if (transportError.billingRisk) unknownBillingAttempts++;
 
       const remainingMs =
         ctx?.deadlineMs !== undefined ? ctx.deadlineMs - now() : Number.POSITIVE_INFINITY;

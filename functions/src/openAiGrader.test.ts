@@ -1,3 +1,4 @@
+import OpenAI from 'openai';
 import { describe, expect, it, vi } from 'vitest';
 import {
   AiGraderFailure,
@@ -383,6 +384,59 @@ describe('OpenAiGrader — single application retry policy (M5-05D2B-2)', () => 
     expect((err as AiGraderFailure).reasonCode).toBe('aborted');
     expect(send).toHaveBeenCalledTimes(1);
     expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('never retries a real APIUserAbortError through the SDK transport (permanent, billed prudently)', async () => {
+    // Percorso reale: il fake client dell'SDK lancia un vero APIUserAbortError,
+    // normalizzato da normalizeTransportError → non-transitorio, billingRisk,
+    // aborted. Il grader deve fare un solo tentativo, zero retry, zero sleep,
+    // contabilizzare il possibile costo ed esitare 'aborted'.
+    const create = vi.fn(async () => {
+      throw new OpenAI.APIUserAbortError();
+    });
+    const transport = new OpenAiSdkTransport({ responses: { create } });
+    const sleep = vi.fn(async () => {});
+    const grader = new OpenAiGrader('gpt-5-nano', transport, {
+      policy: TEST_POLICY,
+      now: () => 0,
+      sleep,
+      random: () => 0.5,
+    });
+    const err = await grader.grade(input).catch((e) => e);
+    expect(err).toBeInstanceOf(AiGraderFailure);
+    expect((err as AiGraderFailure).reasonCode).toBe('aborted');
+    expect(create).toHaveBeenCalledTimes(1); // un solo tentativo
+    expect(sleep).not.toHaveBeenCalled(); // nessun backoff
+    const attempts = (err as AiGraderFailure).attempts;
+    expect(attempts.attemptsTotal).toBe(1);
+    expect(attempts.retriesTotal).toBe(0);
+    expect(attempts.retryReasonCodes).toEqual([]);
+    expect(attempts.retryDelayTotalMs).toBe(0);
+    expect(attempts.unknownBillingAttempts).toBe(1); // possibile costo prudente
+  });
+
+  it('classifies a real APIConnectionTimeoutError as a retryable timeout', async () => {
+    // Contrappunto: il timeout di connessione dell'SDK resta transitorio →
+    // ritentato e distinto dall'abort intenzionale.
+    let first = true;
+    const create = vi.fn(async () => {
+      if (first) {
+        first = false;
+        throw new OpenAI.APIConnectionTimeoutError({ message: 'timeout' });
+      }
+      return { output_text: validOutput(), usage: null };
+    });
+    const transport = new OpenAiSdkTransport({ responses: { create } });
+    const sleep = vi.fn(async () => {});
+    const grader = new OpenAiGrader('gpt-5-nano', transport, {
+      policy: TEST_POLICY,
+      now: () => 0,
+      sleep,
+      random: () => 0.5,
+    });
+    const out = await grader.grade(input);
+    expect(create).toHaveBeenCalledTimes(2); // timeout ritentato una volta
+    expect(out.attempts!.retryReasonCodes).toEqual(['timeout']);
   });
 
   it('records distinct connection vs timeout reason codes', async () => {
