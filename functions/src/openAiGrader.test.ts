@@ -25,6 +25,7 @@ import type { RetryPolicy } from './openAiRetryPolicy.js';
 
 const input: AiGraderInput = {
   requestId: 'request-test-001',
+  gradingMode: 'balanced',
   teacherGuidance: 'Valuta soprattutto la capacità di applicare il concetto.',
   questions: [
     {
@@ -84,6 +85,23 @@ describe('OpenAiGrader payload and mapping', () => {
     for (const forbidden of ['studentUid', 'ownerUid', 'email', 'classId', 'lesson', 'course']) {
       expect(serialized).not.toContain(forbidden);
     }
+    // M5-QUALITY-01 — gradingMode is carried in the user payload…
+    expect(request.input[1].content).toContain('"gradingMode":"balanced"');
+    // …and its semantics are stated in the system prompt, bounded to the evidence.
+    expect(OPENAI_GRADING_INSTRUCTIONS).toContain('gradingMode');
+    expect(OPENAI_GRADING_INSTRUCTIONS).toContain(
+      'entro la fascia già giustificata dalle evidenze',
+    );
+    expect(OPENAI_GRADING_INSTRUCTIONS).toContain('compassionate');
+    expect(OPENAI_GRADING_INSTRUCTIONS).toContain('rigorous');
+    // teacherGuidance must have a concrete effect but stays subordinate to evidence.
+    expect(OPENAI_GRADING_INSTRUCTIONS).toContain('effetto concreto');
+    expect(OPENAI_GRADING_INSTRUCTIONS).toContain('subordinate');
+  });
+
+  it('M5-QUALITY-01 — carries the selected gradingMode into the payload', () => {
+    const request = buildOpenAiGradingRequest({ ...input, gradingMode: 'rigorous' }, 'gpt-5-nano');
+    expect(request.input[1].content).toContain('"gradingMode":"rigorous"');
   });
 
   it('keeps prompt injection in student fields as inert user JSON while preserving bounded guidance', () => {

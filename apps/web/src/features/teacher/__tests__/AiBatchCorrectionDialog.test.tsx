@@ -112,7 +112,7 @@ function makeCallables(
 }
 
 async function calculatePreview() {
-  fireEvent.click(screen.getByRole('button', { name: 'Calcola anteprima' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
   await screen.findByText(/Elaborabili:/);
 }
 
@@ -140,9 +140,15 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     await calculatePreview();
     expect(previewSpy).toHaveBeenCalledTimes(1);
     const payload = previewSpy.mock.calls[0][0];
-    expect(Object.keys(payload).sort()).toEqual(['requestId', 'submissionIds', 'verificationId']);
+    expect(Object.keys(payload).sort()).toEqual([
+      'gradingMode',
+      'requestId',
+      'submissionIds',
+      'verificationId',
+    ]);
     expect(payload.verificationId).toBe(VERIFICATION_ID);
     expect(payload.submissionIds).toEqual(SUBMISSION_IDS);
+    expect(payload.gradingMode).toBe('balanced'); // default
     expect(typeof payload.requestId).toBe('string');
     expect(payload.requestId.length).toBeGreaterThan(0);
     expect(screen.getByText('Modalità mock — costo reale 0')).toBeTruthy();
@@ -187,7 +193,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     );
     await calculatePreview();
     const primary = await screen.findByRole('button', { name: 'Conferma correzione' });
-    const edit = screen.getByRole('button', { name: 'Modifica indicazioni' });
+    const edit = screen.getByRole('button', { name: 'Modifica impostazioni' });
     const actions = edit.closest('.dialog-actions');
     expect(actions).not.toBeNull();
     expect(actions).toBe(primary.closest('.dialog-actions'));
@@ -237,19 +243,19 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
       />,
     );
 
-    const guidance = screen.getByLabelText('Indicazioni per questa correzione (opzionali)');
+    const guidance = screen.getByLabelText('Indicazioni aggiuntive per la correzione');
     fireEvent.change(guidance, { target: { value: 'Premia soprattutto il ragionamento.' } });
     await calculatePreview();
     const firstRequestId = previewSpy.mock.calls[0][0].requestId;
 
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.getByText('Premia soprattutto il ragionamento.')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Modifica indicazioni' }));
-    const editableGuidance = screen.getByLabelText('Indicazioni per questa correzione (opzionali)');
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica impostazioni' }));
+    const editableGuidance = screen.getByLabelText('Indicazioni aggiuntive per la correzione');
     fireEvent.change(editableGuidance, {
       target: { value: 'Premia soprattutto gli esempi pertinenti.' },
     });
-    expect(screen.getByRole('button', { name: 'Calcola anteprima' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Calcola stima' })).toBeTruthy();
     await calculatePreview();
     expect(previewSpy).toHaveBeenCalledTimes(2);
     const previewRequest = previewSpy.mock.calls[1][0];
@@ -261,6 +267,90 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     expect(runSpy.mock.calls[0][0]).toMatchObject({
       requestId: previewRequest.requestId,
       teacherGuidance: previewRequest.teacherGuidance,
+    });
+  });
+
+  it('M5-QUALITY-01 — defaults to Equilibrato and shows the matching description', () => {
+    const { callables } = makeCallables(
+      () => Promise.resolve(makePreview()),
+      () => Promise.resolve(makeRun()),
+    );
+    render(
+      <AiBatchCorrectionDialog
+        verificationId={VERIFICATION_ID}
+        submissionIds={SUBMISSION_IDS}
+        callables={callables}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+    const select = screen.getByLabelText('Stile di valutazione') as HTMLSelectElement;
+    expect(select.value).toBe('balanced');
+    expect(screen.getByText(/È il comportamento predefinito\./)).toBeTruthy();
+    // Selected-count and 0/500 counter are present.
+    expect(screen.getByText(/Consegne selezionate:/)).toBeTruthy();
+    expect(screen.getByText('0/500 caratteri')).toBeTruthy();
+  });
+
+  it('M5-QUALITY-01 — each style shows its dynamic description', () => {
+    const { callables } = makeCallables(
+      () => Promise.resolve(makePreview()),
+      () => Promise.resolve(makeRun()),
+    );
+    render(
+      <AiBatchCorrectionDialog
+        verificationId={VERIFICATION_ID}
+        submissionIds={SUBMISSION_IDS}
+        callables={callables}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+    const select = screen.getByLabelText('Stile di valutazione');
+    fireEvent.change(select, { target: { value: 'compassionate' } });
+    expect(screen.getByText(/Valorizza la comprensione sostanziale/)).toBeTruthy();
+    fireEvent.change(select, { target: { value: 'rigorous' } });
+    expect(screen.getByText(/Richiede più nettamente gli elementi domandati/)).toBeTruthy();
+  });
+
+  it('M5-QUALITY-01 — sends the selected gradingMode; run reuses it; a change invalidates the request', async () => {
+    const { callables, previewSpy, runSpy } = makeCallables(
+      () => Promise.resolve(makePreview()),
+      () => Promise.resolve(makeRun()),
+    );
+    render(
+      <AiBatchCorrectionDialog
+        verificationId={VERIFICATION_ID}
+        submissionIds={SUBMISSION_IDS}
+        callables={callables}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText('Stile di valutazione'), {
+      target: { value: 'rigorous' },
+    });
+    await calculatePreview();
+    const first = previewSpy.mock.calls[0][0];
+    expect(first.gradingMode).toBe('rigorous');
+    // Read-only style shown in the estimate screen (no editable select there).
+    expect(screen.getByText('Rigoroso')).toBeTruthy();
+
+    // Changing the style after a preview forces a fresh preview + new requestId.
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica impostazioni' }));
+    fireEvent.change(screen.getByLabelText('Stile di valutazione'), {
+      target: { value: 'compassionate' },
+    });
+    await calculatePreview();
+    const second = previewSpy.mock.calls[1][0];
+    expect(second.gradingMode).toBe('compassionate');
+    expect(second.requestId).not.toBe(first.requestId);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Conferma correzione' }));
+    await screen.findByText('Correzione completata.');
+    expect(runSpy.mock.calls[0][0]).toMatchObject({
+      requestId: second.requestId,
+      gradingMode: 'compassionate',
     });
   });
 
@@ -302,7 +392,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Calcola anteprima' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
     const status = screen.getByRole('status');
     expect(status.getAttribute('aria-live')).toBe('polite');
     expect(status.getAttribute('aria-busy')).toBe('true');
@@ -506,7 +596,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Calcola anteprima' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toBe('Operazione riservata al docente proprietario.');
     expect(runSpy).not.toHaveBeenCalled();

@@ -32,6 +32,7 @@ import {
   type AiGrader,
   type AiGraderAttemptStats,
   type AiGraderInput,
+  type GradingMode,
 } from './aiCorrectionGatewayCore.js';
 import { isRealProviderEnabled, type AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import { enforceOperationLimits, type OperationLimitInput } from './aiCorrectionLimits.js';
@@ -565,6 +566,15 @@ export function estimateTeacherGuidanceTokens(teacherGuidance?: string): number 
   return teacherGuidance ? Math.ceil(teacherGuidance.length / CHARS_PER_TOKEN) : 0;
 }
 
+/**
+ * Quota input dello `gradingMode` (M5-QUALITY-01): piccola stringa costante
+ * inviata una volta per chiamata/consegna. Inclusa in modo identico in preview e
+ * run così la stima resta coerente col piccolo testo aggiuntivo realmente inviato.
+ */
+export function estimateGradingModeTokens(gradingMode: GradingMode): number {
+  return Math.ceil(gradingMode.length / CHARS_PER_TOKEN);
+}
+
 // ── Validazione output del grader ─────────────────────────────────────────────
 
 export interface ValidatedScore {
@@ -615,15 +625,23 @@ export function canonicalizeSubmissionIds(submissionIds: readonly string[]): str
   return [...submissionIds].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
-/** SHA-256 di verifica, selezione canonica e criteri pedagogici; nessun testo è persistito. */
+/**
+ * SHA-256 di verifica, selezione canonica e criteri pedagogici (`gradingMode` +
+ * `teacherGuidance`); nessun testo è persistito, solo il digest. Includere
+ * `gradingMode` e la guidance rende l'idempotenza sensibile ai criteri: stesso
+ * `requestId` con stile o indicazioni diversi ⇒ hash diverso ⇒ conflitto
+ * (`invalid_input`), mai un replay silenzioso con criteri differenti (M5-QUALITY-01).
+ */
 export function computeSelectionHash(
   verificationId: string,
   submissionIds: string[],
+  gradingMode: GradingMode,
   teacherGuidance?: string,
 ): string {
   const canonical = JSON.stringify([
     verificationId,
     canonicalizeSubmissionIds(submissionIds),
+    gradingMode,
     teacherGuidance ?? '',
   ]);
   return createHash('sha256').update(canonical, 'utf8').digest('hex');
@@ -944,16 +962,19 @@ async function buildOperationPreflight(
     if (item.classification.status !== 'eligible') continue;
     const eligible = item.classification.eligible;
     const hasOpen = eligible.openOrders.length > 0;
-    const guidanceTokens = hasOpen ? estimateTeacherGuidanceTokens(request.teacherGuidance) : 0;
+    const criteriaTokens = hasOpen
+      ? estimateTeacherGuidanceTokens(request.teacherGuidance) +
+        estimateGradingModeTokens(request.gradingMode)
+      : 0;
     const outputEstimate = hasOpen
       ? eligible.openOrders.length * QUESTION_FEEDBACK_TOKEN_ESTIMATE +
         GENERAL_FEEDBACK_TOKEN_ESTIMATE
       : 0;
-    inputTokens += item.openTokens + guidanceTokens;
+    inputTokens += item.openTokens + criteriaTokens;
     outputTokens += outputEstimate;
     eligibleLimits.push({
       openQuestionCount: eligible.openOrders.length,
-      estimatedTokens: item.openTokens + guidanceTokens + outputEstimate,
+      estimatedTokens: item.openTokens + criteriaTokens + outputEstimate,
     });
   }
   return {
@@ -976,6 +997,7 @@ function buildGraderInput(
   answers: Record<string, SubmissionAnswer | undefined>,
   priorPoints: number,
   totalMaxPoints: number,
+  gradingMode: GradingMode,
   teacherGuidance?: string,
 ): AiGraderInput {
   return {
@@ -992,6 +1014,7 @@ function buildGraderInput(
       };
     }),
     submissionContext: { priorPoints, totalMaxPoints },
+    gradingMode,
     ...(teacherGuidance ? { teacherGuidance } : {}),
   };
 }
@@ -1042,6 +1065,7 @@ function computeReservationBoundMicroUsd(
       item.submission?.answers ?? {},
       eligible.totalMaxPoints,
       eligible.totalMaxPoints,
+      request.gradingMode,
       request.teacherGuidance,
     );
     const bound = perAttemptBoundTokens(grader, graderInput);
@@ -1305,6 +1329,7 @@ export async function runExecution(
   const selectionHash = computeSelectionHash(
     request.verificationId,
     request.submissionIds,
+    request.gradingMode,
     request.teacherGuidance,
   );
   const ordinalBySubmissionId = new Map(
@@ -1806,7 +1831,11 @@ async function gradeEligible(
         ctx.teacherQuestions,
         eligible.openOrders,
         ctx.submission.answers,
-      ) + (hasOpen ? estimateTeacherGuidanceTokens(ctx.request.teacherGuidance) : 0),
+      ) +
+      (hasOpen
+        ? estimateTeacherGuidanceTokens(ctx.request.teacherGuidance) +
+          estimateGradingModeTokens(ctx.request.gradingMode)
+        : 0),
     outputTokens: hasOpen
       ? eligible.openOrders.length * QUESTION_FEEDBACK_TOKEN_ESTIMATE +
         GENERAL_FEEDBACK_TOKEN_ESTIMATE
@@ -1862,6 +1891,7 @@ async function gradeEligible(
       ctx.submission.answers,
       priorPoints,
       eligible.totalMaxPoints,
+      ctx.request.gradingMode,
       ctx.request.teacherGuidance,
     );
     // Tetto **per tentativo** (input upper bound + max output) di questa consegna:
