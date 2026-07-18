@@ -97,6 +97,28 @@ Calibrazione strutturata implementata. `gradingMode` (`compassionate` | `balance
 
 Le stesse risposte sintetiche vengono corrette nelle tre modalità. Il gate richiede differenze osservabili e coerenti nella fascia giustificabile, senza trasformare risposte errate in corrette. Il modello non cambia prima di questa evidenza.
 
+### M5-QUALITY-03 — indicazioni docente predefinite (idea futura, non bloccante)
+
+Un docente può voler riutilizzare stabilmente le stesse indicazioni pedagogiche senza
+riscriverle a ogni correzione. Prevedere una preferenza personale salvabile che
+precompili il campo `teacherGuidance` nella finestra «Correggi con IA».
+
+Decisioni da conservare quando verrà progettata:
+
+- nella prima versione basta **un solo testo predefinito**, non una libreria complessa
+  di prompt;
+- il testo precompilato resta sempre visibile e modificabile prima della stima;
+- una modifica usata per il singolo batch non sovrascrive il predefinito: il salvataggio
+  richiede un'azione esplicita, per esempio «Salva come indicazioni predefinite»;
+- limite, trim e validazione restano identici a `teacherGuidance` (`500` caratteri);
+- la preferenza è owner-only e non è leggibile da studenti;
+- il testo non viene copiato in `aiCorrectionRuns`, ledger, audit o log: al provider
+  arriva soltanto la copia confermata per l'operazione corrente;
+- lettura al massimo una volta per sessione docente, mantenuta in cache; scritture solo
+  su salvataggio o cancellazione espliciti;
+- nessun listener, polling o effetto sul Gate G7: è una comodità UX successiva e non
+  modifica scoring, idempotenza o sicurezza della correzione.
+
 ## 4. POOL-SIMPLE — contratto domande definitivo
 
 ### Decisione di prodotto
