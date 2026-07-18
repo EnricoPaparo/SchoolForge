@@ -487,17 +487,29 @@ describe('canonical selection (M5-05D2A)', () => {
     const a = [sid('s2'), sid('s1')];
     const b = [sid('s1'), sid('s2')];
     expect(canonicalizeSubmissionIds(a)).toEqual(b);
-    expect(computeSelectionHash(VERIF, a)).toBe(computeSelectionHash(VERIF, b));
-    expect(computeSelectionHash(VERIF, a)).toMatch(/^[a-f0-9]{64}$/);
+    expect(computeSelectionHash(VERIF, a, 'balanced')).toBe(
+      computeSelectionHash(VERIF, b, 'balanced'),
+    );
+    expect(computeSelectionHash(VERIF, a, 'balanced')).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('includes teacher guidance in the request identity without persisting its text', () => {
     const ids = [sid('s1'), sid('s2')];
-    expect(computeSelectionHash(VERIF, ids, 'Premia il ragionamento.')).toBe(
-      computeSelectionHash(VERIF, ids.reverse(), 'Premia il ragionamento.'),
+    expect(computeSelectionHash(VERIF, ids, 'balanced', 'Premia il ragionamento.')).toBe(
+      computeSelectionHash(VERIF, ids.reverse(), 'balanced', 'Premia il ragionamento.'),
     );
-    expect(computeSelectionHash(VERIF, ids, 'Premia il ragionamento.')).not.toBe(
-      computeSelectionHash(VERIF, ids, 'Premia la terminologia.'),
+    expect(computeSelectionHash(VERIF, ids, 'balanced', 'Premia il ragionamento.')).not.toBe(
+      computeSelectionHash(VERIF, ids, 'balanced', 'Premia la terminologia.'),
+    );
+  });
+
+  it('M5-QUALITY-01 — gradingMode is part of the request identity', () => {
+    const ids = [sid('s1'), sid('s2')];
+    expect(computeSelectionHash(VERIF, ids, 'balanced')).not.toBe(
+      computeSelectionHash(VERIF, ids, 'rigorous'),
+    );
+    expect(computeSelectionHash(VERIF, ids, 'compassionate')).not.toBe(
+      computeSelectionHash(VERIF, ids, 'rigorous'),
     );
   });
 });
@@ -1236,7 +1248,7 @@ describe('runExecution — concurrent idempotency (lease)', () => {
     store.runs.set(REQ, {
       runContractVersion: AI_RUN_CONTRACT_VERSION,
       status: 'running',
-      selectionHash: computeSelectionHash(VERIF, [sid('s1')]),
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced'),
       executionId: 'other-attempt',
       leaseExpiresAt: Date.now() + RUN_LEASE_MS,
     });
@@ -1258,7 +1270,7 @@ describe('runExecution — concurrent idempotency (lease)', () => {
     store.runs.set(REQ, {
       runContractVersion: AI_RUN_CONTRACT_VERSION,
       status: 'running',
-      selectionHash: computeSelectionHash(VERIF, [sid('s1')]),
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced'),
       executionId: 'crashed-attempt',
       leaseExpiresAt: Date.now() - 1000, // expired
     });
@@ -1270,7 +1282,7 @@ describe('runExecution — concurrent idempotency (lease)', () => {
 
   it('an old worker cannot finalize after a takeover (executionId no longer owns the lease)', async () => {
     const store = new FakeStore();
-    const selectionHash = computeSelectionHash(VERIF, [sid('s1')]);
+    const selectionHash = computeSelectionHash(VERIF, [sid('s1')], 'balanced');
     const nowMs = Date.now();
     const meta = {
       selectionHash,
@@ -1422,7 +1434,7 @@ describe('runExecution — lease clock captured at acquisition (M5-05D2A regress
     store.runs.set(REQ, {
       runContractVersion: AI_RUN_CONTRACT_VERSION,
       status: 'running',
-      selectionHash: computeSelectionHash(VERIF, [sid('s1')]),
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced'),
       mode: 'openai',
       executionId: 'A',
       leaseExpiresAt: TA + RUN_LEASE_MS,
@@ -1455,7 +1467,7 @@ describe('runExecution — lease clock captured at acquisition (M5-05D2A regress
     store.runs.set(REQ, {
       runContractVersion: AI_RUN_CONTRACT_VERSION,
       status: 'running',
-      selectionHash: computeSelectionHash(VERIF, [sid('s1')]),
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced'),
       mode: 'openai',
       executionId: 'crashed-A',
       leaseExpiresAt: TA + RUN_LEASE_MS,
@@ -1623,6 +1635,44 @@ describe('runExecution — privacy of aiCorrectionRuns', () => {
     ).rejects.toMatchObject({ code: 'invalid_input' });
   });
 
+  it('M5-QUALITY-01 — rejects the same requestId with a different gradingMode', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    await runExecution(
+      req([sid('s1')], { gradingMode: 'balanced' }),
+      baseDeps(store, new MockAiGrader()),
+    );
+    await expect(
+      runExecution(
+        req([sid('s1')], { gradingMode: 'rigorous' }),
+        baseDeps(store, new MockAiGrader()),
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+  });
+
+  it('M5-QUALITY-01 — forwards gradingMode to the grader; preview/run estimate stays coherent; not persisted raw', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const grade = vi.fn(async (i: { questions: TeacherQuestion[] }) => ({
+      results: i.questions.map((q) => ({ order: q.order, points: 1, feedback: 'ok' })),
+      generalFeedback: 'Feedback generale.',
+      usage: { tokens: 10 },
+    }));
+    const grader = { grade };
+    const preview = await runPreview(
+      req([sid('s1')], { gradingMode: 'rigorous' }),
+      baseDeps(store, grader),
+    );
+    const run = await runExecution(
+      req([sid('s1')], { gradingMode: 'rigorous' }),
+      baseDeps(store, grader),
+    );
+    expect(preview.tokensEstimated).toBe(run.tokensEstimated);
+    expect(grade).toHaveBeenCalledWith(expect.objectContaining({ gradingMode: 'rigorous' }), {});
+    // The run doc keeps only the digest, never the raw mode string.
+    expect(JSON.stringify(store.runs.get(REQ))).not.toContain('rigorous');
+  });
+
   it('uses the injected clock for a deterministic 30-day expireAt', async () => {
     const store = new FakeStore();
     seedOneOpenOneClosed(store, 's1');
@@ -1639,7 +1689,7 @@ describe('runExecution — privacy of aiCorrectionRuns', () => {
     seedOneOpenOneClosed(store, 's1');
     store.runs.set(REQ, {
       status: 'completed',
-      selectionHash: computeSelectionHash(VERIF, [sid('s1')]),
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced'),
       // no runContractVersion => legacy
     });
     const before = JSON.stringify(store.runs.get(REQ));
@@ -2150,7 +2200,7 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     store.runs.set(REQ, {
       runContractVersion: AI_RUN_CONTRACT_VERSION,
       status: 'running',
-      selectionHash: computeSelectionHash(VERIF, [sid('s1')]),
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced'),
       mode: 'openai',
       executionId: 'other',
       leaseExpiresAt: NOW + RUN_LEASE_MS,
@@ -2177,7 +2227,7 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     store.runs.set(REQ, {
       runContractVersion: AI_RUN_CONTRACT_VERSION,
       status: 'running',
-      selectionHash: computeSelectionHash(VERIF, [sid('s1')]),
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced'),
       executionId: 'B',
       leaseExpiresAt: NOW + RUN_LEASE_MS,
     });

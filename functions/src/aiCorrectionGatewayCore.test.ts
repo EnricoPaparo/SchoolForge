@@ -102,6 +102,16 @@ describe('authorizeOwnerCall', () => {
 
 // ── validateAiCorrectionRequest ──────────────────────────────────────────────
 
+/** Runs `fn` and returns the thrown error, or `null` if it did not throw. */
+function captureError(fn: () => unknown): unknown {
+  try {
+    fn();
+    return null;
+  } catch (error) {
+    return error;
+  }
+}
+
 describe('validateAiCorrectionRequest', () => {
   it('accepts a well-formed request', () => {
     const r = validateAiCorrectionRequest(validRequest());
@@ -125,6 +135,32 @@ describe('validateAiCorrectionRequest', () => {
       }),
     ).toThrow();
     expect(() => validateAiCorrectionRequest(validRequest({ teacherGuidance: 42 }))).toThrow();
+  });
+
+  it('M5-QUALITY-01 — accepts the three gradingMode values', () => {
+    for (const mode of ['compassionate', 'balanced', 'rigorous'] as const) {
+      expect(validateAiCorrectionRequest(validRequest({ gradingMode: mode })).gradingMode).toBe(
+        mode,
+      );
+    }
+  });
+
+  it('M5-QUALITY-01 — a missing gradingMode is normalized to balanced', () => {
+    expect(validateAiCorrectionRequest(validRequest()).gradingMode).toBe('balanced');
+  });
+
+  it('M5-QUALITY-01 — a present-but-invalid gradingMode fails with invalid_input', () => {
+    for (const bad of ['strict', 'Balanced', '', 5, {}, null]) {
+      const err = captureError(() =>
+        validateAiCorrectionRequest(validRequest({ gradingMode: bad })),
+      );
+      // null → normalized to balanced (treated as absent); every other invalid value fails.
+      if (bad === null) {
+        expect(err).toBeNull();
+      } else {
+        expect((err as { code?: string })?.code).toBe('invalid_input');
+      }
+    }
   });
 
   it.each([
@@ -152,7 +188,14 @@ describe('validateAiCorrectionRequest', () => {
       submissionIds: [subId('s1')],
       requestId: REQ,
     });
-    expect(Object.keys(r).sort()).toEqual(['requestId', 'submissionIds', 'verificationId']);
+    // gradingMode is normalized in (default balanced) even when the client omits it.
+    expect(Object.keys(r).sort()).toEqual([
+      'gradingMode',
+      'requestId',
+      'submissionIds',
+      'verificationId',
+    ]);
+    expect(r.gradingMode).toBe('balanced');
   });
 
   it.each([
@@ -232,6 +275,7 @@ describe('authorizeAndValidate — shared preview/run gate', () => {
       verificationId: VERIF,
       submissionIds: [subId('s1'), subId('s2')],
       requestId: REQ,
+      gradingMode: 'balanced',
     });
   });
 });

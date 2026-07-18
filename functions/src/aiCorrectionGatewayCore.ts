@@ -79,10 +79,38 @@ export function resolveAiFeatureMode(env: {
  * indicazione pedagogica di batch. Mai testi di domande, risposte, soluzioni,
  * nomi o email. Il server rilegge tutto il resto server-side (in M5-02).
  */
+/**
+ * M5-QUALITY-01 — stile di valutazione della correzione IA. Sposta il punteggio
+ * **solo** entro la fascia già giustificata dalle evidenze (mai oltre `maxPoints`,
+ * mai un punto non sostenuto dalla risposta). `balanced` è il default.
+ */
+export type GradingMode = 'compassionate' | 'balanced' | 'rigorous';
+
+/** Default applicato quando il client non invia `gradingMode` (cache/legacy). */
+export const DEFAULT_GRADING_MODE: GradingMode = 'balanced';
+
+/** Insieme canonico dei valori ammessi (fonte di verità server-side). */
+export const GRADING_MODES: readonly GradingMode[] = ['compassionate', 'balanced', 'rigorous'];
+
+/**
+ * Normalizza `gradingMode`: **assente** ⇒ `balanced` (compatibilità con client in
+ * cache); **presente ma non valido** ⇒ `invalid_input` (fail-closed, mai un
+ * default silenzioso su un valore esplicito e sbagliato).
+ */
+export function normalizeGradingMode(value: unknown): GradingMode {
+  if (value === undefined || value === null) return DEFAULT_GRADING_MODE;
+  if (typeof value === 'string' && (GRADING_MODES as readonly string[]).includes(value)) {
+    return value as GradingMode;
+  }
+  throw new AiGatewayError('invalid_input', 'Stile di valutazione non valido.');
+}
+
 export interface AiCorrectionRequest {
   verificationId: string;
   submissionIds: string[];
   requestId: string;
+  /** Stile di valutazione (M5-QUALITY-01), sempre normalizzato server-side. */
+  gradingMode: GradingMode;
   teacherGuidance?: string;
 }
 
@@ -99,7 +127,7 @@ export interface AiCorrectionRequest {
 export const MAX_SUBMISSIONS_PER_OPERATION = 200;
 
 /** Indicazione pedagogica facoltativa del docente, valida per l'intero batch. */
-export const MAX_TEACHER_GUIDANCE_CHARS = 200;
+export const MAX_TEACHER_GUIDANCE_CHARS = 500;
 
 /** Lunghezza massima prudente di un identificatore (Firestore doc id tipici). */
 const MAX_ID_LENGTH = 200;
@@ -138,6 +166,7 @@ const ALLOWED_REQUEST_KEYS = [
   'verificationId',
   'submissionIds',
   'requestId',
+  'gradingMode',
   'teacherGuidance',
 ] as const;
 
@@ -152,10 +181,8 @@ export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest
       throw new AiGatewayError('invalid_input', 'Il payload contiene proprietà non ammesse.');
     }
   }
-  const { verificationId, submissionIds, requestId, teacherGuidance } = input as Record<
-    string,
-    unknown
-  >;
+  const { verificationId, submissionIds, requestId, gradingMode, teacherGuidance } =
+    input as Record<string, unknown>;
 
   if (!isSafeId(verificationId)) {
     throw new AiGatewayError('invalid_input', 'verificationId mancante o malformato.');
@@ -193,6 +220,9 @@ export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest
     seen.add(id);
   }
 
+  // M5-QUALITY-01 — assente ⇒ balanced; presente ma non valido ⇒ invalid_input.
+  const normalizedGradingMode = normalizeGradingMode(gradingMode);
+
   if (teacherGuidance !== undefined && typeof teacherGuidance !== 'string') {
     throw new AiGatewayError('invalid_input', 'Indicazioni docente non valide.');
   }
@@ -205,6 +235,7 @@ export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest
     verificationId,
     submissionIds: [...submissionIds],
     requestId,
+    gradingMode: normalizedGradingMode,
     ...(normalizedGuidance ? { teacherGuidance: normalizedGuidance } : {}),
   };
 }
@@ -268,6 +299,8 @@ export interface AiGraderInput {
   requestId: string;
   questions: AiGraderQuestion[];
   submissionContext?: AiGraderSubmissionContext;
+  /** Stile di valutazione (M5-QUALITY-01): sposta il punteggio solo entro la fascia giustificata. */
+  gradingMode: GradingMode;
   /** Istruzione pedagogica di batch, subordinata alle regole applicative. */
   teacherGuidance?: string;
 }

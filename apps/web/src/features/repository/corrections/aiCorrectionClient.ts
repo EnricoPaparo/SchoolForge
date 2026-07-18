@@ -33,14 +33,54 @@ export type AiExclusionReason =
 
 export type AiRunStatus = 'running' | 'completed' | 'partial' | 'failed';
 
+/**
+ * M5-QUALITY-01 — stile di valutazione. Sposta il punteggio solo entro la fascia
+ * già giustificata dalle evidenze; `balanced` è il default a ogni operazione.
+ */
+export type GradingMode = 'compassionate' | 'balanced' | 'rigorous';
+
+export const DEFAULT_GRADING_MODE: GradingMode = 'balanced';
+
+/** Etichette + descrizioni dinamiche mostrate nel dialog (ordine di presentazione). */
+export const GRADING_MODE_OPTIONS: readonly {
+  value: GradingMode;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: 'compassionate',
+    label: 'Comprensivo',
+    description:
+      'Valorizza la comprensione sostanziale e tollera imprecisioni non determinanti, collocando il punteggio nella parte alta ancora giustificata dalle evidenze. Non assegna punti non sostenuti dalla risposta.',
+  },
+  {
+    value: 'balanced',
+    label: 'Equilibrato',
+    description:
+      'Valutazione ordinaria: bilancia correttezza, completezza e chiarezza. È il comportamento predefinito.',
+  },
+  {
+    value: 'rigorous',
+    label: 'Rigoroso',
+    description:
+      'Richiede più nettamente gli elementi domandati e penalizza più chiaramente omissioni e imprecisioni, nella parte bassa ancora giustificata dalle evidenze. Non diventa arbitrariamente punitivo.',
+  },
+];
+
+/** Descrizione dinamica dello stile selezionato. */
+export function gradingModeDescription(mode: GradingMode): string {
+  return GRADING_MODE_OPTIONS.find((option) => option.value === mode)!.description;
+}
+
 export interface AiCorrectionRequest {
   verificationId: string;
   submissionIds: string[];
   requestId: string;
+  gradingMode: GradingMode;
   teacherGuidance?: string;
 }
 
-export const MAX_TEACHER_GUIDANCE_CHARS = 200;
+export const MAX_TEACHER_GUIDANCE_CHARS = 500;
 
 export interface AiPreviewCounts {
   selected: number;
@@ -99,11 +139,12 @@ export function newRequestId(): string {
   return crypto.randomUUID();
 }
 
-/** Costruisce il payload chiuso con ID e indicazione pedagogica facoltativa. */
+/** Costruisce il payload chiuso con ID, stile di valutazione e indicazione facoltativa. */
 export function buildRequest(
   verificationId: string,
   submissionIds: string[],
   requestId: string,
+  gradingMode: GradingMode,
   teacherGuidance?: string,
 ): AiCorrectionRequest {
   const normalizedGuidance = teacherGuidance?.trim();
@@ -111,6 +152,7 @@ export function buildRequest(
     verificationId,
     submissionIds: [...submissionIds],
     requestId,
+    gradingMode,
     ...(normalizedGuidance ? { teacherGuidance: normalizedGuidance } : {}),
   };
 }

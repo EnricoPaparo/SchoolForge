@@ -1,6 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import type { AiGrader, AiGraderInput, AiGraderOutput } from './aiCorrectionGatewayCore.js';
+import type {
+  AiGrader,
+  AiGraderInput,
+  AiGraderOutput,
+  GradingMode,
+} from './aiCorrectionGatewayCore.js';
 
 export const DEFAULT_M5_BENCHMARK_DATASET_PATH = fileURLToPath(
   new URL('../../documentazione/evidenze/m5-benchmark-dataset-v1.json', import.meta.url),
@@ -73,6 +78,7 @@ export async function loadM5BenchmarkDataset(
 export function buildBenchmarkGraderInput(
   submission: M5BenchmarkSubmission,
   casesById: ReadonlyMap<string, M5BenchmarkProviderCase>,
+  gradingMode: GradingMode = 'balanced',
 ): { input: AiGraderInput; caseIdByOrder: Map<number, string> } {
   const caseIdByOrder = new Map<number, string>();
   const questions = submission.providerCaseIds.map((caseId, index) => {
@@ -97,6 +103,7 @@ export function buildBenchmarkGraderInput(
         priorPoints: 0,
         totalMaxPoints: questions.reduce((sum, question) => sum + question.maxPoints, 0),
       },
+      gradingMode,
     },
     caseIdByOrder,
   };

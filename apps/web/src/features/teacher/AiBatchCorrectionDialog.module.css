@@ -21,3 +21,38 @@
 }
 /* Lo spinner è ora la utility condivisa `.spinner` (index.css), coerente tra
    fase di anteprima ed esecuzione e con prefers-reduced-motion. */
+
+/* M5-QUALITY-01 — configurazione: ordine verticale coerente, campi a piena
+   larghezza, spaziatura uniforme. Nessuna nuova libreria. */
+.config {
+  display: grid;
+  gap: 0.75rem;
+}
+.configIntro {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+.selectedCount {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+.field {
+  display: grid;
+  gap: 0.375rem;
+}
+.fieldLabel {
+  font-weight: 600;
+}
+.modeDescription {
+  margin: -0.25rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+.counter {
+  margin: -0.25rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  text-align: right;
+}

@@ -5,12 +5,16 @@ import {
   buildRequest,
   describeAiError,
   describeExclusion,
+  gradingModeDescription,
+  DEFAULT_GRADING_MODE,
+  GRADING_MODE_OPTIONS,
   MAX_TEACHER_GUIDANCE_CHARS,
   newRequestId,
   type AiCorrectionCallables,
   type AiCorrectionRequest,
   type AiPreviewResult,
   type AiRunResult,
+  type GradingMode,
 } from '../repository/corrections/aiCorrectionClient.js';
 
 /**
@@ -42,6 +46,7 @@ export function AiBatchCorrectionDialog({
   onApplied: (result: AiRunResult) => void;
 }) {
   const [phase, setPhase] = useState<Phase>('configure');
+  const [gradingMode, setGradingMode] = useState<GradingMode>(DEFAULT_GRADING_MODE);
   const [teacherGuidance, setTeacherGuidance] = useState('');
   const [preview, setPreview] = useState<AiPreviewResult | null>(null);
   const [result, setResult] = useState<AiRunResult | null>(null);
@@ -61,14 +66,26 @@ export function AiBatchCorrectionDialog({
     };
   }, []);
 
-  function changeTeacherGuidance(value: string) {
-    setTeacherGuidance(value);
+  // Ogni modifica ai criteri (stile o indicazioni) invalida la preview e genera
+  // una NUOVA requestId: la run successiva non può mai entrare in conflitto
+  // (stessa requestId con criteri diversi ⇒ invalid_input lato server, M5-QUALITY-01).
+  function invalidatePreview() {
     setPreview(null);
     setPreviewRequest(null);
     setError(null);
     runStartedRef.current = false;
     requestIdRef.current = newRequestId();
     setPhase('configure');
+  }
+
+  function changeGradingMode(value: GradingMode) {
+    setGradingMode(value);
+    invalidatePreview();
+  }
+
+  function changeTeacherGuidance(value: string) {
+    setTeacherGuidance(value);
+    invalidatePreview();
   }
 
   async function requestPreview() {
@@ -80,6 +97,7 @@ export function AiBatchCorrectionDialog({
       verificationId,
       submissionIds,
       requestIdRef.current,
+      gradingMode,
       teacherGuidance,
     );
     try {
@@ -97,13 +115,10 @@ export function AiBatchCorrectionDialog({
     }
   }
 
-  function editTeacherGuidance() {
-    setPreview(null);
-    setPreviewRequest(null);
-    setError(null);
-    runStartedRef.current = false;
-    requestIdRef.current = newRequestId();
-    setPhase('configure');
+  // «Modifica impostazioni» dalla schermata di stima: torna alla configurazione,
+  // invalida la preview e forza una nuova preview + nuova requestId.
+  function editSettings() {
+    invalidatePreview();
   }
 
   async function confirmRun() {
@@ -132,33 +147,69 @@ export function AiBatchCorrectionDialog({
   return (
     <DialogShell title="Correggi con IA" onCancel={onClose} busy={busy}>
       {phase === 'configure' && (
-        <label style={{ display: 'grid', gap: '0.375rem' }}>
-          <span style={{ fontWeight: 700 }}>Indicazioni per questa correzione (opzionali)</span>
-          <textarea
-            aria-label="Indicazioni per questa correzione (opzionali)"
-            aria-describedby="teacher-guidance-help"
-            rows={3}
-            maxLength={MAX_TEACHER_GUIDANCE_CHARS}
-            value={teacherGuidance}
-            disabled={busy}
-            onChange={(event) => changeTeacherGuidance(event.target.value)}
-          />
-          <small id="teacher-guidance-help" style={{ color: 'var(--color-text-muted)' }}>
-            Es. Valuta soprattutto la capacità di applicare il concetto, non la terminologia esatta.
-            {' · '}
-            {teacherGuidance.length}/{MAX_TEACHER_GUIDANCE_CHARS}
-          </small>
-        </label>
-      )}
+        <div className={styles.config}>
+          {/* 1) Titolo (DialogShell) + breve spiegazione. */}
+          <p className={styles.configIntro}>
+            L’IA propone punteggio e feedback per le domande aperte; le chiuse restano
+            deterministiche. Potrai rivedere la stima prima di confermare.
+          </p>
 
-      {phase === 'configure' && (
-        <div className="dialog-actions">
-          <button type="button" onClick={onClose}>
-            Annulla
-          </button>
-          <button type="button" className="btn-primary" onClick={() => void requestPreview()}>
-            Calcola anteprima
-          </button>
+          {/* 2) Numero di consegne selezionate. */}
+          <p className={styles.selectedCount}>
+            Consegne selezionate: <strong>{submissionIds.length}</strong>
+          </p>
+
+          {/* 3) Stile di valutazione. */}
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Stile di valutazione</span>
+            <select
+              aria-label="Stile di valutazione"
+              aria-describedby="grading-mode-desc"
+              value={gradingMode}
+              disabled={busy}
+              onChange={(event) => changeGradingMode(event.target.value as GradingMode)}
+            >
+              {GRADING_MODE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {/* 4) Descrizione dinamica dello stile selezionato. */}
+          <p id="grading-mode-desc" className={styles.modeDescription}>
+            {gradingModeDescription(gradingMode)}
+          </p>
+
+          {/* 5) Indicazioni aggiuntive. */}
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Indicazioni aggiuntive per la correzione</span>
+            <textarea
+              aria-label="Indicazioni aggiuntive per la correzione"
+              aria-describedby="teacher-guidance-help"
+              rows={3}
+              maxLength={MAX_TEACHER_GUIDANCE_CHARS}
+              value={teacherGuidance}
+              disabled={busy}
+              onChange={(event) => changeTeacherGuidance(event.target.value)}
+            />
+          </label>
+
+          {/* 6) Contatore caratteri. */}
+          <small id="teacher-guidance-help" className={styles.counter}>
+            {teacherGuidance.length}/{MAX_TEACHER_GUIDANCE_CHARS} caratteri
+          </small>
+
+          {/* 7) Footer. */}
+          <div className="dialog-actions">
+            <button type="button" onClick={onClose}>
+              Annulla
+            </button>
+            <button type="button" className="btn-primary" onClick={() => void requestPreview()}>
+              Calcola stima
+            </button>
+          </div>
         </div>
       )}
 
@@ -209,6 +260,14 @@ export function AiBatchCorrectionDialog({
               {preview.mode === 'mock' ? ' (mock)' : ' USD'}
             </li>
           </ul>
+          {/* Impostazioni applicate, sola lettura: nessuna seconda textarea. */}
+          <div className={styles.appliedGuidance}>
+            <strong>Stile di valutazione</strong>
+            <p>
+              {GRADING_MODE_OPTIONS.find((o) => o.value === previewRequest?.gradingMode)?.label ??
+                'Equilibrato'}
+            </p>
+          </div>
           <div className={styles.appliedGuidance}>
             <strong>Indicazioni applicate</strong>
             <p>{previewRequest?.teacherGuidance || 'Nessuna indicazione aggiuntiva'}</p>
@@ -224,8 +283,8 @@ export function AiBatchCorrectionDialog({
             </details>
           )}
           <div className="dialog-actions">
-            <button type="button" onClick={editTeacherGuidance}>
-              Modifica indicazioni
+            <button type="button" onClick={editSettings}>
+              Modifica impostazioni
             </button>
             <button
               type="button"
