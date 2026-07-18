@@ -93,12 +93,14 @@ export const DEFAULT_GRADING_MODE: GradingMode = 'balanced';
 export const GRADING_MODES: readonly GradingMode[] = ['compassionate', 'balanced', 'rigorous'];
 
 /**
- * Normalizza `gradingMode`: **assente** ⇒ `balanced` (compatibilità con client in
- * cache); **presente ma non valido** ⇒ `invalid_input` (fail-closed, mai un
- * default silenzioso su un valore esplicito e sbagliato).
+ * Normalizza `gradingMode`. **Assente** significa **proprietà omessa** (valore
+ * `undefined`) ⇒ `balanced`, per compatibilità con client in cache. Ogni altro
+ * caso è fail-closed: `null` o qualunque valore fuori da
+ * `compassionate | balanced | rigorous` ⇒ `invalid_input` (mai un default
+ * silenzioso su un valore esplicito e sbagliato).
  */
 export function normalizeGradingMode(value: unknown): GradingMode {
-  if (value === undefined || value === null) return DEFAULT_GRADING_MODE;
+  if (value === undefined) return DEFAULT_GRADING_MODE;
   if (typeof value === 'string' && (GRADING_MODES as readonly string[]).includes(value)) {
     return value as GradingMode;
   }

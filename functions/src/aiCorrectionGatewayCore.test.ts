@@ -145,21 +145,24 @@ describe('validateAiCorrectionRequest', () => {
     }
   });
 
-  it('M5-QUALITY-01 — a missing gradingMode is normalized to balanced', () => {
+  it('M5-QUALITY-01 — an OMITTED gradingMode (undefined) is normalized to balanced', () => {
+    // Absence means the property is not present at all — as it arrives over the
+    // wire from a cached client (JSON drops undefined).
     expect(validateAiCorrectionRequest(validRequest()).gradingMode).toBe('balanced');
+    expect(validateAiCorrectionRequest(validRequest({ gradingMode: undefined })).gradingMode).toBe(
+      'balanced',
+    );
   });
 
-  it('M5-QUALITY-01 — a present-but-invalid gradingMode fails with invalid_input', () => {
-    for (const bad of ['strict', 'Balanced', '', 5, {}, null]) {
+  it('M5-QUALITY-01 — any present-but-invalid gradingMode (incl. null) fails with invalid_input', () => {
+    // Fail-closed: null is NOT absence. Empty string, wrong case, wrong word,
+    // number, object, array and boolean are all rejected.
+    const invalid: unknown[] = [null, '', 'Balanced', 'strict', 5, {}, ['balanced'], true, false];
+    for (const bad of invalid) {
       const err = captureError(() =>
         validateAiCorrectionRequest(validRequest({ gradingMode: bad })),
       );
-      // null → normalized to balanced (treated as absent); every other invalid value fails.
-      if (bad === null) {
-        expect(err).toBeNull();
-      } else {
-        expect((err as { code?: string })?.code).toBe('invalid_input');
-      }
+      expect((err as { code?: string })?.code).toBe('invalid_input');
     }
   });
 
