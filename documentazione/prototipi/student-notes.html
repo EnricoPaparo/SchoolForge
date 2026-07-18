@@ -6,22 +6,22 @@
     <title>SchoolForge — Prototipo Appunti studente</title>
     <style>
       :root {
-        color-scheme: light;
-        --bg: #f3f5f7;
-        --surface: #ffffff;
-        --surface-soft: #f8fafb;
-        --text: #17212b;
-        --muted: #607080;
-        --border: #d8dee5;
-        --primary: #176b87;
-        --primary-dark: #0d536c;
-        --focus: #2b8fb1;
+        color-scheme: dark;
+        --bg: #090d14;
+        --surface: #141a24;
+        --surface-soft: #1d2532;
+        --text: #e7ebf2;
+        --muted: #93a0b4;
+        --border: #334052;
+        --primary: #3b82f6;
+        --primary-dark: #60a5fa;
+        --focus: #60a5fa;
         --note: #fff3bd;
         --note-deep: #f7e59c;
         --note-border: #c9a94c;
         --danger: #a62d2d;
         --success: #24734a;
-        --shadow: 0 18px 45px rgba(36, 44, 52, 0.2);
+        --shadow: 0 20px 48px rgba(0, 0, 0, 0.48);
       }
 
       * {
@@ -31,7 +31,7 @@
       body {
         margin: 0;
         min-width: 0;
-        background: var(--bg);
+        background: linear-gradient(155deg, #0a101b 0%, var(--bg) 52%, #0b1220 100%);
         color: var(--text);
         font-family:
           Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -77,7 +77,7 @@
         align-items: center;
         gap: 0.55rem;
         padding: 0.65rem clamp(0.75rem, 3vw, 1.5rem);
-        background: #162a35;
+        background: #0b111b;
         color: #fff;
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
       }
@@ -90,9 +90,9 @@
       .demo-bar select {
         min-height: 2rem;
         padding: 0.35rem 0.6rem;
-        border-color: #71818b;
-        background: #fff;
-        color: #17212b;
+        border-color: var(--border);
+        background: var(--surface-soft);
+        color: var(--text);
       }
 
       .app-header {
@@ -117,8 +117,8 @@
       }
 
       .tabs button[aria-current="page"] {
-        background: #e8f3f7;
-        border-color: #acd2df;
+        background: rgba(59, 130, 246, 0.16);
+        border-color: var(--primary);
         color: var(--primary-dark);
         font-weight: 700;
       }
@@ -171,8 +171,8 @@
       }
 
       .lesson-list button[aria-current="page"] {
-        background: #e8f3f7;
-        border-color: #acd2df;
+        background: rgba(59, 130, 246, 0.16);
+        border-color: var(--primary);
         color: var(--primary-dark);
       }
 
@@ -182,7 +182,7 @@
         background: var(--surface);
         border: 1px solid var(--border);
         border-radius: 0.9rem;
-        box-shadow: 0 4px 15px rgba(40, 53, 63, 0.07);
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
       }
 
       .lesson-toolbar {
@@ -213,7 +213,13 @@
         flex: 0 0 auto;
         border-color: #b99b42;
         background: #fff8d8;
+        color: #3e3510;
         font-weight: 700;
+      }
+
+      .notes-open:hover:not(:disabled) {
+        border-color: var(--note-border);
+        color: #25230f;
       }
 
       .lesson-copy {
@@ -228,7 +234,7 @@
       .callout {
         padding: 0.85rem 1rem;
         border-left: 4px solid var(--primary);
-        background: #edf7fa;
+        background: rgba(59, 130, 246, 0.12);
       }
 
       .note-panel {
@@ -354,6 +360,13 @@
 
       .danger {
         margin-right: auto;
+        color: #fca5a5;
+        border-color: #7f1d1d;
+        background: #2a1418;
+      }
+
+      .note-panel .danger,
+      .mobile-notes .danger {
         color: var(--danger);
         border-color: #d79b9b;
         background: #fff7f7;
@@ -437,8 +450,8 @@
 
       .exam-block {
         padding: 1.25rem;
-        background: #fff5df;
-        border: 1px solid #d7aa4b;
+        background: #2b2416;
+        border: 1px solid #8a6b2f;
         border-radius: 0.75rem;
       }
 
