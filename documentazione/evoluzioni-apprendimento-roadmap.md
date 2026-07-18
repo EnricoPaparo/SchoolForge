@@ -46,6 +46,17 @@ Lo spinner di anteprima/esecuzione IA deve ruotare su Safari e Brave mobile quan
 - smoke Safari e Brave mobile, con movimento normale e ridotto;
 - nessuna modifica a IA, payload, costi o Functions.
 
+### Stato — ✅ Implementato
+
+**Diagnosi confermata.** Negli usi attuali `.spinner` è un flex item dentro `.loading-row` ed è quindi già blockificato: non è dimostrato che il suo `display` originario causasse il problema su Safari o Brave. Il comportamento statico confermato derivava invece dal fallback `prefers-reduced-motion`, che disattivava l'animazione lasciando un **anello statico colorato** simile a uno spinner rotto. `display: inline-block` e `will-change: transform` restano difese di robustezza e compositing, non la correzione di una causa browser dimostrata.
+
+**Fix (solo CSS in `index.css`, nessuna modifica al markup/JS).**
+
+- Movimento normale: `.spinner` ora ha `display: inline-block` (elemento trasformabile → la rotazione si applica su desktop e mobile) e `will-change: transform` (layer composito, animazione fluida su mobile); design circolare e ingombro (1,15rem) invariati.
+- `prefers-reduced-motion: reduce`: nessuna rotazione forzata; l'anello è sostituito da **tre puntini statici** sobri (pseudo-elemento `::before` + `box-shadow`, colore `--color-text-muted`), stesso ingombro 1,15rem → nessun salto di layout. L'indicatore resta puramente decorativo (lo `<span>` è già `aria-hidden`); la fonte informativa resta il testo in `role="status"` / `aria-live="polite"` / `aria-busy="true"`, invariati.
+
+Vale per entrambe le fasi (`previewing` «Calcolo della stima…» e `running` «Correzione in corso…»), gli unici usi reali della utility. Nessuna modifica a IA, payload, `teacherGuidance`, `requestId`, idempotenza, costi/budget/ledger, Functions, Rules, schema, indici o dipendenze.
+
 ## 3. M5-QUALITY-01 — calibrazione strutturata della correzione IA
 
 ### Finestra iniziale
@@ -337,4 +348,3 @@ Implementazione solo delle scelte approvate sul prototipo, in pacchetti piccoli 
 12. VISUAL-BOOST-01 dopo approvazione esplicita.
 
 POOL-SIMPLE precede obbligatoriamente VEX: i gruppi equivalenti vengono progettati e implementati soltanto sul contratto senza `peso` e con difficoltà 1–5.
-
