@@ -35,6 +35,7 @@ SchoolForge è un repository didattico Markdown-first per un solo docente. Se è
 8. [test-strategy.md](test-strategy.md) — livelli di test ed evidenze per modulo.
 9. [toolchain.md](toolchain.md) — versioni, monorepo, bootstrap, emulatori.
 10. [piano-implementazione.md](piano-implementazione.md) — pacchetti per agenti, dipendenze, gate.
+11. [evoluzioni-apprendimento-roadmap.md](evoluzioni-apprendimento-roadmap.md) — roadmap approvata post-polish: calibrazione IA, pool senza peso, appunti, varianti equivalenti e boost grafico.
 
 ## Per sviluppare un modulo
 
@@ -63,6 +64,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [storage-gateway-roadmap.md](storage-gateway-roadmap.md) | Contratto e roadmap del **Repository Storage Gateway** same-origin (SGW-00–03). **SGW-01/02A verificati su DEV; SGW-02B batch-read implementato nel codice; restano SGW-02C import e SGW-03.** | Per capire il gateway, l'ultimo accesso Storage diretto e i prossimi passi. |
 | [didattica-ux-roadmap.md](didattica-ux-roadmap.md) | Specifica UX del redesign "Didattica" (DUX-00–10A + Gate GDUX). **DUX-01–10A completati; Gate GDUX superato (PASS)** — vedi [evidenze/gdux-checklist-finale.md](evidenze/gdux-checklist-finale.md). | Per consultare architettura informativa, invarianti di sicurezza/costo e prossimo Gate. |
 | [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) | Roadmap M5-00→M5-05: motore mock e UI implementati; adapter/guardrail server-side fino a **M5-05E-1** implementati con provider reale disabilitato. HG-M5-1/2/3/4 approvati; M5 e G7 aperti. | Per consultare contratto IA/gateway, privacy, limiti costo e percorso di attivazione controllata. |
+| [evoluzioni-apprendimento-roadmap.md](evoluzioni-apprendimento-roadmap.md) | Decisioni approvate per SPINNER-FIX, M5-QUALITY, POOL-SIMPLE, ANNOT, VEX e VISUAL-BOOST. | Fonte di verità per le evoluzioni successive a UI-POLISH-01; implementazione non ancora avviata. |
 
 ## Evidenze
 

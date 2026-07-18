@@ -412,6 +412,24 @@ Redesign UX approvato che unifica le attuali sezioni Corsi, Lezioni e Domande in
 
 ---
 
+## 12b.0 Evoluzioni apprendimento approvate (post UI-POLISH)
+
+Specifica completa e vincolante in [`evoluzioni-apprendimento-roadmap.md`](evoluzioni-apprendimento-roadmap.md). **Stato: progettazione approvata, implementazione non avviata.** Le decisioni includono: calibrazione IA strutturata; rimozione completa di `peso` senza compatibilità legacy; difficoltà intera `1..5` con `maxPoints = difficolta`; aggiornamento obbligatorio di template/kit/fixture; appunti personali a costo controllato; varianti equivalenti a gruppi con warning non bloccanti quando esiste una sola alternativa; visual boost preceduto da prototipo.
+
+| Ordine | Pacchetto | Outcome |
+|---:|---|---|
+| 1 | SPINNER-FIX-01 | Spinner IA robusto su Safari/Brave mobile e fallback statico corretto per reduced-motion. |
+| 2 | M5-QUALITY-01/02 | Combobox Comprensivo/Equilibrato/Rigoroso, indicazioni 500 caratteri, preview bloccata e benchmark comparativo. |
+| 3 | Gate G7 | Chiusura M5 dopo smoke e benchmark. |
+| 4 | POOL-SIMPLE-00/01/02 + GPOOL | Nuovo contratto unico senza `peso`, difficoltà 1–5, template e flussi completi aggiornati; nessun legacy. |
+| 5 | ANNOT-00/01/02 + GANNOT | Appunti personali: post-it flottante desktop, vista mobile, Rules owner-only e blocco durante modalità verifica. |
+| 6 | VEX-00/01/02/03 | Gruppi equivalenti, assegnazione server-side persistente e varianti sicure senza esporre alternative. |
+| 7 | VISUAL-BOOST-00/01 | Prototipo statico approvato prima di qualunque ulteriore modifica grafica applicativa. |
+
+POOL-SIMPLE è prerequisito obbligatorio di VEX. Le evidenziazioni persistenti e «seleziona testo → appunti» sono eliminate dalla roadmap.
+
+---
+
 ## 12b.1 Didattica studente — SDUX
 
 Specifica e confini in [`student-didattica-ux-roadmap.md`](student-didattica-ux-roadmap.md).
