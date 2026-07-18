@@ -46,6 +46,17 @@ Lo spinner di anteprima/esecuzione IA deve ruotare su Safari e Brave mobile quan
 - smoke Safari e Brave mobile, con movimento normale e ridotto;
 - nessuna modifica a IA, payload, costi o Functions.
 
+### Stato — ✅ Implementato
+
+**Causa esatta.** La utility globale `.spinner` (`index.css`) è resa come `<span>`, quindi `display: inline` di default. Per specifica CSS il `transform` **non si applica agli elementi inline non sostituiti**: i motori mobile rigorosi (Safari/Brave) scartano correttamente la `rotate` dei keyframe e lo spinner appariva **fermo**; i browser desktop, più permissivi, lo animavano comunque. In aggiunta, il fallback `prefers-reduced-motion` precedente lasciava un **anello statico colorato** che sembrava uno spinner rotto.
+
+**Fix (solo CSS in `index.css`, nessuna modifica al markup/JS).**
+
+- Movimento normale: `.spinner` ora ha `display: inline-block` (elemento trasformabile → la rotazione si applica su desktop e mobile) e `will-change: transform` (layer composito, animazione fluida su mobile); design circolare e ingombro (1,15rem) invariati.
+- `prefers-reduced-motion: reduce`: nessuna rotazione forzata; l'anello è sostituito da **tre puntini statici** sobri (pseudo-elemento `::before` + `box-shadow`, colore `--color-text-muted`), stesso ingombro 1,15rem → nessun salto di layout. L'indicatore resta puramente decorativo (lo `<span>` è già `aria-hidden`); la fonte informativa resta il testo in `role="status"` / `aria-live="polite"` / `aria-busy="true"`, invariati.
+
+Vale per entrambe le fasi (`previewing` «Calcolo della stima…» e `running` «Correzione in corso…»), gli unici usi reali della utility. Nessuna modifica a IA, payload, `teacherGuidance`, `requestId`, idempotenza, costi/budget/ledger, Functions, Rules, schema, indici o dipendenze.
+
 ## 3. M5-QUALITY-01 — calibrazione strutturata della correzione IA
 
 ### Finestra iniziale
