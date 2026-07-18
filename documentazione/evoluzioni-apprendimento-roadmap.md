@@ -48,7 +48,7 @@ Lo spinner di anteprima/esecuzione IA deve ruotare su Safari e Brave mobile quan
 
 ### Stato — ✅ Implementato
 
-**Causa esatta.** La utility globale `.spinner` (`index.css`) è resa come `<span>`, quindi `display: inline` di default. Per specifica CSS il `transform` **non si applica agli elementi inline non sostituiti**: i motori mobile rigorosi (Safari/Brave) scartano correttamente la `rotate` dei keyframe e lo spinner appariva **fermo**; i browser desktop, più permissivi, lo animavano comunque. In aggiunta, il fallback `prefers-reduced-motion` precedente lasciava un **anello statico colorato** che sembrava uno spinner rotto.
+**Diagnosi confermata.** Negli usi attuali `.spinner` è un flex item dentro `.loading-row` ed è quindi già blockificato: non è dimostrato che il suo `display` originario causasse il problema su Safari o Brave. Il comportamento statico confermato derivava invece dal fallback `prefers-reduced-motion`, che disattivava l'animazione lasciando un **anello statico colorato** simile a uno spinner rotto. `display: inline-block` e `will-change: transform` restano difese di robustezza e compositing, non la correzione di una causa browser dimostrata.
 
 **Fix (solo CSS in `index.css`, nessuna modifica al markup/JS).**
 
@@ -348,4 +348,3 @@ Implementazione solo delle scelte approvate sul prototipo, in pacchetti piccoli 
 12. VISUAL-BOOST-01 dopo approvazione esplicita.
 
 POOL-SIMPLE precede obbligatoriamente VEX: i gruppi equivalenti vengono progettati e implementati soltanto sul contratto senza `peso` e con difficoltà 1–5.
-
