@@ -365,11 +365,11 @@ label {
   font-size: 0.9rem;
 }
 .spinner {
-  /* SPINNER-FIX-01 — `inline-block` è essenziale: il transform NON si applica
-     agli elementi inline non sostituiti (lo `<span>` è inline di default), quindi
-     alcuni motori mobile (Safari/Brave) ignoravano la rotazione e lo spinner
-     appariva fermo. `will-change: transform` promuove il layer per un'animazione
-     fluida e composita su mobile. */
+  /* SPINNER-FIX-01 — il comportamento statico atteso e confermato deriva da
+     `prefers-reduced-motion` (vedi sotto). `display: inline-block` rende la
+     utility robusta anche fuori da un contenitore flex (negli usi attuali è un
+     flex item, quindi già blockificato); `will-change: transform` è una difesa
+     di compositing per Safari/Brave mobile. Nessuna causa browser dimostrata. */
   display: inline-block;
   width: 1.15rem;
   height: 1.15rem;
