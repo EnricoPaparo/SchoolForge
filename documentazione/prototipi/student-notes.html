@@ -1,0 +1,930 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SchoolForge — Prototipo Appunti studente</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f3f5f7;
+        --surface: #ffffff;
+        --surface-soft: #f8fafb;
+        --text: #17212b;
+        --muted: #607080;
+        --border: #d8dee5;
+        --primary: #176b87;
+        --primary-dark: #0d536c;
+        --focus: #2b8fb1;
+        --note: #fff3bd;
+        --note-deep: #f7e59c;
+        --note-border: #c9a94c;
+        --danger: #a62d2d;
+        --success: #24734a;
+        --shadow: 0 18px 45px rgba(36, 44, 52, 0.2);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-width: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      textarea,
+      select {
+        font: inherit;
+      }
+
+      button {
+        min-height: 2.4rem;
+        padding: 0.55rem 0.85rem;
+        border: 1px solid var(--border);
+        border-radius: 0.55rem;
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
+      }
+
+      button:hover:not(:disabled) {
+        border-color: var(--primary);
+        color: var(--primary-dark);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      :focus-visible {
+        outline: 3px solid color-mix(in srgb, var(--focus) 58%, transparent);
+        outline-offset: 2px;
+      }
+
+      .demo-bar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.55rem;
+        padding: 0.65rem clamp(0.75rem, 3vw, 1.5rem);
+        background: #162a35;
+        color: #fff;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+      }
+
+      .demo-bar strong {
+        margin-right: auto;
+      }
+
+      .demo-bar button,
+      .demo-bar select {
+        min-height: 2rem;
+        padding: 0.35rem 0.6rem;
+        border-color: #71818b;
+        background: #fff;
+        color: #17212b;
+      }
+
+      .app-header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        min-height: 4.4rem;
+        padding: 0.75rem clamp(1rem, 4vw, 2rem);
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .brand {
+        color: var(--primary-dark);
+        font-size: 1.25rem;
+        font-weight: 800;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 0.25rem;
+      }
+
+      .tabs button[aria-current="page"] {
+        background: #e8f3f7;
+        border-color: #acd2df;
+        color: var(--primary-dark);
+        font-weight: 700;
+      }
+
+      .shell {
+        width: min(1180px, calc(100% - 2rem));
+        margin: 1.25rem auto 3rem;
+      }
+
+      .course-head {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1rem;
+      }
+
+      .course-head h1 {
+        margin: 0;
+        font-size: clamp(1.25rem, 3vw, 1.65rem);
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: 235px minmax(0, 1fr);
+        gap: 1rem;
+        align-items: start;
+      }
+
+      .sidebar {
+        padding-right: 1rem;
+        border-right: 1px solid var(--border);
+      }
+
+      .sidebar h2 {
+        margin: 0 0 0.75rem;
+        color: var(--muted);
+        font-size: 0.78rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .lesson-list {
+        display: grid;
+        gap: 0.35rem;
+      }
+
+      .lesson-list button {
+        width: 100%;
+        text-align: left;
+      }
+
+      .lesson-list button[aria-current="page"] {
+        background: #e8f3f7;
+        border-color: #acd2df;
+        color: var(--primary-dark);
+      }
+
+      .lesson {
+        min-width: 0;
+        padding: clamp(1rem, 3vw, 1.65rem);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 0.9rem;
+        box-shadow: 0 4px 15px rgba(40, 53, 63, 0.07);
+      }
+
+      .lesson-toolbar {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+        padding-bottom: 0.9rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .lesson-toolbar > div {
+        min-width: 0;
+        flex: 1;
+      }
+
+      .lesson-toolbar h2 {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .lesson-toolbar p {
+        margin: 0.25rem 0 0;
+        color: var(--muted);
+      }
+
+      .notes-open {
+        flex: 0 0 auto;
+        border-color: #b99b42;
+        background: #fff8d8;
+        font-weight: 700;
+      }
+
+      .lesson-copy {
+        max-width: 72ch;
+        line-height: 1.7;
+      }
+
+      .lesson-copy h3 {
+        margin-top: 1.8rem;
+      }
+
+      .callout {
+        padding: 0.85rem 1rem;
+        border-left: 4px solid var(--primary);
+        background: #edf7fa;
+      }
+
+      .note-panel {
+        position: fixed;
+        z-index: 30;
+        top: 132px;
+        right: clamp(20px, 2vw, 24px);
+        display: flex;
+        flex-direction: column;
+        width: min(380px, calc(100vw - 40px));
+        max-height: min(560px, calc(100dvh - 160px));
+        overflow: hidden;
+        background: var(--note);
+        border: 1px solid var(--note-border);
+        border-radius: 0.65rem;
+        box-shadow: var(--shadow);
+      }
+
+      .note-panel[hidden],
+      .mobile-notes[hidden],
+      .confirm-card[hidden],
+      .exam-block[hidden] {
+        display: none;
+      }
+
+      .note-head {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.75rem 0.8rem;
+        background: var(--note-deep);
+        border-bottom: 1px solid var(--note-border);
+      }
+
+      .note-head h2 {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      .save-state {
+        margin-left: auto;
+        color: #5d521f;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+
+      .save-state[data-kind="error"] {
+        color: var(--danger);
+      }
+
+      .save-state[data-kind="saved"] {
+        color: var(--success);
+      }
+
+      .icon-btn {
+        display: inline-grid;
+        width: 2.2rem;
+        min-width: 2.2rem;
+        height: 2.2rem;
+        min-height: 2.2rem;
+        padding: 0;
+        place-items: center;
+        background: rgba(255, 255, 255, 0.55);
+        border-color: #b89b45;
+      }
+
+      .note-body {
+        display: flex;
+        min-height: 0;
+        flex: 1;
+        flex-direction: column;
+        gap: 0.55rem;
+        padding: 0.8rem;
+      }
+
+      .note-label {
+        font-size: 0.85rem;
+        font-weight: 700;
+      }
+
+      .note-text {
+        width: 100%;
+        min-height: 245px;
+        flex: 1 1 auto;
+        resize: none;
+        overflow-y: auto;
+        padding: 0.8rem;
+        background: rgba(255, 253, 239, 0.8);
+        border: 1px solid #bda557;
+        border-radius: 0.45rem;
+        color: #25230f;
+        line-height: 1.55;
+      }
+
+      .note-meta,
+      .note-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+      }
+
+      .note-meta {
+        justify-content: space-between;
+        color: #655b2e;
+        font-size: 0.78rem;
+      }
+
+      .note-actions {
+        justify-content: flex-end;
+      }
+
+      .primary {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: #fff;
+        font-weight: 700;
+      }
+
+      .primary:hover:not(:disabled) {
+        background: var(--primary-dark);
+        color: #fff;
+      }
+
+      .danger {
+        margin-right: auto;
+        color: var(--danger);
+        border-color: #d79b9b;
+        background: #fff7f7;
+      }
+
+      .mobile-notes {
+        min-height: calc(100dvh - 3.5rem);
+        padding: 0.75rem;
+        background: var(--note);
+      }
+
+      .mobile-note-wrap {
+        display: flex;
+        width: 100%;
+        min-width: 0;
+        min-height: calc(100dvh - 5rem);
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      .mobile-note-head {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 0.55rem;
+      }
+
+      .mobile-note-head h1 {
+        margin: 0;
+        overflow: hidden;
+        font-size: 1.15rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .mobile-notes .note-text {
+        min-height: 55dvh;
+        resize: vertical;
+      }
+
+      .mobile-actions {
+        position: sticky;
+        bottom: 0;
+        display: flex;
+        gap: 0.6rem;
+        padding: 0.65rem 0;
+        background: var(--note);
+      }
+
+      .mobile-actions .primary {
+        flex: 1;
+      }
+
+      .confirm-card {
+        position: fixed;
+        z-index: 50;
+        inset: 0;
+        display: grid;
+        padding: 1rem;
+        place-items: center;
+        background: rgba(15, 25, 32, 0.48);
+      }
+
+      .confirm-content {
+        width: min(430px, 100%);
+        padding: 1.1rem;
+        background: var(--surface);
+        border-radius: 0.8rem;
+        box-shadow: var(--shadow);
+      }
+
+      .confirm-content h2 {
+        margin-top: 0;
+      }
+
+      .confirm-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.6rem;
+      }
+
+      .exam-block {
+        padding: 1.25rem;
+        background: #fff5df;
+        border: 1px solid #d7aa4b;
+        border-radius: 0.75rem;
+      }
+
+      .exam-block h2 {
+        margin-top: 0;
+      }
+
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      @media (max-width: 700px) {
+        .demo-bar strong {
+          flex-basis: 100%;
+        }
+
+        .app-header {
+          flex-wrap: wrap;
+        }
+
+        .shell {
+          width: min(100% - 1rem, 1180px);
+          margin-top: 0.75rem;
+        }
+
+        .workspace {
+          display: block;
+        }
+
+        .sidebar {
+          margin-bottom: 0.75rem;
+          padding: 0;
+          border-right: 0;
+        }
+
+        .lesson-list {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .lesson-toolbar {
+          flex-wrap: wrap;
+        }
+
+        .notes-open {
+          width: 100%;
+        }
+
+        .note-panel {
+          display: none !important;
+        }
+
+        body.mobile-notes-open .demo-bar,
+        body.mobile-notes-open .app-header,
+        body.mobile-notes-open .shell {
+          display: none;
+        }
+      }
+
+      @media (min-width: 701px) {
+        .mobile-notes {
+          display: none !important;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="demo-bar" aria-label="Controlli del prototipo">
+      <strong>Prototipo ANNOT-00</strong>
+      <button type="button" id="toggleExam">Attiva Modalità verifica</button>
+      <button type="button" id="fillLong">Inserisci testo lungo</button>
+      <button type="button" id="nextSaveError">Prossimo salvataggio: errore</button>
+      <label>
+        Stato rapido
+        <select id="quickState">
+          <option value="idle">Modifica manuale</option>
+          <option value="saving">Salvataggio…</option>
+          <option value="saved">Salvato</option>
+          <option value="error">Errore</option>
+        </select>
+      </label>
+    </div>
+
+    <header class="app-header">
+      <div class="brand">SchoolForge</div>
+      <nav class="tabs" aria-label="Sezioni studente">
+        <button type="button" aria-current="page">Didattica</button>
+        <button type="button">Verifiche</button>
+      </nav>
+    </header>
+
+    <main class="shell" id="lessonView">
+      <div class="course-head">
+        <button type="button">← Libreria</button>
+        <h1>Informatica — Reti e Web</h1>
+      </div>
+
+      <section class="exam-block" id="examBlock" role="status" hidden>
+        <h2>Didattica temporaneamente non disponibile</h2>
+        <p>
+          La Modalità verifica è attiva per la tua classe. Le lezioni e gli appunti
+          torneranno disponibili quando il docente la disattiverà.
+        </p>
+      </section>
+
+      <div class="workspace" id="workspace">
+        <aside class="sidebar" aria-label="Struttura del corso">
+          <h2>UDA 1 — Le reti</h2>
+          <div class="lesson-list">
+            <button type="button" aria-current="page">Client e server</button>
+            <button type="button">Protocolli Web</button>
+          </div>
+        </aside>
+
+        <article class="lesson" id="lessonArticle">
+          <header class="lesson-toolbar">
+            <div>
+              <h2>Il modello client-server</h2>
+              <p>Concetti chiave: client, server, richiesta, risposta</p>
+            </div>
+            <button type="button" class="notes-open" id="openNotes" aria-haspopup="false">
+              ✎ Appunti
+            </button>
+          </header>
+
+          <div class="lesson-copy">
+            <p>
+              Nel modello client-server due componenti collaborano attraverso una rete.
+              Il client avvia la comunicazione richiedendo una risorsa o un servizio; il
+              server riceve la richiesta, la elabora e restituisce una risposta.
+            </p>
+            <div class="callout">
+              <strong>Esempio.</strong> Il browser è un client: richiede una pagina al web
+              server, che risponde inviando i dati necessari per mostrarla.
+            </div>
+            <h3>Richieste e risposte</h3>
+            <p>
+              Una richiesta contiene le informazioni necessarie per identificare
+              l'operazione. La risposta comunica l'esito e, quando previsto, i dati
+              richiesti. Più client possono contattare lo stesso server.
+            </p>
+            <h3>Responsabilità separate</h3>
+            <p>
+              Separare interfaccia e gestione dei dati rende possibile aggiornare i due
+              componenti in modo indipendente. Il server applica inoltre controlli comuni
+              per tutti i client autorizzati.
+            </p>
+            <p>
+              Questa lezione resta consultabile e scrollabile mentre il pannello Appunti
+              è aperto sul desktop.
+            </p>
+          </div>
+        </article>
+      </div>
+    </main>
+
+    <aside class="note-panel" id="desktopPanel" aria-labelledby="notesTitle" hidden>
+      <header class="note-head">
+        <span aria-hidden="true">✎</span>
+        <h2 id="notesTitle">Appunti</h2>
+        <span class="save-state" id="desktopStatus" aria-live="polite">Salvato</span>
+        <button type="button" class="icon-btn" id="closeNotes" aria-label="Chiudi appunti">
+          ×
+        </button>
+      </header>
+      <div class="note-body">
+        <label class="note-label" for="desktopText">Appunti sulla lezione</label>
+        <textarea
+          class="note-text"
+          id="desktopText"
+          maxlength="20000"
+          placeholder="Scrivi qui i tuoi appunti…"
+        ></textarea>
+        <div class="note-meta">
+          <span id="desktopDirty">Nessuna modifica</span>
+          <span><span id="desktopCount">0</span>/20.000</span>
+        </div>
+        <div class="note-actions">
+          <button type="button" class="danger" id="deleteDesktop">Elimina appunti</button>
+          <button type="button" class="primary" id="saveDesktop">Salva</button>
+        </div>
+      </div>
+    </aside>
+
+    <section class="mobile-notes" id="mobileNotes" aria-labelledby="mobileTitle" hidden>
+      <div class="mobile-note-wrap">
+        <header class="mobile-note-head">
+          <button type="button" id="backToLesson">← Torna alla lezione</button>
+          <h1 id="mobileTitle">Appunti</h1>
+          <span class="save-state" id="mobileStatus" aria-live="polite">Salvato</span>
+        </header>
+        <label class="note-label" for="mobileText">Appunti sulla lezione</label>
+        <textarea
+          class="note-text"
+          id="mobileText"
+          maxlength="20000"
+          placeholder="Scrivi qui i tuoi appunti…"
+        ></textarea>
+        <div class="note-meta">
+          <span id="mobileDirty">Nessuna modifica</span>
+          <span><span id="mobileCount">0</span>/20.000</span>
+        </div>
+        <div class="mobile-actions">
+          <button type="button" class="danger" id="deleteMobile">Elimina</button>
+          <button type="button" class="primary" id="saveMobile">Salva</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="confirm-card" id="confirmCard" hidden>
+      <section class="confirm-content" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+        <h2 id="confirmTitle">Modifiche non salvate</h2>
+        <p id="confirmMessage">Vuoi chiudere senza salvare le modifiche?</p>
+        <div class="confirm-actions">
+          <button type="button" id="cancelConfirm">Annulla</button>
+          <button type="button" class="danger" id="acceptConfirm">Chiudi senza salvare</button>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      (() => {
+        const $ = (id) => document.getElementById(id);
+        const els = {
+          open: $('openNotes'),
+          panel: $('desktopPanel'),
+          close: $('closeNotes'),
+          desktopText: $('desktopText'),
+          mobileText: $('mobileText'),
+          desktopStatus: $('desktopStatus'),
+          mobileStatus: $('mobileStatus'),
+          desktopCount: $('desktopCount'),
+          mobileCount: $('mobileCount'),
+          desktopDirty: $('desktopDirty'),
+          mobileDirty: $('mobileDirty'),
+          saveDesktop: $('saveDesktop'),
+          saveMobile: $('saveMobile'),
+          deleteDesktop: $('deleteDesktop'),
+          deleteMobile: $('deleteMobile'),
+          mobileNotes: $('mobileNotes'),
+          back: $('backToLesson'),
+          confirm: $('confirmCard'),
+          confirmTitle: $('confirmTitle'),
+          confirmMessage: $('confirmMessage'),
+          cancelConfirm: $('cancelConfirm'),
+          acceptConfirm: $('acceptConfirm'),
+          examBlock: $('examBlock'),
+          workspace: $('workspace'),
+          toggleExam: $('toggleExam'),
+          fillLong: $('fillLong'),
+          nextSaveError: $('nextSaveError'),
+          quickState: $('quickState'),
+        };
+
+        let content = '';
+        let savedContent = '';
+        let saveTimer = null;
+        let saving = false;
+        let failNextSave = false;
+        let examMode = false;
+        let pendingConfirm = null;
+        let previousScrollY = 0;
+
+        const isMobile = () => window.matchMedia('(max-width: 700px)').matches;
+        const isDirty = () => content !== savedContent;
+
+        function setStatus(label, kind = 'idle') {
+          [els.desktopStatus, els.mobileStatus].forEach((node) => {
+            node.textContent = label;
+            node.dataset.kind = kind;
+          });
+        }
+
+        function render() {
+          if (els.desktopText.value !== content) els.desktopText.value = content;
+          if (els.mobileText.value !== content) els.mobileText.value = content;
+          const count = content.length.toLocaleString('it-IT');
+          els.desktopCount.textContent = count;
+          els.mobileCount.textContent = count;
+          const dirtyLabel = isDirty() ? 'Modifiche non salvate' : 'Nessuna modifica';
+          els.desktopDirty.textContent = dirtyLabel;
+          els.mobileDirty.textContent = dirtyLabel;
+          els.saveDesktop.disabled = saving || !isDirty() || examMode;
+          els.saveMobile.disabled = saving || !isDirty() || examMode;
+          els.deleteDesktop.disabled = saving || examMode || (content === '' && savedContent === '');
+          els.deleteMobile.disabled = saving || examMode || (content === '' && savedContent === '');
+        }
+
+        function scheduleSave() {
+          window.clearTimeout(saveTimer);
+          if (!isDirty() || saving || examMode) return;
+          saveTimer = window.setTimeout(() => save(), 15000);
+        }
+
+        function updateContent(value) {
+          content = value.slice(0, 20000);
+          if (isDirty()) setStatus('Da salvare');
+          else setStatus('Salvato', 'saved');
+          render();
+          scheduleSave();
+        }
+
+        async function save() {
+          if (saving || !isDirty() || examMode) return;
+          window.clearTimeout(saveTimer);
+          saving = true;
+          const version = content;
+          setStatus('Salvataggio…');
+          render();
+          await new Promise((resolve) => window.setTimeout(resolve, 700));
+          saving = false;
+          if (failNextSave) {
+            failNextSave = false;
+            setStatus('Errore', 'error');
+            render();
+            return;
+          }
+          savedContent = version;
+          setStatus(content === savedContent ? 'Salvato' : 'Da salvare', 'saved');
+          render();
+          if (isDirty()) scheduleSave();
+        }
+
+        function openNotes() {
+          if (examMode) return;
+          previousScrollY = window.scrollY;
+          if (isMobile()) {
+            document.body.classList.add('mobile-notes-open');
+            els.mobileNotes.hidden = false;
+            requestAnimationFrame(() => els.mobileText.focus());
+          } else {
+            els.panel.hidden = false;
+            requestAnimationFrame(() => els.desktopText.focus());
+          }
+          render();
+        }
+
+        function finishClose() {
+          els.panel.hidden = true;
+          els.mobileNotes.hidden = true;
+          document.body.classList.remove('mobile-notes-open');
+          window.scrollTo({ top: previousScrollY, behavior: 'auto' });
+          requestAnimationFrame(() => els.open.focus());
+        }
+
+        function askConfirmation({ title, message, acceptLabel, action }) {
+          pendingConfirm = action;
+          els.confirmTitle.textContent = title;
+          els.confirmMessage.textContent = message;
+          els.acceptConfirm.textContent = acceptLabel;
+          els.confirm.hidden = false;
+          requestAnimationFrame(() => els.cancelConfirm.focus());
+        }
+
+        function requestClose() {
+          if (!isDirty()) {
+            finishClose();
+            return;
+          }
+          askConfirmation({
+            title: 'Modifiche non salvate',
+            message: 'Vuoi chiudere senza salvare le modifiche?',
+            acceptLabel: 'Chiudi senza salvare',
+            action: () => {
+              content = savedContent;
+              render();
+              finishClose();
+            },
+          });
+        }
+
+        function requestDelete() {
+          askConfirmation({
+            title: 'Elimina appunti',
+            message: 'Verranno eliminati soltanto gli appunti personali di questa lezione.',
+            acceptLabel: 'Elimina appunti',
+            action: () => {
+              content = '';
+              savedContent = '';
+              setStatus('Salvato', 'saved');
+              render();
+            },
+          });
+        }
+
+        function setExamMode(next) {
+          examMode = next;
+          els.examBlock.hidden = !examMode;
+          els.workspace.hidden = examMode;
+          els.open.hidden = examMode;
+          els.toggleExam.textContent = examMode
+            ? 'Disattiva Modalità verifica'
+            : 'Attiva Modalità verifica';
+          if (examMode) {
+            window.clearTimeout(saveTimer);
+            els.panel.hidden = true;
+            els.mobileNotes.hidden = true;
+            document.body.classList.remove('mobile-notes-open');
+          }
+          render();
+        }
+
+        [els.desktopText, els.mobileText].forEach((textarea) => {
+          textarea.addEventListener('input', (event) => updateContent(event.currentTarget.value));
+          textarea.addEventListener('blur', () => save());
+        });
+
+        els.open.addEventListener('click', openNotes);
+        els.close.addEventListener('click', requestClose);
+        els.back.addEventListener('click', requestClose);
+        els.saveDesktop.addEventListener('click', save);
+        els.saveMobile.addEventListener('click', save);
+        els.deleteDesktop.addEventListener('click', requestDelete);
+        els.deleteMobile.addEventListener('click', requestDelete);
+        els.cancelConfirm.addEventListener('click', () => {
+          els.confirm.hidden = true;
+          pendingConfirm = null;
+        });
+        els.acceptConfirm.addEventListener('click', () => {
+          els.confirm.hidden = true;
+          const action = pendingConfirm;
+          pendingConfirm = null;
+          action?.();
+        });
+        els.toggleExam.addEventListener('click', () => setExamMode(!examMode));
+        els.nextSaveError.addEventListener('click', () => {
+          failNextSave = true;
+          setStatus('Il prossimo salvataggio simulerà un errore');
+        });
+        els.fillLong.addEventListener('click', () => {
+          const paragraph =
+            'Il client invia una richiesta al server, che la elabora e restituisce una risposta. ';
+          updateContent(Array.from({ length: 75 }, () => paragraph).join('\n\n'));
+          if (els.panel.hidden && els.mobileNotes.hidden) openNotes();
+        });
+        els.quickState.addEventListener('change', () => {
+          const labels = {
+            idle: ['Da salvare', 'idle'],
+            saving: ['Salvataggio…', 'idle'],
+            saved: ['Salvato', 'saved'],
+            error: ['Errore', 'error'],
+          };
+          const [label, kind] = labels[els.quickState.value];
+          setStatus(label, kind);
+        });
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape' && !els.confirm.hidden) {
+            els.confirm.hidden = true;
+            pendingConfirm = null;
+          } else if (event.key === 'Escape' && (!els.panel.hidden || !els.mobileNotes.hidden)) {
+            requestClose();
+          }
+        });
+        window.addEventListener('resize', () => {
+          if (!els.panel.hidden && isMobile()) {
+            els.panel.hidden = true;
+            els.mobileNotes.hidden = false;
+            document.body.classList.add('mobile-notes-open');
+          } else if (!els.mobileNotes.hidden && !isMobile()) {
+            els.mobileNotes.hidden = true;
+            els.panel.hidden = false;
+            document.body.classList.remove('mobile-notes-open');
+          }
+        });
+
+        render();
+        setStatus('Salvato', 'saved');
+      })();
+    </script>
+  </body>
+</html>
