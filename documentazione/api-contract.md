@@ -732,6 +732,30 @@ Lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applic
 
 `classId` su `Student`, `classIds` su `Program` e `classId` su `PublishedProjectionDoc` filtrano ulteriormente cosa uno studente approvato vede: un programma senza classi assegnate, o una verifica senza `classId`, non sono visibili a nessuno studente anche se altrimenti pubblici. Lo schema e la UI docente per assegnare le classi ai programmi sono implementati da M3L-A4. Il filtro per classe è implementato sia sulla sezione **Lezioni** (query client + Security Rules, `isClassmateOf()`, M3L-C) sia sulla sezione **Verifiche** (query `collectionGroup` + Security Rules, M3L-D) — nessuna consegna, risposta online o punteggio è prevista per M3-lite in nessuna delle due sezioni.
 
+### 3.4c Appunti personali dello studente (ANNOT-01 — implementato, senza UI)
+
+Appunti testuali strettamente personali, uno per coppia (studente, lezione pubblica),
+memorizzati al path deterministico `students/{studentUid}/lessonNotes/{publicLessonId}`
+(tipo `StudentLessonNoteDoc`). Il service
+`apps/web/src/features/student/studentLessonNotesService.ts` espone quattro operazioni
+tipizzate; la UI (pannello/vista mobile, cache di sessione, dirty guard, debounce) è
+demandata ad ANNOT-02 e non è implementata qui.
+
+| Operazione | Lettura/Scrittura Firestore |
+|---|---|
+| `loadStudentLessonNote(uid, publicLessonId, db)` | **Un solo** `getDoc` sul path deterministico. Documento assente → stato tipizzato `{ state: 'missing' }` (non un errore); presente → `{ state: 'existing', note }` normalizzato. Nessun listener/polling. |
+| `createStudentLessonNote(identity, content, db)` | **Un solo** `setDoc`: scrive `studentUid`/`publicLessonId`/`programId`/`importId` (derivati dal contesto lezione già caricato dalla UI, nessuna lettura aggiuntiva) + `content` + `createdAt == updatedAt == serverTimestamp()`. |
+| `updateStudentLessonNote(uid, publicLessonId, content, db)` | **Un solo** `updateDoc` di soli `content` + `updatedAt` (`serverTimestamp()`); non riscrive identity/`createdAt`, nessuna lettura né transazione. |
+| `deleteStudentLessonNote(uid, publicLessonId, db)` | **Un solo** `deleteDoc` del solo documento nota; nessun delete ricorsivo, nessun altro documento toccato. |
+
+Contratto client: `content` è una stringa validata lato client a ≤ 20.000 caratteri
+(`STUDENT_LESSON_NOTE_MAX_LENGTH`) **prima** di qualsiasi scrittura (nessuna fiducia in
+un troncamento silenzioso lato server; le Rules rivalidano). Gli errori Firebase sono
+convertiti in `StudentLessonNoteError` sanitizzati (`content-too-long`,
+`permission-denied`, `unavailable`) — nessun messaggio grezzo destinato alla futura UI,
+nessun falso successo, nessun retry automatico. Il campo `lessonId` di ANNOT-00 è stato
+rimosso (vedi `student-notes-contract.md` §4).
+
 ### 3.5 Correzione ed export (Modulo 4, dipende da M3-full — completato)
 
 > Le operazioni seguenti operano sulle consegne digitali di M3-full (`submissions/{id}`, path `${verificationId}_${studentUid}`), quindi non sono utilizzabili con M3-lite. M4-00→M4-03B implementano contratto, service/Rules, workspace, restituzione, ciclo di vita, eliminazione, Registro Correzioni, export CSV ed export PDF. Markdown rinviato (nessun caso d'uso).

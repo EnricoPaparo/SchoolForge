@@ -141,6 +141,50 @@ Le regole seguenti descrivono il modello gateway (link pubblico, tentativi, Clou
 - `deliveryAttempts/*/accessLog` sarebbe scritto solo dalla Cloud Function e leggibile solo dall'owner (Report Accessi).
 - Il reset docente sarebbe ammesso solo in una transazione Firestore su un tentativo `in_progress`, con motivazione, invalidazione sessione, rilascio lock e audit append-only.
 
+### 3.3 Appunti personali dello studente (ANNOT-01)
+
+Gli appunti personali vivono a `students/{studentUid}/lessonNotes/{publicLessonId}` e
+sono governati da un `match` **dedicato** in `firestore.rules`: le regole del documento
+padre `students/{uid}` (che concede la lettura owner al docente) **non si propagano** a
+questa sottocollezione — Firestore non eredita mai le regole del padre — quindi il
+docente non può leggere né scrivere gli appunti, nemmeno in quanto owner.
+
+Ogni operazione (lettura puntuale get/create/update/delete) richiede
+`request.auth.uid == studentUid` **e** il gate `canAccessLessonForNotes(publicLessonId)`,
+che riusa gli helper esistenti
+(`isApprovedStudent`, `myStudentClassId`, `isClassmateOf`, `programActiveImportId`,
+`examModeAppliesToClass`, `isOwner`) senza duplicarne la logica. Il gate è fail-closed e
+in cortocircuito: nega studente non approvato/pending/blocked, portale disattivato,
+studente senza classe, classe non assegnata al programma della lezione, lezione di un
+import non attivo, programma o `publicLessons` mancanti, e **qualsiasi** operazione
+quando la Modalità verifica si applica (globale o alla classe). Il docente è negato
+esplicitamente (`!isOwner()`) e di nuovo dal confronto `uid == studentUid`.
+
+Validazione dei dati (rivalidata server-side, mai delegata al client):
+
+- **lettura**: solo `allow get` (lettura puntuale del documento deterministico), non
+  `allow read` — nessuna query/list sull'intera sottocollegione `lessonNotes` è
+  autorizzata; `list` resta al default deny, riducendo superficie autorizzativa e rischio
+  di scansioni accidentali/costose;
+- **create**: set di chiavi chiuso ed esatto (`studentUid`, `publicLessonId`,
+  `programId`, `importId`, `content`, `createdAt`, `updatedAt`); `studentUid`/
+  `publicLessonId` coerenti con il path e `request.auth.uid`; `programId`/`importId`
+  coerenti con la `publicLessons/{publicLessonId}` associata; `content is string` e
+  `≤ 20000`; `createdAt == updatedAt == request.time`;
+- **update**: solo `content` + `updatedAt` mutabili (`affectedKeys().hasOnly`), identity
+  fields e `createdAt` immutabili; `content is string` e `≤ 20000`;
+  `updatedAt == request.time`;
+- **delete**: solo lo studente proprietario e solo entro il gate completo — una nota di
+  una lezione non più accessibile o durante Modalità verifica non è cancellabile dal
+  client (fail-closed dichiarato nel contratto).
+
+**Costo di autorizzazione.** Il gate esegue accessi cross-document (memoizzati per
+valutazione): `settings/owner`, `settings/studentAccess`, `students/{uid}`,
+`publicLessons/{publicLessonId}`, `programs/{programId}` — accessi puramente
+autorizzativi su path noti, entro i limiti di access-call delle Rules, verificati
+dall'Emulator. Nessuna proiezione didattica (testo lezione, titolo, classe, nome/email,
+pool, domande, soluzioni) è memorizzata o esposta dagli appunti.
+
 ---
 
 ## 4. Gateway M3-full: `startDigitalAttempt` e `continueDigitalAttempt` (modello scartato, non implementato)

@@ -230,7 +230,11 @@ Path target:
 students/{studentUid}/lessonNotes/{publicLessonId}
 ```
 
-Campi minimi: `programId`, `importId`, `lessonId`, `content`, `createdAt`, `updatedAt`.
+Campi minimi (ANNOT-01, definitivi): `studentUid`, `publicLessonId`, `programId`,
+`importId`, `content`, `createdAt`, `updatedAt`. Il campo `lessonId` proposto in
+ANNOT-00 è stato rimosso: `PublicLessonDoc` non ha un campo `lessonId`, l'identità
+canonica della lezione è l'ID documento `publicLessonId` (vedi
+`student-notes-contract.md` §4).
 
 - limite 20.000 caratteri;
 - lettura solo alla prima apertura;
@@ -247,7 +251,7 @@ Campi minimi: `programId`, `importId`, `lessonId`, `content`, `createdAt`, `upda
 | ID | Scope | DoD |
 |---|---|---|
 | ANNOT-00 | Contratto, Rules e prototipo statico desktop/mobile. | Prototipo approvato; budget letture/scritture esplicito. |
-| ANNOT-01 | Service e Rules. | Test Emulator su ownership, classe e modalità verifica. |
+| ANNOT-01 ✅ | Service e Rules. **Implementato** (tipo definitivo, service, Rules, test unitari + Emulator). | Test Emulator su ownership, classe e modalità verifica: superati. |
 | ANNOT-02 | Pannello desktop, vista mobile e stati di salvataggio. | Smoke desktop/mobile; nessun accesso docente o durante verifica. |
 | Gate GANNOT | Evidenze funzionali, sicurezza e costo. | Checklist docente/studente completa. |
 
