@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AiGrader } from './aiCorrectionGatewayCore.js';
-import { loadM5BenchmarkDataset, runM5Benchmark } from './m5BenchmarkHarness.js';
+import {
+  loadM5BenchmarkDataset,
+  runM5Benchmark,
+  runM5BenchmarkModes,
+} from './m5BenchmarkHarness.js';
 
 describe('M5 benchmark harness', () => {
   it('loads the synthetic groups and runs one deterministic call per submission', async () => {
@@ -69,5 +73,40 @@ describe('M5 benchmark harness', () => {
     };
     const report = await runM5Benchmark(dataset, grader, { now: () => 0 });
     expect(report.submissions.every((submission) => submission.outputInvalid)).toBe(true);
+  });
+
+  it('runs the identical synthetic submissions in all three grading modes without network', async () => {
+    const dataset = await loadM5BenchmarkDataset();
+    const grade = vi.fn(async (input) => ({
+      requestId: input.requestId,
+      results: input.questions.map((question) => ({
+        order: question.order,
+        points: 0,
+        feedback: 'Fixture deterministica senza rete.',
+      })),
+      generalFeedback: 'Feedback generale fixture.',
+    }));
+    const reports = await runM5BenchmarkModes(dataset, { id: 'fake', grade }, { repetitions: 2 });
+
+    expect(grade).toHaveBeenCalledTimes(dataset.benchmarkSubmissions.length * 3 * 2);
+    expect(Object.keys(reports)).toEqual(['compassionate', 'balanced', 'rigorous']);
+    for (const mode of ['compassionate', 'balanced', 'rigorous'] as const) {
+      expect(reports[mode]).toHaveLength(2);
+      expect(reports[mode].every((report) => report.gradingMode === mode)).toBe(true);
+    }
+
+    const normalizedInputs = grade.mock.calls.map(([input]) => ({
+      mode: input.gradingMode,
+      questions: input.questions,
+      context: input.submissionContext,
+    }));
+    const balanced = normalizedInputs.filter((item) => item.mode === 'balanced');
+    for (const mode of ['compassionate', 'rigorous'] as const) {
+      expect(
+        normalizedInputs
+          .filter((item) => item.mode === mode)
+          .map(({ questions, context }) => ({ questions, context })),
+      ).toEqual(balanced.map(({ questions, context }) => ({ questions, context })));
+    }
   });
 });

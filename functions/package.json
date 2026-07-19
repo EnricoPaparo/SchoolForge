@@ -6,6 +6,7 @@
   "main": "./lib/index.js",
   "scripts": {
     "build": "tsc",
+    "benchmark:m5-quality": "node lib/m5QualityBenchmarkCli.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

@@ -59,8 +59,11 @@ export interface M5BenchmarkReport {
   datasetVersion: 'm5-benchmark-dataset-v1';
   graderId: string;
   model?: string;
+  gradingMode: GradingMode;
   submissions: M5BenchmarkSubmissionResult[];
 }
+
+export type M5BenchmarkModeReports = Record<GradingMode, M5BenchmarkReport[]>;
 
 export async function loadM5BenchmarkDataset(
   path = DEFAULT_M5_BENCHMARK_DATASET_PATH,
@@ -147,16 +150,17 @@ function assertBenchmarkOutput(output: AiGraderOutput, input: AiGraderInput): vo
 export async function runM5Benchmark(
   dataset: M5BenchmarkDataset,
   grader: AiGrader,
-  options: { now?: () => number } = {},
+  options: { now?: () => number; gradingMode?: GradingMode } = {},
 ): Promise<M5BenchmarkReport> {
   const now = options.now ?? Date.now;
+  const gradingMode = options.gradingMode ?? 'balanced';
   const casesById = new Map(
     dataset.providerCases.map((benchmarkCase) => [benchmarkCase.id, benchmarkCase]),
   );
   const submissions: M5BenchmarkSubmissionResult[] = [];
 
   for (const submission of dataset.benchmarkSubmissions) {
-    const { input, caseIdByOrder } = buildBenchmarkGraderInput(submission, casesById);
+    const { input, caseIdByOrder } = buildBenchmarkGraderInput(submission, casesById, gradingMode);
     const started = now();
     try {
       const output = await grader.grade(input);
@@ -195,6 +199,36 @@ export async function runM5Benchmark(
     datasetVersion: 'm5-benchmark-dataset-v1',
     graderId: grader.id,
     ...(grader.model ? { model: grader.model } : {}),
+    gradingMode,
     submissions,
   };
+}
+
+/**
+ * Esegue gli stessi raggruppamenti sintetici in tutte le modalità. Il grader è
+ * sempre iniettato: importare o testare questo modulo non crea trasporti né rete.
+ */
+export async function runM5BenchmarkModes(
+  dataset: M5BenchmarkDataset,
+  grader: AiGrader,
+  options: { now?: () => number; repetitions?: number } = {},
+): Promise<M5BenchmarkModeReports> {
+  const repetitions = options.repetitions ?? 1;
+  if (!Number.isInteger(repetitions) || repetitions < 1) {
+    throw new Error('Il numero di ripetizioni deve essere un intero positivo.');
+  }
+
+  const modes: GradingMode[] = ['compassionate', 'balanced', 'rigorous'];
+  const reports: M5BenchmarkModeReports = {
+    compassionate: [],
+    balanced: [],
+    rigorous: [],
+  };
+
+  for (const gradingMode of modes) {
+    for (let repetition = 0; repetition < repetitions; repetition++) {
+      reports[gradingMode].push(await runM5Benchmark(dataset, grader, { ...options, gradingMode }));
+    }
+  }
+  return reports;
 }
