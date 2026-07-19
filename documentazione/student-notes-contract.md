@@ -278,7 +278,10 @@ calls; riuso e memoizzazione degli stessi path devono essere verificati con Emul
 
 ### 5.4 Validazione per operazione
 
-**Read:** path `studentUid == request.auth.uid` e `canAccessLessonForNotes` vero.
+**Lettura puntuale (get):** solo `allow get` con `studentUid == request.auth.uid` e
+`canAccessLessonForNotes` vero. Non è ammessa alcuna query/list sulla sottocollegione
+`lessonNotes` (la nota è sempre letta per ID deterministico): `list` resta al default
+deny.
 
 **Create:** oltre al read gate:
 

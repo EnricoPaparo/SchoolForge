@@ -149,8 +149,9 @@ padre `students/{uid}` (che concede la lettura owner al docente) **non si propag
 questa sottocollezione — Firestore non eredita mai le regole del padre — quindi il
 docente non può leggere né scrivere gli appunti, nemmeno in quanto owner.
 
-Ogni operazione (read/create/update/delete) richiede `request.auth.uid == studentUid`
-**e** il gate `canAccessLessonForNotes(publicLessonId)`, che riusa gli helper esistenti
+Ogni operazione (lettura puntuale get/create/update/delete) richiede
+`request.auth.uid == studentUid` **e** il gate `canAccessLessonForNotes(publicLessonId)`,
+che riusa gli helper esistenti
 (`isApprovedStudent`, `myStudentClassId`, `isClassmateOf`, `programActiveImportId`,
 `examModeAppliesToClass`, `isOwner`) senza duplicarne la logica. Il gate è fail-closed e
 in cortocircuito: nega studente non approvato/pending/blocked, portale disattivato,
@@ -161,6 +162,10 @@ esplicitamente (`!isOwner()`) e di nuovo dal confronto `uid == studentUid`.
 
 Validazione dei dati (rivalidata server-side, mai delegata al client):
 
+- **lettura**: solo `allow get` (lettura puntuale del documento deterministico), non
+  `allow read` — nessuna query/list sull'intera sottocollegione `lessonNotes` è
+  autorizzata; `list` resta al default deny, riducendo superficie autorizzativa e rischio
+  di scansioni accidentali/costose;
 - **create**: set di chiavi chiuso ed esatto (`studentUid`, `publicLessonId`,
   `programId`, `importId`, `content`, `createdAt`, `updatedAt`); `studentUid`/
   `publicLessonId` coerenti con il path e `request.auth.uid`; `programId`/`importId`

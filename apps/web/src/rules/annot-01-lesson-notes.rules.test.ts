@@ -8,7 +8,17 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { deleteDoc, doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
 
@@ -157,6 +167,29 @@ function validCreate(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+// ─── Read surface: get-only (no query/list) ──────────────────────────────────
+
+describe('ANNOT-01 rules — read is get-only (no query/list)', () => {
+  it('allows the authorized owning student to getDoc their own note', async () => {
+    await seed({ seedNote: true });
+    await assertSucceeds(getDoc(doc(studentDb(), NOTE_PATH)));
+  });
+
+  it('denies the same student a query/list over students/{uid}/lessonNotes', async () => {
+    await seed({ seedNote: true });
+    await assertFails(
+      getDocs(query(collection(studentDb(), 'students', STUDENT_UID, 'lessonNotes'))),
+    );
+  });
+
+  it('denies teacher/owner, another student and anonymous a getDoc of the note', async () => {
+    await seed({ seedNote: true });
+    await assertFails(getDoc(doc(ownerDb(), NOTE_PATH)));
+    await assertFails(getDoc(doc(otherStudentDb(), NOTE_PATH)));
+    await assertFails(getDoc(doc(anonDb(), NOTE_PATH)));
+  });
+});
 
 // ─── Authorization matrix ────────────────────────────────────────────────────
 

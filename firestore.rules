@@ -382,12 +382,13 @@ service cloud.firestore {
     // No didactic data (lesson body/title, class, name/email, pool, questions
     // or solutions) is ever stored or exposed here.
     match /students/{studentUid}/lessonNotes/{publicLessonId} {
-      // Read: single-document get by the owning student only, in an
-      // authorized context. Deliberately `allow read` (get/list) — the note
-      // is on a deterministic personal path the client reads by id; a
-      // student can only ever reach their own subcollection anyway
-      // (studentUid == request.auth.uid).
-      allow read: if request.auth.uid == studentUid
+      // Read: deliberately `allow get`, NOT `allow read` — the note lives on a
+      // deterministic personal path the client always fetches by id (a single
+      // getDoc), so there is no need to authorize a query/list over the whole
+      // lessonNotes subcollection. Restricting to get() shrinks the
+      // authorization surface and prevents accidental/costly collection scans;
+      // list is left to the default deny.
+      allow get: if request.auth.uid == studentUid
         && canAccessLessonForNotes(publicLessonId);
 
       // Create: exact closed key set, identity pinned to path/auth and to the
