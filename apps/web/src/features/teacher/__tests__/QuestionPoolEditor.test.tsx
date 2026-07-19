@@ -45,14 +45,14 @@ function lesson(over: Partial<LessonItem> = {}): LessonItem {
 }
 
 const VALID_POOL = {
-  schema: 'schoolforge-pool/v1' as const,
+  schema: 'schoolforge-pool/v2' as const,
   questions: [
     {
       id: 'q1',
       tipo: 'aperta' as const,
       difficolta: 1 as const,
-      peso: 1 as const,
       maxPoints: 1,
+      maxCharacters: 2000,
       testo: 'Domanda uno.',
       soluzione: 'Risposta.',
     },

@@ -126,16 +126,16 @@ I test seguenti restano specifica di un eventuale M3-full e non si applicano a M
 
 ### Fixture — pool valido (Markdown)
 
-Pool minimo valido con tre domande, difficoltà 1–3 e peso 1–3 (scala lineare; punteggio massimo = `difficoltà × peso`):
+Pool V2 minimo valido con tre domande. `difficolta` è un intero 1–5 e il punteggio
+massimo è sempre derivato come `maxPoints = difficolta`:
 
 ```md
 ---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q-001
     tipo: chiusa_singola
     difficolta: 1
-    peso: 1
     testo: Quale protocollo risolve i nomi di dominio?
     opzioni:
       - id: a
@@ -146,7 +146,7 @@ questions:
   - id: q-002
     tipo: aperta
     difficolta: 2
-    peso: 2
+    maxCharacters: 2000
     testo: |
       Spiega la differenza tra HTTP e HTTPS.
     soluzione: |
@@ -154,7 +154,6 @@ questions:
   - id: q-003
     tipo: chiusa_multipla
     difficolta: 3
-    peso: 3
     testo: Quali sono livelli del modello TCP/IP?
     opzioni:
       - id: a
@@ -171,18 +170,18 @@ questions:
 
 ```md
 ---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q-001
     tipo: aperta
     # difficolta mancante
-    # peso mancante
-    testo: Domanda senza difficoltà né peso.
+    testo: Domanda senza difficoltà.
     # soluzione mancante
 ---
 ```
 
-Atteso: il parser rifiuta il pool indicando i campi `difficolta`, `peso` e `soluzione` mancanti per `q-001`. Il pool invalido è interamente escluso dalla selezione.
+Atteso: il parser rifiuta il pool indicando i campi `difficolta` e `soluzione` mancanti
+per `q-001`. Il pool invalido è interamente escluso dalla selezione.
 
 ### Mock Firebase per Vitest
 

@@ -1,3 +1,4 @@
+import type { PoolDifficulty } from '@schoolforge/lesson-contract';
 import { doc, getDoc } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import type {
@@ -25,7 +26,7 @@ export type CorrectionWorkspaceQuestion = {
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
   maxPoints: number;
   /** Frozen difficulty/weight from the teacher snapshot; absent on legacy verifications. */
-  difficolta?: 1 | 2 | 3;
+  difficolta?: PoolDifficulty;
   peso?: 1 | 2 | 3;
   testo: string;
   opzioni?: { id: string; testo: string }[];

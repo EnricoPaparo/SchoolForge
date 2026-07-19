@@ -1,9 +1,8 @@
 /**
  * EXAM-UX-03 — limite caratteri delle risposte aperte.
  *
- * `maxCharacters` è opzionale sulla domanda aperta (chiave sorgente YAML
- * `maxCharacters`, coerente con `maxPoints`). Quando assente/nullo/legacy/non
- * valido, il limite **effettivo** applicato a runtime è il default 2000.
+ * `maxCharacters` è opzionale nel Markdown della domanda aperta. Quando
+ * assente, il parser V2 espone come limite effettivo il default 2000.
  * Riguarda soltanto le domande aperte.
  */
 
@@ -28,7 +27,7 @@ export function normalizeMaxCharacters(value: unknown): number | undefined {
 
 /**
  * Limite **effettivo** a runtime: il valore normalizzato se valido, altrimenti
- * il default 2000. Usato da snapshot/OnlineExamView; non tronca mai dati già
+ * il default 2000. Non tronca mai dati già
  * salvati, definisce solo il tetto del nuovo input.
  */
 export function effectiveMaxCharacters(value: unknown): number {

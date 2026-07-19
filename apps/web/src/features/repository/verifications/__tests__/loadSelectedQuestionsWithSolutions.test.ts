@@ -8,18 +8,16 @@ vi.mock('../../gateway/repositoryGatewayClient.js', () => ({
 }));
 
 const POOL_YAML = `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q-001
     tipo: aperta
     difficolta: 2
-    peso: 3
     testo: Spiega HTTP.
     soluzione: HTTP è un protocollo applicativo.
   - id: q-002
     tipo: chiusa_singola
     difficolta: 1
-    peso: 1
     testo: Porta HTTP?
     opzioni:
       - id: a
@@ -30,7 +28,6 @@ questions:
   - id: q-003
     tipo: chiusa_multipla
     difficolta: 2
-    peso: 2
     testo: Protocolli di trasporto?
     opzioni:
       - id: x

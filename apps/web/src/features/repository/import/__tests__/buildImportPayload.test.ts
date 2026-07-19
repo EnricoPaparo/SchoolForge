@@ -26,18 +26,16 @@ const LESSON_WITH_VALID_POOL: RawFile = {
 const VALID_POOL: RawFile = {
   path: 'uda-01-reti/lezione-001-http.pool.md',
   content: `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q-001
     tipo: aperta
     difficolta: 2
-    peso: 3
     testo: Spiega HTTP.
     soluzione: HTTP è un protocollo applicativo.
   - id: q-002
     tipo: chiusa_singola
     difficolta: 1
-    peso: 1
     testo: Quale porta usa HTTP?
     opzioni:
       - id: a
@@ -56,11 +54,11 @@ const LESSON_WITH_INVALID_POOL: RawFile = {
 const INVALID_POOL: RawFile = {
   path: 'uda-01-reti/lezione-002-https.pool.md',
   content: `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q-001
     tipo: aperta
-    testo: Domanda incompleta senza difficolta e peso.
+    testo: Domanda incompleta senza difficolta.
 ---`,
 };
 
@@ -263,7 +261,7 @@ describe('buildImportPayload — questionIndex', () => {
     }
   });
 
-  it('maxPoints equals difficolta × peso', () => {
+  it('maxPoints equals difficolta while the transitional index weight stays neutral', () => {
     const files = buildAllFiles();
     const validation = validateImport('Informatica', files);
     const payload = buildImportPayload({
@@ -277,7 +275,32 @@ describe('buildImportPayload — questionIndex', () => {
 
     for (const entry of payload.questionIndex) {
       expect(entry.data.maxPoints).toBe(entry.data.difficolta * entry.data.peso);
+      expect(entry.data.peso).toBe(1);
     }
+  });
+
+  it('preserves V2 difficolta 5 in questionIndex with neutral weight and derived points', () => {
+    const files = buildAllFiles().map((file) =>
+      file.path === VALID_POOL.path
+        ? { ...file, content: file.content.replace('difficolta: 2', 'difficolta: 5') }
+        : file,
+    );
+    const validation = validateImport('Informatica', files);
+    expect(validation.valid).toBe(true);
+
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    const entry = payload.questionIndex.find(
+      (question) => question.data.questionLocalId === 'q-001',
+    );
+    expect(entry?.data).toMatchObject({ difficolta: 5, peso: 1, maxPoints: 5 });
   });
 
   it('question index IDs are unique and stable', () => {

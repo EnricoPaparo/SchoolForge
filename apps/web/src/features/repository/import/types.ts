@@ -1,3 +1,4 @@
+import type { PoolDifficulty } from '@schoolforge/lesson-contract';
 import type { ProgrammaMetadata, RawFile, ValidationIssue } from '../validation/types.js';
 
 export interface ImportRepositoryInput {
@@ -134,7 +135,7 @@ export interface QuestionIndexPayload {
     poolStorageRef: string;
     questionLocalId: string;
     tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
-    difficolta: 1 | 2 | 3;
+    difficolta: PoolDifficulty;
     peso: 1 | 2 | 3;
     maxPoints: number;
     /** First 100 chars of the normalized question text — never the full text, solution, or answers. */

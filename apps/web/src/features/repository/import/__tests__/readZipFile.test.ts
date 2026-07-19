@@ -26,7 +26,7 @@ describe('readZipFile', () => {
     const file = await makeZip({
       'my-repo/uda-01-reti/uda-01-reti.md': '# Reti',
       'my-repo/uda-01-reti/lezione-001-http.md': '# HTTP',
-      'my-repo/uda-01-reti/lezione-001-http.pool.md': '---\nschema: schoolforge-pool/v1\n',
+      'my-repo/uda-01-reti/lezione-001-http.pool.md': '---\nschema: schoolforge-pool/v2\n',
     });
     const result = await readZipFile(file);
     const paths = result.map((r) => r.path).sort();
@@ -109,7 +109,7 @@ describe('readZipFile', () => {
     const file = await makeZip({
       'uda-01-reti/uda-01-reti.md': '# UDA',
       'uda-01-reti/lezione-001-http.md': '# Lezione',
-      'uda-01-reti/lezione-001-http.pool.md': '---\nschema: schoolforge-pool/v1\n',
+      'uda-01-reti/lezione-001-http.pool.md': '---\nschema: schoolforge-pool/v2\n',
     });
     const result = await readZipFile(file);
     const paths = result.map((r) => r.path).sort();

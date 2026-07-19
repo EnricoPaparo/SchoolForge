@@ -109,18 +109,17 @@ Testo della lezione.
   zip.file(
     `${KIT_ROOT}/uda-01-titolo-uda/lezione-001-titolo-lezione.pool.md`,
     `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q1
     tipo: aperta
     difficolta: 1
-    peso: 1
+    maxCharacters: 2000
     testo: 'Testo della domanda aperta'
     soluzione: 'Testo della soluzione'
   - id: q2
     tipo: chiusa_singola
     difficolta: 1
-    peso: 1
     testo: 'Testo della domanda a scelta singola'
     opzioni:
       - id: a
@@ -169,12 +168,11 @@ Testo della lezione.
   zip.file(
     `${KIT_ROOT}/uda-02-titolo-uda/lezione-001-titolo-lezione.pool.md`,
     `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q1
     tipo: chiusa_multipla
     difficolta: 2
-    peso: 2
     testo: 'Testo della domanda a scelta multipla'
     opzioni:
       - id: a

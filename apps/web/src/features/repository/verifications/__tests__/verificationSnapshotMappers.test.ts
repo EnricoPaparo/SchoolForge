@@ -58,6 +58,14 @@ describe('toTeacherQuestionSnapshot', () => {
     expect(snap.peso).toBe(2);
   });
 
+  it('preserves difficolta 5 through VerificationQuestionRef and teacher snapshot', () => {
+    const snap = toTeacherQuestionSnapshot(
+      { ...LOADED, ref: { ...REF, difficolta: 5, peso: 1, maxPoints: 5 } },
+      0,
+    );
+    expect(snap).toMatchObject({ difficolta: 5, peso: 1, maxPoints: 5 });
+  });
+
   it('preserves ALL correct answers of a chiusa_multipla (array, not reduced to the first)', () => {
     const multipla: LoadedQuestionWithSolution = {
       ref: { ...REF, tipo: 'chiusa_multipla' },

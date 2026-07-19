@@ -1,6 +1,11 @@
 import { z } from 'zod';
+import { DEFAULT_MAX_CHARACTERS, MAX_MAX_CHARACTERS } from './maxCharacters.js';
 
-const DifficoltaPeso = z.union([z.literal(1), z.literal(2), z.literal(3)]);
+const Difficolta = z
+  .number()
+  .int('difficolta deve essere un numero intero')
+  .min(1, 'difficolta deve essere compresa tra 1 e 5')
+  .max(5, 'difficolta deve essere compresa tra 1 e 5');
 
 const QuestionOptionSchema = z
   .object({
@@ -11,22 +16,20 @@ const QuestionOptionSchema = z
 
 const QuestionBaseSchema = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/, 'id must match [a-z0-9-]+'),
-  difficolta: DifficoltaPeso,
-  peso: DifficoltaPeso,
+  difficolta: Difficolta,
   testo: z.string().min(1, 'testo must not be empty'),
 });
 
 const ApertaSchema = QuestionBaseSchema.extend({
   tipo: z.literal('aperta'),
   soluzione: z.string().min(1, 'soluzione must not be empty'),
-  // EXAM-UX-03 — optional per-question answer length limit (integer 1..10000).
-  // Absent/legacy ⇒ runtime falls back to the 2000-char default.
+  // Optional in V2 Markdown; always effective in parsed output.
   maxCharacters: z
     .number()
     .int('maxCharacters must be an integer')
     .min(1, 'maxCharacters must be at least 1')
-    .max(10000, 'maxCharacters must be at most 10000')
-    .optional(),
+    .max(MAX_MAX_CHARACTERS, `maxCharacters must be at most ${MAX_MAX_CHARACTERS}`)
+    .default(DEFAULT_MAX_CHARACTERS),
 }).strict();
 
 const ChiusaSingolaSchema = QuestionBaseSchema.extend({
@@ -59,7 +62,7 @@ export const QuestionSchema = z.discriminatedUnion('tipo', [
 
 export const PoolFrontMatterSchema = z
   .object({
-    schema: z.literal('schoolforge-pool/v1'),
+    schema: z.literal('schoolforge-pool/v2'),
     questions: z.array(QuestionSchema),
   })
   .strict();

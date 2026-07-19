@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { POOL_SCHEMA_VERSION } from './index.js';
+import type { PoolDifficulty } from './index.js';
 
 describe('lesson-contract', () => {
   it('exports the pool schema version identifier', () => {
-    expect(POOL_SCHEMA_VERSION).toBe('schoolforge-pool/v1');
+    expect(POOL_SCHEMA_VERSION).toBe('schoolforge-pool/v2');
+  });
+
+  it('exports the complete V2 difficulty range', () => {
+    const difficulty: PoolDifficulty = 5;
+    expect(difficulty).toBe(5);
   });
 });
