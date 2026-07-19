@@ -1,9 +1,7 @@
 # SchoolForge — ANNOT-00: appunti personali dello studente
 
-**Stato:** ANNOT-01 (contratto, service e Rules) e ANNOT-02 (UI desktop/mobile, cache di
-sessione, dirty guard) implementati con test unitari, componente ed Emulator. ANNOT-03 e
-Gate GANNOT (deploy DEV, smoke multi-account, misurazione costi, approvazione umana)
-restano aperti.
+**Stato:** ANNOT-01, ANNOT-02 e ANNOT-03A implementati. ANNOT-03B (indicatore
+persistente delle lezioni con appunti), smoke DEV e Gate GANNOT restano aperti.
 **Data:** 19 luglio 2026.
 **Perimetro:** progettazione di UX, modello dati, autorizzazioni, costi e pacchetti successivi.
 
@@ -54,7 +52,8 @@ Header:
 
 - icona coerente con il set esistente;
 - titolo `Appunti`;
-- stato in area `aria-live="polite"`: `Salvataggio…`, `Salvato` oppure `Errore`;
+- stato in area `aria-live="polite"`: `Modifiche non salvate`, `Salvataggio…`,
+  `Salvato` oppure `Errore`;
 - pulsante reale di chiusura con nome accessibile;
 - nessuna frase «Privati, visibili solamente a te».
 
@@ -65,6 +64,8 @@ Corpo:
 - occupa lo spazio residuo del pannello;
 - scrollbar interna soltanto oltre l'altezza disponibile;
 - nessun editor visuale, allegato, evidenziatore o formato obbligatorio.
+- footer con contatore, stato e pulsante verde `Salva`, disabilitato durante caricamento,
+  quando il draft è pulito o mentre un salvataggio è in corso.
 
 Focus e chiusura:
 
@@ -127,6 +128,11 @@ Un salvataggio è tentato:
 1. dal pulsante `Salva`;
 2. al `blur` della textarea;
 3. dopo `15` secondi di inattività dall'ultima modifica.
+
+Con Appunti aperti, `Ctrl+S` e `Cmd+S` impediscono il salvataggio browser e invocano
+lo stesso `saveNow()`. La scorciatoia non è intercettata a pannello chiuso; il listener
+è unico e viene rimosso alla chiusura/unmount. Restano validi no-op sul draft pulito,
+un solo write in volo e nessun timer aggiuntivo.
 
 Prima del write il client verifica:
 
@@ -407,6 +413,28 @@ Limite residuo dichiarato: la dirty guard copre tutte le navigazioni controllate
 o il logout smontano la vista senza confermare un draft non salvato — intercettarli
 richiederebbe sollevare lo stato o introdurre un router globale, fuori dal perimetro
 ANNOT-02.
+
+### ANNOT-03A — rifinitura UX e struttura desktop — **IMPLEMENTATO**
+
+- pulsante verde `Salva` esplicito nel footer desktop e nella barra mobile, sempre
+  collegato a `saveNow()` e disabilitato finché il caricamento non è concluso, quando
+  il draft è pulito o durante il write;
+- `Ctrl+S`/`Cmd+S` attivi soltanto con Appunti aperti, senza listener duplicati e senza
+  aggirare no-op, debounce o guardia anti-concorrenza;
+- stato leggibile `Modifiche non salvate`/`Salvataggio…`/`Salvato`/`Errore`;
+- post-it al 95% tramite background RGBA, mai `opacity` sul contenitore; testo e icone
+  opachi, titolo quasi nero e selezione textarea locale ambra con testo nero;
+- comando desktop `Nascondi struttura`/`Mostra struttura`, con `IconPanelLeft` e
+  `aria-pressed`, disponibile soltanto sulla lezione selezionata; stato solo React in
+  memoria, nessuna persistenza. La sidebar viene rimossa e la lezione usa l'intera
+  colonna; mobile invariato.
+
+Nessuna nuova lettura/scrittura, Rule, query, listener, polling o dipendenza.
+
+### ANNOT-03B — indicatore persistente lezioni annotate — **APERTO**
+
+L'indicatore che segnala nell'albero quali lezioni possiedono appunti resta un pacchetto
+separato: ANNOT-03A non aggiunge prefetch, query, badge o persistenza per questa esigenza.
 
 ### ANNOT-03 — smoke DEV e Gate GANNOT
 

@@ -91,6 +91,75 @@ describe('LessonNotesPanel — desktop', () => {
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
   });
 
+  it('offers an explicit Save button and disables it when clean or while saving', async () => {
+    let resolveSave!: () => void;
+    mockCreate.mockImplementation(() => new Promise<void>((resolve) => (resolveSave = resolve)));
+    render(<Harness />);
+    await openAndLoad();
+    const save = screen.getByRole('button', { name: 'Salva' }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Testo degli appunti'), {
+      target: { value: 'nota desktop' },
+    });
+    expect(screen.getByText('Modifiche non salvate')).toBeTruthy();
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    expect(save.disabled).toBe(true);
+    expect(screen.getByText('Salvataggio…')).toBeTruthy();
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+
+    resolveSave();
+    await waitFor(() => expect(screen.getByText('Salvato')).toBeTruthy());
+    expect(save.disabled).toBe(true);
+  });
+
+  it('uses Ctrl/Cmd+S only while open, prevents browser save and remains a clean no-op', async () => {
+    render(<Harness />);
+    await openAndLoad();
+    const cleanShortcut = new KeyboardEvent('keydown', {
+      key: 's',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    expect(window.dispatchEvent(cleanShortcut)).toBe(false);
+    expect(mockCreate).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Testo degli appunti'), {
+      target: { value: 'prima versione' },
+    });
+    const ctrlShortcut = new KeyboardEvent('keydown', {
+      key: 's',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    expect(window.dispatchEvent(ctrlShortcut)).toBe(false);
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText('Testo degli appunti'), {
+      target: { value: 'seconda versione' },
+    });
+    const metaShortcut = new KeyboardEvent('keydown', {
+      key: 'S',
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    expect(window.dispatchEvent(metaShortcut)).toBe(false);
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chiudi appunti' }));
+    const closedShortcut = new KeyboardEvent('keydown', {
+      key: 's',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    expect(window.dispatchEvent(closedShortcut)).toBe(true);
+  });
+
   it('Escape closes when clean', async () => {
     render(<Harness />);
     await openAndLoad();
@@ -186,5 +255,19 @@ describe('LessonNotesPanel — mobile', () => {
     expect(screen.getByRole('button', { name: 'Salva' })).toBeTruthy();
     // No structural horizontal overflow: the textarea is width-constrained, not fixed-position.
     expect(screen.queryByRole('complementary')).toBeNull();
+  });
+
+  it('saves explicitly from the mobile action without duplicate writes', async () => {
+    render(<Harness isMobile />);
+    await openAndLoad();
+    const save = screen.getByRole('button', { name: 'Salva' }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Testo degli appunti'), {
+      target: { value: 'nota mobile' },
+    });
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(save.disabled).toBe(true);
   });
 });

@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { IconBookOpen, IconFileText, IconLayers, IconSearch } from '../../components/icons.js';
+import {
+  IconBookOpen,
+  IconFileText,
+  IconLayers,
+  IconPanelLeft,
+  IconSearch,
+} from '../../components/icons.js';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer.js';
 import { ConfirmDialog } from '../../components/ConfirmDialog.js';
 import { useAuth } from '../../lib/auth.js';
@@ -289,6 +295,11 @@ function StudentCourseWorkspace({
   const grouped = useMemo(() => lessonsByUda(lessons), [lessons]);
   const noteButtonRef = useRef<HTMLButtonElement>(null);
   const prevOpenRef = useRef<string | null>(null);
+  const [structureHidden, setStructureHidden] = useState(false);
+
+  useEffect(() => {
+    setStructureHidden(false);
+  }, [program.id]);
 
   // Desktop focus return: when the panel closes, focus goes back to the
   // exact "Appunti" button that opened it.
@@ -349,60 +360,66 @@ function StudentCourseWorkspace({
         </div>
       </header>
 
-      <div className={styles.workspaceGrid}>
-        <aside className={styles.sidebar} aria-label="Struttura del corso">
-          <button
-            type="button"
-            className={styles.overviewBtn}
-            aria-current={selection.kind === 'course' ? 'page' : undefined}
-            onClick={() => onSelectionChange({ kind: 'course' })}
-          >
-            <IconBookOpen /> Panoramica corso
-          </button>
-          <ul className={styles.tree}>
-            {udaDirs.map((udaDir) => {
-              const expanded = expandedUdas.has(udaDir);
-              const udaLessons = grouped.get(udaDir) ?? [];
-              return (
-                <li key={udaDir}>
-                  <button
-                    type="button"
-                    className={styles.udaTreeBtn}
-                    aria-expanded={expanded}
-                    onClick={() => {
-                      const next = new Set(expandedUdas);
-                      if (expanded) next.delete(udaDir);
-                      else next.add(udaDir);
-                      onExpandedUdasChange(next);
-                      onSelectionChange({ kind: 'uda', udaDir });
-                    }}
-                  >
-                    <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-                    <IconLayers />
-                    <span>{udaTitle(udaDir)}</span>
-                  </button>
-                  {expanded && (
-                    <ul className={styles.lessonTree}>
-                      {udaLessons.map((lesson) => (
-                        <li key={lesson.id}>
-                          <button
-                            type="button"
-                            className={styles.lessonTreeBtn}
-                            aria-current={selectedLesson?.id === lesson.id ? 'page' : undefined}
-                            onClick={() => selectLesson(lesson)}
-                          >
-                            <IconFileText />
-                            <span>{resolveLessonTitle(lesson.filename, lesson.titolo).title}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </aside>
+      <div
+        className={`${styles.workspaceGrid}${structureHidden && !isMobile ? ` ${styles.workspaceGridFocus}` : ''}`}
+      >
+        {isMobile || !structureHidden ? (
+          <aside className={styles.sidebar} aria-label="Struttura del corso">
+            <button
+              type="button"
+              className={styles.overviewBtn}
+              aria-current={selection.kind === 'course' ? 'page' : undefined}
+              onClick={() => onSelectionChange({ kind: 'course' })}
+            >
+              <IconBookOpen /> Panoramica corso
+            </button>
+            <ul className={styles.tree}>
+              {udaDirs.map((udaDir) => {
+                const expanded = expandedUdas.has(udaDir);
+                const udaLessons = grouped.get(udaDir) ?? [];
+                return (
+                  <li key={udaDir}>
+                    <button
+                      type="button"
+                      className={styles.udaTreeBtn}
+                      aria-expanded={expanded}
+                      onClick={() => {
+                        const next = new Set(expandedUdas);
+                        if (expanded) next.delete(udaDir);
+                        else next.add(udaDir);
+                        onExpandedUdasChange(next);
+                        onSelectionChange({ kind: 'uda', udaDir });
+                      }}
+                    >
+                      <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+                      <IconLayers />
+                      <span>{udaTitle(udaDir)}</span>
+                    </button>
+                    {expanded && (
+                      <ul className={styles.lessonTree}>
+                        {udaLessons.map((lesson) => (
+                          <li key={lesson.id}>
+                            <button
+                              type="button"
+                              className={styles.lessonTreeBtn}
+                              aria-current={selectedLesson?.id === lesson.id ? 'page' : undefined}
+                              onClick={() => selectLesson(lesson)}
+                            >
+                              <IconFileText />
+                              <span>
+                                {resolveLessonTitle(lesson.filename, lesson.titolo).title}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </aside>
+        ) : null}
 
         <main className={styles.courseContent}>
           {isMobile && notes.current ? (
@@ -440,6 +457,9 @@ function StudentCourseWorkspace({
                   canOpenNotes={uid != null}
                   notesOpen={notes.openLessonId === selectedLesson.id}
                   noteButtonRef={noteButtonRef}
+                  isMobile={isMobile}
+                  structureHidden={structureHidden}
+                  onToggleStructure={() => setStructureHidden((current) => !current)}
                   onOpenNotes={() => {
                     if (uid == null) return;
                     const scrollTop = window.scrollY;
@@ -518,12 +538,18 @@ function LessonContent({
   canOpenNotes,
   notesOpen,
   noteButtonRef,
+  isMobile,
+  structureHidden,
+  onToggleStructure,
   onOpenNotes,
 }: {
   lesson: StudentLesson;
   canOpenNotes: boolean;
   notesOpen: boolean;
   noteButtonRef: React.RefObject<HTMLButtonElement>;
+  isMobile: boolean;
+  structureHidden: boolean;
+  onToggleStructure: () => void;
   onOpenNotes: () => void;
 }) {
   const title = resolveLessonTitle(lesson.filename, lesson.titolo).title;
@@ -534,17 +560,32 @@ function LessonContent({
           <h3>{title}</h3>
           {lesson.sottotitolo && <p>{lesson.sottotitolo}</p>}
         </div>
-        {canOpenNotes && (
-          <button
-            type="button"
-            ref={noteButtonRef}
-            className={styles.notesBtn}
-            aria-expanded={notesOpen}
-            onClick={onOpenNotes}
-          >
-            <IconFileText /> Appunti
-          </button>
-        )}
+        <div className={styles.lessonActions}>
+          {!isMobile && (
+            <button
+              type="button"
+              className={styles.lessonActionBtn}
+              aria-pressed={structureHidden}
+              aria-label={structureHidden ? 'Mostra struttura' : 'Nascondi struttura'}
+              title={structureHidden ? 'Mostra struttura' : 'Nascondi struttura'}
+              onClick={onToggleStructure}
+            >
+              <IconPanelLeft size={15} />
+              <span>{structureHidden ? 'Mostra struttura' : 'Nascondi struttura'}</span>
+            </button>
+          )}
+          {canOpenNotes && (
+            <button
+              type="button"
+              ref={noteButtonRef}
+              className={styles.notesBtn}
+              aria-expanded={notesOpen}
+              onClick={onOpenNotes}
+            >
+              <IconFileText /> Appunti
+            </button>
+          )}
+        </div>
       </header>
       {(lesson.difficolta ||
         (lesson.concettiChiave?.length ?? 0) > 0 ||

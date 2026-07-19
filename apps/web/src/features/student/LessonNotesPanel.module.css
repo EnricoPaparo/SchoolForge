@@ -23,7 +23,7 @@
   display: flex;
   flex-direction: column;
   /* Sober warm-yellow post-it surface, light ochre border, soft shadow. */
-  background: #fdf6d8;
+  background: rgba(253, 246, 216, 0.95);
   color: #2b2410;
   border: 1px solid #d9bf73;
   border-radius: 12px;
@@ -39,20 +39,16 @@
 }
 .headerIcon {
   display: inline-flex;
-  color: #7a6417;
+  color: #4f3e0c;
 }
 .title {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 700;
-}
-.status {
-  margin-left: auto;
-  font-size: 0.75rem;
-  color: #6b5a1e;
-  min-height: 1em;
+  color: #1d1809;
 }
 .closeBtn {
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -103,24 +99,68 @@
   outline: 2px solid #b3902e;
   outline-offset: 1px;
 }
+.textarea::placeholder {
+  color: #675929;
+  opacity: 1;
+}
+.textarea::selection {
+  color: #120e04;
+  background: #e8b83f;
+}
+.textarea:disabled {
+  color: #4b421f;
+  background: #f3ecd0;
+  cursor: not-allowed;
+}
 
-.footer {
+.panelActions,
+.mobileActions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
   flex-wrap: wrap;
-  min-height: 1em;
+  padding: 0.65rem 0.85rem;
+  border-top: 1px solid #e4d18f;
 }
 .counter {
   font-size: 0.72rem;
-  color: #6b5a1e;
+  color: #514515;
 }
-
-.panelActions {
+.footerStatus {
+  min-height: 1em;
+  color: #514515;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.actionButtons {
+  margin-left: auto;
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  padding: 0 0.85rem 0.75rem;
+  gap: 0.4rem;
+}
+.saveBtn {
+  min-width: 5rem;
+  padding: 0.4rem 0.85rem;
+  color: #fff;
+  background: #257a45;
+  border: 1px solid #1e6639;
+  border-radius: 7px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.saveBtn:hover:not(:disabled) {
+  background: #1e6639;
+}
+.saveBtn:focus-visible {
+  outline: 2px solid #173f27;
+  outline-offset: 2px;
+}
+.saveBtn:disabled {
+  color: #e7eee9;
+  background: #6d8876;
+  border-color: #607767;
+  cursor: default;
 }
 .deleteBtn {
   display: inline-flex;
@@ -155,7 +195,7 @@
   flex-direction: column;
   min-height: 60dvh;
   box-sizing: border-box;
-  background: #fdf6d8;
+  background: rgba(253, 246, 216, 0.95);
   color: #2b2410;
   border: 1px solid #d9bf73;
   border-radius: 12px;
@@ -181,6 +221,7 @@
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
+  color: #1d1809;
 }
 .mobileBody {
   display: flex;
@@ -193,11 +234,19 @@
 .mobileActions {
   position: sticky;
   bottom: 0;
-  display: flex;
-  gap: 0.6rem;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.6rem 0.85rem;
-  background: #f7edc4;
-  border-top: 1px solid #e4d18f;
+  background: rgba(247, 237, 196, 0.96);
+}
+
+@media (max-width: 480px) {
+  .mobileActions {
+    align-items: stretch;
+  }
+  .actionButtons {
+    width: 100%;
+    margin-left: 0;
+  }
+  .actionButtons > button {
+    min-width: 0;
+    flex: 1 1 0;
+  }
 }

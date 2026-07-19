@@ -29,7 +29,8 @@ function errorText(note: OpenNote): string | null {
 function statusLabel(note: OpenNote): string {
   if (note.saveState === 'saving') return 'Salvataggio…';
   if (note.saveState === 'error') return 'Errore';
-  if (!note.dirty && note.exists) return 'Salvato';
+  if (note.dirty) return 'Modifiche non salvate';
+  if (note.loadState === 'loaded') return 'Salvato';
   return '';
 }
 
@@ -56,7 +57,6 @@ function useAutoFocus(
 }
 
 function NoteEditor({ note, controller }: { note: OpenNote; controller: LessonNotesController }) {
-  const counter = `${note.draft.length.toLocaleString('it')}/${STUDENT_LESSON_NOTE_MAX_LENGTH.toLocaleString('it')}`;
   const message = errorText(note);
   if (note.loadState === 'loading') {
     return (
@@ -91,17 +91,57 @@ function NoteEditor({ note, controller }: { note: OpenNote; controller: LessonNo
         onBlur={() => controller.saveNow()}
         spellCheck
       />
-      <div className={styles.footer}>
-        <span className={styles.counter} aria-hidden="true">
-          {counter}
+      {message && (
+        <span role="alert" className="text-error">
+          {message}
         </span>
-        {message && (
-          <span role="alert" className="text-error">
-            {message}
-          </span>
-        )}
-      </div>
+      )}
     </>
+  );
+}
+
+function NoteActions({
+  note,
+  controller,
+  onRequestDelete,
+  mobile = false,
+}: {
+  note: OpenNote;
+  controller: LessonNotesController;
+  onRequestDelete: () => void;
+  mobile?: boolean;
+}) {
+  const counter = `${note.draft.length.toLocaleString('it')}/${STUDENT_LESSON_NOTE_MAX_LENGTH.toLocaleString('it')}`;
+  const saveDisabled = note.loadState !== 'loaded' || !note.dirty || note.saveState === 'saving';
+  return (
+    <footer className={mobile ? styles.mobileActions : styles.panelActions}>
+      <span className={styles.counter} aria-label={`${note.draft.length} caratteri su 20.000`}>
+        {counter}
+      </span>
+      <span className={styles.footerStatus} role="status" aria-live="polite">
+        {statusLabel(note)}
+      </span>
+      <div className={styles.actionButtons}>
+        {note.loadState === 'loaded' && note.canDelete && (
+          <button
+            type="button"
+            className={styles.deleteBtn}
+            onClick={onRequestDelete}
+            disabled={note.saveState === 'saving'}
+          >
+            <IconTrash /> Elimina appunti
+          </button>
+        )}
+        <button
+          type="button"
+          className={styles.saveBtn}
+          onClick={() => controller.saveNow()}
+          disabled={saveDisabled}
+        >
+          Salva
+        </button>
+      </div>
+    </footer>
   );
 }
 
@@ -132,9 +172,6 @@ function DesktopPanel({
           <IconFileText />
         </span>
         <h3 className={styles.title}>Appunti</h3>
-        <span className={styles.status} role="status" aria-live="polite">
-          {statusLabel(note)}
-        </span>
         <button
           type="button"
           ref={closeRef}
@@ -148,18 +185,7 @@ function DesktopPanel({
       <div className={styles.body}>
         <NoteEditor note={note} controller={controller} />
       </div>
-      {note.loadState === 'loaded' && note.canDelete && (
-        <div className={styles.panelActions}>
-          <button
-            type="button"
-            className={styles.deleteBtn}
-            onClick={onRequestDelete}
-            disabled={note.saveState === 'saving'}
-          >
-            <IconTrash /> Elimina appunti
-          </button>
-        </div>
-      )}
+      <NoteActions note={note} controller={controller} onRequestDelete={onRequestDelete} />
     </aside>
   );
 }
@@ -184,35 +210,11 @@ function MobileView({ note, controller, onRequestClose, onRequestDelete, textare
           ← Torna alla lezione
         </button>
         <h3 className={styles.mobileTitle}>Appunti</h3>
-        <span className={styles.status} role="status" aria-live="polite">
-          {statusLabel(note)}
-        </span>
       </header>
       <div className={styles.mobileBody}>
         <NoteEditor note={note} controller={controller} />
       </div>
-      {note.loadState === 'loaded' && (
-        <div className={styles.mobileActions}>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => controller.saveNow()}
-            disabled={note.saveState === 'saving' || !note.dirty}
-          >
-            Salva
-          </button>
-          {note.canDelete && (
-            <button
-              type="button"
-              className={styles.deleteBtn}
-              onClick={onRequestDelete}
-              disabled={note.saveState === 'saving'}
-            >
-              <IconTrash /> Elimina appunti
-            </button>
-          )}
-        </div>
-      )}
+      <NoteActions note={note} controller={controller} onRequestDelete={onRequestDelete} mobile />
     </section>
   );
 }
@@ -237,6 +239,18 @@ export function LessonNotesPanel({
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    if (!note) return;
+    const handleSaveShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 's') {
+        event.preventDefault();
+        controller.saveNow();
+      }
+    };
+    window.addEventListener('keydown', handleSaveShortcut);
+    return () => window.removeEventListener('keydown', handleSaveShortcut);
+  }, [note?.publicLessonId, controller.saveNow]);
 
   if (!note) return null;
 
