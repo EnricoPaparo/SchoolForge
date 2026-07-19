@@ -97,6 +97,10 @@ Calibrazione strutturata implementata. `gradingMode` (`compassionate` | `balance
 
 Le stesse risposte sintetiche vengono corrette nelle tre modalità. Il gate richiede differenze osservabili e coerenti nella fascia giustificabile, senza trasformare risposte errate in corrette. Il modello non cambia prima di questa evidenza.
 
+### Stato — READY FOR MANUAL BENCHMARK
+
+Harness e report comparativo sono predisposti sul dataset sintetico unico: stessi raggruppamenti nelle tre modalità, ripetizioni configurabili, differenze di punteggio, controlli tecnici e criteri aggregati di severità. I controlli pedagogici non riducibili a euristiche restano esplicitamente soggetti a revisione docente. Il runner locale è dry-run per default e richiede due flag più conferma interattiva prima di poter costruire il provider. In questa fase non sono state eseguite chiamate reali, non sono stati prodotti risultati o costi e Gate G7 resta aperto. Evidenza: [`evidenze/m5-quality-02-benchmark.md`](evidenze/m5-quality-02-benchmark.md).
+
 ### M5-QUALITY-03 — indicazioni docente predefinite (idea futura, non bloccante)
 
 Un docente può voler riutilizzare stabilmente le stesse indicazioni pedagogiche senza
