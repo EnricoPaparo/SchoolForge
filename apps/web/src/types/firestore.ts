@@ -252,6 +252,49 @@ export interface PublicLessonsMigrationDoc {
   completedAt: Timestamp | FieldValue;
 }
 
+// ─── ANNOT-01 — Student personal lesson notes ────────────────────────────────
+
+/**
+ * Stored at `students/{studentUid}/lessonNotes/{publicLessonId}` — a single,
+ * strictly personal text note a student keeps for one public lesson (at most
+ * one document per (student, lesson) pair, enforced by the deterministic
+ * path). Never readable or writable by the teacher/owner or any other
+ * student (see `firestore.rules` — the parent `students/{uid}` rules do NOT
+ * propagate to this subcollection). Every operation is additionally denied
+ * while Modalità verifica applies to the student's class.
+ *
+ * `lessonId` is deliberately absent: `PublicLessonDoc` carries no canonical
+ * lesson-identity field of its own — the lesson's identity IS its
+ * `publicLessons` document id (`publicLessonId`). ANNOT-00's proposed
+ * `lessonId` field was resolved during ANNOT-01 to that document id rather
+ * than duplicating an unverifiable identity the Security Rules could never
+ * check (see `documentazione/student-notes-contract.md` §4). `programId`
+ * and `importId` are the ones the Rules can verify against the associated
+ * `publicLessons/{publicLessonId}` projection, and are the only identity
+ * fields kept beyond the two the path already pins.
+ *
+ * `content` is the ONLY mutable field (plus `updatedAt`): a plain string of
+ * at most 20 000 characters, never the lesson body, title, class, name,
+ * email, pool, questions or solutions. No projection of didactic data is
+ * duplicated here.
+ */
+export interface StudentLessonNoteDoc {
+  /** == `{studentUid}` in the path == `request.auth.uid`; immutable. */
+  studentUid: string;
+  /** == the Firestore document id == the associated `publicLessons` id; immutable. */
+  publicLessonId: string;
+  /** == `programId` of the associated `publicLessons/{publicLessonId}`; immutable. */
+  programId: string;
+  /** == the program's `activeImportId` and the associated publicLesson's `importId`; immutable. */
+  importId: string;
+  /** The note text. String, at most 20 000 characters. The only content field. */
+  content: string;
+  /** `request.time` at creation; immutable thereafter. */
+  createdAt: Timestamp | FieldValue;
+  /** `request.time` at every write (create and update). */
+  updatedAt: Timestamp | FieldValue;
+}
+
 // ─── M3-lite — Approved-student access model ─────────────────────────────────
 
 /**

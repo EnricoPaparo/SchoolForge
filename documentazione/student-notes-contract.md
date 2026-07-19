@@ -1,6 +1,8 @@
 # SchoolForge — ANNOT-00: appunti personali dello studente
 
-**Stato:** contratto tecnico e prototipo statico; implementazione non avviata.
+**Stato:** ANNOT-01 implementato (contratto TypeScript definitivo, service Firestore e
+Security Rules, con test unitari ed Emulator); ANNOT-02 (UI) e ANNOT-03/Gate GANNOT
+non ancora avviati.
 **Data:** 19 luglio 2026.
 **Perimetro:** progettazione di UX, modello dati, autorizzazioni, costi e pacchetti successivi.
 
@@ -177,27 +179,25 @@ students/{studentUid}/lessonNotes/{publicLessonId}
 Documento proposto:
 
 ```ts
-type StudentLessonNoteDoc = {
+export interface StudentLessonNoteDoc {
   studentUid: string;
   publicLessonId: string;
   programId: string;
   importId: string;
-  lessonId: string;
   content: string;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-};
+  createdAt: Timestamp | FieldValue;
+  updatedAt: Timestamp | FieldValue;
+}
 ```
 
-Contratto:
+Contratto (ANNOT-01, definitivo):
 
 | Campo | Regola |
 |---|---|
 | `studentUid` | Uguale a `{studentUid}` nel path e a `request.auth.uid`; immutabile. |
-| `publicLessonId` | Uguale all'ID documento e a una proiezione accessibile; immutabile. |
+| `publicLessonId` | Uguale all'ID documento e all'ID della `publicLessons` associata; immutabile. |
 | `programId` | Uguale al campo della `publicLessons/{publicLessonId}` associata; immutabile. |
-| `importId` | Uguale all'import attivo del programma e alla proiezione; immutabile. |
-| `lessonId` | Uguale all'identità lezione della proiezione; immutabile. |
+| `importId` | Uguale all'import attivo del programma e all'`importId` della proiezione; immutabile. |
 | `content` | Stringa, massimo 20.000 caratteri; unico campo contenutistico modificabile. |
 | `createdAt` | `request.time` in create; immutabile. |
 | `updatedAt` | `request.time` in create e update. |
@@ -207,11 +207,15 @@ testo della lezione, titolo, nome/email, classe, pool, domande, soluzioni o asse
 Non viene creata una collezione globale. Il documento viene letto per path e non
 richiede indici compositi.
 
-Il nome `lessonId` deve essere verificato contro il campo realmente presente nella
-proiezione al momento di ANNOT-01. Se l'attuale `PublicLessonDoc` usa il proprio ID
-documento come unica identità della lezione, il contratto TypeScript dovrà evitare una
-duplicazione non verificabile: la decisione va risolta prima delle Rules, mantenendo
-comunque i campi approvati oppure formalizzando l'uguaglianza all'ID canonico.
+**Decisione ANNOT-01 sul campo `lessonId` (risolta).** La verifica contro i dati reali
+(`apps/web/src/types/firestore.ts`) conferma che `PublicLessonDoc` **non possiede alcun
+campo `lessonId`**: l'identità canonica della lezione è l'ID del documento
+`publicLessons` stesso — cioè `publicLessonId`. Il campo `lessonId` proposto in ANNOT-00
+è stato quindi **rimosso** dal contratto TypeScript definitivo anziché duplicare
+un'identità non verificabile che le Rules non potrebbero mai controllare. I soli campi
+identificativi conservati oltre a quelli già fissati dal path (`studentUid`,
+`publicLessonId`) sono `programId` e `importId`, entrambi verificabili dalle Rules
+contro la `publicLessons/{publicLessonId}` associata.
 
 ## 5. Autorizzazioni proposte
 
@@ -335,22 +339,31 @@ autorizzazioni indipendentemente dal client.
 
 ## 7. Pacchetti successivi
 
-### ANNOT-01 — contratto TypeScript, service e Rules
+### ANNOT-01 — contratto TypeScript, service e Rules — **IMPLEMENTATO**
 
-Scope:
+Scope realizzato:
 
-- `StudentLessonNoteDoc` definitivo;
-- service `get/save/delete` a path deterministico;
-- limite client/server 20.000;
-- Rules owner-student-only con gate classe/import/exam mode;
-- test unitari e Emulator, senza UI finale.
+- `StudentLessonNoteDoc` definitivo in `apps/web/src/types/firestore.ts` (senza
+  `lessonId`, vedi §4);
+- service `apps/web/src/features/student/studentLessonNotesService.ts` con
+  `loadStudentLessonNote` (stato tipizzato `missing`/`existing`),
+  `createStudentLessonNote`, `updateStudentLessonNote`, `deleteStudentLessonNote` a
+  path deterministico, errori sanitizzati e senza cache/debounce/dirty guard (che
+  restano ad ANNOT-02);
+- limite client/server 20.000 (`STUDENT_LESSON_NOTE_MAX_LENGTH`);
+- Rules owner-student-only in `firestore.rules`
+  (`match /students/{studentUid}/lessonNotes/{publicLessonId}` + helper
+  `canAccessLessonForNotes`) con gate classe/import/exam mode e regole proprie non
+  ereditate dal documento padre;
+- test unitari del service (`studentLessonNotesService.test.ts`) e suite Emulator
+  dedicata (`annot-01-lesson-notes.rules.test.ts`), senza UI finale.
 
-Criteri di accettazione:
+Criteri di accettazione — verificati:
 
 - tutte le righe della matrice autorizzazioni provate per read/create/update/delete;
 - docente e altro studente non possono leggere neppure conoscendo il path;
 - timestamp, identity fields, chiavi e limite contenuto fail-closed;
-- Modalità verifica nega tutte le operazioni;
+- Modalità verifica (globale e per classe) nega tutte le operazioni;
 - nessun listener, indice, Function o dato didattico duplicato.
 
 ### ANNOT-02 — UI desktop/mobile e dirty guard

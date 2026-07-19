@@ -100,6 +100,39 @@ service cloud.firestore {
         .get('activeImportId', null);
     }
 
+    // --- ANNOT-01 student lesson-notes helpers ---
+    // Bare cross-doc data getter for the lesson projection a note is attached
+    // to. Only ever called after exists(publicLessons/{id}) has been checked
+    // by the caller (see canAccessLessonForNotes) — get() is memoized within
+    // a single evaluation, so referencing it several times bills one read.
+    function lessonNoteProjection(publicLessonId) {
+      return get(/databases/$(database)/documents/publicLessons/$(publicLessonId)).data;
+    }
+
+    // The full authorization gate for a student's personal lesson notes,
+    // reusing the existing student/import/exam-mode helpers rather than
+    // duplicating their logic. Fail-closed and short-circuiting: an approved,
+    // non-owner student with a class of their own, not under Modalità verifica
+    // (globally or for their class), whose class is assigned to the note's
+    // program, and only for a publicLessons projection that exists AND belongs
+    // to that program's current activeImportId. A missing publicLesson or
+    // program, a stale/superseded import, or a class not assigned to the
+    // program all deny. The teacher/owner is denied here explicitly, and again
+    // by the studentUid == request.auth.uid check at every match rule below.
+    function canAccessLessonForNotes(publicLessonId) {
+      return isApprovedStudent()
+        && !isOwner()
+        && myStudentClassId() != null
+        && !examModeAppliesToClass(myStudentClassId())
+        && exists(/databases/$(database)/documents/publicLessons/$(publicLessonId))
+        && exists(/databases/$(database)/documents/programs/$(lessonNoteProjection(publicLessonId).programId))
+        && lessonNoteProjection(publicLessonId).importId
+             == programActiveImportId(lessonNoteProjection(publicLessonId).programId)
+        && isClassmateOf(
+             get(/databases/$(database)/documents/programs/$(lessonNoteProjection(publicLessonId).programId))
+               .data.get('classIds', []));
+    }
+
     // --- M3-full submission helpers (M3F-03) ---
     // Cross-document get() bypasses the read rules on /verifications/{docId}
     // itself (a student is never allowed a direct read there) — get()/exists()
@@ -331,6 +364,73 @@ service cloud.firestore {
                ['uid', 'ownerUid', 'email', 'displayName', 'status', 'classId', 'createdAt',
                 'updatedAt', 'lastLoginAt'])
         );
+    }
+
+    // --- students/{studentUid}/lessonNotes/{publicLessonId} (ANNOT-01) ---
+    // A student's strictly personal note for one public lesson — at most one
+    // document per (student, lesson), guaranteed by the deterministic id
+    // (== publicLessonId). These rules are self-contained: the parent
+    // students/{uid} rules above do NOT propagate to this subcollection
+    // (Firestore never inherits parent rules), so the teacher's owner-read on
+    // students/{uid} grants NOTHING here — the note is unreadable to the
+    // owner, to every other student, and to anonymous callers. Every
+    // operation additionally requires request.auth.uid == studentUid AND the
+    // full canAccessLessonForNotes() gate, which denies pending/blocked/
+    // no-class/portal-disabled students, a class not assigned to the lesson's
+    // program, a stale/inactive import, a missing program/publicLesson, and
+    // ANY operation while Modalità verifica applies globally or to the class.
+    // No didactic data (lesson body/title, class, name/email, pool, questions
+    // or solutions) is ever stored or exposed here.
+    match /students/{studentUid}/lessonNotes/{publicLessonId} {
+      // Read: single-document get by the owning student only, in an
+      // authorized context. Deliberately `allow read` (get/list) — the note
+      // is on a deterministic personal path the client reads by id; a
+      // student can only ever reach their own subcollection anyway
+      // (studentUid == request.auth.uid).
+      allow read: if request.auth.uid == studentUid
+        && canAccessLessonForNotes(publicLessonId);
+
+      // Create: exact closed key set, identity pinned to path/auth and to the
+      // associated publicLesson projection, content a string within the
+      // 20 000 limit, and both timestamps == request.time (a client can never
+      // backdate createdAt or forge updatedAt).
+      allow create: if request.auth.uid == studentUid
+        && canAccessLessonForNotes(publicLessonId)
+        && request.resource.data.keys().hasOnly([
+             'studentUid', 'publicLessonId', 'programId', 'importId',
+             'content', 'createdAt', 'updatedAt'
+           ])
+        && request.resource.data.keys().hasAll([
+             'studentUid', 'publicLessonId', 'programId', 'importId',
+             'content', 'createdAt', 'updatedAt'
+           ])
+        && request.resource.data.studentUid == studentUid
+        && request.resource.data.publicLessonId == publicLessonId
+        && request.resource.data.programId == lessonNoteProjection(publicLessonId).programId
+        && request.resource.data.importId == lessonNoteProjection(publicLessonId).importId
+        && request.resource.data.content is string
+        && request.resource.data.content.size() <= 20000
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      // Update: the note must exist and the student must still be authorized.
+      // Only content + updatedAt may change; identity fields and createdAt are
+      // immutable (enforced by the closed affectedKeys() set). Content stays a
+      // string within the limit and updatedAt == request.time.
+      allow update: if request.auth.uid == studentUid
+        && canAccessLessonForNotes(publicLessonId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['content', 'updatedAt'])
+        && request.resource.data.content is string
+        && request.resource.data.content.size() <= 20000
+        && request.resource.data.updatedAt == request.time;
+
+      // Delete: only the owning student, only in an authorized context (so a
+      // note is undeletable during Modalità verifica or once the lesson is no
+      // longer accessible — fail-closed, documented in the contract). Never
+      // the teacher, never a recursive/cascading delete.
+      allow delete: if request.auth.uid == studentUid
+        && canAccessLessonForNotes(publicLessonId);
     }
 
     // --- Teacher-owned collections ---
