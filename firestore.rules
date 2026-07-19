@@ -399,20 +399,22 @@ service cloud.firestore {
     // No didactic data (lesson body/title, class, name/email, pool, questions
     // or solutions) is ever stored or exposed here.
     match /students/{studentUid}/lessonNotes/{publicLessonId} {
-      // Read: deliberately `allow get`, NOT `allow read` — the note lives on a
-      // deterministic personal path the client always fetches by id (a single
-      // getDoc), so there is no need to authorize a query/list over the whole
-      // lessonNotes subcollection. Restricting to get() shrinks the
-      // authorization surface and prevents accidental/costly collection scans;
-      // list is left to the default deny.
+      // Normal reads stay deterministic (`getDoc`). The separate, bounded
+      // `list` rule below exists only for the one-time legacy index bootstrap;
+      // unfiltered collection scans remain denied.
       allow get: if request.auth.uid == studentUid
         && canAccessLessonForNotes(publicLessonId);
 
-      // Used only by the one-time per-course index bootstrap. Every returned
-      // note must still belong to the caller and to an accessible active
-      // lesson; the client query additionally fixes programId + importId.
+      // Used only by the one-time per-course index bootstrap. A list rule
+      // cannot safely resolve `publicLessonId` from the wildcard path (it is
+      // not a concrete value while the query is authorized), so authorization
+      // is derived from each note's immutable program/import identity. The
+      // production query fixes both fields; an unbounded collection scan is
+      // therefore still denied by Firestore's query/rules proof.
       allow list: if request.auth.uid == studentUid
-        && canAccessLessonForNotes(publicLessonId);
+        && resource.data.programId is string
+        && resource.data.importId is string
+        && canAccessProgramForNotes(resource.data.programId, resource.data.importId);
 
       // Create: exact closed key set, identity pinned to path/auth and to the
       // associated publicLesson projection, content a string within the

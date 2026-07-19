@@ -18,6 +18,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
@@ -255,9 +256,9 @@ describe('ANNOT-03B rules — private per-course lesson-note index', () => {
   });
 });
 
-// ─── Read surface: get-only (no query/list) ──────────────────────────────────
+// ─── Read surface: deterministic get + bounded bootstrap query ──────────────
 
-describe('ANNOT-01 rules — read is get-only (no query/list)', () => {
+describe('ANNOT-03B rules — note reads and bounded index bootstrap', () => {
   it('allows the authorized owning student to getDoc their own note', async () => {
     await seed({ seedNote: true });
     await assertSucceeds(getDoc(doc(studentDb(), NOTE_PATH)));
@@ -268,6 +269,46 @@ describe('ANNOT-01 rules — read is get-only (no query/list)', () => {
     await assertFails(
       getDocs(query(collection(studentDb(), 'students', STUDENT_UID, 'lessonNotes'))),
     );
+  });
+
+  function bootstrapQuery(db: Firestore, programId = 'p1', importId = 'i1') {
+    return getDocs(
+      query(
+        collection(db, 'students', STUDENT_UID, 'lessonNotes'),
+        where('programId', '==', programId),
+        where('importId', '==', importId),
+      ),
+    );
+  }
+
+  it('allows the exact filtered query used by the legacy index bootstrap', async () => {
+    await seed({ seedNote: true });
+    await assertSucceeds(bootstrapQuery(studentDb()));
+  });
+
+  it('denies the bootstrap query to teacher, another student and anonymous', async () => {
+    await seed({ seedNote: true });
+    await assertFails(bootstrapQuery(ownerDb()));
+    await assertFails(bootstrapQuery(otherStudentDb()));
+    await assertFails(bootstrapQuery(anonDb()));
+  });
+
+  it('denies the bootstrap query during Modalità verifica', async () => {
+    await seed({
+      seedNote: true,
+      examMode: { enabled: true, scope: 'all', classIds: [] },
+    });
+    await assertFails(bootstrapQuery(studentDb()));
+  });
+
+  it('denies the bootstrap query for a program not assigned to the student class', async () => {
+    await seed({ seedNote: true, programClassIds: ['class-b'] });
+    await assertFails(bootstrapQuery(studentDb()));
+  });
+
+  it('denies the bootstrap query for an inactive import', async () => {
+    await seed({ seedNote: true, programActiveImportId: 'i2' });
+    await assertFails(bootstrapQuery(studentDb()));
   });
 
   it('denies teacher/owner, another student and anonymous a getDoc of the note', async () => {
