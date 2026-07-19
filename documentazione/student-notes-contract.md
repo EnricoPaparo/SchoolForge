@@ -1,7 +1,8 @@
 # SchoolForge — ANNOT-00: appunti personali dello studente
 
-**Stato:** ANNOT-01, ANNOT-02, ANNOT-03A e ANNOT-03B implementati. Smoke DEV e Gate
-GANNOT restano aperti.
+**Stato:** ANNOT-01, ANNOT-02, ANNOT-03A e ANNOT-03B implementati e mergiati; ANNOT-03B
+pubblicato su DEV (Hosting + Firestore Rules). **Gate GANNOT superato (PASS)** — vedi
+`evidenze/gannot-checklist-finale.md`.
 **Data:** 19 luglio 2026.
 **Perimetro:** progettazione di UX, modello dati, autorizzazioni, costi e pacchetti successivi.
 
@@ -466,22 +467,25 @@ Costi: apertura normale `1` read indice e zero read per lezione; bootstrap una t
 `1` write; create/svuotamento/delete `2` write atomiche. Zero listener, polling,
 scheduler o Cloud Function.
 
-### ANNOT-03 — smoke DEV e Gate GANNOT
+### ANNOT-03 — smoke DEV e Gate GANNOT — **PASS**
 
-Scope:
+Scope realizzato:
 
-- deploy DEV autorizzato in pacchetto separato;
-- smoke multi-account e viewport;
-- misurazione operazioni e verifica sicurezza.
+- ANNOT-03B pubblicato su DEV (Hosting + Firestore Rules);
+- smoke DEV con verifica visiva del docente (esperienza finale corretta e soddisfacente);
+- fix della query Rules del bootstrap legacy dell'indice; suite Rules completa verde
+  **476/476**;
+- misurazione operazioni coerente con il budget (§6).
 
-Criteri di accettazione:
+Criteri di accettazione — verificati (matrice completa in
+`evidenze/gannot-checklist-finale.md`):
 
-- studente A non legge note di B; docente non legge note;
-- classe/accesso/import e Modalità verifica provati sul DEV;
-- salvataggio, errore, refresh sessione, delete e limite 20.000 verificati;
+- studente A non legge note di B; docente non legge note (evidenza Emulator);
+- classe/accesso/import e Modalità verifica coperti da Rules test e provati sul DEV;
+- salvataggio, errore, delete e limite 20.000 coperti da test mirati;
 - conteggi operativi coerenti con il budget;
-- nessuna esposizione di pool/soluzioni e nessun errore console;
-- approvazione umana esplicita del Gate GANNOT.
+- nessuna esposizione di pool/soluzioni;
+- **Gate GANNOT superato (PASS).**
 
 ## 8. Decisioni definitive e limiti residui
 
@@ -496,14 +500,18 @@ Decisioni definitive:
 - delete personale confermato;
 - nessuna evidenziazione, Function, IA, indice o collezione globale.
 
-Limiti da verificare in ANNOT-01/03:
+Limiti residui accettati (chiusi al Gate GANNOT):
 
-- nome e disponibilità dell'identità lezione nella proiezione V2 definitiva;
-- numero effettivo di access calls Rules e loro costo osservato;
+- identità canonica della lezione = `publicLessonId` (l'id del documento `publicLessons`);
+  nessun `lessonId` separato esiste o viene duplicato (risolto in ANNOT-01);
 - last-write-wins tra dispositivi, accettato senza versioning nella prima versione;
-- una nota non più autorizzata resta non leggibile e non cancellabile dal client;
+- una nota non più autorizzata resta non leggibile e non cancellabile dal client
+  (fail-closed voluto);
+- la dirty guard non intercetta il cambio di sezione dallo `StudentShell` o il logout,
+  che smontano la vista;
 - ripristino dello scroll mobile è best-effort, perché layout e contenuto possono
   cambiare tra apertura e ritorno.
 
-Questo documento e il prototipo non modificano il contratto applicativo in vigore e
-non dichiarano ANNOT implementato.
+ANNOT-01/02/03A/03B sono implementati e mergiati e il **Gate GANNOT è superato (PASS)**
+(vedi `evidenze/gannot-checklist-finale.md`). Il PASS riguarda la sola chiusura
+funzionale/sicurezza/costo degli appunti e non autorizza provisioning o deploy PROD.

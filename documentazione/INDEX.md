@@ -9,6 +9,8 @@ Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente l
 
 **Didattica (DUX) — implementazione DUX-01–10A completata.** Didattica ha assorbito Corsi/Lezioni/Domande dopo il **Gate di parità PASS** (vedi [evidenze/dux-04d-matrice-parita.md](evidenze/dux-04d-matrice-parita.md)); Classi è una scheda di Studenti, Verifiche è uniformata e metadata corso/anno sono modificabili. **Gate GDUX superato (PASS)** — vedi [evidenze/gdux-checklist-finale.md](evidenze/gdux-checklist-finale.md) e [didattica-ux-roadmap.md](didattica-ux-roadmap.md).
 
+**Appunti personali dello studente (ANNOT) — completato.** ANNOT-01/02/03A/03B implementati e mergiati; identità canonica lezione = `publicLessonId`; costo di una read indice per corso/sessione e read nota solo all'apertura, senza listener/polling. **Gate GANNOT superato (PASS)** — vedi [evidenze/gannot-checklist-finale.md](evidenze/gannot-checklist-finale.md) e [student-notes-contract.md](student-notes-contract.md).
+
 **Hardening finale (HARD) — completato.** **Gate GHARD superato (PASS, 15/07/2026):** 0 P0/P1, i P2 F01/F02/F03 risolti, fix accessibilità P2 e import resiliente F06 completati; residui P3 accettati con soglie esplicite. Evidenze finali in [evidenze/ghard-checklist-finale.md](evidenze/ghard-checklist-finale.md). HARD-03 resta condizionato a misure reali e non blocca la V1. Il PASS non autorizza provisioning o deploy PROD.
 
 **Didattica studente (SDUX) — completata.** Libreria corsi e workspace corso/UDA/lezione read-only su sole proiezioni pubbliche; nessun componente/service docente, pool o accesso Storage. SDUX-02 e Modalità verifica confermati su DEV — vedi [student-didattica-ux-roadmap.md](student-didattica-ux-roadmap.md).
