@@ -257,6 +257,8 @@ canonica della lezione è l'ID documento `publicLessonId` (vedi
 | ANNOT-00 | Contratto, Rules e prototipo statico desktop/mobile. | Prototipo approvato; budget letture/scritture esplicito. |
 | ANNOT-01 ✅ | Service e Rules. **Implementato** (tipo definitivo, service, Rules, test unitari + Emulator). | Test Emulator su ownership, classe e modalità verifica: superati. |
 | ANNOT-02 ✅ | Pannello desktop, vista mobile e stati di salvataggio. **Implementato** (comando Appunti, `useLessonNotes`, `LessonNotesPanel`, cache di sessione, dirty guard, test componente/hook). | Smoke desktop/mobile; nessun accesso docente o durante verifica: coperti da test; smoke DEV in ANNOT-03. |
+| ANNOT-03A ✅ | Rifinitura UX Appunti e focus lezione desktop. **Implementato:** Salva esplicito desktop/mobile, `Ctrl/Cmd+S`, stati leggibili, contrasto/selezione locale, post-it RGBA 95%, comando `Nascondi/Mostra struttura` solo desktop e stato locale. | Nessuna lettura/scrittura, Rule, query, listener o persistenza aggiuntiva; regressioni Appunti/Didattica coperte da test mirati. |
+| ANNOT-03B | Indicatore persistente delle lezioni con appunti. **Non incluso in ANNOT-03A.** | Contratto costi/query e implementazione separata, senza prefetch implicito. |
 | Gate GANNOT | Evidenze funzionali, sicurezza e costo. | Checklist docente/studente completa. |
 
 ## 6. VEX — varianti equivalenti nelle verifiche online
@@ -376,7 +378,7 @@ Implementazione solo delle scelte approvate sul prototipo, in pacchetti piccoli 
 6. POOL-SIMPLE-01;
 7. POOL-SIMPLE-02;
 8. Gate GPOOL;
-9. ANNOT-00 → ANNOT-02 → Gate GANNOT;
+9. ANNOT-00 → ANNOT-03A → ANNOT-03B → Gate GANNOT;
 10. VEX-00 → VEX-03;
 11. VISUAL-BOOST-00;
 12. VISUAL-BOOST-01 dopo approvazione esplicita.

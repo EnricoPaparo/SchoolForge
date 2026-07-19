@@ -223,6 +223,10 @@
   gap: 1rem;
   align-items: start;
 }
+.workspaceGridFocus {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
 .sidebar {
   min-width: 0;
   padding-right: 1rem;
@@ -331,7 +335,16 @@
 .lessonHeaderText {
   min-width: 0;
 }
-.notesBtn {
+.lessonActions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.notesBtn,
+.lessonActionBtn {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -345,7 +358,8 @@
   color: var(--color-text);
   cursor: pointer;
 }
-.notesBtn:hover {
+.notesBtn:hover,
+.lessonActionBtn:hover {
   border-color: var(--color-accent, #b3902e);
 }
 .lessonHeader h3 {

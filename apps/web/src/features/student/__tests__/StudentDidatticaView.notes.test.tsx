@@ -105,6 +105,24 @@ describe('StudentDidatticaView — Appunti entry point', () => {
     await waitFor(() => expect(mockLoadNote).toHaveBeenCalledTimes(1));
   });
 
+  it('hides and restores the desktop structure while keeping the lesson expanded', async () => {
+    render(<StudentDidatticaView />);
+    await openCourseAndSelectLesson();
+    const hide = await screen.findByRole('button', { name: 'Nascondi struttura' });
+    expect(hide.getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('complementary', { name: 'Struttura del corso' })).toBeTruthy();
+
+    fireEvent.click(hide);
+    expect(screen.queryByRole('complementary', { name: 'Struttura del corso' })).toBeNull();
+    expect(screen.getByText('Corpo lezione')).toBeTruthy();
+    const show = screen.getByRole('button', { name: 'Mostra struttura' });
+    expect(show.getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.click(show);
+    expect(screen.getByRole('complementary', { name: 'Struttura del corso' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Nascondi struttura' })).toBeTruthy();
+  });
+
   it('opens the dedicated mobile view under the mobile breakpoint', async () => {
     setMatchMedia(true);
     render(<StudentDidatticaView />);
@@ -114,6 +132,14 @@ describe('StudentDidatticaView — Appunti entry point', () => {
     expect(await screen.findByRole('region', { name: 'Appunti' })).toBeTruthy();
     expect(screen.getByText('← Torna alla lezione')).toBeTruthy();
     expect(screen.queryByRole('complementary', { name: 'Appunti' })).toBeNull();
+  });
+
+  it('does not render the structure toggle on mobile', async () => {
+    setMatchMedia(true);
+    render(<StudentDidatticaView />);
+    await openCourseAndSelectLesson();
+    expect(screen.queryByRole('button', { name: 'Nascondi struttura' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Mostra struttura' })).toBeNull();
   });
 
   it('restores the lesson scroll position when closing mobile notes', async () => {
