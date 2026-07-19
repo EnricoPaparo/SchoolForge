@@ -115,12 +115,14 @@ function NoteActions({
   const saveDisabled = note.loadState !== 'loaded' || !note.dirty || note.saveState === 'saving';
   return (
     <footer className={mobile ? styles.mobileActions : styles.panelActions}>
-      <span className={styles.counter} aria-label={`${note.draft.length} caratteri su 20.000`}>
-        {counter}
-      </span>
-      <span className={styles.footerStatus} role="status" aria-live="polite">
-        {statusLabel(note)}
-      </span>
+      <div className={styles.statusRow}>
+        <span className={styles.counter} aria-label={`${note.draft.length} caratteri su 20.000`}>
+          {counter}
+        </span>
+        <span className={styles.footerStatus} role="status" aria-live="polite">
+          {statusLabel(note)}
+        </span>
+      </div>
       <div className={styles.actionButtons}>
         {note.loadState === 'loaded' && note.canDelete && (
           <button

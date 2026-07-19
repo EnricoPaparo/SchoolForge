@@ -4,6 +4,7 @@ import {
   IconFileText,
   IconLayers,
   IconPanelLeft,
+  IconPencil,
   IconSearch,
 } from '../../components/icons.js';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer.js';
@@ -301,6 +302,15 @@ function StudentCourseWorkspace({
     setStructureHidden(false);
   }, [program.id]);
 
+  useEffect(() => {
+    if (!uid || !program.activeImportId) return;
+    notes.loadIndex({
+      studentUid: uid,
+      programId: program.id,
+      importId: program.activeImportId,
+    });
+  }, [notes.loadIndex, program.activeImportId, program.id, uid]);
+
   // Desktop focus return: when the panel closes, focus goes back to the
   // exact "Appunti" button that opened it.
   useEffect(() => {
@@ -405,10 +415,10 @@ function StudentCourseWorkspace({
                               aria-current={selectedLesson?.id === lesson.id ? 'page' : undefined}
                               onClick={() => selectLesson(lesson)}
                             >
-                              <IconFileText />
-                              <span>
-                                {resolveLessonTitle(lesson.filename, lesson.titolo).title}
-                              </span>
+                              <LessonRowLabel
+                                lesson={lesson}
+                                hasSavedNote={notes.hasSavedNote(lesson.id)}
+                              />
                             </button>
                           </li>
                         ))}
@@ -449,6 +459,7 @@ function StudentCourseWorkspace({
                   udaDir={selectedUda}
                   lessons={grouped.get(selectedUda) ?? []}
                   onSelect={selectLesson}
+                  hasSavedNote={notes.hasSavedNote}
                 />
               )}
               {selectedLesson && (
@@ -456,6 +467,7 @@ function StudentCourseWorkspace({
                   lesson={selectedLesson}
                   canOpenNotes={uid != null}
                   notesOpen={notes.openLessonId === selectedLesson.id}
+                  hasSavedNote={notes.hasSavedNote(selectedLesson.id)}
                   noteButtonRef={noteButtonRef}
                   isMobile={isMobile}
                   structureHidden={structureHidden}
@@ -511,10 +523,12 @@ function UdaOverview({
   udaDir,
   lessons,
   onSelect,
+  hasSavedNote,
 }: {
   udaDir: string;
   lessons: StudentLesson[];
   onSelect: (lesson: StudentLesson) => void;
+  hasSavedNote: (publicLessonId: string) => boolean;
 }) {
   return (
     <div>
@@ -522,9 +536,7 @@ function UdaOverview({
       <div className={styles.overviewList}>
         {lessons.map((lesson) => (
           <button key={lesson.id} type="button" onClick={() => onSelect(lesson)}>
-            <span>
-              <IconFileText /> {resolveLessonTitle(lesson.filename, lesson.titolo).title}
-            </span>
+            <LessonRowLabel lesson={lesson} hasSavedNote={hasSavedNote(lesson.id)} />
             <span aria-hidden="true">›</span>
           </button>
         ))}
@@ -533,10 +545,38 @@ function UdaOverview({
   );
 }
 
+function LessonRowLabel({
+  lesson,
+  hasSavedNote,
+}: {
+  lesson: StudentLesson;
+  hasSavedNote: boolean;
+}) {
+  return (
+    <span className={styles.lessonRowLabel}>
+      <span className={styles.lessonIcon} aria-hidden="true">
+        <IconFileText size={16} />
+      </span>
+      <span className={styles.noteIndicatorSlot}>
+        {hasSavedNote && (
+          <span className={styles.noteIndicator} title="Appunti salvati">
+            <IconPencil size={14} />
+            <span className={styles.visuallyHidden}>Appunti salvati</span>
+          </span>
+        )}
+      </span>
+      <span className={styles.lessonRowTitle}>
+        {resolveLessonTitle(lesson.filename, lesson.titolo).title}
+      </span>
+    </span>
+  );
+}
+
 function LessonContent({
   lesson,
   canOpenNotes,
   notesOpen,
+  hasSavedNote,
   noteButtonRef,
   isMobile,
   structureHidden,
@@ -546,6 +586,7 @@ function LessonContent({
   lesson: StudentLesson;
   canOpenNotes: boolean;
   notesOpen: boolean;
+  hasSavedNote: boolean;
   noteButtonRef: React.RefObject<HTMLButtonElement>;
   isMobile: boolean;
   structureHidden: boolean;
@@ -578,11 +619,12 @@ function LessonContent({
             <button
               type="button"
               ref={noteButtonRef}
-              className={styles.notesBtn}
+              className={`${styles.notesBtn}${hasSavedNote ? ` ${styles.notesBtnSaved}` : ''}`}
               aria-expanded={notesOpen}
+              aria-label={hasSavedNote ? 'Appunti, appunti salvati' : 'Appunti'}
               onClick={onOpenNotes}
             >
-              <IconFileText /> Appunti
+              {hasSavedNote ? <IconPencil /> : <IconFileText />} Appunti
             </button>
           )}
         </div>

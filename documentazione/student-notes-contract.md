@@ -1,7 +1,7 @@
 # SchoolForge — ANNOT-00: appunti personali dello studente
 
-**Stato:** ANNOT-01, ANNOT-02 e ANNOT-03A implementati. ANNOT-03B (indicatore
-persistente delle lezioni con appunti), smoke DEV e Gate GANNOT restano aperti.
+**Stato:** ANNOT-01, ANNOT-02, ANNOT-03A e ANNOT-03B implementati. Smoke DEV e Gate
+GANNOT restano aperti.
 **Data:** 19 luglio 2026.
 **Perimetro:** progettazione di UX, modello dati, autorizzazioni, costi e pacchetti successivi.
 
@@ -285,10 +285,10 @@ calls; riuso e memoizzazione degli stessi path devono essere verificati con Emul
 
 ### 5.4 Validazione per operazione
 
-**Lettura puntuale (get):** solo `allow get` con `studentUid == request.auth.uid` e
-`canAccessLessonForNotes` vero. Non è ammessa alcuna query/list sulla sottocollegione
-`lessonNotes` (la nota è sempre letta per ID deterministico): `list` resta al default
-deny.
+**Lettura:** il flusso ordinario usa solo `get` deterministico. ANNOT-03B consente
+`list` sulla sola sottocollezione personale per il bootstrap controllato; ogni documento
+deve superare `canAccessLessonForNotes` e il client vincola la query a programma/import
+correnti. Non esistono query globali o accessi docente.
 
 **Create:** oltre al read gate:
 
@@ -325,9 +325,12 @@ Non si fissano tariffe monetarie, perché possono cambiare. Il budget si esprime
 operazioni:
 
 - prima apertura di una nota per lezione/sessione: circa `1` document read;
-- ogni salvataggio realmente diverso: `1` document write;
+- modifica persistita non vuota→non vuota: `1` document write;
+- create, svuotamento o delete: `2` document write atomiche (nota + indice);
+- apertura corso: `1` document read dell'indice, senza read per ogni lezione;
+- bootstrap una tantum: read indice + sole note del corso/import + `1` write indice;
 - nessuna scrittura se il testo non cambia;
-- eliminazione esplicita: `1` delete;
+- eliminazione esplicita: delete nota + update indice nello stesso batch;
 - nessun listener note, polling, Cloud Function, IA o lettura docente;
 - cross-document checks delle Rules possono comportare accessi dipendenti dalle
   regole e vanno misurati con Emulator/console billing in ANNOT-03;
@@ -431,10 +434,37 @@ ANNOT-02.
 
 Nessuna nuova lettura/scrittura, Rule, query, listener, polling o dipendenza.
 
-### ANNOT-03B — indicatore persistente lezioni annotate — **APERTO**
+### ANNOT-03B — indice e indicatore persistente — **IMPLEMENTATO**
 
-L'indicatore che segnala nell'albero quali lezioni possiedono appunti resta un pacchetto
-separato: ANNOT-03A non aggiunge prefetch, query, badge o persistenza per questa esigenza.
+L'indice privacy-minimal vive in
+`students/{studentUid}/lessonNoteIndexes/{programId}`:
+
+```ts
+interface StudentLessonNoteIndexDoc {
+  studentUid: string;
+  programId: string;
+  importId: string;
+  lessonIds: string[]; // max 500, senza duplicati prodotti dal service
+  updatedAt: Timestamp | FieldValue;
+}
+```
+
+Viene letto una volta quando si apre il corso e mantenuto in memoria. Se manca o usa un
+import precedente, il solo bootstrap interroga gli appunti dello stesso studente con
+`programId` e `importId` correnti, ignora contenuti vuoti dopo `trim` e riscrive
+l'indice; nessuna migrazione globale. Un errore lascia le lezioni fruibili senza mostrare
+indicatori incerti.
+
+Prima creazione non vuota, svuotamento e delete esplicito aggiornano nota e indice nello
+stesso `writeBatch`; una modifica non vuota→non vuota aggiorna soltanto la nota. La mappa
+locale cambia solo dopo successo, senza riletture. Sidebar e lista mobile riservano slot
+fissi 16×16 per documento e matita ambra; il pulsante Appunti evidenzia soltanto stato
+persistito. Il footer ha sempre due righe logiche stabili e il post-it usa RGBA al 90%.
+
+Costi: apertura normale `1` read indice e zero read per lezione; bootstrap una tantum
+`1` read indice + read delle sole note del corso/import + `1` write; update non vuoto
+`1` write; create/svuotamento/delete `2` write atomiche. Zero listener, polling,
+scheduler o Cloud Function.
 
 ### ANNOT-03 — smoke DEV e Gate GANNOT
 

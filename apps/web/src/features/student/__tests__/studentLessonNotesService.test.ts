@@ -4,14 +4,29 @@ const mockGetDoc = vi.fn();
 const mockSetDoc = vi.fn();
 const mockUpdateDoc = vi.fn();
 const mockDeleteDoc = vi.fn();
+const mockGetDocs = vi.fn();
+const mockBatchSet = vi.fn();
+const mockBatchDelete = vi.fn();
+const mockBatchCommit = vi.fn();
 
 vi.mock('firebase/firestore', () => ({
   doc: (_db: unknown, ...segments: string[]) => ({ __path: segments.join('/') }),
+  collection: (_db: unknown, ...segments: string[]) => ({ __path: segments.join('/') }),
+  where: (...args: unknown[]) => ({ __where: args }),
+  query: (...args: unknown[]) => ({ __query: args }),
   getDoc: (...args: unknown[]) => mockGetDoc(...args),
+  getDocs: (...args: unknown[]) => mockGetDocs(...args),
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
   updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
   deleteDoc: (...args: unknown[]) => mockDeleteDoc(...args),
   serverTimestamp: () => ({ __serverTimestamp: true }),
+  arrayUnion: (...values: unknown[]) => ({ __arrayUnion: values }),
+  arrayRemove: (...values: unknown[]) => ({ __arrayRemove: values }),
+  writeBatch: () => ({
+    set: (...args: unknown[]) => mockBatchSet(...args),
+    delete: (...args: unknown[]) => mockBatchDelete(...args),
+    commit: (...args: unknown[]) => mockBatchCommit(...args),
+  }),
 }));
 
 import {
@@ -19,6 +34,7 @@ import {
   StudentLessonNoteError,
   createStudentLessonNote,
   deleteStudentLessonNote,
+  loadStudentLessonNoteIndex,
   loadStudentLessonNote,
   updateStudentLessonNote,
 } from '../studentLessonNotesService.js';
@@ -47,15 +63,17 @@ describe('deterministic path', () => {
     mockSetDoc.mockResolvedValue(undefined);
     mockUpdateDoc.mockResolvedValue(undefined);
     mockDeleteDoc.mockResolvedValue(undefined);
+    mockBatchCommit.mockResolvedValue(undefined);
 
     await loadStudentLessonNote(STUDENT_UID, PUBLIC_LESSON_ID, fakeDb);
     await createStudentLessonNote(identity, 'x', fakeDb);
     await updateStudentLessonNote(STUDENT_UID, PUBLIC_LESSON_ID, 'y', fakeDb);
-    await deleteStudentLessonNote(STUDENT_UID, PUBLIC_LESSON_ID, fakeDb);
+    await deleteStudentLessonNote(identity, fakeDb);
 
-    for (const mock of [mockGetDoc, mockSetDoc, mockUpdateDoc, mockDeleteDoc]) {
-      expect((mock.mock.calls[0][0] as { __path: string }).__path).toBe(EXPECTED_PATH);
-    }
+    expect((mockGetDoc.mock.calls[0][0] as { __path: string }).__path).toBe(EXPECTED_PATH);
+    expect((mockUpdateDoc.mock.calls[0][0] as { __path: string }).__path).toBe(EXPECTED_PATH);
+    expect(mockBatchSet).toHaveBeenCalled();
+    expect(mockBatchDelete).toHaveBeenCalledWith({ __path: EXPECTED_PATH });
   });
 });
 
@@ -136,14 +154,15 @@ describe('loadStudentLessonNote', () => {
 });
 
 describe('createStudentLessonNote', () => {
-  it('writes the full identity with createdAt == updatedAt == serverTimestamp in a single setDoc, no extra read', async () => {
-    mockSetDoc.mockResolvedValue(undefined);
+  it('atomically writes the note and adds its id to the course index', async () => {
+    mockBatchCommit.mockResolvedValue(undefined);
 
     await createStudentLessonNote(identity, 'appunti', fakeDb);
 
-    expect(mockSetDoc).toHaveBeenCalledOnce();
+    expect(mockBatchCommit).toHaveBeenCalledOnce();
+    expect(mockBatchSet).toHaveBeenCalledTimes(2);
     expect(mockGetDoc).not.toHaveBeenCalled();
-    const payload = mockSetDoc.mock.calls[0][1] as Record<string, unknown>;
+    const payload = mockBatchSet.mock.calls[0][1] as Record<string, unknown>;
     expect(payload).toEqual({
       studentUid: STUDENT_UID,
       publicLessonId: PUBLIC_LESSON_ID,
@@ -160,15 +179,15 @@ describe('createStudentLessonNote', () => {
     await expect(
       createStudentLessonNote(identity, 'x'.repeat(STUDENT_LESSON_NOTE_MAX_LENGTH + 1), fakeDb),
     ).rejects.toMatchObject({ code: 'content-too-long' });
-    expect(mockSetDoc).not.toHaveBeenCalled();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
   });
 
   it('allows content of exactly 20 000 characters', async () => {
-    mockSetDoc.mockResolvedValue(undefined);
+    mockBatchCommit.mockResolvedValue(undefined);
 
     await createStudentLessonNote(identity, 'x'.repeat(STUDENT_LESSON_NOTE_MAX_LENGTH), fakeDb);
 
-    expect(mockSetDoc).toHaveBeenCalledOnce();
+    expect(mockBatchCommit).toHaveBeenCalledOnce();
   });
 });
 
@@ -214,14 +233,58 @@ describe('updateStudentLessonNote', () => {
 });
 
 describe('deleteStudentLessonNote', () => {
-  it('deletes only the note document in a single deleteDoc, touching nothing else', async () => {
-    mockDeleteDoc.mockResolvedValue(undefined);
+  it('atomically deletes the note and removes its id from the index', async () => {
+    mockBatchCommit.mockResolvedValue(undefined);
 
-    await deleteStudentLessonNote(STUDENT_UID, PUBLIC_LESSON_ID, fakeDb);
+    await deleteStudentLessonNote(identity, fakeDb);
 
-    expect(mockDeleteDoc).toHaveBeenCalledOnce();
+    expect(mockBatchDelete).toHaveBeenCalledWith({ __path: EXPECTED_PATH });
+    expect(mockBatchSet).toHaveBeenCalledOnce();
+    expect(mockBatchCommit).toHaveBeenCalledOnce();
     expect(mockGetDoc).not.toHaveBeenCalled();
-    expect(mockSetDoc).not.toHaveBeenCalled();
     expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe('loadStudentLessonNoteIndex', () => {
+  const indexIdentity = { studentUid: STUDENT_UID, programId: 'p1', importId: 'i1' };
+
+  it('uses one read when a valid current-import index exists and removes duplicates in memory', async () => {
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ...indexIdentity, lessonIds: [PUBLIC_LESSON_ID, PUBLIC_LESSON_ID] }),
+    });
+
+    await expect(loadStudentLessonNoteIndex(indexIdentity, fakeDb)).resolves.toEqual({
+      lessonIds: [PUBLIC_LESSON_ID],
+      bootstrapped: false,
+    });
+    expect(mockGetDoc).toHaveBeenCalledOnce();
+    expect(mockGetDocs).not.toHaveBeenCalled();
+  });
+
+  it('bootstraps a missing index from only trim-non-empty query results', async () => {
+    mockGetDoc.mockResolvedValue({ exists: () => false });
+    mockGetDocs.mockResolvedValue({
+      docs: [
+        { id: PUBLIC_LESSON_ID, data: () => ({ content: 'nota' }) },
+        { id: 'empty', data: () => ({ content: '  ' }) },
+      ],
+    });
+    mockSetDoc.mockResolvedValue(undefined);
+
+    await expect(loadStudentLessonNoteIndex(indexIdentity, fakeDb)).resolves.toEqual({
+      lessonIds: [PUBLIC_LESSON_ID],
+      bootstrapped: true,
+    });
+    expect(mockGetDocs).toHaveBeenCalledOnce();
+    expect(mockGetDocs.mock.calls[0][0]).toEqual({
+      __query: [
+        { __path: `students/${STUDENT_UID}/lessonNotes` },
+        { __where: ['programId', '==', 'p1'] },
+        { __where: ['importId', '==', 'i1'] },
+      ],
+    });
+    expect(mockSetDoc).toHaveBeenCalledOnce();
   });
 });

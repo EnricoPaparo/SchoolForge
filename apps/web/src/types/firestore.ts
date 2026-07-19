@@ -295,6 +295,25 @@ export interface StudentLessonNoteDoc {
   updatedAt: Timestamp | FieldValue;
 }
 
+/**
+ * Lightweight per-course index stored at
+ * `students/{studentUid}/lessonNoteIndexes/{programId}`. It contains only
+ * identifiers for lessons whose persisted note has non-blank content; never
+ * note text or duplicated personal/didactic data.
+ */
+export interface StudentLessonNoteIndexDoc {
+  /** == `{studentUid}` in the path == `request.auth.uid`; immutable. */
+  studentUid: string;
+  /** == `{programId}` in the path; immutable. */
+  programId: string;
+  /** Current active import of the program. */
+  importId: string;
+  /** Unique public lesson ids with a persisted, trim-non-empty note; max 500. */
+  lessonIds: string[];
+  /** `request.time` at every create/update. */
+  updatedAt: Timestamp | FieldValue;
+}
+
 // ─── M3-lite — Approved-student access model ─────────────────────────────────
 
 /**

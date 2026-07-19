@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockLoadLessons = vi.fn();
 const mockLoadNote = vi.fn();
+const mockLoadNoteIndex = vi.fn();
+const mockCreateNote = vi.fn();
+const mockDeleteNote = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
 vi.mock('../../../lib/auth.js', () => ({
@@ -19,9 +22,10 @@ vi.mock('../studentLessonNotesService.js', async () => {
   return {
     ...actual,
     loadStudentLessonNote: (...a: unknown[]) => mockLoadNote(...a),
-    createStudentLessonNote: vi.fn().mockResolvedValue(undefined),
+    loadStudentLessonNoteIndex: (...a: unknown[]) => mockLoadNoteIndex(...a),
+    createStudentLessonNote: (...a: unknown[]) => mockCreateNote(...a),
     updateStudentLessonNote: vi.fn().mockResolvedValue(undefined),
-    deleteStudentLessonNote: vi.fn().mockResolvedValue(undefined),
+    deleteStudentLessonNote: (...a: unknown[]) => mockDeleteNote(...a),
   };
 });
 
@@ -68,6 +72,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   setMatchMedia(false);
   mockLoadNote.mockResolvedValue({ state: 'missing' });
+  mockLoadNoteIndex.mockResolvedValue({ lessonIds: [], bootstrapped: false });
+  mockCreateNote.mockResolvedValue(undefined);
+  mockDeleteNote.mockResolvedValue(undefined);
   mockLoadLessons.mockResolvedValue({
     status: 'ok',
     programs: [{ id: 'p1', title: 'Informatica', classIds: ['class-a'], activeImportId: 'i1' }],
@@ -96,6 +103,44 @@ describe('StudentDidatticaView — Appunti entry point', () => {
     expect(await screen.findByRole('button', { name: 'Appunti' })).toBeTruthy();
   });
 
+  it('shows a stable pencil indicator and highlights Appunti only for persisted notes', async () => {
+    mockLoadNoteIndex.mockResolvedValue({ lessonIds: [LESSON.id], bootstrapped: false });
+    render(<StudentDidatticaView />);
+    await openCourseAndSelectLesson();
+
+    expect(await screen.findByTitle('Appunti salvati')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Appunti, appunti salvati' })).toBeTruthy();
+  });
+
+  it('updates the persisted indicator after save without reloading the course', async () => {
+    render(<StudentDidatticaView />);
+    await openCourseAndSelectLesson();
+    fireEvent.click(await screen.findByRole('button', { name: 'Appunti' }));
+    const textarea = await screen.findByLabelText('Testo degli appunti');
+    fireEvent.change(textarea, { target: { value: 'Nota persistita' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    await waitFor(() => expect(mockCreateNote).toHaveBeenCalledOnce());
+    expect(await screen.findByRole('button', { name: 'Appunti, appunti salvati' })).toBeTruthy();
+    expect(mockLoadLessons).toHaveBeenCalledOnce();
+    expect(mockLoadNoteIndex).toHaveBeenCalledOnce();
+  });
+
+  it('does not create a persisted indicator when the atomic save fails', async () => {
+    mockCreateNote.mockRejectedValue(new Error('offline'));
+    render(<StudentDidatticaView />);
+    await openCourseAndSelectLesson();
+    fireEvent.click(await screen.findByRole('button', { name: 'Appunti' }));
+    fireEvent.change(await screen.findByLabelText('Testo degli appunti'), {
+      target: { value: 'Draft locale' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    await waitFor(() => expect(screen.getByText('Errore')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Appunti, appunti salvati' })).toBeNull();
+    expect(screen.queryByTitle('Appunti salvati')).toBeNull();
+  });
+
   it('opens the desktop aside on click and reads the note once', async () => {
     render(<StudentDidatticaView />);
     await openCourseAndSelectLesson();
@@ -103,6 +148,16 @@ describe('StudentDidatticaView — Appunti entry point', () => {
 
     expect(await screen.findByRole('complementary', { name: 'Appunti' })).toBeTruthy();
     await waitFor(() => expect(mockLoadNote).toHaveBeenCalledTimes(1));
+  });
+
+  it('loads the per-course index once and reuses it when the course is reopened', async () => {
+    render(<StudentDidatticaView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Apri corso Informatica' }));
+    await waitFor(() => expect(mockLoadNoteIndex).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('button', { name: '← Libreria' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apri corso Informatica' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockLoadNoteIndex).toHaveBeenCalledOnce();
   });
 
   it('hides and restores the desktop structure while keeping the lesson expanded', async () => {

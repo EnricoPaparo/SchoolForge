@@ -141,7 +141,7 @@ Le regole seguenti descrivono il modello gateway (link pubblico, tentativi, Clou
 - `deliveryAttempts/*/accessLog` sarebbe scritto solo dalla Cloud Function e leggibile solo dall'owner (Report Accessi).
 - Il reset docente sarebbe ammesso solo in una transazione Firestore su un tentativo `in_progress`, con motivazione, invalidazione sessione, rilascio lock e audit append-only.
 
-### 3.3 Appunti personali dello studente (ANNOT-01)
+### 3.3 Appunti personali e indice (ANNOT-01/03B)
 
 Gli appunti personali vivono a `students/{studentUid}/lessonNotes/{publicLessonId}` e
 sono governati da un `match` **dedicato** in `firestore.rules`: le regole del documento
@@ -162,10 +162,9 @@ esplicitamente (`!isOwner()`) e di nuovo dal confronto `uid == studentUid`.
 
 Validazione dei dati (rivalidata server-side, mai delegata al client):
 
-- **lettura**: solo `allow get` (lettura puntuale del documento deterministico), non
-  `allow read` — nessuna query/list sull'intera sottocollegione `lessonNotes` è
-  autorizzata; `list` resta al default deny, riducendo superficie autorizzativa e rischio
-  di scansioni accidentali/costose;
+- **lettura nota**: `get` puntuale; `list` è ammesso soltanto sulla sottocollezione
+  personale e resta soggetto al gate di ogni documento, per il bootstrap una tantum che
+  il client vincola a `programId` + `importId` correnti;
 - **create**: set di chiavi chiuso ed esatto (`studentUid`, `publicLessonId`,
   `programId`, `importId`, `content`, `createdAt`, `updatedAt`); `studentUid`/
   `publicLessonId` coerenti con il path e `request.auth.uid`; `programId`/`importId`
@@ -177,6 +176,13 @@ Validazione dei dati (rivalidata server-side, mai delegata al client):
 - **delete**: solo lo studente proprietario e solo entro il gate completo — una nota di
   una lezione non più accessibile o durante Modalità verifica non è cancellabile dal
   client (fail-closed dichiarato nel contratto).
+
+L'indice `students/{studentUid}/lessonNoteIndexes/{programId}` è ugualmente personale:
+owner/docente, altri studenti, pending/blocked, portale disabilitato e Modalità verifica
+sono negati. Create/update richiedono chiavi chiuse, identità path immutabile,
+`importId` uguale all'import attivo, lista di massimo 500 elementi e
+`updatedAt == request.time`; delete è sempre negato. L'indice conserva solo ID lezione,
+mai contenuti o dati anagrafici.
 
 **Costo di autorizzazione.** Il gate esegue accessi cross-document (memoizzati per
 valutazione): `settings/owner`, `settings/studentAccess`, `students/{uid}`,

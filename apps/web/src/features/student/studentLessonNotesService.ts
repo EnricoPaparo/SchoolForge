@@ -1,6 +1,19 @@
-import { deleteDoc, doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import {
+  arrayRemove,
+  arrayUnion,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
-import type { StudentLessonNoteDoc } from '../../types/firestore.js';
+import type { StudentLessonNoteDoc, StudentLessonNoteIndexDoc } from '../../types/firestore.js';
 
 /**
  * ANNOT-01 — Firestore service for the student's strictly personal lesson
@@ -9,13 +22,14 @@ import type { StudentLessonNoteDoc } from '../../types/firestore.js';
  * Deliberately minimal and stateless: this layer only reads/writes the
  * deterministic personal document. It does NOT implement the session cache,
  * debounce, dirty guard, coalescing or focus/navigation logic — those belong
- * to the ANNOT-02 UI. Nothing here starts a realtime listener or polls: load
- * is a single one-shot `getDoc`, saves are a single `setDoc`/`updateDoc`, and
- * delete is a single `deleteDoc`. No extra read is issued inside a save/delete.
+ * to the UI controller. Nothing here starts a realtime listener or polls:
+ * ordinary note loads are one-shot, and presence-changing mutations use one
+ * atomic batch for note + index. No extra read is issued by save/delete.
  */
 
 /** The client-side ceiling for note content — re-validated by Security Rules. */
 export const STUDENT_LESSON_NOTE_MAX_LENGTH = 20_000;
+export const STUDENT_LESSON_NOTE_INDEX_MAX_IDS = 500;
 
 /**
  * Identity of a lesson note, derived by the caller (ANNOT-02) from the
@@ -29,6 +43,13 @@ export interface StudentLessonNoteIdentity {
   publicLessonId: string;
   programId: string;
   importId: string;
+}
+
+export type StudentLessonNoteIndexIdentity = Omit<StudentLessonNoteIdentity, 'publicLessonId'>;
+
+export interface StudentLessonNoteIndexResult {
+  lessonIds: string[];
+  bootstrapped: boolean;
 }
 
 /**
@@ -60,6 +81,10 @@ export class StudentLessonNoteError extends Error {
 
 function noteRef(db: Firestore, studentUid: string, publicLessonId: string) {
   return doc(db, 'students', studentUid, 'lessonNotes', publicLessonId);
+}
+
+function noteIndexRef(db: Firestore, studentUid: string, programId: string) {
+  return doc(db, 'students', studentUid, 'lessonNoteIndexes', programId);
 }
 
 /**
@@ -133,11 +158,9 @@ export async function loadStudentLessonNote(
 }
 
 /**
- * Creates the note document with its full identity and `createdAt` ==
- * `updatedAt` == `serverTimestamp()`. Identity fields come from the caller's
- * already-loaded lesson context — the service issues no extra read. A single
- * `setDoc` write; Security Rules reject the create if the identity does not
- * match the path/auth/publicLesson or the content exceeds the limit.
+ * Atomically creates a non-blank note and adds its id to the per-course index.
+ * Identity comes from the already-loaded lesson context; no extra read. The
+ * array transform is idempotent, so lessonIds never gains duplicates.
  */
 export async function createStudentLessonNote(
   identity: StudentLessonNoteIdentity,
@@ -145,9 +168,11 @@ export async function createStudentLessonNote(
   db: Firestore,
 ): Promise<void> {
   const validated = validateContent(content);
+  if (validated.trim() === '') return;
   const timestamp = serverTimestamp();
   try {
-    await setDoc(noteRef(db, identity.studentUid, identity.publicLessonId), {
+    const batch = writeBatch(db);
+    batch.set(noteRef(db, identity.studentUid, identity.publicLessonId), {
       studentUid: identity.studentUid,
       publicLessonId: identity.publicLessonId,
       programId: identity.programId,
@@ -156,6 +181,18 @@ export async function createStudentLessonNote(
       createdAt: timestamp,
       updatedAt: timestamp,
     });
+    batch.set(
+      noteIndexRef(db, identity.studentUid, identity.programId),
+      {
+        studentUid: identity.studentUid,
+        programId: identity.programId,
+        importId: identity.importId,
+        lessonIds: arrayUnion(identity.publicLessonId),
+        updatedAt: timestamp,
+      },
+      { merge: true },
+    );
+    await batch.commit();
   } catch (err) {
     throw toNoteError(err);
   }
@@ -186,17 +223,89 @@ export async function updateStudentLessonNote(
 }
 
 /**
- * Deletes only the student's own personal note document — a single
- * `deleteDoc` on the deterministic path. Never recurses and never touches
- * `publicLessons`, programs, Storage or any other document.
+ * Atomically deletes the student's personal note and removes its id from the
+ * per-course index. Never recurses or touches publicLessons, programs or
+ * Storage. The same operation implements persisted-note -> trim-empty.
  */
 export async function deleteStudentLessonNote(
-  studentUid: string,
-  publicLessonId: string,
+  identity: StudentLessonNoteIdentity,
   db: Firestore,
 ): Promise<void> {
   try {
-    await deleteDoc(noteRef(db, studentUid, publicLessonId));
+    const batch = writeBatch(db);
+    batch.delete(noteRef(db, identity.studentUid, identity.publicLessonId));
+    batch.set(
+      noteIndexRef(db, identity.studentUid, identity.programId),
+      {
+        studentUid: identity.studentUid,
+        programId: identity.programId,
+        importId: identity.importId,
+        lessonIds: arrayRemove(identity.publicLessonId),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+    await batch.commit();
+  } catch (err) {
+    throw toNoteError(err);
+  }
+}
+
+/**
+ * Loads the one per-course index. A missing index, or one from an older
+ * import, is bootstrapped once from this student's notes constrained to the
+ * current program/import. Empty notes are ignored and the normalized index is
+ * persisted in one batch write. No listener or global migration is used.
+ */
+export async function loadStudentLessonNoteIndex(
+  identity: StudentLessonNoteIndexIdentity,
+  db: Firestore,
+): Promise<StudentLessonNoteIndexResult> {
+  try {
+    const indexRef = noteIndexRef(db, identity.studentUid, identity.programId);
+    const indexSnap = await getDoc(indexRef);
+    if (indexSnap.exists()) {
+      const data = indexSnap.data() as Partial<StudentLessonNoteIndexDoc>;
+      if (
+        data.studentUid === identity.studentUid &&
+        data.programId === identity.programId &&
+        data.importId === identity.importId &&
+        Array.isArray(data.lessonIds) &&
+        data.lessonIds.length <= STUDENT_LESSON_NOTE_INDEX_MAX_IDS &&
+        data.lessonIds.every((id) => typeof id === 'string' && id.length > 0)
+      ) {
+        return { lessonIds: [...new Set(data.lessonIds)], bootstrapped: false };
+      }
+    }
+
+    const notesSnap = await getDocs(
+      query(
+        collection(db, 'students', identity.studentUid, 'lessonNotes'),
+        where('programId', '==', identity.programId),
+        where('importId', '==', identity.importId),
+      ),
+    );
+    const lessonIds = [
+      ...new Set(
+        notesSnap.docs
+          .filter((note) => {
+            const content = (note.data() as Partial<StudentLessonNoteDoc>).content;
+            return typeof content === 'string' && content.trim() !== '';
+          })
+          .map((note) => note.id),
+      ),
+    ];
+    if (lessonIds.length > STUDENT_LESSON_NOTE_INDEX_MAX_IDS) {
+      throw new StudentLessonNoteError('unavailable', 'Indice appunti non disponibile.');
+    }
+    await setDoc(indexRef, {
+      studentUid: identity.studentUid,
+      programId: identity.programId,
+      importId: identity.importId,
+      lessonIds,
+      updatedAt: serverTimestamp(),
+    });
+    return { lessonIds, bootstrapped: true };
   } catch (err) {
     throw toNoteError(err);
   }

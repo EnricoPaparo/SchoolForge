@@ -18,6 +18,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
@@ -30,6 +31,7 @@ const STUDENT_UID = 'student-uid';
 const OTHER_STUDENT_UID = 'other-student-uid';
 const LESSON_ID = 'i1_lesson-1';
 const NOTE_PATH = `students/${STUDENT_UID}/lessonNotes/${LESSON_ID}`;
+const INDEX_PATH = `students/${STUDENT_UID}/lessonNoteIndexes/p1`;
 
 let testEnv: RulesTestEnvironment;
 
@@ -168,9 +170,95 @@ function validCreate(overrides: Record<string, unknown> = {}) {
   };
 }
 
-// ─── Read surface: get-only (no query/list) ──────────────────────────────────
+function validIndex(overrides: Record<string, unknown> = {}) {
+  return {
+    studentUid: STUDENT_UID,
+    programId: 'p1',
+    importId: 'i1',
+    lessonIds: [LESSON_ID],
+    updatedAt: serverTimestamp(),
+    ...overrides,
+  };
+}
 
-describe('ANNOT-01 rules — read is get-only (no query/list)', () => {
+describe('ANNOT-03B rules — private per-course lesson-note index', () => {
+  it('allows the approved owning student to create, read and update the own index', async () => {
+    await seed();
+    await assertSucceeds(setDoc(doc(studentDb(), INDEX_PATH), validIndex()));
+    await assertSucceeds(getDoc(doc(studentDb(), INDEX_PATH)));
+    await assertSucceeds(
+      updateDoc(doc(studentDb(), INDEX_PATH), {
+        lessonIds: [],
+        updatedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denies another student and the teacher every index access', async () => {
+    await seed();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), INDEX_PATH), {
+        ...validIndex(),
+        updatedAt: null,
+      });
+    });
+    await assertFails(getDoc(doc(otherStudentDb(), INDEX_PATH)));
+    await assertFails(getDoc(doc(ownerDb(), INDEX_PATH)));
+    await assertFails(setDoc(doc(otherStudentDb(), INDEX_PATH), validIndex()));
+    await assertFails(setDoc(doc(ownerDb(), INDEX_PATH), validIndex()));
+  });
+
+  it('denies pending students and every operation during Modalità verifica', async () => {
+    await seed({ studentStatus: 'pending' });
+    await assertFails(setDoc(doc(studentDb(), INDEX_PATH), validIndex()));
+
+    await testEnv.clearFirestore();
+    await seed({ examMode: { enabled: true, scope: 'all', classIds: [] } });
+    await assertFails(setDoc(doc(studentDb(), INDEX_PATH), validIndex()));
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), INDEX_PATH), { ...validIndex(), updatedAt: null });
+    });
+    await assertFails(getDoc(doc(studentDb(), INDEX_PATH)));
+  });
+
+  it('denies path/body identity mismatches and inactive imports', async () => {
+    await seed();
+    await assertFails(
+      setDoc(doc(studentDb(), INDEX_PATH), validIndex({ studentUid: OTHER_STUDENT_UID })),
+    );
+    await assertFails(setDoc(doc(studentDb(), INDEX_PATH), validIndex({ programId: 'p2' })));
+    await assertFails(setDoc(doc(studentDb(), INDEX_PATH), validIndex({ importId: 'i2' })));
+  });
+
+  it('denies extra keys, arbitrary timestamps and more than 500 lesson ids', async () => {
+    await seed();
+    await assertFails(setDoc(doc(studentDb(), INDEX_PATH), validIndex({ email: 'x@y.test' })));
+    await assertFails(
+      setDoc(
+        doc(studentDb(), INDEX_PATH),
+        validIndex({ updatedAt: new Date('2020-01-01T00:00:00Z') }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(studentDb(), INDEX_PATH),
+        validIndex({ lessonIds: Array.from({ length: 501 }, (_, index) => `lesson-${index}`) }),
+      ),
+    );
+  });
+
+  it('never allows direct deletion, including by the owning student', async () => {
+    await seed();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), INDEX_PATH), { ...validIndex(), updatedAt: null });
+    });
+    await assertFails(deleteDoc(doc(studentDb(), INDEX_PATH)));
+  });
+});
+
+// ─── Read surface: deterministic get + bounded bootstrap query ──────────────
+
+describe('ANNOT-03B rules — note reads and bounded index bootstrap', () => {
   it('allows the authorized owning student to getDoc their own note', async () => {
     await seed({ seedNote: true });
     await assertSucceeds(getDoc(doc(studentDb(), NOTE_PATH)));
@@ -181,6 +269,46 @@ describe('ANNOT-01 rules — read is get-only (no query/list)', () => {
     await assertFails(
       getDocs(query(collection(studentDb(), 'students', STUDENT_UID, 'lessonNotes'))),
     );
+  });
+
+  function bootstrapQuery(db: Firestore, programId = 'p1', importId = 'i1') {
+    return getDocs(
+      query(
+        collection(db, 'students', STUDENT_UID, 'lessonNotes'),
+        where('programId', '==', programId),
+        where('importId', '==', importId),
+      ),
+    );
+  }
+
+  it('allows the exact filtered query used by the legacy index bootstrap', async () => {
+    await seed({ seedNote: true });
+    await assertSucceeds(bootstrapQuery(studentDb()));
+  });
+
+  it('denies the bootstrap query to teacher, another student and anonymous', async () => {
+    await seed({ seedNote: true });
+    await assertFails(bootstrapQuery(ownerDb()));
+    await assertFails(bootstrapQuery(otherStudentDb()));
+    await assertFails(bootstrapQuery(anonDb()));
+  });
+
+  it('denies the bootstrap query during Modalità verifica', async () => {
+    await seed({
+      seedNote: true,
+      examMode: { enabled: true, scope: 'all', classIds: [] },
+    });
+    await assertFails(bootstrapQuery(studentDb()));
+  });
+
+  it('denies the bootstrap query for a program not assigned to the student class', async () => {
+    await seed({ seedNote: true, programClassIds: ['class-b'] });
+    await assertFails(bootstrapQuery(studentDb()));
+  });
+
+  it('denies the bootstrap query for an inactive import', async () => {
+    await seed({ seedNote: true, programActiveImportId: 'i2' });
+    await assertFails(bootstrapQuery(studentDb()));
   });
 
   it('denies teacher/owner, another student and anonymous a getDoc of the note', async () => {
