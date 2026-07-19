@@ -279,6 +279,42 @@
   padding: 0.42rem 0.5rem;
   font-weight: 500;
 }
+.lessonRowLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 0;
+  text-align: left;
+}
+.lessonIcon {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.05rem;
+}
+.lessonIcon svg {
+  width: 16px;
+  height: 16px;
+}
+.noteIndicatorSlot {
+  flex: 0 0 16px;
+  width: 16px;
+  min-height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.noteIndicator {
+  display: inline-flex;
+  color: #e5a82d;
+}
+.lessonRowTitle {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .courseContent {
   min-width: 0;
   background: var(--color-surface-raised);
@@ -361,6 +397,20 @@
 .notesBtn:hover,
 .lessonActionBtn:hover {
   border-color: var(--color-accent, #b3902e);
+}
+.notesBtnSaved {
+  color: #fff;
+  border-color: #d89b22;
+  background: rgba(184, 119, 12, 0.24);
+  box-shadow: 0 0 0 1px rgba(229, 168, 45, 0.12);
+}
+.notesBtnSaved:hover {
+  color: #fff;
+  border-color: #edb747;
+  background: rgba(184, 119, 12, 0.32);
+}
+.notesBtnSaved svg {
+  color: #f2b844;
 }
 .lessonHeader h3 {
   margin: 0;

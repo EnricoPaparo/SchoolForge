@@ -14,6 +14,7 @@ vi.mock('../studentLessonNotesService.js', async () => {
   return {
     ...actual,
     loadStudentLessonNote: (...a: unknown[]) => mockLoad(...a),
+    loadStudentLessonNoteIndex: vi.fn().mockResolvedValue({ lessonIds: [], bootstrapped: false }),
     createStudentLessonNote: (...a: unknown[]) => mockCreate(...a),
     updateStudentLessonNote: (...a: unknown[]) => mockUpdate(...a),
     deleteStudentLessonNote: (...a: unknown[]) => mockDelete(...a),
@@ -68,6 +69,17 @@ describe('LessonNotesPanel — desktop', () => {
     expect(aside.tagName).toBe('ASIDE');
     // Non-modal: no dialog role, no aria-modal on the panel.
     expect(aside.getAttribute('aria-modal')).toBeNull();
+  });
+
+  it('keeps a two-row footer and does not label a never-persisted empty note as saved', async () => {
+    render(<Harness />);
+    await openAndLoad();
+    const footer = screen.getByRole('complementary', { name: 'Appunti' }).querySelector('footer');
+    expect(footer?.children).toHaveLength(2);
+    expect(screen.queryByText('Salvato')).toBeNull();
+    expect((screen.getByRole('button', { name: 'Salva' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
   });
 
   it('enforces maxLength 20000 and shows a live counter', async () => {

@@ -133,6 +133,23 @@ service cloud.firestore {
                .data.get('classIds', []));
     }
 
+    // Course-level equivalent used by the lightweight lesson-note index. The
+    // index has no lesson payload to resolve, so authorization is pinned to
+    // the program path, its current active import, class assignment, portal
+    // state and Modalità verifica.
+    function canAccessProgramForNotes(programId, importId) {
+      return isApprovedStudent()
+        && !isOwner()
+        && myStudentClassId() != null
+        && !examModeAppliesToClass(myStudentClassId())
+        && exists(/databases/$(database)/documents/programs/$(programId))
+        && get(/databases/$(database)/documents/programs/$(programId)).data
+             .get('activeImportId', null) == importId
+        && isClassmateOf(
+             get(/databases/$(database)/documents/programs/$(programId)).data
+               .get('classIds', []));
+    }
+
     // --- M3-full submission helpers (M3F-03) ---
     // Cross-document get() bypasses the read rules on /verifications/{docId}
     // itself (a student is never allowed a direct read there) — get()/exists()
@@ -391,6 +408,12 @@ service cloud.firestore {
       allow get: if request.auth.uid == studentUid
         && canAccessLessonForNotes(publicLessonId);
 
+      // Used only by the one-time per-course index bootstrap. Every returned
+      // note must still belong to the caller and to an accessible active
+      // lesson; the client query additionally fixes programId + importId.
+      allow list: if request.auth.uid == studentUid
+        && canAccessLessonForNotes(publicLessonId);
+
       // Create: exact closed key set, identity pinned to path/auth and to the
       // associated publicLesson projection, content a string within the
       // 20 000 limit, and both timestamps == request.time (a client can never
@@ -432,6 +455,51 @@ service cloud.firestore {
       // the teacher, never a recursive/cascading delete.
       allow delete: if request.auth.uid == studentUid
         && canAccessLessonForNotes(publicLessonId);
+    }
+
+    // --- lessonNoteIndexes (ANNOT-03B) ---
+    // One privacy-minimal document per student/course. No note text or
+    // didactic content; only current-import lesson ids with persisted notes.
+    match /students/{studentUid}/lessonNoteIndexes/{programId} {
+      // Authorize the deterministic path from the current program so a
+      // missing or stale document can still be read as "missing" and safely
+      // bootstrapped. Existing payload validity is enforced on every write.
+      allow get: if request.auth.uid == studentUid
+        && canAccessProgramForNotes(programId, programActiveImportId(programId));
+
+      allow create: if request.auth.uid == studentUid
+        && request.resource.data.keys().hasOnly([
+             'studentUid', 'programId', 'importId', 'lessonIds', 'updatedAt'
+           ])
+        && request.resource.data.keys().hasAll([
+             'studentUid', 'programId', 'importId', 'lessonIds', 'updatedAt'
+           ])
+        && request.resource.data.studentUid == studentUid
+        && request.resource.data.programId == programId
+        && canAccessProgramForNotes(programId, request.resource.data.importId)
+        && request.resource.data.lessonIds is list
+        && request.resource.data.lessonIds.size() <= 500
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if request.auth.uid == studentUid
+        && resource.data.studentUid == studentUid
+        && resource.data.programId == programId
+        && request.resource.data.studentUid == studentUid
+        && request.resource.data.programId == programId
+        && request.resource.data.keys().hasOnly([
+             'studentUid', 'programId', 'importId', 'lessonIds', 'updatedAt'
+           ])
+        && request.resource.data.keys().hasAll([
+             'studentUid', 'programId', 'importId', 'lessonIds', 'updatedAt'
+           ])
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['importId', 'lessonIds', 'updatedAt'])
+        && canAccessProgramForNotes(programId, request.resource.data.importId)
+        && request.resource.data.lessonIds is list
+        && request.resource.data.lessonIds.size() <= 500
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if false;
     }
 
     // --- Teacher-owned collections ---

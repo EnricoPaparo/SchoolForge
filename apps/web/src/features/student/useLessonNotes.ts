@@ -6,9 +6,11 @@ import {
   createStudentLessonNote,
   deleteStudentLessonNote,
   loadStudentLessonNote,
+  loadStudentLessonNoteIndex,
   updateStudentLessonNote,
   type StudentLessonNoteErrorCode,
   type StudentLessonNoteIdentity,
+  type StudentLessonNoteIndexIdentity,
 } from './studentLessonNotesService.js';
 
 /** Idle-save debounce: a save is attempted 15 s after the last edit. */
@@ -61,6 +63,10 @@ export interface OpenNote {
 export interface LessonNotesController {
   openLessonId: string | null;
   current: OpenNote | null;
+  /** Loads/caches the lightweight note-presence index once per course/import. */
+  loadIndex: (identity: StudentLessonNoteIndexIdentity) => void;
+  /** Persisted state only: local dirty drafts never change this indicator. */
+  hasSavedNote: (publicLessonId: string) => boolean;
   /** Opens the panel for a lesson, loading it once (cached thereafter). */
   open: (identity: StudentLessonNoteIdentity) => void;
   /** Retries only a failed load; concurrent/loaded entries are left untouched. */
@@ -97,6 +103,13 @@ function isDirtyEntry(entry: NoteEntry): boolean {
  */
 export function useLessonNotes(db: Firestore): LessonNotesController {
   const cacheRef = useRef<Map<string, NoteEntry>>(new Map());
+  const indexCacheRef = useRef<
+    Map<
+      string,
+      { importId: string; status: 'loading' | 'loaded' | 'error'; lessonIds: Set<string> }
+    >
+  >(new Map());
+  const indexLoadsRef = useRef<Map<string, Promise<void>>>(new Map());
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const mountedRef = useRef(true);
   const performSaveRef = useRef<(publicLessonId: string) => Promise<void>>(async () => {});
@@ -124,13 +137,22 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
 
   const performSave = useCallback(
     async (publicLessonId: string) => {
-      const entry = cacheRef.current.get(publicLessonId);
+      let entry = cacheRef.current.get(publicLessonId);
       if (!entry) return;
       // Never start two writes for the same note. Remember the intent so the
       // latest draft is persisted once the current write settles.
       if (entry.saveState === 'saving') {
         entry.savePending = true;
         return;
+      }
+      // A manual save can happen before the one-shot course-index read has
+      // settled. Wait for that read/bootstrap so an old-import index can never
+      // race the atomic note+index mutation.
+      const indexLoad = indexLoadsRef.current.get(entry.identity.programId);
+      if (indexLoad) {
+        await indexLoad;
+        entry = cacheRef.current.get(publicLessonId);
+        if (!entry) return;
       }
       clearTimer(publicLessonId);
       const draft = entry.draft;
@@ -143,7 +165,9 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
       entry.errorCode = null;
       bump();
       try {
-        if (entry.exists) {
+        if (entry.exists && draft.trim() === '') {
+          await deleteStudentLessonNote(entry.identity, db);
+        } else if (entry.exists) {
           await updateStudentLessonNote(entry.identity.studentUid, publicLessonId, draft, db);
         } else {
           await createStudentLessonNote(entry.identity, draft, db);
@@ -152,8 +176,16 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
         // Ignore a superseded response (entry replaced) — never let an old
         // write's success overwrite a newer local state.
         if (!mountedRef.current || !cur || cur.saveSeq !== seq) return;
-        cur.baseline = draft; // baseline advances only to the text actually sent
-        cur.exists = true;
+        const persisted = draft.trim() !== '';
+        cur.baseline = persisted ? draft : '';
+        cur.draft = persisted ? cur.draft : '';
+        cur.exists = persisted;
+        const index = indexCacheRef.current.get(cur.identity.programId);
+        if (index?.importId === cur.identity.importId) {
+          index.status = 'loaded';
+          if (persisted) index.lessonIds.add(publicLessonId);
+          else index.lessonIds.delete(publicLessonId);
+        }
         cur.saveState = 'idle';
         cur.errorCode = null;
         const saveLatest = cur.savePending && isDirtyEntry(cur);
@@ -309,7 +341,7 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
     entry.errorCode = null;
     bump();
     try {
-      await deleteStudentLessonNote(entry.identity.studentUid, publicLessonId, db);
+      await deleteStudentLessonNote(entry.identity, db);
       const cur = cacheRef.current.get(publicLessonId);
       if (!mountedRef.current || !cur || cur.saveSeq !== seq) return false;
       // Document is now absent; local state reset to empty/clean, panel stays open.
@@ -319,6 +351,11 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
       cur.saveState = 'idle';
       cur.errorCode = null;
       cur.savePending = false;
+      const index = indexCacheRef.current.get(cur.identity.programId);
+      if (index?.importId === cur.identity.importId) {
+        index.status = 'loaded';
+        index.lessonIds.delete(publicLessonId);
+      }
       bump();
       return true;
     } catch (err) {
@@ -346,6 +383,55 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
     return cacheRef.current.get(publicLessonId)?.scrollTop ?? 0;
   }, []);
 
+  const loadIndex = useCallback(
+    (identity: StudentLessonNoteIndexIdentity) => {
+      const cached = indexCacheRef.current.get(identity.programId);
+      if (cached?.importId === identity.importId) return;
+      const entry = {
+        importId: identity.importId,
+        status: 'loading' as const,
+        lessonIds: new Set<string>(),
+      };
+      indexCacheRef.current.set(identity.programId, entry);
+      bump();
+      const load = loadStudentLessonNoteIndex(identity, db)
+        .then((result) => {
+          const current = indexCacheRef.current.get(identity.programId);
+          if (!mountedRef.current || current !== entry) return;
+          indexCacheRef.current.set(identity.programId, {
+            importId: identity.importId,
+            status: 'loaded',
+            lessonIds: new Set(result.lessonIds),
+          });
+          bump();
+        })
+        .catch(() => {
+          const current = indexCacheRef.current.get(identity.programId);
+          if (!mountedRef.current || current !== entry) return;
+          indexCacheRef.current.set(identity.programId, {
+            importId: identity.importId,
+            status: 'error',
+            lessonIds: new Set(),
+          });
+          bump();
+        });
+      indexLoadsRef.current.set(identity.programId, load);
+      void load.finally(() => {
+        if (indexLoadsRef.current.get(identity.programId) === load) {
+          indexLoadsRef.current.delete(identity.programId);
+        }
+      });
+    },
+    [db],
+  );
+
+  const hasSavedNote = useCallback((publicLessonId: string) => {
+    for (const index of indexCacheRef.current.values()) {
+      if (index.status === 'loaded' && index.lessonIds.has(publicLessonId)) return true;
+    }
+    return false;
+  }, []);
+
   const entry = openLessonId ? cacheRef.current.get(openLessonId) : undefined;
   const current: OpenNote | null =
     openLessonId && entry
@@ -366,6 +452,8 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
   return {
     openLessonId,
     current,
+    loadIndex,
+    hasSavedNote,
     open,
     retryLoad,
     close,

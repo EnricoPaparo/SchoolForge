@@ -732,21 +732,25 @@ Lo schema (`StudentAccessSettings`, `Student`) e le Security Rules che li applic
 
 `classId` su `Student`, `classIds` su `Program` e `classId` su `PublishedProjectionDoc` filtrano ulteriormente cosa uno studente approvato vede: un programma senza classi assegnate, o una verifica senza `classId`, non sono visibili a nessuno studente anche se altrimenti pubblici. Lo schema e la UI docente per assegnare le classi ai programmi sono implementati da M3L-A4. Il filtro per classe è implementato sia sulla sezione **Lezioni** (query client + Security Rules, `isClassmateOf()`, M3L-C) sia sulla sezione **Verifiche** (query `collectionGroup` + Security Rules, M3L-D) — nessuna consegna, risposta online o punteggio è prevista per M3-lite in nessuna delle due sezioni.
 
-### 3.4c Appunti personali dello studente (ANNOT-01 — implementato, senza UI)
+### 3.4c Appunti personali dello studente (ANNOT-01→03B — implementato)
 
 Appunti testuali strettamente personali, uno per coppia (studente, lezione pubblica),
 memorizzati al path deterministico `students/{studentUid}/lessonNotes/{publicLessonId}`
 (tipo `StudentLessonNoteDoc`). Il service
-`apps/web/src/features/student/studentLessonNotesService.ts` espone quattro operazioni
-tipizzate; la UI (pannello/vista mobile, cache di sessione, dirty guard, debounce) è
-demandata ad ANNOT-02 e non è implementata qui.
+`apps/web/src/features/student/studentLessonNotesService.ts` espone operazioni tipizzate;
+pannello/vista mobile, cache, dirty guard e indice persistente sono implementati.
 
 | Operazione | Lettura/Scrittura Firestore |
 |---|---|
 | `loadStudentLessonNote(uid, publicLessonId, db)` | **Un solo** `getDoc` sul path deterministico. Documento assente → stato tipizzato `{ state: 'missing' }` (non un errore); presente → `{ state: 'existing', note }` normalizzato. Nessun listener/polling. |
-| `createStudentLessonNote(identity, content, db)` | **Un solo** `setDoc`: scrive `studentUid`/`publicLessonId`/`programId`/`importId` (derivati dal contesto lezione già caricato dalla UI, nessuna lettura aggiuntiva) + `content` + `createdAt == updatedAt == serverTimestamp()`. |
+| `createStudentLessonNote(identity, content, db)` | Batch atomico: crea la nota e usa `arrayUnion(publicLessonId)` sull'indice del corso. |
 | `updateStudentLessonNote(uid, publicLessonId, content, db)` | **Un solo** `updateDoc` di soli `content` + `updatedAt` (`serverTimestamp()`); non riscrive identity/`createdAt`, nessuna lettura né transazione. |
-| `deleteStudentLessonNote(uid, publicLessonId, db)` | **Un solo** `deleteDoc` del solo documento nota; nessun delete ricorsivo, nessun altro documento toccato. |
+| `deleteStudentLessonNote(identity, db)` | Batch atomico: elimina la nota e usa `arrayRemove(publicLessonId)` sull'indice. Lo svuotamento dopo `trim` usa lo stesso flusso. |
+| `loadStudentLessonNoteIndex(identity, db)` | Un `getDoc` per corso/sessione; se assente/stale, bootstrap filtrato per studente, programma e import e una write dell'indice. |
+
+L'indice è `students/{studentUid}/lessonNoteIndexes/{programId}` con chiavi chiuse
+`studentUid`, `programId`, `importId`, `lessonIds` (max 500), `updatedAt`. Non contiene
+testo, nomi/email o dati didattici. Modifica non vuota→non vuota resta una sola write.
 
 Contratto client: `content` è una stringa validata lato client a ≤ 20.000 caratteri
 (`STUDENT_LESSON_NOTE_MAX_LENGTH`) **prima** di qualsiasi scrittura (nessuna fiducia in

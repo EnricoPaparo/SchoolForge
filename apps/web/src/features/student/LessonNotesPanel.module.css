@@ -23,7 +23,7 @@
   display: flex;
   flex-direction: column;
   /* Sober warm-yellow post-it surface, light ochre border, soft shadow. */
-  background: rgba(253, 246, 216, 0.95);
+  background: rgba(253, 246, 216, 0.9);
   color: #2b2410;
   border: 1px solid #d9bf73;
   border-radius: 12px;
@@ -116,24 +116,33 @@
 .panelActions,
 .mobileActions {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  row-gap: 0.35rem;
   padding: 0.65rem 0.85rem;
   border-top: 1px solid #e4d18f;
+}
+.statusRow {
+  width: 100%;
+  min-height: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 .counter {
   font-size: 0.72rem;
   color: #514515;
 }
 .footerStatus {
+  justify-self: end;
   min-height: 1em;
   color: #514515;
   font-size: 0.75rem;
   font-weight: 600;
 }
 .actionButtons {
-  margin-left: auto;
+  width: 100%;
+  min-height: 2.25rem;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -195,7 +204,7 @@
   flex-direction: column;
   min-height: 60dvh;
   box-sizing: border-box;
-  background: rgba(253, 246, 216, 0.95);
+  background: rgba(253, 246, 216, 0.9);
   color: #2b2410;
   border: 1px solid #d9bf73;
   border-radius: 12px;
@@ -238,12 +247,8 @@
 }
 
 @media (max-width: 480px) {
-  .mobileActions {
-    align-items: stretch;
-  }
   .actionButtons {
     width: 100%;
-    margin-left: 0;
   }
   .actionButtons > button {
     min-width: 0;
