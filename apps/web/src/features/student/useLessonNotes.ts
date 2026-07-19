@@ -38,6 +38,8 @@ interface NoteEntry {
   errorCode: StudentLessonNoteErrorCode | null;
   /** Monotonic counter: guards a stale in-flight save from clobbering newer state. */
   saveSeq: number;
+  /** A save was requested while another write was in flight. */
+  savePending: boolean;
   scrollTop: number;
 }
 
@@ -61,16 +63,21 @@ export interface LessonNotesController {
   current: OpenNote | null;
   /** Opens the panel for a lesson, loading it once (cached thereafter). */
   open: (identity: StudentLessonNoteIdentity) => void;
+  /** Retries only a failed load; concurrent/loaded entries are left untouched. */
+  retryLoad: () => void;
   /** Unconditional close (callers apply the dirty guard before calling this). */
   close: () => void;
+  /** Drops the local draft back to its last persisted baseline, then closes. */
+  discardAndClose: () => boolean;
   setDraft: (text: string) => void;
   /** Attempt a save now (button / blur). Returns without writing when clean. */
   saveNow: () => void;
-  remove: () => Promise<void>;
+  remove: () => Promise<boolean>;
   /** True when the given lesson's note has unsaved local changes. */
   isDirty: (publicLessonId: string) => boolean;
   /** Best-effort mobile scroll memory (in memory only). */
   rememberScroll: (publicLessonId: string, scrollTop: number) => void;
+  getRememberedScroll: (publicLessonId: string) => number;
 }
 
 function isDirtyEntry(entry: NoteEntry): boolean {
@@ -92,6 +99,7 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
   const cacheRef = useRef<Map<string, NoteEntry>>(new Map());
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const mountedRef = useRef(true);
+  const performSaveRef = useRef<(publicLessonId: string) => Promise<void>>(async () => {});
   const [openLessonId, setOpenLessonId] = useState<string | null>(null);
   const [, bump] = useReducer((n: number) => n + 1, 0);
 
@@ -118,16 +126,19 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
     async (publicLessonId: string) => {
       const entry = cacheRef.current.get(publicLessonId);
       if (!entry) return;
+      // Never start two writes for the same note. Remember the intent so the
+      // latest draft is persisted once the current write settles.
+      if (entry.saveState === 'saving') {
+        entry.savePending = true;
+        return;
+      }
       clearTimer(publicLessonId);
-      // One in-flight write per note; a change during a write is picked up by
-      // the next save cycle (blur / button / re-armed timer), never a second
-      // concurrent write.
-      if (entry.saveState === 'saving') return;
       const draft = entry.draft;
       if (draft === entry.baseline) return; // no-op: nothing changed
       if (!entry.exists && draft === '') return; // never-persisted + empty: no write
 
       const seq = ++entry.saveSeq;
+      entry.savePending = false;
       entry.saveState = 'saving';
       entry.errorCode = null;
       bump();
@@ -145,11 +156,15 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
         cur.exists = true;
         cur.saveState = 'idle';
         cur.errorCode = null;
+        const saveLatest = cur.savePending && isDirtyEntry(cur);
+        cur.savePending = false;
         bump();
+        if (saveLatest) void performSaveRef.current(publicLessonId);
       } catch (err) {
         const cur = cacheRef.current.get(publicLessonId);
         if (!mountedRef.current || !cur || cur.saveSeq !== seq) return;
         cur.saveState = 'error';
+        cur.savePending = false;
         cur.errorCode = err instanceof StudentLessonNoteError ? err.code : 'unavailable';
         // Draft and baseline are preserved: the text is never lost and the
         // note stays dirty, so manual retry remains available.
@@ -158,12 +173,50 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
     },
     [db, clearTimer],
   );
+  performSaveRef.current = performSave;
+
+  const loadEntry = useCallback(
+    (entry: NoteEntry) => {
+      const { identity } = entry;
+      const { publicLessonId } = identity;
+      entry.loadState = 'loading';
+      entry.errorCode = null;
+      bump();
+      void loadStudentLessonNote(identity.studentUid, publicLessonId, db)
+        .then((result) => {
+          const cur = cacheRef.current.get(publicLessonId);
+          if (!mountedRef.current || cur !== entry || cur.loadState !== 'loading') return;
+          if (result.state === 'existing') {
+            cur.exists = true;
+            cur.draft = result.note.content;
+            cur.baseline = result.note.content;
+          } else {
+            cur.exists = false;
+            cur.draft = '';
+            cur.baseline = '';
+          }
+          cur.loadState = 'loaded';
+          cur.errorCode = null;
+          bump();
+        })
+        .catch((err) => {
+          const cur = cacheRef.current.get(publicLessonId);
+          if (!mountedRef.current || cur !== entry || cur.loadState !== 'loading') return;
+          cur.loadState = 'error';
+          cur.errorCode = err instanceof StudentLessonNoteError ? err.code : 'unavailable';
+          bump();
+        });
+    },
+    [db],
+  );
 
   const open = useCallback(
     (identity: StudentLessonNoteIdentity) => {
       const publicLessonId = identity.publicLessonId;
       setOpenLessonId(publicLessonId);
-      if (cacheRef.current.has(publicLessonId)) {
+      const cached = cacheRef.current.get(publicLessonId);
+      if (cached) {
+        cached.identity = identity;
         bump();
         return; // already cached — no second read
       }
@@ -176,40 +229,43 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
         saveState: 'idle',
         errorCode: null,
         saveSeq: 0,
+        savePending: false,
         scrollTop: 0,
       };
       cacheRef.current.set(publicLessonId, entry);
-      bump();
-      void loadStudentLessonNote(identity.studentUid, publicLessonId, db)
-        .then((result) => {
-          const cur = cacheRef.current.get(publicLessonId);
-          if (!mountedRef.current || !cur || cur.loadState !== 'loading') return;
-          if (result.state === 'existing') {
-            cur.exists = true;
-            cur.draft = result.note.content;
-            cur.baseline = result.note.content;
-          } else {
-            cur.exists = false;
-            cur.draft = '';
-            cur.baseline = '';
-          }
-          cur.loadState = 'loaded';
-          bump();
-        })
-        .catch((err) => {
-          const cur = cacheRef.current.get(publicLessonId);
-          if (!mountedRef.current || !cur || cur.loadState !== 'loading') return;
-          cur.loadState = 'error';
-          cur.errorCode = err instanceof StudentLessonNoteError ? err.code : 'unavailable';
-          bump();
-        });
+      loadEntry(entry);
     },
-    [db],
+    [loadEntry],
   );
+
+  const retryLoad = useCallback(() => {
+    if (!openLessonId) return;
+    const entry = cacheRef.current.get(openLessonId);
+    if (!entry || entry.loadState !== 'error') return;
+    loadEntry(entry);
+  }, [openLessonId, loadEntry]);
 
   const close = useCallback(() => {
     setOpenLessonId(null);
   }, []);
+
+  const discardAndClose = useCallback(() => {
+    if (!openLessonId) return true;
+    const entry = cacheRef.current.get(openLessonId);
+    if (!entry) {
+      setOpenLessonId(null);
+      return true;
+    }
+    if (entry.saveState === 'saving') return false;
+    clearTimer(openLessonId);
+    entry.draft = entry.baseline;
+    entry.saveState = 'idle';
+    entry.errorCode = null;
+    entry.savePending = false;
+    bump();
+    setOpenLessonId(null);
+    return true;
+  }, [openLessonId, clearTimer]);
 
   const setDraft = useCallback(
     (text: string) => {
@@ -227,13 +283,14 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
       clearTimer(publicLessonId);
       if (isDirtyEntry(entry)) {
         const timer = setTimeout(() => {
-          void performSave(publicLessonId);
+          timersRef.current.delete(publicLessonId);
+          void performSaveRef.current(publicLessonId);
         }, NOTE_AUTOSAVE_DELAY_MS);
         timersRef.current.set(publicLessonId, timer);
       }
       bump();
     },
-    [openLessonId, clearTimer, performSave],
+    [openLessonId, clearTimer],
   );
 
   const saveNow = useCallback(() => {
@@ -243,9 +300,9 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
 
   const remove = useCallback(async () => {
     const publicLessonId = openLessonId;
-    if (!publicLessonId) return;
+    if (!publicLessonId) return false;
     const entry = cacheRef.current.get(publicLessonId);
-    if (!entry) return;
+    if (!entry || entry.saveState === 'saving') return false;
     clearTimer(publicLessonId);
     const seq = ++entry.saveSeq;
     entry.saveState = 'saving';
@@ -254,20 +311,24 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
     try {
       await deleteStudentLessonNote(entry.identity.studentUid, publicLessonId, db);
       const cur = cacheRef.current.get(publicLessonId);
-      if (!mountedRef.current || !cur || cur.saveSeq !== seq) return;
+      if (!mountedRef.current || !cur || cur.saveSeq !== seq) return false;
       // Document is now absent; local state reset to empty/clean, panel stays open.
       cur.exists = false;
       cur.draft = '';
       cur.baseline = '';
       cur.saveState = 'idle';
       cur.errorCode = null;
+      cur.savePending = false;
       bump();
+      return true;
     } catch (err) {
       const cur = cacheRef.current.get(publicLessonId);
-      if (!mountedRef.current || !cur || cur.saveSeq !== seq) return;
+      if (!mountedRef.current || !cur || cur.saveSeq !== seq) return false;
       cur.saveState = 'error';
+      cur.savePending = false;
       cur.errorCode = err instanceof StudentLessonNoteError ? err.code : 'unavailable';
       bump();
+      return false;
     }
   }, [openLessonId, db, clearTimer]);
 
@@ -279,6 +340,10 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
   const rememberScroll = useCallback((publicLessonId: string, scrollTop: number) => {
     const entry = cacheRef.current.get(publicLessonId);
     if (entry) entry.scrollTop = scrollTop;
+  }, []);
+
+  const getRememberedScroll = useCallback((publicLessonId: string) => {
+    return cacheRef.current.get(publicLessonId)?.scrollTop ?? 0;
   }, []);
 
   const entry = openLessonId ? cacheRef.current.get(openLessonId) : undefined;
@@ -302,11 +367,14 @@ export function useLessonNotes(db: Firestore): LessonNotesController {
     openLessonId,
     current,
     open,
+    retryLoad,
     close,
+    discardAndClose,
     setDraft,
     saveNow,
     remove,
     isDirty,
     rememberScroll,
+    getRememberedScroll,
   };
 }

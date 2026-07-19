@@ -164,9 +164,10 @@ export function StudentDidatticaView() {
             confirmLabel="Esci senza salvare"
             cancelLabel="Resta e continua"
             danger
+            busy={notes.current?.saveState === 'saving'}
             onCancel={() => setPendingNav(null)}
             onConfirm={() => {
-              notes.close();
+              if (!notes.discardAndClose()) return;
               pendingNav.run();
               setPendingNav(null);
             }}
@@ -318,6 +319,12 @@ function StudentCourseWorkspace({
     onExpandedUdasChange(new Set([...expandedUdas, lesson.udaDir]));
   }
 
+  function restoreLessonScroll(publicLessonId: string) {
+    if (!isMobile) return;
+    const scrollTop = notes.getRememberedScroll(publicLessonId);
+    requestAnimationFrame(() => window.scrollTo({ top: scrollTop, behavior: 'auto' }));
+  }
+
   return (
     <section aria-label={`Corso ${program.title}`} className={styles.workspace}>
       <header className={styles.workspaceHeader}>
@@ -399,7 +406,7 @@ function StudentCourseWorkspace({
 
         <main className={styles.courseContent}>
           {isMobile && notes.current ? (
-            <LessonNotesPanel controller={notes} isMobile />
+            <LessonNotesPanel controller={notes} isMobile onClosed={restoreLessonScroll} />
           ) : (
             <>
               {selection.kind !== 'course' && (
@@ -435,12 +442,14 @@ function StudentCourseWorkspace({
                   noteButtonRef={noteButtonRef}
                   onOpenNotes={() => {
                     if (uid == null) return;
+                    const scrollTop = window.scrollY;
                     notes.open({
                       studentUid: uid,
                       publicLessonId: selectedLesson.id,
                       programId: selectedLesson.programId,
                       importId: selectedLesson.importId,
                     });
+                    if (isMobile) notes.rememberScroll(selectedLesson.id, scrollTop);
                   }}
                 />
               )}

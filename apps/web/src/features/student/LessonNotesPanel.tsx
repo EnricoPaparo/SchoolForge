@@ -71,7 +71,7 @@ function NoteEditor({ note, controller }: { note: OpenNote; controller: LessonNo
         <p role="alert" className="text-error">
           {message ?? 'Impossibile caricare gli appunti.'}
         </p>
-        <button type="button" onClick={() => controller.open(note.identity)}>
+        <button type="button" onClick={() => controller.retryLoad()}>
           Riprova
         </button>
       </div>
@@ -226,20 +226,27 @@ function MobileView({ note, controller, onRequestClose, onRequestDelete, textare
 export function LessonNotesPanel({
   controller,
   isMobile,
+  onClosed,
 }: {
   controller: LessonNotesController;
   isMobile: boolean;
+  onClosed?: (publicLessonId: string) => void;
 }) {
   const note = controller.current;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   if (!note) return null;
 
   function requestClose() {
     if (note!.dirty) setConfirmDiscard(true);
-    else controller.close();
+    else {
+      const publicLessonId = note!.publicLessonId;
+      controller.close();
+      onClosed?.(publicLessonId);
+    }
   }
 
   const body = isMobile ? (
@@ -270,10 +277,13 @@ export function LessonNotesPanel({
           confirmLabel="Esci senza salvare"
           cancelLabel="Resta e continua"
           danger
+          busy={note.saveState === 'saving'}
           onCancel={() => setConfirmDiscard(false)}
           onConfirm={() => {
+            const publicLessonId = note.publicLessonId;
+            if (!controller.discardAndClose()) return;
             setConfirmDiscard(false);
-            controller.close();
+            onClosed?.(publicLessonId);
           }}
         />
       )}
@@ -283,10 +293,16 @@ export function LessonNotesPanel({
           message="Vuoi eliminare definitivamente questi appunti? L'operazione non è reversibile."
           confirmLabel="Elimina"
           danger
+          busy={deleting}
           error={note.saveState === 'error' ? errorText(note) : null}
           onCancel={() => setConfirmDelete(false)}
           onConfirm={() => {
-            void controller.remove().finally(() => setConfirmDelete(false));
+            if (deleting) return;
+            setDeleting(true);
+            void controller.remove().then((deleted) => {
+              setDeleting(false);
+              if (deleted) setConfirmDelete(false);
+            });
           }}
         />
       )}

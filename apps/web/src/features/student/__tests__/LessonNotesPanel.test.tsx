@@ -22,6 +22,7 @@ vi.mock('../studentLessonNotesService.js', async () => {
 
 import { LessonNotesPanel } from '../LessonNotesPanel.js';
 import { useLessonNotes } from '../useLessonNotes.js';
+import { StudentLessonNoteError } from '../studentLessonNotesService.js';
 import type { Firestore } from 'firebase/firestore';
 
 const db = {} as Firestore;
@@ -113,6 +114,21 @@ describe('LessonNotesPanel — desktop', () => {
     await waitFor(() =>
       expect(screen.queryByRole('complementary', { name: 'Appunti' })).toBeNull(),
     );
+    fireEvent.click(screen.getByText('apri'));
+    await waitFor(() => expect(screen.getByLabelText('Testo degli appunti')).toBeTruthy());
+    expect((screen.getByLabelText('Testo degli appunti') as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('retries a failed load from the error surface', async () => {
+    mockLoad
+      .mockRejectedValueOnce(new StudentLessonNoteError('unavailable', 'x'))
+      .mockResolvedValueOnce({ state: 'missing' });
+    render(<Harness />);
+    fireEvent.click(screen.getByText('apri'));
+    expect(await screen.findByRole('button', { name: 'Riprova' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Riprova' }));
+    await waitFor(() => expect(screen.getByLabelText('Testo degli appunti')).toBeTruthy());
+    expect(mockLoad).toHaveBeenCalledTimes(2);
   });
 
   it('deleting an existing note confirms, keeps the panel open and clears the text', async () => {
@@ -139,6 +155,24 @@ describe('LessonNotesPanel — desktop', () => {
     render(<Harness />);
     await openAndLoad();
     expect(screen.queryByText('Elimina appunti')).toBeNull();
+  });
+
+  it('keeps the delete dialog open and exposes the error when deletion fails', async () => {
+    mockLoad.mockResolvedValue({
+      state: 'existing',
+      note: { ...identity, content: 'importante', createdAt: null, updatedAt: null },
+    });
+    mockDelete.mockRejectedValue(new StudentLessonNoteError('unavailable', 'x'));
+    render(<Harness />);
+    await openAndLoad();
+    fireEvent.click(screen.getByText('Elimina appunti'));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina' }));
+    await waitFor(() =>
+      expect(screen.getByRole('dialog', { name: 'Elimina appunti' })).toBeTruthy(),
+    );
+    await waitFor(() =>
+      expect(screen.getAllByText('Errore. Riprova il salvataggio.').length).toBeGreaterThan(0),
+    );
   });
 });
 

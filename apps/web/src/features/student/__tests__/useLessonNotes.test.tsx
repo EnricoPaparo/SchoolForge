@@ -63,6 +63,22 @@ describe('useLessonNotes — reads', () => {
     await waitFor(() => expect(result.current.current?.loadState).toBe('loaded'));
     expect(mockLoad).toHaveBeenCalledTimes(1);
   });
+
+  it('retries a failed load exactly once without duplicating concurrent reads', async () => {
+    mockLoad
+      .mockRejectedValueOnce(new StudentLessonNoteError('unavailable', 'x'))
+      .mockResolvedValueOnce({ state: 'missing' });
+    const { result } = renderHook(() => useLessonNotes(db));
+    act(() => result.current.open(identity));
+    await waitFor(() => expect(result.current.current?.loadState).toBe('error'));
+
+    act(() => {
+      result.current.retryLoad();
+      result.current.retryLoad();
+    });
+    await waitFor(() => expect(result.current.current?.loadState).toBe('loaded'));
+    expect(mockLoad).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('useLessonNotes — saves', () => {
@@ -156,7 +172,7 @@ describe('useLessonNotes — saves', () => {
     expect(mockCreate.mock.calls[0][1]).toBe('ab');
   });
 
-  it('coalesces to one in-flight write; a change during the write keeps it dirty', async () => {
+  it('queues one follow-up write when the draft changes during an in-flight write', async () => {
     let resolveCreate: () => void = () => {};
     mockCreate.mockImplementation(
       () =>
@@ -173,16 +189,46 @@ describe('useLessonNotes — saves', () => {
     expect(result.current.current?.saveState).toBe('saving');
 
     act(() => result.current.setDraft('one-two')); // change during the write
-    act(() => result.current.saveNow()); // ignored — one in flight
+    act(() => result.current.saveNow()); // queued — still only one in flight
     expect(mockCreate).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       resolveCreate();
       await Promise.resolve();
     });
-    // baseline advanced only to the text actually sent ("one"), newest draft stays dirty.
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate.mock.calls[0][2]).toBe('one-two');
+    await waitFor(() => expect(result.current.current?.dirty).toBe(false));
     expect(result.current.current?.draft).toBe('one-two');
-    expect(result.current.current?.dirty).toBe(true);
+  });
+
+  it('does not lose the autosave intent when its timer fires during a slow write', async () => {
+    vi.useFakeTimers();
+    let resolveCreate: () => void = () => {};
+    mockCreate.mockImplementation(
+      () =>
+        new Promise<void>((res) => {
+          resolveCreate = res;
+        }),
+    );
+    const { result } = renderHook(() => useLessonNotes(db));
+    act(() => result.current.open(identity));
+    await act(async () => Promise.resolve());
+
+    act(() => result.current.setDraft('prima'));
+    act(() => result.current.saveNow());
+    act(() => result.current.setDraft('ultima'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(NOTE_AUTOSAVE_DELAY_MS);
+    });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveCreate();
+      await Promise.resolve();
+    });
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUpdate.mock.calls[0][2]).toBe('ultima');
   });
 
   it('preserves the draft and stays dirty after a save error', async () => {
@@ -249,5 +295,22 @@ describe('useLessonNotes — dirty tracking', () => {
     expect(result.current.isDirty(identity.publicLessonId)).toBe(false);
     act(() => result.current.setDraft('x'));
     expect(result.current.isDirty(identity.publicLessonId)).toBe(true);
+  });
+
+  it('discardAndClose restores the persisted baseline before reopening', async () => {
+    mockLoad.mockResolvedValue({
+      state: 'existing',
+      note: { ...identity, content: 'salvato', createdAt: null, updatedAt: null },
+    });
+    const { result } = renderHook(() => useLessonNotes(db));
+    act(() => result.current.open(identity));
+    await waitFor(() => expect(result.current.current?.draft).toBe('salvato'));
+    act(() => result.current.setDraft('da scartare'));
+
+    act(() => expect(result.current.discardAndClose()).toBe(true));
+    act(() => result.current.open(identity));
+    expect(result.current.current?.draft).toBe('salvato');
+    expect(result.current.current?.dirty).toBe(false);
+    expect(mockLoad).toHaveBeenCalledTimes(1);
   });
 });

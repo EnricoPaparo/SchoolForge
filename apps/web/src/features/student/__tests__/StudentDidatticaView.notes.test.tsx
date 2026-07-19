@@ -115,4 +115,21 @@ describe('StudentDidatticaView — Appunti entry point', () => {
     expect(screen.getByText('← Torna alla lezione')).toBeTruthy();
     expect(screen.queryByRole('complementary', { name: 'Appunti' })).toBeNull();
   });
+
+  it('restores the lesson scroll position when closing mobile notes', async () => {
+    setMatchMedia(true);
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 420 });
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    render(<StudentDidatticaView />);
+    await openCourseAndSelectLesson();
+    fireEvent.click(await screen.findByRole('button', { name: 'Appunti' }));
+    await screen.findByRole('region', { name: 'Appunti' });
+    fireEvent.click(screen.getByText('← Torna alla lezione'));
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 420, behavior: 'auto' });
+  });
 });
