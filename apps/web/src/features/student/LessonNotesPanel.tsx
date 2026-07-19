@@ -30,7 +30,7 @@ function statusLabel(note: OpenNote): string {
   if (note.saveState === 'saving') return 'Salvataggio…';
   if (note.saveState === 'error') return 'Errore';
   if (note.dirty) return 'Modifiche non salvate';
-  if (note.loadState === 'loaded') return 'Salvato';
+  if (note.exists) return 'Salvato';
   return '';
 }
 

@@ -98,6 +98,7 @@ describe('LessonNotesPanel — desktop', () => {
     await openAndLoad();
     const save = screen.getByRole('button', { name: 'Salva' }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
+    expect(screen.queryByText('Salvato')).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Testo degli appunti'), {
       target: { value: 'nota desktop' },
