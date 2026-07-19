@@ -422,7 +422,7 @@ Specifica completa e vincolante in [`evoluzioni-apprendimento-roadmap.md`](evolu
 | 2 | M5-QUALITY-01 ✅ / M5-QUALITY-02 READY FOR MANUAL BENCHMARK | Combobox Comprensivo/Equilibrato/Rigoroso, indicazioni 500 caratteri e preview bloccata implementati; harness/report comparativo automatico predisposto, esecuzione reale e revisione docente ancora necessarie. |
 | 3 | Gate G7 | Chiusura M5 dopo smoke e benchmark. |
 | 4 | POOL-SIMPLE-00/01/02 + GPOOL | Nuovo contratto unico senza `peso`, difficoltà 1–5, template e flussi completi aggiornati; nessun legacy. |
-| 5 | ANNOT-00/01/02 ✅ + GANNOT | Appunti personali: post-it flottante desktop, vista mobile, Rules owner-only e blocco durante modalità verifica. Contratto, service, Rules (ANNOT-01) e UI desktop/mobile con cache di sessione e dirty guard (ANNOT-02) implementati; GANNOT (deploy DEV, smoke, costi) ancora aperto. |
+| 5 | ANNOT-00/01/02/03A/03B ✅ + GANNOT ✅ | Appunti personali: post-it flottante desktop, vista mobile, Rules owner-only, blocco durante modalità verifica e indice per corso. Contratto/service/Rules (ANNOT-01), UI desktop/mobile con cache e dirty guard (ANNOT-02), rifinitura UX (03A) e indice+indicatore persistente (03B) implementati; **Gate GANNOT superato (PASS)** — `evidenze/gannot-checklist-finale.md`. Identità canonica lezione = `publicLessonId`; costo: una read indice per corso/sessione, read nota solo all'apertura, nessun listener/polling. |
 | 6 | VEX-00/01/02/03 | Gruppi equivalenti, assegnazione server-side persistente e varianti sicure senza esporre alternative. |
 | 7 | VISUAL-BOOST-00/01 | Prototipo statico approvato prima di qualunque ulteriore modifica grafica applicativa. |
 
