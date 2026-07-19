@@ -1,8 +1,9 @@
 # SchoolForge — ANNOT-00: appunti personali dello studente
 
-**Stato:** ANNOT-01 implementato (contratto TypeScript definitivo, service Firestore e
-Security Rules, con test unitari ed Emulator); ANNOT-02 (UI) e ANNOT-03/Gate GANNOT
-non ancora avviati.
+**Stato:** ANNOT-01 (contratto, service e Rules) e ANNOT-02 (UI desktop/mobile, cache di
+sessione, dirty guard) implementati con test unitari, componente ed Emulator. ANNOT-03 e
+Gate GANNOT (deploy DEV, smoke multi-account, misurazione costi, approvazione umana)
+restano aperti.
 **Data:** 19 luglio 2026.
 **Perimetro:** progettazione di UX, modello dati, autorizzazioni, costi e pacchetti successivi.
 
@@ -369,22 +370,43 @@ Criteri di accettazione — verificati:
 - Modalità verifica (globale e per classe) nega tutte le operazioni;
 - nessun listener, indice, Function o dato didattico duplicato.
 
-### ANNOT-02 — UI desktop/mobile e dirty guard
+### ANNOT-02 — UI desktop/mobile e dirty guard — **IMPLEMENTATO**
 
-Scope:
+Scope realizzato:
 
-- comando Appunti nella lezione;
-- pannello desktop non modale e vista mobile dedicata;
-- cache di sessione, salvataggio manuale/blur/debounce 15 s;
-- dirty guard, focus return, stati sanitizzati ed eliminazione confermata.
+- comando `Appunti` nella sola lezione selezionata (`StudentDidatticaView`), reso solo
+  con `publicLessonId`/`programId`/`importId` già presenti nel contesto della lezione
+  caricata; nessun ID ricavato da titolo/filename/path; assente in Modalità verifica
+  (l'intera Didattica è smontata da `StudentShell`);
+- controller condiviso `useLessonNotes` (cache di sessione **solo in memoria** indicizzata
+  per `publicLessonId`) usato **sia** dal pannello desktop **sia** dalla vista mobile —
+  una sola implementazione dello stato;
+- pannello desktop non modale in stile post-it (`LessonNotesPanel`, elemento `aside`,
+  `380px`, `max-height: min(560px, calc(100dvh - 160px))`, fisso a destra sotto l'header,
+  niente backdrop/focus trap) e vista mobile dedicata a tutta larghezza con
+  `← Torna alla lezione`, `Salva`, `Elimina appunti` e barra azioni sticky;
+- salvataggio manuale (`Salva`), su `blur` e debounce 15 s; no-op quando invariato;
+  never-persisted vuoto non scrive; un solo write in volo per nota con guardia race;
+- dirty guard (chiusura/Escape/cambio lezione/UDA/corso/ritorno libreria) tramite dialog
+  condiviso accessibile (`components/ConfirmDialog`), focus return al pulsante `Appunti`,
+  eliminazione con conferma distruttiva, errori sanitizzati;
+- contatore `n/20.000` e `maxLength={20000}`.
 
-Criteri di accettazione:
+Criteri di accettazione — verificati:
 
-- una sola lettura per prima apertura nella sessione;
-- no-op senza write, doppio salvataggio protetto e testo locale preservato su errore;
-- desktop e mobile accessibili, senza overflow o focus trap;
-- Didattica/exam mode non aggirabili dalla UI;
-- test con timer controllato per debounce e navigazione dirty.
+- una sola lettura per prima apertura nella sessione; riapertura senza nuova lettura;
+- no-op senza write, doppio salvataggio protetto, testo locale preservato su errore;
+- desktop e mobile accessibili, senza focus trap sul pannello;
+- Didattica/exam mode non aggirabili dalla UI (view smontata in Modalità verifica);
+- test con timer controllato per il debounce e con conferma per la navigazione dirty
+  (`useLessonNotes.test.tsx`, `LessonNotesPanel.test.tsx`,
+  `StudentDidatticaView.notes.test.tsx`).
+
+Limite residuo dichiarato: la dirty guard copre tutte le navigazioni controllate da
+`StudentDidatticaView`. Un cambio di sezione dallo `StudentShell` (Didattica↔Verifiche)
+o il logout smontano la vista senza confermare un draft non salvato — intercettarli
+richiederebbe sollevare lo stato o introdurre un router globale, fuori dal perimetro
+ANNOT-02.
 
 ### ANNOT-03 — smoke DEV e Gate GANNOT
 

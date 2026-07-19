@@ -1,14 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { IconBookOpen, IconFileText, IconLayers, IconSearch } from '../../components/icons.js';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer.js';
+import { ConfirmDialog } from '../../components/ConfirmDialog.js';
 import { useAuth } from '../../lib/auth.js';
 import { db } from '../../lib/firebase.js';
+import { useIsMobile } from '../../lib/useIsMobile.js';
 import {
   loadStudentLessons,
   type StudentLesson,
   type StudentProgram,
 } from '../repository/programs/studentLessonsService.js';
 import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
+import { LessonNotesPanel } from './LessonNotesPanel.js';
+import { useLessonNotes, type LessonNotesController } from './useLessonNotes.js';
 import styles from './StudentDidatticaView.module.css';
 
 type LoadState =
@@ -54,8 +58,29 @@ export function StudentDidatticaView() {
   const [openProgramId, setOpenProgramId] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>({ kind: 'course' });
   const [expandedUdas, setExpandedUdas] = useState<Set<string>>(new Set());
+  const notes = useLessonNotes(db);
+  const isMobile = useIsMobile();
+  const [pendingNav, setPendingNav] = useState<{ run: () => void } | null>(null);
 
   const uid = user?.uid;
+
+  /**
+   * Dirty guard for every navigation controlled by this view (lesson/UDA/
+   * course change, back to library). When the open note has unsaved changes,
+   * defer the navigation behind a confirmation; when clean, close the panel
+   * and proceed immediately. External navigation (StudentShell section switch,
+   * sign-out, Modalità verifica) is handled by unmounting the whole view — see
+   * the residual-limit note in the PR/docs.
+   */
+  function guardNavigation(action: () => void) {
+    const openId = notes.openLessonId;
+    if (openId && notes.isDirty(openId)) {
+      setPendingNav({ run: action });
+      return;
+    }
+    if (openId) notes.close();
+    action();
+  }
   useEffect(() => {
     if (!uid) return;
     let cancelled = false;
@@ -119,15 +144,35 @@ export function StudentDidatticaView() {
 
   if (openProgram) {
     return (
-      <StudentCourseWorkspace
-        program={openProgram}
-        lessons={openLessons}
-        selection={selection}
-        expandedUdas={expandedUdas}
-        onSelectionChange={setSelection}
-        onExpandedUdasChange={setExpandedUdas}
-        onBack={backToLibrary}
-      />
+      <>
+        <StudentCourseWorkspace
+          program={openProgram}
+          lessons={openLessons}
+          selection={selection}
+          expandedUdas={expandedUdas}
+          onSelectionChange={(next) => guardNavigation(() => setSelection(next))}
+          onExpandedUdasChange={setExpandedUdas}
+          onBack={() => guardNavigation(backToLibrary)}
+          uid={uid ?? null}
+          notes={notes}
+          isMobile={isMobile}
+        />
+        {pendingNav && (
+          <ConfirmDialog
+            title="Modifiche non salvate"
+            message="Ci sono modifiche non salvate agli appunti. Se continui le perdi."
+            confirmLabel="Esci senza salvare"
+            cancelLabel="Resta e continua"
+            danger
+            onCancel={() => setPendingNav(null)}
+            onConfirm={() => {
+              notes.close();
+              pendingNav.run();
+              setPendingNav(null);
+            }}
+          />
+        )}
+      </>
     );
   }
 
@@ -225,6 +270,9 @@ function StudentCourseWorkspace({
   onSelectionChange,
   onExpandedUdasChange,
   onBack,
+  uid,
+  notes,
+  isMobile,
 }: {
   program: StudentProgram;
   lessons: StudentLesson[];
@@ -233,8 +281,22 @@ function StudentCourseWorkspace({
   onSelectionChange: (selection: Selection) => void;
   onExpandedUdasChange: (next: Set<string>) => void;
   onBack: () => void;
+  uid: string | null;
+  notes: LessonNotesController;
+  isMobile: boolean;
 }) {
   const grouped = useMemo(() => lessonsByUda(lessons), [lessons]);
+  const noteButtonRef = useRef<HTMLButtonElement>(null);
+  const prevOpenRef = useRef<string | null>(null);
+
+  // Desktop focus return: when the panel closes, focus goes back to the
+  // exact "Appunti" button that opened it.
+  useEffect(() => {
+    if (prevOpenRef.current && notes.openLessonId === null) {
+      noteButtonRef.current?.focus();
+    }
+    prevOpenRef.current = notes.openLessonId;
+  }, [notes.openLessonId]);
   const udaDirs = [...grouped.keys()];
   const selectedLesson =
     selection.kind === 'lesson'
@@ -336,34 +398,57 @@ function StudentCourseWorkspace({
         </aside>
 
         <main className={styles.courseContent}>
-          {selection.kind !== 'course' && (
-            <button
-              type="button"
-              className={styles.mobileBack}
-              onClick={() =>
-                onSelectionChange(
-                  selection.kind === 'lesson' && selectedUda
-                    ? { kind: 'uda', udaDir: selectedUda }
-                    : { kind: 'course' },
-                )
-              }
-            >
-              {selection.kind === 'lesson' ? '← UDA' : '← Corso'}
-            </button>
+          {isMobile && notes.current ? (
+            <LessonNotesPanel controller={notes} isMobile />
+          ) : (
+            <>
+              {selection.kind !== 'course' && (
+                <button
+                  type="button"
+                  className={styles.mobileBack}
+                  onClick={() =>
+                    onSelectionChange(
+                      selection.kind === 'lesson' && selectedUda
+                        ? { kind: 'uda', udaDir: selectedUda }
+                        : { kind: 'course' },
+                    )
+                  }
+                >
+                  {selection.kind === 'lesson' ? '← UDA' : '← Corso'}
+                </button>
+              )}
+              {selection.kind === 'course' && (
+                <CourseOverview udaDirs={udaDirs} grouped={grouped} onSelect={selectUda} />
+              )}
+              {selection.kind === 'uda' && selectedUda && (
+                <UdaOverview
+                  udaDir={selectedUda}
+                  lessons={grouped.get(selectedUda) ?? []}
+                  onSelect={selectLesson}
+                />
+              )}
+              {selectedLesson && (
+                <LessonContent
+                  lesson={selectedLesson}
+                  canOpenNotes={uid != null}
+                  notesOpen={notes.openLessonId === selectedLesson.id}
+                  noteButtonRef={noteButtonRef}
+                  onOpenNotes={() => {
+                    if (uid == null) return;
+                    notes.open({
+                      studentUid: uid,
+                      publicLessonId: selectedLesson.id,
+                      programId: selectedLesson.programId,
+                      importId: selectedLesson.importId,
+                    });
+                  }}
+                />
+              )}
+            </>
           )}
-          {selection.kind === 'course' && (
-            <CourseOverview udaDirs={udaDirs} grouped={grouped} onSelect={selectUda} />
-          )}
-          {selection.kind === 'uda' && selectedUda && (
-            <UdaOverview
-              udaDir={selectedUda}
-              lessons={grouped.get(selectedUda) ?? []}
-              onSelect={selectLesson}
-            />
-          )}
-          {selectedLesson && <LessonContent lesson={selectedLesson} />}
         </main>
       </div>
+      {!isMobile && <LessonNotesPanel controller={notes} isMobile={false} />}
     </section>
   );
 }
@@ -419,13 +504,38 @@ function UdaOverview({
   );
 }
 
-function LessonContent({ lesson }: { lesson: StudentLesson }) {
+function LessonContent({
+  lesson,
+  canOpenNotes,
+  notesOpen,
+  noteButtonRef,
+  onOpenNotes,
+}: {
+  lesson: StudentLesson;
+  canOpenNotes: boolean;
+  notesOpen: boolean;
+  noteButtonRef: React.RefObject<HTMLButtonElement>;
+  onOpenNotes: () => void;
+}) {
   const title = resolveLessonTitle(lesson.filename, lesson.titolo).title;
   return (
     <article className={styles.lessonContent}>
       <header className={styles.lessonHeader}>
-        <h3>{title}</h3>
-        {lesson.sottotitolo && <p>{lesson.sottotitolo}</p>}
+        <div className={styles.lessonHeaderText}>
+          <h3>{title}</h3>
+          {lesson.sottotitolo && <p>{lesson.sottotitolo}</p>}
+        </div>
+        {canOpenNotes && (
+          <button
+            type="button"
+            ref={noteButtonRef}
+            className={styles.notesBtn}
+            aria-expanded={notesOpen}
+            onClick={onOpenNotes}
+          >
+            <IconFileText /> Appunti
+          </button>
+        )}
       </header>
       {(lesson.difficolta ||
         (lesson.concettiChiave?.length ?? 0) > 0 ||

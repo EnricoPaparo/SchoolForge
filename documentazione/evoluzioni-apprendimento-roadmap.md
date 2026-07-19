@@ -256,7 +256,7 @@ canonica della lezione è l'ID documento `publicLessonId` (vedi
 |---|---|---|
 | ANNOT-00 | Contratto, Rules e prototipo statico desktop/mobile. | Prototipo approvato; budget letture/scritture esplicito. |
 | ANNOT-01 ✅ | Service e Rules. **Implementato** (tipo definitivo, service, Rules, test unitari + Emulator). | Test Emulator su ownership, classe e modalità verifica: superati. |
-| ANNOT-02 | Pannello desktop, vista mobile e stati di salvataggio. | Smoke desktop/mobile; nessun accesso docente o durante verifica. |
+| ANNOT-02 ✅ | Pannello desktop, vista mobile e stati di salvataggio. **Implementato** (comando Appunti, `useLessonNotes`, `LessonNotesPanel`, cache di sessione, dirty guard, test componente/hook). | Smoke desktop/mobile; nessun accesso docente o durante verifica: coperti da test; smoke DEV in ANNOT-03. |
 | Gate GANNOT | Evidenze funzionali, sicurezza e costo. | Checklist docente/studente completa. |
 
 ## 6. VEX — varianti equivalenti nelle verifiche online

@@ -320,9 +320,33 @@
   min-width: 0;
 }
 .lessonHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
   padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--color-border);
   margin-bottom: 1rem;
+}
+.lessonHeaderText {
+  min-width: 0;
+}
+.notesBtn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+.notesBtn:hover {
+  border-color: var(--color-accent, #b3902e);
 }
 .lessonHeader h3 {
   margin: 0;
