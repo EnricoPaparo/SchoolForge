@@ -279,6 +279,30 @@ describe('buildImportPayload — questionIndex', () => {
     }
   });
 
+  it('preserves V2 difficolta 5 in questionIndex with neutral weight and derived points', () => {
+    const files = buildAllFiles().map((file) =>
+      file.path === VALID_POOL.path
+        ? { ...file, content: file.content.replace('difficolta: 2', 'difficolta: 5') }
+        : file,
+    );
+    const validation = validateImport('Informatica', files);
+    expect(validation.valid).toBe(true);
+
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: OWNER_UID,
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      files,
+    });
+
+    const entry = payload.questionIndex.find(
+      (question) => question.data.questionLocalId === 'q-001',
+    );
+    expect(entry?.data).toMatchObject({ difficolta: 5, peso: 1, maxPoints: 5 });
+  });
+
   it('question index IDs are unique and stable', () => {
     const files = buildAllFiles();
     const validation = validateImport('Informatica', files);

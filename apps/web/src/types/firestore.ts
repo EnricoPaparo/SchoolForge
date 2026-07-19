@@ -1,3 +1,4 @@
+import type { PoolDifficulty } from '@schoolforge/lesson-contract';
 import type { FieldValue, Timestamp } from 'firebase/firestore';
 
 export interface OwnerSettings {
@@ -176,7 +177,7 @@ export interface QuestionIndexEntry {
   poolStorageRef: string;
   questionLocalId: string;
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
-  difficolta: 1 | 2 | 3;
+  difficolta: PoolDifficulty;
   peso: 1 | 2 | 3;
   maxPoints: number;
   /** First 100 chars of the normalized question text — never the full text, solution, or answers. */
@@ -412,7 +413,7 @@ export type VerificationQuestionRef = {
   poolStorageRef: string;
   /** Metadata snapshot at selection time */
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
-  difficolta: 1 | 2 | 3;
+  difficolta: PoolDifficulty;
   peso: 1 | 2 | 3;
   maxPoints: number;
   // NEVER include: questionText, answers, correctAnswer, solution
@@ -452,7 +453,7 @@ export type VerificationTeacherQuestionSnapshot = {
    * workspace shows "—" and never reconstructs them from the live pool. Kept
    * owner-only here; deliberately NOT copied into the public projection.
    */
-  difficolta?: 1 | 2 | 3;
+  difficolta?: PoolDifficulty;
   peso?: 1 | 2 | 3;
   /** Present only for chiusa_singola / chiusa_multipla. id + testo only. */
   opzioni?: { id: string; testo: string }[];

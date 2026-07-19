@@ -15,7 +15,7 @@ export type QuestionIndexEntry = {
   poolStorageRef: string;
   questionLocalId: string;
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
-  difficolta: 1 | 2 | 3;
+  difficolta: QuestionIndexDoc['difficolta'];
   peso: 1 | 2 | 3;
   maxPoints: number;
   questionPreview: string;

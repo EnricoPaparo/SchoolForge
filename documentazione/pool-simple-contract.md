@@ -13,6 +13,10 @@ Questo ponte non appartiene al contratto Markdown, non accetta V1 e deve essere 
 con tipi, picker e snapshot in POOL-SIMPLE-02. Nessun deploy applicativo è autorizzato
 prima del completamento coordinato di 02.
 
+Il tipo condiviso `PoolDifficulty` rappresenta senza restringimenti `1 | 2 | 3 | 4 | 5`
+e viene propagato nel ponte a `QuestionIndexEntry`, `VerificationQuestionRef` e snapshot
+docente. Il solo campo transitorio è `peso: 1`; non altera `maxPoints = difficolta`.
+
 ## 1. Decisione e motivazione
 
 Il contratto attuale usa due indicatori sovrapposti, `difficolta` e `peso`, e deriva

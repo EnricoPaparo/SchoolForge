@@ -11,10 +11,12 @@ export interface QuestionOption {
   testo: string;
 }
 
+export type PoolDifficulty = 1 | 2 | 3 | 4 | 5;
+
 interface PoolQuestionBase {
   id: string;
   tipo: string;
-  difficolta: 1 | 2 | 3 | 4 | 5;
+  difficolta: PoolDifficulty;
   testo: string;
   maxPoints: number;
 }

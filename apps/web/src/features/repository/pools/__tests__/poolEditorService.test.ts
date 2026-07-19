@@ -312,6 +312,37 @@ describe('savePool', () => {
     expect(typeof entry1['questionPreview']).toBe('string');
   });
 
+  it('preserves editor difficolta 4 in questionIndex with neutral weight and derived points', async () => {
+    mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
+    mockGetDocs.mockResolvedValueOnce({ docs: [] });
+
+    await savePool({
+      programId: PROGRAM_ID,
+      importId: IMPORT_ID,
+      lessonId: LESSON_ID,
+      pool: {
+        schema: 'schoolforge-pool/v2',
+        questions: [
+          {
+            id: 'q-high',
+            tipo: 'aperta',
+            difficolta: 4,
+            maxPoints: 4,
+            maxCharacters: 2000,
+            testo: 'Spiega un concetto complesso.',
+            soluzione: 'Risposta di riferimento.',
+          },
+        ],
+      },
+      ownerUid: OWNER_UID,
+      db: fakeDb,
+      storage: fakeStorage,
+    });
+
+    const [, entry] = mockBatchSet.mock.calls[0] as [unknown, Record<string, unknown>];
+    expect(entry).toMatchObject({ difficolta: 4, peso: 1, maxPoints: 4 });
+  });
+
   it('deletes stale questionIndex entries no longer in the pool, in the same batch', async () => {
     mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
     const staleDocRef = { __path: 'stale-entry', id: 'old-entry-id', ref: { __path: 'stale-ref' } };
