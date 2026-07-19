@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { parsePool } from '@schoolforge/lesson-contract';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildKitZip, downloadKitZip, downloadTemplate, TEMPLATES } from '../templateKit.js';
 import { readZipFile } from '../../repository/import/readZipFile.js';
@@ -19,6 +22,17 @@ describe('TEMPLATES', () => {
   it('pool template filename ends with .pool.md', () => {
     const pool = TEMPLATES.find((t) => t.filename.endsWith('.pool.md'));
     expect(pool).toBeDefined();
+  });
+
+  it('ships a static pool template accepted by the V2 parser', () => {
+    const templatePath = resolve(process.cwd(), 'public/templates/pool-template.pool.md');
+    const result = parsePool(readFileSync(templatePath, 'utf8'), 'pool-template.pool.md');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.pool.schema).toBe('schoolforge-pool/v2');
+    expect(new Set(result.pool.questions.map((question) => question.tipo))).toEqual(
+      new Set(['aperta', 'chiusa_singola', 'chiusa_multipla']),
+    );
   });
 });
 
@@ -89,7 +103,7 @@ describe('buildKitZip', () => {
     }
   });
 
-  it('covers all three question types (aperta, chiusa_singola, chiusa_multipla) across the pools', async () => {
+  it('parses every distributed pool and covers all three question types', async () => {
     const zip = buildKitZip();
     const blob = await zip.generateAsync({ type: 'blob' });
     const file = new File([blob], 'programma-esempio.zip', { type: 'application/zip' });
@@ -97,10 +111,18 @@ describe('buildKitZip', () => {
     const files = await readZipFile(file);
     const validation = validateImport('Programma di esempio', files);
 
-    const pools = files.filter((f) => f.path.endsWith('.pool.md')).map((f) => f.content);
-    expect(pools.some((p) => p.includes('tipo: aperta'))).toBe(true);
-    expect(pools.some((p) => p.includes('tipo: chiusa_singola'))).toBe(true);
-    expect(pools.some((p) => p.includes('tipo: chiusa_multipla'))).toBe(true);
+    const poolFiles = files.filter((file) => file.path.endsWith('.pool.md'));
+    const parsedPools = poolFiles.map((file) => {
+      const result = parsePool(file.content, file.path);
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error(JSON.stringify(result.errors));
+      expect(result.pool.schema).toBe('schoolforge-pool/v2');
+      return result.pool;
+    });
+    const questionTypes = new Set(
+      parsedPools.flatMap((pool) => pool.questions.map((question) => question.tipo)),
+    );
+    expect(questionTypes).toEqual(new Set(['aperta', 'chiusa_singola', 'chiusa_multipla']));
     expect(validation.valid).toBe(true);
   });
 

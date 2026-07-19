@@ -1,16 +1,15 @@
 ---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q1
     tipo: aperta
     difficolta: 1
-    peso: 1
+    maxCharacters: 2000
     testo: 'Descrivi brevemente il concetto principale della lezione.'
     soluzione: 'Risposta attesa: il concetto principale è...'
   - id: q2
     tipo: chiusa_singola
     difficolta: 2
-    peso: 2
     testo: 'Quale delle seguenti affermazioni è corretta?'
     opzioni:
       - id: a
@@ -22,7 +21,6 @@ questions:
   - id: q3
     tipo: chiusa_multipla
     difficolta: 3
-    peso: 3
     testo: 'Seleziona tutte le affermazioni corrette.'
     opzioni:
       - id: a

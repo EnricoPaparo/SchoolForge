@@ -24,12 +24,11 @@ const LESSON_WITH_POOL: RawFile = {
 const POOL_FILE: RawFile = {
   path: 'uda-01-reti/lezione-001-http.pool.md',
   content: `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q-001
     tipo: aperta
     difficolta: 1
-    peso: 1
     testo: Cos'è HTTP?
     soluzione: Protocollo applicativo.
 ---`,
@@ -43,11 +42,11 @@ const LESSON_WITHOUT_POOL: RawFile = {
 const INVALID_POOL_FILE: RawFile = {
   path: 'uda-01-reti/lezione-001-http.pool.md',
   content: `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q-001
     tipo: aperta
-    testo: Domanda incompleta senza difficolta e peso.
+    testo: Domanda incompleta senza difficolta.
 ---`,
 };
 

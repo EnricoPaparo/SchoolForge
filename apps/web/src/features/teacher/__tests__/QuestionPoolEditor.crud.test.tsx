@@ -56,14 +56,14 @@ const LESSON: LessonItem = {
 } as LessonItem;
 
 const VALID_POOL = {
-  schema: 'schoolforge-pool/v1' as const,
+  schema: 'schoolforge-pool/v2' as const,
   questions: [
     {
       id: 'q1',
       tipo: 'aperta' as const,
       difficolta: 2 as const,
-      peso: 1 as const,
       maxPoints: 2,
+      maxCharacters: 2000,
       testo: 'Descrivi il modello OSI.',
       soluzione: 'Il modello OSI ha 7 livelli.',
     },
@@ -71,7 +71,6 @@ const VALID_POOL = {
       id: 'q2',
       tipo: 'chiusa_singola' as const,
       difficolta: 1 as const,
-      peso: 1 as const,
       maxPoints: 1,
       testo: 'Quanti livelli ha il modello OSI?',
       opzioni: [
@@ -95,12 +94,11 @@ const VALIDATION_ERRORS = [
 ];
 
 const INVALID_POOL_RAW = `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q-bad
     tipo: INVALID
     difficolta: 2
-    peso: 1
     testo: Domanda da riparare.
     soluzione: Risposta.
 ---
@@ -121,11 +119,11 @@ describe('QuestionPoolEditor — pool valid', () => {
     await screen.findByText('Quanti livelli ha il modello OSI?');
   });
 
-  it('shows tipo, difficolta and peso', async () => {
+  it('shows tipo, difficolta and derived maximum points', async () => {
     renderEditor();
     await screen.findByText('Aperta');
     await screen.findByText('Chiusa (singola)');
-    expect((await screen.findAllByText(/Diff: \d/)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/Difficoltà:\s*\d/)).length).toBeGreaterThan(0);
   });
 
   it('shows soluzione and opzioni', async () => {
@@ -172,12 +170,11 @@ describe('QuestionPoolEditor — YAML save flow', () => {
   });
 
   const validYaml = `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q1
     tipo: aperta
     difficolta: 1
-    peso: 1
     testo: Una domanda.
     soluzione: La risposta.
 ---
@@ -294,7 +291,7 @@ describe('QuestionPoolEditor — question add / edit / delete', () => {
     expect(call.pool.questions.find((q) => q.id === 'q3')?.maxCharacters).toBe(500);
   });
 
-  it('EXAM-UX-03 — leaving "Limite caratteri" empty saves no field (default applies)', async () => {
+  it('EXAM-UX-03 — leaving "Limite caratteri" empty applies the effective default', async () => {
     await openNew();
     fireEvent.change(screen.getByLabelText('ID domanda'), { target: { value: 'q3' } });
     fireEvent.change(screen.getByLabelText('Testo domanda'), { target: { value: 'Spiega.' } });
@@ -304,7 +301,7 @@ describe('QuestionPoolEditor — question add / edit / delete', () => {
     const call = mockSavePool.mock.calls[0][0] as {
       pool: { questions: { id: string; maxCharacters?: number }[] };
     };
-    expect(call.pool.questions.find((q) => q.id === 'q3')).not.toHaveProperty('maxCharacters');
+    expect(call.pool.questions.find((q) => q.id === 'q3')?.maxCharacters).toBe(2000);
   });
 
   it('EXAM-UX-03 — rejects an invalid maxCharacters (0) without saving', async () => {

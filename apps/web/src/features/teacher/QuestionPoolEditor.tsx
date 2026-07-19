@@ -29,7 +29,7 @@ import styles from './QuestionPoolEditor.module.css';
  */
 
 const POOL_TEMPLATE = `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions: []
 ---
 `;
@@ -59,8 +59,7 @@ export type QuestionPoolEditorProps = {
 type QuestionDraft = {
   id: string;
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
-  difficolta: '1' | '2' | '3';
-  peso: '1' | '2' | '3';
+  difficolta: '1' | '2' | '3' | '4' | '5';
   testo: string;
   /** Used only when tipo === 'aperta'. */
   soluzione: string;
@@ -85,7 +84,6 @@ function initDraft(q: PoolQuestion | null): QuestionDraft {
       id: '',
       tipo: 'aperta',
       difficolta: '1',
-      peso: '1',
       testo: '',
       soluzione: '',
       maxCharacters: '',
@@ -97,8 +95,7 @@ function initDraft(q: PoolQuestion | null): QuestionDraft {
   return {
     id: q.id,
     tipo: q.tipo,
-    difficolta: String(q.difficolta) as '1' | '2' | '3',
-    peso: String(q.peso) as '1' | '2' | '3',
+    difficolta: String(q.difficolta) as QuestionDraft['difficolta'],
     testo: q.testo,
     soluzione: q.tipo === 'aperta' ? q.soluzione : '',
     maxCharacters:
@@ -129,7 +126,6 @@ function draftToRaw(d: QuestionDraft): Record<string, unknown> {
     id: d.id.trim(),
     tipo: d.tipo,
     difficolta: Number(d.difficolta),
-    peso: Number(d.peso),
     testo: d.testo,
   };
   if (d.tipo === 'aperta') {
@@ -222,7 +218,7 @@ function QuestionCard({
         <span className={styles.questionId}>{q.id}</span>
         <span className={styles.questionTipo}>{TIPO_LABELS[q.tipo] ?? q.tipo}</span>
         <span className={styles.questionMeta}>
-          Diff:&nbsp;{q.difficolta} · Peso:&nbsp;{q.peso} · Max:&nbsp;{q.maxPoints}&nbsp;pt
+          Difficoltà:&nbsp;{q.difficolta} · Max:&nbsp;{q.maxPoints}&nbsp;pt
         </span>
         <div className={styles.questionCardActions}>
           <button
@@ -442,20 +438,8 @@ function QuestionEditorForm({
               <option value="1">1</option>
               <option value="2">2</option>
               <option value="3">3</option>
-            </select>
-          </label>
-
-          <label className={styles.formLabel}>
-            Peso
-            <select
-              className={styles.formSelect}
-              value={draft.peso}
-              onChange={(e) => setField('peso', e.target.value as QuestionDraft['peso'])}
-              aria-label="Peso"
-            >
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
             </select>
           </label>
         </div>

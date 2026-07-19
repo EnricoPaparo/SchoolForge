@@ -1,9 +1,17 @@
-# SchoolForge — POOL-SIMPLE-00: contratto tecnico pool V2
+# SchoolForge — contratto tecnico pool V2
 
-**Stato:** progettazione approvata; implementazione non avviata.
+**Stato:** POOL-SIMPLE-01 implementa contratto, parser, serializer, fixture e template;
+POOL-SIMPLE-02 e Gate GPOOL restano aperti.
 **Data inventario:** 18 luglio 2026.
+**Data implementazione contratto V2:** 20 luglio 2026.
 **Prerequisito:** pulizia completa dei dati DEV dipendenti dal pool V1 prima del rollout.
 **Dipendenza:** POOL-SIMPLE deve superare Gate GPOOL prima di VEX — Varianti equivalenti.
+
+Per mantenere il workspace compilabile tra 01 e 02, l'editor produce già Markdown V2 e
+i writer dell'indice usano temporaneamente `peso: 1` nella vecchia forma persistente.
+Questo ponte non appartiene al contratto Markdown, non accetta V1 e deve essere rimosso
+con tipi, picker e snapshot in POOL-SIMPLE-02. Nessun deploy applicativo è autorizzato
+prima del completamento coordinato di 02.
 
 ## 1. Decisione e motivazione
 
@@ -281,7 +289,8 @@ Il gate richiede, sul DEV pulito:
 10. ricerca conclusiva `rg` senza riferimenti applicativi a `peso`, salvo documenti
     storici nominati in una allowlist esplicita e revisionata.
 
-POOL-SIMPLE non è implementato finché 01, 02 e Gate GPOOL non sono completati.
+POOL-SIMPLE-01 non rende il rollout completo: POOL-SIMPLE resta aperto finché 02 e Gate
+GPOOL non sono completati.
 
 ## 7. Pulizia DEV obbligatoria
 

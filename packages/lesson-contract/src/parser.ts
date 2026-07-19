@@ -117,6 +117,11 @@ function parseFrontMatterString(yaml: string, fileName: string | null): PoolPars
     };
   }
 
+  const contractErrors = validateRawContract(raw, fileName);
+  if (contractErrors.length > 0) {
+    return { ok: false, errors: contractErrors };
+  }
+
   const result = PoolFrontMatterSchema.safeParse(raw);
 
   if (!result.success) {
@@ -136,7 +141,7 @@ function parseFrontMatterString(yaml: string, fileName: string | null): PoolPars
 
   const parsedQuestions: PoolQuestion[] = questions.map((q) => ({
     ...q,
-    maxPoints: q.difficolta * q.peso,
+    maxPoints: q.difficolta,
   })) as PoolQuestion[];
 
   const crossErrors = validateCrossQuestion(parsedQuestions, fileName);
@@ -145,9 +150,70 @@ function parseFrontMatterString(yaml: string, fileName: string | null): PoolPars
   }
 
   const pool: ParsedPool = {
-    schema: 'schoolforge-pool/v1',
+    schema: 'schoolforge-pool/v2',
     questions: parsedQuestions,
   };
 
   return { ok: true, pool };
+}
+
+function validateRawContract(raw: unknown, fileName: string | null): PoolValidationError[] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return [];
+  }
+
+  const record = raw as Record<string, unknown>;
+  if (record.schema !== 'schoolforge-pool/v2') {
+    return [
+      {
+        fileName,
+        questionId: null,
+        questionIndex: null,
+        field: 'schema',
+        message: 'Schema pool non supportato: atteso schoolforge-pool/v2.',
+      },
+    ];
+  }
+
+  if (!Array.isArray(record.questions)) {
+    return [];
+  }
+
+  const errors: PoolValidationError[] = [];
+  record.questions.forEach((question, questionIndex) => {
+    if (!question || typeof question !== 'object' || Array.isArray(question)) {
+      return;
+    }
+
+    const questionRecord = question as Record<string, unknown>;
+    const questionId = typeof questionRecord.id === 'string' ? questionRecord.id : null;
+    const makeError = (field: string, message: string): PoolValidationError => ({
+      fileName,
+      questionId,
+      questionIndex,
+      field: `questions[${questionIndex}].${field}`,
+      message,
+    });
+
+    if ('peso' in questionRecord) {
+      errors.push(
+        makeError('peso', 'Il campo "peso" non è ammesso nel contratto schoolforge-pool/v2.'),
+      );
+    }
+    if ('maxPoints' in questionRecord) {
+      errors.push(
+        makeError(
+          'maxPoints',
+          'Il campo "maxPoints" non è ammesso nel Markdown: è derivato da difficolta.',
+        ),
+      );
+    }
+    if (questionRecord.tipo !== 'aperta' && 'maxCharacters' in questionRecord) {
+      errors.push(
+        makeError('maxCharacters', 'maxCharacters è ammesso soltanto per le domande aperte.'),
+      );
+    }
+  });
+
+  return errors;
 }

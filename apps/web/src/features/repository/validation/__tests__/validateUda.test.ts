@@ -27,12 +27,11 @@ const VALID_LESSON: RawFile = {
 const VALID_POOL: RawFile = {
   path: 'uda-01-reti/lezione-001-http.pool.md',
   content: `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q-001
     tipo: aperta
     difficolta: 1
-    peso: 2
     testo: Cos'è HTTP?
     soluzione: Protocollo di trasferimento ipertestuale.
 ---`,
@@ -46,7 +45,7 @@ const LESSON_WITHOUT_POOL: RawFile = {
 const INVALID_POOL: RawFile = {
   path: 'uda-01-reti/lezione-001-http.pool.md',
   content: `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q-001
     tipo: aperta

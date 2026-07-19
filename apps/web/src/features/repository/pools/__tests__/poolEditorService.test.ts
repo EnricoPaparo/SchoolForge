@@ -74,12 +74,11 @@ const BASE_LESSON: LessonDoc = {
 };
 
 const VALID_POOL_MD = `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q1
     tipo: aperta
     difficolta: 2
-    peso: 2
     testo: Spiega la differenza tra HTTP e HTTPS.
     soluzione: HTTPS aggiunge TLS.
 ---`;
@@ -196,7 +195,7 @@ describe('loadPool', () => {
 
   it('returns invalid with errors and rawContent when pool file fails validation', async () => {
     mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
-    const badPool = `---\nschema: schoolforge-pool/v1\nquestions:\n  - id: q1\n    tipo: INVALID\n    difficolta: 2\n    peso: 2\n    testo: x\n    soluzione: x\n---`;
+    const badPool = `---\nschema: schoolforge-pool/v2\nquestions:\n  - id: q1\n    tipo: INVALID\n    difficolta: 2\n    testo: x\n    soluzione: x\n---`;
     mockReadText.mockResolvedValueOnce(encode(badPool));
 
     const result = await loadPool({
@@ -218,14 +217,14 @@ describe('loadPool', () => {
 
 describe('savePool', () => {
   const POOL = {
-    schema: 'schoolforge-pool/v1' as const,
+    schema: 'schoolforge-pool/v2' as const,
     questions: [
       {
         id: 'q1',
         tipo: 'aperta' as const,
         difficolta: 2 as const,
-        peso: 2 as const,
-        maxPoints: 4,
+        maxPoints: 2,
+        maxCharacters: 2000,
         testo: 'Spiega la differenza tra HTTP e HTTPS.',
         soluzione: 'HTTPS aggiunge TLS.',
       },
@@ -233,7 +232,6 @@ describe('savePool', () => {
         id: 'q2',
         tipo: 'chiusa_singola' as const,
         difficolta: 1 as const,
-        peso: 1 as const,
         maxPoints: 1,
         testo: 'Quale porta usa HTTP di default?',
         opzioni: [
@@ -279,7 +277,8 @@ describe('savePool', () => {
     expect(mockWriteText).toHaveBeenCalledOnce();
     const [pathArg, written] = mockWriteText.mock.calls[0] as [string, string];
     expect(pathArg).toBe(POOL_STORAGE_REF);
-    expect(written).toContain('schema: schoolforge-pool/v1');
+    expect(written).toContain('schema: schoolforge-pool/v2');
+    expect(written).not.toContain('peso:');
     expect(written).toContain('q1');
     expect(written).toContain('q2');
     expect(written).not.toContain('maxPoints');
@@ -366,13 +365,13 @@ describe('savePool', () => {
 
     // 450 questions + 1 final lesson update = 451 mutations -> ceil(451/400) = 2 chunks.
     const bigPool = {
-      schema: 'schoolforge-pool/v1' as const,
+      schema: 'schoolforge-pool/v2' as const,
       questions: Array.from({ length: 450 }, (_, i) => ({
         id: `q${i}`,
         tipo: 'aperta' as const,
         difficolta: 2 as const,
-        peso: 1 as const,
         maxPoints: 2,
+        maxCharacters: 2000,
         testo: `Domanda ${i}`,
         soluzione: `Risposta ${i}`,
       })),

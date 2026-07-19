@@ -3,6 +3,6 @@ import { POOL_SCHEMA_VERSION } from './index.js';
 
 describe('lesson-contract', () => {
   it('exports the pool schema version identifier', () => {
-    expect(POOL_SCHEMA_VERSION).toBe('schoolforge-pool/v1');
+    expect(POOL_SCHEMA_VERSION).toBe('schoolforge-pool/v2');
   });
 });

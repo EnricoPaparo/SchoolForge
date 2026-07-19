@@ -194,7 +194,7 @@ Difficoltà 4 · Max 4 punti
 | ID | Scope | DoD |
 |---|---|---|
 | POOL-SIMPLE-00 | Contratto tecnico e inventario completo della rimozione di `peso`; nessun codice UI. | Matrice file/flussi, schema V2, strategia rollout senza legacy. |
-| POOL-SIMPLE-01 | Parser/serializer/tipi/fixture e template/kit. | Pool V2 validi 1–5; `peso` rifiutato; tutti i template importabili. |
+| POOL-SIMPLE-01 | ✅ Contratto V2, parser/serializer/tipi/fixture e template/kit implementati; rollout applicativo non ancora eseguito. | Pool V2 validi 1–5; `peso` rifiutato; tutti i template importabili. |
 | POOL-SIMPLE-02 | Editor, index, picker, snapshot, PDF/restituzione/IA. | Nessuna UI o payload nuovo espone `peso`; maxPoints sempre uguale a difficoltà. |
 | Gate GPOOL | Smoke import→verifica→svolgimento→correzione→restituzione. | DEV pulito; test automatici e smoke docente/studente verdi. |
 

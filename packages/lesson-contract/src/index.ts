@@ -1,4 +1,4 @@
-export const POOL_SCHEMA_VERSION = 'schoolforge-pool/v1' as const;
+export const POOL_SCHEMA_VERSION = 'schoolforge-pool/v2' as const;
 
 export type {
   ParsedPool,

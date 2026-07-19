@@ -151,18 +151,16 @@ const LESSON: RawFile = {
 const VALID_POOL: RawFile = {
   path: 'uda-01-reti/lezione-001-http.pool.md',
   content: `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q-001
     tipo: aperta
     difficolta: 2
-    peso: 3
     testo: Spiega HTTP.
     soluzione: HTTP è un protocollo applicativo.
   - id: q-002
     tipo: chiusa_singola
     difficolta: 1
-    peso: 1
     testo: Porta HTTP?
     opzioni:
       - id: a
@@ -181,7 +179,7 @@ const LESSON_NO_POOL: RawFile = {
 const INVALID_POOL_FILE: RawFile = {
   path: 'uda-01-reti/lezione-002-https.pool.md',
   content: `---
-schema: schoolforge-pool/v1
+schema: schoolforge-pool/v2
 questions:
   - id: q-001
     tipo: aperta
