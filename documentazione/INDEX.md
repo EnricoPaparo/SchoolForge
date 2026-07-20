@@ -67,6 +67,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [didattica-ux-roadmap.md](didattica-ux-roadmap.md) | Specifica UX del redesign "Didattica" (DUX-00–10A + Gate GDUX). **DUX-01–10A completati; Gate GDUX superato (PASS)** — vedi [evidenze/gdux-checklist-finale.md](evidenze/gdux-checklist-finale.md). | Per consultare architettura informativa, invarianti di sicurezza/costo e prossimo Gate. |
 | [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md) | Roadmap M5-00→M5-08: modulo completato, provider Luna operativo su DEV e **Gate G7 PASS**. | Per consultare contratto IA/gateway, privacy, limiti costo, benchmark e rollout controllato. |
 | [evidenze/g7-m5-checklist-finale.md](evidenze/g7-m5-checklist-finale.md) | Evidenza finale M5: matrice automatica/manuale, benchmark Luna, rollout, limiti e verdetto G7. | Per verificare la chiusura formale di M5 e Gate G7. |
+| [evidenze/hard-node-01-runtime-upgrade.md](evidenze/hard-node-01-runtime-upgrade.md) | Upgrade controllato delle Cloud Functions a Node.js 22 e SDK Firebase server-side correnti; deploy DEV escluso. | Per audit breaking change, verifiche e piano di rollout/rollback HARD-NODE-01. |
 | [evoluzioni-apprendimento-roadmap.md](evoluzioni-apprendimento-roadmap.md) | Decisioni e stato per SPINNER-FIX, M5-QUALITY, POOL-SIMPLE, ANNOT, VEX e VISUAL-BOOST. **POOL-SIMPLE-01/02 completati; Gate GPOOL superato (PASS).** | Fonte di verità per le evoluzioni successive a UI-POLISH-01 e i relativi gate. |
 
 ## Evidenze

@@ -192,5 +192,14 @@ Il Gate **GHARD** si considera superabile quando:
 - **Checklist manuali con browser reale** (login Google, verifica online end-to-end, a11y con screen reader) restano da eseguire da un umano su DEV — nessun browser interattivo collegato a un progetto reale in questa sessione.
 - **Tariffe Blaze** citate altrove sono parametriche e vanno riverificate sulla pagina ufficiale prima di qualunque decisione di budget.
 - L'audit **non** ha misurato la dimensione reale dei documenti Firestore su dati di produzione né la latenza di rete.
+
+## 13. HARD-NODE-01 — runtime Functions
+
+Il residuo post-G7 relativo a Node.js 20 e agli SDK Firebase server-side è trattato da
+**HARD-NODE-01**. Il repository usa ora Node.js 22 in manifest, configurazione Firebase
+e CI, con `firebase-functions` 7.3.0 e `firebase-admin` 14.2.0 risolti nel lockfile.
+Nessun deploy è compreso nel pacchetto: stato, fonti, audit breaking change e piano di
+rollout/rollback sono registrati in
+[`evidenze/hard-node-01-runtime-upgrade.md`](evidenze/hard-node-01-runtime-upgrade.md).
 </content>
 </invoke>

@@ -1033,7 +1033,7 @@ Il **Modulo 5** aggiunge una sola azione batch **«Correggi con IA»** che pre-c
 | M5-05 ✅ | **Provider reale su DEV**, smoke, verifica audit/costi/sicurezza. | M5-05C, HG-M5-1/2/3/4 | **Completato.** Luna operativo dietro flag; benchmark e smoke documentati. |
 | M5-08 ✅ | Consolidamento evidence-based e chiusura formale. | M5-QUALITY-07, smoke DEV, revisione docente | **Gate G7 PASS; M5 COMPLETATO.** Evidenze in [`g7-m5-checklist-finale.md`](evidenze/g7-m5-checklist-finale.md). |
 
-**G7 è PASS.** **G8** e la correzione automatica restano fuori dalla linea M5 e dal perimetro V1; VEX resta una fase separata. Il prossimo pacchetto tecnico è **HARD-NODE-01** (runtime Functions e `firebase-functions`).
+**G7 è PASS.** **G8** e la correzione automatica restano fuori dalla linea M5 e dal perimetro V1; VEX resta una fase separata. **HARD-NODE-01 è implementato nel repository**: runtime Functions fissato a Node.js 22, SDK server-side aggiornati e rollout DEV separato ancora da eseguire; vedi [evidenza tecnica](evidenze/hard-node-01-runtime-upgrade.md).
 
 ### Altre funzionalità rinviate alla V2
 
