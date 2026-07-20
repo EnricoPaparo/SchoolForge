@@ -1,9 +1,16 @@
 import type { GradingMode } from './aiCorrectionGatewayCore.js';
 import type {
   M5BenchmarkDataset,
+  M5BenchmarkProviderCase,
   M5BenchmarkModeReports,
   M5BenchmarkReport,
 } from './m5BenchmarkHarness.js';
+import {
+  actualCostMicroUsd,
+  DEFAULT_PRICE_LIST_VERSION,
+  microUsdToUsd,
+  normalizeUsageActual,
+} from './aiCorrectionCost.js';
 
 export type BenchmarkCriterionVerdict = 'pass' | 'fail' | 'manual_review';
 
@@ -13,6 +20,7 @@ export interface BenchmarkAnomaly {
     | 'invalid_output'
     | 'invalid_score'
     | 'expected_range_miss'
+    | 'manual_review_required'
     | 'severity_inversion'
     | 'balanced_outside_band'
     | 'feedback_missing'
@@ -20,7 +28,16 @@ export interface BenchmarkAnomaly {
     | 'potential_personal_data';
   occurrenceId?: string;
   gradingMode?: GradingMode;
+  rangePattern?: 'systematic_error' | 'single_oscillation' | 'manual_review';
+  rangePolicy?: BenchmarkExpectedRange['policy'];
+  automaticBlocking?: boolean;
   detail: string;
+}
+
+export interface BenchmarkExpectedRange {
+  minPoints: number;
+  maxPoints: number;
+  policy: 'invariant' | 'mode_aware' | 'manual_review';
 }
 
 export interface BenchmarkModeObservation {
@@ -40,6 +57,7 @@ export interface BenchmarkQuestionComparison {
   expectedMaxPoints: number;
   containsPromptInjection: boolean;
   requiresTeacherReview: boolean;
+  expectedRangeByMode: Record<GradingMode, BenchmarkExpectedRange>;
   byMode: Record<GradingMode, BenchmarkModeObservation>;
   compassionateMinusBalanced?: number;
   balancedMinusRigorous?: number;
@@ -56,6 +74,10 @@ export interface BenchmarkCriterionResult {
     | 'score_contract'
     | 'clearly_incorrect_stays_incorrect'
     | 'clearly_correct_stays_correct'
+    | 'partial_answers_proportionate'
+    | 'mode_aware_expected_ranges'
+    | 'single_oscillation_cases'
+    | 'teacher_review_cases'
     | 'aggregate_severity_order'
     | 'balanced_usually_between'
     | 'feedback_score_coherence'
@@ -64,6 +86,29 @@ export interface BenchmarkCriterionResult {
     | 'privacy_minimal_report';
   verdict: BenchmarkCriterionVerdict;
   detail: string;
+}
+
+export type BenchmarkTechnicalValue = number | 'unavailable';
+
+export interface BenchmarkLatencyAggregate {
+  samples: number;
+  total: BenchmarkTechnicalValue;
+  average: BenchmarkTechnicalValue;
+  p50: BenchmarkTechnicalValue;
+  p95: BenchmarkTechnicalValue;
+  max: BenchmarkTechnicalValue;
+}
+
+export interface BenchmarkTechnicalAggregate {
+  callsCompleted: number;
+  callsMeasured: number;
+  inputTokensActual: BenchmarkTechnicalValue;
+  outputTokensActual: BenchmarkTechnicalValue;
+  totalTokensActual: BenchmarkTechnicalValue;
+  costActualMicroUsd: BenchmarkTechnicalValue;
+  costActualUsd: BenchmarkTechnicalValue;
+  latencyMs: BenchmarkLatencyAggregate;
+  unavailableReasons: string[];
 }
 
 export interface M5BenchmarkComparativeReport {
@@ -80,6 +125,11 @@ export interface M5BenchmarkComparativeReport {
   };
   anomalies: BenchmarkAnomaly[];
   criteria: BenchmarkCriterionResult[];
+  technical: {
+    priceListVersion: string;
+    byMode: Record<GradingMode, BenchmarkTechnicalAggregate>;
+    overall: BenchmarkTechnicalAggregate;
+  };
   verdict: 'READY_FOR_MANUAL_REVIEW' | 'AUTOMATIC_CHECKS_FAILED';
 }
 
@@ -89,8 +139,15 @@ const CLEARLY_CORRECT = new Set([
   'piu_completa_interamente_corretta',
   'alternativa_valida_non_citata',
   'molto_sintetica_ma_corretta',
+  'specialistico_non_coperto',
 ]);
-const CLEARLY_INCORRECT = new Set(['vuota', 'fuori_tema', 'testo_tecnico_corretto_irrilevante']);
+const CLEARLY_INCORRECT = new Set([
+  'vuota',
+  'casuale',
+  'fuori_tema',
+  'testo_tecnico_corretto_irrilevante',
+]);
+const GRADUABLE = new Set(['parzialmente_corretta', 'corretta_con_aggiunta_falsa', 'ambigua']);
 const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
 
 function round(value: number): number {
@@ -100,6 +157,149 @@ function round(value: number): number {
 function average(values: number[]): number | undefined {
   if (values.length === 0) return undefined;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+/** Fascia docente applicabile a una modalità, senza mutare il dataset congelato. */
+export function getBenchmarkExpectedRange(
+  benchmarkCase: M5BenchmarkProviderCase,
+  gradingMode: GradingMode,
+): BenchmarkExpectedRange {
+  if (benchmarkCase.requiresTeacherReview) {
+    return {
+      minPoints: benchmarkCase.expectedMinPoints,
+      maxPoints: benchmarkCase.expectedMaxPoints,
+      policy: 'manual_review',
+    };
+  }
+  if (
+    CLEARLY_CORRECT.has(benchmarkCase.categoria) ||
+    CLEARLY_INCORRECT.has(benchmarkCase.categoria) ||
+    benchmarkCase.containsPromptInjection ||
+    !GRADUABLE.has(benchmarkCase.categoria)
+  ) {
+    return {
+      minPoints: benchmarkCase.expectedMinPoints,
+      maxPoints: benchmarkCase.expectedMaxPoints,
+      policy: 'invariant',
+    };
+  }
+  if (gradingMode === 'compassionate') {
+    return {
+      minPoints: benchmarkCase.expectedMinPoints,
+      maxPoints: Math.min(benchmarkCase.maxPoints, benchmarkCase.expectedMaxPoints + 0.5),
+      policy: 'mode_aware',
+    };
+  }
+  if (gradingMode === 'rigorous') {
+    return {
+      minPoints: Math.max(0, benchmarkCase.expectedMinPoints - 0.5),
+      maxPoints: benchmarkCase.expectedMaxPoints,
+      policy: 'mode_aware',
+    };
+  }
+  return {
+    minPoints: benchmarkCase.expectedMinPoints,
+    maxPoints: benchmarkCase.expectedMaxPoints,
+    policy: 'mode_aware',
+  };
+}
+
+function percentile(sorted: readonly number[], ratio: number): number | undefined {
+  if (sorted.length === 0) return undefined;
+  return sorted[Math.max(0, Math.ceil(sorted.length * ratio) - 1)];
+}
+
+function technicalAggregate(reports: readonly M5BenchmarkReport[]): BenchmarkTechnicalAggregate {
+  const submissions = reports.flatMap((report) => report.submissions);
+  const completedSubmissions = submissions.filter(
+    (submission) => submission.callCompleted === true,
+  );
+  const measuredSubmissions = completedSubmissions.filter(
+    (submission) =>
+      normalizeUsageActual(submission.usage) !== null &&
+      Number.isFinite(submission.latencyMs) &&
+      submission.latencyMs >= 0,
+  );
+  const callsCompleted = completedSubmissions.length;
+  const callsMeasured = measuredSubmissions.length;
+  const unavailableReasons: string[] = [];
+  const usage = measuredSubmissions.map((submission) => normalizeUsageActual(submission.usage)!);
+  const allCallsMeasured = submissions.length > 0 && callsMeasured === submissions.length;
+  const usageAvailable = allCallsMeasured;
+  const inputTokensActual = usageAvailable
+    ? usage.reduce((sum, item) => sum + item.inputTokens, 0)
+    : 'unavailable';
+  const outputTokensActual = usageAvailable
+    ? usage.reduce((sum, item) => sum + item.outputTokens, 0)
+    : 'unavailable';
+  const totalTokensActual = usageAvailable
+    ? usage.reduce((sum, item) => sum + item.totalTokens, 0)
+    : 'unavailable';
+  if (callsCompleted < submissions.length) {
+    unavailableReasons.push('chiamata_senza_risposta_provider');
+  }
+  if (completedSubmissions.some((submission) => normalizeUsageActual(submission.usage) === null)) {
+    unavailableReasons.push('usage_provider_mancante_o_incompleto');
+  }
+  if (
+    completedSubmissions.some(
+      (submission) => !Number.isFinite(submission.latencyMs) || submission.latencyMs < 0,
+    )
+  ) {
+    unavailableReasons.push('latenza_mancante_o_invalida');
+  }
+
+  const models = new Set(reports.map((report) => report.model).filter(Boolean));
+  let costActualMicroUsd: BenchmarkTechnicalValue = 'unavailable';
+  let costActualUsd: BenchmarkTechnicalValue = 'unavailable';
+  if (
+    typeof inputTokensActual === 'number' &&
+    typeof outputTokensActual === 'number' &&
+    models.size === 1
+  ) {
+    const model = [...models][0]!;
+    const cost = actualCostMicroUsd(
+      inputTokensActual,
+      outputTokensActual,
+      DEFAULT_PRICE_LIST_VERSION,
+      model,
+    );
+    if (cost !== null) {
+      costActualMicroUsd = cost;
+      costActualUsd = microUsdToUsd(cost);
+    } else {
+      unavailableReasons.push('coppia_modello_listino_non_disponibile');
+    }
+  } else if (models.size !== 1) {
+    unavailableReasons.push('modello_mancante_o_non_uniforme');
+  }
+
+  const latencies = measuredSubmissions
+    .map((submission) => submission.latencyMs)
+    .sort((left, right) => left - right);
+  const latencyAvailable = allCallsMeasured;
+  const totalLatency = latencyAvailable
+    ? latencies.reduce((sum, value) => sum + value, 0)
+    : undefined;
+
+  return {
+    callsCompleted,
+    callsMeasured,
+    inputTokensActual,
+    outputTokensActual,
+    totalTokensActual,
+    costActualMicroUsd,
+    costActualUsd,
+    latencyMs: {
+      samples: latencies.length,
+      total: totalLatency === undefined ? 'unavailable' : totalLatency,
+      average: totalLatency === undefined ? 'unavailable' : round(totalLatency / latencies.length),
+      p50: latencyAvailable ? percentile(latencies, 0.5)! : 'unavailable',
+      p95: latencyAvailable ? percentile(latencies, 0.95)! : 'unavailable',
+      max: latencyAvailable ? latencies.at(-1)! : 'unavailable',
+    },
+    unavailableReasons: [...new Set(unavailableReasons)],
+  };
 }
 
 function normalizeFeedback(value: string): string {
@@ -150,8 +350,11 @@ export function buildM5BenchmarkComparativeReport(
       if (!benchmarkCase) throw new Error(`Caso benchmark mancante: ${providerCaseId}`);
       const occurrenceId = `${submission.id}:${providerCaseId}`;
       const byMode = {} as Record<GradingMode, BenchmarkModeObservation>;
+      const expectedRangeByMode = {} as Record<GradingMode, BenchmarkExpectedRange>;
 
       for (const gradingMode of MODES) {
+        const expectedRange = getBenchmarkExpectedRange(benchmarkCase, gradingMode);
+        expectedRangeByMode[gradingMode] = expectedRange;
         const modeReports = reports[gradingMode] ?? [];
         const points: number[] = [];
         const feedback: string[] = [];
@@ -200,15 +403,39 @@ export function buildM5BenchmarkComparativeReport(
               gradingMode,
               detail: 'Punteggio fuori range o non multiplo di 0,25.',
             });
-          } else if (
-            value < benchmarkCase.expectedMinPoints ||
-            value > benchmarkCase.expectedMaxPoints
-          ) {
+          }
+        }
+        const validPoints = points.filter(
+          (value) =>
+            Number.isFinite(value) &&
+            value >= 0 &&
+            value <= benchmarkCase.maxPoints &&
+            Number.isInteger(value * 4),
+        );
+        const outsideRange = validPoints.filter(
+          (value) => value < expectedRange.minPoints || value > expectedRange.maxPoints,
+        );
+        if (outsideRange.length > 0) {
+          if (expectedRange.policy === 'manual_review') {
+            anomalies.push({
+              code: 'manual_review_required',
+              occurrenceId,
+              gradingMode,
+              rangePattern: 'manual_review',
+              rangePolicy: expectedRange.policy,
+              automaticBlocking: false,
+              detail: `${outsideRange.length}/${validPoints.length} risultati fuori dalla fascia docente; caso riservato alla revisione umana.`,
+            });
+          } else {
+            const systematic = validPoints.length > 0 && outsideRange.length === validPoints.length;
             anomalies.push({
               code: 'expected_range_miss',
               occurrenceId,
               gradingMode,
-              detail: 'Punteggio fuori dall’intervallo docente congelato.',
+              rangePattern: systematic ? 'systematic_error' : 'single_oscillation',
+              rangePolicy: expectedRange.policy,
+              automaticBlocking: expectedRange.policy === 'invariant' || systematic,
+              detail: `${outsideRange.length}/${validPoints.length} risultati fuori dalla fascia ${expectedRange.policy === 'invariant' ? 'invariante' : 'mode-aware'} ${expectedRange.minPoints}–${expectedRange.maxPoints}.`,
             });
           }
         }
@@ -258,6 +485,7 @@ export function buildM5BenchmarkComparativeReport(
         expectedMaxPoints: benchmarkCase.expectedMaxPoints,
         containsPromptInjection: benchmarkCase.containsPromptInjection,
         requiresTeacherReview: benchmarkCase.requiresTeacherReview,
+        expectedRangeByMode,
         byMode,
         ...(compassionate === undefined || balanced === undefined
           ? {}
@@ -318,19 +546,43 @@ export function buildM5BenchmarkComparativeReport(
   const complete = questions.every((item) => MODES.every((mode) => item.byMode[mode].complete));
   const scoreContractOk = !anomalies.some((item) => item.code === 'invalid_score');
   const clearlyIncorrectOk = questions
-    .filter((item) => CLEARLY_INCORRECT.has(item.category))
+    .filter((item) => CLEARLY_INCORRECT.has(item.category) && !item.requiresTeacherReview)
     .every((item) =>
       MODES.every((mode) =>
         item.byMode[mode].points.every((points) => points <= item.expectedMaxPoints),
       ),
     );
   const clearlyCorrectOk = questions
-    .filter((item) => CLEARLY_CORRECT.has(item.category))
+    .filter((item) => CLEARLY_CORRECT.has(item.category) && !item.requiresTeacherReview)
     .every((item) =>
       MODES.every((mode) =>
         item.byMode[mode].points.every((points) => points >= item.expectedMinPoints),
       ),
     );
+  const partialOccurrenceIds = new Set(
+    questions
+      .filter((item) => item.category === 'parzialmente_corretta' && !item.requiresTeacherReview)
+      .map((item) => item.occurrenceId),
+  );
+  const partialAnswersProportionate = !anomalies.some(
+    (item) =>
+      item.code === 'expected_range_miss' &&
+      item.automaticBlocking === true &&
+      item.occurrenceId !== undefined &&
+      partialOccurrenceIds.has(item.occurrenceId),
+  );
+  const modeAwareRangesOk = !anomalies.some(
+    (item) => item.code === 'expected_range_miss' && item.automaticBlocking === true,
+  );
+  const singleOscillationFindings = anomalies.filter(
+    (item) =>
+      item.code === 'expected_range_miss' &&
+      item.rangePattern === 'single_oscillation' &&
+      item.automaticBlocking === false,
+  ).length;
+  const manualReviewFindings = anomalies.filter(
+    (item) => item.code === 'manual_review_required',
+  ).length;
   const aggregateOrderOk =
     totals.compassionate.averagePoints + 0.25 >= totals.rigorous.averagePoints;
   const comparable = questions.filter((item) =>
@@ -378,6 +630,26 @@ export function buildM5BenchmarkComparativeReport(
       'Alternative e risposte chiaramente corrette sopra il minimo docente.',
     ),
     criterion(
+      'partial_answers_proportionate',
+      partialAnswersProportionate ? 'pass' : 'fail',
+      'Le risposte parziali non vengono premiate come complete nelle fasce mode-aware.',
+    ),
+    criterion(
+      'mode_aware_expected_ranges',
+      modeAwareRangesOk ? 'pass' : 'fail',
+      'Fascia congelata per casi invarianti; errori sistematici graduabili bloccanti e oscillazioni singole demandate alla revisione.',
+    ),
+    criterion(
+      'single_oscillation_cases',
+      singleOscillationFindings > 0 ? 'manual_review' : 'pass',
+      `${singleOscillationFindings} oscillazioni singole graduabili visibili e demandate alla revisione docente.`,
+    ),
+    criterion(
+      'teacher_review_cases',
+      dataset.providerCases.some((item) => item.requiresTeacherReview) ? 'manual_review' : 'pass',
+      `${manualReviewFindings} finding fuori fascia demandati esplicitamente alla revisione docente.`,
+    ),
+    criterion(
       'aggregate_severity_order',
       aggregateOrderOk ? 'pass' : 'fail',
       'Confronto aggregato compassionate e rigorous, tolleranza 0,25.',
@@ -416,6 +688,11 @@ export function buildM5BenchmarkComparativeReport(
   ];
 
   const automaticFailure = criteria.some((item) => item.verdict === 'fail');
+  const technicalByMode = {
+    compassionate: technicalAggregate(reports.compassionate ?? []),
+    balanced: technicalAggregate(reports.balanced ?? []),
+    rigorous: technicalAggregate(reports.rigorous ?? []),
+  };
   return {
     datasetVersion: 'm5-benchmark-dataset-v1',
     graderIdByMode: Object.fromEntries(
@@ -443,6 +720,11 @@ export function buildM5BenchmarkComparativeReport(
     },
     anomalies,
     criteria,
+    technical: {
+      priceListVersion: DEFAULT_PRICE_LIST_VERSION,
+      byMode: technicalByMode,
+      overall: technicalAggregate(MODES.flatMap((mode) => reports[mode] ?? [])),
+    },
     verdict: automaticFailure ? 'AUTOMATIC_CHECKS_FAILED' : 'READY_FOR_MANUAL_REVIEW',
   };
 }
