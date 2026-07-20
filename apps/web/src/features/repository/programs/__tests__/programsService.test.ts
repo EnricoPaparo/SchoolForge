@@ -440,6 +440,13 @@ describe('listLessons — deterministic ordering', () => {
 });
 
 describe('deleteProgram', () => {
+  let cleanupNotes: ReturnType<typeof vi.fn<[string], Promise<unknown>>>;
+  beforeEach(() => {
+    cleanupNotes = vi
+      .fn<[string], Promise<unknown>>()
+      .mockResolvedValue({ status: 'completed', notesDeleted: 0, indexesDeleted: 0 });
+  });
+
   function setupGetDocs(overrides: {
     verifications?: { data: () => { config: { programId: string } } }[];
     imports?: { id: string }[];
@@ -482,7 +489,7 @@ describe('deleteProgram', () => {
       verifications: [{ data: () => ({ config: { programId: 'prog-1' } }) }],
     });
 
-    await expect(deleteProgram('prog-1', 'owner-uid', fakeDb)).rejects.toThrow(
+    await expect(deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes)).rejects.toThrow(
       PROGRAM_DELETE_BLOCKED_MESSAGE,
     );
     expect(mockDeleteDoc).not.toHaveBeenCalled();
@@ -503,7 +510,9 @@ describe('deleteProgram', () => {
       verifications: [],
       imports: [],
     });
-    await expect(deleteProgram('prog-1', 'owner-uid', fakeDb)).resolves.toBeUndefined();
+    await expect(
+      deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes),
+    ).resolves.toBeUndefined();
     expect(mockDeleteDoc).toHaveBeenCalledWith({ __path: 'programs/prog-1' });
   });
 
@@ -518,7 +527,7 @@ describe('deleteProgram', () => {
       lessons: [{ ref: lessonRef }],
       questionIndex: [{ ref: questionRef }],
     });
-    await deleteProgram('prog-1', 'owner-uid', fakeDb);
+    await deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes);
 
     // All docs under the import (udas, lessons, questionIndex, the import doc itself) are batch-deleted.
     expect(mockBatchDelete).toHaveBeenCalledWith(udaRef);
@@ -550,7 +559,7 @@ describe('deleteProgram', () => {
 
   it('deletes a program with no imports at all (no batch/storage calls needed)', async () => {
     setupGetDocs({ verifications: [], imports: [] });
-    await deleteProgram('prog-1', 'owner-uid', fakeDb);
+    await deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes);
 
     expect(mockWriteBatch).not.toHaveBeenCalled();
     expect(mockDeleteImportPrefix).not.toHaveBeenCalled();
@@ -564,8 +573,49 @@ describe('deleteProgram', () => {
       imports: [],
       publicLessons: [{ ref: publicLessonRef }],
     });
-    await deleteProgram('prog-1', 'owner-uid', fakeDb);
+    await deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes);
 
     expect(mockBatchDelete).toHaveBeenCalledWith(publicLessonRef);
+  });
+
+  it('ANNOT-CLEANUP-01 — invokes the notes cleanup with the programId before deleting the program document', async () => {
+    setupGetDocs({ verifications: [], imports: [] });
+    await deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes);
+
+    expect(cleanupNotes).toHaveBeenCalledTimes(1);
+    expect(cleanupNotes).toHaveBeenCalledWith('prog-1');
+    // Cleanup ran before the program document was removed.
+    const cleanupOrder = cleanupNotes.mock.invocationCallOrder[0]!;
+    const deleteProgramCall = mockDeleteDoc.mock.calls.findIndex(
+      ([ref]) => (ref as { __path?: string }).__path === 'programs/prog-1',
+    );
+    const deleteOrder = mockDeleteDoc.mock.invocationCallOrder[deleteProgramCall]!;
+    expect(cleanupOrder).toBeLessThan(deleteOrder);
+  });
+
+  it('ANNOT-CLEANUP-01 — a cleanup failure performs no destructive operation and leaves the course fully intact', async () => {
+    // An import is present so that, if cleanup ran AFTER any destructive step,
+    // the Storage gateway / batch deletes would have fired — they must not.
+    setupGetDocs({
+      verifications: [],
+      imports: [{ id: 'imp-1' }],
+      udas: [{ ref: { __path: 'programs/prog-1/imports/imp-1/udas/u1' } }],
+      publicLessons: [{ ref: { __path: 'publicLessons/pl-1' } }],
+    });
+    cleanupNotes.mockRejectedValue(new Error('cleanup failed'));
+
+    await expect(deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes)).rejects.toThrow();
+
+    // Cleanup runs before any destructive operation: none of them happen.
+    expect(mockDeleteImportPrefix).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+    expect(mockBatchDelete).not.toHaveBeenCalled();
+    expect(mockDeleteDoc).not.toHaveBeenCalled();
+    // No success audit event is written (no false success).
+    const auditCall = mockSetDoc.mock.calls.find(
+      ([, data]) => (data as { action?: string }).action === 'program.deleted',
+    );
+    expect(auditCall).toBeUndefined();
   });
 });

@@ -41,6 +41,7 @@ M3-lite non introduce Cloud Functions. Nella baseline corrente le Cloud Function
 | Funzione | Modulo | Motivo |
 |---|---|---|
 | `aiCorrectionPreview` + `aiCorrectionRun` (gateway IA; **M5-05C adapter predisposto**) | M5 | Due Function `onCall`; default `disabled`, mock operativo, adapter OpenAI non configurato e nessuna chiamata reale; contratto in §5. |
+| `cleanupProgramLessonNotes` (**ANNOT-CLEANUP-01 implementato**) | Appunti | Una Function `onCall` owner-only, region `us-central1`, scale-to-zero; elimina appunti e indici degli studenti alla cancellazione del corso via Admin SDK; contratto in §5b. |
 
 La specifica corrente di **M3-full** è client-only: usa Firebase SDK + Security Rules, `submissions/{id}` e `submissionReceipts/{id}`. Non introduce `startDigitalAttempt`/`continueDigitalAttempt`, cookie HttpOnly o Cloud Functions dedicate. Le Cloud Function IA (`aiCorrectionPreview`/`aiCorrectionRun`) appartengono al Modulo 5 (§5); **M5-01** le ha implementate in **modalità mock** (0 token, nessuna scrittura), il comportamento pieno è M5-02.
 
@@ -922,6 +923,59 @@ Contratto **provider-agnostic** — vedi [m5-ai-assisted-roadmap.md](m5-ai-assis
 **M5-06C — conferma immutabile.** La UI conserva uno snapshot della richiesta usata per la preview (`selection`, `gradingMode`, `teacherGuidance`, `requestId`) e usa esattamente quello nel run. In conferma l'indicazione è sola lettura; tornare alla modifica elimina snapshot e preview e genera una nuova identità, quindi il run resta impossibile fino a una nuova preview. Il feedback generale OpenAI descrive l'esito complessivo, punti di forza, lacune ricorrenti e un passo concreto senza ripetere in sequenza i feedback delle domande. Le sole chiuse mantengono feedback deterministico complessivo, zero provider/token/costo.
 
 Comportamento (contratto M5): `aiCorrectionPreview` calcola eleggibilità/conteggi/stima **senza** chiamare il provider. `aiCorrectionRun` rilegge server-side submission + `publishedProjection`/`teacherSnapshot` via Admin SDK (verifica ownership), **ripete l'eleggibilità** (consegna con dati cambiati dal preview → esclusa con motivo), valuta le **chiuse** in modo **deterministico** (0 token; **anche consegne con sole chiuse**), invia **al massimo una richiesta provider per consegna** con tutte le **aperte** eleggibili (`points === null`; consegne con sole chiuse → nessuna chiamata), valida l'output con schema rigido e i punteggi con le regole di `correctionContract.ts` (`0..maxPoints`, step 0,25), scrive i risultati nelle `evaluations` di `corrections/{submissionId}` **lasciando `status == 'in_progress'`** (mai `completed`/`returned`). Stato/idempotenza/audit/utilizzo in **`aiCorrectionRuns/{requestId}`** (una sola collezione, **mai contenuti**). Idempotente su `requestId`; non sovrascrive domande già valutate. La chiave del provider vive solo in **Secret Manager**, mai lato client/repo/Firestore/log. **Nessuna** correzione automatica, **nessuna** restituzione automatica, **nessun** web/retrieval/tool.
+
+---
+
+## 5b. `cleanupProgramLessonNotes` — pulizia appunti alla cancellazione del corso (ANNOT-CLEANUP-01)
+
+Cloud Function v2 `onCall` **owner-only**, region `us-central1`, scale-to-zero
+(`minInstances: 0`, `maxInstances: 3`). Elimina gli appunti personali degli
+studenti e i loro indici per-corso quando il docente elimina un corso, senza mai
+lasciarli orfani e senza che il docente legga i contenuti (gira con Admin SDK,
+che bypassa le Security Rules → nessun accesso Rules concesso al docente).
+
+**Request (input realmente chiuso):** plain object con **la sola** proprietà
+`programId`; proprietà aggiuntive rifiutate. `programId`, `studentUid` e
+`lessonId` sono validati come singoli segmenti Firestore (stringa non vuota,
+niente `/`, diversa da `.`/`..`, entro il limite UTF-8 di un document ID) senza
+alcuna normalizzazione silenziosa: un id non valido rifiuta l'intera cleanup
+prima di qualsiasi delete. Nessuno `studentUid`/`lessonId` dal client.
+
+**Response (tipizzata minimale):** `{ status: 'completed', notesDeleted: number,
+indexesDeleted: number }`. Non contiene mai nome, email, uid, lessonId, path o
+contenuto delle note.
+
+**Errori (HttpsError):** `unauthenticated` (nessun auth), `permission-denied`
+(non owner / nessun owner configurato → fail-closed), `invalid-argument`
+(`programId` mancante), `failed-precondition` (indice malformato → nessuna
+cancellazione di path arbitrari), `internal`. I messaggi sono leggibili e non
+espongono path o contenuti.
+
+**Flusso:** autentica → verifica owner (`settings/owner.ownerUid`, fail-closed) →
+**una** collection-group query su `lessonNoteIndexes` con `programId == input`
+(filtro campo singolo → indice single-field automatico, **nessun indice
+composito**) → validazione fail-closed di ogni indice (path coerente con
+`studentUid`/`programId`, `lessonIds` array di stringhe non vuote ≤500, dedup) →
+costruzione dei path note **dallo studentUid + lessonIds dell'indice** (i
+`lessonNotes` non vengono **mai** letti) → delete in chunk di max 400,
+**prima le note poi gli indici** → ritorno dei conteggi. Idempotente: cancellare
+un documento assente è un no-op; un retry riquery solo gli indici ancora
+presenti.
+
+**Integrazione:** invocata da `deleteProgram` **prima di qualsiasi operazione
+distruttiva** sul corso (Storage, import/UDA/lezioni/questionIndex,
+publicLessons e documento `programs/{programId}`), subito dopo il blocco per
+verifiche collegate. Se la pulizia fallisce, si propaga un errore leggibile e
+**non** viene eseguita alcuna cancellazione del corso né scritto l'audit di
+successo: il corso resta completamente integro e riprovabile. La delete non è
+globalmente atomica ma è idempotente: un retry completa la pulizia (cancellare
+un doc assente è un no-op). Copre le note tracciate dall'indice per-corso
+ANNOT-03B; nessun fallback di scansione dei `lessonNotes`, nessuna migrazione
+legacy.
+
+**Costi** (solo alla cancellazione del corso; `S` studenti con indice, `N` note
+totali): `S` read indice + `N` delete note + `S` delete indice. Zero listener,
+polling, scheduler, TTL o retry infinito.
 
 ---
 

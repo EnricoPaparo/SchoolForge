@@ -28,7 +28,10 @@ const mockDownloadLessonPdf = vi.fn();
 const mockReorderUda = vi.fn();
 const mockReorderLesson = vi.fn();
 
-vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
+vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
+vi.mock('../../repository/programs/programNotesCleanupClient.js', () => ({
+  createProgramNotesCleanupCallable: () => vi.fn(),
+}));
 vi.mock('../../repository/programs/programsService.js', () => ({
   listUdas: (...a: unknown[]) => mockListUdas(...a),
   listLessons: (...a: unknown[]) => mockListLessons(...a),
@@ -1026,8 +1029,31 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Elimina corso' }));
     fireEvent.click(screen.getByRole('button', { name: 'Elimina' }));
 
-    await waitFor(() => expect(mockDeleteProgram).toHaveBeenCalledWith('p1', 'owner', {}));
+    await waitFor(() =>
+      expect(mockDeleteProgram).toHaveBeenCalledWith('p1', 'owner', {}, expect.any(Function)),
+    );
     expect(onCourseDeleted).toHaveBeenCalledWith('p1');
+  });
+
+  it('double-click on confirm invokes deleteProgram only once (sync guard)', async () => {
+    // deleteProgram stays pending so a second confirm click lands before the
+    // first call resolves; the synchronous ref guard must swallow it.
+    let resolveDelete: () => void = () => {};
+    mockDeleteProgram.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveDelete = resolve;
+      }),
+    );
+    await renderAndReady({}, { onCourseDeleted: vi.fn() });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Elimina corso' }));
+    const confirm = screen.getByRole('button', { name: 'Elimina' });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(mockDeleteProgram).toHaveBeenCalledTimes(1));
+    resolveDelete();
   });
 });
 

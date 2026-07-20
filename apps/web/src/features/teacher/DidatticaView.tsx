@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { db, storage } from '../../lib/firebase.js';
+import { db, functions, storage } from '../../lib/firebase.js';
+import { createProgramNotesCleanupCallable } from '../repository/programs/programNotesCleanupClient.js';
 import { loadCourseLibrary, type CourseCard } from '../repository/programs/courseLibrary.js';
 import {
   createInitializedProgram,
@@ -50,6 +51,10 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
 
   const [dialog, setDialog] = useState<Dialog>({ kind: 'none' });
   const [busy, setBusy] = useState(false);
+  // Synchronous double-click guard: `busy` is React state (updated
+  // asynchronously), so a second confirm click before the re-render could
+  // otherwise invoke deleteProgram twice. This ref flips immediately.
+  const deletingRef = useRef(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
   // Non-blocking notice after a successful import whose deferred publicLessons
   // cleanup was postponed (cleanupPending) — HARD-02B-2.
@@ -271,16 +276,19 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
   }
 
   async function handleDelete(programId: string) {
+    if (deletingRef.current) return;
+    deletingRef.current = true;
     setBusy(true);
     setDialogError(null);
     try {
-      await deleteProgram(programId, ownerUid, db);
+      await deleteProgram(programId, ownerUid, db, createProgramNotesCleanupCallable(functions));
       setDialog({ kind: 'none' });
       await load();
     } catch (err) {
       setDialogError(err instanceof Error ? err.message : 'Impossibile eliminare il corso.');
     } finally {
       setBusy(false);
+      deletingRef.current = false;
     }
   }
 
@@ -542,7 +550,7 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
       {dialog.kind === 'delete' && (
         <ConfirmDialog
           title="Elimina corso"
-          message={`Eliminare definitivamente "${dialog.title}"? Verranno rimossi import, UDA, lezioni, pool e file caricati. L'operazione non è reversibile.`}
+          message={`Eliminare definitivamente "${dialog.title}"? Verranno rimossi import, UDA, lezioni, pool e file caricati, e anche gli appunti personali degli studenti associati al corso. L'operazione non è reversibile.`}
           confirmLabel="Elimina"
           danger
           busy={busy}

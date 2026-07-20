@@ -351,11 +351,18 @@ async function deleteDocsInBatches(db: Firestore, refs: DocumentReference[]): Pr
  * Blocked when any verification references this program via
  * `config.programId` — verifications are never deleted automatically; the
  * teacher must remove them first.
+ *
+ * ANNOT-CLEANUP-01: `cleanupLessonNotes` (the owner-only Cloud Function
+ * callable) runs BEFORE the `programs/{programId}` document is deleted — the
+ * teacher can never read note content, only the server deletes them. If it
+ * throws, the program document is left intact so the teacher can retry, and
+ * no false success is shown.
  */
 export async function deleteProgram(
   programId: string,
   ownerUid: string,
   db: Firestore,
+  cleanupLessonNotes: (programId: string) => Promise<unknown>,
 ): Promise<void> {
   // A targeted, server-side existence check (PERF-SEC-01B-3): only asks
   // "does at least one verification reference this program?" via
@@ -370,6 +377,15 @@ export async function deleteProgram(
   if (!linkedVerificationSnap.empty) {
     throw new Error(PROGRAM_DELETE_BLOCKED_MESSAGE);
   }
+
+  // ANNOT-CLEANUP-01 — server-side, owner-only deletion of every student lesson
+  // note (and per-course index) for this program. Runs BEFORE any destructive
+  // operation on the course (Storage prefixes, import/UDA/lesson/questionIndex
+  // docs, publicLessons projections, the program document): if it throws we
+  // propagate a readable error and the course is left completely intact so the
+  // teacher can retry — no partial deletion, no false success audit. The
+  // teacher never reads note content (the server deletes them).
+  await cleanupLessonNotes(programId);
 
   const [importsSnap, publicLessonsSnap] = await Promise.all([
     getDocs(collection(db, 'programs', programId, 'imports')),

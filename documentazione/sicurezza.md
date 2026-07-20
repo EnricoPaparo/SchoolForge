@@ -191,6 +191,29 @@ autorizzativi su path noti, entro i limiti di access-call delle Rules, verificat
 dall'Emulator. Nessuna proiezione didattica (testo lezione, titolo, classe, nome/email,
 pool, domande, soluzioni) è memorizzata o esposta dagli appunti.
 
+**Pulizia alla cancellazione del corso (ANNOT-CLEANUP-01).** Il delete diretto
+degli appunti e degli indici resta **negato** dalle Rules anche al docente: la
+pulizia avviene tramite la Cloud Function `onCall` owner-only
+`cleanupProgramLessonNotes`, che gira con Admin SDK (bypassa le Rules) senza
+concedere al docente alcun accesso Rules alle note né ai loro contenuti. La
+Function verifica l'owner server-side (`settings/owner.ownerUid`, fail-closed),
+esegue **una** collection-group query su `lessonNoteIndexes` per `programId` e
+costruisce i path delle note **solo** da `studentUid` + `lessonIds` dell'indice:
+i documenti `lessonNotes` (e il loro `content`) non vengono **mai** letti. Ogni
+indice è validato fail-closed (path coerente, `lessonIds` array di stringhe non
+vuote ≤500, dedup). Ogni segmento di path (`programId`, `studentUid`,
+`lessonId`) è validato come document ID Firestore (non vuoto, senza `/`, diverso
+da `.`/`..`, entro il limite UTF-8) senza normalizzazione silenziosa; l'input
+callable è realmente chiuso (solo `{ programId }`, proprietà extra rifiutate).
+Un indice malformato o un id non valido interrompe l'operazione senza cancellare
+path arbitrari e senza esporre path o contenuti. Il risultato è minimale
+(`status`, `notesDeleted`, `indexesDeleted`) e non contiene uid, path, lessonId
+o contenuti. La cleanup è invocata da `deleteProgram` **prima di qualsiasi
+operazione distruttiva** sul corso, così un fallimento lascia il corso
+completamente integro per il retry (idempotente, non globalmente atomico). Le
+Firestore Rules degli appunti **non sono modificate** da questa change. Nessun
+indice composito (filtro campo singolo → indice single-field automatico).
+
 ---
 
 ## 4. Gateway M3-full: `startDigitalAttempt` e `continueDigitalAttempt` (modello scartato, non implementato)

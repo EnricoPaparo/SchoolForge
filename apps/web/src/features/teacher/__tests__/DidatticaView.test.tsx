@@ -11,7 +11,10 @@ const mockDeleteProgram = vi.fn();
 const mockImportRepository = vi.fn();
 const mockReadZipFile = vi.fn();
 
-vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
+vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
+vi.mock('../../repository/programs/programNotesCleanupClient.js', () => ({
+  createProgramNotesCleanupCallable: () => vi.fn(),
+}));
 vi.mock('../../repository/programs/courseLibrary.js', () => ({
   loadCourseLibrary: (...a: unknown[]) => mockLoadCourseLibrary(...a),
 }));
@@ -230,6 +233,29 @@ describe('DidatticaView — open course', () => {
     // workspace; the icon action remains available alongside it.
     fireEvent.click(row.getByRole('button', { name: 'Con Azioni' }));
     expect(screen.getByText('WORKSPACE: Con Azioni')).toBeTruthy();
+  });
+
+  it('double-click on delete confirm invokes deleteProgram only once (sync guard)', async () => {
+    mockLoadCourseLibrary.mockResolvedValue([card({ title: 'Con Azioni' })]);
+    // deleteProgram stays pending so the second confirm click lands before the
+    // first resolves; the synchronous ref guard must swallow it.
+    let resolveDelete: () => void = () => {};
+    mockDeleteProgram.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveDelete = resolve;
+      }),
+    );
+    renderView();
+
+    await waitFor(() => expect(screen.getByText('Con Azioni')).toBeTruthy());
+    const row = within(screen.getByRole('row', { name: /con azioni/i }));
+    fireEvent.click(row.getByRole('button', { name: /elimina corso — con azioni/i }));
+    const confirm = screen.getByRole('button', { name: 'Elimina' });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(mockDeleteProgram).toHaveBeenCalledTimes(1));
+    resolveDelete();
   });
 });
 
