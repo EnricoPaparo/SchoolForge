@@ -145,6 +145,44 @@ Vedi §8 (incidente costi/traffico). In sintesi: identifica il servizio, riduci 
 
 - **Nessuna automazione a pagamento** viene introdotta: niente scheduler, niente funzioni di auto-spegnimento, niente servizi ricorrenti.
 
+### 4.5 Correzione IA in DEV — modello runtime, rollout e rollback (M5-QUALITY-07)
+
+Il modello del provider reale è deciso **esclusivamente** da `settings/aiConfig` (Admin
+SDK, mai dal client). Modelli runtime ammessi e listino **obbligatorio** accoppiato:
+
+- `gpt-5.4-nano-2026-03-17` → `v2-2026-07-17-hg-m5` (scelta esplicita di default);
+- `gpt-5.6-luna` → `v5-2026-07-20-luna-dev` (1.000.000 µUSD/1M input, 6.000.000 µUSD/1M
+  output; `cached input` non conteggiato).
+
+Coppie diverse (Luna con listino nano, nano con listino Luna, modello/listino
+sconosciuti) sono rifiutate fail-closed: il provider resta disabilitato. Non esiste
+fallback automatico tra modelli.
+
+**Rollout controllato di Luna in DEV** (solo dopo merge del codice e con Functions
+deployate):
+
+1. verifica il `settings/aiConfig` attuale (annota `configVersion` e modello);
+2. imposta `enabled=false` (kill switch senza deploy);
+3. deploy delle **sole** Functions IA interessate;
+4. aggiorna `settings/aiConfig`: `provider: openai`, `model: gpt-5.6-luna`,
+   `priceListVersion: v5-2026-07-20-luna-dev`, `enabled: false`, nuova `configVersion`
+   coerente, budget/limiti **invariati**;
+5. esegui una preview col sistema ancora disabilitato e verifica il fail-closed
+   (nessuna chiamata provider);
+6. imposta `enabled=true`;
+7. correggi **una sola** consegna DEV controllata;
+8. verifica punteggi, feedback, `generalFeedback`, `aiCorrectionRuns` e ledger;
+9. verifica costo reale e assenza di PII nei documenti tecnici;
+10. al primo problema: `enabled=false` **immediato**.
+
+**Rollback:** `enabled=false` blocca subito il provider senza deploy; per tornare a nano,
+aggiorna `settings/aiConfig` con `model: gpt-5.4-nano-2026-03-17`,
+`priceListVersion: v2-2026-07-17-hg-m5` e una nuova `configVersion`. Il ritorno a nano è
+**esplicito**, mai automatico.
+
+**Gate G7** passa a PASS **solo** dopo lo smoke reale DEV e la conferma finale del
+docente su feedback, resistenza alle prompt injection e accettabilità delle modalità.
+
 ---
 
 ## 5. Backup ed export

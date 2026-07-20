@@ -13,6 +13,8 @@ import {
   DEFAULT_PRICE_LIST_VERSION,
   USD_MICRO,
   OPENAI_PRODUCTION_MODEL,
+  OPENAI_RUNTIME_LUNA_MODEL,
+  OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
 } from './aiCorrectionCost.js';
 import {
   emptyLedger,
@@ -109,6 +111,9 @@ class FakeStore implements EngineWritePorts {
       runContractVersion?: number;
       selectionHash: string;
       mode?: PersistedRun['mode'];
+      model?: string;
+      priceListVersion?: string;
+      configVersion?: string;
       counts?: PersistedRun['counts'];
       inputTokensEstimated?: number;
       outputTokensEstimated?: number;
@@ -171,6 +176,11 @@ class FakeStore implements EngineWritePorts {
         status: 'running',
         selectionHash: meta.selectionHash,
         mode: meta.provider === 'openai' ? 'openai' : 'mock',
+        // M5-QUALITY-07 — record the model/price-list/config the run used, as the
+        // real port does, so aiCorrectionRuns can be asserted per model.
+        ...(meta.model ? { model: meta.model } : {}),
+        ...(meta.priceListVersion ? { priceListVersion: meta.priceListVersion } : {}),
+        ...(meta.configVersion ? { configVersion: meta.configVersion } : {}),
         executionId: meta.executionId,
         leaseExpiresAt: meta.nowMs + meta.leaseMs,
         ...(existing ? {} : { expireAtMs: meta.expireAtMs }),
@@ -2721,5 +2731,137 @@ describe('M5-05D2B-2 — retry accounting + deadline', () => {
     expect(serialized).not.toContain(OWNER);
     expect(serialized).not.toContain(SOL_MARK);
     expect(serialized).toContain('retriesTotal');
+  });
+});
+
+// ── M5-QUALITY-07 — promozione runtime DEV di gpt-5.6-luna ───────────────────
+
+describe('M5-QUALITY-07 — Luna runtime execution', () => {
+  const NOW = Date.UTC(2026, 6, 20, 12, 0, 0);
+  const MONTH = monthKeyFromMs(NOW);
+  const FIVE_USD = 5 * USD_MICRO;
+
+  const lunaConfig = {
+    ...ENABLED_RUNTIME_CONFIG,
+    model: OPENAI_RUNTIME_LUNA_MODEL,
+    priceListVersion: OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+    configVersion: 'cfg-luna',
+  };
+  const lunaConfigPort = async () => lunaConfig;
+
+  function lunaGrader(usage: AiGraderOutput['usage']): AiGrader {
+    const mock = new MockAiGrader();
+    return {
+      id: 'openai',
+      model: OPENAI_RUNTIME_LUNA_MODEL,
+      maxOutputTokensPerCall: TEST_MAX_OUTPUT_TOKENS,
+      reservationInputTokenUpperBound: () => TEST_INPUT_BOUND,
+      grade: async (input) => ({ ...(await mock.grade(input)), ...(usage ? { usage } : {}) }),
+    };
+  }
+
+  function lunaDeps(store: FakeStore, grader: AiGrader) {
+    return {
+      ...baseDeps(store, grader),
+      featureMode: 'openai' as const,
+      loadRuntimeConfig: lunaConfigPort,
+      now: () => NOW,
+    };
+  }
+
+  it('records the Luna model + runtime price list and prices actual cost with Luna (actual ≤ reservation)', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const res = await runExecution(
+      req([sid('s1')]),
+      lunaDeps(store, lunaGrader({ inputTokens: 1000, outputTokens: 200, tokens: 1200 })),
+    );
+    expect(res.mode).toBe('openai');
+    // 1000 input * $1.00/M + 200 output * $6.00/M = 1000 + 1200 = 2200 µUSD (Luna).
+    expect(res.costActualMicroUsd).toBe(2200);
+    expect(res.costActualMicroUsd).toBeLessThanOrEqual(res.costSettledMicroUsd);
+    expect(res.costSettledMicroUsd).toBeLessThanOrEqual(res.costReservationMicroUsd);
+    const persisted = store.runs.get(REQ)!;
+    expect(persisted.model).toBe(OPENAI_RUNTIME_LUNA_MODEL);
+    expect(persisted.priceListVersion).toBe(OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION);
+    expect(persisted.configVersion).toBe('cfg-luna');
+  });
+
+  it('holds the invariant with a Unicode-heavy submission under Luna pricing', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    // Large usage numbers standing in for Unicode payloads that inflate tokens.
+    const res = await runExecution(
+      req([sid('s1')]),
+      lunaDeps(store, lunaGrader({ inputTokens: 1234, outputTokens: 567, tokens: 1801 })),
+    );
+    expect(res.costActualMicroUsd).toBeLessThanOrEqual(res.costReservationMicroUsd);
+    expect(res.costActualMicroUsd).toBeGreaterThan(0);
+  });
+
+  it('budget_exceeded before any Luna provider call or commit', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    store.ledgers.set(MONTH, {
+      monthKey: MONTH,
+      budgetMicroUsd: FIVE_USD,
+      dailyBudgetMicroUsd: 1_000_000,
+      spentMicroUsd: FIVE_USD, // budget esaurito
+      dailySpentMicroUsd: {},
+      reservations: {},
+    });
+    const grade = vi.fn(new MockAiGrader().grade);
+    const grader: AiGrader = {
+      id: 'openai',
+      model: OPENAI_RUNTIME_LUNA_MODEL,
+      maxOutputTokensPerCall: TEST_MAX_OUTPUT_TOKENS,
+      reservationInputTokenUpperBound: () => TEST_INPUT_BOUND,
+      grade,
+    };
+    await expect(runExecution(req([sid('s1')]), lunaDeps(store, grader))).rejects.toMatchObject({
+      code: 'budget_exceeded',
+    });
+    expect(grade).not.toHaveBeenCalled();
+    expect(store.commitCalls).toBe(0);
+  });
+
+  it('replays a completed Luna run without a new reservation or provider call', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const first = await runExecution(
+      req([sid('s1')]),
+      lunaDeps(store, lunaGrader({ inputTokens: 1000, outputTokens: 200, tokens: 1200 })),
+    );
+    expect(first.idempotentReplay).toBe(false);
+    const reserveAfterFirst = store.reserveBudgetCalls;
+    const spentAfterFirst = store.ledgers.get(MONTH)!.spentMicroUsd;
+
+    const grade = vi.fn(new MockAiGrader().grade);
+    const replayGrader: AiGrader = {
+      id: 'openai',
+      model: OPENAI_RUNTIME_LUNA_MODEL,
+      maxOutputTokensPerCall: TEST_MAX_OUTPUT_TOKENS,
+      reservationInputTokenUpperBound: () => TEST_INPUT_BOUND,
+      grade,
+    };
+    const replay = await runExecution(req([sid('s1')]), lunaDeps(store, replayGrader));
+    expect(replay.idempotentReplay).toBe(true);
+    expect(grade).not.toHaveBeenCalled();
+    expect(store.reserveBudgetCalls).toBe(reserveAfterFirst);
+    expect(store.ledgers.get(MONTH)!.spentMicroUsd).toBe(spentAfterFirst);
+  });
+
+  it('mock mode with a Luna config stays at zero cost and never calls a provider', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const res = await runExecution(req([sid('s1')]), {
+      ...baseDeps(store, new MockAiGrader()),
+      loadRuntimeConfig: lunaConfigPort,
+      now: () => NOW,
+    });
+    expect(res.mode).toBe('mock');
+    expect(res.costActualMicroUsd).toBe(0);
+    expect(res.costReservationMicroUsd).toBe(0);
+    expect(store.reserveBudgetCalls).toBe(0);
   });
 });

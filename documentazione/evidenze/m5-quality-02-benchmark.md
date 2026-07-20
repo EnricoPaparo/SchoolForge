@@ -492,3 +492,72 @@ manualmente:
 
 Luna resta **benchmark-only**: non è promossa in DEV/runtime. Produzione e DEV restano
 su `gpt-5.4-nano-2026-03-17`. **Gate G7 resta APERTO.**
+
+## M5-QUALITY-07 — promozione controllata di GPT-5.6 Luna nel runtime DEV
+
+### Revisione umana M5-QUALITY-06 superata dal docente
+
+Il docente ha confermato manualmente la qualità pedagogica dei feedback per domanda, la
+qualità overall dei feedback generali, la resistenza semantica alle prompt injection,
+l'accettabilità delle modalità compassionate/balanced/rigorous e l'accettabilità dei
+finding manuali su SCI-009. La revisione qualitativa è quindi **SUPERATA**. Sulla base
+del benchmark reale (36/36, 176.235 µUSD, nessuna anomalia automatica bloccante dopo la
+ricalibrazione INF-004, verdict offline `READY_FOR_MANUAL_REVIEW`), Luna è **scelto per
+DEV**.
+
+### Contratto runtime (codice pronto, nessun deploy in questa PR)
+
+Modelli runtime ammessi (allowlist chiusa) e accoppiamento **obbligatorio** modello →
+listino:
+
+| Modello | Listino runtime | Prezzi |
+|---|---|---|
+| `gpt-5.4-nano-2026-03-17` | `v2-2026-07-17-hg-m5` | invariati |
+| `gpt-5.6-luna` | **`v5-2026-07-20-luna-dev`** | 1.000.000 µUSD/1M input, 6.000.000 µUSD/1M output |
+
+`cached input` non è conteggiato (non misurato). La coppia modello→listino è unica e
+autoritativa: qualsiasi combinazione incoerente (Luna con listino nano, nano con listino
+Luna, modello o listino sconosciuti) è respinta **fail-closed** dal parser di
+`settings/aiConfig` **prima** del provider e prima di ogni prenotazione economica.
+Nessun fallback silenzioso Luna→nano o nano→Luna. **nano resta supportato come scelta
+esplicita**: nulla cambia automaticamente in `settings/aiConfig`, in
+`OPENAI_PRODUCTION_MODEL`, nei documenti Firestore o nel Secret Manager.
+
+Tutto il flusso esistente vale per Luna: preview, stima informativa, tetto conservativo,
+prenotazione atomica, mark pending, riconciliazione, recovery, hard stop budget,
+`aiCorrectionRuns`, replay/idempotenza, takeover lease. Il documento tecnico registra
+modello e listino effettivamente usati. Invariante verificata anche con Luna e payload
+Unicode: `costActualMicroUsd ≤ costSettledMicroUsd ≤ costReservationMicroUsd`. Prompt,
+`promptContractVersion`, Structured Output, teacher guidance, grading mode, timeout,
+retry/backoff/jitter, max output, validazione atomica, privacy e singola chiamata per
+consegna **invariati**. La UI non cambia: la preview mostra Modalità OpenAI, token
+stimati e costo stimato calcolato dal backend con il listino del modello attivo.
+
+### Ordine di rollout (DOPO il merge, non in questa PR)
+
+1. verificare `settings/aiConfig` attuale;
+2. impostare `enabled=false`;
+3. deploy delle **sole** Functions interessate;
+4. aggiornare `settings/aiConfig` con: `provider: openai`, `model: gpt-5.6-luna`,
+   `priceListVersion: v5-2026-07-20-luna-dev`, `enabled: false`, nuova `configVersion`
+   coerente, budget/limiti invariati;
+5. eseguire una preview con sistema ancora disabilitato e verificare il fail-closed;
+6. impostare `enabled=true`;
+7. correggere **una sola** consegna DEV controllata;
+8. verificare punteggi, feedback, `generalFeedback`, `aiCorrectionRuns` e ledger;
+9. verificare costo reale e assenza di PII nei documenti tecnici;
+10. in caso di problema: `enabled=false` immediato;
+11. solo dopo conferma docente: **Gate G7 PASS**.
+
+### Rollback
+
+Rollback immediato con `enabled=false` (kill switch senza deploy), poi ritorno
+**esplicito** a nano aggiornando `settings/aiConfig` con `model: gpt-5.4-nano-2026-03-17`
+e `priceListVersion: v2-2026-07-17-hg-m5` e una nuova `configVersion`. Nessun fallback
+automatico tra modelli.
+
+### Gate G7
+
+**Non ancora chiuso.** Resta APERTO fino allo smoke reale DEV e alla conferma finale del
+docente (punto 11). Questa PR prepara solo il codice: nessun deploy, nessuna modifica a
+Firestore, nessuna chiamata OpenAI.
