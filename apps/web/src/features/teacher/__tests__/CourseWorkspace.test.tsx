@@ -28,7 +28,10 @@ const mockDownloadLessonPdf = vi.fn();
 const mockReorderUda = vi.fn();
 const mockReorderLesson = vi.fn();
 
-vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
+vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
+vi.mock('../../repository/programs/programNotesCleanupClient.js', () => ({
+  createProgramNotesCleanupCallable: () => vi.fn(),
+}));
 vi.mock('../../repository/programs/programsService.js', () => ({
   listUdas: (...a: unknown[]) => mockListUdas(...a),
   listLessons: (...a: unknown[]) => mockListLessons(...a),
@@ -1026,7 +1029,9 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Elimina corso' }));
     fireEvent.click(screen.getByRole('button', { name: 'Elimina' }));
 
-    await waitFor(() => expect(mockDeleteProgram).toHaveBeenCalledWith('p1', 'owner', {}));
+    await waitFor(() =>
+      expect(mockDeleteProgram).toHaveBeenCalledWith('p1', 'owner', {}, expect.any(Function)),
+    );
     expect(onCourseDeleted).toHaveBeenCalledWith('p1');
   });
 });

@@ -5,7 +5,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import { db, storage } from '../../lib/firebase.js';
+import { db, functions, storage } from '../../lib/firebase.js';
+import { createProgramNotesCleanupCallable } from '../repository/programs/programNotesCleanupClient.js';
 import {
   IconBookOpen,
   IconArrowUpDown,
@@ -731,7 +732,12 @@ export function CourseWorkspace({
   function handleDeleteCourse() {
     void withBusy(async () => {
       try {
-        await deleteProgram(card.programId, ownerUid, db);
+        await deleteProgram(
+          card.programId,
+          ownerUid,
+          db,
+          createProgramNotesCleanupCallable(functions),
+        );
         if (!mountedRef.current) return;
         onCourseDeleted?.(card.programId);
       } catch (err) {
@@ -1904,7 +1910,7 @@ export function CourseWorkspace({
       {wsDialog.kind === 'deleteCourse' && (
         <ConfirmDialog
           title="Elimina corso"
-          message={`Eliminare definitivamente "${card.title}"? Verranno rimossi import, UDA, lezioni, pool e file caricati. L'operazione non è reversibile.`}
+          message={`Eliminare definitivamente "${card.title}"? Verranno rimossi import, UDA, lezioni, pool e file caricati, e anche gli appunti personali degli studenti associati al corso. L'operazione non è reversibile.`}
           confirmLabel="Elimina"
           danger
           busy={wsBusy}

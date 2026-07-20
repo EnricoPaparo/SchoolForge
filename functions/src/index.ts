@@ -6,3 +6,7 @@
 //   nessuna scrittura Firestore, zero token).
 export { repositoryGateway } from './repositoryGateway.js';
 export { aiCorrectionPreview, aiCorrectionRun } from './aiCorrectionGateway.js';
+// ANNOT-CLEANUP-01 — owner-only cleanup of a program's student lesson notes
+// (indexed collection-group delete), invoked by deleteProgram before removing
+// the program document.
+export { cleanupProgramLessonNotes } from './programNotesCleanup.js';

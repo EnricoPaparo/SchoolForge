@@ -467,6 +467,53 @@ Costi: apertura normale `1` read indice e zero read per lezione; bootstrap una t
 `1` write; create/svuotamento/delete `2` write atomiche. Zero listener, polling,
 scheduler o Cloud Function.
 
+### ANNOT-CLEANUP-01 — eliminazione appunti alla cancellazione del corso — **IMPLEMENTATO**
+
+Quando il docente elimina un corso, gli appunti personali degli studenti
+(`students/{studentUid}/lessonNotes/{publicLessonId}`) e i relativi indici
+per-corso (`students/{studentUid}/lessonNoteIndexes/{programId}`) non restano più
+orfani. La pulizia avviene tramite una Cloud Function v2 `onCall`
+`cleanupProgramLessonNotes` (region `us-central1`, scale-to-zero), owner-only e
+fail-closed: usa l'Admin SDK (bypassa le Security Rules), quindi il docente non
+ottiene mai accesso Rules alle note né ne legge il `content`.
+
+Strategia economica e indicizzata (mai una scansione di tutti i `lessonNotes`):
+
+- **una** collection-group query su `lessonNoteIndexes` filtrata per
+  `programId == input` → un documento per ogni studente che ha un indice per il
+  corso (filtro su campo singolo → indice single-field automatico, **nessun
+  indice composito**);
+- i path delle note si costruiscono **direttamente** dallo `studentUid` +
+  `lessonIds` dell'indice: i documenti `lessonNotes` (e il loro `content`) non
+  vengono **mai** letti;
+- validazione fail-closed di ogni indice (path coerente con `studentUid`/
+  `programId`, `lessonIds` array di stringhe non vuote ≤500, dedup) prima di
+  costruire qualsiasi delete: un indice malformato interrompe l'operazione senza
+  cancellare path arbitrari e senza esporre path/contenuti;
+- delete in chunk sequenziali di massimo 400 op, **prima le note poi gli
+  indici**: un crash a metà non lascia mai un indice che punta a note già
+  rimosse, e il retry riquery solo gli indici ancora presenti → idempotente
+  (cancellare un documento assente è un no-op).
+
+Input chiuso: solo `programId` non vuoto (nessuno `studentUid`/`lessonId` dal
+client). Risultato minimale tipizzato: `{ status: 'completed', notesDeleted,
+indexesDeleted }` — nessun nome, email, uid, lessonId, path o contenuto.
+
+Integrazione in `deleteProgram`: resta per primo il blocco se esistono
+verifiche collegate; la cleanup viene invocata **prima** della delete finale del
+documento `programs/{programId}`, così se fallisce il documento del corso resta
+per il retry (nessun falso successo). La conferma di eliminazione avvisa che
+verranno eliminati anche gli appunti personali degli studenti associati al corso.
+Doppio click protetto; messaggio UI leggibile e sanificato.
+
+Copre esattamente le note tracciate dall'indice per-corso ANNOT-03B. Nessun
+fallback di scansione dei `lessonNotes`, nessuna migrazione/backfill legacy: DEV
+verrà ripulito prima del rollout.
+
+Costi (solo alla cancellazione del corso, con `S` studenti con indice e `N` note
+totali): `S` read indice + `N` delete note + `S` delete indice. Zero listener,
+polling, scheduler, TTL o retry infinito.
+
 ### ANNOT-03 — smoke DEV e Gate GANNOT — **PASS**
 
 Scope realizzato:
