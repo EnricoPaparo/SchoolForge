@@ -347,9 +347,15 @@ Refresh e nuovo login mantengono le domande assegnate; solo l'ordine visivo può
 | ID | Scope | DoD |
 |---|---|---|
 | VEX-00 | Contratto gruppi + prototipo builder desktop/mobile. | Tutti gli stati, warning e validazioni rappresentati; approvazione docente. |
-| VEX-01 | Modello dati, Function, assegnazione persistente e sicurezza. | Test concorrenza/idempotenza, isolamento alternative e refresh. |
-| VEX-02 | Builder docente e flusso studente. | Correzione manuale/IA e restituzione lavorano sulla variante assegnata. |
+| VEX-00B ✅ (docs+prototipo) | Consolidamento tecnico (inventario del già-implementato, congelamento nomi campi, contratto assegnazione/sicurezza/costo/PDF/correzione) + prototipo statico. | [`vex-contract.md`](vex-contract.md) e [`prototipi/vex-builder.html`](prototipi/vex-builder.html); nessun codice applicativo/Function/Rule/indice/schema/dipendenza/deploy. |
+| VEX-01A | Modello dati + builder draft-time + snapshot con conversione entryId→order. | `distributionMode`/`equivalentGroups` in config, `questionsPerStudent` rimosso, validazioni bloccanti/warning, `same_questions` invariato. |
+| VEX-01B | Callable di assegnazione + sicurezza + isolamento. | Test concorrenza/idempotenza, isolamento alternative, refresh; proiezione senza alternative; unica scrittura `assignedQuestionOrders`. |
+| VEX-02 | Flusso studente + correzione manuale/IA/restituzione + PDF. | Variante assegnata consumata; workspace/IA/restituzione filtrati per `assignedQuestionOrders`; PDF studente disabilitato in `equivalent_variants`. |
 | VEX-03 | Hardening equità/costi/smoke. | Gate multi-studente, nessuna fuga di alternative/soluzioni. |
+
+Il contratto tecnico completo (campi definitivi, assegnazione/idempotenza, sicurezza,
+costi, PDF, correzione, scope per pacchetto) è congelato in
+[`vex-contract.md`](vex-contract.md). VEX-00B è **solo documentazione + prototipo**.
 
 ## 7. VISUAL-BOOST — evoluzione grafica controllata
 

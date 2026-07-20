@@ -42,6 +42,7 @@ M3-lite non introduce Cloud Functions. Nella baseline corrente le Cloud Function
 |---|---|---|
 | `aiCorrectionPreview` + `aiCorrectionRun` (gateway IA) | M5 | Due Function `onCall`; modalità `disabled\|mock\|openai`, config fail-closed; Luna operativo su DEV dietro kill switch, nano rollback esplicito; contratto in §5. |
 | `cleanupProgramLessonNotes` (**ANNOT-CLEANUP-01 implementato**) | Appunti | Una Function `onCall` owner-only, region `us-central1`, scale-to-zero; elimina appunti e indici degli studenti alla cancellazione del corso via Admin SDK; contratto in §5b. |
+| callable assegnazione varianti (**VEX-01B — contratto approvato, NON implementato**) | Verifiche online | Al primo avvio in `equivalent_variants`: verifica approvazione/classe/`active+public+online`, legge `teacherSnapshot`, crea o recupera **atomicamente** l'assegnazione (unica scrittura `assignedQuestionOrders`), restituisce solo le domande assegnate **senza soluzioni**. Idempotente su refresh/reload; nessun listener/polling; nessun documento per domanda; nessuna copia del pool. Contratto in [`vex-contract.md`](vex-contract.md). |
 
 La specifica corrente di **M3-full** è client-only: usa Firebase SDK + Security Rules, `submissions/{id}` e `submissionReceipts/{id}`. Non introduce `startDigitalAttempt`/`continueDigitalAttempt`, cookie HttpOnly o Cloud Functions dedicate. Le Cloud Function IA (`aiCorrectionPreview`/`aiCorrectionRun`) appartengono al Modulo 5 (§5); **M5-01** le ha implementate in **modalità mock** (0 token, nessuna scrittura), il comportamento pieno è M5-02.
 
