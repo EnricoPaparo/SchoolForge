@@ -80,7 +80,7 @@ L'implementazione deve consentire al docente di:
 
 **Decisione.** M3-lite non usa Cloud Functions: la StudentShell legge Firestore e Cloud Storage direttamente dal client, entro Security Rules che distinguono `ownerUid` da qualunque altro utente autenticato. Le Cloud Functions restano riservate a:
 - un eventuale gateway M3-full (specifica rinviata): `startDigitalAttempt`/`continueDigitalAttempt` per creare participant lock, tentativo, snapshot con soluzioni private, log accesso e token opaco di sessione, e per gestire ripresa/bozza/consegna autorizzate da un cookie HttpOnly;
-- il modulo IA (M5): due Function `onCall` `aiCorrectionPreview`/`aiCorrectionRun` (preview senza provider + esecuzione) usano un contratto **provider-agnostic** e contesto chiuso. **M5-05C** aggiunge `OpenAiGrader` e il benchmark harness dietro `disabled|mock|openai`, default `disabled`. **M5-05D1** impone sul percorso reale l'ordine auth/owner → config runtime/kill switch → classificazione e hard ceiling DEV → secret/grader → lease; `settings/aiConfig.model` è l'unica fonte del modello. Il preflight caricato viene riusato dopo la lease, mentre `commitSubmission` rilegge transazionalmente la correction contro le race. **M5-05D2A** rende `aiCorrectionRuns` server-only e privacy-minimal: selezione canonica + SHA-256, risultati persistiti solo per ordinale, replay ricostruito dalla selezione validata, legacy fail-safe ed `expireAt` a 30 giorni senza policy TTL attiva. **M5-05D2B-1/2** collega costi e ledger mensile, prenotazione crash-safe `reserved → pending`, retry applicativo unico (`SDK maxRetries: 0`) e accounting prudente. **M5-05E-1** rende corrente soltanto la coppia pinned `gpt-5.4-nano-2026-03-17` / `v2-2026-07-17-hg-m5`, con prezzi interi in micro-USD e ceiling server-side 250.000/operazione, 1.000.000/giorno UTC e 5.000.000/mese UTC. Il limite per operazione precede lease e ledger; giornaliero e mensile sono verificati atomicamente nello stesso `aiBudgetLedger/{YYYY-MM}`, le prenotazioni conservano il `dayKey` originale e la riconciliazione oltre mezzanotte resta attribuita al giorno di reserve. Run e ledger restano server-only e senza ID applicativi/UID/contenuti. Nessuno scheduler/polling; provider reale, secret, chiamate, costi, TTL e deploy restano disabilitati; M5/G7 aperti. **M5-QUALITY-07** estende l'allowlist runtime a due coppie modello→listino univoche — nano/`v2-2026-07-17-hg-m5` e `gpt-5.6-luna`/`v5-2026-07-20-luna-dev` (1.000.000/6.000.000 µUSD per 1M in/out) — dopo la revisione umana M5-QUALITY-06 superata dal docente. Accoppiamento fail-closed prima di secret/grader/prenotazione, nessun fallback automatico, nano scelta esplicita; `aiCorrectionRuns` registra model/listino; UI, prompt e privacy invariati. Nessun deploy/Firestore/chiamata in questa change: rollout e rollback (`enabled=false` → ritorno esplicito a nano) restano post-merge; G7 aperto fino allo smoke reale DEV.
+- il modulo IA (M5): due Function `onCall` `aiCorrectionPreview`/`aiCorrectionRun` usano un contratto **provider-agnostic** e contesto chiuso. Il percorso reale impone auth/owner → config runtime/kill switch → classificazione e hard ceiling DEV → secret/grader → lease; `settings/aiConfig.model` è l'unica fonte del modello. `aiCorrectionRuns` è server-only e privacy-minimal, con selezione canonica, risultati ordinali ed `expireAt` a 30 giorni. Costi e ledger usano prenotazione crash-safe `reserved → pending`, retry applicativo unico (`SDK maxRetries: 0`) e accounting prudente. L’allowlist runtime accoppia in modo univoco Luna/`v5-2026-07-20-luna-dev` e nano/`v2-2026-07-17-hg-m5`, senza fallback automatico. Dopo benchmark, revisione docente e rollout controllato, Luna è operativo su DEV e **Gate G7 è PASS**; nano resta rollback esplicito.
 
 - la pulizia degli appunti alla cancellazione del corso (**ANNOT-CLEANUP-01**): una Function `onCall` owner-only `cleanupProgramLessonNotes` (region `us-central1`, scale-to-zero) elimina appunti e indici degli studenti via Admin SDK quando il docente elimina un corso. Serve una Function perché il docente non può — e non deve — interrogare via Rules gli indici note di tutti gli studenti: l'Admin SDK bypassa le Rules senza concedere accesso ai contenuti. Strategia indicizzata: **una** collection-group query su `lessonNoteIndexes` per `programId`, supportata dall'indice single-field esplicito `COLLECTION_GROUP` in `firestore.indexes.json`; path note costruiti da `studentUid` + `lessonIds` (i `lessonNotes` non sono mai letti), validazione fail-closed (segmenti Firestore validati senza normalizzazione, input callable realmente chiuso), delete in chunk di 400 (prima le note poi gli indici), idempotente ma non globalmente atomica (un retry completa la pulizia). Invocata da `deleteProgram` prima di qualsiasi operazione distruttiva sul corso: se fallisce, il corso resta integro e riprovabile. Nessun indice composito, nessuno scheduler/polling/TTL. Costo solo alla cancellazione: `S` read indice + `N` delete note + `S` delete indice.
 
@@ -136,7 +136,7 @@ Un eventuale M3-full (specifica rinviata) selezionerebbe dal `publishedSnapshot`
 
 ### ADR-09 — Secret Manager solo per M5
 
-**Decisione.** Secret Manager non è usato nei Moduli 1–4. M5-05C predispone soltanto il binding Functions v2 `OPENAI_API_KEY`, associato esclusivamente ad `aiCorrectionRun`; non crea né valorizza il secret. Se in futuro autorizzata, la chiave sarà letta solo dalla Function e mai da client/repo/Firestore/log.
+**Decisione.** Secret Manager non è usato nei Moduli 1–4. Il binding Functions v2 `OPENAI_API_KEY` è associato esclusivamente ad `aiCorrectionRun`; la chiave è letta solo dalla Function e mai da client, repository, Firestore o log.
 
 **Motivazione.** Senza invio email e senza operazioni server-side che richiedano credenziali esterne nei primi quattro moduli, Secret Manager non ha giustificazione fino all'AI (M5/V2).
 
@@ -430,7 +430,7 @@ M3-lite non usa Cloud Functions. Le uniche Cloud Function della baseline corrent
 | Funzione | Attore | Scopo |
 |---|---|---|
 | `aiCorrectionPreview` (M5/V2) | SPA docente | Preflight owner-only, eleggibilità e stima; nessun grader, nessun token. |
-| `aiCorrectionRun` (M5/V2) | SPA docente | Chiuse deterministiche e aperte tramite `AiGrader`; default disabilitato, provider reale non autorizzato. |
+| `aiCorrectionRun` (M5/V2) | SPA docente | Chiuse deterministiche e aperte tramite `AiGrader`; provider reale solo su DEV dietro config fail-closed e kill switch. |
 
 [→ Sequenza correzione AI (V2)](diagrammi/sequence-correzione-ai.md)
 
@@ -548,9 +548,9 @@ L'implementazione è conforme solo se dimostra che:
 
 ## Appendice A — Decisioni residue (V2)
 
-C-02 e C-03 riguardano il Modulo 5 (AI), spostato interamente alla V2; non bloccano la V1. C-02/HG-M5-1..4 è stata decisa il 17 luglio 2026, ma l'attivazione operativa e G7 restano aperti. Vedi `decisioni.md`.
+C-02/HG-M5-1..4 è stata decisa il 17 luglio 2026; benchmark, rollout DEV e Gate G7 sono poi stati completati con M5-08. C-03/G8 resta futuro e non blocca la V1. Vedi `decisioni.md`.
 
 | ID | Decisione | Stato |
 |---|---|---|
-| C-02 | Provider AI, modello e soglie di costo/retention. | **Decisa (HG-M5-1..4):** OpenAI Responses API, snapshot pinned `gpt-5.4-nano-2026-03-17`, ceiling costi e retention approvati. Provider reale/secret/TTL/deploy e G7 restano non autorizzati. |
+| C-02 | Provider AI, modello e soglie di costo/retention. | **Chiusa:** OpenAI Responses API; Luna approvato e operativo su DEV, nano rollback esplicito; ceiling e retention applicati; Gate G7 PASS. |
 | C-03 | Regola didattica per correzione automatica. | Rinviata alla V2. |

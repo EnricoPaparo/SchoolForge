@@ -298,7 +298,8 @@ ma non è ancora validato da una nuova esecuzione reale. Serve un nuovo
 benchmark esplicitamente autorizzato, seguito dalla revisione docente di feedback,
 anomalie e reason code sanitizzati.
 
-**M5-QUALITY-02 non è superato. Gate G7 resta APERTO.**
+**Esito storico del primo ciclo:** M5-QUALITY-02 non era ancora superato; i cicli
+successivi e la chiusura finale sono documentati più avanti.
 
 ## M5-QUALITY-05 — confronto modello controllato nano vs mini (solo benchmark)
 
@@ -402,7 +403,7 @@ pnpm --filter @schoolforge/functions benchmark:m5-quality -- --benchmark-model=g
 
 Stato: nessuna scelta definitiva del modello. Produzione e DEV restano su
 `gpt-5.4-nano-2026-03-17`. Il benchmark reale mini resta subordinato ad autorizzazione
-esplicita. **Gate G7 resta APERTO.**
+esplicita. In questa fase il Gate non era ancora chiudibile.
 
 ## M5-QUALITY-06 — ricalibrazione docente INF-004 e candidatura Gate G7
 
@@ -480,7 +481,7 @@ quindi deciso di **non ripetere il benchmark nano**: la ricalibrazione INF-004 �
 decisione pedagogica indipendente dal modello, e la valutazione di Luna procede sul
 dataset aggiornato senza un nuovo run nano.
 
-### Gate G7 — resta APERTO in attesa della revisione umana
+### Gate G7 — stato storico prima della revisione umana
 
 La rivalutazione automatica non può chiudere G7. Il docente deve confermare
 manualmente:
@@ -490,8 +491,8 @@ manualmente:
 3. resistenza semantica alle prompt injection;
 4. accettabilità delle modalità compassionate/balanced/rigorous.
 
-Luna resta **benchmark-only**: non è promossa in DEV/runtime. Produzione e DEV restano
-su `gpt-5.4-nano-2026-03-17`. **Gate G7 resta APERTO.**
+In questa fase Luna restava **benchmark-only** e non era ancora promossa nel runtime.
+La revisione e il rollout successivi hanno superato questo stato.
 
 ## M5-QUALITY-07 — promozione controllata di GPT-5.6 Luna nel runtime DEV
 
@@ -556,8 +557,28 @@ Rollback immediato con `enabled=false` (kill switch senza deploy), poi ritorno
 e `priceListVersion: v2-2026-07-17-hg-m5` e una nuova `configVersion`. Nessun fallback
 automatico tra modelli.
 
-### Gate G7
+### Gate G7 — esito successivo al rollout
 
-**Non ancora chiuso.** Resta APERTO fino allo smoke reale DEV e alla conferma finale del
-docente (punto 11). Questa PR prepara solo il codice: nessun deploy, nessuna modifica a
-Firestore, nessuna chiamata OpenAI.
+Lo smoke reale DEV e la conferma finale del docente sono stati poi completati. La
+chiusura formale, con separazione fra prove automatiche e manuali, è registrata in
+[`g7-m5-checklist-finale.md`](g7-m5-checklist-finale.md): **Gate G7 PASS**.
+
+## M5-08 — consolidamento finale
+
+Il benchmark Luna ha completato e misurato 36/36 chiamate: 62.109 token input,
+19.021 output, 81.130 totali, costo 176.235 micro-USD (0,176235 USD), latenza media
+5.189,861 ms, p50 5.026 ms, p95 7.791 ms e nessun output invalido. Il contratto
+usato è identificato da `promptContractVersion` `db91d19cc4c43f2a`, con listino
+benchmark `v4-2026-07-20-luna-benchmark`.
+
+La rivalutazione offline di INF-004 ha prodotto `READY_FOR_MANUAL_REVIEW`, tutti i
+criteri automatici obbligatori superati e zero anomalie automatiche bloccanti. Il
+docente ha confermato feedback per domanda, feedback overall, resistenza semantica
+alle injection, tre modalità e finding manuali. Nel caso malevolo il risultato è
+stato 0 in tutte le modalità e ripetizioni, senza esecuzione delle istruzioni né
+esposizione di dettagli interni.
+
+Dopo il rollout controllato, `gpt-5.6-luna` con
+`v5-2026-07-20-luna-dev`/`v2-2026-07-20-luna-dev` è il modello DEV approvato e
+abilitato. Nano resta rollback esplicito. M5-QUALITY-02 è quindi chiuso nel contesto
+del Gate G7; i limiti residui non bloccanti sono raccolti nella checklist finale.
