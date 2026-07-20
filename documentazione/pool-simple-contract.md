@@ -2,7 +2,8 @@
 
 **Stato:** POOL-SIMPLE-01 (contratto, parser, serializer, fixture, template) e
 POOL-SIMPLE-02 (rimozione applicativa end-to-end di `peso`) **implementati**. **Gate
-GPOOL resta aperto**: richiede pulizia DEV, deploy coordinato e smoke end-to-end.
+GPOOL superato (PASS) il 20 luglio 2026**; evidenze in
+[`evidenze/gpool-checklist-finale.md`](evidenze/gpool-checklist-finale.md).
 **Data inventario:** 18 luglio 2026.
 **Data implementazione contratto V2:** 20 luglio 2026.
 **Prerequisito:** pulizia completa dei dati DEV dipendenti dal pool V1 prima del rollout.
@@ -281,12 +282,12 @@ Completato end-to-end:
   l'equivalente `weight`); test dedicato sulla forma del payload OpenAI;
 - rimozione del ponte `peso: 1` da tutti i writer applicativi.
 
-Restano fuori dallo scope di POOL-SIMPLE-02 (Gate GPOOL): pulizia DEV, deploy coordinato
-e smoke manuale end-to-end.
+Pulizia DEV, deploy coordinato e verifica del rollout non facevano parte
+dell'implementazione POOL-SIMPLE-02: sono stati valutati separatamente nel Gate GPOOL.
 
-### Gate GPOOL
+### Gate GPOOL — **PASS**
 
-Il gate richiede, sul DEV pulito:
+Il gate ha verificato, sul DEV dichiarato operativo con il contratto V2:
 
 1. import del kit ZIP V2;
 2. apertura e modifica di un pool nell'editor;
@@ -300,8 +301,11 @@ Il gate richiede, sul DEV pulito:
 10. ricerca conclusiva `rg` senza riferimenti applicativi a `peso`, salvo documenti
     storici nominati in una allowlist esplicita e revisionata.
 
-POOL-SIMPLE-01 non rende il rollout completo: POOL-SIMPLE resta aperto finché 02 e Gate
-GPOOL non sono completati.
+La matrice finale separa evidenze automatiche, conferme manuali realmente dichiarate e
+limiti residui. Il docente ha confermato il funzionamento generale del nuovo flusso su
+DEV e ha osservato specificamente il rifiuto di un pool V1 con «schema non supportato».
+Non sono stati inventati smoke puntuali ulteriori. Verdetto e dettaglio:
+[`evidenze/gpool-checklist-finale.md`](evidenze/gpool-checklist-finale.md).
 
 ## 7. Pulizia DEV obbligatoria
 
@@ -400,6 +404,5 @@ reintrodurre un secondo indicatore di peso o punteggio per distinguere alternati
   dimostrare che nei nuovi flussi è sempre uguale alla difficoltà originaria.
 - **IA:** nessun `peso` è oggi inviato direttamente al provider, ma devono essere
   rimossi i campi upstream e testata l'esatta forma del payload.
-- **Documentazione transitoria:** fino a POOL-SIMPLE-01/02 i documenti canonici
-  continuano correttamente a descrivere il sistema implementato V1; questo documento
-  descrive il target e non dichiara il rollout completato.
+- **Gate successivi:** GPOOL è superato, ma non chiude M5/G7 e non implementa VEX;
+  questi percorsi mantengono il proprio stato e i propri gate.

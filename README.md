@@ -21,6 +21,7 @@ Il flusso completo è operativo e testato (suite automatica estesa + smoke test 
 | Didattica studente read-only (SDUX) | ✅ libreria corsi + workspace corso/UDA/lezione su sole proiezioni pubbliche; modalità verifica e flussi DEV verificati |
 | Repository Editor (RE) | ✅ funzionante — crea/modifica/riordina/elimina (con blocco protetto) UDA e lezioni, export ZIP coerente e reimportabile |
 | Question Editor (QE) — sezione "Domande" | ✅ funzionante — crea/modifica/elimina pool e domande Markdown-first, questionIndex coerente, picker aggiornato |
+| Contratto pool V2 (POOL-SIMPLE) | ✅ `schoolforge-pool/v2` unico, difficoltà intera 1–5, `maxPoints === difficolta`, nessun `peso`; **Gate GPOOL superato (PASS)** — vedi [`gpool-checklist-finale.md`](documentazione/evidenze/gpool-checklist-finale.md) |
 | Portale digitale con consegna online (M3-full) | ✅ completato — avvio online, bozza, consegna immutabile, modalità verifica, monitor docente; Gate G5 superato |
 | Correzione e export risultati (M4) | ✅ completato — correzione/restituzione, ciclo di vita, Registro Correzioni, export CSV ed export PDF (M4-00→M4-04); Markdown rinviato; **Gate G6 superato** (vedi `documentazione/evidenze/g6-m4-checklist-finale.md`) |
 | Hardening finale V1 | ✅ **Gate GHARD superato** — 0 P0/P1, P2 risolti, residui P3 accettati |
@@ -67,6 +68,7 @@ Vedi [documentazione/mvp-docente-cartaceo.md](documentazione/mvp-docente-cartace
 | [Didattica (DUX)](documentazione/didattica-ux-roadmap.md) | Redesign UX del workspace docente: Didattica ha assorbito Corsi/Lezioni/Domande, Classi è ora una scheda di Studenti, Verifiche usa la creazione inline e la shell adotta header unico, Template restaurato e aurora sobria. **DUX-00→10A completati; Gate GDUX superato (PASS)** — vedi [evidenze/gdux-checklist-finale.md](documentazione/evidenze/gdux-checklist-finale.md). |
 | [Didattica studente (SDUX)](documentazione/student-didattica-ux-roadmap.md) | Versione read-only della Didattica su proiezioni pubbliche: implementata e verificata su DEV, inclusa Modalità verifica. |
 | [Gate GHARD](documentazione/evidenze/ghard-checklist-finale.md) | Chiusura hardening V1: finding, evidenze automatiche/manuali, rischi residui accettati e confine PROD. |
+| [Gate GPOOL](documentazione/evidenze/gpool-checklist-finale.md) | Chiusura del rollout pool V2 end-to-end: evidenze automatiche, conferme DEV dichiarate e limiti residui. |
 
 ## Moduli di delivery
 
