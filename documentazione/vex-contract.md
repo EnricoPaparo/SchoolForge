@@ -119,6 +119,38 @@ type SubmissionDoc = {
 - **nessuna copia** delle domande dentro la submission; **nessun documento per domanda**;
 - in `same_questions` il campo è **assente** e il flusso resta interamente client-side.
 
+### 2.4 Metadato `maxCharacters` per la validazione draft (VEX-01A — congelato)
+
+Il builder deve verificare che le aperte dello **stesso gruppo** abbiano lo **stesso
+`maxCharacters` effettivo**, ma oggi **né `QuestionIndexEntry` né `VerificationQuestionRef`
+espongono questo dato** (il valore vive nel pool ed entra nello snapshot solo
+all'attivazione). Decisione congelata per VEX-01A:
+
+- **`QuestionIndexEntry`** aggiungerà `maxCharacters` **solo** per le domande `aperta`;
+- il valore scritto è quello **effettivo già normalizzato dal pool parser**, incluso il
+  **default 2000** quando il pool non lo specifica (il default viene materializzato **nel
+  question index**, non lasciato implicito);
+- **`QuestionIndexPayload`**, **`questionIndexService`** e **`VerificationQuestionRef`**
+  propagano lo **stesso** campo (una sola definizione, nessuna divergenza);
+- **nessun testo, soluzione o risposta** viene aggiunto al question index (resta
+  privacy-minimal: solo metadato numerico per le aperte);
+- **nessun nuovo documento, query o lettura**: è un piccolo campo nei documenti
+  `questionIndex` **già esistenti** → costo trascurabile;
+- il builder confronta il valore **direttamente dai `VerificationQuestionRef` selezionati**;
+- la validazione è **ripetuta autorevolmente all'attivazione** usando le domande
+  realmente caricate dal pool (il ref è un aiuto UX, il pool resta l'autorità);
+- **fail-closed sui corsi legacy:** se una domanda aperta di un corso **già importato**
+  non possiede il nuovo metadato, `equivalent_variants` **fallisce in modo leggibile**
+  chiedendo di **reimportare il corso**; **`same_questions` continua a funzionare senza
+  reimport**;
+- **nessun fallback silenzioso a 2000** su un indice privo del campo: assumere 2000
+  potrebbe nascondere un limite personalizzato realmente impostato nel pool e produrre
+  un'equivalenza falsa. L'assenza del campo su un'aperta ⇒ errore «reimporta il corso»,
+  non un default implicito.
+
+Questa decisione è **solo di contratto** (VEX-01A): questa PR **non** modifica alcun tipo,
+service o schema reale.
+
 ---
 
 ## 3. Validazione dei gruppi
@@ -179,6 +211,23 @@ Numero di **varianti possibili** = prodotto del numero di alternative di ogni gr
 9. Agli accessi successivi: **nessuna nuova scrittura** se l'assegnazione esiste già.
 10. Il flusso **`same_questions` resta client-side** e **non paga** il costo della callable VEX.
 
+### 4.2b Algoritmo di assegnazione (VEX-01B — congelato)
+
+- per **ogni gruppo** viene scelta **esattamente una** alternativa; le comuni sono sempre
+  tutte assegnate;
+- scelta **uniforme** (ogni alternativa del gruppo equiprobabile), decisa **server-side**;
+- **RNG crittograficamente sicuro** in produzione (es. `crypto.randomInt`/
+  `crypto.getRandomValues`), **iniettabile** nei test per determinismo;
+- la casualità è usata **solo** quando l'assegnazione **non esiste** ancora; la
+  transazione persiste `assignedQuestionOrders` una sola volta;
+- **retry, doppia tab e refresh** restituiscono **sempre** l'assegnazione **già
+  persistita** (nessuna nuova estrazione, nessun ri-sorteggio);
+- **nessun bilanciamento globale** tra studenti e **nessuna garanzia** che studenti
+  diversi ricevano varianti diverse; le **ripetizioni** sono **ammesse** (già classificate
+  come warning non bloccante in §3);
+- **nessuna lettura o scrittura aggiuntiva** rispetto al contratto §4.1–4.3 (l'estrazione
+  è in-memory dentro la stessa transazione del primo avvio).
+
 ### 4.3 Budget indicativo (da documentare, non misurato qui)
 
 | Evento | Costo |
@@ -188,6 +237,16 @@ Numero di **varianti possibili** = prodotto del numero di alternative di ogni gr
 | **`same_questions`** | invariato, interamente client-side, **0 callable VEX** |
 
 Nessun costo continuo; nessun listener/polling/scheduler.
+
+**Matrice schema/costo delle modifiche VEX-01A** (nessuna in questa PR; congelate):
+
+| Modifica schema | Dove | Costo | Note |
+|---|---|---|---|
+| `distributionMode` | `VerificationConfig`, `teacherSnapshot` | trascurabile (campo enum su doc esistente) | default `same_questions` |
+| `equivalentGroups` | `VerificationConfig` (entryId), `teacherSnapshot` (order) | trascurabile (piccolo array su doc esistente) | solo `equivalent_variants` |
+| `assignedQuestionOrders` | `SubmissionDoc` | **1** scrittura al primo avvio, poi 0 | server-only |
+| **`maxCharacters` (aperte)** | `QuestionIndexEntry` → `QuestionIndexPayload` → `questionIndexService` → `VerificationQuestionRef` | **trascurabile**: un piccolo campo numerico nei documenti `questionIndex` **già esistenti**; **nessun** nuovo documento, query o lettura | scritto solo per le `aperta`; valore effettivo normalizzato (incl. default 2000); nessun testo/soluzione aggiunto; assenza su corso legacy ⇒ errore «reimporta» in `equivalent_variants`, `same_questions` non richiede reimport |
+| rimozione `questionsPerStudent` | `VerificationConfig` | trascurabile | campo inutilizzato, assorbito |
 
 ### 4.4 PDF
 
@@ -241,14 +300,28 @@ codice applicativo.
 ### VEX-01A — **modello dati + validazione builder (client, draft-time)**
 - aggiungere `distributionMode` + `equivalentGroups` a `VerificationConfig`; **rimuovere
   `questionsPerStudent`** (assorbito);
+- **metadato `maxCharacters` (§2.4):** aggiungerlo a `QuestionIndexEntry` (solo aperte,
+  valore effettivo già normalizzato dal pool incluso il default 2000) e propagarlo in
+  `QuestionIndexPayload`, `questionIndexService` e `VerificationQuestionRef`; nessun
+  testo/soluzione/risposta nel question index; nessun nuovo documento/query/lettura;
 - builder docente draft-time: creare/eliminare gruppi, aggiungere/rimuovere alternative,
-  riepilogo derivato, validazioni §3 (bloccanti e warning), eliminazione gruppo vuoto;
+  riepilogo derivato, validazioni §3 (bloccanti e warning) — incluso il confronto
+  `maxCharacters` per le aperte direttamente dai ref selezionati —, eliminazione gruppo
+  vuoto; **fail-closed «reimporta il corso»** se un'aperta di un corso legacy non ha il
+  metadato (§2.4), senza fallback silenzioso a 2000; `same_questions` funziona senza
+  reimport;
 - estendere `teacherSnapshot` con `distributionMode`/`commonQuestionOrders`/
-  `equivalentGroups` e la **conversione entryId→order all'attivazione**;
+  `equivalentGroups` e la **conversione entryId→order all'attivazione**, ripetendo
+  **autorevolmente** la validazione (incluso `maxCharacters`) sulle domande caricate dal
+  pool;
 - **nessuna** callable ancora; `same_questions` invariato.
 
 ### VEX-01B — **callable di assegnazione + sicurezza + isolamento**
 - Cloud Function callable (owner/student-auth) §4.1;
+- **algoritmo di assegnazione §4.2b:** una alternativa per gruppo, scelta uniforme
+  server-side, RNG crittograficamente sicuro in produzione e iniettabile nei test,
+  casualità usata solo in assenza di assegnazione, nessun bilanciamento globale,
+  ripetizioni ammesse;
 - transazione di assegnazione idempotente §4.2, unica scrittura `assignedQuestionOrders`;
 - proiezione pubblica che **non** espone le alternative in `equivalent_variants`;
 - Rules/isolamento: lo studente non legge alternative non assegnate;
