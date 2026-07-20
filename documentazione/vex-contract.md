@@ -66,7 +66,7 @@ type EquivalentGroupConfig = {
 
 type VerificationConfig = {
   // …campi esistenti…
-  /** Default 'same_questions' (assente/legacy ⇒ 'same_questions'). */
+  /** Default 'same_questions' solo se il campo è ASSENTE (legacy); valore malformato ⇒ errore. */
   distributionMode: 'same_questions' | 'equivalent_variants';
   /** Presente solo in 'equivalent_variants'. Gruppi di alternative. */
   equivalentGroups?: EquivalentGroupConfig[];
@@ -296,9 +296,11 @@ codice applicativo.
 ### VEX-01A — **modello dati + validazione builder (client, draft-time)** ✅ IMPLEMENTATO
 - ✅ `distributionMode` + `equivalentGroups` aggiunti a `VerificationConfig`;
   **`questionsPerStudent` rimosso** dal tipo, dal writer e dalle fixture (assorbito);
-- ✅ helper puro centralizzato `normalizeDistributionMode` (`vexDistribution.ts`):
-  assente/`null`→`same_questions`, valore valido→sé stesso, **valore sconosciuto→errore
-  leggibile** (mai fallback silenzioso); niente controlli-stringa duplicati in UI;
+- ✅ helper puro centralizzato `normalizeDistributionMode` (`vexDistribution.ts`),
+  **fail-closed**: **solo `undefined`** (campo assente, documento legacy)→`same_questions`;
+  valore valido→sé stesso; **qualsiasi altro valore presente** — `null`, stringa vuota,
+  stringhe sconosciute, array, oggetti, numeri — →errore leggibile (mai fallback
+  silenzioso di valori malformati); niente controlli-stringa duplicati in UI;
 - ✅ builder docente draft-time (`VexBuilder.tsx`, subito dopo il picker, solo in bozza):
   creare/eliminare gruppi, aggiungere/rimuovere alternative, riepilogo derivato,
   validazioni §3 (UDA/tipo/difficoltà/`maxPoints`, riferimento valido, domanda in un solo

@@ -74,4 +74,11 @@ describe('buildEquivalentSnapshotParts (VEX-01A)', () => {
     const refs = [ref('a')];
     expect(() => buildEquivalentSnapshotParts(refs, [group('g', [])])).toThrow(/vuoto/);
   });
+
+  it('fails on duplicate group ids (fail-closed)', () => {
+    const refs = [ref('a'), ref('b')];
+    expect(() =>
+      buildEquivalentSnapshotParts(refs, [group('dup', ['a']), group('dup', ['b'])]),
+    ).toThrow(/stesso identificativo/);
+  });
 });

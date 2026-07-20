@@ -50,8 +50,15 @@ export function buildEquivalentSnapshotParts(
 
   const groupedOrders = new Set<number>();
   const equivalentGroups: EquivalentGroupSnapshot[] = [];
+  const seenGroupIds = new Set<string>();
 
   for (const group of groups) {
+    // Id gruppo univoci (fail-closed): id duplicati renderebbero ambigua
+    // l'identità dello snapshot.
+    if (seenGroupIds.has(group.id)) {
+      throw new VexSnapshotError(`Due gruppi hanno lo stesso identificativo: ${group.id}.`);
+    }
+    seenGroupIds.add(group.id);
     if (group.questionIndexEntryIds.length === 0) {
       // I gruppi vuoti sono eliminati a monte (reconcile); qui è un errore.
       throw new VexSnapshotError(`Gruppo ${group.id} vuoto: non convertibile.`);

@@ -1,6 +1,17 @@
 import type { EquivalentGroupConfig, VerificationQuestionRef } from '../../../types/firestore.js';
 
 /**
+ * Sottoinsieme **strutturale** dei campi realmente usati dalla logica pura: così
+ * accettiamo sia i `VerificationQuestionRef` congelati sia il tipo UI-only del
+ * builder (`VexBuilderQuestion`, che aggiunge solo `questionPreview`). Nessuna
+ * dipendenza dalla preview qui.
+ */
+export type VexQuestionRefLike = Pick<
+  VerificationQuestionRef,
+  'questionIndexEntryId' | 'questionLocalId' | 'udaDir' | 'tipo' | 'difficolta' | 'maxPoints'
+>;
+
+/**
  * VEX-01A — logica **pura** dei gruppi equivalenti: riconciliazione con la
  * selezione, validazioni bloccanti/warning e riepilogo derivato. Nessuna
  * lettura/scrittura, nessuna query, nessun accesso a pool/Storage.
@@ -49,7 +60,7 @@ const WARN_SINGLE_ALTERNATIVE =
 const WARN_SINGLE_VARIANT =
   'Una sola variante possibile. La verifica funzionerà normalmente, ma tutti gli studenti riceveranno le stesse domande in ordine casuale.';
 
-function refMap(refs: readonly VerificationQuestionRef[]): Map<string, VerificationQuestionRef> {
+function refMap(refs: readonly VexQuestionRefLike[]): Map<string, VexQuestionRefLike> {
   return new Map(refs.map((r) => [r.questionIndexEntryId, r]));
 }
 
@@ -112,7 +123,7 @@ export function computeVariantsPossible(groups: readonly EquivalentGroupConfig[]
  * alternative equivalenti hanno lo stesso `maxPoints`, si usa la prima).
  */
 export function deriveVexSummary(
-  refs: readonly VerificationQuestionRef[],
+  refs: readonly VexQuestionRefLike[],
   groups: readonly EquivalentGroupConfig[],
 ): VexSummary {
   const byId = refMap(refs);
@@ -138,13 +149,24 @@ export function deriveVexSummary(
  * che vi dipendono sono omessi.
  */
 export function validateEquivalentGroups(
-  refs: readonly VerificationQuestionRef[],
+  refs: readonly VexQuestionRefLike[],
   groups: readonly EquivalentGroupConfig[],
   studentCount?: number,
 ): VexValidation {
   const blocking: string[] = [];
   const warnings: VexWarning[] = [];
   const byId = refMap(refs);
+
+  // Gli id dei gruppi devono essere univoci (fail-closed: due gruppi con lo
+  // stesso id renderebbero ambiguo lo snapshot entryId→order).
+  const seenGroupIds = new Set<string>();
+  for (const g of groups) {
+    if (seenGroupIds.has(g.id)) {
+      blocking.push(`Due gruppi hanno lo stesso identificativo (${g.id}).`);
+    } else {
+      seenGroupIds.add(g.id);
+    }
+  }
 
   // Una stessa domanda non può stare in più gruppi.
   const seenInGroup = new Map<string, string>();
@@ -165,7 +187,7 @@ export function validateEquivalentGroups(
     // Compatibilità delle alternative dello stesso gruppo.
     const present = g.questionIndexEntryIds
       .map((id) => byId.get(id))
-      .filter((r): r is VerificationQuestionRef => r !== undefined);
+      .filter((r): r is VexQuestionRefLike => r !== undefined);
     if (present.length >= 2) {
       const first = present[0]!;
       const incompatible = present.some(
@@ -196,9 +218,14 @@ export function validateEquivalentGroups(
     blocking.push('Nessuna domanda selezionata per la verifica.');
   }
 
-  // Warning globali sulle combinazioni.
+  // Warning globali sulle combinazioni. «Una sola variante» va mostrato ogni
+  // volta che c'è almeno una domanda selezionata ma esiste una sola
+  // combinazione possibile: sia con gruppi a singola alternativa, sia — caso
+  // corretto in VEX-01A-FIX — quando non esistono gruppi e tutte le domande
+  // sono comuni (variantsPossible == 1). Lo stato completamente vuoto (nessuna
+  // domanda) resta gestito dall'errore bloccante sopra e non mostra il warning.
   const variants = computeVariantsPossible(groups);
-  if (nonEmptyGroups.length > 0 && !variants.capped && variants.value === 1) {
+  if (selectedIds.length > 0 && !variants.capped && variants.value === 1) {
     warnings.push({ code: 'single_variant', message: WARN_SINGLE_VARIANT });
   }
   if (

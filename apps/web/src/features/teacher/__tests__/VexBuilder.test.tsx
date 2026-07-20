@@ -1,24 +1,19 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { VexBuilder } from '../VexBuilder.js';
+import { VexBuilder, type VexBuilderQuestion } from '../VexBuilder.js';
 import type {
   EquivalentGroupConfig,
   VerificationDistributionMode,
-  VerificationQuestionRef,
 } from '../../../types/firestore.js';
 
 afterEach(cleanup);
 
-function ref(
-  id: string,
-  overrides: Partial<VerificationQuestionRef> = {},
-): VerificationQuestionRef {
+function ref(id: string, overrides: Partial<VexBuilderQuestion> = {}): VexBuilderQuestion {
   return {
     questionIndexEntryId: id,
     questionLocalId: id,
+    questionPreview: `Anteprima di ${id}`,
     udaDir: 'uda-1',
-    lessonFilename: 'l.md',
-    poolStorageRef: 'r',
     tipo: 'aperta',
     difficolta: 3,
     maxPoints: 3,
@@ -34,7 +29,7 @@ const g = (id: string, ids: string[]): EquivalentGroupConfig => ({
 /** Renders a controlled builder and returns a handle exposing the last props. */
 function setup(opts: {
   mode?: VerificationDistributionMode;
-  refs: VerificationQuestionRef[];
+  refs: VexBuilderQuestion[];
   groups?: EquivalentGroupConfig[];
   studentCount?: number;
 }) {
@@ -120,5 +115,41 @@ describe('VexBuilder (VEX-01A)', () => {
       groups: [g('x', ['a', 'b'])],
     });
     expect(screen.getAllByText(/stessa difficoltà/i).length).toBeGreaterThan(0);
+  });
+
+  it('warns single_variant when there are questions but no groups', () => {
+    setup({ refs: [ref('a'), ref('b')], groups: [] });
+    expect(screen.getByText(/Una sola variante possibile/i)).toBeTruthy();
+  });
+
+  it('has accessible labels for repeated group controls', () => {
+    setup({ refs: [ref('a'), ref('b')], groups: [g('x', ['a'])] });
+    expect(screen.getByRole('button', { name: /Rimuovi la domanda a dal gruppo 1/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Elimina gruppo 1/i })).toBeTruthy();
+    expect(
+      screen.getByRole('combobox', { name: /Aggiungi alternativa al gruppo 1/i }),
+    ).toBeTruthy();
+  });
+});
+
+describe('VexBuilder — question preview (VEX-01A-FIX)', () => {
+  it('shows the preview as the main text and the localId as compact metadata', () => {
+    setup({
+      refs: [ref('q7', { questionLocalId: 'q7', questionPreview: 'Quanto fa 2+2?' })],
+      groups: [],
+    });
+    // Preview is the readable main text…
+    expect(screen.getByText('Quanto fa 2+2?')).toBeTruthy();
+    // …and the id is shown once, as metadata (not duplicated as the main text).
+    expect(screen.getAllByText('q7')).toHaveLength(1);
+  });
+
+  it('falls back to the localId when the preview is absent/empty', () => {
+    setup({
+      refs: [ref('q9', { questionLocalId: 'q9', questionPreview: '   ' })],
+      groups: [],
+    });
+    // With a blank preview the id is used both as metadata and as main text.
+    expect(screen.getAllByText('q9')).toHaveLength(2);
   });
 });

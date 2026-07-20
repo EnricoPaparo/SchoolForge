@@ -18,23 +18,47 @@ import styles from './VexBuilder.module.css';
  * viaggiano nello stesso salvataggio bozza. Nessuna lettura/scrittura qui;
  * tutta la logica è pura (vexGroups). Nessun drag-and-drop.
  */
+/**
+ * Tipo **UI-only** per le domande mostrate nel builder. Aggrega i metadati del
+ * `VerificationQuestionRef` con il `questionPreview` **già** caricato dal
+ * questionIndex in VerificationsView. Non è un contratto Firestore: la preview
+ * **non** entra in `config.equivalentGroups` né in `VerificationQuestionRef` e
+ * **non** è persistita — serve solo a rendere leggibile l'anteprima.
+ */
+export interface VexBuilderQuestion {
+  questionIndexEntryId: string;
+  questionLocalId: string;
+  /** Snippet breve dal questionIndex; può essere assente/vuoto (fallback su ID). */
+  questionPreview?: string;
+  udaDir: string;
+  tipo: VerificationQuestionRef['tipo'];
+  difficolta: VerificationQuestionRef['difficolta'];
+  maxPoints: number;
+}
+
 export interface VexBuilderProps {
   distributionMode: VerificationDistributionMode;
   onModeChange: (mode: VerificationDistributionMode) => void;
-  /** Domande selezionate nel picker, come ref stabili (ordine di selezione). */
-  selectedRefs: VerificationQuestionRef[];
+  /** Domande selezionate nel picker (ordine di selezione), con anteprima UI. */
+  selectedRefs: VexBuilderQuestion[];
   groups: EquivalentGroupConfig[];
   onGroupsChange: (groups: EquivalentGroupConfig[]) => void;
   /** Opzionale: se assente i warning basati sul numero studenti sono omessi. */
   studentCount?: number;
 }
 
-function tipoLabel(tipo: VerificationQuestionRef['tipo']): string {
+function tipoLabel(tipo: VexBuilderQuestion['tipo']): string {
   return tipo === 'aperta'
     ? 'aperta'
     : tipo === 'chiusa_singola'
       ? 'chiusa singola'
       : 'chiusa multipla';
+}
+
+/** Testo principale leggibile: preview se presente, altrimenti l'ID come fallback. */
+function previewText(q: VexBuilderQuestion): string {
+  const p = q.questionPreview?.trim();
+  return p && p.length > 0 ? p : q.questionLocalId;
 }
 
 export function VexBuilder({
@@ -211,7 +235,7 @@ export function VexBuilder({
                 return (
                   <div key={id} className={styles.alt}>
                     <span className={styles.qid}>{r.questionLocalId}</span>
-                    <span className={styles.altText}>{r.questionLocalId}</span>
+                    <span className={styles.altText}>{previewText(r)}</span>
                     <span className={styles.tags}>
                       <span className={styles.tag}>{tipoLabel(r.tipo)}</span>
                       <span className={styles.tag}>{r.udaDir}</span>
@@ -242,7 +266,7 @@ export function VexBuilder({
               groups.map((group, index) => {
                 const alts = group.questionIndexEntryIds
                   .map((id) => byId.get(id))
-                  .filter((r): r is VerificationQuestionRef => r !== undefined);
+                  .filter((r): r is VexBuilderQuestion => r !== undefined);
                 const first = alts[0];
                 const invalid = alts.some(
                   (r) =>
@@ -264,6 +288,7 @@ export function VexBuilder({
                         <button
                           type="button"
                           className={`${styles.btn} ${styles.btnDanger}`}
+                          aria-label={`Elimina gruppo ${index + 1}`}
                           onClick={() => deleteGroup(group.id)}
                         >
                           Elimina gruppo
@@ -274,7 +299,7 @@ export function VexBuilder({
                     {alts.map((r) => (
                       <div key={r.questionIndexEntryId} className={styles.alt}>
                         <span className={styles.qid}>{r.questionLocalId}</span>
-                        <span className={styles.altText}>{r.questionLocalId}</span>
+                        <span className={styles.altText}>{previewText(r)}</span>
                         <span className={styles.tags}>
                           <span className={styles.tag}>{tipoLabel(r.tipo)}</span>
                           <span className={styles.tag}>{r.udaDir}</span>
@@ -286,6 +311,7 @@ export function VexBuilder({
                           <button
                             type="button"
                             className={styles.btn}
+                            aria-label={`Rimuovi la domanda ${r.questionLocalId} dal gruppo ${index + 1}`}
                             onClick={() => removeAlternative(group.id, r.questionIndexEntryId)}
                           >
                             Rimuovi

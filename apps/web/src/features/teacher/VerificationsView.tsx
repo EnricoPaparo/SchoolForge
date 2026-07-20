@@ -70,7 +70,7 @@ import type {
 } from '../../types/firestore.js';
 import { normalizeDistributionMode } from '../repository/verifications/vexDistribution.js';
 import { reconcileEquivalentGroups } from '../repository/verifications/vexGroups.js';
-import { VexBuilder } from './VexBuilder.js';
+import { VexBuilder, type VexBuilderQuestion } from './VexBuilder.js';
 import { correctionStatusLabel } from '../repository/corrections/submissionCorrectionStatus.js';
 import {
   buildCorrectionRegisterCsvFilename,
@@ -733,9 +733,28 @@ export function VerificationsView() {
     markDraftDirty();
   }
 
-  /** Ref stabili delle domande selezionate, per il builder VEX (nessuna lettura). */
-  function selectedRefsForBuilder() {
-    return buildQuestionRefsFromSelection() ?? [];
+  /**
+   * Domande selezionate per il builder VEX, come tipo **UI-only**
+   * `VexBuilderQuestion`: i metadati stabili + `questionPreview` **già** caricato
+   * nel `questionIndex` (nessuna nuova lettura/query/Storage). La preview è
+   * puramente di visualizzazione: non viene mai persistita in
+   * `config.equivalentGroups` né aggiunta a `VerificationQuestionRef`.
+   */
+  function selectedRefsForBuilder(): VexBuilderQuestion[] {
+    if (!questionIndex) return [];
+    const entryMap = new Map(questionIndex.map((e) => [e.id, e]));
+    return Array.from(selectedQuestionIds)
+      .map((id) => entryMap.get(id))
+      .filter((e): e is NonNullable<typeof e> => e !== undefined)
+      .map((entry) => ({
+        questionIndexEntryId: entry.id,
+        questionLocalId: entry.questionLocalId,
+        questionPreview: entry.questionPreview,
+        udaDir: entry.udaDir,
+        tipo: entry.tipo,
+        difficolta: entry.difficolta,
+        maxPoints: entry.maxPoints,
+      }));
   }
 
   /**

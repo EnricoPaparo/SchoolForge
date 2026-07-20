@@ -128,6 +128,11 @@ describe('validateEquivalentGroups — blocking', () => {
     const res = validateEquivalentGroups([], []);
     expect(res.blocking.join(' ')).toMatch(/Nessuna domanda/);
   });
+
+  it('rejects duplicate group ids (fail-closed)', () => {
+    const res = validateEquivalentGroups(refs, [group('dup', ['a']), group('dup', ['b'])]);
+    expect(res.blocking.join(' ')).toMatch(/stesso identificativo/);
+  });
 });
 
 describe('validateEquivalentGroups — warnings', () => {
@@ -141,6 +146,19 @@ describe('validateEquivalentGroups — warnings', () => {
     // one group of one alternative → variantsPossible === 1
     const res = validateEquivalentGroups([ref('a'), ref('b')], [group('g', ['a'])]);
     expect(res.warnings.some((w) => w.code === 'single_variant')).toBe(true);
+  });
+
+  it('warns single_variant when questions are selected but no groups exist', () => {
+    // VEX-01A-FIX: all questions common, no groups → one combination possible.
+    const res = validateEquivalentGroups([ref('a'), ref('b')], []);
+    expect(res.blocking).toEqual([]);
+    expect(res.warnings.some((w) => w.code === 'single_variant')).toBe(true);
+  });
+
+  it('does NOT warn single_variant on the empty state (no questions)', () => {
+    // Empty state is handled by the blocking "no question" error, not a warning.
+    const res = validateEquivalentGroups([], []);
+    expect(res.warnings.some((w) => w.code === 'single_variant')).toBe(false);
   });
 
   it('omits student-count warnings when studentCount is not provided (no reads)', () => {

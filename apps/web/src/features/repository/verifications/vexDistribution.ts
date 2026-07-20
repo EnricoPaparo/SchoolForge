@@ -16,14 +16,16 @@ export const VEX_UNKNOWN_MODE_MESSAGE =
   'Modalità di distribuzione della verifica non riconosciuta. Aggiorna l’app o ricrea la verifica.';
 
 /**
- * Restituisce la modalità normalizzata:
- * - **assente/`undefined`/`null`** ⇒ `'same_questions'` (compatibilità: draft e
- *   documenti legacy senza il campo si comportano come oggi);
+ * Restituisce la modalità normalizzata (fail-closed):
+ * - **solo `undefined`** ⇒ `'same_questions'` (documento legacy senza il campo:
+ *   assenza vera del campo = comportamento di oggi);
  * - valore valido ⇒ se stesso;
- * - **valore presente ma sconosciuto** ⇒ lancia (mai un fallback silenzioso).
+ * - **qualsiasi altro valore presente** — `null`, stringa vuota, stringhe
+ *   sconosciute, array, oggetti, numeri, ecc. — ⇒ lancia. Nessuna
+ *   normalizzazione silenziosa di valori malformati.
  */
 export function normalizeDistributionMode(value: unknown): VerificationDistributionMode {
-  if (value === undefined || value === null) return 'same_questions';
+  if (value === undefined) return 'same_questions';
   if (value === 'same_questions' || value === 'equivalent_variants') return value;
   throw new Error(VEX_UNKNOWN_MODE_MESSAGE);
 }
