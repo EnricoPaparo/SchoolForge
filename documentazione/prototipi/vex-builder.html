@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SchoolForge — Prototipo builder Varianti equivalenti (VEX-00B)</title>
+    <style>
+      /* Design tokens — riuso della palette scura esistente di SchoolForge
+         (index.css). Nessun font/asset/CDN nuovo: estensione naturale della
+         UI Verifiche, header e design globale invariati. */
+      :root {
+        --color-primary: #4a8bf7;
+        --color-primary-hover: #60a5fa;
+        --color-primary-light: rgba(59, 130, 246, 0.16);
+        --color-accent-violet: #a78bfa;
+        --color-brand-blue: #38bdf8;
+        --color-surface: #141a24;
+        --color-surface-subtle: #090d14;
+        --color-surface-raised: #1d2532;
+        --color-border: #334052;
+        --color-text: #e7ebf2;
+        --color-text-muted: #93a0b4;
+        --color-error: #f87171;
+        --color-error-bg: rgba(248, 113, 113, 0.12);
+        --color-error-border: #7f2b2b;
+        --color-success: #4ade80;
+        --color-success-bg: rgba(74, 222, 128, 0.12);
+        --color-success-border: #1f5c37;
+        --color-warning: #fbbf24;
+        --color-warning-bg: rgba(251, 191, 36, 0.12);
+        --color-warning-border: #6b4a12;
+        --color-focus-ring: rgba(59, 130, 246, 0.35);
+        --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        --font-mono: ui-monospace, 'Cascadia Code', Menlo, Monaco, Consolas, monospace;
+        --radius: 6px;
+        --radius-lg: 10px;
+        --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+        --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--font-sans);
+        color: var(--color-text);
+        background: var(--color-surface-subtle);
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: var(--color-primary);
+      }
+
+      /* ── Prototype scaffolding (NON fa parte della UI: barra strumenti demo) ── */
+      .demo-bar {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        padding: 10px 16px;
+        background: #05070c;
+        border-bottom: 1px solid var(--color-border);
+        font-size: 13px;
+        color: var(--color-text-muted);
+      }
+      .demo-bar strong {
+        color: var(--color-text);
+      }
+      .demo-bar .spacer {
+        flex: 1;
+      }
+      .demo-bar button {
+        font: inherit;
+        cursor: pointer;
+        padding: 5px 12px;
+        border-radius: var(--radius);
+        border: 1px solid var(--color-border);
+        background: var(--color-surface-raised);
+        color: var(--color-text);
+      }
+      .demo-bar button[aria-pressed='true'] {
+        border-color: var(--color-primary);
+        background: var(--color-primary-light);
+        color: var(--color-text);
+      }
+
+      /* ── App header (identico nello spirito alla top bar Verifiche) ── */
+      .app-header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 22px;
+        background: var(--color-surface);
+        border-bottom: 1px solid var(--color-border);
+      }
+      .app-header .logo {
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
+        background: linear-gradient(135deg, var(--color-brand-blue), var(--color-accent-violet));
+        flex: none;
+      }
+      .app-header .brand {
+        font-weight: 650;
+        letter-spacing: 0.2px;
+      }
+      .app-header nav {
+        display: flex;
+        gap: 6px;
+        margin-left: 18px;
+      }
+      .app-header nav span {
+        padding: 6px 12px;
+        border-radius: var(--radius);
+        color: var(--color-text-muted);
+        font-size: 14px;
+      }
+      .app-header nav span.active {
+        background: var(--color-primary-light);
+        color: var(--color-text);
+      }
+
+      .shell {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 22px 22px 80px;
+      }
+
+      /* Breadcrumb + titolo verifica */
+      .crumbs {
+        font-size: 13px;
+        color: var(--color-text-muted);
+        margin-bottom: 6px;
+      }
+      .page-title {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 0 0 4px;
+      }
+      .page-title h1 {
+        font-size: 22px;
+        margin: 0;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 9px;
+        border-radius: 999px;
+        border: 1px solid var(--color-border);
+        color: var(--color-text-muted);
+        background: var(--color-surface-raised);
+      }
+      .pill.draft {
+        color: var(--color-warning);
+        border-color: var(--color-warning-border);
+        background: var(--color-warning-bg);
+      }
+      .subtle {
+        color: var(--color-text-muted);
+        font-size: 14px;
+        margin: 4px 0 20px;
+      }
+
+      /* Card / sezioni */
+      .card {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-sm);
+        margin-bottom: 18px;
+        overflow: hidden;
+      }
+      .card > header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--color-border);
+        background: var(--color-surface-raised);
+      }
+      .card > header h2 {
+        font-size: 15px;
+        margin: 0;
+        flex: 1;
+      }
+      .card .body {
+        padding: 16px 18px;
+      }
+
+      /* Picker domande (mock) */
+      .picker {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: var(--radius);
+        border: 1px solid var(--color-border);
+        background: var(--color-surface-subtle);
+        font-size: 13px;
+      }
+      .chip .qid {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--color-brand-blue);
+      }
+      .chip .meta {
+        color: var(--color-text-muted);
+        font-size: 12px;
+      }
+
+      /* Scelta modalità (radio) */
+      .modes {
+        display: grid;
+        gap: 10px;
+      }
+      .mode-opt {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 12px 14px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        cursor: pointer;
+        background: var(--color-surface-subtle);
+      }
+      .mode-opt[data-selected='true'] {
+        border-color: var(--color-primary);
+        background: var(--color-primary-light);
+      }
+      .mode-opt .radio {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid var(--color-text-muted);
+        margin-top: 2px;
+        flex: none;
+        position: relative;
+      }
+      .mode-opt[data-selected='true'] .radio {
+        border-color: var(--color-primary);
+      }
+      .mode-opt[data-selected='true'] .radio::after {
+        content: '';
+        position: absolute;
+        inset: 3px;
+        border-radius: 50%;
+        background: var(--color-primary);
+      }
+      .mode-opt .t {
+        font-weight: 600;
+      }
+      .mode-opt .d {
+        color: var(--color-text-muted);
+        font-size: 13px;
+      }
+
+      /* Riepilogo */
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+      }
+      .stat {
+        background: var(--color-surface-subtle);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 12px;
+        text-align: center;
+      }
+      .stat .n {
+        font-size: 22px;
+        font-weight: 700;
+      }
+      .stat .l {
+        font-size: 12px;
+        color: var(--color-text-muted);
+        margin-top: 2px;
+      }
+
+      /* Gruppi */
+      .group {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        margin-bottom: 14px;
+        overflow: hidden;
+      }
+      .group > .g-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding: 10px 14px;
+        background: var(--color-surface-raised);
+        border-bottom: 1px solid var(--color-border);
+      }
+      .group > .g-head .g-title {
+        font-weight: 600;
+        flex: 1;
+      }
+      .group.invalid {
+        border-color: var(--color-error-border);
+      }
+      .group.invalid > .g-head {
+        background: var(--color-error-bg);
+      }
+      .alt {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 11px 14px;
+        border-top: 1px dashed var(--color-border);
+      }
+      .alt:first-child {
+        border-top: none;
+      }
+      .alt .qid {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--color-brand-blue);
+        flex: none;
+      }
+      .alt .txt {
+        flex: 1;
+        min-width: 160px;
+      }
+      .alt .tags {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .tag {
+        font-size: 11px;
+        padding: 2px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--color-border);
+        color: var(--color-text-muted);
+        background: var(--color-surface-subtle);
+        white-space: nowrap;
+      }
+      .tag.bad {
+        color: var(--color-error);
+        border-color: var(--color-error-border);
+        background: var(--color-error-bg);
+      }
+
+      /* Note / warning / errore */
+      .note {
+        display: flex;
+        gap: 10px;
+        padding: 10px 14px;
+        font-size: 13px;
+        border-radius: var(--radius);
+        margin-top: 10px;
+      }
+      .note .ic {
+        flex: none;
+        font-weight: 700;
+      }
+      .note.warn {
+        background: var(--color-warning-bg);
+        border: 1px solid var(--color-warning-border);
+        color: #f6d488;
+      }
+      .note.err {
+        background: var(--color-error-bg);
+        border: 1px solid var(--color-error-border);
+        color: #f6a9a9;
+      }
+      .note.info {
+        background: var(--color-surface-subtle);
+        border: 1px solid var(--color-border);
+        color: var(--color-text-muted);
+      }
+      .note.ok {
+        background: var(--color-success-bg);
+        border: 1px solid var(--color-success-border);
+        color: #a7e9bf;
+      }
+
+      /* Bottoni */
+      .btn {
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+        padding: 6px 12px;
+        border-radius: var(--radius);
+        border: 1px solid var(--color-border);
+        background: var(--color-surface-raised);
+        color: var(--color-text);
+      }
+      .btn:hover {
+        border-color: var(--color-primary);
+      }
+      .btn.primary {
+        background: var(--color-primary);
+        border-color: var(--color-primary);
+        color: #071018;
+        font-weight: 600;
+      }
+      .btn.ghost {
+        background: transparent;
+      }
+      .btn.danger {
+        color: var(--color-error);
+        border-color: var(--color-error-border);
+      }
+      .btn:focus-visible {
+        outline: 2px solid var(--color-focus-ring);
+        outline-offset: 1px;
+      }
+      .g-actions,
+      .row-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      /* Stato vuoto */
+      .empty {
+        text-align: center;
+        padding: 34px 18px;
+        color: var(--color-text-muted);
+      }
+      .empty .big {
+        font-size: 15px;
+        color: var(--color-text);
+        margin-bottom: 6px;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      /* Simulazione mobile: il device box stringe la larghezza e attiva lo
+         stacking. Nessuna tabella; tutto usa flex/grid che collassa. */
+      .stage.mobile .shell {
+        max-width: 390px;
+        border: 1px solid var(--color-border);
+        border-radius: 22px;
+        margin-top: 16px;
+        box-shadow: var(--shadow-md);
+        background: var(--color-surface-subtle);
+      }
+      .stage.mobile .summary {
+        grid-template-columns: 1fr 1fr;
+      }
+      .stage.mobile .app-header nav {
+        display: none;
+      }
+
+      /* Responsive reale (oltre la simulazione): mobile impilato senza overflow */
+      @media (max-width: 620px) {
+        .summary {
+          grid-template-columns: 1fr 1fr;
+        }
+        .app-header nav {
+          display: none;
+        }
+        .shell {
+          padding: 16px 14px 60px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Barra strumenti del PROTOTIPO (non è UI di prodotto) -->
+    <div class="demo-bar" role="region" aria-label="Strumenti prototipo">
+      <strong>Prototipo VEX-00B</strong> · builder «Varianti equivalenti»
+      <span class="spacer"></span>
+      <span>Vista:</span>
+      <button id="viewDesktop" aria-pressed="true">Desktop</button>
+      <button id="viewMobile" aria-pressed="false">Mobile</button>
+      <span aria-hidden="true">·</span>
+      <span>Scenario:</span>
+      <button id="scMulti" aria-pressed="true">Configurato</button>
+      <button id="scSingle" aria-pressed="false">Una sola variante</button>
+      <button id="scEmpty" aria-pressed="false">Vuoto iniziale</button>
+    </div>
+
+    <div class="stage" id="stage">
+      <!-- Header globale invariato (come Verifiche) -->
+      <header class="app-header">
+        <div class="logo" aria-hidden="true"></div>
+        <div class="brand">SchoolForge</div>
+        <nav aria-label="Sezioni">
+          <span>Didattica</span>
+          <span class="active">Verifiche</span>
+          <span>Studenti</span>
+        </nav>
+      </header>
+
+      <main class="shell">
+        <div class="crumbs">Verifiche › Sistemi e reti — Modulo 3</div>
+        <div class="page-title">
+          <h1>Reti locali e protocolli</h1>
+          <span class="pill draft">● Bozza</span>
+        </div>
+        <p class="subtle">
+          Classe 3ª B · 8 domande selezionate · La distribuzione online si applica solo
+          allo svolgimento online. Il PDF docente usa sempre l'insieme completo configurato.
+        </p>
+
+        <!-- 1. Picker domande (mock, già esistente in Verifiche) -->
+        <section class="card">
+          <header><h2>Domande della verifica</h2><button class="btn ghost">Modifica selezione</button></header>
+          <div class="body">
+            <div class="picker">
+              <span class="chip"><span class="qid">Q-A1</span> <span>Indirizzamento IP</span> <span class="meta">aperta · diff 3</span></span>
+              <span class="chip"><span class="qid">Q-A2</span> <span>Subnetting</span> <span class="meta">aperta · diff 3</span></span>
+              <span class="chip"><span class="qid">Q-B1</span> <span>TCP handshake</span> <span class="meta">chiusa · diff 2</span></span>
+              <span class="chip"><span class="qid">Q-B2</span> <span>UDP vs TCP</span> <span class="meta">chiusa · diff 2</span></span>
+              <span class="chip"><span class="qid">Q-C1</span> <span>Routing statico</span> <span class="meta">aperta · diff 4</span></span>
+              <span class="chip"><span class="qid">Q-C2</span> <span>Routing dinamico</span> <span class="meta">aperta · diff 4</span></span>
+              <span class="chip"><span class="qid">Q-D1</span> <span>DNS</span> <span class="meta">aperta · diff 2</span></span>
+              <span class="chip"><span class="qid">Q-D2</span> <span>DHCP</span> <span class="meta">chiusa · diff 2</span></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. Distribuzione online -->
+        <section class="card">
+          <header><h2>Distribuzione online</h2></header>
+          <div class="body">
+            <div class="modes" role="radiogroup" aria-label="Modalità di distribuzione online">
+              <label class="mode-opt" data-mode="same_questions" data-selected="false">
+                <span class="radio" aria-hidden="true"></span>
+                <span>
+                  <span class="t">Stesse domande, ordine casuale</span><br />
+                  <span class="d">Tutti gli studenti ricevono le stesse domande. L'ordine è casuale e locale, senza costi aggiuntivi.</span>
+                </span>
+              </label>
+              <label class="mode-opt" data-mode="equivalent_variants" data-selected="true">
+                <span class="radio" aria-hidden="true"></span>
+                <span>
+                  <span class="t">Varianti equivalenti</span><br />
+                  <span class="d">Domande comuni a tutti + una alternativa per ogni gruppo. Ogni studente riceve una variante equivalente, assegnata una sola volta al primo avvio.</span>
+                </span>
+              </label>
+            </div>
+            <div class="note info" id="orderNote">
+              <span class="ic" aria-hidden="true">↻</span>
+              <span>In entrambe le modalità l'ordine delle domande resta comunque casuale a ogni apertura: cambia solo la disposizione visiva, non le domande assegnate.</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Blocco «Varianti equivalenti» (visibile solo in quella modalità) -->
+        <div id="vexBlock">
+          <!-- 3. Riepilogo -->
+          <section class="card">
+            <header><h2>Riepilogo distribuzione</h2></header>
+            <div class="body">
+              <div class="summary">
+                <div class="stat"><div class="n" id="sCommon">2</div><div class="l">Domande comuni</div></div>
+                <div class="stat"><div class="n" id="sGroups">3</div><div class="l">Gruppi equivalenti</div></div>
+                <div class="stat"><div class="n" id="sPerStudent">5</div><div class="l">Domande per studente</div></div>
+                <div class="stat"><div class="n" id="sVariants">6</div><div class="l">Varianti possibili</div></div>
+                <div class="stat"><div class="n" id="sMax">14</div><div class="l">Punteggio massimo</div></div>
+              </div>
+              <div class="note ok" id="okNote">
+                <span class="ic" aria-hidden="true">✓</span>
+                <span>Configurazione valida. Ogni studente riceve 2 domande comuni e 1 domanda per ciascuno dei 3 gruppi.</span>
+              </div>
+              <div class="note warn hidden" id="singleVariantNote">
+                <span class="ic" aria-hidden="true">!</span>
+                <span><strong>Una sola variante possibile.</strong> La verifica funzionerà normalmente, ma tutti gli studenti riceveranno le stesse domande, in ordine casuale.</span>
+              </div>
+              <div class="note err hidden" id="blockingNote">
+                <span class="ic" aria-hidden="true">✕</span>
+                <span><strong>Configurazione da correggere.</strong> Un gruppo contiene alternative incompatibili: l'attivazione è bloccata finché non viene risolto.</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- 4. Domande comuni -->
+          <section class="card">
+            <header><h2>Domande comuni</h2><span class="pill">assegnate a tutti</span></header>
+            <div class="body" id="commonBody">
+              <div class="alt">
+                <span class="qid">Q-A1</span>
+                <span class="txt">Indirizzamento IP</span>
+                <span class="tags"><span class="tag">aperta</span><span class="tag">diff 3 · 3 pt</span></span>
+                <span class="row-actions"><button class="btn ghost">Sposta in un gruppo</button></span>
+              </div>
+              <div class="alt">
+                <span class="qid">Q-B1</span>
+                <span class="txt">TCP handshake</span>
+                <span class="tags"><span class="tag">chiusa</span><span class="tag">diff 2 · 2 pt</span></span>
+                <span class="row-actions"><button class="btn ghost">Sposta in un gruppo</button></span>
+              </div>
+            </div>
+          </section>
+
+          <!-- 5. Gruppi equivalenti -->
+          <section class="card" id="groupsCard">
+            <header>
+              <h2>Gruppi equivalenti</h2>
+              <span class="pill" id="groupsPill">3 gruppi</span>
+              <button class="btn primary" id="createGroup">+ Crea gruppo</button>
+            </header>
+            <div class="body" id="groupsBody">
+              <!-- Gruppo valido, più alternative -->
+              <div class="group">
+                <div class="g-head">
+                  <span class="g-title">Gruppo 1 — una domanda estratta</span>
+                  <span class="pill">2 alternative · diff 3</span>
+                  <span class="g-actions">
+                    <button class="btn ghost">+ Aggiungi alternativa</button>
+                    <button class="btn danger">Elimina gruppo</button>
+                  </span>
+                </div>
+                <div class="alt">
+                  <span class="qid">Q-A2</span>
+                  <span class="txt">Subnetting a lunghezza fissa</span>
+                  <span class="tags"><span class="tag">aperta</span><span class="tag">UDA 2</span><span class="tag">diff 3 · 3 pt</span></span>
+                  <span class="row-actions"><button class="btn ghost">Rimuovi</button></span>
+                </div>
+                <div class="alt">
+                  <span class="qid">Q-C1</span>
+                  <span class="txt">Progetto di indirizzamento con VLSM</span>
+                  <span class="tags"><span class="tag">aperta</span><span class="tag">UDA 2</span><span class="tag">diff 3 · 3 pt</span></span>
+                  <span class="row-actions"><button class="btn ghost">Rimuovi</button></span>
+                </div>
+              </div>
+
+              <!-- Gruppo con una sola alternativa → warning non bloccante -->
+              <div class="group">
+                <div class="g-head">
+                  <span class="g-title">Gruppo 2 — una domanda estratta</span>
+                  <span class="pill">1 alternativa</span>
+                  <span class="g-actions">
+                    <button class="btn ghost">+ Aggiungi alternativa</button>
+                    <button class="btn danger">Elimina gruppo</button>
+                  </span>
+                </div>
+                <div class="alt">
+                  <span class="qid">Q-D1</span>
+                  <span class="txt">Risoluzione dei nomi con DNS</span>
+                  <span class="tags"><span class="tag">aperta</span><span class="tag">UDA 3</span><span class="tag">diff 2 · 2 pt</span></span>
+                  <span class="row-actions"><button class="btn ghost">Rimuovi</button></span>
+                </div>
+                <div class="note warn">
+                  <span class="ic" aria-hidden="true">!</span>
+                  <span><strong>Una alternativa possibile</strong> — questa domanda sarà assegnata a tutti gli studenti.</span>
+                </div>
+              </div>
+
+              <!-- Gruppo con incompatibilità bloccante -->
+              <div class="group invalid">
+                <div class="g-head">
+                  <span class="g-title">Gruppo 3 — una domanda estratta</span>
+                  <span class="pill" style="color: var(--color-error); border-color: var(--color-error-border); background: var(--color-error-bg)">incompatibile</span>
+                  <span class="g-actions">
+                    <button class="btn ghost">+ Aggiungi alternativa</button>
+                    <button class="btn danger">Elimina gruppo</button>
+                  </span>
+                </div>
+                <div class="alt">
+                  <span class="qid">Q-C2</span>
+                  <span class="txt">Routing dinamico (OSPF)</span>
+                  <span class="tags"><span class="tag">aperta</span><span class="tag">UDA 2</span><span class="tag bad">diff 4 · 4 pt</span></span>
+                  <span class="row-actions"><button class="btn ghost">Rimuovi</button></span>
+                </div>
+                <div class="alt">
+                  <span class="qid">Q-D2</span>
+                  <span class="txt">Assegnazione automatica con DHCP</span>
+                  <span class="tags"><span class="tag bad">chiusa</span><span class="tag">UDA 3</span><span class="tag bad">diff 2 · 2 pt</span></span>
+                  <span class="row-actions"><button class="btn ghost">Rimuovi</button></span>
+                </div>
+                <div class="note err">
+                  <span class="ic" aria-hidden="true">✕</span>
+                  <span>Le alternative devono avere <strong>stessa UDA, stesso tipo, stessa difficoltà</strong>. Qui differiscono tipo (aperta/chiusa) e difficoltà (4/2): il gruppo blocca l'attivazione.</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Stato vuoto iniziale (nessun gruppo ancora) -->
+        <section class="card hidden" id="emptyCard">
+          <header><h2>Gruppi equivalenti</h2><button class="btn primary">+ Crea gruppo</button></header>
+          <div class="body">
+            <div class="empty">
+              <div class="big">Nessun gruppo equivalente</div>
+              <div>
+                Tutte le 8 domande sono al momento comuni: ogni studente le riceve tutte.
+                Crea un gruppo e <em>seleziona</em> due o più domande equivalenti per far
+                scegliere al sistema una alternativa per studente.
+              </div>
+              <div class="note info" style="justify-content: center; margin-top: 16px">
+                <span class="ic" aria-hidden="true">↻</span>
+                <span>Anche senza gruppi, l'ordine delle domande resta casuale a ogni apertura.</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px">
+          <button class="btn ghost">Salva bozza</button>
+          <button class="btn primary" id="activateBtn">Attiva verifica</button>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      // Prototipo statico: nessuna rete, nessun dato reale, nessun drag-and-drop.
+      // Interazioni minime per mostrare gli stati richiesti (vista, scenari).
+      (function () {
+        'use strict';
+
+        var stage = document.getElementById('stage');
+        var viewDesktop = document.getElementById('viewDesktop');
+        var viewMobile = document.getElementById('viewMobile');
+
+        function setView(mobile) {
+          stage.classList.toggle('mobile', mobile);
+          viewMobile.setAttribute('aria-pressed', String(mobile));
+          viewDesktop.setAttribute('aria-pressed', String(!mobile));
+        }
+        viewDesktop.addEventListener('click', function () {
+          setView(false);
+        });
+        viewMobile.addEventListener('click', function () {
+          setView(true);
+        });
+
+        // Scenari di riepilogo: configurato / una sola variante / vuoto iniziale.
+        var scMulti = document.getElementById('scMulti');
+        var scSingle = document.getElementById('scSingle');
+        var scEmpty = document.getElementById('scEmpty');
+        var vexBlock = document.getElementById('vexBlock');
+        var emptyCard = document.getElementById('emptyCard');
+        var okNote = document.getElementById('okNote');
+        var singleNote = document.getElementById('singleVariantNote');
+        var blockingNote = document.getElementById('blockingNote');
+
+        var stats = {
+          common: document.getElementById('sCommon'),
+          groups: document.getElementById('sGroups'),
+          perStudent: document.getElementById('sPerStudent'),
+          variants: document.getElementById('sVariants'),
+          max: document.getElementById('sMax'),
+        };
+
+        function press(active) {
+          scMulti.setAttribute('aria-pressed', String(active === 'multi'));
+          scSingle.setAttribute('aria-pressed', String(active === 'single'));
+          scEmpty.setAttribute('aria-pressed', String(active === 'empty'));
+        }
+
+        function apply(scenario) {
+          press(scenario);
+          if (scenario === 'empty') {
+            vexBlock.classList.add('hidden');
+            emptyCard.classList.remove('hidden');
+            return;
+          }
+          vexBlock.classList.remove('hidden');
+          emptyCard.classList.add('hidden');
+          if (scenario === 'single') {
+            // Tre gruppi ma con una sola alternativa ciascuno → 1 combinazione.
+            stats.common.textContent = '2';
+            stats.groups.textContent = '4';
+            stats.perStudent.textContent = '6';
+            stats.variants.textContent = '1';
+            stats.max.textContent = '14';
+            okNote.classList.add('hidden');
+            blockingNote.classList.add('hidden');
+            singleNote.classList.remove('hidden');
+          } else {
+            // Configurato: include un gruppo bloccante → mostra errore + ok informativo.
+            stats.common.textContent = '2';
+            stats.groups.textContent = '4';
+            stats.perStudent.textContent = '6';
+            stats.variants.textContent = '4';
+            stats.max.textContent = '14';
+            singleNote.classList.add('hidden');
+            okNote.classList.remove('hidden');
+            blockingNote.classList.remove('hidden');
+          }
+        }
+
+        scMulti.addEventListener('click', function () {
+          apply('multi');
+        });
+        scSingle.addEventListener('click', function () {
+          apply('single');
+        });
+        scEmpty.addEventListener('click', function () {
+          apply('empty');
+        });
+
+        // Toggle modalità di distribuzione: mostra/nasconde il blocco varianti.
+        var modeOpts = document.querySelectorAll('.mode-opt');
+        modeOpts.forEach(function (opt) {
+          opt.addEventListener('click', function () {
+            modeOpts.forEach(function (o) {
+              o.setAttribute('data-selected', 'false');
+            });
+            opt.setAttribute('data-selected', 'true');
+            var isVariants = opt.getAttribute('data-mode') === 'equivalent_variants';
+            vexBlock.classList.toggle('hidden', !isVariants);
+            if (!isVariants) {
+              emptyCard.classList.add('hidden');
+            } else {
+              apply('multi');
+            }
+          });
+        });
+
+        // Stato iniziale coerente.
+        apply('multi');
+        setView(false);
+      })();
+    </script>
+  </body>
+</html>

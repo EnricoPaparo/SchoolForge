@@ -333,6 +333,32 @@ Contratto completo e mitigazioni in [m5-ai-assisted-roadmap.md](m5-ai-assisted-r
 
 ---
 
+## 8b. Varianti equivalenti (VEX — contratto approvato, NON implementato)
+
+Requisiti di sicurezza congelati per `equivalent_variants` (dettaglio in
+[`vex-contract.md`](vex-contract.md) §4–5):
+
+- lo studente **non** deve ricevere né poter leggere alternative **non assegnate**; la
+  `publishedProjection` **non** contiene tutte le alternative leggibili dallo studente;
+- le domande assegnate arrivano **solo** da una callable owner/student-auth che verifica
+  approvazione/classe/`active+public+online`, legge il `teacherSnapshot` congelato, crea o
+  recupera **atomicamente** l'assegnazione e restituisce solo le domande assegnate **senza
+  soluzioni**;
+- primo avvio concorrente ⇒ **una sola** assegnazione definitiva (transazione),
+  retry/reload idempotenti; unica scrittura aggiuntiva `assignedQuestionOrders`; nessuna
+  nuova scrittura ai riaccessi;
+- nessun listener/polling/scheduler, nessun documento per domanda, nessuna copia del pool;
+  `same_questions` resta client-side e non paga la callable;
+- **PDF studente disabilitato/nascosto** in `equivalent_variants` (un PDF dalla proiezione
+  completa esporrebbe le alternative); il **PDF docente** continua a usare l'insieme
+  completo configurato;
+- correzione manuale/IA e restituzione operano **solo** sugli order assegnati
+  (`assignedQuestionOrders`); `correctionReturns` contiene solo le domande assegnate; i
+  gruppi equivalenti garantiscono lo stesso `maxPoints`, quindi totali/percentuali
+  coerenti tra varianti.
+
+---
+
 ## 9. Backup, costi e incidenti
 
 - I Markdown e gli asset in Cloud Storage sono intrinsecamente portabili e protetti dalla ridondanza nativa di Storage; non è previsto alcun job di backup dedicato.

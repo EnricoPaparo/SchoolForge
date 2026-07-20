@@ -438,6 +438,8 @@ Tutti gli endpoint AI richiedono Firebase ID token valido con `ownerUid` verific
 
 > Un eventuale M3-full (specifica rinviata) aggiungerebbe `startDigitalAttempt` (participant lock nome+cognome, tentativo, snapshot con soluzioni private, accessLog, token sessione) e `continueDigitalAttempt` (lettura/ripresa, bozza e consegna autorizzate dal cookie). Non fanno parte della baseline corrente.
 
+> **VEX — varianti equivalenti (contratto approvato, NON implementato).** In modalità `equivalent_variants` una callable owner/student-auth assegnerà al primo avvio, in modo atomico e idempotente, una variante (domande comuni + una alternativa per gruppo), persistendo **una sola** scrittura `assignedQuestionOrders` sulla submission e restituendo solo le domande assegnate senza soluzioni; la `publishedProjection` non espone le alternative. `same_questions` resta interamente client-side (shuffle locale già implementato) e non paga la callable. Nessun listener/polling, nessun documento per domanda, nessuna copia del pool. Contratto e scope VEX-01A/01B/02/03 in [`vex-contract.md`](vex-contract.md); prototipo del builder in [`prototipi/vex-builder.html`](prototipi/vex-builder.html).
+
 Le Security Rules negano allo studente ogni accesso diretto ai documenti tecnici del docente (`lessons`, `questionIndex`, `publishedSnapshot`) e a ogni collezione relativa a un eventuale M3-full (`deliveryAttempts`, risposte, snapshot per tentativo). Le soluzioni private, correzioni e audit sono leggibili solo dall'`ownerUid`.
 
 ---

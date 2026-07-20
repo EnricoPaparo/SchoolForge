@@ -38,6 +38,7 @@ SchoolForge è un repository didattico Markdown-first per un solo docente. Se è
 9. [toolchain.md](toolchain.md) — versioni, monorepo, bootstrap, emulatori.
 10. [piano-implementazione.md](piano-implementazione.md) — pacchetti per agenti, dipendenze, gate.
 11. [evoluzioni-apprendimento-roadmap.md](evoluzioni-apprendimento-roadmap.md) — roadmap approvata post-polish: calibrazione IA, pool senza peso, appunti, varianti equivalenti e boost grafico.
+12. [vex-contract.md](vex-contract.md) — VEX varianti equivalenti: inventario del già-implementato, campi definitivi congelati, contratto assegnazione/sicurezza/costo/PDF/correzione, scope VEX-01A/01B/02/03 (**docs+prototipo, non ancora implementato**). Prototipo builder: [prototipi/vex-builder.html](prototipi/vex-builder.html).
 
 ## Per sviluppare un modulo
 
