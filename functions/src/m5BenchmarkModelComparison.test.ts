@@ -15,7 +15,12 @@ import type {
   M5BenchmarkModeReports,
   M5BenchmarkReport,
 } from './m5BenchmarkHarness.js';
-import { buildM5ModelComparisonSynthesis } from './m5BenchmarkModelComparison.js';
+import { OPENAI_GRADING_CONTRACT_VERSION } from './openAiGrader.js';
+import {
+  assessBaselineCompatibility,
+  buildM5ModelComparisonSynthesis,
+  type BaselineExpectations,
+} from './m5BenchmarkModelComparison.js';
 
 const MODES: readonly GradingMode[] = ['compassionate', 'balanced', 'rigorous'];
 
@@ -144,5 +149,58 @@ describe('M5-QUALITY-05 cross-model comparison synthesis', () => {
     expect(typeof synthesis.candidate.costActualMicroUsd).toBe('number');
     // Mini costs strictly more than nano at these token counts.
     expect(synthesis.costRatioCandidateOverBaseline).toBeGreaterThan(1);
+  });
+
+  it('stamps the current prompt/grading-contract version on generated reports', () => {
+    expect(nanoReport().promptContractVersion).toBe(OPENAI_GRADING_CONTRACT_VERSION);
+  });
+});
+
+describe('M5-QUALITY-05 nano baseline compatibility gate', () => {
+  const expected: BaselineExpectations = {
+    model: OPENAI_PRODUCTION_MODEL,
+    priceListVersion: DEFAULT_PRICE_LIST_VERSION,
+    promptContractVersion: OPENAI_GRADING_CONTRACT_VERSION,
+    datasetVersion: 'm5-benchmark-dataset-v1',
+  };
+
+  it('accepts a report with the same dataset, model, price list and contract version', () => {
+    expect(assessBaselineCompatibility(nanoReport(), expected)).toEqual({
+      compatible: true,
+      detail: expect.any(String),
+    });
+  });
+
+  it('rejects a report on a different model (e.g. the mini candidate) — blockingField model', () => {
+    const result = assessBaselineCompatibility(miniReport(), expected);
+    expect(result.compatible).toBe(false);
+    expect(result.blockingField).toBe('model');
+  });
+
+  it('rejects a report priced with a different list — blockingField priceListVersion', () => {
+    const result = assessBaselineCompatibility(nanoReport(), {
+      ...expected,
+      priceListVersion: 'v-somewhere-else',
+    });
+    expect(result.compatible).toBe(false);
+    expect(result.blockingField).toBe('priceListVersion');
+  });
+
+  it('rejects a legacy report without the contract-version stamp — prompt not verifiable', () => {
+    const legacy = nanoReport();
+    // Simulate a report generated before the stamp existed (e.g. m5-quality-02).
+    delete (legacy as { promptContractVersion?: string }).promptContractVersion;
+    const result = assessBaselineCompatibility(legacy, expected);
+    expect(result.compatible).toBe(false);
+    expect(result.blockingField).toBe('promptContractVersion');
+    expect(result.detail).toMatch(/prima dello stamp/);
+  });
+
+  it('rejects a report whose prompt changed after generation — blockingField promptContractVersion', () => {
+    const stale = { ...nanoReport(), promptContractVersion: 'deadbeefdeadbeef' };
+    const result = assessBaselineCompatibility(stale, expected);
+    expect(result.compatible).toBe(false);
+    expect(result.blockingField).toBe('promptContractVersion');
+    expect(result.detail).toMatch(/prompt cambiato/);
   });
 });

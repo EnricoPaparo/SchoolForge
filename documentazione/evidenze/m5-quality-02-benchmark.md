@@ -331,6 +331,38 @@ Cosa cambia (esclusivamente lato benchmark):
   costo, latenza media/p50/p95 e rapporto costo mini/nano. Se manca un report il
   confronto è dichiarato **non disponibile**, senza ricostruire o inventare dati.
 
+### Riuso del report reale nano esistente (baseline)
+
+Per non ripetere 36 chiamate nano solo perché M5-QUALITY-05 ha introdotto nomi di file
+distinti, `benchmark:m5-quality:compare` accetta come baseline nano, **in quest'ordine**:
+
+1. il report per-modello `m5-quality-05-gpt-5.4-nano-2026-03-17-report.json`;
+2. il report reale legacy `m5-quality-02-report.json` (prodotto da M5-QUALITY-02/04).
+
+Il primo candidato **presente e compatibile** è riusato così com'è, senza rieseguire
+alcuna chiamata e senza modificarne i dati reali. La compatibilità è verificata
+fail-closed su quattro campi: `datasetVersion`, modello uniforme = nano,
+`priceListVersion` = `v2-2026-07-17-hg-m5` e — decisivo — `promptContractVersion`, un
+digest deterministico di prompt di sistema + schema di output introdotto in questa PR e
+registrato in ogni nuovo report.
+
+**Verdetto sul report attuale `m5-quality-02-report.json`: NON riusabile.** Il campo
+che lo impedisce è `promptContractVersion`: il report è stato prodotto **prima**
+dell'introduzione dello stamp, quindi il prompt con cui è stato generato non è
+verificabile dal file. Inoltre il prompt di valutazione (`OPENAI_GRADING_INSTRUCTIONS`)
+è stato modificato dopo quell'esecuzione (PR #246, #247 e #248), perciò riusarlo
+confronterebbe nano-prompt-vecchio contro mini-prompt-corrente, confondendo effetto
+modello ed effetto prompt — esattamente ciò che M5-QUALITY-05 deve evitare. Di
+conseguenza, per un confronto interpretabile, la baseline nano va **rigenerata con il
+prompt corrente** (un solo run reale autorizzato), dopodiché il suo report per-modello
+verrà riconosciuto automaticamente. Da quel momento, finché prompt e schema non
+cambiano, il report nano resta riusabile senza nuove chiamate.
+
+Il benchmark mini scrive **esclusivamente** su
+`m5-quality-05-gpt-5.4-mini-2026-03-17-report.json` e non tocca mai i file nano (né il
+per-modello né il legacy): non può quindi sovrascrivere il report nano. La CLI di
+confronto scrive solo la sintesi `m5-quality-05-model-comparison.json`, mai un report.
+
 Confrontabilità rigorosa: nano e mini usano lo stesso dataset congelato, gli stessi
 `submissionId`/casi, le stesse tre modalità, le stesse tre ripetizioni, lo stesso
 prompt, lo stesso Structured Output, gli stessi parametri e le stesse fasce attese, con

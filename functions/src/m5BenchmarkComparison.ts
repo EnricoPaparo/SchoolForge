@@ -12,6 +12,7 @@ import {
   microUsdToUsd,
   normalizeUsageActual,
 } from './aiCorrectionCost.js';
+import { OPENAI_GRADING_CONTRACT_VERSION } from './openAiGrader.js';
 
 export type BenchmarkCriterionVerdict = 'pass' | 'fail' | 'manual_review';
 
@@ -115,6 +116,13 @@ export interface BenchmarkTechnicalAggregate {
 
 export interface M5BenchmarkComparativeReport {
   datasetVersion: 'm5-benchmark-dataset-v1';
+  /**
+   * Versione del contratto di valutazione (prompt + schema) con cui il report è
+   * stato prodotto. Consente a M5-QUALITY-05 di verificare che un report
+   * riutilizzato come baseline usi lo stesso prompt del candidato. Assente nei
+   * report generati prima dell'introduzione dello stamp.
+   */
+  promptContractVersion: string;
   graderIdByMode: Partial<Record<GradingMode, string>>;
   modelByMode: Partial<Record<GradingMode, string>>;
   repetitionsByMode: Record<GradingMode, number>;
@@ -699,6 +707,7 @@ export function buildM5BenchmarkComparativeReport(
   };
   return {
     datasetVersion: 'm5-benchmark-dataset-v1',
+    promptContractVersion: OPENAI_GRADING_CONTRACT_VERSION,
     graderIdByMode: Object.fromEntries(
       MODES.flatMap((mode) => (reports[mode]?.[0] ? [[mode, reports[mode]![0].graderId]] : [])),
     ),

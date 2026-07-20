@@ -22,6 +22,73 @@ export const M5_MODEL_COMPARISON_FOCUS_CASES = ['SCI-002', 'SCI-003', 'SCI-004']
 
 const MODES: readonly GradingMode[] = ['compassionate', 'balanced', 'rigorous'];
 
+export interface BaselineCompatibility {
+  compatible: boolean;
+  /** Campo che impedisce il riuso, quando `compatible` è `false`. */
+  blockingField?: 'datasetVersion' | 'model' | 'priceListVersion' | 'promptContractVersion';
+  detail: string;
+}
+
+export interface BaselineExpectations {
+  model: string;
+  priceListVersion: string;
+  promptContractVersion: string;
+  datasetVersion: string;
+}
+
+function reportModels(report: M5BenchmarkComparativeReport): Set<string> {
+  return new Set(MODES.map((mode) => report.modelByMode[mode]).filter((m): m is string => !!m));
+}
+
+/**
+ * M5-QUALITY-05 — stabilisce, **senza rieseguire alcuna valutazione**, se un
+ * report comparativo esistente possa essere riusato come baseline nano di un
+ * confronto fra modelli. Il riuso è ammesso solo se dataset, modello, listino e
+ * **versione del contratto di valutazione (prompt + schema)** coincidono con
+ * quelli attesi: solo così il confronto isola l'effetto-modello dall'effetto
+ * prompt. Non modifica né ricostruisce i dati reali del report.
+ */
+export function assessBaselineCompatibility(
+  report: M5BenchmarkComparativeReport,
+  expected: BaselineExpectations,
+): BaselineCompatibility {
+  if (report.datasetVersion !== expected.datasetVersion) {
+    return {
+      compatible: false,
+      blockingField: 'datasetVersion',
+      detail: `datasetVersion del report (${report.datasetVersion}) diverso da ${expected.datasetVersion}.`,
+    };
+  }
+  const models = reportModels(report);
+  if (models.size !== 1 || !models.has(expected.model)) {
+    return {
+      compatible: false,
+      blockingField: 'model',
+      detail: `il report non è uniformemente sul modello atteso ${expected.model} (modelli: ${[...models].join(', ') || 'assente'}).`,
+    };
+  }
+  if (report.technical.priceListVersion !== expected.priceListVersion) {
+    return {
+      compatible: false,
+      blockingField: 'priceListVersion',
+      detail: `priceListVersion del report (${report.technical.priceListVersion}) diverso da ${expected.priceListVersion}.`,
+    };
+  }
+  // Il campo può mancare del tutto nei report prodotti prima dello stamp: in
+  // quel caso il prompt non è verificabile e il riuso è rifiutato.
+  if (report.promptContractVersion !== expected.promptContractVersion) {
+    return {
+      compatible: false,
+      blockingField: 'promptContractVersion',
+      detail:
+        report.promptContractVersion === undefined
+          ? 'il report non registra promptContractVersion: prodotto prima dello stamp del contratto, prompt non verificabile.'
+          : `promptContractVersion del report (${report.promptContractVersion}) diverso dal contratto corrente (${expected.promptContractVersion}): prompt cambiato dopo la generazione.`,
+    };
+  }
+  return { compatible: true, detail: 'Report compatibile: riusabile come baseline nano.' };
+}
+
 export interface ModelSideSummary {
   model: string | 'unknown';
   verdict: M5BenchmarkComparativeReport['verdict'];
