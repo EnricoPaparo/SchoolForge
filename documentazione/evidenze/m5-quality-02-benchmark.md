@@ -403,3 +403,92 @@ pnpm --filter @schoolforge/functions benchmark:m5-quality -- --benchmark-model=g
 Stato: nessuna scelta definitiva del modello. Produzione e DEV restano su
 `gpt-5.4-nano-2026-03-17`. Il benchmark reale mini resta subordinato ad autorizzazione
 esplicita. **Gate G7 resta APERTO.**
+
+## M5-QUALITY-06 — ricalibrazione docente INF-004 e candidatura Gate G7
+
+### Evidenza reale Luna
+
+Il benchmark reale con `gpt-5.6-luna` è stato completato (autorizzato dal docente):
+
+- 36/36 chiamate completate e misurate, nessun output invalido;
+- costo reale **176.235 µUSD (0,176235 USD)**;
+- token: 62.109 input, 19.021 output, 81.130 totali;
+- latenza media 5.189,861 ms, p50 5.026 ms, p95 7.791 ms;
+- `promptContractVersion`: `db91d19cc4c43f2a`;
+- report locale (ignorato da Git): `functions/lib/m5-quality-05-gpt-5.6-luna-report.json`.
+
+Luna ha risolto i difetti principali: SCI-002 a 4/4 in tutte le modalità e ripetizioni;
+SCI-003 valutata parziale ~2–2,5/4; SCI-004 penalizzata ~2/3 per l'aggiunta falsa. Il
+Gate falliva ancora principalmente per **INF-004**.
+
+### Ricalibrazione pedagogica di INF-004 (revisione esplicita, non adattamento nascosto)
+
+Il docente ha riesaminato INF-004 e giudicato la precedente fascia balanced **2,50–3,25
+troppo generosa**: la risposta riconosce solo l'indirizzamento IP e l'ordinamento TCP,
+ma manca l'instradamento IP e **l'intero nucleo TCP** di affidabilità, controllo degli
+errori e ritrasmissioni. Decisione: fascia balanced congelata **2,00–2,50**.
+
+Prima → dopo (solo INF-004; nessun'altra fascia toccata):
+
+| | balanced | compassionate (≤ +0,50) | rigorous (≤ −0,50) |
+|---|---|---|---|
+| Prima | 2,50–3,25 | 2,50–3,75 | 2,00–3,25 |
+| Dopo | **2,00–2,50** | 2,00–3,00 | 1,50–2,50 |
+
+La derivazione mode-aware resta quella esistente (compassionate al massimo 0,50 sopra
+balanced, rigorous al massimo 0,50 sotto, valori nello step 0,25 e nel range
+0..maxPoints). Sono state modificate **soltanto** la fascia e la motivazione attesa di
+INF-004: domanda, soluzione, risposta, prompt, Structured Output, altre fasce,
+classificazione delle anomalie, modello runtime, listini e provider **restano
+invariati**. È una revisione pedagogica esplicita, non un adattamento per far passare
+Luna.
+
+### Rivalutazione offline (nessuna rete, nessuna nuova risposta del provider)
+
+`benchmark:m5-quality:reevaluate` rivaluta **offline** un report reale già esistente
+contro il dataset aggiornato: ricostruisce i risultati grezzi dal report comparativo
+(punteggi e feedback per ripetizione, feedback generali, ordine dal dataset immutato),
+ri-esegue il comparatore con le nuove fasce e **preserva verbatim** il blocco tecnico
+reale (costo, token, latenza non dipendono dal dataset). I risultati originali non
+vengono mai modificati e il report originale non è mai sovrascritto: l'esito è un file
+derivato nuovo (`m5-quality-06-gpt-5.6-luna-reevaluated.json`) più un riepilogo per la
+revisione umana (`m5-quality-06-review-summary.json`). È **fail-closed** se
+`datasetVersion`, `promptContractVersion`, modello o struttura non sono compatibili.
+Nessuna chiamata OpenAI, nessuna lettura di `OPENAI_API_KEY`.
+
+Comando (da eseguire nel workspace che contiene il report reale Luna):
+
+```powershell
+pnpm --filter @schoolforge/functions build
+pnpm --filter @schoolforge/functions benchmark:m5-quality:reevaluate
+```
+
+**Nel checkout dell'agente il report reale Luna non è presente** (`functions/lib` è
+ephemeral e ignorato da Git): il nuovo verdetto automatico è quindi **non disponibile**
+in questa PR e non viene ricostruito né inventato. La rivalutazione va eseguita dove
+risiede il report; la meccanica è verificata da test unitari (ricostruzione fedele,
+immutabilità dei risultati, tecnico preservato, fail-closed) ed è stata provata
+end-to-end su un report sintetico.
+
+### Nessun confronto automatico col vecchio nano; niente ripetizione nano
+
+Il vecchio report reale nano (`m5-quality-02-report.json`) **non registra
+`promptContractVersion`** ed è stato prodotto con un prompt precedente: il gate di
+compatibilità di M5-QUALITY-05 lo rifiuta come baseline e un confronto automatico
+nano-vecchio vs Luna-corrente confonderebbe effetto-modello ed effetto-prompt. Si è
+quindi deciso di **non ripetere il benchmark nano**: la ricalibrazione INF-004 è una
+decisione pedagogica indipendente dal modello, e la valutazione di Luna procede sul
+dataset aggiornato senza un nuovo run nano.
+
+### Gate G7 — resta APERTO in attesa della revisione umana
+
+La rivalutazione automatica non può chiudere G7. Il docente deve confermare
+manualmente:
+
+1. qualità pedagogica dei feedback per domanda;
+2. qualità overall dei feedback generali;
+3. resistenza semantica alle prompt injection;
+4. accettabilità delle modalità compassionate/balanced/rigorous.
+
+Luna resta **benchmark-only**: non è promossa in DEV/runtime. Produzione e DEV restano
+su `gpt-5.4-nano-2026-03-17`. **Gate G7 resta APERTO.**

@@ -71,9 +71,9 @@
       "rispostaStudente": "IP decide verso quale indirizzo mandare i pacchetti. TCP mette i dati nell'ordine giusto, ma non so come gestisca le perdite.",
       "maxPoints": 4,
       "difficolta": 2,
-      "expectedMinPoints": 2.5,
-      "expectedMaxPoints": 3.25,
-      "motivazioneAttesa": "Sono riconosciuti indirizzamento IP e ordinamento TCP, ma manca la parte centrale di affidabilità, controllo e ritrasmissione.",
+      "expectedMinPoints": 2.0,
+      "expectedMaxPoints": 2.5,
+      "motivazioneAttesa": "Revisione pedagogica del docente (M5-QUALITY-06): la fascia balanced scende a 2,00-2,50. La risposta riconosce solo l'indirizzamento IP e l'ordinamento TCP; mancano l'instradamento IP e l'intero nucleo TCP di affidabilita, controllo degli errori e ritrasmissioni, quindi la precedente fascia 2,50-3,25 era troppo generosa.",
       "requiresTeacherReview": false,
       "containsPromptInjection": false
     },

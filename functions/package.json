@@ -8,6 +8,7 @@
     "build": "tsc",
     "benchmark:m5-quality": "node lib/m5QualityBenchmarkCli.js",
     "benchmark:m5-quality:compare": "node lib/m5ModelComparisonCli.js",
+    "benchmark:m5-quality:reevaluate": "node lib/m5ReevaluateCli.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
