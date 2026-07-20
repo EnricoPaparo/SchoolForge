@@ -1401,7 +1401,6 @@ function verificationDoc(
                 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-001-http.pool.md',
               tipo: 'aperta',
               difficolta: 1,
-              peso: 1,
               maxPoints: 1,
             },
           ],

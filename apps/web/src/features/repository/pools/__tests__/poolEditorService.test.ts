@@ -312,7 +312,7 @@ describe('savePool', () => {
     expect(typeof entry1['questionPreview']).toBe('string');
   });
 
-  it('preserves editor difficolta 4 in questionIndex with neutral weight and derived points', async () => {
+  it('preserves editor difficolta 4 in questionIndex with derived points and no peso', async () => {
     mockGetDoc.mockResolvedValueOnce(lessonSnap(BASE_LESSON));
     mockGetDocs.mockResolvedValueOnce({ docs: [] });
 
@@ -340,7 +340,8 @@ describe('savePool', () => {
     });
 
     const [, entry] = mockBatchSet.mock.calls[0] as [unknown, Record<string, unknown>];
-    expect(entry).toMatchObject({ difficolta: 4, peso: 1, maxPoints: 4 });
+    expect(entry).toMatchObject({ difficolta: 4, maxPoints: 4 });
+    expect(entry).not.toHaveProperty('peso');
   });
 
   it('deletes stale questionIndex entries no longer in the pool, in the same batch', async () => {
@@ -559,8 +560,7 @@ describe('deletePool', () => {
             poolStorageRef: POOL_STORAGE_REF,
             tipo: 'aperta',
             difficolta: 2,
-            peso: 2,
-            maxPoints: 4,
+            maxPoints: 2,
           },
         ],
       },

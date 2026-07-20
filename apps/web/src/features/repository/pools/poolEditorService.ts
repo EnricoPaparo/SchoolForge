@@ -67,9 +67,8 @@ function buildQuestionIndexEntry(
     poolStorageRef,
     questionLocalId: q.id,
     tipo: q.tipo,
-    // Transitional questionIndex shape; POOL-SIMPLE-02 removes peso.
+    // POOL-SIMPLE v2: difficoltà 1–5, maxPoints === difficolta, no peso.
     difficolta: q.difficolta,
-    peso: 1,
     maxPoints: q.maxPoints,
     questionPreview: buildQuestionPreview(q.testo),
   };

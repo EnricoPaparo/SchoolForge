@@ -607,8 +607,7 @@ export function CorrectionWorkspace({
           </div>
 
           <p className={styles.questionMeta}>
-            Difficoltà {currentQuestion?.difficolta ?? '—'} · Peso {currentQuestion?.peso ?? '—'} ·
-            Max {currentMaxPoints} punti
+            Difficoltà {currentQuestion?.difficolta ?? '—'} · Max {currentMaxPoints} punti
           </p>
 
           <p className={styles.questionText}>

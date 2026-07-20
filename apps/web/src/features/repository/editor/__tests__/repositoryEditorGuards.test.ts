@@ -26,7 +26,6 @@ function verification(
           poolStorageRef: 'repository/owner/imports/import-a/uda-01-reti/lezione-001-http.pool.md',
           tipo: 'aperta',
           difficolta: 1,
-          peso: 1,
           maxPoints: 1,
         },
       ],

@@ -10,6 +10,7 @@ const SMALL_QUESTION: VerificationTeacherQuestionSnapshot = {
   order: 0,
   tipo: 'aperta',
   maxPoints: 4,
+  difficolta: 4,
   testo: 'Spiega HTTP.',
   soluzione: 'HTTP è un protocollo applicativo.',
 };

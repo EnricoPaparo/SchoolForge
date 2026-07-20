@@ -109,7 +109,7 @@ I test seguenti restano specifica di un eventuale M3-full e non si applicano a M
 
 ## 5c. Casi di test su questionIndex e re-import
 
-1. **Re-import di una lezione con pool modificato aggiorna correttamente questionIndex** — dopo il re-import dall'interfaccia, le voci di `questionIndex` riflettono il nuovo pool (aggiunte, rimozioni, valori `difficolta`/`peso`/`maxPoints` aggiornati).
+1. **Re-import di una lezione con pool modificato aggiorna correttamente questionIndex** — dopo il re-import dall'interfaccia, le voci di `questionIndex` riflettono il nuovo pool (aggiunte, rimozioni, valori `difficolta` 1–5 e `maxPoints === difficolta` aggiornati; nessun `peso`).
 2. **Import fallito non cambia il Programma attivo** — un re-import con pool invalido oppure upload interrotto non aggiorna `activeImportId`; l'import e il `questionIndex` visibili restano invariati.
 
 ---

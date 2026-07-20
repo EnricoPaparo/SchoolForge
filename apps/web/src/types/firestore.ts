@@ -177,8 +177,8 @@ export interface QuestionIndexEntry {
   poolStorageRef: string;
   questionLocalId: string;
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
+  /** POOL-SIMPLE v2: integer 1–5. `maxPoints` is always derived as `maxPoints === difficolta`. */
   difficolta: PoolDifficulty;
-  peso: 1 | 2 | 3;
   maxPoints: number;
   /** First 100 chars of the normalized question text — never the full text, solution, or answers. */
   questionPreview: string;
@@ -413,8 +413,8 @@ export type VerificationQuestionRef = {
   poolStorageRef: string;
   /** Metadata snapshot at selection time */
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
+  /** POOL-SIMPLE v2: integer 1–5, frozen at selection. `maxPoints === difficolta`. */
   difficolta: PoolDifficulty;
-  peso: 1 | 2 | 3;
   maxPoints: number;
   // NEVER include: questionText, answers, correctAnswer, solution
 };
@@ -447,14 +447,13 @@ export type VerificationTeacherQuestionSnapshot = {
   maxPoints: number;
   testo: string;
   /**
-   * Difficulty/weight frozen from the selected `VerificationQuestionRef` at
-   * activation, shown in the teacher correction workspace. Optional: absent on
-   * verifications activated before this snapshot carried them (legacy) — the
-   * workspace shows "—" and never reconstructs them from the live pool. Kept
-   * owner-only here; deliberately NOT copied into the public projection.
+   * POOL-SIMPLE v2: integer difficulty 1–5, frozen from the selected
+   * `VerificationQuestionRef` at activation and shown in the teacher correction
+   * workspace. `maxPoints === difficolta`. Kept owner-only here; deliberately
+   * NOT copied into the public projection. There is no `peso` (removed in
+   * POOL-SIMPLE-02) and no legacy fallback — every V2 snapshot carries it.
    */
-  difficolta?: PoolDifficulty;
-  peso?: 1 | 2 | 3;
+  difficolta: PoolDifficulty;
   /** Present only for chiusa_singola / chiusa_multipla. id + testo only. */
   opzioni?: { id: string; testo: string }[];
   /** string for aperta/chiusa_singola, string[] for chiusa_multipla. */

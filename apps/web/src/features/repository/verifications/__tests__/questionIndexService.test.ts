@@ -28,7 +28,6 @@ function doc(id: string, overrides: Record<string, unknown> = {}) {
       questionLocalId: 'q1',
       tipo: 'aperta',
       difficolta: 1,
-      peso: 1,
       maxPoints: 1,
       questionPreview: 'Descrivi il protocollo HTTP.',
       ...overrides,
@@ -77,6 +76,30 @@ describe('listQuestionIndex', () => {
     expect(result[0]).not.toHaveProperty('soluzione');
     expect(result[0]).not.toHaveProperty('correctAnswer');
     expect(result[0]).not.toHaveProperty('answers');
+  });
+
+  it('POOL-SIMPLE-02 — accepts a coherent V2 entry (difficoltà 5, maxPoints 5)', async () => {
+    mockGetDocs.mockResolvedValue({
+      docs: [doc('qi-5', { difficolta: 5, maxPoints: 5 })],
+    });
+    const result = await listQuestionIndex('prog-1', 'imp-1', fakeDb);
+    expect(result[0]).toMatchObject({ difficolta: 5, maxPoints: 5 });
+  });
+
+  it('POOL-SIMPLE-02 fail-closed — rejects an incoherent entry so the picker never shows it', async () => {
+    const invalidCases: Array<Record<string, unknown>> = [
+      { difficolta: 0, maxPoints: 0 },
+      { difficolta: 6, maxPoints: 6 },
+      { difficolta: 2.5, maxPoints: 2.5 },
+      { difficolta: 3, maxPoints: 4 }, // maxPoints !== difficolta
+      { tipo: 'sconosciuto', difficolta: 3, maxPoints: 3 },
+    ];
+    for (const overrides of invalidCases) {
+      mockGetDocs.mockResolvedValue({ docs: [doc('qi-bad', overrides)] });
+      await expect(listQuestionIndex('prog-1', 'imp-1', fakeDb)).rejects.toThrow(
+        /questionIndex non valida/,
+      );
+    }
   });
 
   it('sorts entries deterministically by UDA, then lesson, then questionLocalId', async () => {

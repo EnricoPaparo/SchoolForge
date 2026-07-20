@@ -257,9 +257,8 @@ interface QuestionIndex {
   udaId: string;
   programId: string;
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
-  difficolta: 1 | 2 | 3;
-  peso: 1 | 2 | 3;
-  maxPoints: number;           // difficolta * peso (scala lineare, 1–9)
+  difficolta: 1 | 2 | 3 | 4 | 5; // POOL-SIMPLE v2: intero 1–5
+  maxPoints: number;           // derivato: maxPoints === difficolta (nessun `peso`)
   valid: boolean;
 }
 
@@ -830,8 +829,7 @@ Content-Type: application/json
         "order": 1,
         "tipo": "aperta",
         "difficolta": 2,
-        "peso": 3,
-        "maxPoints": 6,
+        "maxPoints": 2,
         "testo": "Spiega la differenza tra HTTP e HTTPS.",
         "opzioni": null
       }
