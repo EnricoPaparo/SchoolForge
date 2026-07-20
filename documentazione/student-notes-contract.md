@@ -491,18 +491,28 @@ Strategia economica e indicizzata (mai una scansione di tutti i `lessonNotes`):
   costruire qualsiasi delete: un indice malformato interrompe l'operazione senza
   cancellare path arbitrari e senza esporre path/contenuti;
 - delete in chunk sequenziali di massimo 400 op, **prima le note poi gli
-  indici**: un crash a metà non lascia mai un indice che punta a note già
-  rimosse, e il retry riquery solo gli indici ancora presenti → idempotente
-  (cancellare un documento assente è un no-op).
+  indici**. L'operazione **non** è globalmente atomica: un crash dopo aver
+  eliminato alcune note ma prima del loro indice può lasciare temporaneamente un
+  indice che punta a note già rimosse. Questo stato intermedio è innocuo e
+  auto-risanante: il retry riquery solo gli indici ancora presenti e riemette le
+  delete note idempotenti (cancellare un documento assente è un no-op),
+  completando la pulizia.
 
 Input chiuso: solo `programId` non vuoto (nessuno `studentUid`/`lessonId` dal
 client). Risultato minimale tipizzato: `{ status: 'completed', notesDeleted,
 indexesDeleted }` — nessun nome, email, uid, lessonId, path o contenuto.
 
 Integrazione in `deleteProgram`: resta per primo il blocco se esistono
-verifiche collegate; la cleanup viene invocata **prima** della delete finale del
-documento `programs/{programId}`, così se fallisce il documento del corso resta
-per il retry (nessun falso successo). La conferma di eliminazione avvisa che
+verifiche collegate; la cleanup viene invocata **prima di qualsiasi operazione
+distruttiva** sul corso (cancellazione Storage, import/UDA/lezioni/
+questionIndex, publicLessons e documento `programs/{programId}`). Se fallisce,
+si propaga un errore leggibile, non viene eseguita alcuna cancellazione del
+corso né scritto l'audit di successo, e il corso resta completamente integro e
+riprovabile dalla UI (nessun falso successo). L'input callable è realmente
+chiuso: solo `{ programId }`, proprietà extra rifiutate; `programId`,
+`studentUid` e `lessonId` sono validati come singoli segmenti Firestore (non
+vuoti, senza `/`, diversi da `.`/`..`, entro il limite UTF-8) senza alcuna
+normalizzazione silenziosa. La conferma di eliminazione avvisa che
 verranno eliminati anche gli appunti personali degli studenti associati al corso.
 Doppio click protetto; messaggio UI leggibile e sanificato.
 

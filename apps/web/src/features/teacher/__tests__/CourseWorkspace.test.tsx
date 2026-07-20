@@ -1034,6 +1034,27 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
     );
     expect(onCourseDeleted).toHaveBeenCalledWith('p1');
   });
+
+  it('double-click on confirm invokes deleteProgram only once (sync guard)', async () => {
+    // deleteProgram stays pending so a second confirm click lands before the
+    // first call resolves; the synchronous ref guard must swallow it.
+    let resolveDelete: () => void = () => {};
+    mockDeleteProgram.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveDelete = resolve;
+      }),
+    );
+    await renderAndReady({}, { onCourseDeleted: vi.fn() });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Elimina corso' }));
+    const confirm = screen.getByRole('button', { name: 'Elimina' });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(mockDeleteProgram).toHaveBeenCalledTimes(1));
+    resolveDelete();
+  });
 });
 
 describe('CourseWorkspace — pure updaters & class preservation (DUX-04A fixes)', () => {

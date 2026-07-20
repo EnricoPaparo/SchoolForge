@@ -934,8 +934,12 @@ studenti e i loro indici per-corso quando il docente elimina un corso, senza mai
 lasciarli orfani e senza che il docente legga i contenuti (gira con Admin SDK,
 che bypassa le Security Rules → nessun accesso Rules concesso al docente).
 
-**Request (input chiuso):** `{ programId: string }` non vuoto. Nessuno
-`studentUid`/`lessonId` dal client.
+**Request (input realmente chiuso):** plain object con **la sola** proprietà
+`programId`; proprietà aggiuntive rifiutate. `programId`, `studentUid` e
+`lessonId` sono validati come singoli segmenti Firestore (stringa non vuota,
+niente `/`, diversa da `.`/`..`, entro il limite UTF-8 di un document ID) senza
+alcuna normalizzazione silenziosa: un id non valido rifiuta l'intera cleanup
+prima di qualsiasi delete. Nessuno `studentUid`/`lessonId` dal client.
 
 **Response (tipizzata minimale):** `{ status: 'completed', notesDeleted: number,
 indexesDeleted: number }`. Non contiene mai nome, email, uid, lessonId, path o
@@ -958,11 +962,16 @@ costruzione dei path note **dallo studentUid + lessonIds dell'indice** (i
 un documento assente è un no-op; un retry riquery solo gli indici ancora
 presenti.
 
-**Integrazione:** invocata da `deleteProgram` **prima** della delete del
-documento `programs/{programId}` (dopo il blocco per verifiche collegate). Se la
-pulizia fallisce, il documento del corso resta per il retry (nessun falso
-successo). Copre le note tracciate dall'indice per-corso ANNOT-03B; nessun
-fallback di scansione dei `lessonNotes`, nessuna migrazione legacy.
+**Integrazione:** invocata da `deleteProgram` **prima di qualsiasi operazione
+distruttiva** sul corso (Storage, import/UDA/lezioni/questionIndex,
+publicLessons e documento `programs/{programId}`), subito dopo il blocco per
+verifiche collegate. Se la pulizia fallisce, si propaga un errore leggibile e
+**non** viene eseguita alcuna cancellazione del corso né scritto l'audit di
+successo: il corso resta completamente integro e riprovabile. La delete non è
+globalmente atomica ma è idempotente: un retry completa la pulizia (cancellare
+un doc assente è un no-op). Copre le note tracciate dall'indice per-corso
+ANNOT-03B; nessun fallback di scansione dei `lessonNotes`, nessuna migrazione
+legacy.
 
 **Costi** (solo alla cancellazione del corso; `S` studenti con indice, `N` note
 totali): `S` read indice + `N` delete note + `S` delete indice. Zero listener,

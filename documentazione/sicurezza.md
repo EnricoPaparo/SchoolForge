@@ -201,14 +201,18 @@ esegue **una** collection-group query su `lessonNoteIndexes` per `programId` e
 costruisce i path delle note **solo** da `studentUid` + `lessonIds` dell'indice:
 i documenti `lessonNotes` (e il loro `content`) non vengono **mai** letti. Ogni
 indice è validato fail-closed (path coerente, `lessonIds` array di stringhe non
-vuote ≤500, dedup); un indice malformato interrompe l'operazione senza
-cancellare path arbitrari e senza esporre path o contenuti. Il risultato è
-minimale (`status`, `notesDeleted`, `indexesDeleted`) e non contiene uid, path,
-lessonId o contenuti. La cleanup è invocata da `deleteProgram` **prima** della
-delete del documento `programs/{programId}`, così un fallimento lascia il corso
-per il retry (idempotente). Le Firestore Rules degli appunti **non sono
-modificate** da questa change. Nessun indice composito (filtro campo singolo →
-indice single-field automatico).
+vuote ≤500, dedup). Ogni segmento di path (`programId`, `studentUid`,
+`lessonId`) è validato come document ID Firestore (non vuoto, senza `/`, diverso
+da `.`/`..`, entro il limite UTF-8) senza normalizzazione silenziosa; l'input
+callable è realmente chiuso (solo `{ programId }`, proprietà extra rifiutate).
+Un indice malformato o un id non valido interrompe l'operazione senza cancellare
+path arbitrari e senza esporre path o contenuti. Il risultato è minimale
+(`status`, `notesDeleted`, `indexesDeleted`) e non contiene uid, path, lessonId
+o contenuti. La cleanup è invocata da `deleteProgram` **prima di qualsiasi
+operazione distruttiva** sul corso, così un fallimento lascia il corso
+completamente integro per il retry (idempotente, non globalmente atomico). Le
+Firestore Rules degli appunti **non sono modificate** da questa change. Nessun
+indice composito (filtro campo singolo → indice single-field automatico).
 
 ---
 

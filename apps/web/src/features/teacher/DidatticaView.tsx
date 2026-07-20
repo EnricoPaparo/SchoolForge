@@ -51,6 +51,10 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
 
   const [dialog, setDialog] = useState<Dialog>({ kind: 'none' });
   const [busy, setBusy] = useState(false);
+  // Synchronous double-click guard: `busy` is React state (updated
+  // asynchronously), so a second confirm click before the re-render could
+  // otherwise invoke deleteProgram twice. This ref flips immediately.
+  const deletingRef = useRef(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
   // Non-blocking notice after a successful import whose deferred publicLessons
   // cleanup was postponed (cleanupPending) — HARD-02B-2.
@@ -272,6 +276,8 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
   }
 
   async function handleDelete(programId: string) {
+    if (deletingRef.current) return;
+    deletingRef.current = true;
     setBusy(true);
     setDialogError(null);
     try {
@@ -282,6 +288,7 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
       setDialogError(err instanceof Error ? err.message : 'Impossibile eliminare il corso.');
     } finally {
       setBusy(false);
+      deletingRef.current = false;
     }
   }
 

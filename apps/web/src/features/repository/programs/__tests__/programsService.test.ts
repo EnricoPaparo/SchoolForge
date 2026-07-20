@@ -593,15 +593,26 @@ describe('deleteProgram', () => {
     expect(cleanupOrder).toBeLessThan(deleteOrder);
   });
 
-  it('ANNOT-CLEANUP-01 — a cleanup failure leaves the program document intact (no final delete, no audit, no false success)', async () => {
-    setupGetDocs({ verifications: [], imports: [] });
+  it('ANNOT-CLEANUP-01 — a cleanup failure performs no destructive operation and leaves the course fully intact', async () => {
+    // An import is present so that, if cleanup ran AFTER any destructive step,
+    // the Storage gateway / batch deletes would have fired — they must not.
+    setupGetDocs({
+      verifications: [],
+      imports: [{ id: 'imp-1' }],
+      udas: [{ ref: { __path: 'programs/prog-1/imports/imp-1/udas/u1' } }],
+      publicLessons: [{ ref: { __path: 'publicLessons/pl-1' } }],
+    });
     cleanupNotes.mockRejectedValue(new Error('cleanup failed'));
 
     await expect(deleteProgram('prog-1', 'owner-uid', fakeDb, cleanupNotes)).rejects.toThrow();
 
-    // The program document is never deleted, so the teacher can retry.
-    expect(mockDeleteDoc).not.toHaveBeenCalledWith({ __path: 'programs/prog-1' });
-    // No success audit event is written.
+    // Cleanup runs before any destructive operation: none of them happen.
+    expect(mockDeleteImportPrefix).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+    expect(mockBatchDelete).not.toHaveBeenCalled();
+    expect(mockDeleteDoc).not.toHaveBeenCalled();
+    // No success audit event is written (no false success).
     const auditCall = mockSetDoc.mock.calls.find(
       ([, data]) => (data as { action?: string }).action === 'program.deleted',
     );

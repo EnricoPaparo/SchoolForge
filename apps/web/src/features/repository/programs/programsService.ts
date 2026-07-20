@@ -378,6 +378,15 @@ export async function deleteProgram(
     throw new Error(PROGRAM_DELETE_BLOCKED_MESSAGE);
   }
 
+  // ANNOT-CLEANUP-01 — server-side, owner-only deletion of every student lesson
+  // note (and per-course index) for this program. Runs BEFORE any destructive
+  // operation on the course (Storage prefixes, import/UDA/lesson/questionIndex
+  // docs, publicLessons projections, the program document): if it throws we
+  // propagate a readable error and the course is left completely intact so the
+  // teacher can retry — no partial deletion, no false success audit. The
+  // teacher never reads note content (the server deletes them).
+  await cleanupLessonNotes(programId);
+
   const [importsSnap, publicLessonsSnap] = await Promise.all([
     getDocs(collection(db, 'programs', programId, 'imports')),
     getDocs(query(collection(db, 'publicLessons'), where('programId', '==', programId))),
@@ -421,12 +430,6 @@ export async function deleteProgram(
     db,
     publicLessonsSnap.docs.map((d) => d.ref),
   );
-
-  // ANNOT-CLEANUP-01 — server-side, owner-only deletion of every student lesson
-  // note (and per-course index) for this program. Runs BEFORE the program
-  // document is removed: if it throws, we propagate and the program document
-  // stays, so the teacher can retry. The teacher never reads note content.
-  await cleanupLessonNotes(programId);
 
   await deleteDoc(doc(db, 'programs', programId));
 

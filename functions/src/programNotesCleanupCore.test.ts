@@ -93,6 +93,36 @@ describe('runProgramNotesCleanup — authorization', () => {
   });
 });
 
+describe('runProgramNotesCleanup — closed input & Firestore-segment validation', () => {
+  const badInputs: Array<[string, unknown]> = [
+    ['extra property besides programId', { programId: PROGRAM_ID, studentUid: 'x' }],
+    ['whitespace-only programId', { programId: '   ' }],
+    ['programId with a slash', { programId: 'a/b' }],
+    ['programId equal to ".."', { programId: '..' }],
+    ['programId equal to "."', { programId: '.' }],
+    ['non-string programId', { programId: 123 }],
+    ['null input', null],
+    ['array input', [{ programId: PROGRAM_ID }]],
+    ['programId over the UTF-8 segment limit', { programId: 'a'.repeat(1501) }],
+  ];
+
+  it.each(badInputs)('rejects %s before any query or delete', async (_label, input) => {
+    const deleteChunk = vi.fn(async () => {});
+    const { deps, queryCalls } = makeDeps({ deleteChunk });
+    await expect(runProgramNotesCleanup(input, deps)).rejects.toMatchObject({
+      code: 'invalid_input',
+    });
+    expect(queryCalls).toHaveLength(0);
+    expect(deleteChunk).not.toHaveBeenCalled();
+  });
+
+  it('accepts a valid programId unchanged (no normalization)', async () => {
+    const { deps, queryCalls } = makeDeps({ indexes: [] });
+    await runProgramNotesCleanup({ programId: PROGRAM_ID }, deps);
+    expect(queryCalls).toEqual([PROGRAM_ID]);
+  });
+});
+
 describe('runProgramNotesCleanup — deletion', () => {
   it('does nothing (zero notes/indexes) when no student has an index for the course', async () => {
     const { deps, deletedChunks, queryCalls } = makeDeps({ indexes: [] });
@@ -216,7 +246,12 @@ describe('runProgramNotesCleanup — fail-closed on malformed index', () => {
       },
     ],
     ['lessonId not a non-empty string', rawIndex('s', ['ok', ''])],
+    ['lessonId whitespace-only', rawIndex('s', ['ok', '   '])],
     ['lessonId non-string', rawIndex('s', ['ok', 123])],
+    ['lessonId with a slash', rawIndex('s', ['ok', 'a/b'])],
+    ['lessonId equal to "."', rawIndex('s', ['ok', '.'])],
+    ['lessonId equal to ".."', rawIndex('s', ['ok', '..'])],
+    ['pathStudentUid with a slash', rawIndex('s', ['x'], { pathStudentUid: 'a/b' })],
     [
       'too many lessonIds',
       rawIndex(

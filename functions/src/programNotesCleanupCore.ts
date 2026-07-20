@@ -78,10 +78,44 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
-/** Validates the closed input: only a non-empty `programId`. */
+/**
+ * Firestore's hard limit for a single document ID: 1500 bytes UTF-8. We use it
+ * as the ceiling for every path segment we build (programId/studentUid/lessonId).
+ */
+export const FIRESTORE_MAX_SEGMENT_BYTES = 1500;
+
+/**
+ * Fail-closed validation of one Firestore path segment. Never normalizes or
+ * mutates the value: a segment that is empty, whitespace-only, contains a
+ * slash, equals `.`/`..`, or exceeds the UTF-8 document-ID limit is rejected so
+ * the whole cleanup aborts before any path is built. `trimForEmptiness` treats
+ * a whitespace-only string as empty without changing the accepted value.
+ */
+export function isValidFirestoreSegment(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  if (value.trim().length === 0) return false;
+  if (value.includes('/')) return false;
+  if (value === '.' || value === '..') return false;
+  if (new TextEncoder().encode(value).length > FIRESTORE_MAX_SEGMENT_BYTES) return false;
+  return true;
+}
+
+/**
+ * Validates the closed input: a plain object whose only property is a
+ * `programId` valid as a single Firestore segment. Any extra property, a
+ * missing/empty/whitespace/slash-bearing `programId`, or a non-object input is
+ * rejected — nothing is normalized.
+ */
 export function validateCleanupInput(input: unknown): ProgramNotesCleanupInput {
-  const programId = (input as { programId?: unknown } | null)?.programId;
-  if (!isNonEmptyString(programId)) {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new ProgramNotesCleanupError('invalid_input', 'programId mancante o non valido.');
+  }
+  const keys = Object.keys(input as Record<string, unknown>);
+  if (keys.length !== 1 || keys[0] !== 'programId') {
+    throw new ProgramNotesCleanupError('invalid_input', 'programId mancante o non valido.');
+  }
+  const programId = (input as { programId: unknown }).programId;
+  if (!isValidFirestoreSegment(programId)) {
     throw new ProgramNotesCleanupError('invalid_input', 'programId mancante o non valido.');
   }
   return { programId };
@@ -104,8 +138,9 @@ export function validateIndex(
     );
   };
 
-  // Path must be coherent with the requested program.
-  if (!isNonEmptyString(raw.pathStudentUid) || raw.pathProgramId !== programId) fail();
+  // Path must be coherent with the requested program; the student uid must be
+  // a valid Firestore segment (no slash / dot-dot / oversize), never normalized.
+  if (!isValidFirestoreSegment(raw.pathStudentUid) || raw.pathProgramId !== programId) fail();
   // Stored identity must match the path and the requested program.
   if (
     raw.data.studentUid !== raw.pathStudentUid ||
@@ -115,10 +150,12 @@ export function validateIndex(
     fail();
   }
   const lessonIds = raw.data.lessonIds;
+  // Every lessonId must be a valid Firestore segment: a slash, `.`/`..` or an
+  // oversize id fails the whole cleanup rather than building an unintended path.
   if (
     !Array.isArray(lessonIds) ||
     lessonIds.length > NOTE_INDEX_MAX_LESSON_IDS ||
-    !lessonIds.every(isNonEmptyString)
+    !lessonIds.every(isValidFirestoreSegment)
   ) {
     fail();
   }
@@ -165,9 +202,14 @@ export async function runProgramNotesCleanup(
     indexRefs.push({ segments: ['students', studentUid, 'lessonNoteIndexes', programId] });
   }
 
-  // Delete notes first (in chunks), then their indexes (in chunks): a crash
-  // mid-way never leaves an index pointing at notes that are gone, and the
-  // next retry re-queries only the still-present indexes — idempotent.
+  // Delete notes first (in chunks), then their indexes (in chunks). This is NOT
+  // globally atomic: a crash after some notes are deleted but before their index
+  // is removed can temporarily leave an index pointing at notes that are already
+  // gone. That intermediate state is harmless and self-healing — a retry
+  // re-queries the still-present indexes and re-issues the (idempotent) note
+  // deletes (deleting an absent doc is a no-op), completing the cleanup. Notes
+  // are removed before their index so a retry never has to trust an index whose
+  // notes were only partially removed.
   await deleteInChunks(noteRefs, deps.deleteChunk);
   await deleteInChunks(indexRefs, deps.deleteChunk);
 
