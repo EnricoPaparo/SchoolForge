@@ -14,8 +14,7 @@ const ENTRIES: QuestionIndexEntry[] = [
     questionLocalId: 'q1',
     tipo: 'aperta',
     difficolta: 1,
-    peso: 2,
-    maxPoints: 2,
+    maxPoints: 1,
     questionPreview: 'Descrivi il modello ISO/OSI.',
   },
   {
@@ -26,8 +25,7 @@ const ENTRIES: QuestionIndexEntry[] = [
     questionLocalId: 'q2',
     tipo: 'chiusa_singola',
     difficolta: 2,
-    peso: 3,
-    maxPoints: 3,
+    maxPoints: 2,
     questionPreview: 'Quale protocollo usa il three-way handshake?',
   },
   {
@@ -38,8 +36,7 @@ const ENTRIES: QuestionIndexEntry[] = [
     questionLocalId: 'q3',
     tipo: 'chiusa_multipla',
     difficolta: 3,
-    peso: 3,
-    maxPoints: 5,
+    maxPoints: 3,
     questionPreview: 'Seleziona le funzioni tipiche di un firewall.',
   },
 ];
@@ -217,11 +214,11 @@ describe('QuestionPicker — selection', () => {
   it('updates the live counters (selected count and total points)', () => {
     renderPicker(new Set(['qi-1', 'qi-3']));
     expect(screen.getByText('3 domande trovate')).toBeTruthy();
-    // 2 selected, maxPoints 2 + 5 = 7
+    // 2 selected; V2 maxPoints === difficolta: 1 (qi-1) + 3 (qi-3) = 4
     expect(screen.getByLabelText('Domande selezionate (contatore)').textContent).toMatch(
       /2 selezionate/,
     );
-    expect(screen.getByLabelText('Punti totali selezionati').textContent).toMatch(/7 punti totali/);
+    expect(screen.getByLabelText('Punti totali selezionati').textContent).toMatch(/4 punti totali/);
   });
 });
 
@@ -238,8 +235,8 @@ describe('QuestionPicker — selected summary', () => {
     expect(
       within(region).getByText(/uda-02-sicurezza \/ lezione-003-firewall\.md · chiusa multipla/),
     ).toBeTruthy();
-    expect(within(region).getByText('2pt')).toBeTruthy();
-    expect(within(region).getByText('5pt')).toBeTruthy();
+    expect(within(region).getByText('1pt')).toBeTruthy();
+    expect(within(region).getByText('3pt')).toBeTruthy();
   });
 
   it('removes a question from the summary and calls onChange without it', () => {
@@ -261,7 +258,7 @@ describe('QuestionPicker — content safety', () => {
 });
 
 describe('QuestionPicker — question preview', () => {
-  it('shows id, preview text, tipo, difficoltà, peso/punti and UDA/lezione for each row', () => {
+  it('shows id, preview text, tipo, difficoltà and punti (no peso) for each row', () => {
     renderPicker();
     const list = questionList();
     const row = within(list).getByText('#q1').closest('li');
@@ -270,8 +267,9 @@ describe('QuestionPicker — question preview', () => {
     expect(rowScope.getByText('#q1')).toBeTruthy();
     expect(rowScope.getByText('Descrivi il modello ISO/OSI.')).toBeTruthy();
     expect(
-      rowScope.getByText(/uda-01-reti \/ lezione-001-intro\.md · aperta · diff 1 · peso 2 · 2pt/),
+      rowScope.getByText(/uda-01-reti \/ lezione-001-intro\.md · aperta · diff 1 · 1pt/),
     ).toBeTruthy();
+    expect(within(row as HTMLElement).queryByText(/peso/i)).toBeNull();
   });
 
   it('shows a different preview per question row', () => {

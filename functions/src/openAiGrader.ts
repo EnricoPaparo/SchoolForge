@@ -329,7 +329,6 @@ export function buildOpenAiGradingRequest(
       studentAnswer: question.studentAnswer,
       maxPoints: question.maxPoints,
       ...(question.difficulty === undefined ? {} : { difficulty: question.difficulty }),
-      ...(question.weight === undefined ? {} : { weight: question.weight }),
     })),
     ...(input.submissionContext ? { submissionContext: input.submissionContext } : {}),
     gradingMode: input.gradingMode,

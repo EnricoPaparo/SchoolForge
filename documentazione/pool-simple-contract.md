@@ -1,21 +1,21 @@
 # SchoolForge — contratto tecnico pool V2
 
-**Stato:** POOL-SIMPLE-01 implementa contratto, parser, serializer, fixture e template;
-POOL-SIMPLE-02 e Gate GPOOL restano aperti.
+**Stato:** POOL-SIMPLE-01 (contratto, parser, serializer, fixture, template) e
+POOL-SIMPLE-02 (rimozione applicativa end-to-end di `peso`) **implementati**. **Gate
+GPOOL resta aperto**: richiede pulizia DEV, deploy coordinato e smoke end-to-end.
 **Data inventario:** 18 luglio 2026.
 **Data implementazione contratto V2:** 20 luglio 2026.
 **Prerequisito:** pulizia completa dei dati DEV dipendenti dal pool V1 prima del rollout.
 **Dipendenza:** POOL-SIMPLE deve superare Gate GPOOL prima di VEX — Varianti equivalenti.
 
-Per mantenere il workspace compilabile tra 01 e 02, l'editor produce già Markdown V2 e
-i writer dell'indice usano temporaneamente `peso: 1` nella vecchia forma persistente.
-Questo ponte non appartiene al contratto Markdown, non accetta V1 e deve essere rimosso
-con tipi, picker e snapshot in POOL-SIMPLE-02. Nessun deploy applicativo è autorizzato
-prima del completamento coordinato di 02.
+Il ponte transitorio è stato **rimosso** in POOL-SIMPLE-02: nessun writer scrive più
+`peso: 1`, nessun nuovo documento Firestore contiene `peso` e nessun cast nasconde le
+difficoltà 4 o 5. `maxPoints` è sempre derivato da `difficolta` (`maxPoints === difficolta`).
 
-Il tipo condiviso `PoolDifficulty` rappresenta senza restringimenti `1 | 2 | 3 | 4 | 5`
-e viene propagato nel ponte a `QuestionIndexEntry`, `VerificationQuestionRef` e snapshot
-docente. Il solo campo transitorio è `peso: 1`; non altera `maxPoints = difficolta`.
+Il tipo condiviso `PoolDifficulty` rappresenta `1 | 2 | 3 | 4 | 5` ed è propagato a
+`QuestionIndexEntry`, `VerificationQuestionRef` e snapshot docente, **senza** alcun campo
+`peso`. Nel percorso IA il payload provider trasporta difficoltà e `maxPoints`, mai `peso`
+(rimosso anche l'equivalente `weight`).
 
 ## 1. Decisione e motivazione
 
@@ -265,17 +265,24 @@ sempre da `difficolta`, mai da un campo Markdown o da input libero.
 - validazione import V2 e costruzione iniziale dell'indice;
 - nessun parser duale, convertitore o fallback V1.
 
-### POOL-SIMPLE-02 — superfici applicative
+### POOL-SIMPLE-02 — superfici applicative — **IMPLEMENTATO**
 
-- Question Pool Editor;
-- question index, relativo tipo Firestore e picker;
-- selezione domande e snapshot docente/studente;
-- svolgimento online;
-- correzione manuale e restituzione;
-- PDF verifica, PDF/CSV registro e altre esportazioni;
-- input e payload IA, con difficoltà e `maxPoints` ma senza `peso`;
-- rimozione finale di ogni riferimento applicativo a `peso` e aggiornamento dei
-  documenti canonici rimandati da POOL-SIMPLE-00.
+Completato end-to-end:
+
+- Question Pool Editor (difficoltà 1–5, punti = difficoltà, nessun `peso`);
+- `QuestionIndexEntry`, payload/writer del `questionIndex`, `questionIndexService` e
+  picker senza `peso` (filtri difficoltà derivati dai dati, quindi 1–5);
+- `VerificationQuestionRef`, configurazione/selezione verifiche e teacher snapshot senza
+  `peso` (`difficolta` obbligatoria sul nuovo snapshot, `maxPoints === difficolta`);
+- loader domande con/senza soluzioni, svolgimento online, correzione manuale
+  (`Difficoltà N · Max N punti`, step 0,25) e restituzione;
+- PDF verifica/soluzioni e PDF/CSV registro senza colonne o metadati `peso`;
+- input e payload IA con difficoltà e `maxPoints` ma senza `peso` (rimosso anche
+  l'equivalente `weight`); test dedicato sulla forma del payload OpenAI;
+- rimozione del ponte `peso: 1` da tutti i writer applicativi.
+
+Restano fuori dallo scope di POOL-SIMPLE-02 (Gate GPOOL): pulizia DEV, deploy coordinato
+e smoke manuale end-to-end.
 
 ### Gate GPOOL
 

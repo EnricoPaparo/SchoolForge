@@ -94,9 +94,8 @@ export function buildImportPayload(params: {
                   poolStorageRef: poolStorageRef!,
                   questionLocalId: q.id,
                   tipo: q.tipo as 'aperta' | 'chiusa_singola' | 'chiusa_multipla',
-                  // Transitional questionIndex shape; POOL-SIMPLE-02 removes peso.
+                  // POOL-SIMPLE v2: difficoltà 1–5, maxPoints === difficolta, no peso.
                   difficolta: q.difficolta,
-                  peso: 1,
                   maxPoints: q.maxPoints,
                   questionPreview: buildQuestionPreview(q.testo),
                 },

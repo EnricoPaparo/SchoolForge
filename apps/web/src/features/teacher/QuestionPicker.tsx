@@ -259,7 +259,7 @@ export function QuestionPicker({ entries, selectedIds, onChange }: Props) {
                 </span>
                 <span className={styles.rowMeta}>
                   {entry.udaDir} / {entry.lessonFilename} · {TIPO_LABELS[entry.tipo]} · diff{' '}
-                  {entry.difficolta} · peso {entry.peso} · {entry.maxPoints}pt
+                  {entry.difficolta} · {entry.maxPoints}pt
                 </span>
               </label>
             </li>

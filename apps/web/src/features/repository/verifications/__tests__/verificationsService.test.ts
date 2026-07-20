@@ -82,7 +82,6 @@ const VALID_CONFIG: VerificationConfig = {
       poolStorageRef: 'gs://bucket/imports/imp-1/UDA1/lezione1.pool.md',
       tipo: 'chiusa_singola',
       difficolta: 2,
-      peso: 1,
       maxPoints: 2,
     },
   ],

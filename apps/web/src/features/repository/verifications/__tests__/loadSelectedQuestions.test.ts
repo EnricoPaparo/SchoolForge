@@ -47,7 +47,6 @@ const makeRef = (overrides: Partial<VerificationQuestionRef> = {}): Verification
   poolStorageRef: 'repository/uid/imports/imp-1/UDA1/lezione1.pool.md',
   tipo: 'aperta',
   difficolta: 2,
-  peso: 3,
   maxPoints: 6,
   ...overrides,
 });

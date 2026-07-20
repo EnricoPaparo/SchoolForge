@@ -278,9 +278,11 @@ export interface AiGraderQuestion {
   questionText: string;
   referenceSolution: string;
   studentAnswer: string;
-  /** Metadati didattici opzionali, inviati solo quando sono già disponibili. */
+  /**
+   * Difficoltà intera opzionale (POOL-SIMPLE v2, 1–5), inviata solo quando già
+   * disponibile. Non esiste `peso`/`weight`: rimosso in POOL-SIMPLE-02.
+   */
   difficulty?: number;
-  weight?: number;
 }
 
 /**

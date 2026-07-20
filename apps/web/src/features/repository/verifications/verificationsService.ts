@@ -236,7 +236,6 @@ function sameQuestionRefs(
         left.poolStorageRef === right.poolStorageRef &&
         left.tipo === right.tipo &&
         left.difficolta === right.difficolta &&
-        left.peso === right.peso &&
         left.maxPoints === right.maxPoints
       );
     })

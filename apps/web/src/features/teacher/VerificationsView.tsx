@@ -680,7 +680,6 @@ export function VerificationsView() {
           poolStorageRef: entry.poolStorageRef,
           tipo: entry.tipo,
           difficolta: entry.difficolta,
-          peso: entry.peso,
           maxPoints: entry.maxPoints,
         };
       })

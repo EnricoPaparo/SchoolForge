@@ -16,7 +16,6 @@ export type QuestionIndexEntry = {
   questionLocalId: string;
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
   difficolta: QuestionIndexDoc['difficolta'];
-  peso: 1 | 2 | 3;
   maxPoints: number;
   questionPreview: string;
   // NEVER expose: full questionText, answers, correctAnswer, solution
@@ -41,7 +40,6 @@ export async function listQuestionIndex(
       questionLocalId: data.questionLocalId,
       tipo: data.tipo,
       difficolta: data.difficolta,
-      peso: data.peso,
       maxPoints: data.maxPoints,
       // Absent on questionIndex entries created before the preview field existed.
       questionPreview: data.questionPreview ?? '',

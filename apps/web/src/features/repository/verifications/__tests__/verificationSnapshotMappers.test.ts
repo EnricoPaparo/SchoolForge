@@ -16,8 +16,7 @@ const REF = {
   poolStorageRef: 'gs://bucket/lezione1.pool.md',
   tipo: 'chiusa_singola' as const,
   difficolta: 2 as const,
-  peso: 1 as const,
-  maxPoints: 3,
+  maxPoints: 2,
 };
 
 const LOADED: LoadedQuestionWithSolution = {
@@ -32,14 +31,13 @@ const LOADED: LoadedQuestionWithSolution = {
 };
 
 describe('toTeacherQuestionSnapshot', () => {
-  it('maps a LoadedQuestionWithSolution into the frozen snapshot shape, including soluzione, difficoltà and peso', () => {
+  it('maps a LoadedQuestionWithSolution into the frozen snapshot shape, including soluzione and difficoltà (no peso)', () => {
     const snap = toTeacherQuestionSnapshot(LOADED, 2);
     expect(snap).toEqual({
       order: 2,
       tipo: 'chiusa_singola',
-      maxPoints: 3,
+      maxPoints: 2,
       difficolta: 2,
-      peso: 1,
       testo: 'Domanda?',
       opzioni: [
         { id: 'a', testo: 'A' },
@@ -47,23 +45,25 @@ describe('toTeacherQuestionSnapshot', () => {
       ],
       soluzione: 'a',
     });
+    expect(snap).not.toHaveProperty('peso');
   });
 
-  it('freezes difficoltà and peso from the selection ref (no extra pool read)', () => {
+  it('freezes difficoltà from the selection ref (no extra pool read, no peso)', () => {
     const snap = toTeacherQuestionSnapshot(
-      { ...LOADED, ref: { ...REF, difficolta: 3, peso: 2 } },
+      { ...LOADED, ref: { ...REF, difficolta: 3, maxPoints: 3 } },
       0,
     );
     expect(snap.difficolta).toBe(3);
-    expect(snap.peso).toBe(2);
+    expect(snap).not.toHaveProperty('peso');
   });
 
-  it('preserves difficolta 5 through VerificationQuestionRef and teacher snapshot', () => {
+  it('preserves difficolta 5 through VerificationQuestionRef and teacher snapshot, with maxPoints === difficolta', () => {
     const snap = toTeacherQuestionSnapshot(
-      { ...LOADED, ref: { ...REF, difficolta: 5, peso: 1, maxPoints: 5 } },
+      { ...LOADED, ref: { ...REF, difficolta: 5, maxPoints: 5 } },
       0,
     );
-    expect(snap).toMatchObject({ difficolta: 5, peso: 1, maxPoints: 5 });
+    expect(snap).toMatchObject({ difficolta: 5, maxPoints: 5 });
+    expect(snap).not.toHaveProperty('peso');
   });
 
   it('preserves ALL correct answers of a chiusa_multipla (array, not reduced to the first)', () => {
@@ -115,6 +115,7 @@ describe('toPublicVerificationQuestion', () => {
     order: 1,
     tipo: 'chiusa_singola',
     maxPoints: 3,
+    difficolta: 3,
     testo: 'Domanda?',
     opzioni: [{ id: 'a', testo: 'A' }],
     soluzione: 'a',
@@ -138,6 +139,7 @@ describe('toPublicVerificationQuestion', () => {
       order: 0,
       tipo: 'aperta',
       maxPoints: 2,
+      difficolta: 2,
       testo: 'Spiega.',
       soluzione: 'x',
       maxCharacters: 800,
@@ -153,6 +155,7 @@ describe('toPdfQuestion / toPdfQuestionWithSolution', () => {
     order: 0,
     tipo: 'aperta',
     maxPoints: 5,
+    difficolta: 5,
     testo: 'Spiega.',
     soluzione: 'Risposta.',
   };

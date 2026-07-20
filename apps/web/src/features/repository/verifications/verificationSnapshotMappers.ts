@@ -26,8 +26,8 @@ export function toTeacherQuestionSnapshot(
     tipo: q.tipo,
     maxPoints: q.ref.maxPoints,
     // Frozen from the already-loaded selection ref — no extra pool/Storage read.
+    // POOL-SIMPLE v2: difficoltà 1–5, maxPoints === difficolta, no peso.
     difficolta: q.ref.difficolta,
-    peso: q.ref.peso,
     testo: q.testo,
     ...(q.opzioni ? { opzioni: q.opzioni } : {}),
     // EXAM-UX-03 — frozen at activation for aperta questions that set it.

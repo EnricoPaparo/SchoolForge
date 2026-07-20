@@ -104,6 +104,21 @@ describe('OpenAiGrader payload and mapping', () => {
     expect(request.input[1].content).toContain('"gradingMode":"rigorous"');
   });
 
+  it('POOL-SIMPLE-02 — the OpenAI payload carries difficulty + maxPoints but never peso/weight', () => {
+    const withDifficulty: AiGraderInput = {
+      ...input,
+      questions: input.questions.map((q) => ({ ...q, difficulty: 5 })),
+    };
+    const request = buildOpenAiGradingRequest(withDifficulty, 'gpt-5-nano');
+    const userPayload = request.input[1].content;
+    // maxPoints (frozen) and the optional difficulty are present…
+    expect(userPayload).toContain('"maxPoints":2');
+    expect(userPayload).toContain('"difficulty":5');
+    // …but the removed weight/peso indicator never appears anywhere in the request.
+    expect(userPayload).not.toMatch(/"weight"|"peso"/);
+    expect(JSON.stringify(request)).not.toMatch(/weight|peso/i);
+  });
+
   it('keeps prompt injection in student fields as inert user JSON while preserving bounded guidance', () => {
     const guardedInput: AiGraderInput = {
       ...input,

@@ -183,7 +183,7 @@ schema: schoolforge-pool/v2
 questions:
   - id: q-001
     tipo: aperta
-    testo: Domanda senza difficolta e peso.
+    testo: Domanda senza difficolta.
 ---`,
 };
 
@@ -226,7 +226,7 @@ describe('Firestore rules — programs/{id}/imports/{id} owner-scoped', () => {
       setDoc(doc(db, 'programs/p1/imports/imp-1/questionIndex/q-01'), {
         tipo: 'aperta',
         difficolta: 1,
-        peso: 1,
+        maxPoints: 1,
       }),
     );
   });
@@ -349,8 +349,8 @@ describe('importRepository — valid import', () => {
       const data = d.data();
       expect(data).toHaveProperty('tipo');
       expect(data).toHaveProperty('difficolta');
-      expect(data).toHaveProperty('peso');
-      expect(data).toHaveProperty('maxPoints');
+      expect(data).not.toHaveProperty('peso');
+      expect(data.maxPoints).toBe(data.difficolta);
       expect(data).not.toHaveProperty('testo');
       expect(data).not.toHaveProperty('soluzione');
     }

@@ -228,7 +228,7 @@ describe('buildImportPayload — questionIndex', () => {
     for (const entry of payload.questionIndex) {
       expect(entry.data).toHaveProperty('tipo');
       expect(entry.data).toHaveProperty('difficolta');
-      expect(entry.data).toHaveProperty('peso');
+      expect(entry.data).not.toHaveProperty('peso');
       expect(entry.data).toHaveProperty('maxPoints');
       expect(entry.data).not.toHaveProperty('testo');
       expect(entry.data).not.toHaveProperty('soluzione');
@@ -261,7 +261,7 @@ describe('buildImportPayload — questionIndex', () => {
     }
   });
 
-  it('maxPoints equals difficolta while the transitional index weight stays neutral', () => {
+  it('maxPoints equals difficolta and no peso is written', () => {
     const files = buildAllFiles();
     const validation = validateImport('Informatica', files);
     const payload = buildImportPayload({
@@ -274,12 +274,12 @@ describe('buildImportPayload — questionIndex', () => {
     });
 
     for (const entry of payload.questionIndex) {
-      expect(entry.data.maxPoints).toBe(entry.data.difficolta * entry.data.peso);
-      expect(entry.data.peso).toBe(1);
+      expect(entry.data.maxPoints).toBe(entry.data.difficolta);
+      expect(entry.data).not.toHaveProperty('peso');
     }
   });
 
-  it('preserves V2 difficolta 5 in questionIndex with neutral weight and derived points', () => {
+  it('preserves V2 difficolta 5 in questionIndex with derived points and no peso', () => {
     const files = buildAllFiles().map((file) =>
       file.path === VALID_POOL.path
         ? { ...file, content: file.content.replace('difficolta: 2', 'difficolta: 5') }
@@ -300,7 +300,8 @@ describe('buildImportPayload — questionIndex', () => {
     const entry = payload.questionIndex.find(
       (question) => question.data.questionLocalId === 'q-001',
     );
-    expect(entry?.data).toMatchObject({ difficolta: 5, peso: 1, maxPoints: 5 });
+    expect(entry?.data).toMatchObject({ difficolta: 5, maxPoints: 5 });
+    expect(entry?.data).not.toHaveProperty('peso');
   });
 
   it('question index IDs are unique and stable', () => {

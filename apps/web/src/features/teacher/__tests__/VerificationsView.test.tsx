@@ -208,7 +208,6 @@ const sampleQuestionIndexEntries = [
     questionLocalId: 'q1',
     tipo: 'chiusa_singola' as const,
     difficolta: 2 as const,
-    peso: 1 as const,
     maxPoints: 2,
     questionPreview: 'Quale livello gestisce il routing?',
   },
@@ -220,7 +219,6 @@ const sampleQuestionIndexEntries = [
     questionLocalId: 'q2',
     tipo: 'aperta' as const,
     difficolta: 3 as const,
-    peso: 2 as const,
     maxPoints: 4,
     questionPreview: 'Descrivi il modello OSI.',
   },
@@ -234,7 +232,6 @@ const sampleQuestionRef = {
   poolStorageRef: 'gs://bucket/imports/imp-1/UDA1/lezione1.pool.md',
   tipo: 'chiusa_singola' as const,
   difficolta: 2 as const,
-  peso: 1 as const,
   maxPoints: 2,
 };
 

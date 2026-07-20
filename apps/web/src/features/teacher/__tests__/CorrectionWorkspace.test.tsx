@@ -325,8 +325,8 @@ describe('CorrectionWorkspace — loading and data', () => {
   });
 });
 
-describe('CorrectionWorkspace — question metadata (difficoltà/peso/max)', () => {
-  it('shows frozen difficulty, weight and max points when present', async () => {
+describe('CorrectionWorkspace — question metadata (difficoltà/max)', () => {
+  it('shows frozen difficulty and max points when present (no peso)', async () => {
     setupDefaults();
     mockLoadCorrectionWorkspace.mockResolvedValue(
       makeWorkspaceData({
@@ -336,7 +336,6 @@ describe('CorrectionWorkspace — question metadata (difficoltà/peso/max)', () 
             tipo: 'aperta',
             maxPoints: 6,
             difficolta: 2,
-            peso: 3,
             testo: 'Spiega il TCP.',
             soluzione: 'x',
             solutionUnavailable: false,
@@ -346,7 +345,6 @@ describe('CorrectionWorkspace — question metadata (difficoltà/peso/max)', () 
             tipo: 'aperta',
             maxPoints: 5,
             difficolta: 1,
-            peso: 1,
             testo: 'Seconda.',
             soluzione: 'y',
             solutionUnavailable: false,
@@ -363,12 +361,11 @@ describe('CorrectionWorkspace — question metadata (difficoltà/peso/max)', () 
     renderWorkspace();
     await waitFor(() => expect(screen.getByText('Spiega il TCP.')).toBeTruthy());
 
-    expect(document.body.textContent).toMatch(
-      /Difficoltà\s*2\s*·\s*Peso\s*3\s*·\s*Max\s*6\s*punti/,
-    );
+    expect(document.body.textContent).toMatch(/Difficoltà\s*2\s*·\s*Max\s*6\s*punti/);
+    expect(document.body.textContent).not.toMatch(/Peso/);
   });
 
-  it('shows an em dash for difficulty/weight on a legacy question, keeping max points', async () => {
+  it('shows an em dash for difficulty on a projection-only question, keeping max points', async () => {
     setupDefaults();
     mockLoadCorrectionWorkspace.mockResolvedValue(
       makeWorkspaceData({
@@ -390,9 +387,8 @@ describe('CorrectionWorkspace — question metadata (difficoltà/peso/max)', () 
     renderWorkspace();
     await waitFor(() => expect(screen.getByText('Domanda legacy.')).toBeTruthy());
 
-    expect(document.body.textContent).toMatch(
-      /Difficoltà\s*—\s*·\s*Peso\s*—\s*·\s*Max\s*10\s*punti/,
-    );
+    expect(document.body.textContent).toMatch(/Difficoltà\s*—\s*·\s*Max\s*10\s*punti/);
+    expect(document.body.textContent).not.toMatch(/Peso/);
   });
 });
 

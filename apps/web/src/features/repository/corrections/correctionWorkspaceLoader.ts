@@ -25,9 +25,12 @@ export type CorrectionWorkspaceQuestion = {
   order: number;
   tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
   maxPoints: number;
-  /** Frozen difficulty/weight from the teacher snapshot; absent on legacy verifications. */
+  /**
+   * Frozen integer difficulty (POOL-SIMPLE v2, 1–5) from the teacher snapshot.
+   * Absent only on the projection-only path (no snapshot with solutions).
+   * There is no `peso` (removed in POOL-SIMPLE-02).
+   */
   difficolta?: PoolDifficulty;
-  peso?: 1 | 2 | 3;
   testo: string;
   opzioni?: { id: string; testo: string }[];
   soluzione: string | string[] | null;
@@ -59,7 +62,6 @@ function fromTeacherSnapshot(
       tipo: q.tipo,
       maxPoints: q.maxPoints,
       ...(q.difficolta !== undefined ? { difficolta: q.difficolta } : {}),
-      ...(q.peso !== undefined ? { peso: q.peso } : {}),
       testo: q.testo,
       ...(q.opzioni ? { opzioni: q.opzioni } : {}),
       soluzione: q.soluzione,

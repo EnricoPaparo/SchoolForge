@@ -28,7 +28,6 @@ function doc(id: string, overrides: Record<string, unknown> = {}) {
       questionLocalId: 'q1',
       tipo: 'aperta',
       difficolta: 1,
-      peso: 1,
       maxPoints: 1,
       questionPreview: 'Descrivi il protocollo HTTP.',
       ...overrides,

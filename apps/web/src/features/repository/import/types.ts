@@ -136,7 +136,6 @@ export interface QuestionIndexPayload {
     questionLocalId: string;
     tipo: 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
     difficolta: PoolDifficulty;
-    peso: 1 | 2 | 3;
     maxPoints: number;
     /** First 100 chars of the normalized question text — never the full text, solution, or answers. */
     questionPreview: string;
