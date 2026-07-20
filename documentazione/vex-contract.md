@@ -15,7 +15,7 @@ assegnazione/sicurezza/costo e delimita gli scope VEX-01A/01B/02/03.
 | Fondazione | Dove | Fatti verificati |
 |---|---|---|
 | **Shuffle locale Fisher–Yates** | `apps/web/src/features/student/examShuffle.ts` (`shuffleWithRng`), usato in `OnlineExamView.tsx` | Ordine **solo visivo**, RNG iniettabile, non muta l'input; **mai persistito** (Firestore/session/localStorage); cambia liberamente a ogni mount/refresh; risposte e flag restano legati all'`order` originale. Va **riusato tale e quale** anche in `equivalent_variants`. |
-| **`maxCharacters`** | `packages/lesson-contract` (parser/serializer/schema/`maxCharacters.ts`), editor pool, `VerificationTeacherQuestionSnapshot.maxCharacters`, `PublicVerificationQuestion.maxCharacters` | Contratto pool V2 + editor + snapshot/proiezione + limite runtime `OnlineExamView`; default effettivo **2000** se assente/legacy. Congelato all'attivazione. Riusato per validare l'equivalenza delle aperte. |
+| **`maxCharacters`** | `packages/lesson-contract` (parser/serializer/schema/`maxCharacters.ts`), editor pool, `VerificationTeacherQuestionSnapshot.maxCharacters`, `PublicVerificationQuestion.maxCharacters` | Contratto pool V2 + editor + snapshot/proiezione + limite runtime `OnlineExamView`; default effettivo **2000** se assente/legacy. Congelato all'attivazione. È il limite tecnico **della singola** risposta aperta assegnata; **non** è un criterio di equivalenza VEX (vedi §2.4). |
 | **POOL-SIMPLE v2** | `packages/lesson-contract`, `VerificationQuestionRef.difficolta`, snapshot | Difficoltà **intera 1–5**, `maxPoints === difficolta`, **`peso` eliminato**. |
 | **`teacherSnapshot` immutabile** | `VerificationTeacherSnapshot` (owner-only), congelato all'attivazione; Rules vietano update post-attivazione | Contiene `questions[]` con `soluzione`, `difficolta`, `maxCharacters`; **mai** copiato nella proiezione pubblica. |
 | **`publishedProjection` senza soluzioni** | `PublishedProjectionDoc.questions: PublicVerificationQuestion[]` | Mai `soluzione`/`poolStorageRef`/`questionIndexEntryId`; leggibile dallo studente solo se `active` + `public` + `classId` combacia. |
@@ -119,37 +119,22 @@ type SubmissionDoc = {
 - **nessuna copia** delle domande dentro la submission; **nessun documento per domanda**;
 - in `same_questions` il campo è **assente** e il flusso resta interamente client-side.
 
-### 2.4 Metadato `maxCharacters` per la validazione draft (VEX-01A — congelato)
+### 2.4 `maxCharacters` NON è un criterio di equivalenza (decisione definitiva del docente)
 
-Il builder deve verificare che le aperte dello **stesso gruppo** abbiano lo **stesso
-`maxCharacters` effettivo**, ma oggi **né `QuestionIndexEntry` né `VerificationQuestionRef`
-espongono questo dato** (il valore vive nel pool ed entra nello snapshot solo
-all'attivazione). Decisione congelata per VEX-01A:
+`maxCharacters` **non** è un criterio di equivalenza pedagogica: è **soltanto** il limite
+tecnico della singola risposta aperta. Di conseguenza, per VEX:
 
-- **`QuestionIndexEntry`** aggiungerà `maxCharacters` **solo** per le domande `aperta`;
-- il valore scritto è quello **effettivo già normalizzato dal pool parser**, incluso il
-  **default 2000** quando il pool non lo specifica (il default viene materializzato **nel
-  question index**, non lasciato implicito);
-- **`QuestionIndexPayload`**, **`questionIndexService`** e **`VerificationQuestionRef`**
-  propagano lo **stesso** campo (una sola definizione, nessuna divergenza);
-- **nessun testo, soluzione o risposta** viene aggiunto al question index (resta
-  privacy-minimal: solo metadato numerico per le aperte);
-- **nessun nuovo documento, query o lettura**: è un piccolo campo nei documenti
-  `questionIndex` **già esistenti** → costo trascurabile;
-- il builder confronta il valore **direttamente dai `VerificationQuestionRef` selezionati**;
-- la validazione è **ripetuta autorevolmente all'attivazione** usando le domande
-  realmente caricate dal pool (il ref è un aiuto UX, il pool resta l'autorità);
-- **fail-closed sui corsi legacy:** se una domanda aperta di un corso **già importato**
-  non possiede il nuovo metadato, `equivalent_variants` **fallisce in modo leggibile**
-  chiedendo di **reimportare il corso**; **`same_questions` continua a funzionare senza
-  reimport**;
-- **nessun fallback silenzioso a 2000** su un indice privo del campo: assumere 2000
-  potrebbe nascondere un limite personalizzato realmente impostato nel pool e produrre
-  un'equivalenza falsa. L'assenza del campo su un'aperta ⇒ errore «reimporta il corso»,
-  non un default implicito.
+- ogni domanda conserva il **proprio** `maxCharacters` già esistente (nessuna modifica);
+- `OnlineExamView` applica il limite della **domanda effettivamente assegnata** (come già
+  oggi, dallo snapshot/proiezione);
+- due alternative dello stesso gruppo **possono** avere `maxCharacters` **differenti**;
+- **nessuna** validazione, warning o blocco confronta `maxCharacters`;
+- **nessun** nuovo campo nel question index (`QuestionIndexEntry`/`QuestionIndexPayload`)
+  o nei question ref (`VerificationQuestionRef`);
+- **nessun reimport** richiesto;
+- **nessuna** nuova lettura, scrittura o occupazione Firestore.
 
-Questa decisione è **solo di contratto** (VEX-01A): questa PR **non** modifica alcun tipo,
-service o schema reale.
+La coerenza pedagogica **sostanziale** delle alternative resta responsabilità del docente.
 
 ---
 
@@ -160,8 +145,12 @@ Alternative dello stesso gruppo **devono** avere:
 - stessa **UDA** (`udaDir` della `VerificationQuestionRef`);
 - stesso **tipo** (`aperta` / `chiusa_singola` / `chiusa_multipla`);
 - stessa **difficoltà** intera 1–5;
-- stesso **`maxCharacters` effettivo** per le aperte (default 2000 se assente);
-- ⇒ di conseguenza stesso **`maxPoints`**, perché `maxPoints === difficolta`.
+- ⇒ di conseguenza stesso **`maxPoints`**, perché `maxPoints === difficolta`;
+- riferimento **valido** (entryId presente tra i `questionRefs`);
+- domanda presente **al massimo in un gruppo**; snapshot costruibile.
+
+`maxCharacters` **non** è un criterio di equivalenza (vedi §2.4): non viene confrontato,
+non genera warning né blocchi. Due alternative possono avere limiti caratteri diversi.
 
 **Bloccante SOLO:**
 
@@ -245,8 +234,10 @@ Nessun costo continuo; nessun listener/polling/scheduler.
 | `distributionMode` | `VerificationConfig`, `teacherSnapshot` | trascurabile (campo enum su doc esistente) | default `same_questions` |
 | `equivalentGroups` | `VerificationConfig` (entryId), `teacherSnapshot` (order) | trascurabile (piccolo array su doc esistente) | solo `equivalent_variants` |
 | `assignedQuestionOrders` | `SubmissionDoc` | **1** scrittura al primo avvio, poi 0 | server-only |
-| **`maxCharacters` (aperte)** | `QuestionIndexEntry` → `QuestionIndexPayload` → `questionIndexService` → `VerificationQuestionRef` | **trascurabile**: un piccolo campo numerico nei documenti `questionIndex` **già esistenti**; **nessun** nuovo documento, query o lettura | scritto solo per le `aperta`; valore effettivo normalizzato (incl. default 2000); nessun testo/soluzione aggiunto; assenza su corso legacy ⇒ errore «reimporta» in `equivalent_variants`, `same_questions` non richiede reimport |
 | rimozione `questionsPerStudent` | `VerificationConfig` | trascurabile | campo inutilizzato, assorbito |
+
+`maxCharacters` **non** compare in questa matrice: non viene aggiunto al question index né
+ai question ref, non richiede reimport e non introduce alcun costo/storage/schema (§2.4).
 
 ### 4.4 PDF
 
@@ -300,20 +291,14 @@ codice applicativo.
 ### VEX-01A — **modello dati + validazione builder (client, draft-time)**
 - aggiungere `distributionMode` + `equivalentGroups` a `VerificationConfig`; **rimuovere
   `questionsPerStudent`** (assorbito);
-- **metadato `maxCharacters` (§2.4):** aggiungerlo a `QuestionIndexEntry` (solo aperte,
-  valore effettivo già normalizzato dal pool incluso il default 2000) e propagarlo in
-  `QuestionIndexPayload`, `questionIndexService` e `VerificationQuestionRef`; nessun
-  testo/soluzione/risposta nel question index; nessun nuovo documento/query/lettura;
 - builder docente draft-time: creare/eliminare gruppi, aggiungere/rimuovere alternative,
-  riepilogo derivato, validazioni §3 (bloccanti e warning) — incluso il confronto
-  `maxCharacters` per le aperte direttamente dai ref selezionati —, eliminazione gruppo
-  vuoto; **fail-closed «reimporta il corso»** se un'aperta di un corso legacy non ha il
-  metadato (§2.4), senza fallback silenzioso a 2000; `same_questions` funziona senza
-  reimport;
+  riepilogo derivato, validazioni §3 (UDA/tipo/difficoltà/`maxPoints`, riferimento valido,
+  domanda in un solo gruppo, snapshot costruibile; warning non bloccanti) — **`maxCharacters`
+  non è confrontato** (§2.4) —, eliminazione gruppo vuoto; **nessun** reimport richiesto;
 - estendere `teacherSnapshot` con `distributionMode`/`commonQuestionOrders`/
   `equivalentGroups` e la **conversione entryId→order all'attivazione**, ripetendo
-  **autorevolmente** la validazione (incluso `maxCharacters`) sulle domande caricate dal
-  pool;
+  **autorevolmente** la validazione §3 (UDA/tipo/difficoltà/riferimenti/gruppo unico)
+  sulle domande caricate dal pool;
 - **nessuna** callable ancora; `same_questions` invariato.
 
 ### VEX-01B — **callable di assegnazione + sicurezza + isolamento**

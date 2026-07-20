@@ -574,14 +574,14 @@
             <div class="body">
               <div class="summary">
                 <div class="stat"><div class="n" id="sCommon">2</div><div class="l">Domande comuni</div></div>
-                <div class="stat"><div class="n" id="sGroups">4</div><div class="l">Gruppi equivalenti</div></div>
+                <div class="stat"><div class="n" id="sGroups">3</div><div class="l">Gruppi equivalenti</div></div>
                 <div class="stat"><div class="n" id="sPerStudent">5</div><div class="l">Domande per studente</div></div>
                 <div class="stat"><div class="n" id="sVariants">6</div><div class="l">Varianti possibili</div></div>
                 <div class="stat"><div class="n" id="sMax">14</div><div class="l">Punteggio massimo</div></div>
               </div>
               <div class="note ok" id="okNote">
                 <span class="ic" aria-hidden="true">✓</span>
-                <span>Configurazione valida. Ogni studente riceve 2 domande comuni e 1 domanda per ciascuno dei 4 gruppi (di cui uno da correggere).</span>
+                <span>Configurazione valida. Ogni studente riceve 2 domande comuni e 1 domanda per ciascuno dei 3 gruppi.</span>
               </div>
               <div class="note warn hidden" id="singleVariantNote">
                 <span class="ic" aria-hidden="true">!</span>
@@ -617,7 +617,7 @@
           <section class="card" id="groupsCard">
             <header>
               <h2>Gruppi equivalenti</h2>
-              <span class="pill" id="groupsPill">4 gruppi</span>
+              <span class="pill" id="groupsPill">3 gruppi</span>
               <button class="btn primary" id="createGroup">+ Crea gruppo</button>
             </header>
             <div class="body" id="groupsBody">
@@ -691,35 +691,7 @@
                 </div>
                 <div class="note err">
                   <span class="ic" aria-hidden="true">✕</span>
-                  <span>Le alternative devono avere <strong>stessa UDA, stesso tipo, stessa difficoltà</strong> (e stesso limite caratteri per le aperte). Qui differiscono tipo (aperta/chiusa) e difficoltà (4/2): il gruppo blocca l'attivazione.</span>
-                </div>
-              </div>
-
-              <!-- Gruppo bloccante per metadato mancante su corso legacy → reimporta -->
-              <div class="group invalid">
-                <div class="g-head">
-                  <span class="g-title">Gruppo 4 — una domanda estratta</span>
-                  <span class="pill" style="color: var(--color-error); border-color: var(--color-error-border); background: var(--color-error-bg)">metadato mancante</span>
-                  <span class="g-actions">
-                    <button class="btn ghost">+ Aggiungi alternativa</button>
-                    <button class="btn danger">Elimina gruppo</button>
-                  </span>
-                </div>
-                <div class="alt">
-                  <span class="qid">Q-A2</span>
-                  <span class="txt">Subnetting a lunghezza fissa</span>
-                  <span class="tags"><span class="tag">aperta</span><span class="tag">UDA 2</span><span class="tag bad">limite caratteri: sconosciuto</span></span>
-                  <span class="row-actions"><button class="btn ghost">Rimuovi</button></span>
-                </div>
-                <div class="alt">
-                  <span class="qid">Q-C1</span>
-                  <span class="txt">Progetto di indirizzamento con VLSM</span>
-                  <span class="tags"><span class="tag">aperta</span><span class="tag">UDA 2</span><span class="tag">limite caratteri: 2000</span></span>
-                  <span class="row-actions"><button class="btn ghost">Rimuovi</button></span>
-                </div>
-                <div class="note err">
-                  <span class="ic" aria-hidden="true">✕</span>
-                  <span><strong>Reimporta il corso.</strong> Una domanda aperta di questo corso è stata importata prima dell'introduzione del limite caratteri nell'indice: non è possibile confrontare l'equivalenza in modo sicuro. Reimporta il corso per abilitare le «Varianti equivalenti». La modalità «Stesse domande» funziona comunque senza reimport.</span>
+                  <span>Le alternative devono avere <strong>stessa UDA, stesso tipo, stessa difficoltà</strong>. Qui differiscono tipo (aperta/chiusa) e difficoltà (4/2): il gruppo blocca l'attivazione.</span>
                 </div>
               </div>
             </div>
