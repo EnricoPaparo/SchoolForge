@@ -6,6 +6,7 @@ import {
   MAX_QUESTION_FEEDBACK_CHARS,
   type AiGraderInput,
 } from './aiCorrectionGatewayCore.js';
+import { buildGraderInput, mapSnapshotQuestionToTeacher } from './aiCorrectionEngine.js';
 import {
   DEFAULT_OPENAI_RETRY_POLICY,
   OPENAI_ATTEMPT_TIMEOUT_MS,
@@ -30,6 +31,7 @@ const input: AiGraderInput = {
   questions: [
     {
       order: 2,
+      difficulty: 3,
       maxPoints: 3,
       questionText: 'Spiega HTTPS.',
       referenceSolution: 'HTTP protetto da TLS.',
@@ -37,6 +39,7 @@ const input: AiGraderInput = {
     },
     {
       order: 5,
+      difficulty: 2,
       maxPoints: 2,
       questionText: 'A cosa serve la RAM?',
       referenceSolution: 'Memoria volatile di lavoro.',
@@ -104,19 +107,65 @@ describe('OpenAiGrader payload and mapping', () => {
     expect(request.input[1].content).toContain('"gradingMode":"rigorous"');
   });
 
-  it('POOL-SIMPLE-02 — the OpenAI payload carries difficulty + maxPoints but never peso/weight', () => {
-    const withDifficulty: AiGraderInput = {
-      ...input,
-      questions: input.questions.map((q) => ({ ...q, difficulty: 5 })),
+  it('POOL-SIMPLE-02 — REAL chain: teacher snapshot difficoltà 5 → mapSnapshot → buildGraderInput → OpenAI payload (difficulty 5, maxPoints 5, no peso/weight)', () => {
+    // Start from a frozen teacherSnapshot question exactly as stored (difficoltà
+    // 5, maxPoints 5), and drive the REAL gateway/engine mapping — NOT a
+    // hand-built AiGraderInput.
+    const rawSnapshotQuestion = {
+      order: 0,
+      tipo: 'aperta',
+      difficolta: 5,
+      maxPoints: 5,
+      testo: 'Analizza un caso complesso.',
+      soluzione: 'Risposta di riferimento.',
     };
-    const request = buildOpenAiGradingRequest(withDifficulty, 'gpt-5-nano');
+    const teacher = mapSnapshotQuestionToTeacher(rawSnapshotQuestion);
+    expect(teacher.difficolta).toBe(5);
+
+    const graderInput = buildGraderInput(
+      'req-pool-simple-02',
+      [0],
+      new Map([[0, teacher]]),
+      { '0': { tipo: 'aperta', testo: 'La mia analisi.' } },
+      0,
+      5,
+      'balanced',
+    );
+    // buildGraderInput derived difficulty from the mapped question (no manual value).
+    expect(graderInput.questions[0]!.difficulty).toBe(5);
+    expect(graderInput.questions[0]!.maxPoints).toBe(5);
+
+    const request = buildOpenAiGradingRequest(graderInput, 'gpt-5-nano');
     const userPayload = request.input[1].content;
-    // maxPoints (frozen) and the optional difficulty are present…
-    expect(userPayload).toContain('"maxPoints":2');
     expect(userPayload).toContain('"difficulty":5');
-    // …but the removed weight/peso indicator never appears anywhere in the request.
+    expect(userPayload).toContain('"maxPoints":5');
+    // difficulty === maxPoints, and the removed weight/peso indicator is absent everywhere.
     expect(userPayload).not.toMatch(/"weight"|"peso"/);
     expect(JSON.stringify(request)).not.toMatch(/weight|peso/i);
+  });
+
+  it('POOL-SIMPLE-02 fail-closed — an incoherent teacher snapshot never becomes a payload (mapSnapshot throws)', () => {
+    const invalidSnapshots: Array<Record<string, unknown>> = [
+      { order: 0, tipo: 'aperta', maxPoints: 5, testo: 't', soluzione: 's' }, // difficoltà assente
+      { order: 0, tipo: 'aperta', difficolta: 0, maxPoints: 0, testo: 't', soluzione: 's' },
+      { order: 0, tipo: 'aperta', difficolta: 6, maxPoints: 6, testo: 't', soluzione: 's' },
+      { order: 0, tipo: 'aperta', difficolta: 2.5, maxPoints: 2.5, testo: 't', soluzione: 's' },
+      { order: 0, tipo: 'aperta', difficolta: 3, maxPoints: 5, testo: 't', soluzione: 's' }, // maxPoints !== difficolta
+    ];
+    for (const snapshot of invalidSnapshots) {
+      expect(() => mapSnapshotQuestionToTeacher(snapshot)).toThrow();
+    }
+    // A coherent V2 snapshot is accepted.
+    expect(() =>
+      mapSnapshotQuestionToTeacher({
+        order: 0,
+        tipo: 'aperta',
+        difficolta: 5,
+        maxPoints: 5,
+        testo: 't',
+        soluzione: 's',
+      }),
+    ).not.toThrow();
   });
 
   it('keeps prompt injection in student fields as inert user JSON while preserving bounded guidance', () => {

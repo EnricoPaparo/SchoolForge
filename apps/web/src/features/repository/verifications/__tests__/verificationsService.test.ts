@@ -311,6 +311,25 @@ describe('validateForActivation', () => {
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.includes('domanda'))).toBe(true);
   });
+
+  it('POOL-SIMPLE-02 — accepts difficoltà 5 with maxPoints 5', () => {
+    const ref = { ...VALID_CONFIG.questionRefs[0]!, difficolta: 5 as const, maxPoints: 5 };
+    const result = validateForActivation({ ...VALID_CONFIG, questionRefs: [ref] });
+    expect(result.valid).toBe(true);
+  });
+
+  it('POOL-SIMPLE-02 fail-closed — rejects an incoherent ref before activation (invalid difficoltà or maxPoints !== difficolta)', () => {
+    const badDifficolta = {
+      ...VALID_CONFIG.questionRefs[0]!,
+      difficolta: 6 as unknown as 5,
+      maxPoints: 6,
+    };
+    const badMaxPoints = { ...VALID_CONFIG.questionRefs[0]!, difficolta: 3 as const, maxPoints: 4 };
+    for (const ref of [badDifficolta, badMaxPoints]) {
+      const result = validateForActivation({ ...VALID_CONFIG, questionRefs: [ref] });
+      expect(result.valid).toBe(false);
+    }
+  });
 });
 
 // ─── activateVerification ─────────────────────────────────────────────────────

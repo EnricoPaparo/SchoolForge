@@ -101,9 +101,42 @@ export const RUN_RETENTION_MS = AI_RUN_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 export type QuestionTipo = 'aperta' | 'chiusa_singola' | 'chiusa_multipla';
 
+/** POOL-SIMPLE v2 difficulty: integer 1–5. `maxPoints === difficolta`, no `peso`. */
+export type PoolDifficultyV2 = 1 | 2 | 3 | 4 | 5;
+
+export function isPoolDifficultyV2(value: unknown): value is PoolDifficultyV2 {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5;
+}
+
+/**
+ * Fail-closed POOL-SIMPLE v2 invariant on a frozen teacher-snapshot question:
+ * `difficolta` must be an integer 1–5 and `maxPoints` must be finite and
+ * exactly equal to it. Throws (never repairs) on an incoherent snapshot, so an
+ * inconsistent delivery is never graded with wrong data — the provider is not
+ * called and no correction is written.
+ */
+export function assertTeacherQuestionV2Invariant(q: {
+  order: number;
+  difficolta: unknown;
+  maxPoints: unknown;
+}): void {
+  if (
+    !isPoolDifficultyV2(q.difficolta) ||
+    typeof q.maxPoints !== 'number' ||
+    !Number.isFinite(q.maxPoints) ||
+    q.maxPoints !== q.difficolta
+  ) {
+    throw new Error(
+      `Snapshot incoerente per la domanda ${q.order}: richiesti difficoltà intera 1–5 e maxPoints === difficoltà (POOL-SIMPLE v2).`,
+    );
+  }
+}
+
 export interface TeacherQuestion {
   order: number;
   tipo: QuestionTipo;
+  /** POOL-SIMPLE v2: integer 1–5, frozen at activation. `maxPoints === difficolta`. */
+  difficolta: PoolDifficultyV2;
   maxPoints: number;
   testo: string;
   /**
@@ -118,6 +151,40 @@ export interface TeacherQuestion {
    * scoring parziale delle chiuse multiple (M5-04C). Assente per le aperte.
    */
   optionIds?: string[];
+}
+
+/**
+ * Maps one frozen `teacherSnapshot.questions[i]` document into a
+ * `TeacherQuestion`, reading the POOL-SIMPLE v2 `difficolta` (1–5) alongside
+ * `maxPoints` — no `peso`/`weight`. Fail-closed: an incoherent snapshot
+ * (missing/invalid difficoltà, or `maxPoints !== difficolta`) throws, so the
+ * gateway's `loadVerification` propagates it and the delivery is never graded
+ * (no provider call, no correction write). No V1 tolerance. Pure — exported so
+ * tests can exercise the real snapshot → TeacherQuestion → grader-input chain.
+ */
+export function mapSnapshotQuestionToTeacher(question: Record<string, unknown>): TeacherQuestion {
+  // M5-04C: gli ID delle opzioni (dal teacherSnapshot congelato) servono allo
+  // scoring parziale delle chiuse multiple. Nessuna lettura in più.
+  const rawOptions = Array.isArray(question.opzioni) ? question.opzioni : null;
+  const optionIds = rawOptions
+    ? rawOptions
+        .map((o) => (o as Record<string, unknown>)?.id)
+        .filter((id): id is string => typeof id === 'string')
+    : undefined;
+  assertTeacherQuestionV2Invariant({
+    order: question.order as number,
+    difficolta: question.difficolta,
+    maxPoints: question.maxPoints,
+  });
+  return {
+    order: question.order as number,
+    tipo: question.tipo as TeacherQuestion['tipo'],
+    difficolta: question.difficolta as PoolDifficultyV2,
+    maxPoints: question.maxPoints as number,
+    testo: (question.testo as string) ?? '',
+    soluzione: question.soluzione as string | string[],
+    ...(optionIds ? { optionIds } : {}),
+  };
 }
 
 export type SubmissionAnswer =
@@ -990,7 +1057,7 @@ async function buildOperationPreflight(
  * costruzione, riusato sia per il payload reale (grading) sia per il calcolo del
  * tetto di prenotazione, così il bound stima **l'esatto** payload inviato.
  */
-function buildGraderInput(
+export function buildGraderInput(
   requestId: string,
   openOrders: number[],
   byOrder: Map<number, TeacherQuestion>,
@@ -1007,6 +1074,10 @@ function buildGraderInput(
       const answer = answers[order.toString()];
       return {
         order,
+        // POOL-SIMPLE v2: difficoltà 1–5 propagated to the payload; maxPoints === difficolta.
+        // The V2 invariant is enforced fail-closed upstream, when the gateway maps
+        // the frozen teacher snapshot (mapSnapshotQuestionToTeacher).
+        difficulty: q.difficolta,
         maxPoints: q.maxPoints,
         questionText: q.testo,
         referenceSolution: typeof q.soluzione === 'string' ? q.soluzione : '',

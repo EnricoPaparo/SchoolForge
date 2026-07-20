@@ -327,8 +327,9 @@ export function buildOpenAiGradingRequest(
       questionText: question.questionText,
       referenceSolution: question.referenceSolution,
       studentAnswer: question.studentAnswer,
+      // POOL-SIMPLE v2: difficoltà 1–5 sempre presente; maxPoints === difficulty.
+      difficulty: question.difficulty,
       maxPoints: question.maxPoints,
-      ...(question.difficulty === undefined ? {} : { difficulty: question.difficulty }),
     })),
     ...(input.submissionContext ? { submissionContext: input.submissionContext } : {}),
     gradingMode: input.gradingMode,

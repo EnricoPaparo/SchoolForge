@@ -837,6 +837,29 @@ describe('M5-05D1 — kill switch + limiti sul percorso provider reale', () => {
     }
   });
 
+  it('POOL-SIMPLE-02 fail-closed — an incoherent teacher snapshot (loadVerification throws) never calls the provider nor commits a correction', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    // Simulate the gateway mapping (mapSnapshotQuestionToTeacher) rejecting an
+    // incoherent POOL-SIMPLE v2 snapshot: loadVerification throws.
+    store.loadVerification = async () => {
+      store.loadVerificationCalls++;
+      throw new Error(
+        'Snapshot incoerente: POOL-SIMPLE v2 richiede difficoltà 1–5 e maxPoints === difficoltà.',
+      );
+    };
+    const grader = { id: 'openai', model: 'm', grade: vi.fn() } as unknown as AiGrader;
+    const graderFactory = vi.fn(() => grader);
+    await runExecution(req([sid('s1')]), {
+      ...baseDeps(store, grader),
+      grader: graderFactory,
+      featureMode: 'openai',
+      loadRuntimeConfig: enabledConfigPort,
+    }).catch(() => undefined);
+    expect(grader.grade as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+    expect(store.commitCalls).toBe(0);
+  });
+
   it('run: openai abilitato entro i limiti procede e valuta', async () => {
     const store = new FakeStore();
     seedOneOpenOneClosed(store, 's1');

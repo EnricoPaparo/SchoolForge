@@ -274,15 +274,16 @@ export async function authorizeOwnerCall(deps: OwnerAuthDeps): Promise<string> {
 /** Input chiuso e tipizzato per la valutazione di una domanda aperta. */
 export interface AiGraderQuestion {
   order: number;
+  /**
+   * Difficoltà intera 1–5 (POOL-SIMPLE v2), **obbligatoria** nel percorso V2 e
+   * sempre uguale a `maxPoints`. Non esiste `peso`/`weight`: rimosso in
+   * POOL-SIMPLE-02.
+   */
+  difficulty: number;
   maxPoints: number;
   questionText: string;
   referenceSolution: string;
   studentAnswer: string;
-  /**
-   * Difficoltà intera opzionale (POOL-SIMPLE v2, 1–5), inviata solo quando già
-   * disponibile. Non esiste `peso`/`weight`: rimosso in POOL-SIMPLE-02.
-   */
-  difficulty?: number;
 }
 
 /**

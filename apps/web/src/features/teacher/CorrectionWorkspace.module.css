@@ -296,7 +296,7 @@
   border: 0;
 }
 
-/* Compact difficulty · weight · max metadata line under the question type. */
+/* Compact difficulty · max points metadata line under the question type (POOL-SIMPLE v2, no peso). */
 .questionMeta {
   margin: 0;
   font-size: 0.75rem;

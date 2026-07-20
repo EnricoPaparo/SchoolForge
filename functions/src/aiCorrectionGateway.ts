@@ -16,6 +16,7 @@ import { parseAiRuntimeConfig, type AiRuntimeConfig } from './aiCorrectionRuntim
 import {
   AI_RUN_CONTRACT_VERSION,
   AI_RUN_TIMEOUT_SECONDS,
+  mapSnapshotQuestionToTeacher,
   runExecution,
   runPreview,
   type CommitSubmissionInput,
@@ -92,25 +93,7 @@ function loadVerification(db: Firestore) {
       ? teacherSnapshot!.questions
       : null;
     const teacherQuestions: TeacherQuestion[] | null = rawQuestions
-      ? rawQuestions.map((q) => {
-          const question = q as Record<string, unknown>;
-          // M5-04C: gli ID delle opzioni (dal teacherSnapshot congelato) servono
-          // allo scoring parziale delle chiuse multiple. Nessuna lettura in più.
-          const rawOptions = Array.isArray(question.opzioni) ? question.opzioni : null;
-          const optionIds = rawOptions
-            ? rawOptions
-                .map((o) => (o as Record<string, unknown>)?.id)
-                .filter((id): id is string => typeof id === 'string')
-            : undefined;
-          return {
-            order: question.order as number,
-            tipo: question.tipo as TeacherQuestion['tipo'],
-            maxPoints: question.maxPoints as number,
-            testo: (question.testo as string) ?? '',
-            soluzione: question.soluzione as string | string[],
-            ...(optionIds ? { optionIds } : {}),
-          };
-        })
+      ? rawQuestions.map((q) => mapSnapshotQuestionToTeacher(q as Record<string, unknown>))
       : null;
     return {
       ownerUid: (data.ownerUid as string) ?? '',

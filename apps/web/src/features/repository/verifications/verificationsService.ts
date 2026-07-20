@@ -25,6 +25,7 @@ import type {
   VerificationVisibility,
 } from '../../../types/firestore.js';
 import { loadSelectedQuestionsWithSolutions } from './loadSelectedQuestionsWithSolutions.js';
+import { poolQuestionInvariantError } from './poolQuestionInvariant.js';
 import { normalizeOnlineEnabled } from './onlineEnabled.js';
 import { normalizeStudentPdfEnabled } from './studentPdfEnabled.js';
 import { assertTeacherSnapshotQuestionsWithinLimit } from './verificationSnapshotLimits.js';
@@ -201,6 +202,16 @@ export function validateForActivation(config: VerificationConfig): {
   }
   if (!config.questionRefs || config.questionRefs.length < 1) {
     errors.push('Selezionare almeno una domanda');
+  } else {
+    // POOL-SIMPLE v2 fail-closed: every selected ref must carry a valid integer
+    // difficoltà 1–5 with maxPoints === difficolta, BEFORE any pool read,
+    // snapshot build or write in activateVerification.
+    for (const ref of config.questionRefs) {
+      const invalid = poolQuestionInvariantError(ref);
+      if (invalid) {
+        errors.push(`Domanda ${ref.questionLocalId ?? ref.questionIndexEntryId}: ${invalid}`);
+      }
+    }
   }
   return { valid: errors.length === 0, errors };
 }
