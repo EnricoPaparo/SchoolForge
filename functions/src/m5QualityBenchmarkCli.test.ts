@@ -4,9 +4,20 @@ import type { M5BenchmarkComparativeReport } from './m5BenchmarkComparison.js';
 import type { M5BenchmarkDataset, M5BenchmarkModeReports } from './m5BenchmarkHarness.js';
 import type { M5BenchmarkExecutionPlan } from './m5BenchmarkPlan.js';
 import {
+  OPENAI_BENCHMARK_CANDIDATE_MODEL,
+  OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION,
+  OPENAI_BENCHMARK_LUNA_MODEL,
+  OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION,
+  OPENAI_PRODUCTION_MODEL,
+  DEFAULT_PRICE_LIST_VERSION,
+} from './aiCorrectionCost.js';
+import {
+  benchmarkReportFileName,
   M5_BENCHMARK_CONFIRMATION,
   M5_BENCHMARK_COST_ACK_FLAG,
   M5_BENCHMARK_EXECUTE_FLAG,
+  M5_BENCHMARK_MODEL_FLAG,
+  resolveBenchmarkModelSelection,
   runM5QualityBenchmarkCli,
   type M5QualityBenchmarkCliDeps,
 } from './m5QualityBenchmarkCli.js';
@@ -106,9 +117,128 @@ describe('M5 quality benchmark CLI safety gate', () => {
     expect(current.createGrader).toHaveBeenCalledOnce();
     expect(current.getApiKey).toHaveBeenCalledOnce();
     expect(current.runModes).toHaveBeenCalledOnce();
-    expect(current.writeReport).toHaveBeenCalledWith(comparison);
+    expect(current.writeReport).toHaveBeenCalledWith(
+      comparison,
+      expect.objectContaining({ model: OPENAI_PRODUCTION_MODEL }),
+    );
     expect(fakeGrader.grade).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
+  });
+});
+
+describe('M5 quality benchmark model override (M5-QUALITY-05)', () => {
+  it('resolves to the production nano model by default (unchanged)', () => {
+    expect(resolveBenchmarkModelSelection([])).toEqual({
+      model: OPENAI_PRODUCTION_MODEL,
+      priceListVersion: DEFAULT_PRICE_LIST_VERSION,
+    });
+  });
+
+  it('resolves the mini candidate with its own price list when overridden', () => {
+    expect(
+      resolveBenchmarkModelSelection([
+        `${M5_BENCHMARK_MODEL_FLAG}=${OPENAI_BENCHMARK_CANDIDATE_MODEL}`,
+      ]),
+    ).toEqual({
+      model: OPENAI_BENCHMARK_CANDIDATE_MODEL,
+      priceListVersion: OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION,
+    });
+  });
+
+  it('resolves the Luna candidate with its own price list when overridden', () => {
+    expect(
+      resolveBenchmarkModelSelection([`${M5_BENCHMARK_MODEL_FLAG}=${OPENAI_BENCHMARK_LUNA_MODEL}`]),
+    ).toEqual({
+      model: OPENAI_BENCHMARK_LUNA_MODEL,
+      priceListVersion: OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION,
+    });
+  });
+
+  it('rejects a non-allowlisted model with a readable error', () => {
+    expect(() => resolveBenchmarkModelSelection([`${M5_BENCHMARK_MODEL_FLAG}=gpt-4o`])).toThrow(
+      /non consentito/,
+    );
+  });
+
+  it('rejects the flag without a value and a repeated flag', () => {
+    expect(() => resolveBenchmarkModelSelection([M5_BENCHMARK_MODEL_FLAG])).toThrow(/=<modello>/);
+    expect(() =>
+      resolveBenchmarkModelSelection([
+        `${M5_BENCHMARK_MODEL_FLAG}=${OPENAI_PRODUCTION_MODEL}`,
+        `${M5_BENCHMARK_MODEL_FLAG}=${OPENAI_BENCHMARK_CANDIDATE_MODEL}`,
+      ]),
+    ).toThrow(/una sola volta/);
+  });
+
+  it('threads the default nano selection into plan and grader', async () => {
+    const current = deps({
+      argv: [M5_BENCHMARK_EXECUTE_FLAG, M5_BENCHMARK_COST_ACK_FLAG],
+      getApiKey: vi.fn(() => 'synthetic-test-value'),
+      stdinIsTTY: true,
+      stdoutIsTTY: true,
+    });
+    await runM5QualityBenchmarkCli(current);
+    expect(current.buildPlan).toHaveBeenCalledWith(
+      dataset,
+      expect.objectContaining({ model: OPENAI_PRODUCTION_MODEL }),
+    );
+    expect(current.createGrader).toHaveBeenCalledWith(
+      'synthetic-test-value',
+      expect.objectContaining({ model: OPENAI_PRODUCTION_MODEL }),
+    );
+  });
+
+  it('applies the mini override to the grader actually built by the CLI', async () => {
+    const current = deps({
+      argv: [
+        M5_BENCHMARK_EXECUTE_FLAG,
+        M5_BENCHMARK_COST_ACK_FLAG,
+        `${M5_BENCHMARK_MODEL_FLAG}=${OPENAI_BENCHMARK_CANDIDATE_MODEL}`,
+      ],
+      getApiKey: vi.fn(() => 'synthetic-test-value'),
+      stdinIsTTY: true,
+      stdoutIsTTY: true,
+    });
+    await runM5QualityBenchmarkCli(current);
+    expect(current.createGrader).toHaveBeenCalledWith(
+      'synthetic-test-value',
+      expect.objectContaining({
+        model: OPENAI_BENCHMARK_CANDIDATE_MODEL,
+        priceListVersion: OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION,
+      }),
+    );
+    expect(current.buildComparison).toHaveBeenCalledWith(
+      dataset,
+      reports,
+      expect.objectContaining({ model: OPENAI_BENCHMARK_CANDIDATE_MODEL }),
+    );
+  });
+
+  it('rejects an invalid model before reading the key, dataset or network', async () => {
+    const current = deps({
+      argv: [`${M5_BENCHMARK_MODEL_FLAG}=gpt-4o`],
+    });
+    await expect(runM5QualityBenchmarkCli(current)).rejects.toThrow(/non consentito/);
+    expect(current.loadDataset).not.toHaveBeenCalled();
+    expect(current.getApiKey).not.toHaveBeenCalled();
+    expect(current.createGrader).not.toHaveBeenCalled();
+  });
+
+  it('names the local report per model to avoid accidental overwrite', () => {
+    expect(benchmarkReportFileName(OPENAI_PRODUCTION_MODEL)).toBe(
+      'm5-quality-05-gpt-5.4-nano-2026-03-17-report.json',
+    );
+    expect(benchmarkReportFileName(OPENAI_BENCHMARK_CANDIDATE_MODEL)).toBe(
+      'm5-quality-05-gpt-5.4-mini-2026-03-17-report.json',
+    );
+    expect(benchmarkReportFileName(OPENAI_PRODUCTION_MODEL)).not.toBe(
+      benchmarkReportFileName(OPENAI_BENCHMARK_CANDIDATE_MODEL),
+    );
+  });
+
+  it('keeps the production/runtime model on nano (mini is benchmark-only)', () => {
+    expect(OPENAI_PRODUCTION_MODEL).toBe('gpt-5.4-nano-2026-03-17');
+    expect(OPENAI_BENCHMARK_CANDIDATE_MODEL).not.toBe(OPENAI_PRODUCTION_MODEL);
   });
 });

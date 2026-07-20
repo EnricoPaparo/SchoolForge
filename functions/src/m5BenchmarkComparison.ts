@@ -12,6 +12,7 @@ import {
   microUsdToUsd,
   normalizeUsageActual,
 } from './aiCorrectionCost.js';
+import { OPENAI_GRADING_CONTRACT_VERSION } from './openAiGrader.js';
 
 export type BenchmarkCriterionVerdict = 'pass' | 'fail' | 'manual_review';
 
@@ -115,6 +116,13 @@ export interface BenchmarkTechnicalAggregate {
 
 export interface M5BenchmarkComparativeReport {
   datasetVersion: 'm5-benchmark-dataset-v1';
+  /**
+   * Versione del contratto di valutazione (prompt + schema) con cui il report è
+   * stato prodotto. Consente a M5-QUALITY-05 di verificare che un report
+   * riutilizzato come baseline usi lo stesso prompt del candidato. Assente nei
+   * report generati prima dell'introduzione dello stamp.
+   */
+  promptContractVersion: string;
   graderIdByMode: Partial<Record<GradingMode, string>>;
   modelByMode: Partial<Record<GradingMode, string>>;
   repetitionsByMode: Record<GradingMode, number>;
@@ -211,7 +219,10 @@ function percentile(sorted: readonly number[], ratio: number): number | undefine
   return sorted[Math.max(0, Math.ceil(sorted.length * ratio) - 1)];
 }
 
-function technicalAggregate(reports: readonly M5BenchmarkReport[]): BenchmarkTechnicalAggregate {
+function technicalAggregate(
+  reports: readonly M5BenchmarkReport[],
+  priceListVersion: string = DEFAULT_PRICE_LIST_VERSION,
+): BenchmarkTechnicalAggregate {
   const submissions = reports.flatMap((report) => report.submissions);
   const completedSubmissions = submissions.filter(
     (submission) => submission.callCompleted === true,
@@ -260,12 +271,7 @@ function technicalAggregate(reports: readonly M5BenchmarkReport[]): BenchmarkTec
     models.size === 1
   ) {
     const model = [...models][0]!;
-    const cost = actualCostMicroUsd(
-      inputTokensActual,
-      outputTokensActual,
-      DEFAULT_PRICE_LIST_VERSION,
-      model,
-    );
+    const cost = actualCostMicroUsd(inputTokensActual, outputTokensActual, priceListVersion, model);
     if (cost !== null) {
       costActualMicroUsd = cost;
       costActualUsd = microUsdToUsd(cost);
@@ -341,6 +347,8 @@ function criterion(
 export function buildM5BenchmarkComparativeReport(
   dataset: M5BenchmarkDataset,
   reports: Partial<M5BenchmarkModeReports>,
+  /** M5-QUALITY-05: listino coerente col modello dei report (default = DEV). */
+  priceListVersion: string = DEFAULT_PRICE_LIST_VERSION,
 ): M5BenchmarkComparativeReport {
   const anomalies: BenchmarkAnomaly[] = [];
   const casesById = new Map(dataset.providerCases.map((item) => [item.id, item]));
@@ -693,12 +701,13 @@ export function buildM5BenchmarkComparativeReport(
 
   const automaticFailure = criteria.some((item) => item.verdict === 'fail');
   const technicalByMode = {
-    compassionate: technicalAggregate(reports.compassionate ?? []),
-    balanced: technicalAggregate(reports.balanced ?? []),
-    rigorous: technicalAggregate(reports.rigorous ?? []),
+    compassionate: technicalAggregate(reports.compassionate ?? [], priceListVersion),
+    balanced: technicalAggregate(reports.balanced ?? [], priceListVersion),
+    rigorous: technicalAggregate(reports.rigorous ?? [], priceListVersion),
   };
   return {
     datasetVersion: 'm5-benchmark-dataset-v1',
+    promptContractVersion: OPENAI_GRADING_CONTRACT_VERSION,
     graderIdByMode: Object.fromEntries(
       MODES.flatMap((mode) => (reports[mode]?.[0] ? [[mode, reports[mode]![0].graderId]] : [])),
     ),
@@ -725,9 +734,12 @@ export function buildM5BenchmarkComparativeReport(
     anomalies,
     criteria,
     technical: {
-      priceListVersion: DEFAULT_PRICE_LIST_VERSION,
+      priceListVersion,
       byMode: technicalByMode,
-      overall: technicalAggregate(MODES.flatMap((mode) => reports[mode] ?? [])),
+      overall: technicalAggregate(
+        MODES.flatMap((mode) => reports[mode] ?? []),
+        priceListVersion,
+      ),
     },
     verdict: automaticFailure ? 'AUTOMATIC_CHECKS_FAILED' : 'READY_FOR_MANUAL_REVIEW',
   };

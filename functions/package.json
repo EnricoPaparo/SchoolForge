@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc",
     "benchmark:m5-quality": "node lib/m5QualityBenchmarkCli.js",
+    "benchmark:m5-quality:compare": "node lib/m5ModelComparisonCli.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

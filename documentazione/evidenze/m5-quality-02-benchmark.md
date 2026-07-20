@@ -299,3 +299,107 @@ benchmark esplicitamente autorizzato, seguito dalla revisione docente di feedbac
 anomalie e reason code sanitizzati.
 
 **M5-QUALITY-02 non è superato. Gate G7 resta APERTO.**
+
+## M5-QUALITY-05 — confronto modello controllato nano vs mini (solo benchmark)
+
+Obiettivo: capire, con evidenza riproducibile, se i fallimenti sistematici residui del
+Gate G7 (SCI-002/003/004) dipendano dal modello `gpt-5.4-nano` o dal contratto di
+valutazione. Per farlo il benchmark accetta un override di modello **solo dalla CLI
+locale**, senza toccare il modello runtime.
+
+Cosa cambia (esclusivamente lato benchmark):
+
+- override CLI `--benchmark-model=<modello>` con **allowlist chiusa**: sono ammessi
+  soltanto `gpt-5.4-nano-2026-03-17` (baseline), `gpt-5.4-mini-2026-03-17` (candidato) e
+  `gpt-5.6-luna` (secondo candidato). Un modello diverso, un flag ripetuto o senza
+  valore termina con errore leggibile **prima** di leggere `OPENAI_API_KEY` e prima di
+  qualunque chiamata di rete. Nessun fallback automatico;
+- il modello selezionato è passato esplicitamente alla costruzione dell'`OpenAiGrader`
+  del benchmark. Non legge né modifica `settings/aiConfig`, non modifica
+  `OPENAI_PRODUCTION_MODEL`, non cambia il modello runtime delle Functions e non
+  persiste nulla su Firestore;
+- listino versionato esteso con **due nuove** versioni, una per candidato:
+  `v3-2026-07-20-mini-benchmark` (mini: input 0,75 USD/1M = 750.000 µUSD, output
+  4,50 USD/1M = 4.500.000 µUSD) e `v4-2026-07-20-luna-benchmark` (Luna: input
+  1,00 USD/1M = 1.000.000 µUSD, output 6,00 USD/1M = 6.000.000 µUSD). La versione DEV
+  `v2-2026-07-17-hg-m5` resta immutata (nano) e ogni candidato vive nella propria
+  versione. Nessun prezzo `cached input` inventato: il benchmark non lo usa né lo
+  misura;
+- il report locale è distinto per modello
+  (`m5-quality-05-<modello>-report.json`), resta in `functions/lib/` (ignorato da Git) e
+  non viene mai committato;
+- sintesi comparativa fra modelli (`benchmark:m5-quality:compare`) che supporta
+  **nano vs mini vs Luna**: verdict per modello, SCI-002/003/004 per modalità e
+  ripetizione con fasce attese, oscillazioni, output invalidi, token, costo, latenza
+  media/p50/p95 e rapporto costo di **ogni candidato** su nano. È generabile con il
+  baseline nano e almeno un candidato; i candidati assenti sono elencati in
+  `missingCandidates` senza inventare dati, e se manca il baseline (o tutti i
+  candidati) il confronto è dichiarato **non disponibile**.
+
+### Riuso del report reale nano esistente (baseline)
+
+Per non ripetere 36 chiamate nano solo perché M5-QUALITY-05 ha introdotto nomi di file
+distinti, `benchmark:m5-quality:compare` accetta come baseline nano, **in quest'ordine**:
+
+1. il report per-modello `m5-quality-05-gpt-5.4-nano-2026-03-17-report.json`;
+2. il report reale legacy `m5-quality-02-report.json` (prodotto da M5-QUALITY-02/04).
+
+Il primo candidato **presente e compatibile** è riusato così com'è, senza rieseguire
+alcuna chiamata e senza modificarne i dati reali. La compatibilità è verificata
+fail-closed su quattro campi: `datasetVersion`, modello uniforme = nano,
+`priceListVersion` = `v2-2026-07-17-hg-m5` e — decisivo — `promptContractVersion`, un
+digest deterministico di prompt di sistema + schema di output introdotto in questa PR e
+registrato in ogni nuovo report.
+
+**Verdetto sul report attuale `m5-quality-02-report.json`: NON riusabile.** Il campo
+che lo impedisce è `promptContractVersion`: il report è stato prodotto **prima**
+dell'introduzione dello stamp, quindi il prompt con cui è stato generato non è
+verificabile dal file. Inoltre il prompt di valutazione (`OPENAI_GRADING_INSTRUCTIONS`)
+è stato modificato dopo quell'esecuzione (PR #246, #247 e #248), perciò riusarlo
+confronterebbe nano-prompt-vecchio contro mini-prompt-corrente, confondendo effetto
+modello ed effetto prompt — esattamente ciò che M5-QUALITY-05 deve evitare. Di
+conseguenza, per un confronto interpretabile, la baseline nano va **rigenerata con il
+prompt corrente** (un solo run reale autorizzato), dopodiché il suo report per-modello
+verrà riconosciuto automaticamente. Da quel momento, finché prompt e schema non
+cambiano, il report nano resta riusabile senza nuove chiamate.
+
+Ogni benchmark candidato scrive **esclusivamente** sul proprio file distinto
+(`m5-quality-05-gpt-5.4-mini-2026-03-17-report.json` per mini,
+`m5-quality-05-gpt-5.6-luna-report.json` per Luna) e non tocca mai i file nano (né il
+per-modello né il legacy): un candidato non può quindi sovrascrivere il report nano né
+quello dell'altro candidato. La CLI di confronto scrive solo la sintesi
+`m5-quality-05-model-comparison.json`, mai un report.
+
+Confrontabilità rigorosa: nano e mini usano lo stesso dataset congelato, gli stessi
+`submissionId`/casi, le stesse tre modalità, le stesse tre ripetizioni, lo stesso
+prompt, lo stesso Structured Output, gli stessi parametri e le stesse fasce attese, con
+lo stesso numero pianificato di chiamate. In questa PR **non** sono stati toccati
+prompt, dataset, rubriche, fasce o classificazione delle anomalie: cambiare insieme
+modello e prompt renderebbe il confronto non interpretabile.
+
+Dry-run verificati il 20 luglio 2026 (nessuna chiamata reale, nessuna lettura della
+chiave):
+
+- baseline nano: 36 chiamate pianificate, fino a 72 tentativi, tetto prudenziale
+  **834.350 µUSD (0,83435 USD)**, listino `v2-2026-07-17-hg-m5`;
+- candidato mini: stesse 36 chiamate/72 tentativi, tetto prudenziale
+  **3.020.810 µUSD (3,02081 USD)**, listino `v3-2026-07-20-mini-benchmark`;
+- candidato Luna: stesse 36 chiamate/72 tentativi, tetto prudenziale
+  **4.026.954 µUSD (4,026954 USD)**, listino `v4-2026-07-20-luna-benchmark`.
+
+L'upper bound dei token è identico tra i modelli a meno della lunghezza del nome
+modello nel payload serializzato; il numero pianificato di chiamate è identico. Sono
+limiti preventivi, non consumo o costo reale.
+
+Comandi reali mini e Luna — **da NON eseguire senza nuova autorizzazione esplicita del
+docente**, da terminale interattivo, con entrambe le protezioni e la frase esatta
+`ESEGUI BENCHMARK REALE`:
+
+```powershell
+pnpm --filter @schoolforge/functions benchmark:m5-quality -- --benchmark-model=gpt-5.4-mini-2026-03-17 --execute-real-openai --i-understand-this-costs-money
+pnpm --filter @schoolforge/functions benchmark:m5-quality -- --benchmark-model=gpt-5.6-luna --execute-real-openai --i-understand-this-costs-money
+```
+
+Stato: nessuna scelta definitiva del modello. Produzione e DEV restano su
+`gpt-5.4-nano-2026-03-17`. Il benchmark reale mini resta subordinato ad autorizzazione
+esplicita. **Gate G7 resta APERTO.**
