@@ -1,6 +1,6 @@
 # M5-QUALITY-02 — benchmark comparativo modalità di correzione
 
-**Stato:** `M5-QUALITY-03-FIX IMPLEMENTED — NEW REAL BENCHMARK REQUIRED`
+**Stato:** `M5-QUALITY-04-FIX IMPLEMENTED — NEW REAL BENCHMARK REQUIRED`
 
 **Primo benchmark reale:** eseguito e autorizzato dal docente il 20 luglio 2026
 
@@ -72,6 +72,33 @@ qualitativa del comparatore, gli intervalli del dataset, il modello, il listino 
 guardrail economici. Il report riceve soltanto la nuova diagnostica sanitizzata degli
 output invalidi. Nessuna chiamata reale è stata eseguita durante l'implementazione del
 fix.
+
+## Terzo benchmark reale
+
+Il docente ha eseguito il terzo benchmark reale autorizzato dopo
+M5-QUALITY-03-FIX. Il framework tecnico è risultato stabile:
+
+- 36/36 chiamate completate;
+- 36/36 chiamate misurate;
+- nessun output invalido;
+- 76.287 token reali;
+- costo reale complessivo di circa 0,03434 USD.
+
+Il verdict resta `AUTOMATIC_CHECKS_FAILED`. La prompt injection non produce più un
+fallimento automatico ed è demandata a `manual_review`; restano bloccanti tre anomalie
+qualitative:
+
+- **SCI-002:** alternativa scientificamente valida ancora penalizzata
+  eccessivamente (`compassionate` circa 1,667; `balanced` 1; `rigorous` circa 0,667,
+  su range docente 3,5–4);
+- **SCI-003:** risposta parziale ancora valutata 4/4 in tutte le modalità, inferendo
+  elementi scientifici sostanziali non espressi;
+- **SCI-004:** nucleo corretto con aggiunta falsa pertinente ancora troppo generoso,
+  spesso 2,5–2,75 su range `balanced` 1,75–2,25.
+
+M5-QUALITY-04-FIX non cambia comparatore, dataset o range: interviene soltanto sulla
+micro-rubrica interna del prompt e mantiene i tre casi bloccanti fino a una nuova
+evidenza reale autorizzata.
 
 ## Anomalie reali confermate
 
@@ -183,6 +210,18 @@ M5-QUALITY-03-FIX rafforza in modo compatto gli stessi principi:
 
 Lo schema pubblico resta invariato: `requestId`, `results` e `generalFeedback`.
 
+M5-QUALITY-04-FIX aggiunge tre controlli interni compatti, non esposti nell'output:
+
+1. alternative e strategie valutate sul meccanismo causale nel contesto della
+   domanda, non sulla coincidenza letterale con la soluzione;
+2. elementi scientifici sostanziali non inferiti: devono essere nominati, descritti o
+   chiaramente equivalenti;
+3. aggiunte false pertinenti su classificazione o proprietà centrali penalizzate in
+   modo significativo, senza azzerare automaticamente un nucleo corretto.
+
+Structured Outputs, schema, `gradingMode`, teacher guidance e vincoli anti-injection
+restano invariati.
+
 ## Diagnostica privacy-minimal degli output invalidi
 
 Il solo harness locale associa agli output invalidi un `reasonCode` chiuso e
@@ -238,9 +277,9 @@ pnpm --filter @schoolforge/functions benchmark:m5-quality
 Il dry-run non costruisce il provider, non legge `OPENAI_API_KEY` e stampa chiamate,
 tentativi e upper bound aggiornati dopo la modifica del prompt.
 
-Dry-run di M5-QUALITY-03-FIX verificato il 20 luglio 2026: 36 chiamate pianificate,
-fino a 72 tentativi, upper bound 532.578 token input e 576.000 token output, costo
-massimo prudenziale 826.516 micro-USD (0,826516 USD). Sono limiti preventivi, non consumo o
+Dry-run di M5-QUALITY-04-FIX verificato il 20 luglio 2026: 36 chiamate pianificate,
+fino a 72 tentativi, upper bound 571.746 token input e 576.000 token output, costo
+massimo prudenziale 834.350 micro-USD (0,83435 USD). Sono limiti preventivi, non consumo o
 costo reale.
 
 Solo dopo una nuova autorizzazione esplicita del docente, da terminale interattivo:
@@ -254,8 +293,8 @@ due flag, TTY e conferma legge la chiave e costruisce il provider.
 
 ## Verdetto
 
-Il secondo benchmark resta `AUTOMATIC_CHECKS_FAILED`. M5-QUALITY-03-FIX è
-implementato, ma non è ancora validato da una nuova esecuzione reale. Serve un nuovo
+Il terzo benchmark resta `AUTOMATIC_CHECKS_FAILED`. M5-QUALITY-04-FIX è implementato,
+ma non è ancora validato da una nuova esecuzione reale. Serve un nuovo
 benchmark esplicitamente autorizzato, seguito dalla revisione docente di feedback,
 anomalie e reason code sanitizzati.
 
