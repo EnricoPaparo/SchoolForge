@@ -53,7 +53,7 @@
   },
   "functions": {
     "source": "functions",
-    "runtime": "nodejs20",
+    "runtime": "nodejs22",
     "predeploy": ["pnpm --dir \"$RESOURCE_DIR\" build"]
   },
   "emulators": {

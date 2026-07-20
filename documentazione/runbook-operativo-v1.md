@@ -185,9 +185,9 @@ aggiorna `settings/aiConfig` con `model: gpt-5.4-nano-2026-03-17`,
 resistenza alle prompt injection e modalità sono completati. Il monitoraggio costi
 resta manuale; in caso di anomalia usare subito il kill switch.
 
-**Prossimo pacchetto tecnico:** **HARD-NODE-01**, per migrare il runtime Functions da
-Node.js 20 e aggiornare controllatamente `firebase-functions`, con verifica delle
-breaking change, test e deploy separati.
+**HARD-NODE-01:** l'upgrade repository a Node.js 22, `firebase-functions` 7.3.0 e
+`firebase-admin` 14.2.0 è predisposto e verificato; il deploy non fa parte della PR.
+Il piano di rollout/rollback vincolante è nell'[evidenza tecnica](evidenze/hard-node-01-runtime-upgrade.md).
 
 ---
 
