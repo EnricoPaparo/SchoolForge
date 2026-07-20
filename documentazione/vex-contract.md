@@ -1,8 +1,13 @@
 # VEX — Contratto varianti equivalenti
 
-**Stato:** VEX-00B — consolidamento tecnico + prototipo statico del builder.
-**Natura:** documentazione + prototipo. **Nessun codice applicativo, Function, Rule,
-indice, schema reale, dipendenza o deploy** è introdotto da questo pacchetto.
+**Stato:** VEX-01A — modello dati, validazioni pure e builder docente draft-time
+**implementati** (client). **VEX non è ancora operativo:** l'attivazione di
+`equivalent_variants` è **bloccata a monte** da una guardia fail-closed finché VEX-01B
+non aggiunge callable di assegnazione + isolamento + Rules. VEX-01B/02/03 e il Gate
+GVEX restano aperti. VEX-00B (sotto) ha congelato il contratto; VEX-01A **non**
+introduce Function, Rule, indice, schema reale, dipendenza o deploy.
+**Natura (VEX-00B):** documentazione + prototipo. **Nessun codice applicativo, Function, Rule,
+indice, schema reale, dipendenza o deploy** è introdotto dal pacchetto VEX-00B.
 **Base:** UX e decisioni di prodotto già approvate in
 [`evoluzioni-apprendimento-roadmap.md` §6](evoluzioni-apprendimento-roadmap.md). Questo
 documento **non riprogetta** VEX: congela i nomi dei campi, il contratto di
@@ -61,7 +66,7 @@ type EquivalentGroupConfig = {
 
 type VerificationConfig = {
   // …campi esistenti…
-  /** Default 'same_questions' (assente/legacy ⇒ 'same_questions'). */
+  /** Default 'same_questions' solo se il campo è ASSENTE (legacy); valore malformato ⇒ errore. */
   distributionMode: 'same_questions' | 'equivalent_variants';
   /** Presente solo in 'equivalent_variants'. Gruppi di alternative. */
   equivalentGroups?: EquivalentGroupConfig[];
@@ -288,18 +293,33 @@ Contratto congelato (questo file), aggiornamenti minimi alla documentazione e pr
 statico `prototipi/vex-builder.html` con tutti gli stati/warning/validazioni. Nessun
 codice applicativo.
 
-### VEX-01A — **modello dati + validazione builder (client, draft-time)**
-- aggiungere `distributionMode` + `equivalentGroups` a `VerificationConfig`; **rimuovere
-  `questionsPerStudent`** (assorbito);
-- builder docente draft-time: creare/eliminare gruppi, aggiungere/rimuovere alternative,
-  riepilogo derivato, validazioni §3 (UDA/tipo/difficoltà/`maxPoints`, riferimento valido,
-  domanda in un solo gruppo, snapshot costruibile; warning non bloccanti) — **`maxCharacters`
-  non è confrontato** (§2.4) —, eliminazione gruppo vuoto; **nessun** reimport richiesto;
-- estendere `teacherSnapshot` con `distributionMode`/`commonQuestionOrders`/
-  `equivalentGroups` e la **conversione entryId→order all'attivazione**, ripetendo
-  **autorevolmente** la validazione §3 (UDA/tipo/difficoltà/riferimenti/gruppo unico)
-  sulle domande caricate dal pool;
-- **nessuna** callable ancora; `same_questions` invariato.
+### VEX-01A — **modello dati + validazione builder (client, draft-time)** ✅ IMPLEMENTATO
+- ✅ `distributionMode` + `equivalentGroups` aggiunti a `VerificationConfig`;
+  **`questionsPerStudent` rimosso** dal tipo, dal writer e dalle fixture (assorbito);
+- ✅ helper puro centralizzato `normalizeDistributionMode` (`vexDistribution.ts`),
+  **fail-closed**: **solo `undefined`** (campo assente, documento legacy)→`same_questions`;
+  valore valido→sé stesso; **qualsiasi altro valore presente** — `null`, stringa vuota,
+  stringhe sconosciute, array, oggetti, numeri — →errore leggibile (mai fallback
+  silenzioso di valori malformati); niente controlli-stringa duplicati in UI;
+- ✅ builder docente draft-time (`VexBuilder.tsx`, subito dopo il picker, solo in bozza):
+  creare/eliminare gruppi, aggiungere/rimuovere alternative, riepilogo derivato,
+  validazioni §3 (UDA/tipo/difficoltà/`maxPoints`, riferimento valido, domanda in un solo
+  gruppo, snapshot costruibile; warning non bloccanti) — **`maxCharacters` non è confrontato**
+  (§2.4) —, eliminazione gruppo vuoto; nessun drag-and-drop; nessun reimport;
+- ✅ helper puro di riconciliazione/derivazione (`vexGroups.ts`) e di conversione
+  entryId→order per lo snapshot futuro (`vexSnapshot.ts`), completamente testati; i tipi
+  snapshot (`EquivalentGroupSnapshot`, `teacherSnapshot.distributionMode`/
+  `commonQuestionOrders`/`equivalentGroups`) sono **dichiarati** e pronti per VEX-01B;
+- ✅ salvataggio bozza esteso **senza scritture aggiuntive**: `distributionMode` ed
+  `equivalentGroups` viaggiano nello stesso `updateVerificationConfig` di titolo/classe/
+  questionRefs; dirty-state include modalità e gruppi; passare a `same_questions`
+  **preserva** i gruppi nella bozza ma li rende inattivi/non conteggiati;
+- ✅ **guardia fail-closed di rollout parziale:** `activateVerification` **rifiuta**
+  `equivalent_variants` **prima** di leggere il pool, aprire la transazione o scrivere
+  documenti, con messaggio esatto _«Le varianti equivalenti saranno attivabili dopo il
+  completamento del servizio di assegnazione sicura.»_; nessuna callable ancora;
+  `same_questions` invariato per comportamento e costo. La guardia è applicativa
+  (nessun feature-flag remoto/Firebase config) e sarà rimossa da VEX-01B.
 
 ### VEX-01B — **callable di assegnazione + sicurezza + isolamento**
 - Cloud Function callable (owner/student-auth) §4.1;

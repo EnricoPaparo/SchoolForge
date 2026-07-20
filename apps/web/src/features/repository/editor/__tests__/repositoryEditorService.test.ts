@@ -1404,7 +1404,6 @@ function verificationDoc(
               maxPoints: 1,
             },
           ],
-          questionsPerStudent: null,
           ...overrides,
         },
         teacherSnapshot: null,

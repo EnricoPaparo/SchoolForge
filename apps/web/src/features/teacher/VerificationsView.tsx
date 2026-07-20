@@ -62,7 +62,15 @@ import {
   IconSend,
   IconEraser,
 } from '../../components/icons.js';
-import type { AttentionEvent, VerificationTeacherQuestionSnapshot } from '../../types/firestore.js';
+import type {
+  AttentionEvent,
+  EquivalentGroupConfig,
+  VerificationDistributionMode,
+  VerificationTeacherQuestionSnapshot,
+} from '../../types/firestore.js';
+import { normalizeDistributionMode } from '../repository/verifications/vexDistribution.js';
+import { reconcileEquivalentGroups } from '../repository/verifications/vexGroups.js';
+import { VexBuilder, type VexBuilderQuestion } from './VexBuilder.js';
 import { correctionStatusLabel } from '../repository/corrections/submissionCorrectionStatus.js';
 import {
   buildCorrectionRegisterCsvFilename,
@@ -222,6 +230,11 @@ export function VerificationsView() {
   // ── Draft edit state ────────────────────────────────────────────
   const [editDraftTitle, setEditDraftTitle] = useState('');
   const [editDraftClassId, setEditDraftClassId] = useState('');
+  // VEX-01A — distribuzione online e gruppi equivalenti del draft. Viaggiano
+  // nello stesso salvataggio bozza di titolo/classe/domande (nessuna write extra).
+  const [distributionMode, setDistributionMode] =
+    useState<VerificationDistributionMode>('same_questions');
+  const [equivalentGroups, setEquivalentGroups] = useState<EquivalentGroupConfig[]>([]);
   const [savingDraft, setSavingDraft] = useState(false);
   const [draftSaveStatus, setDraftSaveStatus] = useState<
     'idle' | 'dirty' | 'saving' | 'saved' | 'error'
@@ -643,6 +656,15 @@ export function VerificationsView() {
     setSelectedQuestionIds(new Set(v.config.questionRefs.map((r) => r.questionIndexEntryId)));
     setEditDraftTitle(v.config.title);
     setEditDraftClassId(v.config.classId ?? '');
+    // VEX-01A: modalità normalizzata fail-closed; gruppi riconciliati con la
+    // selezione corrente (scarta entryId non più presenti e gruppi vuoti).
+    setDistributionMode(normalizeDistributionMode(v.config.distributionMode));
+    setEquivalentGroups(
+      reconcileEquivalentGroups(
+        v.config.equivalentGroups ?? [],
+        new Set(v.config.questionRefs.map((r) => r.questionIndexEntryId)),
+      ),
+    );
     draftRevisionRef.current = 0;
     setDraftSaveStatus('idle');
     setDraftSavedAt(null);
@@ -695,7 +717,44 @@ export function VerificationsView() {
 
   function handleQuestionSelectionChange(next: Set<string>) {
     setSelectedQuestionIds(next);
+    // VEX-01A: deselezionare una domanda la rimuove automaticamente dal suo
+    // gruppo; un gruppo che resta vuoto viene eliminato (reconcile).
+    setEquivalentGroups((prev) => reconcileEquivalentGroups(prev, next));
     markDraftDirty();
+  }
+
+  function handleDistributionModeChange(mode: VerificationDistributionMode) {
+    setDistributionMode(mode);
+    markDraftDirty();
+  }
+
+  function handleEquivalentGroupsChange(groups: EquivalentGroupConfig[]) {
+    setEquivalentGroups(groups);
+    markDraftDirty();
+  }
+
+  /**
+   * Domande selezionate per il builder VEX, come tipo **UI-only**
+   * `VexBuilderQuestion`: i metadati stabili + `questionPreview` **già** caricato
+   * nel `questionIndex` (nessuna nuova lettura/query/Storage). La preview è
+   * puramente di visualizzazione: non viene mai persistita in
+   * `config.equivalentGroups` né aggiunta a `VerificationQuestionRef`.
+   */
+  function selectedRefsForBuilder(): VexBuilderQuestion[] {
+    if (!questionIndex) return [];
+    const entryMap = new Map(questionIndex.map((e) => [e.id, e]));
+    return Array.from(selectedQuestionIds)
+      .map((id) => entryMap.get(id))
+      .filter((e): e is NonNullable<typeof e> => e !== undefined)
+      .map((entry) => ({
+        questionIndexEntryId: entry.id,
+        questionLocalId: entry.questionLocalId,
+        questionPreview: entry.questionPreview,
+        udaDir: entry.udaDir,
+        tipo: entry.tipo,
+        difficolta: entry.difficolta,
+        maxPoints: entry.maxPoints,
+      }));
   }
 
   /**
@@ -714,8 +773,17 @@ export function VerificationsView() {
     try {
       const classId = editDraftClassId || null;
       const questionRefs = buildQuestionRefsFromSelection();
-      const patch = questionRefs === null ? { title, classId } : { title, classId, questionRefs };
+      // VEX-01A: distributionMode ed equivalentGroups viaggiano nello stesso
+      // update di titolo/classe/questionRefs (nessuna scrittura aggiuntiva). I
+      // gruppi vengono riconciliati con la selezione corrente prima di salvare.
+      const reconciledGroups = reconcileEquivalentGroups(equivalentGroups, selectedQuestionIds);
+      const vexPatch = { distributionMode, equivalentGroups: reconciledGroups };
+      const patch =
+        questionRefs === null
+          ? { title, classId, ...vexPatch }
+          : { title, classId, questionRefs, ...vexPatch };
       await updateVerificationConfig(selectedVer.id, patch, ownerUid, db);
+      if (reconciledGroups !== equivalentGroups) setEquivalentGroups(reconciledGroups);
       const updated = { ...selectedVer, config: { ...selectedVer.config, ...patch } };
       setSelectedVer(updated);
       setVerifications((prev) => prev?.map((v) => (v.id === updated.id ? updated : v)) ?? null);
@@ -781,7 +849,15 @@ export function VerificationsView() {
       }
       const classId = editDraftClassId || null;
       const questionRefs = buildQuestionRefsFromSelection();
-      const patch = questionRefs === null ? { title, classId } : { title, classId, questionRefs };
+      // VEX-01A: persist distributionMode/equivalentGroups so activation reads
+      // exactly what is visible. The fail-closed guard in activateVerification
+      // rejects equivalent_variants before any pool read/transaction/write.
+      const reconciledGroups = reconcileEquivalentGroups(equivalentGroups, selectedQuestionIds);
+      const vexPatch = { distributionMode, equivalentGroups: reconciledGroups };
+      const patch =
+        questionRefs === null
+          ? { title, classId, ...vexPatch }
+          : { title, classId, questionRefs, ...vexPatch };
       // Activation must freeze exactly what is currently visible in the draft
       // editor, even when the teacher did not click "Salva bozza" first.
       await updateVerificationConfig(selectedVer.id, patch, ownerUid, db);
@@ -1890,6 +1966,16 @@ export function VerificationsView() {
                   />
                 )}
               </div>
+
+              {/* VEX-01A: builder «Distribuzione online», subito dopo il picker.
+                  Mostrato solo in bozza (non su verifiche attive/chiuse). */}
+              <VexBuilder
+                distributionMode={distributionMode}
+                onModeChange={handleDistributionModeChange}
+                selectedRefs={selectedRefsForBuilder()}
+                groups={equivalentGroups}
+                onGroupsChange={handleEquivalentGroupsChange}
+              />
 
               {/* Salva bozza + Attiva verifica — kept side by side, in this order */}
               {!showActivateConfirm ? (

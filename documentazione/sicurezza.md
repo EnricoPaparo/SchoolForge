@@ -333,7 +333,19 @@ Contratto completo e mitigazioni in [m5-ai-assisted-roadmap.md](m5-ai-assisted-r
 
 ---
 
-## 8b. Varianti equivalenti (VEX — contratto approvato, NON implementato)
+## 8b. Varianti equivalenti (VEX — VEX-01A client implementato, assegnazione NON implementata)
+
+**Guardia fail-closed di rollout parziale (VEX-01A).** Finché VEX-01B non aggiunge la
+callable di assegnazione sicura, l'isolamento e le Rules, `equivalent_variants` **non deve
+diventare operativo**. `activateVerification` (`verificationsService.ts`) applica quindi
+una guardia **applicativa** (nessun feature-flag remoto / Firebase config): se
+`distributionMode === 'equivalent_variants'` l'attivazione viene **rifiutata prima** di
+leggere il pool, aprire la transazione o scrivere qualsiasi documento — nessuno snapshot o
+proiezione parziale viene creato — con messaggio esatto _«Le varianti equivalenti saranno
+attivabili dopo il completamento del servizio di assegnazione sicura.»_. `same_questions`
+si attiva esattamente come prima. La guardia sarà **rimossa da VEX-01B** insieme a
+Function+isolamento+Rules-test. I dati VEX (gruppi in bozza) **non** sono leggibili dallo
+studente in questo pacchetto (restano nella `config` owner-only, mai in proiezione).
 
 Requisiti di sicurezza congelati per `equivalent_variants` (dettaglio in
 [`vex-contract.md`](vex-contract.md) §4–5):

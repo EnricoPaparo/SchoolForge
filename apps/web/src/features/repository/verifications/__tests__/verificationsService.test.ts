@@ -50,6 +50,7 @@ import {
   listActiveOnlineVerificationClassIds,
   createVerification,
   updateVerificationConfig,
+  VEX_ACTIVATION_BLOCKED_MESSAGE,
   validateForActivation,
   activateVerification,
   setVerificationVisibility,
@@ -534,6 +535,37 @@ describe('activateVerification', () => {
       activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage),
     ).rejects.toThrow('Verifica non valida:');
     expect(mockRunTransaction).not.toHaveBeenCalled();
+  });
+
+  it('VEX-01A: rejects equivalent_variants BEFORE reading the pool, opening a transaction or writing', async () => {
+    const vexDraft: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: { ...VALID_CONFIG, distributionMode: 'equivalent_variants' },
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => vexDraft });
+
+    await expect(
+      activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage),
+    ).rejects.toThrow(VEX_ACTIVATION_BLOCKED_MESSAGE);
+    expect(mockLoadSelectedQuestionsWithSolutions).not.toHaveBeenCalled();
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+    expect(mockSetDoc).not.toHaveBeenCalled(); // no audit, no projection, no write
+  });
+
+  it('VEX-01A: same_questions activates unchanged and records distributionMode in the snapshot', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: { ...VALID_CONFIG, distributionMode: 'same_questions' },
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(draftDoc);
+
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    expect(mockRunTransaction).toHaveBeenCalledTimes(1);
+    const snapshot = capture.getUpdate()?.teacherSnapshot as { distributionMode?: string };
+    expect(snapshot.distributionMode).toBe('same_questions');
   });
 
   it('throws when the pool cannot be loaded from Storage, before opening the transaction', async () => {
