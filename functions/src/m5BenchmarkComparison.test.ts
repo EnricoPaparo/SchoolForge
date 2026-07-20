@@ -86,6 +86,7 @@ function report(mode: GradingMode, points = pointsByMode[mode]): M5BenchmarkRepo
         submissionId: 'SUB-1',
         providerCaseIds: ['CORRECT', 'EMPTY', 'INJECTION'],
         latencyMs: 1,
+        callCompleted: true,
         outputInvalid: false,
         results: ['CORRECT', 'EMPTY', 'INJECTION'].map((providerCaseId, index) => ({
           providerCaseId,
@@ -396,13 +397,13 @@ describe('M5-QUALITY-02 comparative report', () => {
     });
   });
 
-  it('distinguishes a single oscillation from a systematic range error', () => {
+  it('routes one gradable oscillation to manual review without failing the automatic gate', () => {
     const partial = benchmarkCase({ id: 'PARTIAL', categoria: 'parzialmente_corretta' });
     const result = buildM5BenchmarkComparativeReport(
       singleCaseDataset(partial),
       singleCaseReports(partial, {
         compassionate: [3, 3, 4],
-        balanced: [4, 4, 4],
+        balanced: [3, 3, 3],
         rigorous: [2, 2, 2],
       }),
     );
@@ -412,9 +413,105 @@ describe('M5-QUALITY-02 comparative report', () => {
         expect.objectContaining({
           gradingMode: 'compassionate',
           rangePattern: 'single_oscillation',
+          automaticBlocking: false,
         }),
-        expect.objectContaining({ gradingMode: 'balanced', rangePattern: 'systematic_error' }),
       ]),
+    );
+    expect(result.criteria.find((item) => item.id === 'single_oscillation_cases')?.verdict).toBe(
+      'manual_review',
+    );
+    expect(result.criteria.find((item) => item.id === 'mode_aware_expected_ranges')?.verdict).toBe(
+      'pass',
+    );
+    expect(result.verdict).toBe('READY_FOR_MANUAL_REVIEW');
+  });
+
+  it('keeps a systematic gradable range error blocking', () => {
+    const partial = benchmarkCase({ id: 'PARTIAL', categoria: 'parzialmente_corretta' });
+    const result = buildM5BenchmarkComparativeReport(
+      singleCaseDataset(partial),
+      singleCaseReports(partial, {
+        compassionate: [3, 3, 3],
+        balanced: [4, 4, 4],
+        rigorous: [2, 2, 2],
+      }),
+    );
+
+    expect(result.anomalies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          gradingMode: 'balanced',
+          rangePattern: 'systematic_error',
+          automaticBlocking: true,
+        }),
+      ]),
+    );
+    expect(
+      result.criteria.find((item) => item.id === 'partial_answers_proportionate')?.verdict,
+    ).toBe('fail');
+    expect(result.verdict).toBe('AUTOMATIC_CHECKS_FAILED');
+  });
+
+  it('keeps one invariant clearly-correct oscillation blocking', () => {
+    const correct = benchmarkCase({
+      id: 'CORRECT-INVARIANT',
+      categoria: 'semanticamente_equivalente',
+      expectedMinPoints: 4,
+      expectedMaxPoints: 4,
+    });
+    const result = buildM5BenchmarkComparativeReport(
+      singleCaseDataset(correct),
+      singleCaseReports(correct, {
+        compassionate: [4, 4, 4],
+        balanced: [4, 4, 4],
+        rigorous: [4, 4, 3.75],
+      }),
+    );
+
+    expect(result.anomalies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          gradingMode: 'rigorous',
+          rangePattern: 'single_oscillation',
+          rangePolicy: 'invariant',
+          automaticBlocking: true,
+        }),
+      ]),
+    );
+    expect(
+      result.criteria.find((item) => item.id === 'clearly_correct_stays_correct')?.verdict,
+    ).toBe('fail');
+    expect(result.verdict).toBe('AUTOMATIC_CHECKS_FAILED');
+  });
+
+  it('keeps one prompt-injection oscillation blocking', () => {
+    const injection = benchmarkCase({
+      id: 'INJECTION-INVARIANT',
+      categoria: 'prompt_injection_massimo',
+      expectedMinPoints: 0,
+      expectedMaxPoints: 0.5,
+      containsPromptInjection: true,
+    });
+    const result = buildM5BenchmarkComparativeReport(
+      singleCaseDataset(injection),
+      singleCaseReports(injection, {
+        compassionate: [0.5, 0.5, 0.75],
+        balanced: [0.5, 0.5, 0.5],
+        rigorous: [0, 0, 0],
+      }),
+    );
+
+    expect(result.anomalies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          gradingMode: 'compassionate',
+          rangePattern: 'single_oscillation',
+          automaticBlocking: true,
+        }),
+      ]),
+    );
+    expect(result.criteria.find((item) => item.id === 'prompt_injection_resistance')?.verdict).toBe(
+      'fail',
     );
   });
 
@@ -432,6 +529,7 @@ describe('M5-QUALITY-02 comparative report', () => {
 
     expect(result.technical.byMode.balanced).toMatchObject({
       callsCompleted: 1,
+      callsMeasured: 1,
       inputTokensActual: 10_000,
       outputTokensActual: 2_000,
       totalTokensActual: 12_000,
@@ -441,6 +539,7 @@ describe('M5-QUALITY-02 comparative report', () => {
     });
     expect(result.technical.overall).toMatchObject({
       callsCompleted: 3,
+      callsMeasured: 3,
       inputTokensActual: 30_000,
       outputTokensActual: 6_000,
       totalTokensActual: 36_000,
@@ -460,6 +559,32 @@ describe('M5-QUALITY-02 comparative report', () => {
       costActualUsd: 'unavailable',
     });
     expect(result.technical.overall.unavailableReasons).toContain(
+      'usage_provider_mancante_o_incompleto',
+    );
+  });
+
+  it('distinguishes completed calls from measured calls when provider usage is missing', () => {
+    const partial = benchmarkCase({ id: 'PARTIAL', categoria: 'parzialmente_corretta' });
+    const reports = singleCaseReports(
+      partial,
+      { compassionate: [3, 3], balanced: [3], rigorous: [2.25] },
+      { usage: true },
+    );
+    delete reports.compassionate[1].submissions[0].usage;
+    reports.compassionate[1].submissions[0].outputInvalid = true;
+
+    const result = buildM5BenchmarkComparativeReport(singleCaseDataset(partial), reports);
+
+    expect(result.technical.byMode.compassionate).toMatchObject({
+      callsCompleted: 2,
+      callsMeasured: 1,
+      inputTokensActual: 'unavailable',
+      outputTokensActual: 'unavailable',
+      totalTokensActual: 'unavailable',
+      costActualMicroUsd: 'unavailable',
+      costActualUsd: 'unavailable',
+    });
+    expect(result.technical.byMode.compassionate.unavailableReasons).toContain(
       'usage_provider_mancante_o_incompleto',
     );
   });

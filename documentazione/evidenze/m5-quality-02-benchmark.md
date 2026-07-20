@@ -111,9 +111,12 @@ Per `requiresTeacherReview == true`, uno scostamento dalla fascia genera
 
 Il report distingue `systematic_error` quando tutte le ripetizioni sono fuori fascia,
 `single_oscillation` quando lo è soltanto una parte e `manual_review` per i casi
-annotati. Restano attivi l'ordine aggregato `compassionate ≥ balanced ≥ rigorous` con
-la tolleranza approvata e `balanced_usually_between`; le medie non nascondono le
-anomalie individuali.
+annotati. Nei casi graduabili senza `requiresTeacherReview`, `systematic_error` resta
+bloccante mentre `single_oscillation` rimane visibile come finding manuale e, da sola,
+non produce `AUTOMATIC_CHECKS_FAILED`. Nei casi invarianti e di prompt injection anche
+una sola ripetizione fuori fascia resta bloccante. Restano attivi l'ordine aggregato
+`compassionate ≥ balanced ≥ rigorous` con la tolleranza approvata e
+`balanced_usually_between`; le medie non nascondono le anomalie individuali.
 
 ## Hardening mirato del prompt
 
@@ -139,18 +142,22 @@ seconda chiamata.
 
 Per ogni modalità e complessivamente il report locale include:
 
-- `callsCompleted` e `callsMeasured`;
+- `callsCompleted`, cioè risposte ricevute dal provider anche se poi invalidate;
+- `callsMeasured`, cioè chiamate completate con usage provider e latenza entrambi
+  validi;
 - `inputTokensActual`, `outputTokensActual`, `totalTokensActual`;
 - `costActualMicroUsd` e `costActualUsd`, calcolati con il listino pinned
   `v2-2026-07-17-hg-m5`;
 - `latencyMs.samples`, `total`, `average`, `p50`, `p95` e `max`;
 - `unavailableReasons`.
 
-I token vengono aggregati soltanto se ogni chiamata misurata espone usage reale e
-coerente. Modello/listino non riconosciuti, usage incompleto o latenza invalida
-producono il valore letterale `unavailable`; non vengono create somme parziali o
-stime spacciate per consumo reale. Anche l'usage fatturabile di un output provider
-invalido viene preservato nel solo harness. Nessun dato viene scritto su Firestore.
+`callsMeasured` non viene mai ricavato dal numero di consegne. Token e costo vengono
+aggregati soltanto se tutte le chiamate hanno misure reali complete; se anche una sola
+non è misurata restano `unavailable` con una motivazione esplicita. Modello/listino non
+riconosciuti, risposta provider assente, usage incompleto o latenza invalida non
+vengono ricostruiti: non vengono create somme parziali o stime spacciate per consumo
+reale. Anche l'usage fatturabile di un output provider invalido viene preservato nel
+solo harness. Nessun dato viene scritto su Firestore.
 
 ## Privacy
 

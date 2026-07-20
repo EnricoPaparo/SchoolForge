@@ -29,6 +29,8 @@ export interface BenchmarkAnomaly {
   occurrenceId?: string;
   gradingMode?: GradingMode;
   rangePattern?: 'systematic_error' | 'single_oscillation' | 'manual_review';
+  rangePolicy?: BenchmarkExpectedRange['policy'];
+  automaticBlocking?: boolean;
   detail: string;
 }
 
@@ -74,6 +76,7 @@ export interface BenchmarkCriterionResult {
     | 'clearly_correct_stays_correct'
     | 'partial_answers_proportionate'
     | 'mode_aware_expected_ranges'
+    | 'single_oscillation_cases'
     | 'teacher_review_cases'
     | 'aggregate_severity_order'
     | 'balanced_usually_between'
@@ -208,22 +211,43 @@ function percentile(sorted: readonly number[], ratio: number): number | undefine
 
 function technicalAggregate(reports: readonly M5BenchmarkReport[]): BenchmarkTechnicalAggregate {
   const submissions = reports.flatMap((report) => report.submissions);
-  const callsCompleted = submissions.filter(
-    (submission) => submission.callCompleted ?? !submission.outputInvalid,
-  ).length;
+  const completedSubmissions = submissions.filter(
+    (submission) => submission.callCompleted === true,
+  );
+  const measuredSubmissions = completedSubmissions.filter(
+    (submission) =>
+      normalizeUsageActual(submission.usage) !== null &&
+      Number.isFinite(submission.latencyMs) &&
+      submission.latencyMs >= 0,
+  );
+  const callsCompleted = completedSubmissions.length;
+  const callsMeasured = measuredSubmissions.length;
   const unavailableReasons: string[] = [];
-  const usage = submissions.map((submission) => normalizeUsageActual(submission.usage));
-  const usageAvailable = submissions.length > 0 && usage.every((item) => item !== null);
+  const usage = measuredSubmissions.map((submission) => normalizeUsageActual(submission.usage)!);
+  const allCallsMeasured = submissions.length > 0 && callsMeasured === submissions.length;
+  const usageAvailable = allCallsMeasured;
   const inputTokensActual = usageAvailable
-    ? usage.reduce((sum, item) => sum + item!.inputTokens, 0)
+    ? usage.reduce((sum, item) => sum + item.inputTokens, 0)
     : 'unavailable';
   const outputTokensActual = usageAvailable
-    ? usage.reduce((sum, item) => sum + item!.outputTokens, 0)
+    ? usage.reduce((sum, item) => sum + item.outputTokens, 0)
     : 'unavailable';
   const totalTokensActual = usageAvailable
-    ? usage.reduce((sum, item) => sum + item!.totalTokens, 0)
+    ? usage.reduce((sum, item) => sum + item.totalTokens, 0)
     : 'unavailable';
-  if (!usageAvailable) unavailableReasons.push('usage_provider_mancante_o_incompleto');
+  if (callsCompleted < submissions.length) {
+    unavailableReasons.push('chiamata_senza_risposta_provider');
+  }
+  if (completedSubmissions.some((submission) => normalizeUsageActual(submission.usage) === null)) {
+    unavailableReasons.push('usage_provider_mancante_o_incompleto');
+  }
+  if (
+    completedSubmissions.some(
+      (submission) => !Number.isFinite(submission.latencyMs) || submission.latencyMs < 0,
+    )
+  ) {
+    unavailableReasons.push('latenza_mancante_o_invalida');
+  }
 
   const models = new Set(reports.map((report) => report.model).filter(Boolean));
   let costActualMicroUsd: BenchmarkTechnicalValue = 'unavailable';
@@ -250,19 +274,17 @@ function technicalAggregate(reports: readonly M5BenchmarkReport[]): BenchmarkTec
     unavailableReasons.push('modello_mancante_o_non_uniforme');
   }
 
-  const latencies = submissions
+  const latencies = measuredSubmissions
     .map((submission) => submission.latencyMs)
-    .filter((value) => Number.isFinite(value) && value >= 0)
     .sort((left, right) => left - right);
-  const latencyAvailable = latencies.length === submissions.length && latencies.length > 0;
-  if (!latencyAvailable) unavailableReasons.push('latenza_mancante_o_invalida');
+  const latencyAvailable = allCallsMeasured;
   const totalLatency = latencyAvailable
     ? latencies.reduce((sum, value) => sum + value, 0)
     : undefined;
 
   return {
     callsCompleted,
-    callsMeasured: submissions.length,
+    callsMeasured,
     inputTokensActual,
     outputTokensActual,
     totalTokensActual,
@@ -400,6 +422,8 @@ export function buildM5BenchmarkComparativeReport(
               occurrenceId,
               gradingMode,
               rangePattern: 'manual_review',
+              rangePolicy: expectedRange.policy,
+              automaticBlocking: false,
               detail: `${outsideRange.length}/${validPoints.length} risultati fuori dalla fascia docente; caso riservato alla revisione umana.`,
             });
           } else {
@@ -409,6 +433,8 @@ export function buildM5BenchmarkComparativeReport(
               occurrenceId,
               gradingMode,
               rangePattern: systematic ? 'systematic_error' : 'single_oscillation',
+              rangePolicy: expectedRange.policy,
+              automaticBlocking: expectedRange.policy === 'invariant' || systematic,
               detail: `${outsideRange.length}/${validPoints.length} risultati fuori dalla fascia ${expectedRange.policy === 'invariant' ? 'invariante' : 'mode-aware'} ${expectedRange.minPoints}–${expectedRange.maxPoints}.`,
             });
           }
@@ -533,17 +559,27 @@ export function buildM5BenchmarkComparativeReport(
         item.byMode[mode].points.every((points) => points >= item.expectedMinPoints),
       ),
     );
-  const partialAnswersProportionate = questions
-    .filter((item) => item.category === 'parzialmente_corretta' && !item.requiresTeacherReview)
-    .every((item) =>
-      MODES.every((mode) => {
-        const range = item.expectedRangeByMode[mode];
-        return item.byMode[mode].points.every(
-          (points) => points >= range.minPoints && points <= range.maxPoints,
-        );
-      }),
-    );
-  const modeAwareRangesOk = !anomalies.some((item) => item.code === 'expected_range_miss');
+  const partialOccurrenceIds = new Set(
+    questions
+      .filter((item) => item.category === 'parzialmente_corretta' && !item.requiresTeacherReview)
+      .map((item) => item.occurrenceId),
+  );
+  const partialAnswersProportionate = !anomalies.some(
+    (item) =>
+      item.code === 'expected_range_miss' &&
+      item.automaticBlocking === true &&
+      item.occurrenceId !== undefined &&
+      partialOccurrenceIds.has(item.occurrenceId),
+  );
+  const modeAwareRangesOk = !anomalies.some(
+    (item) => item.code === 'expected_range_miss' && item.automaticBlocking === true,
+  );
+  const singleOscillationFindings = anomalies.filter(
+    (item) =>
+      item.code === 'expected_range_miss' &&
+      item.rangePattern === 'single_oscillation' &&
+      item.automaticBlocking === false,
+  ).length;
   const manualReviewFindings = anomalies.filter(
     (item) => item.code === 'manual_review_required',
   ).length;
@@ -601,7 +637,12 @@ export function buildM5BenchmarkComparativeReport(
     criterion(
       'mode_aware_expected_ranges',
       modeAwareRangesOk ? 'pass' : 'fail',
-      'Fascia congelata per casi invarianti; tolleranza di 0,50 soltanto per casi graduabili.',
+      'Fascia congelata per casi invarianti; errori sistematici graduabili bloccanti e oscillazioni singole demandate alla revisione.',
+    ),
+    criterion(
+      'single_oscillation_cases',
+      singleOscillationFindings > 0 ? 'manual_review' : 'pass',
+      `${singleOscillationFindings} oscillazioni singole graduabili visibili e demandate alla revisione docente.`,
     ),
     criterion(
       'teacher_review_cases',
