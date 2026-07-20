@@ -34,9 +34,9 @@ async function getOwnerUid(db: Firestore): Promise<string | null> {
 
 /**
  * One collection-group read over `lessonNoteIndexes` filtered by `programId`.
- * A single-field equality filter uses Firestore's automatic single-field
- * (collection-group-scoped) index — no composite index required. The `content`
- * of `lessonNotes` is never read here.
+ * The equality filter uses the explicit collection-group single-field index
+ * declared in `firestore.indexes.json` for `lessonNoteIndexes.programId`.
+ * The `content` of `lessonNotes` is never read here.
  */
 async function queryIndexesByProgram(
   db: Firestore,
