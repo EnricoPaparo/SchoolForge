@@ -31,6 +31,7 @@ Fonti ufficiali consultate:
 | `firebase-admin` | `^13.0.0` / 13.10.0 | `^14.1.0` / 14.2.0 | La linea 14 richiede Node 22+, elimina il supporto legacy e allinea l'SDK al runtime scelto. |
 | `@types/node` Functions | `^20.17.0` / 20.19.43 | `^22.0.0` / 22.20.1 | Tipi coerenti con il runtime target. |
 | Firebase CLI | `^14.0.0` / 14.27.0 | invariato | Riconosce Node 22 ed è già la baseline CI; nessun upgrade major non necessario. |
+| GitHub Actions | major v4 basate su Node 20 | `checkout@v7`, `pnpm/action-setup@v6`, `setup-node@v7`, `setup-java@v5`, `cache@v6` | Elimina il warning Node 20 del runner; le Actions usano Node 24 internamente, mentre build e test SchoolForge restano su Node 22. |
 
 Il lockfile è stato rigenerato esclusivamente con pnpm 9.15.9.
 
@@ -49,7 +50,7 @@ Il lockfile è stato rigenerato esclusivamente con pnpm 9.15.9.
 | Scale-to-zero | `minInstances: 0` | Esplicito e invariato su tutte le Function. |
 | Limiti runtime | `maxInstances`, timeout, secret | Valori applicativi invariati; nessun nuovo default impostato per concurrency o memoria. |
 | Emulatori | wiring e comportamento errori v7 | Nessuna dipendenza da handler che restano pendenti dopo errore; suite Functions verde. |
-| CLI/CI | Firebase CLI e GitHub Actions | CLI invariata; CI portata a Node 22. |
+| CLI/CI | Firebase CLI e GitHub Actions | CLI invariata; build/test su Node 22 e Actions ufficiali aggiornate alle major basate su Node 24. |
 
 La modifica di v7 che trasforma immediatamente in HTTP 500 gli errori asincroni non
 gestiti nell'emulatore non cambia il contratto: i gateway convertono già gli errori
@@ -81,7 +82,9 @@ invariati. I dry-run non hanno letto `OPENAI_API_KEY`, aperto rete o generato co
 
 La sessione locale usa il runtime Codex Node.js 24.14.0 e mostra quindi il warning
 `engines` atteso rispetto al target esatto 22. La CI costituisce la verifica eseguita
-su Node.js 22; il warning locale non è un warning del runtime di deploy.
+su Node.js 22; il warning locale non è un warning del runtime di deploy. Le GitHub
+Actions sono aggiornate alle major che usano Node 24 internamente, eliminando
+l'annotazione di deprecazione Node 20 senza cambiare il runtime applicativo.
 
 ## Piano di rollout DEV — non eseguito
 
