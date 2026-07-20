@@ -53,6 +53,9 @@ describe('M5 benchmark harness', () => {
     };
     const report = await runM5Benchmark(dataset, grader, { now: () => 0 });
     expect(report.submissions.every((submission) => submission.outputInvalid)).toBe(true);
+    expect(
+      report.submissions.every((submission) => submission.reasonCode === 'provider_error'),
+    ).toBe(true);
     expect(JSON.stringify(report)).not.toContain('raw provider output');
     expect(
       dataset.providerCases.map((item) => [
@@ -76,6 +79,9 @@ describe('M5 benchmark harness', () => {
     const report = await runM5Benchmark(dataset, grader, { now: () => 0 });
     expect(report.submissions.every((submission) => submission.outputInvalid)).toBe(true);
     expect(report.submissions.every((submission) => submission.callCompleted)).toBe(true);
+    expect(
+      report.submissions.every((submission) => submission.reasonCode === 'missing_result'),
+    ).toBe(true);
   });
 
   it('preserves billed usage from invalid provider output without exposing the raw error', async () => {
@@ -84,16 +90,24 @@ describe('M5 benchmark harness', () => {
       id: 'invalid-output-fake',
       model: 'fixture-model',
       grade: vi.fn(async () => {
-        throw new AiGraderInvalidOutputError('raw invalid provider content', {
-          tokens: 15,
-          inputTokens: 10,
-          outputTokens: 5,
-        });
+        throw new AiGraderInvalidOutputError(
+          'raw invalid provider content',
+          {
+            tokens: 15,
+            inputTokens: 10,
+            outputTokens: 5,
+          },
+          undefined,
+          'invalid_score',
+        );
       }),
     };
     const report = await runM5Benchmark(dataset, grader, { now: () => 0 });
     expect(report.submissions.every((submission) => submission.callCompleted)).toBe(true);
     expect(report.submissions.every((submission) => submission.usage?.tokens === 15)).toBe(true);
+    expect(
+      report.submissions.every((submission) => submission.reasonCode === 'invalid_score'),
+    ).toBe(true);
     expect(JSON.stringify(report)).not.toContain('raw invalid provider content');
   });
 
