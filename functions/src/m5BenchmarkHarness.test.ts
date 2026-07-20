@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AiGrader } from './aiCorrectionGatewayCore.js';
+import { AiGraderInvalidOutputError, type AiGrader } from './aiCorrectionGatewayCore.js';
 import {
   loadM5BenchmarkDataset,
   runM5Benchmark,
@@ -26,7 +26,9 @@ describe('M5 benchmark harness', () => {
     expect(grade).toHaveBeenCalledTimes(dataset.benchmarkSubmissions.length);
     expect(report.submissions).toHaveLength(4);
     expect(report.submissions.every((submission) => submission.latencyMs === 5)).toBe(true);
+    expect(report.submissions.every((submission) => submission.callCompleted)).toBe(true);
     expect(report.submissions.every((submission) => !submission.outputInvalid)).toBe(true);
+    expect(report.submissions.every((submission) => submission.usage?.tokens === 10)).toBe(true);
     expect(report.submissions.map((submission) => submission.providerCaseIds)).toEqual(
       dataset.benchmarkSubmissions.map((submission) => submission.providerCaseIds),
     );
@@ -73,6 +75,26 @@ describe('M5 benchmark harness', () => {
     };
     const report = await runM5Benchmark(dataset, grader, { now: () => 0 });
     expect(report.submissions.every((submission) => submission.outputInvalid)).toBe(true);
+    expect(report.submissions.every((submission) => submission.callCompleted)).toBe(true);
+  });
+
+  it('preserves billed usage from invalid provider output without exposing the raw error', async () => {
+    const dataset = await loadM5BenchmarkDataset();
+    const grader: AiGrader = {
+      id: 'invalid-output-fake',
+      model: 'fixture-model',
+      grade: vi.fn(async () => {
+        throw new AiGraderInvalidOutputError('raw invalid provider content', {
+          tokens: 15,
+          inputTokens: 10,
+          outputTokens: 5,
+        });
+      }),
+    };
+    const report = await runM5Benchmark(dataset, grader, { now: () => 0 });
+    expect(report.submissions.every((submission) => submission.callCompleted)).toBe(true);
+    expect(report.submissions.every((submission) => submission.usage?.tokens === 15)).toBe(true);
+    expect(JSON.stringify(report)).not.toContain('raw invalid provider content');
   });
 
   it('runs the identical synthetic submissions in all three grading modes without network', async () => {

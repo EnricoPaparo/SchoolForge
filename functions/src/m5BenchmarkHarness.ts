@@ -1,10 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import type {
-  AiGrader,
-  AiGraderInput,
-  AiGraderOutput,
-  GradingMode,
+import {
+  AiGraderFailure,
+  AiGraderInvalidOutputError,
+  type AiGrader,
+  type AiGraderInput,
+  type AiGraderOutput,
+  type GradingMode,
 } from './aiCorrectionGatewayCore.js';
 
 export const DEFAULT_M5_BENCHMARK_DATASET_PATH = fileURLToPath(
@@ -49,6 +51,8 @@ export interface M5BenchmarkSubmissionResult {
   submissionId: string;
   providerCaseIds: string[];
   latencyMs: number;
+  /** `true` quando il provider/grader ha restituito una risposta, anche se poi invalida. */
+  callCompleted?: boolean;
   outputInvalid: boolean;
   results: M5BenchmarkCaseResult[];
   generalFeedback?: string;
@@ -162,13 +166,16 @@ export async function runM5Benchmark(
   for (const submission of dataset.benchmarkSubmissions) {
     const { input, caseIdByOrder } = buildBenchmarkGraderInput(submission, casesById, gradingMode);
     const started = now();
+    let returnedOutput: AiGraderOutput | undefined;
     try {
       const output = await grader.grade(input);
+      returnedOutput = output;
       assertBenchmarkOutput(output, input);
       submissions.push({
         submissionId: submission.id,
         providerCaseIds: [...submission.providerCaseIds],
         latencyMs: Math.max(0, now() - started),
+        callCompleted: true,
         outputInvalid: false,
         results: output.results.map((result) => ({
           providerCaseId: caseIdByOrder.get(result.order) ?? 'unknown',
@@ -181,16 +188,23 @@ export async function runM5Benchmark(
           : { generalFeedback: output.generalFeedback }),
         ...(output.usage === undefined ? {} : { usage: output.usage }),
       });
-    } catch {
+    } catch (error) {
+      const errorUsage =
+        error instanceof AiGraderFailure || error instanceof AiGraderInvalidOutputError
+          ? error.usage
+          : undefined;
+      const usage = returnedOutput?.usage ?? errorUsage;
       submissions.push({
         submissionId: submission.id,
         providerCaseIds: [...submission.providerCaseIds],
         latencyMs: Math.max(0, now() - started),
+        callCompleted: returnedOutput !== undefined || error instanceof AiGraderInvalidOutputError,
         outputInvalid: true,
         results: submission.providerCaseIds.map((providerCaseId, index) => ({
           providerCaseId,
           order: index + 1,
         })),
+        ...(usage === undefined ? {} : { usage }),
       });
     }
   }
