@@ -6,6 +6,8 @@ import type { M5BenchmarkExecutionPlan } from './m5BenchmarkPlan.js';
 import {
   OPENAI_BENCHMARK_CANDIDATE_MODEL,
   OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION,
+  OPENAI_BENCHMARK_LUNA_MODEL,
+  OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION,
   OPENAI_PRODUCTION_MODEL,
   DEFAULT_PRICE_LIST_VERSION,
 } from './aiCorrectionCost.js';
@@ -141,6 +143,15 @@ describe('M5 quality benchmark model override (M5-QUALITY-05)', () => {
     ).toEqual({
       model: OPENAI_BENCHMARK_CANDIDATE_MODEL,
       priceListVersion: OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION,
+    });
+  });
+
+  it('resolves the Luna candidate with its own price list when overridden', () => {
+    expect(
+      resolveBenchmarkModelSelection([`${M5_BENCHMARK_MODEL_FLAG}=${OPENAI_BENCHMARK_LUNA_MODEL}`]),
+    ).toEqual({
+      model: OPENAI_BENCHMARK_LUNA_MODEL,
+      priceListVersion: OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION,
     });
   });
 

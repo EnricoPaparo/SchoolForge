@@ -6,12 +6,13 @@ import type {
 } from './m5BenchmarkComparison.js';
 
 /**
- * M5-QUALITY-05 — sintesi comparativa **fra modelli** (baseline nano vs
- * candidato mini), generabile **solo** quando entrambi i report comparativi
- * locali sono disponibili. Non ricostruisce né inventa dati mancanti: se manca
- * un report, il confronto è dichiarato non disponibile.
+ * M5-QUALITY-05 — sintesi comparativa **fra modelli** (baseline nano vs uno o
+ * più candidati: mini, Luna, …), generabile quando sono disponibili il baseline
+ * e almeno un report candidato. Non ricostruisce né inventa dati mancanti: i
+ * candidati assenti sono elencati e, se manca il baseline o tutti i candidati,
+ * il confronto è dichiarato non disponibile.
  *
- * Il confronto è rigorosamente interpretabile solo perché i due report usano lo
+ * Il confronto è rigorosamente interpretabile solo perché i report usano lo
  * stesso dataset congelato, gli stessi casi/modalità/ripetizioni, lo stesso
  * prompt e le stesse fasce: qui si limita a giustapporre le osservazioni già
  * calcolate, senza rieseguire alcuna valutazione.
@@ -118,18 +119,24 @@ export interface FocusCaseOccurrence {
   submissionId: string;
   providerCaseId: string;
   maxPoints: number;
-  baselineByMode: Record<GradingMode, FocusCaseModeObservation>;
-  candidateByMode: Record<GradingMode, FocusCaseModeObservation>;
+  /** Osservazioni per modello (baseline + ogni candidato presente), per modalità. */
+  byModel: Record<string, Record<GradingMode, FocusCaseModeObservation>>;
+}
+
+export interface CandidateSideSummary extends ModelSideSummary {
+  /** Rapporto costo reale candidato/baseline, `unavailable` se non calcolabile. */
+  costRatioOverBaseline: number | 'unavailable';
 }
 
 export interface M5ModelComparisonAvailable {
   available: true;
   datasetVersion: M5BenchmarkComparativeReport['datasetVersion'];
   baseline: ModelSideSummary;
-  candidate: ModelSideSummary;
+  /** Candidati confrontati (mini, Luna, …), nell'ordine fornito. */
+  candidates: CandidateSideSummary[];
   focusCases: FocusCaseOccurrence[];
-  /** Rapporto costo reale candidato/baseline, `unavailable` se non calcolabile. */
-  costRatioCandidateOverBaseline: number | 'unavailable';
+  /** Etichette dei candidati il cui report non era disponibile (nessun dato inventato). */
+  missingCandidates: string[];
 }
 
 export interface M5ModelComparisonUnavailable {
@@ -139,6 +146,12 @@ export interface M5ModelComparisonUnavailable {
 }
 
 export type M5ModelComparisonSynthesis = M5ModelComparisonAvailable | M5ModelComparisonUnavailable;
+
+/** Un candidato benchmark con il suo report locale (o `null` se assente). */
+export interface CandidateReport {
+  model: string;
+  report: M5BenchmarkComparativeReport | null;
+}
 
 function firstModel(report: M5BenchmarkComparativeReport): string | 'unknown' {
   for (const mode of MODES) {
@@ -188,21 +201,41 @@ function observationsByModel(report: M5BenchmarkComparativeReport, occurrenceId:
   return byMode;
 }
 
+function costRatioOverBaseline(
+  baseline: M5BenchmarkComparativeReport,
+  candidate: M5BenchmarkComparativeReport,
+): number | 'unavailable' {
+  const baselineCost = baseline.technical.overall.costActualMicroUsd;
+  const candidateCost = candidate.technical.overall.costActualMicroUsd;
+  return typeof baselineCost === 'number' && typeof candidateCost === 'number' && baselineCost > 0
+    ? Math.round((candidateCost / baselineCost) * 1_000) / 1_000
+    : 'unavailable';
+}
+
 /**
- * Costruisce la sintesi comparativa fra due report. Ritorna `available: false`
- * — senza inventare valori — se manca uno dei due report.
+ * Costruisce la sintesi comparativa fra il baseline nano e uno o più candidati
+ * (mini, Luna, …). Ritorna `available: false` — senza inventare valori — se
+ * manca il baseline o se nessun candidato ha un report. I candidati presenti
+ * sono confrontati; quelli assenti sono elencati in `missingCandidates`.
  */
 export function buildM5ModelComparisonSynthesis(
   baseline: M5BenchmarkComparativeReport | null,
-  candidate: M5BenchmarkComparativeReport | null,
+  candidates: ReadonlyArray<CandidateReport>,
 ): M5ModelComparisonSynthesis {
-  const missing: string[] = [];
-  if (!baseline) missing.push('baseline');
-  if (!candidate) missing.push('candidate');
-  if (!baseline || !candidate) {
+  const present = candidates.filter((item) => item.report !== null);
+  const missingCandidates = candidates
+    .filter((item) => item.report === null)
+    .map((item) => item.model);
+
+  if (!baseline || present.length === 0) {
+    const missing: string[] = [];
+    if (!baseline) missing.push('baseline');
+    if (present.length === 0)
+      missing.push(...(missingCandidates.length ? missingCandidates : ['candidate']));
     return {
       available: false,
-      reason: 'Confronto non disponibile: manca almeno un report comparativo locale.',
+      reason:
+        'Confronto non disponibile: serve il baseline nano e almeno un report candidato locale.',
       missing,
     };
   }
@@ -210,32 +243,36 @@ export function buildM5ModelComparisonSynthesis(
   const focusSet = new Set<string>(M5_MODEL_COMPARISON_FOCUS_CASES);
   const focusCases: FocusCaseOccurrence[] = [];
   // Le occorrenze provengono dal report baseline; il dataset congelato e la
-  // stessa logica garantiscono le stesse occorrenze nel candidato.
+  // stessa logica garantiscono le stesse occorrenze in ogni candidato.
   for (const question of baseline.questions) {
     if (!focusSet.has(question.providerCaseId)) continue;
+    const byModel: Record<string, Record<GradingMode, FocusCaseModeObservation>> = {
+      [firstModel(baseline)]: observationsByModel(baseline, question.occurrenceId),
+    };
+    for (const candidate of present) {
+      byModel[firstModel(candidate.report!)] = observationsByModel(
+        candidate.report!,
+        question.occurrenceId,
+      );
+    }
     focusCases.push({
       occurrenceId: question.occurrenceId,
       submissionId: question.submissionId,
       providerCaseId: question.providerCaseId,
       maxPoints: question.maxPoints,
-      baselineByMode: observationsByModel(baseline, question.occurrenceId),
-      candidateByMode: observationsByModel(candidate, question.occurrenceId),
+      byModel,
     });
   }
-
-  const baselineCost = baseline.technical.overall.costActualMicroUsd;
-  const candidateCost = candidate.technical.overall.costActualMicroUsd;
-  const costRatioCandidateOverBaseline =
-    typeof baselineCost === 'number' && typeof candidateCost === 'number' && baselineCost > 0
-      ? Math.round((candidateCost / baselineCost) * 1_000) / 1_000
-      : 'unavailable';
 
   return {
     available: true,
     datasetVersion: baseline.datasetVersion,
     baseline: summarize(baseline),
-    candidate: summarize(candidate),
+    candidates: present.map((candidate) => ({
+      ...summarize(candidate.report!),
+      costRatioOverBaseline: costRatioOverBaseline(baseline, candidate.report!),
+    })),
     focusCases,
-    costRatioCandidateOverBaseline,
+    missingCandidates,
   };
 }

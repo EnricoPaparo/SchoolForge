@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_PRICE_LIST_VERSION,
   OPENAI_BENCHMARK_CANDIDATE_MODEL,
+  OPENAI_BENCHMARK_LUNA_MODEL,
   OPENAI_PRODUCTION_MODEL,
 } from './aiCorrectionCost.js';
 import type { M5BenchmarkComparativeReport } from './m5BenchmarkComparison.js';
@@ -72,18 +73,34 @@ async function resolveNanoBaseline(
  * un report compatibile per uno dei due, dichiara il confronto non disponibile
  * senza inventare dati.
  */
+/** Modelli candidati confrontati contro il baseline nano: mini e Luna. */
+export const M5_COMPARISON_CANDIDATE_MODELS = [
+  OPENAI_BENCHMARK_CANDIDATE_MODEL,
+  OPENAI_BENCHMARK_LUNA_MODEL,
+] as const;
+
 export async function runM5ModelComparisonCli(
   deps: M5ModelComparisonCliDeps,
 ): Promise<M5ModelComparisonSynthesis> {
-  const [{ report: baseline, source }, candidate] = await Promise.all([
+  const [{ report: baseline, source }, ...candidateReports] = await Promise.all([
     resolveNanoBaseline(deps),
-    deps.readReportFile(benchmarkReportFileName(OPENAI_BENCHMARK_CANDIDATE_MODEL)),
+    ...M5_COMPARISON_CANDIDATE_MODELS.map((model) =>
+      deps.readReportFile(benchmarkReportFileName(model)),
+    ),
   ]);
-  const synthesis = buildM5ModelComparisonSynthesis(baseline, candidate);
+  const candidates = M5_COMPARISON_CANDIDATE_MODELS.map((model, index) => ({
+    model,
+    report: candidateReports[index] ?? null,
+  }));
+  const synthesis = buildM5ModelComparisonSynthesis(baseline, candidates);
   await deps.writeSynthesis(synthesis);
   if (synthesis.available) {
+    const names = synthesis.candidates.map((item) => item.model).join(', ');
+    const absent = synthesis.missingCandidates.length
+      ? ` (candidati assenti: ${synthesis.missingCandidates.join(', ')})`
+      : '';
     deps.log(
-      `Sintesi comparativa scritta in lib/${M5_MODEL_COMPARISON_OUTPUT_FILE} (baseline ${synthesis.baseline.model} da ${source ?? 'sconosciuto'} vs candidato ${synthesis.candidate.model}).`,
+      `Sintesi comparativa scritta in lib/${M5_MODEL_COMPARISON_OUTPUT_FILE} (baseline ${synthesis.baseline.model} da ${source ?? 'sconosciuto'} vs ${names})${absent}.`,
     );
   } else {
     deps.log(`Confronto non disponibile: mancano i report [${synthesis.missing.join(', ')}].`);

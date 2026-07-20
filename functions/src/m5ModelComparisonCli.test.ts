@@ -4,6 +4,8 @@ import {
   DEFAULT_PRICE_LIST_VERSION,
   OPENAI_BENCHMARK_CANDIDATE_MODEL,
   OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION,
+  OPENAI_BENCHMARK_LUNA_MODEL,
+  OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION,
   OPENAI_PRODUCTION_MODEL,
 } from './aiCorrectionCost.js';
 import {
@@ -86,6 +88,12 @@ const mini = (): M5BenchmarkComparativeReport =>
     modeReports(OPENAI_BENCHMARK_CANDIDATE_MODEL, 4),
     OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION,
   );
+const lunaR = (): M5BenchmarkComparativeReport =>
+  buildM5BenchmarkComparativeReport(
+    dataset,
+    modeReports(OPENAI_BENCHMARK_LUNA_MODEL, 3.5),
+    OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION,
+  );
 
 function deps(
   files: Record<string, M5BenchmarkComparativeReport | null>,
@@ -99,6 +107,7 @@ function deps(
 
 const nanoFile = benchmarkReportFileName(OPENAI_PRODUCTION_MODEL);
 const miniFile = benchmarkReportFileName(OPENAI_BENCHMARK_CANDIDATE_MODEL);
+const lunaFile = benchmarkReportFileName(OPENAI_BENCHMARK_LUNA_MODEL);
 
 describe('M5-QUALITY-05 model comparison CLI — legacy baseline reuse', () => {
   it('reuses the real legacy nano report (m5-quality-02) as baseline when compatible', async () => {
@@ -137,12 +146,38 @@ describe('M5-QUALITY-05 model comparison CLI — legacy baseline reuse', () => {
     );
   });
 
+  it('supports nano vs mini vs Luna when all three reports are present', async () => {
+    const current = deps({ [nanoFile]: nano(), [miniFile]: mini(), [lunaFile]: lunaR() });
+    const synthesis = await runM5ModelComparisonCli(current);
+    expect(synthesis.available).toBe(true);
+    if (!synthesis.available) return;
+    expect(synthesis.baseline.model).toBe(OPENAI_PRODUCTION_MODEL);
+    expect(synthesis.candidates.map((c) => c.model)).toEqual([
+      OPENAI_BENCHMARK_CANDIDATE_MODEL,
+      OPENAI_BENCHMARK_LUNA_MODEL,
+    ]);
+    expect(synthesis.missingCandidates).toEqual([]);
+  });
+
+  it('stays available with mini present and Luna absent, listing Luna as missing', async () => {
+    const current = deps({ [nanoFile]: nano(), [miniFile]: mini() });
+    const synthesis = await runM5ModelComparisonCli(current);
+    expect(synthesis.available).toBe(true);
+    if (!synthesis.available) return;
+    expect(synthesis.candidates.map((c) => c.model)).toEqual([OPENAI_BENCHMARK_CANDIDATE_MODEL]);
+    expect(synthesis.missingCandidates).toEqual([OPENAI_BENCHMARK_LUNA_MODEL]);
+  });
+
   it('never reads or writes the nano files from the mini side (mini cannot overwrite nano)', async () => {
     const current = deps({ [nanoFile]: nano(), [miniFile]: mini() });
     await runM5ModelComparisonCli(current);
-    // The mini report file name is distinct from every nano baseline candidate.
+    // The mini and Luna report file names are distinct from every nano baseline
+    // candidate, so a candidate benchmark can never overwrite the nano report.
     expect(miniFile).not.toBe(nanoFile);
     expect(miniFile).not.toBe(LEGACY_NANO_BASELINE_FILE);
+    expect(lunaFile).not.toBe(nanoFile);
+    expect(lunaFile).not.toBe(LEGACY_NANO_BASELINE_FILE);
+    expect(lunaFile).not.toBe(miniFile);
     // The comparison CLI only ever writes the synthesis file, never a report.
     const writeCalls = (current.writeSynthesis as ReturnType<typeof vi.fn>).mock.calls;
     expect(writeCalls).toHaveLength(1);

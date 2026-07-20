@@ -310,26 +310,31 @@ locale**, senza toccare il modello runtime.
 Cosa cambia (esclusivamente lato benchmark):
 
 - override CLI `--benchmark-model=<modello>` con **allowlist chiusa**: sono ammessi
-  soltanto `gpt-5.4-nano-2026-03-17` (baseline) e `gpt-5.4-mini-2026-03-17` (candidato).
-  Un modello diverso, un flag ripetuto o senza valore termina con errore leggibile
-  **prima** di leggere `OPENAI_API_KEY` e prima di qualunque chiamata di rete. Nessun
-  fallback automatico;
+  soltanto `gpt-5.4-nano-2026-03-17` (baseline), `gpt-5.4-mini-2026-03-17` (candidato) e
+  `gpt-5.6-luna` (secondo candidato). Un modello diverso, un flag ripetuto o senza
+  valore termina con errore leggibile **prima** di leggere `OPENAI_API_KEY` e prima di
+  qualunque chiamata di rete. Nessun fallback automatico;
 - il modello selezionato è passato esplicitamente alla costruzione dell'`OpenAiGrader`
   del benchmark. Non legge né modifica `settings/aiConfig`, non modifica
   `OPENAI_PRODUCTION_MODEL`, non cambia il modello runtime delle Functions e non
   persiste nulla su Firestore;
-- listino versionato esteso con una **nuova** versione dedicata al solo candidato,
-  `v3-2026-07-20-mini-benchmark`: input 0,75 USD/1M (750.000 µUSD), output 4,50 USD/1M
-  (4.500.000 µUSD). La versione DEV `v2-2026-07-17-hg-m5` resta immutata (nano). Nessun
-  prezzo `cached input` inventato: il benchmark non lo usa né lo misura;
+- listino versionato esteso con **due nuove** versioni, una per candidato:
+  `v3-2026-07-20-mini-benchmark` (mini: input 0,75 USD/1M = 750.000 µUSD, output
+  4,50 USD/1M = 4.500.000 µUSD) e `v4-2026-07-20-luna-benchmark` (Luna: input
+  1,00 USD/1M = 1.000.000 µUSD, output 6,00 USD/1M = 6.000.000 µUSD). La versione DEV
+  `v2-2026-07-17-hg-m5` resta immutata (nano) e ogni candidato vive nella propria
+  versione. Nessun prezzo `cached input` inventato: il benchmark non lo usa né lo
+  misura;
 - il report locale è distinto per modello
   (`m5-quality-05-<modello>-report.json`), resta in `functions/lib/` (ignorato da Git) e
   non viene mai committato;
-- sintesi comparativa fra modelli (`benchmark:m5-quality:compare`) generabile **solo**
-  quando entrambi i report locali sono presenti: verdict nano e mini, SCI-002/003/004
-  per modalità e ripetizione con fasce attese, oscillazioni, output invalidi, token,
-  costo, latenza media/p50/p95 e rapporto costo mini/nano. Se manca un report il
-  confronto è dichiarato **non disponibile**, senza ricostruire o inventare dati.
+- sintesi comparativa fra modelli (`benchmark:m5-quality:compare`) che supporta
+  **nano vs mini vs Luna**: verdict per modello, SCI-002/003/004 per modalità e
+  ripetizione con fasce attese, oscillazioni, output invalidi, token, costo, latenza
+  media/p50/p95 e rapporto costo di **ogni candidato** su nano. È generabile con il
+  baseline nano e almeno un candidato; i candidati assenti sono elencati in
+  `missingCandidates` senza inventare dati, e se manca il baseline (o tutti i
+  candidati) il confronto è dichiarato **non disponibile**.
 
 ### Riuso del report reale nano esistente (baseline)
 
@@ -358,10 +363,12 @@ prompt corrente** (un solo run reale autorizzato), dopodiché il suo report per-
 verrà riconosciuto automaticamente. Da quel momento, finché prompt e schema non
 cambiano, il report nano resta riusabile senza nuove chiamate.
 
-Il benchmark mini scrive **esclusivamente** su
-`m5-quality-05-gpt-5.4-mini-2026-03-17-report.json` e non tocca mai i file nano (né il
-per-modello né il legacy): non può quindi sovrascrivere il report nano. La CLI di
-confronto scrive solo la sintesi `m5-quality-05-model-comparison.json`, mai un report.
+Ogni benchmark candidato scrive **esclusivamente** sul proprio file distinto
+(`m5-quality-05-gpt-5.4-mini-2026-03-17-report.json` per mini,
+`m5-quality-05-gpt-5.6-luna-report.json` per Luna) e non tocca mai i file nano (né il
+per-modello né il legacy): un candidato non può quindi sovrascrivere il report nano né
+quello dell'altro candidato. La CLI di confronto scrive solo la sintesi
+`m5-quality-05-model-comparison.json`, mai un report.
 
 Confrontabilità rigorosa: nano e mini usano lo stesso dataset congelato, gli stessi
 `submissionId`/casi, le stesse tre modalità, le stesse tre ripetizioni, lo stesso
@@ -373,20 +380,24 @@ modello e prompt renderebbe il confronto non interpretabile.
 Dry-run verificati il 20 luglio 2026 (nessuna chiamata reale, nessuna lettura della
 chiave):
 
-- baseline nano: 36 chiamate pianificate, fino a 72 tentativi, 571.746 token input e
-  576.000 token output di upper bound, tetto prudenziale **834.350 µUSD (0,83435 USD)**,
-  listino `v2-2026-07-17-hg-m5`;
-- candidato mini: stesse 36 chiamate/72 tentativi e stessi upper bound di token, tetto
-  prudenziale **3.020.810 µUSD (3,02081 USD)**, listino `v3-2026-07-20-mini-benchmark`.
+- baseline nano: 36 chiamate pianificate, fino a 72 tentativi, tetto prudenziale
+  **834.350 µUSD (0,83435 USD)**, listino `v2-2026-07-17-hg-m5`;
+- candidato mini: stesse 36 chiamate/72 tentativi, tetto prudenziale
+  **3.020.810 µUSD (3,02081 USD)**, listino `v3-2026-07-20-mini-benchmark`;
+- candidato Luna: stesse 36 chiamate/72 tentativi, tetto prudenziale
+  **4.026.954 µUSD (4,026954 USD)**, listino `v4-2026-07-20-luna-benchmark`.
 
-Sono limiti preventivi, non consumo o costo reale.
+L'upper bound dei token è identico tra i modelli a meno della lunghezza del nome
+modello nel payload serializzato; il numero pianificato di chiamate è identico. Sono
+limiti preventivi, non consumo o costo reale.
 
-Comando reale mini — **da NON eseguire senza nuova autorizzazione esplicita del
+Comandi reali mini e Luna — **da NON eseguire senza nuova autorizzazione esplicita del
 docente**, da terminale interattivo, con entrambe le protezioni e la frase esatta
 `ESEGUI BENCHMARK REALE`:
 
 ```powershell
 pnpm --filter @schoolforge/functions benchmark:m5-quality -- --benchmark-model=gpt-5.4-mini-2026-03-17 --execute-real-openai --i-understand-this-costs-money
+pnpm --filter @schoolforge/functions benchmark:m5-quality -- --benchmark-model=gpt-5.6-luna --execute-real-openai --i-understand-this-costs-money
 ```
 
 Stato: nessuna scelta definitiva del modello. Produzione e DEV restano su

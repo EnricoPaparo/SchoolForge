@@ -4,6 +4,8 @@ import {
   DEFAULT_PRICE_LIST_VERSION,
   OPENAI_BENCHMARK_CANDIDATE_MODEL,
   OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION,
+  OPENAI_BENCHMARK_LUNA_MODEL,
+  OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION,
   OPENAI_PRODUCTION_MODEL,
 } from './aiCorrectionCost.js';
 import {
@@ -103,52 +105,92 @@ function miniReport(): M5BenchmarkComparativeReport {
   );
 }
 
+function lunaReport(): M5BenchmarkComparativeReport {
+  return buildM5BenchmarkComparativeReport(
+    dataset,
+    reports(OPENAI_BENCHMARK_LUNA_MODEL, {
+      compassionate: [4, 3.75],
+      balanced: [3.5, 3.75],
+      rigorous: [3.25, 3.5],
+    }),
+    OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION,
+  );
+}
+
+const mini = () => ({ model: OPENAI_BENCHMARK_CANDIDATE_MODEL, report: miniReport() });
+const luna = () => ({ model: OPENAI_BENCHMARK_LUNA_MODEL, report: lunaReport() });
+
 describe('M5-QUALITY-05 cross-model comparison synthesis', () => {
-  it('declares the comparison unavailable when a report is missing', () => {
-    expect(buildM5ModelComparisonSynthesis(null, miniReport())).toMatchObject({
+  it('declares the comparison unavailable when the baseline or all candidates are missing', () => {
+    expect(buildM5ModelComparisonSynthesis(null, [mini()])).toMatchObject({
       available: false,
       missing: ['baseline'],
     });
-    expect(buildM5ModelComparisonSynthesis(nanoReport(), null)).toMatchObject({
+    expect(
+      buildM5ModelComparisonSynthesis(nanoReport(), [
+        { model: OPENAI_BENCHMARK_CANDIDATE_MODEL, report: null },
+      ]),
+    ).toMatchObject({
       available: false,
-      missing: ['candidate'],
+      missing: [OPENAI_BENCHMARK_CANDIDATE_MODEL],
     });
-    expect(buildM5ModelComparisonSynthesis(null, null)).toMatchObject({
-      available: false,
-      missing: ['baseline', 'candidate'],
-    });
+    expect(buildM5ModelComparisonSynthesis(null, [])).toMatchObject({ available: false });
   });
 
-  it('summarizes both models with the SCI focus case per mode and repetition', () => {
-    const synthesis = buildM5ModelComparisonSynthesis(nanoReport(), miniReport());
+  it('supports nano vs mini vs Luna with the SCI focus case per mode and repetition', () => {
+    const synthesis = buildM5ModelComparisonSynthesis(nanoReport(), [mini(), luna()]);
     expect(synthesis.available).toBe(true);
     if (!synthesis.available) return;
 
     expect(synthesis.baseline.model).toBe(OPENAI_PRODUCTION_MODEL);
-    expect(synthesis.candidate.model).toBe(OPENAI_BENCHMARK_CANDIDATE_MODEL);
-    expect(synthesis.baseline.priceListVersion).toBe(DEFAULT_PRICE_LIST_VERSION);
-    expect(synthesis.candidate.priceListVersion).toBe(
+    expect(synthesis.candidates.map((c) => c.model)).toEqual([
+      OPENAI_BENCHMARK_CANDIDATE_MODEL,
+      OPENAI_BENCHMARK_LUNA_MODEL,
+    ]);
+    expect(synthesis.candidates[0]!.priceListVersion).toBe(
       OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION,
     );
+    expect(synthesis.candidates[1]!.priceListVersion).toBe(
+      OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION,
+    );
+    expect(synthesis.missingCandidates).toEqual([]);
 
     expect(synthesis.focusCases).toHaveLength(1);
     const focus = synthesis.focusCases[0]!;
     expect(focus.providerCaseId).toBe('SCI-002');
-    // Two repetitions per mode, distinct per model.
-    expect(focus.baselineByMode.balanced.points).toEqual([3, 3]);
-    expect(focus.candidateByMode.balanced.points).toEqual([3.75, 4]);
+    // Observations per model, two repetitions per mode.
+    expect(focus.byModel[OPENAI_PRODUCTION_MODEL]!.balanced.points).toEqual([3, 3]);
+    expect(focus.byModel[OPENAI_BENCHMARK_CANDIDATE_MODEL]!.balanced.points).toEqual([3.75, 4]);
+    expect(focus.byModel[OPENAI_BENCHMARK_LUNA_MODEL]!.balanced.points).toEqual([3.5, 3.75]);
     for (const mode of MODES) {
-      expect(focus.baselineByMode[mode].expectedRange.minPoints).toBe(3.5);
+      expect(focus.byModel[OPENAI_PRODUCTION_MODEL]![mode].expectedRange.minPoints).toBe(3.5);
     }
   });
 
-  it('reports the cost ratio candidate/baseline from actual measured usage', () => {
-    const synthesis = buildM5ModelComparisonSynthesis(nanoReport(), miniReport());
+  it('stays available with a subset of candidates and lists the missing ones', () => {
+    const synthesis = buildM5ModelComparisonSynthesis(nanoReport(), [
+      mini(),
+      { model: OPENAI_BENCHMARK_LUNA_MODEL, report: null },
+    ]);
+    expect(synthesis.available).toBe(true);
+    if (!synthesis.available) return;
+    expect(synthesis.candidates.map((c) => c.model)).toEqual([OPENAI_BENCHMARK_CANDIDATE_MODEL]);
+    expect(synthesis.missingCandidates).toEqual([OPENAI_BENCHMARK_LUNA_MODEL]);
+  });
+
+  it('reports each candidate cost ratio over the baseline from actual measured usage', () => {
+    const synthesis = buildM5ModelComparisonSynthesis(nanoReport(), [mini(), luna()]);
     if (!synthesis.available) throw new Error('expected available synthesis');
     expect(typeof synthesis.baseline.costActualMicroUsd).toBe('number');
-    expect(typeof synthesis.candidate.costActualMicroUsd).toBe('number');
-    // Mini costs strictly more than nano at these token counts.
-    expect(synthesis.costRatioCandidateOverBaseline).toBeGreaterThan(1);
+    for (const candidate of synthesis.candidates) {
+      expect(typeof candidate.costActualMicroUsd).toBe('number');
+      // Both mini and Luna cost strictly more than nano at these token counts.
+      expect(candidate.costRatioOverBaseline).toBeGreaterThan(1);
+    }
+    // Luna ($1.00/$6.00) is pricier than mini ($0.75/$4.50).
+    expect(synthesis.candidates[1]!.costRatioOverBaseline).toBeGreaterThan(
+      synthesis.candidates[0]!.costRatioOverBaseline as number,
+    );
   });
 
   it('stamps the current prompt/grading-contract version on generated reports', () => {

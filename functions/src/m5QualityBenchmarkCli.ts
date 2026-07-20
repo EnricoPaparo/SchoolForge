@@ -7,6 +7,8 @@ import {
   DEFAULT_PRICE_LIST_VERSION,
   OPENAI_BENCHMARK_CANDIDATE_MODEL,
   OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION,
+  OPENAI_BENCHMARK_LUNA_MODEL,
+  OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION,
   OPENAI_PRODUCTION_MODEL,
 } from './aiCorrectionCost.js';
 import type { AiGrader } from './aiCorrectionGatewayCore.js';
@@ -42,11 +44,12 @@ export interface BenchmarkModelSelection {
 /**
  * Allowlist **chiusa** dei modelli accettati dalla CLI di benchmark, ciascuno
  * mappato al proprio listino versionato. Nessun altro modello è ammesso e non
- * esiste alcun fallback automatico: baseline nano vs candidato mini.
+ * esiste alcun fallback automatico: baseline nano vs candidati mini e Luna.
  */
 export const M5_BENCHMARK_ALLOWED_MODELS: Readonly<Record<string, string>> = {
   [OPENAI_PRODUCTION_MODEL]: DEFAULT_PRICE_LIST_VERSION,
   [OPENAI_BENCHMARK_CANDIDATE_MODEL]: OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION,
+  [OPENAI_BENCHMARK_LUNA_MODEL]: OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION,
 };
 
 /**

@@ -36,6 +36,13 @@ export const OPENAI_PRODUCTION_MODEL = 'gpt-5.4-nano-2026-03-17';
 export const OPENAI_BENCHMARK_CANDIDATE_MODEL = 'gpt-5.4-mini-2026-03-17';
 
 /**
+ * M5-QUALITY-05 — secondo candidato benchmark-only `gpt-5.6-luna`. Valgono le
+ * stesse invarianti del candidato mini: mai runtime/DEV/Firestore, mai
+ * `OPENAI_PRODUCTION_MODEL`, non persistito, nessun fallback.
+ */
+export const OPENAI_BENCHMARK_LUNA_MODEL = 'gpt-5.6-luna';
+
+/**
  * Fonte ufficiale: https://developers.openai.com/api/docs/models/gpt-5.4-nano
  * Verificata il 2026-07-17. La pagina documenta lo snapshot immutabile,
  * Responses API, Structured Outputs e prezzi standard $0.20/M input,
@@ -53,6 +60,15 @@ export const OPENAI_PRICE_VERIFIED_ON = '2026-07-17';
 export const OPENAI_BENCHMARK_CANDIDATE_PRICE_SOURCE =
   'https://developers.openai.com/api/docs/models/gpt-5.4-mini';
 export const OPENAI_BENCHMARK_CANDIDATE_PRICE_VERIFIED_ON = '2026-07-20';
+
+/**
+ * Fonte ufficiale del secondo candidato benchmark `gpt-5.6-luna`.
+ * Prezzi standard $1.00/M input, $6.00/M output. Il listino `cached input` non
+ * è incluso: il benchmark non lo usa né lo misura, quindi non viene inventato.
+ */
+export const OPENAI_BENCHMARK_LUNA_PRICE_SOURCE =
+  'https://developers.openai.com/api/docs/models/gpt-5.6-luna';
+export const OPENAI_BENCHMARK_LUNA_PRICE_VERIFIED_ON = '2026-07-20';
 
 /**
  * Listini production **immutabili** e versionati. Contengono solo coppie
@@ -83,13 +99,24 @@ export const PRICE_LISTS: Readonly<Record<string, Readonly<Record<string, ModelP
       outputMicroUsdPerMillion: 4_500_000,
     },
   },
+  // M5-QUALITY-05 — versione dedicata al solo secondo candidato benchmark
+  // `gpt-5.6-luna`. $1.00/M input → 1 000 000 µUSD, $6.00/M output → 6 000 000 µUSD.
+  'v4-2026-07-20-luna-benchmark': {
+    [OPENAI_BENCHMARK_LUNA_MODEL]: {
+      inputMicroUsdPerMillion: 1_000_000,
+      outputMicroUsdPerMillion: 6_000_000,
+    },
+  },
 };
 
 /** Versione di listino di default per DEV (deve esistere in `PRICE_LISTS`). */
 export const DEFAULT_PRICE_LIST_VERSION = 'v2-2026-07-17-hg-m5';
 
-/** Versione di listino del candidato benchmark (solo CLI di benchmark). */
+/** Versione di listino del candidato benchmark mini (solo CLI di benchmark). */
 export const OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION = 'v3-2026-07-20-mini-benchmark';
+
+/** Versione di listino del candidato benchmark Luna (solo CLI di benchmark). */
+export const OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION = 'v4-2026-07-20-luna-benchmark';
 
 /** Prezzo del modello per una versione di listino, o `null` se assente. */
 export function lookupModelPrice(priceListVersion: string, model: string): ModelPrice | null {

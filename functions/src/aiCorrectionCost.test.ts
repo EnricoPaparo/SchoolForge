@@ -4,6 +4,8 @@ import {
   lookupModelPrice,
   OPENAI_BENCHMARK_CANDIDATE_MODEL,
   OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION,
+  OPENAI_BENCHMARK_LUNA_MODEL,
+  OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION,
   OPENAI_PRODUCTION_MODEL,
 } from './aiCorrectionCost.js';
 
@@ -27,12 +29,25 @@ describe('price lists — nano baseline and mini benchmark candidate (M5-QUALITY
     });
   });
 
-  it('does not add the mini candidate to the published DEV price list (version isolation)', () => {
+  it('prices the Luna candidate at $1.00/M input and $6.00/M output in its own version', () => {
+    expect(
+      lookupModelPrice(OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION, OPENAI_BENCHMARK_LUNA_MODEL),
+    ).toEqual({
+      inputMicroUsdPerMillion: 1_000_000,
+      outputMicroUsdPerMillion: 6_000_000,
+    });
+  });
+
+  it('keeps each candidate in its own price-list version (no cross-contamination)', () => {
     expect(
       lookupModelPrice(DEFAULT_PRICE_LIST_VERSION, OPENAI_BENCHMARK_CANDIDATE_MODEL),
     ).toBeNull();
+    expect(lookupModelPrice(DEFAULT_PRICE_LIST_VERSION, OPENAI_BENCHMARK_LUNA_MODEL)).toBeNull();
     expect(
       lookupModelPrice(OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL),
+    ).toBeNull();
+    expect(
+      lookupModelPrice(OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION, OPENAI_BENCHMARK_CANDIDATE_MODEL),
     ).toBeNull();
   });
 });
