@@ -34,6 +34,15 @@ import {
   toTeacherQuestionSnapshot,
 } from './verificationSnapshotMappers.js';
 import { normalizeVisibility } from './visibility.js';
+import { normalizeDistributionMode } from './vexDistribution.js';
+
+/**
+ * VEX-01A — messaggio della guardia fail-closed: `equivalent_variants` non è
+ * attivabile finché VEX-01B non introduce la callable di assegnazione sicura e
+ * l'isolamento delle alternative.
+ */
+export const VEX_ACTIVATION_BLOCKED_MESSAGE =
+  'Le varianti equivalenti saranno attivabili dopo il completamento del servizio di assegnazione sicura.';
 
 export type VerificationItem = { id: string } & Omit<
   VerificationDoc,
@@ -311,6 +320,18 @@ export async function activateVerification(
     throw new Error(`Verifica non valida: ${preValidation.errors.join(', ')}`);
   }
 
+  // VEX-01A — GUARDIA FAIL-CLOSED (rollout parziale). `equivalent_variants` non
+  // può essere attivata in questo pacchetto: la callable di assegnazione sicura
+  // e l'isolamento delle alternative arrivano in VEX-01B. Il controllo è QUI,
+  // PRIMA di leggere il pool da Storage, aprire la transazione o scrivere
+  // qualsiasi documento — così non nasce mai un teacherSnapshot/
+  // publishedProjection parziale né una verifica VEX resa public/online.
+  // `normalizeDistributionMode` fa anche da fail-closed sul valore sconosciuto.
+  // VEX-01B rimuoverà questa guardia insieme a Function, isolamento e test Rules.
+  if (normalizeDistributionMode(preData.config.distributionMode) === 'equivalent_variants') {
+    throw new Error(VEX_ACTIVATION_BLOCKED_MESSAGE);
+  }
+
   // Single Storage read for both the owner-only teacher snapshot (with
   // solutions) and the student-safe published projection (without) — see
   // doc comment above.
@@ -365,6 +386,9 @@ export async function activateVerification(
       importId: data.config.importId,
       questionRefs: data.config.questionRefs,
       questions: teacherQuestions,
+      // VEX-01A: solo `same_questions` raggiunge l'attivazione (guardia sopra);
+      // i gruppi eventualmente salvati nel draft sono deliberatamente IGNORATI.
+      distributionMode: 'same_questions',
       activatedAt: serverTimestamp(),
     };
     transaction.update(verRef, {

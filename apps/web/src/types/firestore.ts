@@ -419,13 +419,45 @@ export type VerificationQuestionRef = {
   // NEVER include: questionText, answers, correctAnswer, solution
 };
 
+/**
+ * VEX — modalità di distribuzione online (§ vex-contract.md).
+ * `same_questions`: tutti ricevono le stesse domande, ordine casuale locale
+ * (comportamento attuale, invariato). `equivalent_variants`: domande comuni +
+ * una alternativa per gruppo (assegnazione server-side, NON in VEX-01A).
+ */
+export type VerificationDistributionMode = 'same_questions' | 'equivalent_variants';
+
+/**
+ * VEX — gruppo di alternative equivalenti nel draft. Referenzia
+ * `questionIndexEntryId` STABILI (non `order`, che esiste solo dopo
+ * l'attivazione). `id` generato client-side con `crypto.randomUUID()`,
+ * immutabile dopo la creazione.
+ */
+export type EquivalentGroupConfig = {
+  id: string;
+  questionIndexEntryIds: string[];
+};
+
 export type VerificationConfig = {
   title: string;
   classId: string | null;
   programId: string;
   importId: string;
   questionRefs: VerificationQuestionRef[];
-  questionsPerStudent?: number | null;
+  /**
+   * VEX (VEX-01A): assente su draft/documenti legacy ⇒ normalizzato a
+   * `same_questions` (vedi `normalizeDistributionMode`). Un valore presente ma
+   * sconosciuto è un errore leggibile, mai un fallback silenzioso.
+   */
+  distributionMode?: VerificationDistributionMode;
+  /**
+   * VEX: presente solo in `equivalent_variants`; assente ⇔ `[]`. In
+   * `same_questions` i gruppi possono restare salvati nel draft ma sono
+   * inattivi e ignorati da attivazione/snapshot.
+   */
+  equivalentGroups?: EquivalentGroupConfig[];
+  // `questionsPerStudent` RIMOSSO in VEX-01A: campo mai usato, assorbito dal
+  // modello VEX (le domande per studente sono derivate, non configurabili).
 };
 
 /**
@@ -466,6 +498,16 @@ export type VerificationTeacherQuestionSnapshot = {
   maxCharacters?: number;
 };
 
+/**
+ * VEX — gruppo equivalente congelato nello snapshot: le alternative espresse
+ * come `order` (0-based) dentro `questions[]`. Popolato all'attivazione dalla
+ * conversione entryId→order (VEX-01B). Preparazione tipi in VEX-01A.
+ */
+export type EquivalentGroupSnapshot = {
+  id: string;
+  alternativeOrders: number[];
+};
+
 /** Teacher-side full snapshot (owner-only, set at activation) */
 export type VerificationTeacherSnapshot = {
   title: string;
@@ -474,6 +516,15 @@ export type VerificationTeacherSnapshot = {
   programId: string;
   importId: string;
   questionRefs: VerificationQuestionRef[];
+  /**
+   * VEX: modalità con cui la verifica è stata attivata. Assente su snapshot
+   * legacy ⇒ `same_questions`. In `same_questions` `equivalentGroups` è ignorato.
+   */
+  distributionMode?: VerificationDistributionMode;
+  /** VEX: order (0-based) delle domande comuni (assegnate a tutti). */
+  commonQuestionOrders?: number[];
+  /** VEX: presente solo in `equivalent_variants`. */
+  equivalentGroups?: EquivalentGroupSnapshot[];
   /**
    * Absent on verifications activated before this field existed (legacy) —
    * those keep resolving PDFs from `questionRefs` + the current Storage

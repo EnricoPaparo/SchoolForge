@@ -29,7 +29,6 @@ function verification(
           maxPoints: 1,
         },
       ],
-      questionsPerStudent: null,
       ...overrides,
     },
   };
