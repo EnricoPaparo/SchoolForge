@@ -312,15 +312,16 @@ describe('M5-QUALITY-02 comparative report', () => {
     const sci004 = benchmarkCase({
       id: 'SCI-004',
       categoria: 'corretta_con_aggiunta_falsa',
-      expectedMinPoints: 2.25,
-      expectedMaxPoints: 3,
+      maxPoints: 3,
+      expectedMinPoints: 1.75,
+      expectedMaxPoints: 2.25,
     });
     const result = buildM5BenchmarkComparativeReport(
       singleCaseDataset(sci004),
       singleCaseReports(sci004, {
-        compassionate: [4, 4, 4],
-        balanced: [4, 4, 4],
-        rigorous: [4, 4, 4],
+        compassionate: [2.5, 2.5, 2.75],
+        balanced: [2.5, 2.75, 2.5],
+        rigorous: [2.5, 2.5, 2.5],
       }),
     );
 
