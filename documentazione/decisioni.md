@@ -65,7 +65,7 @@ Legenda stato:
 | ID | Titolo | Stato | Documento | Sintesi decisione |
 |---|---|---|---|---|
 | C-01 | Provider, regione, backup, RPO/RTO | ✅ Chiusa | brief.md | Firebase su progetto del Docente; dati in `europe-west8` (target UE deciso storicamente); backup come redundancy Storage nativa più export Firestore manuale on-demand dalle impostazioni; RPO best-effort; RTO best-effort. *(Nota HARD-F02: su DEV Storage/Function sono in `us-central1`, mentre Firestore è stata verificata in `europe-west8`; il target UE resta valido per PROD — `evidenze/hard-01c-region-matrix.md`.)* |
-| C-02 | Provider IA e modello | ✅ **Decisa (HG-M5-1..4, 17 luglio 2026)** | brief.md, m5-ai-assisted-roadmap.md, evidenze/hg-m5-human-gate.md | OpenAI Responses API, snapshot pinned `gpt-5.4-nano-2026-03-17`, ceiling 0,25 USD/operazione, 1 USD/giorno UTC, 5 USD/mese UTC e retention run 30 giorni. Decisione approvata ma provider reale, secret, TTL, deploy e Gate G7 restano non autorizzati/aperti. Applica solo a M5. |
+| C-02 | Provider IA e modello | ✅ **Chiusa (HG-M5-1..4 + G7)** | brief.md, m5-ai-assisted-roadmap.md, evidenze/g7-m5-checklist-finale.md | OpenAI Responses API; `gpt-5.6-luna` approvato su DEV, nano rollback esplicito; ceiling e retention invariati; Gate G7 PASS. Applica solo a M5. |
 | C-03 | Regola didattica correzione automatica | ⏳ Rinviata (G8) | brief.md | Regola d'uso della modalità automatica IA; **fuori** dalla linea M5-00→M5-05 (correzione assistita). Rimandata a un eventuale Gate G8. |
 
 ---

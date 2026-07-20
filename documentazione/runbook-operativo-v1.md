@@ -145,12 +145,12 @@ Vedi §8 (incidente costi/traffico). In sintesi: identifica il servizio, riduci 
 
 - **Nessuna automazione a pagamento** viene introdotta: niente scheduler, niente funzioni di auto-spegnimento, niente servizi ricorrenti.
 
-### 4.5 Correzione IA in DEV — modello runtime, rollout e rollback (M5-QUALITY-07)
+### 4.5 Correzione IA in DEV — modello runtime, rollout e rollback (G7 PASS)
 
 Il modello del provider reale è deciso **esclusivamente** da `settings/aiConfig` (Admin
 SDK, mai dal client). Modelli runtime ammessi e listino **obbligatorio** accoppiato:
 
-- `gpt-5.4-nano-2026-03-17` → `v2-2026-07-17-hg-m5` (scelta esplicita di default);
+- `gpt-5.4-nano-2026-03-17` → `v2-2026-07-17-hg-m5` (rollback esplicito);
 - `gpt-5.6-luna` → `v5-2026-07-20-luna-dev` (1.000.000 µUSD/1M input, 6.000.000 µUSD/1M
   output; `cached input` non conteggiato).
 
@@ -158,8 +158,7 @@ Coppie diverse (Luna con listino nano, nano con listino Luna, modello/listino
 sconosciuti) sono rifiutate fail-closed: il provider resta disabilitato. Non esiste
 fallback automatico tra modelli.
 
-**Rollout controllato di Luna in DEV** (solo dopo merge del codice e con Functions
-deployate):
+**Rollout controllato di Luna in DEV — completato:**
 
 1. verifica il `settings/aiConfig` attuale (annota `configVersion` e modello);
 2. imposta `enabled=false` (kill switch senza deploy);
@@ -171,17 +170,24 @@ deployate):
    (nessuna chiamata provider);
 6. imposta `enabled=true`;
 7. correggi **una sola** consegna DEV controllata;
-8. verifica punteggi, feedback, `generalFeedback`, `aiCorrectionRuns` e ledger;
-9. verifica costo reale e assenza di PII nei documenti tecnici;
-10. al primo problema: `enabled=false` **immediato**.
+8. smoke funzionale finale su una consegna, dichiarato dal docente “impeccabile”.
+
+La chiusura G7 non attribuisce una verifica manuale specifica a `aiCorrectionRuns` o
+al ledger: questi aspetti sono coperti dalle evidenze automatiche della
+[checklist finale](evidenze/g7-m5-checklist-finale.md).
 
 **Rollback:** `enabled=false` blocca subito il provider senza deploy; per tornare a nano,
 aggiorna `settings/aiConfig` con `model: gpt-5.4-nano-2026-03-17`,
 `priceListVersion: v2-2026-07-17-hg-m5` e una nuova `configVersion`. Il ritorno a nano è
 **esplicito**, mai automatico.
 
-**Gate G7** passa a PASS **solo** dopo lo smoke reale DEV e la conferma finale del
-docente su feedback, resistenza alle prompt injection e accettabilità delle modalità.
+**Gate G7: PASS.** Lo smoke reale DEV e la conferma finale del docente su feedback,
+resistenza alle prompt injection e modalità sono completati. Il monitoraggio costi
+resta manuale; in caso di anomalia usare subito il kill switch.
+
+**Prossimo pacchetto tecnico:** **HARD-NODE-01**, per migrare il runtime Functions da
+Node.js 20 e aggiornare controllatamente `firebase-functions`, con verifica delle
+breaking change, test e deploy separati.
 
 ---
 

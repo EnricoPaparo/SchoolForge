@@ -2,11 +2,11 @@
 
 **Stato:** APPROVATO dal docente il 17 luglio 2026  
 **Pacchetto tecnico:** M5-05E-1  
-**Gate di prodotto:** M5 e Gate G7 restano APERTI
+**Stato storico del documento:** decisioni HG approvate; la successiva chiusura di M5 e Gate G7 è registrata in [g7-m5-checklist-finale.md](g7-m5-checklist-finale.md).
 
 ## Significato dell’approvazione
 
-Questa evidenza registra decisioni umane vincolanti per la futura attivazione DEV. Non abilita il provider reale, non autorizza una API key, non crea Secret Manager, non configura la TTL Firebase, non autorizza chiamate OpenAI, costi o deploy. Il kill switch resta spento e `MockAiGrader` resta invariato.
+Questa evidenza registrava decisioni umane vincolanti per la futura attivazione DEV. Al momento della sua approvazione non abilitava provider, API key, Secret Manager, chiamate, costi o deploy e il kill switch restava spento. Il successivo rollout è documentato separatamente nella checklist finale G7.
 
 ## Decisioni approvate
 

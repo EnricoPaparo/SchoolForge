@@ -2,7 +2,7 @@
 
 **Stato:** decisioni UX/prodotto approvate; implementazione non avviata.  
 **Data baseline:** 18 luglio 2026.  
-**Dipendenze:** UI-POLISH-01 completato; M5 operativo su DEV; Gate G7 ancora aperto.
+**Dipendenze:** UI-POLISH-01 completato; M5 operativo su DEV e **Gate G7 PASS**.
 
 Questa roadmap fissa senza ambiguità le evoluzioni successive al polish V1:
 
@@ -91,7 +91,7 @@ Dialog desktop di circa `640px`, larghezza disponibile completa su mobile. Ordin
 
 ### Stato — ✅ Implementato (M5-QUALITY-01)
 
-Calibrazione strutturata implementata. `gradingMode` (`compassionate` | `balanced` | `rigorous`, default `balanced`) attraversa in modo tipizzato UI → client → preview → run → engine → `AiGraderInput` → prompt OpenAI, ed entra nell'hash di selezione (idempotenza): stesso `requestId` con stile o indicazioni diversi ⇒ `invalid_input`, e la UI genera una nuova `requestId` a ogni modifica. `gradingMode` assente — cioè **proprietà omessa** (`undefined`) — ⇒ normalizzato a `balanced` (compatibilità client in cache); valore presente ma non valido, **incluso `null`**, ⇒ `invalid_input` (fail-closed: `null` non è assenza). Il limite delle indicazioni docente è ora **500** caratteri (validazione client + server, trim, vuoto = assente, contatore `0/500`). Il prompt stabilisce che `gradingMode` sposta il punteggio **solo entro la fascia giustificata dalle evidenze** e che `teacherGuidance` ha effetto concreto ma resta subordinata a evidenze e contratto; domanda/soluzione/risposta restano dati non attendibili (anti prompt-injection invariato). Popup con ordine verticale fisso, stile read-only in stima + «Modifica impostazioni». Costi invariati: una sola chiamata provider per consegna con aperte, zero per sole chiuse; stima e prenotazione includono il piccolo testo aggiuntivo, preview e run restano coerenti; nessuna nuova lettura/scrittura Firestore, nessun listener. `gradingMode`/`teacherGuidance` non persistiti in `aiCorrectionRuns`/ledger/log (solo il digest). **Il primo benchmark M5-QUALITY-02 è stato eseguito; il fix richiede una seconda validazione reale. Gate G7/M5 restano aperti.**
+Calibrazione strutturata implementata. `gradingMode` (`compassionate` | `balanced` | `rigorous`, default `balanced`) attraversa in modo tipizzato UI → client → preview → run → engine → `AiGraderInput` → prompt OpenAI, ed entra nell'hash di selezione (idempotenza): stesso `requestId` con stile o indicazioni diversi ⇒ `invalid_input`, e la UI genera una nuova `requestId` a ogni modifica. `gradingMode` assente — cioè **proprietà omessa** (`undefined`) — ⇒ normalizzato a `balanced`; valore presente ma non valido, incluso `null`, ⇒ `invalid_input`. Il limite delle indicazioni docente è 500 caratteri. Il benchmark e la revisione successivi sono conclusi con **Gate G7 PASS**; vedi [`evidenze/g7-m5-checklist-finale.md`](evidenze/g7-m5-checklist-finale.md).
 
 ### M5-QUALITY-02 — benchmark
 
@@ -101,7 +101,7 @@ Le stesse risposte sintetiche vengono corrette nelle tre modalità. Il gate rich
 
 Il primo benchmark reale autorizzato è stato eseguito sul solo dataset sintetico: 36 chiamate pianificate, modello pinned, tre ripetizioni. L'ordine aggregato (`compassionate` 41, `balanced` 39,001, `rigorous` 37,75 su 53) è coerente, ma il verdetto è `AUTOMATIC_CHECKS_FAILED`: SCI-003 è stata sovrastimata, SCI-002 ha penalizzato un'alternativa scientificamente valida e INF-007 ha mostrato una violazione della fascia nel caso prompt injection. Il comparatore produceva inoltre falsi positivi perché applicava la stessa fascia congelata a tutte le modalità.
 
-M5-QUALITY-02-FIX introduce fasce mode-aware di ±0,50 esclusivamente per casi graduabili, mantiene invarianti i casi chiaramente corretti/errati e separa errori sistematici, oscillazioni e casi `requiresTeacherReview`. Il prompt adotta un protocollo compatto su copertura, alternative valide, errori proporzionati e isolamento injection. Il prossimo report locale conserva usage/costo pinned e latenza aggregati, marcando `unavailable` i dati mancanti. In questa PR non vengono eseguite nuove chiamate: serve un secondo benchmark reale autorizzato e la revisione docente. **M5-QUALITY-02 e Gate G7 restano aperti.** Evidenza: [`evidenze/m5-quality-02-benchmark.md`](evidenze/m5-quality-02-benchmark.md).
+M5-QUALITY-02-FIX ha introdotto fasce mode-aware di ±0,50 esclusivamente per casi graduabili, invarianti per casi chiaramente corretti/errati e separazione fra errori sistematici, oscillazioni e `requiresTeacherReview`. I benchmark successivi, la rivalutazione offline e la revisione docente sono conclusi; **M5-QUALITY-02 è chiuso nel Gate G7 PASS**. Evidenze: [`evidenze/m5-quality-02-benchmark.md`](evidenze/m5-quality-02-benchmark.md) e [`evidenze/g7-m5-checklist-finale.md`](evidenze/g7-m5-checklist-finale.md).
 
 ### M5-QUALITY-03 — indicazioni docente predefinite (idea futura, non bloccante)
 

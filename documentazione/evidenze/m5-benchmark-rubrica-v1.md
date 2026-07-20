@@ -4,7 +4,7 @@
 
 **Ambito:** dataset sintetico italiano; nessun dato reale, provider, runner, chiamata di rete, chiave, Secret Manager o deploy
 
-**Gate:** Human Gate e Gate G7 non superati; M5-05 non è completato
+**Stato storico:** rubrica preparatoria; benchmark, Human Gate e Gate G7 sono poi stati chiusi. Evidenza finale: [g7-m5-checklist-finale.md](g7-m5-checklist-finale.md).
 
 ## 1. Scopo e confini
 
@@ -149,4 +149,4 @@ I casi `ambigua` e `specialistico_non_coperto` verificano anche la capacità di 
 - [ ] **PENDING — È confermato che nessun provider può essere promosso automaticamente.**
 - [ ] **PENDING — È confermato che il benchmark non supera Gate G7 e non autorizza provider, chiavi, Secret Manager, costi reali o deploy.**
 
-Finché tutte le decisioni necessarie non sono approvate esplicitamente, M5-05B-DATASET resta «preparato, in attesa di approvazione docente» e il provider definitivo resta aperto.
+Questa era la condizione di ingresso del benchmark. Le decisioni e la revisione sono state successivamente completate; il dataset resta congelato come evidenza sintetica.
