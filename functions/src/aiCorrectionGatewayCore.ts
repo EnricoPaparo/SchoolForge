@@ -410,6 +410,12 @@ export class AiGraderFailure extends Error {
   }
 }
 
+export type AiGraderInvalidOutputReasonCode =
+  | 'schema_invalid'
+  | 'missing_result'
+  | 'invalid_score'
+  | 'invalid_general_feedback';
+
 /**
  * M5-05D2B-1 — errore di **output invalido** del grader che trasporta l'`usage`
  * eventualmente **già fatturabile** dal provider. Il provider può aver consumato
@@ -422,11 +428,19 @@ export class AiGraderInvalidOutputError extends Error {
   readonly usage?: AiGraderUsage;
   /** Statistiche dei tentativi fino all'output invalido (M5-05D2B-2). */
   readonly attempts?: AiGraderAttemptStats;
-  constructor(message: string, usage?: AiGraderUsage, attempts?: AiGraderAttemptStats) {
+  /** Diagnostica tecnica chiusa e sanitizzata; non contiene output o contenuti. */
+  readonly reasonCode: AiGraderInvalidOutputReasonCode;
+  constructor(
+    message: string,
+    usage?: AiGraderUsage,
+    attempts?: AiGraderAttemptStats,
+    reasonCode: AiGraderInvalidOutputReasonCode = 'schema_invalid',
+  ) {
     super(message);
     this.name = 'AiGraderInvalidOutputError';
     this.usage = usage;
     if (attempts !== undefined) this.attempts = attempts;
+    this.reasonCode = reasonCode;
   }
 }
 

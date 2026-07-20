@@ -4,6 +4,7 @@ import type {
   M5BenchmarkProviderCase,
   M5BenchmarkModeReports,
   M5BenchmarkReport,
+  M5BenchmarkInvalidReasonCode,
 } from './m5BenchmarkHarness.js';
 import {
   actualCostMicroUsd,
@@ -31,6 +32,7 @@ export interface BenchmarkAnomaly {
   rangePattern?: 'systematic_error' | 'single_oscillation' | 'manual_review';
   rangePolicy?: BenchmarkExpectedRange['policy'];
   automaticBlocking?: boolean;
+  reasonCode?: M5BenchmarkInvalidReasonCode | 'unavailable';
   detail: string;
 }
 
@@ -363,11 +365,13 @@ export function buildM5BenchmarkComparativeReport(
           const found = getReportResult(report, submission.id, providerCaseId);
           if (found.submission?.outputInvalid) {
             complete = false;
+            const reasonCode = found.submission.reasonCode ?? 'unavailable';
             anomalies.push({
               code: 'invalid_output',
               occurrenceId,
               gradingMode,
-              detail: 'La consegna ha prodotto output invalido.',
+              reasonCode,
+              detail: `La consegna ha prodotto output invalido (${reasonCode}).`,
             });
           }
           if (found.result?.points === undefined) {

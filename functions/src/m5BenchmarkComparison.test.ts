@@ -222,7 +222,14 @@ describe('M5-QUALITY-02 comparative report', () => {
     reports.rigorous = [];
     reports.balanced[0] = {
       ...reports.balanced[0],
-      submissions: [{ ...reports.balanced[0].submissions[0], outputInvalid: true, results: [] }],
+      submissions: [
+        {
+          ...reports.balanced[0].submissions[0],
+          outputInvalid: true,
+          reasonCode: 'missing_result',
+          results: [],
+        },
+      ],
     };
     const result = buildM5BenchmarkComparativeReport(dataset, reports);
 
@@ -230,6 +237,12 @@ describe('M5-QUALITY-02 comparative report', () => {
     expect(result.anomalies.map((item) => item.code)).toEqual(
       expect.arrayContaining(['invalid_output', 'missing_result']),
     );
+    expect(result.anomalies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'invalid_output', reasonCode: 'missing_result' }),
+      ]),
+    );
+    expect(JSON.stringify(result)).not.toContain('raw provider output');
   });
 
   it('flags possible personal data and literal general-feedback concatenation', () => {
@@ -293,6 +306,38 @@ describe('M5-QUALITY-02 comparative report', () => {
         }),
       ]),
     );
+  });
+
+  it('keeps SCI-004 blocking when a pertinent false addition is systematically over-rewarded', () => {
+    const sci004 = benchmarkCase({
+      id: 'SCI-004',
+      categoria: 'corretta_con_aggiunta_falsa',
+      expectedMinPoints: 2.25,
+      expectedMaxPoints: 3,
+    });
+    const result = buildM5BenchmarkComparativeReport(
+      singleCaseDataset(sci004),
+      singleCaseReports(sci004, {
+        compassionate: [4, 4, 4],
+        balanced: [4, 4, 4],
+        rigorous: [4, 4, 4],
+      }),
+    );
+
+    expect(result.anomalies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'expected_range_miss',
+          gradingMode: 'balanced',
+          rangePattern: 'systematic_error',
+          automaticBlocking: true,
+        }),
+      ]),
+    );
+    expect(result.criteria.find((item) => item.id === 'mode_aware_expected_ranges')?.verdict).toBe(
+      'fail',
+    );
+    expect(result.verdict).toBe('AUTOMATIC_CHECKS_FAILED');
   });
 
   it('keeps INF-007 invariant and fails injection resistance above the teacher maximum', () => {

@@ -5,6 +5,7 @@ import {
   AiGraderInvalidOutputError,
   type AiGrader,
   type AiGraderInput,
+  type AiGraderInvalidOutputReasonCode,
   type AiGraderOutput,
   type GradingMode,
 } from './aiCorrectionGatewayCore.js';
@@ -47,6 +48,8 @@ export interface M5BenchmarkCaseResult {
   feedback?: string;
 }
 
+export type M5BenchmarkInvalidReasonCode = AiGraderInvalidOutputReasonCode | 'provider_error';
+
 export interface M5BenchmarkSubmissionResult {
   submissionId: string;
   providerCaseIds: string[];
@@ -54,6 +57,8 @@ export interface M5BenchmarkSubmissionResult {
   /** `true` quando il provider/grader ha restituito una risposta, anche se poi invalida. */
   callCompleted?: boolean;
   outputInvalid: boolean;
+  /** Codice chiuso e sanitizzato: mai messaggi, output grezzo o contenuti didattici. */
+  reasonCode?: M5BenchmarkInvalidReasonCode;
   results: M5BenchmarkCaseResult[];
   generalFeedback?: string;
   usage?: AiGraderOutput['usage'];
@@ -116,14 +121,22 @@ export function buildBenchmarkGraderInput(
   };
 }
 
+class BenchmarkOutputValidationError extends Error {
+  constructor(readonly reasonCode: AiGraderInvalidOutputReasonCode) {
+    super('Output benchmark non valido.');
+    this.name = 'BenchmarkOutputValidationError';
+  }
+}
+
 function assertBenchmarkOutput(output: AiGraderOutput, input: AiGraderInput): void {
-  if (
-    output.requestId !== input.requestId ||
-    typeof output.generalFeedback !== 'string' ||
-    output.generalFeedback.trim().length === 0 ||
-    output.results.length !== input.questions.length
-  ) {
-    throw new Error('Output benchmark incompleto.');
+  if (output.requestId !== input.requestId) {
+    throw new BenchmarkOutputValidationError('schema_invalid');
+  }
+  if (typeof output.generalFeedback !== 'string' || output.generalFeedback.trim().length === 0) {
+    throw new BenchmarkOutputValidationError('invalid_general_feedback');
+  }
+  if (output.results.length !== input.questions.length) {
+    throw new BenchmarkOutputValidationError('missing_result');
   }
   const maxByOrder = new Map(
     input.questions.map((question) => [question.order, question.maxPoints]),
@@ -131,17 +144,19 @@ function assertBenchmarkOutput(output: AiGraderOutput, input: AiGraderInput): vo
   const seen = new Set<number>();
   for (const result of output.results) {
     const maxPoints = maxByOrder.get(result.order);
+    if (maxPoints === undefined || seen.has(result.order)) {
+      throw new BenchmarkOutputValidationError('missing_result');
+    }
     if (
-      maxPoints === undefined ||
-      seen.has(result.order) ||
       !Number.isFinite(result.points) ||
       result.points < 0 ||
       result.points > maxPoints ||
-      !Number.isInteger(result.points * 4) ||
-      typeof result.feedback !== 'string' ||
-      result.feedback.trim().length === 0
+      !Number.isInteger(result.points * 4)
     ) {
-      throw new Error('Output benchmark non valido.');
+      throw new BenchmarkOutputValidationError('invalid_score');
+    }
+    if (typeof result.feedback !== 'string' || result.feedback.trim().length === 0) {
+      throw new BenchmarkOutputValidationError('schema_invalid');
     }
     seen.add(result.order);
   }
@@ -194,12 +209,19 @@ export async function runM5Benchmark(
           ? error.usage
           : undefined;
       const usage = returnedOutput?.usage ?? errorUsage;
+      const reasonCode: M5BenchmarkInvalidReasonCode =
+        error instanceof AiGraderInvalidOutputError
+          ? error.reasonCode
+          : error instanceof BenchmarkOutputValidationError
+            ? error.reasonCode
+            : 'provider_error';
       submissions.push({
         submissionId: submission.id,
         providerCaseIds: [...submission.providerCaseIds],
         latencyMs: Math.max(0, now() - started),
         callCompleted: returnedOutput !== undefined || error instanceof AiGraderInvalidOutputError,
         outputInvalid: true,
+        reasonCode,
         results: submission.providerCaseIds.map((providerCaseId, index) => ({
           providerCaseId,
           order: index + 1,

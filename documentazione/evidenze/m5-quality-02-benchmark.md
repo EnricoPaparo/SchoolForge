@@ -1,6 +1,6 @@
 # M5-QUALITY-02 — benchmark comparativo modalità di correzione
 
-**Stato:** `M5-QUALITY-02-FIX IMPLEMENTED — SECOND BENCHMARK REQUIRED`
+**Stato:** `M5-QUALITY-03-FIX IMPLEMENTED — NEW REAL BENCHMARK REQUIRED`
 
 **Primo benchmark reale:** eseguito e autorizzato dal docente il 20 luglio 2026
 
@@ -43,6 +43,35 @@ Sono state registrate 15 occorrenze con 48 anomalie: 47
 Il primo report non ha conservato aggregati di token, costo e latenza reali. Questi
 dati restano **unavailable** per quella esecuzione: non vengono ricostruiti o stimati
 a posteriori.
+
+## Secondo benchmark reale
+
+Il docente ha eseguito il secondo benchmark reale autorizzato sul medesimo dataset
+sintetico dopo M5-QUALITY-02-FIX. Il report locale, ignorato da Git, ha confermato che
+il framework tecnico ora misura correttamente l'esecuzione:
+
+- verdict `AUTOMATIC_CHECKS_FAILED`;
+- `callsCompleted`: 36/36;
+- `callsMeasured`: 36/36;
+- token reali complessivi: 77.420;
+- costo reale complessivo: circa 0,041389 USD.
+
+Il fallimento residuo è qualitativo e di robustezza dell'output, non del comparatore:
+
+- una consegna `rigorous` ha prodotto output invalido, causando `missing_result` su
+  più domande;
+- SCI-002 è rimasta penalizzata in tutte le modalità pur essendo un'alternativa
+  scientificamente valida;
+- SCI-003 è rimasta sistematicamente sovrastimata nonostante omissioni sostanziali;
+- SCI-004 è rimasta troppo generosa rispetto a un'aggiunta falsa pertinente;
+- INF-007 ha ancora una singola oscillazione `compassionate` bloccante sul caso di
+  prompt injection.
+
+M5-QUALITY-03-FIX interviene su questi confini senza modificare la semantica
+qualitativa del comparatore, gli intervalli del dataset, il modello, il listino o i
+guardrail economici. Il report riceve soltanto la nuova diagnostica sanitizzata degli
+output invalidi. Nessuna chiamata reale è stata eseguita durante l'implementazione del
+fix.
 
 ## Anomalie reali confermate
 
@@ -138,6 +167,38 @@ Il prompt mantiene Responses API, Structured Outputs, una chiamata per consegna,
 Non viene aggiunto alcun campo allo Structured Output e non viene introdotta una
 seconda chiamata.
 
+M5-QUALITY-03-FIX rafforza in modo compatto gli stessi principi:
+
+- checklist degli elementi richiesti prima di attribuire punteggi alti;
+- pieno riconoscimento delle alternative corrette, pertinenti, motivate e complete,
+  anche quando assenti dagli esempi della soluzione;
+- punteggio proporzionale per risposte parziali, mai quasi pieno con omissioni
+  sostanziali;
+- penalizzazione esplicita e più netta delle aggiunte false pertinenti, senza zero
+  automatico quando resta un nucleo corretto;
+- isolamento di comandi che chiedono punteggio massimo o modifiche a criteri, schema,
+  formato o tono;
+- esattamente un risultato per ogni `order`, senza omissioni, duplicati o risultati
+  aggiuntivi.
+
+Lo schema pubblico resta invariato: `requestId`, `results` e `generalFeedback`.
+
+## Diagnostica privacy-minimal degli output invalidi
+
+Il solo harness locale associa agli output invalidi un `reasonCode` chiuso e
+sanitizzato:
+
+- `schema_invalid`;
+- `missing_result`;
+- `invalid_score`;
+- `invalid_general_feedback`;
+- `provider_error`.
+
+Il report comparativo propaga il codice nelle anomalie `invalid_output`. Non conserva
+messaggi d'errore, raw output, prompt, domande, soluzioni o risposte dello studente.
+La diagnostica non modifica il contratto persistito dell'applicazione e non aggiunge
+scritture Firestore.
+
 ## Aggregati tecnici del prossimo report
 
 Per ogni modalità e complessivamente il report locale include:
@@ -177,9 +238,9 @@ pnpm --filter @schoolforge/functions benchmark:m5-quality
 Il dry-run non costruisce il provider, non legge `OPENAI_API_KEY` e stampa chiamate,
 tentativi e upper bound aggiornati dopo la modifica del prompt.
 
-Dry-run del fix verificato il 20 luglio 2026: 36 chiamate pianificate, fino a 72
-tentativi, upper bound 485.130 token input e 576.000 token output, costo massimo
-prudenziale 817.026 micro-USD (0,817026 USD). Sono limiti preventivi, non consumo o
+Dry-run di M5-QUALITY-03-FIX verificato il 20 luglio 2026: 36 chiamate pianificate,
+fino a 72 tentativi, upper bound 532.578 token input e 576.000 token output, costo
+massimo prudenziale 826.516 micro-USD (0,826516 USD). Sono limiti preventivi, non consumo o
 costo reale.
 
 Solo dopo una nuova autorizzazione esplicita del docente, da terminale interattivo:
@@ -193,8 +254,9 @@ due flag, TTY e conferma legge la chiave e costruisce il provider.
 
 ## Verdetto
 
-Il primo benchmark resta `AUTOMATIC_CHECKS_FAILED`. M5-QUALITY-02-FIX è implementato,
-ma non validato da una seconda esecuzione reale. Serve un nuovo benchmark autorizzato,
-seguito dalla revisione docente di feedback e anomalie.
+Il secondo benchmark resta `AUTOMATIC_CHECKS_FAILED`. M5-QUALITY-03-FIX è
+implementato, ma non è ancora validato da una nuova esecuzione reale. Serve un nuovo
+benchmark esplicitamente autorizzato, seguito dalla revisione docente di feedback,
+anomalie e reason code sanitizzati.
 
 **M5-QUALITY-02 non è superato. Gate G7 resta APERTO.**
