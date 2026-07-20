@@ -107,6 +107,16 @@ export const PRICE_LISTS: Readonly<Record<string, Readonly<Record<string, ModelP
       outputMicroUsdPerMillion: 6_000_000,
     },
   },
+  // M5-QUALITY-07 — versione **runtime DEV** dedicata a `gpt-5.6-luna`, distinta
+  // dalla versione benchmark: la config runtime accoppia Luna esclusivamente a
+  // questo listino. Stessi prezzi verificati ($1.00/M input, $6.00/M output);
+  // `cached input` non incluso perché non misurato.
+  'v5-2026-07-20-luna-dev': {
+    [OPENAI_BENCHMARK_LUNA_MODEL]: {
+      inputMicroUsdPerMillion: 1_000_000,
+      outputMicroUsdPerMillion: 6_000_000,
+    },
+  },
 };
 
 /** Versione di listino di default per DEV (deve esistere in `PRICE_LISTS`). */
@@ -117,6 +127,15 @@ export const OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION = 'v3-2026-07-20-mini
 
 /** Versione di listino del candidato benchmark Luna (solo CLI di benchmark). */
 export const OPENAI_BENCHMARK_LUNA_PRICE_LIST_VERSION = 'v4-2026-07-20-luna-benchmark';
+
+/**
+ * M5-QUALITY-07 — modello runtime `gpt-5.6-luna` e sua versione di listino
+ * **runtime DEV** dedicata. Lo stesso id modello del benchmark, ma con listino
+ * runtime separato: la config runtime lo accoppia esclusivamente a questa
+ * versione.
+ */
+export const OPENAI_RUNTIME_LUNA_MODEL = OPENAI_BENCHMARK_LUNA_MODEL;
+export const OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION = 'v5-2026-07-20-luna-dev';
 
 /** Prezzo del modello per una versione di listino, o `null` se assente. */
 export function lookupModelPrice(priceListVersion: string, model: string): ModelPrice | null {

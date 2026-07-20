@@ -5,6 +5,8 @@ import { AiGatewayError } from './aiCorrectionGatewayCore.js';
 import {
   DEFAULT_PRICE_LIST_VERSION,
   OPENAI_PRODUCTION_MODEL,
+  OPENAI_RUNTIME_LUNA_MODEL,
+  OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
   PRICE_LISTS,
   lookupModelPrice,
   tokenCostMicroUsd,
@@ -95,6 +97,54 @@ describe('parseAiRuntimeConfig (M5-05D1 fail-closed)', () => {
     ).toBeNull();
     expect(
       parseAiRuntimeConfig({ ...VALID_CONFIG_RAW, priceListVersion: 'v2-unknown' }),
+    ).toBeNull();
+  });
+
+  it('M5-QUALITY-07: accepts Luna only with its runtime price list; rejects mismatched pairs', () => {
+    // nano valid (baseline, explicit choice) — unchanged.
+    expect(parseAiRuntimeConfig(VALID_CONFIG_RAW)!.model).toBe(OPENAI_PRODUCTION_MODEL);
+
+    // Luna valid with its own runtime price list.
+    const lunaCfg = parseAiRuntimeConfig({
+      ...VALID_CONFIG_RAW,
+      model: OPENAI_RUNTIME_LUNA_MODEL,
+      priceListVersion: OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+    });
+    expect(lunaCfg).not.toBeNull();
+    expect(lunaCfg!.model).toBe(OPENAI_RUNTIME_LUNA_MODEL);
+    expect(lunaCfg!.priceListVersion).toBe(OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION);
+
+    // Luna with nano's price list → rejected (no silent fallback).
+    expect(
+      parseAiRuntimeConfig({
+        ...VALID_CONFIG_RAW,
+        model: OPENAI_RUNTIME_LUNA_MODEL,
+        priceListVersion: DEFAULT_PRICE_LIST_VERSION,
+      }),
+    ).toBeNull();
+    // nano with Luna's price list → rejected.
+    expect(
+      parseAiRuntimeConfig({
+        ...VALID_CONFIG_RAW,
+        model: OPENAI_PRODUCTION_MODEL,
+        priceListVersion: OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+      }),
+    ).toBeNull();
+    // Luna with a completely unknown price list → rejected.
+    expect(
+      parseAiRuntimeConfig({
+        ...VALID_CONFIG_RAW,
+        model: OPENAI_RUNTIME_LUNA_MODEL,
+        priceListVersion: 'v4-2026-07-20-luna-benchmark',
+      }),
+    ).toBeNull();
+    // Unknown model (even with a real price-list version) → rejected.
+    expect(
+      parseAiRuntimeConfig({
+        ...VALID_CONFIG_RAW,
+        model: 'gpt-5.6-luna-preview',
+        priceListVersion: OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+      }),
     ).toBeNull();
   });
 
@@ -264,6 +314,63 @@ describe('cost breakdown (M5-05D2B-1)', () => {
     );
     expect(actualCostMicroUsd(0, 0, DEFAULT_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL)).toBe(0);
     expect(actualCostMicroUsd(1, 1, 'nope', OPENAI_PRODUCTION_MODEL)).toBeNull();
+  });
+});
+
+// ── Costo Luna runtime (M5-QUALITY-07) ──────────────────────────────────────
+
+describe('Luna runtime cost (M5-QUALITY-07)', () => {
+  it('prices Luna at $1.00/M input and $6.00/M output in its runtime version', () => {
+    expect(
+      lookupModelPrice(OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION, OPENAI_RUNTIME_LUNA_MODEL),
+    ).toEqual({
+      inputMicroUsdPerMillion: 1_000_000,
+      outputMicroUsdPerMillion: 6_000_000,
+    });
+    // nano's model is not in Luna's runtime list and vice-versa.
+    expect(
+      lookupModelPrice(OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION, OPENAI_PRODUCTION_MODEL),
+    ).toBeNull();
+    expect(lookupModelPrice(DEFAULT_PRICE_LIST_VERSION, OPENAI_RUNTIME_LUNA_MODEL)).toBeNull();
+  });
+
+  it('estimate is conservative (ceil) and actual (nearest) never exceeds it for Luna', () => {
+    // 4001 input at $1.00/M = 4001 µUSD exactly; 100 output at $6.00/M = 600.
+    const est = estimateCostBreakdown(
+      4001,
+      100,
+      OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+      OPENAI_RUNTIME_LUNA_MODEL,
+    )!;
+    const actual = actualCostMicroUsd(
+      4001,
+      100,
+      OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+      OPENAI_RUNTIME_LUNA_MODEL,
+    )!;
+    expect(est.costMicroUsd).toBe(4601);
+    // Reservation (ceil) ≥ actual (nearest): the invariant holds for Luna too.
+    expect(actual).toBeLessThanOrEqual(est.costMicroUsd);
+  });
+
+  it('holds costActual ≤ costReservation with Unicode-heavy token counts (Luna)', () => {
+    // A fractional µUSD boundary that rounds up for the reservation and down for
+    // the actual, mirroring Unicode payloads whose byte length inflates tokens.
+    const inputTokens = 1234567; // arbitrary large count
+    const outputTokens = 7654;
+    const reservation = estimateCostBreakdown(
+      inputTokens,
+      outputTokens,
+      OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+      OPENAI_RUNTIME_LUNA_MODEL,
+    )!.costMicroUsd;
+    const actual = actualCostMicroUsd(
+      inputTokens,
+      outputTokens,
+      OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+      OPENAI_RUNTIME_LUNA_MODEL,
+    )!;
+    expect(actual).toBeLessThanOrEqual(reservation);
   });
 });
 

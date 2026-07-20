@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MockAiGrader, resolveAiFeatureMode } from './aiCorrectionGatewayCore.js';
 import { createConfiguredAiGrader } from './aiCorrectionProvider.js';
-import { OPENAI_PRODUCTION_MODEL } from './aiCorrectionCost.js';
+import { OPENAI_PRODUCTION_MODEL, OPENAI_RUNTIME_LUNA_MODEL } from './aiCorrectionCost.js';
 import type { OpenAiTransport } from './openAiGrader.js';
 
 describe('AI provider configuration', () => {
@@ -42,5 +42,21 @@ describe('AI provider configuration', () => {
     expect(grader.model).toBe(OPENAI_PRODUCTION_MODEL);
     expect(createOpenAiTransport).toHaveBeenCalledWith('test-only-secret');
     vi.unstubAllEnvs();
+  });
+
+  it('M5-QUALITY-07: builds the grader with the validated Luna runtime model', () => {
+    const transport = { send: vi.fn() } as unknown as OpenAiTransport;
+    const createOpenAiTransport = vi.fn(() => transport);
+    const grader = createConfiguredAiGrader(
+      {
+        mode: 'openai',
+        openAiModel: OPENAI_RUNTIME_LUNA_MODEL,
+        openAiApiKey: 'test-only-secret',
+      },
+      { createOpenAiTransport },
+    );
+    expect(grader.id).toBe('openai');
+    expect(grader.model).toBe(OPENAI_RUNTIME_LUNA_MODEL);
+    expect(createOpenAiTransport).toHaveBeenCalledWith('test-only-secret');
   });
 });

@@ -16,8 +16,24 @@
 import {
   DEFAULT_PRICE_LIST_VERSION,
   OPENAI_PRODUCTION_MODEL,
+  OPENAI_RUNTIME_LUNA_MODEL,
+  OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
   lookupModelPrice,
 } from './aiCorrectionCost.js';
+
+/**
+ * M5-QUALITY-07 — allowlist **chiusa** dei modelli runtime ammessi in DEV con il
+ * loro listino **obbligatorio e univoco**: nano resta la scelta esplicita
+ * sicura, Luna è promosso con il proprio listino runtime dedicato. La coppia
+ * modello→listino è autoritativa: qualsiasi combinazione incoerente (Luna con
+ * listino nano, nano con listino Luna, modello o listino sconosciuti) è
+ * respinta fail-closed prima del provider e prima di ogni prenotazione
+ * economica. Nessun fallback silenzioso Luna→nano o nano→Luna.
+ */
+export const RUNTIME_MODEL_PRICE_LISTS: Readonly<Record<string, string>> = {
+  [OPENAI_PRODUCTION_MODEL]: DEFAULT_PRICE_LIST_VERSION,
+  [OPENAI_RUNTIME_LUNA_MODEL]: OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
+};
 
 /** Limiti prudenziali DEV applicati server-side nel preflight (M5-05D1 §2). */
 export interface AiRuntimeLimits {
@@ -124,12 +140,15 @@ export function parseAiRuntimeConfig(raw: unknown): AiRuntimeConfig | null {
   if (typeof r.model !== 'string' || !MODEL_ID_RE.test(r.model)) return null;
   if (typeof r.configVersion !== 'string' || !VERSION_RE.test(r.configVersion)) return null;
   if (typeof r.priceListVersion !== 'string' || !VERSION_RE.test(r.priceListVersion)) return null;
-  // Modello e listino sono una coppia unica e autoritativa. Un alias mobile,
-  // un modello non verificato o una versione sconosciuta disabilitano il
-  // provider prima di leggere il secret o costruire il transport.
+  // Modello e listino sono una coppia unica e autoritativa (M5-QUALITY-07:
+  // allowlist nano/Luna, ciascuno col proprio listino). Un alias mobile, un
+  // modello non ammesso, un listino non accoppiato o una versione sconosciuta
+  // disabilitano il provider prima di leggere il secret o costruire il
+  // transport. Nessun fallback silenzioso tra modelli.
+  const expectedPriceListVersion = RUNTIME_MODEL_PRICE_LISTS[r.model];
   if (
-    r.model !== OPENAI_PRODUCTION_MODEL ||
-    r.priceListVersion !== DEFAULT_PRICE_LIST_VERSION ||
+    expectedPriceListVersion === undefined ||
+    r.priceListVersion !== expectedPriceListVersion ||
     lookupModelPrice(r.priceListVersion, r.model) === null
   ) {
     return null;
