@@ -953,8 +953,8 @@ espongono path o contenuti.
 
 **Flusso:** autentica → verifica owner (`settings/owner.ownerUid`, fail-closed) →
 **una** collection-group query su `lessonNoteIndexes` con `programId == input`
-(filtro campo singolo → indice single-field automatico, **nessun indice
-composito**) → validazione fail-closed di ogni indice (path coerente con
+(indice single-field esplicito con scope `COLLECTION_GROUP` in
+`firestore.indexes.json`, **nessun indice composito**) → validazione fail-closed di ogni indice (path coerente con
 `studentUid`/`programId`, `lessonIds` array di stringhe non vuote ≤500, dedup) →
 costruzione dei path note **dallo studentUid + lessonIds dell'indice** (i
 `lessonNotes` non vengono **mai** letti) → delete in chunk di max 400,

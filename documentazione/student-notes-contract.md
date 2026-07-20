@@ -481,8 +481,8 @@ Strategia economica e indicizzata (mai una scansione di tutti i `lessonNotes`):
 
 - **una** collection-group query su `lessonNoteIndexes` filtrata per
   `programId == input` → un documento per ogni studente che ha un indice per il
-  corso (filtro su campo singolo → indice single-field automatico, **nessun
-  indice composito**);
+  corso (indice single-field esplicito con scope `COLLECTION_GROUP` in
+  `firestore.indexes.json`, **nessun indice composito**);
 - i path delle note si costruiscono **direttamente** dallo `studentUid` +
   `lessonIds` dell'indice: i documenti `lessonNotes` (e il loro `content`) non
   vengono **mai** letti;
