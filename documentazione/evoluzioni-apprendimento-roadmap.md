@@ -194,9 +194,9 @@ Difficoltà 4 · Max 4 punti
 | ID | Scope | DoD |
 |---|---|---|
 | POOL-SIMPLE-00 | Contratto tecnico e inventario completo della rimozione di `peso`; nessun codice UI. | Matrice file/flussi, schema V2, strategia rollout senza legacy. |
-| POOL-SIMPLE-01 | ✅ Contratto V2, parser/serializer/tipi/fixture e template/kit implementati; rollout applicativo non ancora eseguito. | Pool V2 validi 1–5; `peso` rifiutato; tutti i template importabili. |
+| POOL-SIMPLE-01 | ✅ Contratto V2, parser/serializer/tipi/fixture e template/kit implementati. | Pool V2 validi 1–5; `peso` rifiutato; tutti i template importabili. |
 | POOL-SIMPLE-02 | ✅ Editor, index, picker, snapshot, PDF/restituzione/IA privi di `peso`; ponte `peso: 1` rimosso, `maxPoints === difficolta`, test end-to-end di contratto e payload IA. **Implementato.** | Nessuna UI o payload nuovo espone `peso`; maxPoints sempre uguale a difficoltà. |
-| Gate GPOOL | Smoke import→verifica→svolgimento→correzione→restituzione. **Aperto:** richiede DEV pulito, deploy coordinato e smoke. | DEV pulito; test automatici e smoke docente/studente verdi. |
+| Gate GPOOL | ✅ **PASS (20 luglio 2026).** Audit del flusso import→verifica→svolgimento→correzione→restituzione/export, con evidenze automatiche, rollout DEV dichiarato e rifiuto V1 osservato dal docente. Vedi [`evidenze/gpool-checklist-finale.md`](evidenze/gpool-checklist-finale.md). | Contratto V2 verificato end-to-end; limiti manuali residui esplicitati nell'evidenza. |
 
 ## 5. ANNOT — appunti personali dello studente
 
@@ -377,7 +377,7 @@ Implementazione solo delle scelte approvate sul prototipo, in pacchetti piccoli 
 5. POOL-SIMPLE-00;
 6. POOL-SIMPLE-01;
 7. POOL-SIMPLE-02;
-8. Gate GPOOL;
+8. Gate GPOOL ✅ PASS;
 9. ANNOT-00 → ANNOT-03A → ANNOT-03B → Gate GANNOT;
 10. VEX-00 → VEX-03;
 11. VISUAL-BOOST-00;

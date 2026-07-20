@@ -121,7 +121,7 @@ I test seguenti restano specifica di un eventuale M3-full e non si applicano a M
 | Pattern | Tipo di test | Strumento |
 |---|---|---|
 | `*.test.ts` | Unit | Vitest |
-| `*.contract.test.ts` | Contract (contratto pool v1, tipi API) | Vitest |
+| `*.contract.test.ts` | Contract (contratto pool V2, tipi API) | Vitest |
 | `*.e2e.ts` | End-to-end | Playwright |
 
 ### Fixture — pool valido (Markdown)
