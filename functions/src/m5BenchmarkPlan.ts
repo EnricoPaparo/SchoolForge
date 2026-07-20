@@ -23,10 +23,19 @@ export interface M5BenchmarkExecutionPlan {
 /** Piano locale puro: nessun transport, secret, rete o scrittura. */
 export function buildM5BenchmarkExecutionPlan(
   dataset: M5BenchmarkDataset,
-  options: { repetitions?: number; maxAttemptsPerCall?: number } = {},
+  options: {
+    repetitions?: number;
+    maxAttemptsPerCall?: number;
+    /** M5-QUALITY-05: modello del piano (default = produzione nano). */
+    model?: string;
+    /** Listino coerente col modello (default = listino DEV). */
+    priceListVersion?: string;
+  } = {},
 ): M5BenchmarkExecutionPlan {
   const repetitions = options.repetitions ?? 3;
   const maxAttemptsPerCall = options.maxAttemptsPerCall ?? 2;
+  const model = options.model ?? OPENAI_PRODUCTION_MODEL;
+  const priceListVersion = options.priceListVersion ?? DEFAULT_PRICE_LIST_VERSION;
   if (!Number.isInteger(repetitions) || repetitions < 1) throw new Error('Ripetizioni non valide.');
   if (!Number.isInteger(maxAttemptsPerCall) || maxAttemptsPerCall < 1) {
     throw new Error('Numero massimo di tentativi non valido.');
@@ -39,7 +48,7 @@ export function buildM5BenchmarkExecutionPlan(
     for (const submission of dataset.benchmarkSubmissions) {
       const { input } = buildBenchmarkGraderInput(submission, casesById, gradingMode);
       inputPerRepetition += Buffer.byteLength(
-        JSON.stringify(buildOpenAiGradingRequest(input, OPENAI_PRODUCTION_MODEL)),
+        JSON.stringify(buildOpenAiGradingRequest(input, model)),
         'utf8',
       );
     }
@@ -52,8 +61,8 @@ export function buildM5BenchmarkExecutionPlan(
   const cost = estimateCostBreakdown(
     inputTokensUpperBound,
     outputTokensUpperBound,
-    DEFAULT_PRICE_LIST_VERSION,
-    OPENAI_PRODUCTION_MODEL,
+    priceListVersion,
+    model,
   );
   if (!cost) throw new Error('Listino benchmark non disponibile.');
 
@@ -67,7 +76,7 @@ export function buildM5BenchmarkExecutionPlan(
     inputTokensUpperBound,
     outputTokensUpperBound,
     costUpperBoundMicroUsd: cost.costMicroUsd,
-    model: OPENAI_PRODUCTION_MODEL,
-    priceListVersion: DEFAULT_PRICE_LIST_VERSION,
+    model,
+    priceListVersion,
   };
 }

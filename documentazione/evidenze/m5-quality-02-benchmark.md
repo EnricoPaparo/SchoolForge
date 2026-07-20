@@ -299,3 +299,64 @@ benchmark esplicitamente autorizzato, seguito dalla revisione docente di feedbac
 anomalie e reason code sanitizzati.
 
 **M5-QUALITY-02 non è superato. Gate G7 resta APERTO.**
+
+## M5-QUALITY-05 — confronto modello controllato nano vs mini (solo benchmark)
+
+Obiettivo: capire, con evidenza riproducibile, se i fallimenti sistematici residui del
+Gate G7 (SCI-002/003/004) dipendano dal modello `gpt-5.4-nano` o dal contratto di
+valutazione. Per farlo il benchmark accetta un override di modello **solo dalla CLI
+locale**, senza toccare il modello runtime.
+
+Cosa cambia (esclusivamente lato benchmark):
+
+- override CLI `--benchmark-model=<modello>` con **allowlist chiusa**: sono ammessi
+  soltanto `gpt-5.4-nano-2026-03-17` (baseline) e `gpt-5.4-mini-2026-03-17` (candidato).
+  Un modello diverso, un flag ripetuto o senza valore termina con errore leggibile
+  **prima** di leggere `OPENAI_API_KEY` e prima di qualunque chiamata di rete. Nessun
+  fallback automatico;
+- il modello selezionato è passato esplicitamente alla costruzione dell'`OpenAiGrader`
+  del benchmark. Non legge né modifica `settings/aiConfig`, non modifica
+  `OPENAI_PRODUCTION_MODEL`, non cambia il modello runtime delle Functions e non
+  persiste nulla su Firestore;
+- listino versionato esteso con una **nuova** versione dedicata al solo candidato,
+  `v3-2026-07-20-mini-benchmark`: input 0,75 USD/1M (750.000 µUSD), output 4,50 USD/1M
+  (4.500.000 µUSD). La versione DEV `v2-2026-07-17-hg-m5` resta immutata (nano). Nessun
+  prezzo `cached input` inventato: il benchmark non lo usa né lo misura;
+- il report locale è distinto per modello
+  (`m5-quality-05-<modello>-report.json`), resta in `functions/lib/` (ignorato da Git) e
+  non viene mai committato;
+- sintesi comparativa fra modelli (`benchmark:m5-quality:compare`) generabile **solo**
+  quando entrambi i report locali sono presenti: verdict nano e mini, SCI-002/003/004
+  per modalità e ripetizione con fasce attese, oscillazioni, output invalidi, token,
+  costo, latenza media/p50/p95 e rapporto costo mini/nano. Se manca un report il
+  confronto è dichiarato **non disponibile**, senza ricostruire o inventare dati.
+
+Confrontabilità rigorosa: nano e mini usano lo stesso dataset congelato, gli stessi
+`submissionId`/casi, le stesse tre modalità, le stesse tre ripetizioni, lo stesso
+prompt, lo stesso Structured Output, gli stessi parametri e le stesse fasce attese, con
+lo stesso numero pianificato di chiamate. In questa PR **non** sono stati toccati
+prompt, dataset, rubriche, fasce o classificazione delle anomalie: cambiare insieme
+modello e prompt renderebbe il confronto non interpretabile.
+
+Dry-run verificati il 20 luglio 2026 (nessuna chiamata reale, nessuna lettura della
+chiave):
+
+- baseline nano: 36 chiamate pianificate, fino a 72 tentativi, 571.746 token input e
+  576.000 token output di upper bound, tetto prudenziale **834.350 µUSD (0,83435 USD)**,
+  listino `v2-2026-07-17-hg-m5`;
+- candidato mini: stesse 36 chiamate/72 tentativi e stessi upper bound di token, tetto
+  prudenziale **3.020.810 µUSD (3,02081 USD)**, listino `v3-2026-07-20-mini-benchmark`.
+
+Sono limiti preventivi, non consumo o costo reale.
+
+Comando reale mini — **da NON eseguire senza nuova autorizzazione esplicita del
+docente**, da terminale interattivo, con entrambe le protezioni e la frase esatta
+`ESEGUI BENCHMARK REALE`:
+
+```powershell
+pnpm --filter @schoolforge/functions benchmark:m5-quality -- --benchmark-model=gpt-5.4-mini-2026-03-17 --execute-real-openai --i-understand-this-costs-money
+```
+
+Stato: nessuna scelta definitiva del modello. Produzione e DEV restano su
+`gpt-5.4-nano-2026-03-17`. Il benchmark reale mini resta subordinato ad autorizzazione
+esplicita. **Gate G7 resta APERTO.**

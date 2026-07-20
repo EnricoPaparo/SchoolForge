@@ -28,6 +28,14 @@ export const OPENAI_LEGACY_MODEL = 'gpt-5-nano-2025-08-07';
 export const OPENAI_PRODUCTION_MODEL = 'gpt-5.4-nano-2026-03-17';
 
 /**
+ * M5-QUALITY-05 — modello candidato usato **esclusivamente** dalla CLI locale di
+ * benchmark per un confronto controllato con il modello di produzione. Non è mai
+ * il modello runtime delle Functions, di DEV o di Firestore: non compare in
+ * `OPENAI_PRODUCTION_MODEL`, non è persistito e non introduce fallback.
+ */
+export const OPENAI_BENCHMARK_CANDIDATE_MODEL = 'gpt-5.4-mini-2026-03-17';
+
+/**
  * Fonte ufficiale: https://developers.openai.com/api/docs/models/gpt-5.4-nano
  * Verificata il 2026-07-17. La pagina documenta lo snapshot immutabile,
  * Responses API, Structured Outputs e prezzi standard $0.20/M input,
@@ -35,6 +43,16 @@ export const OPENAI_PRODUCTION_MODEL = 'gpt-5.4-nano-2026-03-17';
  */
 export const OPENAI_PRICE_SOURCE = 'https://developers.openai.com/api/docs/models/gpt-5.4-nano';
 export const OPENAI_PRICE_VERIFIED_ON = '2026-07-17';
+
+/**
+ * Fonte ufficiale del candidato benchmark:
+ * https://developers.openai.com/api/docs/models/gpt-5.4-mini
+ * Prezzi standard $0.75/M input, $4.50/M output. Il listino `cached input` non
+ * è incluso: il benchmark non lo usa né lo misura, quindi non viene inventato.
+ */
+export const OPENAI_BENCHMARK_CANDIDATE_PRICE_SOURCE =
+  'https://developers.openai.com/api/docs/models/gpt-5.4-mini';
+export const OPENAI_BENCHMARK_CANDIDATE_PRICE_VERIFIED_ON = '2026-07-20';
 
 /**
  * Listini production **immutabili** e versionati. Contengono solo coppie
@@ -55,10 +73,23 @@ export const PRICE_LISTS: Readonly<Record<string, Readonly<Record<string, ModelP
       outputMicroUsdPerMillion: 1_250_000,
     },
   },
+  // M5-QUALITY-05 — nuova versione dedicata al solo prezzo del candidato
+  // benchmark `gpt-5.4-mini`. Una versione pubblicata non viene mai modificata
+  // in loco: il candidato riceve la propria versione invece di essere aggiunto a
+  // `v2`. $0.75/M input → 750 000 µUSD, $4.50/M output → 4 500 000 µUSD.
+  'v3-2026-07-20-mini-benchmark': {
+    [OPENAI_BENCHMARK_CANDIDATE_MODEL]: {
+      inputMicroUsdPerMillion: 750_000,
+      outputMicroUsdPerMillion: 4_500_000,
+    },
+  },
 };
 
 /** Versione di listino di default per DEV (deve esistere in `PRICE_LISTS`). */
 export const DEFAULT_PRICE_LIST_VERSION = 'v2-2026-07-17-hg-m5';
+
+/** Versione di listino del candidato benchmark (solo CLI di benchmark). */
+export const OPENAI_BENCHMARK_CANDIDATE_PRICE_LIST_VERSION = 'v3-2026-07-20-mini-benchmark';
 
 /** Prezzo del modello per una versione di listino, o `null` se assente. */
 export function lookupModelPrice(priceListVersion: string, model: string): ModelPrice | null {
