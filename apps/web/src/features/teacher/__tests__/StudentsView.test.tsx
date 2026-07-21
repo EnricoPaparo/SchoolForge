@@ -143,6 +143,36 @@ describe('StudentsView — tabs Studenti/Classi (DUX-05A)', () => {
     expect(mockListClasses).toHaveBeenCalledOnce();
   });
 
+  it('shows the three access columns (TWU-01), with "—" for legacy portal timestamps', async () => {
+    const withPortal = STUDENTS.map((s) =>
+      s.id === 'u-approved'
+        ? {
+            ...s,
+            createdAt: { toDate: () => new Date('2026-01-05T10:00:00Z') },
+            firstPortalAccessAt: { toDate: () => new Date('2026-02-10T10:00:00Z') },
+            lastPortalAccessAt: { toDate: () => new Date('2026-03-20T10:00:00Z') },
+          }
+        : s,
+    );
+    mockListStudents.mockResolvedValue(withPortal);
+    render(<StudentsView ownerUid={OWNER_UID} />);
+
+    // Header labels: the request timestamp is renamed, plus first/last access.
+    expect(await screen.findByRole('columnheader', { name: 'Richiesta accesso' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Primo accesso' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Ultimo accesso' })).toBeTruthy();
+
+    // Approved row shows its real portal timestamps.
+    const approvedRow = screen.getByText('Ada Approved').closest('tr')!;
+    expect(within(approvedRow).getByText('05/01/2026')).toBeTruthy();
+    expect(within(approvedRow).getByText('10/02/2026')).toBeTruthy();
+    expect(within(approvedRow).getByText('20/03/2026')).toBeTruthy();
+
+    // A legacy row without portal fields shows "—" for first/last access.
+    const pendingRow = screen.getByText('Pia Pending').closest('tr')!;
+    expect(within(pendingRow).getAllByText('—').length).toBeGreaterThanOrEqual(2);
+  });
+
   it('moves tab selection and focus with the keyboard', async () => {
     mockListStudents.mockResolvedValue(STUDENTS);
     render(<StudentsView ownerUid={OWNER_UID} />);

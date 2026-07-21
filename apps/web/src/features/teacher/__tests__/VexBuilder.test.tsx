@@ -62,8 +62,37 @@ describe('VexBuilder (VEX-01A)', () => {
     const note = screen.getByText(/precompilati usando UDA, tipologia e difficoltà/i);
     expect(note).toBeTruthy();
     // It is a note, never an alert/error.
-    expect(note.closest('[role="note"]')).not.toBeNull();
+    const noteEl = note.closest('[role="note"]');
+    expect(noteEl).not.toBeNull();
     expect(note.closest('[role="alert"]')).toBeNull();
+    // TWU-01: an aria-hidden decorative SVG icon replaces the old text glyph.
+    const icon = noteEl!.querySelector('svg');
+    expect(icon).not.toBeNull();
+    expect(icon!.getAttribute('aria-hidden')).toBe('true');
+    // No leftover text glyphs / emoji as pseudo-icons.
+    expect(noteEl!.textContent).not.toMatch(/[ℹ!✕↻]/);
+  });
+
+  it('renders the incompatibility error with an SVG icon and no text-glyph prefix (TWU-01)', () => {
+    setup({
+      refs: [ref('a'), ref('b', { difficolta: 5, maxPoints: 5 })],
+      groups: [g('x', ['a', 'b'])],
+    });
+    const alert = screen.getAllByRole('alert')[0]!;
+    expect(alert.querySelector('svg')).not.toBeNull();
+    expect(alert.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+    expect(alert.textContent).not.toMatch(/[!✕]/);
+    // The message itself is still shown.
+    expect(alert.textContent).toMatch(/stessa difficoltà/i);
+  });
+
+  it('renders warnings as role="status" with an SVG icon, no "!" prefix (TWU-01)', () => {
+    // A one-question group triggers a non-blocking warning.
+    setup({ refs: [ref('a'), ref('b')], groups: [g('x', ['a'])] });
+    const warning = screen.getByText(/assegnata a tutti gli studenti/i).closest('[role="status"]');
+    expect(warning).not.toBeNull();
+    expect(warning!.querySelector('svg')).not.toBeNull();
+    expect(warning!.textContent).not.toMatch(/^\s*!/);
   });
 
   it('switches mode via the radios without clearing groups', () => {

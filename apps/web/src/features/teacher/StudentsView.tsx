@@ -568,6 +568,7 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
                     <th className={styles.th}>Email</th>
                     <th className={styles.th}>Stato</th>
                     <th className={styles.th}>Classe</th>
+                    <th className={styles.th}>Richiesta accesso</th>
                     <th className={styles.th}>Primo accesso</th>
                     <th className={styles.th}>Ultimo accesso</th>
                     <th className={styles.th} aria-label="Azioni"></th>
@@ -600,7 +601,12 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
                         </select>
                       </td>
                       <td className={styles.td}>{formatTimestamp(s.createdAt)}</td>
-                      <td className={styles.td}>{formatTimestamp(s.lastLoginAt)}</td>
+                      <td className={styles.td}>
+                        {s.firstPortalAccessAt ? formatTimestamp(s.firstPortalAccessAt) : '—'}
+                      </td>
+                      <td className={styles.td}>
+                        {s.lastPortalAccessAt ? formatTimestamp(s.lastPortalAccessAt) : '—'}
+                      </td>
                       <td className={styles.tdActions}>
                         {deleteConfirmId === s.id ? (
                           <div className={styles.confirmActions}>

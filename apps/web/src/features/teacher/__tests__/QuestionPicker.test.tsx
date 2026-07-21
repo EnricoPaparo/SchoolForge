@@ -53,6 +53,29 @@ function questionList() {
   return screen.getByRole('list', { name: 'Elenco domande filtrate' });
 }
 
+describe('QuestionPicker — preview ellipsis (TWU-01)', () => {
+  it('keeps the full preview text in the DOM and exposes it via title, with the clamp class', () => {
+    const longPreview =
+      'Descrivi in dettaglio, con esempi concreti, il funzionamento del modello ' +
+      'ISO/OSI e le responsabilità di ciascuno dei sette livelli, evidenziando le ' +
+      'differenze rispetto al modello TCP/IP.';
+    render(
+      <QuestionPicker
+        entries={[{ ...ENTRIES[0]!, questionPreview: longPreview }]}
+        selectedIds={new Set()}
+        onChange={vi.fn()}
+      />,
+    );
+
+    // The complete text is present (never truncated in the data/DOM)…
+    const preview = screen.getByText(longPreview);
+    // …available on hover via title…
+    expect(preview.getAttribute('title')).toBe(longPreview);
+    // …and carries the class responsible for the two-line CSS clamp.
+    expect(preview.className).toMatch(/rowPreview/);
+  });
+});
+
 describe('QuestionPicker — filters', () => {
   it('shows all filter controls', () => {
     renderPicker();

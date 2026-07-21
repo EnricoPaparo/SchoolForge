@@ -49,6 +49,49 @@ service cloud.firestore {
         .data.get('classId', null);
     }
 
+    // TWU-01 — an already-approved student stamping ONLY their own portal
+    // access telemetry on their own students/{uid} document. Everything that
+    // authorizes or identifies the student is frozen: only the two access
+    // timestamps (plus, optionally, updatedAt) may move, and only ever to the
+    // server clock.
+    //   * FIRST ping (firstPortalAccessAt absent): the update MUST add
+    //     firstPortalAccessAt == request.time AND lastPortalAccessAt ==
+    //     request.time in the same write — a first ping carrying only
+    //     lastPortalAccessAt is denied.
+    //   * LATER ping (firstPortalAccessAt present): it stays immutable and
+    //     must remain present in the result; the client may only move
+    //     lastPortalAccessAt (and, if used, updatedAt).
+    // Neither timestamp can ever be dropped. This grants NOTHING to a teacher
+    // (they already have full update), to another student, to a
+    // pending/rejected caller, or to an anonymous user.
+    function isOwnPortalAccessPing(uid) {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      let hadFirst = resource.data.keys().hasAny(['firstPortalAccessAt']);
+      return isAuthenticated()
+        && request.auth.uid == uid
+        // Must be an update of an existing, already-approved student doc.
+        && resource.data.status == 'approved'
+        // Only the access timestamps (and optionally updatedAt) may change.
+        && affected.hasOnly(['firstPortalAccessAt', 'lastPortalAccessAt', 'updatedAt'])
+        // lastPortalAccessAt is always stamped now, and thus never removed.
+        && request.resource.data.lastPortalAccessAt == request.time
+        && (
+          hadFirst
+            // Immutable and still present in the resulting document.
+            ? (
+                !affected.hasAny(['firstPortalAccessAt'])
+                && request.resource.data.firstPortalAccessAt == resource.data.firstPortalAccessAt
+              )
+            // First ping: firstPortalAccessAt MUST be added, == request.time.
+            : (
+                affected.hasAny(['firstPortalAccessAt'])
+                && request.resource.data.firstPortalAccessAt == request.time
+              )
+        )
+        // If updatedAt is touched at all it must be the server clock.
+        && (!affected.hasAny(['updatedAt']) || request.resource.data.updatedAt == request.time);
+    }
+
     // True only for an approved student (with the portal active) whose own
     // classId is one of the given classIds. `classIds` is always passed in
     // by the caller from resource/cross-doc data via .get('classIds', []),
@@ -366,7 +409,11 @@ service cloud.firestore {
     // own status/classId/ownerUid after the initial request.
     match /students/{uid} {
       allow read: if isOwner() || (isAuthenticated() && request.auth.uid == uid);
-      allow update, delete: if isOwner();
+      allow delete: if isOwner();
+      // TWU-01: besides the teacher's full update, an approved student may
+      // stamp ONLY their own portal-access telemetry on their own document —
+      // first/last portal access — and nothing else (see isOwnPortalAccessPing).
+      allow update: if isOwner() || isOwnPortalAccessPing(uid);
       allow create: if (isOwner() && request.resource.data.ownerUid == request.auth.uid)
         || (
           isAuthenticated()

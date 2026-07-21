@@ -302,6 +302,19 @@ export function VerificationsView() {
     studentName: string;
     events: AttentionEvent[];
   } | null>(null);
+  // ── Manual "Aggiorna" for the submissions monitor (TWU-01) ─────────
+  // Explicit, teacher-initiated refresh of the pull-based monitor reads
+  // (correction progress / «Valutate» / correction status + class roster),
+  // reusing the same services as the selection effect. No new query, no
+  // listener, no polling — the cost exists ONLY on click.
+  const [monitorRefreshing, setMonitorRefreshing] = useState(false);
+  const [monitorRefreshError, setMonitorRefreshError] = useState<string | null>(null);
+  const [monitorRefreshedAt, setMonitorRefreshedAt] = useState(false);
+  // Synchronous re-entrancy guard: two rapid clicks both pass the state check
+  // before React re-renders, so a ref set before the first await is what
+  // actually collapses them into a single refresh orchestration.
+  const monitorRefreshingRef = useRef(false);
+  const mountedRef = useRef(true);
 
   // ── Delete submission (M4-LIFE-02) ────────────────────────────────
   const [submissionDeleteTarget, setSubmissionDeleteTarget] = useState<{
@@ -408,6 +421,45 @@ export function VerificationsView() {
       setCorrectionProgress(await loadCorrectionProgressByStudent(selectedVer.id, db));
     } catch {
       /* non-blocking: la tabella resta usabile con i dati precedenti */
+    }
+  }
+
+  /**
+   * TWU-01 — single refresh orchestration behind the «Aggiorna» button. It runs
+   * the same two load operations (queries) as the selection effect —
+   * `loadCorrectionProgressByStudent` and `listStudents` — so no new
+   * query/index is introduced. Billed Firestore reads are proportional to the
+   * documents each query returns (not a fixed "2 reads"); the cost is incurred
+   * only on click, with no listener or polling. Keeps the current data on
+   * error, guards against double-click, and never updates state after unmount.
+   */
+  async function refreshMonitor(): Promise<void> {
+    if (!selectedVer || monitorRefreshingRef.current) return;
+    monitorRefreshingRef.current = true;
+    setMonitorRefreshing(true);
+    setMonitorRefreshedAt(false);
+    setMonitorRefreshError(null);
+    const verId = selectedVer.id;
+    const classId = selectedVer.teacherSnapshot?.classId ?? selectedVer.config.classId;
+    try {
+      const [progress, students] = await Promise.all([
+        loadCorrectionProgressByStudent(verId, db),
+        listStudents(ownerUid, db),
+      ]);
+      if (!mountedRef.current) return;
+      const approved = students
+        .filter((s) => s.status === 'approved' && s.classId === classId)
+        .sort((a, b) => (a.displayName ?? a.email).localeCompare(b.displayName ?? b.email, 'it'));
+      setCorrectionProgress(progress);
+      setMonitorStudents(approved);
+      setMonitorRefreshedAt(true);
+    } catch {
+      // Keep the current data visible; surface a readable, dismissible error.
+      if (mountedRef.current)
+        setMonitorRefreshError('Impossibile aggiornare le consegne. Riprova.');
+    } finally {
+      if (mountedRef.current) setMonitorRefreshing(false);
+      monitorRefreshingRef.current = false;
     }
   }
 
@@ -633,6 +685,21 @@ export function VerificationsView() {
       unsubscribe();
     };
   }, [selectedVerId, selectedVerStatus]);
+
+  // TWU-01: tracks mount state so the manual refresh never sets state after
+  // unmount (StrictMode-safe: the ref is reset to true on the second mount).
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // Reset the transient refresh feedback when the selected verification changes.
+  useEffect(() => {
+    setMonitorRefreshError(null);
+    setMonitorRefreshedAt(false);
+  }, [selectedVerId]);
 
   async function loadAll() {
     setLoadError(null);
@@ -2160,6 +2227,18 @@ export function VerificationsView() {
                 <div className={styles.monitorActions}>
                   <button
                     type="button"
+                    className={styles.refreshBtn}
+                    aria-label="Aggiorna consegne"
+                    disabled={monitorStudents === null || monitorRefreshing}
+                    onClick={() => void refreshMonitor()}
+                  >
+                    <IconRotateCcw />
+                    <span className={styles.refreshLabel}>
+                      {monitorRefreshing ? 'Aggiornamento…' : 'Aggiorna'}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
                     className="btn-primary"
                     disabled={
                       monitorStudents === null ||
@@ -2224,6 +2303,17 @@ export function VerificationsView() {
                 ))}
               </div>
               <>
+                {/* TWU-01: discreet, accessible refresh feedback. Success is a
+                    polite aria-live status; failure is an assertive alert that
+                    keeps the current data visible below. */}
+                <p role="status" aria-live="polite" className={styles.refreshStatus}>
+                  {monitorRefreshedAt && !monitorRefreshing ? 'Aggiornato ora' : ''}
+                </p>
+                {monitorRefreshError && (
+                  <p role="alert" className="text-error">
+                    {monitorRefreshError}
+                  </p>
+                )}
                 {csvExportError && (
                   <p role="alert" className="text-error">
                     {csvExportError}

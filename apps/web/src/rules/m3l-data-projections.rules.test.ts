@@ -8,7 +8,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
 import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
 
@@ -311,6 +311,150 @@ describe('Firestore rules — students/{uid} approval roster', () => {
     });
 
     await assertFails(getDoc(doc(anonDb(), 'students', OTHER_UID)));
+  });
+});
+
+// ─── students/{uid} portal-access telemetry (TWU-01) ─────────────────────────
+
+describe('Firestore rules — students/{uid} portal-access telemetry (TWU-01)', () => {
+  const ANOTHER_UID = 'another-uid';
+
+  function anotherStudentDb() {
+    return testEnv.authenticatedContext(ANOTHER_UID).firestore() as unknown as Firestore;
+  }
+
+  async function seedApprovedStudent(extra: Record<string, unknown> = {}) {
+    await seedOwnerOnly();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'students', OTHER_UID), {
+        uid: OTHER_UID,
+        ownerUid: OWNER_UID,
+        email: 'student@example.com',
+        displayName: 'Studente Test',
+        status: 'approved',
+        classId: null,
+        createdAt: null,
+        updatedAt: null,
+        lastLoginAt: null,
+        ...extra,
+      });
+    });
+  }
+
+  it('approved student can set both access timestamps on the first entry', async () => {
+    await seedApprovedStudent();
+    await assertSucceeds(
+      updateDoc(doc(studentDb(), 'students', OTHER_UID), {
+        firstPortalAccessAt: serverTimestamp(),
+        lastPortalAccessAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denies a first ping that carries only lastPortalAccessAt (firstPortalAccessAt required)', async () => {
+    await seedApprovedStudent(); // no firstPortalAccessAt yet
+    await assertFails(
+      updateDoc(doc(studentDb(), 'students', OTHER_UID), {
+        lastPortalAccessAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('approved student can update only lastPortalAccessAt on a later entry', async () => {
+    await seedApprovedStudent({ firstPortalAccessAt: new Date('2026-01-01') });
+    await assertSucceeds(
+      updateDoc(doc(studentDb(), 'students', OTHER_UID), {
+        lastPortalAccessAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('approved student cannot change an existing firstPortalAccessAt', async () => {
+    await seedApprovedStudent({ firstPortalAccessAt: new Date('2026-01-01') });
+    await assertFails(
+      updateDoc(doc(studentDb(), 'students', OTHER_UID), {
+        firstPortalAccessAt: serverTimestamp(),
+        lastPortalAccessAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('approved student cannot set firstPortalAccessAt to a non-server value', async () => {
+    await seedApprovedStudent();
+    await assertFails(
+      updateDoc(doc(studentDb(), 'students', OTHER_UID), {
+        firstPortalAccessAt: new Date('2020-01-01'),
+        lastPortalAccessAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('approved student cannot delete lastPortalAccessAt', async () => {
+    await seedApprovedStudent({
+      firstPortalAccessAt: new Date('2026-01-01'),
+      lastPortalAccessAt: new Date('2026-01-02'),
+    });
+    // Removing lastPortalAccessAt (deleteField would drop it) fails: the rule
+    // requires it to equal request.time on every write.
+    await assertFails(
+      updateDoc(doc(studentDb(), 'students', OTHER_UID), {
+        lastPortalAccessAt: null,
+      }),
+    );
+  });
+
+  it('approved student cannot change any other field alongside the ping', async () => {
+    await seedApprovedStudent();
+    await assertFails(
+      updateDoc(doc(studentDb(), 'students', OTHER_UID), {
+        lastPortalAccessAt: serverTimestamp(),
+        classId: 'class-1',
+      }),
+    );
+  });
+
+  it('approved student cannot self-elevate status via the access update', async () => {
+    await seedApprovedStudent({ status: 'pending' });
+    await assertFails(
+      updateDoc(doc(studentDb(), 'students', OTHER_UID), {
+        status: 'approved',
+        lastPortalAccessAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('a pending student cannot stamp access timestamps', async () => {
+    await seedApprovedStudent({ status: 'pending' });
+    await assertFails(
+      updateDoc(doc(studentDb(), 'students', OTHER_UID), {
+        lastPortalAccessAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('another student cannot stamp access timestamps on someone else’s document', async () => {
+    await seedApprovedStudent();
+    await assertFails(
+      updateDoc(doc(anotherStudentDb(), 'students', OTHER_UID), {
+        lastPortalAccessAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('an anonymous user cannot stamp access timestamps', async () => {
+    await seedApprovedStudent();
+    await assertFails(
+      updateDoc(doc(anonDb(), 'students', OTHER_UID), {
+        lastPortalAccessAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('owner keeps full update authority over the document', async () => {
+    await seedApprovedStudent();
+    await assertSucceeds(
+      setDoc(doc(ownerDb(), 'students', OTHER_UID), { classId: 'class-1' }, { merge: true }),
+    );
   });
 });
 

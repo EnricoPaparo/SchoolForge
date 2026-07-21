@@ -11,6 +11,7 @@ import {
   type VexWarning,
 } from '../repository/verifications/vexGroups.js';
 import { VexQuestionSelect } from './VexQuestionSelect.js';
+import { IconCircleX, IconInfo, IconRotateCcw, IconTriangleAlert } from '../../components/icons.js';
 import styles from './VexBuilder.module.css';
 
 /**
@@ -174,7 +175,7 @@ export function VexBuilder({
       </div>
 
       <p className={styles.orderNote}>
-        <span aria-hidden="true">↻</span>
+        <IconRotateCcw size={16} aria-hidden="true" />
         <span>
           In entrambe le modalità l'ordine delle domande resta comunque casuale a ogni apertura:
           cambia solo la disposizione visiva, non le domande assegnate.
@@ -212,13 +213,13 @@ export function VexBuilder({
 
           {validation.blocking.map((msg, i) => (
             <p key={`b-${i}`} className={`${styles.note} ${styles.err}`} role="alert">
-              <span aria-hidden="true">✕</span>
+              <IconCircleX size={16} aria-hidden="true" />
               <span>{msg}</span>
             </p>
           ))}
           {globalWarnings.map((w, i) => (
-            <p key={`w-${i}`} className={`${styles.note} ${styles.warn}`}>
-              <span aria-hidden="true">!</span>
+            <p key={`w-${i}`} className={`${styles.note} ${styles.warn}`} role="status">
+              <IconTriangleAlert size={16} aria-hidden="true" />
               <span>{w.message}</span>
             </p>
           ))}
@@ -262,7 +263,7 @@ export function VexBuilder({
                 tecnica (UDA + tipologia + difficoltà), non una garanzia
                 pedagogica. Nessun popup/toast/conferma. */}
             <p className={styles.assistNote} role="note">
-              <span aria-hidden="true">ℹ</span>
+              <IconInfo size={16} aria-hidden="true" />
               <span>
                 I gruppi sono precompilati usando UDA, tipologia e difficoltà. Verifica sempre che
                 le domande siano realmente equivalenti dal punto di vista didattico.
@@ -342,15 +343,15 @@ export function VexBuilder({
 
                     {invalid && (
                       <p className={`${styles.note} ${styles.err}`} role="alert">
-                        <span aria-hidden="true">✕</span>
+                        <IconCircleX size={16} aria-hidden="true" />
                         <span>
                           Le alternative devono avere stessa UDA, stesso tipo e stessa difficoltà.
                         </span>
                       </p>
                     )}
                     {groupWarnings.map((w, i) => (
-                      <p key={`gw-${i}`} className={`${styles.note} ${styles.warn}`}>
-                        <span aria-hidden="true">!</span>
+                      <p key={`gw-${i}`} className={`${styles.note} ${styles.warn}`} role="status">
+                        <IconTriangleAlert size={16} aria-hidden="true" />
                         <span>{w.message}</span>
                       </p>
                     ))}
