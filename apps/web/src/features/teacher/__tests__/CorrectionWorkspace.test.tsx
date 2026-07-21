@@ -886,7 +886,17 @@ describe('CorrectionWorkspace — completion gate', () => {
     const dialog = await screen.findByRole('alertdialog', { name: /conferma completamento/i });
     fireEvent.click(within(dialog).getByText('Conferma'));
 
-    await waitFor(() => expect(mockCompleteCorrection).toHaveBeenCalledWith(SUBMISSION_ID, {}));
+    await waitFor(() =>
+      expect(mockCompleteCorrection).toHaveBeenCalledWith(
+        SUBMISSION_ID,
+        {},
+        expect.objectContaining({
+          submission: expect.objectContaining({ submissionId: SUBMISSION_ID }),
+          verification: expect.any(Object),
+          questions: expect.any(Array),
+        }),
+      ),
+    );
     await waitFor(() => expect(screen.getByText('Corretta')).toBeTruthy());
     expect(mockLoadCorrectionWorkspace).toHaveBeenCalledTimes(1);
   });
@@ -931,7 +941,17 @@ describe('CorrectionWorkspace — completed state actions', () => {
     );
     fireEvent.click(within(dialog).getByText('Conferma'));
 
-    await waitFor(() => expect(mockReopenCorrection).toHaveBeenCalledWith(SUBMISSION_ID, {}));
+    await waitFor(() =>
+      expect(mockReopenCorrection).toHaveBeenCalledWith(
+        SUBMISSION_ID,
+        {},
+        expect.objectContaining({
+          submission: expect.objectContaining({ submissionId: SUBMISSION_ID }),
+          verification: expect.any(Object),
+          questions: expect.any(Array),
+        }),
+      ),
+    );
   });
 });
 
@@ -966,7 +986,15 @@ describe('CorrectionWorkspace — returned state toggles', () => {
     );
     fireEvent.click(screen.getByLabelText('Mostra soluzioni'));
     await waitFor(() =>
-      expect(mockSetSolutionsVisible).toHaveBeenCalledWith(SUBMISSION_ID, true, {}),
+      expect(mockSetSolutionsVisible).toHaveBeenCalledWith(
+        SUBMISSION_ID,
+        true,
+        {},
+        expect.objectContaining({
+          submission: expect.objectContaining({ submissionId: SUBMISSION_ID }),
+          verification: expect.any(Object),
+        }),
+      ),
     );
   });
 

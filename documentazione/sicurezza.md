@@ -373,7 +373,27 @@ Contratto completo e mitigazioni in [m5-ai-assisted-roadmap.md](m5-ai-assisted-r
 - **PDF studente disabilitato/nascosto** in `equivalent_variants`: nessun modo client-side di
   ottenere il PDF completo (esporrebbe/ometterebbe le domande in modo incoerente con la variante).
 
-Restano a VEX-02B/03 la correzione/IA/restituzione/export filtrati e il Gate GVEX.
+**Correzione/IA/restituzione/export (VEX-02B).** Ogni flusso post-consegna usa il risolutore
+canonico `resolveAssignedQuestions` (fail-closed) come unica fonte di verità sulle domande
+applicabili:
+
+- la correzione manuale costruisce lo scheletro delle `evaluations` sulla **sola variante**
+  (dal teacherSnapshot owner-only, non dalla proiezione comune-only); un'evaluation con order
+  estraneo blocca il caricamento; totali/percentuale/`maxPoints` sulla variante;
+- la correzione **IA** riceve esclusivamente le domande aperte assegnate (mai testi/soluzioni/
+  metadati di alternative non assegnate); una variante malformata esclude la consegna
+  (`invalid_variant`) **prima** del grader e della prenotazione budget (le altre proseguono);
+- la `CorrectionReturnDoc` (student-readable) contiene **solo** domande/risposte/evaluation
+  assegnate e, se abilitate, solo le relative soluzioni — mai `commonQuestionOrders`,
+  `equivalentGroups`, `alternativeOrders`, alternative non assegnate o il teacherSnapshot;
+- gli export riferiti a una consegna (registro PDF/CSV) usano i totali della variante; il **PDF
+  docente** della verifica resta completo (insieme docente), il **PDF studente** resta disabilitato
+  in VEX. Le Rules restano invariate (`correctionReturns` è già letto solo dallo studente
+  proprietario quando visibile); la proiezione è costruita e validata dal service client del
+  docente owner e la scrittura resta soggetta alle Rules. Dopo l'eliminazione di una submission un nuovo svolgimento riceve una
+  **nuova** assegnazione server-side.
+
+Resta a VEX-03 il Gate GVEX (rollout coordinato, smoke multi-studente, evidenze finali).
 
 Requisiti di sicurezza congelati per `equivalent_variants` (dettaglio in
 [`vex-contract.md`](vex-contract.md) §4–5):

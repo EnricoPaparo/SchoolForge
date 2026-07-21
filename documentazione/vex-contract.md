@@ -9,9 +9,11 @@ VEX-02A: **svolgimento studente della variante assegnata** — il portale instra
 `equivalent_variants` sulla callable (avvio/ripresa/refresh idempotenti), `OnlineExamView`
 mostra **solo** le domande assegnate, autosave/consegna sono ristretti alla variante (client
 fail-closed + **Rules**: `answers`/`flagged` ⊆ `assignedAnswerKeys`), PDF studente disabilitato
-in VEX. `same_questions` resta invariato e **non** invoca la callable. **VEX non è ancora
-deployabile:** restano **VEX-02B** (correzione/IA/restituzione/export/PDF-variante filtrati) e
-il Gate **GVEX**. VEX-00B (sotto) ha congelato il contratto.
+in VEX. VEX-02B: **correzione, IA, restituzione ed export sulla sola variante assegnata** —
+risolutore canonico condiviso (`assignedVariant.ts`), scheletro correzione + totali +
+restituzione + payload IA costruiti esclusivamente su `assignedQuestionOrders` (fail-closed).
+`same_questions` resta invariato e **non** invoca la callable. **VEX non è ancora deployabile:**
+resta **VEX-03 / Gate GVEX** (rollout coordinato, smoke, evidenze). VEX-00B ha congelato il contratto.
 **Natura (VEX-00B):** documentazione + prototipo. **Nessun codice applicativo, Function, Rule,
 indice, schema reale, dipendenza o deploy** è introdotto dal pacchetto VEX-00B.
 **Base:** UX e decisioni di prodotto già approvate in
@@ -370,9 +372,39 @@ codice applicativo.
 - ✅ test web mirati + Rules Emulator (subset risposte). Nessun listener/polling; nessun nuovo
   documento; nessuna lettura pool/Storage o delle alternative dal browser.
 
-### VEX-02B — **correzione/restituzione/export filtrati** (aperto)
-- workspace docente/IA/restituzione filtrati per `assignedQuestionOrders` §5;
-- export docente filtrato; eventuale PDF della singola variante; statistiche per variante.
+### VEX-02B — **correzione/IA/restituzione/export filtrati** ✅ IMPLEMENTATO
+- ✅ **risolutore canonico** `resolveAssignedQuestions` (`assignedVariant.ts`): unica fonte di
+  verità su quali domande dello snapshot si applicano a una consegna. `same_questions`=tutte;
+  `equivalent_variants`=variante validata fail-closed (comuni + una per gruppo, no estranei/
+  duplicati/inesistenti, `assignedAnswerKeys` obbligatorio e coerente); la modalità deriva
+  **esclusivamente** da `teacherSnapshot.distributionMode`: solo `undefined` legacy equivale a
+  `same_questions`, mentre `null`, vuoto, tipo errato o sconosciuto falliscono; **mai** fallback
+  all'intero banco e mai inferenza dalla presenza/assenza dell'assegnazione;
+- ✅ **correzione manuale**: lo scheletro delle `evaluations` è costruito dal teacherSnapshot
+  sulla **sola variante** (la proiezione pubblica ha solo le comuni); il workspace mostra e
+  valuta solo la variante; un'evaluation con order estraneo blocca il caricamento (fail-closed);
+  totali/percentuale/completezza sulla variante (`maxPoints` = somma delle assegnate);
+- ✅ **IA** (`aiCorrectionEngine`): `classifySubmission` restringe skeleton/openOrders/closedOrders/
+  `totalMaxPoints` alla variante; payload solo domande aperte assegnate; assegnazione malformata
+  ⇒ consegna **esclusa** (`invalid_variant`) prima del grader e della prenotazione budget, le
+  altre proseguono; closed-only ⇒ zero provider/token/costo; idempotenza/lease/budget invariati;
+- ✅ **restituzione**: `CorrectionReturnDoc` self-contained con **solo** domande/risposte/
+  evaluation assegnate; testo/opzioni dal teacherSnapshot filtrato; `setSolutionsVisible` espone
+  solo le soluzioni assegnate; nessun `commonQuestionOrders`/`equivalentGroups`/`alternativeOrders`/
+  alternative non assegnate; vista studente invariata;
+- ✅ **export**: PDF docente completo invariato; registro/riepilogo PDF+CSV usano i totali della
+  variante (dal `correctionSummary`, già evaluation-based); PDF studente resta disabilitato in VEX;
+- ✅ **ciclo di vita**: nessun documento assignment separato; eliminare la submission elimina
+  `assignedQuestionOrders`/`assignedAnswerKeys`; riapertura/azzeramento/completamento/restituzione
+  conservano la variante; dopo eliminazione un nuovo svolgimento riceve una **nuova** assegnazione
+  server-side (la submission precedente non esiste più);
+- ✅ Rules invariate (`correctionReturns` è già leggibile solo dallo studente proprietario quando
+  visibile); il service client owner-only costruisce e valida la proiezione, poi le Rules
+  autorizzano la scrittura. Test web + Functions mirati. Nessun nuovo listener/query/documento;
+  nel workspace submission e snapshot già caricati vengono riusati; write invariati.
+
+### VEX-03 / Gate GVEX — **rollout coordinato + evidenze** (aperto)
+- deploy coordinato callable+Rules+client, smoke multi-studente, verifica assenza fughe e costi reali.
 
 ### VEX-03 — **hardening equità/costi/smoke**
 - gate multi-studente, nessuna fuga di alternative/soluzioni, verifica costi reali.

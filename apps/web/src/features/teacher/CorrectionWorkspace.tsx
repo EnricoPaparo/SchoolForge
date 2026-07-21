@@ -349,6 +349,11 @@ export function CorrectionWorkspace({
           generalFeedback: generalFeedback === '' ? null : generalFeedback,
         },
         db,
+        {
+          submission: data.submission,
+          verification: data.verification,
+          questions: data.questions,
+        },
       );
       if (!mountedRef.current) return;
       const persisted = editableFromResult(saved);
@@ -386,7 +391,12 @@ export function CorrectionWorkspace({
     setBusy('complete');
     setActionError(null);
     try {
-      await completeCorrection(submissionId, db);
+      if (!data) return;
+      await completeCorrection(submissionId, db, {
+        submission: data.submission,
+        verification: data.verification,
+        questions: data.questions,
+      });
       // The atomic write is the source of truth for this deterministic
       // transition. Do not turn a successful completion into a false error
       // because a second, unrelated workspace reload is slow or denied.
@@ -426,7 +436,17 @@ export function CorrectionWorkspace({
     setBusy('reopen');
     setActionError(null);
     try {
-      await reopenCorrection(submissionId, db);
+      await reopenCorrection(
+        submissionId,
+        db,
+        data
+          ? {
+              submission: data.submission,
+              verification: data.verification,
+              questions: data.questions,
+            }
+          : undefined,
+      );
       await refresh();
       setConfirmReopen(false);
     } catch (err) {
@@ -450,10 +470,14 @@ export function CorrectionWorkspace({
   }
 
   async function handleToggleSolutions(visible: boolean) {
+    if (!data) return;
     setBusy('solutions');
     setActionError(null);
     try {
-      await setSolutionsVisible(submissionId, visible, db);
+      await setSolutionsVisible(submissionId, visible, db, {
+        submission: data.submission,
+        verification: data.verification,
+      });
       await refresh();
     } catch (err) {
       if (mountedRef.current) setActionError(saveErrorMessage(err));

@@ -197,6 +197,10 @@ export interface VerificationData {
   status: string;
   /** teacherSnapshot.questions congelate; `null` se lo snapshot non è disponibile. */
   teacherQuestions: TeacherQuestion[] | null;
+  /** Fonte autorevole VEX. Solo `undefined` legacy equivale a same_questions. */
+  distributionMode?: unknown;
+  commonQuestionOrders?: unknown;
+  equivalentGroups?: unknown;
 }
 
 export interface SubmissionData {
@@ -205,6 +209,12 @@ export interface SubmissionData {
   studentUid: string;
   status: string;
   answers: Record<string, SubmissionAnswer | undefined>;
+  /**
+   * Campi non attendibili finché il `distributionMode` autorevole non è stato
+   * validato. La loro assenza non sceglie mai `same_questions`.
+   */
+  assignedQuestionOrders?: unknown;
+  assignedAnswerKeys?: unknown;
 }
 
 export interface ExistingEvaluation {
@@ -233,6 +243,10 @@ export type ExclusionCode =
   | 'too_large'
   | 'changed_since_preview'
   | 'write_error'
+  // VEX-02B — assegnazione della variante mancante/malformata: la consegna è
+  // esclusa (nessuna chiamata provider, nessuna prenotazione budget, nessun
+  // punteggio), le altre proseguono.
+  | 'invalid_variant'
   // M5-05D2B-2 — esiti tecnici del provider reale (retry/deadline), privacy-safe.
   | 'deadline_exceeded'
   | 'rate_limited'
@@ -518,6 +532,97 @@ export type Classification =
   | { status: 'eligible'; eligible: EligibleSubmission }
   | { status: 'excluded'; code: ExclusionCode };
 
+function resolveApplicableTeacherQuestions(params: {
+  teacherQuestions: TeacherQuestion[];
+  distributionMode: unknown;
+  commonQuestionOrders: unknown;
+  equivalentGroups: unknown;
+  submission: SubmissionData;
+}): TeacherQuestion[] | null {
+  const { teacherQuestions, distributionMode, submission } = params;
+  const byOrder = new Map<number, TeacherQuestion>();
+  for (const question of teacherQuestions) {
+    if (!Number.isInteger(question.order) || byOrder.has(question.order)) return null;
+    byOrder.set(question.order, question);
+  }
+  if (distributionMode === undefined || distributionMode === 'same_questions') {
+    return [...teacherQuestions].sort((a, b) => a.order - b.order);
+  }
+  if (distributionMode !== 'equivalent_variants') return null;
+
+  const assigned = submission.assignedQuestionOrders;
+  const answerKeys = submission.assignedAnswerKeys;
+  const common = params.commonQuestionOrders;
+  const groups = params.equivalentGroups;
+  if (
+    !Array.isArray(assigned) ||
+    assigned.length === 0 ||
+    !Array.isArray(answerKeys) ||
+    !Array.isArray(common) ||
+    !Array.isArray(groups) ||
+    groups.length === 0
+  ) {
+    return null;
+  }
+
+  const configured = new Set<number>();
+  for (const order of common) {
+    if (!Number.isInteger(order) || !byOrder.has(order) || configured.has(order)) return null;
+    configured.add(order);
+  }
+  const groupIds = new Set<string>();
+  const normalizedGroups: { id: string; alternativeOrders: number[] }[] = [];
+  for (const rawGroup of groups) {
+    if (!rawGroup || typeof rawGroup !== 'object') return null;
+    const group = rawGroup as { id?: unknown; alternativeOrders?: unknown };
+    if (
+      typeof group.id !== 'string' ||
+      group.id.trim().length === 0 ||
+      groupIds.has(group.id) ||
+      !Array.isArray(group.alternativeOrders) ||
+      group.alternativeOrders.length === 0
+    ) {
+      return null;
+    }
+    groupIds.add(group.id);
+    const alternatives: number[] = [];
+    for (const order of group.alternativeOrders) {
+      if (!Number.isInteger(order) || !byOrder.has(order) || configured.has(order)) return null;
+      configured.add(order);
+      alternatives.push(order);
+    }
+    normalizedGroups.push({ id: group.id, alternativeOrders: alternatives });
+  }
+  if (configured.size !== byOrder.size) return null;
+
+  const assignedSet = new Set<number>();
+  for (const order of assigned) {
+    if (!Number.isInteger(order) || !byOrder.has(order) || assignedSet.has(order)) return null;
+    assignedSet.add(order);
+  }
+  if (assignedSet.size !== common.length + normalizedGroups.length) return null;
+  if (common.some((order) => !assignedSet.has(order))) return null;
+  if (
+    normalizedGroups.some(
+      (group) => group.alternativeOrders.filter((order) => assignedSet.has(order)).length !== 1,
+    )
+  ) {
+    return null;
+  }
+
+  if (answerKeys.length !== assignedSet.size) return null;
+  const keySet = new Set(answerKeys);
+  if (
+    keySet.size !== answerKeys.length ||
+    [...assignedSet].some((order) => !keySet.has(order.toString()))
+  ) {
+    return null;
+  }
+  return teacherQuestions
+    .filter((question) => assignedSet.has(question.order))
+    .sort((a, b) => a.order - b.order);
+}
+
 /**
  * Classifica una consegna come **elaborabile** o **esclusa** con codice. Non
  * scrive nulla, non chiama il grader. Le consegne con **sole chiuse** non
@@ -531,6 +636,9 @@ export function classifySubmission(params: {
   expectedOwner: string;
   expectedVerificationId: string;
   teacherQuestions: TeacherQuestion[] | null;
+  distributionMode?: unknown;
+  commonQuestionOrders?: unknown;
+  equivalentGroups?: unknown;
   submission: SubmissionData | null;
   correction: CorrectionData | null;
 }): Classification {
@@ -550,15 +658,26 @@ export function classifySubmission(params: {
     return { status: 'excluded', code: 'correction_not_in_progress' };
   }
 
-  const skeleton = teacherQuestions.map((q) => ({ order: q.order, maxPoints: q.maxPoints }));
-  const totalMaxPoints = teacherQuestions.reduce((sum, q) => sum + q.maxPoints, 0);
+  // La modalità deriva esclusivamente dallo snapshot: solo `undefined` legacy
+  // equivale a same_questions. Ogni VEX malformata diventa `invalid_variant`.
+  const applicableQuestions = resolveApplicableTeacherQuestions({
+    teacherQuestions,
+    distributionMode: params.distributionMode,
+    commonQuestionOrders: params.commonQuestionOrders,
+    equivalentGroups: params.equivalentGroups,
+    submission,
+  });
+  if (!applicableQuestions) return { status: 'excluded', code: 'invalid_variant' };
+
+  const skeleton = applicableQuestions.map((q) => ({ order: q.order, maxPoints: q.maxPoints }));
+  const totalMaxPoints = applicableQuestions.reduce((sum, q) => sum + q.maxPoints, 0);
   const closedOrders: number[] = [];
   const openOrders: number[] = [];
   let alreadyGraded = 0;
   let alreadyGradedPoints = 0;
   let openCharTotal = 0;
 
-  for (const q of teacherQuestions) {
+  for (const q of applicableQuestions) {
     const key = q.order.toString();
     const existing = correction?.evaluations[key];
     if (existing && existing.points !== null) {
@@ -1008,6 +1127,9 @@ async function buildOperationPreflight(
         expectedOwner: ownerUid,
         expectedVerificationId: request.verificationId,
         teacherQuestions,
+        distributionMode: verification?.distributionMode,
+        commonQuestionOrders: verification?.commonQuestionOrders,
+        equivalentGroups: verification?.equivalentGroups,
         submission,
         correction,
       });
@@ -1603,6 +1725,9 @@ export async function runExecution(
                 expectedOwner: ownerUid,
                 expectedVerificationId: request.verificationId,
                 teacherQuestions,
+                distributionMode: verification?.distributionMode,
+                commonQuestionOrders: verification?.commonQuestionOrders,
+                equivalentGroups: verification?.equivalentGroups,
                 submission: loadedSubmission,
                 correction,
               }),

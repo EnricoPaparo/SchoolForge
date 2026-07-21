@@ -1,5 +1,7 @@
 import type { Firestore } from 'firebase/firestore';
+import type { VerificationDoc } from '../../../types/firestore.js';
 import { mapWithConcurrency } from '../verifications/mapWithConcurrency.js';
+import { resolveAssignedQuestions } from '../verifications/assignedVariant.js';
 import {
   clearCorrection,
   completeCorrection,
@@ -28,12 +30,15 @@ export type BatchExclusionReason =
   | 'not_completed_or_returned'
   | 'already_returned'
   | 'clear_requires_reopen'
-  | 'nothing_to_clear';
+  | 'nothing_to_clear'
+  | 'invalid_variant';
 
 export interface BatchSelectedRow {
   studentUid: string;
   studentName: string;
   submissionId: string;
+  assignedQuestionOrders?: number[];
+  assignedAnswerKeys?: string[];
   /** Progresso della correzione, o `undefined` se non esiste ancora. */
   progress: CorrectionProgress | undefined;
 }
@@ -42,6 +47,8 @@ export interface BatchEligibleRow {
   studentUid: string;
   studentName: string;
   submissionId: string;
+  assignedQuestionOrders?: number[];
+  assignedAnswerKeys?: string[];
 }
 
 export interface BatchExcludedRow {
@@ -92,16 +99,28 @@ export function classifyRow(
 export function computeEligibility(
   action: BatchAction,
   rows: BatchSelectedRow[],
+  verification?: VerificationDoc,
 ): BatchEligibility {
   const eligible: BatchEligibleRow[] = [];
   const excluded: BatchExcludedRow[] = [];
   for (const row of rows) {
-    const reason = classifyRow(action, row);
+    let reason = classifyRow(action, row);
+    if (reason === null && verification?.teacherSnapshot) {
+      try {
+        resolveAssignedQuestions(verification.teacherSnapshot, row);
+      } catch {
+        reason = 'invalid_variant';
+      }
+    }
     if (reason === null) {
       eligible.push({
         studentUid: row.studentUid,
         studentName: row.studentName,
         submissionId: row.submissionId,
+        ...(row.assignedQuestionOrders
+          ? { assignedQuestionOrders: row.assignedQuestionOrders }
+          : {}),
+        ...(row.assignedAnswerKeys ? { assignedAnswerKeys: row.assignedAnswerKeys } : {}),
       });
     } else {
       excluded.push({ studentUid: row.studentUid, studentName: row.studentName, reason });
@@ -118,11 +137,21 @@ export interface BatchRowResult {
   error?: string;
 }
 
-const SERVICE: Record<BatchAction, (submissionId: string, db: Firestore) => Promise<unknown>> = {
-  complete: completeCorrection,
-  reopen: reopenCorrection,
-  return: returnCorrection,
-  clear: clearCorrection,
+const SERVICE: Record<
+  BatchAction,
+  (
+    submissionId: string,
+    db: Firestore,
+    context?: Parameters<typeof completeCorrection>[2],
+  ) => Promise<unknown>
+> = {
+  complete: (submissionId, db, context) =>
+    context ? completeCorrection(submissionId, db, context) : completeCorrection(submissionId, db),
+  reopen: (submissionId, db, context) =>
+    context ? reopenCorrection(submissionId, db, context) : reopenCorrection(submissionId, db),
+  return: (submissionId, db) => returnCorrection(submissionId, db),
+  clear: (submissionId, db, context) =>
+    context ? clearCorrection(submissionId, db, context) : clearCorrection(submissionId, db),
 };
 
 /**
@@ -136,11 +165,29 @@ export async function runBatchCorrectionAction(
   action: BatchAction,
   rows: BatchEligibleRow[],
   db: Firestore,
+  variantContext?: { verificationId: string; verification: VerificationDoc },
 ): Promise<BatchRowResult[]> {
   const service = SERVICE[action];
   return mapWithConcurrency(rows, BATCH_CONCURRENCY, async (row) => {
     try {
-      await service(row.submissionId, db);
+      if (variantContext) {
+        await service(row.submissionId, db, {
+          submission: {
+            submissionId: row.submissionId,
+            verificationId: variantContext.verificationId,
+            ...(row.assignedQuestionOrders
+              ? { assignedQuestionOrders: row.assignedQuestionOrders }
+              : {}),
+            ...(row.assignedAnswerKeys ? { assignedAnswerKeys: row.assignedAnswerKeys } : {}),
+          },
+          verification: variantContext.verification,
+          ...(variantContext.verification.teacherSnapshot?.questions
+            ? { questions: variantContext.verification.teacherSnapshot.questions }
+            : {}),
+        });
+      } else {
+        await service(row.submissionId, db);
+      }
       return { studentUid: row.studentUid, submissionId: row.submissionId, outcome: 'succeeded' };
     } catch (err) {
       return {
@@ -172,5 +219,7 @@ export function describeBatchExclusion(reason: BatchExclusionReason): string {
       return 'Riapri prima la correzione';
     case 'nothing_to_clear':
       return 'Nessuna correzione da azzerare';
+    case 'invalid_variant':
+      return 'Variante assegnata non valida; operazione esclusa';
   }
 }

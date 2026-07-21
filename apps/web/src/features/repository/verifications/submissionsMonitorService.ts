@@ -30,6 +30,9 @@ export type SubmissionMonitorItem = {
   lastSavedAt: SubmissionDoc['lastSavedAt'];
   submittedAt: SubmissionDoc['submittedAt'];
   deliveryCode: SubmissionDoc['deliveryCode'];
+  /** Campi server-only riusati dalle azioni batch per validare VEX senza nuove letture. */
+  assignedQuestionOrders?: number[];
+  assignedAnswerKeys?: string[];
   correctionStatus: NonNullable<SubmissionDoc['correctionStatus']>;
   correctionSummary: SubmissionDoc['correctionSummary'] | null;
   attentionEventsCount: number;
@@ -45,6 +48,10 @@ function toMonitorItem(data: SubmissionDoc): SubmissionMonitorItem {
     lastSavedAt: data.lastSavedAt,
     submittedAt: data.submittedAt,
     deliveryCode: data.deliveryCode,
+    ...(data.assignedQuestionOrders
+      ? { assignedQuestionOrders: [...data.assignedQuestionOrders] }
+      : {}),
+    ...(data.assignedAnswerKeys ? { assignedAnswerKeys: [...data.assignedAnswerKeys] } : {}),
     correctionStatus: normalizeSubmissionCorrectionStatus(data.correctionStatus),
     correctionSummary: data.correctionSummary ?? null,
     attentionEventsCount: attentionEvents.length,
