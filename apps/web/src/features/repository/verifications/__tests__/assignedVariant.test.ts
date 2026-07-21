@@ -95,7 +95,7 @@ describe('resolveAssignedQuestions', () => {
     const snap = vexSnap();
     snap.questions = [...snap.questions!, q(5)];
     expect(() => resolveAssignedQuestions(snap, { assignedQuestionOrders: [0, 1, 3, 5] })).toThrow(
-      /estranei|gruppo/,
+      /estranee|gruppo/,
     );
   });
 
