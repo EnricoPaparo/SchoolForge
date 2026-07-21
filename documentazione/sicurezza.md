@@ -388,8 +388,9 @@ applicabili:
   `equivalentGroups`, `alternativeOrders`, alternative non assegnate o il teacherSnapshot;
 - gli export riferiti a una consegna (registro PDF/CSV) usano i totali della variante; il **PDF
   docente** della verifica resta completo (insieme docente), il **PDF studente** resta disabilitato
-  in VEX. Le Rules restano invariate (correctionReturns è già letto solo dal proprietario; il doc
-  è costruito server-side). Dopo l'eliminazione di una submission un nuovo svolgimento riceve una
+  in VEX. Le Rules restano invariate (`correctionReturns` è già letto solo dallo studente
+  proprietario quando visibile); la proiezione è costruita e validata dal service client del
+  docente owner e la scrittura resta soggetta alle Rules. Dopo l'eliminazione di una submission un nuovo svolgimento riceve una
   **nuova** assegnazione server-side.
 
 Resta a VEX-03 il Gate GVEX (rollout coordinato, smoke multi-studente, evidenze finali).

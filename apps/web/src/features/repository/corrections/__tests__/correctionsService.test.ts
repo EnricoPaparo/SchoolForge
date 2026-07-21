@@ -243,6 +243,9 @@ function seedReturn(overrides: Partial<CorrectionReturnDoc> = {}) {
 describe('openOrLoadCorrection', () => {
   it('returns the existing correction without writing when one already exists', async () => {
     seedCorrection();
+    seedSubmittedSubmission();
+    seedVerification();
+    seedPublishedProjection();
 
     const { correction, projectionQuestions } = await openOrLoadCorrection(
       SUBMISSION_ID,
@@ -251,7 +254,8 @@ describe('openOrLoadCorrection', () => {
     );
 
     expect(correction.status).toBe('in_progress');
-    // Fast path: no projection was read for an already-existing correction.
+    // The service validates the existing skeleton but does not expose the
+    // projection as a create-path reuse value.
     expect(projectionQuestions).toBeNull();
     expect(mockRunTransaction).not.toHaveBeenCalled();
     expect(mockSetDoc).not.toHaveBeenCalled();
@@ -259,6 +263,7 @@ describe('openOrLoadCorrection', () => {
 
   it('creates a new in_progress correction initialized from the published projection', async () => {
     seedSubmittedSubmission();
+    seedVerification();
     seedPublishedProjection();
     mockRunTransaction.mockImplementation(async (_db: unknown, fn: (tx: unknown) => unknown) => {
       const tx = {
@@ -288,6 +293,7 @@ describe('openOrLoadCorrection', () => {
 
   it('is idempotent against two near-simultaneous opens (transaction re-checks existence)', async () => {
     seedSubmittedSubmission();
+    seedVerification();
     seedPublishedProjection();
     const alreadyCreated = correctionFixture({ reopenCount: 0 });
     mockRunTransaction.mockImplementation(async (_db: unknown, fn: (tx: unknown) => unknown) => {
@@ -331,6 +337,11 @@ describe('openOrLoadCorrection', () => {
 // ─── saveCorrection ──────────────────────────────────────────────────────────
 
 describe('saveCorrection', () => {
+  beforeEach(() => {
+    seedSubmittedSubmission();
+    seedVerification();
+    seedPublishedProjection();
+  });
   it('computes totals correctly and writes a single update with no reopen', async () => {
     seedCorrection();
 
@@ -502,6 +513,11 @@ describe('saveCorrection', () => {
 // ─── completeCorrection ──────────────────────────────────────────────────────
 
 describe('completeCorrection', () => {
+  beforeEach(() => {
+    seedSubmittedSubmission();
+    seedVerification();
+    seedPublishedProjection();
+  });
   it('rejects completion while a question is unevaluated', async () => {
     seedCorrection({
       evaluations: {
@@ -618,6 +634,12 @@ describe('returnCorrection', () => {
 // ─── reopenCorrection ────────────────────────────────────────────────────────
 
 describe('reopenCorrection', () => {
+  beforeEach(() => {
+    seedSubmittedSubmission();
+    seedVerification();
+    seedPublishedProjection();
+  });
+
   it('increments reopenCount by exactly one and appends a reopened event', async () => {
     seedCorrection({ status: 'completed', reopenCount: 0 });
 
@@ -661,6 +683,12 @@ describe('reopenCorrection', () => {
 // ─── clearCorrection (M5-04C) ────────────────────────────────────────────────
 
 describe('clearCorrection', () => {
+  beforeEach(() => {
+    seedSubmittedSubmission();
+    seedVerification();
+    seedPublishedProjection();
+  });
+
   type Write = { path: string; data: Record<string, unknown> };
   function wireTransaction(): { updates: Write[]; sets: Write[] } {
     const updates: Write[] = [];
@@ -826,6 +854,7 @@ describe('setReturnVisibleToStudent', () => {
 
 describe('setSolutionsVisible', () => {
   it('inserts frozen correctAnswer on every question when turning visible on', async () => {
+    seedSubmittedSubmission();
     seedVerification();
     seedCorrection({ status: 'returned' });
     seedReturn({ solutionsVisible: false });
@@ -874,6 +903,7 @@ describe('setSolutionsVisible', () => {
   });
 
   it('rejects revealing solutions for a legacy verification with no frozen teacherSnapshot.questions', async () => {
+    seedSubmittedSubmission();
     seedDoc(`verifications/${VERIFICATION_ID}`, {
       exists: true,
       data: {
@@ -898,7 +928,7 @@ describe('setSolutionsVisible', () => {
     seedReturn({ solutionsVisible: false });
 
     await expect(setSolutionsVisible(SUBMISSION_ID, true, fakeDb)).rejects.toThrow(
-      /snapshot con soluzioni/i,
+      /snapshot.*soluzioni/i,
     );
   });
 
@@ -932,7 +962,7 @@ describe('setSolutionsVisible', () => {
 
 // ─── VEX-02B — correzione ristretta alla variante assegnata ──────────────────
 
-function seedVexVerification() {
+function seedVexVerification(distributionMode: unknown = 'equivalent_variants') {
   seedDoc(`verifications/${VERIFICATION_ID}`, {
     exists: true,
     data: {
@@ -946,7 +976,7 @@ function seedVexVerification() {
         programId: 'p1',
         importId: 'i1',
         questionRefs: [],
-        distributionMode: 'equivalent_variants',
+        distributionMode,
         commonQuestionOrders: [0],
         equivalentGroups: [{ id: 'g1', alternativeOrders: [1, 2] }],
         questions: [
@@ -963,6 +993,48 @@ function seedVexVerification() {
 }
 
 describe('VEX-02B — assigned-variant correction', () => {
+  it('fails closed before writes when a VEX assignment is missing or empty', async () => {
+    seedSubmittedSubmission();
+    seedVexVerification();
+    await expect(openOrLoadCorrection(SUBMISSION_ID, OWNER_UID, fakeDb)).rejects.toThrow(
+      /variante assegnata mancante/i,
+    );
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+
+    seedSubmittedSubmission({ assignedQuestionOrders: [], assignedAnswerKeys: [] });
+    await expect(openOrLoadCorrection(SUBMISSION_ID, OWNER_UID, fakeDb)).rejects.toThrow(/vuota/i);
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+  });
+
+  it.each([null, '', 'future_mode'])(
+    'fails closed for malformed distributionMode %p',
+    async (distributionMode) => {
+      seedSubmittedSubmission({
+        assignedQuestionOrders: [0, 1],
+        assignedAnswerKeys: ['0', '1'],
+      });
+      seedVexVerification(distributionMode);
+      await expect(openOrLoadCorrection(SUBMISSION_ID, OWNER_UID, fakeDb)).rejects.toThrow(
+        /modalit/i,
+      );
+      expect(mockRunTransaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it('same_questions with unexpected assignment still uses the complete projection', async () => {
+    seedSubmittedSubmission({ assignedQuestionOrders: [0], assignedAnswerKeys: ['0'] });
+    seedVerification();
+    seedPublishedProjection();
+    mockRunTransaction.mockImplementation(async (_db: unknown, fn: (tx: unknown) => unknown) =>
+      fn({
+        get: vi.fn().mockResolvedValue({ exists: () => false }),
+        set: vi.fn(),
+      }),
+    );
+    const { correction } = await openOrLoadCorrection(SUBMISSION_ID, OWNER_UID, fakeDb);
+    expect(Object.keys(correction.evaluations)).toEqual(['0', '1']);
+  });
+
   it('openOrLoadCorrection builds the skeleton on the assigned variant only', async () => {
     seedSubmittedSubmission({ assignedQuestionOrders: [0, 1], assignedAnswerKeys: ['0', '1'] });
     seedVexVerification();
@@ -983,6 +1055,37 @@ describe('VEX-02B — assigned-variant correction', () => {
     expect((captured?.evaluations as Record<string, unknown>) ?? {}).toHaveProperty('1');
     expect((captured?.evaluations as Record<string, unknown>) ?? {}).not.toHaveProperty('2');
     expect(correction.maxPoints).toBe(15); // 10 + 5, not the whole bank (20)
+  });
+
+  it('save and complete reject an unassigned evaluation before any write', async () => {
+    seedSubmittedSubmission({ assignedQuestionOrders: [0, 1], assignedAnswerKeys: ['0', '1'] });
+    seedVexVerification();
+    seedCorrection({
+      evaluations: {
+        '0': { order: 0, points: 8, maxPoints: 10 },
+        '1': { order: 1, points: 4, maxPoints: 5 },
+        '2': { order: 2, points: 4, maxPoints: 5 },
+      },
+      totalPoints: 16,
+      maxPoints: 20,
+      percentage: 80,
+    });
+
+    await expect(
+      saveCorrection(
+        {
+          submissionId: SUBMISSION_ID,
+          evaluations: { '0': { points: 8 }, '1': { points: 4 }, '2': { points: 4 } },
+          generalFeedback: null,
+        },
+        fakeDb,
+      ),
+    ).rejects.toThrow(/insieme delle domande|estranea|incoerente/i);
+    await expect(completeCorrection(SUBMISSION_ID, fakeDb)).rejects.toThrow(
+      /insieme delle domande|estranea|incoerente/i,
+    );
+    expect(mockBatchUpdate).not.toHaveBeenCalled();
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
 
   it('returnCorrection includes only the assigned variant, no unassigned alternative', async () => {
@@ -1009,5 +1112,33 @@ describe('VEX-02B — assigned-variant correction', () => {
     expect(returnDoc.questions.some((q: { order: number }) => q.order === 2)).toBe(false);
     expect(returnDoc.maxPoints).toBe(15);
     for (const q of returnDoc.questions) expect(q.correctAnswer).toBeUndefined();
+  });
+
+  it('setSolutionsVisible reveals solutions only for the assigned VEX questions', async () => {
+    seedSubmittedSubmission({ assignedQuestionOrders: [0, 1], assignedAnswerKeys: ['0', '1'] });
+    seedVexVerification();
+    seedCorrection({
+      status: 'returned',
+      evaluations: {
+        '0': { order: 0, points: 8, maxPoints: 10 },
+        '1': { order: 1, points: 4, maxPoints: 5 },
+      },
+      totalPoints: 12,
+      maxPoints: 15,
+      percentage: 80,
+    });
+    seedReturn({
+      solutionsVisible: false,
+      questions: returnFixture().questions.filter((question) => question.order !== 2),
+    });
+
+    await setSolutionsVisible(SUBMISSION_ID, true, fakeDb);
+
+    const [, update] = mockUpdateDoc.mock.calls[0]!;
+    expect(update.questions.map((question: { order: number }) => question.order)).toEqual([0, 1]);
+    expect(
+      update.questions.map((question: { correctAnswer: string }) => question.correctAnswer),
+    ).toEqual(['sol0', 'sol1']);
+    expect(JSON.stringify(update)).not.toContain('sol2');
   });
 });

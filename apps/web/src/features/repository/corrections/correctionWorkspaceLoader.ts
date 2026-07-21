@@ -133,6 +133,7 @@ export async function loadCorrectionWorkspace(
     ownerUid,
     db,
     verification,
+    submission,
   );
 
   const teacherQuestions = verification.teacherSnapshot?.questions;
@@ -157,9 +158,17 @@ export async function loadCorrectionWorkspace(
   // esattamente con le domande applicabili (variante). Un order estraneo (es.
   // una correzione incoerente) blocca il caricamento invece di essere ignorato
   // silenziosamente o di falsare totali/completezza.
-  const applicableOrders = new Set(questions.map((q) => q.order));
-  for (const key of Object.keys(correction.evaluations)) {
-    if (!applicableOrders.has(Number(key))) {
+  const applicableByKey = new Map(questions.map((q) => [q.order.toString(), q]));
+  if (Object.keys(correction.evaluations).length !== applicableByKey.size) {
+    throw new Error('Correzione incoerente: insieme delle domande incompleto o estraneo.');
+  }
+  for (const [key, evaluation] of Object.entries(correction.evaluations)) {
+    const question = applicableByKey.get(key);
+    if (
+      !question ||
+      evaluation.order !== question.order ||
+      evaluation.maxPoints !== question.maxPoints
+    ) {
       throw new Error(
         `Correzione incoerente: la domanda ${key} non appartiene alla variante assegnata.`,
       );

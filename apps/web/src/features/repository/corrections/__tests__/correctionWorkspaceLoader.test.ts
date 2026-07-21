@@ -127,12 +127,43 @@ function seedVerificationLegacy() {
   });
 }
 
+function seedVexVerification(distributionMode: unknown = 'equivalent_variants') {
+  seedDoc(`verifications/${VERIFICATION_ID}`, {
+    exists: true,
+    data: {
+      ownerUid: OWNER_UID,
+      status: 'active',
+      config: { title: 'V', classId: 'a', programId: 'p1', importId: 'i1', questionRefs: [] },
+      teacherSnapshot: {
+        title: 'V',
+        classId: 'a',
+        className: 'Classe A',
+        programId: 'p1',
+        importId: 'i1',
+        questionRefs: [],
+        distributionMode,
+        commonQuestionOrders: [0],
+        equivalentGroups: [{ id: 'g1', alternativeOrders: [1, 2] }],
+        questions: [
+          { order: 0, tipo: 'aperta', maxPoints: 2, testo: 'Comune', soluzione: 'S0' },
+          { order: 1, tipo: 'aperta', maxPoints: 3, testo: 'A', soluzione: 'S1' },
+          { order: 2, tipo: 'aperta', maxPoints: 3, testo: 'B', soluzione: 'S2' },
+        ],
+        activatedAt: { seconds: 1, nanoseconds: 0 },
+      },
+    },
+  });
+}
+
 describe('loadCorrectionWorkspace', () => {
   it('assembles submission + verification + correction + null correctionReturn', async () => {
     seedSubmittedSubmission();
     seedVerification();
     mockOpenOrLoadCorrection.mockResolvedValue({
-      correction: { status: 'in_progress', evaluations: {} },
+      correction: {
+        status: 'in_progress',
+        evaluations: { '0': { order: 0, points: null, maxPoints: 10 } },
+      },
       projectionQuestions: null,
     });
 
@@ -147,6 +178,7 @@ describe('loadCorrectionWorkspace', () => {
       OWNER_UID,
       fakeDb,
       expect.anything(),
+      expect.anything(),
     );
   });
 
@@ -154,7 +186,10 @@ describe('loadCorrectionWorkspace', () => {
     seedSubmittedSubmission();
     seedVerification();
     mockOpenOrLoadCorrection.mockResolvedValue({
-      correction: { status: 'in_progress', evaluations: {} },
+      correction: {
+        status: 'in_progress',
+        evaluations: { '0': { order: 0, points: null, maxPoints: 10 } },
+      },
       projectionQuestions: null,
     });
 
@@ -180,7 +215,13 @@ describe('loadCorrectionWorkspace', () => {
     // Projection already read while creating the correction — out of order to
     // prove the loader sorts by `order`.
     mockOpenOrLoadCorrection.mockResolvedValue({
-      correction: { status: 'in_progress', evaluations: {} },
+      correction: {
+        status: 'in_progress',
+        evaluations: {
+          '0': { order: 0, points: null, maxPoints: 10 },
+          '1': { order: 1, points: null, maxPoints: 5 },
+        },
+      },
       projectionQuestions: [
         { order: 1, tipo: 'aperta', maxPoints: 5, testo: 'D2' },
         { order: 0, tipo: 'aperta', maxPoints: 10, testo: 'D1' },
@@ -207,7 +248,10 @@ describe('loadCorrectionWorkspace', () => {
     seedSubmittedSubmission();
     seedVerificationLegacy();
     mockOpenOrLoadCorrection.mockResolvedValue({
-      correction: { status: 'in_progress', evaluations: {} },
+      correction: {
+        status: 'in_progress',
+        evaluations: { '0': { order: 0, points: null, maxPoints: 10 } },
+      },
       projectionQuestions: null,
     });
     mockLoadPublishedProjectionQuestions.mockResolvedValue([
@@ -229,7 +273,10 @@ describe('loadCorrectionWorkspace', () => {
       data: { visibleToStudent: true, solutionsVisible: false },
     });
     mockOpenOrLoadCorrection.mockResolvedValue({
-      correction: { status: 'returned', evaluations: {} },
+      correction: {
+        status: 'returned',
+        evaluations: { '0': { order: 0, points: 10, maxPoints: 10 } },
+      },
       projectionQuestions: null,
     });
 
@@ -268,4 +315,50 @@ describe('loadCorrectionWorkspace', () => {
       /verifica non trovata/i,
     );
   });
+
+  it('renders only the assigned VEX questions and validates the exact correction skeleton', async () => {
+    seedSubmittedSubmission({
+      assignedQuestionOrders: [0, 2],
+      assignedAnswerKeys: ['0', '2'],
+    });
+    seedVexVerification();
+    mockOpenOrLoadCorrection.mockResolvedValue({
+      correction: {
+        status: 'in_progress',
+        evaluations: {
+          '0': { order: 0, points: null, maxPoints: 2 },
+          '2': { order: 2, points: null, maxPoints: 3 },
+        },
+      },
+      projectionQuestions: null,
+    });
+
+    const result = await loadCorrectionWorkspace(SUBMISSION_ID, OWNER_UID, fakeDb);
+    expect(result.questions.map((question) => question.order)).toEqual([0, 2]);
+    expect(result.questions.map((question) => question.soluzione)).toEqual(['S0', 'S2']);
+  });
+
+  it('fails closed for VEX without assignment before exposing all snapshot questions', async () => {
+    seedSubmittedSubmission();
+    seedVexVerification();
+    mockOpenOrLoadCorrection.mockRejectedValue(new Error('Variante assegnata mancante'));
+    await expect(loadCorrectionWorkspace(SUBMISSION_ID, OWNER_UID, fakeDb)).rejects.toThrow(
+      /variante assegnata mancante/i,
+    );
+  });
+
+  it.each([null, '', 'future_mode'])(
+    'fails closed for malformed distributionMode %p',
+    async (distributionMode) => {
+      seedSubmittedSubmission();
+      seedVexVerification(distributionMode);
+      mockOpenOrLoadCorrection.mockResolvedValue({
+        correction: { status: 'in_progress', evaluations: {} },
+        projectionQuestions: null,
+      });
+      await expect(loadCorrectionWorkspace(SUBMISSION_ID, OWNER_UID, fakeDb)).rejects.toThrow(
+        /modalit/i,
+      );
+    },
+  );
 });

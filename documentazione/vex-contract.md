@@ -376,7 +376,10 @@ codice applicativo.
 - ✅ **risolutore canonico** `resolveAssignedQuestions` (`assignedVariant.ts`): unica fonte di
   verità su quali domande dello snapshot si applicano a una consegna. `same_questions`=tutte;
   `equivalent_variants`=variante validata fail-closed (comuni + una per gruppo, no estranei/
-  duplicati/inesistenti, `assignedAnswerKeys` coerente); **mai** fallback all'intero banco;
+  duplicati/inesistenti, `assignedAnswerKeys` obbligatorio e coerente); la modalità deriva
+  **esclusivamente** da `teacherSnapshot.distributionMode`: solo `undefined` legacy equivale a
+  `same_questions`, mentre `null`, vuoto, tipo errato o sconosciuto falliscono; **mai** fallback
+  all'intero banco e mai inferenza dalla presenza/assenza dell'assegnazione;
 - ✅ **correzione manuale**: lo scheletro delle `evaluations` è costruito dal teacherSnapshot
   sulla **sola variante** (la proiezione pubblica ha solo le comuni); il workspace mostra e
   valuta solo la variante; un'evaluation con order estraneo blocca il caricamento (fail-closed);
@@ -395,8 +398,10 @@ codice applicativo.
   `assignedQuestionOrders`/`assignedAnswerKeys`; riapertura/azzeramento/completamento/restituzione
   conservano la variante; dopo eliminazione un nuovo svolgimento riceve una **nuova** assegnazione
   server-side (la submission precedente non esiste più);
-- ✅ Rules invariate (correctionReturns già student-own-read-only; return doc costruito server-side);
-  test web + Functions mirati. Nessuna nuova query/lettura/documento; write invariati.
+- ✅ Rules invariate (`correctionReturns` è già leggibile solo dallo studente proprietario quando
+  visibile); il service client owner-only costruisce e valida la proiezione, poi le Rules
+  autorizzano la scrittura. Test web + Functions mirati. Nessun nuovo listener/query/documento;
+  nel workspace submission e snapshot già caricati vengono riusati; write invariati.
 
 ### VEX-03 / Gate GVEX — **rollout coordinato + evidenze** (aperto)
 - deploy coordinato callable+Rules+client, smoke multi-studente, verifica assenza fughe e costi reali.

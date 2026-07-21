@@ -51,7 +51,10 @@ describe('resolveAssignedQuestions', () => {
   });
 
   it('VEX valid → common + one per group, sorted', () => {
-    const out = resolveAssignedQuestions(vexSnap(), { assignedQuestionOrders: [0, 2, 3] });
+    const out = resolveAssignedQuestions(vexSnap(), {
+      assignedQuestionOrders: [0, 2, 3],
+      assignedAnswerKeys: ['0', '2', '3'],
+    });
     expect(out.map((x) => x.order)).toEqual([0, 2, 3]);
   });
 
@@ -117,11 +120,66 @@ describe('resolveAssignedQuestions', () => {
     const snap = vexSnap();
     snap.questions![1] = q(1, { maxCharacters: 500 });
     snap.questions![2] = q(2, { maxCharacters: 1200 });
-    const out = resolveAssignedQuestions(snap, { assignedQuestionOrders: [0, 2, 3] });
+    const out = resolveAssignedQuestions(snap, {
+      assignedQuestionOrders: [0, 2, 3],
+      assignedAnswerKeys: ['0', '2', '3'],
+    });
     expect(out.find((x) => x.order === 2)?.maxCharacters).toBe(1200);
   });
 
   it('rejects a missing assignment for VEX (fail-closed, no fallback to full snapshot)', () => {
     expect(() => resolveAssignedQuestions(vexSnap(), {})).toThrow(AssignedVariantError);
+  });
+
+  it('rejects an empty VEX assignment when questions exist', () => {
+    expect(() =>
+      resolveAssignedQuestions(vexSnap(), {
+        assignedQuestionOrders: [],
+        assignedAnswerKeys: [],
+      }),
+    ).toThrow(/vuota/);
+  });
+
+  it.each([null, '', 'future_mode'])(
+    'rejects malformed or unknown distributionMode %p',
+    (distributionMode) => {
+      const snapshot = { ...vexSnap(), distributionMode } as unknown as Snap;
+      expect(() =>
+        resolveAssignedQuestions(snapshot, {
+          assignedQuestionOrders: [0, 1, 3],
+          assignedAnswerKeys: ['0', '1', '3'],
+        }),
+      ).toThrow(/modalit/i);
+    },
+  );
+
+  it('does not reinterpret same_questions as VEX when assignment fields are present', () => {
+    const snapshot: Snap = {
+      distributionMode: 'same_questions',
+      questions: [q(2), q(0), q(1)],
+    };
+    expect(
+      resolveAssignedQuestions(snapshot, {
+        assignedQuestionOrders: [0],
+        assignedAnswerKeys: ['0'],
+      }).map((question) => question.order),
+    ).toEqual([0, 1, 2]);
+  });
+
+  it('requires assignedAnswerKeys for VEX', () => {
+    expect(() =>
+      resolveAssignedQuestions(vexSnap(), { assignedQuestionOrders: [0, 1, 3] }),
+    ).toThrow(/assignedAnswerKeys/);
+  });
+
+  it('rejects a snapshot where one question is outside common/groups', () => {
+    const snapshot = vexSnap();
+    snapshot.questions = [...snapshot.questions!, q(5)];
+    expect(() =>
+      resolveAssignedQuestions(snapshot, {
+        assignedQuestionOrders: [0, 1, 3],
+        assignedAnswerKeys: ['0', '1', '3'],
+      }),
+    ).toThrow(/estranee/);
   });
 });

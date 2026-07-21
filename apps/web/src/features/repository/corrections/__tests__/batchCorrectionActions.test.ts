@@ -113,6 +113,39 @@ describe('computeEligibility', () => {
       { studentUid: 'c', studentName: 'Studente c', reason: 'no_correction' },
     ]);
   });
+
+  it('excludes an invalid VEX row with a readable reason without blocking valid rows', () => {
+    const verification = {
+      teacherSnapshot: {
+        distributionMode: 'equivalent_variants',
+        questions: [
+          { order: 0, tipo: 'aperta', maxPoints: 2, testo: 'Comune', soluzione: 'S0' },
+          { order: 1, tipo: 'aperta', maxPoints: 3, testo: 'A', soluzione: 'S1' },
+          { order: 2, tipo: 'aperta', maxPoints: 3, testo: 'B', soluzione: 'S2' },
+        ],
+        commonQuestionOrders: [0],
+        equivalentGroups: [{ id: 'g1', alternativeOrders: [1, 2] }],
+      },
+    } as never;
+    const valid = {
+      ...row('valid', progress({ status: 'in_progress', evaluated: 2, total: 2 })),
+      assignedQuestionOrders: [0, 2],
+      assignedAnswerKeys: ['0', '2'],
+    };
+    const invalid = row('invalid', progress({ status: 'in_progress', evaluated: 2, total: 2 }));
+
+    const result = computeEligibility('complete', [invalid, valid], verification);
+
+    expect(result.eligible.map((entry) => entry.studentUid)).toEqual(['valid']);
+    expect(result.excluded).toEqual([
+      {
+        studentUid: 'invalid',
+        studentName: 'Studente invalid',
+        reason: 'invalid_variant',
+      },
+    ]);
+    expect(describeBatchExclusion('invalid_variant')).toMatch(/variante assegnata non valida/i);
+  });
 });
 
 describe('runBatchCorrectionAction', () => {
@@ -149,6 +182,36 @@ describe('runBatchCorrectionAction', () => {
       'a',
       'c',
     ]);
+  });
+
+  it('passes the already-loaded VEX assignment and authoritative snapshot to complete', async () => {
+    const verification = {
+      teacherSnapshot: { distributionMode: 'equivalent_variants' },
+    } as never;
+    await runBatchCorrectionAction(
+      'complete',
+      [
+        {
+          studentUid: 'a',
+          studentName: 'A',
+          submissionId: 'v_a',
+          assignedQuestionOrders: [0, 2],
+          assignedAnswerKeys: ['0', '2'],
+        },
+      ],
+      fakeDb,
+      { verificationId: 'v', verification },
+    );
+
+    expect(mockComplete).toHaveBeenCalledWith('v_a', fakeDb, {
+      submission: {
+        submissionId: 'v_a',
+        verificationId: 'v',
+        assignedQuestionOrders: [0, 2],
+        assignedAnswerKeys: ['0', '2'],
+      },
+      verification,
+    });
   });
 
   it('never runs more than BATCH_CONCURRENCY operations at once', async () => {

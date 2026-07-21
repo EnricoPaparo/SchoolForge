@@ -72,6 +72,7 @@ function tq(
   return {
     order,
     tipo,
+    difficolta: maxPoints as TeacherQuestion['difficolta'],
     maxPoints,
     testo: `${Q_MARK}-${order}`,
     soluzione,
@@ -807,12 +808,24 @@ describe('classifySubmission', () => {
       tq(3, 'chiusa_singola', 1, 'a'),
       tq(4, 'chiusa_singola', 1, 'a'),
     ];
-    const vexBase = { ...base, teacherQuestions: vexQuestions };
+    const vexBase = {
+      ...base,
+      teacherQuestions: vexQuestions,
+      distributionMode: 'equivalent_variants',
+      commonQuestionOrders: [0],
+      equivalentGroups: [
+        { id: 'g-open', alternativeOrders: [1, 2] },
+        { id: 'g-closed', alternativeOrders: [3, 4] },
+      ],
+    };
 
     it('restricts skeleton/orders/totalMaxPoints to the assigned variant', () => {
       const c = classifySubmission({
         ...vexBase,
-        submission: sub({ assignedQuestionOrders: [0, 2, 3] }),
+        submission: sub({
+          assignedQuestionOrders: [0, 2, 3],
+          assignedAnswerKeys: ['0', '2', '3'],
+        }),
         correction: null,
       });
       expect(c.status).toBe('eligible');
@@ -825,8 +838,12 @@ describe('classifySubmission', () => {
 
     it('closed-only assigned variant → no open questions (zero provider path)', () => {
       const c = classifySubmission({
-        ...vexBase,
-        submission: sub({ assignedQuestionOrders: [3] }),
+        ...base,
+        teacherQuestions: vexQuestions.slice(3),
+        distributionMode: 'equivalent_variants',
+        commonQuestionOrders: [],
+        equivalentGroups: [{ id: 'g-closed', alternativeOrders: [3, 4] }],
+        submission: sub({ assignedQuestionOrders: [3], assignedAnswerKeys: ['3'] }),
         correction: null,
       });
       expect(c.status).toBe('eligible');
@@ -839,7 +856,10 @@ describe('classifySubmission', () => {
       expect(
         classifySubmission({
           ...vexBase,
-          submission: sub({ assignedQuestionOrders: [0, 99] }),
+          submission: sub({
+            assignedQuestionOrders: [0, 99],
+            assignedAnswerKeys: ['0', '99'],
+          }),
           correction: null,
         }),
       ).toMatchObject({ status: 'excluded', code: 'invalid_variant' });
@@ -849,10 +869,71 @@ describe('classifySubmission', () => {
       expect(
         classifySubmission({
           ...vexBase,
-          submission: sub({ assignedQuestionOrders: [0, 0, 3] }),
+          submission: sub({
+            assignedQuestionOrders: [0, 0, 3],
+            assignedAnswerKeys: ['0', '0', '3'],
+          }),
           correction: null,
         }),
       ).toMatchObject({ status: 'excluded', code: 'invalid_variant' });
+    });
+
+    it('VEX missing or empty assignment fails closed', () => {
+      expect(classifySubmission({ ...vexBase, submission: sub(), correction: null })).toMatchObject(
+        { status: 'excluded', code: 'invalid_variant' },
+      );
+      expect(
+        classifySubmission({
+          ...vexBase,
+          submission: sub({ assignedQuestionOrders: [], assignedAnswerKeys: [] }),
+          correction: null,
+        }),
+      ).toMatchObject({ status: 'excluded', code: 'invalid_variant' });
+    });
+
+    it.each([null, '', 'future_mode'])(
+      'malformed distributionMode %p fails closed',
+      (distributionMode) => {
+        expect(
+          classifySubmission({
+            ...vexBase,
+            distributionMode,
+            submission: sub({
+              assignedQuestionOrders: [0, 1, 3],
+              assignedAnswerKeys: ['0', '1', '3'],
+            }),
+            correction: null,
+          }),
+        ).toMatchObject({ status: 'excluded', code: 'invalid_variant' });
+      },
+    );
+
+    it('legacy mode absence keeps same_questions behavior', () => {
+      const c = classifySubmission({
+        ...base,
+        distributionMode: undefined,
+        teacherQuestions: vexQuestions,
+        submission: sub(),
+        correction: null,
+      });
+      expect(c.status).toBe('eligible');
+      if (c.status === 'eligible') {
+        expect(c.eligible.skeleton.map((question) => question.order)).toEqual([0, 1, 2, 3, 4]);
+      }
+    });
+
+    it('same_questions ignores unexpected assignment fields instead of becoming VEX', () => {
+      const c = classifySubmission({
+        ...base,
+        distributionMode: 'same_questions',
+        teacherQuestions: vexQuestions,
+        submission: sub({ assignedQuestionOrders: [0], assignedAnswerKeys: ['0'] }),
+        correction: null,
+      });
+      expect(c.status).toBe('eligible');
+      if (c.status === 'eligible') {
+        expect(c.eligible.skeleton.map((question) => question.order)).toEqual([0, 1, 2, 3, 4]);
+      }
     });
   });
 });
@@ -2227,6 +2308,61 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     expect(res.costEstimatedMicroUsd).toBe(0);
     expect(store.reserveBudgetCalls).toBe(0);
     expect(grade).not.toHaveBeenCalled();
+  });
+
+  it('invalid VEX is excluded before budget/provider/commit and does not block a valid row', async () => {
+    const store = new FakeStore();
+    store.verification = {
+      ownerUid: OWNER,
+      status: 'active',
+      distributionMode: 'equivalent_variants',
+      commonQuestionOrders: [0],
+      equivalentGroups: [{ id: 'g1', alternativeOrders: [1, 2] }],
+      teacherQuestions: [
+        tq(0, 'aperta', 2, SOL_MARK),
+        tq(1, 'aperta', 2, SOL_MARK),
+        tq(2, 'aperta', 2, SOL_MARK),
+      ],
+    };
+    store.submissions.set(sid('valid'), {
+      ownerUid: OWNER,
+      verificationId: VERIF,
+      studentUid: 'valid',
+      status: 'submitted',
+      assignedQuestionOrders: [0, 1],
+      assignedAnswerKeys: ['0', '1'],
+      answers: {
+        '0': { tipo: 'aperta', testo: ANS_MARK },
+        '1': { tipo: 'aperta', testo: ANS_MARK },
+      },
+    });
+    store.submissions.set(sid('invalid'), {
+      ownerUid: OWNER,
+      verificationId: VERIF,
+      studentUid: 'invalid',
+      status: 'submitted',
+      answers: { '0': { tipo: 'aperta', testo: ANS_MARK } },
+    });
+    const grade = vi.fn(new MockAiGrader().grade);
+
+    const result = await runExecution(
+      req([sid('valid'), sid('invalid')]),
+      openaiDeps(store, realGrader(grade), NOW),
+    );
+
+    expect(result.results.find((item) => item.submissionId === sid('invalid'))).toMatchObject({
+      outcome: 'excluded',
+      reason: 'invalid_variant',
+    });
+    expect(result.results.find((item) => item.submissionId === sid('valid'))?.outcome).toBe(
+      'succeeded',
+    );
+    expect(grade).toHaveBeenCalledTimes(1);
+    expect(store.reserveBudgetCalls).toBe(1);
+    expect(store.commitCalls).toBe(1);
+    const graderInput = grade.mock.calls[0]![0];
+    expect(graderInput.questions.map((question) => question.order)).toEqual([0, 1]);
+    expect(JSON.stringify(graderInput)).not.toContain(`${Q_MARK}-2`);
   });
 
   it('preview and run agree on the estimated cost for the same selection/config', async () => {

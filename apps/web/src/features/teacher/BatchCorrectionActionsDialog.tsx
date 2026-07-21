@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import type { Firestore } from 'firebase/firestore';
+import type { VerificationDoc } from '../../types/firestore.js';
 import { DialogShell } from './workspaceDialogs.js';
 import {
   computeEligibility,
@@ -69,12 +70,16 @@ export function BatchCorrectionActionsDialog({
   action,
   rows,
   db,
+  verificationId,
+  verification,
   onClose,
   onApplied,
 }: {
   action: BatchAction;
   rows: BatchSelectedRow[];
   db: Firestore;
+  verificationId?: string;
+  verification?: VerificationDoc;
   onClose: () => void;
   /**
    * Notifica al chiamante che il batch è stato eseguito, così può fare la
@@ -88,7 +93,7 @@ export function BatchCorrectionActionsDialog({
   // refresh del chiamante cambia intenzionalmente lo stato delle righe (per
   // esempio in_progress → completed): ricalcolare qui l'eleggibilità farebbe
   // ricontare la stessa consegna sia tra le riuscite sia tra le escluse.
-  const [eligibility] = useState(() => computeEligibility(action, rows));
+  const [eligibility] = useState(() => computeEligibility(action, rows, verification));
   const [phase, setPhase] = useState<Phase>('confirm');
   const [results, setResults] = useState<BatchRowResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -100,7 +105,12 @@ export function BatchCorrectionActionsDialog({
     startedRef.current = true;
     setPhase('running');
     try {
-      const res = await runBatchCorrectionAction(action, eligibility.eligible, db);
+      const res = await runBatchCorrectionAction(
+        action,
+        eligibility.eligible,
+        db,
+        verificationId && verification ? { verificationId, verification } : undefined,
+      );
       setResults(res);
       setPhase('result');
       onApplied();

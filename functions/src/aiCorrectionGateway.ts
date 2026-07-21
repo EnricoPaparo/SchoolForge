@@ -88,7 +88,15 @@ function loadVerification(db: Firestore) {
     const snap = await db.doc(`verifications/${verificationId}`).get();
     if (!snap.exists) return null;
     const data = snap.data() as Record<string, unknown>;
-    const teacherSnapshot = data.teacherSnapshot as { questions?: unknown[] } | null | undefined;
+    const teacherSnapshot = data.teacherSnapshot as
+      | {
+          questions?: unknown[];
+          distributionMode?: unknown;
+          commonQuestionOrders?: unknown;
+          equivalentGroups?: unknown;
+        }
+      | null
+      | undefined;
     const rawQuestions = Array.isArray(teacherSnapshot?.questions)
       ? teacherSnapshot!.questions
       : null;
@@ -99,6 +107,9 @@ function loadVerification(db: Firestore) {
       ownerUid: (data.ownerUid as string) ?? '',
       status: (data.status as string) ?? '',
       teacherQuestions,
+      distributionMode: teacherSnapshot?.distributionMode,
+      commonQuestionOrders: teacherSnapshot?.commonQuestionOrders,
+      equivalentGroups: teacherSnapshot?.equivalentGroups,
     };
   };
 }
@@ -114,10 +125,13 @@ function loadSubmission(db: Firestore) {
       studentUid: (data.studentUid as string) ?? '',
       status: (data.status as string) ?? '',
       answers: (data.answers as SubmissionData['answers']) ?? {},
-      // VEX-02B: presente solo in equivalent_variants; la correzione IA usa
-      // esclusivamente queste domande. Assente ⇒ same_questions (invariato).
-      ...(Array.isArray(data.assignedQuestionOrders)
-        ? { assignedQuestionOrders: data.assignedQuestionOrders as number[] }
+      // Conserva anche valori malformati: la classificazione basata sullo
+      // snapshot li rifiuta, senza trasformarli in assenza/same_questions.
+      ...(Object.prototype.hasOwnProperty.call(data, 'assignedQuestionOrders')
+        ? { assignedQuestionOrders: data.assignedQuestionOrders }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(data, 'assignedAnswerKeys')
+        ? { assignedAnswerKeys: data.assignedAnswerKeys }
         : {}),
     };
   };

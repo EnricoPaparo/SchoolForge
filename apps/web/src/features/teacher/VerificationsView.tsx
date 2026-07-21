@@ -360,6 +360,12 @@ export function VerificationsView() {
               studentUid: r.studentUid,
               studentName: r.studentName,
               submissionId: `${selectedVer.id}_${r.studentUid}`,
+              ...(r.item?.assignedQuestionOrders
+                ? { assignedQuestionOrders: r.item.assignedQuestionOrders }
+                : {}),
+              ...(r.item?.assignedAnswerKeys
+                ? { assignedAnswerKeys: r.item.assignedAnswerKeys }
+                : {}),
               progress: correctionProgress.get(r.studentUid),
             }))
         : [],
@@ -2402,6 +2408,8 @@ export function VerificationsView() {
           action={batchAction}
           rows={batchSelectedRows}
           db={db}
+          verificationId={selectedVer.id}
+          verification={selectedVer}
           onClose={() => setBatchAction(null)}
           onApplied={() => {
             // M5-04A: una sola rilettura mirata aggiorna «Valutate»/stato/

@@ -36,10 +36,8 @@ import {
 } from './correctionContract.js';
 import { assertCorrectionReturnWithinLimit } from './correctionReturnSize.js';
 import { correctionProgressFromEvaluations } from './submissionCorrectionStatus.js';
-import {
-  isEquivalentVariantsSnapshot,
-  resolveAssignedQuestions,
-} from '../verifications/assignedVariant.js';
+import { resolveAssignedQuestions } from '../verifications/assignedVariant.js';
+import { normalizeDistributionMode } from '../verifications/vexDistribution.js';
 
 function mirrorCorrectionProgress(
   batch: ReturnType<typeof writeBatch>,
@@ -122,22 +120,115 @@ async function loadVerificationForCorrection(
   return snap.data() as VerificationDoc;
 }
 
-async function loadTeacherSnapshotQuestions(
+type CorrectionVariantSubmission = Pick<
+  SubmissionDoc,
+  'submissionId' | 'verificationId' | 'assignedQuestionOrders' | 'assignedAnswerKeys'
+>;
+
+export type CorrectionVariantContext = {
+  submission: CorrectionVariantSubmission;
+  verification: VerificationDoc;
+  questions?: readonly { order: number; maxPoints: number }[];
+};
+
+async function loadCorrectionVariantContext(
+  submissionId: string,
   verificationId: string,
   db: Firestore,
-): Promise<VerificationTeacherQuestionSnapshot[]> {
-  const snap = await getDoc(doc(db, 'verifications', verificationId));
-  if (!snap.exists()) {
-    throw new Error('Impossibile mostrare le soluzioni: verifica non trovata.');
+  context?: CorrectionVariantContext,
+): Promise<CorrectionVariantContext> {
+  if (context) {
+    if (
+      context.submission.submissionId !== submissionId ||
+      context.submission.verificationId !== verificationId
+    ) {
+      throw new Error('Impossibile correggere: contesto della variante incoerente.');
+    }
+    return context;
   }
-  const questions = (snap.data() as VerificationDoc).teacherSnapshot?.questions;
-  if (!questions) {
-    throw new Error(
-      'Impossibile mostrare le soluzioni: questa verifica non ha uno snapshot con soluzioni ' +
-        'congelate (attivata prima del fix dello snapshot immutabile).',
-    );
+  const [submissionSnap, verificationSnap] = await Promise.all([
+    getDoc(doc(db, 'submissions', submissionId)),
+    getDoc(doc(db, 'verifications', verificationId)),
+  ]);
+  if (!submissionSnap.exists()) throw new Error('Impossibile correggere: consegna non trovata.');
+  if (!verificationSnap.exists()) throw new Error('Impossibile correggere: verifica non trovata.');
+  return {
+    submission: submissionSnap.data() as SubmissionDoc,
+    verification: verificationSnap.data() as VerificationDoc,
+  };
+}
+
+function resolveSnapshotQuestions(
+  context: CorrectionVariantContext,
+  includeSameQuestions = false,
+): VerificationTeacherQuestionSnapshot[] | null {
+  const snapshot = context.verification.teacherSnapshot;
+  if (!snapshot) return null; // snapshot legacy: modalita assente => same_questions
+  const mode = normalizeDistributionMode(snapshot.distributionMode);
+  if (mode === 'equivalent_variants') {
+    if (!Array.isArray(snapshot.questions) || snapshot.questions.length === 0) {
+      throw new Error('Impossibile correggere: snapshot della variante non disponibile.');
+    }
+    return resolveAssignedQuestions(snapshot, context.submission);
   }
+  // same_questions conserva il percorso storico sulla publishedProjection,
+  // salvo i flussi che richiedono esplicitamente le soluzioni congelate.
+  return includeSameQuestions && Array.isArray(snapshot.questions) && snapshot.questions.length > 0
+    ? [...snapshot.questions].sort((a, b) => a.order - b.order)
+    : null;
+}
+
+function assertCorrectionMatchesQuestions(
+  correction: CorrectionDoc,
+  questions: readonly { order: number; maxPoints: number }[],
+  action: string,
+): void {
+  const expected = new Map(questions.map((question) => [question.order.toString(), question]));
+  const actualKeys = Object.keys(correction.evaluations);
+  if (actualKeys.length !== expected.size) {
+    throw new Error(`Impossibile ${action}: insieme delle domande della correzione incoerente.`);
+  }
+  for (const key of actualKeys) {
+    const evaluation = correction.evaluations[key];
+    const question = expected.get(key);
+    if (
+      !evaluation ||
+      !question ||
+      evaluation.order !== question.order ||
+      evaluation.maxPoints !== question.maxPoints
+    ) {
+      throw new Error(`Impossibile ${action}: domanda ${key} estranea o incoerente.`);
+    }
+  }
+}
+
+async function loadAuthoritativeCorrectionQuestions(
+  correction: Pick<CorrectionDoc, 'submissionId' | 'verificationId'>,
+  db: Firestore,
+  context?: CorrectionVariantContext,
+): Promise<readonly { order: number; maxPoints: number }[]> {
+  const resolvedContext = await loadCorrectionVariantContext(
+    correction.submissionId,
+    correction.verificationId,
+    db,
+    context,
+  );
+  const snapshotQuestions = resolveSnapshotQuestions(resolvedContext);
+  const questions =
+    snapshotQuestions ??
+    resolvedContext.questions ??
+    (await loadPublishedProjectionQuestions(correction.verificationId, db));
   return questions;
+}
+
+async function assertCorrectionMatchesAuthoritativeVariant(
+  correction: CorrectionDoc,
+  db: Firestore,
+  action: string,
+  context?: CorrectionVariantContext,
+): Promise<void> {
+  const questions = await loadAuthoritativeCorrectionQuestions(correction, db, context);
+  assertCorrectionMatchesQuestions(correction, questions, action);
 }
 
 // ─── openOrLoadCorrection ────────────────────────────────────────────────────
@@ -177,25 +268,24 @@ export async function openOrLoadCorrection(
   ownerUid: string,
   db: Firestore,
   /**
-   * VEX-02B: la verifica già letta dal chiamante (workspace loader) — riusata
-   * per non aggiungere letture. Se assente e la consegna è a varianti, viene
-   * letta qui (necessaria per costruire lo scheletro sulla sola variante).
+   * Verifica già letta dal workspace: riusata senza nuove letture e fonte
+   * esclusiva del `distributionMode` autorevole.
    */
   verification?: VerificationDoc,
+  loadedSubmission?: SubmissionDoc,
 ): Promise<OpenCorrectionResult> {
   const ref = doc(db, 'corrections', submissionId);
 
-  // Fast path: already exists — pure read, no write attempted at all.
+  // Anche l'esistente viene validato; il workspace riusa i documenti caricati.
   const existing = await getDoc(ref);
-  if (existing.exists()) {
-    return { correction: existing.data() as CorrectionDoc, projectionQuestions: null };
+  let submission = loadedSubmission;
+  if (!submission) {
+    const submissionSnap = await getDoc(doc(db, 'submissions', submissionId));
+    if (!submissionSnap.exists()) {
+      throw new Error('Impossibile correggere: consegna non trovata.');
+    }
+    submission = submissionSnap.data() as SubmissionDoc;
   }
-
-  const submissionSnap = await getDoc(doc(db, 'submissions', submissionId));
-  if (!submissionSnap.exists()) {
-    throw new Error('Impossibile correggere: consegna non trovata.');
-  }
-  const submission = submissionSnap.data() as SubmissionDoc;
   if (submission.status !== 'submitted') {
     throw new Error('Impossibile correggere: la consegna non è ancora stata inviata.');
   }
@@ -203,22 +293,26 @@ export async function openOrLoadCorrection(
     throw new Error('Impossibile correggere: la consegna non appartiene a questo docente.');
   }
 
-  // VEX-02B: una consegna a varianti si riconosce dal proprio
-  // `assignedQuestionOrders` (scritto dalla callable, mai presente in
-  // `same_questions`) — così NON serve leggere la verifica per il caso comune.
-  // Solo per le varianti lo scheletro è costruito sulla SOLA variante assegnata,
-  // risolta dal teacherSnapshot (la proiezione pubblica contiene solo le comuni
-  // e non basta). `same_questions` mantiene invariato il percorso proiezione.
+  // VEX-02B: la modalità viene sempre normalizzata dal teacherSnapshot prima
+  // di leggere l'assegnazione. I campi assigned non scelgono mai il percorso.
+  const loadedVerification =
+    verification ?? (await loadVerificationForCorrection(submission.verificationId, db));
+  const snapshotQuestions = resolveSnapshotQuestions({
+    submission,
+    verification: loadedVerification,
+  });
+  if (existing.exists()) {
+    const correction = existing.data() as CorrectionDoc;
+    const applicable =
+      snapshotQuestions ?? (await loadPublishedProjectionQuestions(submission.verificationId, db));
+    assertCorrectionMatchesQuestions(correction, applicable, 'aprire');
+    return { correction, projectionQuestions: null };
+  }
+
   const evaluations: Record<string, QuestionEvaluation> = {};
   let projectionQuestions: PublicVerificationQuestion[] | null = null;
-  if (submission.assignedQuestionOrders !== undefined) {
-    const ver =
-      verification ?? (await loadVerificationForCorrection(submission.verificationId, db));
-    if (!ver.teacherSnapshot || !isEquivalentVariantsSnapshot(ver.teacherSnapshot)) {
-      throw new Error('Impossibile correggere: variante assegnata incoerente con la verifica.');
-    }
-    const assignedQuestions = resolveAssignedQuestions(ver.teacherSnapshot, submission);
-    for (const question of assignedQuestions) {
+  if (snapshotQuestions) {
+    for (const question of snapshotQuestions) {
       evaluations[question.order.toString()] = {
         order: question.order,
         points: null,
@@ -314,6 +408,7 @@ export type SaveCorrectionResult = {
 export async function saveCorrection(
   input: SaveCorrectionInput,
   db: Firestore,
+  context?: CorrectionVariantContext,
 ): Promise<SaveCorrectionResult> {
   const { submissionId, evaluations: incoming, generalFeedback } = input;
   const ref = doc(db, 'corrections', submissionId);
@@ -325,6 +420,7 @@ export async function saveCorrection(
   if (correction.status !== 'in_progress') {
     throw new Error('Impossibile salvare: la correzione non è in corso.');
   }
+  await assertCorrectionMatchesAuthoritativeVariant(correction, db, 'salvare', context);
 
   const existingKeys = Object.keys(correction.evaluations);
   const incomingKeys = Object.keys(incoming);
@@ -424,13 +520,18 @@ export async function saveCorrection(
  * `points: null`. Does not create/touch `correctionReturns` — completing
  * and returning are two distinct docente actions (D-M4-08/D-M4-09).
  */
-export async function completeCorrection(submissionId: string, db: Firestore): Promise<void> {
+export async function completeCorrection(
+  submissionId: string,
+  db: Firestore,
+  context?: CorrectionVariantContext,
+): Promise<void> {
   const ref = doc(db, 'corrections', submissionId);
   const snap = await getDoc(ref);
   if (!snap.exists()) {
     throw new Error('Impossibile completare: correzione non trovata.');
   }
   const correction = snap.data() as CorrectionDoc;
+  await assertCorrectionMatchesAuthoritativeVariant(correction, db, 'completare', context);
   assertValidCorrectionStatusTransition(correction.status, 'completed');
   if (!isCorrectionComplete(correction.evaluations)) {
     throw new Error('Impossibile completare: una o più domande non sono ancora state valutate.');
@@ -501,15 +602,27 @@ export async function returnCorrection(submissionId: string, db: Firestore): Pro
     {
       tipo: CorrectionReturnQuestionView['tipo'];
       testo: string;
+      maxPoints: number;
       opzioni?: { id: string; testo: string }[];
     }
   >;
-  if (verification.teacherSnapshot && isEquivalentVariantsSnapshot(verification.teacherSnapshot)) {
+  const distributionMode = normalizeDistributionMode(
+    verification.teacherSnapshot?.distributionMode,
+  );
+  if (distributionMode === 'equivalent_variants') {
+    if (!verification.teacherSnapshot) {
+      throw new Error('Impossibile restituire: snapshot della variante non disponibile.');
+    }
     const assigned = resolveAssignedQuestions(verification.teacherSnapshot, submission);
     questionByOrder = new Map(
       assigned.map((q) => [
         q.order,
-        { tipo: q.tipo, testo: q.testo, ...(q.opzioni ? { opzioni: q.opzioni } : {}) },
+        {
+          tipo: q.tipo,
+          testo: q.testo,
+          maxPoints: q.maxPoints,
+          ...(q.opzioni ? { opzioni: q.opzioni } : {}),
+        },
       ]),
     );
   } else {
@@ -520,10 +633,24 @@ export async function returnCorrection(submissionId: string, db: Firestore): Pro
     questionByOrder = new Map(
       projectionQuestions.map((q) => [
         q.order,
-        { tipo: q.tipo, testo: q.testo, ...(q.opzioni ? { opzioni: q.opzioni } : {}) },
+        {
+          tipo: q.tipo,
+          testo: q.testo,
+          maxPoints: q.maxPoints,
+          ...(q.opzioni ? { opzioni: q.opzioni } : {}),
+        },
       ]),
     );
   }
+
+  assertCorrectionMatchesQuestions(
+    correction,
+    [...questionByOrder.entries()].map(([order, question]) => ({
+      order,
+      maxPoints: question.maxPoints,
+    })),
+    'restituire',
+  );
 
   const questions: CorrectionReturnQuestionView[] = Object.keys(correction.evaluations)
     .map((key) => Number(key))
@@ -615,7 +742,11 @@ export async function returnCorrection(submissionId: string, db: Firestore): Pro
  * untouched (not deleted) — `returnCorrection` will overwrite it wholesale
  * the next time this correction is returned.
  */
-export async function reopenCorrection(submissionId: string, db: Firestore): Promise<void> {
+export async function reopenCorrection(
+  submissionId: string,
+  db: Firestore,
+  context?: CorrectionVariantContext,
+): Promise<void> {
   const ref = doc(db, 'corrections', submissionId);
   const snap = await getDoc(ref);
   if (!snap.exists()) {
@@ -623,6 +754,7 @@ export async function reopenCorrection(submissionId: string, db: Firestore): Pro
   }
   const correction = snap.data() as CorrectionDoc;
   assertValidCorrectionStatusTransition(correction.status, 'in_progress');
+  await assertCorrectionMatchesAuthoritativeVariant(correction, db, 'riaprire', context);
   const wasReturned = correction.status === 'returned';
 
   const batch = writeBatch(db);
@@ -693,8 +825,27 @@ function hasSomethingToClear(correction: CorrectionDoc): boolean {
 export async function clearCorrection(
   submissionId: string,
   db: Firestore,
+  context?: CorrectionVariantContext,
 ): Promise<ClearCorrectionResult> {
   const ref = doc(db, 'corrections', submissionId);
+  let correctionIdentity: Pick<CorrectionDoc, 'submissionId' | 'verificationId'>;
+  if (context) {
+    correctionIdentity = {
+      submissionId,
+      verificationId: context.submission.verificationId,
+    };
+  } else {
+    const preflight = await getDoc(ref);
+    if (!preflight.exists()) {
+      throw new Error('Impossibile azzerare: correzione non trovata.');
+    }
+    correctionIdentity = preflight.data() as CorrectionDoc;
+  }
+  const authoritativeQuestions = await loadAuthoritativeCorrectionQuestions(
+    correctionIdentity,
+    db,
+    context,
+  );
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists()) {
@@ -704,6 +855,7 @@ export async function clearCorrection(
     if (correction.status !== 'in_progress') {
       throw new Error('Impossibile azzerare: riapri prima la correzione.');
     }
+    assertCorrectionMatchesQuestions(correction, authoritativeQuestions, 'azzerare');
 
     if (!hasSomethingToClear(correction)) {
       // No-op: nulla da azzerare → nessuna scrittura, nessun evento.
@@ -775,7 +927,7 @@ async function assertCorrectionCurrentlyReturned(
   submissionId: string,
   db: Firestore,
   action: string,
-): Promise<void> {
+): Promise<CorrectionDoc> {
   const snap = await getDoc(doc(db, 'corrections', submissionId));
   if (!snap.exists()) {
     throw new Error(`Impossibile ${action}: correzione non trovata.`);
@@ -786,6 +938,7 @@ async function assertCorrectionCurrentlyReturned(
       `Impossibile ${action}: la correzione non è attualmente restituita (stato '${correction.status}').`,
     );
   }
+  return correction;
 }
 
 /**
@@ -834,8 +987,13 @@ export async function setSolutionsVisible(
   submissionId: string,
   visible: boolean,
   db: Firestore,
+  context?: CorrectionVariantContext,
 ): Promise<void> {
-  await assertCorrectionCurrentlyReturned(submissionId, db, 'aggiornare le soluzioni');
+  const correction = await assertCorrectionCurrentlyReturned(
+    submissionId,
+    db,
+    'aggiornare le soluzioni',
+  );
 
   const ref = doc(db, 'correctionReturns', submissionId);
   const snap = await getDoc(ref);
@@ -846,7 +1004,29 @@ export async function setSolutionsVisible(
   if (current.solutionsVisible === visible) return;
 
   if (visible) {
-    const teacherQuestions = await loadTeacherSnapshotQuestions(current.verificationId, db);
+    const resolvedContext = await loadCorrectionVariantContext(
+      submissionId,
+      current.verificationId,
+      db,
+      context,
+    );
+    const teacherQuestions = resolveSnapshotQuestions(resolvedContext, true);
+    if (!teacherQuestions) {
+      throw new Error(
+        'Impossibile mostrare le soluzioni: snapshot docente con soluzioni non disponibile.',
+      );
+    }
+    assertCorrectionMatchesQuestions(correction, teacherQuestions, 'mostrare le soluzioni');
+    const returnOrders = current.questions.map((question) => question.order.toString());
+    const expectedOrders = teacherQuestions.map((question) => question.order.toString());
+    if (
+      returnOrders.length !== expectedOrders.length ||
+      expectedOrders.some((key) => !returnOrders.includes(key))
+    ) {
+      throw new Error(
+        'Impossibile mostrare le soluzioni: restituzione incoerente con la variante assegnata.',
+      );
+    }
     const byOrder = new Map(teacherQuestions.map((q) => [q.order, q]));
     const nextQuestions: CorrectionReturnQuestionView[] = current.questions.map((question) => {
       const teacherQuestion = byOrder.get(question.order);

@@ -84,6 +84,30 @@ describe('buildCorrectionRegisterExportRows', () => {
     ]);
     expect(row).toMatchObject({ totalPoints: null, maxPoints: null, percentage: null });
   });
+
+  it('exports the assigned-variant summary without question or alternative details', () => {
+    const [row] = buildCorrectionRegisterExportRows([
+      {
+        studentName: 'Studente sintetico',
+        studentEmail: null,
+        submission: {
+          studentUid: 'synthetic',
+          status: 'submitted',
+          lastSavedAt: Timestamp.fromDate(DATE),
+          submittedAt: Timestamp.fromDate(DATE),
+          deliveryCode: 'SF-VEX',
+          correctionStatus: 'completed',
+          correctionSummary: { totalPoints: 7, maxPoints: 8, percentage: 88 },
+          attentionEventsCount: 0,
+          attentionEvents: [],
+        },
+      },
+    ]);
+    expect(row).toMatchObject({ totalPoints: 7, maxPoints: 8, percentage: 88 });
+    expect(Object.keys(row!)).not.toEqual(
+      expect.arrayContaining(['questions', 'equivalentGroups', 'alternativeOrders']),
+    );
+  });
 });
 
 describe('serializeCorrectionRegisterCsv', () => {
