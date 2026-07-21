@@ -348,6 +348,34 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // --- teacherAiPreferences/{ownerUid} (TWU-02) ---
+    // Preferenze predefinite della correzione IA del docente: un solo documento,
+    // id == ownerUid. Leggibile e scrivibile SOLO dall'owner (mai da uno studente
+    // o da un altro utente). Contratto CHIUSO: solo profilo modello, stile di
+    // valutazione, indicazioni facoltative; `ownerUid` immutabile e uguale
+    // all'utente autenticato; `updatedAt` sempre == request.time (mai un timestamp
+    // client); enum sconosciuti, chiavi extra e guidance oltre limite negati.
+    match /teacherAiPreferences/{ownerUid} {
+      function validPrefs() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['ownerUid', 'modelProfile', 'gradingMode',
+                                 'teacherGuidance', 'updatedAt'])
+          && d.keys().hasAll(['ownerUid', 'modelProfile', 'gradingMode', 'updatedAt'])
+          && d.ownerUid == request.auth.uid
+          && ownerUid == request.auth.uid
+          && d.modelProfile in ['economy', 'quality']
+          && d.gradingMode in ['compassionate', 'balanced', 'rigorous']
+          && (!d.keys().hasAny(['teacherGuidance'])
+              || (d.teacherGuidance is string
+                  && d.teacherGuidance.size() > 0
+                  && d.teacherGuidance.size() <= 500))
+          && d.updatedAt == request.time;
+      }
+      allow read: if isOwner() && request.auth.uid == ownerUid;
+      allow create, update: if isOwner() && request.auth.uid == ownerUid && validPrefs();
+      allow delete: if isOwner() && request.auth.uid == ownerUid;
+    }
+
     // --- settings/ownerPublic (M3-lite) ---
     // Holds only `ownerUid`, readable by any authenticated user so the client
     // can resolve TeacherShell vs. StudentShell without exposing settings/owner

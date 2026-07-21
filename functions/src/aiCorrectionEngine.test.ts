@@ -509,9 +509,9 @@ describe('canonical selection (M5-05D2A)', () => {
     expect(computeSelectionHash(VERIF, ids, 'balanced', 'quality', 'Premia il ragionamento.')).toBe(
       computeSelectionHash(VERIF, ids.reverse(), 'balanced', 'quality', 'Premia il ragionamento.'),
     );
-    expect(computeSelectionHash(VERIF, ids, 'balanced', 'quality', 'Premia il ragionamento.')).not.toBe(
-      computeSelectionHash(VERIF, ids, 'balanced', 'quality', 'Premia la terminologia.'),
-    );
+    expect(
+      computeSelectionHash(VERIF, ids, 'balanced', 'quality', 'Premia il ragionamento.'),
+    ).not.toBe(computeSelectionHash(VERIF, ids, 'balanced', 'quality', 'Premia la terminologia.'));
   });
 
   it('M5-QUALITY-01 — gradingMode is part of the request identity', () => {
@@ -3135,10 +3135,9 @@ describe('TWU-02 — model profile server-side resolution', () => {
     expect(store.reserveBudgetCalls).toBe(1);
     const gradeCallsAfterFirst = store.commitCalls;
     // Second identical call (same requestId + profile) → idempotent replay.
-    const second = await runExecution(
-      req([sid('s1')], { modelProfile: 'economy' }),
-      { ...openaiDeps(store, realGrader(grade), NOW + 1) },
-    );
+    const second = await runExecution(req([sid('s1')], { modelProfile: 'economy' }), {
+      ...openaiDeps(store, realGrader(grade), NOW + 1),
+    });
     expect(second.idempotentReplay).toBe(true);
     expect(store.reserveBudgetCalls).toBe(1); // no second reservation
     expect(grade).not.toHaveBeenCalled(); // no second provider call

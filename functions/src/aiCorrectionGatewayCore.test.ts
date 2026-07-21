@@ -168,9 +168,9 @@ describe('validateAiCorrectionRequest', () => {
 
   it('TWU-02 — accepts the two closed modelProfile values and echoes them', () => {
     for (const profile of ['economy', 'quality'] as const) {
-      expect(validateAiCorrectionRequest(validRequest({ modelProfile: profile })).modelProfile).toBe(
-        profile,
-      );
+      expect(
+        validateAiCorrectionRequest(validRequest({ modelProfile: profile })).modelProfile,
+      ).toBe(profile);
     }
   });
 
@@ -182,7 +182,17 @@ describe('validateAiCorrectionRequest', () => {
   });
 
   it('TWU-02 — a present-but-invalid modelProfile (null/unknown/non-string) fails with invalid_input', () => {
-    const invalid: unknown[] = [null, '', 'premium', 'nano', 'gpt-5.6-luna', 5, {}, ['economy'], true];
+    const invalid: unknown[] = [
+      null,
+      '',
+      'premium',
+      'nano',
+      'gpt-5.6-luna',
+      5,
+      {},
+      ['economy'],
+      true,
+    ];
     for (const bad of invalid) {
       const err = captureError(() =>
         validateAiCorrectionRequest(validRequest({ modelProfile: bad })),

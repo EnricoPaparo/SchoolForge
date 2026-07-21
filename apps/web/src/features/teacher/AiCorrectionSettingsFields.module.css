@@ -1,0 +1,39 @@
+/* TWU-02 — shared AI correction settings fields (profile, grading, guidance).
+   Mirrors the AiBatchCorrectionDialog field styling so the settings dialog and
+   the batch configure step read as one system. */
+.fields {
+  display: grid;
+  gap: 0.75rem;
+}
+.field {
+  display: grid;
+  gap: 0.375rem;
+}
+.fieldLabel {
+  font-weight: 600;
+}
+.field select,
+.field textarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.description {
+  margin: -0.25rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  display: grid;
+  gap: 0.125rem;
+}
+.modelId {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+.counter {
+  margin: -0.25rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  text-align: right;
+}

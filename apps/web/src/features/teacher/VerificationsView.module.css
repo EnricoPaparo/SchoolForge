@@ -760,6 +760,28 @@
   min-width: 8rem;
 }
 
+/* TWU-02 — «Impostazioni correzione IA» button: sits on its own row within the
+   filter bar, aligned to the start, icon + label, coherent with the controls. */
+.aiSettingsBtn {
+  grid-column: 1 / -1;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.875rem;
+  min-height: 2.35rem;
+  cursor: pointer;
+}
+.aiSettingsBtn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
 .filters select:focus-visible,
 .filterSearch:focus-visible {
   outline: none;

@@ -43,6 +43,12 @@ import { QuestionPicker } from './QuestionPicker.js';
 import { AttentionEventsDialog } from './AttentionEventsDialog.js';
 import { CorrectionWorkspace } from './CorrectionWorkspace.js';
 import { AiBatchCorrectionDialog } from './AiBatchCorrectionDialog.js';
+import { AiCorrectionSettingsDialog } from './AiCorrectionSettingsDialog.js';
+import {
+  loadTeacherAiPreferences,
+  DEFAULT_TEACHER_AI_PREFERENCES,
+  type TeacherAiPreferences,
+} from '../repository/corrections/teacherAiPreferencesService.js';
 import { BatchCorrectionActionsDialog } from './BatchCorrectionActionsDialog.js';
 import { createAiCorrectionCallables } from '../repository/corrections/aiCorrectionClient.js';
 import {
@@ -334,6 +340,13 @@ export function VerificationsView() {
   // durante ordinamento e aggiornamenti live della tabella.
   const [aiSelectedUids, setAiSelectedUids] = useState<Set<string>>(new Set());
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  // TWU-02 — default AI-correction preferences: a single owner-only get on
+  // entering Verifiche, kept in memory for the session; one write only on save.
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const [aiPreferences, setAiPreferences] = useState<TeacherAiPreferences>(
+    DEFAULT_TEACHER_AI_PREFERENCES,
+  );
+  const aiPreferencesLoaded = useRef(false);
   // M5-04: azione massiva in conferma (Completa/Riapri/Restituisci/Azzera) o null.
   const [batchAction, setBatchAction] = useState<BatchAction | null>(null);
   // «Valutate» n/totale per studentUid: singola lettura mirata (no listener).
@@ -700,6 +713,22 @@ export function VerificationsView() {
     setMonitorRefreshError(null);
     setMonitorRefreshedAt(false);
   }, [selectedVerId]);
+
+  // TWU-02 — load the teacher's default AI-correction preferences once on
+  // entering Verifiche (a single owner-only get; no listener/polling). The ref
+  // guard keeps it to one read under React StrictMode; failure is non-blocking
+  // (defaults remain in effect).
+  useEffect(() => {
+    if (!ownerUid || aiPreferencesLoaded.current) return;
+    aiPreferencesLoaded.current = true;
+    void loadTeacherAiPreferences(ownerUid, db)
+      .then((prefs) => {
+        if (mountedRef.current) setAiPreferences(prefs);
+      })
+      .catch(() => {
+        // Non-blocking: keep the application defaults.
+      });
+  }, [ownerUid]);
 
   async function loadAll() {
     setLoadError(null);
@@ -1525,6 +1554,15 @@ export function VerificationsView() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          {/* TWU-02 — default AI-correction settings for this teacher. */}
+          <button
+            type="button"
+            className={styles.aiSettingsBtn}
+            onClick={() => setAiSettingsOpen(true)}
+          >
+            <IconSparkles />
+            Impostazioni correzione IA
+          </button>
         </div>
       )}
 
@@ -2548,11 +2586,25 @@ export function VerificationsView() {
         />
       )}
 
+      {aiSettingsOpen && (
+        <AiCorrectionSettingsDialog
+          ownerUid={ownerUid}
+          db={db}
+          initial={aiPreferences}
+          onClose={() => setAiSettingsOpen(false)}
+          onSaved={(prefs) => {
+            setAiPreferences(prefs);
+            setAiSettingsOpen(false);
+          }}
+        />
+      )}
+
       {aiDialogOpen && selectedVer && (
         <AiBatchCorrectionDialog
           verificationId={selectedVer.id}
           submissionIds={aiSelectedSubmissionIds}
           callables={aiCallables}
+          defaults={aiPreferences}
           onClose={() => setAiDialogOpen(false)}
           onApplied={() => {
             // M5-04A: aggiornamento minimale (stato/percentuale dal listener del
