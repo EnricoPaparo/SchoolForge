@@ -38,7 +38,7 @@ SchoolForge è un repository didattico Markdown-first per un solo docente. Se è
 9. [toolchain.md](toolchain.md) — versioni, monorepo, bootstrap, emulatori.
 10. [piano-implementazione.md](piano-implementazione.md) — pacchetti per agenti, dipendenze, gate.
 11. [evoluzioni-apprendimento-roadmap.md](evoluzioni-apprendimento-roadmap.md) — roadmap approvata post-polish: calibrazione IA, pool senza peso, appunti, varianti equivalenti e boost grafico.
-12. [vex-contract.md](vex-contract.md) — VEX varianti equivalenti: inventario del già-implementato, campi definitivi congelati, contratto assegnazione/sicurezza/costo/PDF/correzione, scope VEX-01A/01B/02/03 (**docs+prototipo, non ancora implementato**). Prototipo builder: [prototipi/vex-builder.html](prototipi/vex-builder.html).
+12. [vex-contract.md](vex-contract.md) — VEX varianti equivalenti: contratto, builder docente, assegnazione server-side idempotente, svolgimento, correzione/IA/restituzione sulla variante. VEX-01A→02B implementati; rollout VEX-03A su DEV completato, **Gate GVEX PENDING**. Prototipo builder: [prototipi/vex-builder.html](prototipi/vex-builder.html).
 
 ## Per sviluppare un modulo
 
@@ -85,6 +85,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 - [evidenze/g6-m4-checklist-finale.md](evidenze/g6-m4-checklist-finale.md) — checklist finale del Gate G6 (M4 — Correzione ed export): matrice evidenze automatiche vs conferme manuali DEV (salvataggio/completamento/PDF/CSV), limiti residui, smoke consigliato non bloccante, fuori scope, verdetto **superato**.
 - [evidenze/gdux-checklist-finale.md](evidenze/gdux-checklist-finale.md) — checklist finale del Gate GDUX (refactor Didattica/UX): matrice 14 punti di verifica, conferme manuali DEV, limiti residui, verdetto **superato (PASS)**.
 - [evidenze/gpool-checklist-finale.md](evidenze/gpool-checklist-finale.md) — checklist finale del contratto pool V2: parser/template, import/editor, index/snapshot, svolgimento, correzione, restituzione ed export; evidenze automatiche e conferme DEV dichiarate, verdetto **Gate GPOOL PASS**.
+- [evidenze/gvex-human-gate.md](evidenze/gvex-human-gate.md) — checklist manuale post-rollout VEX-03A su DEV: builder, assegnazione multi-studente, idempotenza, isolamento, consegna, correzione/IA/restituzione ed export. Stato iniziale **PENDING**.
 - [hardening-audit-v1.md](hardening-audit-v1.md) — audit e remediation hardening V1; **Gate GHARD PASS**.
 - [runbook-operativo-v1.md](runbook-operativo-v1.md) — **HARD-01A**: runbook operativo V1 per il singolo docente — ambienti DEV/PROD, deploy, rollback, budget e controllo costi, backup/export, ripristino, incidenti (owner/costi/dati), checklist mensile.
 - [evidenze/hard-01a-human-gate.md](evidenze/hard-01a-human-gate.md) — **HARD-01A** Human Gate: checklist delle azioni manuali del docente (budget alert DEV, politiche backup, rollback/incidente letti). **PASS il 15/07/2026; HARD-F01 risolto.**

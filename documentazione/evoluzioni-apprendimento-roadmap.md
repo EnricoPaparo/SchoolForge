@@ -287,7 +287,9 @@ Alternative nello stesso gruppo:
 - stessa UDA;
 - stesso tipo;
 - stessa difficoltà intera 1–5;
-- stesso `maxCharacters` effettivo per le aperte.
+
+`maxCharacters` **non** è un criterio di equivalenza: ogni alternativa conserva il proprio
+limite e la coerenza pedagogica sostanziale resta responsabilità del docente.
 
 Poiché `maxPoints = difficolta`, non serve un ulteriore confronto di peso/punteggio.
 
@@ -352,7 +354,7 @@ Refresh e nuovo login mantengono le domande assegnate; solo l'ordine visivo può
 | VEX-01B ✅ | Attivazione `equivalent_variants` operativa + callable `assignVerificationVariant` (RNG sicuro, transazione idempotente) + isolamento + Rules server-only. | Test concorrenza/idempotenza, isolamento alternative, refresh; proiezione **solo comuni**; unica scrittura `assignedQuestionOrders`; guardia VEX-01A rimossa. **VEX non ancora operativo end-to-end**: UI studente a VEX-02. |
 | VEX-02A ✅ | Svolgimento studente della variante assegnata. | Routing fail-closed su `distributionMode`; avvio/ripresa/refresh via callable idempotente; `OnlineExamView` solo variante; autosave/consegna ristretti (client + Rules `answers ⊆ assignedAnswerKeys`); PDF studente disabilitato in VEX; `same_questions` invariato (nessuna callable). |
 | VEX-02B ✅ | Correzione/IA/restituzione/export sulla sola variante. | Risolutore canonico `resolveAssignedQuestions`; fonte modalità esclusiva `teacherSnapshot.distributionMode` (solo assenza legacy → `same_questions`); scheletro correzione + totali + return + payload IA sulla variante validata fail-closed; IA esclude consegne a variante malformata; PDF docente completo invariato, registro/CSV su totali variante. |
-| VEX-03 | Hardening equità/costi/smoke. | Gate multi-studente, nessuna fuga di alternative/soluzioni. |
+| VEX-03A ✅ rollout DEV / Gate GVEX PENDING | Rollout coordinato Functions → Firestore Rules → Hosting su `schoolforge-dev`, SHA `1399faeb1539b1adf1fd9d0ead1bb485ca5d9d53`. | Preflight automatico verde; resta la checklist manuale multi-studente e anti-fuga in `evidenze/gvex-human-gate.md`. |
 
 Il contratto tecnico completo (campi definitivi, assegnazione/idempotenza, sicurezza,
 costi, PDF, correzione, scope per pacchetto) è congelato in

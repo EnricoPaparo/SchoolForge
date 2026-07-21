@@ -432,6 +432,11 @@ Specifica completa e vincolante in [`evoluzioni-apprendimento-roadmap.md`](evolu
 
 POOL-SIMPLE è prerequisito obbligatorio di VEX. Le evidenziazioni persistenti e «seleziona testo → appunti» sono eliminate dalla roadmap.
 
+**VEX-03A rollout DEV:** completato il 21 luglio 2026 su `schoolforge-dev`, SHA
+`1399faeb1539b1adf1fd9d0ead1bb485ca5d9d53`, con Node `v22.23.1` e ordine Functions →
+Firestore Rules → Hosting. Il [Gate GVEX](evidenze/gvex-human-gate.md) resta **PENDING** fino
+alla conferma dello smoke manuale docente/multi-studente; nessun PROD è coinvolto.
+
 ---
 
 ## 12b.1 Didattica studente — SDUX
