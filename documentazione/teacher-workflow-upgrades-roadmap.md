@@ -1,19 +1,19 @@
 # TWU — Teacher Workflow Upgrades (roadmap)
 
-Interventi circoscritti di rifinitura e correzione del flusso docente, **senza
-nuove funzionalità di prodotto**. Nessun redesign, nessuna nuova dipendenza,
-nessuna Cloud Function nuova, nessun indice nuovo, nessun listener/polling
-aggiuntivo. `Gate GTWU` resta **APERTO**.
+Interventi circoscritti di rifinitura e miglioramento del flusso docente.
+Nessun redesign, nessuna nuova dipendenza, nessuna nuova Cloud Function, nessun
+nuovo indice, nessun listener/polling aggiuntivo. `Gate GTWU` resta **APERTO**.
 
 ## Stato pacchetti
 
 | Pacchetto | Descrizione | Stato |
 |---|---|---|
 | **TWU-01** | Fix immediati e polish: ellissi preview picker, icone SVG coerenti nei messaggi VEX, pulsante «Aggiorna» consegne, contratto primo/ultimo accesso studente. | **Implementato** |
-| TWU-02 | — (non ancora avviato) | Aperto |
-| TWU-03 | — (non ancora avviato) | Aperto |
-| TWU-04 | — (non ancora avviato) | Aperto |
-| TWU-05 | — (non ancora avviato) | Aperto |
+| **TWU-02** | Preferenze predefinite della correzione IA (owner-only) + scelta profilo modello chiuso (`economy`/`quality`), risolto server-side; form condiviso tra i due dialog; gerarchia prompt esplicita. | **Implementato** |
+| TWU-03 | — (non ancora avviato) | Pendente |
+| **TWU-04A** | Contratto import UDA. | **Progettato** — vedi [uda-import-contract.md](uda-import-contract.md) |
+| TWU-04B | — (non ancora avviato) | Pendente |
+| TWU-05 | — (non ancora avviato) | Pendente |
 | Gate GTWU | Verifica finale del pacchetto TWU. | **APERTO** |
 
 ---
@@ -123,4 +123,107 @@ timestamp). Nessuna lettura/scrittura per pending/blocked/portale disattivo.
 - Functions, provider IA, prompt, costi IA e VEX runtime **non toccati**.
 - Nessun nuovo indice Firestore. `firestore.rules` modificato **solo** per la
   Rule di accesso studente sopra.
-- TWU-02/03/04/05 invariati; Gate GTWU **APERTO**; nessun deploy, nessun merge.
+- Gate GTWU **APERTO**; nessun deploy, nessun merge.
+
+---
+
+## TWU-02 — Preferenze predefinite della correzione IA e scelta profilo modello ✅ IMPLEMENTATO
+
+Aggiunge i **valori predefiniti** della correzione IA del docente e la scelta di
+un **profilo modello chiuso**. Riusa integralmente il motore IA, il dialog e le
+validazioni esistenti (M5, Gate G7 PASS): nessun duplicato. Nessuna nuova
+dipendenza, nessuna nuova Cloud Function, nessun nuovo indice, nessun
+listener/polling.
+
+### Profili modello (chiusi, risolti server-side)
+Il client sceglie **solo** `modelProfile: 'economy' | 'quality'` e **mai** un
+model ID o un listino. La risoluzione profilo → (modello tecnico, versione
+listino) è **esclusivamente server-side** e fail-closed:
+
+| Profilo | Etichetta | Modello tecnico (server) | Listino |
+|---|---|---|---|
+| `economy` | Economico | `gpt-5.4-nano-2026-03-17` | `v2-2026-07-17-hg-m5` |
+| `quality` | Qualità | `gpt-5.6-luna` | `v5-2026-07-20-luna-dev` |
+
+UI: nome leggibile del profilo, sotto in piccolo il **model ID tecnico** (solo
+informativo, non un prezzo) e una descrizione breve (Economico = costo inferiore;
+Qualità = feedback più approfonditi, costo maggiore). La **preview esistente**
+continua a mostrare la stima reale dell'operazione; nessun prezzo statico inventato.
+
+**Comportamento server (`aiCorrectionModelProfile.ts` + engine):**
+- profilo **assente** ⇒ default legacy = profilo del **modello runtime**
+  (`settings/aiConfig.model`); su DEV il runtime è Luna ⇒ `quality`. Senza config
+  runtime (mock) ⇒ default applicativo `quality`. Comportamento attuale preservato;
+- profilo **presente ma nullo/sconosciuto/non-stringa** ⇒ `invalid_input`;
+- **nessun fallback silenzioso** Luna↔nano; modello e listino restano una coppia
+  accoppiata e verificata (`lookupModelPrice`);
+- il profilo **risolto** entra nell'**identità idempotente** (`selectionHash`):
+  stesso `requestId` con profilo diverso ⇒ `invalid_input`;
+- **preview e run** usano lo **stesso** profilo, modello e listino; la config
+  effettiva sostituisce **solo** modello + listino, mantenendo budget, limiti,
+  prenotazione conservativa (`costActual ≤ costSettled ≤ costReservation`), retry,
+  lease, kill switch e `aiCorrectionRuns` privacy-minimal invariati;
+- la risposta continua a riportare modello/listino/costi reali coerenti col
+  profilo risolto. Il client non può inviare `model` né `priceListVersion`
+  (payload chiuso).
+
+### Preferenze persistenti owner-only — `teacherAiPreferences/{ownerUid}`
+Un solo documento, **contratto chiuso**:
+
+```
+{ ownerUid, modelProfile: 'economy'|'quality',
+  gradingMode: 'compassionate'|'balanced'|'rigorous',
+  teacherGuidance?: string, updatedAt: serverTimestamp() }
+```
+
+- leggibile/scrivibile **solo** dall'owner; nessun accesso studente; `id == ownerUid`;
+  `ownerUid` immutabile e uguale all'utente autenticato; chiavi chiuse; `gradingMode`
+  e `modelProfile` enum validati; `teacherGuidance` normalizzata con trim (stringa
+  vuota ⇒ campo omesso), stesso limite di 500 caratteri del dialog; `updatedAt`
+  sempre `== request.time` (mai timestamp client). Enum sconosciuti, chiavi extra,
+  timestamp client e guidance oltre limite **negati** (vedi
+  `twu-02-ai-preferences.rules.test.ts`);
+- documento **assente** ⇒ default applicativi: `modelProfile` **quality**,
+  `gradingMode` **balanced**, `teacherGuidance` vuota. Nessuna migrazione;
+- service client tipizzato `loadTeacherAiPreferences` / `saveTeacherAiPreferences`.
+
+**Costo:** **una** get puntuale all'ingresso in Verifiche (StrictMode-safe,
+non bloccante), preferenze **in memoria** per la sessione; **una** write solo al
+click «Salva». Nessun listener, nessun polling, nessuna lettura per riga/consegna.
+
+### UI — form condiviso
+`AiCorrectionSettingsFields` (campi controllati profilo + stile + indicazioni) è
+**riusato** sia dal dialog «Impostazioni correzione IA» (pulsante nella barra dei
+filtri di Verifiche) sia dalla fase configure di `AiBatchCorrectionDialog`: nessun
+markup/logica duplicati. Il dialog impostazioni salva una sola volta (guardia anti
+doppio click, feedback `aria-live` save/success/error, nessun update dopo unmount,
+Escape/focus trap/restore via `DialogShell`). Il dialog «Correggi con IA» si apre
+**precompilato** con le preferenze; le modifiche locali valgono solo per quella
+operazione e **non** sovrascrivono le preferenze; ogni cambio dei tre criteri
+invalida preview e `requestId`; dopo la stima i criteri sono congelati e
+«Modifica impostazioni» torna alla configurazione con una nuova `requestId`.
+
+### Gerarchia minima del prompt
+Resa **esplicita** (nessun redesign) in `OPENAI_GRADING_INSTRUCTIONS`, dalla
+precedenza più alta alla più bassa: (1) sicurezza, schema e limiti server;
+(2) evidenze (domanda, risposta, soluzione docente, `maxPoints`); (3) `gradingMode`;
+(4) `teacherGuidance`, applicata concretamente quando compatibile; (5) testo dello
+studente, sempre contenuto **non attendibile** e mai istruzione. `teacherGuidance`
+non può alterare `maxPoints`, imporre output fuori schema, rendere corretta una
+risposta errata, eseguire istruzioni nella risposta studente, né aggirare i
+guardrail. Una sola chiamata provider per consegna.
+
+### Letture/scritture (prima → dopo)
+- **Preferenze:** prima 0; dopo 1 get all'ingresso in Verifiche + 1 write per
+  «Salva». Nessun listener/polling.
+- **Correzione IA:** invariata (stesse letture/scritture del run M5); il profilo
+  cambia solo modello/listino usati, non il numero di operazioni.
+
+### Fuori perimetro / regressioni evitate
+- Non modificati: scoring deterministico delle chiuse, correzione manuale, VEX e
+  varianti assegnate, selezione/checkbox batch, azioni Completa/Riapri/Restituisci/
+  Azzera, struttura submission/correctionReturn, StudentShell, secret provider,
+  budget ceiling, TTL. `settings/aiConfig` resta kill switch e fonte di
+  limiti/budget, mai leggibile dal client.
+- `firestore.rules` modificato **solo** per il nuovo documento owner-only.
+- Gate GTWU **APERTO**; nessun deploy, nessun merge.
