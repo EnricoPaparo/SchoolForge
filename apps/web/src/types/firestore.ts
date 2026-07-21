@@ -746,6 +746,15 @@ export type SubmissionDoc = {
   startedAt: Timestamp;
   lastSavedAt: Timestamp | FieldValue;
   submittedAt: Timestamp | FieldValue | null;
+  /**
+   * VEX (VEX-01B): presente SOLO in `equivalent_variants`. Scritto UNA SOLA
+   * VOLTA dal server (callable `assignVerificationVariant`, Admin SDK) al primo
+   * avvio: gli `order` (0-based) effettivamente assegnati allo studente
+   * (comuni + una alternativa per gruppo). Mai riscritto; il client non può
+   * crearlo, modificarlo o rimuoverlo (Firestore Rules). Assente ⇒ non ancora
+   * assegnata (o modalità `same_questions`, dove il campo non esiste).
+   */
+  assignedQuestionOrders?: number[];
   /** Teacher-controlled public lifecycle mirror; absent on legacy submissions means `submitted`. */
   correctionStatus?: SubmissionCorrectionStatus;
   correctionStatusUpdatedAt?: Timestamp | FieldValue;

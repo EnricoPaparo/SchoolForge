@@ -50,7 +50,6 @@ import {
   listActiveOnlineVerificationClassIds,
   createVerification,
   updateVerificationConfig,
-  VEX_ACTIVATION_BLOCKED_MESSAGE,
   validateForActivation,
   activateVerification,
   setVerificationVisibility,
@@ -537,19 +536,62 @@ describe('activateVerification', () => {
     expect(mockRunTransaction).not.toHaveBeenCalled();
   });
 
-  it('VEX-01A: rejects equivalent_variants BEFORE reading the pool, opening a transaction or writing', async () => {
+  it('VEX-01B: activates equivalent_variants — snapshot carries VEX order fields, projection is common-only', async () => {
+    const commonRef = { ...VALID_CONFIG.questionRefs[0]!, questionIndexEntryId: 'qi-1' };
+    const altA = {
+      ...VALID_CONFIG.questionRefs[0]!,
+      questionIndexEntryId: 'qi-2',
+      questionLocalId: 'q2',
+      tipo: 'aperta' as const,
+    };
+    const altB = {
+      ...VALID_CONFIG.questionRefs[0]!,
+      questionIndexEntryId: 'qi-3',
+      questionLocalId: 'q3',
+      tipo: 'aperta' as const,
+    };
     const vexDraft: Partial<VerificationDoc> = {
       status: 'draft',
-      config: { ...VALID_CONFIG, distributionMode: 'equivalent_variants' },
+      config: {
+        ...VALID_CONFIG,
+        questionRefs: [commonRef, altA, altB],
+        distributionMode: 'equivalent_variants',
+        equivalentGroups: [{ id: 'g1', questionIndexEntryIds: ['qi-2', 'qi-3'] }],
+      },
     };
     mockGetDoc.mockResolvedValue({ exists: () => true, data: () => vexDraft });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue({
+      ok: true as const,
+      questions: [
+        {
+          ref: commonRef,
+          testo: 'Q1?',
+          tipo: 'chiusa_singola' as const,
+          opzioni: [],
+          soluzione: 'a',
+        },
+        { ref: altA, testo: 'Q2?', tipo: 'aperta' as const, soluzione: 'sol2' },
+        { ref: altB, testo: 'Q3?', tipo: 'aperta' as const, soluzione: 'sol3' },
+      ],
+    });
+    const capture = setupTransactionCapture(vexDraft);
 
-    await expect(
-      activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage),
-    ).rejects.toThrow(VEX_ACTIVATION_BLOCKED_MESSAGE);
-    expect(mockLoadSelectedQuestionsWithSolutions).not.toHaveBeenCalled();
-    expect(mockRunTransaction).not.toHaveBeenCalled();
-    expect(mockSetDoc).not.toHaveBeenCalled(); // no audit, no projection, no write
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    const snapshot = capture.getUpdate()?.teacherSnapshot as {
+      distributionMode?: string;
+      commonQuestionOrders?: number[];
+      equivalentGroups?: { id: string; alternativeOrders: number[] }[];
+      questions?: { order: number }[];
+    };
+    expect(snapshot.distributionMode).toBe('equivalent_variants');
+    expect(snapshot.commonQuestionOrders).toEqual([0]);
+    expect(snapshot.equivalentGroups).toEqual([{ id: 'g1', alternativeOrders: [1, 2] }]);
+    // teacherSnapshot keeps ALL selected questions (common + every alternative).
+    expect(snapshot.questions).toHaveLength(3);
+    // Published projection exposes ONLY the common question — alternatives never leak.
+    const projectionQuestions = capture.getProjection()?.questions as { order: number }[];
+    expect(projectionQuestions.map((q) => q.order)).toEqual([0]);
   });
 
   it('VEX-01A: same_questions activates unchanged and records distributionMode in the snapshot', async () => {

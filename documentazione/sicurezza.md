@@ -333,19 +333,29 @@ Contratto completo e mitigazioni in [m5-ai-assisted-roadmap.md](m5-ai-assisted-r
 
 ---
 
-## 8b. Varianti equivalenti (VEX — VEX-01A client implementato, assegnazione NON implementata)
+## 8b. Varianti equivalenti (VEX — VEX-01A e VEX-01B implementati)
 
-**Guardia fail-closed di rollout parziale (VEX-01A).** Finché VEX-01B non aggiunge la
-callable di assegnazione sicura, l'isolamento e le Rules, `equivalent_variants` **non deve
-diventare operativo**. `activateVerification` (`verificationsService.ts`) applica quindi
-una guardia **applicativa** (nessun feature-flag remoto / Firebase config): se
-`distributionMode === 'equivalent_variants'` l'attivazione viene **rifiutata prima** di
-leggere il pool, aprire la transazione o scrivere qualsiasi documento — nessuno snapshot o
-proiezione parziale viene creato — con messaggio esatto _«Le varianti equivalenti saranno
-attivabili dopo il completamento del servizio di assegnazione sicura.»_. `same_questions`
-si attiva esattamente come prima. La guardia sarà **rimossa da VEX-01B** insieme a
-Function+isolamento+Rules-test. I dati VEX (gruppi in bozza) **non** sono leggibili dallo
-studente in questo pacchetto (restano nella `config` owner-only, mai in proiezione).
+**Assegnazione server-side e isolamento (VEX-01B).** La guardia fail-closed di VEX-01A è
+**rimossa**: `equivalent_variants` è ora attivabile. Le garanzie di sicurezza:
+
+- **Attivazione:** `activateVerification` costruisce lo snapshot VEX (owner-only, immutabile)
+  con tutte le alternative + soluzioni, ma la `publishedProjection` (student-readable) contiene
+  **solo le domande comuni** — nessuna alternativa né soluzione è mai leggibile dalla proiezione.
+- **Callable `assignVerificationVariant`** (Admin SDK): unico produttore dell'assegnazione.
+  Autorizzazione fail-closed (auth, studente approvato dello stesso owner, classe, `active` +
+  `onlineEnabled`, modalità corretta, snapshot valido). Restituisce **solo** le domande
+  assegnate sanitizzate — mai soluzioni, alternative non assegnate, `teacherSnapshot` o gruppi.
+- **`assignedQuestionOrders` è SERVER-ONLY:** le Firestore Rules negano allo studente di
+  crearlo, modificarlo o rimuoverlo; gli altri studenti non lo leggono; un autosave normale lo
+  lascia immutato (test emulator dedicati). Lo scrive **una sola volta** la callable, in
+  transazione idempotente; un valore persistito invalido è **fail-closed** (nessuna
+  rigenerazione silenziosa). RNG crittograficamente sicuro (`node:crypto`), scelta uniforme,
+  nessun bilanciamento globale, ripetizioni ammesse.
+- Lo studente legge **il proprio** `assignedQuestionOrders` (soli `order`, non contenuti): è la
+  sua assegnazione, non espone le alternative altrui.
+
+Restano a VEX-02/03 la UI studente (svolgimento/ripresa/filtri), il PDF studente disabilitato,
+la correzione/IA/restituzione filtrate e il Gate GVEX.
 
 Requisiti di sicurezza congelati per `equivalent_variants` (dettaglio in
 [`vex-contract.md`](vex-contract.md) §4–5):

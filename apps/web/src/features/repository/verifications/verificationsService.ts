@@ -35,14 +35,7 @@ import {
 } from './verificationSnapshotMappers.js';
 import { normalizeVisibility } from './visibility.js';
 import { normalizeDistributionMode } from './vexDistribution.js';
-
-/**
- * VEX-01A — messaggio della guardia fail-closed: `equivalent_variants` non è
- * attivabile finché VEX-01B non introduce la callable di assegnazione sicura e
- * l'isolamento delle alternative.
- */
-export const VEX_ACTIVATION_BLOCKED_MESSAGE =
-  'Le varianti equivalenti saranno attivabili dopo il completamento del servizio di assegnazione sicura.';
+import { buildEquivalentSnapshotParts, VexSnapshotError } from './vexSnapshot.js';
 
 export type VerificationItem = { id: string } & Omit<
   VerificationDoc,
@@ -320,17 +313,12 @@ export async function activateVerification(
     throw new Error(`Verifica non valida: ${preValidation.errors.join(', ')}`);
   }
 
-  // VEX-01A — GUARDIA FAIL-CLOSED (rollout parziale). `equivalent_variants` non
-  // può essere attivata in questo pacchetto: la callable di assegnazione sicura
-  // e l'isolamento delle alternative arrivano in VEX-01B. Il controllo è QUI,
-  // PRIMA di leggere il pool da Storage, aprire la transazione o scrivere
-  // qualsiasi documento — così non nasce mai un teacherSnapshot/
-  // publishedProjection parziale né una verifica VEX resa public/online.
-  // `normalizeDistributionMode` fa anche da fail-closed sul valore sconosciuto.
-  // VEX-01B rimuoverà questa guardia insieme a Function, isolamento e test Rules.
-  if (normalizeDistributionMode(preData.config.distributionMode) === 'equivalent_variants') {
-    throw new Error(VEX_ACTIVATION_BLOCKED_MESSAGE);
-  }
+  // VEX-01B — modalità di distribuzione, normalizzata fail-closed (valore
+  // sconosciuto ⇒ errore leggibile, mai fallback silenzioso). Determina se
+  // costruire lo snapshot VEX (gruppi equivalenti) o mantenere il flusso
+  // classico `same_questions` invariato.
+  const distributionMode = normalizeDistributionMode(preData.config.distributionMode);
+  const isVex = distributionMode === 'equivalent_variants';
 
   // Single Storage read for both the owner-only teacher snapshot (with
   // solutions) and the student-safe published projection (without) — see
@@ -355,7 +343,49 @@ export async function activateVerification(
   );
   assertTeacherSnapshotQuestionsWithinLimit(teacherQuestions);
 
-  const publicQuestions = teacherQuestions.map(toPublicVerificationQuestion);
+  // VEX-01B — snapshot dei gruppi equivalenti costruito **prima** della
+  // transazione (puro, nessuna IO): converte gli `questionIndexEntryId` del
+  // draft negli `order` (indice in questions[]), calcola `commonQuestionOrders`
+  // e `equivalentGroups` (order-based), e ri-valida **autorevolmente** lato
+  // service (riferimenti, id gruppo unici, gruppo non vuoto, domanda in un solo
+  // gruppo, alternative compatibili per UDA/tipo/difficoltà, nessun order
+  // duplicato, copertura completa e disgiunta). Fail-closed: qualsiasi
+  // incoerenza aborta l'attivazione PRIMA di scrivere qualsiasi documento.
+  let vexSnapshotFields:
+    | { distributionMode: 'same_questions' }
+    | {
+        distributionMode: 'equivalent_variants';
+        commonQuestionOrders: number[];
+        equivalentGroups: { id: string; alternativeOrders: number[] }[];
+      } = { distributionMode: 'same_questions' };
+  // In `same_questions` la proiezione pubblica contiene tutte le domande (come
+  // oggi). In `equivalent_variants` la proiezione pubblica espone **solo** le
+  // domande comuni: le alternative non assegnate non devono mai essere
+  // leggibili dallo studente (arrivano solo dalla callable). Vedi vex-contract §4.1.
+  let publicQuestions = teacherQuestions.map(toPublicVerificationQuestion);
+  if (isVex) {
+    let parts;
+    try {
+      parts = buildEquivalentSnapshotParts(
+        preData.config.questionRefs,
+        preData.config.equivalentGroups ?? [],
+      );
+    } catch (error) {
+      if (error instanceof VexSnapshotError) {
+        throw new Error(`Impossibile attivare le varianti equivalenti: ${error.message}`);
+      }
+      throw error;
+    }
+    vexSnapshotFields = {
+      distributionMode: 'equivalent_variants',
+      commonQuestionOrders: parts.commonQuestionOrders,
+      equivalentGroups: parts.equivalentGroups,
+    };
+    const commonSet = new Set(parts.commonQuestionOrders);
+    publicQuestions = teacherQuestions
+      .filter((q) => commonSet.has(q.order))
+      .map(toPublicVerificationQuestion);
+  }
 
   await runTransaction(db, async (transaction) => {
     const snap = await transaction.get(verRef);
@@ -386,9 +416,11 @@ export async function activateVerification(
       importId: data.config.importId,
       questionRefs: data.config.questionRefs,
       questions: teacherQuestions,
-      // VEX-01A: solo `same_questions` raggiunge l'attivazione (guardia sopra);
-      // i gruppi eventualmente salvati nel draft sono deliberatamente IGNORATI.
-      distributionMode: 'same_questions',
+      // VEX-01B: modalità + (solo in equivalent_variants) order comuni e gruppi
+      // equivalenti congelati. Lo snapshot resta owner-only e immutabile
+      // (Rules vietano l'update di teacherSnapshot). In `same_questions` solo
+      // `distributionMode` è presente e nulla cambia rispetto a prima.
+      ...vexSnapshotFields,
       activatedAt: serverTimestamp(),
     };
     transaction.update(verRef, {
