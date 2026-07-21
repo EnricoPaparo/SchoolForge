@@ -1,0 +1,198 @@
+import type { EquivalentGroupConfig, VerificationQuestionRef } from '../../../types/firestore.js';
+
+/**
+ * VEX-02C — **builder assistito locale** dei gruppi equivalenti. Logica **pura**
+ * (nessuna lettura/scrittura, nessuna IA, nessun costo): assiste il docente nel
+ * formare i gruppi usando **esclusivamente** la chiave tecnica UDA + tipo +
+ * difficoltà intera 1–5.
+ *
+ * L'equivalenza tecnica **non** garantisce quella pedagogica: il risultato è un
+ * punto di partenza modificabile liberamente; le modifiche manuali del docente
+ * hanno **precedenza assoluta** (nessun ricalcolo globale automatico).
+ *
+ * `maxCharacters`, titolo, punteggio, similarità testuale NON sono criteri.
+ * Fail-closed: metadati mancanti/malformati ⇒ chiave `null` ⇒ la domanda resta
+ * **comune** (mai raggruppata su dati incoerenti).
+ */
+
+/** Sottoinsieme dei metadati usati per la chiave tecnica. */
+export type AutogroupRef = Pick<
+  VerificationQuestionRef,
+  'questionIndexEntryId' | 'udaDir' | 'tipo' | 'difficolta'
+>;
+
+const TIPI: ReadonlySet<string> = new Set(['aperta', 'chiusa_singola', 'chiusa_multipla']);
+/** Separatore che non può comparire in UDA/tipo (evita collisioni di chiave). */
+const SEP = '\u0000';
+
+/** id gruppo iniettabile nei test; in produzione `crypto.randomUUID()`. */
+export type MakeId = () => string;
+const defaultMakeId: MakeId = () => crypto.randomUUID();
+
+/**
+ * Chiave tecnica di equivalenza: `UDA + tipo + difficoltà`. Fail-closed:
+ * ritorna `null` se un metadato manca o è malformato (UDA vuota, tipo ignoto,
+ * difficoltà non intera fuori 1–5) ⇒ la domanda va lasciata comune.
+ */
+export function equivalenceKey(ref: AutogroupRef | undefined | null): string | null {
+  if (!ref) return null;
+  const uda = ref.udaDir;
+  const tipo = ref.tipo;
+  const diff = ref.difficolta;
+  if (typeof uda !== 'string' || uda.length === 0) return null;
+  if (typeof tipo !== 'string' || !TIPI.has(tipo)) return null;
+  if (!Number.isInteger(diff) || diff < 1 || diff > 5) return null;
+  return `${uda}${SEP}${tipo}${SEP}${diff}`;
+}
+
+function isInAnyGroup(entryId: string, groups: readonly EquivalentGroupConfig[]): boolean {
+  return groups.some((g) => g.questionIndexEntryIds.includes(entryId));
+}
+
+/**
+ * Chiave comune di un gruppo: la chiave condivisa da **tutte** le sue domande,
+ * o `null` se il gruppo è vuoto, contiene una domanda a chiave `null` o mescola
+ * chiavi diverse (un gruppo incoerente non è un bersaglio di raggruppamento).
+ */
+export function groupEquivalenceKey(
+  group: EquivalentGroupConfig,
+  byId: ReadonlyMap<string, AutogroupRef>,
+): string | null {
+  if (group.questionIndexEntryIds.length === 0) return null;
+  let key: string | null = null;
+  for (const id of group.questionIndexEntryIds) {
+    const k = equivalenceKey(byId.get(id) ?? null);
+    if (k === null) return null;
+    if (key === null) key = k;
+    else if (key !== k) return null;
+  }
+  return key;
+}
+
+/**
+ * **Prima inizializzazione** (A): raggruppa deterministicamente le domande
+ * selezionate per chiave tecnica. Crea un gruppo solo per i bucket con **≥2**
+ * domande (i singleton restano comuni). Ordine stabile: bucket in ordine di
+ * prima comparsa, domande in ordine di selezione. Non muta l'input.
+ */
+export function autoGroupByKey(
+  refs: readonly AutogroupRef[],
+  makeId: MakeId = defaultMakeId,
+): EquivalentGroupConfig[] {
+  const buckets = new Map<string, string[]>();
+  const order: string[] = [];
+  for (const ref of refs) {
+    const key = equivalenceKey(ref);
+    if (key === null) continue; // fail-closed: resta comune
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = [];
+      buckets.set(key, bucket);
+      order.push(key);
+    }
+    if (!bucket.includes(ref.questionIndexEntryId)) bucket.push(ref.questionIndexEntryId);
+  }
+  const groups: EquivalentGroupConfig[] = [];
+  for (const key of order) {
+    const ids = buckets.get(key)!;
+    if (ids.length >= 2) groups.push({ id: makeId(), questionIndexEntryIds: [...ids] });
+  }
+  return groups;
+}
+
+/** entryId (in ordine) delle domande NON raggruppate: i singleton comuni. */
+export function ungroupedEntryIds(
+  refs: readonly AutogroupRef[],
+  groups: readonly EquivalentGroupConfig[],
+): string[] {
+  return refs.map((r) => r.questionIndexEntryId).filter((id) => !isInAnyGroup(id, groups));
+}
+
+export interface AssignOnSelectInput {
+  /** entryId appena selezionato dal picker. */
+  newEntryId: string;
+  /** Tutte le domande attualmente selezionate (incl. la nuova). */
+  refs: readonly AutogroupRef[];
+  /** Gruppi correnti (autorevoli: manuali + eventuale precompilazione). */
+  groups: readonly EquivalentGroupConfig[];
+  /**
+   * entryId selezionati in questa sessione, ancora comuni e **non assegnati**,
+   * candidati a formare un nuovo gruppo con una domanda compatibile.
+   */
+  sessionUnassigned: readonly string[];
+}
+
+export interface AssignOnSelectResult {
+  groups: EquivalentGroupConfig[];
+  sessionUnassigned: string[];
+}
+
+/**
+ * **Selezione progressiva** (B): decide dove va una domanda **appena
+ * selezionata**, senza mai ricalcolare i gruppi esistenti.
+ * - esattamente **un** gruppo compatibile ⇒ la aggiunge a quel gruppo;
+ * - **nessun** gruppo compatibile ⇒ la abbina a una domanda compatibile ancora
+ *   non assegnata di questa sessione (nuovo gruppo), altrimenti la lascia comune
+ *   marcandola come candidata;
+ * - **più** gruppi compatibili ⇒ la lascia comune (nessuna scelta arbitraria).
+ * Fail-closed su chiave `null` (resta comune). Una domanda sta in al più un gruppo.
+ */
+export function assignOnSelect(
+  input: AssignOnSelectInput,
+  makeId: MakeId = defaultMakeId,
+): AssignOnSelectResult {
+  const { newEntryId, refs, groups, sessionUnassigned } = input;
+  const byId = new Map<string, AutogroupRef>(refs.map((r) => [r.questionIndexEntryId, r]));
+  const without = (list: readonly string[], id: string): string[] => list.filter((x) => x !== id);
+
+  // Già in un gruppo (guardia) o chiave non valida ⇒ nessuna azione / resta comune.
+  if (isInAnyGroup(newEntryId, groups)) {
+    return { groups: [...groups], sessionUnassigned: without(sessionUnassigned, newEntryId) };
+  }
+  const key = equivalenceKey(byId.get(newEntryId) ?? null);
+  if (key === null) {
+    return { groups: [...groups], sessionUnassigned: without(sessionUnassigned, newEntryId) };
+  }
+
+  const compatible = groups.filter((g) => groupEquivalenceKey(g, byId) === key);
+
+  if (compatible.length === 1) {
+    const targetId = compatible[0]!.id;
+    return {
+      groups: groups.map((g) =>
+        g.id === targetId
+          ? { ...g, questionIndexEntryIds: [...g.questionIndexEntryIds, newEntryId] }
+          : { ...g },
+      ),
+      sessionUnassigned: without(sessionUnassigned, newEntryId),
+    };
+  }
+
+  if (compatible.length === 0) {
+    const partner = sessionUnassigned.find(
+      (id) =>
+        id !== newEntryId &&
+        !isInAnyGroup(id, groups) &&
+        equivalenceKey(byId.get(id) ?? null) === key,
+    );
+    if (partner) {
+      return {
+        groups: [
+          ...groups.map((g) => ({ ...g })),
+          { id: makeId(), questionIndexEntryIds: [partner, newEntryId] },
+        ],
+        sessionUnassigned: without(without(sessionUnassigned, partner), newEntryId),
+      };
+    }
+    // Nessun partner: resta comune, ma diventa candidata per un futuro abbinamento.
+    return {
+      groups: [...groups],
+      sessionUnassigned: sessionUnassigned.includes(newEntryId)
+        ? [...sessionUnassigned]
+        : [...sessionUnassigned, newEntryId],
+    };
+  }
+
+  // Più gruppi compatibili ⇒ lascia comune, non seminare (scelta ambigua).
+  return { groups: [...groups], sessionUnassigned: without(sessionUnassigned, newEntryId) };
+}

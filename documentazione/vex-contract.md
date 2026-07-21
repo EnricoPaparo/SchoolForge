@@ -13,10 +13,16 @@ fail-closed + **Rules**: `answers`/`flagged` ⊆ `assignedAnswerKeys`), PDF stud
 in VEX. VEX-02B: **correzione, IA, restituzione ed export sulla sola variante assegnata** —
 risolutore canonico condiviso (`assignedVariant.ts`), scheletro correzione + totali +
 restituzione + payload IA costruiti esclusivamente su `assignedQuestionOrders` (fail-closed).
-`same_questions` resta invariato e **non** invoca la callable. Il rollout VEX-03A su
-`schoolforge-dev` è completato sullo SHA `1399faeb1539b1adf1fd9d0ead1bb485ca5d9d53`;
-resta il **Gate GVEX**, ancora `PENDING`, con smoke manuale multi-studente ed evidenze finali.
-VEX-00B ha congelato il contratto.
+VEX-02C: **builder assistito locale** — precompilazione **tecnica** dei gruppi (UDA + tipologia +
+difficoltà, `vexAutogroup.ts`), abbinamento progressivo delle nuove selezioni, avviso permanente
+(«non è garanzia pedagogica») e selettore domande leggibile (listbox accessibile a due righe con
+`questionPreview`). **Puramente client, zero costo**: nessuna IA/lettura/scrittura/backend; le
+modifiche manuali del docente hanno **precedenza assoluta** (nessun ricalcolo globale). Precompilazione
+tecnica, non pedagogica. `same_questions` resta invariato e **non** invoca la callable.
+Il rollout VEX-03A su `schoolforge-dev` è completato: baseline server/Rules SHA
+`1399faeb1539b1adf1fd9d0ead1bb485ca5d9d53`, Hosting finale VEX-02C SHA
+`adba8e3208c33ece05fbc928f598e0197c4ba94b`. Lo smoke manuale è stato confermato dal docente:
+**Gate GVEX PASS** il 21 luglio 2026. VEX-00B ha congelato il contratto.
 **Natura (VEX-00B):** documentazione + prototipo. **Nessun codice applicativo, Function, Rule,
 indice, schema reale, dipendenza o deploy** è introdotto dal pacchetto VEX-00B.
 **Base:** UX e decisioni di prodotto già approvate in
@@ -406,14 +412,47 @@ codice applicativo.
   autorizzano la scrittura. Test web + Functions mirati. Nessun nuovo listener/query/documento;
   nel workspace submission e snapshot già caricati vengono riusati; write invariati.
 
-### VEX-03A / Gate GVEX — **rollout DEV completato; Human Gate PENDING**
-- rollout coordinato completato il 21 luglio 2026 su `schoolforge-dev`, SHA
-  `1399faeb1539b1adf1fd9d0ead1bb485ca5d9d53`, nell'ordine Functions → Firestore Rules → Hosting;
-- preflight automatico completamente verde con Node `v22.23.1`;
-- resta lo smoke manuale multi-studente, la verifica di assenza di fughe di alternative/soluzioni
-  e la conferma dei flussi di correzione/restituzione;
-- checklist: [`evidenze/gvex-human-gate.md`](evidenze/gvex-human-gate.md). Il Gate non è PASS
-  finché il docente non completa e conferma la checklist.
+### VEX-02C — **builder assistito locale** ✅ IMPLEMENTATO
+- ✅ modulo puro `vexAutogroup.ts`: chiave tecnica **UDA + tipo + difficoltà** (fail-closed su
+  metadati mancanti/malformati ⇒ domanda comune); `maxCharacters`/titolo/punteggio/similarità
+  **non** sono criteri;
+- ✅ **prima inizializzazione** (solo alla transizione manuale `same_questions`→`equivalent_variants`
+  con zero gruppi): bucket con ≥2 domande → gruppo, singleton comuni, id stabili, ordine stabile;
+- ✅ **selezione progressiva**: una nuova domanda va nell'unico gruppo compatibile, oppure forma un
+  gruppo con una compatibile ancora non assegnata della sessione, altrimenti resta comune (mai
+  scelta arbitraria con più gruppi compatibili); una domanda in al più un gruppo;
+- ✅ **precedenza assoluta alle modifiche manuali**: nessun ricalcolo globale a render/salvataggio/
+  cambio tab; al caricamento i gruppi/comuni persistiti sono autorevoli (niente autocompilazione);
+  deselezione riconcilia (rimozione dal gruppo, eliminazione gruppi vuoti) senza reinserimenti;
+- ✅ **reset assistito intenzionale** (comportamento previsto, non un bug, senza flag né campi
+  persistiti): la precompilazione **non** ricalcola mai i gruppi esistenti; le modifiche manuali
+  restano autorevoli **finché esiste almeno un gruppo**. Se il docente elimina **tutti** i gruppi,
+  passa a `same_questions` e poi torna a `equivalent_variants`, l'handler di cambio modalità osserva
+  zero gruppi e riavvia intenzionalmente la precompilazione: è un reset assistito richiesto
+  esplicitamente da un'azione dell'utente, non un'autocompilazione a sorpresa;
+- ✅ **updater React puri (Strict Mode)**: gruppi, candidati di sessione ed eventuali UUID sono
+  calcolati **una sola volta per evento utente, fuori** dagli updater di stato; `setEquivalentGroups`
+  applica solo il risultato già calcolato ⇒ la doppia invocazione di Strict Mode non produce
+  UUID/gruppi doppi né perde candidati (test dedicato);
+- ✅ **avviso permanente** non bloccante e accessibile («precompilati usando UDA, tipologia e
+  difficoltà; verifica l'equivalenza didattica»); nessun popup/toast/conferma;
+- ✅ **selettore leggibile** (`VexQuestionSelect`, listbox accessibile senza dipendenze): due righe
+  (metadati `#id · Tipo · Diff. N · UDA x` + preview reale da `questionPreview`), ellissi ~2 righe,
+  testo completo via `title`, fallback all'ID, tastiera/focus/Escape/click-esterno, nome per gruppo;
+- ✅ **zero costo/backend**: nessuna IA/lettura/scrittura/query/listener; `questionPreview` mai
+  persistita in `equivalentGroups`; nessuna nuova struttura Firestore; `same_questions` invariato.
+
+### VEX-03A / Gate GVEX — **PASS**
+- rollout coordinato completato il 21 luglio 2026 su `schoolforge-dev`, nell'ordine Functions →
+  Firestore Rules → Hosting; baseline server/Rules SHA
+  `1399faeb1539b1adf1fd9d0ead1bb485ca5d9d53`;
+- VEX-02C distribuito con un successivo deploy **solo Hosting**, SHA
+  `adba8e3208c33ece05fbc928f598e0197c4ba94b`;
+- preflight automatici verdi con Node `v22.23.1`: web finale 1631/1631; Functions 532/532 e
+  Rules Emulator 493/493 sul rollout coordinato;
+- smoke manuale docente/multi-studente, idempotenza, isolamento, correzione, restituzione ed
+  export confermati dal docente;
+- checklist finale: [`evidenze/gvex-human-gate.md`](evidenze/gvex-human-gate.md).
 
 ---
 

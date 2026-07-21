@@ -10,6 +10,7 @@ import {
   validateEquivalentGroups,
   type VexWarning,
 } from '../repository/verifications/vexGroups.js';
+import { VexQuestionSelect } from './VexQuestionSelect.js';
 import styles from './VexBuilder.module.css';
 
 /**
@@ -257,6 +258,17 @@ export function VexBuilder({
               </button>
             </div>
 
+            {/* VEX-02C — avviso permanente (non bloccante): la precompilazione è
+                tecnica (UDA + tipologia + difficoltà), non una garanzia
+                pedagogica. Nessun popup/toast/conferma. */}
+            <p className={styles.assistNote} role="note">
+              <span aria-hidden="true">ℹ</span>
+              <span>
+                I gruppi sono precompilati usando UDA, tipologia e difficoltà. Verifica sempre che
+                le domande siano realmente equivalenti dal punto di vista didattico.
+              </span>
+            </p>
+
             {groups.length === 0 ? (
               <p className={styles.empty}>
                 Nessun gruppo. Crea un gruppo e aggiungi due o più domande equivalenti per far
@@ -321,26 +333,11 @@ export function VexBuilder({
                     ))}
 
                     <div className={styles.addForm}>
-                      <select
-                        aria-label={`Aggiungi alternativa al gruppo ${index + 1}`}
-                        defaultValue=""
-                        disabled={available.length === 0}
-                        onChange={(e) => {
-                          addAlternative(group.id, e.target.value);
-                          e.target.value = '';
-                        }}
-                      >
-                        <option value="" disabled>
-                          {available.length === 0
-                            ? 'Nessuna domanda disponibile'
-                            : '+ Aggiungi alternativa…'}
-                        </option>
-                        {available.map((r) => (
-                          <option key={r.questionIndexEntryId} value={r.questionIndexEntryId}>
-                            {r.questionLocalId} — {tipoLabel(r.tipo)}, diff {r.difficolta}
-                          </option>
-                        ))}
-                      </select>
+                      <VexQuestionSelect
+                        label={`Aggiungi alternativa al gruppo ${index + 1}`}
+                        options={available}
+                        onSelect={(entryId) => addAlternative(group.id, entryId)}
+                      />
                     </div>
 
                     {invalid && (
