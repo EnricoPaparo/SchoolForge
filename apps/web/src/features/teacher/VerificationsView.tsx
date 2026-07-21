@@ -753,32 +753,38 @@ export function VerificationsView() {
   function handleQuestionSelectionChange(next: Set<string>) {
     const prev = selectedQuestionIds;
     const added = [...next].filter((id) => !prev.has(id));
-    setSelectedQuestionIds(next);
-    setEquivalentGroups((prevGroups) => {
-      // VEX-01A: deselezione ⇒ rimozione dal gruppo + eliminazione dei gruppi vuoti.
-      let groups = reconcileEquivalentGroups(prevGroups, next);
-      // Ripulisci i candidati non più selezionati o ora raggruppati.
-      vexSessionUnassignedRef.current = vexSessionUnassignedRef.current.filter(
-        (id) => next.has(id) && !groups.some((g) => g.questionIndexEntryIds.includes(id)),
-      );
-      // VEX-02C: abbinamento progressivo SOLO per le domande appena selezionate e
-      // solo in modalità varianti. Mai un ricalcolo globale: le scelte manuali
-      // restano autorevoli (le domande già presenti non vengono toccate).
-      if (distributionMode === 'equivalent_variants' && added.length > 0) {
-        const refs = autogroupRefsFor(next);
-        for (const id of added) {
-          const res = assignOnSelect({
-            newEntryId: id,
-            refs,
-            groups,
-            sessionUnassigned: vexSessionUnassignedRef.current,
-          });
-          groups = res.groups;
-          vexSessionUnassignedRef.current = res.sessionUnassigned;
-        }
+
+    // VEX-02C: tutto il calcolo (riconciliazione, abbinamento progressivo, UUID,
+    // candidati di sessione) avviene **fuori** dall'updater di React, una sola
+    // volta per evento utente. L'updater si limita ad applicare il risultato
+    // già calcolato, così Strict Mode (doppia invocazione) non può generare
+    // UUID/gruppi doppi né perdere candidati.
+    // VEX-01A: deselezione ⇒ rimozione dal gruppo + eliminazione dei gruppi vuoti.
+    let groups = reconcileEquivalentGroups(equivalentGroups, next);
+    // Ripulisci i candidati non più selezionati o ora raggruppati.
+    let sessionUnassigned = vexSessionUnassignedRef.current.filter(
+      (id) => next.has(id) && !groups.some((g) => g.questionIndexEntryIds.includes(id)),
+    );
+    // Abbinamento progressivo SOLO per le domande appena selezionate e solo in
+    // modalità varianti. Mai un ricalcolo globale: le scelte manuali restano
+    // autorevoli (le domande già presenti non vengono toccate).
+    if (distributionMode === 'equivalent_variants' && added.length > 0) {
+      const refs = autogroupRefsFor(next);
+      for (const id of added) {
+        const res = assignOnSelect({
+          newEntryId: id,
+          refs,
+          groups,
+          sessionUnassigned,
+        });
+        groups = res.groups;
+        sessionUnassigned = res.sessionUnassigned;
       }
-      return groups;
-    });
+    }
+
+    setSelectedQuestionIds(next);
+    setEquivalentGroups(groups);
+    vexSessionUnassignedRef.current = sessionUnassigned;
     markDraftDirty();
   }
 

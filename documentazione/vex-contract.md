@@ -421,6 +421,16 @@ codice applicativo.
 - ✅ **precedenza assoluta alle modifiche manuali**: nessun ricalcolo globale a render/salvataggio/
   cambio tab; al caricamento i gruppi/comuni persistiti sono autorevoli (niente autocompilazione);
   deselezione riconcilia (rimozione dal gruppo, eliminazione gruppi vuoti) senza reinserimenti;
+- ✅ **reset assistito intenzionale** (comportamento previsto, non un bug, senza flag né campi
+  persistiti): la precompilazione **non** ricalcola mai i gruppi esistenti; le modifiche manuali
+  restano autorevoli **finché esiste almeno un gruppo**. Se il docente elimina **tutti** i gruppi,
+  passa a `same_questions` e poi torna a `equivalent_variants`, l'handler di cambio modalità osserva
+  zero gruppi e riavvia intenzionalmente la precompilazione: è un reset assistito richiesto
+  esplicitamente da un'azione dell'utente, non un'autocompilazione a sorpresa;
+- ✅ **updater React puri (Strict Mode)**: gruppi, candidati di sessione ed eventuali UUID sono
+  calcolati **una sola volta per evento utente, fuori** dagli updater di stato; `setEquivalentGroups`
+  applica solo il risultato già calcolato ⇒ la doppia invocazione di Strict Mode non produce
+  UUID/gruppi doppi né perde candidati (test dedicato);
 - ✅ **avviso permanente** non bloccante e accessibile («precompilati usando UDA, tipologia e
   difficoltà; verifica l'equivalenza didattica»); nessun popup/toast/conferma;
 - ✅ **selettore leggibile** (`VexQuestionSelect`, listbox accessibile senza dipendenze): due righe
