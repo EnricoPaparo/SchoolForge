@@ -24,6 +24,7 @@ export type AiExclusionReason =
   | 'too_large'
   | 'changed_since_preview'
   | 'write_error'
+  | 'invalid_variant'
   // M5-05D2B-2 — esiti tecnici del provider reale (retry/deadline).
   | 'deadline_exceeded'
   | 'rate_limited'
@@ -193,6 +194,8 @@ export function describeExclusion(reason: AiExclusionReason): string {
       return 'Dati cambiati dopo l’anteprima';
     case 'write_error':
       return 'Errore di scrittura';
+    case 'invalid_variant':
+      return 'Variante assegnata non valida';
     case 'deadline_exceeded':
       return 'Tempo massimo dell’operazione superato';
     case 'rate_limited':

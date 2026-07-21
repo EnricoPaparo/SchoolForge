@@ -796,6 +796,65 @@ describe('classifySubmission', () => {
     expect(c.eligible.openOrders).toEqual([1]);
     expect(c.eligible.alreadyGraded).toBe(0);
   });
+
+  // ── VEX-02B — la correzione IA usa SOLO la variante assegnata ──────────────
+  describe('VEX-02B — assigned variant', () => {
+    // 0 comune (open), 1&2 gruppo (open), 3&4 gruppo (closed)
+    const vexQuestions = [
+      tq(0, 'aperta', 2, SOL_MARK),
+      tq(1, 'aperta', 2, SOL_MARK),
+      tq(2, 'aperta', 2, SOL_MARK),
+      tq(3, 'chiusa_singola', 1, 'a'),
+      tq(4, 'chiusa_singola', 1, 'a'),
+    ];
+    const vexBase = { ...base, teacherQuestions: vexQuestions };
+
+    it('restricts skeleton/orders/totalMaxPoints to the assigned variant', () => {
+      const c = classifySubmission({
+        ...vexBase,
+        submission: sub({ assignedQuestionOrders: [0, 2, 3] }),
+        correction: null,
+      });
+      expect(c.status).toBe('eligible');
+      if (c.status !== 'eligible') return;
+      expect(c.eligible.skeleton.map((s) => s.order)).toEqual([0, 2, 3]);
+      expect(c.eligible.openOrders).toEqual([0, 2]); // only assigned open
+      expect(c.eligible.closedOrders).toEqual([3]); // only assigned closed
+      expect(c.eligible.totalMaxPoints).toBe(5); // 2+2+1, NOT the whole bank
+    });
+
+    it('closed-only assigned variant → no open questions (zero provider path)', () => {
+      const c = classifySubmission({
+        ...vexBase,
+        submission: sub({ assignedQuestionOrders: [3] }),
+        correction: null,
+      });
+      expect(c.status).toBe('eligible');
+      if (c.status !== 'eligible') return;
+      expect(c.eligible.openOrders).toEqual([]);
+      expect(c.eligible.closedOrders).toEqual([3]);
+    });
+
+    it('malformed assignment (order absent from snapshot) → excluded invalid_variant', () => {
+      expect(
+        classifySubmission({
+          ...vexBase,
+          submission: sub({ assignedQuestionOrders: [0, 99] }),
+          correction: null,
+        }),
+      ).toMatchObject({ status: 'excluded', code: 'invalid_variant' });
+    });
+
+    it('duplicate assigned order → excluded invalid_variant', () => {
+      expect(
+        classifySubmission({
+          ...vexBase,
+          submission: sub({ assignedQuestionOrders: [0, 0, 3] }),
+          correction: null,
+        }),
+      ).toMatchObject({ status: 'excluded', code: 'invalid_variant' });
+    });
+  });
 });
 
 // ── runPreview ────────────────────────────────────────────────────────────────

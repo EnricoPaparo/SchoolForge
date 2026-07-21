@@ -929,3 +929,85 @@ describe('setSolutionsVisible', () => {
     expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
 });
+
+// ─── VEX-02B — correzione ristretta alla variante assegnata ──────────────────
+
+function seedVexVerification() {
+  seedDoc(`verifications/${VERIFICATION_ID}`, {
+    exists: true,
+    data: {
+      ownerUid: OWNER_UID,
+      status: 'active',
+      config: { title: 'V', classId: 'class-a', programId: 'p1', importId: 'i1', questionRefs: [] },
+      teacherSnapshot: {
+        title: 'V',
+        classId: 'class-a',
+        className: 'Classe A',
+        programId: 'p1',
+        importId: 'i1',
+        questionRefs: [],
+        distributionMode: 'equivalent_variants',
+        commonQuestionOrders: [0],
+        equivalentGroups: [{ id: 'g1', alternativeOrders: [1, 2] }],
+        questions: [
+          { order: 0, tipo: 'aperta', maxPoints: 10, testo: 'Comune', soluzione: 'sol0' },
+          { order: 1, tipo: 'aperta', maxPoints: 5, testo: 'Alt A', soluzione: 'sol1' },
+          { order: 2, tipo: 'aperta', maxPoints: 5, testo: 'Alt B', soluzione: 'sol2' },
+        ],
+        activatedAt: { seconds: 1, nanoseconds: 0 },
+      },
+      activatedAt: { seconds: 1, nanoseconds: 0 },
+      closedAt: null,
+    },
+  });
+}
+
+describe('VEX-02B — assigned-variant correction', () => {
+  it('openOrLoadCorrection builds the skeleton on the assigned variant only', async () => {
+    seedSubmittedSubmission({ assignedQuestionOrders: [0, 1], assignedAnswerKeys: ['0', '1'] });
+    seedVexVerification();
+    let captured: Record<string, unknown> | undefined;
+    mockRunTransaction.mockImplementation(async (_db: unknown, fn: (tx: unknown) => unknown) => {
+      const tx = {
+        get: vi.fn().mockResolvedValue({ exists: () => false }),
+        set: vi.fn((_ref: unknown, data: Record<string, unknown>) => {
+          captured = data;
+        }),
+      };
+      return fn(tx);
+    });
+
+    const { correction } = await openOrLoadCorrection(SUBMISSION_ID, OWNER_UID, fakeDb);
+
+    expect(Object.keys(correction.evaluations).sort()).toEqual(['0', '1']);
+    expect((captured?.evaluations as Record<string, unknown>) ?? {}).toHaveProperty('1');
+    expect((captured?.evaluations as Record<string, unknown>) ?? {}).not.toHaveProperty('2');
+    expect(correction.maxPoints).toBe(15); // 10 + 5, not the whole bank (20)
+  });
+
+  it('returnCorrection includes only the assigned variant, no unassigned alternative', async () => {
+    seedSubmittedSubmission({ assignedQuestionOrders: [0, 1], assignedAnswerKeys: ['0', '1'] });
+    seedVexVerification();
+    seedDoc(`corrections/${SUBMISSION_ID}`, {
+      exists: true,
+      data: correctionFixture({
+        status: 'completed',
+        evaluations: {
+          '0': { order: 0, points: 8, maxPoints: 10 },
+          '1': { order: 1, points: 4, maxPoints: 5 },
+        },
+        totalPoints: 12,
+        maxPoints: 15,
+        percentage: 80,
+      }),
+    });
+
+    await returnCorrection(SUBMISSION_ID, fakeDb);
+
+    const [, returnDoc] = mockBatchSet.mock.calls[0]!;
+    expect(returnDoc.questions.map((q: { order: number }) => q.order)).toEqual([0, 1]);
+    expect(returnDoc.questions.some((q: { order: number }) => q.order === 2)).toBe(false);
+    expect(returnDoc.maxPoints).toBe(15);
+    for (const q of returnDoc.questions) expect(q.correctAnswer).toBeUndefined();
+  });
+});

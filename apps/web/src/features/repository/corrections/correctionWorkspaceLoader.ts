@@ -10,6 +10,7 @@ import type {
   VerificationTeacherQuestionSnapshot,
 } from '../../../types/firestore.js';
 import { loadPublishedProjectionQuestions, openOrLoadCorrection } from './correctionsService.js';
+import { resolveAssignedQuestions } from '../verifications/assignedVariant.js';
 
 /**
  * Canonical question the correction workspace renders — assembled once by the
@@ -125,16 +126,24 @@ export async function loadCorrectionWorkspace(
   }
   const verification = verificationSnap.data() as VerificationDoc;
 
+  // VEX-02B: passa la verifica già letta a openOrLoadCorrection (nessuna lettura
+  // aggiuntiva) così lo scheletro della correzione è costruito sulla variante.
   const { correction, projectionQuestions } = await openOrLoadCorrection(
     submissionId,
     ownerUid,
     db,
+    verification,
   );
 
   const teacherQuestions = verification.teacherSnapshot?.questions;
   let questions: CorrectionWorkspaceQuestion[];
   if (teacherQuestions && teacherQuestions.length > 0) {
-    questions = fromTeacherSnapshot(teacherQuestions);
+    // VEX-02B: risolve la SOLA variante assegnata (fail-closed). Per
+    // `same_questions` l'helper restituisce tutte le domande, come prima.
+    const applicable = verification.teacherSnapshot
+      ? resolveAssignedQuestions(verification.teacherSnapshot, submission)
+      : teacherQuestions;
+    questions = fromTeacherSnapshot(applicable);
   } else {
     // Legacy verification: reuse the projection the create path already read
     // when available, otherwise read it exactly once here. Never the pool.
@@ -142,6 +151,19 @@ export async function loadCorrectionWorkspace(
       projectionQuestions ??
       (await loadPublishedProjectionQuestions(submission.verificationId, db));
     questions = fromProjection(projection);
+  }
+
+  // VEX-02B fail-closed: le evaluation della correzione devono coincidere
+  // esattamente con le domande applicabili (variante). Un order estraneo (es.
+  // una correzione incoerente) blocca il caricamento invece di essere ignorato
+  // silenziosamente o di falsare totali/completezza.
+  const applicableOrders = new Set(questions.map((q) => q.order));
+  for (const key of Object.keys(correction.evaluations)) {
+    if (!applicableOrders.has(Number(key))) {
+      throw new Error(
+        `Correzione incoerente: la domanda ${key} non appartiene alla variante assegnata.`,
+      );
+    }
   }
 
   const returnSnap = await getDoc(doc(db, 'correctionReturns', submissionId));

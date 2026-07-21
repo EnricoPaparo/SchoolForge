@@ -114,6 +114,11 @@ function loadSubmission(db: Firestore) {
       studentUid: (data.studentUid as string) ?? '',
       status: (data.status as string) ?? '',
       answers: (data.answers as SubmissionData['answers']) ?? {},
+      // VEX-02B: presente solo in equivalent_variants; la correzione IA usa
+      // esclusivamente queste domande. Assente ⇒ same_questions (invariato).
+      ...(Array.isArray(data.assignedQuestionOrders)
+        ? { assignedQuestionOrders: data.assignedQuestionOrders as number[] }
+        : {}),
     };
   };
 }

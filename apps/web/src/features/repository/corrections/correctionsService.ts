@@ -36,6 +36,10 @@ import {
 } from './correctionContract.js';
 import { assertCorrectionReturnWithinLimit } from './correctionReturnSize.js';
 import { correctionProgressFromEvaluations } from './submissionCorrectionStatus.js';
+import {
+  isEquivalentVariantsSnapshot,
+  resolveAssignedQuestions,
+} from '../verifications/assignedVariant.js';
 
 function mirrorCorrectionProgress(
   batch: ReturnType<typeof writeBatch>,
@@ -106,6 +110,18 @@ export async function loadPublishedProjectionQuestions(
  * fix (no `teacherSnapshot.questions`): there is no frozen solution to show
  * in that case, and this service never falls back to the live pool.
  */
+/** Legge il documento verifica (teacherSnapshot owner-only). Mai il pool. */
+async function loadVerificationForCorrection(
+  verificationId: string,
+  db: Firestore,
+): Promise<VerificationDoc> {
+  const snap = await getDoc(doc(db, 'verifications', verificationId));
+  if (!snap.exists()) {
+    throw new Error('Impossibile correggere: verifica non trovata.');
+  }
+  return snap.data() as VerificationDoc;
+}
+
 async function loadTeacherSnapshotQuestions(
   verificationId: string,
   db: Firestore,
@@ -160,6 +176,12 @@ export async function openOrLoadCorrection(
   submissionId: string,
   ownerUid: string,
   db: Firestore,
+  /**
+   * VEX-02B: la verifica già letta dal chiamante (workspace loader) — riusata
+   * per non aggiungere letture. Se assente e la consegna è a varianti, viene
+   * letta qui (necessaria per costruire lo scheletro sulla sola variante).
+   */
+  verification?: VerificationDoc,
 ): Promise<OpenCorrectionResult> {
   const ref = doc(db, 'corrections', submissionId);
 
@@ -181,15 +203,37 @@ export async function openOrLoadCorrection(
     throw new Error('Impossibile correggere: la consegna non appartiene a questo docente.');
   }
 
-  const projectionQuestions = await loadPublishedProjectionQuestions(submission.verificationId, db);
-
+  // VEX-02B: una consegna a varianti si riconosce dal proprio
+  // `assignedQuestionOrders` (scritto dalla callable, mai presente in
+  // `same_questions`) — così NON serve leggere la verifica per il caso comune.
+  // Solo per le varianti lo scheletro è costruito sulla SOLA variante assegnata,
+  // risolta dal teacherSnapshot (la proiezione pubblica contiene solo le comuni
+  // e non basta). `same_questions` mantiene invariato il percorso proiezione.
   const evaluations: Record<string, QuestionEvaluation> = {};
-  for (const question of projectionQuestions) {
-    evaluations[question.order.toString()] = {
-      order: question.order,
-      points: null,
-      maxPoints: question.maxPoints,
-    };
+  let projectionQuestions: PublicVerificationQuestion[] | null = null;
+  if (submission.assignedQuestionOrders !== undefined) {
+    const ver =
+      verification ?? (await loadVerificationForCorrection(submission.verificationId, db));
+    if (!ver.teacherSnapshot || !isEquivalentVariantsSnapshot(ver.teacherSnapshot)) {
+      throw new Error('Impossibile correggere: variante assegnata incoerente con la verifica.');
+    }
+    const assignedQuestions = resolveAssignedQuestions(ver.teacherSnapshot, submission);
+    for (const question of assignedQuestions) {
+      evaluations[question.order.toString()] = {
+        order: question.order,
+        points: null,
+        maxPoints: question.maxPoints,
+      };
+    }
+  } else {
+    projectionQuestions = await loadPublishedProjectionQuestions(submission.verificationId, db);
+    for (const question of projectionQuestions) {
+      evaluations[question.order.toString()] = {
+        order: question.order,
+        points: null,
+        maxPoints: question.maxPoints,
+      };
+    }
   }
   const totals = computeCorrectionTotals(evaluations);
 
@@ -446,18 +490,50 @@ export async function returnCorrection(submissionId: string, db: Firestore): Pro
   }
   const verification = verificationSnap.data() as VerificationDoc;
 
-  const projectionQuestions = await loadPublishedProjectionQuestions(correction.verificationId, db);
-  const projectionByOrder = new Map(projectionQuestions.map((q) => [q.order, q]));
+  // VEX-02B: la sorgente di testo/opzioni della restituzione è la SOLA variante
+  // assegnata (dal teacherSnapshot). La proiezione pubblica contiene solo le
+  // comuni, quindi per `equivalent_variants` non basta e non va usata. Così la
+  // CorrectionReturnDoc contiene esclusivamente le domande/risposte/evaluation
+  // assegnate: nessuna alternativa non assegnata raggiunge lo studente.
+  // `same_questions` mantiene la sorgente proiezione, invariato.
+  let questionByOrder: Map<
+    number,
+    {
+      tipo: CorrectionReturnQuestionView['tipo'];
+      testo: string;
+      opzioni?: { id: string; testo: string }[];
+    }
+  >;
+  if (verification.teacherSnapshot && isEquivalentVariantsSnapshot(verification.teacherSnapshot)) {
+    const assigned = resolveAssignedQuestions(verification.teacherSnapshot, submission);
+    questionByOrder = new Map(
+      assigned.map((q) => [
+        q.order,
+        { tipo: q.tipo, testo: q.testo, ...(q.opzioni ? { opzioni: q.opzioni } : {}) },
+      ]),
+    );
+  } else {
+    const projectionQuestions = await loadPublishedProjectionQuestions(
+      correction.verificationId,
+      db,
+    );
+    questionByOrder = new Map(
+      projectionQuestions.map((q) => [
+        q.order,
+        { tipo: q.tipo, testo: q.testo, ...(q.opzioni ? { opzioni: q.opzioni } : {}) },
+      ]),
+    );
+  }
 
   const questions: CorrectionReturnQuestionView[] = Object.keys(correction.evaluations)
     .map((key) => Number(key))
     .sort((a, b) => a - b)
     .map((order) => {
       const evaluation = correction.evaluations[order.toString()]!;
-      const question = projectionByOrder.get(order);
+      const question = questionByOrder.get(order);
       if (!question) {
         throw new Error(
-          `Impossibile restituire: domanda ${order} assente dallo snapshot pubblicato.`,
+          `Impossibile restituire: domanda ${order} assente dalla variante assegnata.`,
         );
       }
       if (evaluation.points === null) {

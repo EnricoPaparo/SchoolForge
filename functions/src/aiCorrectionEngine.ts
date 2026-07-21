@@ -205,6 +205,12 @@ export interface SubmissionData {
   studentUid: string;
   status: string;
   answers: Record<string, SubmissionAnswer | undefined>;
+  /**
+   * VEX-02B: presente solo in `equivalent_variants`. Gli `order` assegnati a
+   * QUESTA consegna: la correzione IA usa esclusivamente queste domande dello
+   * snapshot. Assente ⇒ `same_questions` (tutte le domande, invariato).
+   */
+  assignedQuestionOrders?: number[];
 }
 
 export interface ExistingEvaluation {
@@ -233,6 +239,10 @@ export type ExclusionCode =
   | 'too_large'
   | 'changed_since_preview'
   | 'write_error'
+  // VEX-02B — assegnazione della variante mancante/malformata: la consegna è
+  // esclusa (nessuna chiamata provider, nessuna prenotazione budget, nessun
+  // punteggio), le altre proseguono.
+  | 'invalid_variant'
   // M5-05D2B-2 — esiti tecnici del provider reale (retry/deadline), privacy-safe.
   | 'deadline_exceeded'
   | 'rate_limited'
@@ -550,15 +560,37 @@ export function classifySubmission(params: {
     return { status: 'excluded', code: 'correction_not_in_progress' };
   }
 
-  const skeleton = teacherQuestions.map((q) => ({ order: q.order, maxPoints: q.maxPoints }));
-  const totalMaxPoints = teacherQuestions.reduce((sum, q) => sum + q.maxPoints, 0);
+  // VEX-02B — restringe le domande alla SOLA variante assegnata alla consegna.
+  // Fail-closed: order assegnato mancante nello snapshot o duplicato ⇒ esclusa
+  // (`invalid_variant`), così non arriva mai al grader né alla prenotazione
+  // budget, e le altre consegne del batch proseguono. `same_questions` (campo
+  // assente) usa tutte le domande, invariato.
+  let applicableQuestions = teacherQuestions;
+  if (submission.assignedQuestionOrders !== undefined) {
+    const assignedOrders = submission.assignedQuestionOrders;
+    const byOrderAll = new Map(teacherQuestions.map((q) => [q.order, q]));
+    const seen = new Set<number>();
+    const filtered: TeacherQuestion[] = [];
+    for (const order of assignedOrders) {
+      if (!Number.isInteger(order) || !byOrderAll.has(order) || seen.has(order)) {
+        return { status: 'excluded', code: 'invalid_variant' };
+      }
+      seen.add(order);
+      filtered.push(byOrderAll.get(order)!);
+    }
+    if (filtered.length === 0) return { status: 'excluded', code: 'invalid_variant' };
+    applicableQuestions = filtered;
+  }
+
+  const skeleton = applicableQuestions.map((q) => ({ order: q.order, maxPoints: q.maxPoints }));
+  const totalMaxPoints = applicableQuestions.reduce((sum, q) => sum + q.maxPoints, 0);
   const closedOrders: number[] = [];
   const openOrders: number[] = [];
   let alreadyGraded = 0;
   let alreadyGradedPoints = 0;
   let openCharTotal = 0;
 
-  for (const q of teacherQuestions) {
+  for (const q of applicableQuestions) {
     const key = q.order.toString();
     const existing = correction?.evaluations[key];
     if (existing && existing.points !== null) {

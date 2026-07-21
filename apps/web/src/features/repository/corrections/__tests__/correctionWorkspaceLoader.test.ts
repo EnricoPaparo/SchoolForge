@@ -142,7 +142,12 @@ describe('loadCorrectionWorkspace', () => {
     expect(result.verification.teacherSnapshot?.title).toBe('Verifica 1');
     expect(result.correction.status).toBe('in_progress');
     expect(result.correctionReturn).toBeNull();
-    expect(mockOpenOrLoadCorrection).toHaveBeenCalledWith(SUBMISSION_ID, OWNER_UID, fakeDb);
+    expect(mockOpenOrLoadCorrection).toHaveBeenCalledWith(
+      SUBMISSION_ID,
+      OWNER_UID,
+      fakeDb,
+      expect.anything(),
+    );
   });
 
   it('recent verification: canonical questions carry type, text and frozen solution', async () => {
