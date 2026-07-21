@@ -1,6 +1,14 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// This suite verifies role resolution, student approval, selection of the
+// correct shell, and that teacher-only content is never exposed to students.
+// StudentShell's internal behavior has its own dedicated suite; mocking only
+// that lazy module keeps this unit test independent from module-transform speed.
+vi.mock('../../student/StudentShell.js', () => ({
+  StudentShell: () => <nav aria-label="Sezioni studente">Portale studente</nav>,
+}));
+
 afterEach(cleanup);
 import { RoleGate } from '../RoleGate.js';
 
