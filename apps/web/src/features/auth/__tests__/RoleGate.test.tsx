@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,6 +34,7 @@ vi.mock('../../../lib/auth.js', () => ({
 let firestoreDocs: Record<string, unknown> = {};
 let firestoreErrors: Set<string> = new Set();
 const mockSetDoc = vi.fn();
+const mockUpdateDoc = vi.fn();
 const mockBatchSet = vi.fn();
 const mockBatchCommit = vi.fn();
 
@@ -52,7 +54,8 @@ vi.mock('firebase/firestore', () => ({
     });
   },
   setDoc: (...args: unknown[]) => mockSetDoc(...args),
-  serverTimestamp: vi.fn(() => null),
+  updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
+  serverTimestamp: vi.fn(() => ({ _type: 'serverTimestamp' })),
   writeBatch: () => ({
     set: mockBatchSet,
     commit: (...args: unknown[]) => mockBatchCommit(...args),
@@ -72,6 +75,7 @@ beforeEach(() => {
   firestoreErrors = new Set();
   currentUser = { uid: OWNER_UID, email: 'teacher@test.com', displayName: null };
   mockSetDoc.mockResolvedValue(undefined);
+  mockUpdateDoc.mockResolvedValue(undefined);
 });
 
 function seedOwnerPublic() {
@@ -82,7 +86,10 @@ function seedStudentAccess(studentPortalEnabled: boolean, newStudentRequestsEnab
   firestoreDocs['settings/studentAccess'] = { studentPortalEnabled, newStudentRequestsEnabled };
 }
 
-function seedStudentDoc(status: 'pending' | 'approved' | 'blocked') {
+function seedStudentDoc(
+  status: 'pending' | 'approved' | 'blocked',
+  extra: Record<string, unknown> = {},
+) {
   firestoreDocs[`students/${STUDENT_UID}`] = {
     uid: STUDENT_UID,
     ownerUid: OWNER_UID,
@@ -90,6 +97,7 @@ function seedStudentDoc(status: 'pending' | 'approved' | 'blocked') {
     displayName: null,
     status,
     classId: null,
+    ...extra,
   };
 }
 
@@ -154,6 +162,131 @@ describe('RoleGate — approved student', () => {
     await screen.findByRole('navigation', { name: /Sezioni studente/i });
     expect(screen.queryByRole('button', { name: /Diventa proprietario/i })).toBeNull();
     expect(screen.queryByText('Area docente')).toBeNull();
+  });
+});
+
+describe('RoleGate — portal access telemetry (TWU-01)', () => {
+  it('stamps first + last portal access on the first real entry of an approved student', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    seedStudentDoc('approved'); // no firstPortalAccessAt → first entry
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    await screen.findByRole('navigation', { name: /Sezioni studente/i });
+
+    expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+    const [ref, data] = mockUpdateDoc.mock.calls[0];
+    expect(ref.path).toBe(`students/${STUDENT_UID}`);
+    expect(data.firstPortalAccessAt).toEqual({ _type: 'serverTimestamp' });
+    expect(data.lastPortalAccessAt).toEqual({ _type: 'serverTimestamp' });
+  });
+
+  it('updates only last portal access on a subsequent entry (first already set)', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    seedStudentDoc('approved', { firstPortalAccessAt: { _seconds: 1 } });
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    await screen.findByRole('navigation', { name: /Sezioni studente/i });
+
+    expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+    const [, data] = mockUpdateDoc.mock.calls[0];
+    expect(data.lastPortalAccessAt).toEqual({ _type: 'serverTimestamp' });
+    expect(data.firstPortalAccessAt).toBeUndefined();
+  });
+
+  it('does NOT record access for a pending student', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    seedStudentDoc('pending');
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    await screen.findByRole('heading', { name: /Richiesta inviata/i });
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+
+  it('does NOT record access for a blocked student', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    seedStudentDoc('blocked');
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    await screen.findByRole('heading', { name: /Accesso studente bloccato/i });
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+
+  it('does NOT record access when the portal is disabled', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(false);
+    seedStudentDoc('approved');
+    asStudent();
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    await screen.findByRole('heading', { name: /Portale studenti temporaneamente disabilitato/i });
+    expect(mockUpdateDoc).not.toHaveBeenCalled();
+  });
+
+  it('records access exactly once under React StrictMode (no double write)', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    seedStudentDoc('approved');
+    asStudent();
+
+    render(
+      <StrictMode>
+        <RoleGate>
+          <div>Area docente</div>
+        </RoleGate>
+      </StrictMode>,
+    );
+    await screen.findByRole('navigation', { name: /Sezioni studente/i });
+    expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+  });
+
+  it('still grants the portal when the access-telemetry write fails (non-blocking)', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    seedStudentDoc('approved');
+    asStudent();
+    mockUpdateDoc.mockRejectedValue(new Error('permission-denied'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    render(
+      <RoleGate>
+        <div>Area docente</div>
+      </RoleGate>,
+    );
+    // Portal is shown despite the failed write.
+    expect(await screen.findByRole('navigation', { name: /Sezioni studente/i })).toBeTruthy();
+    // A sanitized message is logged, with no PII (no email/uid).
+    const logged = warn.mock.calls.flat().join(' ');
+    expect(logged).not.toContain('student@test.com');
+    expect(logged).not.toContain(STUDENT_UID);
+    warn.mockRestore();
   });
 });
 

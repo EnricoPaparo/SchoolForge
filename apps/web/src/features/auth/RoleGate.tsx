@@ -3,7 +3,11 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import { getStudentAccessSettings } from '../repository/students/studentAccessService.js';
-import { getOwnStudentDoc, requestStudentAccess } from '../repository/students/studentsService.js';
+import {
+  getOwnStudentDoc,
+  recordPortalAccess,
+  requestStudentAccess,
+} from '../repository/students/studentsService.js';
 import { OwnerSetup } from './OwnerSetup.js';
 import styles from './OwnerSetup.module.css';
 
@@ -74,6 +78,9 @@ export function RoleGate({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth();
   const [state, setState] = useState<GateState>('loading');
   const requestAttempted = useRef(false);
+  // TWU-01: guards a single portal-access telemetry write per app entry, so
+  // React StrictMode's double effect invocation cannot produce two writes.
+  const accessRecorded = useRef(false);
 
   useEffect(() => {
     if (!user) return;
@@ -116,7 +123,23 @@ export function RoleGate({ children }: { children: ReactNode }) {
         if (studentDoc) {
           if (studentDoc.status === 'blocked') setState('blocked');
           else if (studentDoc.status === 'pending') setState('pending');
-          else setState(access.studentPortalEnabled ? 'student' : 'portalDisabled');
+          else if (access.studentPortalEnabled) {
+            setState('student');
+            // TWU-01: this is the first point at which an approved student
+            // actually enters the portal. Stamp their access telemetry once
+            // per entry. It is deliberately **non-blocking**: a failed write
+            // never denies the portal to an already-authorized student — we
+            // only log a sanitized message (no personal data). StrictMode is
+            // guarded by `accessRecorded`.
+            if (!accessRecorded.current) {
+              accessRecorded.current = true;
+              const hasFirstAccess = studentDoc.firstPortalAccessAt != null;
+              void recordPortalAccess(user.uid, hasFirstAccess, db).catch(() => {
+                // Sanitized, no PII: the write is telemetry-only.
+                console.warn('[RoleGate] portal access telemetry write failed');
+              });
+            }
+          } else setState('portalDisabled');
           return;
         }
 

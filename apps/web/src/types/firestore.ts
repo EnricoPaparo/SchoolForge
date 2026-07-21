@@ -357,10 +357,20 @@ export type StudentStatus = 'pending' | 'approved' | 'blocked';
  * reads. A missing document is treated as `pending` for authorization
  * purposes (Security Rules default-deny when it doesn't exist).
  * `classId` is set by the teacher (M3L-A3); class-based lesson/verification
- * filtering itself is not implemented by this PR. `lastLoginAt` is set once
- * at the initial self-request — it is not refreshed on subsequent logins
- * (that would require a write rule or Cloud Function this PR intentionally
- * does not introduce).
+ * filtering itself is not implemented by this PR.
+ *
+ * Access telemetry (TWU-01):
+ * - `lastLoginAt` / `createdAt` are stamped once at the initial self-request.
+ *   They represent **when access was requested**, not a real portal entry, and
+ *   are surfaced in the teacher UI as "Richiesta accesso".
+ * - `firstPortalAccessAt` (optional) is stamped the first time the approved
+ *   student actually opens the portal; once present it is immutable.
+ * - `lastPortalAccessAt` (optional) is stamped on that same first entry and
+ *   refreshed on every subsequent real entry.
+ * Legacy documents predating TWU-01 have neither portal field; the teacher UI
+ * shows "—" for them until the student's next real access. The student writes
+ * these two fields client-side under a tightly-scoped Security Rule; no Cloud
+ * Function, listener or polling is involved.
  */
 export interface StudentDoc {
   uid: string;
@@ -372,6 +382,10 @@ export interface StudentDoc {
   createdAt: Timestamp | FieldValue;
   updatedAt: Timestamp | FieldValue;
   lastLoginAt: Timestamp | FieldValue;
+  /** TWU-01: first real portal entry after approval; immutable once set. */
+  firstPortalAccessAt?: Timestamp | FieldValue;
+  /** TWU-01: most recent real portal entry; refreshed each entry. */
+  lastPortalAccessAt?: Timestamp | FieldValue;
 }
 
 /** Serialized form of a validation issue (Firestore-safe, no class instances). */

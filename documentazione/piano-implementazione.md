@@ -1048,3 +1048,12 @@ Oltre al Modulo 5, sono rinviate alla V2 le seguenti funzionalità, fuori dal pe
 - **Editor integrato lezioni e domande:** modifica dei file Markdown delle lezioni e dei pool direttamente dal sistema. In V1 i file sono prodotti esternamente (strumenti AI come Claude o GPT, o manualmente) e SchoolForge si limita a importarli e validarli.
 - **Specchietto consegne:** popup sulla verifica attiva che mostra in tempo reale chi ha consegnato e chi non ha ancora consegnato.
 - **Sommario curricolare PDF:** generazione automatica di un sommario curricolare (curriculum vitae della classe) in PDF dai programmi svolti. In V1 resta disponibile l'export del programma svolto in Markdown e PDF descritto in M1; è solo la generazione di questo ulteriore sommario curricolare in PDF a essere rinviata alla V2.
+
+## Appendice D — TWU — Teacher Workflow Upgrades
+
+Rifiniture e fix del flusso docente, senza nuove funzionalità. Roadmap e
+contratti in [teacher-workflow-upgrades-roadmap.md](teacher-workflow-upgrades-roadmap.md).
+
+| Pacchetto | Sintesi | Dipendenze | Stato |
+|---|---|---|---|
+| TWU-01 ✅ | Ellissi due righe nella preview del picker domande; icone SVG coerenti (errore/warning/info) nei messaggi del builder VEX al posto dei glifi testuali; pulsante «Aggiorna» nelle consegne che riusa i refresh già presenti (nessuna nuova query/listener/polling); contratto primo/ultimo accesso studente (`firstPortalAccessAt` immutabile + `lastPortalAccessAt`, writer client-side in `RoleGate`, Rule di self-update ristretta, UI docente «Richiesta/Primo/Ultimo accesso»). `createdAt`/`lastLoginAt` reinterpretati come «Richiesta accesso». | M3-full, VEX | **Implementato.** Test mirati web + Rules emulator verdi; Functions/provider/IA/VEX runtime invariati; nessun indice nuovo; `firestore.rules` toccato solo per l'accesso studente. Gate GTWU **APERTO**; nessun deploy/merge. |

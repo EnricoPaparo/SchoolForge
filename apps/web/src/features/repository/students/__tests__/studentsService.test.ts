@@ -35,6 +35,7 @@ import {
   countPendingStudents,
   getOwnStudentDoc,
   listStudents,
+  recordPortalAccess,
   removeStudent,
   requestStudentAccess,
   resetStudentToPending,
@@ -130,6 +131,36 @@ describe('requestStudentAccess', () => {
     expect(data.classId).toBeNull();
     expect(data.ownerUid).toBe(OWNER_UID);
     expect(data.uid).toBe(STUDENT_UID);
+  });
+});
+
+describe('recordPortalAccess (TWU-01)', () => {
+  it('stamps both first and last portal access on the first entry', async () => {
+    await recordPortalAccess(STUDENT_UID, false, fakeDb);
+
+    expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+    const [, data] = mockUpdateDoc.mock.calls[0];
+    expect(data.firstPortalAccessAt).toEqual({ _type: 'serverTimestamp' });
+    expect(data.lastPortalAccessAt).toEqual({ _type: 'serverTimestamp' });
+    // No other field touched (no updatedAt bump, no status/class).
+    expect(Object.keys(data).sort()).toEqual(['firstPortalAccessAt', 'lastPortalAccessAt']);
+  });
+
+  it('stamps only last portal access on subsequent entries', async () => {
+    await recordPortalAccess(STUDENT_UID, true, fakeDb);
+
+    expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+    const [, data] = mockUpdateDoc.mock.calls[0];
+    expect(data.lastPortalAccessAt).toEqual({ _type: 'serverTimestamp' });
+    expect(data.firstPortalAccessAt).toBeUndefined();
+    expect(Object.keys(data)).toEqual(['lastPortalAccessAt']);
+  });
+
+  it('uses serverTimestamp, never a persisted Date.now', async () => {
+    await recordPortalAccess(STUDENT_UID, true, fakeDb);
+    expect(mockServerTimestamp).toHaveBeenCalled();
+    const [, data] = mockUpdateDoc.mock.calls[0];
+    expect(typeof data.lastPortalAccessAt).not.toBe('number');
   });
 });
 

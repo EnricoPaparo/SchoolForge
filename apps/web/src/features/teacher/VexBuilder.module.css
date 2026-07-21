@@ -48,6 +48,7 @@
 .orderNote {
   display: flex;
   gap: 8px;
+  align-items: flex-start;
   margin-top: 12px;
   padding: 10px 12px;
   border: 1px solid var(--color-border);
@@ -170,10 +171,19 @@
 .note {
   display: flex;
   gap: 8px;
+  align-items: flex-start;
   padding: 9px 12px;
   font-size: 13px;
   border-radius: var(--radius);
   margin-top: 8px;
+}
+/* TWU-01: message icons inherit the note color (currentColor) and must never
+   shrink or shift the baseline of the wrapped text. */
+.note > svg,
+.orderNote > svg,
+.assistNote > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 .warn {
   background: var(--color-warning-bg);

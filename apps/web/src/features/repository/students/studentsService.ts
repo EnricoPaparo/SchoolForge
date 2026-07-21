@@ -82,6 +82,30 @@ export async function requestStudentAccess(
   });
 }
 
+/**
+ * TWU-01 — records an approved student's real portal access on their own
+ * `students/{uid}` document with **at most one write per application entry**.
+ * `lastPortalAccessAt` is stamped on every real entry; `firstPortalAccessAt`
+ * only the first time (immutable thereafter, enforced by the Security Rules).
+ *
+ * `hasFirstAccess` is derived from the document RoleGate already read, so no
+ * extra read is performed. `serverTimestamp()` is the sole authoritative clock
+ * (it resolves to `request.time`, which the Rules require) — never `Date.now()`.
+ * No `updatedAt` bump: this is student-owned access telemetry, not a teacher
+ * edit of the roster document.
+ */
+export async function recordPortalAccess(
+  uid: string,
+  hasFirstAccess: boolean,
+  db: Firestore,
+): Promise<void> {
+  const payload: Record<string, ReturnType<typeof serverTimestamp>> = {
+    lastPortalAccessAt: serverTimestamp(),
+  };
+  if (!hasFirstAccess) payload.firstPortalAccessAt = serverTimestamp();
+  await updateDoc(doc(db, 'students', uid), payload);
+}
+
 export async function approveStudent(uid: string, ownerUid: string, db: Firestore): Promise<void> {
   await updateDoc(doc(db, 'students', uid), { status: 'approved', updatedAt: serverTimestamp() });
   await writeAudit(db, ownerUid, 'student.approved', uid);

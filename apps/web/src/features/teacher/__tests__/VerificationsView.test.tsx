@@ -1866,6 +1866,66 @@ describe('VerificationsView — consegne online monitor (M3F-05)', () => {
     expect(screen.queryByText(/monitor consegne/i)).toBeNull();
     expect(mockWatchSubmissions).not.toHaveBeenCalled();
   });
+
+  // ── TWU-01 — manual «Aggiorna» button ──────────────────────────────
+  async function openMonitor() {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([activeVerWithClass()]);
+    mockListStudents.mockResolvedValue([approvedStudents[1]]); // Anna only
+    mockWatchSubmissions.mockImplementation((_v, _o, _db, onChange) => {
+      onChange([]);
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => expect(screen.getByText('Anna')).toBeTruthy());
+  }
+
+  it('runs a single refresh orchestration on a double click (double-click guard)', async () => {
+    await openMonitor();
+    const initialProgressCalls = mockLoadCorrectionProgressByStudent.mock.calls.length;
+    const initialStudentCalls = mockListStudents.mock.calls.length;
+
+    const btn = screen.getByRole('button', { name: 'Aggiorna consegne' });
+    fireEvent.click(btn);
+    fireEvent.click(btn); // second click in the same tick must be ignored
+
+    await waitFor(() => expect(screen.getByText('Aggiornato ora')).toBeTruthy());
+    // Exactly one extra progress read + one extra roster read for both clicks.
+    expect(mockLoadCorrectionProgressByStudent.mock.calls.length).toBe(initialProgressCalls + 1);
+    expect(mockListStudents.mock.calls.length).toBe(initialStudentCalls + 1);
+  });
+
+  it('preserves selection and sort while refreshing, updating «Valutate» after success', async () => {
+    await openMonitor();
+    // Refresh delivers fresh progress for Anna.
+    mockLoadCorrectionProgressByStudent.mockResolvedValueOnce(
+      new Map([['stud-a', { evaluated: 2, total: 2 }]]),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aggiorna consegne' }));
+
+    await waitFor(() => expect(screen.getByText('Aggiornato ora')).toBeTruthy());
+    // The refreshed «Valutate» value is shown; Anna's row is still present.
+    expect(screen.getByText('2/2')).toBeTruthy();
+    expect(screen.getByText('Anna')).toBeTruthy();
+  });
+
+  it('keeps the current data and shows a readable error when the refresh fails', async () => {
+    await openMonitor();
+    mockLoadCorrectionProgressByStudent.mockRejectedValueOnce(new Error('network'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aggiorna consegne' }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Impossibile aggiornare le consegne/i)).toBeTruthy(),
+    );
+    // Data is preserved — the row is still rendered.
+    expect(screen.getByText('Anna')).toBeTruthy();
+    // No misleading "Aggiornato ora" on failure.
+    expect(screen.queryByText('Aggiornato ora')).toBeNull();
+  });
 });
 
 describe('VerificationsView — correction workspace action (M4-02)', () => {
