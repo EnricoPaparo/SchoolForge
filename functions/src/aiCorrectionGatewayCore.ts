@@ -16,7 +16,7 @@
  * Il wiring runtime (`onCall`, Admin SDK) è in `aiCorrectionGateway.ts`.
  */
 
-import { normalizeModelProfileField, type ModelProfile } from './aiCorrectionModelProfile.js';
+import { parseModelProfileField, type ModelProfile } from './aiCorrectionModelProfile.js';
 
 // ── Errori ────────────────────────────────────────────────────────────────
 
@@ -235,8 +235,14 @@ export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest
   const normalizedGradingMode = normalizeGradingMode(gradingMode);
 
   // TWU-02 — assente ⇒ undefined (default legacy risolto server-side); presente
-  // ma non valido (null/sconosciuto/non-stringa) ⇒ invalid_input.
-  const normalizedProfile = normalizeModelProfileField(modelProfile);
+  // ma non valido (null/sconosciuto/non-stringa) ⇒ invalid_input. La validazione
+  // è una funzione pura del modulo profili (nessun ciclo di import): qui si
+  // traduce l'esito fail-closed in AiGatewayError.
+  const profileResult = parseModelProfileField(modelProfile);
+  if (!profileResult.ok) {
+    throw new AiGatewayError('invalid_input', 'Profilo modello non valido.');
+  }
+  const normalizedProfile = profileResult.profile;
 
   if (teacherGuidance !== undefined && typeof teacherGuidance !== 'string') {
     throw new AiGatewayError('invalid_input', 'Indicazioni docente non valide.');

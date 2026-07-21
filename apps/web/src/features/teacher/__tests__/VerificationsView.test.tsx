@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type * as CorrectionRegisterExportModule from '../../repository/corrections/correctionRegisterExport.js';
 import type * as CorrectionProgressModule from '../../repository/corrections/correctionProgressService.js';
+import type * as TeacherAiPrefsModule from '../../repository/corrections/teacherAiPreferencesService.js';
 
 afterEach(cleanup);
 
@@ -99,6 +100,21 @@ vi.mock('../../repository/corrections/correctionProgressService.js', async (impo
     ...actual, // keep real pure progress helpers
     loadCorrectionProgressByStudent: (...args: unknown[]) =>
       mockLoadCorrectionProgressByStudent(...args),
+  };
+});
+// TWU-02 — the AI-preferences load resolves to the application defaults so the
+// dialogs reach the `ready` state (the fail-closed error path is covered by the
+// service unit tests and dedicated cases below).
+const mockLoadTeacherAiPreferences = vi.fn(async (..._args: unknown[]) => ({
+  modelProfile: 'quality' as const,
+  gradingMode: 'balanced' as const,
+  teacherGuidance: '',
+}));
+vi.mock('../../repository/corrections/teacherAiPreferencesService.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof TeacherAiPrefsModule>();
+  return {
+    ...actual,
+    loadTeacherAiPreferences: (...args: unknown[]) => mockLoadTeacherAiPreferences(...args),
   };
 });
 const mockAiDialog = vi.fn();
@@ -3218,6 +3234,31 @@ describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)
     fireEvent.click(within(region).getByRole('button', { name: /Correggi con IA/ }));
     const dialog = await screen.findByTestId('ai-batch-dialog');
     expect(within(dialog).getByText('IDs: ver-1_stud-a')).toBeTruthy();
+  });
+
+  it('TWU-02 — a preferences LOAD ERROR blocks «Correggi con IA» (no silent default) and «Riprova» recovers', async () => {
+    setupDefaults();
+    // The first (auto) load fails; the retry resolves to the defaults.
+    mockLoadTeacherAiPreferences.mockRejectedValueOnce(new Error('permission-denied'));
+    const region = await openWith(twoSubmissions);
+
+    // Persistent accessible error message is shown.
+    expect(
+      await within(region).findByText('Impossibile caricare le impostazioni IA. Riprova.'),
+    ).toBeTruthy();
+
+    // Even with a row selected, the AI action stays disabled (never runs on defaults).
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
+    const aiButton = within(region).getByRole('button', {
+      name: /Correggi con IA/,
+    }) as HTMLButtonElement;
+    expect(aiButton.disabled).toBe(true);
+    expect(screen.queryByTestId('ai-batch-dialog')).toBeNull();
+
+    // A single explicit retry re-loads; on success the action becomes available.
+    fireEvent.click(within(region).getByRole('button', { name: 'Riprova' }));
+    await waitFor(() => expect(aiButton.disabled).toBe(false));
+    expect(mockLoadTeacherAiPreferences).toHaveBeenCalledTimes(2);
   });
 
   it('renders «Valutate» as n/total from the targeted read, and «—» when absent', async () => {

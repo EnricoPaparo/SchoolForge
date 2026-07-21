@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_MODEL_PROFILE,
   MODEL_PROFILE_RESOLUTIONS,
-  normalizeModelProfileField,
+  parseModelProfileField,
   profileForModel,
   resolveModelProfile,
 } from './aiCorrectionModelProfile.js';
@@ -13,7 +16,6 @@ import {
   OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION,
   lookupModelPrice,
 } from './aiCorrectionCost.js';
-import { AiGatewayError } from './aiCorrectionGatewayCore.js';
 
 describe('TWU-02 — closed model profiles', () => {
   it('economy resolves to nano model + nano price list', () => {
@@ -45,26 +47,29 @@ describe('TWU-02 — closed model profiles', () => {
     expect(DEFAULT_MODEL_PROFILE).toBe('quality');
   });
 
-  describe('normalizeModelProfileField (client input)', () => {
+  describe('parseModelProfileField (pure, result-based)', () => {
     it('accepts the two closed values', () => {
-      expect(normalizeModelProfileField('economy')).toBe('economy');
-      expect(normalizeModelProfileField('quality')).toBe('quality');
+      expect(parseModelProfileField('economy')).toEqual({ ok: true, profile: 'economy' });
+      expect(parseModelProfileField('quality')).toEqual({ ok: true, profile: 'quality' });
     });
 
-    it('treats an omitted field as undefined (legacy default resolved later)', () => {
-      expect(normalizeModelProfileField(undefined)).toBeUndefined();
+    it('treats an omitted field as ok with an undefined profile (legacy default later)', () => {
+      expect(parseModelProfileField(undefined)).toEqual({ ok: true, profile: undefined });
     });
 
-    it('rejects null, unknown strings and non-strings with invalid_input', () => {
-      for (const bad of [null, 'premium', 'nano', 'gpt-5.6-luna', 3, {}, []]) {
-        expect(() => normalizeModelProfileField(bad)).toThrow(AiGatewayError);
-        try {
-          normalizeModelProfileField(bad);
-        } catch (e) {
-          expect((e as AiGatewayError).code).toBe('invalid_input');
-        }
+    it('rejects null, unknown strings and non-strings with { ok: false } (no throw)', () => {
+      for (const bad of [null, '', 'premium', 'nano', 'gpt-5.6-luna', 3, {}, []]) {
+        expect(parseModelProfileField(bad)).toEqual({ ok: false });
       }
     });
+  });
+
+  it('is a pure module: it does NOT import aiCorrectionGatewayCore (no import cycle)', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(resolve(here, './aiCorrectionModelProfile.ts'), 'utf8');
+    // Only import statements matter (the doc comment may name the module in prose).
+    expect(source).not.toMatch(/from\s+['"][^'"]*aiCorrectionGatewayCore/);
+    expect(source).not.toMatch(/import\([^)]*aiCorrectionGatewayCore/);
   });
 
   describe('profileForModel (legacy default derivation)', () => {

@@ -5,12 +5,15 @@
  * server-side e fail-closed, così un client non può iniettare un modello
  * arbitrario né disaccoppiare modello e prezzo.
  *
- * Modulo **puro**: nessuna dipendenza Firestore/rete. Riusa le costanti
- * autoritative di `aiCorrectionCost.ts` — nessun nuovo modello o listino è
- * introdotto qui.
+ * Modulo **puro e indipendente**: nessuna dipendenza Firestore/rete e **nessun
+ * import da `aiCorrectionGatewayCore`** (nessun ciclo). La validazione del campo
+ * client è esposta come funzione pura che ritorna un `result` (mai un throw di
+ * `AiGatewayError`): è `aiCorrectionGatewayCore` a tradurre un input non valido
+ * in `AiGatewayError('invalid_input', …)`, ed è `aiCorrectionEngine` a tradurre
+ * un'impossibilità server-side in `provider_config_invalid`. Riusa le costanti
+ * autoritative di `aiCorrectionCost.ts` — nessun nuovo modello o listino qui.
  */
 
-import { AiGatewayError } from './aiCorrectionGatewayCore.js';
 import {
   DEFAULT_PRICE_LIST_VERSION,
   OPENAI_PRODUCTION_MODEL,
@@ -51,17 +54,27 @@ export const MODEL_PROFILE_RESOLUTIONS: Readonly<Record<ModelProfile, ModelProfi
 export const DEFAULT_MODEL_PROFILE: ModelProfile = 'quality';
 
 /**
- * Normalizza il campo `modelProfile` **inviato dal client**. **Assente**
- * (`undefined`) ⇒ `undefined` (il chiamante applicherà il default legacy dal
- * modello runtime). Ogni altro caso è fail-closed: `null`, stringa sconosciuta,
- * o tipo non-stringa ⇒ `invalid_input`. Nessun fallback silenzioso.
+ * Esito **puro** della validazione del campo `modelProfile` inviato dal client.
+ * `ok: true` con `profile: undefined` significa **campo assente** (il chiamante
+ * applicherà il default legacy dal modello runtime). `ok: false` è fail-closed
+ * (nessun fallback silenzioso): sta al chiamante tradurlo in `invalid_input`.
  */
-export function normalizeModelProfileField(value: unknown): ModelProfile | undefined {
-  if (value === undefined) return undefined;
+export type ModelProfileFieldResult =
+  | { ok: true; profile: ModelProfile | undefined }
+  | { ok: false };
+
+/**
+ * Valida il campo `modelProfile` **inviato dal client** senza mai lanciare:
+ * **assente** (`undefined`) ⇒ `{ ok: true, profile: undefined }`; `economy`/
+ * `quality` ⇒ `{ ok: true, profile }`; `null`, stringa sconosciuta o tipo
+ * non-stringa ⇒ `{ ok: false }`.
+ */
+export function parseModelProfileField(value: unknown): ModelProfileFieldResult {
+  if (value === undefined) return { ok: true, profile: undefined };
   if (typeof value === 'string' && (MODEL_PROFILES as readonly string[]).includes(value)) {
-    return value as ModelProfile;
+    return { ok: true, profile: value as ModelProfile };
   }
-  throw new AiGatewayError('invalid_input', 'Profilo modello non valido.');
+  return { ok: false };
 }
 
 /**
@@ -78,13 +91,11 @@ export function profileForModel(model: string): ModelProfile | null {
 }
 
 /**
- * Risolve la coppia (modello, listino) autoritativa per un profilo. Fail-closed:
- * un profilo fuori mappa ⇒ `provider_config_invalid` (mai un modello arbitrario).
+ * Risolve la coppia (modello, listino) autoritativa per un profilo. Funzione
+ * pura: il tipo `ModelProfile` (unione chiusa) garantisce sempre una risoluzione,
+ * quindi non lancia. L'eventuale impossibilità server-side (es. modello runtime
+ * non mappato) è gestita a monte dall'engine come `provider_config_invalid`.
  */
 export function resolveModelProfile(profile: ModelProfile): ModelProfileResolution {
-  const resolution = MODEL_PROFILE_RESOLUTIONS[profile];
-  if (!resolution) {
-    throw new AiGatewayError('provider_config_invalid', 'Profilo modello non risolvibile.');
-  }
-  return resolution;
+  return MODEL_PROFILE_RESOLUTIONS[profile];
 }
