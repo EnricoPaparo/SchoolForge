@@ -12,8 +12,14 @@ fail-closed + **Rules**: `answers`/`flagged` ⊆ `assignedAnswerKeys`), PDF stud
 in VEX. VEX-02B: **correzione, IA, restituzione ed export sulla sola variante assegnata** —
 risolutore canonico condiviso (`assignedVariant.ts`), scheletro correzione + totali +
 restituzione + payload IA costruiti esclusivamente su `assignedQuestionOrders` (fail-closed).
-`same_questions` resta invariato e **non** invoca la callable. **VEX non è ancora deployabile:**
-resta **VEX-03 / Gate GVEX** (rollout coordinato, smoke, evidenze). VEX-00B ha congelato il contratto.
+VEX-02C: **builder assistito locale** — precompilazione **tecnica** dei gruppi (UDA + tipologia +
+difficoltà, `vexAutogroup.ts`), abbinamento progressivo delle nuove selezioni, avviso permanente
+(«non è garanzia pedagogica») e selettore domande leggibile (listbox accessibile a due righe con
+`questionPreview`). **Puramente client, zero costo**: nessuna IA/lettura/scrittura/backend; le
+modifiche manuali del docente hanno **precedenza assoluta** (nessun ricalcolo globale). Precompilazione
+tecnica, non pedagogica. `same_questions` resta invariato e **non** invoca la callable. **VEX non è
+ancora deployabile:** resta **VEX-03 / Gate GVEX** (rollout coordinato, smoke, evidenze) —
+**PENDING**. VEX-00B ha congelato il contratto.
 **Natura (VEX-00B):** documentazione + prototipo. **Nessun codice applicativo, Function, Rule,
 indice, schema reale, dipendenza o deploy** è introdotto dal pacchetto VEX-00B.
 **Base:** UX e decisioni di prodotto già approvate in
@@ -403,7 +409,27 @@ codice applicativo.
   autorizzano la scrittura. Test web + Functions mirati. Nessun nuovo listener/query/documento;
   nel workspace submission e snapshot già caricati vengono riusati; write invariati.
 
-### VEX-03 / Gate GVEX — **rollout coordinato + evidenze** (aperto)
+### VEX-02C — **builder assistito locale** ✅ IMPLEMENTATO
+- ✅ modulo puro `vexAutogroup.ts`: chiave tecnica **UDA + tipo + difficoltà** (fail-closed su
+  metadati mancanti/malformati ⇒ domanda comune); `maxCharacters`/titolo/punteggio/similarità
+  **non** sono criteri;
+- ✅ **prima inizializzazione** (solo alla transizione manuale `same_questions`→`equivalent_variants`
+  con zero gruppi): bucket con ≥2 domande → gruppo, singleton comuni, id stabili, ordine stabile;
+- ✅ **selezione progressiva**: una nuova domanda va nell'unico gruppo compatibile, oppure forma un
+  gruppo con una compatibile ancora non assegnata della sessione, altrimenti resta comune (mai
+  scelta arbitraria con più gruppi compatibili); una domanda in al più un gruppo;
+- ✅ **precedenza assoluta alle modifiche manuali**: nessun ricalcolo globale a render/salvataggio/
+  cambio tab; al caricamento i gruppi/comuni persistiti sono autorevoli (niente autocompilazione);
+  deselezione riconcilia (rimozione dal gruppo, eliminazione gruppi vuoti) senza reinserimenti;
+- ✅ **avviso permanente** non bloccante e accessibile («precompilati usando UDA, tipologia e
+  difficoltà; verifica l'equivalenza didattica»); nessun popup/toast/conferma;
+- ✅ **selettore leggibile** (`VexQuestionSelect`, listbox accessibile senza dipendenze): due righe
+  (metadati `#id · Tipo · Diff. N · UDA x` + preview reale da `questionPreview`), ellissi ~2 righe,
+  testo completo via `title`, fallback all'ID, tastiera/focus/Escape/click-esterno, nome per gruppo;
+- ✅ **zero costo/backend**: nessuna IA/lettura/scrittura/query/listener; `questionPreview` mai
+  persistita in `equivalentGroups`; nessuna nuova struttura Firestore; `same_questions` invariato.
+
+### VEX-03 / Gate GVEX — **rollout coordinato + evidenze** (aperto, **PENDING**)
 - deploy coordinato callable+Rules+client, smoke multi-studente, verifica assenza fughe e costi reali.
 
 ### VEX-03 — **hardening equità/costi/smoke**

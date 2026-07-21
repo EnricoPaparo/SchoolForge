@@ -70,6 +70,12 @@ import type {
 } from '../../types/firestore.js';
 import { normalizeDistributionMode } from '../repository/verifications/vexDistribution.js';
 import { reconcileEquivalentGroups } from '../repository/verifications/vexGroups.js';
+import {
+  assignOnSelect,
+  autoGroupByKey,
+  ungroupedEntryIds,
+  type AutogroupRef,
+} from '../repository/verifications/vexAutogroup.js';
 import { VexBuilder, type VexBuilderQuestion } from './VexBuilder.js';
 import { correctionStatusLabel } from '../repository/corrections/submissionCorrectionStatus.js';
 import {
@@ -235,6 +241,10 @@ export function VerificationsView() {
   const [distributionMode, setDistributionMode] =
     useState<VerificationDistributionMode>('same_questions');
   const [equivalentGroups, setEquivalentGroups] = useState<EquivalentGroupConfig[]>([]);
+  // VEX-02C: entryId selezionati in questa sessione, ancora comuni e candidati a
+  // formare un nuovo gruppo con una domanda compatibile (abbinamento progressivo).
+  // Vive in un ref: non è stato di rendering e non deve triggerare re-render.
+  const vexSessionUnassignedRef = useRef<string[]>([]);
   const [savingDraft, setSavingDraft] = useState(false);
   const [draftSaveStatus, setDraftSaveStatus] = useState<
     'idle' | 'dirty' | 'saving' | 'saved' | 'error'
@@ -671,6 +681,10 @@ export function VerificationsView() {
         new Set(v.config.questionRefs.map((r) => r.questionIndexEntryId)),
       ),
     );
+    // VEX-02C: al caricamento le domande comuni persistite NON sono candidate a
+    // un abbinamento automatico (nessuna autocompilazione globale); la sessione
+    // di abbinamento progressivo parte vuota.
+    vexSessionUnassignedRef.current = [];
     draftRevisionRef.current = 0;
     setDraftSaveStatus('idle');
     setDraftSavedAt(null);
@@ -721,15 +735,66 @@ export function VerificationsView() {
     setDraftSaveError(null);
   }
 
+  /** Metadati minimi (UDA/tipo/difficoltà) per l'autogroup, dal questionIndex. */
+  function autogroupRefsFor(ids: Set<string>): AutogroupRef[] {
+    if (!questionIndex) return [];
+    const entryMap = new Map(questionIndex.map((e) => [e.id, e]));
+    return Array.from(ids)
+      .map((id) => entryMap.get(id))
+      .filter((e): e is NonNullable<typeof e> => e !== undefined)
+      .map((e) => ({
+        questionIndexEntryId: e.id,
+        udaDir: e.udaDir,
+        tipo: e.tipo,
+        difficolta: e.difficolta,
+      }));
+  }
+
   function handleQuestionSelectionChange(next: Set<string>) {
+    const prev = selectedQuestionIds;
+    const added = [...next].filter((id) => !prev.has(id));
     setSelectedQuestionIds(next);
-    // VEX-01A: deselezionare una domanda la rimuove automaticamente dal suo
-    // gruppo; un gruppo che resta vuoto viene eliminato (reconcile).
-    setEquivalentGroups((prev) => reconcileEquivalentGroups(prev, next));
+    setEquivalentGroups((prevGroups) => {
+      // VEX-01A: deselezione ⇒ rimozione dal gruppo + eliminazione dei gruppi vuoti.
+      let groups = reconcileEquivalentGroups(prevGroups, next);
+      // Ripulisci i candidati non più selezionati o ora raggruppati.
+      vexSessionUnassignedRef.current = vexSessionUnassignedRef.current.filter(
+        (id) => next.has(id) && !groups.some((g) => g.questionIndexEntryIds.includes(id)),
+      );
+      // VEX-02C: abbinamento progressivo SOLO per le domande appena selezionate e
+      // solo in modalità varianti. Mai un ricalcolo globale: le scelte manuali
+      // restano autorevoli (le domande già presenti non vengono toccate).
+      if (distributionMode === 'equivalent_variants' && added.length > 0) {
+        const refs = autogroupRefsFor(next);
+        for (const id of added) {
+          const res = assignOnSelect({
+            newEntryId: id,
+            refs,
+            groups,
+            sessionUnassigned: vexSessionUnassignedRef.current,
+          });
+          groups = res.groups;
+          vexSessionUnassignedRef.current = res.sessionUnassigned;
+        }
+      }
+      return groups;
+    });
     markDraftDirty();
   }
 
   function handleDistributionModeChange(mode: VerificationDistributionMode) {
+    // VEX-02C: **prima** inizializzazione — solo alla transizione manuale verso
+    // `equivalent_variants` e SOLO se non esistono già gruppi. Al caricamento di
+    // una configurazione esistente questo handler non viene invocato, quindi
+    // nessuna autocompilazione globale sui gruppi/comuni già persistiti.
+    if (mode === 'equivalent_variants' && equivalentGroups.length === 0) {
+      const refs = autogroupRefsFor(selectedQuestionIds);
+      const auto = autoGroupByKey(refs);
+      setEquivalentGroups(auto);
+      // I singleton della precompilazione (di questa sessione) diventano candidati
+      // per un abbinamento con selezioni successive; i comuni persistiti no.
+      vexSessionUnassignedRef.current = ungroupedEntryIds(refs, auto);
+    }
     setDistributionMode(mode);
     markDraftDirty();
   }

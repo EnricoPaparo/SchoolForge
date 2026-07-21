@@ -53,6 +53,17 @@ describe('VexBuilder (VEX-01A)', () => {
     setup({ mode: 'same_questions', refs: [ref('a'), ref('b')] });
     expect(screen.queryByText('Gruppi equivalenti')).toBeNull();
     expect(screen.getByText('Stesse domande, ordine casuale')).toBeTruthy();
+    // VEX-02C: the permanent assist warning belongs to the VEX section only.
+    expect(screen.queryByText(/precompilati usando UDA/i)).toBeNull();
+  });
+
+  it('shows a permanent, accessible assist warning in VEX mode (not blocking)', () => {
+    setup({ refs: [ref('a'), ref('b')], groups: [] });
+    const note = screen.getByText(/precompilati usando UDA, tipologia e difficoltà/i);
+    expect(note).toBeTruthy();
+    // It is a note, never an alert/error.
+    expect(note.closest('[role="note"]')).not.toBeNull();
+    expect(note.closest('[role="alert"]')).toBeNull();
   });
 
   it('switches mode via the radios without clearing groups', () => {
@@ -126,9 +137,8 @@ describe('VexBuilder (VEX-01A)', () => {
     setup({ refs: [ref('a'), ref('b')], groups: [g('x', ['a'])] });
     expect(screen.getByRole('button', { name: /Rimuovi la domanda a dal gruppo 1/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Elimina gruppo 1/i })).toBeTruthy();
-    expect(
-      screen.getByRole('combobox', { name: /Aggiungi alternativa al gruppo 1/i }),
-    ).toBeTruthy();
+    // VEX-02C: the add-alternative control is now an accessible listbox trigger.
+    expect(screen.getByRole('button', { name: /Aggiungi alternativa al gruppo 1/i })).toBeTruthy();
   });
 });
 
