@@ -30,6 +30,7 @@ const ITEM_A: StudentVerificationItem = {
   questions: [],
   onlineEnabled: true,
   studentPdfEnabled: false,
+  distributionMode: 'same_questions' as const,
   ownerUid: 'owner-uid',
   status: 'active',
 };
@@ -43,6 +44,7 @@ const ITEM_B: StudentVerificationItem = {
   questions: [],
   onlineEnabled: true,
   studentPdfEnabled: false,
+  distributionMode: 'same_questions' as const,
   ownerUid: 'owner-uid',
   status: 'active',
 };

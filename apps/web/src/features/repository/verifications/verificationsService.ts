@@ -448,6 +448,11 @@ export async function activateVerification(
       // projection existed yet to mirror onto), so activation is what
       // carries that choice into the projection for the first time.
       studentPdfEnabled: normalizeStudentPdfEnabled(data.studentPdfEnabled),
+      // VEX-02A: la modalità è rispecchiata nella proiezione così che il portale
+      // studente instradi il flusso senza leggere il documento verifica
+      // owner-only. In `equivalent_variants` `questions` sopra contiene SOLO le
+      // domande comuni (le alternative non sono mai leggibili dalla proiezione).
+      distributionMode,
       questions: publicQuestions,
       activatedAt: serverTimestamp(),
     });

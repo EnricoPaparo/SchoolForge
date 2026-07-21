@@ -947,3 +947,41 @@ describe('OnlineExamView — open answer maxCharacters (EXAM-UX-03)', () => {
     expect(screen.getAllByText(/\d+ \/ \d+ caratteri/)).toHaveLength(1);
   });
 });
+
+describe('OnlineExamView — VEX-02A variant guard', () => {
+  const ASSIGNED = [QUESTIONS[0]!, QUESTIONS[1]!]; // orders 0 and 1
+
+  it('autosave sends only answers whose order belongs to the assigned variant', async () => {
+    // A stale/foreign answer for order 2 (not in the variant) is present in state
+    // but must never reach saveDraft — client fail-closed filter.
+    renderView({
+      questions: ASSIGNED,
+      assignedQuestionOrders: [0, 1],
+      submission: emptySubmission({
+        answers: { '2': { tipo: 'chiusa_multipla', selectedIds: ['a'] } },
+      }),
+    });
+    // Fill an assigned answer so the draft is dirty and Salva bozza is enabled.
+    const ta = screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: 'ciao' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva bozza' }));
+    await waitFor(() => expect(mockSaveDraft).toHaveBeenCalled());
+    const payload = mockSaveDraft.mock.calls[0]![0] as { answers: Record<string, unknown> };
+    expect(Object.keys(payload.answers).sort()).toEqual(['0']);
+    expect('2' in payload.answers).toBe(false);
+  });
+
+  it('same_questions (no assignedQuestionOrders) keeps all answers unfiltered', async () => {
+    renderView({
+      submission: emptySubmission({
+        answers: { '2': { tipo: 'chiusa_multipla', selectedIds: ['a'] } },
+      }),
+    });
+    const ta = screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: 'x' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva bozza' }));
+    await waitFor(() => expect(mockSaveDraft).toHaveBeenCalled());
+    const payload = mockSaveDraft.mock.calls[0]![0] as { answers: Record<string, unknown> };
+    expect('2' in payload.answers).toBe(true); // unfiltered — existing behavior
+  });
+});

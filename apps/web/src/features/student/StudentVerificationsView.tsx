@@ -1,13 +1,43 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../lib/auth.js';
-import { db } from '../../lib/firebase.js';
+import { db, functions } from '../../lib/firebase.js';
 import {
   loadStudentVerifications,
   type StudentVerificationItem,
 } from '../repository/verifications/studentVerificationsService.js';
 import { downloadStudentPdfFromProjection } from '../repository/verifications/verificationPdf.js';
-import type { SubmissionDoc, SubmissionReceiptDoc } from '../../types/firestore.js';
-import { loadReceipt, loadSubmission, startSubmission } from './submissionsService.js';
+import type {
+  PublicVerificationQuestion,
+  SubmissionDoc,
+  SubmissionReceiptDoc,
+} from '../../types/firestore.js';
+import { loadReceipt, loadSubmission } from './submissionsService.js';
+import {
+  productionVexExamDeps,
+  resolveSameQuestionsExam,
+  resolveVexExam,
+  VexExamError,
+} from './vexExamService.js';
+import { describeAssignVariantError } from './verificationVariantClient.js';
+
+/** `true` se la verifica usa le varianti equivalenti (routing VEX). */
+function isVexItem(item: StudentVerificationItem): boolean {
+  return item.distributionMode === 'equivalent_variants';
+}
+
+/**
+ * Messaggio d'errore leggibile per l'avvio, senza rivelare dettagli tecnici o
+ * l'esistenza di altre alternative. Le VexExamError sono già formulate per
+ * l'utente; gli errori della callable passano da `describeAssignVariantError`.
+ */
+function startErrorMessage(err: unknown): string {
+  if (err instanceof VexExamError) return err.message;
+  const code = (err as { code?: string; details?: { code?: string } } | null)?.code;
+  if (typeof code === 'string' && code.startsWith('functions/')) {
+    return describeAssignVariantError(err);
+  }
+  return 'Impossibile avviare la verifica online: verifica chiusa o disabilitata.';
+}
 import { requestFullscreenBestEffort } from './examDeterrence.js';
 import {
   clearActiveSessionHint,
@@ -40,7 +70,16 @@ type OnlineStatus =
 
 type ViewState =
   | { mode: 'list' }
-  | { mode: 'exam'; item: StudentVerificationItem; submission: SubmissionDoc }
+  | {
+      mode: 'exam';
+      item: StudentVerificationItem;
+      submission: SubmissionDoc;
+      // VEX-02A: le domande effettivamente da svolgere. Per `same_questions`
+      // sono quelle della proiezione; per `equivalent_variants` SOLO la variante
+      // assegnata dalla callable. `assignedQuestionOrders` presente solo in VEX.
+      questions: PublicVerificationQuestion[];
+      assignedQuestionOrders?: number[];
+    }
   | { mode: 'confirmation'; receipt: SubmissionReceiptDoc }
   | { mode: 'correction'; submissionId: string; data: StudentCorrectionReturnItem };
 
@@ -131,6 +170,14 @@ export function StudentVerificationsView({
   const [pdfErrors, setPdfErrors] = useState<Record<string, string>>({});
   const [onlineStatus, setOnlineStatus] = useState<Record<string, OnlineStatus>>({});
   const [startErrors, setStartErrors] = useState<Record<string, string>>({});
+  /** id della verifica in fase di avvio VEX (loading + guardia doppio-click). */
+  const [startingId, setStartingId] = useState<string | null>(null);
+  const startingRef = useRef(false);
+  // Deps VEX (callable + loadSubmission) montate una sola volta su Firebase reale.
+  const vexDepsRef = useRef<ReturnType<typeof productionVexExamDeps> | null>(null);
+  if (vexDepsRef.current === null) {
+    vexDepsRef.current = productionVexExamDeps(functions, db);
+  }
   const [view, setView] = useState<ViewState>({ mode: 'list' });
   /** Keyed by submissionId (`${verificationId}_${uid}`) — loaded once alongside the list, never via a listener. */
   const [correctionReturns, setCorrectionReturns] = useState<
@@ -185,8 +232,29 @@ export function StudentVerificationsView({
       );
       const activeDraft = await findActiveDraftSession(uid, onlineItems, db);
       if (activeDraft) {
-        setView({ mode: 'exam', item: activeDraft.item, submission: activeDraft.submission });
-        return;
+        // VEX-02A: alla ripresa di una bozza `equivalent_variants` le domande
+        // NON sono nella proiezione (solo comuni): vanno richieste alla callable
+        // (idempotente → stessa variante). `same_questions` usa la proiezione.
+        try {
+          const resolved = isVexItem(activeDraft.item)
+            ? await resolveVexExam(activeDraft.item, uid, vexDepsRef.current!)
+            : {
+                submission: activeDraft.submission,
+                questions: activeDraft.item.questions,
+                assignedQuestionOrders: undefined,
+              };
+          setView({
+            mode: 'exam',
+            item: activeDraft.item,
+            submission: resolved.submission,
+            questions: resolved.questions,
+            assignedQuestionOrders: resolved.assignedQuestionOrders,
+          });
+          return;
+        } catch {
+          // Ripresa VEX fallita (es. callable non disponibile): cade sulla lista,
+          // dove lo studente può riprovare con "Riprendi bozza".
+        }
       }
 
       void refreshOnlineStatuses(uid, result.verifications);
@@ -290,45 +358,51 @@ export function StudentVerificationsView({
     }
   }
 
-  /** "Svolgi online" / "Riprendi bozza" — fullscreen must be requested synchronously from this click. */
+  /**
+   * "Svolgi online" / "Riprendi bozza" — fullscreen must be requested
+   * synchronously from this click.
+   *
+   * VEX-02A routing: `equivalent_variants` passa dalla callable
+   * (`resolveVexExam`, che assegna/recupera la variante e restituisce SOLO le
+   * domande assegnate); `same_questions` mantiene il flusso client-side
+   * esistente (`resolveSameQuestionsExam`, nessuna callable VEX). Guardia
+   * doppio-click via `startingRef` (una sola invocazione concorrente).
+   */
   async function handleStartOrResume(item: StudentVerificationItem) {
     if (!uid) return;
+    if (startingRef.current) return; // guardia doppio-click / doppia invocazione
+    startingRef.current = true;
     requestFullscreenBestEffort();
     setStartErrors((prev) => ({ ...prev, [item.id]: '' }));
+    setStartingId(item.id);
     try {
-      await startSubmission(
-        {
-          verificationId: item.id,
-          studentUid: uid,
-          ownerUid: item.ownerUid,
-          verificationTitle: item.title,
-          className: item.className,
-        },
-        db,
-      );
-      const submission = await loadSubmission(item.id, uid, db);
-      if (!submission) {
-        setStartErrors((prev) => ({
-          ...prev,
-          [item.id]: 'Impossibile avviare la verifica online. Riprova.',
-        }));
-        return;
-      }
-      if (submission.status !== 'draft') {
-        // Already submitted between the list load and this click (e.g. another tab) — show the receipt instead.
+      const resolved = isVexItem(item)
+        ? await resolveVexExam(item, uid, vexDepsRef.current!)
+        : await resolveSameQuestionsExam(item, uid, db);
+      writeActiveSessionHint(item.id);
+      setView({
+        mode: 'exam',
+        item,
+        submission: resolved.submission,
+        questions: resolved.questions,
+        assignedQuestionOrders: resolved.assignedQuestionOrders,
+      });
+    } catch (err) {
+      // Consegna avvenuta in un'altra tab tra il caricamento e il click: mostra
+      // la ricevuta invece di un errore.
+      try {
         const receipt = await loadReceipt(item.id, uid, db);
         if (receipt) {
           setView({ mode: 'confirmation', receipt });
           return;
         }
+      } catch {
+        // Non-fatale — cade sul messaggio d'errore sotto.
       }
-      writeActiveSessionHint(item.id);
-      setView({ mode: 'exam', item, submission });
-    } catch {
-      setStartErrors((prev) => ({
-        ...prev,
-        [item.id]: 'Impossibile avviare la verifica online: verifica chiusa o disabilitata.',
-      }));
+      setStartErrors((prev) => ({ ...prev, [item.id]: startErrorMessage(err) }));
+    } finally {
+      startingRef.current = false;
+      setStartingId(null);
     }
   }
 
@@ -360,7 +434,8 @@ export function StudentVerificationsView({
         className={view.item.className}
         ownerUid={view.item.ownerUid}
         studentUid={uid ?? ''}
-        questions={view.item.questions}
+        questions={view.questions}
+        assignedQuestionOrders={view.assignedQuestionOrders}
         submission={view.submission}
         onSubmitted={(receipt) => handleSubmitted(view.item, receipt)}
       />
@@ -525,7 +600,12 @@ export function StudentVerificationsView({
         </dl>
 
         <div className={styles.cardActions}>
-          {item.studentPdfEnabled && (
+          {/* VEX-02A: in `equivalent_variants` il PDF studente è disabilitato e
+              NON mostrato — un PDF dalla proiezione esporrebbe/ometterebbe le
+              domande in modo incoerente con la variante assegnata; non esiste
+              alcun modo client-side di ottenere il PDF completo. `same_questions`
+              mantiene il toggle docente esistente. */}
+          {item.studentPdfEnabled && !isVexItem(item) && (
             <button
               type="button"
               className={styles.pdfBtn}
@@ -558,9 +638,11 @@ export function StudentVerificationsView({
             <button
               type="button"
               className="btn-primary"
+              aria-busy={startingId === item.id}
+              disabled={startingId === item.id}
               onClick={() => void handleStartOrResume(item)}
             >
-              Riprendi bozza
+              {startingId === item.id ? 'Apertura…' : 'Riprendi bozza'}
             </button>
           )}
 
@@ -570,10 +652,13 @@ export function StudentVerificationsView({
               <button
                 type="button"
                 className="btn-primary"
-                disabled={status === undefined || status.kind === 'checking'}
+                aria-busy={startingId === item.id}
+                disabled={
+                  status === undefined || status.kind === 'checking' || startingId === item.id
+                }
                 onClick={() => void handleStartOrResume(item)}
               >
-                Svolgi online
+                {startingId === item.id ? 'Apertura…' : 'Svolgi online'}
               </button>
             )}
         </div>

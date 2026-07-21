@@ -95,6 +95,7 @@ describe('loadStudentVerifications — class filtering', () => {
         questions: [{ order: 0, tipo: 'aperta', maxPoints: 3, testo: 'Domanda?' }],
         onlineEnabled: false,
         studentPdfEnabled: false,
+        distributionMode: 'same_questions',
         ownerUid: 'owner',
         status: 'active',
       },

@@ -1,14 +1,17 @@
 # VEX — Contratto varianti equivalenti
 
-**Stato:** VEX-01A **e VEX-01B implementati**. VEX-01A: modello dati, validazioni pure e
-builder docente draft-time (client). VEX-01B: attivazione `equivalent_variants` operativa
-(snapshot VEX + proiezione pubblica **solo domande comuni**), callable server-side
+**Stato:** VEX-01A, VEX-01B **e VEX-02A implementati**. VEX-01A: modello dati, validazioni
+pure e builder docente draft-time (client). VEX-01B: attivazione `equivalent_variants`
+operativa (snapshot VEX + proiezione pubblica **solo domande comuni**), callable server-side
 `assignVerificationVariant` (assegnazione uniforme, RNG sicuro, transazione idempotente,
 unica scrittura `assignedQuestionOrders`), isolamento delle alternative e Rules server-only.
-La **guardia fail-closed** di VEX-01A è stata **rimossa**. **VEX non è ancora operativo
-end-to-end:** manca la UI studente (svolgimento/ripresa/filtri) — **VEX-02** — e
-correzione/IA/restituzione/export + Gate **GVEX** — **VEX-03**. VEX-00B (sotto) ha congelato
-il contratto.
+VEX-02A: **svolgimento studente della variante assegnata** — il portale instrada
+`equivalent_variants` sulla callable (avvio/ripresa/refresh idempotenti), `OnlineExamView`
+mostra **solo** le domande assegnate, autosave/consegna sono ristretti alla variante (client
+fail-closed + **Rules**: `answers`/`flagged` ⊆ `assignedAnswerKeys`), PDF studente disabilitato
+in VEX. `same_questions` resta invariato e **non** invoca la callable. **VEX non è ancora
+deployabile:** restano **VEX-02B** (correzione/IA/restituzione/export/PDF-variante filtrati) e
+il Gate **GVEX**. VEX-00B (sotto) ha congelato il contratto.
 **Natura (VEX-00B):** documentazione + prototipo. **Nessun codice applicativo, Function, Rule,
 indice, schema reale, dipendenza o deploy** è introdotto dal pacchetto VEX-00B.
 **Base:** UX e decisioni di prodotto già approvate in
@@ -347,10 +350,32 @@ codice applicativo.
 - ❌ **NON** in VEX-01B (restano a VEX-02/03): UI studente/`OnlineExamView`, correzione/IA/
   restituzione filtrate, PDF studente, Gate GVEX.
 
-### VEX-02 — **flusso studente + correzione/restituzione + PDF**
-- `OnlineExamView` consuma la variante assegnata (stesso shuffle visivo);
+### VEX-02A — **svolgimento studente della variante assegnata** ✅ IMPLEMENTATO
+- ✅ routing fail-closed su `distributionMode` (rispecchiato nella `publishedProjection`):
+  `same_questions` resta client-side **senza** callable; `equivalent_variants` passa da
+  `assignVerificationVariant` via `verificationVariantClient`;
+- ✅ avvio/ripresa/refresh idempotenti (stessa variante); la submission deterministica non è
+  duplicata, `assignedQuestionOrders` non è mai riscritto dal client, nessuna nuova assegnazione
+  dopo riapertura docente (M4 invariato);
+- ✅ `OnlineExamView` consuma **solo** le domande assegnate (order canonici; shuffle visivo
+  invariato e non persistito; `maxCharacters` della domanda assegnata); navigatore/«da
+  rivedere»/contatori sulla sola variante; nessun testo rivela altre alternative;
+- ✅ risposta callable validata **fail-closed** (modalità/coerenza order/assenza soluzioni);
+  modalità sconosciuta o payload malformato bloccano l'avvio, **nessun** fallback;
+- ✅ autosave/consegna ristretti alla variante: filtro client fail-closed + **Rules**
+  (`answers`/`flagged` keys ⊆ `assignedAnswerKeys`, mirror string server-only di
+  `assignedQuestionOrders` — le Rules non convertono numeri→stringa); cadenza/write invariati;
+- ✅ PDF studente **disabilitato e nascosto** in `equivalent_variants`; `same_questions` invariato;
+- ✅ loading/spinner sobrio, guardia doppio-click, nessun setState post-unmount, retry su errore;
+- ✅ test web mirati + Rules Emulator (subset risposte). Nessun listener/polling; nessun nuovo
+  documento; nessuna lettura pool/Storage o delle alternative dal browser.
+
+### VEX-02B — **correzione/restituzione/export filtrati** (aperto)
 - workspace docente/IA/restituzione filtrati per `assignedQuestionOrders` §5;
-- PDF studente disabilitato/nascosto in `equivalent_variants` §4.4.
+- export docente filtrato; eventuale PDF della singola variante; statistiche per variante.
+
+### VEX-03 — **hardening equità/costi/smoke**
+- gate multi-studente, nessuna fuga di alternative/soluzioni, verifica costi reali.
 
 ### VEX-03 — **hardening equità/costi/smoke**
 - gate multi-studente, nessuna fuga di alternative/soluzioni, verifica costi reali.
