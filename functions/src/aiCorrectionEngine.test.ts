@@ -498,29 +498,29 @@ describe('canonical selection (M5-05D2A)', () => {
     const a = [sid('s2'), sid('s1')];
     const b = [sid('s1'), sid('s2')];
     expect(canonicalizeSubmissionIds(a)).toEqual(b);
-    expect(computeSelectionHash(VERIF, a, 'balanced')).toBe(
-      computeSelectionHash(VERIF, b, 'balanced'),
+    expect(computeSelectionHash(VERIF, a, 'balanced', 'quality')).toBe(
+      computeSelectionHash(VERIF, b, 'balanced', 'quality'),
     );
-    expect(computeSelectionHash(VERIF, a, 'balanced')).toMatch(/^[a-f0-9]{64}$/);
+    expect(computeSelectionHash(VERIF, a, 'balanced', 'quality')).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('includes teacher guidance in the request identity without persisting its text', () => {
     const ids = [sid('s1'), sid('s2')];
-    expect(computeSelectionHash(VERIF, ids, 'balanced', 'Premia il ragionamento.')).toBe(
-      computeSelectionHash(VERIF, ids.reverse(), 'balanced', 'Premia il ragionamento.'),
+    expect(computeSelectionHash(VERIF, ids, 'balanced', 'quality', 'Premia il ragionamento.')).toBe(
+      computeSelectionHash(VERIF, ids.reverse(), 'balanced', 'quality', 'Premia il ragionamento.'),
     );
-    expect(computeSelectionHash(VERIF, ids, 'balanced', 'Premia il ragionamento.')).not.toBe(
-      computeSelectionHash(VERIF, ids, 'balanced', 'Premia la terminologia.'),
+    expect(computeSelectionHash(VERIF, ids, 'balanced', 'quality', 'Premia il ragionamento.')).not.toBe(
+      computeSelectionHash(VERIF, ids, 'balanced', 'quality', 'Premia la terminologia.'),
     );
   });
 
   it('M5-QUALITY-01 — gradingMode is part of the request identity', () => {
     const ids = [sid('s1'), sid('s2')];
-    expect(computeSelectionHash(VERIF, ids, 'balanced')).not.toBe(
-      computeSelectionHash(VERIF, ids, 'rigorous'),
+    expect(computeSelectionHash(VERIF, ids, 'balanced', 'quality')).not.toBe(
+      computeSelectionHash(VERIF, ids, 'rigorous', 'quality'),
     );
-    expect(computeSelectionHash(VERIF, ids, 'compassionate')).not.toBe(
-      computeSelectionHash(VERIF, ids, 'rigorous'),
+    expect(computeSelectionHash(VERIF, ids, 'compassionate', 'quality')).not.toBe(
+      computeSelectionHash(VERIF, ids, 'rigorous', 'quality'),
     );
   });
 });
@@ -1421,7 +1421,7 @@ describe('runExecution — concurrent idempotency (lease)', () => {
     store.runs.set(REQ, {
       runContractVersion: AI_RUN_CONTRACT_VERSION,
       status: 'running',
-      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced'),
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced', 'quality'),
       executionId: 'other-attempt',
       leaseExpiresAt: Date.now() + RUN_LEASE_MS,
     });
@@ -1443,7 +1443,7 @@ describe('runExecution — concurrent idempotency (lease)', () => {
     store.runs.set(REQ, {
       runContractVersion: AI_RUN_CONTRACT_VERSION,
       status: 'running',
-      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced'),
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced', 'quality'),
       executionId: 'crashed-attempt',
       leaseExpiresAt: Date.now() - 1000, // expired
     });
@@ -1455,7 +1455,7 @@ describe('runExecution — concurrent idempotency (lease)', () => {
 
   it('an old worker cannot finalize after a takeover (executionId no longer owns the lease)', async () => {
     const store = new FakeStore();
-    const selectionHash = computeSelectionHash(VERIF, [sid('s1')], 'balanced');
+    const selectionHash = computeSelectionHash(VERIF, [sid('s1')], 'balanced', 'quality');
     const nowMs = Date.now();
     const meta = {
       selectionHash,
@@ -1607,7 +1607,7 @@ describe('runExecution — lease clock captured at acquisition (M5-05D2A regress
     store.runs.set(REQ, {
       runContractVersion: AI_RUN_CONTRACT_VERSION,
       status: 'running',
-      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced'),
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced', 'economy'),
       mode: 'openai',
       executionId: 'A',
       leaseExpiresAt: TA + RUN_LEASE_MS,
@@ -1640,7 +1640,7 @@ describe('runExecution — lease clock captured at acquisition (M5-05D2A regress
     store.runs.set(REQ, {
       runContractVersion: AI_RUN_CONTRACT_VERSION,
       status: 'running',
-      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced'),
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced', 'economy'),
       mode: 'openai',
       executionId: 'crashed-A',
       leaseExpiresAt: TA + RUN_LEASE_MS,
@@ -1862,7 +1862,7 @@ describe('runExecution — privacy of aiCorrectionRuns', () => {
     seedOneOpenOneClosed(store, 's1');
     store.runs.set(REQ, {
       status: 'completed',
-      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced'),
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced', 'quality'),
       // no runContractVersion => legacy
     });
     const before = JSON.stringify(store.runs.get(REQ));
@@ -2428,7 +2428,7 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     store.runs.set(REQ, {
       runContractVersion: AI_RUN_CONTRACT_VERSION,
       status: 'running',
-      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced'),
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced', 'economy'),
       mode: 'openai',
       executionId: 'other',
       leaseExpiresAt: NOW + RUN_LEASE_MS,
@@ -2455,7 +2455,7 @@ describe('M5-05D2B-1 — cost accounting + budget ledger runtime', () => {
     store.runs.set(REQ, {
       runContractVersion: AI_RUN_CONTRACT_VERSION,
       status: 'running',
-      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced'),
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced', 'quality'),
       executionId: 'B',
       leaseExpiresAt: NOW + RUN_LEASE_MS,
     });
@@ -3057,6 +3057,103 @@ describe('M5-QUALITY-07 — Luna runtime execution', () => {
     expect(res.mode).toBe('mock');
     expect(res.costActualMicroUsd).toBe(0);
     expect(res.costReservationMicroUsd).toBe(0);
+    expect(store.reserveBudgetCalls).toBe(0);
+  });
+});
+
+describe('TWU-02 — model profile server-side resolution', () => {
+  const NOW = Date.UTC(2026, 6, 16, 12, 0, 0);
+  const USAGE = { inputTokens: 1000, outputTokens: 200, tokens: 1200 };
+
+  it('economy → nano model + nano price list (cost from nano list)', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const res = await runExecution(
+      req([sid('s1')], { modelProfile: 'economy' }),
+      openaiDeps(store, usageGrader(USAGE), NOW),
+    );
+    expect(res.costActualMicroUsd).toBe(450); // nano list HG-M5-1
+    expect(store.runs.get(REQ)!.model).toBe(OPENAI_PRODUCTION_MODEL);
+    expect(store.runs.get(REQ)!.priceListVersion).toBe(DEFAULT_PRICE_LIST_VERSION);
+    expect(store.reserveBudgetCalls).toBe(1);
+    expect(store.reconcileBudgetCalls).toBe(1);
+  });
+
+  it('quality → Luna model + Luna price list (cost differs from economy)', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const res = await runExecution(
+      req([sid('s1')], { modelProfile: 'quality' }),
+      openaiDeps(store, usageGrader(USAGE), NOW),
+    );
+    expect(store.runs.get(REQ)!.priceListVersion).toBe(OPENAI_RUNTIME_LUNA_PRICE_LIST_VERSION);
+    // The Luna price list is distinct from nano → a distinct actual cost.
+    expect(res.costActualMicroUsd).toBeGreaterThan(0);
+    expect(res.costActualMicroUsd).not.toBe(450);
+    expect(store.reserveBudgetCalls).toBe(1);
+  });
+
+  it('omitted profile → legacy default from the runtime config model (nano ⇒ economy)', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    // enabledConfigPort uses OPENAI_PRODUCTION_MODEL (nano) ⇒ economy.
+    const res = await runExecution(req([sid('s1')]), openaiDeps(store, usageGrader(USAGE), NOW));
+    expect(res.costActualMicroUsd).toBe(450);
+    expect(store.runs.get(REQ)!.priceListVersion).toBe(DEFAULT_PRICE_LIST_VERSION);
+  });
+
+  it('same requestId with a different profile → invalid_input (identity conflict)', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    // A run already exists for this requestId under the economy identity.
+    store.runs.set(REQ, {
+      runContractVersion: AI_RUN_CONTRACT_VERSION,
+      status: 'running',
+      selectionHash: computeSelectionHash(VERIF, [sid('s1')], 'balanced', 'economy'),
+      mode: 'openai',
+      executionId: 'other',
+      leaseExpiresAt: NOW + RUN_LEASE_MS,
+      expireAtMs: NOW + RUN_RETENTION_MS,
+    });
+    await expect(
+      runExecution(
+        req([sid('s1')], { modelProfile: 'quality' }),
+        openaiDeps(store, usageGrader(USAGE), NOW + 1),
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+  });
+
+  it('replay with the same profile does not reserve budget or call the provider again', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    const grade = vi.fn(new MockAiGrader().grade);
+    const first = await runExecution(
+      req([sid('s1')], { modelProfile: 'economy' }),
+      openaiDeps(store, usageGrader(USAGE), NOW),
+    );
+    expect(first.idempotentReplay).toBeFalsy();
+    expect(store.reserveBudgetCalls).toBe(1);
+    const gradeCallsAfterFirst = store.commitCalls;
+    // Second identical call (same requestId + profile) → idempotent replay.
+    const second = await runExecution(
+      req([sid('s1')], { modelProfile: 'economy' }),
+      { ...openaiDeps(store, realGrader(grade), NOW + 1) },
+    );
+    expect(second.idempotentReplay).toBe(true);
+    expect(store.reserveBudgetCalls).toBe(1); // no second reservation
+    expect(grade).not.toHaveBeenCalled(); // no second provider call
+    expect(store.commitCalls).toBe(gradeCallsAfterFirst);
+  });
+
+  it('an invalid profile in the payload is rejected with invalid_input before any work', async () => {
+    const store = new FakeStore();
+    seedOneOpenOneClosed(store, 's1');
+    await expect(
+      runExecution(
+        req([sid('s1')], { modelProfile: 'premium' }),
+        openaiDeps(store, usageGrader(USAGE), NOW),
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
     expect(store.reserveBudgetCalls).toBe(0);
   });
 });

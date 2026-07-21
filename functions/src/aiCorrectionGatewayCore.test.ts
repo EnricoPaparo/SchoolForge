@@ -166,6 +166,40 @@ describe('validateAiCorrectionRequest', () => {
     }
   });
 
+  it('TWU-02 — accepts the two closed modelProfile values and echoes them', () => {
+    for (const profile of ['economy', 'quality'] as const) {
+      expect(validateAiCorrectionRequest(validRequest({ modelProfile: profile })).modelProfile).toBe(
+        profile,
+      );
+    }
+  });
+
+  it('TWU-02 — an OMITTED modelProfile leaves the field undefined (legacy default resolved server-side)', () => {
+    expect(validateAiCorrectionRequest(validRequest()).modelProfile).toBeUndefined();
+    expect(
+      validateAiCorrectionRequest(validRequest({ modelProfile: undefined })).modelProfile,
+    ).toBeUndefined();
+  });
+
+  it('TWU-02 — a present-but-invalid modelProfile (null/unknown/non-string) fails with invalid_input', () => {
+    const invalid: unknown[] = [null, '', 'premium', 'nano', 'gpt-5.6-luna', 5, {}, ['economy'], true];
+    for (const bad of invalid) {
+      const err = captureError(() =>
+        validateAiCorrectionRequest(validRequest({ modelProfile: bad })),
+      );
+      expect((err as { code?: string })?.code).toBe('invalid_input');
+    }
+  });
+
+  it('TWU-02 — the client can never send a model id or price list (closed payload)', () => {
+    for (const key of ['model', 'priceListVersion', 'priceList', 'openAiModel']) {
+      const err = captureError(() =>
+        validateAiCorrectionRequest(validRequest({ [key]: 'gpt-5.6-luna' })),
+      );
+      expect((err as { code?: string })?.code).toBe('invalid_input');
+    }
+  });
+
   it.each([
     ['null payload', null],
     ['non-object', 42],
