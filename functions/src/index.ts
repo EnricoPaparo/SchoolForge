@@ -10,3 +10,6 @@ export { aiCorrectionPreview, aiCorrectionRun } from './aiCorrectionGateway.js';
 // (indexed collection-group delete), invoked by deleteProgram before removing
 // the program document.
 export { cleanupProgramLessonNotes } from './programNotesCleanup.js';
+// VEX-01B — callable di assegnazione idempotente delle varianti equivalenti
+// (server-side, isolamento delle alternative). Vedi documentazione/vex-contract.md.
+export { assignVerificationVariant } from './verificationVariantGateway.js';

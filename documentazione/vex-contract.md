@@ -1,11 +1,14 @@
 # VEX — Contratto varianti equivalenti
 
-**Stato:** VEX-01A — modello dati, validazioni pure e builder docente draft-time
-**implementati** (client). **VEX non è ancora operativo:** l'attivazione di
-`equivalent_variants` è **bloccata a monte** da una guardia fail-closed finché VEX-01B
-non aggiunge callable di assegnazione + isolamento + Rules. VEX-01B/02/03 e il Gate
-GVEX restano aperti. VEX-00B (sotto) ha congelato il contratto; VEX-01A **non**
-introduce Function, Rule, indice, schema reale, dipendenza o deploy.
+**Stato:** VEX-01A **e VEX-01B implementati**. VEX-01A: modello dati, validazioni pure e
+builder docente draft-time (client). VEX-01B: attivazione `equivalent_variants` operativa
+(snapshot VEX + proiezione pubblica **solo domande comuni**), callable server-side
+`assignVerificationVariant` (assegnazione uniforme, RNG sicuro, transazione idempotente,
+unica scrittura `assignedQuestionOrders`), isolamento delle alternative e Rules server-only.
+La **guardia fail-closed** di VEX-01A è stata **rimossa**. **VEX non è ancora operativo
+end-to-end:** manca la UI studente (svolgimento/ripresa/filtri) — **VEX-02** — e
+correzione/IA/restituzione/export + Gate **GVEX** — **VEX-03**. VEX-00B (sotto) ha congelato
+il contratto.
 **Natura (VEX-00B):** documentazione + prototipo. **Nessun codice applicativo, Function, Rule,
 indice, schema reale, dipendenza o deploy** è introdotto dal pacchetto VEX-00B.
 **Base:** UX e decisioni di prodotto già approvate in
@@ -321,16 +324,28 @@ codice applicativo.
   `same_questions` invariato per comportamento e costo. La guardia è applicativa
   (nessun feature-flag remoto/Firebase config) e sarà rimossa da VEX-01B.
 
-### VEX-01B — **callable di assegnazione + sicurezza + isolamento**
-- Cloud Function callable (owner/student-auth) §4.1;
-- **algoritmo di assegnazione §4.2b:** una alternativa per gruppo, scelta uniforme
-  server-side, RNG crittograficamente sicuro in produzione e iniettabile nei test,
-  casualità usata solo in assenza di assegnazione, nessun bilanciamento globale,
-  ripetizioni ammesse;
-- transazione di assegnazione idempotente §4.2, unica scrittura `assignedQuestionOrders`;
-- proiezione pubblica che **non** espone le alternative in `equivalent_variants`;
-- Rules/isolamento: lo studente non legge alternative non assegnate;
-- test concorrenza/idempotenza/isolamento/refresh; budget §4.3.
+### VEX-01B — **callable di assegnazione + sicurezza + isolamento** ✅ IMPLEMENTATO
+- ✅ **attivazione `equivalent_variants` operativa** (guardia VEX-01A rimossa):
+  `activateVerification` costruisce lo snapshot VEX (conversione entryId→order, ri-validazione
+  autorevole §3) e scrive la `publishedProjection` con **solo le domande comuni**;
+- ✅ Cloud Function callable **`assignVerificationVariant`** (v2 `onCall`, scale-to-zero,
+  regione `us-central1`) §4.1 — input chiuso `{ verificationId }`, autorizzazione fail-closed
+  (auth, studente approvato dello stesso owner, classe, verifica `active` + `onlineEnabled`,
+  modalità `equivalent_variants`, snapshot valido);
+- ✅ **algoritmo di assegnazione §4.2b** (`verificationVariantCore.ts`): una alternativa per
+  gruppo, scelta **uniforme** server-side, RNG crittograficamente sicuro (`node:crypto.randomInt`)
+  in produzione e **iniettabile** nei test, casualità usata solo in assenza di assegnazione,
+  nessun bilanciamento globale, ripetizioni ammesse;
+- ✅ transazione idempotente §4.2 (read-or-assign) con **unica** scrittura
+  `assignedQuestionOrders` su `submissions/{id}` al primo avvio, **0 scritture** ai riaccessi;
+  assegnazione persistita **invalida** ⇒ fail-closed (nessuna rigenerazione silenziosa);
+- ✅ proiezione pubblica che **non** espone le alternative; risposta callable sanitizzata
+  (solo domande assegnate, **nessuna** soluzione/alternativa non assegnata/teacherSnapshot/gruppo);
+- ✅ Rules/isolamento: `assignedQuestionOrders` è **server-only** (creazione/modifica/rimozione
+  dal client negate; altri studenti non lo leggono; autosave lo lascia immutato);
+- ✅ test unitari + gateway (core puro, network-free) e Rules Emulator; budget §4.3 rispettato.
+- ❌ **NON** in VEX-01B (restano a VEX-02/03): UI studente/`OnlineExamView`, correzione/IA/
+  restituzione filtrate, PDF studente, Gate GVEX.
 
 ### VEX-02 — **flusso studente + correzione/restituzione + PDF**
 - `OnlineExamView` consuma la variante assegnata (stesso shuffle visivo);
