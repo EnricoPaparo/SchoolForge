@@ -351,6 +351,15 @@ describe('Firestore rules — students/{uid} portal-access telemetry (TWU-01)', 
     );
   });
 
+  it('denies a first ping that carries only lastPortalAccessAt (firstPortalAccessAt required)', async () => {
+    await seedApprovedStudent(); // no firstPortalAccessAt yet
+    await assertFails(
+      updateDoc(doc(studentDb(), 'students', OTHER_UID), {
+        lastPortalAccessAt: serverTimestamp(),
+      }),
+    );
+  });
+
   it('approved student can update only lastPortalAccessAt on a later entry', async () => {
     await seedApprovedStudent({ firstPortalAccessAt: new Date('2026-01-01') });
     await assertSucceeds(

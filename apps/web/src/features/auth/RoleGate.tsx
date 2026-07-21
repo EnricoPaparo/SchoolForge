@@ -78,12 +78,19 @@ export function RoleGate({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth();
   const [state, setState] = useState<GateState>('loading');
   const requestAttempted = useRef(false);
-  // TWU-01: guards a single portal-access telemetry write per app entry, so
-  // React StrictMode's double effect invocation cannot produce two writes.
-  const accessRecorded = useRef(false);
+  // TWU-01: guards a single portal-access telemetry write per real entry. It
+  // holds the uid the current entry already recorded for (null = none yet), so
+  // React StrictMode's double effect invocation still writes once, while a new
+  // session — logout→login of the same uid, or a switch to a different uid —
+  // records again. Reset to null whenever `user` becomes null (session end).
+  const recordedForUid = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      // Session ended: the next real entry (even the same uid) must record anew.
+      recordedForUid.current = null;
+      return;
+    }
     let active = true;
 
     void (async () => {
@@ -129,10 +136,11 @@ export function RoleGate({ children }: { children: ReactNode }) {
             // actually enters the portal. Stamp their access telemetry once
             // per entry. It is deliberately **non-blocking**: a failed write
             // never denies the portal to an already-authorized student — we
-            // only log a sanitized message (no personal data). StrictMode is
-            // guarded by `accessRecorded`.
-            if (!accessRecorded.current) {
-              accessRecorded.current = true;
+            // only log a sanitized message (no personal data). The uid-keyed
+            // guard collapses StrictMode's double invocation into one write
+            // while still recording again for a new session/uid.
+            if (recordedForUid.current !== user.uid) {
+              recordedForUid.current = user.uid;
               const hasFirstAccess = studentDoc.firstPortalAccessAt != null;
               void recordPortalAccess(user.uid, hasFirstAccess, db).catch(() => {
                 // Sanitized, no PII: the write is telemetry-only.

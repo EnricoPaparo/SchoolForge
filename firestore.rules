@@ -53,11 +53,17 @@ service cloud.firestore {
     // access telemetry on their own students/{uid} document. Everything that
     // authorizes or identifies the student is frozen: only the two access
     // timestamps (plus, optionally, updatedAt) may move, and only ever to the
-    // server clock. `firstPortalAccessAt` is write-once (settable only when
-    // previously absent, immutable afterwards, never removable);
-    // `lastPortalAccessAt` is always the server clock and never removable.
-    // This grants NOTHING to a teacher (they already have full update), to
-    // another student, to a pending/rejected caller, or to an anonymous user.
+    // server clock.
+    //   * FIRST ping (firstPortalAccessAt absent): the update MUST add
+    //     firstPortalAccessAt == request.time AND lastPortalAccessAt ==
+    //     request.time in the same write — a first ping carrying only
+    //     lastPortalAccessAt is denied.
+    //   * LATER ping (firstPortalAccessAt present): it stays immutable and
+    //     must remain present in the result; the client may only move
+    //     lastPortalAccessAt (and, if used, updatedAt).
+    // Neither timestamp can ever be dropped. This grants NOTHING to a teacher
+    // (they already have full update), to another student, to a
+    // pending/rejected caller, or to an anonymous user.
     function isOwnPortalAccessPing(uid) {
       let affected = request.resource.data.diff(resource.data).affectedKeys();
       let hadFirst = resource.data.keys().hasAny(['firstPortalAccessAt']);
@@ -69,15 +75,18 @@ service cloud.firestore {
         && affected.hasOnly(['firstPortalAccessAt', 'lastPortalAccessAt', 'updatedAt'])
         // lastPortalAccessAt is always stamped now, and thus never removed.
         && request.resource.data.lastPortalAccessAt == request.time
-        // firstPortalAccessAt: immutable if it already existed; else settable
-        // only to the server clock. Either way it can never be dropped.
         && (
           hadFirst
-            ? !affected.hasAny(['firstPortalAccessAt'])
+            // Immutable and still present in the resulting document.
+            ? (
+                !affected.hasAny(['firstPortalAccessAt'])
+                && request.resource.data.firstPortalAccessAt == resource.data.firstPortalAccessAt
+              )
+            // First ping: firstPortalAccessAt MUST be added, == request.time.
             : (
-              !affected.hasAny(['firstPortalAccessAt'])
-                || request.resource.data.firstPortalAccessAt == request.time
-            )
+                affected.hasAny(['firstPortalAccessAt'])
+                && request.resource.data.firstPortalAccessAt == request.time
+              )
         )
         // If updatedAt is touched at all it must be the server clock.
         && (!affected.hasAny(['updatedAt']) || request.resource.data.updatedAt == request.time);

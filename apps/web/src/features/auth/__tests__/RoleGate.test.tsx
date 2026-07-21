@@ -1,5 +1,5 @@
 import { StrictMode } from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // This suite verifies role resolution, student approval, selection of the
@@ -265,6 +265,62 @@ describe('RoleGate — portal access telemetry (TWU-01)', () => {
     );
     await screen.findByRole('navigation', { name: /Sezioni studente/i });
     expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+  });
+
+  // A fresh element each render: passing the *same* element reference to
+  // rerender makes React bail out of re-rendering, so useAuth would never be
+  // re-read. Each call returns a new element so the [user] effect re-runs.
+  const gateEl = () => (
+    <RoleGate>
+      <div>Area docente</div>
+    </RoleGate>
+  );
+
+  it('records again after logout→login of the same uid in the same mount', async () => {
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    seedStudentDoc('approved');
+    asStudent();
+    const { rerender } = render(gateEl());
+    await screen.findByRole('navigation', { name: /Sezioni studente/i });
+    expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+
+    // Logout resets the guard…
+    currentUser = null;
+    rerender(gateEl());
+    // …so the same uid logging back in records a new entry.
+    asStudent();
+    rerender(gateEl());
+    await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(2));
+    // Both writes targeted this student's own document.
+    expect(mockUpdateDoc.mock.calls[0][0].path).toBe(`students/${STUDENT_UID}`);
+    expect(mockUpdateDoc.mock.calls[1][0].path).toBe(`students/${STUDENT_UID}`);
+  });
+
+  it('records once per user when switching from uid A to uid B (no logout in between)', async () => {
+    const UID_B = 'student-b-uid';
+    seedOwnerPublic();
+    seedStudentAccess(true);
+    seedStudentDoc('approved'); // A = STUDENT_UID
+    firestoreDocs[`students/${UID_B}`] = {
+      uid: UID_B,
+      ownerUid: OWNER_UID,
+      email: 'b@test.com',
+      displayName: null,
+      status: 'approved',
+      classId: null,
+    };
+    asStudent();
+    const { rerender } = render(gateEl());
+    await screen.findByRole('navigation', { name: /Sezioni studente/i });
+    expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
+    expect(mockUpdateDoc.mock.calls[0][0].path).toBe(`students/${STUDENT_UID}`);
+
+    // Switch directly to user B (uid change, no null in between).
+    currentUser = { uid: UID_B, email: 'b@test.com', displayName: null };
+    rerender(gateEl());
+    await waitFor(() => expect(mockUpdateDoc).toHaveBeenCalledTimes(2));
+    expect(mockUpdateDoc.mock.calls[1][0].path).toBe(`students/${UID_B}`);
   });
 
   it('still grants the portal when the access-telemetry write fails (non-blocking)', async () => {

@@ -425,11 +425,13 @@ export function VerificationsView() {
   }
 
   /**
-   * TWU-01 — single refresh orchestration behind the «Aggiorna» button. Reuses
-   * the same two pull-based reads as the selection effect (correction progress
-   * and the approved class roster) so no new query/index is introduced. Keeps
-   * the current data on error, guards against double-click, and never updates
-   * state after unmount.
+   * TWU-01 — single refresh orchestration behind the «Aggiorna» button. It runs
+   * the same two load operations (queries) as the selection effect —
+   * `loadCorrectionProgressByStudent` and `listStudents` — so no new
+   * query/index is introduced. Billed Firestore reads are proportional to the
+   * documents each query returns (not a fixed "2 reads"); the cost is incurred
+   * only on click, with no listener or polling. Keeps the current data on
+   * error, guards against double-click, and never updates state after unmount.
    */
   async function refreshMonitor(): Promise<void> {
     if (!selectedVer || monitorRefreshingRef.current) return;

@@ -60,11 +60,13 @@ studente (Task 4). Nessun deploy, nessun merge automatico.
   errore leggibile che **mantiene i dati correnti**, nessun update dopo unmount,
   StrictMode-safe. Selezione, filtri e ordinamento conservati; checkbox non
   deselezionate.
-- **Costo letture:** invariato a regime (nessun costo passivo aggiunto). Il
-  refresh manuale costa esattamente **2 letture** per click — la lettura
-  aggregata delle correzioni della verifica (`loadCorrectionProgressByStudent`)
-  e la lettura del roster studenti (`listStudents`) — le stesse già eseguite
-  all'apertura del monitor. Zero letture finché il docente non clicca.
+- **Costo letture:** invariato a regime (nessun costo passivo aggiunto). Ogni
+  click esegue **una sola orchestrazione di refresh** con **due operazioni di
+  caricamento (query)** — `loadCorrectionProgressByStudent` e `listStudents`,
+  le stesse già eseguite all'apertura del monitor. Le **letture Firestore
+  fatturate sono proporzionali ai documenti restituiti** da quelle query (una
+  per documento letto), non un fisso «2 letture». **Zero costo finché il docente
+  non clicca**; nessun listener o polling aggiuntivo.
 
 ### Task 4 — Primo e ultimo accesso studente
 
