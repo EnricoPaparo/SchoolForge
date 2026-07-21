@@ -1,6 +1,7 @@
 # VEX — Contratto varianti equivalenti
 
-**Stato:** VEX-01A, VEX-01B **e VEX-02A implementati**. VEX-01A: modello dati, validazioni
+**Stato:** VEX-01A, VEX-01B, VEX-02A e VEX-02B **implementati e distribuiti su DEV**.
+VEX-01A: modello dati, validazioni
 pure e builder docente draft-time (client). VEX-01B: attivazione `equivalent_variants`
 operativa (snapshot VEX + proiezione pubblica **solo domande comuni**), callable server-side
 `assignVerificationVariant` (assegnazione uniforme, RNG sicuro, transazione idempotente,
@@ -17,9 +18,11 @@ difficoltà, `vexAutogroup.ts`), abbinamento progressivo delle nuove selezioni, 
 («non è garanzia pedagogica») e selettore domande leggibile (listbox accessibile a due righe con
 `questionPreview`). **Puramente client, zero costo**: nessuna IA/lettura/scrittura/backend; le
 modifiche manuali del docente hanno **precedenza assoluta** (nessun ricalcolo globale). Precompilazione
-tecnica, non pedagogica. `same_questions` resta invariato e **non** invoca la callable. **VEX non è
-ancora deployabile:** resta **VEX-03 / Gate GVEX** (rollout coordinato, smoke, evidenze) —
-**PENDING**. VEX-00B ha congelato il contratto.
+tecnica, non pedagogica. `same_questions` resta invariato e **non** invoca la callable.
+Il rollout VEX-03A su `schoolforge-dev` è completato: baseline server/Rules SHA
+`1399faeb1539b1adf1fd9d0ead1bb485ca5d9d53`, Hosting finale VEX-02C SHA
+`adba8e3208c33ece05fbc928f598e0197c4ba94b`. Lo smoke manuale è stato confermato dal docente:
+**Gate GVEX PASS** il 21 luglio 2026. VEX-00B ha congelato il contratto.
 **Natura (VEX-00B):** documentazione + prototipo. **Nessun codice applicativo, Function, Rule,
 indice, schema reale, dipendenza o deploy** è introdotto dal pacchetto VEX-00B.
 **Base:** UX e decisioni di prodotto già approvate in
@@ -439,14 +442,17 @@ codice applicativo.
 - ✅ **zero costo/backend**: nessuna IA/lettura/scrittura/query/listener; `questionPreview` mai
   persistita in `equivalentGroups`; nessuna nuova struttura Firestore; `same_questions` invariato.
 
-### VEX-03 / Gate GVEX — **rollout coordinato + evidenze** (aperto, **PENDING**)
-- deploy coordinato callable+Rules+client, smoke multi-studente, verifica assenza fughe e costi reali.
-
-### VEX-03 — **hardening equità/costi/smoke**
-- gate multi-studente, nessuna fuga di alternative/soluzioni, verifica costi reali.
-
-### VEX-03 — **hardening equità/costi/smoke**
-- gate multi-studente, nessuna fuga di alternative/soluzioni, verifica costi reali.
+### VEX-03A / Gate GVEX — **PASS**
+- rollout coordinato completato il 21 luglio 2026 su `schoolforge-dev`, nell'ordine Functions →
+  Firestore Rules → Hosting; baseline server/Rules SHA
+  `1399faeb1539b1adf1fd9d0ead1bb485ca5d9d53`;
+- VEX-02C distribuito con un successivo deploy **solo Hosting**, SHA
+  `adba8e3208c33ece05fbc928f598e0197c4ba94b`;
+- preflight automatici verdi con Node `v22.23.1`: web finale 1631/1631; Functions 532/532 e
+  Rules Emulator 493/493 sul rollout coordinato;
+- smoke manuale docente/multi-studente, idempotenza, isolamento, correzione, restituzione ed
+  export confermati dal docente;
+- checklist finale: [`evidenze/gvex-human-gate.md`](evidenze/gvex-human-gate.md).
 
 ---
 

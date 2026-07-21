@@ -393,7 +393,11 @@ applicabili:
   docente owner e la scrittura resta soggetta alle Rules. Dopo l'eliminazione di una submission un nuovo svolgimento riceve una
   **nuova** assegnazione server-side.
 
-Resta a VEX-03 il Gate GVEX (rollout coordinato, smoke multi-studente, evidenze finali).
+Il rollout VEX-03A su `schoolforge-dev` è completato: baseline server/Rules SHA
+`1399faeb1539b1adf1fd9d0ead1bb485ca5d9d53`, Hosting finale VEX-02C SHA
+`adba8e3208c33ece05fbc928f598e0197c4ba94b`. Smoke multi-studente, isolamento delle
+alternative, correzione e restituzione sono stati confermati dal docente: **Gate GVEX PASS**.
+Evidenze in `evidenze/gvex-human-gate.md`.
 
 Requisiti di sicurezza congelati per `equivalent_variants` (dettaglio in
 [`vex-contract.md`](vex-contract.md) §4–5):
