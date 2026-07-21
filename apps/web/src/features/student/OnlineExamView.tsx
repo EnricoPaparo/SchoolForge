@@ -29,6 +29,14 @@ type OnlineExamViewProps = {
   ownerUid: string;
   studentUid: string;
   questions: PublicVerificationQuestion[];
+  /**
+   * VEX-02A: in `equivalent_variants` gli order della variante assegnata
+   * (server). Se presente, autosave e consegna scrivono SOLO risposte/flag i cui
+   * order vi appartengono (validazione client fail-closed, non barriera di
+   * sicurezza: le Rules impongono lo stesso vincolo). Assente ⇒ `same_questions`
+   * (comportamento invariato, nessun filtro).
+   */
+  assignedQuestionOrders?: number[];
   /** The draft submission as loaded/created before this view mounted. */
   submission: SubmissionDoc;
   onSubmitted: (receipt: SubmissionReceiptDoc) => void;
@@ -39,6 +47,25 @@ type OnlineExamViewProps = {
    */
   rng?: () => number;
 };
+
+/**
+ * VEX-02A — validazione client **fail-closed** prima di ogni scrittura: tiene
+ * solo le voci le cui chiavi (order.toString()) appartengono alla variante
+ * assegnata. Difesa applicativa, NON barriera di sicurezza (le Firestore Rules
+ * impongono lo stesso vincolo, vedi firestore.rules). `allowedKeys` assente
+ * (`same_questions`) ⇒ nessun filtro, comportamento invariato.
+ */
+function restrictToAssigned<T>(
+  map: Record<string, T>,
+  allowedKeys: ReadonlySet<string> | null,
+): Record<string, T> {
+  if (!allowedKeys) return map;
+  const out: Record<string, T> = {};
+  for (const [key, value] of Object.entries(map)) {
+    if (allowedKeys.has(key)) out[key] = value;
+  }
+  return out;
+}
 
 function saveErrorMessage(err: unknown): string {
   const code = (err as { code?: string } | null)?.code;
@@ -69,6 +96,7 @@ export function OnlineExamView({
   ownerUid,
   studentUid,
   questions,
+  assignedQuestionOrders,
   submission,
   onSubmitted,
   rng = Math.random,
@@ -88,6 +116,12 @@ export function OnlineExamView({
   // Refs mirror the state above so the 60s autosave interval (set up once)
   // and the deterrence event handlers (also set up once) always see the
   // latest values without needing to be re-created on every keystroke.
+  // VEX-02A: set delle chiavi ammesse (order della variante come stringa), o
+  // `null` in `same_questions` (nessun filtro). Stabile per (mount, variante).
+  const allowedKeysRef = useRef<ReadonlySet<string> | null>(
+    assignedQuestionOrders ? new Set(assignedQuestionOrders.map(String)) : null,
+  );
+
   const answersRef = useRef(answers);
   const flaggedRef = useRef(flagged);
   const dirtyRef = useRef(false);
@@ -147,8 +181,8 @@ export function OnlineExamView({
           {
             verificationId,
             studentUid,
-            answers: answersRef.current,
-            flagged: flaggedRef.current,
+            answers: restrictToAssigned(answersRef.current, allowedKeysRef.current),
+            flagged: restrictToAssigned(flaggedRef.current, allowedKeysRef.current),
             newAttentionEvents: eventsToSend,
           },
           db,
@@ -286,8 +320,8 @@ export function OnlineExamView({
           verificationId,
           studentUid,
           ownerUid,
-          answers: answersRef.current,
-          flagged: flaggedRef.current,
+          answers: restrictToAssigned(answersRef.current, allowedKeysRef.current),
+          flagged: restrictToAssigned(flaggedRef.current, allowedKeysRef.current),
           newAttentionEvents: eventsToSend,
           verificationTitle: title,
           className,

@@ -99,9 +99,18 @@ function persistAssignment(db: Firestore) {
       if (decision.kind === 'reuse') {
         return { assignedQuestionOrders: decision.assignedQuestionOrders, writes: 0 };
       }
+      // VEX-02A: `assignedAnswerKeys` è il mirror string di
+      // `assignedQuestionOrders` (order.toString()) — server-only, scritto nella
+      // STESSA singola scrittura. Serve solo alle Firestore Rules (che non sanno
+      // convertire numeri→stringa) per validare che le chiavi di answers/flagged
+      // siano un sottoinsieme della variante assegnata.
+      const assignedAnswerKeys = decision.assignedQuestionOrders.map((o) => o.toString());
       if (decision.kind === 'update') {
-        // Unica scrittura: aggiunge il campo server-only alla submission esistente.
-        tx.update(ref, { assignedQuestionOrders: decision.assignedQuestionOrders });
+        // Unica scrittura: aggiunge i campi server-only alla submission esistente.
+        tx.update(ref, {
+          assignedQuestionOrders: decision.assignedQuestionOrders,
+          assignedAnswerKeys,
+        });
         return { assignedQuestionOrders: decision.assignedQuestionOrders, writes: 1 };
       }
       // create: submission assente ⇒ una sola scrittura, forma di avvio + assegnazione.
@@ -118,6 +127,7 @@ function persistAssignment(db: Firestore) {
         verificationTitle: input.verificationTitle,
         className: input.className,
         assignedQuestionOrders: decision.assignedQuestionOrders,
+        assignedAnswerKeys,
         startedAt: Timestamp.now(),
         lastSavedAt: now,
         submittedAt: null,

@@ -728,11 +728,12 @@ service cloud.firestore {
         && request.resource.data.deliveryCode == null
         && request.resource.data.submittedAt == null
         && request.resource.data.lastSavedAt == request.time
-        // VEX-01B — `assignedQuestionOrders` è SERVER-ONLY: lo scrive solo la
-        // callable `assignVerificationVariant` (Admin SDK, bypassa le Rules). Lo
-        // studente non può crearlo. La hasOnly() sopra già lo esclude; questo
-        // rende il vincolo esplicito e testabile.
+        // VEX-01B/02A — `assignedQuestionOrders`/`assignedAnswerKeys` sono
+        // SERVER-ONLY: li scrive solo la callable `assignVerificationVariant`
+        // (Admin SDK, bypassa le Rules). Lo studente non può crearli. La
+        // hasOnly() sopra già li esclude; qui il vincolo è esplicito e testabile.
         && !('assignedQuestionOrders' in request.resource.data)
+        && !('assignedAnswerKeys' in request.resource.data)
         && verificationOnlineAndActive(request.resource.data.verificationId)
         && verificationClassMatches(request.resource.data.verificationId)
         && request.resource.data.ownerUid
@@ -768,11 +769,26 @@ service cloud.firestore {
              'status', 'answers', 'flagged', 'attentionEvents', 'lastSavedAt',
              'deliveryCode', 'submittedAt'
            ])
-        // VEX-01B — lo studente non può creare, modificare o rimuovere
-        // `assignedQuestionOrders` (server-only). La hasOnly() sopra lo esclude
-        // già dagli affectedKeys; questa clausola lo rende esplicito: un
-        // autosave normale non lo tocca e resta immutato attraverso l'update.
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedQuestionOrders'])
+        // VEX-01B/02A — `assignedQuestionOrders` e `assignedAnswerKeys` sono
+        // SERVER-ONLY: lo studente non può crearli, modificarli o rimuoverli. La
+        // hasOnly() sopra li esclude già dagli affectedKeys; questa clausola lo
+        // rende esplicito e testabile (un autosave/consegna non li tocca).
+        && !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['assignedQuestionOrders', 'assignedAnswerKeys'])
+        // VEX-02A — isolamento della variante: se la submission è VEX (ha
+        // `assignedAnswerKeys`, mirror string di assignedQuestionOrders scritto
+        // dalla callable), le chiavi/order di answers e flagged devono essere un
+        // SOTTOINSIEME della variante assegnata. Impossibile con soli
+        // assignedQuestionOrders (le Rules non convertono numeri→stringa né
+        // iterano), da qui il mirror string. `same_questions` (campo assente):
+        // comportamento invariato.
+        && (
+          !('assignedAnswerKeys' in resource.data)
+          || (
+            request.resource.data.answers.keys().hasOnly(resource.data.assignedAnswerKeys)
+            && request.resource.data.flagged.keys().hasOnly(resource.data.assignedAnswerKeys)
+          )
+        )
         && request.resource.data.submissionId == resource.data.submissionId
         && request.resource.data.verificationId == resource.data.verificationId
         && request.resource.data.studentUid == resource.data.studentUid

@@ -354,8 +354,26 @@ Contratto completo e mitigazioni in [m5-ai-assisted-roadmap.md](m5-ai-assisted-r
 - Lo studente legge **il proprio** `assignedQuestionOrders` (soli `order`, non contenuti): è la
   sua assegnazione, non espone le alternative altrui.
 
-Restano a VEX-02/03 la UI studente (svolgimento/ripresa/filtri), il PDF studente disabilitato,
-la correzione/IA/restituzione filtrate e il Gate GVEX.
+**Svolgimento studente (VEX-02A).**
+
+- Il portale instrada `equivalent_variants` **solo** sulla callable: `OnlineExamView` riceve
+  esclusivamente le domande assegnate (sanitizzate, senza soluzioni). La proiezione pubblica non
+  contiene le alternative; il browser non le legge mai. La risposta della callable è validata
+  fail-closed lato client (modalità/coerenza order/assenza soluzioni): payload malformato o
+  modalità sconosciuta **bloccano** l'avvio senza fallback.
+- **Risposte ristrette alla variante:** `answers`/`flagged` possono contenere **solo** order
+  assegnati. Enforcement doppio: filtro client fail-closed (difesa applicativa, non sufficiente)
+  **e** Firestore Rules. Le Rules non sanno convertire numeri→stringa né iterare, quindi la
+  callable scrive `assignedAnswerKeys` (mirror **string** server-only di `assignedQuestionOrders`,
+  stessa singola scrittura) e le Rules impongono
+  `answers.keys().hasOnly(assignedAnswerKeys) && flagged.keys().hasOnly(assignedAnswerKeys)`. Lo
+  studente non può creare/modificare/rimuovere `assignedQuestionOrders`/`assignedAnswerKeys`, né
+  trasformare una submission VEX in `same_questions`, né alterare i campi identitari; altri
+  studenti non leggono/scrivono la submission. `same_questions` resta interamente invariato.
+- **PDF studente disabilitato/nascosto** in `equivalent_variants`: nessun modo client-side di
+  ottenere il PDF completo (esporrebbe/ometterebbe le domande in modo incoerente con la variante).
+
+Restano a VEX-02B/03 la correzione/IA/restituzione/export filtrati e il Gate GVEX.
 
 Requisiti di sicurezza congelati per `equivalent_variants` (dettaglio in
 [`vex-contract.md`](vex-contract.md) §4–5):

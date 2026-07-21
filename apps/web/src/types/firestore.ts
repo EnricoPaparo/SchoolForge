@@ -658,6 +658,15 @@ export type PublishedProjectionDoc = {
    * yet, so there is nothing to mirror until activation writes it.
    */
   studentPdfEnabled?: boolean;
+  /**
+   * VEX (VEX-02A): modalità di distribuzione, rispecchiata all'attivazione così
+   * che il portale studente sappia instradare il flusso (callable VEX vs
+   * client-only) SENZA leggere il documento verifica owner-only. Assente su
+   * proiezioni legacy ⇒ `same_questions` (normalizzata fail-closed alla lettura).
+   * In `equivalent_variants` `questions` contiene **solo le domande comuni**: le
+   * domande effettivamente assegnate arrivano esclusivamente dalla callable.
+   */
+  distributionMode?: VerificationDistributionMode;
   questions: PublicVerificationQuestion[];
   activatedAt: Timestamp | FieldValue;
 };
@@ -755,6 +764,16 @@ export type SubmissionDoc = {
    * assegnata (o modalità `same_questions`, dove il campo non esiste).
    */
   assignedQuestionOrders?: number[];
+  /**
+   * VEX (VEX-02A): mirror **string** di `assignedQuestionOrders`
+   * (`order.toString()`), scritto insieme ad esso dalla callable. Server-only,
+   * come `assignedQuestionOrders`. Esiste per un solo motivo: le Firestore Rules
+   * non sanno convertire numeri→stringa né iterare, quindi non possono validare
+   * che le chiavi di `answers`/`flagged` (stringhe) siano un sottoinsieme di
+   * `assignedQuestionOrders` (numeri). Con questo mirror le Rules impongono
+   * `answers.keys().hasOnly(assignedAnswerKeys)`. Presente ⇔ `equivalent_variants`.
+   */
+  assignedAnswerKeys?: string[];
   /** Teacher-controlled public lifecycle mirror; absent on legacy submissions means `submitted`. */
   correctionStatus?: SubmissionCorrectionStatus;
   correctionStatusUpdatedAt?: Timestamp | FieldValue;

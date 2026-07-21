@@ -4,7 +4,7 @@ import { StudentVerificationsView } from '../StudentVerificationsView.js';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
-vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
+vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
 vi.mock('../../../lib/auth.js', () => ({
   useAuth: () => ({ user: { uid: 'student-uid', email: 's@test.com', displayName: null } }),
 }));

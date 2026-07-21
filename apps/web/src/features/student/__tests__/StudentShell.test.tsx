@@ -14,7 +14,13 @@ const mockWatchStudentAccessSettings = vi.fn();
 let mockUser: { uid: string; email: string; displayName: string | null; photoURL?: string | null } =
   { uid: 'student-uid', email: 'student@test.com', displayName: null };
 
-vi.mock('../../../lib/firebase.js', () => ({ app: {}, auth: {}, db: {}, storage: {} }));
+vi.mock('../../../lib/firebase.js', () => ({
+  app: {},
+  auth: {},
+  db: {},
+  storage: {},
+  functions: {},
+}));
 vi.mock('../../../lib/auth.js', () => ({
   useAuth: () => ({ user: mockUser, signOut: mockSignOut }),
 }));
