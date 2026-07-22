@@ -73,17 +73,30 @@ describe('generateMarkdown', () => {
 
   it('shows empty message when no completed lessons', () => {
     const md = generateMarkdown(PROGRAM, [UDA], [LESSON_NOT_COMPLETED]);
-    expect(md).toContain('Nessuna lezione');
+    expect(md).toContain('_Nessun argomento segnato come svolto._');
+    expect(md).not.toContain('Nessuna lezione');
   });
 
-  it('includes completedAt date when present', () => {
+  it('never emits a date, even when completedAt is set (PROG-EXPORT-01)', () => {
+    const udaWithMeta: UdaItem = {
+      ...UDA,
+      competenze: ['Competenza A'],
+      titolo: 'Reti di calcolatori',
+    };
     const lessonWithDate: LessonItem = {
       ...LESSON_COMPLETED,
+      titolo: 'Introduzione alle reti',
+      // 2025-06-15 — the formatted year/date must not leak into the output.
       completedAt: { seconds: 1750000000, nanoseconds: 0 } as never,
     };
-    const md = generateMarkdown(PROGRAM, [UDA], [lessonWithDate]);
-    // Should contain a date string
-    expect(md).toMatch(/\(\d{1,2}\/\d{1,2}\/\d{4}\)/);
+    const md = generateMarkdown(PROGRAM, [udaWithMeta], [lessonWithDate]);
+    // Only the real argument title appears — no parenthesised date.
+    expect(md).toContain('- Introduzione alle reti');
+    expect(md).not.toMatch(/\(\d{1,2}\/\d{1,2}\/\d{4}\)/);
+    expect(md).not.toContain('2025');
+    // Section renamed from "Lezioni svolte:" to "Argomenti:".
+    expect(md).toContain('Argomenti:');
+    expect(md).not.toContain('Lezioni svolte:');
   });
 
   it('handles lessons without explicit completed flag (falsy)', () => {
