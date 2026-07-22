@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import type { Firestore } from 'firebase/firestore';
 import { listLessons, listUdas, type ProgramItem } from '../repository/programs/programsService.js';
 import { readTexts } from '../repository/gateway/repositoryGatewayClient.js';
+import { filterCommittedLessons } from '../repository/programs/committedUdas.js';
 
 /**
  * Builds the exportable archive for a program's active import, reading live
@@ -31,10 +32,12 @@ export async function buildExportZip(
 
   const zip = new JSZip();
 
-  const [udas, lessons] = await Promise.all([
+  const [udas, allLessons] = await Promise.all([
     listUdas(program.id, program.activeImportId, db),
     listLessons(program.id, program.activeImportId, db),
   ]);
+  // Never export a lesson staged for a not-yet-committed UDA (no UdaDoc).
+  const lessons = filterCommittedLessons(udas, allLessons);
 
   const entries: Array<{ storagePath: string; zipPath: string }> = [
     ...udas

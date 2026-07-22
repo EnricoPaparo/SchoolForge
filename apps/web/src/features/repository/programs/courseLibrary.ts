@@ -7,6 +7,7 @@ import {
   listUdas,
   type ProgramItem,
 } from './programsService.js';
+import { filterCommittedLessons } from './committedUdas.js';
 
 /**
  * One card in the Didattica library (DUX-01). Deliberately flat and
@@ -95,11 +96,15 @@ async function buildCard(
   }
 
   const importId = program.activeImportId;
-  const [udas, lessons, programmaMeta] = await Promise.all([
+  const [udas, allLessons, programmaMeta] = await Promise.all([
     listUdas(program.id, importId, db),
     listLessons(program.id, importId, db),
     getImportMeta(program.id, importId, db),
   ]);
+  // Ignore lessons staged for a not-yet-committed UDA (no UdaDoc) — reader
+  // coherence for the "Importa UDA" staged append. No extra read: both lists
+  // are already loaded above.
+  const lessons = filterCommittedLessons(udas, allLessons);
 
   return {
     programId: program.id,
