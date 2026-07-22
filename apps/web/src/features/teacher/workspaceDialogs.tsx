@@ -13,6 +13,7 @@ import { listClasses, type ClassItem } from '../repository/classes/classesServic
 import { updateProgramMetadata } from '../repository/editor/repositoryEditorService.js';
 import { EMPTY_PROGRAM_METADATA } from '../repository/validation/programMetadata.js';
 import type { ProgrammaMeta } from '../../types/firestore.js';
+import type { RawFile } from '../repository/validation/types.js';
 import styles from './DidatticaView.module.css';
 
 /**
@@ -388,6 +389,129 @@ export function ImportIntoCourseDialog({
           </button>
           <button type="submit" className="btn-primary" disabled={busy || !file}>
             {busy ? 'Importazione…' : 'Importa'}
+          </button>
+        </div>
+      </form>
+    </DialogShell>
+  );
+}
+
+/**
+ * TWU-04B — adds ONE UDA (lessons + pools) to the current course. The archive
+ * is validated entirely in the browser (readUdaZip + validateUdaArchive) before
+ * any network write, showing a readable summary or a specific error. Confirming
+ * hands the already-read files up so the service runs the staged append. The
+ * confirm button is disabled until a valid archive is selected and while busy,
+ * so a double click can never start two imports.
+ */
+export function ImportUdaDialog({
+  courseTitle,
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  courseTitle: string;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: (files: RawFile[]) => void;
+}) {
+  const [validating, setValidating] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<{
+    files: RawFile[];
+    udaTitle: string | null;
+    lessonCount: number;
+    poolCount: number;
+    questionCount: number;
+    sizeKb: number;
+  } | null>(null);
+  const runIdRef = useRef(0);
+
+  async function handleFile(file: File | null) {
+    const runId = ++runIdRef.current;
+    setSummary(null);
+    setLocalError(null);
+    if (!file) return;
+    setValidating(true);
+    try {
+      const { readUdaZip } = await import('../repository/importUda/readUdaZip.js');
+      const { validateUdaArchive } = await import('../repository/importUda/validateUdaArchive.js');
+      const read = await readUdaZip(file);
+      if (runId !== runIdRef.current) return;
+      if (!read.ok) {
+        setLocalError(read.error.message);
+        return;
+      }
+      const validation = validateUdaArchive(read.files);
+      if (runId !== runIdRef.current) return;
+      if (!validation.ok) {
+        setLocalError(validation.error.message);
+        return;
+      }
+      setSummary({
+        files: read.files,
+        udaTitle: validation.archive.udaTitle,
+        lessonCount: validation.archive.lessonCount,
+        poolCount: validation.archive.poolCount,
+        questionCount: validation.archive.questionCount,
+        sizeKb: Math.round(read.totalDecompressedBytes / 1024),
+      });
+    } catch {
+      if (runId === runIdRef.current) setLocalError('Impossibile leggere il file ZIP.');
+    } finally {
+      if (runId === runIdRef.current) setValidating(false);
+    }
+  }
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (busy || validating || !summary) return;
+    onConfirm(summary.files);
+  }
+
+  return (
+    <DialogShell title="Importa UDA" onCancel={onCancel} busy={busy}>
+      <form onSubmit={submit} className={styles.dialogForm}>
+        <p className={styles.dialogHint}>
+          Aggiungi al corso «{courseTitle}» una sola UDA da un file ZIP. I contenuti esistenti non
+          verranno modificati.
+        </p>
+        <label className={styles.dialogLabel}>
+          File ZIP UDA
+          <input
+            type="file"
+            accept=".zip"
+            autoFocus
+            aria-label="File ZIP della UDA"
+            disabled={busy}
+            onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
+          />
+        </label>
+
+        <p role="status" aria-live="polite" className={styles.dialogHint}>
+          {validating
+            ? 'Analisi del file in corso…'
+            : busy
+              ? 'Importazione UDA in corso… Non chiudere questa finestra.'
+              : summary
+                ? `UDA: ${summary.udaTitle ?? '—'} · ${summary.lessonCount} lezioni · ${summary.poolCount} pool · ${summary.questionCount} domande · ${summary.sizeKb} KB`
+                : ''}
+        </p>
+
+        {(localError || error) && (
+          <p role="alert" className="text-error">
+            {localError ?? error}
+          </p>
+        )}
+
+        <div className={styles.dialogActions}>
+          <button type="button" onClick={onCancel} disabled={busy}>
+            Annulla
+          </button>
+          <button type="submit" className="btn-primary" disabled={busy || validating || !summary}>
+            {busy ? 'Importazione…' : 'Importa UDA'}
           </button>
         </div>
       </form>

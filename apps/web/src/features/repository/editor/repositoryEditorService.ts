@@ -39,6 +39,7 @@ import {
   type RepositoryDeleteBlocker,
   type VerificationForRepositoryGuard,
 } from './repositoryEditorGuards.js';
+import { assertNoActiveUdaAppendLease } from '../importUda/udaImportLease.js';
 
 // SGW-01: gli accessi Storage singolo-file passano dal gateway same-origin, non
 // più da `firebase/storage` diretto (che su Brave fallisce con timeout ~120 s).
@@ -622,6 +623,9 @@ export async function createUda(params: {
   const titolo = fields.titolo.trim();
   if (!titolo) throw new Error('Il titolo della UDA è obbligatorio.');
 
+  // Mutual exclusion with an in-flight "Importa UDA" staged append.
+  await assertNoActiveUdaAppendLease(programId, importId, db);
+
   const udasRef = collection(db, 'programs', programId, 'imports', importId, 'udas');
   const existingSnap = await getDocs(udasRef);
   const existingUdas = existingSnap.docs.map((d) => d.data() as Partial<UdaDoc>);
@@ -704,6 +708,8 @@ export async function reorderUda(params: {
   const [udaSnap, neighborSnap] = await Promise.all([getDoc(udaRef), getDoc(neighborRef)]);
   if (!udaSnap.exists()) throw new Error('UDA non trovata.');
   if (!neighborSnap.exists()) throw new Error('UDA vicina non trovata.');
+  // Mutual exclusion with an in-flight "Importa UDA" staged append.
+  await assertNoActiveUdaAppendLease(programId, importId, db);
   const uda = udaSnap.data() as UdaDoc;
   const neighbor = neighborSnap.data() as UdaDoc;
 
@@ -1008,6 +1014,8 @@ export async function deleteUda(params: {
 
   const blockers = await getUdaDeleteBlockers(ownerUid, programId, importId, uda.dir, db);
   if (blockers.length > 0) throw new RepositoryDeleteBlockedError(blockers);
+  // Mutual exclusion with an in-flight "Importa UDA" staged append.
+  await assertNoActiveUdaAppendLease(programId, importId, db);
 
   const lessonsRef = collection(db, 'programs', programId, 'imports', importId, 'lessons');
   const [lessonsSnap, questionIndexSnap] = await Promise.all([

@@ -228,7 +228,9 @@ describe('buildExportZip — order preservation (RE-06)', () => {
   });
 
   it('adds lesson files to the archive in listLessons order, grouped per UDA', async () => {
-    mockListUdas.mockResolvedValue([]);
+    // The lessons' UDA must be committed (present in listUdas) for reader
+    // coherence to keep them — a real course always has its UdaDoc.
+    mockListUdas.mockResolvedValue([UDA_A]);
     const LESSON_A2 = {
       ...LESSON,
       id: 'l-a2',
@@ -248,7 +250,110 @@ describe('buildExportZip — order preservation (RE-06)', () => {
 
     const zip = await buildExportZip(PROGRAM, mockStorage, mockDb);
 
-    expect(fileKeys(zip)).toEqual(['uda-01-a/lezione-001-http.md', 'uda-01-a/lezione-002-tcp.md']);
+    expect(fileKeys(zip)).toEqual([
+      'uda-01-a/uda-01-a.md',
+      'uda-01-a/lezione-001-http.md',
+      'uda-01-a/lezione-002-tcp.md',
+    ]);
+  });
+});
+
+describe('exportZip — pool round-trip (TWU-04B)', () => {
+  const POOL_CONTENT = `---
+schema: schoolforge-pool/v2
+questions:
+  - id: q-001
+    tipo: aperta
+    difficolta: 2
+    testo: Spiega HTTP.
+    soluzione: HTTP è un protocollo applicativo.
+---`;
+
+  const LESSON_WITH_POOL = {
+    ...LESSON,
+    id: 'l-with-pool',
+    udaDir: 'uda-01-reti',
+    path: 'uda-01-reti/lezione-001-http.md',
+    filename: 'lezione-001-http.md',
+    storageRef: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-001-http.md',
+    poolStatus: 'valid' as const,
+    poolStorageRef: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-001-http.pool.md',
+  };
+
+  it('exports the companion .pool.md for a lesson with a valid pool', async () => {
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_WITH_POOL]);
+
+    const zip = await buildExportZip(PROGRAM, mockStorage, mockDb);
+
+    const fetched = mockReadTexts.mock.calls[0]?.[0] as string[];
+    expect(fetched).toContain(LESSON_WITH_POOL.poolStorageRef);
+    expect(fileKeys(zip)).toEqual([
+      'uda-01-reti/uda-01-reti.md',
+      'uda-01-reti/lezione-001-http.md',
+      'uda-01-reti/lezione-001-http.pool.md',
+    ]);
+  });
+
+  it('never exports a pool for an absent/invalid pool (no regression for pool-less courses)', async () => {
+    const NO_POOL = { ...LESSON_WITH_POOL, poolStatus: 'absent' as const, poolStorageRef: null };
+    const INVALID_POOL = {
+      ...LESSON_WITH_POOL,
+      id: 'l-invalid',
+      filename: 'lezione-002-tcp.md',
+      storageRef: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-002-tcp.md',
+      poolStatus: 'invalid' as const,
+      poolStorageRef: 'repository/owner-uid/imports/imp-1/uda-01-reti/lezione-002-tcp.pool.md',
+    };
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([NO_POOL, INVALID_POOL]);
+
+    const zip = await buildExportZip(PROGRAM, mockStorage, mockDb);
+
+    expect(fileKeys(zip).some((p) => p.endsWith('.pool.md'))).toBe(false);
+  });
+
+  it('round-trips export → reimport preserving the pool questions', async () => {
+    mockListUdas.mockResolvedValue([UDA]);
+    mockListLessons.mockResolvedValue([LESSON_WITH_POOL]);
+    mockReadTexts.mockImplementation(async (paths: string[]) =>
+      paths.map((path) => ({
+        ok: true,
+        path,
+        content: path.endsWith('uda-01-reti.md')
+          ? '---\ntitolo: "Reti"\ncompetenze:\n  - "Comp"\nobiettivi:\n  - "Obj"\n---\n'
+          : path.endsWith('.pool.md')
+            ? POOL_CONTENT
+            : '---\ntitolo: "HTTP"\n---\n\nCorpo.',
+      })),
+    );
+
+    const zip = await buildExportZip(PROGRAM, mockStorage, mockDb);
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const file = new File([blob], 'export.zip', { type: 'application/zip' });
+
+    const rawFiles = await readZipFile(file);
+    // The pool companion survived the archive.
+    expect(rawFiles.some((f) => f.path.endsWith('lezione-001-http.pool.md'))).toBe(true);
+
+    const validation = validateImport('Informatica', rawFiles);
+    expect(validation.valid).toBe(true);
+
+    const payload = buildImportPayload({
+      validation,
+      programmaTitle: 'Informatica',
+      ownerUid: 'owner-uid',
+      programId: 'prog-1',
+      importId: 'imp-2',
+      files: rawFiles,
+    });
+
+    // The reimported lesson carries its pool and its question index entry.
+    const lesson = payload.lessons.find((l) => l.data.filename === 'lezione-001-http.md');
+    expect(lesson?.data.poolStatus).toBe('valid');
+    expect(lesson?.data.questionCount).toBe(1);
+    expect(payload.questionIndex).toHaveLength(1);
+    expect(payload.questionIndex[0]?.data.questionLocalId).toBe('q-001');
   });
 });
 

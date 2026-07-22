@@ -81,32 +81,47 @@ const POOL_LESSON = {
   poolStorageRef: null,
 };
 
-// ─── 1. Pool files excluded from ZIP ─────────────────────────────────────────
+// ─── 1. Pools in the owner-only export ZIP (TWU-04B round-trip) ───────────────
 
-describe('Security: pool files excluded from ZIP', () => {
-  it('does not request or add .pool.md lesson files', async () => {
+describe('Security: pools belong in the owner-only export, never in the student projection', () => {
+  it('includes a valid lesson pool companion in the export (TWU-04B round-trip)', async () => {
     const { exportZip } = await import('../../teacher/exportZip.js');
 
-    mockListUdas.mockResolvedValue([]);
+    // NORMAL_LESSON has poolStatus 'valid' + a poolStorageRef. Its own
+    // filename is a lesson (never a .pool.md pseudo-lesson like POOL_LESSON).
+    // The lesson's UDA must be committed (present in listUdas) for reader
+    // coherence to keep it.
+    mockListUdas.mockResolvedValue([
+      {
+        dir: 'uda-01',
+        filename: 'uda-01.md',
+        storageBasePath: 'repository/owner-uid/imports/imp-1/uda-01',
+      },
+    ]);
     mockListLessons.mockResolvedValue([NORMAL_LESSON, POOL_LESSON]);
 
     mockReadTexts.mockImplementation(async (paths: string[]) =>
       paths.map((path) => ({ ok: true, path, content: 'lesson content' })),
     );
 
-    // Create a fake anchor element for the download trigger
     const mockAnchor = { href: '', download: '', click: vi.fn() };
     vi.spyOn(document, 'createElement').mockReturnValue(mockAnchor as unknown as HTMLElement);
 
     await exportZip(PROGRAM as never, {} as never, {} as never);
 
-    expect(mockReadTexts).toHaveBeenCalledWith([NORMAL_LESSON.storageRef]);
-
-    // zip.file() should have been called only for the normal lesson, not for pool lesson.
+    // The export is owner-only: it fetches AND adds the companion pool so the
+    // archive is a full round-trip. Student exposure of pools is prevented by
+    // the publicLessons projection (covered by the projection tests), not by
+    // stripping pools from the teacher's own export.
     const zipFileCalls = mockZipFile.mock.calls as [string, string][];
     const addedPaths = zipFileCalls.map(([path]) => path);
-    expect(addedPaths.some((p) => p.endsWith('.pool.md'))).toBe(false);
+    expect(addedPaths.some((p) => p.endsWith('lezione-001.pool.md'))).toBe(true);
     expect(addedPaths.some((p) => p.includes('lezione-001.md'))).toBe(true);
+    // Both the lesson and its companion pool are fetched (the .pool.md
+    // pseudo-lesson row is never double-added as a lesson entry).
+    const fetched = mockReadTexts.mock.calls[0]?.[0] as string[];
+    expect(fetched).toContain(NORMAL_LESSON.storageRef);
+    expect(fetched).toContain(NORMAL_LESSON.poolStorageRef);
 
     vi.restoreAllMocks();
   });

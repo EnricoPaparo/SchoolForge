@@ -53,6 +53,10 @@ import {
 import type { RepositoryDeleteBlocker } from '../repository/editor/repositoryEditorGuards.js';
 import { importRepository } from '../repository/import/importRepository.js';
 import { readZipFile } from '../repository/import/readZipFile.js';
+import { importUda } from '../repository/importUda/importUdaRepository.js';
+import { createFirestoreUdaImportDeps } from '../repository/importUda/udaImportDeps.js';
+import { filterCommittedLessons } from '../repository/programs/committedUdas.js';
+import type { RawFile } from '../repository/validation/types.js';
 import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
 import { resolvePublicLessonId } from '../repository/programs/publicLessonId.js';
 import {
@@ -77,6 +81,7 @@ import {
   ClassesDialog,
   ConfirmDialog,
   ImportIntoCourseDialog,
+  ImportUdaDialog,
   NewLessonDialog,
   NewUdaDialog,
   ProgramInfoDialog,
@@ -248,6 +253,7 @@ type WsDialog =
   | { kind: 'none' }
   | { kind: 'renameCourse' }
   | { kind: 'importCourse' }
+  | { kind: 'importUda' }
   | { kind: 'classes' }
   | { kind: 'info' }
   | { kind: 'deleteCourse' }
@@ -285,6 +291,11 @@ export function CourseWorkspace({
   // state (async), so a second confirm click before the re-render could
   // otherwise invoke deleteProgram twice. This ref flips immediately.
   const deletingCourseRef = useRef(false);
+  // Idempotency: one requestId per "Importa UDA" operation, kept stable across
+  // retries of the same attempt (reset when the dialog opens/closes). Also acts
+  // as a synchronous double-click guard for the import confirm.
+  const udaImportRequestIdRef = useRef<string | null>(null);
+  const udaImportInFlightRef = useRef(false);
   // Non-blocking notice after a successful re-import whose deferred
   // publicLessons cleanup was postponed (cleanupPending) — HARD-02B-2.
   const [wsNotice, setWsNotice] = useState<string | null>(null);
@@ -378,10 +389,12 @@ export function CourseWorkspace({
         return;
       }
       try {
-        const [udas, lessons] = await Promise.all([
+        const [udas, allLessons] = await Promise.all([
           listUdas(card.programId, card.activeImportId, db),
           listLessons(card.programId, card.activeImportId, db),
         ]);
+        // Reader coherence: hide lessons staged for a not-yet-committed UDA.
+        const lessons = filterCommittedLessons(udas, allLessons);
         if (!cancelled) {
           setTree({ udas, lessons });
           // A large course must open as an overview, never as an already
@@ -610,6 +623,9 @@ export function CourseWorkspace({
       setUdaBlockers(null);
       setLessonBlockers(null);
       setMenuOpen(false);
+      // Fresh "Importa UDA" operation → fresh idempotency token. Retries of the
+      // SAME attempt (dialog kept open on error) keep the token.
+      if (kind.kind === 'importUda') udaImportRequestIdRef.current = null;
       setWsDialog(kind);
     });
   }
@@ -720,6 +736,68 @@ export function CourseWorkspace({
         // not throw). A committed import never reaches here as an error.
         if (mountedRef.current)
           setWsError(err instanceof Error ? err.message : "Errore durante l'importazione.");
+      }
+    });
+  }
+
+  function handleImportUda(files: RawFile[]) {
+    if (!card.activeImportId) return;
+    // Synchronous double-click guard (wsBusy is async React state).
+    if (udaImportInFlightRef.current) return;
+    udaImportInFlightRef.current = true;
+    if (!udaImportRequestIdRef.current) udaImportRequestIdRef.current = crypto.randomUUID();
+    const requestId = udaImportRequestIdRef.current;
+    setWsNotice(null);
+    void withBusy(async () => {
+      try {
+        const result = await importUda(
+          { programId: card.programId, ownerUid, requestId, files },
+          createFirestoreUdaImportDeps(db),
+        );
+        if (!mountedRef.current) return;
+        if (result.status === 'validation_failed') {
+          setWsError(result.error.message);
+          return;
+        }
+        if (result.status === 'not_applied' || result.status === 'cleanup_pending') {
+          setWsError(result.message);
+          return;
+        }
+        // result.status === 'committed': the UDA is live. From here nothing may
+        // downgrade this to a blocking error. Refresh the tree best-effort.
+        const importId = card.activeImportId!;
+        let refreshDeferred = false;
+        try {
+          const [udas, allLessons] = await Promise.all([
+            listUdas(card.programId, importId, db),
+            listLessons(card.programId, importId, db),
+          ]);
+          if (!mountedRef.current) return;
+          const lessons = filterCommittedLessons(udas, allLessons);
+          const next = { udas, lessons };
+          setTree(next);
+          setCollapsedUdas((prev) => new Set(prev).add(result.udaId));
+          patchCardCounts(next);
+        } catch {
+          refreshDeferred = true;
+        }
+        // Reset idempotency token — this operation is done.
+        udaImportRequestIdRef.current = null;
+        setSelection({ kind: 'course' });
+        closeDialog();
+        if (!mountedRef.current) return;
+        setWsNotice(
+          refreshDeferred
+            ? 'UDA importata. La vista non si è aggiornata completamente; verrà riallineata al prossimo caricamento.'
+            : 'UDA importata. Sidebar, panoramica e conteggi sono stati aggiornati.',
+        );
+      } catch (err) {
+        if (mountedRef.current)
+          setWsError(
+            err instanceof Error ? err.message : "Errore durante l'importazione della UDA.",
+          );
+      } finally {
+        udaImportInFlightRef.current = false;
       }
     });
   }
@@ -1546,6 +1624,15 @@ export function CourseWorkspace({
                     type="button"
                     role="menuitem"
                     disabled={!card.hasImport}
+                    onClick={() => openDialog({ kind: 'importUda' })}
+                  >
+                    <IconUpload size={15} />
+                    Importa UDA
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!card.hasImport}
                     onClick={() => void handleExportZip()}
                   >
                     <IconDownload size={15} />
@@ -1930,6 +2017,15 @@ export function CourseWorkspace({
           error={wsError}
           onCancel={closeDialog}
           onConfirm={handleImportCourse}
+        />
+      )}
+      {wsDialog.kind === 'importUda' && (
+        <ImportUdaDialog
+          courseTitle={card.title}
+          busy={wsBusy}
+          error={wsError}
+          onCancel={closeDialog}
+          onConfirm={handleImportUda}
         />
       )}
       {wsDialog.kind === 'classes' && (

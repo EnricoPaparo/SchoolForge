@@ -152,6 +152,12 @@ Un eventuale M3-full (specifica rinviata) selezionerebbe dal `publishedSnapshot`
 
 **Motivazione.** Cloud Storage e Firestore non condividono una transazione. Separando upload e commit di visibilità, un errore lascia in uso il contenuto precedente senza introdurre Functions o costi ricorrenti.
 
+### ADR-11b — Append staged di una singola UDA (TWU-04B)
+
+**Decisione.** «Importa UDA» aggiunge **una sola UDA** all'`activeImportId` esistente senza cambiarlo. Il `UdaDoc` è il **commit marker**: lezioni e `questionIndex` sono scritti in staging chunked prima del commit ma restano logicamente invisibili finché la UDA non ha il suo `UdaDoc`; il commit finale crea in **una transazione** `UdaDoc` + tutte le `publicLessons` e aggiorna i metadata. Una **lease singola** sull'import (`udaAppendLease`) esclude append concorrenti e blocca create/reorder/delete UDA finché è valida; i reader ordinari intersecano lezioni e UDA già caricate (`committedUdas.ts`) senza query aggiuntive. Upload esclusivamente via SGW same-origin (concorrenza 3); cleanup pre-commit idempotente limitato al manifest del tentativo, mai ai dati preesistenti.
+
+**Motivazione.** L'append diretto riusa path, editor, cancellazione ed export import-scoped senza riscrivere il corso, mantenendo l'invisibilità atomica per lo studente (nessuna proiezione parziale) e senza nuove Function, Rule o indici. Storage e Firestore restano non-transazionali insieme: la sicurezza deriva dall'assenza del commit marker e dalla cleanup manifest-based, non da un rollback distribuito.
+
 ### ADR-12 — Proiezioni read-only dedicate per lo studente (M3-lite)
 
 **Decisione.** Lo studente non riceve mai accesso in lettura ai documenti tecnici del docente: `lessons` (con `poolPath`/`poolStatus`/`poolErrors`), `questionIndex`, `verifications/*/publishedSnapshot`. Per ogni dato che deve essere leggibile dallo studente, il sistema mantiene una proiezione pubblica dedicata, scritta dal client docente nello stesso flusso che scrive il documento tecnico:
