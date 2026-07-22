@@ -164,9 +164,25 @@ describe('correctionArchiveModel', () => {
       'Opzione alfa',
       '• Opzione x\n• Opzione y',
     ]);
+    expect(model.questions[0]).not.toHaveProperty('options');
+    expect(model.questions[0]).not.toHaveProperty('correctAnswerText');
+    expect(model.questions[1]).toMatchObject({
+      options: [
+        { text: 'Opzione alfa', selected: true },
+        { text: 'Opzione beta', selected: false },
+      ],
+      correctAnswerText: 'Opzione alfa',
+    });
+    expect(model.questions[2]).toMatchObject({
+      options: [
+        { text: 'Opzione x', selected: true },
+        { text: 'Opzione y', selected: true },
+      ],
+      correctAnswerText: 'Opzione x\nOpzione y',
+    });
     expect(model.correctionStatus).toBe('completed');
     expect(JSON.stringify(model)).not.toMatch(
-      /Soluzione segreta|PRIVATE-CODE|owner-private|student-private|verification-private|correctAnswer|soluzione/,
+      /Soluzione segreta 0|PRIVATE-CODE|owner-private|student-private|verification-private|"id":/,
     );
   });
 
@@ -202,6 +218,13 @@ describe('correctionArchiveModel', () => {
     });
     expect(model.questions.map((entry) => entry.order)).toEqual([0, 2]);
     expect(JSON.stringify(model)).not.toContain('Opzione alfa');
+    expect(model.questions[1]).toMatchObject({
+      options: [
+        { text: 'Opzione x', selected: true },
+        { text: 'Opzione y', selected: false },
+      ],
+      correctAnswerText: 'Opzione x\nOpzione y',
+    });
 
     expect(() =>
       build({

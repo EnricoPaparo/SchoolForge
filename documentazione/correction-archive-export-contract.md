@@ -48,7 +48,10 @@ Ogni PDF contiene esclusivamente i dati della singola consegna:
 7. per ogni domanda assegnata allo studente, nell'ordine canonico della sua
    consegna:
    - testo della domanda;
-   - risposta consegnata;
+   - per le domande chiuse, tutte le opzioni con marcatura `[X]`/`[ ]` della
+     selezione dello studente e la soluzione corretta congelata;
+   - per le domande aperte, risposta consegnata senza esportare la soluzione
+     campione del pool;
    - punti attribuiti e massimo della domanda;
    - correzione/feedback docente della domanda;
 8. feedback generale della consegna, se presente.
@@ -61,7 +64,7 @@ restituzione e registro. Non devono comparire alternative non assegnate.
 
 Il documento di archivio non contiene:
 
-- soluzioni canoniche del docente;
+- soluzioni campione delle domande aperte;
 - alternative VEX non assegnate;
 - UID Firebase, `submissionId`, codici tecnici o path Firestore/Storage;
 - log tecnici, eventi anti-cheating o diagnostica;
@@ -151,12 +154,13 @@ Registro Correzioni. Il PDF della singola lezione non è stato modificato.
 1. Una consegna selezionata produce un solo PDF relativo a quello studente.
 2. Più consegne producono uno ZIP contenente esattamente un PDF per studente e
    mai un PDF cumulativo.
-3. Ogni PDF contiene intestazione, domanda, risposta, punteggio e correzione per
-   domanda, più feedback generale quando presente.
+3. Ogni PDF usa il titolo reale della verifica come intestazione e contiene
+   domanda, risposta, punteggio e correzione per domanda, più feedback generale
+   quando presente; le chiuse includono tutte le opzioni e la soluzione corretta.
 4. `submitted`/`in_progress` sono escluse senza generare documenti incompleti.
 5. VEX include soltanto la variante assegnata.
-6. Nessuna soluzione, alternativa non assegnata, PII tecnica o marchio
-   SchoolForge compare nel file.
+6. Nessuna soluzione campione aperta, alternativa VEX non assegnata, PII
+   tecnica o marchio SchoolForge compare nel file.
 7. Nessuna scrittura Firebase o upload Storage viene effettuato.
 8. Il fallimento di un vecchio chunk PDF mostra la recovery esplicita e non una
    rejection non gestita.
@@ -180,8 +184,10 @@ L'export usa la verifica già caricata e, soltanto al click, legge per ogni
 consegna esportabile `submissions/{submissionId}` e
 `corrections/{submissionId}` con concorrenza massima 3. Non legge
 `correctionReturns`, pool live, Storage o `publishedProjection` e non esegue
-scritture. Il modello passato al renderer è chiuso e non contiene soluzioni,
-UID, identificatori tecnici, codici di consegna o documenti Firestore grezzi.
+scritture. Il modello passato al renderer è chiuso: contiene soltanto le
+soluzioni delle domande chiuse già assegnate, espresse come testo leggibile, e
+non contiene UID, identificatori tecnici, codici di consegna o documenti
+Firestore grezzi. Le soluzioni campione delle aperte restano escluse.
 
 Per `same_questions` usa tutte le domande congelate; per
 `equivalent_variants` passa obbligatoriamente da `resolveAssignedQuestions` e

@@ -116,10 +116,6 @@ export function renderCorrectionArchivePdf(
   doc.setTextColor(0);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(17);
-  doc.text('Correzione della verifica', MARGIN, y);
-  y += 23;
-
-  doc.setFontSize(13);
   y = writePaginatedLines(doc, doc.splitTextToSize(model.verificationTitle, CONTENT_WIDTH), y) + 8;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
@@ -149,7 +145,15 @@ export function renderCorrectionArchivePdf(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     y = writePaginatedLines(doc, questionLines, y) + 8;
-    y = writeLabelledBlock(doc, 'Risposta dello studente', question.answerText, y);
+    if (question.options && question.correctAnswerText) {
+      const optionLines = question.options
+        .map((option) => `[${option.selected ? 'X' : ' '}] ${option.text}`)
+        .join('\n');
+      y = writeLabelledBlock(doc, 'Opzioni', optionLines, y);
+      y = writeLabelledBlock(doc, 'Soluzione corretta', question.correctAnswerText, y);
+    } else {
+      y = writeLabelledBlock(doc, 'Risposta dello studente', question.answerText, y);
+    }
     y = ensureSpace(doc, y, LINE_HEIGHT * 2);
     doc.setFont('helvetica', 'bold');
     doc.text(
