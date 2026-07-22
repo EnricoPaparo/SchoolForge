@@ -953,7 +953,7 @@ export async function setReturnVisibleToStudent(
   submissionId: string,
   visible: boolean,
   db: Firestore,
-): Promise<void> {
+): Promise<'changed' | 'noop'> {
   await assertCorrectionCurrentlyReturned(submissionId, db, 'aggiornare la visibilità');
 
   const ref = doc(db, 'correctionReturns', submissionId);
@@ -962,8 +962,9 @@ export async function setReturnVisibleToStudent(
     throw new Error('Impossibile aggiornare la visibilità: nessuna correzione restituita trovata.');
   }
   const current = snap.data() as CorrectionReturnDoc;
-  if (current.visibleToStudent === visible) return;
+  if (current.visibleToStudent === visible) return 'noop';
   await updateDoc(ref, { visibleToStudent: visible, updatedAt: serverTimestamp() });
+  return 'changed';
 }
 
 /**
@@ -988,7 +989,7 @@ export async function setSolutionsVisible(
   visible: boolean,
   db: Firestore,
   context?: CorrectionVariantContext,
-): Promise<void> {
+): Promise<'changed' | 'noop'> {
   const correction = await assertCorrectionCurrentlyReturned(
     submissionId,
     db,
@@ -1001,7 +1002,7 @@ export async function setSolutionsVisible(
     throw new Error('Impossibile aggiornare le soluzioni: nessuna correzione restituita trovata.');
   }
   const current = snap.data() as CorrectionReturnDoc;
-  if (current.solutionsVisible === visible) return;
+  if (current.solutionsVisible === visible) return 'noop';
 
   if (visible) {
     const resolvedContext = await loadCorrectionVariantContext(
@@ -1043,7 +1044,7 @@ export async function setSolutionsVisible(
       solutionsVisible: true,
       updatedAt: serverTimestamp(),
     });
-    return;
+    return 'changed';
   }
 
   const nextQuestions: CorrectionReturnQuestionView[] = current.questions.map((question) => {
@@ -1057,4 +1058,5 @@ export async function setSolutionsVisible(
     solutionsVisible: false,
     updatedAt: serverTimestamp(),
   });
+  return 'changed';
 }

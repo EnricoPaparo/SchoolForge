@@ -10,7 +10,7 @@ nuovo indice, nessun listener/polling aggiuntivo. `Gate GTWU` resta **APERTO**.
 |---|---|---|
 | **TWU-01** | Fix immediati e polish: ellissi preview picker, icone SVG coerenti nei messaggi VEX, pulsante «Aggiorna» consegne, contratto primo/ultimo accesso studente. | **Implementato** |
 | **TWU-02** | Preferenze predefinite della correzione IA (owner-only) + scelta profilo modello chiuso (`economy`/`quality`), risolto server-side; form condiviso tra i due dialog; gerarchia prompt esplicita. | **Implementato** |
-| TWU-03 | — (non ancora avviato) | Pendente |
+| **TWU-03** | Visibilità batch delle correzioni restituite dalla toolbar «Consegne online». | **Implementato** |
 | **TWU-04A** | Contratto import UDA. | **Progettato** — vedi [uda-import-contract.md](uda-import-contract.md) |
 | TWU-04B | — (non ancora avviato) | Pendente |
 | TWU-05 | — (non ancora avviato) | Pendente |
@@ -124,6 +124,32 @@ timestamp). Nessuna lettura/scrittura per pending/blocked/portale disattivo.
 - Nessun nuovo indice Firestore. `firestore.rules` modificato **solo** per la
   Rule di accesso studente sopra.
 - Gate GTWU **APERTO**; nessun deploy, nessun merge.
+
+---
+
+## TWU-03 — Visibilità batch delle correzioni restituite ✅ IMPLEMENTATO
+
+La toolbar «Consegne online» espone un unico menu «Visibilità» con quattro
+azioni indipendenti: rendere visibile o nascondere la restituzione e mostrare o
+nascondere le soluzioni. Il batch riusa esclusivamente i service autorevoli
+`setReturnVisibleToStudent` e `setSolutionsVisible`: nessun accoppiamento
+implicito tra i due flag e nessuna duplicazione dei controlli canonici.
+
+Sono elaborabili soltanto correction attualmente `returned`, con
+`correctionReturns` coerente con owner e verifica. Il preflight usa lo stato già
+caricato e, solo dopo la scelta dell'azione, una lettura puntuale per ciascuna
+candidata restituita; i service ripetono le verifiche autorevoli prima della
+write. L'esecuzione ha concorrenza massima 3, prosegue dopo errori individuali e
+distingue riuscite, no-op, escluse e fallite. Le checkbox restano invariate e
+non viene eseguito un refresh finale, perché la tabella non mostra i due flag.
+
+Costi: zero passivo, nessun listener/polling e nessuna scansione globale. Le
+letture e le eventuali scritture sono proporzionali alle righe selezionate;
+`setSolutionsVisible(true)` conserva il contratto VEX e include soltanto le
+soluzioni assegnate. Rules, Functions e indici restano invariati.
+
+TWU-04A resta **progettato**, TWU-04B resta **pendente** e Gate GTWU resta
+**APERTO**. Nessun deploy e nessun merge automatico.
 
 ---
 

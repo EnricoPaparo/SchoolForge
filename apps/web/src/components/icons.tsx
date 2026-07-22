@@ -298,6 +298,30 @@ export function IconEraser(props: IconProps = {}) {
   );
 }
 
+/** Eye — visibility controls. */
+export function IconEye(props: IconProps = {}) {
+  return icon(
+    <>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </>,
+    props,
+  );
+}
+
+/** Eye with slash — hidden visibility state. */
+export function IconEyeOff(props: IconProps = {}) {
+  return icon(
+    <>
+      <path d="m3 3 18 18" />
+      <path d="M10.6 5.2A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-2.2 3.1" />
+      <path d="M6.2 6.2C3.5 8.1 2 12 2 12s3.5 7 10 7a10.7 10.7 0 0 0 4.1-.8" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    </>,
+    props,
+  );
+}
+
 /** Sparkles — AI-assisted actions (Correggi con IA) */
 export function IconSparkles(props: IconProps = {}) {
   return icon(
