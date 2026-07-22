@@ -6,6 +6,8 @@ import {
   formatDateForFilename,
   sanitizeForFilename,
 } from '../verifications/verificationPdfNaming.js';
+import { loadPdfModule } from '../../../lib/pdfModuleLoader.js';
+import type { jsPDF as JsPdfInstance } from 'jspdf';
 
 /**
  * M4-03B — printable PDF of the "Riepilogo consegne e correzioni".
@@ -17,10 +19,10 @@ import {
  * fields are printed: never a UID, submissionId, ownerUid, answer, solution,
  * feedback, attention event or any other technical datum.
  *
- * jsPDF is loaded with a dynamic `import('jspdf')` inside the download
- * function, so it never enters the entry bundle. The table layout is drawn
- * directly with small pure helpers (no jspdf-autotable, no html2canvas, no
- * canvas/HTML rendering).
+ * jsPDF is loaded through the shared stale-chunk-aware dynamic module loader
+ * inside the download function, so it never enters the entry bundle. The
+ * table layout is drawn directly with small pure helpers (no jspdf-autotable,
+ * no html2canvas, no canvas/HTML rendering).
  */
 
 export type CorrectionRegisterPdfParams = {
@@ -161,6 +163,14 @@ type PdfDoc = {
   save(filename: string): void;
 };
 
+type JsPdfConstructor = new (options: {
+  orientation: 'landscape';
+  unit: 'pt';
+  format: 'a4';
+}) => JsPdfInstance;
+export type CorrectionRegisterPdfModuleFactory = () => Promise<{ jsPDF: JsPdfConstructor }>;
+const importJsPdf: CorrectionRegisterPdfModuleFactory = () => import('jspdf');
+
 function drawHeaderBlock(
   doc: PdfDoc,
   params: CorrectionRegisterPdfParams,
@@ -276,9 +286,10 @@ function stampFooters(doc: PdfDoc): void {
  */
 export async function downloadCorrectionRegisterPdf(
   params: CorrectionRegisterPdfParams,
+  moduleFactory: CorrectionRegisterPdfModuleFactory = importJsPdf,
 ): Promise<void> {
   const generatedAt = params.generatedAt ?? new Date();
-  const { jsPDF } = await import('jspdf');
+  const { jsPDF } = await loadPdfModule(moduleFactory);
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'pt',

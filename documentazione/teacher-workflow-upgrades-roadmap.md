@@ -15,8 +15,8 @@ nuovo indice, nessun listener/polling aggiuntivo. `Gate GTWU` resta **APERTO**.
 | **TWU-03B** | Restituzione visibile con soluzioni congelate per default, inclusa la sola variante VEX assegnata. | **Implementato** |
 | **TWU-04A** | Contratto import UDA. | **Progettato** — vedi [uda-import-contract.md](uda-import-contract.md) |
 | TWU-04B | — (non ancora avviato) | Pendente |
-| **CHUNK-RECOVERY-01** | Recovery esplicita dei moduli PDF dinamici obsoleti dopo un deploy, senza reload automatico. | **Implementato** per «Programma svolto (PDF)»; helper riusabile da CORR-PDF-01 |
-| **CORR-PDF-01** | Un PDF scolastico autonomo per ogni consegna selezionata; ZIP soltanto come contenitore di PDF separati quando la selezione è multipla. | **Progettato** — vedi [correction-archive-export-contract.md](correction-archive-export-contract.md) |
+| **CHUNK-RECOVERY-01** | Recovery esplicita dei moduli PDF dinamici obsoleti dopo un deploy, senza reload automatico. | **Implementato** per «Programma svolto (PDF)», Registro Correzioni e CORR-PDF-01 |
+| **CORR-PDF-01** | Un PDF scolastico autonomo per ogni consegna selezionata; ZIP soltanto come contenitore di PDF separati quando la selezione è multipla. | **Implementato** — smoke DEV pendente; vedi [correction-archive-export-contract.md](correction-archive-export-contract.md) |
 | TWU-05 | Riservato ad altri upgrade del flusso docente. | Pendente |
 | Gate GTWU | Verifica finale del pacchetto TWU. | **APERTO** |
 
@@ -177,7 +177,7 @@ TWU-04A resta **progettato**, TWU-04B resta **pendente** e Gate GTWU resta
 
 ---
 
-## CHUNK-RECOVERY-01 ✅ e CORR-PDF-01 📐 — PDF affidabili e archivio scolastico
+## CHUNK-RECOVERY-01 ✅ e CORR-PDF-01 ✅ — PDF affidabili e archivio scolastico
 
 Le decisioni complete sono congelate in
 [correction-archive-export-contract.md](correction-archive-export-contract.md).
@@ -185,7 +185,8 @@ Le decisioni complete sono congelate in
 - `CHUNK-RECOVERY-01` è implementato su «Programma svolto (PDF)»: distingue un
   chunk dinamico obsoleto dagli errori generici, rilascia sempre lo stato busy
   e propone «Ricarica pagina» senza reload automatico, passando dalla dirty
-  guard esistente. L'helper tipizzato resta riusabile da `CORR-PDF-01`.
+  guard esistente. Lo stesso helper tipizzato è ora usato da `CORR-PDF-01` e
+  dal Registro Correzioni.
 - `CORR-PDF-01` aggiunge alla toolbar delle consegne l'export archivistico: **un
   PDF distinto per ogni studente**. Una selezione multipla produce uno ZIP che
   contiene i PDF separati; **non** viene mai creato un PDF cumulativo.
@@ -193,10 +194,13 @@ Le decisioni complete sono congelate in
   punteggio e correzione per domanda, più feedback generale; esclude soluzioni,
   dati tecnici e alternative VEX non assegnate.
 - Generazione locale nel browser, nessuna persistenza, Function, listener o
-  polling. Riutilizzo del renderer/dati M4 e della dipendenza ZIP esistente.
+  polling. Due letture puntuali owner-only per consegna esportabile, concorrenza
+  massima 3, modello chiuso e dipendenza ZIP esistente.
+- Lo ZIP è all-or-nothing: una consegna incoerente o un renderer fallito
+  impedisce ogni download parziale e viene indicato con il nome leggibile dello
+  studente.
 
-Ordine residuo: export per-studente → smoke DEV. TWU-03/03A/03B e
-CHUNK-RECOVERY-01 sono implementati; CORR-PDF-01 resta progettato.
+Ordine residuo: smoke DEV di CORR-PDF-01 e implementazione TWU-04B.
 Gate GTWU resta **APERTO**.
 
 ---

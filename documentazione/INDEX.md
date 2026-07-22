@@ -39,7 +39,7 @@ SchoolForge è un repository didattico Markdown-first per un solo docente. Se è
 10. [piano-implementazione.md](piano-implementazione.md) — pacchetti per agenti, dipendenze, gate.
 11. [evoluzioni-apprendimento-roadmap.md](evoluzioni-apprendimento-roadmap.md) — roadmap approvata post-polish: calibrazione IA, pool senza peso, appunti, varianti equivalenti e boost grafico.
 12. [vex-contract.md](vex-contract.md) — VEX varianti equivalenti: contratto, builder assistito docente, assegnazione server-side idempotente, svolgimento, correzione/IA/restituzione sulla variante. VEX-01A→02C implementati e distribuiti su DEV; **Gate GVEX PASS**. Prototipo builder: [prototipi/vex-builder.html](prototipi/vex-builder.html).
-13. [teacher-workflow-upgrades-roadmap.md](teacher-workflow-upgrades-roadmap.md) — TWU: rifiniture e miglioramenti del flusso docente. TWU-01 e TWU-02 implementati; TWU-03 in lavorazione; TWU-04A progettato ([uda-import-contract.md](uda-import-contract.md)); export archivistico per-studente e recovery dei chunk PDF progettati in [correction-archive-export-contract.md](correction-archive-export-contract.md). **Gate GTWU APERTO**.
+13. [teacher-workflow-upgrades-roadmap.md](teacher-workflow-upgrades-roadmap.md) — TWU: rifiniture e miglioramenti del flusso docente. TWU-01/02/03 e CORR-PDF-01 implementati; TWU-04A progettato e TWU-04B pendente ([uda-import-contract.md](uda-import-contract.md)); contratto dell'export archivistico per-studente e recovery chunk in [correction-archive-export-contract.md](correction-archive-export-contract.md). **Gate GTWU APERTO** per smoke DEV e TWU-04B.
 
 ## Per sviluppare un modulo
 
