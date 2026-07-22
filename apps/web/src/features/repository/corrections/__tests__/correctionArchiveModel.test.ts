@@ -178,7 +178,7 @@ describe('correctionArchiveModel', () => {
         { text: 'Opzione x', selected: true },
         { text: 'Opzione y', selected: true },
       ],
-      correctAnswerText: 'Opzione x\nOpzione y',
+      correctAnswerText: '• Opzione x\n• Opzione y',
     });
     expect(model.correctionStatus).toBe('completed');
     expect(JSON.stringify(model)).not.toMatch(
@@ -223,7 +223,7 @@ describe('correctionArchiveModel', () => {
         { text: 'Opzione x', selected: true },
         { text: 'Opzione y', selected: false },
       ],
-      correctAnswerText: 'Opzione x\nOpzione y',
+      correctAnswerText: '• Opzione x\n• Opzione y',
     });
 
     expect(() =>

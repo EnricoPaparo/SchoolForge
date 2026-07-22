@@ -129,7 +129,7 @@ describe('correctionArchivePdf', () => {
           { text: 'Due', selected: false },
           { text: 'Tre', selected: true },
         ],
-        correctAnswerText: 'Uno\nDue',
+        correctAnswerText: '• Uno\n• Due',
         points: 1,
         maxPoints: 2,
       },
@@ -141,7 +141,7 @@ describe('correctionArchivePdf', () => {
     expect(text).toContain('Opzioni\nAlfa\nBeta');
     expect(text).toContain('Soluzione corretta\nAlfa');
     expect(text).toContain('Opzioni\nUno\nDue\nTre');
-    expect(text).toContain('Soluzione corretta\nUno\nDue');
+    expect(text).toContain('Soluzione corretta\n• Uno\n• Due');
     expect(text).not.toMatch(/\[[X ]\]/);
     expect(pdf.rectCalls).toHaveLength(5);
     // Three selected options, two diagonal strokes for each vector X.
