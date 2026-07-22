@@ -1907,10 +1907,28 @@ describe('VerificationsView — consegne online monitor (M3F-05)', () => {
     fireEvent.click(btn);
     fireEvent.click(btn); // second click in the same tick must be ignored
 
-    await waitFor(() => expect(screen.getByText('Aggiornato ora')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Aggiornato alle/)).toBeTruthy());
     // Exactly one extra progress read + one extra roster read for both clicks.
     expect(mockLoadCorrectionProgressByStudent.mock.calls.length).toBe(initialProgressCalls + 1);
     expect(mockListStudents.mock.calls.length).toBe(initialStudentCalls + 1);
+  });
+
+  it('TWU-02A — shows the refresh status inline in the «Consegne online» header (no separate row, aria-live)', async () => {
+    await openMonitor();
+    const region = screen.getByRole('region', { name: 'Consegne online' });
+    fireEvent.click(within(region).getByRole('button', { name: 'Aggiorna consegne' }));
+
+    const status = await within(region).findByText(/Aggiornato alle \d{2}:\d{2}:\d{2}/);
+    // The old standalone "Aggiornato ora" line is gone.
+    expect(screen.queryByText('Aggiornato ora')).toBeNull();
+    // The status is a polite live region…
+    const live = status.closest('[aria-live="polite"]');
+    expect(live).not.toBeNull();
+    // …and lives in the same header group as the «Consegne online» title.
+    const heading = within(region).getByRole('heading', { name: 'Consegne online' });
+    expect(live!.parentElement).toBe(heading.parentElement);
+    // Exactly one status element (no duplicate).
+    expect(within(region).getAllByText(/Aggiornato alle/)).toHaveLength(1);
   });
 
   it('preserves selection and sort while refreshing, updating «Valutate» after success', async () => {
@@ -1922,25 +1940,23 @@ describe('VerificationsView — consegne online monitor (M3F-05)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Aggiorna consegne' }));
 
-    await waitFor(() => expect(screen.getByText('Aggiornato ora')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Aggiornato alle/)).toBeTruthy());
     // The refreshed «Valutate» value is shown; Anna's row is still present.
     expect(screen.getByText('2/2')).toBeTruthy();
     expect(screen.getByText('Anna')).toBeTruthy();
   });
 
-  it('keeps the current data and shows a readable error when the refresh fails', async () => {
+  it('keeps the current data and shows an inline error when the refresh fails', async () => {
     await openMonitor();
     mockLoadCorrectionProgressByStudent.mockRejectedValueOnce(new Error('network'));
 
     fireEvent.click(screen.getByRole('button', { name: 'Aggiorna consegne' }));
 
-    await waitFor(() =>
-      expect(screen.getByText(/Impossibile aggiornare le consegne/i)).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByText('Aggiornamento non riuscito')).toBeTruthy());
     // Data is preserved — the row is still rendered.
     expect(screen.getByText('Anna')).toBeTruthy();
-    // No misleading "Aggiornato ora" on failure.
-    expect(screen.queryByText('Aggiornato ora')).toBeNull();
+    // No misleading success text on failure.
+    expect(screen.queryByText(/Aggiornato alle/)).toBeNull();
   });
 });
 
@@ -3058,6 +3074,50 @@ describe('VerificationsView — school year + archive filters (VUX-01)', () => {
     await waitFor(() =>
       expect(within(screen.getByRole('table')).getByText('2025/2026')).toBeTruthy(),
     );
+  });
+
+  // ── TWU-02A — filter-bar layout of «Impostazioni correzione IA» ──────
+  it('keeps «Impostazioni correzione IA» in the same filter toolbar, in DOM order anno → classe → ricerca → impostazioni', async () => {
+    setupDefaults();
+    mockGetImportMeta.mockResolvedValue({ annoScolastico: '2025/2026' });
+    mockListVerifications.mockResolvedValue([verWith('v1', 'Alfa', 'imp-1', 'cls-1')]);
+    render(<VerificationsView />);
+    await screen.findByText('Alfa');
+
+    const toolbar = screen.getByLabelText('Filtri archivio verifiche');
+    const anno = within(toolbar).getByLabelText('Filtro anno scolastico');
+    const classe = within(toolbar).getByLabelText('Filtro classe');
+    const cerca = within(toolbar).getByLabelText('Cerca verifica');
+    const settings = within(toolbar).getByRole('button', { name: /Impostazioni correzione IA/ });
+
+    // All four controls live in the SAME toolbar (no separate row/container).
+    for (const el of [anno, classe, cerca, settings]) {
+      expect(el.closest(`[aria-label="Filtri archivio verifiche"]`)).toBe(toolbar);
+    }
+    // DOM order (== tab order): anno → classe → ricerca → impostazioni.
+    const order = [anno, classe, cerca, settings];
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i])).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+  });
+
+  it('renders the AI-settings action once, with its icon and accessible name, and opens the dialog', async () => {
+    setupDefaults();
+    mockGetImportMeta.mockResolvedValue({ annoScolastico: '2025/2026' });
+    mockListVerifications.mockResolvedValue([verWith('v1', 'Alfa', 'imp-1', 'cls-1')]);
+    render(<VerificationsView />);
+    await screen.findByText('Alfa');
+
+    const buttons = screen.getAllByRole('button', { name: /Impostazioni correzione IA/ });
+    expect(buttons).toHaveLength(1); // no duplicate
+    const button = buttons[0]!;
+    // Primary-action styling reused from «Nuovo corso» (btn-primary) + a decorative SVG icon.
+    expect(button.className).toContain('btn-primary');
+    expect(button.querySelector('svg')).not.toBeNull();
+
+    fireEvent.click(button);
+    // No functional regression: the settings dialog opens.
+    expect(await screen.findByRole('heading', { name: /Impostazioni correzione IA/ })).toBeTruthy();
   });
 });
 
