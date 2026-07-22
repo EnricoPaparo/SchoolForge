@@ -8,6 +8,7 @@ import {
 
 class FakePdf implements CorrectionArchivePdfDoc {
   texts: string[] = [];
+  textCalls: Array<{ value: string; page: number; y: number }> = [];
   pages = 1;
   currentPage = 1;
   setFont() {}
@@ -16,10 +17,21 @@ class FakePdf implements CorrectionArchivePdfDoc {
   line() {}
   splitTextToSize(text: string, maxWidth: number): string[] {
     const size = Math.max(8, Math.floor(maxWidth / 7));
-    return text.length <= size ? [text] : [text.slice(0, size), text.slice(size)];
+    return text.split('\n').flatMap((line) => {
+      if (line.length === 0) return [''];
+      const chunks: string[] = [];
+      for (let offset = 0; offset < line.length; offset += size) {
+        chunks.push(line.slice(offset, offset + size));
+      }
+      return chunks;
+    });
   }
-  text(text: string | string[]) {
-    this.texts.push(...(Array.isArray(text) ? text : [text]));
+  text(text: string | string[], _x: number, y: number) {
+    const lines = Array.isArray(text) ? text : [text];
+    this.texts.push(...lines);
+    lines.forEach((value, index) => {
+      this.textCalls.push({ value, page: this.currentPage, y: y + index * 13 });
+    });
   }
   addPage() {
     this.pages += 1;
@@ -90,6 +102,39 @@ describe('correctionArchivePdf', () => {
     renderCorrectionArchivePdf(large, pdf);
     expect(pdf.pages).toBeGreaterThan(1);
     expect(pdf.texts).toContain(`Pagina ${pdf.pages} di ${pdf.pages}`);
+  });
+
+  it.each([
+    'verificationTitle',
+    'questionText',
+    'answerText',
+    'teacherFeedback',
+    'generalFeedback',
+  ] as const)('paginates one very long %s block without losing or clipping text', (field) => {
+    const pdf = new FakePdf();
+    const large = model();
+    const longText = `${field.toUpperCase()}-${'contenuto molto lungo '.repeat(900)}`;
+
+    if (field === 'verificationTitle') large.verificationTitle = longText;
+    else if (field === 'generalFeedback') large.generalFeedback = longText;
+    else large.questions[0]![field] = longText;
+
+    renderCorrectionArchivePdf(large, pdf);
+
+    expect(pdf.pages).toBeGreaterThan(1);
+    expect(pdf.texts.join('')).toContain(longText);
+    expect(
+      pdf.textCalls
+        .filter((call) => !/^Pagina \d+ di \d+$/.test(call.value))
+        .every((call) => call.y <= 841.89 - 52),
+    ).toBe(true);
+    for (let page = 1; page <= pdf.pages; page += 1) {
+      expect(pdf.textCalls).toContainEqual({
+        value: `Pagina ${page} di ${pdf.pages}`,
+        page,
+        y: 841.89 - 25,
+      });
+    }
   });
 
   it('formats quarter points with the Italian decimal comma', () => {

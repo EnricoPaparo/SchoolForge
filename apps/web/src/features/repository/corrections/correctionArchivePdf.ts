@@ -33,15 +33,46 @@ export function formatArchiveDate(value: Date | null): string {
   return value.toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-function writeLines(doc: CorrectionArchivePdfDoc, lines: string[], y: number): number {
-  doc.text(lines, MARGIN, y);
-  return y + Math.max(1, lines.length) * LINE_HEIGHT;
-}
-
 function ensureSpace(doc: CorrectionArchivePdfDoc, y: number, required: number): number {
   if (y + required <= FOOTER_LIMIT) return y;
   doc.addPage();
   return MARGIN;
+}
+
+/**
+ * Writes every wrapped line while reserving the footer area on each page.
+ * A single answer or feedback can be longer than an entire page, so checking
+ * the block height once is not enough: consume only the lines that fit, add a
+ * page, and continue until none remain.
+ */
+function writePaginatedLines(
+  doc: CorrectionArchivePdfDoc,
+  lines: readonly string[],
+  y: number,
+): number {
+  const pending = lines.length > 0 ? lines : [''];
+  let cursor = 0;
+  let nextY = y;
+
+  while (cursor < pending.length) {
+    if (nextY > FOOTER_LIMIT) {
+      doc.addPage();
+      nextY = MARGIN;
+    }
+
+    const capacity = Math.max(1, Math.floor((FOOTER_LIMIT - nextY) / LINE_HEIGHT) + 1);
+    const pageLines = pending.slice(cursor, cursor + capacity);
+    doc.text(pageLines, MARGIN, nextY);
+    nextY += pageLines.length * LINE_HEIGHT;
+    cursor += pageLines.length;
+
+    if (cursor < pending.length) {
+      doc.addPage();
+      nextY = MARGIN;
+    }
+  }
+
+  return nextY;
 }
 
 function writeLabelledBlock(
@@ -51,13 +82,15 @@ function writeLabelledBlock(
   y: number,
 ): number {
   const valueLines = doc.splitTextToSize(value, CONTENT_WIDTH);
-  y = ensureSpace(doc, y, LINE_HEIGHT * (valueLines.length + 2));
+  // Keep the label with at least the first value line. Remaining lines are
+  // allowed to continue across as many pages as necessary.
+  y = ensureSpace(doc, y, LINE_HEIGHT * 2);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.text(label, MARGIN, y);
   y += LINE_HEIGHT;
   doc.setFont('helvetica', 'normal');
-  return writeLines(doc, valueLines, y) + 5;
+  return writePaginatedLines(doc, valueLines, y) + 5;
 }
 
 function stampFooters(doc: CorrectionArchivePdfDoc): void {
@@ -87,7 +120,7 @@ export function renderCorrectionArchivePdf(
   y += 23;
 
   doc.setFontSize(13);
-  y = writeLines(doc, doc.splitTextToSize(model.verificationTitle, CONTENT_WIDTH), y) + 8;
+  y = writePaginatedLines(doc, doc.splitTextToSize(model.verificationTitle, CONTENT_WIDTH), y) + 8;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   const status = model.correctionStatus === 'returned' ? 'Restituita' : 'Corretta';
@@ -99,21 +132,23 @@ export function renderCorrectionArchivePdf(
     `Punteggio: ${formatArchivePoints(model.totalPoints)} / ${formatArchivePoints(model.maxPoints)} punti`,
     `Percentuale: ${model.percentage === null ? '—' : `${model.percentage}%`}`,
   ];
-  doc.text(headerLines, MARGIN, y);
-  y += headerLines.length * LINE_HEIGHT + 10;
+  y = writePaginatedLines(doc, headerLines, y) + 10;
+  y = ensureSpace(doc, y, 18);
   doc.line(MARGIN, y, PAGE.width - MARGIN, y);
   y += 18;
 
   model.questions.forEach((question, index) => {
     const questionLines = doc.splitTextToSize(question.questionText, CONTENT_WIDTH);
-    y = ensureSpace(doc, y, Math.min(questionLines.length + 2, 5) * LINE_HEIGHT);
+    // Keep the heading with the first line of the question; the rest may span
+    // multiple pages without ever entering the footer area.
+    y = ensureSpace(doc, y, 17 + LINE_HEIGHT);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
     doc.text(`Domanda ${index + 1}`, MARGIN, y);
     y += 17;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    y = writeLines(doc, questionLines, y) + 8;
+    y = writePaginatedLines(doc, questionLines, y) + 8;
     y = writeLabelledBlock(doc, 'Risposta dello studente', question.answerText, y);
     y = ensureSpace(doc, y, LINE_HEIGHT * 2);
     doc.setFont('helvetica', 'bold');
