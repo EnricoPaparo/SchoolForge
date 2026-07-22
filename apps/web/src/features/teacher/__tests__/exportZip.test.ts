@@ -228,7 +228,9 @@ describe('buildExportZip — order preservation (RE-06)', () => {
   });
 
   it('adds lesson files to the archive in listLessons order, grouped per UDA', async () => {
-    mockListUdas.mockResolvedValue([]);
+    // The lessons' UDA must be committed (present in listUdas) for reader
+    // coherence to keep them — a real course always has its UdaDoc.
+    mockListUdas.mockResolvedValue([UDA_A]);
     const LESSON_A2 = {
       ...LESSON,
       id: 'l-a2',
@@ -248,7 +250,11 @@ describe('buildExportZip — order preservation (RE-06)', () => {
 
     const zip = await buildExportZip(PROGRAM, mockStorage, mockDb);
 
-    expect(fileKeys(zip)).toEqual(['uda-01-a/lezione-001-http.md', 'uda-01-a/lezione-002-tcp.md']);
+    expect(fileKeys(zip)).toEqual([
+      'uda-01-a/uda-01-a.md',
+      'uda-01-a/lezione-001-http.md',
+      'uda-01-a/lezione-002-tcp.md',
+    ]);
   });
 });
 

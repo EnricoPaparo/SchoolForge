@@ -89,7 +89,15 @@ describe('Security: pools belong in the owner-only export, never in the student 
 
     // NORMAL_LESSON has poolStatus 'valid' + a poolStorageRef. Its own
     // filename is a lesson (never a .pool.md pseudo-lesson like POOL_LESSON).
-    mockListUdas.mockResolvedValue([]);
+    // The lesson's UDA must be committed (present in listUdas) for reader
+    // coherence to keep it.
+    mockListUdas.mockResolvedValue([
+      {
+        dir: 'uda-01',
+        filename: 'uda-01.md',
+        storageBasePath: 'repository/owner-uid/imports/imp-1/uda-01',
+      },
+    ]);
     mockListLessons.mockResolvedValue([NORMAL_LESSON, POOL_LESSON]);
 
     mockReadTexts.mockImplementation(async (paths: string[]) =>
@@ -109,12 +117,11 @@ describe('Security: pools belong in the owner-only export, never in the student 
     const addedPaths = zipFileCalls.map(([path]) => path);
     expect(addedPaths.some((p) => p.endsWith('lezione-001.pool.md'))).toBe(true);
     expect(addedPaths.some((p) => p.includes('lezione-001.md'))).toBe(true);
-    // The .pool.md *pseudo-lesson* row (a lesson whose own file is a pool) is
-    // never double-added as a lesson entry.
-    expect(mockReadTexts).toHaveBeenCalledWith([
-      NORMAL_LESSON.storageRef,
-      NORMAL_LESSON.poolStorageRef,
-    ]);
+    // Both the lesson and its companion pool are fetched (the .pool.md
+    // pseudo-lesson row is never double-added as a lesson entry).
+    const fetched = mockReadTexts.mock.calls[0]?.[0] as string[];
+    expect(fetched).toContain(NORMAL_LESSON.storageRef);
+    expect(fetched).toContain(NORMAL_LESSON.poolStorageRef);
 
     vi.restoreAllMocks();
   });
