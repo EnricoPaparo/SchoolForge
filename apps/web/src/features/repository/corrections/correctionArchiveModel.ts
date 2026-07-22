@@ -12,10 +12,19 @@ import { computeCorrectionTotals, isValidQuestionPoints } from './correctionCont
 
 export type CorrectionArchiveStatus = 'completed' | 'returned';
 
+export type CorrectionArchiveOption = {
+  text: string;
+  selected: boolean;
+};
+
 export type CorrectionArchiveQuestion = {
   order: number;
   questionText: string;
   answerText: string;
+  /** Present only for closed questions. Contains labels, never technical option ids. */
+  options?: CorrectionArchiveOption[];
+  /** Present only for closed questions. Open reference solutions are deliberately excluded. */
+  correctAnswerText?: string;
   points: number;
   maxPoints: number;
   teacherFeedback?: string;
@@ -86,6 +95,57 @@ function optionTextById(question: VerificationTeacherQuestionSnapshot): Map<stri
     result.set(option.id, option.testo);
   }
   return result;
+}
+
+function closedQuestionArchiveDetails(
+  question: VerificationTeacherQuestionSnapshot,
+  answer: AnswerValue | undefined,
+): Pick<CorrectionArchiveQuestion, 'options' | 'correctAnswerText'> {
+  const optionById = optionTextById(question);
+  let selectedIds: string[];
+  let correctIds: string[];
+
+  if (question.tipo === 'chiusa_singola') {
+    if (answer === undefined) selectedIds = [];
+    else {
+      if (answer.tipo !== 'chiusa_singola') fail();
+      if (answer.selectedId === null) selectedIds = [];
+      else {
+        if (typeof answer.selectedId !== 'string' || !optionById.has(answer.selectedId)) fail();
+        selectedIds = [answer.selectedId];
+      }
+    }
+    correctIds = Array.isArray(question.soluzione) ? question.soluzione : [question.soluzione];
+    if (correctIds.length !== 1) fail();
+  } else if (question.tipo === 'chiusa_multipla') {
+    if (answer === undefined) selectedIds = [];
+    else {
+      if (answer.tipo !== 'chiusa_multipla' || !Array.isArray(answer.selectedIds)) fail();
+      selectedIds = answer.selectedIds;
+    }
+    if (!Array.isArray(question.soluzione) || question.soluzione.length === 0) fail();
+    correctIds = question.soluzione;
+  } else {
+    fail();
+  }
+
+  const selected = new Set(selectedIds);
+  const correct = new Set(correctIds);
+  if (selected.size !== selectedIds.length || correct.size !== correctIds.length) fail();
+  if (
+    [...selected].some((id) => typeof id !== 'string' || !optionById.has(id)) ||
+    [...correct].some((id) => typeof id !== 'string' || !optionById.has(id))
+  ) {
+    fail();
+  }
+
+  return {
+    options: question.opzioni!.map((option) => ({
+      text: option.testo,
+      selected: selected.has(option.id),
+    })),
+    correctAnswerText: correctIds.map((id) => optionById.get(id)!).join('\n'),
+  };
 }
 
 export function formatArchiveAnswer(
@@ -194,10 +254,15 @@ export function buildCorrectionArchiveModel(params: {
     ) {
       fail();
     }
+    const closedDetails =
+      question.tipo === 'aperta'
+        ? {}
+        : closedQuestionArchiveDetails(question, submission.answers?.[key]);
     return {
       order: question.order,
       questionText: question.testo,
       answerText: formatArchiveAnswer(question, submission.answers?.[key]),
+      ...closedDetails,
       points: evaluation.points,
       maxPoints: evaluation.maxPoints,
       ...(evaluation.feedback?.trim() ? { teacherFeedback: evaluation.feedback } : {}),

@@ -78,7 +78,8 @@ describe('correctionArchivePdf', () => {
     const bytes = renderCorrectionArchivePdf(model(), pdf);
     const text = pdf.texts.join('\n');
     expect(bytes.byteLength).toBe(4);
-    expect(text).toContain('Correzione della verifica');
+    expect(text).toContain('Verifica di reti');
+    expect(text).not.toContain('Correzione della verifica');
     expect(text).toContain('Studente: Anna Bianchi');
     expect(text).toContain('Stato: Restituita');
     expect(text).toContain('Valutazione: 2,75 / 4 punti');
@@ -86,9 +87,54 @@ describe('correctionArchivePdf', () => {
     expect(text).toContain('Correzione del docente');
     expect(text).toContain('Feedback generale');
     expect(text).toContain('Pagina 1 di 1');
-    expect(text).not.toMatch(
-      /SchoolForge|ownerUid|studentUid|submissionId|correctAnswer|soluzione/i,
-    );
+    expect(text).not.toMatch(/SchoolForge|ownerUid|studentUid|submissionId/i);
+  });
+
+  it('renders all closed options, marks student choices and includes only closed solutions', () => {
+    const pdf = new FakePdf();
+    const archive = model();
+    archive.questions = [
+      {
+        order: 0,
+        questionText: 'Domanda aperta',
+        answerText: 'Risposta aperta',
+        points: 2,
+        maxPoints: 3,
+      },
+      {
+        order: 1,
+        questionText: 'Domanda singola',
+        answerText: 'Beta',
+        options: [
+          { text: 'Alfa', selected: false },
+          { text: 'Beta', selected: true },
+        ],
+        correctAnswerText: 'Alfa',
+        points: 0,
+        maxPoints: 1,
+      },
+      {
+        order: 2,
+        questionText: 'Domanda multipla',
+        answerText: 'Uno\nTre',
+        options: [
+          { text: 'Uno', selected: true },
+          { text: 'Due', selected: false },
+          { text: 'Tre', selected: true },
+        ],
+        correctAnswerText: 'Uno\nDue',
+        points: 1,
+        maxPoints: 2,
+      },
+    ];
+
+    renderCorrectionArchivePdf(archive, pdf);
+    const text = pdf.texts.join('\n');
+    expect(text).toContain('Risposta dello studente\nRisposta aperta');
+    expect(text).toContain('Opzioni\n[ ] Alfa\n[X] Beta');
+    expect(text).toContain('Soluzione corretta\nAlfa');
+    expect(text).toContain('Opzioni\n[X] Uno\n[ ] Due\n[X] Tre');
+    expect(text).toContain('Soluzione corretta\nUno\nDue');
   });
 
   it('wraps long content and creates page breaks without clipping the footer', () => {
