@@ -364,8 +364,11 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
-  padding-bottom: 0.75rem;
+  padding: 0.75rem 0.8rem 0.8rem;
+  border-top: 3px solid var(--color-primary);
   border-bottom: 1px solid var(--color-border);
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: rgba(59, 130, 246, 0.045);
   margin-bottom: 1rem;
 }
 .lessonHeaderText {
@@ -414,11 +417,15 @@
 }
 .lessonHeader h3 {
   margin: 0;
+  font-size: clamp(1.15rem, 1.06rem + 0.28vw, 1.35rem);
+  line-height: 1.35;
   overflow-wrap: anywhere;
 }
 .lessonHeader p {
   margin: 0.3rem 0 0;
   color: var(--color-text-muted);
+  font-size: 0.925rem;
+  line-height: 1.5;
 }
 .lessonMeta {
   display: flex;
@@ -462,6 +469,9 @@
     width: 100%;
     box-sizing: border-box;
     padding: 0.85rem;
+  }
+  .lessonHeader {
+    padding: 0.7rem;
   }
   .mobileBack {
     display: inline-flex;
