@@ -733,7 +733,10 @@
 /* ── Archive filters (VUX-01) ── */
 .filters {
   display: grid;
-  grid-template-columns: minmax(8.5rem, auto) minmax(8.5rem, auto) minmax(12rem, 1fr);
+  /* TWU-02A — desktop: anno · classe (compact) · ricerca (flessibile) · pulsante,
+     tutti sulla stessa riga. La ricerca prende lo spazio elastico senza
+     monopolizzare la barra; il pulsante resta interamente leggibile. */
+  grid-template-columns: auto auto minmax(12rem, 1fr) auto;
   gap: 0.6rem;
   align-items: center;
   padding: 0.75rem;
@@ -760,30 +763,21 @@
   min-width: 8rem;
 }
 
-/* TWU-02 — «Impostazioni correzione IA» button: sits on its own row within the
-   filter bar, aligned to the start, icon + label, coherent with the controls. */
+/* TWU-02A — «Impostazioni correzione IA» is a PRIMARY action: it reuses the
+   global `btn-primary` blue (same as «Nuovo corso» in Didattica) for
+   background/border/text/hover/focus/disabled; this class only aligns its
+   geometry (height, radius, centred icon+label) with the sibling filter
+   controls. No new colour or near-duplicate variant is introduced. */
 .aiSettingsBtn {
-  grid-column: 1 / -1;
-  justify-self: start;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
-  padding: 0.4rem 0.75rem;
-  border: 1px solid var(--color-border);
+  padding: 0.4rem 0.85rem;
   border-radius: calc(var(--radius) + 2px);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: 0.875rem;
   min-height: 2.35rem;
-  cursor: pointer;
-}
-.aiSettingsBtn:hover:not(:disabled) {
-  border-color: var(--color-primary);
-}
-.aiSettingsBtn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+  font-size: 0.875rem;
+  white-space: nowrap;
 }
 
 /* TWU-02 — persistent AI-preferences load error + compact retry. */
@@ -864,11 +858,23 @@
     min-width: 5rem;
   }
 
+  /* TWU-02A — tablet/mobile: intentional 2 / 1 / 1 layout, no empty cells.
+     Row 1: anno + classe (balanced halves); row 2: ricerca full-width;
+     row 3: pulsante full-width. Same outer spacing as the desktop bar. */
   .filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .filterSearch {
+  .filterSearch,
+  .aiSettingsBtn {
     grid-column: 1 / -1;
+  }
+}
+
+/* TWU-02A — very narrow (≤20rem): only if needed, anno and classe each take a
+   full row so nothing is clipped and there is no horizontal overflow. */
+@media (max-width: 20rem) {
+  .filters {
+    grid-template-columns: 1fr;
   }
 }

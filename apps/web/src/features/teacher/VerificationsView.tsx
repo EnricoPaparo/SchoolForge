@@ -1598,7 +1598,7 @@ export function VerificationsView() {
               invented defaults. */}
           <button
             type="button"
-            className={styles.aiSettingsBtn}
+            className={`btn-primary ${styles.aiSettingsBtn}`}
             disabled={aiPrefs.status !== 'ready'}
             onClick={() => setAiSettingsOpen(true)}
           >

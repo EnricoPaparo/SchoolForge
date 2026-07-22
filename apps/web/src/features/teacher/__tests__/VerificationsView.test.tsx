@@ -3059,6 +3059,50 @@ describe('VerificationsView — school year + archive filters (VUX-01)', () => {
       expect(within(screen.getByRole('table')).getByText('2025/2026')).toBeTruthy(),
     );
   });
+
+  // ── TWU-02A — filter-bar layout of «Impostazioni correzione IA» ──────
+  it('keeps «Impostazioni correzione IA» in the same filter toolbar, in DOM order anno → classe → ricerca → impostazioni', async () => {
+    setupDefaults();
+    mockGetImportMeta.mockResolvedValue({ annoScolastico: '2025/2026' });
+    mockListVerifications.mockResolvedValue([verWith('v1', 'Alfa', 'imp-1', 'cls-1')]);
+    render(<VerificationsView />);
+    await screen.findByText('Alfa');
+
+    const toolbar = screen.getByLabelText('Filtri archivio verifiche');
+    const anno = within(toolbar).getByLabelText('Filtro anno scolastico');
+    const classe = within(toolbar).getByLabelText('Filtro classe');
+    const cerca = within(toolbar).getByLabelText('Cerca verifica');
+    const settings = within(toolbar).getByRole('button', { name: /Impostazioni correzione IA/ });
+
+    // All four controls live in the SAME toolbar (no separate row/container).
+    for (const el of [anno, classe, cerca, settings]) {
+      expect(el.closest(`[aria-label="Filtri archivio verifiche"]`)).toBe(toolbar);
+    }
+    // DOM order (== tab order): anno → classe → ricerca → impostazioni.
+    const order = [anno, classe, cerca, settings];
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i])).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+  });
+
+  it('renders the AI-settings action once, with its icon and accessible name, and opens the dialog', async () => {
+    setupDefaults();
+    mockGetImportMeta.mockResolvedValue({ annoScolastico: '2025/2026' });
+    mockListVerifications.mockResolvedValue([verWith('v1', 'Alfa', 'imp-1', 'cls-1')]);
+    render(<VerificationsView />);
+    await screen.findByText('Alfa');
+
+    const buttons = screen.getAllByRole('button', { name: /Impostazioni correzione IA/ });
+    expect(buttons).toHaveLength(1); // no duplicate
+    const button = buttons[0]!;
+    // Primary-action styling reused from «Nuovo corso» (btn-primary) + a decorative SVG icon.
+    expect(button.className).toContain('btn-primary');
+    expect(button.querySelector('svg')).not.toBeNull();
+
+    fireEvent.click(button);
+    // No functional regression: the settings dialog opens.
+    expect(await screen.findByRole('heading', { name: /Impostazioni correzione IA/ })).toBeTruthy();
+  });
 });
 
 describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)', () => {
