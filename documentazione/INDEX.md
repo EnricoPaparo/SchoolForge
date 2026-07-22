@@ -39,7 +39,7 @@ SchoolForge è un repository didattico Markdown-first per un solo docente. Se è
 10. [piano-implementazione.md](piano-implementazione.md) — pacchetti per agenti, dipendenze, gate.
 11. [evoluzioni-apprendimento-roadmap.md](evoluzioni-apprendimento-roadmap.md) — roadmap approvata post-polish: calibrazione IA, pool senza peso, appunti, varianti equivalenti e boost grafico.
 12. [vex-contract.md](vex-contract.md) — VEX varianti equivalenti: contratto, builder assistito docente, assegnazione server-side idempotente, svolgimento, correzione/IA/restituzione sulla variante. VEX-01A→02C implementati e distribuiti su DEV; **Gate GVEX PASS**. Prototipo builder: [prototipi/vex-builder.html](prototipi/vex-builder.html).
-13. [teacher-workflow-upgrades-roadmap.md](teacher-workflow-upgrades-roadmap.md) — TWU: rifiniture e fix del flusso docente. TWU-01 implementato (ellissi preview picker, icone SVG nei messaggi VEX, pulsante «Aggiorna» consegne, contratto primo/ultimo accesso studente); **Gate GTWU APERTO**.
+13. [teacher-workflow-upgrades-roadmap.md](teacher-workflow-upgrades-roadmap.md) — TWU: rifiniture e miglioramenti del flusso docente. TWU-01 e TWU-02 implementati (TWU-01: ellissi preview picker, icone SVG nei messaggi VEX, pulsante «Aggiorna» consegne, primo/ultimo accesso studente; TWU-02: preferenze correzione IA owner-only + profilo modello chiuso risolto server-side + form condiviso + gerarchia prompt esplicita); TWU-04A progettato ([uda-import-contract.md](uda-import-contract.md)); **Gate GTWU APERTO**.
 
 ## Per sviluppare un modulo
 

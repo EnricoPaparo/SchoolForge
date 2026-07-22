@@ -142,6 +142,7 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     const payload = previewSpy.mock.calls[0][0];
     expect(Object.keys(payload).sort()).toEqual([
       'gradingMode',
+      'modelProfile',
       'requestId',
       'submissionIds',
       'verificationId',
@@ -149,6 +150,10 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     expect(payload.verificationId).toBe(VERIFICATION_ID);
     expect(payload.submissionIds).toEqual(SUBMISSION_IDS);
     expect(payload.gradingMode).toBe('balanced'); // default
+    expect(payload.modelProfile).toBe('quality'); // TWU-02 default profile
+    // The client never sends a raw model id or price list.
+    expect('model' in payload).toBe(false);
+    expect('priceListVersion' in payload).toBe(false);
     expect(typeof payload.requestId).toBe('string');
     expect(payload.requestId.length).toBeGreaterThan(0);
     expect(screen.getByText('Modalità mock — costo reale 0')).toBeTruthy();
@@ -635,5 +640,71 @@ describe('AiBatchCorrectionDialog (M5-03)', () => {
     const exclusions = screen.getByText('Consegne escluse (1)');
     fireEvent.click(exclusions);
     expect(within(screen.getByRole('dialog')).getByText('Non ancora consegnata')).toBeTruthy();
+  });
+});
+
+describe('AiBatchCorrectionDialog — TWU-02 model profile + preferences prefill', () => {
+  it('prefills the three criteria from the teacher defaults and sends modelProfile in the payload', async () => {
+    const { callables, previewSpy } = makeCallables(
+      () => Promise.resolve(makePreview()),
+      () => Promise.resolve(makeRun()),
+    );
+    render(
+      <AiBatchCorrectionDialog
+        verificationId={VERIFICATION_ID}
+        submissionIds={SUBMISSION_IDS}
+        callables={callables}
+        onClose={() => {}}
+        onApplied={() => {}}
+        defaults={{
+          modelProfile: 'economy',
+          gradingMode: 'rigorous',
+          teacherGuidance: 'Sii severo.',
+        }}
+      />,
+    );
+    // The shared fields reflect the defaults.
+    expect((screen.getByLabelText('Profilo modello') as HTMLSelectElement).value).toBe('economy');
+    expect((screen.getByLabelText('Stile di valutazione') as HTMLSelectElement).value).toBe(
+      'rigorous',
+    );
+
+    await calculatePreview();
+    const payload = previewSpy.mock.calls[0][0];
+    expect(payload.modelProfile).toBe('economy');
+    expect(payload.gradingMode).toBe('rigorous');
+    expect(payload.teacherGuidance).toBe('Sii severo.');
+    // No raw model id or price list ever leaves the client.
+    expect('model' in payload).toBe(false);
+    expect('priceListVersion' in payload).toBe(false);
+  });
+
+  it('changing the model profile after a preview invalidates it and mints a new requestId', async () => {
+    const { callables, previewSpy } = makeCallables(
+      () => Promise.resolve(makePreview()),
+      () => Promise.resolve(makeRun()),
+    );
+    render(
+      <AiBatchCorrectionDialog
+        verificationId={VERIFICATION_ID}
+        submissionIds={SUBMISSION_IDS}
+        callables={callables}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />,
+    );
+    await calculatePreview();
+    const firstRequestId = previewSpy.mock.calls[0][0].requestId;
+    expect(previewSpy.mock.calls[0][0].modelProfile).toBe('quality'); // default
+    // After the estimate the criteria are frozen; editing requires "Modifica
+    // impostazioni", which returns to configure and mints a new requestId.
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica impostazioni' }));
+    fireEvent.change(screen.getByLabelText('Profilo modello'), { target: { value: 'economy' } });
+
+    await calculatePreview();
+    const secondPayload = previewSpy.mock.calls[1][0];
+    expect(secondPayload.modelProfile).toBe('economy');
+    // A new requestId: same requestId with a different profile could never be reused.
+    expect(secondPayload.requestId).not.toBe(firstRequestId);
   });
 });

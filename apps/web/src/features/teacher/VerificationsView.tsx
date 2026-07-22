@@ -43,6 +43,11 @@ import { QuestionPicker } from './QuestionPicker.js';
 import { AttentionEventsDialog } from './AttentionEventsDialog.js';
 import { CorrectionWorkspace } from './CorrectionWorkspace.js';
 import { AiBatchCorrectionDialog } from './AiBatchCorrectionDialog.js';
+import { AiCorrectionSettingsDialog } from './AiCorrectionSettingsDialog.js';
+import {
+  loadTeacherAiPreferences,
+  type TeacherAiPreferences,
+} from '../repository/corrections/teacherAiPreferencesService.js';
 import { BatchCorrectionActionsDialog } from './BatchCorrectionActionsDialog.js';
 import { createAiCorrectionCallables } from '../repository/corrections/aiCorrectionClient.js';
 import {
@@ -198,6 +203,18 @@ function StatusBadge({
   return <span className={`${styles.badge} ${cls[status]}`}>{labels[status]}</span>;
 }
 
+/**
+ * TWU-02 — explicit load states for the teacher's AI-correction preferences.
+ * A preferences value is available ONLY in the `ready` state; a load error is a
+ * distinct state that never resolves to an implicit default.
+ */
+type AiPreferencesLoadState =
+  | { status: 'loading' }
+  | { status: 'ready'; preferences: TeacherAiPreferences }
+  | { status: 'error'; message: string };
+
+const AI_PREFS_ERROR_MESSAGE = 'Impossibile caricare le impostazioni IA. Riprova.';
+
 export function VerificationsView() {
   const { user } = useAuth();
   const ownerUid = user?.uid ?? '';
@@ -334,6 +351,17 @@ export function VerificationsView() {
   // durante ordinamento e aggiornamenti live della tabella.
   const [aiSelectedUids, setAiSelectedUids] = useState<Set<string>>(new Set());
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  // TWU-02 — default AI-correction preferences: a single owner-only get on
+  // entering Verifiche, kept in memory for the session; one write only on save.
+  // A load error is an EXPLICIT distinct state — never a silent fallback to the
+  // application defaults (which would risk running quality/Luna when the teacher
+  // had saved economy). Until preferences are `ready`, the AI dialogs cannot run
+  // with implicit defaults.
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const [aiPrefs, setAiPrefs] = useState<AiPreferencesLoadState>({ status: 'loading' });
+  // In-flight guard: collapses StrictMode double-invocation and double-clicks on
+  // «Riprova» into a single explicit get.
+  const aiPrefsLoadingRef = useRef(false);
   // M5-04: azione massiva in conferma (Completa/Riapri/Restituisci/Azzera) o null.
   const [batchAction, setBatchAction] = useState<BatchAction | null>(null);
   // «Valutate» n/totale per studentUid: singola lettura mirata (no listener).
@@ -700,6 +728,45 @@ export function VerificationsView() {
     setMonitorRefreshError(null);
     setMonitorRefreshedAt(false);
   }, [selectedVerId]);
+
+  // TWU-02 — one explicit owner-only get of the AI-correction preferences (no
+  // listener/polling). On success ⇒ `ready`; on any failure (network, permission,
+  // malformed document) ⇒ `error` — NEVER a silent fallback to the defaults. The
+  // in-flight ref collapses StrictMode's double effect and «Riprova» double-clicks
+  // into a single get; no state update after unmount.
+  function loadAiPreferences() {
+    if (!ownerUid || aiPrefsLoadingRef.current) return;
+    aiPrefsLoadingRef.current = true;
+    setAiPrefs({ status: 'loading' });
+    loadTeacherAiPreferences(ownerUid, db)
+      .then((preferences) => {
+        if (mountedRef.current) setAiPrefs({ status: 'ready', preferences });
+      })
+      .catch(() => {
+        if (mountedRef.current) setAiPrefs({ status: 'error', message: AI_PREFS_ERROR_MESSAGE });
+      })
+      .finally(() => {
+        aiPrefsLoadingRef.current = false;
+      });
+  }
+
+  // Load once on entering Verifiche (per owner). StrictMode-safe via the ref.
+  useEffect(() => {
+    loadAiPreferences();
+  }, [ownerUid]);
+
+  // TWU-02 — persistent, accessible error banner with a compact «Riprova» button.
+  // A retry is a single new explicit get (guarded against double-click).
+  function renderAiPrefsError() {
+    return (
+      <p role="alert" className={styles.aiPrefsError}>
+        <span>{AI_PREFS_ERROR_MESSAGE}</span>
+        <button type="button" className={styles.aiPrefsRetryBtn} onClick={loadAiPreferences}>
+          Riprova
+        </button>
+      </p>
+    );
+  }
 
   async function loadAll() {
     setLoadError(null);
@@ -1525,6 +1592,20 @@ export function VerificationsView() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          {/* TWU-02 — default AI-correction settings for this teacher. Disabled
+              while preferences are loading; in error the persistent message +
+              «Riprova» below drive the recovery. Never opens a form built on
+              invented defaults. */}
+          <button
+            type="button"
+            className={styles.aiSettingsBtn}
+            disabled={aiPrefs.status !== 'ready'}
+            onClick={() => setAiSettingsOpen(true)}
+          >
+            <IconSparkles />
+            Impostazioni correzione IA
+          </button>
+          {aiPrefs.status === 'error' && renderAiPrefsError()}
         </div>
       )}
 
@@ -2264,6 +2345,10 @@ export function VerificationsView() {
                   </button>
                 </div>
               </div>
+              {/* TWU-02 — if the AI preferences failed to load, «Correggi con IA»
+                  must not start on invented defaults: show the persistent error
+                  + «Riprova» and disable the button until preferences are ready. */}
+              {aiPrefs.status === 'error' && renderAiPrefsError()}
               {/* M5-04A: barra azioni batch sulle righe selezionate — icone
                   coerenti, dimensioni uniformi, griglia responsive (5 col →
                   2 col → 1 col). Nessun pulsante sulle singole righe. */}
@@ -2275,7 +2360,12 @@ export function VerificationsView() {
                 <button
                   type="button"
                   className="btn-primary"
-                  disabled={aiSelectedUids.size === 0 || aiDialogOpen || batchAction !== null}
+                  disabled={
+                    aiSelectedUids.size === 0 ||
+                    aiDialogOpen ||
+                    batchAction !== null ||
+                    aiPrefs.status !== 'ready'
+                  }
                   onClick={() => setAiDialogOpen(true)}
                 >
                   <IconSparkles />
@@ -2548,11 +2638,25 @@ export function VerificationsView() {
         />
       )}
 
-      {aiDialogOpen && selectedVer && (
+      {aiSettingsOpen && aiPrefs.status === 'ready' && (
+        <AiCorrectionSettingsDialog
+          ownerUid={ownerUid}
+          db={db}
+          initial={aiPrefs.preferences}
+          onClose={() => setAiSettingsOpen(false)}
+          onSaved={(prefs) => {
+            setAiPrefs({ status: 'ready', preferences: prefs });
+            setAiSettingsOpen(false);
+          }}
+        />
+      )}
+
+      {aiDialogOpen && selectedVer && aiPrefs.status === 'ready' && (
         <AiBatchCorrectionDialog
           verificationId={selectedVer.id}
           submissionIds={aiSelectedSubmissionIds}
           callables={aiCallables}
+          defaults={aiPrefs.preferences}
           onClose={() => setAiDialogOpen(false)}
           onApplied={() => {
             // M5-04A: aggiornamento minimale (stato/percentuale dal listener del

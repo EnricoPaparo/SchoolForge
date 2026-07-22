@@ -35,6 +35,12 @@ import {
   type GradingMode,
 } from './aiCorrectionGatewayCore.js';
 import { isRealProviderEnabled, type AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
+import {
+  DEFAULT_MODEL_PROFILE,
+  profileForModel,
+  resolveModelProfile,
+  type ModelProfile,
+} from './aiCorrectionModelProfile.js';
 import { enforceOperationLimits, type OperationLimitInput } from './aiCorrectionLimits.js';
 import {
   estimateCostBreakdown,
@@ -812,25 +818,69 @@ export function canonicalizeSubmissionIds(submissionIds: readonly string[]): str
 }
 
 /**
- * SHA-256 di verifica, selezione canonica e criteri pedagogici (`gradingMode` +
- * `teacherGuidance`); nessun testo è persistito, solo il digest. Includere
- * `gradingMode` e la guidance rende l'idempotenza sensibile ai criteri: stesso
- * `requestId` con stile o indicazioni diversi ⇒ hash diverso ⇒ conflitto
- * (`invalid_input`), mai un replay silenzioso con criteri differenti (M5-QUALITY-01).
+ * SHA-256 di verifica, selezione canonica e criteri pedagogici (`gradingMode`,
+ * profilo modello **risolto** e `teacherGuidance`); nessun testo è persistito,
+ * solo il digest. Includere `gradingMode`, il `modelProfile` risolto e la guidance
+ * rende l'idempotenza sensibile ai criteri: stesso `requestId` con stile, profilo
+ * o indicazioni diversi ⇒ hash diverso ⇒ conflitto (`invalid_input`), mai un
+ * replay silenzioso con criteri differenti (M5-QUALITY-01, TWU-02).
  */
 export function computeSelectionHash(
   verificationId: string,
   submissionIds: string[],
   gradingMode: GradingMode,
+  modelProfile: ModelProfile,
   teacherGuidance?: string,
 ): string {
   const canonical = JSON.stringify([
     verificationId,
     canonicalizeSubmissionIds(submissionIds),
     gradingMode,
+    modelProfile,
     teacherGuidance ?? '',
   ]);
   return createHash('sha256').update(canonical, 'utf8').digest('hex');
+}
+
+// ── Risoluzione profilo modello (TWU-02) ─────────────────────────────────────
+
+/**
+ * Risolve il **profilo effettivo** della richiesta. Se il client ha inviato un
+ * profilo, vince quello. Se assente (compatibilità legacy) il default si deriva
+ * dal **modello della config runtime** (`settings/aiConfig.model`): su DEV punta
+ * a Luna ⇒ `quality`. Senza config runtime (mock/config assente) si usa il
+ * default applicativo. Un modello runtime non mappato ad alcun profilo chiuso è
+ * fail-closed (`provider_config_invalid`) — nessun fallback silenzioso.
+ */
+export function resolveEffectiveModelProfile(
+  requestProfile: ModelProfile | undefined,
+  runtimeConfig: AiRuntimeConfig | null,
+): ModelProfile {
+  if (requestProfile) return requestProfile;
+  if (runtimeConfig) {
+    const legacy = profileForModel(runtimeConfig.model);
+    if (legacy) return legacy;
+    throw new AiGatewayError(
+      'provider_config_invalid',
+      'Modello runtime non associato ad alcun profilo modello.',
+    );
+  }
+  return DEFAULT_MODEL_PROFILE;
+}
+
+/**
+ * Applica il profilo alla config runtime **reale**, sostituendo **solo** modello
+ * e listino (budget, limiti, kill switch restano quelli autoritativi di
+ * `settings/aiConfig`). Tutto il resto del motore (stima, prenotazione, grader,
+ * metadata) opera così sul modello/listino del profilo risolto, in modo coerente
+ * tra preview e run.
+ */
+export function applyModelProfileToConfig(
+  runtimeConfig: AiRuntimeConfig,
+  profile: ModelProfile,
+): AiRuntimeConfig {
+  const { model, priceListVersion } = resolveModelProfile(profile);
+  return { ...runtimeConfig, model, priceListVersion };
 }
 
 // ── Porte (implementate con Admin SDK nel wiring) ─────────────────────────────
@@ -1303,6 +1353,13 @@ export async function runPreview(
     deps.featureMode === 'openai'
       ? await loadEnabledRealProviderConfig(deps.loadRuntimeConfig)
       : null;
+  // TWU-02 — profilo effettivo risolto server-side; il modello/listino del
+  // profilo sostituisce quelli di default della config runtime per la stima
+  // (identica al run a parità di selezione/profilo).
+  const effectiveProfile = resolveEffectiveModelProfile(request.modelProfile, runtimeConfig);
+  const effectiveConfig = runtimeConfig
+    ? applyModelProfileToConfig(runtimeConfig, effectiveProfile)
+    : null;
   const preflight = await buildOperationPreflight(request, deps.callerUid!, deps.ports);
 
   const counts: AiCorrectionCounts = emptyCounts(request.submissionIds.length);
@@ -1324,15 +1381,17 @@ export async function runPreview(
 
   // M5-05D1 — solo provider reale: kill switch da config runtime + limiti DEV
   // applicati nel preflight, prima di qualsiasi elaborazione. Mock: nessun gate.
-  if (runtimeConfig) {
-    enforceRealProviderLimits(runtimeConfig, preflight.eligibleLimits);
+  // I limiti restano quelli di `settings/aiConfig` (invariati dal profilo).
+  if (effectiveConfig) {
+    enforceRealProviderLimits(effectiveConfig, preflight.eligibleLimits);
   }
 
   // M5-05D2B-1 — stima costo con lo **stesso** contratto del run (ripartizione
   // input/output della sola selezione eleggibile). Mock: 0 (nessun costo, nessuna
   // prenotazione, nessuna chiamata provider). La preview **non** dichiara un costo
-  // effettivo. A parità di selezione/config coincide col run.
-  const cost = buildCostEstimateFields(runtimeConfig, preflight.estimate);
+  // effettivo. A parità di selezione/profilo coincide col run: usa il modello e
+  // listino del profilo risolto (TWU-02).
+  const cost = buildCostEstimateFields(effectiveConfig, preflight.estimate);
 
   return {
     mode: deps.featureMode === 'openai' ? 'openai' : 'mock',
@@ -1519,12 +1578,6 @@ export async function runExecution(
   };
   const mode: AiEnabledFeatureMode = deps.featureMode === 'openai' ? 'openai' : 'mock';
   const ownerUid = deps.callerUid!;
-  const selectionHash = computeSelectionHash(
-    request.verificationId,
-    request.submissionIds,
-    request.gradingMode,
-    request.teacherGuidance,
-  );
   const ordinalBySubmissionId = new Map(
     request.submissionIds.map((submissionId, ordinal) => [submissionId, ordinal]),
   );
@@ -1543,12 +1596,26 @@ export async function runExecution(
   // della correction per proteggere dalle race.
   const runtimeConfig =
     mode === 'openai' ? await loadEnabledRealProviderConfig(deps.loadRuntimeConfig) : null;
+  // TWU-02 — profilo effettivo risolto server-side; sostituisce modello e listino
+  // (budget/limiti/kill switch restano da `settings/aiConfig`). Il profilo entra
+  // nell'identità idempotente (hash) ed è quello usato per grader, stima e costi.
+  const effectiveProfile = resolveEffectiveModelProfile(request.modelProfile, runtimeConfig);
+  const effectiveConfig = runtimeConfig
+    ? applyModelProfileToConfig(runtimeConfig, effectiveProfile)
+    : null;
+  const selectionHash = computeSelectionHash(
+    request.verificationId,
+    request.submissionIds,
+    request.gradingMode,
+    effectiveProfile,
+    request.teacherGuidance,
+  );
   const preflight =
     mode === 'openai' ? await buildOperationPreflight(request, ownerUid, deps.ports) : null;
-  if (runtimeConfig && preflight) {
-    enforceRealProviderLimits(runtimeConfig, preflight.eligibleLimits);
+  if (effectiveConfig && preflight) {
+    enforceRealProviderLimits(effectiveConfig, preflight.eligibleLimits);
   }
-  const grader = typeof deps.grader === 'function' ? deps.grader(runtimeConfig) : deps.grader;
+  const grader = typeof deps.grader === 'function' ? deps.grader(effectiveConfig) : deps.grader;
 
   // M5-05E-1: calcola e applica il tetto prudenziale prima della lease.
   const preflightTeacherQuestions = preflight?.teacherQuestions ?? null;
@@ -1560,9 +1627,9 @@ export async function runExecution(
       item.classification.status === 'eligible' &&
       item.classification.eligible.openOrders.length > 0,
   );
-  const maxAttemptsPerCall = runtimeConfig ? runtimeConfig.limits.maxApplicationRetries + 1 : 1;
+  const maxAttemptsPerCall = effectiveConfig ? effectiveConfig.limits.maxApplicationRetries + 1 : 1;
   let reservationCostMicroUsd = 0;
-  if (runtimeConfig && eligibleWithOpen.length > 0) {
+  if (effectiveConfig && eligibleWithOpen.length > 0) {
     if (!deps.ports.reserveBudget || !deps.ports.reconcileBudget || !deps.ports.markBudgetInvoked) {
       throw new AiGatewayError(
         'budget_unavailable',
@@ -1576,14 +1643,14 @@ export async function runExecution(
       );
     }
     reservationCostMicroUsd = computeReservationBoundMicroUsd(
-      runtimeConfig,
+      effectiveConfig,
       eligibleWithOpen,
       preflightByOrder,
       request,
       grader,
       maxAttemptsPerCall,
     );
-    if (reservationCostMicroUsd > runtimeConfig.maxOperationCostMicroUsd) {
+    if (reservationCostMicroUsd > effectiveConfig.maxOperationCostMicroUsd) {
       throw new AiGatewayError(
         'operation_budget_exceeded',
         'La prenotazione prudenziale supera il limite di costo della singola operazione.',
@@ -1608,9 +1675,9 @@ export async function runExecution(
     submissionCount: request.submissionIds.length,
     provider: grader.id,
     ...(grader.model ? { model: grader.model } : {}),
-    ...(runtimeConfig?.configVersion ? { configVersion: runtimeConfig.configVersion } : {}),
-    ...(runtimeConfig?.priceListVersion
-      ? { priceListVersion: runtimeConfig.priceListVersion }
+    ...(effectiveConfig?.configVersion ? { configVersion: effectiveConfig.configVersion } : {}),
+    ...(effectiveConfig?.priceListVersion
+      ? { priceListVersion: effectiveConfig.priceListVersion }
       : {}),
     executionId,
     leaseMs: RUN_LEASE_MS,
@@ -1658,8 +1725,8 @@ export async function runExecution(
   // ── M5-05D2B-1 — contratto economico del percorso provider reale ────────────
   const reservationMonthKey = monthKeyFromMs(nowMs);
   const reservationDayKey = dayKeyFromMs(nowMs);
-  const budgetMicroUsd = runtimeConfig?.monthlyBudgetMicroUsd ?? 0;
-  const dailyBudgetMicroUsd = runtimeConfig?.dailyBudgetMicroUsd ?? 0;
+  const budgetMicroUsd = effectiveConfig?.monthlyBudgetMicroUsd ?? 0;
+  const dailyBudgetMicroUsd = effectiveConfig?.dailyBudgetMicroUsd ?? 0;
   // Consegne che genereranno **una chiamata provider** (hanno aperte). Le
   // sole-chiuse non chiamano il provider → costo 0 → nessuna prenotazione.
   // M5-05D2B-2 — tentativi massimi per chiamata (retry incluso) e deadline
@@ -1668,7 +1735,7 @@ export async function runExecution(
   const runDeadlineMs = nowMs + RUN_OVERALL_DEADLINE_MS - RUN_FINALIZE_MARGIN_MS;
 
   let budgetReserved = false;
-  if (runtimeConfig && eligibleWithOpen.length > 0) {
+  if (effectiveConfig && eligibleWithOpen.length > 0) {
     const reservation = await deps.ports.reserveBudget!({
       requestId: request.requestId,
       amountMicroUsd: reservationCostMicroUsd,
@@ -1759,7 +1826,7 @@ export async function runExecution(
         byOrder,
         grader,
         commit: deps.ports.commitSubmission,
-        deadlineMs: runtimeConfig ? runDeadlineMs : undefined,
+        deadlineMs: effectiveConfig ? runDeadlineMs : undefined,
         signal: deps.abortSignal,
       });
     },
@@ -1837,31 +1904,31 @@ export async function runExecution(
   // `nearest`. Mock/sole-chiuse: 0/0/0 → costo 0 (mai un actual inventato).
   const totalTokensEstimated = inputTokensEstimated + outputTokensEstimated;
   const totalTokensActual = inputTokensActual + outputTokensActual;
-  const costEstimatedMicroUsd = runtimeConfig
+  const costEstimatedMicroUsd = effectiveConfig
     ? (estimateCostBreakdown(
         inputTokensEstimated,
         outputTokensEstimated,
-        runtimeConfig.priceListVersion,
-        runtimeConfig.model,
+        effectiveConfig.priceListVersion,
+        effectiveConfig.model,
       )?.costMicroUsd ?? 0)
     : 0;
-  const costActualMicroUsd = runtimeConfig
+  const costActualMicroUsd = effectiveConfig
     ? (actualCostMicroUsd(
         inputTokensActual,
         outputTokensActual,
-        runtimeConfig.priceListVersion,
-        runtimeConfig.model,
+        effectiveConfig.priceListVersion,
+        effectiveConfig.model,
       ) ?? 0)
     : 0;
   // M5-05D2B-2 — costo **contabilizzato prudenziale**: effettivo noto + tetto
   // (`ceil`, conservativo) dei tentativi dal costo incerto, mai oltre la
   // prenotazione. È il valore che verrà addebitato al ledger.
-  const uncertainBoundMicroUsd = runtimeConfig
+  const uncertainBoundMicroUsd = effectiveConfig
     ? (estimateCostBreakdown(
         settledInputTokens,
         settledOutputTokens,
-        runtimeConfig.priceListVersion,
-        runtimeConfig.model,
+        effectiveConfig.priceListVersion,
+        effectiveConfig.model,
       )?.costMicroUsd ?? 0)
     : 0;
   const rawSettledMicroUsd = costActualMicroUsd + uncertainBoundMicroUsd;

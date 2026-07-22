@@ -16,6 +16,8 @@
  * Il wiring runtime (`onCall`, Admin SDK) è in `aiCorrectionGateway.ts`.
  */
 
+import { parseModelProfileField, type ModelProfile } from './aiCorrectionModelProfile.js';
+
 // ── Errori ────────────────────────────────────────────────────────────────
 
 /**
@@ -114,6 +116,12 @@ export interface AiCorrectionRequest {
   /** Stile di valutazione (M5-QUALITY-01), sempre normalizzato server-side. */
   gradingMode: GradingMode;
   teacherGuidance?: string;
+  /**
+   * TWU-02 — profilo modello **chiuso** scelto dal client (`economy` | `quality`).
+   * Assente ⇒ default legacy risolto server-side dal modello runtime. Mai un
+   * model ID o un listino: la risoluzione profilo → modello/listino è server-side.
+   */
+  modelProfile?: ModelProfile;
 }
 
 // Le response di preview/run (contratto pieno M5-02) sono definite in
@@ -170,6 +178,7 @@ const ALLOWED_REQUEST_KEYS = [
   'requestId',
   'gradingMode',
   'teacherGuidance',
+  'modelProfile',
 ] as const;
 
 export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest {
@@ -183,7 +192,7 @@ export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest
       throw new AiGatewayError('invalid_input', 'Il payload contiene proprietà non ammesse.');
     }
   }
-  const { verificationId, submissionIds, requestId, gradingMode, teacherGuidance } =
+  const { verificationId, submissionIds, requestId, gradingMode, teacherGuidance, modelProfile } =
     input as Record<string, unknown>;
 
   if (!isSafeId(verificationId)) {
@@ -225,6 +234,16 @@ export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest
   // M5-QUALITY-01 — assente ⇒ balanced; presente ma non valido ⇒ invalid_input.
   const normalizedGradingMode = normalizeGradingMode(gradingMode);
 
+  // TWU-02 — assente ⇒ undefined (default legacy risolto server-side); presente
+  // ma non valido (null/sconosciuto/non-stringa) ⇒ invalid_input. La validazione
+  // è una funzione pura del modulo profili (nessun ciclo di import): qui si
+  // traduce l'esito fail-closed in AiGatewayError.
+  const profileResult = parseModelProfileField(modelProfile);
+  if (!profileResult.ok) {
+    throw new AiGatewayError('invalid_input', 'Profilo modello non valido.');
+  }
+  const normalizedProfile = profileResult.profile;
+
   if (teacherGuidance !== undefined && typeof teacherGuidance !== 'string') {
     throw new AiGatewayError('invalid_input', 'Indicazioni docente non valide.');
   }
@@ -239,6 +258,7 @@ export function validateAiCorrectionRequest(input: unknown): AiCorrectionRequest
     requestId,
     gradingMode: normalizedGradingMode,
     ...(normalizedGuidance ? { teacherGuidance: normalizedGuidance } : {}),
+    ...(normalizedProfile ? { modelProfile: normalizedProfile } : {}),
   };
 }
 

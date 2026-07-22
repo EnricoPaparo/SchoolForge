@@ -73,12 +73,53 @@ export function gradingModeDescription(mode: GradingMode): string {
   return GRADING_MODE_OPTIONS.find((option) => option.value === mode)!.description;
 }
 
+/**
+ * TWU-02 — profilo modello **chiuso**. Il client sceglie solo `economy`/`quality`
+ * e **mai** un model ID o un listino: la risoluzione profilo → modello/listino è
+ * esclusivamente server-side. `quality` è il default (su DEV il runtime è Luna).
+ */
+export type ModelProfile = 'economy' | 'quality';
+
+export const DEFAULT_MODEL_PROFILE: ModelProfile = 'quality';
+
+/**
+ * Opzioni mostrate nel dialog. `modelId` è il **nome tecnico** del modello
+ * server-side, mostrato in piccolo sotto l'etichetta a puro scopo informativo:
+ * non è un prezzo e non viene mai inviato nel payload.
+ */
+export const MODEL_PROFILE_OPTIONS: readonly {
+  value: ModelProfile;
+  label: string;
+  modelId: string;
+  description: string;
+}[] = [
+  {
+    value: 'economy',
+    label: 'Economico',
+    modelId: 'gpt-5.4-nano-2026-03-17',
+    description: 'Costo inferiore.',
+  },
+  {
+    value: 'quality',
+    label: 'Qualità',
+    modelId: 'gpt-5.6-luna',
+    description: 'Feedback più approfonditi, costo maggiore.',
+  },
+];
+
+/** Descrizione dinamica del profilo selezionato. */
+export function modelProfileDescription(profile: ModelProfile): string {
+  return MODEL_PROFILE_OPTIONS.find((option) => option.value === profile)!.description;
+}
+
 export interface AiCorrectionRequest {
   verificationId: string;
   submissionIds: string[];
   requestId: string;
   gradingMode: GradingMode;
   teacherGuidance?: string;
+  /** TWU-02 — profilo modello chiuso; il server risolve modello/listino. */
+  modelProfile?: ModelProfile;
 }
 
 export const MAX_TEACHER_GUIDANCE_CHARS = 500;
@@ -147,6 +188,7 @@ export function buildRequest(
   requestId: string,
   gradingMode: GradingMode,
   teacherGuidance?: string,
+  modelProfile?: ModelProfile,
 ): AiCorrectionRequest {
   const normalizedGuidance = teacherGuidance?.trim();
   return {
@@ -155,6 +197,7 @@ export function buildRequest(
     requestId,
     gradingMode,
     ...(normalizedGuidance ? { teacherGuidance: normalizedGuidance } : {}),
+    ...(modelProfile ? { modelProfile } : {}),
   };
 }
 

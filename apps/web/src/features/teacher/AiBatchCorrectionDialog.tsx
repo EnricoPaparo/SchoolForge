@@ -2,20 +2,30 @@ import { useEffect, useRef, useState } from 'react';
 import { DialogShell } from './workspaceDialogs.js';
 import styles from './AiBatchCorrectionDialog.module.css';
 import {
+  AiCorrectionSettingsFields,
+  type AiCorrectionSettingsValue,
+} from './AiCorrectionSettingsFields.js';
+import {
   buildRequest,
   describeAiError,
   describeExclusion,
-  gradingModeDescription,
   DEFAULT_GRADING_MODE,
+  DEFAULT_MODEL_PROFILE,
   GRADING_MODE_OPTIONS,
-  MAX_TEACHER_GUIDANCE_CHARS,
+  MODEL_PROFILE_OPTIONS,
   newRequestId,
   type AiCorrectionCallables,
   type AiCorrectionRequest,
   type AiPreviewResult,
   type AiRunResult,
-  type GradingMode,
 } from '../repository/corrections/aiCorrectionClient.js';
+
+/** Valori iniziali dei criteri (preferenze del docente); default se non caricate. */
+export const DEFAULT_AI_SETTINGS: AiCorrectionSettingsValue = {
+  modelProfile: DEFAULT_MODEL_PROFILE,
+  gradingMode: DEFAULT_GRADING_MODE,
+  teacherGuidance: '',
+};
 
 /**
  * M5-03/M5-05 — dialog batch «Correggi con IA» (mock o OpenAI reale).
@@ -38,16 +48,20 @@ export function AiBatchCorrectionDialog({
   callables,
   onClose,
   onApplied,
+  defaults = DEFAULT_AI_SETTINGS,
 }: {
   verificationId: string;
   submissionIds: string[];
   callables: AiCorrectionCallables;
   onClose: () => void;
   onApplied: (result: AiRunResult) => void;
+  /** TWU-02 — valori predefiniti caricati dalle preferenze del docente. */
+  defaults?: AiCorrectionSettingsValue;
 }) {
   const [phase, setPhase] = useState<Phase>('configure');
-  const [gradingMode, setGradingMode] = useState<GradingMode>(DEFAULT_GRADING_MODE);
-  const [teacherGuidance, setTeacherGuidance] = useState('');
+  // TWU-02 — i tre criteri vivono in un unico oggetto controllato, precompilato
+  // dalle preferenze del docente. La modifica locale NON tocca le preferenze.
+  const [settings, setSettings] = useState<AiCorrectionSettingsValue>(defaults);
   const [preview, setPreview] = useState<AiPreviewResult | null>(null);
   const [result, setResult] = useState<AiRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -78,13 +92,11 @@ export function AiBatchCorrectionDialog({
     setPhase('configure');
   }
 
-  function changeGradingMode(value: GradingMode) {
-    setGradingMode(value);
-    invalidatePreview();
-  }
-
-  function changeTeacherGuidance(value: string) {
-    setTeacherGuidance(value);
+  // Ogni modifica ai criteri (profilo, stile o indicazioni) invalida la preview
+  // e genera una nuova requestId: la run non può mai entrare in conflitto
+  // (stessa requestId con criteri diversi ⇒ invalid_input lato server).
+  function changeSettings(next: AiCorrectionSettingsValue) {
+    setSettings(next);
     invalidatePreview();
   }
 
@@ -97,8 +109,9 @@ export function AiBatchCorrectionDialog({
       verificationId,
       submissionIds,
       requestIdRef.current,
-      gradingMode,
-      teacherGuidance,
+      settings.gradingMode,
+      settings.teacherGuidance,
+      settings.modelProfile,
     );
     try {
       const res = await callables.preview(request);
@@ -159,49 +172,16 @@ export function AiBatchCorrectionDialog({
             Consegne selezionate: <strong>{submissionIds.length}</strong>
           </p>
 
-          {/* 3) Stile di valutazione. */}
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Stile di valutazione</span>
-            <select
-              aria-label="Stile di valutazione"
-              aria-describedby="grading-mode-desc"
-              value={gradingMode}
-              disabled={busy}
-              onChange={(event) => changeGradingMode(event.target.value as GradingMode)}
-            >
-              {GRADING_MODE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* 3) Criteri condivisi: profilo modello + stile + indicazioni
+              (stesso form del dialog «Impostazioni correzione IA»). */}
+          <AiCorrectionSettingsFields
+            value={settings}
+            onChange={changeSettings}
+            disabled={busy}
+            idPrefix="ai-batch"
+          />
 
-          {/* 4) Descrizione dinamica dello stile selezionato. */}
-          <p id="grading-mode-desc" className={styles.modeDescription}>
-            {gradingModeDescription(gradingMode)}
-          </p>
-
-          {/* 5) Indicazioni aggiuntive. */}
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Indicazioni aggiuntive per la correzione</span>
-            <textarea
-              aria-label="Indicazioni aggiuntive per la correzione"
-              aria-describedby="teacher-guidance-help"
-              rows={3}
-              maxLength={MAX_TEACHER_GUIDANCE_CHARS}
-              value={teacherGuidance}
-              disabled={busy}
-              onChange={(event) => changeTeacherGuidance(event.target.value)}
-            />
-          </label>
-
-          {/* 6) Contatore caratteri. */}
-          <small id="teacher-guidance-help" className={styles.counter}>
-            {teacherGuidance.length}/{MAX_TEACHER_GUIDANCE_CHARS} caratteri
-          </small>
-
-          {/* 7) Footer. */}
+          {/* 4) Footer. */}
           <div className="dialog-actions">
             <button type="button" onClick={onClose}>
               Annulla
@@ -261,6 +241,14 @@ export function AiBatchCorrectionDialog({
             </li>
           </ul>
           {/* Impostazioni applicate, sola lettura: nessuna seconda textarea. */}
+          <div className={styles.appliedGuidance}>
+            <strong>Profilo modello</strong>
+            <p>
+              {MODEL_PROFILE_OPTIONS.find(
+                (o) => o.value === (previewRequest?.modelProfile ?? DEFAULT_MODEL_PROFILE),
+              )?.label ?? 'Qualità'}
+            </p>
+          </div>
           <div className={styles.appliedGuidance}>
             <strong>Stile di valutazione</strong>
             <p>
