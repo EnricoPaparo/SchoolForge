@@ -656,7 +656,7 @@ function LessonContent({
           Contenuto temporaneamente non disponibile.
         </p>
       ) : (
-        <MarkdownRenderer markdown={lesson.content} />
+        <MarkdownRenderer markdown={lesson.content} variant="lesson" />
       )}
     </article>
   );

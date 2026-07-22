@@ -245,12 +245,17 @@
   color: var(--color-text);
 }
 .lessonHead {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.65rem;
+  padding: 0.75rem 0.8rem 0.65rem;
+  border-top: 3px solid var(--color-primary);
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: rgba(59, 130, 246, 0.045);
 }
 .lessonSubtitle {
-  margin: 0.1rem 0 0;
+  margin: 0.3rem 0 0;
   color: var(--color-text-muted);
-  font-size: 0.9rem;
+  font-size: 0.925rem;
+  line-height: 1.5;
 }
 .difficulty {
   display: inline-block;
@@ -579,6 +584,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
+  font-size: clamp(1.15rem, 1.06rem + 0.28vw, 1.35rem);
+  line-height: 1.35;
 }
 .lessonMainCompleted {
   display: inline-flex;
