@@ -1,7 +1,13 @@
 import type { LessonItem, ProgramItem, UdaItem } from '../repository/programs/programsService.js';
 import type { ProgrammaMeta } from '../../types/firestore.js';
+import type * as JsPdfModule from 'jspdf';
 import { resolveLessonTitle } from '../repository/programs/lessonTitle.js';
 import { resolveUdaTitle } from '../repository/programs/udaTitle.js';
+import { loadPdfModule } from '../../lib/pdfModuleLoader.js';
+
+export type JsPdfModuleFactory = () => Promise<typeof JsPdfModule>;
+
+const importJsPdf: JsPdfModuleFactory = () => import('jspdf');
 
 /**
  * Generates a Markdown document of completed lessons, grouped by UDA.
@@ -109,8 +115,12 @@ export function downloadMarkdown(content: string, filename: string): void {
 /**
  * Generates a PDF from Markdown content using jsPDF and triggers a browser download.
  */
-export async function downloadPdf(content: string, title: string): Promise<void> {
-  const { jsPDF } = await import('jspdf');
+export async function downloadPdf(
+  content: string,
+  title: string,
+  moduleFactory: JsPdfModuleFactory = importJsPdf,
+): Promise<void> {
+  const { jsPDF } = await loadPdfModule(moduleFactory);
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
   const pageWidth = doc.internal.pageSize.getWidth();

@@ -151,21 +151,37 @@ vi.mock('../AiBatchCorrectionDialog.js', () => ({
   },
 }));
 // M5-04 — batch actions dialog stub: exposes the received rows and lets a test
-// drive onApplied (M5-04A: onApplied carries no uids — selection is persistent).
+// drive the typed server-confirmed result while selection stays persistent.
 const mockBatchDialog = vi.fn();
 vi.mock('../BatchCorrectionActionsDialog.js', () => ({
   BatchCorrectionActionsDialog: (props: {
     action: string;
     rows: { studentUid: string }[];
     onClose: () => void;
-    onApplied: () => void;
+    onApplied: (action: string, results: unknown[]) => void;
   }) => {
     mockBatchDialog(props);
     return (
       <div data-testid="batch-actions-dialog">
         <span>action: {props.action}</span>
         <span>rows: {props.rows.map((r) => r.studentUid).join(',')}</span>
-        <button type="button" onClick={() => props.onApplied()}>
+        <button
+          type="button"
+          onClick={() =>
+            props.onApplied(props.action, [
+              {
+                studentUid: 'stud-a',
+                submissionId: 'ver-1_stud-a',
+                outcome: 'succeeded',
+              },
+              {
+                studentUid: 'stud-b',
+                submissionId: 'ver-1_stud-b',
+                outcome: 'failed',
+              },
+            ])
+          }
+        >
           Applica
         </button>
         <button type="button" onClick={props.onClose}>
@@ -3794,6 +3810,52 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
       const btn = within(region).getByRole('button', { name: new RegExp(`^${name}`) });
       // Decorative inline SVG icon rendered inside the button.
       expect(btn.querySelector('svg')).not.toBeNull();
+    }
+  });
+
+  it('updates return visibility locally only for succeeded rows and preserves selection', async () => {
+    setupDefaults();
+    const completed = {
+      status: 'completed' as const,
+      evaluated: 1,
+      total: 1,
+      totalPoints: 2,
+      maxPoints: 2,
+      percentage: 100,
+      hasContent: true,
+    };
+    const region = await openWith(
+      new Map([
+        ['stud-a', completed],
+        ['stud-b', completed],
+      ]),
+    );
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona tutte le consegne' }));
+    mockLoadCorrectionProgressByStudent.mockResolvedValue(
+      new Map([
+        ['stud-a', { ...completed, status: 'returned' }],
+        ['stud-b', { ...completed, status: 'returned' }],
+      ]),
+    );
+
+    fireEvent.click(within(region).getByRole('button', { name: 'Restituisci' }));
+    fireEvent.click(within(await screen.findByTestId('batch-actions-dialog')).getByText('Applica'));
+
+    const annaRow = within(region).getByText('Anna').closest('tr')!;
+    const brunoRow = within(region).getByText('Bruno').closest('tr')!;
+    await waitFor(() =>
+      expect(within(annaRow).getByLabelText('Restituzione visibile allo studente')).toBeTruthy(),
+    );
+    expect(within(annaRow).getByLabelText('Soluzioni visibili allo studente')).toBeTruthy();
+    expect(within(brunoRow).getByLabelText('Visibilità non disponibile')).toBeTruthy();
+    for (const name of ['Anna', 'Bruno']) {
+      expect(
+        (
+          within(region).getByRole('checkbox', {
+            name: `Seleziona consegna — ${name}`,
+          }) as HTMLInputElement
+        ).checked,
+      ).toBe(true);
     }
   });
 });

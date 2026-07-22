@@ -2,8 +2,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
 import { CourseWorkspace } from '../CourseWorkspace.js';
+import { PdfModuleLoadError } from '../../../lib/pdfModuleLoader.js';
 import type { CourseCard } from '../../repository/programs/courseLibrary.js';
 import type { LessonItem, UdaItem } from '../../repository/programs/programsService.js';
+import type * as PdfModuleLoaderModule from '../../../lib/pdfModuleLoader.js';
+import type * as ProgrammaSvoltoModule from '../programmaSvolto.js';
 
 const mockListUdas = vi.fn();
 const mockListLessons = vi.fn();
@@ -27,8 +30,21 @@ const mockUpdateProgramMetadata = vi.fn();
 const mockDownloadLessonPdf = vi.fn();
 const mockReorderUda = vi.fn();
 const mockReorderLesson = vi.fn();
+const mockDownloadProgramPdf = vi.fn();
+const mockReloadCurrentPage = vi.fn();
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
+vi.mock('../../../lib/pdfModuleLoader.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof PdfModuleLoaderModule>();
+  return { ...actual, reloadCurrentPage: () => mockReloadCurrentPage() };
+});
+vi.mock('../programmaSvolto.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof ProgrammaSvoltoModule>();
+  return {
+    ...actual,
+    downloadPdf: (...args: unknown[]) => mockDownloadProgramPdf(...args),
+  };
+});
 vi.mock('../../repository/programs/programNotesCleanupClient.js', () => ({
   createProgramNotesCleanupCallable: () => vi.fn(),
 }));
@@ -119,6 +135,7 @@ beforeEach(() => {
   // Default: no usable Firestore projection, so existing tests exercise the
   // legacy Storage path (fetchLessonContent). MOB-01C tests override this.
   mockFetchPublicLessonContent.mockResolvedValue(null);
+  mockDownloadProgramPdf.mockResolvedValue(undefined);
 });
 
 // Controllable matchMedia stub for the mobile/desktop breakpoint tests.
@@ -1054,6 +1071,98 @@ describe('CourseWorkspace — course/UDA actions (DUX-04A)', () => {
 
     await waitFor(() => expect(mockDeleteProgram).toHaveBeenCalledTimes(1));
     resolveDelete();
+  });
+});
+
+describe('CourseWorkspace — Programma svolto PDF chunk recovery', () => {
+  async function renderProgramPdfWorkspace() {
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([
+      lesson('l1', 'uda-01-reti', { completed: true, titolo: 'Lezione A' }),
+    ]);
+    mockGetImportMeta.mockResolvedValue(null);
+    renderWorkspace();
+    await screen.findByRole('button', { name: 'Azioni corso' });
+  }
+
+  it('shows stale-chunk recovery without automatic reload and reloads once on explicit click', async () => {
+    mockDownloadProgramPdf.mockRejectedValueOnce(new PdfModuleLoadError('stale_chunk'));
+    await renderProgramPdfWorkspace();
+
+    clickMenuAction('Azioni corso', 'Programma svolto (PDF)');
+    expect(
+      await screen.findByText('SchoolForge è stato aggiornato. Ricarica la pagina e riprova.'),
+    ).toBeTruthy();
+    expect(mockReloadCurrentPage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Ricarica pagina' }));
+    expect(mockReloadCurrentPage).toHaveBeenCalledTimes(1);
+    expect(mockDownloadProgramPdf).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps generic PDF failures distinct and releases busy', async () => {
+    mockDownloadProgramPdf.mockRejectedValueOnce(new Error('renderer failed'));
+    await renderProgramPdfWorkspace();
+
+    clickMenuAction('Azioni corso', 'Programma svolto (PDF)');
+    expect(await screen.findByText('Impossibile generare il PDF. Riprova.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Ricarica pagina' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    expect(
+      (screen.getByRole('menuitem', { name: 'Programma svolto (PDF)' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  it('routes an explicit reload through the existing dirty guard', async () => {
+    mockDownloadProgramPdf.mockRejectedValueOnce(new PdfModuleLoadError('stale_chunk'));
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    await renderProgramPdfWorkspace();
+    clickMenuAction('Azioni corso', 'Programma svolto (PDF)');
+    await screen.findByRole('button', { name: 'Ricarica pagina' });
+
+    await expandUda();
+    fireEvent.click(screen.getByRole('button', { name: 'Lezione A' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Domande' }));
+    fireEvent.click(screen.getByRole('button', { name: 'make-dirty' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ricarica pagina' }));
+
+    expect(mockReloadCurrentPage).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog', { name: 'Modifiche non salvate' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /continua senza salvare/i }));
+    expect(mockReloadCurrentPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks a synchronous double click while one PDF generation is pending', async () => {
+    let resolvePdf!: () => void;
+    mockDownloadProgramPdf.mockReturnValueOnce(
+      new Promise<void>((resolve) => (resolvePdf = resolve)),
+    );
+    await renderProgramPdfWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni corso' }));
+    const action = screen.getByRole('menuitem', { name: 'Programma svolto (PDF)' });
+    fireEvent.click(action);
+    fireEvent.click(action);
+    await waitFor(() => expect(mockDownloadProgramPdf).toHaveBeenCalledTimes(1));
+    resolvePdf();
+    await waitFor(() => expect(screen.queryByText('Generazione PDF in corso…')).toBeNull());
+  });
+
+  it('does not update recovery UI after unmount', async () => {
+    let rejectPdf!: (error: unknown) => void;
+    mockDownloadProgramPdf.mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => (rejectPdf = reject)),
+    );
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { completed: true })]);
+    mockGetImportMeta.mockResolvedValue(null);
+    const view = renderWorkspace();
+    await screen.findByRole('button', { name: 'Azioni corso' });
+    clickMenuAction('Azioni corso', 'Programma svolto (PDF)');
+    view.unmount();
+    rejectPdf(new PdfModuleLoadError('stale_chunk'));
+    await act(async () => Promise.resolve());
+    expect(screen.queryByText(/SchoolForge è stato aggiornato/)).toBeNull();
   });
 });
 

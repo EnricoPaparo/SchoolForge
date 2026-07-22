@@ -6,6 +6,7 @@ import {
   useState,
 } from 'react';
 import { db, functions, storage } from '../../lib/firebase.js';
+import { PdfModuleLoadError, reloadCurrentPage } from '../../lib/pdfModuleLoader.js';
 import { createProgramNotesCleanupCallable } from '../repository/programs/programNotesCleanupClient.js';
 import {
   IconBookOpen,
@@ -287,6 +288,9 @@ export function CourseWorkspace({
   // Non-blocking notice after a successful re-import whose deferred
   // publicLessons cleanup was postponed (cleanupPending) — HARD-02B-2.
   const [wsNotice, setWsNotice] = useState<string | null>(null);
+  const [programPdfBusy, setProgramPdfBusy] = useState(false);
+  const [programPdfError, setProgramPdfError] = useState<'stale_chunk' | 'generic' | null>(null);
+  const programPdfBusyRef = useRef(false);
   const [udaBlockers, setUdaBlockers] = useState<RepositoryDeleteBlocker[] | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -767,13 +771,34 @@ export function CourseWorkspace({
   async function handleProgrammaSvolto(format: 'md' | 'pdf') {
     setMenuOpen(false);
     if (!tree) return;
-    const meta = card.activeImportId
-      ? await getImportMeta(card.programId, card.activeImportId, db).catch(() => null)
-      : null;
-    const content = generateMarkdown(cardToProgram(card), tree.udas, tree.lessons, meta);
-    const base = `programma-svolto-${card.title.replace(/\s+/g, '_')}`;
-    if (format === 'md') downloadMarkdown(content, `${base}.md`);
-    else await downloadPdf(content, base);
+    if (format === 'pdf' && programPdfBusyRef.current) return;
+    if (format === 'pdf') {
+      programPdfBusyRef.current = true;
+      setProgramPdfBusy(true);
+      setProgramPdfError(null);
+    }
+    try {
+      const meta = card.activeImportId
+        ? await getImportMeta(card.programId, card.activeImportId, db).catch(() => null)
+        : null;
+      const content = generateMarkdown(cardToProgram(card), tree.udas, tree.lessons, meta);
+      const base = `programma-svolto-${card.title.replace(/\s+/g, '_')}`;
+      if (format === 'md') downloadMarkdown(content, `${base}.md`);
+      else await downloadPdf(content, base);
+    } catch (error) {
+      if (format !== 'pdf') throw error;
+      if (!mountedRef.current) return;
+      setProgramPdfError(
+        error instanceof PdfModuleLoadError && error.category === 'stale_chunk'
+          ? 'stale_chunk'
+          : 'generic',
+      );
+    } finally {
+      if (format === 'pdf') {
+        programPdfBusyRef.current = false;
+        if (mountedRef.current) setProgramPdfBusy(false);
+      }
+    }
   }
 
   function handleNewUda(values: { titolo: string } & UdaMetadataValues) {
@@ -1268,6 +1293,26 @@ export function CourseWorkspace({
         </p>
       )}
 
+      {programPdfBusy && (
+        <p aria-busy="true" className="state-loading">
+          Generazione PDF in corso…
+        </p>
+      )}
+      {programPdfError && (
+        <div role="alert">
+          <p className="text-error">
+            {programPdfError === 'stale_chunk'
+              ? 'SchoolForge è stato aggiornato. Ricarica la pagina e riprova.'
+              : 'Impossibile generare il PDF. Riprova.'}
+          </p>
+          {programPdfError === 'stale_chunk' && (
+            <button type="button" onClick={() => guardedNav(reloadCurrentPage)}>
+              Ricarica pagina
+            </button>
+          )}
+        </div>
+      )}
+
       <div className={styles.summaryStrip}>
         <span className={styles.pill}>{yearLabel}</span>
         {card.classNames.length > 0 ? (
@@ -1518,7 +1563,7 @@ export function CourseWorkspace({
                   <button
                     type="button"
                     role="menuitem"
-                    disabled={!card.hasImport}
+                    disabled={!card.hasImport || programPdfBusy}
                     onClick={() => void handleProgrammaSvolto('pdf')}
                   >
                     <IconFileCheck size={15} />

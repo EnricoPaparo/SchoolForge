@@ -276,6 +276,19 @@ describe('downloadMarkdown', () => {
   });
 });
 
+describe('downloadPdf — dynamic module boundary', () => {
+  it('classifies a stale chunk before constructing or saving any PDF', async () => {
+    const factory = vi.fn(async () => {
+      throw new Error('Failed to fetch dynamically imported module: /assets/jspdf-old.js');
+    });
+
+    await expect(downloadPdf('# Programma', 'programma', factory as never)).rejects.toMatchObject({
+      category: 'stale_chunk',
+    });
+    expect(factory).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('downloadPdf', () => {
   it('resolves without throwing for standard markdown content', async () => {
     // jsPDF uses canvas APIs not available in jsdom — we only verify the function

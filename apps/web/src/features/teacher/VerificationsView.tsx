@@ -357,6 +357,7 @@ export function VerificationsView() {
   // ── Correction workspace (M4-02) ──────────────────────────────────
   const [correctionTarget, setCorrectionTarget] = useState<{
     submissionId: string;
+    studentUid: string;
     studentName: string;
   } | null>(null);
   // ── Batch AI correction (M5-03, mock) ─────────────────────────────
@@ -1547,6 +1548,18 @@ export function VerificationsView() {
         submissionId={correctionTarget.submissionId}
         ownerUid={ownerUid}
         studentName={correctionTarget.studentName}
+        onReturned={(submissionId) => {
+          setCorrectionReturnVisibility((current) => {
+            const next = new Map(current);
+            next.set(submissionId, {
+              submissionId,
+              studentUid: correctionTarget.studentUid,
+              visibleToStudent: true,
+              solutionsVisible: true,
+            });
+            return next;
+          });
+        }}
         onClose={() => {
           setCorrectionTarget(null);
           // Il workspace salva direttamente la correction, mentre la tabella
@@ -2701,6 +2714,7 @@ export function VerificationsView() {
                                         onClick={() =>
                                           setCorrectionTarget({
                                             submissionId: `${selectedVer.id}_${row.studentUid}`,
+                                            studentUid: row.studentUid,
                                             studentName,
                                           })
                                         }
@@ -2808,7 +2822,22 @@ export function VerificationsView() {
           verificationId={selectedVer.id}
           verification={selectedVer}
           onClose={() => setBatchAction(null)}
-          onApplied={() => {
+          onApplied={(action, results) => {
+            if (action === 'return') {
+              setCorrectionReturnVisibility((current) => {
+                const next = new Map(current);
+                for (const result of results) {
+                  if (result.outcome !== 'succeeded') continue;
+                  next.set(result.submissionId, {
+                    submissionId: result.submissionId,
+                    studentUid: result.studentUid,
+                    visibleToStudent: true,
+                    solutionsVisible: true,
+                  });
+                }
+                return next;
+              });
+            }
             // M5-04A: una sola rilettura mirata aggiorna «Valutate»/stato/
             // percentuale. La selezione resta INVARIATA (né riuscite né fallite
             // vengono deselezionate): il docente può concatenare azioni sullo

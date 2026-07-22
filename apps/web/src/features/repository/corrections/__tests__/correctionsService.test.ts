@@ -561,7 +561,7 @@ describe('completeCorrection', () => {
 // ─── returnCorrection ────────────────────────────────────────────────────────
 
 describe('returnCorrection', () => {
-  it('atomically writes the correction update, the return projection (no solutions), and an event', async () => {
+  it('atomically returns same_questions visible with every frozen solution', async () => {
     seedSubmittedSubmission();
     seedVerification();
     seedPublishedProjection();
@@ -582,6 +582,12 @@ describe('returnCorrection', () => {
     expect(mockBatchUpdate).toHaveBeenCalledTimes(3); // correction + submission + receipt
     expect(mockBatchSet).toHaveBeenCalledTimes(2); // correctionReturns + event
     expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+    expect(
+      mockGetDoc.mock.calls.some(
+        ([ref]) =>
+          (ref as FakeRef).__path === `verifications/${VERIFICATION_ID}/publishedProjection/data`,
+      ),
+    ).toBe(false);
 
     const [correctionUpdateRef, correctionUpdate] = mockBatchUpdate.mock.calls[0]!;
     expect(correctionUpdateRef.__path).toBe(`corrections/${SUBMISSION_ID}`);
@@ -590,12 +596,12 @@ describe('returnCorrection', () => {
     const [returnRef, returnDoc] = mockBatchSet.mock.calls[0]!;
     expect(returnRef.__path).toBe(`correctionReturns/${SUBMISSION_ID}`);
     expect(returnDoc.visibleToStudent).toBe(true);
-    expect(returnDoc.solutionsVisible).toBe(false);
+    expect(returnDoc.solutionsVisible).toBe(true);
     expect(returnDoc.questions).toHaveLength(2);
-    for (const question of returnDoc.questions) {
-      expect(question.correctAnswer).toBeUndefined();
-      expect(typeof question.points).toBe('number');
-    }
+    expect(
+      returnDoc.questions.map((question: { correctAnswer: string }) => question.correctAnswer),
+    ).toEqual(['sol0', 'sol1']);
+    for (const question of returnDoc.questions) expect(typeof question.points).toBe('number');
     expect(returnDoc.questions[0].studentAnswer).toEqual({ tipo: 'aperta', testo: 'risposta 1' });
 
     const [, event] = mockBatchSet.mock.calls[1]!;
@@ -612,12 +618,22 @@ describe('returnCorrection', () => {
 
   it('rejects when the self-sufficient projection would exceed the size limit', async () => {
     seedSubmittedSubmission();
-    seedVerification();
     const hugeTesto = 'x'.repeat(400_000);
-    seedPublishedProjection([
-      { order: 0, tipo: 'aperta', maxPoints: 10, testo: hugeTesto },
-      { order: 1, tipo: 'aperta', maxPoints: 5, testo: hugeTesto },
-    ]);
+    seedVerification({
+      teacherSnapshot: {
+        title: 'Verifica 1',
+        classId: 'class-a',
+        className: 'Classe A',
+        programId: 'p1',
+        importId: 'i1',
+        questionRefs: [],
+        questions: [
+          { order: 0, tipo: 'aperta', maxPoints: 10, testo: hugeTesto, soluzione: 'sol0' },
+          { order: 1, tipo: 'aperta', maxPoints: 5, testo: hugeTesto, soluzione: 'sol1' },
+        ],
+        activatedAt: { seconds: 1, nanoseconds: 0 },
+      },
+    });
     seedCorrection({
       status: 'completed',
       evaluations: {
@@ -627,6 +643,41 @@ describe('returnCorrection', () => {
     });
 
     await expect(returnCorrection(SUBMISSION_ID, fakeDb)).rejects.toThrow(/troppo grande/i);
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+  });
+
+  it('fails before every write when the frozen snapshot or a solution is unavailable', async () => {
+    seedSubmittedSubmission();
+    seedVerification({ teacherSnapshot: null });
+    seedCorrection({
+      status: 'completed',
+      evaluations: {
+        '0': { order: 0, points: 8, maxPoints: 10 },
+        '1': { order: 1, points: 4, maxPoints: 5 },
+      },
+    });
+
+    await expect(returnCorrection(SUBMISSION_ID, fakeDb)).rejects.toThrow(/snapshot docente/i);
+    expect(mockBatchUpdate).not.toHaveBeenCalled();
+    expect(mockBatchSet).not.toHaveBeenCalled();
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+
+    seedVerification({
+      teacherSnapshot: {
+        title: 'Verifica 1',
+        classId: 'class-a',
+        className: 'Classe A',
+        programId: 'p1',
+        importId: 'i1',
+        questionRefs: [],
+        questions: [
+          { order: 0, tipo: 'aperta', maxPoints: 10, testo: 'D1', soluzione: '' },
+          { order: 1, tipo: 'aperta', maxPoints: 5, testo: 'D2', soluzione: 'sol1' },
+        ],
+        activatedAt: { seconds: 1, nanoseconds: 0 },
+      },
+    });
+    await expect(returnCorrection(SUBMISSION_ID, fakeDb)).rejects.toThrow(/soluzione congelata/i);
     expect(mockBatchCommit).not.toHaveBeenCalled();
   });
 });
@@ -1116,7 +1167,10 @@ describe('VEX-02B — assigned-variant correction', () => {
     expect(returnDoc.questions.map((q: { order: number }) => q.order)).toEqual([0, 1]);
     expect(returnDoc.questions.some((q: { order: number }) => q.order === 2)).toBe(false);
     expect(returnDoc.maxPoints).toBe(15);
-    for (const q of returnDoc.questions) expect(q.correctAnswer).toBeUndefined();
+    expect(
+      returnDoc.questions.map((question: { correctAnswer: string }) => question.correctAnswer),
+    ).toEqual(['sol0', 'sol1']);
+    expect(JSON.stringify(returnDoc)).not.toContain('sol2');
   });
 
   it('setSolutionsVisible reveals solutions only for the assigned VEX questions', async () => {

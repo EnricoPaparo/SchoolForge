@@ -61,6 +61,7 @@ describe('BatchCorrectionActionsDialog (M5-04)', () => {
     expect(screen.getByText('Eleggibili: 1')).toBeTruthy();
     expect(screen.getByText('Escluse: 1')).toBeTruthy();
     expect(screen.getByText(/diventeranno immediatamente visibili allo studente/)).toBeTruthy();
+    expect(screen.getByText(/relative soluzioni/)).toBeTruthy();
     fireEvent.click(screen.getByText('Consegne escluse (1)'));
     expect(screen.getByText(/Studente b — Non ancora completata/)).toBeTruthy();
   });
@@ -90,10 +91,10 @@ describe('BatchCorrectionActionsDialog (M5-04)', () => {
     expect(screen.getByText('Riuscite: 1')).toBeTruthy();
     expect(screen.getByText('Fallite: 1')).toBeTruthy();
     expect(screen.getByText(/Studente b — non valutata/)).toBeTruthy();
-    // M5-04A: onApplied notifica soltanto (nessun uid): la selezione è
-    // persistente e non viene toccata dal dialog.
+    // TWU-03B: il parent riceve solo risultati server-confirmed per aggiornare
+    // la mappa locale, senza cambiare la selezione.
     expect(onApplied).toHaveBeenCalledTimes(1);
-    expect(onApplied).toHaveBeenCalledWith();
+    expect(onApplied).toHaveBeenCalledWith('complete', results);
   });
 
   it('keeps the initial exclusion count after a successful row changes status', async () => {
