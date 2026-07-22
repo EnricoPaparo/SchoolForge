@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type * as CorrectionRegisterExportModule from '../../repository/corrections/correctionRegisterExport.js';
 import type * as CorrectionProgressModule from '../../repository/corrections/correctionProgressService.js';
+import type * as CorrectionReturnVisibilityModule from '../../repository/corrections/correctionReturnVisibilityService.js';
 import type * as TeacherAiPrefsModule from '../../repository/corrections/teacherAiPreferencesService.js';
 
 afterEach(cleanup);
@@ -26,6 +27,9 @@ const mockWatchSubmissions = vi.fn();
 const mockDeleteSubmissionData = vi.fn();
 const mockDownloadCorrectionRegisterCsv = vi.fn();
 const mockDownloadCorrectionRegisterPdf = vi.fn();
+const mockLoadCorrectionReturnVisibilityBySubmission = vi.fn(
+  async (..._args: unknown[]) => new Map<string, unknown>(),
+);
 
 const mockLoadSelectedQuestions = vi.fn();
 const mockDownloadStudentPdf = vi.fn();
@@ -102,6 +106,17 @@ vi.mock('../../repository/corrections/correctionProgressService.js', async (impo
       mockLoadCorrectionProgressByStudent(...args),
   };
 });
+vi.mock(
+  '../../repository/corrections/correctionReturnVisibilityService.js',
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof CorrectionReturnVisibilityModule>();
+    return {
+      ...actual,
+      loadCorrectionReturnVisibilityBySubmission: (...args: unknown[]) =>
+        mockLoadCorrectionReturnVisibilityBySubmission(...args),
+    };
+  },
+);
 // TWU-02 — the AI-preferences load resolves to the application defaults so the
 // dialogs reach the `ready` state (the fail-closed error path is covered by the
 // service unit tests and dedicated cases below).
@@ -166,6 +181,7 @@ vi.mock('../BatchReturnVisibilityDialog.js', () => ({
     action: string;
     rows: { studentUid: string }[];
     onClose: () => void;
+    onApplied: (action: string, results: unknown[]) => void;
   }) => {
     mockVisibilityDialog(props);
     return (
@@ -174,6 +190,29 @@ vi.mock('../BatchReturnVisibilityDialog.js', () => ({
         <span>visibility rows: {props.rows.map((row) => row.studentUid).join(',')}</span>
         <button type="button" onClick={props.onClose}>
           Chiudi visibilità
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            props.onApplied(props.action, [
+              {
+                studentUid: 'stud-a',
+                submissionId: 'ver-1_stud-a',
+                outcome: 'succeeded',
+                visibleToStudent: true,
+                solutionsVisible: true,
+              },
+              {
+                studentUid: 'stud-b',
+                submissionId: 'ver-1_stud-b',
+                outcome: 'noop',
+                visibleToStudent: true,
+                solutionsVisible: true,
+              },
+            ])
+          }
+        >
+          Applica visibilità
         </button>
       </div>
     );
@@ -289,6 +328,7 @@ function setupDefaults() {
   mockSetVerificationStudentPdfEnabled.mockResolvedValue(undefined);
   mockListStudents.mockResolvedValue([]);
   mockWatchSubmissions.mockReturnValue(vi.fn());
+  mockLoadCorrectionReturnVisibilityBySubmission.mockResolvedValue(new Map());
 }
 
 describe('VerificationsView', () => {
@@ -1733,7 +1773,9 @@ describe('VerificationsView — consegne online monitor (M3F-05)', () => {
 
     await waitFor(() => expect(screen.getByText('Consegnata')).toBeTruthy());
     expect(screen.getByText('Non iniziata')).toBeTruthy(); // Bruno has no submission
-    expect(screen.getByText('SF-2026-A1B2')).toBeTruthy();
+    // `deliveryCode` remains in the submission contract/export, but TWU-03A
+    // intentionally removes it from this table UI.
+    expect(screen.queryByText('SF-2026-A1B2')).toBeNull();
     expect(screen.getByText('3')).toBeTruthy();
   });
 
@@ -1921,15 +1963,19 @@ describe('VerificationsView — consegne online monitor (M3F-05)', () => {
     await openMonitor();
     const initialProgressCalls = mockLoadCorrectionProgressByStudent.mock.calls.length;
     const initialStudentCalls = mockListStudents.mock.calls.length;
+    const initialVisibilityCalls = mockLoadCorrectionReturnVisibilityBySubmission.mock.calls.length;
 
     const btn = screen.getByRole('button', { name: 'Aggiorna consegne' });
     fireEvent.click(btn);
     fireEvent.click(btn); // second click in the same tick must be ignored
 
     await waitFor(() => expect(screen.getByText(/Aggiornato alle/)).toBeTruthy());
-    // Exactly one extra progress read + one extra roster read for both clicks.
+    // Exactly one extra invocation of each of the three scoped loads.
     expect(mockLoadCorrectionProgressByStudent.mock.calls.length).toBe(initialProgressCalls + 1);
     expect(mockListStudents.mock.calls.length).toBe(initialStudentCalls + 1);
+    expect(mockLoadCorrectionReturnVisibilityBySubmission.mock.calls.length).toBe(
+      initialVisibilityCalls + 1,
+    );
   });
 
   it('TWU-02A — shows the refresh status inline in the «Consegne online» header (no separate row, aria-live)', async () => {
@@ -3254,6 +3300,97 @@ describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)
     expect(within(table).getByRole('button', { name: 'Apri correzione — Anna' })).toBeTruthy();
   });
 
+  it.each([
+    [true, true, 'Restituzione visibile allo studente', 'Soluzioni visibili allo studente'],
+    [true, false, 'Restituzione visibile allo studente', 'Soluzioni nascoste allo studente'],
+    [false, true, 'Restituzione nascosta allo studente', 'Soluzioni visibili allo studente'],
+    [false, false, 'Restituzione nascosta allo studente', 'Soluzioni nascoste allo studente'],
+  ] as const)(
+    'shows return visibility icons for flags %s/%s',
+    async (visibleToStudent, solutionsVisible, returnLabel, solutionsLabel) => {
+      setupDefaults();
+      mockLoadCorrectionReturnVisibilityBySubmission.mockResolvedValueOnce(
+        new Map([
+          [
+            'ver-1_stud-a',
+            {
+              submissionId: 'ver-1_stud-a',
+              studentUid: 'stud-a',
+              visibleToStudent,
+              solutionsVisible,
+            },
+          ],
+        ]),
+      );
+      const region = await openWith(
+        twoSubmissions,
+        new Map([
+          [
+            'stud-a',
+            {
+              status: 'returned',
+              evaluated: 1,
+              total: 1,
+              totalPoints: 2,
+              maxPoints: 2,
+              percentage: 100,
+              hasContent: true,
+            },
+          ],
+        ]),
+      );
+      const table = within(region).getByRole('table');
+      expect(within(table).queryByRole('columnheader', { name: 'Codice' })).toBeNull();
+      expect(within(table).getByRole('columnheader', { name: 'Visibilità' })).toBeTruthy();
+      expect(
+        within(table)
+          .getAllByRole('columnheader')
+          .slice(-4)
+          .map((header) => header.textContent?.trim()),
+      ).toEqual(['Consegna', 'Visibilità', 'Eventi', 'Azioni']);
+      expect(within(table).queryByText('SF-A')).toBeNull();
+      const annaRow = within(table).getByText('Anna').closest('tr')!;
+      expect(within(annaRow).getByLabelText(returnLabel)).toBeTruthy();
+      expect(within(annaRow).getByLabelText(solutionsLabel)).toBeTruthy();
+    },
+  );
+
+  it('shows an accessible dash when the correction is not currently returned', async () => {
+    setupDefaults();
+    mockLoadCorrectionReturnVisibilityBySubmission.mockResolvedValueOnce(
+      new Map([
+        [
+          'ver-1_stud-a',
+          {
+            submissionId: 'ver-1_stud-a',
+            studentUid: 'stud-a',
+            visibleToStudent: true,
+            solutionsVisible: true,
+          },
+        ],
+      ]),
+    );
+    const region = await openWith(
+      twoSubmissions,
+      new Map([
+        [
+          'stud-a',
+          {
+            status: 'in_progress',
+            evaluated: 0,
+            total: 1,
+            totalPoints: 0,
+            maxPoints: 2,
+            percentage: 0,
+            hasContent: false,
+          },
+        ],
+      ]),
+    );
+    const annaRow = within(region).getByText('Anna').closest('tr')!;
+    expect(within(annaRow).getByLabelText('Visibilità non disponibile').textContent).toBe('—');
+  });
+
   it('disables the checkbox for a non-submitted row and select-all covers only submitted rows', async () => {
     setupDefaults();
     const region = await openWith(twoSubmissions);
@@ -3453,6 +3590,26 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
     }
   });
 
+  it('renders the exact batch action order and only Azzera as destructive', async () => {
+    setupDefaults();
+    const region = await openWith();
+    const toolbar = within(region).getByRole('group', {
+      name: 'Azioni sulle consegne selezionate',
+    });
+    const buttons = within(toolbar).getAllByRole('button');
+    expect(buttons.map((button) => button.textContent?.trim())).toEqual([
+      'Correggi con IA',
+      'Completa',
+      'Restituisci',
+      'Visibilità',
+      'Riapri',
+      'Azzera',
+    ]);
+    expect(buttons.filter((button) => button.classList.contains('btn-danger'))).toEqual([
+      buttons[5],
+    ]);
+  });
+
   it('opens the dialog with the selected rows and the chosen action', async () => {
     setupDefaults();
     const region = await openWith();
@@ -3497,6 +3654,79 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
         ).checked,
       ).toBe(true);
     }
+  });
+
+  it('updates succeeded/noop visibility locally, ignores failures and performs no final read', async () => {
+    setupDefaults();
+    const returnedProgress = {
+      status: 'returned' as const,
+      evaluated: 1,
+      total: 1,
+      totalPoints: 2,
+      maxPoints: 2,
+      percentage: 100,
+      hasContent: true,
+    };
+    mockLoadCorrectionReturnVisibilityBySubmission.mockResolvedValueOnce(
+      new Map([
+        [
+          'ver-1_stud-a',
+          {
+            submissionId: 'ver-1_stud-a',
+            studentUid: 'stud-a',
+            visibleToStudent: false,
+            solutionsVisible: false,
+          },
+        ],
+        [
+          'ver-1_stud-b',
+          {
+            submissionId: 'ver-1_stud-b',
+            studentUid: 'stud-b',
+            visibleToStudent: false,
+            solutionsVisible: false,
+          },
+        ],
+      ]),
+    );
+    const region = await openWith(
+      new Map([
+        ['stud-a', returnedProgress],
+        ['stud-b', returnedProgress],
+      ]),
+    );
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona tutte le consegne' }));
+    fireEvent.click(within(region).getByRole('button', { name: 'Visibilità' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Mostra soluzioni' }));
+    const dialog = await screen.findByTestId('batch-visibility-dialog');
+    const readsBefore = mockLoadCorrectionReturnVisibilityBySubmission.mock.calls.length;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Applica visibilità' }));
+
+    for (const name of ['Anna', 'Bruno']) {
+      const row = within(region).getByText(name).closest('tr')!;
+      expect(within(row).getByLabelText('Restituzione visibile allo studente')).toBeTruthy();
+      expect(within(row).getByLabelText('Soluzioni visibili allo studente')).toBeTruthy();
+      expect(
+        (
+          within(row).getByRole('checkbox', {
+            name: `Seleziona consegna — ${name}`,
+          }) as HTMLInputElement
+        ).checked,
+      ).toBe(true);
+    }
+    expect(mockLoadCorrectionReturnVisibilityBySubmission).toHaveBeenCalledTimes(readsBefore);
+
+    const props = mockVisibilityDialog.mock.calls.at(-1)?.[0];
+    props.onApplied('show_return', [
+      {
+        studentUid: 'stud-a',
+        submissionId: 'ver-1_stud-a',
+        outcome: 'failed',
+        error: 'failed',
+      },
+    ]);
+    const annaRow = within(region).getByText('Anna').closest('tr')!;
+    expect(within(annaRow).getByLabelText('Restituzione visibile allo studente')).toBeTruthy();
   });
 
   it('M5-04A: keeps the full selection after applying and performs one targeted re-read', async () => {

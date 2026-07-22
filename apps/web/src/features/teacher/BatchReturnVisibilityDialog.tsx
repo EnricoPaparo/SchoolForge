@@ -52,6 +52,7 @@ export function BatchReturnVisibilityDialog({
   verification,
   db,
   onClose,
+  onApplied,
 }: {
   action: BatchReturnVisibilityAction;
   rows: BatchSelectedRow[];
@@ -60,6 +61,7 @@ export function BatchReturnVisibilityDialog({
   verification: VerificationDoc;
   db: Firestore;
   onClose: () => void;
+  onApplied?: (action: BatchReturnVisibilityAction, results: BatchReturnVisibilityResult[]) => void;
 }) {
   const meta = META[action];
   const [phase, setPhase] = useState<Phase>('loading');
@@ -100,6 +102,7 @@ export function BatchReturnVisibilityDialog({
         verification,
       });
       if (!mountedRef.current) return;
+      onApplied?.(action, value);
       setResults(value);
       setPhase('result');
     } catch {

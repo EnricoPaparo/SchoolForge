@@ -11,6 +11,7 @@ nuovo indice, nessun listener/polling aggiuntivo. `Gate GTWU` resta **APERTO**.
 | **TWU-01** | Fix immediati e polish: ellissi preview picker, icone SVG coerenti nei messaggi VEX, pulsante «Aggiorna» consegne, contratto primo/ultimo accesso studente. | **Implementato** |
 | **TWU-02** | Preferenze predefinite della correzione IA (owner-only) + scelta profilo modello chiuso (`economy`/`quality`), risolto server-side; form condiviso tra i due dialog; gerarchia prompt esplicita. | **Implementato** |
 | **TWU-03** | Visibilità batch delle correzioni restituite dalla toolbar «Consegne online». | **Implementato** |
+| **TWU-03A** | Toolbar batch ordinata e stato restituzione/soluzioni nella tabella consegne. | **Implementato** |
 | **TWU-04A** | Contratto import UDA. | **Progettato** — vedi [uda-import-contract.md](uda-import-contract.md) |
 | TWU-04B | — (non ancora avviato) | Pendente |
 | **CHUNK-RECOVERY-01** | Recovery esplicita dei moduli PDF dinamici obsoleti dopo un deploy, senza reload automatico. | **Progettato** — vedi [correction-archive-export-contract.md](correction-archive-export-contract.md) |
@@ -52,20 +53,20 @@ studente (Task 4). Nessun deploy, nessun merge automatico.
 - Pulsante «Aggiorna» nella toolbar «Consegne online» (icona refresh
   `IconRotateCcw` + testo; `aria-label="Aggiorna consegne"`; label collassabile
   su viewport molto stretto).
-- Al click esegue **una sola orchestrazione di refresh** che **riusa i service
-  già presenti**: `loadCorrectionProgressByStudent` (stato correzioni /
-  «Valutate») e `listStudents` (roster classe). **Nessuna nuova query/indice**,
-  nessun listener, nessun polling; la lista consegne resta servita dal listener
-  già attivo.
+- Al click esegue **una sola orchestrazione di refresh**: riusa
+  `loadCorrectionProgressByStudent` (stato correzioni / «Valutate») e
+  `listStudents` (roster classe), e dopo TWU-03A include la query mirata delle
+  `correctionReturns` della verifica per gli indicatori di visibilità. Nessun
+  listener/polling; la lista consegne resta servita dal listener già attivo.
 - Guardia sincrona anti doppio-click (ref), stato «Aggiornamento…» con pulsante
   disabilitato, feedback discreto «Aggiornato ora» via `aria-live="polite"`,
   errore leggibile che **mantiene i dati correnti**, nessun update dopo unmount,
   StrictMode-safe. Selezione, filtri e ordinamento conservati; checkbox non
   deselezionate.
 - **Costo letture:** invariato a regime (nessun costo passivo aggiunto). Ogni
-  click esegue **una sola orchestrazione di refresh** con **due operazioni di
-  caricamento (query)** — `loadCorrectionProgressByStudent` e `listStudents`,
-  le stesse già eseguite all'apertura del monitor. Le **letture Firestore
+  click esegue **una sola orchestrazione di refresh** con **tre operazioni di
+  caricamento** — progresso correzioni, roster e visibilità restituzioni — le
+  stesse già eseguite all'apertura del monitor. Le **letture Firestore
   fatturate sono proporzionali ai documenti restituiti** da quelle query (una
   per documento letto), non un fisso «2 letture». **Zero costo finché il docente
   non clicca**; nessun listener o polling aggiuntivo.
@@ -142,11 +143,22 @@ Sono elaborabili soltanto correction attualmente `returned`, con
 caricato e, solo dopo la scelta dell'azione, una lettura puntuale per ciascuna
 candidata restituita; i service ripetono le verifiche autorevoli prima della
 write. L'esecuzione ha concorrenza massima 3, prosegue dopo errori individuali e
-distingue riuscite, no-op, escluse e fallite. Le checkbox restano invariate e
-non viene eseguito un refresh finale, perché la tabella non mostra i due flag.
+distingue riuscite, no-op, escluse e fallite. Le checkbox restano invariate.
 
-Costi: zero passivo, nessun listener/polling e nessuna scansione globale. Le
-letture e le eventuali scritture sono proporzionali alle righe selezionate;
+TWU-03A ordina la toolbar come «Correggi con IA → Completa → Restituisci →
+Visibilità → Riapri → Azzera» e sostituisce nella sola UI la colonna «Codice»
+con «Visibilità». Una query owner-only filtrata per `verificationId`, eseguita
+all'apertura e al solo refresh manuale, carica i due flag senza letture per
+riga. I documenti incoerenti sono esclusi fail-closed. Dopo un batch, soltanto
+gli esiti riusciti/no-op aggiornano la mappa locale confermata dal service; le
+righe fallite conservano il valore precedente e non viene eseguita una
+rilettura finale. `deliveryCode` resta invariato nel contratto persistito e
+negli export.
+
+Costi: zero listener/polling e nessuna scansione globale. La query di
+visibilità costa letture proporzionali alle projection restituite all'apertura
+o al refresh manuale; le letture puntuali di preflight e le eventuali scritture
+restano proporzionali alle righe selezionate;
 `setSolutionsVisible(true)` conserva il contratto VEX e include soltanto le
 soluzioni assegnate. Rules, Functions e indici restano invariati.
 

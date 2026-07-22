@@ -64,6 +64,8 @@ function returnSnap(uid: string, overrides: Record<string, unknown> = {}) {
       studentUid: uid,
       ownerUid: 'owner',
       verificationId: 'v1',
+      visibleToStudent: false,
+      solutionsVisible: false,
       ...overrides,
     }),
   };
@@ -115,6 +117,14 @@ describe('loadBatchReturnVisibilityEligibility', () => {
 });
 
 describe('runBatchReturnVisibilityAction', () => {
+  function eligible(uid: string) {
+    return {
+      ...row(uid),
+      visibleToStudent: false,
+      solutionsVisible: false,
+    };
+  }
+
   it.each([
     ['show_return', mockSetReturnVisible, true],
     ['hide_return', mockSetReturnVisible, false],
@@ -123,7 +133,7 @@ describe('runBatchReturnVisibilityAction', () => {
   ] as const)('%s invokes only its canonical service with %s', async (action, service, value) => {
     await runBatchReturnVisibilityAction({
       action,
-      rows: [row('a')],
+      rows: [eligible('a')],
       db,
       verificationId: 'v1',
       verification,
@@ -145,15 +155,18 @@ describe('runBatchReturnVisibilityAction', () => {
 
     const result = await runBatchReturnVisibilityAction({
       action: 'show_return',
-      rows: [row('a'), row('b'), row('c')],
+      rows: [eligible('a'), eligible('b'), eligible('c')],
       db,
       verificationId: 'v1',
       verification,
     });
 
     expect(result.map((entry) => entry.outcome)).toEqual(['succeeded', 'noop', 'failed']);
-    expect(result[2]?.error).toBe('Operazione non riuscita per questa consegna. Riprova.');
-    expect(result[2]?.error).not.toContain('project@example.test');
+    const failure = result[2];
+    expect(failure?.outcome).toBe('failed');
+    if (!failure || failure.outcome !== 'failed') throw new Error('Expected failed result');
+    expect(failure.error).toBe('Operazione non riuscita per questa consegna. Riprova.');
+    expect(failure.error).not.toContain('project@example.test');
   });
 
   it('never exceeds concurrency three', async () => {
@@ -174,7 +187,7 @@ describe('runBatchReturnVisibilityAction', () => {
 
     await runBatchReturnVisibilityAction({
       action: 'hide_return',
-      rows: Array.from({ length: 9 }, (_, index) => row(`s${index}`)),
+      rows: Array.from({ length: 9 }, (_, index) => eligible(`s${index}`)),
       db,
       verificationId: 'v1',
       verification,
@@ -196,7 +209,13 @@ describe('runBatchReturnVisibilityAction', () => {
     } as never;
     await runBatchReturnVisibilityAction({
       action: 'show_solutions',
-      rows: [{ ...row('a'), assignedQuestionOrders: [0, 2], assignedAnswerKeys: ['0', '2'] }],
+      rows: [
+        {
+          ...eligible('a'),
+          assignedQuestionOrders: [0, 2],
+          assignedAnswerKeys: ['0', '2'],
+        },
+      ],
       db,
       verificationId: 'v1',
       verification: vex,
