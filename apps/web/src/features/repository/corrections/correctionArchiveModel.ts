@@ -144,7 +144,10 @@ function closedQuestionArchiveDetails(
       text: option.testo,
       selected: selected.has(option.id),
     })),
-    correctAnswerText: correctIds.map((id) => optionById.get(id)!).join('\n'),
+    correctAnswerText:
+      question.tipo === 'chiusa_multipla' && correctIds.length > 1
+        ? correctIds.map((id) => `• ${optionById.get(id)!}`).join('\n')
+        : optionById.get(correctIds[0]!)!,
   };
 }
 

@@ -49,7 +49,8 @@ Ogni PDF contiene esclusivamente i dati della singola consegna:
    consegna:
    - testo della domanda;
    - per le domande chiuse, tutte le opzioni con checkbox vettoriali allineate
-     (croce sulle selezionate) e la soluzione corretta congelata;
+     (croce sulle selezionate) e la soluzione corretta congelata; nelle
+     multiple, più soluzioni corrette sono presentate come elenco puntato;
    - per le domande aperte, risposta consegnata senza esportare la soluzione
      campione del pool;
    - punti attribuiti e massimo della domanda;
