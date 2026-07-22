@@ -388,6 +388,16 @@
 .monitorHeader .createTitle {
   margin: 0;
 }
+/* TWU-02A — title + inline refresh status share one flex group so, on a narrow
+   viewport, the status wraps WITH the title (never as a standalone full-width
+   row) and never pushes the table down. */
+.monitorTitleGroup {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
 /* Esporta CSV + Esporta PDF wrap together, tidily, on a narrow viewport. */
 .monitorActions {
   display: flex;
@@ -405,13 +415,20 @@
   align-items: center;
   gap: 0.375rem;
 }
-/* TWU-01 — discreet "Aggiornato ora" live-region line; occupies no vertical
-   space when empty so the toolbar layout never jumps. */
+/* TWU-02A — inline refresh status beside the «Consegne online» title. Small,
+   subordinate text; empty until the first manual refresh (no reserved row).
+   Colours reuse the existing semantic tokens. */
 .refreshStatus {
   margin: 0;
-  min-height: 1rem;
   font-size: 0.8125rem;
+  font-weight: 400;
   color: var(--color-text-muted);
+}
+.refreshStatus[data-state='success'] {
+  color: var(--color-success);
+}
+.refreshStatus[data-state='error'] {
+  color: var(--color-error);
 }
 /* On very narrow viewports the label may collapse to keep the toolbar tidy;
    the accessible name (aria-label="Aggiorna consegne") is unaffected. */

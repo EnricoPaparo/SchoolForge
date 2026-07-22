@@ -325,8 +325,10 @@ export function VerificationsView() {
   // reusing the same services as the selection effect. No new query, no
   // listener, no polling — the cost exists ONLY on click.
   const [monitorRefreshing, setMonitorRefreshing] = useState(false);
-  const [monitorRefreshError, setMonitorRefreshError] = useState<string | null>(null);
-  const [monitorRefreshedAt, setMonitorRefreshedAt] = useState(false);
+  const [monitorRefreshError, setMonitorRefreshError] = useState(false);
+  // TWU-02A — local time of the last successful manual refresh (HH:mm:ss), or
+  // null before the first one. Shown inline in the «Consegne online» header.
+  const [monitorRefreshedAt, setMonitorRefreshedAt] = useState<string | null>(null);
   // Synchronous re-entrancy guard: two rapid clicks both pass the state check
   // before React re-renders, so a ref set before the first await is what
   // actually collapses them into a single refresh orchestration.
@@ -465,8 +467,8 @@ export function VerificationsView() {
     if (!selectedVer || monitorRefreshingRef.current) return;
     monitorRefreshingRef.current = true;
     setMonitorRefreshing(true);
-    setMonitorRefreshedAt(false);
-    setMonitorRefreshError(null);
+    setMonitorRefreshedAt(null);
+    setMonitorRefreshError(false);
     const verId = selectedVer.id;
     const classId = selectedVer.teacherSnapshot?.classId ?? selectedVer.config.classId;
     try {
@@ -480,11 +482,11 @@ export function VerificationsView() {
         .sort((a, b) => (a.displayName ?? a.email).localeCompare(b.displayName ?? b.email, 'it'));
       setCorrectionProgress(progress);
       setMonitorStudents(approved);
-      setMonitorRefreshedAt(true);
+      // Local time via the existing Date logic; not persisted anywhere.
+      setMonitorRefreshedAt(new Date().toLocaleTimeString('it-IT'));
     } catch {
-      // Keep the current data visible; surface a readable, dismissible error.
-      if (mountedRef.current)
-        setMonitorRefreshError('Impossibile aggiornare le consegne. Riprova.');
+      // Keep the current data visible; the inline header status reports the failure.
+      if (mountedRef.current) setMonitorRefreshError(true);
     } finally {
       if (mountedRef.current) setMonitorRefreshing(false);
       monitorRefreshingRef.current = false;
@@ -725,8 +727,8 @@ export function VerificationsView() {
 
   // Reset the transient refresh feedback when the selected verification changes.
   useEffect(() => {
-    setMonitorRefreshError(null);
-    setMonitorRefreshedAt(false);
+    setMonitorRefreshError(false);
+    setMonitorRefreshedAt(null);
   }, [selectedVerId]);
 
   // TWU-02 — one explicit owner-only get of the AI-correction preferences (no
@@ -2304,7 +2306,33 @@ export function VerificationsView() {
           {selectedVer.status !== 'draft' && (
             <div role="region" aria-label="Consegne online" className={styles.monitorPanel}>
               <div className={styles.monitorHeader}>
-                <h3 className={styles.createTitle}>Consegne online</h3>
+                {/* TWU-02A — title + inline refresh status (no separate row, no
+                    layout shift of the table). aria-live only on the status. */}
+                <div className={styles.monitorTitleGroup}>
+                  <h3 className={styles.createTitle}>Consegne online</h3>
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    className={styles.refreshStatus}
+                    data-state={
+                      monitorRefreshing
+                        ? 'loading'
+                        : monitorRefreshError
+                          ? 'error'
+                          : monitorRefreshedAt
+                            ? 'success'
+                            : 'idle'
+                    }
+                  >
+                    {monitorRefreshing
+                      ? 'Aggiornamento…'
+                      : monitorRefreshError
+                        ? 'Aggiornamento non riuscito'
+                        : monitorRefreshedAt
+                          ? `Aggiornato alle ${monitorRefreshedAt}`
+                          : ''}
+                  </span>
+                </div>
                 <div className={styles.monitorActions}>
                   <button
                     type="button"
@@ -2393,17 +2421,8 @@ export function VerificationsView() {
                 ))}
               </div>
               <>
-                {/* TWU-01: discreet, accessible refresh feedback. Success is a
-                    polite aria-live status; failure is an assertive alert that
-                    keeps the current data visible below. */}
-                <p role="status" aria-live="polite" className={styles.refreshStatus}>
-                  {monitorRefreshedAt && !monitorRefreshing ? 'Aggiornato ora' : ''}
-                </p>
-                {monitorRefreshError && (
-                  <p role="alert" className="text-error">
-                    {monitorRefreshError}
-                  </p>
-                )}
+                {/* TWU-02A: the refresh status now lives inline in the header
+                    above (no separate row → no table layout shift). */}
                 {csvExportError && (
                   <p role="alert" className="text-error">
                     {csvExportError}
