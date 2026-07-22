@@ -1,9 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type * as CorrectionRegisterExportModule from '../../repository/corrections/correctionRegisterExport.js';
+import type * as CorrectionArchiveExportModule from '../../repository/corrections/correctionArchiveExport.js';
 import type * as CorrectionProgressModule from '../../repository/corrections/correctionProgressService.js';
 import type * as CorrectionReturnVisibilityModule from '../../repository/corrections/correctionReturnVisibilityService.js';
 import type * as TeacherAiPrefsModule from '../../repository/corrections/teacherAiPreferencesService.js';
+import { PdfModuleLoadError } from '../../../lib/pdfModuleLoader.js';
 
 afterEach(cleanup);
 
@@ -27,6 +29,7 @@ const mockWatchSubmissions = vi.fn();
 const mockDeleteSubmissionData = vi.fn();
 const mockDownloadCorrectionRegisterCsv = vi.fn();
 const mockDownloadCorrectionRegisterPdf = vi.fn();
+const mockRunCorrectionArchiveExport = vi.fn();
 const mockLoadCorrectionReturnVisibilityBySubmission = vi.fn(
   async (..._args: unknown[]) => new Map<string, unknown>(),
 );
@@ -83,6 +86,13 @@ vi.mock('../../repository/corrections/correctionRegisterExport.js', async (impor
 vi.mock('../../repository/corrections/correctionRegisterPdf.js', () => ({
   downloadCorrectionRegisterPdf: (...args: unknown[]) => mockDownloadCorrectionRegisterPdf(...args),
 }));
+vi.mock('../../repository/corrections/correctionArchiveExport.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof CorrectionArchiveExportModule>();
+  return {
+    ...actual,
+    runCorrectionArchiveExport: (...args: unknown[]) => mockRunCorrectionArchiveExport(...args),
+  };
+});
 vi.mock('../../repository/classes/classesService.js', () => ({
   listClasses: (...args: unknown[]) => mockListClasses(...args),
 }));
@@ -345,6 +355,11 @@ function setupDefaults() {
   mockListStudents.mockResolvedValue([]);
   mockWatchSubmissions.mockReturnValue(vi.fn());
   mockLoadCorrectionReturnVisibilityBySubmission.mockResolvedValue(new Map());
+  mockRunCorrectionArchiveExport.mockResolvedValue({
+    ok: true,
+    kind: 'pdf',
+    filenames: ['Anna_Verifica.pdf'],
+  });
 }
 
 describe('VerificationsView', () => {
@@ -2502,6 +2517,18 @@ describe('VerificationsView — correction register CSV (M4-03A)', () => {
     fireEvent.click(within(region).getByRole('button', { name: 'Esporta CSV' }));
     expect(mockDownloadCorrectionRegisterCsv).toHaveBeenCalledOnce();
   });
+
+  it('shows explicit stale-chunk recovery for the correction register without auto reload', async () => {
+    mockDownloadCorrectionRegisterPdf.mockRejectedValueOnce(new PdfModuleLoadError('stale_chunk'));
+    const region = await openMonitor((callback) => callback(submissions));
+    fireEvent.click(within(region).getByRole('button', { name: 'Esporta PDF' }));
+    expect(
+      await within(region).findByText(
+        'SchoolForge è stato aggiornato. Ricarica la pagina e riprova.',
+      ),
+    ).toBeTruthy();
+    expect(within(region).getByRole('button', { name: 'Ricarica pagina' })).toBeTruthy();
+  });
 });
 
 describe('VerificationsView — delete submission (M4-LIFE-02)', () => {
@@ -3589,12 +3616,26 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
   it('disables batch buttons until a row is selected, with no per-row buttons', async () => {
     setupDefaults();
     const region = await openWith();
-    for (const name of ['Completa', 'Riapri', 'Restituisci', 'Azzera', 'Visibilità']) {
+    for (const name of [
+      'Completa',
+      'Riapri',
+      'Restituisci',
+      'Azzera',
+      'Visibilità',
+      'PDF correzioni',
+    ]) {
       const btn = within(region).getByRole('button', { name }) as HTMLButtonElement;
       expect(btn.disabled).toBe(true);
     }
     fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
-    for (const name of ['Completa', 'Riapri', 'Restituisci', 'Azzera', 'Visibilità']) {
+    for (const name of [
+      'Completa',
+      'Riapri',
+      'Restituisci',
+      'Azzera',
+      'Visibilità',
+      'PDF correzioni',
+    ]) {
       const btn = within(region).getByRole('button', { name }) as HTMLButtonElement;
       expect(btn.disabled).toBe(false);
     }
@@ -3618,12 +3659,62 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
       'Completa',
       'Restituisci',
       'Visibilità',
+      'PDF correzioni',
       'Riapri',
       'Azzera',
     ]);
     expect(buttons.filter((button) => button.classList.contains('btn-danger'))).toEqual([
-      buttons[5],
+      buttons[6],
     ]);
+  });
+
+  it('exports one completed selection directly and preserves its checkbox', async () => {
+    setupDefaults();
+    const region = await openWith(
+      new Map([
+        [
+          'stud-a',
+          {
+            status: 'completed',
+            evaluated: 1,
+            total: 1,
+            totalPoints: 2,
+            maxPoints: 2,
+            percentage: 100,
+          },
+        ],
+      ]),
+    );
+    const checkbox = within(region).getByRole('checkbox', {
+      name: 'Seleziona consegna — Anna',
+    }) as HTMLInputElement;
+    fireEvent.click(checkbox);
+    fireEvent.click(within(region).getByRole('button', { name: 'PDF correzioni' }));
+    await waitFor(() => expect(mockRunCorrectionArchiveExport).toHaveBeenCalledTimes(1));
+    expect(checkbox.checked).toBe(true);
+    expect(screen.queryByRole('dialog', { name: 'PDF correzioni' })).toBeNull();
+  });
+
+  it('shows compact ZIP confirmation for multiple completed selections', async () => {
+    setupDefaults();
+    const progress = new Map(
+      ['stud-a', 'stud-b'].map((uid) => [
+        uid,
+        {
+          status: 'returned',
+          evaluated: 1,
+          total: 1,
+          totalPoints: 2,
+          maxPoints: 2,
+          percentage: 100,
+        },
+      ]),
+    );
+    const region = await openWith(progress);
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona tutte le consegne' }));
+    fireEvent.click(within(region).getByRole('button', { name: 'PDF correzioni' }));
+    expect(await screen.findByText('Verrà creato uno ZIP con 2 PDF separati.')).toBeTruthy();
+    expect(mockRunCorrectionArchiveExport).not.toHaveBeenCalled();
   });
 
   it('opens the dialog with the selected rows and the chosen action', async () => {
@@ -3641,6 +3732,7 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
       'Restituisci',
       'Azzera',
       'Visibilità',
+      'PDF correzioni',
     ]) {
       expect(
         (within(region).getByRole('button', { name: new RegExp(`^${name}`) }) as HTMLButtonElement)
@@ -3806,6 +3898,7 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
       'Restituisci',
       'Azzera',
       'Visibilità',
+      'PDF correzioni',
     ]) {
       const btn = within(region).getByRole('button', { name: new RegExp(`^${name}`) });
       // Decorative inline SVG icon rendered inside the button.

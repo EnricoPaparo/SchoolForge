@@ -1,6 +1,6 @@
 # CORR-PDF-01 — Export delle correzioni per archivio scolastico
 
-**Stato:** contratto approvato, implementazione pendente.
+**Stato:** CORR-PDF-01 implementato; smoke DEV pendente.
 
 ## 1. Obiettivo
 
@@ -131,8 +131,8 @@ Contratto di recovery:
 
 `CHUNK-RECOVERY-01` è implementato per «Programma svolto (PDF)» con un helper
 tipizzato riusabile. Il PDF della singola lezione non è stato modificato.
-`CORR-PDF-01` resta progettato e dovrà riusare lo stesso helper quando verrà
-implementato.
+`CORR-PDF-01` riusa lo stesso helper sia per l'export archivistico sia per il
+Registro Correzioni. Il PDF della singola lezione non è stato modificato.
 
 ## 8. UX minima
 
@@ -170,5 +170,23 @@ implementato.
 1. `CHUNK-RECOVERY-01` — implementato: helper comune e fix «Programma svolto
    (PDF)».
 2. `TWU-03/03A/03B` — implementati: toolbar e visibilità/restituzione.
-3. `CORR-PDF-01` — pendente: pulsante batch e renderer PDF per-studente.
-4. Smoke DEV e allineamento del Gate GTWU.
+3. `CORR-PDF-01` — implementato: loader autorevole, modello chiuso, renderer
+   PDF per-studente e ZIP all-or-nothing.
+4. Smoke DEV e allineamento del Gate GTWU — pendenti.
+
+## 11. Implementazione CORR-PDF-01
+
+L'export usa la verifica già caricata e, soltanto al click, legge per ogni
+consegna esportabile `submissions/{submissionId}` e
+`corrections/{submissionId}` con concorrenza massima 3. Non legge
+`correctionReturns`, pool live, Storage o `publishedProjection` e non esegue
+scritture. Il modello passato al renderer è chiuso e non contiene soluzioni,
+UID, identificatori tecnici, codici di consegna o documenti Firestore grezzi.
+
+Per `same_questions` usa tutte le domande congelate; per
+`equivalent_variants` passa obbligatoriamente da `resolveAssignedQuestions` e
+fallisce in modo chiuso su assegnazione, risposte, valutazioni, opzioni o totali
+incoerenti. Una selezione singola scarica un PDF; una selezione multipla genera
+prima tutti i PDF e scarica lo ZIP soltanto se ogni documento è valido. Nomi
+duplicati sono risolti localmente con `_2`, `_3`, preservando l'ordine della
+tabella.

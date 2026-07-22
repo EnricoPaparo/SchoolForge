@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CorrectionRegisterExportRow } from '../correctionRegisterExport.js';
+import type { PdfModuleLoadError } from '../../../../lib/pdfModuleLoader.js';
 
 // ─── jsPDF mock (we never test the library itself) ──────────────────────────
 
@@ -133,6 +134,18 @@ describe('correctionRegisterPdf — pure helpers', () => {
 });
 
 describe('downloadCorrectionRegisterPdf', () => {
+  it('classifies a stale jsPDF chunk through the shared loader without saving a file', async () => {
+    await expect(
+      downloadCorrectionRegisterPdf(
+        { verificationTitle: 'V', className: null, rows: [] },
+        async () => {
+          throw new TypeError('Failed to fetch dynamically imported module: old-jspdf.js');
+        },
+      ),
+    ).rejects.toMatchObject({ category: 'stale_chunk' } satisfies Partial<PdfModuleLoadError>);
+    expect(lastDoc?.saved).toBeFalsy();
+  });
+
   it('does not load jsPDF until the export function is actually called', async () => {
     expect(jsPDFCtor).not.toHaveBeenCalled();
     await downloadCorrectionRegisterPdf({ verificationTitle: 'V', className: null, rows: [] });

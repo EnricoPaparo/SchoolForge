@@ -51,6 +51,7 @@ import {
 import { BatchCorrectionActionsDialog } from './BatchCorrectionActionsDialog.js';
 import { BatchReturnVisibilityDialog } from './BatchReturnVisibilityDialog.js';
 import { BatchVisibilityMenu } from './BatchVisibilityMenu.js';
+import { CorrectionArchiveExportDialog } from './CorrectionArchiveExportDialog.js';
 import { createAiCorrectionCallables } from '../repository/corrections/aiCorrectionClient.js';
 import {
   loadCorrectionProgressByStudent,
@@ -77,6 +78,7 @@ import {
   IconRotateCcw,
   IconSend,
   IconEraser,
+  IconDownload,
 } from '../../components/icons.js';
 import type {
   AttentionEvent,
@@ -102,6 +104,12 @@ import {
   type CorrectionRegisterExportRow,
 } from '../repository/corrections/correctionRegisterExport.js';
 import { downloadCorrectionRegisterPdf } from '../repository/corrections/correctionRegisterPdf.js';
+import {
+  classifyCorrectionArchiveEligibility,
+  runCorrectionArchiveExport,
+  type CorrectionArchiveEligibility,
+} from '../repository/corrections/correctionArchiveExport.js';
+import { PdfModuleLoadError, reloadCurrentPage } from '../../lib/pdfModuleLoader.js';
 import {
   sortSubmissionMonitorRows,
   type SubmissionMonitorSortConfig,
@@ -320,6 +328,7 @@ export function VerificationsView() {
   const [monitorError, setMonitorError] = useState<string | null>(null);
   const [csvExportError, setCsvExportError] = useState<string | null>(null);
   const [pdfExportError, setPdfExportError] = useState<string | null>(null);
+  const [pdfExportNeedsReload, setPdfExportNeedsReload] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const exportingPdfRef = useRef(false);
   const [monitorSort, setMonitorSort] = useState<SubmissionMonitorSortConfig>({
@@ -381,6 +390,15 @@ export function VerificationsView() {
   // TWU-03: una delle quattro operazioni indipendenti sulla proiezione restituita.
   const [batchReturnVisibilityAction, setBatchReturnVisibilityAction] =
     useState<BatchReturnVisibilityAction | null>(null);
+  const [archiveEligibility, setArchiveEligibility] = useState<CorrectionArchiveEligibility | null>(
+    null,
+  );
+  const [archiveExportBusy, setArchiveExportBusy] = useState(false);
+  const archiveExportBusyRef = useRef(false);
+  const [archiveExportError, setArchiveExportError] = useState<'stale_chunk' | 'generic' | null>(
+    null,
+  );
+  const [archiveExportFailures, setArchiveExportFailures] = useState<string[]>([]);
   // «Valutate» n/totale per studentUid: singola lettura mirata (no listener).
   const [correctionProgress, setCorrectionProgress] = useState<Map<string, CorrectionProgress>>(
     new Map(),
@@ -587,17 +605,68 @@ export function VerificationsView() {
     exportingPdfRef.current = true;
     setExportingPdf(true);
     setPdfExportError(null);
+    setPdfExportNeedsReload(false);
     try {
       await downloadCorrectionRegisterPdf({
         verificationTitle: model.title,
         className: model.className,
         rows: model.rows,
       });
-    } catch {
-      setPdfExportError('Impossibile generare il PDF del riepilogo. Riprova.');
+    } catch (cause) {
+      if (cause instanceof PdfModuleLoadError && cause.category === 'stale_chunk') {
+        setPdfExportError('SchoolForge è stato aggiornato. Ricarica la pagina e riprova.');
+        setPdfExportNeedsReload(true);
+      } else {
+        setPdfExportError('Impossibile generare il PDF del riepilogo. Riprova.');
+      }
     } finally {
       exportingPdfRef.current = false;
       setExportingPdf(false);
+    }
+  }
+
+  async function executeCorrectionArchiveExport(
+    eligibility: CorrectionArchiveEligibility,
+  ): Promise<Awaited<ReturnType<typeof runCorrectionArchiveExport>>> {
+    if (!selectedVer) throw new Error('Verifica non disponibile.');
+    return runCorrectionArchiveExport({
+      verificationId: selectedVer.id,
+      verification: selectedVer,
+      ownerUid,
+      candidates: eligibility.eligible,
+      db,
+    });
+  }
+
+  async function handleCorrectionArchiveExport(): Promise<void> {
+    if (archiveExportBusyRef.current || !selectedVer) return;
+    const eligibility = classifyCorrectionArchiveEligibility(batchSelectedRows);
+    setArchiveExportError(null);
+    setArchiveExportFailures([]);
+    if (eligibility.eligible.length !== 1 || eligibility.excluded.length > 0) {
+      setArchiveEligibility(eligibility);
+      return;
+    }
+
+    archiveExportBusyRef.current = true;
+    setArchiveExportBusy(true);
+    try {
+      const result = await executeCorrectionArchiveExport(eligibility);
+      if (!mountedRef.current) return;
+      if (!result.ok) {
+        setArchiveExportError('generic');
+        setArchiveExportFailures(result.failures.map((failure) => failure.candidate.studentName));
+      }
+    } catch (cause) {
+      if (!mountedRef.current) return;
+      setArchiveExportError(
+        cause instanceof PdfModuleLoadError && cause.category === 'stale_chunk'
+          ? 'stale_chunk'
+          : 'generic',
+      );
+    } finally {
+      archiveExportBusyRef.current = false;
+      if (mountedRef.current) setArchiveExportBusy(false);
     }
   }
 
@@ -698,6 +767,9 @@ export function VerificationsView() {
     setAiSelectedUids(new Set());
     setCorrectionProgress(new Map());
     setCorrectionReturnVisibility(new Map());
+    setArchiveEligibility(null);
+    setArchiveExportError(null);
+    setArchiveExportFailures([]);
 
     // «Valutate»: singola lettura mirata delle correzioni della verifica
     // (owner-only per Rules, nessun listener, nessun polling).
@@ -2419,8 +2491,9 @@ export function VerificationsView() {
                   must not start on invented defaults: show the persistent error
                   + «Riprova» and disable the button until preferences are ready. */}
               {aiPrefs.status === 'error' && renderAiPrefsError()}
-              {/* M5-04A/TWU-03A: ordine operativo stabile e griglia responsive
-                  6 → 2 → 1, con Azzera sempre ultimo e unico distruttivo. */}
+              {/* M5-04A/TWU-03A/CORR-PDF-01: ordine operativo stabile e
+                  griglia responsive 7 → 2 → 1, con Azzera sempre ultimo e
+                  unico distruttivo. */}
               <div
                 className={styles.batchToolbar}
                 role="group"
@@ -2434,6 +2507,8 @@ export function VerificationsView() {
                     aiDialogOpen ||
                     batchAction !== null ||
                     batchReturnVisibilityAction !== null ||
+                    archiveExportBusy ||
+                    archiveEligibility !== null ||
                     aiPrefs.status !== 'ready'
                   }
                   onClick={() => setAiDialogOpen(true)}
@@ -2456,7 +2531,9 @@ export function VerificationsView() {
                       aiSelectedUids.size === 0 ||
                       aiDialogOpen ||
                       batchAction !== null ||
-                      batchReturnVisibilityAction !== null
+                      batchReturnVisibilityAction !== null ||
+                      archiveExportBusy ||
+                      archiveEligibility !== null
                     }
                     onClick={() => setBatchAction(action)}
                   >
@@ -2469,11 +2546,33 @@ export function VerificationsView() {
                     aiSelectedUids.size === 0 ||
                     aiDialogOpen ||
                     batchAction !== null ||
-                    batchReturnVisibilityAction !== null
+                    batchReturnVisibilityAction !== null ||
+                    archiveExportBusy ||
+                    archiveEligibility !== null
                   }
                   contextKey={selectedVer?.id ?? ''}
                   onSelect={setBatchReturnVisibilityAction}
                 />
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={
+                    aiSelectedUids.size === 0 ||
+                    aiDialogOpen ||
+                    batchAction !== null ||
+                    batchReturnVisibilityAction !== null ||
+                    archiveExportBusy ||
+                    archiveEligibility !== null
+                  }
+                  onClick={() => void handleCorrectionArchiveExport()}
+                >
+                  {archiveExportBusy ? (
+                    <span className="spinner" aria-hidden="true" />
+                  ) : (
+                    <IconDownload />
+                  )}
+                  {archiveExportBusy ? 'Preparazione…' : 'PDF correzioni'}
+                </button>
                 {(
                   [
                     { action: 'reopen', label: 'Riapri', Icon: IconRotateCcw },
@@ -2488,7 +2587,9 @@ export function VerificationsView() {
                       aiSelectedUids.size === 0 ||
                       aiDialogOpen ||
                       batchAction !== null ||
-                      batchReturnVisibilityAction !== null
+                      batchReturnVisibilityAction !== null ||
+                      archiveExportBusy ||
+                      archiveEligibility !== null
                     }
                     onClick={() => setBatchAction(action)}
                   >
@@ -2506,9 +2607,35 @@ export function VerificationsView() {
                   </p>
                 )}
                 {pdfExportError && (
-                  <p role="alert" className="text-error">
-                    {pdfExportError}
-                  </p>
+                  <div role="alert" className="text-error">
+                    <p>{pdfExportError}</p>
+                    {pdfExportNeedsReload && (
+                      <button type="button" onClick={reloadCurrentPage}>
+                        Ricarica pagina
+                      </button>
+                    )}
+                  </div>
+                )}
+                {archiveExportError && (
+                  <div role="alert" className="text-error">
+                    <p>
+                      {archiveExportError === 'stale_chunk'
+                        ? 'SchoolForge è stato aggiornato. Ricarica la pagina e riprova.'
+                        : 'Impossibile generare i PDF. Riprova.'}
+                    </p>
+                    {archiveExportError === 'stale_chunk' && (
+                      <button type="button" onClick={reloadCurrentPage}>
+                        Ricarica pagina
+                      </button>
+                    )}
+                    {archiveExportFailures.length > 0 && (
+                      <ul>
+                        {archiveExportFailures.map((studentName, index) => (
+                          <li key={`${studentName}-${index}`}>{studentName}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 )}
                 {monitorError && (
                   <p role="alert" className="text-error">
@@ -2873,6 +3000,16 @@ export function VerificationsView() {
               return next;
             });
           }}
+        />
+      )}
+
+      {archiveEligibility && selectedVer && (
+        <CorrectionArchiveExportDialog
+          selectedCount={batchSelectedRows.length}
+          eligibility={archiveEligibility}
+          run={() => executeCorrectionArchiveExport(archiveEligibility)}
+          onClose={() => setArchiveEligibility(null)}
+          onReload={reloadCurrentPage}
         />
       )}
 
