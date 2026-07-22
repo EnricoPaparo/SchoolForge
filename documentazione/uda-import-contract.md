@@ -1,6 +1,16 @@
 # TWU-04A — Contratto tecnico “Importa UDA”
 
-> Stato: **progettato, non implementato**. Rilevazione evidence-based: 21 luglio 2026. Pacchetto di implementazione successivo: **TWU-04B**. Questo documento non autorizza deploy, migrazioni o modifiche ai dati esistenti.
+> Stato: **implementato in TWU-04B** (codice + test, branch `twu-04b-importa-uda`). Progettazione evidence-based: 21 luglio 2026. Restano **pendenti**: smoke DEV desktop/mobile/Brave e il **Gate GTWU** (APERTO). Questo documento non autorizza deploy, migrazioni o modifiche ai dati esistenti; nessuna conferma manuale è data qui.
+>
+> **Mappa implementazione → contratto** (branch `twu-04b-importa-uda`):
+> - Helper puri: `apps/web/src/features/repository/importUda/{limits,readUdaZip,validateUdaArchive,buildUdaImportPayload,manifestHash}.ts` (§6, §7).
+> - Service orchestratore a porte iniettate: `importUda/importUdaRepository.ts`; implementazione Firestore+SGW: `importUda/udaImportDeps.ts` (§8–§10).
+> - Reader coherence: `programs/committedUdas.ts` (libreria/workspace/export ignorano lo staged senza `UdaDoc`) (§5.1).
+> - Mutual exclusion editor: `importUda/udaImportLease.ts` + guardie in `editor/repositoryEditorService.ts` (create/reorder/delete UDA) (§7.3).
+> - Export round-trip pool: `teacher/exportZip.ts` (§3.4).
+> - UI: `teacher/workspaceDialogs.tsx` (`ImportUdaDialog`) + azione in `teacher/CourseWorkspace.tsx` (§12).
+> - Test: `importUda/__tests__/*`, `programs/__tests__/committedUdas.test.ts`, `teacher/__tests__/{ImportUdaDialog,exportZip}.test.ts`, `repository/__tests__/securityReview.test.ts`.
+> - **Non** modificati (come da §11): Cloud Functions, Firestore/Storage Rules, indici, dipendenze, schema verifiche/VEX/IA/appunti, import programma.
 
 ## 1. Stato e obiettivo
 

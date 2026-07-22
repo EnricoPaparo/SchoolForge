@@ -14,7 +14,7 @@ nuovo indice, nessun listener/polling aggiuntivo. `Gate GTWU` resta **APERTO**.
 | **TWU-03A** | Toolbar batch ordinata e stato restituzione/soluzioni nella tabella consegne. | **Implementato** |
 | **TWU-03B** | Restituzione visibile con soluzioni congelate per default, inclusa la sola variante VEX assegnata. | **Implementato** |
 | **TWU-04A** | Contratto import UDA. | **Progettato** — vedi [uda-import-contract.md](uda-import-contract.md) |
-| TWU-04B | — (non ancora avviato) | Pendente |
+| **TWU-04B** | Implementazione «Importa UDA»: append staged di una sola UDA nell'import attivo + export round-trip pool. | **Implementato** (codice + test) — smoke DEV/Brave pendente |
 | **CHUNK-RECOVERY-01** | Recovery esplicita dei moduli PDF dinamici obsoleti dopo un deploy, senza reload automatico. | **Implementato** per «Programma svolto (PDF)», Registro Correzioni e CORR-PDF-01 |
 | **CORR-PDF-01** | Un PDF scolastico autonomo per ogni consegna selezionata; ZIP soltanto come contenitore di PDF separati quando la selezione è multipla. | **Implementato** — smoke DEV pendente; vedi [correction-archive-export-contract.md](correction-archive-export-contract.md) |
 | TWU-05 | Riservato ad altri upgrade del flusso docente. | Pendente |
@@ -172,8 +172,50 @@ bloccano ogni write e il limite dimensionale è verificato sul documento
 completo. Gli esiti batch riusciti aggiornano subito la mappa locale senza una
 query aggiuntiva; i toggle TWU-03 restano indipendenti.
 
-TWU-04A resta **progettato**, TWU-04B resta **pendente** e Gate GTWU resta
-**APERTO**. Nessun deploy e nessun merge automatico.
+TWU-04A resta il contratto autorevole; **TWU-04B è ora implementato** (sotto) e
+Gate GTWU resta **APERTO**. Nessun deploy e nessun merge automatico.
+
+---
+
+## TWU-04B — «Importa UDA» ✅ IMPLEMENTATO (smoke DEV pendente)
+
+Implementa il contratto [uda-import-contract.md](uda-import-contract.md):
+`Didattica → corso → Panoramica → Azioni → Importa UDA` aggiunge **una sola
+UDA** (lezioni + pool) all'`activeImportId` corrente, senza reimportare,
+duplicare o riscrivere il corso. Architettura A: **append diretto con staging
+owner-only, lease singola dell'import e `UdaDoc` come commit marker**.
+
+Protocollo (§8): validazione locale completa dello ZIP → payload puro → preflight
+autorevole delle collisioni Firestore/Storage → prenotazione (attempt + lease) →
+upload SGW same-origin (concorrenza 3) → staging chunked (≤400) di
+lezioni/`questionIndex` → **commit transazionale** che crea `UdaDoc` + tutte le
+`publicLessons` e aggiorna i metadata → patch locale UI senza reload. Errore
+pre-commit ⇒ cleanup idempotente limitato al manifest, corso invariato; errore
+post-commit ⇒ successo con avviso di riallineamento. Replay dello stesso
+`requestId+manifestHash` è idempotente.
+
+Contratto ZIP applicato prima di ogni scrittura: esattamente 1 UDA, 1–40 lezioni,
+pool 0–40 solo `schoolforge-pool/v2` (errore pool = bloccante), pool orfani
+vietati, limiti 10 MB/8 MB/700 KB/500 domande, blocco di traversal/ZIP-slip/path
+assoluti/symlink/entry duplicate/file inattesi; nessuna normalizzazione o rinomina
+silenziosa. Difficoltà intera 1–5, `maxPoints === difficolta`, nessun `peso`,
+`maxCharacters` solo sulle aperte.
+
+Reader coherence (§5.1): libreria, workspace ed export ignorano lezioni/indice
+staged privi di `UdaDoc` (`programs/committedUdas.ts`), senza letture extra in
+apertura. Mutual exclusion (§7.3): create/reorder/delete UDA rifiutano la
+mutazione mentre la lease è valida. Export round-trip (§3.4): il ZIP del programma
+ora include i pool `valid` via `poolStorageRef`, reimportabili, senza regressioni
+sui corsi senza pool.
+
+Invarianti (§11): **nessuna** nuova Cloud Function, Firestore/Storage Rule,
+indice, dipendenza o modifica a schema verifiche/VEX/IA/appunti/import programma.
+Costo per apertura invariato; nessun listener/polling.
+
+Fuori perimetro / ancora pendente: **smoke DEV desktop/mobile/Brave** (upload
+multi-file UDA reale, vista docente, vista studente autorizzata, assenza
+pool/soluzioni, export completo, collisione) e **Gate GTWU** (APERTO). Nessun
+deploy, nessun merge automatico.
 
 ---
 
