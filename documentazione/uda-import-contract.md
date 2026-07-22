@@ -1,6 +1,6 @@
 # TWU-04A — Contratto tecnico “Importa UDA”
 
-> Stato: **implementato in TWU-04B** (codice + test, branch `twu-04b-importa-uda`). Progettazione evidence-based: 21 luglio 2026. Restano **pendenti**: smoke DEV desktop/mobile/Brave e il **Gate GTWU** (APERTO). Questo documento non autorizza deploy, migrazioni o modifiche ai dati esistenti; nessuna conferma manuale è data qui.
+> Stato: **implementato, distribuito e verificato su DEV in TWU-04B**. Progettazione evidence-based: 21 luglio 2026; smoke finale: 22 luglio 2026. **Gate GTWU PASS** — vedi [checklist finale](evidenze/gtwu-checklist-finale.md). Questo documento non autorizza deploy PROD, migrazioni o modifiche ai dati esistenti.
 >
 > **Mappa implementazione → contratto** (branch `twu-04b-importa-uda`):
 > - Helper puri: `apps/web/src/features/repository/importUda/{limits,readUdaZip,validateUdaArchive,buildUdaImportPayload,manifestHash}.ts` (§6, §7).
@@ -14,7 +14,7 @@
 
 ## 1. Stato e obiettivo
 
-SchoolForge importa oggi un programma ZIP intero e consente poi di creare, modificare, riordinare ed eliminare UDA e lezioni nell'import attivo. TWU-04B aggiungerà il comando:
+SchoolForge importa un programma ZIP intero e consente poi di creare, modificare, riordinare ed eliminare UDA e lezioni nell'import attivo. TWU-04B ha aggiunto il comando:
 
 `Didattica → corso → Panoramica → Azioni → Importa UDA`
 
@@ -62,7 +62,7 @@ L'import programma corrente carica ancora i file con `uploadBytes` diretto. Non 
 | Proiezione studente | `publicLessons/{publicLessonId}` | `publicLessonId = ${importId}_${lessonId}`; corpo e metadata didattici, mai pool, soluzione o dettagli dell'indice. |
 | Storage | `repository/{ownerUid}/imports/{importId}/{udaDir}/{file}` | Markdown UDA/lezione e pool V2 owner-only. |
 
-`listUdas` e `listLessons` leggono le collezioni dell'import e ordinano prima per `order`, con fallback legacy dal nome e tie-break deterministico. `courseLibrary.ts` esegue già, per corso attivo, `listUdas + listLessons + getImportMeta` in parallelo: TWU-04B non aggiungerà una lettura all'apertura ordinaria.
+`listUdas` e `listLessons` leggono le collezioni dell'import e ordinano prima per `order`, con fallback legacy dal nome e tie-break deterministico. `courseLibrary.ts` esegue, per corso attivo, `listUdas + listLessons + getImportMeta` in parallelo: TWU-04B non aggiunge una lettura all'apertura ordinaria.
 
 ### 3.3 Primitive editor riusabili
 
@@ -78,7 +78,7 @@ L'import programma corrente carica ancora i file con `uploadBytes` diretto. Non 
 
 - Il kit `templateKit.ts` usa un wrapper opzionale, cartelle `uda-NN-slug`, un file UDA, lezioni `lezione-NNN-slug.md` e pool companion `.pool.md`.
 - Il contratto pool canonico è solo `schoolforge-pool/v2`: `difficolta` intera 1–5, `maxPoints === difficolta`, `maxCharacters` solo sulle aperte (default effettivo 2000, range 1–10000), nessun `peso`.
-- `teacher/exportZip.ts` legge UDA/lezioni con `readTexts` e preserva l'ordine, ma **esclude oggi i pool**. Perciò l'export corrente non è un round-trip completo dei pool: TWU-04B deve estenderlo ai `poolStorageRef` validi prima di dichiarare esportabile integralmente una UDA importata.
+- `teacher/exportZip.ts` legge UDA/lezioni con `readTexts`, preserva l'ordine e, dopo TWU-04B, include i pool referenziati validi: il round-trip completo è coperto dai test e dallo smoke DEV.
 - `programma.md` appartiene al pacchetto programma e non è ammesso nello ZIP UDA.
 
 ### 3.5 Storage Gateway reale
@@ -92,7 +92,7 @@ Il codice implementato comprende:
 - allowlist path ASCII e sole estensioni `.md`/`.pool.md`;
 - rewrite Hosting `/api/repository/**`.
 
-`architettura.md` registra SGW-01 come deployato e verificato su Brave mobile per operazioni singolo file; batch/prefix completi erano demandati a SGW-02. Le API effettivamente presenti sono l'autorità: TWU-04B userà `writeText`/`deleteFile` con concorrenza client limitata, senza inventare un endpoint ZIP. Lo smoke Brave del nuovo flusso resta obbligatorio perché l'upload multi-file UDA non è ancora provato dal repository.
+`architettura.md` registra SGW-01 come deployato e verificato su Brave mobile per operazioni singolo file; batch/prefix completi erano demandati a SGW-02. Le API effettivamente presenti sono l'autorità: TWU-04B usa `writeText`/`deleteFile` con concorrenza client limitata, senza inventare un endpoint ZIP. Lo smoke Brave del flusso multi-file è stato completato su DEV.
 
 ### 3.6 Sicurezza corrente
 
@@ -133,7 +133,7 @@ Motivi:
 
 ### 5.1 Staging tecnico e commit marker
 
-TWU-04B introdurrà un record owner-only effimero:
+TWU-04B usa un record owner-only effimero:
 
 `programs/{programId}/imports/{activeImportId}/udaImportAttempts/{requestId}`
 
@@ -344,7 +344,7 @@ Non usa `deleteImportPrefix`, perché cancellerebbe anche dati preesistenti. Non
 
 Comportamenti futuri:
 
-- **elimina lezione/UDA**: i service correnti sono riusabili; TWU-04B deve testarli sulla nuova provenienza e rimuovere anche eventuali metadata `sourceRequestId`;
+- **elimina lezione/UDA**: i service esistenti sono riusati e testati sulla nuova provenienza; rimuovono anche gli eventuali metadata `sourceRequestId`;
 - **elimina programma**: `deleteProgram` copre l'intero import e il relativo prefisso Storage;
 - **export**: deve includere pool validi per un round-trip completo;
 - **reimport programma completo**: crea un nuovo import come oggi; l'UDA aggiunta compare solo se inclusa nell'export ZIP reimportato;
@@ -393,7 +393,7 @@ Punto di ingresso unico nelle azioni del corso, solo con corso/import attivo. Di
 - doppio click produce una sola prenotazione;
 - unmount non genera setState tardivi, ma non interrompe cleanup/commit già avviati.
 
-Su mobile il dialog occupa la larghezza disponibile, mantiene footer raggiungibile e non produce overflow orizzontale. Il flusso SGW same-origin va provato su Brave mobile nello smoke TWU-04B.
+Su mobile il dialog occupa la larghezza disponibile, mantiene footer raggiungibile e non produce overflow orizzontale. Il flusso SGW same-origin è stato verificato su Brave mobile nello smoke TWU-04B.
 
 ## 13. Letture, scritture e costi
 
@@ -532,9 +532,9 @@ TWU-04B è accettabile soltanto se:
 - I chunk tecnici possono lasciare orfani owner-only dopo crash; il manifest/lease deve essere recuperabile e non va eliminato finché la cleanup non termina.
 - Un secondo tab docente è un rischio reale: lease server-side e reader che ignorano discendenti senza UdaDoc sono obbligatori; la sola guardia UI non basta.
 - `writeText` genera una chiamata Function per file; entro 81 file è accettato, ma va misurato su Brave mobile. Nessun batch-write viene anticipato.
-- L'export corrente omette i pool: il fix round-trip è parte necessaria di TWU-04B, non un optional.
+- L'export include i pool: il requisito round-trip di TWU-04B è soddisfatto.
 - La documentazione SGW contiene sezioni storiche stale (“target non implementato”); l'audit usa codice, rewrite e stato più recente di `architettura.md`, senza modificarle in questa PR.
-- La compatibilità pratica di ZIP creati da strumenti diversi (flag symlink/encoding nome entry) va coperta con fixture reali in TWU-04B, senza allentare traversal e allowlist.
+- La compatibilità pratica dello ZIP reale è coperta, incluso il nome canonico esterno con cartella interna senza numero; traversal e allowlist restano invariati.
 
 ## 19. Fuori scope
 

@@ -1,6 +1,7 @@
 # CORR-PDF-01 — Export delle correzioni per archivio scolastico
 
-**Stato:** CORR-PDF-01 implementato; smoke DEV pendente.
+**Stato:** CORR-PDF-01 implementato, distribuito e verificato su DEV; **Gate
+GTWU PASS** — vedi [checklist finale](evidenze/gtwu-checklist-finale.md).
 
 ## 1. Obiettivo
 
@@ -177,7 +178,8 @@ Registro Correzioni. Il PDF della singola lezione non è stato modificato.
 2. `TWU-03/03A/03B` — implementati: toolbar e visibilità/restituzione.
 3. `CORR-PDF-01` — implementato: loader autorevole, modello chiuso, renderer
    PDF per-studente e ZIP all-or-nothing.
-4. Smoke DEV e allineamento del Gate GTWU — pendenti.
+4. Smoke DEV completato e Gate GTWU superato — vedi
+   [checklist finale](evidenze/gtwu-checklist-finale.md).
 
 ## 11. Implementazione CORR-PDF-01
 
