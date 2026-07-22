@@ -49,6 +49,8 @@ import {
   type TeacherAiPreferences,
 } from '../repository/corrections/teacherAiPreferencesService.js';
 import { BatchCorrectionActionsDialog } from './BatchCorrectionActionsDialog.js';
+import { BatchReturnVisibilityDialog } from './BatchReturnVisibilityDialog.js';
+import { BatchVisibilityMenu } from './BatchVisibilityMenu.js';
 import { createAiCorrectionCallables } from '../repository/corrections/aiCorrectionClient.js';
 import {
   loadCorrectionProgressByStudent,
@@ -58,6 +60,7 @@ import type {
   BatchAction,
   BatchSelectedRow,
 } from '../repository/corrections/batchCorrectionActions.js';
+import type { BatchReturnVisibilityAction } from '../repository/corrections/batchReturnVisibility.js';
 import { deleteSubmissionData } from '../repository/verifications/deleteSubmissionData.js';
 import {
   IconTrash,
@@ -366,6 +369,9 @@ export function VerificationsView() {
   const aiPrefsLoadingRef = useRef(false);
   // M5-04: azione massiva in conferma (Completa/Riapri/Restituisci/Azzera) o null.
   const [batchAction, setBatchAction] = useState<BatchAction | null>(null);
+  // TWU-03: una delle quattro operazioni indipendenti sulla proiezione restituita.
+  const [batchReturnVisibilityAction, setBatchReturnVisibilityAction] =
+    useState<BatchReturnVisibilityAction | null>(null);
   // «Valutate» n/totale per studentUid: singola lettura mirata (no listener).
   const [correctionProgress, setCorrectionProgress] = useState<Map<string, CorrectionProgress>>(
     new Map(),
@@ -2377,9 +2383,8 @@ export function VerificationsView() {
                   must not start on invented defaults: show the persistent error
                   + «Riprova» and disable the button until preferences are ready. */}
               {aiPrefs.status === 'error' && renderAiPrefsError()}
-              {/* M5-04A: barra azioni batch sulle righe selezionate — icone
-                  coerenti, dimensioni uniformi, griglia responsive (5 col →
-                  2 col → 1 col). Nessun pulsante sulle singole righe. */}
+              {/* M5-04A/TWU-03: barra azioni batch sulle righe selezionate —
+                  dimensioni uniformi e griglia responsive 4 → 2 → 1. */}
               <div
                 className={styles.batchToolbar}
                 role="group"
@@ -2392,6 +2397,7 @@ export function VerificationsView() {
                     aiSelectedUids.size === 0 ||
                     aiDialogOpen ||
                     batchAction !== null ||
+                    batchReturnVisibilityAction !== null ||
                     aiPrefs.status !== 'ready'
                   }
                   onClick={() => setAiDialogOpen(true)}
@@ -2412,13 +2418,28 @@ export function VerificationsView() {
                     key={action}
                     type="button"
                     className={action === 'clear' ? 'btn-danger' : 'btn-primary'}
-                    disabled={aiSelectedUids.size === 0 || aiDialogOpen || batchAction !== null}
+                    disabled={
+                      aiSelectedUids.size === 0 ||
+                      aiDialogOpen ||
+                      batchAction !== null ||
+                      batchReturnVisibilityAction !== null
+                    }
                     onClick={() => setBatchAction(action)}
                   >
                     <Icon />
                     {label}
                   </button>
                 ))}
+                <BatchVisibilityMenu
+                  disabled={
+                    aiSelectedUids.size === 0 ||
+                    aiDialogOpen ||
+                    batchAction !== null ||
+                    batchReturnVisibilityAction !== null
+                  }
+                  contextKey={selectedVer?.id ?? ''}
+                  onSelect={setBatchReturnVisibilityAction}
+                />
               </div>
               <>
                 {/* TWU-02A: the refresh status now lives inline in the header
@@ -2702,6 +2723,18 @@ export function VerificationsView() {
             // stesso gruppo. La selezione cambia solo manualmente.
             void refreshCorrectionProgress();
           }}
+        />
+      )}
+
+      {batchReturnVisibilityAction && selectedVer && (
+        <BatchReturnVisibilityDialog
+          action={batchReturnVisibilityAction}
+          rows={batchSelectedRows}
+          ownerUid={ownerUid}
+          verificationId={selectedVer.id}
+          verification={selectedVer}
+          db={db}
+          onClose={() => setBatchReturnVisibilityAction(null)}
         />
       )}
 

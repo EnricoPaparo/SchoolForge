@@ -800,8 +800,9 @@ describe('setReturnVisibleToStudent', () => {
     seedCorrection({ status: 'returned' });
     seedReturn({ visibleToStudent: true });
 
-    await setReturnVisibleToStudent(SUBMISSION_ID, false, fakeDb);
+    const result = await setReturnVisibleToStudent(SUBMISSION_ID, false, fakeDb);
 
+    expect(result).toBe('changed');
     expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
     const [, update] = mockUpdateDoc.mock.calls[0]!;
     expect(update.visibleToStudent).toBe(false);
@@ -811,8 +812,9 @@ describe('setReturnVisibleToStudent', () => {
     seedCorrection({ status: 'returned' });
     seedReturn({ visibleToStudent: true });
 
-    await setReturnVisibleToStudent(SUBMISSION_ID, true, fakeDb);
+    const result = await setReturnVisibleToStudent(SUBMISSION_ID, true, fakeDb);
 
+    expect(result).toBe('noop');
     expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
 
@@ -859,8 +861,9 @@ describe('setSolutionsVisible', () => {
     seedCorrection({ status: 'returned' });
     seedReturn({ solutionsVisible: false });
 
-    await setSolutionsVisible(SUBMISSION_ID, true, fakeDb);
+    const result = await setSolutionsVisible(SUBMISSION_ID, true, fakeDb);
 
+    expect(result).toBe('changed');
     expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
     const [, update] = mockUpdateDoc.mock.calls[0]!;
     expect(update.solutionsVisible).toBe(true);
@@ -885,8 +888,9 @@ describe('setSolutionsVisible', () => {
       ],
     });
 
-    await setSolutionsVisible(SUBMISSION_ID, false, fakeDb);
+    const result = await setSolutionsVisible(SUBMISSION_ID, false, fakeDb);
 
+    expect(result).toBe('changed');
     expect(mockUpdateDoc).toHaveBeenCalledTimes(1);
     const [, update] = mockUpdateDoc.mock.calls[0]!;
     expect(update.solutionsVisible).toBe(false);
@@ -897,8 +901,9 @@ describe('setSolutionsVisible', () => {
     seedCorrection({ status: 'returned' });
     seedReturn({ solutionsVisible: false });
 
-    await setSolutionsVisible(SUBMISSION_ID, false, fakeDb);
+    const result = await setSolutionsVisible(SUBMISSION_ID, false, fakeDb);
 
+    expect(result).toBe('noop');
     expect(mockUpdateDoc).not.toHaveBeenCalled();
   });
 

@@ -160,6 +160,25 @@ vi.mock('../BatchCorrectionActionsDialog.js', () => ({
     );
   },
 }));
+const mockVisibilityDialog = vi.fn();
+vi.mock('../BatchReturnVisibilityDialog.js', () => ({
+  BatchReturnVisibilityDialog: (props: {
+    action: string;
+    rows: { studentUid: string }[];
+    onClose: () => void;
+  }) => {
+    mockVisibilityDialog(props);
+    return (
+      <div data-testid="batch-visibility-dialog">
+        <span>visibility action: {props.action}</span>
+        <span>visibility rows: {props.rows.map((row) => row.studentUid).join(',')}</span>
+        <button type="button" onClick={props.onClose}>
+          Chiudi visibilità
+        </button>
+      </div>
+    );
+  },
+}));
 // CorrectionWorkspace (M4-02) has its own dedicated test suite — mocked here
 // so this file stays focused on how VerificationsView opens it (which
 // submissions get the action, what props it receives), not its internals.
@@ -3414,15 +3433,15 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
     return screen.findByRole('region', { name: 'Consegne online' });
   }
 
-  it('disables the four batch buttons until a row is selected, with no per-row buttons', async () => {
+  it('disables batch buttons until a row is selected, with no per-row buttons', async () => {
     setupDefaults();
     const region = await openWith();
-    for (const name of ['Completa', 'Riapri', 'Restituisci', 'Azzera']) {
+    for (const name of ['Completa', 'Riapri', 'Restituisci', 'Azzera', 'Visibilità']) {
       const btn = within(region).getByRole('button', { name }) as HTMLButtonElement;
       expect(btn.disabled).toBe(true);
     }
     fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
-    for (const name of ['Completa', 'Riapri', 'Restituisci', 'Azzera']) {
+    for (const name of ['Completa', 'Riapri', 'Restituisci', 'Azzera', 'Visibilità']) {
       const btn = within(region).getByRole('button', { name }) as HTMLButtonElement;
       expect(btn.disabled).toBe(false);
     }
@@ -3442,10 +3461,40 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
     const dialog = await screen.findByTestId('batch-actions-dialog');
     expect(within(dialog).getByText('action: return')).toBeTruthy();
     expect(within(dialog).getByText('rows: stud-a')).toBeTruthy();
-    for (const name of ['Correggi con IA', 'Completa', 'Riapri', 'Restituisci', 'Azzera']) {
+    for (const name of [
+      'Correggi con IA',
+      'Completa',
+      'Riapri',
+      'Restituisci',
+      'Azzera',
+      'Visibilità',
+    ]) {
       expect(
         (within(region).getByRole('button', { name: new RegExp(`^${name}`) }) as HTMLButtonElement)
           .disabled,
+      ).toBe(true);
+    }
+  });
+
+  it('opens the visibility menu and preserves selection when its dialog closes', async () => {
+    setupDefaults();
+    const region = await openWith();
+    fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona tutte le consegne' }));
+    fireEvent.click(within(region).getByRole('button', { name: 'Visibilità' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Mostra soluzioni' }));
+
+    const dialog = await screen.findByTestId('batch-visibility-dialog');
+    expect(within(dialog).getByText('visibility action: show_solutions')).toBeTruthy();
+    expect(within(dialog).getByText('visibility rows: stud-a,stud-b')).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Chiudi visibilità' }));
+
+    for (const name of ['Anna', 'Bruno']) {
+      expect(
+        (
+          within(region).getByRole('checkbox', {
+            name: `Seleziona consegna — ${name}`,
+          }) as HTMLInputElement
+        ).checked,
       ).toBe(true);
     }
   });
@@ -3504,7 +3553,14 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
   it('M5-04A: all toolbar buttons render an icon before their accessible label', async () => {
     setupDefaults();
     const region = await openWith();
-    for (const name of ['Correggi con IA', 'Completa', 'Riapri', 'Restituisci', 'Azzera']) {
+    for (const name of [
+      'Correggi con IA',
+      'Completa',
+      'Riapri',
+      'Restituisci',
+      'Azzera',
+      'Visibilità',
+    ]) {
       const btn = within(region).getByRole('button', { name: new RegExp(`^${name}`) });
       // Decorative inline SVG icon rendered inside the button.
       expect(btn.querySelector('svg')).not.toBeNull();
