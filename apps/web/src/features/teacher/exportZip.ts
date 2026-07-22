@@ -36,23 +36,38 @@ export async function buildExportZip(
     listLessons(program.id, program.activeImportId, db),
   ]);
 
-  const entries = [
+  const entries: Array<{ storagePath: string; zipPath: string }> = [
     ...udas
       .filter((uda) => !uda.filename.endsWith('.pool.md'))
       .map((uda) => ({
         storagePath: `${uda.storageBasePath}/${uda.filename}`,
         zipPath: `${uda.dir}/${uda.filename}`,
       })),
-    ...lessons
-      .filter(
-        (lesson) =>
-          !lesson.filename.endsWith('.pool.md') && !lesson.storageRef.endsWith('.pool.md'),
-      )
-      .map((lesson) => ({
-        storagePath: lesson.storageRef,
-        zipPath: `${lesson.udaDir}/${lesson.filename}`,
-      })),
   ];
+
+  // Lessons keep their `order` sequence; each lesson that carries a valid pool
+  // emits its companion `.pool.md` entry immediately after the lesson entry, so
+  // the archive is a full pool round-trip (TWU-04B). The pool zip name is
+  // derived from the lesson filename (`lezione-XXX-slug.pool.md`) so a
+  // reimported archive re-associates the pool with its lesson by the same
+  // companion convention `readZipFile`/`validateImport` already expect.
+  // Pools are read from the authoritative `poolStorageRef` and only exported
+  // when the pool is `valid`: an `invalid`/`absent` pool is never emitted, so a
+  // program without pools exports exactly as before (no regression).
+  for (const lesson of lessons) {
+    if (lesson.filename.endsWith('.pool.md') || lesson.storageRef.endsWith('.pool.md')) continue;
+    entries.push({
+      storagePath: lesson.storageRef,
+      zipPath: `${lesson.udaDir}/${lesson.filename}`,
+    });
+    if (lesson.poolStatus === 'valid' && lesson.poolStorageRef) {
+      const poolZipName = lesson.filename.replace(/\.md$/, '.pool.md');
+      entries.push({
+        storagePath: lesson.poolStorageRef,
+        zipPath: `${lesson.udaDir}/${poolZipName}`,
+      });
+    }
+  }
   const results = await readTexts(entries.map((entry) => entry.storagePath));
   const contentByPath = new Map(
     results.filter((result) => result.ok).map((result) => [result.path, result.content]),
