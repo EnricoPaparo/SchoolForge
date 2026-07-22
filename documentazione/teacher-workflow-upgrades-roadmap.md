@@ -2,7 +2,9 @@
 
 Interventi circoscritti di rifinitura e miglioramento del flusso docente.
 Nessun redesign, nessuna nuova dipendenza, nessuna nuova Cloud Function, nessun
-nuovo indice, nessun listener/polling aggiuntivo. `Gate GTWU` resta **APERTO**.
+nuovo indice o listener/polling aggiuntivo. **Gate GTWU superato (PASS)** il 22
+luglio 2026: vedi
+[checklist finale](evidenze/gtwu-checklist-finale.md).
 
 ## Stato pacchetti
 
@@ -14,18 +16,18 @@ nuovo indice, nessun listener/polling aggiuntivo. `Gate GTWU` resta **APERTO**.
 | **TWU-03A** | Toolbar batch ordinata e stato restituzione/soluzioni nella tabella consegne. | **Implementato** |
 | **TWU-03B** | Restituzione visibile con soluzioni congelate per default, inclusa la sola variante VEX assegnata. | **Implementato** |
 | **TWU-04A** | Contratto import UDA. | **Progettato** — vedi [uda-import-contract.md](uda-import-contract.md) |
-| **TWU-04B** | Implementazione «Importa UDA»: append staged di una sola UDA nell'import attivo + export round-trip pool. | **Implementato** (codice + test) — smoke DEV/Brave pendente |
+| **TWU-04B** | Implementazione «Importa UDA»: append staged di una sola UDA nell'import attivo + export round-trip pool. | **Implementato, distribuito e verificato su DEV** |
 | **CHUNK-RECOVERY-01** | Recovery esplicita dei moduli PDF dinamici obsoleti dopo un deploy, senza reload automatico. | **Implementato** per «Programma svolto (PDF)», Registro Correzioni e CORR-PDF-01 |
-| **CORR-PDF-01** | Un PDF scolastico autonomo per ogni consegna selezionata; ZIP soltanto come contenitore di PDF separati quando la selezione è multipla. | **Implementato** — smoke DEV pendente; vedi [correction-archive-export-contract.md](correction-archive-export-contract.md) |
-| TWU-05 | Riservato ad altri upgrade del flusso docente. | Pendente |
-| Gate GTWU | Verifica finale del pacchetto TWU. | **APERTO** |
+| **CORR-PDF-01** | Un PDF scolastico autonomo per ogni consegna selezionata; ZIP soltanto come contenitore di PDF separati quando la selezione è multipla. | **Implementato, distribuito e verificato su DEV**; vedi [correction-archive-export-contract.md](correction-archive-export-contract.md) |
+| TWU-05 | Riservato ad altri upgrade del flusso docente. | Nessuno scope approvato; non bloccante |
+| Gate GTWU | Verifica finale del pacchetto TWU. | **PASS** — [evidenze](evidenze/gtwu-checklist-finale.md) |
 
 ---
 
 ## TWU-01 — Fix immediati e polish del flusso docente ✅ IMPLEMENTATO
 
 Quattro interventi indipendenti. **Solo client** salvo la Rule di accesso
-studente (Task 4). Nessun deploy, nessun merge automatico.
+studente (Task 4). Il pacchetto non richiedeva deploy di Functions o indici.
 
 ### Task 1 — Ellissi nella preview del picker domande
 - `QuestionPicker`: la preview è **clampata a due righe** con ellissi CSS reale
@@ -127,7 +129,7 @@ timestamp). Nessuna lettura/scrittura per pending/blocked/portale disattivo.
 - Functions, provider IA, prompt, costi IA e VEX runtime **non toccati**.
 - Nessun nuovo indice Firestore. `firestore.rules` modificato **solo** per la
   Rule di accesso studente sopra.
-- Gate GTWU **APERTO**; nessun deploy, nessun merge.
+- Stato finale: pacchetto distribuito e verificato su DEV; Gate GTWU **PASS**.
 
 ---
 
@@ -172,12 +174,12 @@ bloccano ogni write e il limite dimensionale è verificato sul documento
 completo. Gli esiti batch riusciti aggiornano subito la mappa locale senza una
 query aggiuntiva; i toggle TWU-03 restano indipendenti.
 
-TWU-04A resta il contratto autorevole; **TWU-04B è ora implementato** (sotto) e
-Gate GTWU resta **APERTO**. Nessun deploy e nessun merge automatico.
+TWU-04A resta il contratto autorevole; **TWU-04B è implementato, distribuito e
+verificato su DEV**. Gate GTWU **PASS**.
 
 ---
 
-## TWU-04B — «Importa UDA» ✅ IMPLEMENTATO (smoke DEV pendente)
+## TWU-04B — «Importa UDA» ✅ IMPLEMENTATO E VERIFICATO SU DEV
 
 Implementa il contratto [uda-import-contract.md](uda-import-contract.md):
 `Didattica → corso → Panoramica → Azioni → Importa UDA` aggiunge **una sola
@@ -197,8 +199,10 @@ post-commit ⇒ successo con avviso di riallineamento. Replay dello stesso
 Contratto ZIP applicato prima di ogni scrittura: esattamente 1 UDA, 1–40 lezioni,
 pool 0–40 solo `schoolforge-pool/v2` (errore pool = bloccante), pool orfani
 vietati, limiti 10 MB/8 MB/700 KB/500 domande, blocco di traversal/ZIP-slip/path
-assoluti/symlink/entry duplicate/file inattesi; nessuna normalizzazione o rinomina
-silenziosa. Difficoltà intera 1–5, `maxPoints === difficolta`, nessun `peso`,
+assoluti/symlink/entry duplicate/file inattesi. L'unica normalizzazione ammessa
+usa il nome canonico `uda-NN-slug.zip` quando la cartella interna omette il
+numero ma conserva esattamente lo stesso slug; nomi differenti restano
+bloccanti. Difficoltà intera 1–5, `maxPoints === difficolta`, nessun `peso`,
 `maxCharacters` solo sulle aperte.
 
 Reader coherence (§5.1): libreria, workspace ed export ignorano lezioni/indice
@@ -212,10 +216,9 @@ Invarianti (§11): **nessuna** nuova Cloud Function, Firestore/Storage Rule,
 indice, dipendenza o modifica a schema verifiche/VEX/IA/appunti/import programma.
 Costo per apertura invariato; nessun listener/polling.
 
-Fuori perimetro / ancora pendente: **smoke DEV desktop/mobile/Brave** (upload
-multi-file UDA reale, vista docente, vista studente autorizzata, assenza
-pool/soluzioni, export completo, collisione) e **Gate GTWU** (APERTO). Nessun
-deploy, nessun merge automatico.
+Smoke DEV desktop/mobile/Brave completato: upload multi-file UDA reale, vista
+docente e studente autorizzata, assenza pool/soluzioni lato studente, export
+completo, round-trip e collisione verificati. **Gate GTWU PASS**.
 
 ---
 
@@ -242,8 +245,7 @@ Le decisioni complete sono congelate in
   impedisce ogni download parziale e viene indicato con il nome leggibile dello
   studente.
 
-Ordine residuo: smoke DEV di CORR-PDF-01 e implementazione TWU-04B.
-Gate GTWU resta **APERTO**.
+CORR-PDF-01 e TWU-04B sono distribuiti e verificati su DEV. **Gate GTWU PASS**.
 
 ---
 
@@ -346,4 +348,4 @@ guardrail. Una sola chiamata provider per consegna.
   budget ceiling, TTL. `settings/aiConfig` resta kill switch e fonte di
   limiti/budget, mai leggibile dal client.
 - `firestore.rules` modificato **solo** per il nuovo documento owner-only.
-- Gate GTWU **APERTO**; nessun deploy, nessun merge.
+- Stato finale: distribuito e verificato su DEV; Gate GTWU **PASS**.

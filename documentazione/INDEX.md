@@ -11,6 +11,12 @@ Vedi [mvp-docente-cartaceo.md](mvp-docente-cartaceo.md) per avviare l'ambiente l
 
 **Appunti personali dello studente (ANNOT) — completato.** ANNOT-01/02/03A/03B implementati e mergiati; identità canonica lezione = `publicLessonId`; costo di una read indice per corso/sessione e read nota solo all'apertura, senza listener/polling. **Gate GANNOT superato (PASS)** — vedi [evidenze/gannot-checklist-finale.md](evidenze/gannot-checklist-finale.md) e [student-notes-contract.md](student-notes-contract.md).
 
+**Teacher Workflow Upgrades (TWU) — completato.** TWU-01→04B,
+CHUNK-RECOVERY-01 e CORR-PDF-01 sono implementati, distribuiti e verificati su
+DEV; Importa UDA ed export archivistico per studente hanno superato lo smoke
+desktop/mobile/Brave. **Gate GTWU superato (PASS)** — vedi
+[evidenze/gtwu-checklist-finale.md](evidenze/gtwu-checklist-finale.md).
+
 **Hardening finale (HARD) — completato.** **Gate GHARD superato (PASS, 15/07/2026):** 0 P0/P1, i P2 F01/F02/F03 risolti, fix accessibilità P2 e import resiliente F06 completati; residui P3 accettati con soglie esplicite. Evidenze finali in [evidenze/ghard-checklist-finale.md](evidenze/ghard-checklist-finale.md). HARD-03 resta condizionato a misure reali e non blocca la V1. Il PASS non autorizza provisioning o deploy PROD.
 
 **Didattica studente (SDUX) — completata.** Libreria corsi e workspace corso/UDA/lezione read-only su sole proiezioni pubbliche; nessun componente/service docente, pool o accesso Storage. SDUX-02 e Modalità verifica confermati su DEV — vedi [student-didattica-ux-roadmap.md](student-didattica-ux-roadmap.md).
@@ -39,7 +45,7 @@ SchoolForge è un repository didattico Markdown-first per un solo docente. Se è
 10. [piano-implementazione.md](piano-implementazione.md) — pacchetti per agenti, dipendenze, gate.
 11. [evoluzioni-apprendimento-roadmap.md](evoluzioni-apprendimento-roadmap.md) — roadmap approvata post-polish: calibrazione IA, pool senza peso, appunti, varianti equivalenti e boost grafico.
 12. [vex-contract.md](vex-contract.md) — VEX varianti equivalenti: contratto, builder assistito docente, assegnazione server-side idempotente, svolgimento, correzione/IA/restituzione sulla variante. VEX-01A→02C implementati e distribuiti su DEV; **Gate GVEX PASS**. Prototipo builder: [prototipi/vex-builder.html](prototipi/vex-builder.html).
-13. [teacher-workflow-upgrades-roadmap.md](teacher-workflow-upgrades-roadmap.md) — TWU: rifiniture e miglioramenti del flusso docente. TWU-01/02/03 e CORR-PDF-01 implementati; TWU-04A progettato e TWU-04B pendente ([uda-import-contract.md](uda-import-contract.md)); contratto dell'export archivistico per-studente e recovery chunk in [correction-archive-export-contract.md](correction-archive-export-contract.md). **Gate GTWU APERTO** per smoke DEV e TWU-04B.
+13. [teacher-workflow-upgrades-roadmap.md](teacher-workflow-upgrades-roadmap.md) — TWU: rifiniture e miglioramenti del flusso docente. TWU-01→04B, CORR-PDF-01 e recovery chunk completati; contratto Importa UDA in [uda-import-contract.md](uda-import-contract.md), export archivistico in [correction-archive-export-contract.md](correction-archive-export-contract.md). **Gate GTWU PASS** — [evidenze](evidenze/gtwu-checklist-finale.md).
 
 ## Per sviluppare un modulo
 
