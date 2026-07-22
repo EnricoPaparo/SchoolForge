@@ -7,6 +7,7 @@ const EXCLUDED_PREFIXES = ['__MACOSX/'];
 const EXCLUDED_NAMES = ['.DS_Store'];
 /** Only lesson/UDA Markdown and pool companions are allowed logical files. */
 const ALLOWED_EXTENSION_RE = /\.md$/;
+const CANONICAL_UDA_ARCHIVE_RE = /^uda-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.zip$/i;
 
 function err(code: UdaArchiveErrorCode, message: string, path?: string): ReadUdaZipResult {
   const error: UdaArchiveError = path ? { code, message, path } : { code, message };
@@ -51,6 +52,26 @@ function isSymlink(entry: JSZip.JSZipObject): boolean {
 
 function stripBom(content: string): string {
   return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+}
+
+/**
+ * Some authoring workflows export `uda-NN-slug.zip` while keeping the single
+ * internal UDA folder/file as `uda-slug`. When the slugs match exactly, use
+ * the canonical archive name as the logical UDA directory and filename. This
+ * is a one-to-one in-memory mapping: unrelated internal names stay untouched
+ * and are rejected later by the structural validator.
+ */
+function canonicalizeUdaPathFromArchive(path: string, archiveName: string): string {
+  if (!CANONICAL_UDA_ARCHIVE_RE.test(archiveName)) return path;
+
+  const canonicalDir = archiveName.replace(/\.zip$/i, '');
+  const legacyDir = canonicalDir.replace(/^uda-\d{2}-/i, 'uda-');
+  if (legacyDir === canonicalDir || !path.startsWith(`${legacyDir}/`)) return path;
+
+  const relativePath = path.slice(legacyDir.length + 1);
+  const canonicalFilename =
+    relativePath === `${legacyDir}.md` ? `${canonicalDir}.md` : relativePath;
+  return `${canonicalDir}/${canonicalFilename}`;
 }
 
 /**
@@ -117,7 +138,8 @@ export async function readUdaZip(file: File): Promise<ReadUdaZipResult> {
   let totalDecompressedBytes = 0;
 
   for (const rawPath of rawPaths) {
-    const path = prefix ? rawPath.slice(prefix.length) : rawPath;
+    const unwrappedPath = prefix ? rawPath.slice(prefix.length) : rawPath;
+    const path = canonicalizeUdaPathFromArchive(unwrappedPath, file.name);
     if (!path || isHidden(path)) continue;
 
     if (!ALLOWED_EXTENSION_RE.test(path)) {

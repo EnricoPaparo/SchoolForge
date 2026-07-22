@@ -178,6 +178,13 @@ Dopo la rimozione facoltativa di **un solo wrapper comune**, la radice logica de
 - nessun file alla root (`programma.md` incluso);
 - nessuna sottocartella dentro l'UDA.
 
+È accettato anche l'export equivalente in cui il file ZIP ha il nome canonico
+`uda-NN-slug.zip`, mentre l'unica cartella interna omette solo `NN-`. Il file
+UDA interno può essere già canonico (`uda-NN-slug.md`) oppure omettere anch'esso
+il numero (`uda-slug.md`). Il reader usa il nome canonico dello ZIP
+esclusivamente quando lo slug coincide esattamente e normalizza i path soltanto
+in memoria. Nomi interni differenti o ambigui restano bloccanti.
+
 I segmenti path devono essere ASCII minuscoli, numeri e trattini, secondo:
 
 - UDA: `^uda-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*$`;
