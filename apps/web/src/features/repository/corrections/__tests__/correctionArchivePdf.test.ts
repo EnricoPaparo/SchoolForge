@@ -9,12 +9,19 @@ import {
 class FakePdf implements CorrectionArchivePdfDoc {
   texts: string[] = [];
   textCalls: Array<{ value: string; page: number; y: number }> = [];
+  rectCalls: Array<{ x: number; y: number; width: number; height: number }> = [];
+  lineCalls: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
   pages = 1;
   currentPage = 1;
   setFont() {}
   setFontSize() {}
   setTextColor() {}
-  line() {}
+  line(x1: number, y1: number, x2: number, y2: number) {
+    this.lineCalls.push({ x1, y1, x2, y2 });
+  }
+  rect(x: number, y: number, width: number, height: number) {
+    this.rectCalls.push({ x, y, width, height });
+  }
   splitTextToSize(text: string, maxWidth: number): string[] {
     const size = Math.max(8, Math.floor(maxWidth / 7));
     return text.split('\n').flatMap((line) => {
@@ -131,10 +138,14 @@ describe('correctionArchivePdf', () => {
     renderCorrectionArchivePdf(archive, pdf);
     const text = pdf.texts.join('\n');
     expect(text).toContain('Risposta dello studente\nRisposta aperta');
-    expect(text).toContain('Opzioni\n[ ] Alfa\n[X] Beta');
+    expect(text).toContain('Opzioni\nAlfa\nBeta');
     expect(text).toContain('Soluzione corretta\nAlfa');
-    expect(text).toContain('Opzioni\n[X] Uno\n[ ] Due\n[X] Tre');
+    expect(text).toContain('Opzioni\nUno\nDue\nTre');
     expect(text).toContain('Soluzione corretta\nUno\nDue');
+    expect(text).not.toMatch(/\[[X ]\]/);
+    expect(pdf.rectCalls).toHaveLength(5);
+    // Three selected options, two diagonal strokes for each vector X.
+    expect(pdf.lineCalls.filter((line) => line.y1 !== line.y2)).toHaveLength(6);
   });
 
   it('wraps long content and creates page breaks without clipping the footer', () => {

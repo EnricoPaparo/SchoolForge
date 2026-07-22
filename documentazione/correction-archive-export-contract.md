@@ -48,8 +48,8 @@ Ogni PDF contiene esclusivamente i dati della singola consegna:
 7. per ogni domanda assegnata allo studente, nell'ordine canonico della sua
    consegna:
    - testo della domanda;
-   - per le domande chiuse, tutte le opzioni con marcatura `[X]`/`[ ]` della
-     selezione dello studente e la soluzione corretta congelata;
+   - per le domande chiuse, tutte le opzioni con checkbox vettoriali allineate
+     (croce sulle selezionate) e la soluzione corretta congelata;
    - per le domande aperte, risposta consegnata senza esportare la soluzione
      campione del pool;
    - punti attribuiti e massimo della domanda;

@@ -5,6 +5,8 @@ const MARGIN = 42;
 const CONTENT_WIDTH = PAGE.width - MARGIN * 2;
 const FOOTER_LIMIT = PAGE.height - 52;
 const LINE_HEIGHT = 13;
+const OPTION_BOX_SIZE = 8;
+const OPTION_TEXT_INDENT = 15;
 
 const NUMBER_FORMAT = new Intl.NumberFormat('it-IT', {
   minimumFractionDigits: 0,
@@ -18,6 +20,7 @@ export type CorrectionArchivePdfDoc = {
   splitTextToSize(text: string, maxWidth: number): string[];
   text(text: string | string[], x: number, y: number, options?: { align?: string }): void;
   line(x1: number, y1: number, x2: number, y2: number): void;
+  rect(x: number, y: number, width: number, height: number): void;
   addPage(): void;
   setPage(page: number): void;
   getNumberOfPages(): number;
@@ -49,6 +52,7 @@ function writePaginatedLines(
   doc: CorrectionArchivePdfDoc,
   lines: readonly string[],
   y: number,
+  x = MARGIN,
 ): number {
   const pending = lines.length > 0 ? lines : [''];
   let cursor = 0;
@@ -62,7 +66,7 @@ function writePaginatedLines(
 
     const capacity = Math.max(1, Math.floor((FOOTER_LIMIT - nextY) / LINE_HEIGHT) + 1);
     const pageLines = pending.slice(cursor, cursor + capacity);
-    doc.text(pageLines, MARGIN, nextY);
+    doc.text(pageLines, x, nextY);
     nextY += pageLines.length * LINE_HEIGHT;
     cursor += pageLines.length;
 
@@ -73,6 +77,44 @@ function writePaginatedLines(
   }
 
   return nextY;
+}
+
+function writeOptionsBlock(
+  doc: CorrectionArchivePdfDoc,
+  options: CorrectionArchiveModel['questions'][number]['options'],
+  y: number,
+): number {
+  if (!options || options.length === 0) return y;
+  y = ensureSpace(doc, y, LINE_HEIGHT * 2);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Opzioni', MARGIN, y);
+  y += LINE_HEIGHT;
+  doc.setFont('helvetica', 'normal');
+
+  for (const option of options) {
+    y = ensureSpace(doc, y, LINE_HEIGHT);
+    const boxY = y - OPTION_BOX_SIZE + 1;
+    doc.rect(MARGIN, boxY, OPTION_BOX_SIZE, OPTION_BOX_SIZE);
+    if (option.selected) {
+      doc.line(
+        MARGIN + 1.5,
+        boxY + 1.5,
+        MARGIN + OPTION_BOX_SIZE - 1.5,
+        boxY + OPTION_BOX_SIZE - 1.5,
+      );
+      doc.line(
+        MARGIN + OPTION_BOX_SIZE - 1.5,
+        boxY + 1.5,
+        MARGIN + 1.5,
+        boxY + OPTION_BOX_SIZE - 1.5,
+      );
+    }
+    const lines = doc.splitTextToSize(option.text, CONTENT_WIDTH - OPTION_TEXT_INDENT);
+    y = writePaginatedLines(doc, lines, y, MARGIN + OPTION_TEXT_INDENT) + 4;
+  }
+
+  return y + 1;
 }
 
 function writeLabelledBlock(
@@ -146,10 +188,7 @@ export function renderCorrectionArchivePdf(
     doc.setFontSize(10);
     y = writePaginatedLines(doc, questionLines, y) + 8;
     if (question.options && question.correctAnswerText) {
-      const optionLines = question.options
-        .map((option) => `[${option.selected ? 'X' : ' '}] ${option.text}`)
-        .join('\n');
-      y = writeLabelledBlock(doc, 'Opzioni', optionLines, y);
+      y = writeOptionsBlock(doc, question.options, y);
       y = writeLabelledBlock(doc, 'Soluzione corretta', question.correctAnswerText, y);
     } else {
       y = writeLabelledBlock(doc, 'Risposta dello studente', question.answerText, y);
