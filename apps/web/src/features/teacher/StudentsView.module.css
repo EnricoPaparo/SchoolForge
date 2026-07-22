@@ -228,6 +228,14 @@
   white-space: nowrap;
 }
 
+/** Second line of a date/time cell: the time, smaller and muted. */
+.cellTime {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
 .tdActions {
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--color-border);

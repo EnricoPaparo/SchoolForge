@@ -37,15 +37,27 @@ const STATUS_BADGE_CLASS: Record<StudentStatus, string> = {
   blocked: 'badge-error',
 };
 
-function formatTimestamp(value: Timestamp | unknown): string {
+/**
+ * Splits a Firestore timestamp into a date line and an "HH:mm" time line so the
+ * table can show the date on top and the time in small text below it, saving
+ * horizontal space. Returns `null` for missing/legacy values.
+ */
+function formatDateTime(value: Timestamp | unknown): { date: string; time: string } | null {
   if (value && typeof (value as Timestamp).toDate === 'function') {
-    return (value as Timestamp).toDate().toLocaleDateString('it-IT', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
+    const d = (value as Timestamp).toDate();
+    return {
+      date: d.toLocaleDateString('it-IT', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      }),
+      time: d.toLocaleTimeString('it-IT', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    };
   }
-  return '—';
+  return null;
 }
 
 interface Props {
@@ -568,8 +580,6 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
                     <th className={styles.th}>Email</th>
                     <th className={styles.th}>Stato</th>
                     <th className={styles.th}>Classe</th>
-                    <th className={styles.th}>Richiesta accesso</th>
-                    <th className={styles.th}>Primo accesso</th>
                     <th className={styles.th}>Ultimo accesso</th>
                     <th className={styles.th} aria-label="Azioni"></th>
                   </tr>
@@ -600,12 +610,18 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
                           ))}
                         </select>
                       </td>
-                      <td className={styles.td}>{formatTimestamp(s.createdAt)}</td>
                       <td className={styles.td}>
-                        {s.firstPortalAccessAt ? formatTimestamp(s.firstPortalAccessAt) : '—'}
-                      </td>
-                      <td className={styles.td}>
-                        {s.lastPortalAccessAt ? formatTimestamp(s.lastPortalAccessAt) : '—'}
+                        {(() => {
+                          const dt = formatDateTime(s.lastPortalAccessAt);
+                          return dt ? (
+                            <>
+                              <span>{dt.date}</span>
+                              <span className={styles.cellTime}>{dt.time}</span>
+                            </>
+                          ) : (
+                            '—'
+                          );
+                        })()}
                       </td>
                       <td className={styles.tdActions}>
                         {deleteConfirmId === s.id ? (
