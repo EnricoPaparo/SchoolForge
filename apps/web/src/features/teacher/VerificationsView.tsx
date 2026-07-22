@@ -56,6 +56,10 @@ import {
   loadCorrectionProgressByStudent,
   type CorrectionProgress,
 } from '../repository/corrections/correctionProgressService.js';
+import {
+  loadCorrectionReturnVisibilityBySubmission,
+  type CorrectionReturnVisibility,
+} from '../repository/corrections/correctionReturnVisibilityService.js';
 import type {
   BatchAction,
   BatchSelectedRow,
@@ -63,9 +67,13 @@ import type {
 import type { BatchReturnVisibilityAction } from '../repository/corrections/batchReturnVisibility.js';
 import { deleteSubmissionData } from '../repository/verifications/deleteSubmissionData.js';
 import {
+  IconBookOpen,
+  IconCircleX,
   IconTrash,
   IconSparkles,
   IconCircleCheck,
+  IconEye,
+  IconEyeOff,
   IconRotateCcw,
   IconSend,
   IconEraser,
@@ -376,6 +384,9 @@ export function VerificationsView() {
   const [correctionProgress, setCorrectionProgress] = useState<Map<string, CorrectionProgress>>(
     new Map(),
   );
+  const [correctionReturnVisibility, setCorrectionReturnVisibility] = useState<
+    Map<string, CorrectionReturnVisibility>
+  >(new Map());
   const aiCallables = useMemo(() => createAiCorrectionCallables(functions), []);
 
   const sortedMonitorRows = useMemo(() => {
@@ -462,12 +473,13 @@ export function VerificationsView() {
 
   /**
    * TWU-01 — single refresh orchestration behind the «Aggiorna» button. It runs
-   * the same two load operations (queries) as the selection effect —
-   * `loadCorrectionProgressByStudent` and `listStudents` — so no new
-   * query/index is introduced. Billed Firestore reads are proportional to the
-   * documents each query returns (not a fixed "2 reads"); the cost is incurred
-   * only on click, with no listener or polling. Keeps the current data on
-   * error, guards against double-click, and never updates state after unmount.
+   * the same three load operations as the selection effect: correction
+   * progress, class roster and return visibility. The visibility query is
+   * scoped by `verificationId` and uses its automatic single-field index.
+   * Billed Firestore reads are proportional to the documents returned by each
+   * operation (not a fixed "3 reads"); the cost exists only on click, with no
+   * listener or polling. Keeps current data on error, guards against
+   * double-click, and never updates state after unmount.
    */
   async function refreshMonitor(): Promise<void> {
     if (!selectedVer || monitorRefreshingRef.current) return;
@@ -478,9 +490,10 @@ export function VerificationsView() {
     const verId = selectedVer.id;
     const classId = selectedVer.teacherSnapshot?.classId ?? selectedVer.config.classId;
     try {
-      const [progress, students] = await Promise.all([
+      const [progress, students, returnVisibility] = await Promise.all([
         loadCorrectionProgressByStudent(verId, db),
         listStudents(ownerUid, db),
+        loadCorrectionReturnVisibilityBySubmission(verId, ownerUid, db),
       ]);
       if (!mountedRef.current) return;
       const approved = students
@@ -488,6 +501,7 @@ export function VerificationsView() {
         .sort((a, b) => (a.displayName ?? a.email).localeCompare(b.displayName ?? b.email, 'it'));
       setCorrectionProgress(progress);
       setMonitorStudents(approved);
+      setCorrectionReturnVisibility(returnVisibility);
       // Local time via the existing Date logic; not persisted anywhere.
       setMonitorRefreshedAt(new Date().toLocaleTimeString('it-IT'));
     } catch {
@@ -682,12 +696,21 @@ export function VerificationsView() {
     setMonitorItems(null);
     setAiSelectedUids(new Set());
     setCorrectionProgress(new Map());
+    setCorrectionReturnVisibility(new Map());
 
     // «Valutate»: singola lettura mirata delle correzioni della verifica
     // (owner-only per Rules, nessun listener, nessun polling).
     loadCorrectionProgressByStudent(v.id, db)
       .then((progress) => {
         if (!cancelled) setCorrectionProgress(progress);
+      })
+      .catch(() => undefined);
+
+    // One owner-only query scoped to this verification. Malformed return
+    // projections are ignored fail-closed by the service.
+    loadCorrectionReturnVisibilityBySubmission(v.id, ownerUid, db)
+      .then((visibility) => {
+        if (!cancelled) setCorrectionReturnVisibility(visibility);
       })
       .catch(() => undefined);
 
@@ -2383,8 +2406,8 @@ export function VerificationsView() {
                   must not start on invented defaults: show the persistent error
                   + «Riprova» and disable the button until preferences are ready. */}
               {aiPrefs.status === 'error' && renderAiPrefsError()}
-              {/* M5-04A/TWU-03: barra azioni batch sulle righe selezionate —
-                  dimensioni uniformi e griglia responsive 4 → 2 → 1. */}
+              {/* M5-04A/TWU-03A: ordine operativo stabile e griglia responsive
+                  6 → 2 → 1, con Azzera sempre ultimo e unico distruttivo. */}
               <div
                 className={styles.batchToolbar}
                 role="group"
@@ -2409,15 +2432,13 @@ export function VerificationsView() {
                 {(
                   [
                     { action: 'complete', label: 'Completa', Icon: IconCircleCheck },
-                    { action: 'reopen', label: 'Riapri', Icon: IconRotateCcw },
                     { action: 'return', label: 'Restituisci', Icon: IconSend },
-                    { action: 'clear', label: 'Azzera', Icon: IconEraser },
                   ] as const
                 ).map(({ action, label, Icon }) => (
                   <button
                     key={action}
                     type="button"
-                    className={action === 'clear' ? 'btn-danger' : 'btn-primary'}
+                    className="btn-primary"
                     disabled={
                       aiSelectedUids.size === 0 ||
                       aiDialogOpen ||
@@ -2440,6 +2461,28 @@ export function VerificationsView() {
                   contextKey={selectedVer?.id ?? ''}
                   onSelect={setBatchReturnVisibilityAction}
                 />
+                {(
+                  [
+                    { action: 'reopen', label: 'Riapri', Icon: IconRotateCcw },
+                    { action: 'clear', label: 'Azzera', Icon: IconEraser },
+                  ] as const
+                ).map(({ action, label, Icon }) => (
+                  <button
+                    key={action}
+                    type="button"
+                    className={action === 'clear' ? 'btn-danger' : 'btn-primary'}
+                    disabled={
+                      aiSelectedUids.size === 0 ||
+                      aiDialogOpen ||
+                      batchAction !== null ||
+                      batchReturnVisibilityAction !== null
+                    }
+                    onClick={() => setBatchAction(action)}
+                  >
+                    <Icon />
+                    {label}
+                  </button>
+                ))}
               </div>
               <>
                 {/* TWU-02A: the refresh status now lives inline in the header
@@ -2531,6 +2574,9 @@ export function VerificationsView() {
                                 Consegna{monitorSortIndicator('submittedAt')}
                               </button>
                             </th>
+                            <th className={`${styles.th} ${styles.visibilityHeader}`}>
+                              Visibilità
+                            </th>
                             <th className={styles.th} aria-sort={monitorSortAria('events')}>
                               <button
                                 type="button"
@@ -2541,7 +2587,6 @@ export function VerificationsView() {
                                 Eventi{monitorSortIndicator('events')}
                               </button>
                             </th>
-                            <th className={styles.th}>Codice</th>
                             <th className={styles.th}>Azioni</th>
                           </tr>
                         </thead>
@@ -2552,6 +2597,11 @@ export function VerificationsView() {
                             const studentName = row.studentName;
                             const eventsCount = item?.attentionEventsCount ?? 0;
                             const selectable = item?.status === 'submitted';
+                            const submissionId = `${selectedVer.id}_${row.studentUid}`;
+                            const visibility = correctionReturnVisibility.get(submissionId);
+                            const showVisibility =
+                              correctionProgress.get(row.studentUid)?.status === 'returned' &&
+                              visibility?.studentUid === row.studentUid;
                             return (
                               <tr key={row.studentUid} className={styles.row}>
                                 <td className={`${styles.td} ${styles.selectionCell}`}>
@@ -2576,6 +2626,51 @@ export function VerificationsView() {
                                 <td className={`${styles.td} ${styles.metaCell}`}>
                                   {item ? formatTimestamp(item.submittedAt) : '—'}
                                 </td>
+                                <td className={`${styles.td} ${styles.visibilityCell}`}>
+                                  {showVisibility && visibility ? (
+                                    <span
+                                      className={styles.visibilityIcons}
+                                      aria-label="Stato visibilità restituzione"
+                                    >
+                                      <span
+                                        className={styles.visibilityIcon}
+                                        title={
+                                          visibility.visibleToStudent
+                                            ? 'Restituzione visibile allo studente'
+                                            : 'Restituzione nascosta allo studente'
+                                        }
+                                        aria-label={
+                                          visibility.visibleToStudent
+                                            ? 'Restituzione visibile allo studente'
+                                            : 'Restituzione nascosta allo studente'
+                                        }
+                                      >
+                                        {visibility.visibleToStudent ? <IconEye /> : <IconEyeOff />}
+                                      </span>
+                                      <span
+                                        className={styles.visibilityIcon}
+                                        title={
+                                          visibility.solutionsVisible
+                                            ? 'Soluzioni visibili allo studente'
+                                            : 'Soluzioni nascoste allo studente'
+                                        }
+                                        aria-label={
+                                          visibility.solutionsVisible
+                                            ? 'Soluzioni visibili allo studente'
+                                            : 'Soluzioni nascoste allo studente'
+                                        }
+                                      >
+                                        {visibility.solutionsVisible ? (
+                                          <IconBookOpen />
+                                        ) : (
+                                          <IconCircleX />
+                                        )}
+                                      </span>
+                                    </span>
+                                  ) : (
+                                    <span aria-label="Visibilità non disponibile">—</span>
+                                  )}
+                                </td>
                                 <td className={`${styles.td} ${styles.metaCell}`}>
                                   {eventsCount > 0 ? (
                                     <button
@@ -2594,9 +2689,6 @@ export function VerificationsView() {
                                   ) : (
                                     eventsCount
                                   )}
-                                </td>
-                                <td className={`${styles.td} ${styles.metaCell}`}>
-                                  {item?.deliveryCode ?? '—'}
                                 </td>
                                 <td className={`${styles.td} ${styles.metaCell}`}>
                                   <div className={styles.actionsWrapper}>
@@ -2735,6 +2827,23 @@ export function VerificationsView() {
           verification={selectedVer}
           db={db}
           onClose={() => setBatchReturnVisibilityAction(null)}
+          onApplied={(_action, results) => {
+            // Server-confirmed values only: succeeded/no-op rows update the
+            // local map; failures keep their previous state. No final read.
+            setCorrectionReturnVisibility((current) => {
+              const next = new Map(current);
+              for (const result of results) {
+                if (result.outcome === 'failed') continue;
+                next.set(result.submissionId, {
+                  submissionId: result.submissionId,
+                  studentUid: result.studentUid,
+                  visibleToStudent: result.visibleToStudent,
+                  solutionsVisible: result.solutionsVisible,
+                });
+              }
+              return next;
+            });
+          }}
         />
       )}
 

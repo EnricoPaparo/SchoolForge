@@ -24,6 +24,8 @@ export interface BatchReturnVisibilityEligibleRow {
   submissionId: string;
   assignedQuestionOrders?: number[];
   assignedAnswerKeys?: string[];
+  visibleToStudent: boolean;
+  solutionsVisible: boolean;
 }
 
 export interface BatchReturnVisibilityExcludedRow {
@@ -37,12 +39,20 @@ export interface BatchReturnVisibilityEligibility {
   excluded: BatchReturnVisibilityExcludedRow[];
 }
 
-export interface BatchReturnVisibilityResult {
-  studentUid: string;
-  submissionId: string;
-  outcome: 'succeeded' | 'noop' | 'failed';
-  error?: string;
-}
+export type BatchReturnVisibilityResult =
+  | {
+      studentUid: string;
+      submissionId: string;
+      outcome: 'succeeded' | 'noop';
+      visibleToStudent: boolean;
+      solutionsVisible: boolean;
+    }
+  | {
+      studentUid: string;
+      submissionId: string;
+      outcome: 'failed';
+      error: string;
+    };
 
 export const BATCH_RETURN_VISIBILITY_CONCURRENCY = 3;
 
@@ -51,13 +61,18 @@ function localExclusion(row: BatchSelectedRow): BatchReturnVisibilityExclusionRe
   return row.progress.status === 'returned' ? null : 'not_returned';
 }
 
-function copyEligible(row: BatchSelectedRow): BatchReturnVisibilityEligibleRow {
+function copyEligible(
+  row: BatchSelectedRow,
+  visibility: Pick<CorrectionReturnDoc, 'visibleToStudent' | 'solutionsVisible'>,
+): BatchReturnVisibilityEligibleRow {
   return {
     studentUid: row.studentUid,
     studentName: row.studentName,
     submissionId: row.submissionId,
     ...(row.assignedQuestionOrders ? { assignedQuestionOrders: row.assignedQuestionOrders } : {}),
     ...(row.assignedAnswerKeys ? { assignedAnswerKeys: row.assignedAnswerKeys } : {}),
+    visibleToStudent: visibility.visibleToStudent,
+    solutionsVisible: visibility.solutionsVisible,
   };
 }
 
@@ -101,11 +116,20 @@ export async function loadBatchReturnVisibilityEligibility(params: {
         data.correctionId !== row.submissionId ||
         data.studentUid !== row.studentUid ||
         data.ownerUid !== ownerUid ||
-        data.verificationId !== verificationId
+        data.verificationId !== verificationId ||
+        typeof data.visibleToStudent !== 'boolean' ||
+        typeof data.solutionsVisible !== 'boolean'
       ) {
         return { row, reason: 'inconsistent_return' as const };
       }
-      return { row, reason: null };
+      return {
+        row,
+        reason: null,
+        visibility: {
+          visibleToStudent: data.visibleToStudent,
+          solutionsVisible: data.solutionsVisible,
+        },
+      };
     },
   );
 
@@ -118,7 +142,7 @@ export async function loadBatchReturnVisibilityEligibility(params: {
         reason: item.reason,
       });
     } else {
-      eligible.push(copyEligible(item.row));
+      eligible.push(copyEligible(item.row, item.visibility));
     }
   }
   return { eligible, excluded };
@@ -166,6 +190,10 @@ export async function runBatchReturnVisibilityAction(params: {
         studentUid: row.studentUid,
         submissionId: row.submissionId,
         outcome: mutation === 'noop' ? ('noop' as const) : ('succeeded' as const),
+        visibleToStudent:
+          action === 'show_return' || action === 'hide_return' ? value : row.visibleToStudent,
+        solutionsVisible:
+          action === 'show_solutions' || action === 'hide_solutions' ? value : row.solutionsVisible,
       };
     } catch (error) {
       return {

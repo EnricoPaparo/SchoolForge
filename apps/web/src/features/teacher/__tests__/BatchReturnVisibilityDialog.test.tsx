@@ -44,6 +44,7 @@ const rows: BatchSelectedRow[] = [
 
 function renderDialog(
   action: 'show_return' | 'hide_return' | 'show_solutions' | 'hide_solutions' = 'show_return',
+  onApplied = vi.fn(),
 ) {
   return render(
     <BatchReturnVisibilityDialog
@@ -54,6 +55,7 @@ function renderDialog(
       verification={verification}
       db={db}
       onClose={vi.fn()}
+      onApplied={onApplied}
     />,
   );
 }
@@ -61,11 +63,25 @@ function renderDialog(
 beforeEach(() => {
   vi.clearAllMocks();
   mockLoadEligibility.mockResolvedValue({
-    eligible: [{ studentUid: 'a', studentName: 'Anna', submissionId: 'v1_a' }],
+    eligible: [
+      {
+        studentUid: 'a',
+        studentName: 'Anna',
+        submissionId: 'v1_a',
+        visibleToStudent: false,
+        solutionsVisible: false,
+      },
+    ],
     excluded: [{ studentUid: 'b', studentName: 'Bruno', reason: 'no_correction' }],
   });
   mockRunAction.mockResolvedValue([
-    { studentUid: 'a', submissionId: 'v1_a', outcome: 'succeeded' },
+    {
+      studentUid: 'a',
+      submissionId: 'v1_a',
+      outcome: 'succeeded',
+      visibleToStudent: true,
+      solutionsVisible: false,
+    },
   ]);
 });
 
@@ -115,7 +131,13 @@ describe('BatchReturnVisibilityDialog', () => {
 
   it('reports successes, no-ops, exclusions and failures separately', async () => {
     mockRunAction.mockResolvedValueOnce([
-      { studentUid: 'a', submissionId: 'v1_a', outcome: 'noop' },
+      {
+        studentUid: 'a',
+        submissionId: 'v1_a',
+        outcome: 'noop',
+        visibleToStudent: true,
+        solutionsVisible: false,
+      },
       {
         studentUid: 'c',
         submissionId: 'v1_c',
@@ -125,8 +147,20 @@ describe('BatchReturnVisibilityDialog', () => {
     ]);
     mockLoadEligibility.mockResolvedValueOnce({
       eligible: [
-        { studentUid: 'a', studentName: 'Anna', submissionId: 'v1_a' },
-        { studentUid: 'c', studentName: 'Carla', submissionId: 'v1_c' },
+        {
+          studentUid: 'a',
+          studentName: 'Anna',
+          submissionId: 'v1_a',
+          visibleToStudent: true,
+          solutionsVisible: false,
+        },
+        {
+          studentUid: 'c',
+          studentName: 'Carla',
+          submissionId: 'v1_c',
+          visibleToStudent: false,
+          solutionsVisible: false,
+        },
       ],
       excluded: [{ studentUid: 'b', studentName: 'Bruno', reason: 'no_correction' }],
     });
@@ -140,6 +174,21 @@ describe('BatchReturnVisibilityDialog', () => {
     expect(screen.getByText(/Consegna selezionata — Operazione non riuscita/)).toBeTruthy();
   });
 
+  it('reports only server-confirmed results through the typed callback', async () => {
+    const onApplied = vi.fn();
+    renderDialog('show_return', onApplied);
+    fireEvent.click(await screen.findByRole('button', { name: 'Rendi visibili' }));
+
+    await waitFor(() => expect(onApplied).toHaveBeenCalledTimes(1));
+    expect(onApplied).toHaveBeenCalledWith('show_return', [
+      expect.objectContaining({
+        submissionId: 'v1_a',
+        outcome: 'succeeded',
+        visibleToStudent: true,
+      }),
+    ]);
+  });
+
   it('does not update state after unmount while a batch is pending', async () => {
     let resolve!: (value: unknown[]) => void;
     mockRunAction.mockReturnValueOnce(new Promise((done) => (resolve = done)));
@@ -147,7 +196,15 @@ describe('BatchReturnVisibilityDialog', () => {
     const view = renderDialog();
     fireEvent.click(await screen.findByRole('button', { name: 'Rendi visibili' }));
     view.unmount();
-    resolve([{ studentUid: 'a', submissionId: 'v1_a', outcome: 'succeeded' }]);
+    resolve([
+      {
+        studentUid: 'a',
+        submissionId: 'v1_a',
+        outcome: 'succeeded',
+        visibleToStudent: true,
+        solutionsVisible: false,
+      },
+    ]);
     await Promise.resolve();
     expect(consoleError).not.toHaveBeenCalled();
     consoleError.mockRestore();
