@@ -55,7 +55,52 @@ async function seedBase() {
       status: 'closed',
       teacherSnapshot: {
         title: 'Verifica 1',
+        classId: 'class-a',
         className: 'Classe A',
+        programId: 'program-1',
+        importId: 'import-1',
+        questionRefs: [
+          {
+            questionIndexEntryId: 'question-index-1',
+            questionLocalId: 'q-1',
+            udaDir: 'UDA-1',
+            lessonFilename: 'lezione-1.md',
+            poolStorageRef: 'imports/import-1/UDA-1/lezione-1.pool.md',
+            tipo: 'aperta',
+            difficolta: 5,
+            maxPoints: 5,
+          },
+          {
+            questionIndexEntryId: 'question-index-2',
+            questionLocalId: 'q-2',
+            udaDir: 'UDA-1',
+            lessonFilename: 'lezione-1.md',
+            poolStorageRef: 'imports/import-1/UDA-1/lezione-1.pool.md',
+            tipo: 'aperta',
+            difficolta: 4,
+            maxPoints: 4,
+          },
+        ],
+        distributionMode: 'same_questions',
+        questions: [
+          {
+            order: 0,
+            tipo: 'aperta',
+            difficolta: 5,
+            maxPoints: 5,
+            testo: 'D1',
+            soluzione: 'Soluzione congelata D1',
+          },
+          {
+            order: 1,
+            tipo: 'aperta',
+            difficolta: 4,
+            maxPoints: 4,
+            testo: 'D2',
+            soluzione: 'Soluzione congelata D2',
+          },
+        ],
+        activatedAt: Timestamp.now(),
       },
     });
     await setDoc(doc(db, `verifications/${VERIFICATION_ID}/publishedProjection/data`), {
@@ -66,8 +111,8 @@ async function seedBase() {
       visibility: 'public',
       onlineEnabled: true,
       questions: [
-        { order: 0, tipo: 'aperta', maxPoints: 10, testo: 'D1' },
-        { order: 1, tipo: 'aperta', maxPoints: 5, testo: 'D2' },
+        { order: 0, tipo: 'aperta', maxPoints: 5, testo: 'D1' },
+        { order: 1, tipo: 'aperta', maxPoints: 4, testo: 'D2' },
       ],
       activatedAt: Timestamp.now(),
     });
@@ -117,7 +162,7 @@ describe('M4 correction save — real service against the emulator', () => {
       {
         submissionId: SUBMISSION_ID,
         evaluations: {
-          '0': { points: 7.5, feedback: 'Buono' },
+          '0': { points: 4.5, feedback: 'Buono' },
           '1': { points: 2 },
         },
         generalFeedback: 'Nel complesso ok',
@@ -127,11 +172,11 @@ describe('M4 correction save — real service against the emulator', () => {
 
     const snap = await getDoc(doc(db, 'corrections', SUBMISSION_ID));
     const saved = snap.data()!;
-    expect(saved.evaluations['0'].points).toBe(7.5);
+    expect(saved.evaluations['0'].points).toBe(4.5);
     expect(saved.evaluations['0'].feedback).toBe('Buono');
     expect(saved.evaluations['1'].points).toBe(2);
     expect(saved.generalFeedback).toBe('Nel complesso ok');
-    expect(saved.totalPoints).toBe(9.5);
+    expect(saved.totalPoints).toBe(6.5);
   });
 
   it('completes and returns through the real service batch under the deployed rules shape', async () => {
@@ -143,7 +188,7 @@ describe('M4 correction save — real service against the emulator', () => {
       {
         submissionId: SUBMISSION_ID,
         evaluations: {
-          '0': { points: 7.5, feedback: 'Buono' },
+          '0': { points: 4.5, feedback: 'Buono' },
           '1': { points: 2 },
         },
         generalFeedback: 'Nel complesso ok',
@@ -157,5 +202,10 @@ describe('M4 correction save — real service against the emulator', () => {
     const returned = await getDoc(doc(db, 'correctionReturns', SUBMISSION_ID));
     expect(correction.data()?.status).toBe('returned');
     expect(returned.data()?.visibleToStudent).toBe(true);
+    expect(returned.data()?.solutionsVisible).toBe(true);
+    expect(returned.data()?.questions).toEqual([
+      expect.objectContaining({ order: 0, correctAnswer: 'Soluzione congelata D1' }),
+      expect.objectContaining({ order: 1, correctAnswer: 'Soluzione congelata D2' }),
+    ]);
   });
 });
