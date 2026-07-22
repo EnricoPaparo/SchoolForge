@@ -105,7 +105,7 @@ deterministico (`_2`, `_3`, ...), senza esporre identificatori tecnici.
   deve mostrare chiaramente quali PDF non sono stati generati. Nessun falso
   successo.
 
-## 7. Gestione dei moduli dinamici PDF — CHUNK-RECOVERY-01
+## 7. Gestione dei moduli dinamici PDF — CHUNK-RECOVERY-01 ✅ IMPLEMENTATO
 
 Il browser può mantenere aperta una versione precedente dell'app dopo un deploy
 e tentare di caricare un vecchio chunk hashato di `jsPDF`, ottenendo ad esempio:
@@ -129,8 +129,10 @@ Contratto di recovery:
   caricano `jsPDF` dinamicamente, incluso «Programma svolto (PDF)» e il nuovo
   export per-studente.
 
-`CHUNK-RECOVERY-01` è un micro-pacchetto indipendente e può precedere
-`CORR-PDF-01`.
+`CHUNK-RECOVERY-01` è implementato per «Programma svolto (PDF)» con un helper
+tipizzato riusabile. Il PDF della singola lezione non è stato modificato.
+`CORR-PDF-01` resta progettato e dovrà riusare lo stesso helper quando verrà
+implementato.
 
 ## 8. UX minima
 
@@ -165,7 +167,8 @@ Contratto di recovery:
 
 ## 10. Ordine consigliato
 
-1. `CHUNK-RECOVERY-01` — helper comune e fix «Programma svolto (PDF)».
-2. Completamento/merge di `TWU-03` — toolbar batch definitiva.
-3. `CORR-PDF-01` — pulsante batch e renderer PDF per-studente.
+1. `CHUNK-RECOVERY-01` — implementato: helper comune e fix «Programma svolto
+   (PDF)».
+2. `TWU-03/03A/03B` — implementati: toolbar e visibilità/restituzione.
+3. `CORR-PDF-01` — pendente: pulsante batch e renderer PDF per-studente.
 4. Smoke DEV e allineamento del Gate GTWU.

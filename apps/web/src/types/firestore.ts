@@ -987,8 +987,9 @@ export type CorrectionEventDoc = {
  * reference into `SubmissionDoc`/`teacherSnapshot`/`publishedProjection`:
  * those may become unreadable to the student by the time they read this
  * projection (verification closed/hidden, Modalità verifica active, etc.),
- * and a returned result must remain readable regardless. `correctAnswer`
- * is the one field that is never copied by default — see
+ * and a returned result must remain readable regardless. `correctAnswer` is
+ * copied from the immutable teacher snapshot on return and is physically
+ * removed only when the teacher explicitly hides solutions — see
  * `CorrectionReturnDoc.solutionsVisible`.
  */
 export type CorrectionReturnQuestionView = {
@@ -1026,7 +1027,8 @@ export type CorrectionReturnQuestionView = {
  * Everything the student needs to see (§6 of
  * `m4-correzione-ux-concept.md`) is embedded directly: question text,
  * options, the student's own answer, per-question score/feedback, and
- * totals. Solutions are the one exception — never included automatically.
+ * totals. Solutions are included by default from the immutable teacher
+ * snapshot and can subsequently be hidden independently by the teacher.
  *
  * Stored at `correctionReturns/{submissionId}` — same deterministic id
  * space as `corrections`/`submissions`. Written only by the teacher's

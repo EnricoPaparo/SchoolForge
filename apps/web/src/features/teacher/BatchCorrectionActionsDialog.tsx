@@ -53,7 +53,7 @@ const META: Record<
     title: 'Restituisci correzioni',
     confirmLabel: (n) => `Restituisci ${n} correzioni`,
     consequence:
-      'Le consegne diventeranno immediatamente visibili allo studente. Le soluzioni restano nascoste.',
+      'Le consegne e le relative soluzioni diventeranno immediatamente visibili allo studente.',
     zeroEligible: 'Nessuna consegna selezionata è eleggibile per questa azione.',
   },
   clear: {
@@ -82,11 +82,11 @@ export function BatchCorrectionActionsDialog({
   verification?: VerificationDoc;
   onClose: () => void;
   /**
-   * Notifica al chiamante che il batch è stato eseguito, così può fare la
-   * singola rilettura mirata. **Non** trasporta gli uid riusciti: da M5-04A la
-   * selezione è persistente e cambia solo manualmente dal docente.
+   * Notifica il risultato server-confirmed. Gli identificatori permettono al
+   * chiamante di aggiornare proiezioni locali senza riletture aggiuntive; la
+   * selezione resta persistente e cambia solo manualmente dal docente.
    */
-  onApplied: () => void;
+  onApplied: (action: BatchAction, results: BatchRowResult[]) => void;
 }) {
   const meta = META[action];
   // Congela il preflight all'apertura del dialog. Dopo un batch riuscito il
@@ -113,7 +113,7 @@ export function BatchCorrectionActionsDialog({
       );
       setResults(res);
       setPhase('result');
-      onApplied();
+      onApplied(action, res);
     } catch (err) {
       // runBatchCorrectionAction non rilancia per-riga; un throw qui è
       // eccezionale (es. errore interno). Consenti un nuovo tentativo.

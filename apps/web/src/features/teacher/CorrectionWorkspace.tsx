@@ -31,6 +31,7 @@ export type CorrectionWorkspaceProps = {
   ownerUid: string;
   studentName: string;
   onClose: () => void;
+  onReturned?: (submissionId: string) => void;
 };
 
 type EditableEvaluation = {
@@ -166,6 +167,7 @@ export function CorrectionWorkspace({
   ownerUid,
   studentName,
   onClose,
+  onReturned,
 }: CorrectionWorkspaceProps) {
   const [data, setData] = useState<CorrectionWorkspaceData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -424,6 +426,7 @@ export function CorrectionWorkspace({
     setActionError(null);
     try {
       await returnCorrection(submissionId, db);
+      if (mountedRef.current) onReturned?.(submissionId);
       await refresh();
     } catch (err) {
       if (mountedRef.current) setActionError(saveErrorMessage(err));

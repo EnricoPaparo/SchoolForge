@@ -209,16 +209,17 @@ function setupDefaults() {
   mockSetSolutionsVisible.mockResolvedValue(undefined);
 }
 
-function renderWorkspace(onClose = vi.fn()) {
+function renderWorkspace(onClose = vi.fn(), onReturned = vi.fn()) {
   render(
     <CorrectionWorkspace
       submissionId={SUBMISSION_ID}
       ownerUid={OWNER_UID}
       studentName="Mario Rossi"
       onClose={onClose}
+      onReturned={onReturned}
     />,
   );
-  return { onClose };
+  return { onClose, onReturned };
 }
 
 async function renderSingleChoice(solution: string | string[] | null, selectedId: string) {
@@ -908,19 +909,20 @@ describe('CorrectionWorkspace — completed state actions', () => {
     mockLoadCorrectionWorkspace.mockResolvedValue(
       makeWorkspaceData({ correction: { status: 'completed' } }),
     );
-    renderWorkspace();
+    const { onReturned } = renderWorkspace();
     await waitFor(() => expect(screen.getByText('Spiega il TCP.')).toBeTruthy());
 
     expect(screen.getByText('Riapri')).toBeTruthy();
     mockLoadCorrectionWorkspace.mockResolvedValueOnce(
       makeWorkspaceData({
         correction: { status: 'returned' },
-        correctionReturn: { visibleToStudent: true, solutionsVisible: false },
+        correctionReturn: { visibleToStudent: true, solutionsVisible: true },
       }),
     );
     fireEvent.click(screen.getByText('Restituisci allo studente'));
 
     await waitFor(() => expect(mockReturnCorrection).toHaveBeenCalledWith(SUBMISSION_ID, {}));
+    expect(onReturned).toHaveBeenCalledWith(SUBMISSION_ID);
     await waitFor(() => expect(screen.getByText('Restituita')).toBeTruthy());
   });
 

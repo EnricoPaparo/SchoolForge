@@ -178,6 +178,32 @@ function resolveSnapshotQuestions(
     : null;
 }
 
+function hasValidFrozenSolution(question: VerificationTeacherQuestionSnapshot): boolean {
+  const optionIds = new Set(question.opzioni?.map((option) => option.id) ?? []);
+  if (question.tipo === 'chiusa_multipla') {
+    return (
+      Array.isArray(question.soluzione) &&
+      question.soluzione.length > 0 &&
+      new Set(question.soluzione).size === question.soluzione.length &&
+      question.soluzione.every(
+        (value) => typeof value === 'string' && value.trim().length > 0 && optionIds.has(value),
+      )
+    );
+  }
+  if (question.tipo === 'chiusa_singola') {
+    const solutionId =
+      typeof question.soluzione === 'string'
+        ? question.soluzione
+        : Array.isArray(question.soluzione) && question.soluzione.length === 1
+          ? question.soluzione[0]
+          : null;
+    return (
+      typeof solutionId === 'string' && solutionId.trim().length > 0 && optionIds.has(solutionId)
+    );
+  }
+  return typeof question.soluzione === 'string' && question.soluzione.trim().length > 0;
+}
+
 function assertCorrectionMatchesQuestions(
   correction: CorrectionDoc,
   questions: readonly { order: number; maxPoints: number }[],
@@ -553,15 +579,15 @@ export async function completeCorrection(
 /**
  * Transitions `'completed' → 'returned'` and builds the self-sufficient
  * `correctionReturns/{submissionId}` projection entirely from already-frozen
- * data — the submitted submission's answers and the verification's
- * published projection (question text/options, never the live pool) —
- * plus the completed correction's own scores/feedback. Never reads or
+ * data — the submitted submission's answers and the verification's immutable
+ * teacher snapshot — plus the completed correction's own scores/feedback.
+ * Never reads the live pool, Storage, or the published projection and never
  * writes the submission itself.
  *
- * `visibleToStudent` starts `true` and `solutionsVisible` starts `false`:
- * no solution is ever present on first return. Checked against
- * `assertCorrectionReturnWithinLimit` before writing — a projection that
- * would be too large fails loudly, never silently truncated.
+ * `visibleToStudent` and `solutionsVisible` both start `true`; every returned
+ * question carries its frozen `correctAnswer`. The complete projection is
+ * checked against `assertCorrectionReturnWithinLimit` before writing — a
+ * projection that would be too large fails loudly, never silently truncated.
  *
  * Correction update, submission/receipt status mirrors, projection
  * create/overwrite, and the `'returned'` `correctionEvents` entry are written
@@ -591,57 +617,21 @@ export async function returnCorrection(submissionId: string, db: Firestore): Pro
   }
   const verification = verificationSnap.data() as VerificationDoc;
 
-  // VEX-02B: la sorgente di testo/opzioni della restituzione è la SOLA variante
-  // assegnata (dal teacherSnapshot). La proiezione pubblica contiene solo le
-  // comuni, quindi per `equivalent_variants` non basta e non va usata. Così la
-  // CorrectionReturnDoc contiene esclusivamente le domande/risposte/evaluation
-  // assegnate: nessuna alternativa non assegnata raggiunge lo studente.
-  // `same_questions` mantiene la sorgente proiezione, invariato.
-  let questionByOrder: Map<
-    number,
-    {
-      tipo: CorrectionReturnQuestionView['tipo'];
-      testo: string;
-      maxPoints: number;
-      opzioni?: { id: string; testo: string }[];
-    }
-  >;
-  const distributionMode = normalizeDistributionMode(
-    verification.teacherSnapshot?.distributionMode,
-  );
-  if (distributionMode === 'equivalent_variants') {
-    if (!verification.teacherSnapshot) {
-      throw new Error('Impossibile restituire: snapshot della variante non disponibile.');
-    }
-    const assigned = resolveAssignedQuestions(verification.teacherSnapshot, submission);
-    questionByOrder = new Map(
-      assigned.map((q) => [
-        q.order,
-        {
-          tipo: q.tipo,
-          testo: q.testo,
-          maxPoints: q.maxPoints,
-          ...(q.opzioni ? { opzioni: q.opzioni } : {}),
-        },
-      ]),
-    );
-  } else {
-    const projectionQuestions = await loadPublishedProjectionQuestions(
-      correction.verificationId,
-      db,
-    );
-    questionByOrder = new Map(
-      projectionQuestions.map((q) => [
-        q.order,
-        {
-          tipo: q.tipo,
-          testo: q.testo,
-          maxPoints: q.maxPoints,
-          ...(q.opzioni ? { opzioni: q.opzioni } : {}),
-        },
-      ]),
+  // TWU-03B: teacherSnapshot è l'unica fonte autorevole della proiezione
+  // restituita, incluse le soluzioni. Nessun fallback al pool live, Storage o
+  // publishedProjection. Per VEX il resolver canonico limita lo snapshot alla
+  // sola variante assegnata.
+  const snapshotQuestions = resolveSnapshotQuestions({ submission, verification }, true);
+  if (!snapshotQuestions) {
+    throw new Error('Impossibile restituire: snapshot docente con soluzioni non disponibile.');
+  }
+  const invalidSolution = snapshotQuestions.find((question) => !hasValidFrozenSolution(question));
+  if (invalidSolution) {
+    throw new Error(
+      `Impossibile restituire: soluzione congelata mancante o non valida per la domanda ${invalidSolution.order}.`,
     );
   }
+  const questionByOrder = new Map(snapshotQuestions.map((question) => [question.order, question]));
 
   assertCorrectionMatchesQuestions(
     correction,
@@ -678,6 +668,7 @@ export async function returnCorrection(submissionId: string, db: Firestore): Pro
         points: evaluation.points,
         maxPoints: evaluation.maxPoints,
         ...(evaluation.feedback !== undefined ? { feedback: evaluation.feedback } : {}),
+        correctAnswer: question.soluzione,
       };
     });
 
@@ -696,7 +687,7 @@ export async function returnCorrection(submissionId: string, db: Firestore): Pro
     maxPoints: correction.maxPoints,
     percentage: correction.percentage,
     visibleToStudent: true,
-    solutionsVisible: false,
+    solutionsVisible: true,
     updatedAt: serverTimestamp(),
   };
   assertCorrectionReturnWithinLimit(correctionReturn);
