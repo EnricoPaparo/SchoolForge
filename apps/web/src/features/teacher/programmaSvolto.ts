@@ -35,7 +35,7 @@ export function generateMarkdown(
   }
 
   if (completed.length === 0) {
-    lines.push('_Nessuna lezione segnata come svolta._');
+    lines.push('_Nessun argomento segnato come svolto._');
     return lines.join('\n');
   }
 
@@ -77,21 +77,16 @@ export function generateMarkdown(
       lines.push('');
     }
     if (hasCompetenze || hasObiettivi) {
-      lines.push('Lezioni svolte:');
+      lines.push('Argomenti:');
     }
 
     for (const lesson of groupLessons) {
-      const date =
-        lesson.completedAt != null
-          ? new Date((lesson.completedAt as { seconds: number }).seconds * 1000).toLocaleDateString(
-              'it-IT',
-            )
-          : null;
-      const dateStr = date ? ` (${date})` : '';
       // Readable lesson label: front matter titolo when present, else a
-      // cleaned-up filename (never the raw "lezione-001-....md").
+      // cleaned-up filename (never the raw "lezione-001-....md"). The
+      // completedAt date is intentionally not exported — only the argument
+      // title appears in the Programma svolto.
       const { title } = resolveLessonTitle(lesson.filename, lesson.titolo);
-      lines.push(`- ${title}${dateStr}`);
+      lines.push(`- ${title}`);
     }
     lines.push('');
   }

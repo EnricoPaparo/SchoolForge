@@ -162,7 +162,7 @@ describe('Security: generateMarkdown excludes non-completed lessons', () => {
     };
     const incompleteLesson = { ...NORMAL_LESSON, completed: false, filename: 'lezione-001.md' };
     const md = generateMarkdown(PROGRAM as never, [UDA], [incompleteLesson]);
-    expect(md).toContain('Nessuna lezione');
+    expect(md).toContain('Nessun argomento segnato come svolto');
     expect(md).not.toContain('lezione-001.md');
   });
 });
