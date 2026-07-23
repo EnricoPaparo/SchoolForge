@@ -6,6 +6,10 @@
 //   nessuna scrittura Firestore, zero token).
 export { repositoryGateway } from './repositoryGateway.js';
 export { aiCorrectionPreview, aiCorrectionRun } from './aiCorrectionGateway.js';
+// AIGEN-01 — callable server-side della generazione IA di pool e lezioni
+// (aiContentPreview/aiContentGenerate). Provider reale disabilitato dal kill
+// switch; run server-only in aiContentRuns. Vedi ai-content-generation-roadmap.md.
+export { aiContentPreview, aiContentGenerate } from './aiContentGateway.js';
 // ANNOT-CLEANUP-01 — owner-only cleanup of a program's student lesson notes
 // (indexed collection-group delete), invoked by deleteProgram before removing
 // the program document.

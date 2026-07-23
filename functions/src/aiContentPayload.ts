@@ -1,0 +1,153 @@
+/**
+ * AIGEN-01 — costruzione **pura** dell'esatto payload Responses API (Structured
+ * Output) per pool e lezione. È l'**unica** fonte del payload: la stima costi, il
+ * bound di prenotazione e il provider reale usano tutti questo builder, così il
+ * `max_output_tokens` prenotato è esattamente quello trasmesso e il bound di input
+ * si basa sui byte UTF-8 dell'**identico** payload serializzato.
+ *
+ * Gli schema sono **strict** e compatibili con la Responses API. Per il pool è una
+ * struttura **discriminata** (aperta / chiusa_singola / chiusa_multipla), senza
+ * `soluzione` non vincolata: nessun campo tecnico/ID è ammesso dallo schema. Il
+ * validator runtime (`aiContentValidation`) resta comunque autorevole.
+ */
+
+import { buildLessonPrompt, buildPoolPrompt } from './aiContentPrompt.js';
+import { type AiContentRequest, type LessonDepth } from './aiContentCore.js';
+import type { OpenAiStructuredRequest } from './openAiGrader.js';
+
+/** Nome schema (distinto da `schoolforge_ai_grading` della correzione). */
+export const AI_CONTENT_SCHEMA_NAME = 'schoolforge_ai_content';
+
+/** ~4 caratteri per token; overhead fisso di prompt/schema. Euristica prudente. */
+export const CHARS_PER_TOKEN = 4;
+export const PROMPT_OVERHEAD_TOKENS = 900;
+/** Token di output massimi per singola domanda (testo+opzioni+soluzione). */
+export const OUTPUT_TOKENS_PER_QUESTION = 220;
+/** Token di output massimi per profondità lezione. */
+export const LESSON_OUTPUT_TOKENS: Readonly<Record<LessonDepth, number>> = {
+  synthetic: 1_200,
+  complete: 3_500,
+  in_depth: 6_000,
+};
+
+/**
+ * Hard `max_output_tokens` realmente trasmesso al provider per la richiesta: è il
+ * **tetto** dell'output fatturabile e la base della componente output della
+ * prenotazione.
+ */
+export function resolveMaxOutputTokens(request: AiContentRequest): number {
+  if (request.kind === 'pool') {
+    const total =
+      request.counts.aperta + request.counts.chiusa_singola + request.counts.chiusa_multipla;
+    return total * OUTPUT_TOKENS_PER_QUESTION;
+  }
+  return LESSON_OUTPUT_TOKENS[request.depth];
+}
+
+/** Stima **informativa** dei token di input (euristica caratteri/token). */
+export function estimateInputTokens(request: AiContentRequest): number {
+  const chars =
+    request.kind === 'pool'
+      ? request.lessonSource.length + (request.teacherGuidance?.length ?? 0)
+      : request.currentBody.length +
+        (request.teacherGuidance?.length ?? 0) +
+        request.concettiChiave.join('').length +
+        request.obiettivi.join('').length;
+  return Math.ceil(chars / CHARS_PER_TOKEN) + PROMPT_OVERHEAD_TOKENS;
+}
+
+// ─── Schema strict (Structured Output) ────────────────────────────────────────
+
+const POOL_QUESTION_APERTA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['tipo', 'testo', 'difficolta', 'soluzione'],
+  properties: {
+    tipo: { type: 'string', enum: ['aperta'] },
+    testo: { type: 'string' },
+    difficolta: { type: 'integer', minimum: 1, maximum: 5 },
+    soluzione: { type: 'string' },
+  },
+};
+
+function closedVariant(tipo: 'chiusa_singola' | 'chiusa_multipla') {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['tipo', 'testo', 'difficolta', 'opzioni', 'soluzione'],
+    properties: {
+      tipo: { type: 'string', enum: [tipo] },
+      testo: { type: 'string' },
+      difficolta: { type: 'integer', minimum: 1, maximum: 5 },
+      opzioni: { type: 'array', items: { type: 'string' } },
+      // Indici (0-based) delle opzioni corrette: nessun ID, nessun oggetto libero.
+      soluzione: { type: 'array', items: { type: 'integer', minimum: 0 } },
+    },
+  };
+}
+
+/** Schema pool **discriminato** e strict: nessun campo tecnico/ID ammesso. */
+export const POOL_OUTPUT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['questions'],
+  properties: {
+    questions: {
+      type: 'array',
+      items: {
+        anyOf: [
+          POOL_QUESTION_APERTA,
+          closedVariant('chiusa_singola'),
+          closedVariant('chiusa_multipla'),
+        ],
+      },
+    },
+  },
+};
+
+/** Schema lezione strict: solo corpo Markdown. */
+export const LESSON_OUTPUT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['body'],
+  properties: { body: { type: 'string' } },
+};
+
+/**
+ * Costruisce l'**esatta** `OpenAiStructuredRequest` (system+user+schema strict+
+ * `max_output_tokens` reale, `store: false`). Pura: nessun trasporto, nessun
+ * dato identificativo. Usata identica da stima, prenotazione e provider reale.
+ */
+export function buildContentStructuredRequest(
+  request: AiContentRequest,
+  model: string,
+): OpenAiStructuredRequest {
+  const prompt = request.kind === 'pool' ? buildPoolPrompt(request) : buildLessonPrompt(request);
+  const schema = request.kind === 'pool' ? POOL_OUTPUT_SCHEMA : LESSON_OUTPUT_SCHEMA;
+  return {
+    model,
+    input: [
+      { role: 'system', content: prompt.system },
+      { role: 'user', content: prompt.user },
+    ],
+    text: {
+      format: {
+        type: 'json_schema',
+        name: AI_CONTENT_SCHEMA_NAME,
+        strict: true,
+        schema,
+      },
+    },
+    max_output_tokens: resolveMaxOutputTokens(request),
+    store: false,
+  };
+}
+
+/**
+ * Upper bound **provabile** dei token di input fatturabili: byte UTF-8 dell'esatta
+ * richiesta serializzata. Il tokenizer BPE è byte-level ⇒ token input ≤ byte UTF-8
+ * (mai inferiore all'input realmente fatturato; prudente su emoji/CJK/combinati).
+ */
+export function reservationInputTokenUpperBound(request: AiContentRequest, model: string): number {
+  return Buffer.byteLength(JSON.stringify(buildContentStructuredRequest(request, model)), 'utf8');
+}

@@ -31,7 +31,7 @@ export const OPENAI_ATTEMPT_TIMEOUT_MS = 60_000;
  * timeout: scattando **dopo** il timeout SDK, non traveste mai un timeout
  * (ritentabile) da abort (permanente).
  */
-const ATTEMPT_HARD_ABORT_MARGIN_MS = 5_000;
+export const ATTEMPT_HARD_ABORT_MARGIN_MS = 5_000;
 export const OPENAI_MAX_APPLICATION_RETRIES = 1;
 export const OPENAI_MAX_OUTPUT_TOKENS = 8_000;
 
@@ -98,7 +98,11 @@ export interface OpenAiStructuredRequest {
   text: {
     format: {
       type: 'json_schema';
-      name: 'schoolforge_ai_grading';
+      // Ampliato da letterale a `string` (AIGEN-01): consente all'adapter
+      // condiviso di riusare lo stesso transport/SDK con uno schema di output
+      // diverso (`schoolforge_ai_content`). La correzione continua a passare il
+      // letterale `'schoolforge_ai_grading'`: nessun cambiamento di comportamento.
+      name: string;
       strict: true;
       schema: Record<string, unknown>;
     };
@@ -194,7 +198,7 @@ function statusHasBillingRisk(status: number | undefined): boolean {
   return status === 408 || (status !== undefined && status >= 500);
 }
 
-function normalizeTransportError(error: unknown): OpenAiTransportError {
+export function normalizeTransportError(error: unknown): OpenAiTransportError {
   if (error instanceof OpenAiTransportError) return error;
   // Connessione fallita: la richiesta certamente non è arrivata → nessun costo.
   if (

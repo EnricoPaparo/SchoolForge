@@ -19,6 +19,8 @@ const TECHNICAL_DOCUMENTS = [
   'settings/aiConfig',
   'aiCorrectionRuns/run-1',
   'aiBudgetLedger/2026-07',
+  // AIGEN-01 — run tecnici della generazione contenuti IA, server-only.
+  'aiContentRuns/opaque-run-1',
 ] as const;
 
 let testEnv: RulesTestEnvironment;
@@ -59,6 +61,16 @@ describe.each(TECHNICAL_DOCUMENTS)('%s — server-only', (path) => {
 
     await assertFails(setDoc(ref, { technical: true }));
 
+    await seed(path);
+    await assertFails(getDoc(ref));
+    await assertFails(updateDoc(ref, { technical: false }));
+    await assertFails(deleteDoc(ref));
+  });
+
+  it('nega read/create/update/delete al client anonimo', async () => {
+    const db = testEnv.unauthenticatedContext().firestore();
+    const ref = doc(db, path);
+    await assertFails(setDoc(ref, { technical: true }));
     await seed(path);
     await assertFails(getDoc(ref));
     await assertFails(updateDoc(ref, { technical: false }));
