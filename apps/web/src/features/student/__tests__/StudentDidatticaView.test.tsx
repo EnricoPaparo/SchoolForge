@@ -107,6 +107,9 @@ describe('StudentDidatticaView — SDUX-01', () => {
     expect(await screen.findByText('Contenuto della lezione.')).toBeTruthy();
     expect(screen.getByText('Concetti fondamentali')).toBeTruthy();
     expect(screen.getByText(/internet, rete/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Scarica PDF/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Nascondi struttura' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Appunti/ })).toBeTruthy();
   });
 
   it('starts with every UDA collapsed and exposes no teacher or pool actions', async () => {
