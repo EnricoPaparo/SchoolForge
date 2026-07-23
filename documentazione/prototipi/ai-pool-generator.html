@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prototipo AIGEN — Genera domande con IA (pool)</title>
+    <style>
+      :root {
+        --color-primary: #2563eb;
+        --color-primary-light: #eaf1ff;
+        --color-primary-dark: #1d4ed8;
+        --color-text: #0f172a;
+        --color-text-muted: #64748b;
+        --color-surface: #ffffff;
+        --color-surface-subtle: #f6f8fb;
+        --color-border: #e2e8f0;
+        --color-error: #b91c1c;
+        --color-error-bg: #fef2f2;
+        --color-error-border: #fecaca;
+        --color-warning: #b45309;
+        --color-warning-bg: #fffbeb;
+        --color-ok: #15803d;
+        --radius: 8px;
+        --radius-lg: 12px;
+        --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          sans-serif;
+        color: var(--color-text);
+        background: var(--color-surface-subtle);
+        line-height: 1.45;
+      }
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 1.25rem;
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 0.25rem;
+      }
+      .note {
+        color: var(--color-text-muted);
+        font-size: 0.85rem;
+        margin: 0 0 1.25rem;
+      }
+      .panel {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-sm);
+        padding: 1rem 1.125rem;
+        margin-bottom: 1rem;
+      }
+      .panel > h2 {
+        font-size: 0.95rem;
+        margin: 0 0 0.75rem;
+      }
+      .toolbar {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      button {
+        font: inherit;
+        border-radius: var(--radius);
+        border: 1px solid var(--color-border);
+        background: var(--color-surface);
+        color: var(--color-text);
+        padding: 0.5rem 0.85rem;
+        cursor: pointer;
+        transition:
+          background-color 0.15s,
+          border-color 0.15s;
+      }
+      button:hover {
+        background: var(--color-surface-subtle);
+        border-color: var(--color-primary);
+      }
+      button:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 2px;
+      }
+      .btn-primary {
+        background: var(--color-primary);
+        border-color: var(--color-primary);
+        color: #fff;
+        font-weight: 600;
+      }
+      .btn-primary:hover {
+        background: var(--color-primary-dark);
+      }
+      .btn-ai::before {
+        content: "\2728";
+        margin-right: 0.35rem;
+      }
+      label {
+        display: block;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-bottom: 0.3rem;
+      }
+      select,
+      input[type="number"],
+      textarea {
+        width: 100%;
+        font: inherit;
+        padding: 0.45rem 0.55rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: var(--color-surface);
+      }
+      .grid {
+        display: grid;
+        gap: 0.9rem;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .field {
+        margin-bottom: 0.9rem;
+      }
+      .counter {
+        font-size: 0.75rem;
+        color: var(--color-text-muted);
+        text-align: right;
+      }
+      .summary {
+        background: var(--color-primary-light);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 0.75rem 0.85rem;
+        font-size: 0.85rem;
+      }
+      .summary dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.2rem 0.75rem;
+      }
+      .summary dt {
+        color: var(--color-text-muted);
+      }
+      .summary dd {
+        margin: 0;
+        font-weight: 600;
+      }
+      .backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(9, 13, 20, 0.55);
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 1.5rem 1rem;
+        overflow: auto;
+      }
+      .dialog {
+        background: var(--color-surface);
+        border-radius: var(--radius-lg);
+        width: 100%;
+        max-width: 620px;
+        padding: 1.1rem 1.25rem 1.25rem;
+        box-shadow: 0 12px 40px rgba(15, 23, 42, 0.25);
+      }
+      .dialog h2 {
+        margin: 0 0 0.9rem;
+        font-size: 1.05rem;
+      }
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.6rem;
+        margin-top: 1.1rem;
+      }
+      .hidden {
+        display: none !important;
+      }
+      .alert {
+        background: var(--color-error-bg);
+        border: 1px solid var(--color-error-border);
+        color: var(--color-error);
+        border-radius: var(--radius);
+        padding: 0.6rem 0.75rem;
+        font-size: 0.85rem;
+      }
+      .warnbox {
+        background: var(--color-warning-bg);
+        border: 1px solid #fde68a;
+        color: var(--color-warning);
+        border-radius: var(--radius);
+        padding: 0.6rem 0.75rem;
+        font-size: 0.85rem;
+      }
+      .spinner {
+        width: 1.1rem;
+        height: 1.1rem;
+        border: 2px solid var(--color-border);
+        border-top-color: var(--color-primary);
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        display: inline-block;
+        vertical-align: -2px;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner {
+          animation: none;
+        }
+      }
+      .proposal {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 0.7rem 0.8rem;
+        margin-bottom: 0.6rem;
+      }
+      .proposal .meta {
+        font-size: 0.72rem;
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 0.25rem;
+      }
+      .tag {
+        display: inline-block;
+        background: var(--color-primary-light);
+        color: var(--color-primary-dark);
+        border-radius: 999px;
+        padding: 0.05rem 0.5rem;
+        font-size: 0.72rem;
+        font-weight: 600;
+      }
+      .proposal .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+        align-items: flex-start;
+      }
+      .proposal .sol {
+        color: var(--color-ok);
+        font-size: 0.82rem;
+      }
+      .mini {
+        padding: 0.3rem 0.55rem;
+        font-size: 0.8rem;
+      }
+      @media (max-width: 640px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .toolbar button,
+        .actions button {
+          flex: 1;
+        }
+        .summary dl {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Prototipo statico — «Genera domande con IA» (pool)</h1>
+      <p class="note">
+        Mock non funzionante di AIGEN-02. Nessuna chiamata reale, nessun costo, nessuna API key. I
+        pulsanti simulano solo gli stati dell'interfaccia.
+      </p>
+
+      <!-- STATE A: pool assente -->
+      <section class="panel" aria-labelledby="p-empty">
+        <h2 id="p-empty">Stato: pool assente</h2>
+        <div class="toolbar">
+          <button type="button">Crea pool</button>
+          <button type="button" class="btn-primary btn-ai" onclick="openDialog()">
+            Genera con IA
+          </button>
+        </div>
+      </section>
+
+      <!-- STATE B: pool esistente -->
+      <section class="panel" aria-labelledby="p-exist">
+        <h2 id="p-exist">Stato: pool esistente — toolbar</h2>
+        <div class="toolbar">
+          <button type="button">Nuova domanda</button>
+          <button type="button" class="btn-primary btn-ai" onclick="openDialog()">
+            Genera domande con IA
+          </button>
+          <button type="button">Modifica YAML</button>
+          <button type="button">Elimina pool</button>
+        </div>
+      </section>
+
+      <p class="note">
+        Apri il dialog dai pulsanti «Genera…». Usa i controlli sotto per vedere gli altri stati del
+        risultato.
+      </p>
+      <div class="toolbar">
+        <button type="button" class="mini" onclick="showState('result')">Mostra risultato</button>
+        <button type="button" class="mini" onclick="showState('loading')">Mostra caricamento</button>
+        <button type="button" class="mini" onclick="showState('validation')">Errore validazione</button>
+        <button type="button" class="mini" onclick="showState('budget')">Budget insufficiente</button>
+      </div>
+    </div>
+
+    <!-- DIALOG -->
+    <div id="backdrop" class="backdrop hidden" role="presentation" onclick="onBackdrop(event)">
+      <div
+        class="dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dlg-title"
+        onclick="event.stopPropagation()"
+      >
+        <h2 id="dlg-title">Genera domande con IA</h2>
+
+        <!-- CONFIG -->
+        <div id="view-config">
+          <div class="grid">
+            <div class="field">
+              <label for="f-profile">Profilo modello</label>
+              <select id="f-profile">
+                <option value="economy">Economy</option>
+                <option value="quality">Quality</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="f-level">Livello del pool</label>
+              <select id="f-level">
+                <option value="base">Base (difficoltà 1–3)</option>
+                <option value="balanced" selected>Bilanciato (1–5)</option>
+                <option value="advanced">Avanzato (3–5)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="f-open">Domande aperte</label>
+              <input id="f-open" type="number" min="0" max="30" value="4" />
+            </div>
+            <div class="field">
+              <label for="f-single">Risposta singola</label>
+              <input id="f-single" type="number" min="0" max="30" value="4" />
+            </div>
+            <div class="field">
+              <label for="f-multi">Risposta multipla</label>
+              <input id="f-multi" type="number" min="0" max="30" value="2" />
+            </div>
+            <div class="field">
+              <label id="lbl-total">Totale</label>
+              <input aria-labelledby="lbl-total" type="number" value="10" readonly />
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="f-guidance">Indicazioni aggiuntive (opzionali)</label>
+            <textarea id="f-guidance" rows="2" maxlength="500" oninput="onGuidance()"></textarea>
+            <div class="counter"><span id="g-count">0</span>/500</div>
+          </div>
+
+          <div class="summary" aria-label="Riepilogo stima">
+            <dl>
+              <dt>Totale domande</dt>
+              <dd>10 (4 aperte · 4 singole · 2 multiple)</dd>
+              <dt>Intervallo difficoltà</dt>
+              <dd>1–5</dd>
+              <dt>Token stimati</dt>
+              <dd>~4.000 input · ~3.000 output</dd>
+              <dt>Costo massimo stimato</dt>
+              <dd>~0,022 USD (profilo Quality) — stima, non garanzia</dd>
+              <dt>Profilo</dt>
+              <dd>Quality</dd>
+            </dl>
+          </div>
+
+          <div class="actions">
+            <button type="button" onclick="closeDialog()">Annulla</button>
+            <button type="button" class="btn-primary" onclick="showState('loading')">
+              Genera
+            </button>
+          </div>
+        </div>
+
+        <!-- LOADING -->
+        <div id="view-loading" class="hidden" role="status" aria-live="polite">
+          <p><span class="spinner" aria-hidden="true"></span> Generazione in corso… Non chiudere questa finestra.</p>
+          <div class="actions">
+            <button type="button" onclick="closeDialog()">Annulla</button>
+          </div>
+        </div>
+
+        <!-- RESULT -->
+        <div id="view-result" class="hidden">
+          <p class="note">Costo reale della generazione: <strong>0,021 USD</strong>. Le proposte non
+            modificano il pool finché non premi «Aggiungi al pool».</p>
+          <div class="proposal">
+            <div class="meta"><span class="tag">Aperta</span> · difficoltà 3</div>
+            <div class="row">
+              <div>Spiega la differenza tra un indirizzo IP pubblico e uno privato.</div>
+              <button type="button" class="mini" aria-label="Elimina proposta 1">Elimina</button>
+            </div>
+            <div class="sol">Soluzione attesa: distinzione instradabilità/NAT.</div>
+          </div>
+          <div class="proposal">
+            <div class="meta"><span class="tag">Risposta singola</span> · difficoltà 2</div>
+            <div class="row">
+              <div>Quale protocollo garantisce la consegna affidabile dei segmenti?</div>
+              <button type="button" class="mini" aria-label="Elimina proposta 2">Elimina</button>
+            </div>
+            <div class="sol">Soluzione: TCP (opzioni: TCP, UDP, ICMP, ARP).</div>
+          </div>
+          <div class="proposal">
+            <div class="meta"><span class="tag">Risposta multipla</span> · difficoltà 4</div>
+            <div class="row">
+              <div>Quali livelli appartengono al modello TCP/IP?</div>
+              <button type="button" class="mini" aria-label="Elimina proposta 3">Elimina</button>
+            </div>
+            <div class="sol">Soluzioni: Applicazione, Trasporto, Internet.</div>
+          </div>
+          <p class="note">Conteggio finale: <strong>3 proposte</strong> pronte all'applicazione.</p>
+          <div class="actions">
+            <button type="button" onclick="closeDialog()">Chiudi senza applicare</button>
+            <button type="button" class="btn-primary">Aggiungi al pool</button>
+          </div>
+        </div>
+
+        <!-- VALIDATION ERROR -->
+        <div id="view-validation" class="hidden">
+          <p class="alert" role="alert">
+            L'output del modello non rispetta lo schema richiesto (quantità di domande aperte non
+            corrispondente). La generazione è stata rifiutata integralmente: il pool non è stato
+            modificato.
+          </p>
+          <div class="actions">
+            <button type="button" onclick="showState('config')">Torna alla configurazione</button>
+          </div>
+        </div>
+
+        <!-- BUDGET ERROR -->
+        <div id="view-budget" class="hidden">
+          <p class="warnbox" role="alert">
+            Budget mensile insufficiente per questa generazione. Nessuna chiamata è stata effettuata
+            e nessun costo è stato addebitato.
+          </p>
+          <div class="actions">
+            <button type="button" onclick="closeDialog()">Chiudi</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      var VIEWS = ['config', 'loading', 'result', 'validation', 'budget'];
+      function showState(name) {
+        openBackdrop();
+        for (var i = 0; i < VIEWS.length; i++) {
+          var el = document.getElementById('view-' + VIEWS[i]);
+          if (el) el.classList.toggle('hidden', VIEWS[i] !== name);
+        }
+      }
+      function openBackdrop() {
+        document.getElementById('backdrop').classList.remove('hidden');
+      }
+      function openDialog() {
+        showState('config');
+      }
+      function closeDialog() {
+        document.getElementById('backdrop').classList.add('hidden');
+      }
+      function onBackdrop(event) {
+        if (event.target === document.getElementById('backdrop')) closeDialog();
+      }
+      function onGuidance() {
+        var ta = document.getElementById('f-guidance');
+        document.getElementById('g-count').textContent = String(ta.value.trim().length);
+      }
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeDialog();
+      });
+    </script>
+  </body>
+</html>

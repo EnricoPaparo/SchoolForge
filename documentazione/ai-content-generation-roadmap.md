@@ -1,0 +1,366 @@
+# AIGEN — Generazione IA di pool e lezioni (contratto e roadmap)
+
+> Stato: **AIGEN-00 — progettazione congelata, nessuna implementazione applicativa**. Rilevazione evidence-based: 23 luglio 2026. Questo documento e i prototipi statici associati **non** autorizzano deploy, chiamate provider, migrazioni o modifiche ai dati esistenti. Nessuna API key viene letta, nessuna chiamata OpenAI viene effettuata. I pacchetti implementativi successivi sono **AIGEN-01/02/03** e il **Gate GAIGEN**.
+>
+> Ambito di AIGEN-00 (questa PR): **solo nuovi file** — questo documento, i due prototipi statici `documentazione/prototipi/ai-pool-generator.html` e `documentazione/prototipi/ai-lesson-generator.html`, e l'evidenza di review `documentazione/evidenze/aigen-00-review.md`. Nessun file applicativo, test runtime, Function, Rule, indice, configurazione, dipendenza o documento generale esistente è modificato.
+
+## 0. Obiettivo
+
+Progettare in modo definitivo due funzionalità, **riusando l'infrastruttura IA esistente** (correzione IA M5/TWU-02) come modello architetturale, ma **senza riusare il dominio della correzione** (submission, punteggi, feedback, `aiCorrectionRuns`):
+
+1. **Generazione pool** — l'IA propone un pool `schoolforge-pool/v2` di domande a partire dal testo di una lezione.
+2. **Generazione lezione** — l'IA propone una bozza Markdown del corpo di una lezione.
+
+Entrambe restano **owner-only**, con profili modello astratti `economy`/`quality`, mapping modello/listino esclusivamente server-side, OpenAI Responses API + Structured Output, kill switch, config runtime fail-closed, budget mensile, stima/prenotazione/riconciliazione del costo, timeout e retry controllato, `requestId`/idempotenza, telemetria tecnica privacy-minimal, documenti tecnici non leggibili dal client e **nessun fallback silenzioso tra modelli**.
+
+---
+
+## 1. Inventario del riuso reale (sola lettura)
+
+Ispezione read-only dell'infrastruttura esistente. Percorsi verificati il 23 luglio 2026.
+
+### 1.1 Componenti realmente riusabili (come **pattern**, non come dominio)
+
+| Componente | Percorso | Cosa si riusa |
+|---|---|---|
+| Profili modello chiusi | `functions/src/aiCorrectionModelProfile.ts` | `ModelProfile = 'economy' \| 'quality'`, `MODEL_PROFILE_RESOLUTIONS` (economy→`gpt-5.4-nano` @ listino v2; quality→`gpt-5.6-luna` @ listino v5-luna-dev), `parseModelProfileField` (puro, fail-closed, mai throw). **Riuso diretto del modulo** (import), non duplicazione. |
+| Listino prezzi versionato | `functions/src/aiCorrectionCost.ts` | `PRICE_LISTS`, `lookupModelPrice`, `tokenCostMicroUsd` (arrotondamento `ceil` per stima/prenotazione, `nearest` per costo reale), micro-USD interi (`USD_MICRO = 1_000_000`), `estimateCostBreakdown`, `actualCostMicroUsd`. **Riuso diretto**. |
+| Config runtime / kill switch | `functions/src/aiCorrectionRuntimeConfig.ts` | `settings/aiConfig` (Admin-only, mai al client): `enabled`, `provider:'openai'`, `environment:'dev'`, `limits`, `maxOperationCostMicroUsd (≤250_000)`, `dailyBudgetMicroUsd (≤1_000_000)`, `monthlyBudgetMicroUsd (≤5_000_000)`, `RUNTIME_MODEL_PRICE_LISTS` (coppia modello→listino autoritativa). Fail-closed: assente/incompleto/`enabled=false` ⇒ provider reale disabilitato. **Riuso diretto della porta di lettura config**. |
+| Budget ledger | `functions/src/aiCorrectionBudget.ts` | Ledger mensile con aggregati giornalieri, `reserve`/`markPending`/`reconcile`, settlement delle prenotazioni scadute, `availableMicroUsd`/`availableDailyMicroUsd`, idempotenza per `requestId`. **Riuso diretto** (stesso ledger, chiavi `requestId` distinte). |
+| Guardrail limiti | `functions/src/aiCorrectionLimits.ts` | `enforceOperationLimits` + `DEV_LIMITS` (concurrency 3, `attemptTimeoutMs 60_000`, `maxApplicationRetries 1`). **Riuso del pattern**; per AIGEN servono limiti nuovi orientati ai contenuti (§8). |
+| Errori tipizzati + ordine controlli | `functions/src/aiCorrectionGatewayCore.ts` | `AiGatewayError`/`AiGatewayErrorCode`, `resolveAiFeatureMode`, ordine **auth → owner → feature flag → input**. **Riuso del pattern e della classe errore** (estesa con codici nuovi, §Error codes). |
+| Transport provider | `functions/src/openAiGrader.ts`, `aiCorrectionProvider.ts` | Chiamata **Responses API** con **Structured Output**, timeout per tentativo, retry classificato (`retryPolicy`), estrazione usage token. **Riuso del transport**; lo *schema* di output è nuovo (pool/lezione). |
+| Run tecnico | `functions/src/aiCorrectionEngine.ts` | `aiCorrectionRuns/{requestId}` privacy-minimal (`AI_RUN_CONTRACT_VERSION=2`, retention approvata, lease, `status`, token/costo stimati/reali). **Riuso del pattern**, **NON** della collection (§5). |
+| Preferenze IA docente | TWU-02 (`teacherAiPreferences/{ownerUid}`) | Il profilo modello di default owner-only è già un contratto chiuso. AIGEN può leggerlo come default, senza nuovi campi. |
+| Contratto pool | `packages/lesson-contract/src/{parser,serializer,maxCharacters,types}.ts` | `parsePool`/`serializePool` `schoolforge-pool/v2`: `difficolta` intera 1–5, `maxPoints === difficolta`, **no `peso`**, `maxCharacters` solo aperte (`DEFAULT 2000`, range `[1,10000]`). **Riuso diretto** per validazione finale. |
+| Limite dimensione lezione | `apps/web/src/features/repository/programs/lessonContentSize.ts` | `MAX_LESSON_CONTENT_BYTES = 700_000` (UTF-8), `utf8ByteLength`, `assertLessonContentSize`. **Riuso diretto** come cap dell'output lezione. |
+| Callable client | `apps/web/src/features/repository/corrections/aiCorrectionClient.ts` | Pattern `httpsCallable` con payload chiuso e `requestId`; callable esistenti `aiCorrectionPreview`/`aiCorrectionRun`. **Riuso del pattern**; nuovi callable dedicati (§2). |
+
+### 1.2 Componenti da **non** riusare
+
+- `aiCorrectionRuns` (collection): appartiene al dominio correzione (submission/verifica). AIGEN usa `aiContentRuns` (§5).
+- `aiCorrectionEngine` end-to-end: modella `submission → grading → correctionWrite`. AIGEN genera **contenuti**, non valuta consegne. Si riusa il *pattern* (reserve→provider→validate→reconcile→finalize), non il flusso.
+- `aiCorrectionGateway.ts` (onCall correzione), `validateAiCorrectionRequest`, `assertTeacherQuestionV2Invariant`, scoring, `correctionReturns`, feedback, `submissionIds`, `verificationId`: dominio consegne, fuori scope.
+- Persistenza automatica del risultato nel dominio didattico: AIGEN **non** scrive mai pool/lezione senza conferma esplicita del docente (§Operazione 1/2).
+
+### 1.3 Nuovi contratti necessari
+
+- Callable `aiContentPreview` / `aiContentGenerate` con payload chiuso discriminato `kind: 'pool' | 'lesson'`.
+- Motore condiviso **AI Content Generation** (`aiContentCore` + `aiContentEngine`) con guardrail e ordine fail-closed riusati da entrambe le operazioni.
+- Schemi Structured Output nuovi: `PoolGenerationOutput`, `LessonGenerationOutput`.
+- Prompt builder separati `poolGenerationPrompt` / `lessonGenerationPrompt` con gerarchia e difese injection (§Prompt).
+- Collection tecnica `aiContentRuns/{opaqueRunId}` con TTL 24h (§5).
+- Cost model dedicato ai contenuti (§Cost model) sui listini server-side già presenti.
+
+### 1.4 Limiti tecnici già presenti nel repository (vincolanti)
+
+- **Documento Firestore ≤ 1 MiB.** Il corpo lezione condivide il documento `publicLessons`/`lessons`: il cap riusato è `MAX_LESSON_CONTENT_BYTES = 700_000` byte UTF-8.
+- **Costo per operazione ≤ 250_000 µUSD (0,25 USD)**, budget giornaliero ≤ 1 USD, mensile ≤ 5 USD (`aiCorrectionRuntimeConfig`). Non aumentabili via Firestore.
+- **Un solo retry applicativo** (`maxApplicationRetries = 1`) e **timeout 60 s** per tentativo.
+- **Pool v2**: difficoltà intera 1–5, `maxPoints === difficolta`, no `peso`, `maxCharacters` solo aperte.
+
+> **Gap rilevati.** Nessun conflitto bloccante con l'architettura esistente. Un solo punto d'attenzione, non bloccante: i codici errore di `AiGatewayErrorCode` sono orientati alla correzione (`batch_limit_exceeded`, `submissionIds`); AIGEN-01 dovrà **estendere** l'enum con codici propri (§Error codes) senza rimuovere quelli esistenti. Documentato qui, non risolto con workaround.
+
+---
+
+## 2. Architettura condivisa da congelare
+
+### 2.1 Callable
+
+Due callable server-side dedicati (nomi **congelati**):
+
+- **`aiContentPreview`** — nessuna chiamata provider, nessuna generazione, nessuna prenotazione budget.
+- **`aiContentGenerate`** — una sola generazione logica (una chiamata provider per tentativo, max 1 retry).
+
+Il client **non** invia mai: model ID tecnico, `priceListVersion`, prezzi, budget, API key, system prompt, parametri arbitrari del provider. Il server risolve **sempre** modello e listino dal profilo tramite `MODEL_PROFILE_RESOLUTIONS` (mapping chiuso).
+
+### 2.2 Payload chiuso (discriminato)
+
+Campi ammessi dal client (qualsiasi altra proprietà ⇒ `invalid_input`):
+
+**Comuni**
+- `requestId: string` (UUID client, stabile tra i retry della stessa operazione)
+- `kind: 'pool' | 'lesson'`
+- `modelProfile: 'economy' | 'quality'`
+- `teacherGuidance?: string` (trim, ≤ 500 caratteri, nessun troncamento silenzioso — oltre ⇒ `invalid_input`)
+
+**`kind: 'pool'`** → `poolConfig`:
+- `level: 'base' | 'balanced' | 'advanced'` (range difficoltà: base 1–3, balanced 1–5, advanced 3–5)
+- `counts: { aperta: number; chiusa_singola: number; chiusa_multipla: number }` (ogni valore intero ≥ 0; totale ≥ 1 e ≤ 30)
+- `lessonContext`: metadati + testo lezione (materiale didattico, delimitato e non attendibile), entro i cap §8
+- `existingPoolQuestionCount?: number` (solo per contesto/anti-duplicazione; gli ID tecnici NON sono mai inviati né generati dal modello)
+
+**`kind: 'lesson'`** → `lessonConfig`:
+- `depth: 'synthetic' | 'complete' | 'in_depth'`
+- `context`: `{ titolo?, sottotitolo?, concettiChiave?: string[], obiettivi?: string[], currentBody?: string, udaTitle? }` — solo dati **già in memoria** nell'editor; nessuna nuova query per arricchire il prompt
+- `hasCurrentContent: boolean`
+
+### 2.3 Ordine dei controlli (fail-closed)
+
+Nessuna chiamata provider parte se un controllo precedente fallisce:
+
+1. autenticazione (`unauthenticated`)
+2. owner autorizzato (`not_owner`)
+3. feature flag / kill switch (`feature_disabled`)
+4. validazione payload chiuso (`invalid_input`)
+5. validazione dimensioni input (`content_too_large` / `limit_exceeded`)
+6. risoluzione profilo → modello/listino (`provider_config_invalid`)
+7. stima e limiti (`limit_exceeded` / `operation_budget_exceeded`)
+8. lease/idempotenza (replay noto → risultato o `running`)
+9. prenotazione budget (`budget_exceeded` / `daily_budget_exceeded` / `budget_unavailable`)
+10. provider (una chiamata; retry ≤ 1)
+11. validazione output (`output_invalid` / `output_too_large`)
+12. persistenza temporanea del risultato in `aiContentRuns`
+13. riconciliazione costo (reserve → actual)
+14. finalizzazione run (`completed`)
+
+`aiContentPreview` esegue **solo 1–7** (senza prenotazione né provider) e restituisce la stima.
+
+### 2.4 PREVIEW — comportamento
+
+`aiContentPreview`: non chiama il provider, non genera, non prenota budget, non crea listener/polling. Calcola input stimato, output massimo, tentativi massimi e **costo prudenziale** con la **stessa formula del run**. Restituisce il **modello astratto** mostrabile (`economy`/`quality`), mai il model ID reale né la API key. Applica gli stessi limiti del run: se un limite è superato, restituisce l'error code corrispondente (nessuna generazione).
+
+### 2.5 GENERATE — comportamento
+
+`aiContentGenerate`: **una sola generazione logica**, **una sola chiamata provider per tentativo**, **massimo un retry** applicativo/tecnico (come `maxApplicationRetries = 1`). **Nessuna** seconda chiamata "critica"/"revisore". Output **Structured Output**. Validazione **completa** prima di restituire. **Nessuna scrittura automatica** al pool o alla lezione: il risultato è solo proposto.
+
+---
+
+## 3. Idempotenza e recupero risultato — `aiContentRuns`
+
+Collection tecnica **distinta** da `aiCorrectionRuns`, **server-only**.
+
+### 3.1 Id documento
+
+`aiContentRuns/{opaqueRunId}` — id **opaco**, derivato **server-side** da `hash(ownerUid + requestId)` (es. SHA-256 esadecimale troncato). Nel documento **non** compaiono UID in chiaro né ID didattici in chiaro.
+
+### 3.2 Contratto del run (campi persistiti)
+
+- `contractVersion` (intero)
+- `kind` (`'pool' | 'lesson'`)
+- `status` (`'running' | 'completed' | 'failed'`)
+- `inputHash` (hash del payload normalizzato: kind, profilo, config, guidance, materiale — **hash, non testo**)
+- `modelProfile` (`economy`/`quality`)
+- `model` e `priceListVersion` risolti **server-side**
+- token stimati/reali (`estimatedInput`, `maxOutput`, `actualInput`, `actualOutput`)
+- costo `estimatedMicroUsd` / `reservedMicroUsd` / `actualMicroUsd`
+- lease/execution metadata (`leaseOwner` opaco, `leaseExpiresAtMs`, `attemptsTotal`)
+- `output` strutturato generato (pool JSON o corpo Markdown), entro il cap §3.4
+- `createdAt` / `updatedAt`
+- `expireAt` (per TTL Firebase)
+
+### 3.3 Cosa **non** viene persistito
+
+Testo sorgente della lezione; `teacherGuidance`; prompt (system o assemblato); API key; email/nome docente; UID in chiaro; dati studenti; **raw response** del provider. Il risultato strutturato è conservato **solo** per rendere idempotente il replay ed evitare di perdere una generazione **già pagata** in caso di interruzione di rete.
+
+### 3.4 Cap dimensionale dell'output persistito
+
+- **Pool**: massimo 30 domande; struttura JSON compatta. Cap prudenziale **≤ 200_000 byte** UTF-8 per il campo `output` (ampiamente sotto 1 MiB; oltre ⇒ `output_too_large`).
+- **Lezione**: `output` = corpo Markdown, cap **`MAX_LESSON_CONTENT_BYTES = 700_000`** byte UTF-8 (lo stesso già applicato al salvataggio lezione). Oltre ⇒ `output_too_large`.
+
+Entrambi restano ampiamente sotto il limite documento Firestore (1 MiB), lasciando margine per gli altri campi.
+
+### 3.5 Retention (congelata)
+
+- **TTL 24 ore** (`expireAt = createdAt + 24h`).
+- Collection **server-only**: Rules negano lettura/scrittura diretta dal client (§7).
+- Replay **soltanto** tramite callable dopo nuova autorizzazione (auth+owner+feature+budget rifatti).
+- **Nessun listener, polling o scheduler.** Il TTL Firebase è cleanup **differito**: nessuna promessa di eliminazione immediata.
+
+### 3.6 Semantica replay (stesso `requestId`)
+
+| Situazione | Esito |
+|---|---|
+| Run `completed`, stesso `inputHash` | Restituisce lo **stesso** risultato; **zero** nuova chiamata/costo |
+| Run `running` con lease valida | `running` (nessuna seconda chiamata) |
+| Run `running` con lease **scaduta** | Takeover controllato (nuova lease), un tentativo consentito |
+| Stesso `requestId`, `inputHash` **diverso** | `invalid_input` |
+| Run legacy/malformato | Fail-closed (`provider_config_invalid`) |
+
+---
+
+## 4. Gerarchia prompt e sicurezza
+
+Due prompt builder **separati**: `poolGenerationPrompt`, `lessonGenerationPrompt`. Gerarchia obbligatoria (dal più autorevole al meno):
+
+1. sicurezza, schema e limiti server (system, non sovrascrivibile);
+2. contratto dell'operazione (pool v2 / corpo lezione);
+3. quantità/range/profondità scelti dal docente;
+4. metadati didattici autorevoli (titolo, concetti, obiettivi);
+5. indicazioni del docente **compatibili**;
+6. testo della lezione / bozza corrente come **contenuto non attendibile**.
+
+Il materiale della lezione, il draft e le indicazioni sono **delimitati** (blocchi marcati) e trattati come **dati**, mai come system instructions.
+
+### 4.1 Resistenza prompt injection
+
+- Frasi nel Markdown tipo "ignora le istruzioni precedenti" **non** vengono eseguite.
+- Il testo sorgente **non** può cambiare schema, quantità, range o modello.
+- Le indicazioni docente **non** possono richiedere output fuori schema.
+- Nessun contenuto può richiedere tool, rete, file, segreti o chiamate esterne.
+- **Nessun dato studente** entra nei prompt.
+- Il modello **non** sceglie il proprio modello o costo.
+- Output estraneo o incompleto ⇒ **rifiutato integralmente** (Structured Output + validazione post).
+
+### 4.2 Requisiti pool prompt
+Esatto numero di domande per tipo; intervallo difficoltà corretto; domande autonome e non ambigue; distrattori plausibili; soluzioni coerenti; **nessuna conoscenza sostanziale inventata** (fondata sul testo della lezione); varietà senza duplicazioni; lingua coerente con la lezione.
+
+### 4.3 Requisiti lezione prompt
+Tono scolastico professionale; chiarezza didattica; coerenza con obiettivi/concetti; struttura Markdown sobria; niente stile blog/marketing/social; nessun fatto non verificabile presentato come certo; nessun riferimento al fatto che il testo sia generato da IA; **nessun front matter o HTML**.
+
+---
+
+## 5. Operazione 1 — Generazione pool
+
+### 5.1 Posizione UI (congelata)
+- **Pool assente**: `Crea pool` · `Genera con IA`.
+- **Pool esistente** (toolbar del pool): `Nuova domanda` · `Genera domande con IA` · `Modifica YAML` · `Elimina pool`.
+
+Disponibile sia per creare il primo pool sia per aggiungere domande a un pool esistente.
+
+### 5.2 Dialog configurazione
+1. **Profilo**: Economy / Quality.
+2. **Livello**: Base (1–3) / Bilanciato (1–5) / Avanzato (3–5).
+3. **Quantità per tipo**: aperte, risposta singola, risposta multipla — interi ≥ 0, totale ≥ 1, **max 30**, nessun campo libero per tipi non supportati.
+4. **Indicazioni**: opzionale, trim, **≤ 500** caratteri, contatore, nessun troncamento silenzioso.
+5. **Riepilogo**: numero totale, distribuzione per tipo, intervallo difficoltà, token stimati, costo massimo stimato, profilo.
+
+### 5.3 Flusso
+Configura → calcola stima → conferma la spesa → genera → visualizza domande → modifica/elimina proposte → conferma `Aggiungi al pool`/`Crea pool` → solo allora il **service canonico** del pool (`poolEditorService`) scrive. **L'IA non salva direttamente.**
+
+- **Pool assente**: genera un nuovo `schoolforge-pool/v2`; applicazione solo dopo conferma; write canonica.
+- **Pool esistente**: **aggiunge** le nuove domande; non sovrascrive/cancella le esistenti; **ID tecnici generati dal sistema** (mai dal modello); collisioni ID risolte dal sistema prima del salvataggio; pool risultante **validato integralmente** (`parsePool`) prima della write.
+
+### 5.4 Output strutturato pool
+Il provider restituisce **contenuti semantici**, non ID tecnici persistiti. Per ogni domanda: tipo supportato; difficoltà intera nel range; testo; soluzione; `maxCharacters` per le aperte (contratto esistente); opzioni e soluzione coerenti per le chiuse.
+
+Validazioni obbligatorie (fail-closed, rifiuto integrale): quantità esatta per ogni tipo; totale esatto; difficoltà nel range; `maxPoints === difficolta`; risposta singola con **una** sola soluzione; multipla con **almeno una** soluzione valida; soluzione **contenuta** nelle opzioni; opzioni senza ID duplicati; **nessun `peso`**; nessun campo estraneo; parser finale `schoolforge-pool/v2`; limite dimensionale. La generazione si basa sul testo della lezione e **non inventa** nozioni sostanziali non supportate.
+
+### 5.5 Anteprima risultato
+Mostra tipo, difficoltà, preview domanda, soluzione, opzioni (dove presenti), modifica, elimina proposta, conteggio finale aggiornato, **costo reale** della generazione, pulsante finale di applicazione. Chiudere il dialog prima dell'applicazione **non** modifica il pool.
+
+---
+
+## 6. Operazione 2 — Generazione lezione
+
+### 6.1 Posizione UI (congelata)
+Nel **MarkdownBodyEditor**, accanto ai comandi dell'editor: `Genera con IA`. **Non** nella vista di sola lettura, **non** nei menu UDA/corso.
+
+### 6.2 Dialog configurazione
+1. **Profilo**: Economy / Quality.
+2. **Profondità**: Sintetica / Completa / Approfondita.
+3. **Indicazioni**: opzionali, ≤ 500, trim, nessun troncamento silenzioso.
+4. **Contesto (sola lettura)**: titolo, sottotitolo, concetti chiave, obiettivi, presenza/assenza di contenuto attuale.
+5. **Riepilogo stima**: token input/output, costo massimo, profilo, avviso sul comportamento della bozza.
+
+### 6.3 Contesto inviato
+Entro limiti chiusi: metadati lezione; corpo Markdown attualmente nell'editor; indicazioni docente; eventuale contesto minimo dell'UDA **già caricato** se realmente disponibile senza nuove query. **Nessuna nuova lettura** solo per arricchire il prompt.
+
+### 6.4 Semantica
+- Editor vuoto → genera una nuova bozza.
+- Editor con contenuto → il modello produce una **nuova versione completa** usando il testo corrente come contesto; l'interfaccia avverte chiaramente che la bozza **sostituirà** il testo nell'editor; **non** salvata automaticamente.
+
+Copy vincolante: **«La bozza generata sostituirà il testo nell'editor. La lezione non verrà salvata finché non premi Salva.»**
+
+### 6.5 Risultato
+Anteprima Markdown + **costo reale**; `Usa questa bozza` · `Annulla`.
+
+`Usa questa bozza`: sostituisce **esclusivamente** il draft locale del MarkdownBodyEditor; marca l'editor **dirty**; **non** chiama il service di salvataggio; **non** aggiorna Storage/Firestore/publicLessons; il docente modifica liberamente; il normale `Salva` esegue poi il flusso canonico esistente; dirty guard e `Annulla` continuano a funzionare.
+
+### 6.6 Output lezione
+Il provider restituisce **esclusivamente** corpo Markdown: nessun front matter, nessun HTML raw, nessuno script, nessun metadato tecnico, nessun path, nessun ID Firestore/Storage.
+
+Validazioni: stringa non vuota; UTF-8 valido; dimensione entro `MAX_LESSON_CONTENT_BYTES`; niente HTML raw/elementi pericolosi; nessun front matter duplicato; Markdown renderizzabile; struttura coerente con titolo/concetti/obiettivi; **nessun salvataggio se output invalido**.
+
+---
+
+## 7. Cost model (esempi indicativi, non garanzie)
+
+Basato **esclusivamente** sui listini server-side già presenti (`aiCorrectionCost.PRICE_LISTS`). La **preview runtime resta l'unica stima autorevole**; i valori qui sono **esempi**.
+
+Listini (µUSD per 1M token): **economy** = `gpt-5.4-nano` → input 200_000, output 1_250_000; **quality** = `gpt-5.6-luna` → input 1_000_000, output 6_000_000.
+
+Grandezze separate: input stimato; output massimo; costo realistico stimato (`ceil`); prenotazione prudenziale; costo effettivo (`nearest`); massimo tentativi (=2, cioè 1 + 1 retry).
+
+### 7.1 Pool — esempio (materiale lezione ~4k token input, 20 domande, output ~3k token)
+- **Economy**: input ≈ 4000×0,20/M + output ≈ 3000×1,25/M ≈ **0,0008 + 0,00375 = ~0,0046 USD** (≈ 4_550 µUSD).
+- **Quality**: 4000×1,00/M + 3000×6,00/M ≈ **0,004 + 0,018 = ~0,022 USD** (≈ 22_000 µUSD).
+
+### 7.2 Lezione — esempio (contesto ~2k token input, profondità Completa, output ~3,5k token)
+- **Economy**: 2000×0,20/M + 3500×1,25/M ≈ **0,0004 + 0,004375 = ~0,0048 USD** (≈ 4_775 µUSD).
+- **Quality**: 2000×1,00/M + 3500×6,00/M ≈ **0,002 + 0,021 = ~0,023 USD** (≈ 23_000 µUSD).
+
+Tutti gli esempi restano **ordini di grandezza sotto** il cap per operazione (250_000 µUSD). Il cap resta la soglia autoritativa.
+
+### 7.3 Soglie di stop (fail-closed)
+- operazione oltre limite token;
+- output previsto oltre limite dimensionale (`output_too_large`);
+- costo stimato oltre limite per-operazione (`operation_budget_exceeded`);
+- budget mensile/giornaliero insufficiente (`budget_exceeded` / `daily_budget_exceeded`);
+- configurazione assente/incoerente (`provider_config_invalid` / `feature_disabled`);
+- modello/listino non mappato (`provider_config_invalid`).
+
+---
+
+## 8. Letture/scritture Firebase — prima e dopo
+
+- **Zero costo passivo**; **zero** listener/polling; nessuna nuova query nell'apertura ordinaria di corso/lezione/pool.
+- **Preview**: letture config/limiti già previste (una `get` puntuale di `settings/aiConfig` + budget ledger in sola lettura), **nessuna** chiamata provider, **nessuna** prenotazione.
+- **Generate**: 1 callable + transazioni budget (`reserve`→`reconcile`) + scrittura/aggiornamento di **un** documento `aiContentRuns` (con lease). Una chiamata provider (retry ≤ 1).
+- **Risultato temporaneo**: un documento con **TTL 24h**.
+- **Applicazione pool**: normale write canonica esistente (`poolEditorService`), invariata.
+- **Applicazione lezione**: **zero write** finché il docente non preme il normale `Salva` (flusso canonico invariato).
+
+### 8.1 Error codes (congelati per AIGEN-01)
+Riuso dei codici esistenti (`unauthenticated`, `not_owner`, `feature_disabled`, `provider_config_invalid`, `invalid_input`, `limit_exceeded`, `operation_budget_exceeded`, `daily_budget_exceeded`, `budget_exceeded`, `budget_unavailable`) **estesi** con codici AIGEN dedicati:
+- `content_too_large` — input oltre i cap §3.4/§6.6;
+- `output_invalid` — output provider non conforme allo schema/validazioni;
+- `output_too_large` — output oltre il cap dimensionale;
+- `run_conflict` — replay con `inputHash` diverso sullo stesso `requestId` (mappato a `invalid_input` verso il client se si preferisce non esporlo).
+
+`batch_limit_exceeded`/`submissionIds` **non** si applicano ai contenuti.
+
+---
+
+## 9. Prototipi statici
+
+Due file HTML standalone, senza dipendenze/rete/build, coerenti con lo stile SchoolForge attuale:
+
+- `documentazione/prototipi/ai-pool-generator.html`
+- `documentazione/prototipi/ai-lesson-generator.html`
+
+Contenuti e stati rappresentati sono elencati nella sezione «Prototipi» del task e verificati in `documentazione/evidenze/aigen-00-review.md`. I prototipi sono **mock statici**: nessuna chiamata reale, nessun costo, nessuna API key.
+
+---
+
+## 10. Pacchetti successivi e Gate GAIGEN
+
+| Pacchetto | Scope | Dipendenze | Criterio di uscita |
+|---|---|---|---|
+| **AIGEN-00** | Questo documento + prototipi + cost model + sicurezza. Nessun codice runtime. | — | PR draft aperta; format/diff/node-check verdi; nessun file applicativo toccato. |
+| **AIGEN-01** | Core server condiviso (`aiContentCore`/`aiContentEngine`), callable `aiContentPreview`/`aiContentGenerate`, `aiContentRuns` + lease/idempotenza/TTL, integrazione budget, schemi Structured Output, prompt builder. **Nessuna UI.** | AIGEN-00 | Test Functions verdi (validazione payload, ordine fail-closed, cost/budget, idempotenza/replay, output validation, privacy del run); Rules `aiContentRuns` server-only con emulator test; nessun deploy. |
+| **AIGEN-02** | UI + applicazione generazione **pool** (dialog, preview, editor proposte, `Aggiungi/Crea pool` via service canonico). | AIGEN-01 | Test web verdi; pool validato `parsePool` prima della write; nessun autosave IA; responsive 1440/1024/390/320. |
+| **AIGEN-03** | UI + applicazione generazione **lezione** (pulsante nel MarkdownBodyEditor, dialog, `Usa questa bozza` → draft dirty, salvataggio canonico). | AIGEN-01 | Test web verdi; nessun salvataggio automatico; dirty guard/Annulla intatti; sanitizzazione invariata. |
+| **Gate GAIGEN** | Rollout DEV, smoke owner/costi/sicurezza. | AIGEN-01/02/03 | Smoke DEV desktop/mobile/Brave; kill switch verificato; budget rispettato; nessun dato sensibile persistito; nessun fallback silenzioso; conferma manuale del responsabile. |
+
+**AIGEN-01 non inizia in questa PR.**
+
+### 10.1 Scope preciso di AIGEN-01
+Solo Functions (`functions/src/`) + Rules per `aiContentRuns`:
+1. `aiContentCore.ts` — payload chiuso discriminato, validazioni input/dimensioni, error codes, riuso `parseModelProfileField`.
+2. `aiContentEngine.ts` — ordine fail-closed (§2.3), lease/idempotenza su `aiContentRuns`, integrazione `reserve`/`reconcile`, output validation, finalizzazione.
+3. `aiContentProvider.ts` / schema Structured Output pool+lezione — riuso transport Responses API, 1 retry.
+4. `aiContentPrompt.ts` — `poolGenerationPrompt`/`lessonGenerationPrompt` con gerarchia e delimitazione.
+5. Callable `aiContentPreview`/`aiContentGenerate` in `index.ts`.
+6. `firestore.rules`: `aiContentRuns` lettura/scrittura client **negata** (server-only), + TTL policy documentata.
+Nessuna UI, nessun autosave, nessun dominio correzione toccato.
+
+---
+
+## 11. Rischi residui
+
+- **Deriva di costo del profilo quality** (Luna ×5 rispetto a nano): mitigata da cap per-operazione, preview autorevole e budget mensile; nessun aumento automatico.
+- **Qualità/allucinazioni**: il contratto vieta nozioni inventate e richiede fondatezza sul testo; resta rischio didattico → l'output è **sempre** una proposta rivista dal docente prima dell'applicazione.
+- **Prompt injection dal Markdown**: mitigata da gerarchia, delimitazione, Structured Output e validazione post; da verificare con fixture reali in AIGEN-01.
+- **Enum error codes**: da estendere senza rompere i consumatori esistenti (gap §1.4).
+- **TTL differito**: un run resta fino a 24h+ (cleanup non immediato); accettato, documentato.
