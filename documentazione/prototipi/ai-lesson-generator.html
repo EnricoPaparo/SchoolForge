@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prototipo AIGEN — Genera con IA (bozza lezione)</title>
+    <style>
+      :root {
+        --color-primary: #2563eb;
+        --color-primary-light: #eaf1ff;
+        --color-primary-dark: #1d4ed8;
+        --color-text: #0f172a;
+        --color-text-muted: #64748b;
+        --color-surface: #ffffff;
+        --color-surface-subtle: #f6f8fb;
+        --color-border: #e2e8f0;
+        --color-error: #b91c1c;
+        --color-error-bg: #fef2f2;
+        --color-error-border: #fecaca;
+        --color-warning: #b45309;
+        --color-warning-bg: #fffbeb;
+        --radius: 8px;
+        --radius-lg: 12px;
+        --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          sans-serif;
+        color: var(--color-text);
+        background: var(--color-surface-subtle);
+        line-height: 1.45;
+      }
+      .wrap {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 1.25rem;
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 0.25rem;
+      }
+      .note {
+        color: var(--color-text-muted);
+        font-size: 0.85rem;
+        margin: 0 0 1.25rem;
+      }
+      .panel {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-sm);
+        padding: 1rem 1.125rem;
+        margin-bottom: 1rem;
+      }
+      .editor-toolbar {
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+        border-bottom: 1px solid var(--color-border);
+        padding-bottom: 0.6rem;
+        margin-bottom: 0.6rem;
+      }
+      button {
+        font: inherit;
+        border-radius: var(--radius);
+        border: 1px solid var(--color-border);
+        background: var(--color-surface);
+        color: var(--color-text);
+        padding: 0.4rem 0.7rem;
+        cursor: pointer;
+        transition:
+          background-color 0.15s,
+          border-color 0.15s;
+      }
+      button:hover {
+        background: var(--color-surface-subtle);
+        border-color: var(--color-primary);
+      }
+      button:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 2px;
+      }
+      .btn-primary {
+        background: var(--color-primary);
+        border-color: var(--color-primary);
+        color: #fff;
+        font-weight: 600;
+      }
+      .btn-primary:hover {
+        background: var(--color-primary-dark);
+      }
+      .btn-ai::before {
+        content: "\2728";
+        margin-right: 0.35rem;
+      }
+      textarea.editor {
+        width: 100%;
+        min-height: 180px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.85rem;
+        padding: 0.6rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        resize: vertical;
+      }
+      .dirty {
+        color: var(--color-warning);
+        font-size: 0.78rem;
+        font-weight: 600;
+      }
+      label {
+        display: block;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-bottom: 0.3rem;
+      }
+      select,
+      textarea {
+        width: 100%;
+        font: inherit;
+        padding: 0.45rem 0.55rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: var(--color-surface);
+      }
+      .grid2 {
+        display: grid;
+        gap: 0.9rem;
+        grid-template-columns: 1fr 1fr;
+      }
+      .field {
+        margin-bottom: 0.9rem;
+      }
+      .counter {
+        font-size: 0.75rem;
+        color: var(--color-text-muted);
+        text-align: right;
+      }
+      .ctx {
+        background: var(--color-surface-subtle);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 0.6rem 0.75rem;
+        font-size: 0.82rem;
+      }
+      .ctx dt {
+        color: var(--color-text-muted);
+      }
+      .summary {
+        background: var(--color-primary-light);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 0.7rem 0.8rem;
+        font-size: 0.85rem;
+      }
+      .warnbox {
+        background: var(--color-warning-bg);
+        border: 1px solid #fde68a;
+        color: var(--color-warning);
+        border-radius: var(--radius);
+        padding: 0.6rem 0.75rem;
+        font-size: 0.85rem;
+      }
+      .alert {
+        background: var(--color-error-bg);
+        border: 1px solid var(--color-error-border);
+        color: var(--color-error);
+        border-radius: var(--radius);
+        padding: 0.6rem 0.75rem;
+        font-size: 0.85rem;
+      }
+      .backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(9, 13, 20, 0.55);
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 1.5rem 1rem;
+        overflow: auto;
+      }
+      .dialog {
+        background: var(--color-surface);
+        border-radius: var(--radius-lg);
+        width: 100%;
+        max-width: 640px;
+        padding: 1.1rem 1.25rem 1.25rem;
+        box-shadow: 0 12px 40px rgba(15, 23, 42, 0.25);
+      }
+      .dialog h2 {
+        margin: 0 0 0.9rem;
+        font-size: 1.05rem;
+      }
+      .preview {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 0.75rem 0.9rem;
+        max-height: 240px;
+        overflow: auto;
+        font-size: 0.9rem;
+      }
+      .preview h3 {
+        margin-top: 0.4rem;
+      }
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.6rem;
+        margin-top: 1.1rem;
+      }
+      .hidden {
+        display: none !important;
+      }
+      .spinner {
+        width: 1.1rem;
+        height: 1.1rem;
+        border: 2px solid var(--color-border);
+        border-top-color: var(--color-primary);
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        display: inline-block;
+        vertical-align: -2px;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner {
+          animation: none;
+        }
+      }
+      @media (max-width: 640px) {
+        .grid2 {
+          grid-template-columns: 1fr;
+        }
+        .editor-toolbar button,
+        .actions button {
+          flex: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Prototipo statico — «Genera con IA» (bozza lezione)</h1>
+      <p class="note">
+        Mock non funzionante di AIGEN-03. Nessuna chiamata reale, nessun costo, nessuna API key.
+      </p>
+
+      <section class="panel" aria-labelledby="ed">
+        <h2 id="ed" style="font-size: 0.95rem; margin: 0 0 0.6rem">MarkdownBodyEditor</h2>
+        <div class="editor-toolbar">
+          <button type="button">Grassetto</button>
+          <button type="button">Titolo</button>
+          <button type="button">Lista</button>
+          <button type="button">Anteprima</button>
+          <button type="button" class="btn-primary btn-ai" onclick="openDialog(true)">
+            Genera con IA
+          </button>
+        </div>
+        <label for="ed-body" class="sr-only" style="position: absolute; left: -9999px"
+          >Corpo Markdown della lezione</label
+        >
+        <textarea id="ed-body" class="editor" aria-label="Corpo Markdown della lezione">
+## Le reti di calcolatori
+
+Contenuto attuale della lezione, modificabile dal docente.</textarea
+        >
+        <p><span id="dirty" class="dirty hidden">Modifiche non salvate</span></p>
+        <div class="editor-toolbar" style="border: 0; padding: 0; margin-top: 0.3rem">
+          <button type="button">Salva</button>
+          <button type="button">Annulla</button>
+          <button type="button" class="btn-ai" onclick="openDialog(false)">
+            Simula editor vuoto
+          </button>
+        </div>
+      </section>
+
+      <p class="note">Usa i controlli per vedere gli altri stati.</p>
+      <div class="editor-toolbar" style="border: 0">
+        <button type="button" onclick="showState('loading')">Mostra caricamento</button>
+        <button type="button" onclick="showState('result')">Mostra risultato</button>
+        <button type="button" onclick="showState('provider')">Errore provider</button>
+        <button type="button" onclick="showState('invalid')">Output invalido</button>
+      </div>
+    </div>
+
+    <div id="backdrop" class="backdrop hidden" role="presentation" onclick="onBackdrop(event)">
+      <div
+        class="dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dlg-title"
+        onclick="event.stopPropagation()"
+      >
+        <h2 id="dlg-title">Genera con IA</h2>
+
+        <!-- CONFIG -->
+        <div id="view-config">
+          <div class="grid2">
+            <div class="field">
+              <label for="l-profile">Profilo modello</label>
+              <select id="l-profile">
+                <option value="economy">Economy</option>
+                <option value="quality">Quality</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="l-depth">Profondità</label>
+              <select id="l-depth">
+                <option value="synthetic">Sintetica</option>
+                <option value="complete" selected>Completa</option>
+                <option value="in_depth">Approfondita</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="l-guidance">Indicazioni aggiuntive (opzionali)</label>
+            <textarea id="l-guidance" rows="2" maxlength="500" oninput="onGuidance()"></textarea>
+            <div class="counter"><span id="lg-count">0</span>/500</div>
+          </div>
+
+          <div class="field">
+            <label>Contesto (sola lettura)</label>
+            <dl class="ctx">
+              <dt>Titolo</dt>
+              <dd>Le reti di calcolatori</dd>
+              <dt>Sottotitolo</dt>
+              <dd>Fondamenti e protocolli</dd>
+              <dt>Concetti chiave</dt>
+              <dd>Indirizzamento, instradamento, TCP/IP</dd>
+              <dt>Obiettivi</dt>
+              <dd>Distinguere i livelli, spiegare il ruolo di TCP e IP</dd>
+              <dt>Contenuto attuale</dt>
+              <dd id="ctx-content">Presente</dd>
+            </dl>
+          </div>
+
+          <p id="warn-replace" class="warnbox">
+            La bozza generata sostituirà il testo nell'editor. La lezione non verrà salvata finché
+            non premi Salva.
+          </p>
+
+          <div class="summary">
+            Token stimati ~2.000 input · ~3.500 output · costo massimo ~0,023 USD (Quality) — stima,
+            non garanzia. Profilo: Quality.
+          </div>
+
+          <div class="actions">
+            <button type="button" onclick="closeDialog()">Annulla</button>
+            <button type="button" class="btn-primary" onclick="showState('loading')">
+              Genera bozza
+            </button>
+          </div>
+        </div>
+
+        <!-- LOADING -->
+        <div id="view-loading" class="hidden" role="status" aria-live="polite">
+          <p>
+            <span class="spinner" aria-hidden="true"></span> Generazione della bozza in corso… Non
+            chiudere questa finestra.
+          </p>
+          <div class="actions">
+            <button type="button" onclick="closeDialog()">Annulla</button>
+          </div>
+        </div>
+
+        <!-- RESULT -->
+        <div id="view-result" class="hidden">
+          <p class="note">Costo reale: <strong>0,022 USD</strong>. La bozza non è ancora salvata.</p>
+          <div class="preview">
+            <h3>Le reti di calcolatori</h3>
+            <p>Una rete di calcolatori collega dispositivi per scambiare dati secondo regole
+              condivise dette protocolli.</p>
+            <h3>Il modello TCP/IP</h3>
+            <p>Il modello organizza la comunicazione in livelli: applicazione, trasporto, internet e
+              accesso alla rete.</p>
+          </div>
+          <div class="actions">
+            <button type="button" onclick="closeDialog()">Annulla</button>
+            <button type="button" class="btn-primary" onclick="useDraft()">Usa questa bozza</button>
+          </div>
+        </div>
+
+        <!-- PROVIDER ERROR -->
+        <div id="view-provider" class="hidden">
+          <p class="alert" role="alert">
+            Il servizio non ha risposto in tempo. Nessuna bozza è stata generata; l'editor è rimasto
+            invariato. Riprova più tardi.
+          </p>
+          <div class="actions">
+            <button type="button" onclick="showState('config')">Torna alla configurazione</button>
+          </div>
+        </div>
+
+        <!-- INVALID OUTPUT -->
+        <div id="view-invalid" class="hidden">
+          <p class="alert" role="alert">
+            La bozza generata non è valida (conteneva HTML non ammesso). È stata rifiutata: l'editor
+            non è stato modificato.
+          </p>
+          <div class="actions">
+            <button type="button" onclick="showState('config')">Torna alla configurazione</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      var VIEWS = ['config', 'loading', 'result', 'provider', 'invalid'];
+      function showState(name) {
+        openBackdrop();
+        for (var i = 0; i < VIEWS.length; i++) {
+          var el = document.getElementById('view-' + VIEWS[i]);
+          if (el) el.classList.toggle('hidden', VIEWS[i] !== name);
+        }
+      }
+      function openBackdrop() {
+        document.getElementById('backdrop').classList.remove('hidden');
+      }
+      function openDialog(hasContent) {
+        document.getElementById('ctx-content').textContent = hasContent ? 'Presente' : 'Assente';
+        document.getElementById('warn-replace').classList.toggle('hidden', !hasContent);
+        showState('config');
+      }
+      function closeDialog() {
+        document.getElementById('backdrop').classList.add('hidden');
+      }
+      function onBackdrop(event) {
+        if (event.target === document.getElementById('backdrop')) closeDialog();
+      }
+      function onGuidance() {
+        var ta = document.getElementById('l-guidance');
+        document.getElementById('lg-count').textContent = String(ta.value.trim().length);
+      }
+      function useDraft() {
+        document.getElementById('ed-body').value =
+          '## Le reti di calcolatori\n\nUna rete di calcolatori collega dispositivi...';
+        document.getElementById('dirty').classList.remove('hidden');
+        closeDialog();
+      }
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeDialog();
+      });
+    </script>
+  </body>
+</html>
