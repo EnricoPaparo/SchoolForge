@@ -27,7 +27,6 @@ const mockDeleteLesson = vi.fn();
 const mockUpdateLessonBody = vi.fn();
 const mockUpdateLessonMetadata = vi.fn();
 const mockUpdateProgramMetadata = vi.fn();
-const mockDownloadLessonPdf = vi.fn();
 const mockReorderUda = vi.fn();
 const mockReorderLesson = vi.fn();
 const mockDownloadProgramPdf = vi.fn();
@@ -56,9 +55,6 @@ vi.mock('../../repository/programs/programsService.js', () => ({
   deleteProgram: (...a: unknown[]) => mockDeleteProgram(...a),
   getImportMeta: (...a: unknown[]) => mockGetImportMeta(...a),
   setLessonCompleted: (...a: unknown[]) => mockSetLessonCompleted(...a),
-}));
-vi.mock('../lessonPdf.js', () => ({
-  downloadLessonPdf: (...a: unknown[]) => mockDownloadLessonPdf(...a),
 }));
 const { mockDeleteBlockedError } = vi.hoisted(() => ({
   mockDeleteBlockedError: class extends Error {
@@ -1465,18 +1461,15 @@ describe('CourseWorkspace — lesson actions (DUX-04B)', () => {
     expect(onCardPatch).toHaveBeenCalledWith('p1', expect.objectContaining({ lessonsDone: 1 }));
   });
 
-  it('downloads the PDF reusing the already-loaded content and metadata', async () => {
-    mockDownloadLessonPdf.mockResolvedValue(undefined);
+  it('does not expose the single-lesson PDF command and preserves the other lesson actions', async () => {
     await openLesson();
-    expect(mockFetchLessonContent).toHaveBeenCalledTimes(1);
-    clickMenuAction('Azioni lezione', 'Scarica PDF');
+    fireEvent.click(screen.getByRole('button', { name: 'Azioni lezione' }));
+    const menu = screen.getByRole('menu');
 
-    await waitFor(() => expect(mockDownloadLessonPdf).toHaveBeenCalledOnce());
-    const [, content, context] = mockDownloadLessonPdf.mock.calls[0];
-    expect(content).toBe('Corpo lezione A.');
-    expect(context).toBe('Sistemi e Reti - uda-01-reti');
-    // No second Storage read for the PDF.
-    expect(mockFetchLessonContent).toHaveBeenCalledTimes(1);
+    expect(within(menu).queryByRole('menuitem', { name: 'Scarica PDF' })).toBeNull();
+    expect(within(menu).getByRole('menuitem', { name: 'Modifica contenuto' })).toBeTruthy();
+    expect(within(menu).getByRole('menuitem', { name: 'Modifica informazioni' })).toBeTruthy();
+    expect(within(menu).getByRole('menuitem', { name: 'Elimina lezione' })).toBeTruthy();
   });
 
   it('deletes an authorized lesson and returns to its UDA', async () => {
@@ -1876,7 +1869,7 @@ describe('CourseWorkspace — lesson toolbar + table wrapping (DUX-08)', () => {
     const menu = screen.getByRole('menu');
     expect(within(menu).getByRole('menuitem', { name: 'Modifica contenuto' })).toBeTruthy();
     expect(within(menu).getByRole('menuitem', { name: 'Modifica informazioni' })).toBeTruthy();
-    expect(within(menu).getByRole('menuitem', { name: 'Scarica PDF' })).toBeTruthy();
+    expect(within(menu).queryByRole('menuitem', { name: 'Scarica PDF' })).toBeNull();
     expect(within(menu).getByRole('menuitem', { name: 'Elimina lezione' })).toBeTruthy();
     expect(within(menu).queryByRole('menuitem', { name: /segna svolta/i })).toBeNull();
     expect(within(menu).queryByRole('menuitem', { name: /struttura/i })).toBeNull();

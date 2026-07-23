@@ -70,7 +70,6 @@ import {
   storageErrorDetailLines,
   type StorageErrorDetails,
 } from './storageErrorDetails.js';
-import { downloadLessonPdf } from './lessonPdf.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { QuestionPoolEditor, type PoolCountStatus } from './QuestionPoolEditor.js';
 import { MarkdownBodyEditor, LessonMetadataForm, type EditStatus } from './lessonEditors.js';
@@ -344,8 +343,6 @@ export function CourseWorkspace({
   const [infoStatus, setInfoStatus] = useState<EditStatus>(NO_STATUS);
   const [completedBusy, setCompletedBusy] = useState(false);
   const [completedError, setCompletedError] = useState<string | null>(null);
-  const [pdfBusy, setPdfBusy] = useState(false);
-  const [pdfError, setPdfError] = useState<string | null>(null);
   const [lessonBlockers, setLessonBlockers] = useState<RepositoryDeleteBlocker[] | null>(null);
   // Tracks the currently-selected lesson id so a save that resolves after the
   // context changed can never write the new lesson's panel.
@@ -492,7 +489,6 @@ export function CourseWorkspace({
     setContentStatus(NO_STATUS);
     setInfoStatus(NO_STATUS);
     setCompletedError(null);
-    setPdfError(null);
     await loadLessonContent(lesson, requestId);
   }
 
@@ -1171,21 +1167,6 @@ export function CourseWorkspace({
     })();
   }
 
-  async function handleDownloadLessonPdf(lesson: LessonItem) {
-    if (lessonContent == null) return;
-    setPdfBusy(true);
-    setPdfError(null);
-    try {
-      const context = `${card.title} - ${lesson.udaDir}`;
-      const { title } = resolveLessonTitle(lesson.filename, lessonMetadata.titolo ?? lesson.titolo);
-      await downloadLessonPdf(title, lessonContent, context, lessonMetadata);
-    } catch {
-      if (mountedRef.current) setPdfError('Impossibile generare il PDF della lezione.');
-    } finally {
-      if (mountedRef.current) setPdfBusy(false);
-    }
-  }
-
   function handleDeleteLesson(lessonId: string) {
     if (!card.activeImportId) return;
     const importId = card.activeImportId;
@@ -1854,18 +1835,6 @@ export function CourseWorkspace({
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      void handleDownloadLessonPdf(selectedLesson);
-                    }}
-                    disabled={pdfBusy || lessonContent == null}
-                  >
-                    <IconDownload size={15} />
-                    {pdfBusy ? 'PDF…' : 'Scarica PDF'}
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
                     className={styles.menuDanger}
                     onClick={() =>
                       openDialog({ kind: 'deleteLesson', lessonId: selectedLesson.id })
@@ -1914,11 +1883,6 @@ export function CourseWorkspace({
               {completedError && (
                 <span role="alert" className="text-error">
                   {completedError}
-                </span>
-              )}
-              {pdfError && (
-                <span role="alert" className="text-error">
-                  {pdfError}
                 </span>
               )}
             </div>

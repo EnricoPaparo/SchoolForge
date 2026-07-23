@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClassesTab, type ClassesTabItem } from '../ClassesTab.js';
@@ -73,7 +73,7 @@ describe('ClassesTab (DUX-05A)', () => {
     const onClassRenamed = vi.fn();
     renderTab({ onClassRenamed });
     fireEvent.click(screen.getByRole('button', { name: 'Modifica classe 3A Informatica' }));
-    fireEvent.change(screen.getByLabelText('Nome classe'), { target: { value: '3A INF' } });
+    fireEvent.change(screen.getByLabelText('Nome classe'), { target: { value: '  3A INF  ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
 
     await waitFor(() =>
@@ -86,6 +86,114 @@ describe('ClassesTab (DUX-05A)', () => {
       ),
     );
     expect(onClassRenamed).toHaveBeenCalledWith('class-1', '3A INF');
+  });
+
+  it('enters edit mode without submitting when the edit button is clicked', () => {
+    renderTab();
+
+    act(() => {
+      screen.getByRole('button', { name: 'Modifica classe 3A Informatica' }).click();
+    });
+
+    const input = screen.getByRole('textbox', { name: 'Nome classe' });
+    expect(input).toBeTruthy();
+    expect(document.activeElement).toBe(input);
+    expect(mockUpdateClass).not.toHaveBeenCalled();
+  });
+
+  it('saves once with Enter and closes the editor', async () => {
+    const onClassRenamed = vi.fn();
+    renderTab({ onClassRenamed });
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica classe 3A Informatica' }));
+    const input = screen.getByRole('textbox', { name: 'Nome classe' });
+    fireEvent.change(input, { target: { value: '3A Sistemi' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(mockUpdateClass).toHaveBeenCalledTimes(1));
+    expect(onClassRenamed).toHaveBeenCalledWith('class-1', '3A Sistemi');
+    expect(screen.queryByRole('textbox', { name: 'Nome classe' })).toBeNull();
+  });
+
+  it('cancels with Escape without writing and restores the original name', () => {
+    renderTab();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica classe 3A Informatica' }));
+    const input = screen.getByRole('textbox', { name: 'Nome classe' });
+    fireEvent.change(input, { target: { value: 'Nome temporaneo' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(mockUpdateClass).not.toHaveBeenCalled();
+    expect(screen.getByText('3A Informatica')).toBeTruthy();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Modifica classe 3A Informatica' }),
+    );
+  });
+
+  it('cancels with the explicit button without writing', () => {
+    renderTab();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica classe 3A Informatica' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nome classe' }), {
+      target: { value: 'Nome temporaneo' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+
+    expect(mockUpdateClass).not.toHaveBeenCalled();
+    expect(screen.getByText('3A Informatica')).toBeTruthy();
+  });
+
+  it('does not write an empty or unchanged name', () => {
+    renderTab();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica classe 3A Informatica' }));
+    const input = screen.getByRole('textbox', { name: 'Nome classe' });
+    const save = screen.getByRole('button', { name: 'Salva' }) as HTMLButtonElement;
+
+    expect(save.disabled).toBe(true);
+    fireEvent.change(input, { target: { value: '   ' } });
+    expect(save.disabled).toBe(true);
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(mockUpdateClass).not.toHaveBeenCalled();
+  });
+
+  it('guards a pending save against double submission', async () => {
+    let resolveSave!: () => void;
+    mockUpdateClass.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (resolveSave = resolve)),
+    );
+    renderTab();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica classe 3A Informatica' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nome classe' }), {
+      target: { value: '3A Sistemi' },
+    });
+    const save = screen.getByRole('button', { name: 'Salva' });
+    fireEvent.click(save);
+    fireEvent.click(save);
+
+    expect(mockUpdateClass).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Salvataggio…' })).toBeTruthy();
+    expect(
+      (screen.getByRole('textbox', { name: 'Nome classe' }) as HTMLInputElement).disabled,
+    ).toBe(true);
+
+    resolveSave();
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Nome classe' })).toBeNull());
+  });
+
+  it('keeps the editor and typed value after a service error, then permits retry', async () => {
+    mockUpdateClass.mockRejectedValueOnce(new Error('duplicate'));
+    renderTab();
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica classe 3A Informatica' }));
+    const input = screen.getByRole('textbox', { name: 'Nome classe' });
+    fireEvent.change(input, { target: { value: '3A Sistemi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Impossibile modificare la classe. Riprova.',
+    );
+    expect((screen.getByRole('textbox', { name: 'Nome classe' }) as HTMLInputElement).value).toBe(
+      '3A Sistemi',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+    await waitFor(() => expect(mockUpdateClass).toHaveBeenCalledTimes(2));
   });
 
   it('requires explicit confirmation before deleting', async () => {

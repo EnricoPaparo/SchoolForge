@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { db } from '../../lib/firebase.js';
 import {
   createClass,
@@ -35,6 +35,20 @@ export function ClassesTab({
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
+  const editTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const restoreEditFocusRef = useRef(false);
+  const savingRef = useRef(false);
+
+  useEffect(() => {
+    if (editId) {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    } else if (restoreEditFocusRef.current) {
+      restoreEditFocusRef.current = false;
+      editTriggerRef.current?.focus();
+    }
+  }, [editId]);
 
   async function handleCreate(event: FormEvent) {
     event.preventDefault();
@@ -53,7 +67,9 @@ export function ClassesTab({
     }
   }
 
-  function startEdit(item: ClassesTabItem) {
+  function startEdit(item: ClassesTabItem, trigger: HTMLButtonElement) {
+    editTriggerRef.current = trigger;
+    restoreEditFocusRef.current = false;
     setEditId(item.id);
     setEditName(item.name);
     setDeleteConfirmId(null);
@@ -61,14 +77,17 @@ export function ClassesTab({
   }
 
   function cancelEdit() {
+    restoreEditFocusRef.current = true;
     setEditId(null);
     setEditName('');
+    setActionError(null);
   }
 
-  async function handleSave(event: FormEvent, item: ClassesTabItem) {
-    event.preventDefault();
+  async function handleSave(item: ClassesTabItem) {
+    if (savingRef.current) return;
     const name = editName.trim();
-    if (!name) return;
+    if (!name || name === item.name.trim()) return;
+    savingRef.current = true;
     setSaving(true);
     setActionError(null);
     try {
@@ -79,7 +98,18 @@ export function ClassesTab({
     } catch {
       setActionError('Impossibile modificare la classe. Riprova.');
     } finally {
+      savingRef.current = false;
       setSaving(false);
+    }
+  }
+
+  function handleEditKeyDown(event: KeyboardEvent<HTMLInputElement>, item: ClassesTabItem) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      if (!savingRef.current) cancelEdit();
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      void handleSave(item);
     }
   }
 
@@ -153,17 +183,11 @@ export function ClassesTab({
 
             {classes.map((item) => {
               const count = studentCountByClassId.get(item.id) ?? 0;
-              const editFormId = `edit-class-${item.id}`;
               return (
                 <tr key={item.id} className={styles.row}>
                   <td className={styles.td}>
                     {editId === item.id ? (
                       <>
-                        <form
-                          id={editFormId}
-                          aria-label={`Modifica classe ${item.name}`}
-                          onSubmit={(e) => void handleSave(e, item)}
-                        />
                         <label
                           className={styles.visuallyHidden}
                           htmlFor={`edit-class-name-${item.id}`}
@@ -172,10 +196,12 @@ export function ClassesTab({
                         </label>
                         <input
                           id={`edit-class-name-${item.id}`}
-                          form={editFormId}
+                          ref={editInputRef}
                           className={styles.input}
                           value={editName}
+                          disabled={saving}
                           onChange={(e) => setEditName(e.target.value)}
+                          onKeyDown={(e) => handleEditKeyDown(e, item)}
                         />
                       </>
                     ) : (
@@ -187,10 +213,12 @@ export function ClassesTab({
                     {editId === item.id ? (
                       <div className={styles.actions}>
                         <button
-                          type="submit"
-                          form={editFormId}
+                          type="button"
                           className="btn-success"
-                          disabled={saving || !editName.trim()}
+                          disabled={
+                            saving || !editName.trim() || editName.trim() === item.name.trim()
+                          }
+                          onClick={() => void handleSave(item)}
                         >
                           {saving ? 'Salvataggio…' : 'Salva'}
                         </button>
@@ -224,7 +252,7 @@ export function ClassesTab({
                           className={styles.iconButton}
                           aria-label={`Modifica classe ${item.name}`}
                           title="Modifica classe"
-                          onClick={() => startEdit(item)}
+                          onClick={(event) => startEdit(item, event.currentTarget)}
                         >
                           <span aria-hidden="true">✏️</span>
                         </button>
