@@ -30,7 +30,18 @@ export interface ProviderUsage {
  * pre-invocazione (costo zero) da invocazione incerta (settlement conservativo).
  */
 export type ContentProviderOutcome =
-  | { status: 'ok'; output: unknown; usage: ProviderUsage | null; metered: boolean }
+  | {
+      status: 'ok';
+      output: unknown;
+      usage: ProviderUsage | null;
+      metered: boolean;
+      /**
+       * `true` se un tentativo precedente (poi ritentato con successo) poteva aver
+       * generato costo: il consumo totale non è conoscibile ⇒ settlement
+       * conservativo a valle, `actualCost` non presentato come reale.
+       */
+      priorBillingRisk: boolean;
+    }
   | { status: 'error'; phase: 'pre_invocation' | 'invocation_unknown' };
 
 export interface ContentProvider {
@@ -74,6 +85,7 @@ class MockContentProvider implements ContentProvider {
         output: { questions },
         usage: { inputTokens: 0, outputTokens: 0 },
         metered: false,
+        priorBillingRisk: false,
       };
     }
     return {
@@ -81,6 +93,7 @@ class MockContentProvider implements ContentProvider {
       output: { body: `## ${request.titolo ?? 'Lezione'}\n\nBozza generata (mock).` },
       usage: { inputTokens: 0, outputTokens: 0 },
       metered: false,
+      priorBillingRisk: false,
     };
   }
 }
@@ -117,7 +130,13 @@ class OpenAiContentProvider implements ContentProvider {
       // Output non-JSON: la validazione a valle lo rifiuta come provider_invalid_output.
       parsed = null;
     }
-    return { status: 'ok', output: parsed, usage: outcome.usage, metered: true };
+    return {
+      status: 'ok',
+      output: parsed,
+      usage: outcome.usage,
+      metered: true,
+      priorBillingRisk: outcome.priorBillingRisk,
+    };
   }
 }
 
@@ -150,4 +169,28 @@ export function createContentProvider(config: CreateContentProviderConfig): Cont
     throw new AiContentError('provider_config_invalid', 'Provider OpenAI non configurato.');
   }
   return new OpenAiContentProvider(transport, config.runnerDeps);
+}
+
+/**
+ * Wiring **concreto** del provider per le porte (AIGEN-01-REVIEW-FIX-2 §1).
+ * `withProvider=false` (preview) ⇒ **nessuna** costruzione, `null`, mai un accesso
+ * al secret. `withProvider=true` (generate) ⇒ costruzione **eager** prima di
+ * reserve/lease/rete: in mode `openai` senza secret/transport lancia
+ * `provider_config_invalid`. `disabled` ⇒ `null` (il gate a monte ha già emesso
+ * `feature_disabled`).
+ */
+export function selectContentProvider(params: {
+  mode: ContentProviderMode;
+  withProvider: boolean;
+  openAiApiKey?: string | undefined;
+  transport?: OpenAiTransport;
+  runnerDeps?: StructuredRunnerDeps;
+}): ContentProvider | null {
+  if (!params.withProvider || params.mode === 'disabled') return null;
+  return createContentProvider({
+    mode: params.mode,
+    openAiApiKey: params.openAiApiKey,
+    ...(params.transport ? { transport: params.transport } : {}),
+    ...(params.runnerDeps ? { runnerDeps: params.runnerDeps } : {}),
+  });
 }

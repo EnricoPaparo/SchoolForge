@@ -11,7 +11,7 @@
  */
 
 import { Timestamp } from 'firebase-admin/firestore';
-import { AI_CONTENT_CONTRACT_VERSION } from './aiContentCore.js';
+import { AI_CONTENT_CONTRACT_VERSION, AI_CONTENT_LIMITS, utf8ByteLength } from './aiContentCore.js';
 import type { StoredAiContentRun } from './aiContentEngine.js';
 
 const RUN_KINDS = new Set(['pool', 'lesson']);
@@ -67,6 +67,20 @@ function tsToMillis(v: unknown): number | null {
  * (completed richiede output oggetto non nullo). Legacy/malformato/incoerente ⇒
  * `null`.
  */
+function isCoherentCompletedOutput(kind: StoredAiContentRun['kind'], output: unknown): boolean {
+  if (typeof output !== 'object' || output === null || Array.isArray(output)) return false;
+  const o = output as Record<string, unknown>;
+  if (kind === 'lesson') {
+    if ('questions' in o) return false;
+    const body = o.body;
+    if (typeof body !== 'string' || body.trim().length === 0) return false;
+    return utf8ByteLength(body) <= AI_CONTENT_LIMITS.MAX_LESSON_OUTPUT_BYTES;
+  }
+  // kind === 'pool'
+  if ('body' in o) return false;
+  return Array.isArray(o.questions) && o.questions.length > 0;
+}
+
 export function parseStoredRunDocument(data: unknown): StoredAiContentRun | null {
   if (typeof data !== 'object' || data === null) return null;
   const d = data as Record<string, unknown>;
@@ -103,12 +117,15 @@ export function parseStoredRunDocument(data: unknown): StoredAiContentRun | null
     return null;
   }
   const status = d.status as StoredAiContentRun['status'];
+  const kind = d.kind as StoredAiContentRun['kind'];
   const output = d.output ?? null;
-  // Coerenza output↔stato: completed richiede output oggetto non nullo.
-  if (status === 'completed' && (output === null || typeof output !== 'object')) return null;
+  // Coerenza output↔stato↔kind (AIGEN-01-REVIEW-FIX-2 §5): un run `completed` deve
+  // avere un output **chiuso e coerente col kind**, altrimenti è rifiutato (mai
+  // replay di output non validato). `running`/`failed` non vincolano l'output.
+  if (status === 'completed' && !isCoherentCompletedOutput(kind, output)) return null;
   return {
     contractVersion: AI_CONTENT_CONTRACT_VERSION,
-    kind: d.kind as StoredAiContentRun['kind'],
+    kind,
     status,
     inputHash: d.inputHash,
     modelProfile: d.modelProfile,

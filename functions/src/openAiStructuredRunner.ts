@@ -36,6 +36,13 @@ export type StructuredRunOutcome =
       status: 'ok';
       outputText: string;
       usage: { inputTokens: number; outputTokens: number } | null;
+      /**
+       * `true` se un tentativo **precedente** (poi ritentato con successo) poteva
+       * aver generato costo (`billingRisk`): il consumo totale non è conoscibile,
+       * quindi l'usage dell'ultimo tentativo **non** va presentato come costo reale
+       * complessivo (AIGEN-01-REVIEW-FIX-2 §2).
+       */
+      priorBillingRisk: boolean;
     }
   /** La richiesta **certamente non** ha raggiunto il provider: nessun costo. */
   | { status: 'pre_invocation' }
@@ -84,6 +91,7 @@ export async function runStructuredCall(
         usage: response.usage
           ? { inputTokens: response.usage.inputTokens, outputTokens: response.usage.outputTokens }
           : null,
+        priorBillingRisk: anyBillingRisk,
       };
     } catch (error) {
       const transportError = normalizeTransportError(error);

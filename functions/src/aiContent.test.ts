@@ -20,7 +20,10 @@ import {
   reservationInputTokenUpperBound,
   resolveMaxOutputTokens,
 } from './aiContentPayload.js';
-import { createContentProvider } from './aiContentProvider.js';
+import { createContentProvider, selectContentProvider } from './aiContentProvider.js';
+import { canMarkProviderPending } from './aiContentPending.js';
+import { runStructuredCall } from './openAiStructuredRunner.js';
+import { OpenAiTransportError } from './openAiGrader.js';
 import { parseStoredRunDocument, serializeRun } from './aiContentRunDoc.js';
 import {
   AI_CONTENT_LEASE_TTL_MS,
@@ -614,6 +617,7 @@ const okOutcome = {
   },
   usage: { inputTokens: 1000, outputTokens: 400 },
   metered: true,
+  priorBillingRisk: false,
 };
 
 function makePorts(over: Partial<AiContentPorts> = {}): AiContentPorts {
@@ -805,6 +809,7 @@ describe('generateContent', () => {
             output: okOutcome.output,
             usage: null,
             metered: true,
+            priorBillingRisk: false,
           }),
           failRun,
           finalizeRun,
@@ -828,6 +833,7 @@ describe('generateContent', () => {
           output: okOutcome.output,
           usage: { inputTokens: 0, outputTokens: 0 },
           metered: false,
+          priorBillingRisk: false,
         }),
         finalizeRun,
       }),
@@ -849,6 +855,7 @@ describe('generateContent', () => {
             output: { questions: [] },
             usage: { inputTokens: 100, outputTokens: 50 },
             metered: true,
+            priorBillingRisk: false,
           }),
           failRun,
           finalizeRun,
@@ -880,5 +887,281 @@ describe('generateContent', () => {
       ),
     ).rejects.toMatchObject({ code: 'feature_disabled' });
     expect(reserveRunAndBudget).not.toHaveBeenCalled();
+  });
+});
+
+// ─── AIGEN-01-REVIEW-FIX-2 ───────────────────────────────────────────────────
+
+const VALID_POOL_JSON = JSON.stringify({
+  questions: [
+    { tipo: 'aperta', testo: 'Spiega TCP', difficolta: 3, soluzione: 'ok' },
+    {
+      tipo: 'chiusa_singola',
+      testo: 'Quale?',
+      difficolta: 2,
+      opzioni: ['TCP', 'UDP'],
+      soluzione: [0],
+    },
+  ],
+});
+
+describe('§1 selectContentProvider (concrete wiring)', () => {
+  it('preview (withProvider=false) never constructs a provider, even openai without secret', () => {
+    expect(
+      selectContentProvider({ mode: 'openai', withProvider: false, openAiApiKey: undefined }),
+    ).toBeNull();
+    expect(selectContentProvider({ mode: 'mock', withProvider: false })).toBeNull();
+  });
+  it('generate openai without secret → provider_config_invalid (before network)', () => {
+    try {
+      selectContentProvider({ mode: 'openai', withProvider: true, openAiApiKey: undefined });
+      throw new Error('should throw');
+    } catch (e) {
+      expect((e as AiContentError).code).toBe('provider_config_invalid');
+    }
+  });
+  it('generate openai with a transport builds a real provider', () => {
+    const provider = selectContentProvider({
+      mode: 'openai',
+      withProvider: true,
+      transport: jsonTransport(VALID_POOL_JSON, { inputTokens: 900, outputTokens: 200 }),
+    });
+    expect(provider).not.toBeNull();
+  });
+});
+
+describe('§2 retry success after a billing-risk attempt', () => {
+  it('runStructuredCall reports priorBillingRisk on a retried success', async () => {
+    let calls = 0;
+    const transport: OpenAiTransport = {
+      async send() {
+        calls++;
+        if (calls === 1) {
+          throw new OpenAiTransportError('5xx', {
+            transient: true,
+            billingRisk: true,
+            status: 500,
+          });
+        }
+        return {
+          outputText: VALID_POOL_JSON,
+          usage: { inputTokens: 900, outputTokens: 200, totalTokens: 1100 },
+        };
+      },
+    };
+    const outcome = await runStructuredCall(
+      transport,
+      buildContentStructuredRequest(genReq, OPENAI_RUNTIME_LUNA_MODEL),
+      {
+        policy: { ...DEFAULT_OPENAI_RETRY_POLICY, maxRetries: 1 },
+        sleep: async () => {},
+      },
+    );
+    expect(outcome.status).toBe('ok');
+    if (outcome.status === 'ok') expect(outcome.priorBillingRisk).toBe(true);
+    expect(calls).toBe(2);
+  });
+
+  it('provider propagates priorBillingRisk', async () => {
+    let calls = 0;
+    const transport: OpenAiTransport = {
+      async send() {
+        calls++;
+        if (calls === 1) {
+          throw new OpenAiTransportError('5xx', {
+            transient: true,
+            billingRisk: true,
+            status: 500,
+          });
+        }
+        return {
+          outputText: VALID_POOL_JSON,
+          usage: { inputTokens: 900, outputTokens: 200, totalTokens: 1100 },
+        };
+      },
+    };
+    const provider = createContentProvider({
+      mode: 'openai',
+      transport,
+      runnerDeps: {
+        policy: { ...DEFAULT_OPENAI_RETRY_POLICY, maxRetries: 1 },
+        sleep: async () => {},
+      },
+    });
+    const outcome = await provider.generate(genReq, OPENAI_RUNTIME_LUNA_MODEL);
+    expect(outcome).toMatchObject({ status: 'ok', metered: true, priorBillingRisk: true });
+  });
+
+  it('engine: retry-success after billing risk → completed, actual null, settlement = reservation', async () => {
+    const finalizeRun = vi.fn(async () => 'finalized' as const);
+    const res = await generateContent(
+      genReq,
+      ctx,
+      makePorts({
+        callProvider: async () => ({
+          status: 'ok',
+          output: okOutcome.output,
+          usage: { inputTokens: 900, outputTokens: 200 },
+          metered: true,
+          priorBillingRisk: true,
+        }),
+        finalizeRun,
+      }),
+    );
+    expect(res.status).toBe('completed');
+    expect(res.actualCostMicroUsd).toBeNull();
+    const arg = finalizeRun.mock.calls[0]![0] as {
+      actualCostMicroUsd: number | null;
+      settledMicroUsd: number;
+    };
+    expect(arg.actualCostMicroUsd).toBeNull();
+    expect(arg.settledMicroUsd).toBeGreaterThan(0); // reservation cap, mai sotto-contabilizzare
+  });
+
+  it('engine: invalid output after billing risk → conservative settlement, no completed', async () => {
+    const failRun = vi.fn(async () => undefined);
+    const finalizeRun = vi.fn(async () => 'finalized' as const);
+    await expect(
+      generateContent(
+        genReq,
+        ctx,
+        makePorts({
+          callProvider: async () => ({
+            status: 'ok',
+            output: { questions: [] },
+            usage: { inputTokens: 900, outputTokens: 200 },
+            metered: true,
+            priorBillingRisk: true,
+          }),
+          failRun,
+          finalizeRun,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'provider_invalid_output' });
+    expect(finalizeRun).not.toHaveBeenCalled();
+    const arg = failRun.mock.calls[0]![0] as {
+      actualCostMicroUsd: number | null;
+      settledMicroUsd: number;
+    };
+    expect(arg.actualCostMicroUsd).toBeNull();
+    expect(arg.settledMicroUsd).toBeGreaterThan(0);
+  });
+});
+
+describe('§3 canMarkProviderPending (fail-closed preconditions)', () => {
+  const RUN: StoredAiContentRun = { ...SAMPLE_RUN, reservedCostMicroUsd: 300 };
+  const OK_RES = { microUsd: 300, expiresAtMs: 2_000_000, status: 'reserved' as const };
+  const now = 1_000_000;
+  it('true only when run+lease+reservation all coherent', () => {
+    expect(
+      canMarkProviderPending({ run: RUN, reservation: OK_RES, executionId: 'exec-1', nowMs: now }),
+    ).toBe(true);
+  });
+  it('false for missing / pending / expired / mismatched-amount reservation', () => {
+    expect(
+      canMarkProviderPending({
+        run: RUN,
+        reservation: undefined,
+        executionId: 'exec-1',
+        nowMs: now,
+      }),
+    ).toBe(false);
+    expect(
+      canMarkProviderPending({
+        run: RUN,
+        reservation: { ...OK_RES, status: 'pending' },
+        executionId: 'exec-1',
+        nowMs: now,
+      }),
+    ).toBe(false);
+    expect(
+      canMarkProviderPending({
+        run: RUN,
+        reservation: { ...OK_RES, expiresAtMs: 500_000 },
+        executionId: 'exec-1',
+        nowMs: now,
+      }),
+    ).toBe(false);
+    expect(
+      canMarkProviderPending({
+        run: RUN,
+        reservation: { ...OK_RES, microUsd: 299 },
+        executionId: 'exec-1',
+        nowMs: now,
+      }),
+    ).toBe(false);
+  });
+  it('false for null / wrong-execution / non-running / expired-lease run', () => {
+    expect(
+      canMarkProviderPending({ run: null, reservation: OK_RES, executionId: 'exec-1', nowMs: now }),
+    ).toBe(false);
+    expect(
+      canMarkProviderPending({ run: RUN, reservation: OK_RES, executionId: 'other', nowMs: now }),
+    ).toBe(false);
+    expect(
+      canMarkProviderPending({
+        run: { ...RUN, status: 'completed' },
+        reservation: OK_RES,
+        executionId: 'exec-1',
+        nowMs: now,
+      }),
+    ).toBe(false);
+    expect(
+      canMarkProviderPending({
+        run: RUN,
+        reservation: OK_RES,
+        executionId: 'exec-1',
+        nowMs: 9_000_000,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('§5 parseStoredRunDocument output↔kind coherence', () => {
+  it('accepts a coherent completed pool / lesson', () => {
+    const pool = serializeRun({
+      ...SAMPLE_RUN,
+      kind: 'pool',
+      status: 'completed',
+      output: { questions: [{ tipo: 'aperta' }] },
+    });
+    expect(parseStoredRunDocument(pool)).not.toBeNull();
+    const lesson = serializeRun({
+      ...SAMPLE_RUN,
+      kind: 'lesson',
+      status: 'completed',
+      output: { body: '## Reti' },
+    });
+    expect(parseStoredRunDocument(lesson)).not.toBeNull();
+  });
+  it('rejects swapped pool/lesson outputs and empty/malformed completed output', () => {
+    const poolWithBody = serializeRun({
+      ...SAMPLE_RUN,
+      kind: 'pool',
+      status: 'completed',
+      output: { body: 'x' },
+    });
+    expect(parseStoredRunDocument(poolWithBody)).toBeNull();
+    const lessonWithQuestions = serializeRun({
+      ...SAMPLE_RUN,
+      kind: 'lesson',
+      status: 'completed',
+      output: { questions: [] },
+    });
+    expect(parseStoredRunDocument(lessonWithQuestions)).toBeNull();
+    const emptyPool = serializeRun({
+      ...SAMPLE_RUN,
+      kind: 'pool',
+      status: 'completed',
+      output: { questions: [] },
+    });
+    expect(parseStoredRunDocument(emptyPool)).toBeNull();
+    const emptyLessonBody = serializeRun({
+      ...SAMPLE_RUN,
+      kind: 'lesson',
+      status: 'completed',
+      output: { body: '   ' },
+    });
+    expect(parseStoredRunDocument(emptyLessonBody)).toBeNull();
   });
 });

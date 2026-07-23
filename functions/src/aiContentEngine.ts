@@ -149,7 +149,8 @@ export interface AiContentPorts {
     output: unknown;
     actualInputTokens: number | null;
     actualOutputTokens: number | null;
-    actualCostMicroUsd: number;
+    /** Costo effettivo noto, o `null` se non conoscibile (priorBillingRisk). */
+    actualCostMicroUsd: number | null;
     settledMicroUsd: number;
     nowMs: number;
   }): Promise<'finalized' | 'lost_lease'>;
@@ -406,19 +407,32 @@ export async function generateContent(
     );
   }
 
-  // Costo effettivo dall'usage (mai inventato).
+  // Costo effettivo dall'usage (mai inventato). `priorBillingRisk` (un tentativo
+  // precedente incerto poi ritentato con successo) rende il **totale** non
+  // conoscibile: si salva il contenuto valido ma `actualCost` resta `null` e il
+  // settlement è il tetto conservativo (mai sotto-contabilizzare).
+  const priorBillingRisk = providerOutcome.metered && providerOutcome.priorBillingRisk;
   let actualInputTokens: number | null = null;
   let actualOutputTokens: number | null = null;
-  let actualCost: number;
+  let actualCost: number | null;
+  let settledCost: number;
   if (!providerOutcome.metered) {
     // mock → costo zero autorevole.
     actualInputTokens = 0;
     actualOutputTokens = 0;
     actualCost = 0;
+    settledCost = 0;
+  } else if (priorBillingRisk) {
+    // Tentativo incerto seguito da retry riuscito: costo totale ignoto.
+    actualInputTokens = null;
+    actualOutputTokens = null;
+    actualCost = null;
+    settledCost = reservationCap;
   } else {
     const usage = normalizeUsageActual(providerOutcome.usage ?? undefined);
     if (usage === null) {
-      // openai completed senza usage valido: fail-closed + settlement conservativo.
+      // openai completed senza usage valido (nessun tentativo incerto prima):
+      // fail-closed + settlement conservativo.
       await ports.failRun({
         opaqueRunId,
         budgetReservationKey,
@@ -443,10 +457,11 @@ export async function generateContent(
         resolved.priceListVersion,
         resolved.model,
       ) ?? 0;
+    settledCost = actualCost;
   }
 
-  // 12. validazione output (fail-closed, rifiuto integrale). Costo effettivo già
-  // fatturato → contabilizzato, ma nessun output completed persistito.
+  // 12. validazione output (fail-closed, rifiuto integrale). Costo già fatturato →
+  // contabilizzato (conservativo se priorBillingRisk), nessun output completed.
   let output: unknown;
   try {
     output =
@@ -461,7 +476,7 @@ export async function generateContent(
       actualInputTokens,
       actualOutputTokens,
       actualCostMicroUsd: actualCost,
-      settledMicroUsd: actualCost,
+      settledMicroUsd: settledCost,
       nowMs: ctx.nowMs,
     });
     if (e instanceof AiContentError) throw e;
@@ -477,14 +492,15 @@ export async function generateContent(
       actualInputTokens,
       actualOutputTokens,
       actualCostMicroUsd: actualCost,
-      settledMicroUsd: actualCost,
+      settledMicroUsd: settledCost,
       nowMs: ctx.nowMs,
     });
     throw new AiContentError('output_too_large', 'Il risultato supera il limite di dimensione.');
   }
 
-  // 14. persistenza + riconciliazione al costo effettivo + finalizzazione (solo
-  // se la lease è ancora mia).
+  // 14. persistenza + riconciliazione + finalizzazione (solo se la lease è ancora
+  // mia). Con priorBillingRisk: contenuto salvato, `actualCost` null, settlement
+  // al tetto conservativo.
   const finalized = await ports.finalizeRun({
     opaqueRunId,
     budgetReservationKey,
@@ -493,7 +509,7 @@ export async function generateContent(
     actualInputTokens,
     actualOutputTokens,
     actualCostMicroUsd: actualCost,
-    settledMicroUsd: actualCost,
+    settledMicroUsd: settledCost,
     nowMs: ctx.nowMs,
   });
   if (finalized === 'lost_lease') {

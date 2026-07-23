@@ -45,7 +45,8 @@ import {
   type AiContentPorts,
   type ReserveOutcome,
 } from './aiContentEngine.js';
-import { createContentProvider } from './aiContentProvider.js';
+import { selectContentProvider } from './aiContentProvider.js';
+import { canMarkProviderPending } from './aiContentPending.js';
 import { parseStoredRunDocument, serializeRun } from './aiContentRunDoc.js';
 import { DEFAULT_OPENAI_RETRY_POLICY } from './openAiGrader.js';
 import type { RetryPolicy } from './openAiRetryPolicy.js';
@@ -158,14 +159,19 @@ function createPorts(
   config: AiRuntimeConfig | null,
   mode: AiContentMode,
   secret: string | undefined,
+  withProvider: boolean,
 ): AiContentPorts {
   const policy = retryPolicyFromConfig(config);
-  // Il provider è costruito **una sola volta**, dopo mode/secret: in mode openai
-  // senza secret/transport → provider_config_invalid **prima** della rete.
-  const provider =
-    mode === 'disabled'
-      ? null
-      : createContentProvider({ mode, openAiApiKey: secret, runnerDeps: { policy } });
+  // Il provider è costruito **solo** per il percorso generate (`withProvider`), mai
+  // per la preview: `selectContentProvider` ritorna `null` in preview e non tocca
+  // il secret. In generate mode openai senza secret/transport →
+  // provider_config_invalid **prima** di reserve/lease/rete.
+  const provider = selectContentProvider({
+    mode,
+    withProvider,
+    openAiApiKey: secret,
+    runnerDeps: { policy },
+  });
 
   return {
     async loadRuntimeConfig() {
@@ -234,7 +240,6 @@ function createPorts(
         const runSnap = await tx.get(runRef);
         if (!runSnap.exists) return false;
         const run = parseStoredRunDocument(runSnap.data());
-        if (!run || run.leaseExecutionId !== params.executionId) return false;
         const ledgerSnap = await tx.get(ledgerRef);
         const state = readLedgerState(
           ledgerSnap,
@@ -242,6 +247,19 @@ function createPorts(
           config?.monthlyBudgetMicroUsd ?? 0,
           config?.dailyBudgetMicroUsd ?? 0,
         );
+        // Precondizioni **fail-closed** (helper puro): run running+lease+executionId
+        // e prenotazione esistente, `reserved`, di importo coerente. Qualunque
+        // incoerenza ⇒ nessuna transizione, `false` → il provider non è chiamato.
+        if (
+          !canMarkProviderPending({
+            run,
+            reservation: state.reservations[params.budgetReservationKey],
+            executionId: params.executionId,
+            nowMs: params.nowMs,
+          })
+        ) {
+          return false;
+        }
         writeLedgerState(
           tx,
           ledgerRef,
@@ -387,14 +405,16 @@ export const aiContentPreview = onCall(async (request) => {
   const database = db();
   const mode = contentMode();
   try {
+    // Ordine contratto: auth → owner → mode/kill switch → payload. Un anonimo
+    // riceve `unauthenticated` prima di `feature_disabled`.
+    const ownerUid = await requireOwner(request, database);
     if (mode === 'disabled') {
       throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
     }
-    const ownerUid = await requireOwner(request, database);
     const validated = validateAiContentRequest(request.data);
     const config = await loadRuntimeConfig(database);
-    // La preview non costruisce il provider né legge il secret: ports senza secret.
-    const ports = createPorts(database, config, mode, undefined);
+    // La preview non costruisce il provider né legge il secret (withProvider=false).
+    const ports = createPorts(database, config, mode, undefined, false);
     return await previewContent(
       validated,
       {
@@ -418,15 +438,16 @@ export const aiContentGenerate = onCall({ secrets: [OPENAI_API_KEY] }, async (re
   const database = db();
   const mode = contentMode();
   try {
+    // Ordine contratto: auth → owner → mode/kill switch → payload.
+    const ownerUid = await requireOwner(request, database);
     if (mode === 'disabled') {
       throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
     }
-    const ownerUid = await requireOwner(request, database);
     const validated = validateAiContentRequest(request.data);
     const config = await loadRuntimeConfig(database);
     // Il secret è letto **solo** qui (percorso generate) e **solo** in mode openai.
     const secret = mode === 'openai' ? readOpenAiSecret() : undefined;
-    const ports = createPorts(database, config, mode, secret);
+    const ports = createPorts(database, config, mode, secret, true);
     return await generateContent(
       validated,
       {
