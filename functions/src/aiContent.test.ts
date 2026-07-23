@@ -8,7 +8,6 @@ import {
   type AiContentRequest,
 } from './aiContentCore.js';
 import { validateLessonProposal, validatePoolProposal } from './aiContentValidation.js';
-import { estimateContentCost } from './aiContentCost.js';
 import { buildPoolPrompt } from './aiContentPrompt.js';
 import {
   generateContent,

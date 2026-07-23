@@ -348,6 +348,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // --- aiContentRuns/{opaqueRunId} (AIGEN-01) ---
+    // Run tecnici server-only della generazione IA di pool e lezioni. Contengono
+    // output generato potenzialmente sensibile: negati a owner, studente e
+    // anonimo. Solo l'Admin SDK (Cloud Functions) vi accede; il replay avviene
+    // esclusivamente tramite callable dopo nuova autorizzazione. `expireAt` è
+    // scritto dal codice; la TTL policy va configurata al rollout (non dal codice).
+    match /aiContentRuns/{document=**} {
+      allow read, write: if false;
+    }
+
     // --- teacherAiPreferences/{ownerUid} (TWU-02) ---
     // Preferenze predefinite della correzione IA del docente: un solo documento,
     // id == ownerUid. Leggibile e scrivibile SOLO dall'owner (mai da uno studente
