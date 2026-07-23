@@ -1,26 +1,45 @@
 /**
  * AIGEN-01 — provider di generazione contenuti. Selezione **esplicita** mock vs
  * OpenAI (nessun fallback silenzioso). Il percorso reale usa la **Responses API**
- * con **Structured Output**; resta disabilitato dal kill switch finché Rules/TTL/
- * smoke DEV non sono verificati e finché il secret non è valorizzato.
+ * con **Structured Output** tramite il transport già collaudato dalla correzione
+ * IA (`OpenAiTransport`) e il runner condiviso (`runStructuredCall`): stessa
+ * policy di retry, stesso timeout, stessa classificazione errori. Nessun nuovo
+ * client HTTP, nessuna reimplementazione del backoff.
  *
- * Il mock è deterministico, **a costo zero e senza rete**: serve allo smoke DEV e
- * ai test. Nessuna API key, chiamata reale o costo in questa PR.
+ * Il mock è deterministico, **a costo zero e senza rete**, con usage esplicito a
+ * zero. Nessuna API key, chiamata reale o costo nei test.
  */
 
-import { buildLessonPrompt, buildPoolPrompt } from './aiContentPrompt.js';
+import { buildContentStructuredRequest } from './aiContentPayload.js';
 import { AiContentError, type AiContentRequest } from './aiContentCore.js';
-import type { ProviderOutput } from './aiContentEngine.js';
+import { createOpenAiSdkTransport, type OpenAiTransport } from './openAiGrader.js';
+import { runStructuredCall, type StructuredRunnerDeps } from './openAiStructuredRunner.js';
 
 export type ContentProviderMode = 'mock' | 'openai' | 'disabled';
 
+/** Usage grezzo del provider (interi non negativi attesi; validati a valle). */
+export interface ProviderUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+/**
+ * Esito **tipizzato** del provider (AIGEN-01-REVIEW-FIX §6). `metered=false`
+ * (mock) ⇒ costo zero autorevole; `metered=true` (openai) ⇒ costo dall'usage
+ * reale, e usage assente/incoerente è fail-closed a valle. Gli errori distinguono
+ * pre-invocazione (costo zero) da invocazione incerta (settlement conservativo).
+ */
+export type ContentProviderOutcome =
+  | { status: 'ok'; output: unknown; usage: ProviderUsage | null; metered: boolean }
+  | { status: 'error'; phase: 'pre_invocation' | 'invocation_unknown' };
+
 export interface ContentProvider {
-  generate(request: AiContentRequest, model: string): Promise<ProviderOutput>;
+  generate(request: AiContentRequest, model: string): Promise<ContentProviderOutcome>;
 }
 
 /** Proposta mock deterministica, strutturalmente valida per lo schema richiesto. */
 class MockContentProvider implements ContentProvider {
-  async generate(request: AiContentRequest): Promise<ProviderOutput> {
+  async generate(request: AiContentRequest): Promise<ContentProviderOutcome> {
     if (request.kind === 'pool') {
       const questions: unknown[] = [];
       for (let i = 0; i < request.counts.aperta; i++) {
@@ -49,11 +68,19 @@ class MockContentProvider implements ContentProvider {
           soluzione: [0, 1],
         });
       }
-      return { output: { questions }, usage: null };
+      // Usage esplicitamente zero: il mock non genera costo, mai un costo inventato.
+      return {
+        status: 'ok',
+        output: { questions },
+        usage: { inputTokens: 0, outputTokens: 0 },
+        metered: false,
+      };
     }
     return {
+      status: 'ok',
       output: { body: `## ${request.titolo ?? 'Lezione'}\n\nBozza generata (mock).` },
-      usage: null,
+      usage: { inputTokens: 0, outputTokens: 0 },
+      metered: false,
     };
   }
 }
@@ -66,79 +93,61 @@ function clampDifficulty(level: 'base' | 'balanced' | 'advanced'): number {
 
 /**
  * Provider reale OpenAI (Responses API + Structured Output). Costruito solo su
- * richiesta esplicita; richiede model + apiKey. **Non** invocato dai test/CI.
- * Il transport concreto è iniettabile per non accoppiare i test alla rete.
+ * richiesta esplicita; richiede un transport valido. Il transport è iniettabile
+ * per non accoppiare i test alla rete. **Non** invocato dai test/CI con rete reale.
  */
-export interface OpenAiResponsesTransport {
-  createStructured(params: {
-    model: string;
-    system: string;
-    user: string;
-    schemaName: string;
-    schema: Record<string, unknown>;
-  }): Promise<{ parsed: unknown; usage: { inputTokens?: number; outputTokens?: number } | null }>;
-}
-
 class OpenAiContentProvider implements ContentProvider {
-  constructor(private readonly transport: OpenAiResponsesTransport) {}
-  async generate(request: AiContentRequest, model: string): Promise<ProviderOutput> {
-    const prompt = request.kind === 'pool' ? buildPoolPrompt(request) : buildLessonPrompt(request);
-    const res = await this.transport.createStructured({
-      model,
-      system: prompt.system,
-      user: prompt.user,
-      schemaName: request.kind === 'pool' ? 'PoolProposal' : 'LessonProposal',
-      schema: request.kind === 'pool' ? POOL_OUTPUT_SCHEMA : LESSON_OUTPUT_SCHEMA,
-    });
-    return { output: res.parsed, usage: res.usage };
+  constructor(
+    private readonly transport: OpenAiTransport,
+    private readonly deps: StructuredRunnerDeps = {},
+  ) {}
+
+  async generate(request: AiContentRequest, model: string): Promise<ContentProviderOutcome> {
+    // Payload **esatto**: lo stesso builder usato da stima e prenotazione, così il
+    // `max_output_tokens` prenotato è quello trasmesso.
+    const httpRequest = buildContentStructuredRequest(request, model);
+    const outcome = await runStructuredCall(this.transport, httpRequest, this.deps);
+    if (outcome.status !== 'ok') {
+      return { status: 'error', phase: outcome.status };
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(outcome.outputText);
+    } catch {
+      // Output non-JSON: la validazione a valle lo rifiuta come provider_invalid_output.
+      parsed = null;
+    }
+    return { status: 'ok', output: parsed, usage: outcome.usage, metered: true };
   }
 }
 
-/** JSON Schema (Structured Output) — proposta pool senza ID tecnici. */
-export const POOL_OUTPUT_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['questions'],
-  properties: {
-    questions: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['tipo', 'testo', 'difficolta'],
-        properties: {
-          tipo: { type: 'string', enum: ['aperta', 'chiusa_singola', 'chiusa_multipla'] },
-          testo: { type: 'string' },
-          difficolta: { type: 'integer', minimum: 1, maximum: 5 },
-          soluzione: {},
-          opzioni: { type: 'array', items: { type: 'string' } },
-        },
-      },
-    },
-  },
-};
-
-/** JSON Schema — solo corpo Markdown. */
-export const LESSON_OUTPUT_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['body'],
-  properties: { body: { type: 'string' } },
-};
-
 export interface CreateContentProviderConfig {
   mode: ContentProviderMode;
-  transport?: OpenAiResponsesTransport;
+  /** API key OpenAI, letta **solo** sul percorso generate in mode openai. */
+  openAiApiKey?: string | undefined;
+  /** Transport iniettabile (test): sostituisce l'SDK reale. */
+  transport?: OpenAiTransport;
+  /** Deps del runner (policy/sleep/random) per test deterministici. */
+  runnerDeps?: StructuredRunnerDeps;
 }
 
-/** Selezione esplicita del provider — nessun fallback silenzioso. */
+/**
+ * Selezione esplicita del provider — nessun fallback silenzioso. In mode `openai`
+ * senza transport né secret ⇒ `provider_config_invalid` **prima della rete**.
+ */
 export function createContentProvider(config: CreateContentProviderConfig): ContentProvider {
   if (config.mode === 'disabled') {
     throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
   }
   if (config.mode === 'mock') return new MockContentProvider();
-  if (!config.transport) {
+  // mode === 'openai'
+  const transport =
+    config.transport ??
+    (config.openAiApiKey && config.openAiApiKey.trim().length > 0
+      ? createOpenAiSdkTransport(config.openAiApiKey.trim())
+      : undefined);
+  if (!transport) {
     throw new AiContentError('provider_config_invalid', 'Provider OpenAI non configurato.');
   }
-  return new OpenAiContentProvider(config.transport);
+  return new OpenAiContentProvider(transport, config.runnerDeps);
 }

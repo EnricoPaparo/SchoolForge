@@ -1,31 +1,53 @@
 /**
  * AIGEN-01 — motore **puro** della generazione contenuti. Nessun Firestore/rete
  * qui: le operazioni con effetti sono **porte iniettate** (`AiContentPorts`), così
- * l'ordine fail-closed, l'idempotenza/replay, la lease e l'integrazione budget
- * sono testabili senza emulatori. La materializzazione `schoolforge-pool/v2`
- * (mapper ID + `parsePool`) NON è qui: è di AIGEN-02, nel web.
+ * l'ordine fail-closed, l'idempotenza/replay, la lease, la macchina
+ * reserved→pending→reconciled e l'integrazione budget sono testabili senza
+ * emulatori. La materializzazione `schoolforge-pool/v2` (mapper ID + `parsePool`)
+ * NON è qui: è di AIGEN-02, nel web.
  */
 
 import {
   AiContentError,
   AI_CONTENT_CONTRACT_VERSION,
   AI_CONTENT_LIMITS,
+  AI_CONTENT_RUN_TTL_MS,
   computeBudgetReservationKey,
   computeInputHash,
   computeOpaqueRunId,
   resolveContentModel,
   utf8ByteLength,
+  type AiContentMode,
   type AiContentRequest,
   type ContentKind,
 } from './aiContentCore.js';
 import { estimateContentCost } from './aiContentCost.js';
 import { validateLessonProposal, validatePoolProposal } from './aiContentValidation.js';
 import { actualCostMicroUsd, normalizeUsageActual } from './aiCorrectionCost.js';
-import { AI_CONTENT_RUN_TTL_MS } from './aiContentCore.js';
 import type { AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
+import type { ContentProviderOutcome } from './aiContentProvider.js';
+import { DEFAULT_OPENAI_RETRY_POLICY, ATTEMPT_HARD_ABORT_MARGIN_MS } from './openAiGrader.js';
+import type { RetryPolicy } from './openAiRetryPolicy.js';
 
-/** Durata lease sul run (ms): deve coprire un tentativo provider + finalizzazione. */
-export const AI_CONTENT_LEASE_TTL_MS = 90_000;
+/**
+ * Durata lease derivata dal **massimo percorso timeout+retry**: per ogni
+ * tentativo il timeout SDK più il margine di hard-abort, più i backoff massimi fra
+ * i retry, più un margine di finalizzazione. Non può scadere durante l'intera
+ * finestra provider (AIGEN-01-REVIEW-FIX §7).
+ */
+export const AI_CONTENT_FINALIZATION_MARGIN_MS = 20_000;
+
+export function computeContentLeaseTtlMs(policy: RetryPolicy): number {
+  const attempts = 1 + Math.max(0, policy.maxRetries);
+  const perAttempt = policy.attemptTimeoutMs + ATTEMPT_HARD_ABORT_MARGIN_MS;
+  const backoffAllowance = Math.max(0, policy.maxRetries) * policy.maxDelayMs;
+  const derived = attempts * perAttempt + backoffAllowance + AI_CONTENT_FINALIZATION_MARGIN_MS;
+  // Tetto conservativo documentato: mai inferiore all'intera finestra provider.
+  return Math.max(derived, 300_000);
+}
+
+/** Lease di default (policy DEV: timeout 60 s, 1 retry) — ≈ 5 minuti. */
+export const AI_CONTENT_LEASE_TTL_MS = computeContentLeaseTtlMs(DEFAULT_OPENAI_RETRY_POLICY);
 
 /** Documento run **privacy-minimal** (nessun UID/testo/prompt/guidance/raw response). */
 export interface StoredAiContentRun {
@@ -41,7 +63,11 @@ export interface StoredAiContentRun {
   actualInputTokens: number | null;
   actualOutputTokens: number | null;
   estimatedCostMicroUsd: number;
+  /** Tetto conservativo prenotato al ledger. */
   reservedCostMicroUsd: number;
+  /** Importo effettivamente contabilizzato (≤ reserved). */
+  settledCostMicroUsd: number | null;
+  /** Costo effettivo noto (null se ignoto → settlement conservativo). */
   actualCostMicroUsd: number | null;
   leaseExecutionId: string;
   leaseExpiresAtMs: number;
@@ -56,6 +82,10 @@ export interface AiContentContext {
   authenticatedOwnerUid: string;
   nowMs: number;
   executionId: string;
+  /** Modalità server-side risolta (AI_CONTENT_MODE). */
+  mode: AiContentMode;
+  /** Durata lease (ms), derivata dalla policy retry runtime. */
+  leaseMs: number;
 }
 
 /** Esito della prenotazione run+budget in transazione (idempotente). */
@@ -66,11 +96,6 @@ export type ReserveOutcome =
   | { kind: 'conflict' }
   | { kind: 'budget'; code: 'budget_exceeded' | 'daily_budget_exceeded' | 'budget_unavailable' };
 
-export interface ProviderOutput {
-  output: unknown;
-  usage: { inputTokens?: number; outputTokens?: number; tokens?: number } | null;
-}
-
 /**
  * Porte con effetti. Ogni metodo è una singola operazione mockabile. Il gateway
  * concreto (Admin SDK + provider Responses API) le implementa.
@@ -80,12 +105,13 @@ export interface AiContentPorts {
   loadRuntimeConfig(): Promise<AiRuntimeConfig | null>;
   /** Disponibilità budget in sola lettura (µUSD), per la preview. */
   readAvailableBudgetMicroUsd(): Promise<number | null>;
-  /** Legge il run esistente (per replay/lease). */
+  /** Legge il run esistente (parser fail-closed nel gateway). */
   loadRun(opaqueRunId: string): Promise<StoredAiContentRun | null>;
   /**
-   * Transazione: verifica replay (stesso inputHash completed → replay), lease
-   * (running valida altrui → running; scaduta → takeover), prenota budget e
-   * scrive il run `running` con la lease del chiamante. Input diverso → conflict.
+   * Transazione: replay (stesso inputHash completed → replay), lease (running
+   * valida altrui → running; scaduta → takeover), prenota il budget come
+   * **reserved** (NON pending) e scrive il run `running`. Input diverso → conflict.
+   * Documento tecnico esistente malformato/legacy → conflict (mai replay).
    */
   reserveRunAndBudget(params: {
     opaqueRunId: string;
@@ -96,11 +122,25 @@ export interface AiContentPorts {
     expiresAtMs: number;
     nowMs: number;
   }): Promise<ReserveOutcome>;
-  /** Una sola chiamata provider per tentativo (retry ≤ 1 dentro l'implementazione). */
-  callProvider(params: { request: AiContentRequest; model: string }): Promise<ProviderOutput>;
   /**
-   * Finalizza: persiste output + costo reale e riconcilia il budget in
-   * transazione, solo se la lease appartiene ancora a `executionId`.
+   * Transizione `reserved → pending` **gated dalla lease**, immediatamente prima
+   * dell'invocazione provider. `false` ⇒ lease persa (takeover): il provider NON
+   * va chiamato.
+   */
+  markProviderPending(params: {
+    opaqueRunId: string;
+    budgetReservationKey: string;
+    executionId: string;
+    nowMs: number;
+  }): Promise<boolean>;
+  /** Una sola chiamata provider per operazione (retry interno al provider). */
+  callProvider(params: {
+    request: AiContentRequest;
+    model: string;
+  }): Promise<ContentProviderOutcome>;
+  /**
+   * Finalizza: persiste output + costo reale e riconcilia (reconcile al costo
+   * effettivo) in transazione, solo se la lease appartiene ancora a `executionId`.
    */
   finalizeRun(params: {
     opaqueRunId: string;
@@ -110,14 +150,18 @@ export interface AiContentPorts {
     actualInputTokens: number | null;
     actualOutputTokens: number | null;
     actualCostMicroUsd: number;
+    settledMicroUsd: number;
     nowMs: number;
   }): Promise<'finalized' | 'lost_lease'>;
-  /** Segna il run come `failed` e riconcilia (costo reale, anche 0), se lease valida. */
+  /** Segna `failed` e riconcilia al `settledMicroUsd` (0 o tetto conservativo). */
   failRun(params: {
     opaqueRunId: string;
     budgetReservationKey: string;
     executionId: string;
-    actualCostMicroUsd: number;
+    actualInputTokens: number | null;
+    actualOutputTokens: number | null;
+    actualCostMicroUsd: number | null;
+    settledMicroUsd: number;
     nowMs: number;
   }): Promise<void>;
 }
@@ -128,6 +172,8 @@ export interface AiContentPreviewResult {
   estimatedInputTokens: number;
   maxOutputTokens: number;
   estimatedCostMicroUsd: number;
+  /** Tetto conservativo che il run prenoterebbe (trasparenza UI). */
+  reservationCostMicroUsd: number;
   /** Solo per il pool: totale domande richieste. */
   requestedTotal: number | null;
 }
@@ -141,32 +187,45 @@ export interface AiContentGenerateResult {
   replayed: boolean;
 }
 
-function enforceConfigAndLimits(
-  request: AiContentRequest,
-  config: AiRuntimeConfig | null,
-): {
+interface ResolvedCost {
   model: string;
   priceListVersion: string;
   estimatedInputTokens: number;
   maxOutputTokens: number;
   estimatedCostMicroUsd: number;
-} {
-  // 3. kill switch / feature flag.
+  reservationCostMicroUsd: number;
+}
+
+/** Numero massimo di tentativi complessivi (1 + retry) dalla config runtime. */
+function maxAttemptsFromConfig(config: AiRuntimeConfig): number {
+  return 1 + Math.max(0, config.limits.maxApplicationRetries);
+}
+
+function enforceConfigAndLimits(
+  request: AiContentRequest,
+  config: AiRuntimeConfig | null,
+): ResolvedCost {
+  // 3. kill switch / feature flag runtime.
   if (!config || !config.enabled) {
     throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
   }
   // 6. risoluzione profilo → modello/listino (server-side, nessun fallback).
   const { model, priceListVersion } = resolveContentModel(request.modelProfile);
-  // 7. stima e limiti.
-  const estimate = estimateContentCost(request, model, priceListVersion);
+  // 7. stima informativa + prenotazione conservativa (× tentativi).
+  const estimate = estimateContentCost(
+    request,
+    model,
+    priceListVersion,
+    maxAttemptsFromConfig(config),
+  );
   const totalTokens = estimate.estimatedInputTokens + estimate.maxOutputTokens;
   if (totalTokens > config.limits.maxEstimatedTokensPerOperation) {
     throw new AiContentError('limit_exceeded', 'La richiesta supera i token consentiti.');
   }
-  if (estimate.breakdown.costMicroUsd > config.maxOperationCostMicroUsd) {
+  if (estimate.reservationCostMicroUsd > config.maxOperationCostMicroUsd) {
     throw new AiContentError(
       'operation_budget_exceeded',
-      'Il costo stimato supera il limite per operazione.',
+      'Il costo prenotato supera il limite per operazione.',
     );
   }
   return {
@@ -174,26 +233,34 @@ function enforceConfigAndLimits(
     priceListVersion,
     estimatedInputTokens: estimate.estimatedInputTokens,
     maxOutputTokens: estimate.maxOutputTokens,
-    estimatedCostMicroUsd: estimate.breakdown.costMicroUsd,
+    estimatedCostMicroUsd: estimate.estimatedCostMicroUsd,
+    reservationCostMicroUsd: estimate.reservationCostMicroUsd,
   };
 }
 
 /**
- * PREVIEW (passi 1–7): nessuna chiamata provider, nessuna prenotazione, nessuna
- * scrittura. Applica gli stessi limiti del run e legge il budget disponibile.
+ * PREVIEW: nessuna chiamata provider, nessuna prenotazione, nessuna scrittura,
+ * nessun accesso al secret. `mode === 'disabled'` ⇒ `feature_disabled` **prima**
+ * di ogni altra cosa. Applica gli stessi limiti del run e legge (sola lettura) il
+ * budget disponibile.
  */
 export async function previewContent(
   request: AiContentRequest,
   ctx: AiContentContext,
   ports: AiContentPorts,
 ): Promise<AiContentPreviewResult> {
+  if (ctx.mode === 'disabled') {
+    throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
+  }
   const config = await ports.loadRuntimeConfig();
   const resolved = enforceConfigAndLimits(request, config);
   const available = await ports.readAvailableBudgetMicroUsd();
   if (available === null) {
     throw new AiContentError('budget_unavailable', 'Budget non disponibile. Riprova più tardi.');
   }
-  if (resolved.estimatedCostMicroUsd > available) {
+  // La preview mostra la stima realistica; verifica però la fattibilità sul tetto
+  // conservativo che il run prenoterebbe.
+  if (resolved.reservationCostMicroUsd > available) {
     throw new AiContentError(
       'budget_exceeded',
       'Budget mensile insufficiente per questa generazione.',
@@ -205,6 +272,7 @@ export async function previewContent(
     estimatedInputTokens: resolved.estimatedInputTokens,
     maxOutputTokens: resolved.maxOutputTokens,
     estimatedCostMicroUsd: resolved.estimatedCostMicroUsd,
+    reservationCostMicroUsd: resolved.reservationCostMicroUsd,
     requestedTotal:
       request.kind === 'pool'
         ? request.counts.aperta + request.counts.chiusa_singola + request.counts.chiusa_multipla
@@ -212,18 +280,29 @@ export async function previewContent(
   };
 }
 
+/** Bound prudenziale UTF-8 del **documento run completo** che verrebbe persistito. */
+function wholeRunDocumentBytes(run: StoredAiContentRun, output: unknown): number {
+  const candidate = { ...run, status: 'completed', output };
+  // Overhead documentato: nomi campi Firestore, wrapper Timestamp, margine di
+  // sicurezza. `JSON.stringify` misura output + metadati + hash + costi + lease.
+  const SAFETY_OVERHEAD_BYTES = 4_096;
+  return utf8ByteLength(JSON.stringify(candidate)) + SAFETY_OVERHEAD_BYTES;
+}
+
 /**
- * GENERATE (passi 1–14): ordine fail-closed. Una sola generazione logica; il
- * retry tecnico ≤ 1 è dentro `callProvider`. Idempotenza/replay tramite
- * `aiContentRuns/{opaqueRunId}`; budget prenotato prima del provider e
- * riconciliato dopo (l'output fatturabile ma invalido è contabilizzato senza
- * essere persistito come successo).
+ * GENERATE: ordine fail-closed con macchina budget reserved → pending →
+ * reconciled. `reserve` NON marca pending; `markProviderPending` (gated dalla
+ * lease) precede la chiamata provider; il settlement (finalize/fail) è gated dalla
+ * lease. Idempotenza/replay via `aiContentRuns/{opaqueRunId}`.
  */
 export async function generateContent(
   request: AiContentRequest,
   ctx: AiContentContext,
   ports: AiContentPorts,
 ): Promise<AiContentGenerateResult> {
+  if (ctx.mode === 'disabled') {
+    throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
+  }
   const config = await ports.loadRuntimeConfig();
   const resolved = enforceConfigAndLimits(request, config);
 
@@ -233,6 +312,7 @@ export async function generateContent(
     request.requestId,
   );
   const inputHash = computeInputHash(request);
+  const leaseExpiresAtMs = ctx.nowMs + ctx.leaseMs;
 
   const runDoc: StoredAiContentRun = {
     contractVersion: AI_CONTENT_CONTRACT_VERSION,
@@ -247,24 +327,25 @@ export async function generateContent(
     actualInputTokens: null,
     actualOutputTokens: null,
     estimatedCostMicroUsd: resolved.estimatedCostMicroUsd,
-    reservedCostMicroUsd: resolved.estimatedCostMicroUsd,
+    reservedCostMicroUsd: resolved.reservationCostMicroUsd,
+    settledCostMicroUsd: null,
     actualCostMicroUsd: null,
     leaseExecutionId: ctx.executionId,
-    leaseExpiresAtMs: ctx.nowMs + AI_CONTENT_LEASE_TTL_MS,
+    leaseExpiresAtMs,
     output: null,
     createdAtMs: ctx.nowMs,
     updatedAtMs: ctx.nowMs,
     expireAtMs: ctx.nowMs + AI_CONTENT_RUN_TTL_MS,
   };
 
-  // 8–9. run/lease/idempotenza + prenotazione budget (transazione).
+  // 8–9. run/lease/idempotenza + prenotazione budget **reserved** (transazione).
   const outcome = await ports.reserveRunAndBudget({
     opaqueRunId,
     budgetReservationKey,
     inputHash,
     run: runDoc,
-    reserveMicroUsd: resolved.estimatedCostMicroUsd,
-    expiresAtMs: runDoc.leaseExpiresAtMs,
+    reserveMicroUsd: resolved.reservationCostMicroUsd,
+    expiresAtMs: leaseExpiresAtMs,
     nowMs: ctx.nowMs,
   });
 
@@ -288,16 +369,35 @@ export async function generateContent(
     throw new AiContentError(outcome.code, 'Budget insufficiente per la generazione.');
   }
 
-  // 10. provider (una chiamata, retry ≤ 1 interno).
-  let provider: ProviderOutput;
-  try {
-    provider = await ports.callProvider({ request, model: resolved.model });
-  } catch {
+  const reservationCap = resolved.reservationCostMicroUsd;
+
+  // 10. reserved → pending, gated dalla lease. Se la lease è persa, il provider
+  // NON viene chiamato (nessun costo).
+  const canProceed = await ports.markProviderPending({
+    opaqueRunId,
+    budgetReservationKey,
+    executionId: ctx.executionId,
+    nowMs: ctx.nowMs,
+  });
+  if (!canProceed) {
+    throw new AiContentError('running', 'Generazione ripresa da un altro tentativo.');
+  }
+
+  // 11. provider (esito tipizzato: pre-invocazione vs invocazione incerta).
+  const providerOutcome = await ports.callProvider({ request, model: resolved.model });
+
+  if (providerOutcome.status === 'error') {
+    // pre_invocation → costo 0 (release); invocation_unknown → settlement
+    // conservativo del tetto prenotato (il provider può aver elaborato).
+    const settled = providerOutcome.phase === 'invocation_unknown' ? reservationCap : 0;
     await ports.failRun({
       opaqueRunId,
       budgetReservationKey,
       executionId: ctx.executionId,
-      actualCostMicroUsd: 0,
+      actualInputTokens: null,
+      actualOutputTokens: null,
+      actualCostMicroUsd: null,
+      settledMicroUsd: settled,
       nowMs: ctx.nowMs,
     });
     throw new AiContentError(
@@ -306,53 +406,85 @@ export async function generateContent(
     );
   }
 
-  // Costo reale (fatturabile anche se l'output sarà invalido).
-  const usage = normalizeUsageActual(provider.usage ?? undefined);
-  const actualInputTokens = usage?.inputTokens ?? null;
-  const actualOutputTokens = usage?.outputTokens ?? null;
-  const actual =
-    usage === null
-      ? 0
-      : (actualCostMicroUsd(
-          usage.inputTokens,
-          usage.outputTokens,
-          resolved.priceListVersion,
-          resolved.model,
-        ) ?? 0);
+  // Costo effettivo dall'usage (mai inventato).
+  let actualInputTokens: number | null = null;
+  let actualOutputTokens: number | null = null;
+  let actualCost: number;
+  if (!providerOutcome.metered) {
+    // mock → costo zero autorevole.
+    actualInputTokens = 0;
+    actualOutputTokens = 0;
+    actualCost = 0;
+  } else {
+    const usage = normalizeUsageActual(providerOutcome.usage ?? undefined);
+    if (usage === null) {
+      // openai completed senza usage valido: fail-closed + settlement conservativo.
+      await ports.failRun({
+        opaqueRunId,
+        budgetReservationKey,
+        executionId: ctx.executionId,
+        actualInputTokens: null,
+        actualOutputTokens: null,
+        actualCostMicroUsd: null,
+        settledMicroUsd: reservationCap,
+        nowMs: ctx.nowMs,
+      });
+      throw new AiContentError(
+        'provider_invalid_output',
+        'La risposta generata non riporta un consumo valido.',
+      );
+    }
+    actualInputTokens = usage.inputTokens;
+    actualOutputTokens = usage.outputTokens;
+    actualCost =
+      actualCostMicroUsd(
+        usage.inputTokens,
+        usage.outputTokens,
+        resolved.priceListVersion,
+        resolved.model,
+      ) ?? 0;
+  }
 
-  // 11. validazione output (fail-closed, rifiuto integrale).
+  // 12. validazione output (fail-closed, rifiuto integrale). Costo effettivo già
+  // fatturato → contabilizzato, ma nessun output completed persistito.
   let output: unknown;
   try {
     output =
       request.kind === 'pool'
-        ? validatePoolProposal(provider.output, request.counts, request.level)
-        : validateLessonProposal(provider.output);
+        ? validatePoolProposal(providerOutcome.output, request.counts, request.level)
+        : validateLessonProposal(providerOutcome.output);
   } catch (e) {
-    // Output fatturabile ma invalido: contabilizza il costo, NON persistere come successo.
     await ports.failRun({
       opaqueRunId,
       budgetReservationKey,
       executionId: ctx.executionId,
-      actualCostMicroUsd: actual,
+      actualInputTokens,
+      actualOutputTokens,
+      actualCostMicroUsd: actualCost,
+      settledMicroUsd: actualCost,
       nowMs: ctx.nowMs,
     });
     if (e instanceof AiContentError) throw e;
     throw new AiContentError('provider_invalid_output', 'La risposta generata non è valida.');
   }
 
-  // Cap prudenziale della dimensione complessiva del documento run.
-  if (utf8ByteLength(JSON.stringify(output)) > AI_CONTENT_LIMITS.MAX_RUN_DOCUMENT_BYTES) {
+  // 13. bound prudenziale del **documento run completo** (< 1 MiB).
+  if (wholeRunDocumentBytes(runDoc, output) > AI_CONTENT_LIMITS.MAX_RUN_DOCUMENT_BYTES) {
     await ports.failRun({
       opaqueRunId,
       budgetReservationKey,
       executionId: ctx.executionId,
-      actualCostMicroUsd: actual,
+      actualInputTokens,
+      actualOutputTokens,
+      actualCostMicroUsd: actualCost,
+      settledMicroUsd: actualCost,
       nowMs: ctx.nowMs,
     });
     throw new AiContentError('output_too_large', 'Il risultato supera il limite di dimensione.');
   }
 
-  // 12–14. persistenza + riconciliazione + finalizzazione (solo se lease ancora mia).
+  // 14. persistenza + riconciliazione al costo effettivo + finalizzazione (solo
+  // se la lease è ancora mia).
   const finalized = await ports.finalizeRun({
     opaqueRunId,
     budgetReservationKey,
@@ -360,11 +492,11 @@ export async function generateContent(
     output,
     actualInputTokens,
     actualOutputTokens,
-    actualCostMicroUsd: actual,
+    actualCostMicroUsd: actualCost,
+    settledMicroUsd: actualCost,
     nowMs: ctx.nowMs,
   });
   if (finalized === 'lost_lease') {
-    // Un worker più recente ha preso il run: non sovrascrivere né ri-riconciliare.
     throw new AiContentError('running', 'Generazione ripresa da un altro tentativo.');
   }
 
@@ -373,7 +505,7 @@ export async function generateContent(
     kind: request.kind,
     modelProfile: request.modelProfile,
     output,
-    actualCostMicroUsd: actual,
+    actualCostMicroUsd: actualCost,
     replayed: false,
   };
 }

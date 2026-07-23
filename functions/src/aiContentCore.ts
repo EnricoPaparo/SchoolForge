@@ -62,6 +62,45 @@ export const AI_CONTENT_RUN_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_GUIDANCE_CHARS = 500;
 export const MAX_POOL_TOTAL_QUESTIONS = 30;
 
+// ─── Feature switch server-side dedicato (AIGEN-01-REVIEW-FIX §1) ─────────────
+
+/**
+ * Modalità **esplicita** e **indipendente** della generazione contenuti IA,
+ * distinta da `AI_CORRECTION_MODE`: consente di tenere la correzione IA attiva e
+ * AIGEN disabilitato (o viceversa) durante il rollout. Default e valori
+ * sconosciuti ⇒ `'disabled'`, senza alcun fallback silenzioso.
+ */
+export type AiContentMode = 'disabled' | 'mock' | 'openai';
+
+/**
+ * Risolve la modalità **solo** dalla configurazione server (env della Function).
+ * Unici valori operativi: gli esatti `'mock'` e `'openai'`. Assenza, stringa
+ * vuota, casing diverso o qualunque altro valore ⇒ `'disabled'` (fail-closed).
+ */
+export function resolveAiContentMode(env: { AI_CONTENT_MODE?: string | undefined }): AiContentMode {
+  if (env.AI_CONTENT_MODE === 'mock' || env.AI_CONTENT_MODE === 'openai') {
+    return env.AI_CONTENT_MODE;
+  }
+  return 'disabled';
+}
+
+// ─── Limiti dell'intero payload normalizzato (AIGEN-01-REVIEW-FIX §11) ────────
+
+/** Numero massimo di concetti chiave / obiettivi accettati nella lezione. */
+export const MAX_LESSON_LIST_ITEMS = 40;
+/** Lunghezza massima (caratteri) di un singolo concetto/obiettivo. */
+export const MAX_LESSON_ITEM_CHARS = 300;
+/** Lunghezza massima (caratteri) di titolo/sottotitolo/UDA. */
+export const MAX_TITLE_CHARS = 300;
+/** Tetto ragionevole del contesto quantitativo del pool esistente. */
+export const MAX_EXISTING_POOL_QUESTIONS = 1_000;
+/**
+ * Dimensione UTF-8 complessiva massima della richiesta **normalizzata**. Poco
+ * sopra il cap del singolo sorgente (200 KB): impedisce di aggirare il limite
+ * gonfiando i metadati (titoli/liste) attorno a un sorgente già al massimo.
+ */
+export const MAX_REQUEST_TOTAL_BYTES = 210_000;
+
 /** Cap dimensionali (byte UTF-8) — §3.4/§6.6 del contratto. */
 export const AI_CONTENT_LIMITS = {
   /** Materiale lezione (pool) inviato come sorgente. */
@@ -177,32 +216,40 @@ export function computeBudgetReservationKey(
  * guidance, materiale). Copre il contenuto ma non è testo in chiaro: pseudonimo.
  * Deterministico e stabile tra i retry dello stesso payload.
  */
-export function computeInputHash(request: AiContentRequest): string {
-  const canonical =
+export function canonicalRequest(request: AiContentRequest): string {
+  const canonical: unknown =
     request.kind === 'pool'
-      ? canonicalTuple([
-          'pool',
-          request.modelProfile,
-          request.level,
-          String(request.counts.aperta),
-          String(request.counts.chiusa_singola),
-          String(request.counts.chiusa_multipla),
-          request.teacherGuidance ?? '',
-          request.lessonSource,
-        ])
-      : canonicalTuple([
-          'lesson',
-          request.modelProfile,
-          request.depth,
-          request.titolo ?? '',
-          request.sottotitolo ?? '',
-          request.concettiChiave.join(''),
-          request.obiettivi.join(''),
-          request.udaTitle ?? '',
-          request.teacherGuidance ?? '',
-          request.currentBody,
-        ]);
-  return sha256Hex(canonical);
+      ? {
+          kind: 'pool',
+          modelProfile: request.modelProfile,
+          level: request.level,
+          counts: {
+            aperta: request.counts.aperta,
+            chiusa_singola: request.counts.chiusa_singola,
+            chiusa_multipla: request.counts.chiusa_multipla,
+          },
+          teacherGuidance: request.teacherGuidance,
+          existingPoolQuestionCount: request.existingPoolQuestionCount,
+          lessonSource: request.lessonSource,
+        }
+      : {
+          kind: 'lesson',
+          modelProfile: request.modelProfile,
+          depth: request.depth,
+          titolo: request.titolo,
+          sottotitolo: request.sottotitolo,
+          udaTitle: request.udaTitle,
+          concettiChiave: request.concettiChiave,
+          obiettivi: request.obiettivi,
+          teacherGuidance: request.teacherGuidance,
+          hasCurrentContent: request.hasCurrentContent,
+          currentBody: request.currentBody,
+        };
+  return JSON.stringify(canonical);
+}
+
+export function computeInputHash(request: AiContentRequest): string {
+  return sha256Hex(canonicalRequest(request));
 }
 
 // ─── Validazione payload chiuso ───────────────────────────────────────────────
@@ -244,7 +291,36 @@ function parseStringArray(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) {
     throw new AiContentError('invalid_input', `${label} deve essere una lista di stringhe.`);
   }
-  return (value as string[]).map((s) => s.trim()).filter((s) => s.length > 0);
+  // Cap sul numero di elementi PRIMA di normalizzare: rifiuta array enormi anche
+  // se composti da voci vuote/spazi (che verrebbero poi filtrate).
+  if (value.length > MAX_LESSON_LIST_ITEMS) {
+    throw new AiContentError('limit_exceeded', `${label}: troppi elementi.`);
+  }
+  const items = (value as string[]).map((s) => s.trim()).filter((s) => s.length > 0);
+  for (const item of items) {
+    if (item.length > MAX_LESSON_ITEM_CHARS) {
+      throw new AiContentError('invalid_input', `${label}: un elemento è troppo lungo.`);
+    }
+  }
+  return items;
+}
+
+function parseTitle(value: unknown, label: string): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  if (trimmed.length > MAX_TITLE_CHARS) {
+    throw new AiContentError('invalid_input', `${label} troppo lungo.`);
+  }
+  return trimmed;
+}
+
+/** Cap fail-closed sulla dimensione UTF-8 dell'intera richiesta **normalizzata**. */
+function enforceTotalRequestSize(request: AiContentRequest): AiContentRequest {
+  if (utf8ByteLength(canonicalRequest(request)) > MAX_REQUEST_TOTAL_BYTES) {
+    throw new AiContentError('content_too_large', 'La richiesta complessiva è troppo grande.');
+  }
+  return request;
 }
 
 function parseProfile(value: unknown): ModelProfile {
@@ -315,7 +391,10 @@ export function validateAiContentRequest(input: unknown): AiContentRequest {
       input.existingPoolQuestionCount === undefined
         ? 0
         : parseNonNegativeInt(input.existingPoolQuestionCount, 'Conteggio pool esistente');
-    return {
+    if (existingPoolQuestionCount > MAX_EXISTING_POOL_QUESTIONS) {
+      throw new AiContentError('limit_exceeded', 'Conteggio pool esistente troppo grande.');
+    }
+    return enforceTotalRequestSize({
       kind: 'pool',
       requestId,
       modelProfile,
@@ -324,7 +403,7 @@ export function validateAiContentRequest(input: unknown): AiContentRequest {
       counts,
       lessonSource: input.lessonSource,
       existingPoolQuestionCount,
-    };
+    });
   }
 
   // kind === 'lesson'
@@ -352,19 +431,14 @@ export function validateAiContentRequest(input: unknown): AiContentRequest {
       'Il contenuto attuale della lezione è troppo grande.',
     );
   }
-  const titolo =
-    typeof input.titolo === 'string' && input.titolo.trim() ? input.titolo.trim() : null;
-  const sottotitolo =
-    typeof input.sottotitolo === 'string' && input.sottotitolo.trim()
-      ? input.sottotitolo.trim()
-      : null;
-  const udaTitle =
-    typeof input.udaTitle === 'string' && input.udaTitle.trim() ? input.udaTitle.trim() : null;
+  const titolo = parseTitle(input.titolo, 'Titolo');
+  const sottotitolo = parseTitle(input.sottotitolo, 'Sottotitolo');
+  const udaTitle = parseTitle(input.udaTitle, 'Titolo UDA');
   const hasCurrentContent =
     typeof input.hasCurrentContent === 'boolean'
       ? input.hasCurrentContent
       : currentBody.trim().length > 0;
-  return {
+  return enforceTotalRequestSize({
     kind: 'lesson',
     requestId,
     modelProfile,
@@ -377,7 +451,7 @@ export function validateAiContentRequest(input: unknown): AiContentRequest {
     udaTitle,
     currentBody,
     hasCurrentContent,
-  };
+  });
 }
 
 /** Risoluzione **server-side** profilo → modello/listino (riuso, mai dal client). */

@@ -1,23 +1,25 @@
 /**
  * AIGEN-01 — wiring runtime dei callable di generazione contenuti. Monta il
  * motore puro `aiContentEngine` sull'Admin SDK: due Cloud Functions v2 `onCall`
- * scale-to-zero, `aiContentPreview` (nessun provider/prenotazione/scrittura) e
- * `aiContentGenerate` (ordine fail-closed completo).
+ * scale-to-zero, `aiContentPreview` (nessun secret/provider/prenotazione/scrittura)
+ * e `aiContentGenerate` (ordine fail-closed completo).
  *
- * Riuso: `settings/owner` (owner singleton), `settings/aiConfig` (kill switch),
- * `aiBudgetLedger/{mese}` (budget), profili/listini/costo. Nuova collection
- * server-only `aiContentRuns/{opaqueRunId}` (mai leggibile dal client — Rules).
- * Nessuna API key, chiamata reale o deploy in questa PR.
+ * Feature switch **dedicato** `AI_CONTENT_MODE` (disabled|mock|openai), distinto da
+ * `AI_CORRECTION_MODE`: la correzione IA resta invariata. Riuso: `settings/owner`,
+ * `settings/aiConfig` (kill switch), `aiBudgetLedger/{mese}`, profili/listini/costo,
+ * transport Responses API + retry. Nuova collection server-only
+ * `aiContentRuns/{opaqueRunId}` (mai leggibile dal client — Rules). Nessuna API
+ * key, chiamata reale o deploy in questa PR.
  */
 
+import { randomUUID } from 'node:crypto';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import type { CallableRequest, FunctionsErrorCode } from 'firebase-functions/v2/https';
 import * as logger from 'firebase-functions/logger';
 import { defineSecret } from 'firebase-functions/params';
 import { getApps, initializeApp } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { Firestore, Transaction } from 'firebase-admin/firestore';
-import { resolveAiFeatureMode } from './aiCorrectionGatewayCore.js';
 import { parseAiRuntimeConfig, type AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import {
   availableMicroUsd,
@@ -30,15 +32,23 @@ import {
   type BudgetReservation,
   type ReservationStatus,
 } from './aiCorrectionBudget.js';
-import { AiContentError, validateAiContentRequest } from './aiContentCore.js';
 import {
+  AiContentError,
+  resolveAiContentMode,
+  validateAiContentRequest,
+  type AiContentMode,
+} from './aiContentCore.js';
+import {
+  computeContentLeaseTtlMs,
   generateContent,
   previewContent,
   type AiContentPorts,
   type ReserveOutcome,
-  type StoredAiContentRun,
 } from './aiContentEngine.js';
-import { createContentProvider, type ContentProviderMode } from './aiContentProvider.js';
+import { createContentProvider } from './aiContentProvider.js';
+import { parseStoredRunDocument, serializeRun } from './aiContentRunDoc.js';
+import { DEFAULT_OPENAI_RETRY_POLICY } from './openAiGrader.js';
+import type { RetryPolicy } from './openAiRetryPolicy.js';
 
 export const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
 
@@ -55,6 +65,22 @@ async function loadOwnerUid(database: Firestore): Promise<string | null> {
 async function loadRuntimeConfig(database: Firestore): Promise<AiRuntimeConfig | null> {
   const snap = await database.doc('settings/aiConfig').get();
   return snap.exists ? parseAiRuntimeConfig(snap.data()) : null;
+}
+
+/** Policy retry dalla config runtime validata (ceiling DEV: retry ≤ 1, timeout ≤ 60 s). */
+function retryPolicyFromConfig(config: AiRuntimeConfig | null): RetryPolicy {
+  if (!config) return DEFAULT_OPENAI_RETRY_POLICY;
+  return {
+    ...DEFAULT_OPENAI_RETRY_POLICY,
+    maxRetries: Math.max(
+      0,
+      Math.min(DEFAULT_OPENAI_RETRY_POLICY.maxRetries, config.limits.maxApplicationRetries),
+    ),
+    attemptTimeoutMs: Math.max(
+      1,
+      Math.min(DEFAULT_OPENAI_RETRY_POLICY.attemptTimeoutMs, config.limits.attemptTimeoutMs),
+    ),
+  };
 }
 
 // ── Ledger helpers (adapter Admin SDK, stessi del gateway correzione) ─────────
@@ -125,17 +151,21 @@ function writeLedgerState(
   });
 }
 
-function toStoredRun(data: Record<string, unknown>): StoredAiContentRun {
-  return data as unknown as StoredAiContentRun;
-}
-
 // ── Porte concrete (Admin SDK) ────────────────────────────────────────────────
 
-function createPorts(database: Firestore, config: AiRuntimeConfig | null): AiContentPorts {
-  const providerMode: ContentProviderMode = ((): ContentProviderMode => {
-    const mode = resolveAiFeatureMode({ AI_CORRECTION_MODE: process.env.AI_CORRECTION_MODE });
-    return mode === 'openai' ? 'openai' : mode === 'mock' ? 'mock' : 'disabled';
-  })();
+function createPorts(
+  database: Firestore,
+  config: AiRuntimeConfig | null,
+  mode: AiContentMode,
+  secret: string | undefined,
+): AiContentPorts {
+  const policy = retryPolicyFromConfig(config);
+  // Il provider è costruito **una sola volta**, dopo mode/secret: in mode openai
+  // senza secret/transport → provider_config_invalid **prima** della rete.
+  const provider =
+    mode === 'disabled'
+      ? null
+      : createContentProvider({ mode, openAiApiKey: secret, runnerDeps: { policy } });
 
   return {
     async loadRuntimeConfig() {
@@ -155,7 +185,7 @@ function createPorts(database: Firestore, config: AiRuntimeConfig | null): AiCon
     },
     async loadRun(opaqueRunId) {
       const snap = await database.doc(`aiContentRuns/${opaqueRunId}`).get();
-      return snap.exists ? toStoredRun(snap.data() as Record<string, unknown>) : null;
+      return snap.exists ? parseStoredRunDocument(snap.data()) : null;
     },
     async reserveRunAndBudget(params): Promise<ReserveOutcome> {
       if (!config) return { kind: 'budget', code: 'budget_unavailable' };
@@ -165,7 +195,9 @@ function createPorts(database: Firestore, config: AiRuntimeConfig | null): AiCon
       return database.runTransaction(async (tx): Promise<ReserveOutcome> => {
         const [runSnap, ledgerSnap] = await Promise.all([tx.get(runRef), tx.get(ledgerRef)]);
         if (runSnap.exists) {
-          const existing = toStoredRun(runSnap.data() as Record<string, unknown>);
+          const existing = parseStoredRunDocument(runSnap.data());
+          // Documento malformato/legacy/incoerente → conflict (mai replay).
+          if (!existing) return { kind: 'conflict' };
           if (existing.inputHash !== params.inputHash) return { kind: 'conflict' };
           if (existing.status === 'completed') return { kind: 'replay_completed', run: existing };
           if (existing.status === 'running' && existing.leaseExpiresAtMs > params.nowMs) {
@@ -179,6 +211,8 @@ function createPorts(database: Firestore, config: AiRuntimeConfig | null): AiCon
           config.monthlyBudgetMicroUsd,
           config.dailyBudgetMicroUsd,
         );
+        // Prenotazione **reserved** (NON pending): markPending avviene subito
+        // prima del provider, in una transazione separata gated dalla lease.
         const reserved = reserveLedger(
           state,
           params.budgetReservationKey,
@@ -187,31 +221,21 @@ function createPorts(database: Firestore, config: AiRuntimeConfig | null): AiCon
           params.nowMs,
         );
         if (!reserved.ok) return { kind: 'budget', code: reserved.reason };
-        // Prenotazione + markPending (il provider verrà chiamato subito dopo): una
-        // scadenza addebiterà comunque il tetto, mai un doppio addebito.
-        const pending = markPendingLedger(
-          reserved.state,
-          params.budgetReservationKey,
-          params.nowMs,
-        );
-        writeLedgerState(tx, ledgerRef, pending);
-        tx.set(runRef, { ...params.run });
+        writeLedgerState(tx, ledgerRef, reserved.state);
+        tx.set(runRef, serializeRun(params.run));
         return { kind: 'reserved', reservedMicroUsd: reserved.reservedMicroUsd };
       });
     },
-    async callProvider({ request, model }) {
-      const provider = createContentProvider({ mode: providerMode });
-      return provider.generate(request, model);
-    },
-    async finalizeRun(params) {
+    async markProviderPending(params): Promise<boolean> {
       const monthKey = monthKeyFromMs(params.nowMs);
       const runRef = database.doc(`aiContentRuns/${params.opaqueRunId}`);
       const ledgerRef = database.doc(`aiBudgetLedger/${monthKey}`);
-      return database.runTransaction(async (tx): Promise<'finalized' | 'lost_lease'> => {
-        const [runSnap, ledgerSnap] = await Promise.all([tx.get(runRef), tx.get(ledgerRef)]);
-        if (!runSnap.exists) return 'lost_lease';
-        const run = toStoredRun(runSnap.data() as Record<string, unknown>);
-        if (run.leaseExecutionId !== params.executionId) return 'lost_lease';
+      return database.runTransaction(async (tx): Promise<boolean> => {
+        const runSnap = await tx.get(runRef);
+        if (!runSnap.exists) return false;
+        const run = parseStoredRunDocument(runSnap.data());
+        if (!run || run.leaseExecutionId !== params.executionId) return false;
+        const ledgerSnap = await tx.get(ledgerRef);
         const state = readLedgerState(
           ledgerSnap,
           monthKey,
@@ -221,12 +245,36 @@ function createPorts(database: Firestore, config: AiRuntimeConfig | null): AiCon
         writeLedgerState(
           tx,
           ledgerRef,
-          reconcileLedger(
-            state,
-            params.budgetReservationKey,
-            params.actualCostMicroUsd,
-            params.nowMs,
-          ),
+          markPendingLedger(state, params.budgetReservationKey, params.nowMs),
+        );
+        return true;
+      });
+    },
+    async callProvider({ request, model }) {
+      if (!provider) {
+        throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
+      }
+      return provider.generate(request, model);
+    },
+    async finalizeRun(params) {
+      const monthKey = monthKeyFromMs(params.nowMs);
+      const runRef = database.doc(`aiContentRuns/${params.opaqueRunId}`);
+      const ledgerRef = database.doc(`aiBudgetLedger/${monthKey}`);
+      return database.runTransaction(async (tx): Promise<'finalized' | 'lost_lease'> => {
+        const [runSnap, ledgerSnap] = await Promise.all([tx.get(runRef), tx.get(ledgerRef)]);
+        if (!runSnap.exists) return 'lost_lease';
+        const run = parseStoredRunDocument(runSnap.data());
+        if (!run || run.leaseExecutionId !== params.executionId) return 'lost_lease';
+        const state = readLedgerState(
+          ledgerSnap,
+          monthKey,
+          config?.monthlyBudgetMicroUsd ?? 0,
+          config?.dailyBudgetMicroUsd ?? 0,
+        );
+        writeLedgerState(
+          tx,
+          ledgerRef,
+          reconcileLedger(state, params.budgetReservationKey, params.settledMicroUsd, params.nowMs),
         );
         tx.set(
           runRef,
@@ -236,7 +284,8 @@ function createPorts(database: Firestore, config: AiRuntimeConfig | null): AiCon
             actualInputTokens: params.actualInputTokens,
             actualOutputTokens: params.actualOutputTokens,
             actualCostMicroUsd: params.actualCostMicroUsd,
-            updatedAtMs: params.nowMs,
+            settledCostMicroUsd: params.settledMicroUsd,
+            updatedAt: Timestamp.fromMillis(params.nowMs),
           },
           { merge: true },
         );
@@ -250,8 +299,8 @@ function createPorts(database: Firestore, config: AiRuntimeConfig | null): AiCon
       await database.runTransaction(async (tx) => {
         const [runSnap, ledgerSnap] = await Promise.all([tx.get(runRef), tx.get(ledgerRef)]);
         if (!runSnap.exists) return;
-        const run = toStoredRun(runSnap.data() as Record<string, unknown>);
-        if (run.leaseExecutionId !== params.executionId) return;
+        const run = parseStoredRunDocument(runSnap.data());
+        if (!run || run.leaseExecutionId !== params.executionId) return;
         const state = readLedgerState(
           ledgerSnap,
           monthKey,
@@ -261,19 +310,17 @@ function createPorts(database: Firestore, config: AiRuntimeConfig | null): AiCon
         writeLedgerState(
           tx,
           ledgerRef,
-          reconcileLedger(
-            state,
-            params.budgetReservationKey,
-            params.actualCostMicroUsd,
-            params.nowMs,
-          ),
+          reconcileLedger(state, params.budgetReservationKey, params.settledMicroUsd, params.nowMs),
         );
         tx.set(
           runRef,
           {
             status: 'failed',
+            actualInputTokens: params.actualInputTokens,
+            actualOutputTokens: params.actualOutputTokens,
             actualCostMicroUsd: params.actualCostMicroUsd,
-            updatedAtMs: params.nowMs,
+            settledCostMicroUsd: params.settledMicroUsd,
+            updatedAt: Timestamp.fromMillis(params.nowMs),
           },
           { merge: true },
         );
@@ -320,24 +367,45 @@ async function requireOwner(
   return uid;
 }
 
-function newExecutionId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+function contentMode(): AiContentMode {
+  return resolveAiContentMode({ AI_CONTENT_MODE: process.env.AI_CONTENT_MODE });
 }
 
-/** `aiContentPreview` — stima senza provider/prenotazione/scrittura. */
-export const aiContentPreview = onCall({ secrets: [OPENAI_API_KEY] }, async (request) => {
-  const database = db();
+function readOpenAiSecret(): string | undefined {
   try {
+    return OPENAI_API_KEY.value();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * `aiContentPreview` — stima senza secret/provider/prenotazione/scrittura.
+ * **Nessun** binding del secret: la preview non ha accesso alla API key.
+ */
+export const aiContentPreview = onCall(async (request) => {
+  const database = db();
+  const mode = contentMode();
+  try {
+    if (mode === 'disabled') {
+      throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
+    }
     const ownerUid = await requireOwner(request, database);
     const validated = validateAiContentRequest(request.data);
     const config = await loadRuntimeConfig(database);
-    const ports = createPorts(database, config);
-    const result = await previewContent(
+    // La preview non costruisce il provider né legge il secret: ports senza secret.
+    const ports = createPorts(database, config, mode, undefined);
+    return await previewContent(
       validated,
-      { authenticatedOwnerUid: ownerUid, nowMs: Date.now(), executionId: newExecutionId() },
+      {
+        authenticatedOwnerUid: ownerUid,
+        nowMs: Date.now(),
+        executionId: randomUUID(),
+        mode,
+        leaseMs: computeContentLeaseTtlMs(retryPolicyFromConfig(config)),
+      },
       ports,
     );
-    return result;
   } catch (err) {
     if (err instanceof AiContentError) throw toHttpsError(err);
     logger.error('aiContentPreview internal error', { name: (err as Error)?.name });
@@ -348,17 +416,28 @@ export const aiContentPreview = onCall({ secrets: [OPENAI_API_KEY] }, async (req
 /** `aiContentGenerate` — ordine fail-closed completo. Una sola generazione logica. */
 export const aiContentGenerate = onCall({ secrets: [OPENAI_API_KEY] }, async (request) => {
   const database = db();
+  const mode = contentMode();
   try {
+    if (mode === 'disabled') {
+      throw new AiContentError('feature_disabled', 'La generazione IA è disattivata.');
+    }
     const ownerUid = await requireOwner(request, database);
     const validated = validateAiContentRequest(request.data);
     const config = await loadRuntimeConfig(database);
-    const ports = createPorts(database, config);
-    const result = await generateContent(
+    // Il secret è letto **solo** qui (percorso generate) e **solo** in mode openai.
+    const secret = mode === 'openai' ? readOpenAiSecret() : undefined;
+    const ports = createPorts(database, config, mode, secret);
+    return await generateContent(
       validated,
-      { authenticatedOwnerUid: ownerUid, nowMs: Date.now(), executionId: newExecutionId() },
+      {
+        authenticatedOwnerUid: ownerUid,
+        nowMs: Date.now(),
+        executionId: randomUUID(),
+        mode,
+        leaseMs: computeContentLeaseTtlMs(retryPolicyFromConfig(config)),
+      },
       ports,
     );
-    return result;
   } catch (err) {
     if (err instanceof AiContentError) throw toHttpsError(err);
     logger.error('aiContentGenerate internal error', { name: (err as Error)?.name });
