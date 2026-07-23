@@ -7,7 +7,7 @@ const mockLoadPool = vi.fn();
 const mockSavePool = vi.fn();
 const mockDeletePool = vi.fn();
 
-vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
+vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
 vi.mock('../../repository/pools/poolEditorService.js', () => {
   class PoolDeleteBlockedError extends Error {}
   return {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { parsePool, serializePool, normalizeMaxCharacters } from '@schoolforge/lesson-contract';
 import type { ParsedPool, PoolQuestion, PoolValidationError } from '@schoolforge/lesson-contract';
 import type { LessonItem } from '../repository/programs/programsService.js';
@@ -9,8 +9,10 @@ import {
   PoolDeleteBlockedError,
   type PoolDeleteBlocker,
 } from '../repository/pools/poolEditorService.js';
-import { db, storage } from '../../lib/firebase.js';
-import { IconPencil, IconPlus, IconTrash } from '../../components/icons.js';
+import { createAiContentCallables } from '../repository/pools/aiContentClient.js';
+import { db, functions, storage } from '../../lib/firebase.js';
+import { IconPencil, IconPlus, IconSparkles, IconTrash } from '../../components/icons.js';
+import { AiPoolGenerationDialog } from './AiPoolGenerationDialog.js';
 import styles from './QuestionPoolEditor.module.css';
 
 /**
@@ -48,6 +50,11 @@ export type QuestionPoolEditorProps = {
   importId: string | null;
   lesson: LessonItem;
   ownerUid: string;
+  /**
+   * AIGEN-02 — testo Markdown della lezione già caricato in memoria dal workspace,
+   * usato come `lessonSource` per la generazione IA. Nessuna nuova lettura Storage.
+   */
+  lessonSource?: string | null;
   /** Called after a successful save/delete so the parent can update its own counters. */
   onPoolCountChange?: (questionCount: number, poolStatus: PoolCountStatus) => void;
   /** Reports whether there are unsaved edits, so the parent can guard navigation. */
@@ -597,11 +604,16 @@ export function QuestionPoolEditor({
   importId,
   lesson,
   ownerUid,
+  lessonSource,
   onPoolCountChange,
   onDirtyChange,
 }: QuestionPoolEditorProps) {
   const [poolState, setPoolState] = useState<PoolState>({ status: 'idle' });
   const [reloadNonce, setReloadNonce] = useState(0);
+
+  // AIGEN-02 — dialog «Genera con IA» (pool). Callable create-on-demand.
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const aiCallables = useMemo(() => createAiContentCallables(functions), []);
 
   // YAML editor
   const [editorOpen, setEditorOpen] = useState(false);
@@ -704,6 +716,18 @@ export function QuestionPoolEditor({
     setYamlDraft(serialized);
     setYamlBaseline(serialized);
     onPoolCountChangeRef.current?.(newPool.questions.length, 'valid');
+  }
+
+  /**
+   * AIGEN-02 — applica il pool combinato prodotto dal mapper tramite il **servizio
+   * canonico** (`savePool`, lo stesso di «Crea pool»/editor): una sola scrittura
+   * atomica, nessuna write per domanda. Aggiorna lo stato locale senza reload.
+   * Lancia in caso di errore (il dialog conserva proposta ed edit locali).
+   */
+  async function applyAiPool(pool: ParsedPool) {
+    if (!importId) throw new Error('Import non disponibile per il salvataggio del pool.');
+    await savePool({ programId, importId, lessonId: lesson.id, pool, ownerUid, db, storage });
+    applyPoolUpdate(pool);
   }
 
   async function handleSaveYaml() {
@@ -872,18 +896,38 @@ export function QuestionPoolEditor({
 
   return (
     <div>
+      {aiDialogOpen && (
+        <AiPoolGenerationDialog
+          lessonSource={lessonSource ?? ''}
+          existingPool={poolState.status === 'valid' ? poolState.pool : null}
+          callables={aiCallables}
+          onApply={applyAiPool}
+          onClose={() => setAiDialogOpen(false)}
+        />
+      )}
+
       {/* Pool absent */}
       {poolState.status === 'absent' && !editorOpen && (
         <div className={styles.absentState}>
           <p>Nessun pool di domande per questa lezione.</p>
-          <button
-            type="button"
-            className={`${styles.btn} btn-success`}
-            onClick={openEditor}
-            disabled={!importId}
-          >
-            Crea pool
-          </button>
+          <div className={styles.poolMetaActions}>
+            <button
+              type="button"
+              className={`${styles.btn} btn-success`}
+              onClick={openEditor}
+              disabled={!importId}
+            >
+              Crea pool
+            </button>
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnSecondary}`}
+              onClick={() => setAiDialogOpen(true)}
+              disabled={!importId}
+            >
+              <IconSparkles size={14} /> Genera con IA
+            </button>
+          </div>
         </div>
       )}
 
@@ -923,6 +967,14 @@ export function QuestionPoolEditor({
                   <IconPlus size={12} /> Nuova domanda
                 </button>
               )}
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnSecondary}`}
+                onClick={() => setAiDialogOpen(true)}
+                disabled={anyQuestionEditorOpen || !importId}
+              >
+                <IconSparkles size={12} /> Genera con IA
+              </button>
               <button
                 type="button"
                 className={`${styles.btn} ${styles.btnSecondary}`}

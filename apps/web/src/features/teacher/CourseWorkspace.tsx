@@ -2556,6 +2556,7 @@ function LessonDetail({
             importId={importId}
             lesson={lesson}
             ownerUid={ownerUid}
+            lessonSource={content}
             onDirtyChange={onDirtyChange}
             onPoolCountChange={onPoolCountChange}
           />
