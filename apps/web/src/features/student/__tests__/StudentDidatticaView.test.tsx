@@ -105,7 +105,6 @@ describe('StudentDidatticaView — SDUX-01', () => {
     fireEvent.click(within(structure).getByRole('button', { name: /Reti/ }));
     fireEvent.click(within(structure).getByRole('button', { name: /Internet e reti/ }));
     expect(await screen.findByText('Contenuto della lezione.')).toBeTruthy();
-    expect(document.querySelector('.prose--lesson')).not.toBeNull();
     expect(screen.getByText('Concetti fondamentali')).toBeTruthy();
     expect(screen.getByText(/internet, rete/)).toBeTruthy();
   });

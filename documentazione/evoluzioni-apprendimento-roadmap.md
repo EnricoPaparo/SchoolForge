@@ -380,27 +380,6 @@ Direzione vincolante: tre livelli di superficie, accenti brand sottili, tabelle 
 
 Implementazione solo delle scelte approvate sul prototipo, in pacchetti piccoli e reversibili. Ogni modifica deve mantenere layout, responsive, accessibilità e costi invariati.
 
-### LESSON-POLISH-01 ✅
-
-Polish conservativo della lettura delle lezioni, condiviso tra docente e studente e
-attivato solo sulle superfici di consultazione reale:
-
-- gerarchia tipografica da articolo, larghezza di lettura controllata e superfici
-  coerenti con il tema esistente;
-- indice locale accessibile ricavato dagli `h2`/`h3` del Markdown già sanitizzato,
-  con ancore deterministiche e nessuna persistenza;
-- indicatore di avanzamento reale calcolato sul contenitore di scorrimento, senza
-  listener Firebase, polling o scritture;
-- resa più leggibile di callout, codice, tabelle, immagini, link e separatori;
-- comportamento responsive verificato a 1440, 1024, 390 e 320 px e rispetto di
-  `prefers-reduced-motion`;
-- anteprime degli editor intenzionalmente escluse, così da non alterare il flusso
-  di modifica.
-
-Il pacchetto non introduce asset, font, librerie, documenti, query, Storage,
-Functions, Rules, indici o modifiche di schema. È un'evoluzione post-GTWU
-indipendente e non riapre Gate GTWU.
-
 ## 8. Ordine di esecuzione
 
 1. SPINNER-FIX-01;
@@ -415,6 +394,5 @@ indipendente e non riapre Gate GTWU.
 10. VEX-00 → VEX-03;
 11. VISUAL-BOOST-00;
 12. VISUAL-BOOST-01 dopo approvazione esplicita.
-13. LESSON-POLISH-01 ✅ — lettura lezioni condivisa e a costo Firebase zero.
 
 POOL-SIMPLE precede obbligatoriamente VEX: i gruppi equivalenti vengono progettati e implementati soltanto sul contratto senza `peso` e con difficoltà 1–5.
