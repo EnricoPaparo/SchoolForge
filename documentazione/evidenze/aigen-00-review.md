@@ -34,11 +34,25 @@ Nessun file esistente è stato toccato (verifica in §4).
 - [x] Costi Firestore/provider (prima/dopo) e soglie di stop.
 - [x] Criteri Gate GAIGEN.
 
-## 3. Cap dimensionali coerenti col repository
+## 3. Cap dimensionali coerenti col repository (rivisti)
 
-- Output lezione ≤ `MAX_LESSON_CONTENT_BYTES = 700_000` byte (riuso `lessonContentSize.ts`).
-- Output pool ≤ 200_000 byte, max 30 domande. Entrambi ≪ 1 MiB (limite documento Firestore).
+- **Lezione salvata (canonica)**: ≤ `MAX_LESSON_CONTENT_BYTES = 700_000` byte UTF-8 — invariato (`lessonContentSize.ts`).
+- **Output temporaneo `aiContentRuns`**: ≤ **600_000 byte** UTF-8 (più prudente dei 700_000), + **controllo della dimensione complessiva del documento prima della scrittura**. Il limite 1 MiB riguarda l'**intero documento** (campi, UTF-8, overhead): nessuna affermazione di «ampio margine». Output oltre il limite ⇒ `output_too_large` **prima** della persistenza (nessun documento sovradimensionato, nessun provider replay incompleto).
 - Costo per operazione ≤ 250_000 µUSD (riuso `aiCorrectionRuntimeConfig`).
+
+## 2bis. Correzioni AIGEN-00-REVIEW applicate
+
+1. **Budget condiviso** — chiave namespaced/opaca `budgetReservationKey = SHA-256(canonical(["ai-content/v1", ownerUid, requestId]))`, mai `requestId`/UID in chiaro sul ledger (evita collisione con la correzione IA).
+2. **Identità run** — `opaqueRunId = SHA-256(canonical(["ai-content/v1", authenticatedOwnerUid, requestId]))`, serializzazione canonica (non concatenazione), sempre server-side dall'UID autenticato, mai dal client; `opaqueRunId`/`inputHash`/`budgetReservationKey` dichiarati **fingerprint pseudonimi**, non anonimi.
+3. **Limite Firestore run** — rimossa la dicitura «ampio margine»; congelati 700_000 (lezione) / 600_000 (output temp) + check dimensione documento pre-scrittura; fail prima della persistenza.
+4. **Contratto pool/ID** — pipeline `provider (no ID) → server valida → mapper deterministico assegna questionLocalId/optionId non collidenti → build doc v2 → parsePool → write canonica`; nessun ID del modello autorevole.
+5. **Anti-duplicazione** — rimossa ogni affermazione che il solo conteggio deduplica; il pool esistente non viene inviato; il docente rimuove/modifica i duplicati in preview.
+6. **TTL** — `expireAt=24h`; delete TTL non immediata e **fatturabile**; TTL policy configurata al rollout (non dal codice); provider disabilitato finché Rules/TTL/smoke non verificati; contenuto potenzialmente sensibile, server-only.
+7. **Replay/modifiche docente** — `aiContentRuns` conserva la proposta **originale**; edit del docente restano locali fino a Applica/Usa; replay restituisce l'originale, non le modifiche non salvate.
+8. **Markdown/HTML** — nessuna garanzia regex assoluta; difesa = sanitizzazione renderer esistente (invariata) + divieto nel prompt + rifiuto validator di costrutti espliciti; front matter YAML vietato.
+9. **Costi/applicazione** — confermati: zero costo passivo, preview senza provider, una chiamata provider, nessun autosave, pool via service canonico, lezione solo draft locale dirty + Salva separato.
+
+I due prototipi statici **non** contenevano testi contrari al contratto corretto (sono mock UI senza claim tecnici) → nessuna modifica ai prototipi.
 
 ## 4. Verifiche eseguite
 

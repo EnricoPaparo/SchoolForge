@@ -87,8 +87,8 @@ Campi ammessi dal client (qualsiasi altra proprietà ⇒ `invalid_input`):
 **`kind: 'pool'`** → `poolConfig`:
 - `level: 'base' | 'balanced' | 'advanced'` (range difficoltà: base 1–3, balanced 1–5, advanced 3–5)
 - `counts: { aperta: number; chiusa_singola: number; chiusa_multipla: number }` (ogni valore intero ≥ 0; totale ≥ 1 e ≤ 30)
-- `lessonContext`: metadati + testo lezione (materiale didattico, delimitato e non attendibile), entro i cap §8
-- `existingPoolQuestionCount?: number` (solo per contesto/anti-duplicazione; gli ID tecnici NON sono mai inviati né generati dal modello)
+- `lessonContext`: metadati + testo lezione (materiale didattico, delimitato e non attendibile), entro i cap di input (`content_too_large`, §8.1)
+- `existingPoolQuestionCount?: number` — **solo** contesto quantitativo (quante domande esistono già). **Non** è un meccanismo di anti-duplicazione: un semplice conteggio non consente di rilevare duplicati semantici. Gli ID tecnici del pool esistente **non** sono mai inviati né generati dal modello (§5.4).
 
 **`kind: 'lesson'`** → `lessonConfig`:
 - `depth: 'synthetic' | 'complete' | 'in_depth'`
@@ -130,16 +130,33 @@ Nessuna chiamata provider parte se un controllo precedente fallisce:
 
 Collection tecnica **distinta** da `aiCorrectionRuns`, **server-only**.
 
-### 3.1 Id documento
+### 3.1 Id documento e chiave budget (fingerprint pseudonimi)
 
-`aiContentRuns/{opaqueRunId}` — id **opaco**, derivato **server-side** da `hash(ownerUid + requestId)` (es. SHA-256 esadecimale troncato). Nel documento **non** compaiono UID in chiaro né ID didattici in chiaro.
+**`opaqueRunId`** = **SHA-256 completo** (esadecimale, non troncato) della **serializzazione canonica e non ambigua** della tupla:
+
+```
+["ai-content/v1", authenticatedOwnerUid, requestId]
+```
+
+La serializzazione è canonica (es. `JSON.stringify` dell'array di stringhe, che è già deterministico e non ambiguo perché ogni elemento è delimitato), **mai** una semplice concatenazione di stringhe (che confonderebbe `a`+`bc` con `ab`+`c`). `opaqueRunId` è **sempre calcolato server-side dall'UID autenticato** (`request.auth.uid`) e **non è mai accettato dal client**.
+
+**Chiave di prenotazione budget** — le prenotazioni su `aiBudgetLedger` **non** usano direttamente `requestId` (potrebbe collidere con una `requestId` della correzione IA sullo stesso ledger). Chiave tecnica **namespaced e opaca**:
+
+```
+budgetReservationKey = SHA-256( canonical(["ai-content/v1", authenticatedOwnerUid, requestId]) )
+```
+
+(stessa tupla e stessa serializzazione canonica dell'`opaqueRunId`). La chiave **non** contiene UID né `requestId` in chiaro e vive in uno spazio di chiavi distinto da quello della correzione.
+
+> **Natura del dato.** `opaqueRunId`, `budgetReservationKey` e `inputHash` sono **fingerprint pseudonimi**, **non** dati anonimi: derivano in modo deterministico dall'UID autenticato e dal `requestId`, quindi sono ricollegabili all'owner da chi possiede quei valori. Nel documento **non** compaiono UID in chiaro né ID didattici in chiaro, ma il documento **non** è anonimo e resta **server-only**.
 
 ### 3.2 Contratto del run (campi persistiti)
 
 - `contractVersion` (intero)
 - `kind` (`'pool' | 'lesson'`)
 - `status` (`'running' | 'completed' | 'failed'`)
-- `inputHash` (hash del payload normalizzato: kind, profilo, config, guidance, materiale — **hash, non testo**)
+- `inputHash` (hash del payload normalizzato: kind, profilo, config, guidance, materiale — **hash, non testo**; fingerprint pseudonimo)
+- `budgetReservationKey` (chiave namespaced opaca usata sul ledger, §3.1 — mai UID/requestId in chiaro)
 - `modelProfile` (`economy`/`quality`)
 - `model` e `priceListVersion` risolti **server-side**
 - token stimati/reali (`estimatedInput`, `maxOutput`, `actualInput`, `actualOutput`)
@@ -155,17 +172,24 @@ Testo sorgente della lezione; `teacherGuidance`; prompt (system o assemblato); A
 
 ### 3.4 Cap dimensionale dell'output persistito
 
-- **Pool**: massimo 30 domande; struttura JSON compatta. Cap prudenziale **≤ 200_000 byte** UTF-8 per il campo `output` (ampiamente sotto 1 MiB; oltre ⇒ `output_too_large`).
-- **Lezione**: `output` = corpo Markdown, cap **`MAX_LESSON_CONTENT_BYTES = 700_000`** byte UTF-8 (lo stesso già applicato al salvataggio lezione). Oltre ⇒ `output_too_large`.
+Il limite Firestore di 1 MiB riguarda **l'intero documento** — tutti i campi, le stringhe UTF-8 e l'overhead di serializzazione — **non** il solo campo `output`. Per questo l'output temporaneo ha un cap **più prudente** di quello della lezione salvata, e la scrittura è preceduta da un **controllo della dimensione complessiva stimata del documento**.
 
-Entrambi restano ampiamente sotto il limite documento Firestore (1 MiB), lasciando margine per gli altri campi.
+- **Limite canonico della lezione salvata**: **`MAX_LESSON_CONTENT_BYTES = 700_000`** byte UTF-8 — **invariato** (contratto esistente `lessonContentSize.ts`, riguarda il documento lezione canonico).
+- **Limite dell'output temporaneo in `aiContentRuns`**: **≤ 600_000 byte** UTF-8 per il campo `output` (pool o corpo lezione). Più prudente dei 700_000 canonici, così i restanti campi tecnici del run (hash, metadata, lease, costi) restano sotto 1 MiB.
+- **Pool**: massimo 30 domande, dentro lo stesso cap 600_000 byte.
+- **Controllo pre-scrittura**: la dimensione complessiva stimata del documento `aiContentRuns` è verificata **prima** della persistenza.
+
+Un output oltre il limite temporaneo **fallisce prima della persistenza** (`output_too_large`), **senza** provider replay incompleto e **senza** scrivere un documento sovradimensionato. Il costo già speso resta registrato solo se il run può essere persistito entro i limiti; altrimenti la generazione è respinta come fallita in modo pulito.
 
 ### 3.5 Retention (congelata)
 
-- **TTL 24 ore** (`expireAt = createdAt + 24h`).
-- Collection **server-only**: Rules negano lettura/scrittura diretta dal client (§7).
-- Replay **soltanto** tramite callable dopo nuova autorizzazione (auth+owner+feature+budget rifatti).
-- **Nessun listener, polling o scheduler.** Il TTL Firebase è cleanup **differito**: nessuna promessa di eliminazione immediata.
+- **`expireAt = createdAt + 24h`**.
+- La **cancellazione TTL non è immediata** ed è una **delete Firestore fatturabile** (una scrittura per documento eliminato): il TTL è cleanup **differito**, senza alcuna promessa di eliminazione puntuale.
+- La **TTL policy** della collection group `aiContentRuns` (campo `expireAt`) va **configurata durante il rollout** (console/`gcloud firestore`), **non** implicitamente dal codice applicativo. Finché non è configurata, i documenti restano fino a cancellazione manuale.
+- Il **provider reale resta disabilitato** (kill switch) finché **Rules, TTL policy e smoke DEV** non sono verificati.
+- `aiContentRuns` contiene **output generato potenzialmente sensibile** (testo lezione/pool) e resta **server-only**: Rules negano lettura/scrittura diretta dal client (§8.1/AIGEN-01).
+- Replay **soltanto** tramite callable dopo **nuova autorizzazione** (auth+owner+feature+budget rifatti).
+- **Nessun listener, polling o scheduler.**
 
 ### 3.6 Semantica replay (stesso `requestId`)
 
@@ -176,6 +200,13 @@ Entrambi restano ampiamente sotto il limite documento Firestore (1 MiB), lascian
 | Run `running` con lease **scaduta** | Takeover controllato (nuova lease), un tentativo consentito |
 | Stesso `requestId`, `inputHash` **diverso** | `invalid_input` |
 | Run legacy/malformato | Fail-closed (`provider_config_invalid`) |
+
+**Replay vs modifiche del docente.** `aiContentRuns` conserva **la proposta originale del modello**. Le modifiche fatte dal docente nella preview (edit/elimina di una domanda proposta, edit del Markdown della bozza):
+
+- restano **locali** finché il docente non preme `Aggiungi al pool`/`Crea pool` (pool) o `Usa questa bozza` (lezione);
+- **non** modificano `aiContentRuns`;
+- vengono persistite **soltanto** tramite i servizi canonici (pool → `poolEditorService`; lezione → draft locale dirty poi `Salva` canonico dell'editor);
+- un **replay** dello stesso `requestId`/`inputHash` restituisce la **proposta originale**, **non** le modifiche locali non salvate.
 
 ---
 
@@ -231,10 +262,23 @@ Configura → calcola stima → conferma la spesa → genera → visualizza doma
 - **Pool assente**: genera un nuovo `schoolforge-pool/v2`; applicazione solo dopo conferma; write canonica.
 - **Pool esistente**: **aggiunge** le nuove domande; non sovrascrive/cancella le esistenti; **ID tecnici generati dal sistema** (mai dal modello); collisioni ID risolte dal sistema prima del salvataggio; pool risultante **validato integralmente** (`parsePool`) prima della write.
 
-### 5.4 Output strutturato pool
-Il provider restituisce **contenuti semantici**, non ID tecnici persistiti. Per ogni domanda: tipo supportato; difficoltà intera nel range; testo; soluzione; `maxCharacters` per le aperte (contratto esistente); opzioni e soluzione coerenti per le chiuse.
+### 5.4 Output strutturato pool + pipeline ID tecnici
 
-Validazioni obbligatorie (fail-closed, rifiuto integrale): quantità esatta per ogni tipo; totale esatto; difficoltà nel range; `maxPoints === difficolta`; risposta singola con **una** sola soluzione; multipla con **almeno una** soluzione valida; soluzione **contenuta** nelle opzioni; opzioni senza ID duplicati; **nessun `peso`**; nessun campo estraneo; parser finale `schoolforge-pool/v2`; limite dimensionale. La generazione si basa sul testo della lezione e **non inventa** nozioni sostanziali non supportate.
+Il provider restituisce **contenuti semantici**, **mai** ID tecnici persistiti. Per ogni domanda: tipo supportato; difficoltà intera nel range; testo; soluzione; `maxCharacters` per le aperte (contratto esistente); opzioni e soluzione coerenti per le chiuse. Per le chiuse il modello riferisce la soluzione alle opzioni tramite un **riferimento locale non autorevole** (es. indice/lettera d'opzione nella risposta), che il server usa solo per ricostruire la relazione — **non** come ID persistito.
+
+**Pipeline deterministica provider → mapper ID → parsePool → applicazione** (risolve la contraddizione «il provider non genera ID» ↔ «`schoolforge-pool/v2` richiede identificativi validi»):
+
+1. il provider restituisce **domande strutturate senza ID persistiti** (Structured Output);
+2. il **server valida** struttura, tipo, difficoltà, soluzione e opzioni (coerenza semantica, quantità esatte, range);
+3. all'**applicazione**, un **mapper deterministico** assegna `questionLocalId` e `optionId` **validi e non collidenti** (generati dal sistema, univoci nell'intero pool risultante, inclusi gli ID già esistenti in caso di pool esistente);
+4. viene costruito il **documento `schoolforge-pool/v2` completo** (con gli ID assegnati, `maxPoints === difficolta`, nessun `peso`);
+5. **`parsePool` valida il documento finale** prima della scrittura **canonica** (`poolEditorService`).
+
+**Nessun ID prodotto dal modello è considerato autorevole.**
+
+Validazioni obbligatorie (fail-closed, rifiuto integrale): quantità esatta per ogni tipo; totale esatto; difficoltà nel range; `maxPoints === difficolta`; risposta singola con **una** sola soluzione; multipla con **almeno una** soluzione valida; soluzione **contenuta** nelle opzioni; opzioni senza ID duplicati (garantito dal mapper); **nessun `peso`**; nessun campo estraneo; parser finale `schoolforge-pool/v2`; limite dimensionale. La generazione si basa sul testo della lezione e **non inventa** nozioni sostanziali non supportate.
+
+**Anti-duplicazione (onesta).** `existingPoolQuestionCount` è solo contesto quantitativo e **non** rileva duplicati semantici. Per AIGEN-01 **non** si invia l'intero pool esistente al modello: si eviterebbe di pagare token extra per una **falsa** garanzia di deduplicazione. Il modello genera una proposta; **il docente elimina o modifica** eventuali duplicati nella preview prima di applicare.
 
 ### 5.5 Anteprima risultato
 Mostra tipo, difficoltà, preview domanda, soluzione, opzioni (dove presenti), modifica, elimina proposta, conteggio finale aggiornato, **costo reale** della generazione, pulsante finale di applicazione. Chiudere il dialog prima dell'applicazione **non** modifica il pool.
@@ -268,9 +312,16 @@ Anteprima Markdown + **costo reale**; `Usa questa bozza` · `Annulla`.
 `Usa questa bozza`: sostituisce **esclusivamente** il draft locale del MarkdownBodyEditor; marca l'editor **dirty**; **non** chiama il service di salvataggio; **non** aggiorna Storage/Firestore/publicLessons; il docente modifica liberamente; il normale `Salva` esegue poi il flusso canonico esistente; dirty guard e `Annulla` continuano a funzionare.
 
 ### 6.6 Output lezione
-Il provider restituisce **esclusivamente** corpo Markdown: nessun front matter, nessun HTML raw, nessuno script, nessun metadato tecnico, nessun path, nessun ID Firestore/Storage.
+Il provider restituisce **esclusivamente** corpo Markdown: nessun front matter, nessuno script, nessun metadato tecnico, nessun path, nessun ID Firestore/Storage.
 
-Validazioni: stringa non vuota; UTF-8 valido; dimensione entro `MAX_LESSON_CONTENT_BYTES`; niente HTML raw/elementi pericolosi; nessun front matter duplicato; Markdown renderizzabile; struttura coerente con titolo/concetti/obiettivi; **nessun salvataggio se output invalido**.
+Validazioni: stringa non vuota; UTF-8 valido; dimensione entro `MAX_LESSON_CONTENT_BYTES`; **nessun front matter** (YAML `--- … ---` iniziale) — vietato e rifiutato; Markdown renderizzabile; struttura coerente con titolo/concetti/obiettivi; **nessun salvataggio se output invalido**.
+
+**Strategia di sicurezza su Markdown/HTML (verificabile, non una falsa garanzia regex).** La sicurezza **non** si basa su una promessa di «nessun HTML» ottenuta via regex assoluta — un filtro regex sull'HTML è notoriamente aggirabile. La difesa è a più livelli:
+1. la **sanitizzazione già esistente nel renderer** (DOMPurify, `MarkdownRenderer`) resta il gate autoritativo a render-time e **non** viene modificata;
+2. il **prompt vieta** esplicitamente HTML raw e front matter;
+3. il **validator rifiuta** costrutti esplicitamente non ammessi (front matter YAML, blocchi `<script>`/`<style>`, tag noti pericolosi) come segnale di output non conforme → `output_invalid`, senza dichiarare copertura assoluta.
+
+La bozza è comunque sempre renderizzata attraverso il renderer sanitizzato esistente, quindi la difesa finale contro XSS resta quella già in produzione, invariata.
 
 ---
 
@@ -310,6 +361,14 @@ Tutti gli esempi restano **ordini di grandezza sotto** il cap per operazione (25
 - **Risultato temporaneo**: un documento con **TTL 24h**.
 - **Applicazione pool**: normale write canonica esistente (`poolEditorService`), invariata.
 - **Applicazione lezione**: **zero write** finché il docente non preme il normale `Salva` (flusso canonico invariato).
+
+**Conferma costi/applicazione (congelata):**
+- zero costo passivo;
+- **preview senza chiamata provider**;
+- **una sola chiamata provider** per generazione (retry ≤ 1);
+- **nessun autosave** automatico dell'output;
+- **pool** applicato **tramite servizio canonico** (`poolEditorService`) dopo conferma;
+- **lezione** inserita **soltanto nel draft locale dirty** e salvata **separatamente** dal docente col `Salva` canonico.
 
 ### 8.1 Error codes (congelati per AIGEN-01)
 Riuso dei codici esistenti (`unauthenticated`, `not_owner`, `feature_disabled`, `provider_config_invalid`, `invalid_input`, `limit_exceeded`, `operation_budget_exceeded`, `daily_budget_exceeded`, `budget_exceeded`, `budget_unavailable`) **estesi** con codici AIGEN dedicati:
