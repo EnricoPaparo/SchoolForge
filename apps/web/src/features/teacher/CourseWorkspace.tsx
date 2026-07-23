@@ -2571,7 +2571,7 @@ function LessonDetail({
                 <p className="state-empty">Nessun contenuto disponibile per questa lezione.</p>
               )}
               {!loading && !error && content !== null && content.trim() !== '' && (
-                <MarkdownRenderer markdown={content} variant="lesson" />
+                <MarkdownRenderer markdown={content} />
               )}
             </>
           )

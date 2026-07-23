@@ -98,11 +98,7 @@ vi.mock('../lessonContent.js', () => ({
   fetchPublicLessonContent: (...a: unknown[]) => mockFetchPublicLessonContent(...a),
 }));
 vi.mock('../MarkdownRenderer.js', () => ({
-  MarkdownRenderer: ({ markdown, variant }: { markdown: string; variant?: string }) => (
-    <div data-testid="md" data-variant={variant ?? 'default'}>
-      {markdown}
-    </div>
-  ),
+  MarkdownRenderer: ({ markdown }: { markdown: string }) => <div data-testid="md">{markdown}</div>,
 }));
 // The pool editor has its own dedicated test; here we stub it to observe that
 // the workspace mounts it lazily (only on the Domande tab) and to drive its
@@ -311,7 +307,6 @@ describe('CourseWorkspace — selection', () => {
     expect(mockFetchLessonContent).toHaveBeenCalledTimes(1);
     expect(mockFetchLessonContent).toHaveBeenCalledWith('ref/uda-01-reti/l1.md', expect.anything());
     expect(screen.getByTestId('md').textContent).toContain('Corpo della lezione.');
-    expect(screen.getByTestId('md').getAttribute('data-variant')).toBe('lesson');
     // No pool read: the only content read is the lesson Markdown itself.
     expect(mockListLessons).toHaveBeenCalledTimes(1);
     expect(mockListUdas).toHaveBeenCalledTimes(1);
