@@ -72,7 +72,12 @@ import {
 } from './storageErrorDetails.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { QuestionPoolEditor, type PoolCountStatus } from './QuestionPoolEditor.js';
-import { MarkdownBodyEditor, LessonMetadataForm, type EditStatus } from './lessonEditors.js';
+import {
+  MarkdownBodyEditor,
+  LessonMetadataForm,
+  type EditStatus,
+  type LessonAiButtonContext,
+} from './lessonEditors.js';
 import { exportZip } from './exportZip.js';
 import { downloadMarkdown, downloadPdf, generateMarkdown } from './programmaSvolto.js';
 import { describeImportValidationError } from './importValidationMessage.js';
@@ -1891,6 +1896,14 @@ export function CourseWorkspace({
             <LessonDetail
               lesson={selectedLesson}
               metadata={lessonMetadata}
+              lessonAi={{
+                titolo: lessonMetadata.titolo ?? selectedLesson.titolo ?? null,
+                sottotitolo: lessonMetadata.sottotitolo ?? null,
+                // UDA title già in memoria dall'albero: nessuna nuova query.
+                udaTitle: tree?.udas.find((u) => u.dir === selectedLesson.udaDir)?.titolo ?? null,
+                concettiChiave: lessonMetadata.concettiChiave,
+                obiettivi: lessonMetadata.obiettivi,
+              }}
               content={lessonContent}
               loading={lessonLoading}
               error={lessonError}
@@ -2395,6 +2408,7 @@ function LessonDetail({
   onCancelInfo,
   onContentDirtyChange,
   onInfoDirtyChange,
+  lessonAi,
 }: {
   lesson: LessonItem;
   metadata: LessonMetadata;
@@ -2421,6 +2435,7 @@ function LessonDetail({
   onCancelInfo: () => void;
   onContentDirtyChange: (dirty: boolean) => void;
   onInfoDirtyChange: (dirty: boolean) => void;
+  lessonAi: LessonAiButtonContext;
 }) {
   const { title } = resolveLessonTitle(lesson.filename, metadata.titolo ?? lesson.titolo);
 
@@ -2499,6 +2514,7 @@ function LessonDetail({
             onSave={onSaveContent}
             onCancel={onCancelContent}
             onDirtyChange={onContentDirtyChange}
+            lessonAi={lessonAi}
           />
         ) : (
           activeTab === 'contenuto' && (

@@ -249,3 +249,133 @@ export function describeAiContentError(err: unknown): string {
 export function formatMicroUsd(microUsd: number): string {
   return `${(microUsd / 1_000_000).toFixed(6)} USD`;
 }
+
+// ─── AIGEN-03 — generazione bozza **lezione** (kind: 'lesson') ────────────────
+
+/** Profondità della bozza (mappa 1:1 sul `depth` del payload backend AIGEN-01). */
+export type LessonDepth = 'synthetic' | 'complete' | 'in_depth';
+
+export const DEFAULT_LESSON_DEPTH: LessonDepth = 'complete';
+
+export const LESSON_DEPTH_OPTIONS: readonly {
+  value: LessonDepth;
+  label: string;
+  description: string;
+}[] = [
+  { value: 'synthetic', label: 'Sintetica', description: 'Bozza concisa, essenziale.' },
+  { value: 'complete', label: 'Completa', description: 'Copertura equilibrata dell’argomento.' },
+  { value: 'in_depth', label: 'Approfondita', description: 'Trattazione estesa e dettagliata.' },
+];
+
+/** Payload chiuso `kind: 'lesson'` (stesso contratto congelato lato backend). */
+export interface AiLessonContentRequest {
+  kind: 'lesson';
+  requestId: string;
+  modelProfile: PoolModelProfile;
+  teacherGuidance?: string;
+  depth: LessonDepth;
+  titolo?: string;
+  sottotitolo?: string;
+  udaTitle?: string;
+  concettiChiave?: string[];
+  obiettivi?: string[];
+  currentBody?: string;
+  hasCurrentContent: boolean;
+}
+
+export interface AiLessonPreviewResult {
+  kind: 'lesson';
+  modelProfile: string;
+  estimatedInputTokens: number;
+  maxOutputTokens: number;
+  estimatedCostMicroUsd: number;
+  reservationCostMicroUsd: number;
+  requestedTotal: number | null;
+}
+
+export interface AiLessonProposalOutput {
+  body: string;
+}
+
+export interface AiLessonGenerateResult {
+  status: 'completed';
+  kind: 'lesson';
+  modelProfile: string;
+  output: AiLessonProposalOutput;
+  actualCostMicroUsd: number | null;
+  replayed: boolean;
+}
+
+export interface AiLessonCallables {
+  preview: (req: AiLessonContentRequest) => Promise<AiLessonPreviewResult>;
+  generate: (req: AiLessonContentRequest) => Promise<AiLessonGenerateResult>;
+}
+
+/**
+ * Contesto della lezione **già disponibile in memoria** (nessuna nuova query
+ * Firestore/Storage). Testo e indicazioni sono materiale non attendibile: nessun
+ * prompt è costruito nel client.
+ */
+export interface LessonAiContext {
+  titolo?: string | null;
+  sottotitolo?: string | null;
+  udaTitle?: string | null;
+  concettiChiave?: string[];
+  obiettivi?: string[];
+  currentBody: string;
+}
+
+/**
+ * Costruisce il payload chiuso `kind: 'lesson'` **normalizzato**. Guidance e campi
+ * di contesto vuoti sono omessi (trim); `hasCurrentContent` è derivato dal corpo
+ * attuale. Non invia mai model ID/listino/budget/API key/prompt/ownerUid.
+ */
+export function buildLessonContentRequest(params: {
+  requestId: string;
+  modelProfile: PoolModelProfile;
+  depth: LessonDepth;
+  context: LessonAiContext;
+  teacherGuidance?: string;
+}): AiLessonContentRequest {
+  const { context } = params;
+  const guidance = params.teacherGuidance?.trim();
+  const titolo = context.titolo?.trim();
+  const sottotitolo = context.sottotitolo?.trim();
+  const udaTitle = context.udaTitle?.trim();
+  const concettiChiave = (context.concettiChiave ?? [])
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0);
+  const obiettivi = (context.obiettivi ?? []).map((o) => o.trim()).filter((o) => o.length > 0);
+  const currentBody = context.currentBody;
+  const hasCurrentContent = currentBody.trim().length > 0;
+  return {
+    kind: 'lesson',
+    requestId: params.requestId,
+    modelProfile: params.modelProfile,
+    depth: params.depth,
+    hasCurrentContent,
+    ...(guidance ? { teacherGuidance: guidance } : {}),
+    ...(titolo ? { titolo } : {}),
+    ...(sottotitolo ? { sottotitolo } : {}),
+    ...(udaTitle ? { udaTitle } : {}),
+    ...(concettiChiave.length ? { concettiChiave } : {}),
+    ...(obiettivi.length ? { obiettivi } : {}),
+    ...(hasCurrentContent ? { currentBody } : {}),
+  };
+}
+
+/** Crea i wrapper delle callable lezione su una `Functions` iniettata (testabile). */
+export function createAiLessonCallables(functions: Functions): AiLessonCallables {
+  const previewFn = httpsCallable<AiLessonContentRequest, AiLessonPreviewResult>(
+    functions,
+    'aiContentPreview',
+  );
+  const generateFn = httpsCallable<AiLessonContentRequest, AiLessonGenerateResult>(
+    functions,
+    'aiContentGenerate',
+  );
+  return {
+    preview: async (req) => (await previewFn(req)).data,
+    generate: async (req) => (await generateFn(req)).data,
+  };
+}

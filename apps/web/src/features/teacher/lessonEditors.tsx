@@ -1,7 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { LessonMetadata } from '../repository/validation/types.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
+import { functions } from '../../lib/firebase.js';
+import { IconSparkles } from '../../components/icons.js';
+import {
+  createAiLessonCallables,
+  type PoolModelProfile,
+} from '../repository/pools/aiContentClient.js';
+import { AiLessonGenerationDialog } from './AiLessonGenerationDialog.js';
 import styles from './lessonEditors.module.css';
+
+/**
+ * AIGEN-03 — metadati di contesto della lezione (già in memoria) usati dal dialog
+ * «Genera con IA». Il corpo attuale (`currentBody`) è fornito dall'editor stesso
+ * (il draft corrente), non da qui: nessuna nuova lettura Storage/Firestore.
+ */
+export interface LessonAiButtonContext {
+  titolo?: string | null;
+  sottotitolo?: string | null;
+  udaTitle?: string | null;
+  concettiChiave?: string[];
+  obiettivi?: string[];
+  defaultModelProfile?: PoolModelProfile;
+}
 
 /**
  * Shared lesson editors for the Didattica workspace (DUX-04B): a Markdown
@@ -47,16 +68,21 @@ export function MarkdownBodyEditor({
   onSave,
   onCancel,
   onDirtyChange,
+  lessonAi,
 }: {
   initial: string;
   status: EditStatus;
   onSave: (body: string) => void;
   onCancel: () => void;
   onDirtyChange: (dirty: boolean) => void;
+  /** AIGEN-03 — abilita «Genera con IA» (solo in modifica corpo Markdown). */
+  lessonAi?: LessonAiButtonContext;
 }) {
   const [draft, setDraft] = useState(initial);
   const [tab, setTab] = useState<'editor' | 'preview'>('editor');
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const dirty = draft !== initial;
+  const aiCallables = useMemo(() => createAiLessonCallables(functions), []);
 
   useEffect(() => {
     onDirtyChange(dirty);
@@ -65,6 +91,25 @@ export function MarkdownBodyEditor({
 
   return (
     <div className={styles.editor} role="group" aria-label="Modifica contenuto">
+      {aiDialogOpen && lessonAi && (
+        <AiLessonGenerationDialog
+          context={{
+            titolo: lessonAi.titolo ?? null,
+            sottotitolo: lessonAi.sottotitolo ?? null,
+            udaTitle: lessonAi.udaTitle ?? null,
+            concettiChiave: lessonAi.concettiChiave ?? [],
+            obiettivi: lessonAi.obiettivi ?? [],
+            // Il corpo attuale è il draft locale corrente (contesto per il modello).
+            currentBody: draft,
+          }}
+          callables={aiCallables}
+          {...(lessonAi.defaultModelProfile
+            ? { defaultModelProfile: lessonAi.defaultModelProfile }
+            : {})}
+          onUseDraft={(body) => setDraft(body)}
+          onClose={() => setAiDialogOpen(false)}
+        />
+      )}
       <div className={styles.editorTabs} role="tablist" aria-label="Editor contenuto">
         <button
           type="button"
@@ -112,6 +157,16 @@ export function MarkdownBodyEditor({
         <button type="button" onClick={onCancel} disabled={status.busy}>
           Annulla
         </button>
+        {lessonAi && (
+          <button
+            type="button"
+            onClick={() => setAiDialogOpen(true)}
+            disabled={status.busy}
+            title="Genera una bozza con l’IA"
+          >
+            <IconSparkles size={14} /> Genera con IA
+          </button>
+        )}
         <StatusLine status={status} dirty={dirty} />
       </div>
     </div>
