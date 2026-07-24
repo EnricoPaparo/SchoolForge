@@ -150,7 +150,8 @@ describe('StudentsView — tabs Studenti/Classi (DUX-05A)', () => {
             ...s,
             createdAt: { toDate: () => new Date('2026-01-05T10:00:00Z') },
             firstPortalAccessAt: { toDate: () => new Date('2026-02-10T10:00:00Z') },
-            lastPortalAccessAt: { toDate: () => new Date('2026-03-20T14:30:00Z') },
+            // Local wall-clock time: the assertion must not depend on the runner timezone.
+            lastPortalAccessAt: { toDate: () => new Date(2026, 2, 20, 14, 30) },
           }
         : s,
     );
