@@ -8,7 +8,7 @@ import type { LessonItem } from '../../repository/programs/programsService.js';
 // DUX-04D and retargeted to the live shared `QuestionPoolEditor`, which is the
 // single pool editor mounted by the Didattica workspace.
 
-vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
+vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {}, functions: {} }));
 
 const mockLoadPool = vi.fn();
 const mockSavePool = vi.fn();
