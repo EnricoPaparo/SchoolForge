@@ -337,6 +337,19 @@
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+  /*
+   * AIGEN-UI-02 — scrollbar visivamente nascosta (poco elegante su mobile) senza
+   * mai disabilitare lo scorrimento: touch, rotellina, trackpad e tastiera
+   * continuano a funzionare. Circoscritto a questa variante: nessuna regola
+   * globale sulle scrollbar del portale.
+   */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge */
+}
+.dialogWideScroll::-webkit-scrollbar {
+  /* WebKit/Chromium: barra a larghezza zero, scroll intatto. */
+  width: 0;
+  height: 0;
 }
 .dialogTitle {
   font-size: 1.05rem;

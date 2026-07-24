@@ -10,6 +10,44 @@
   min-width: 0;
 }
 
+/*
+ * Variante inline (AIGEN-UI-02): usata nella riga metadati della revisione bozza,
+ * senza etichetta visibile e con ingombro ridotto, per stare sulla stessa riga di
+ * badge e «Elimina». L'altezza combacia con quella del pulsante «Elimina».
+ */
+.stepperInline {
+  display: inline-flex;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.stepperInline .control {
+  height: 2rem;
+}
+
+.stepperInline .button {
+  flex-basis: 1.75rem;
+  font-size: 1rem;
+}
+
+.stepperInline .input {
+  width: 3.25rem;
+  flex: 0 1 3.25rem;
+  font-size: 0.85rem;
+}
+
+/* Ingombro ridotto su mobile: i controlli della riga metadati restano su una riga. */
+@media (max-width: 640px) {
+  .stepperInline .button {
+    flex-basis: 1.5rem;
+  }
+  .stepperInline .input {
+    width: 2.25rem;
+    flex: 0 1 2.25rem;
+    padding-inline: 0.15rem;
+  }
+}
+
 .label {
   font-size: 0.8125rem;
   font-weight: 600;
@@ -33,6 +71,11 @@
   justify-content: center;
   font-size: 1.15rem;
   line-height: 1;
+  /* Neutralizza padding/min-width del bottone globale: senza questo il
+     `min-width: auto` del flex item riporterebbe la larghezza al min-content,
+     ignorando la flex-basis (e facendo debordare la riga su mobile). */
+  padding: 0;
+  min-width: 0;
   border: none;
   background: transparent;
   color: var(--color-text, inherit);

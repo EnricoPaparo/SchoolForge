@@ -295,7 +295,6 @@ export function AiLessonGenerationDialog({
             <li>Costo stimato: {formatMicroUsd(preview.estimatedCostMicroUsd)}</li>
             <li>Tetto massimo prenotabile: {formatMicroUsd(preview.reservationCostMicroUsd)}</li>
           </ul>
-          <p className={styles.noCostNote}>Nessun costo è stato ancora generato.</p>
           <div className="dialog-actions">
             <button type="button" onClick={invalidateEstimate}>
               Modifica configurazione

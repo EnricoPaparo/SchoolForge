@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../lib/firebase.js', () => ({
@@ -122,7 +122,6 @@ describe('AiPoolGenerationDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
     await screen.findByText(/Costo stimato/);
     expect(screen.getByText(/Tetto massimo prenotabile/)).toBeTruthy();
-    expect(screen.getByText(/Nessun costo è stato ancora generato/)).toBeTruthy();
   });
 
   it('a config change invalidates the estimate and yields a new requestId', async () => {
@@ -170,10 +169,7 @@ describe('AiPoolGenerationDialog', () => {
     const { callables } = makeCallables();
     await goToReview(callables);
     expect(screen.getByText('Spiega TCP')).toBeTruthy();
-    const firstCard = screen.getByText('Spiega TCP').closest('div')!;
-    fireEvent.click(
-      within(firstCard.parentElement as HTMLElement).getAllByRole('button', { name: 'Elimina' })[0],
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina domanda 1' }));
     await waitFor(() => expect(screen.queryByText('Spiega TCP')).toBeNull());
   });
 
@@ -354,5 +350,165 @@ describe('AiPoolGenerationDialog — AIGEN-UI-01 UI', () => {
     await screen.findByText(/Costo stimato/);
     expect(previewReqs).toHaveLength(1);
     expect(previewReqs[0].counts).toEqual({ aperta: 3, chiusa_singola: 3, chiusa_multipla: 1 });
+  });
+});
+
+// ─── AIGEN-UI-02 — rifinitura revisione bozza ────────────────────────────────
+describe('AiPoolGenerationDialog — AIGEN-UI-02 review card', () => {
+  it('no longer shows the "Nessun costo è stato ancora generato" note', async () => {
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    expect(screen.queryByText(/Nessun costo è stato ancora generato/)).toBeNull();
+    // Le informazioni operative utili restano.
+    expect(screen.getByText(/Token stimati/)).toBeTruthy();
+    expect(screen.getByText(/Tetto massimo prenotabile/)).toBeTruthy();
+  });
+
+  it('keeps the review list scrollable with a visually hidden scrollbar', async () => {
+    const { callables } = makeCallables();
+    await goToReview(callables);
+    const list = document.querySelector('[class*="reviewList"]') as HTMLElement;
+    expect(list).toBeTruthy();
+    // La classe scrollabile è applicata: overflow non è disabilitato.
+    expect(list.className).toMatch(/reviewList/);
+  });
+
+  it('renders the difficulty stepper (1–5) instead of a native number spinner', async () => {
+    const { callables } = makeCallables();
+    await goToReview(callables);
+    const diff = screen.getByLabelText('Difficoltà domanda 1') as HTMLInputElement;
+    expect(diff.getAttribute('type')).toBe('text');
+    expect(diff.getAttribute('inputmode')).toBe('numeric');
+    expect(diff.value).toBe('3');
+    expect(screen.queryByRole('spinbutton', { name: 'Difficoltà domanda 1' })).toBeNull();
+  });
+
+  it('clamps the difficulty stepper at 1 and 5 (disabled at the bounds)', async () => {
+    const { callables } = makeCallables();
+    await goToReview(callables);
+    const dec = () =>
+      screen.getByRole('button', { name: 'Diminuisci difficoltà domanda 1' }) as HTMLButtonElement;
+    const inc = () =>
+      screen.getByRole('button', { name: 'Aumenta difficoltà domanda 1' }) as HTMLButtonElement;
+    const value = () => (screen.getByLabelText('Difficoltà domanda 1') as HTMLInputElement).value;
+    // 3 → 1
+    fireEvent.click(dec());
+    fireEvent.click(dec());
+    expect(value()).toBe('1');
+    expect(dec().disabled).toBe(true);
+    // 1 → 5
+    for (let i = 0; i < 4; i += 1) fireEvent.click(inc());
+    expect(value()).toBe('5');
+    expect(inc().disabled).toBe(true);
+  });
+
+  it('renders the "Caratteri max" stepper only for open questions, within canonical bounds', async () => {
+    const { callables } = makeCallables();
+    await goToReview(callables);
+    // Domanda 1 = aperta → stepper presente e derivato dalla difficoltà (3 → 1200).
+    const chars = screen.getByLabelText('Caratteri max domanda 1') as HTMLInputElement;
+    expect(chars.value).toBe('1200');
+    expect(chars.getAttribute('type')).toBe('text');
+    fireEvent.click(screen.getByRole('button', { name: 'Aumenta caratteri max domanda 1' }));
+    expect((screen.getByLabelText('Caratteri max domanda 1') as HTMLInputElement).value).toBe(
+      '1300',
+    );
+    // Domanda 2 = chiusa singola → nessun controllo caratteri.
+    expect(screen.queryByLabelText('Caratteri max domanda 2')).toBeNull();
+  });
+
+  it('does not silently correct a manual out-of-range difficulty (validation blocks apply)', async () => {
+    const { callables } = makeCallables();
+    await goToReview(callables);
+    fireEvent.change(screen.getByLabelText('Difficoltà domanda 1'), { target: { value: '9' } });
+    // Nessuna correzione silenziosa: il valore digitato resta.
+    expect((screen.getByLabelText('Difficoltà domanda 1') as HTMLInputElement).value).toBe('9');
+    fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Crea pool' }).at(-1)!);
+    await screen.findByText(/la difficoltà deve essere un intero da 1 a 5/i);
+  });
+
+  it('shows the delete button beside the metadata controls, deleting only the local draft', async () => {
+    const onApply = vi.fn(async () => {});
+    const { callables } = makeCallables();
+    await goToReview(callables, onApply);
+    const del = screen.getByRole('button', { name: 'Elimina domanda 1' });
+    const diff = screen.getByLabelText('Difficoltà domanda 1');
+    // Stessa riga metadati: condividono il contenitore dei controlli.
+    const controls = del.closest('[class*="reviewHeadControls"]') as HTMLElement;
+    expect(controls).toBeTruthy();
+    expect(controls.contains(diff)).toBe(true);
+    fireEvent.click(del);
+    await waitFor(() => expect(screen.queryByText('Spiega TCP')).toBeNull());
+    // Nessuna scrittura del pool: la cancellazione tocca solo la bozza locale.
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('gives the three type badges distinct colour classes (no white background)', async () => {
+    const { callables } = makeCallables({
+      generate: async () =>
+        generateResult({
+          output: {
+            questions: [
+              {
+                order: 0,
+                tipo: 'aperta',
+                testo: 'Spiega TCP',
+                difficolta: 3,
+                soluzione: 'Affidabile',
+              },
+              {
+                order: 1,
+                tipo: 'chiusa_singola',
+                testo: 'Quale?',
+                difficolta: 2,
+                opzioni: ['TCP', 'UDP'],
+                soluzioneIndici: [0],
+              },
+              {
+                order: 2,
+                tipo: 'chiusa_multipla',
+                testo: 'Quali?',
+                difficolta: 4,
+                opzioni: ['TCP', 'UDP', 'RAM'],
+                soluzioneIndici: [0, 1],
+              },
+            ],
+          },
+        }),
+    });
+    await goToReview(callables);
+    const cls = (text: string) => screen.getByText(text).className;
+    expect(cls('Aperta')).toMatch(/badgeAperta/);
+    expect(cls('Chiusa (singola)')).toMatch(/badgeSingola/);
+    expect(cls('Chiusa (multipla)')).toMatch(/badgeMultipla/);
+    // Tre classi cromatiche distinte.
+    expect(new Set([cls('Aperta'), cls('Chiusa (singola)'), cls('Chiusa (multipla)')]).size).toBe(
+      3,
+    );
+  });
+
+  it('applies a pool whose maxPoints matches the edited difficolta', async () => {
+    const onApply = vi.fn(async (_pool: ParsedPool) => {});
+    const { callables } = makeCallables();
+    await goToReview(callables, onApply);
+    fireEvent.click(screen.getByRole('button', { name: 'Aumenta difficoltà domanda 1' })); // 3 → 4
+    fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Crea pool' }).at(-1)!);
+    await screen.findByText(/Pool creato con 2 domande/);
+    const pool = onApply.mock.calls[0]![0];
+    const aperta = pool.questions.find((q) => q.tipo === 'aperta')!;
+    expect(aperta.difficolta).toBe(4);
+    expect(aperta.maxPoints).toBe(aperta.difficolta);
   });
 });

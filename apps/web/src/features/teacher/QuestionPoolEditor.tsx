@@ -11,7 +11,13 @@ import {
 } from '../repository/pools/poolEditorService.js';
 import { createAiContentCallables } from '../repository/pools/aiContentClient.js';
 import { db, functions, storage } from '../../lib/firebase.js';
-import { IconPencil, IconPlus, IconSparkles, IconTrash } from '../../components/icons.js';
+import {
+  IconFileText,
+  IconPencil,
+  IconPlus,
+  IconSparkles,
+  IconTrash,
+} from '../../components/icons.js';
 import { AiPoolGenerationDialog } from './AiPoolGenerationDialog.js';
 import styles from './QuestionPoolEditor.module.css';
 
@@ -944,7 +950,7 @@ export function QuestionPoolEditor({
             ))}
           </ul>
           <button type="button" className={`${styles.btn} btn-primary`} onClick={openEditor}>
-            Modifica YAML
+            <IconFileText size={12} /> Modifica YAML
           </button>
         </div>
       )}
@@ -981,11 +987,12 @@ export function QuestionPoolEditor({
                 onClick={openEditor}
                 disabled={anyQuestionEditorOpen}
               >
-                Modifica YAML
+                <IconFileText size={12} /> Modifica YAML
               </button>
+              {/* Azione realmente distruttiva: cestino + stile danger già a riposo. */}
               <button
                 type="button"
-                className={`${styles.btn} ${styles.iconBtnDanger}`}
+                className={`${styles.btn} btn-danger`}
                 onClick={() => {
                   setDeleteConfirm(true);
                   setDeleteError(null);
@@ -993,7 +1000,7 @@ export function QuestionPoolEditor({
                 }}
                 disabled={anyQuestionEditorOpen}
               >
-                Elimina pool
+                <IconTrash size={12} /> Elimina pool
               </button>
             </div>
           </div>
