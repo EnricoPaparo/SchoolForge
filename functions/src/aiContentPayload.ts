@@ -23,11 +23,16 @@ export const CHARS_PER_TOKEN = 4;
 export const PROMPT_OVERHEAD_TOKENS = 900;
 /** Token di output massimi per singola domanda (testo+opzioni+soluzione). */
 export const OUTPUT_TOKENS_PER_QUESTION = 220;
-/** Token di output massimi per profondità lezione. */
+/**
+ * Hard cap **tecnico** dei token di output per profondità lezione (Responses API,
+ * prenotazione, budget, memoria, dimensione documentale). NON è un obiettivo di
+ * lunghezza: il prompt non chiede mai di raggiungere questi valori. Alzati in
+ * AIGEN-PROMPT-01 per non troncare lezioni didatticamente complete.
+ */
 export const LESSON_OUTPUT_TOKENS: Readonly<Record<LessonDepth, number>> = {
-  synthetic: 1_200,
-  complete: 3_500,
-  in_depth: 6_000,
+  synthetic: 2_500,
+  complete: 7_000,
+  in_depth: 12_000,
 };
 
 /**

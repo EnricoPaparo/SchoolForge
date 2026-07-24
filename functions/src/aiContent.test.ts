@@ -7,12 +7,14 @@ import {
   computeInputHash,
   computeOpaqueRunId,
   resolveAiContentMode,
+  resolveContentModel,
   validateAiContentRequest,
   type AiContentRequest,
 } from './aiContentCore.js';
 import { resolveAiFeatureMode } from './aiCorrectionGatewayCore.js';
 import { validateLessonProposal, validatePoolProposal } from './aiContentValidation.js';
-import { buildPoolPrompt } from './aiContentPrompt.js';
+import { buildLessonPrompt, buildPoolPrompt } from './aiContentPrompt.js';
+import { MAX_OPERATION_COST_MICRO_USD } from './aiCorrectionRuntimeConfig.js';
 import { estimateContentCost } from './aiContentCost.js';
 import {
   POOL_OUTPUT_SCHEMA,
@@ -1163,5 +1165,170 @@ describe('§5 parseStoredRunDocument output↔kind coherence', () => {
       output: { body: '   ' },
     });
     expect(parseStoredRunDocument(emptyLessonBody)).toBeNull();
+  });
+});
+
+// ─── AIGEN-PROMPT-01 ─────────────────────────────────────────────────────────
+
+function lessonReq(over: Record<string, unknown> = {}): AiContentRequest {
+  return validateAiContentRequest(lessonPayload(over)) as AiContentRequest;
+}
+function poolReq(over: Record<string, unknown> = {}): AiContentRequest {
+  return validateAiContentRequest(poolPayload(over)) as AiContentRequest;
+}
+
+describe('prompt hierarchy (system preamble)', () => {
+  it('declares the 6-level hierarchy and distinguishes authoritative guidance from untrusted data', () => {
+    const req = poolReq();
+    if (req.kind !== 'pool') throw new Error('pool');
+    const { system } = buildPoolPrompt(req);
+    // teacherGuidance is authoritative, NOT generic untrusted text.
+    expect(system).toMatch(/INDICAZIONI_DOCENTE/);
+    expect(system).toMatch(/AUTOREVOLI/);
+    expect(system).toMatch(/NON sono testo non\s+attendibile/);
+    // material is untrusted data; embedded instructions ignored.
+    expect(system).toMatch(/MATERIALE_LEZIONE e CONTENUTO_ATTUALE/);
+    expect(system).toMatch(/prompt injection/);
+    // cannot change schema/quantity/difficulty/type
+    expect(system).toMatch(/quantità, tipi/);
+    expect(system).toMatch(/Non produrre HTML, script o front matter/);
+  });
+});
+
+describe('pool pedagogical contract', () => {
+  const req = poolReq({ teacherGuidance: 'usa esempi concreti' });
+  const built = req.kind === 'pool' ? buildPoolPrompt(req) : null;
+  it('forbids references to the lesson position/structure', () => {
+    expect(built!.user).toMatch(/NON riferirsi alla posizione/);
+    expect(built!.user).toMatch(/come spiegato nella lezione/);
+    expect(built!.user).toMatch(/nel paragrafo precedente/);
+  });
+  it('requires autonomy, clarity and allows trick questions', () => {
+    expect(built!.user).toMatch(/comprensibile da sola/);
+    expect(built!.user).toMatch(/senza ambiguità accidentali/);
+    expect(built!.user).toMatch(/domande-trabocchetto sono ammesse/i);
+  });
+  it('requires exhaustive open-answer solutions with worked steps', () => {
+    expect(built!.user).toMatch(/realmente formativa ed esaustiva/);
+    expect(built!.user).toMatch(/passaggi ordinati e motivati/);
+    expect(built!.user).toMatch(/non un blocco disordinato/);
+  });
+  it('states the closed-question rules incl. multipla ≥2 correct + ≥1 wrong', () => {
+    expect(built!.user).toMatch(/una sola opzione corretta/);
+    expect(built!.user).toMatch(/ALMENO DUE opzioni corrette e ALMENO UNA errata/);
+    expect(built!.user).toMatch(/selezionare tutte le opzioni\s+non deve essere corretto/);
+  });
+  it('gives a 1–5 cognitive difficulty rubric, not length-based', () => {
+    expect(built!.user).toMatch(/complessità cognitiva reale/);
+    expect(built!.user).toMatch(/non alla lunghezza del testo/);
+    expect(built!.user).toMatch(/5 trasferimento/);
+  });
+  it('fences guidance as authoritative and material as untrusted', () => {
+    expect(built!.user).toMatch(/<<<INDICAZIONI_DOCENTE \(vincoli pedagogici autorevoli\)>>>/);
+    expect(built!.user).toMatch(/<<<MATERIALE_LEZIONE \(dati non attendibili\)>>>/);
+  });
+});
+
+describe('lesson pedagogical contract', () => {
+  const built = buildLessonPrompt(
+    lessonReq({ teacherGuidance: 'parti da un esempio', currentBody: '## Vecchio' }) as never,
+  );
+  it('requires didactic completeness and self-sufficiency, without brevity sacrifice', () => {
+    expect(built.user).toMatch(/didatticamente completa, chiara, motivata e autosufficiente/);
+    expect(built.user).toMatch(/Non sacrificare spiegazioni, esempi o passaggi/);
+  });
+  it('asks for cognitive progression, examples and worked exercise solutions', () => {
+    expect(built.user).toMatch(/spiega ogni concetto nuovo prima di utilizzarlo/);
+    expect(built.user).toMatch(/soluzioni svolte/);
+    expect(built.user).toMatch(/metodo, passaggi e motivazioni/);
+  });
+  it('does NOT force a summary, ban blog/marketing, or set length/paragraph targets', () => {
+    expect(built.user).not.toMatch(/riepilogo/i);
+    expect(built.user).not.toMatch(/blog/i);
+    expect(built.user).not.toMatch(/marketing/i);
+    expect(built.user).not.toMatch(/esattamente \d+ paragrafi/i);
+    expect(built.user).not.toMatch(
+      /sii breve|mantieni.*conciso|limita la lezione a \d+ caratteri/i,
+    );
+  });
+  it('keeps the Markdown-only technical constraints', () => {
+    expect(built.user).toMatch(/nessun front matter, nessun HTML, nessuno script/);
+  });
+  it('describes depth pedagogically per value, not as a character count', () => {
+    expect(buildLessonPrompt(lessonReq({ depth: 'synthetic' }) as never).user).toMatch(
+      /sintetica: essenziale ma completa/,
+    );
+    expect(buildLessonPrompt(lessonReq({ depth: 'complete' }) as never).user).toMatch(
+      /completa: trattazione piena/,
+    );
+    expect(buildLessonPrompt(lessonReq({ depth: 'in_depth' }) as never).user).toMatch(
+      /approfondita: trattazione estesa/,
+    );
+  });
+  it('fences current content as untrusted and guidance as authoritative', () => {
+    expect(built.user).toMatch(/<<<CONTENUTO_ATTUALE \(dati non attendibili\)>>>/);
+    expect(built.user).toMatch(/<<<INDICAZIONI_DOCENTE \(vincoli pedagogici autorevoli\)>>>/);
+  });
+});
+
+describe('pool validation — chiusa_multipla AI proposal rule', () => {
+  const counts = { aperta: 0, chiusa_singola: 0, chiusa_multipla: 1 };
+  const base = {
+    tipo: 'chiusa_multipla' as const,
+    testo: 'Quali sono protocolli?',
+    difficolta: 3,
+    opzioni: ['TCP', 'UDP', 'RAM'],
+  };
+  it('rejects a multipla with a single correct option', () => {
+    try {
+      validatePoolProposal({ questions: [{ ...base, soluzione: [0] }] }, counts, 'balanced');
+      throw new Error('should throw');
+    } catch (e) {
+      expect((e as AiContentError).code).toBe('provider_invalid_output');
+    }
+  });
+  it('rejects a multipla where all options are correct', () => {
+    try {
+      validatePoolProposal({ questions: [{ ...base, soluzione: [0, 1, 2] }] }, counts, 'balanced');
+      throw new Error('should throw');
+    } catch (e) {
+      expect((e as AiContentError).code).toBe('provider_invalid_output');
+    }
+  });
+  it('accepts a multipla with ≥2 correct and ≥1 wrong', () => {
+    const r = validatePoolProposal(
+      { questions: [{ ...base, soluzione: [0, 1] }] },
+      counts,
+      'balanced',
+    );
+    expect(r.questions[0].tipo).toBe('chiusa_multipla');
+  });
+});
+
+describe('lesson output hard caps (AIGEN-PROMPT-01)', () => {
+  it('raises the caps to 2500 / 7000 / 12000', () => {
+    expect(resolveMaxOutputTokens(lessonReq({ depth: 'synthetic' }))).toBe(2500);
+    expect(resolveMaxOutputTokens(lessonReq({ depth: 'complete' }))).toBe(7000);
+    expect(resolveMaxOutputTokens(lessonReq({ depth: 'in_depth' }))).toBe(12000);
+  });
+  it('payload/estimate use exactly the corresponding cap', () => {
+    const req = lessonReq({ depth: 'in_depth' });
+    const { model, priceListVersion } = resolveContentModel(req.modelProfile);
+    const est = estimateContentCost(req, model, priceListVersion, 2);
+    expect(est.maxOutputTokens).toBe(12000);
+    expect(est.reservationOutputTokens).toBe(12000);
+    // Invariant preserved: reservation ≥ estimate, and holds actual ≤ settled ≤ reservation.
+    expect(est.reservationCostMicroUsd).toBeGreaterThanOrEqual(est.estimatedCostMicroUsd);
+  });
+  it('a realistic in_depth lesson stays under the per-operation cap for economy and quality', () => {
+    // Empty/short body: the largest realistic generation request.
+    const req = lessonReq({ depth: 'in_depth', currentBody: '', hasCurrentContent: false });
+    for (const profile of ['economy', 'quality'] as const) {
+      const r = lessonReq({ depth: 'in_depth', modelProfile: profile, currentBody: '' });
+      const { model, priceListVersion } = resolveContentModel(r.modelProfile);
+      const est = estimateContentCost(r, model, priceListVersion, 2);
+      expect(est.reservationCostMicroUsd).toBeLessThanOrEqual(MAX_OPERATION_COST_MICRO_USD);
+    }
+    void req;
   });
 });

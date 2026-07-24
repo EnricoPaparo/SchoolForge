@@ -24,8 +24,31 @@ import type { AiPoolProposalOutput } from './aiContentClient.js';
  * intero ≥ 1 che non collide con gli ID del pool esistente né con quelli già
  * assegnati alle domande generate: deterministico a parità di pool esistente e di
  * proposta, senza collisioni. `maxPoints` è derivato da `difficolta` dal parser;
- * nessun `peso`. Le aperte hanno `maxCharacters` (default canonico 2000).
+ * nessun `peso`. Le aperte ricevono `maxCharacters` **derivato deterministicamente
+ * dalla difficoltà** (AIGEN-PROMPT-01, vedi `maxCharactersForDifficulty`), non un
+ * default fisso; il docente può comunque modificarlo nella revisione/editor.
  */
+
+/**
+ * AIGEN-PROMPT-01 — derivazione **deterministica** di `maxCharacters` di una
+ * domanda aperta generata dalla sua difficoltà (1–5). Funzione pura e fail-closed:
+ * una difficoltà fuori range lancia (nessun default silenzioso). Il docente può
+ * modificare il valore nella revisione; le domande esistenti non sono toccate.
+ */
+export const MAX_CHARACTERS_BY_DIFFICULTY: Readonly<Record<1 | 2 | 3 | 4 | 5, number>> = {
+  1: 500,
+  2: 800,
+  3: 1200,
+  4: 1800,
+  5: 2500,
+};
+
+export function maxCharactersForDifficulty(difficolta: number): number {
+  if (!Number.isInteger(difficolta) || difficolta < 1 || difficolta > 5) {
+    throw new RangeError(`Difficoltà non valida per maxCharacters: ${difficolta}`);
+  }
+  return MAX_CHARACTERS_BY_DIFFICULTY[difficolta as 1 | 2 | 3 | 4 | 5];
+}
 
 /** Convenzione canonica degli ID opzione del pool editor (a, b, c, …). */
 export function optionIdFromIndex(index: number): string {
@@ -57,7 +80,8 @@ function nextLocalKey(): string {
 
 /**
  * Converte la proposta del server (senza ID) nel modello locale **editabile**.
- * Le aperte ricevono il default canonico `maxCharacters = 2000`.
+ * Le aperte ricevono `maxCharacters` **derivato dalla difficoltà** (deterministico,
+ * fail-closed); il docente può poi modificarlo. Le chiuse non usano il campo.
  */
 export function proposalToLocalQuestions(output: AiPoolProposalOutput): LocalProposalQuestion[] {
   return output.questions.map((q) => {
@@ -68,7 +92,7 @@ export function proposalToLocalQuestions(output: AiPoolProposalOutput): LocalPro
         testo: q.testo,
         difficolta: q.difficolta,
         soluzione: q.soluzione,
-        maxCharacters: DEFAULT_MAX_CHARACTERS,
+        maxCharacters: maxCharactersForDifficulty(q.difficolta),
         opzioni: [],
         soluzioneIndici: [],
       };
