@@ -11,7 +11,7 @@
 - Functions distribuite in `us-central1`: `aiContentPreview`, `aiContentGenerate`.
 - Firestore Rules: distribuite.
 - Hosting: <https://schoolforge-dev.web.app>.
-- `AI_CONTENT_MODE`: assente, quindi `disabled` fail-closed.
+- `AI_CONTENT_MODE`: `mock` dopo verifica fail-closed iniziale in `disabled`.
 - Chiamate OpenAI e costo reale durante il rollout: **zero**.
 
 ## Evidenza automatica
@@ -28,10 +28,10 @@
 
 ## Human Gate
 
-- [ ] Configurare la TTL della collection group `aiContentRuns`, campo `expireAt`, e verificarne lo stato `ACTIVE`.
+- [x] Configurare la TTL della collection group `aiContentRuns`, campo `expireAt`, e verificarne lo stato `ACTIVE`.
 - [ ] Con `AI_CONTENT_MODE=disabled`, autenticarsi come docente e verificare che «Genera con IA» sia presente sia nel pool sia nell’editor della lezione.
 - [ ] Verificare che la preview fallisca in modo leggibile e senza creare run, prenotazioni o chiamate provider.
-- [ ] Attivare temporaneamente `mock`; generare e applicare un pool, controllando revisione, ID, difficoltà, soluzioni e salvataggio canonico.
+- [ ] In `mock`, generare e applicare un pool, controllando revisione, ID, difficoltà, soluzioni e salvataggio canonico.
 - [ ] In `mock`, generare una lezione; verificare che «Usa questa bozza» modifichi solo il draft e che solo «Salva» persista il contenuto.
 - [ ] Ripetere lo smoke essenziale su mobile/Brave senza overflow o dialog irraggiungibili.
 - [ ] Verificare che uno studente non possa leggere `aiContentRuns` né vedere controlli di generazione.
