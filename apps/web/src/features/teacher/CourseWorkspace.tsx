@@ -1781,7 +1781,10 @@ export function CourseWorkspace({
             />
           )}
           {selection.kind === 'lesson' && selectedLesson && (
-            <div className={styles.toolbar}>
+            <div
+              className={`${styles.toolbar} ${styles.toolbarLesson}`}
+              data-testid="lesson-toolbar"
+            >
               <div className={styles.menuWrap}>
                 <button
                   type="button"

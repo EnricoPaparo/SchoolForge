@@ -96,3 +96,66 @@ describe('AIGEN-02 — «Genera con IA» button placement', () => {
     expect(mockSavePool).not.toHaveBeenCalled();
   });
 });
+
+// ─── AIGEN-UI-02 — toolbar del pool ──────────────────────────────────────────
+describe('AIGEN-UI-02 — pool toolbar icons and destructive styling', () => {
+  const VALID_POOL = {
+    status: 'valid',
+    pool: {
+      schema: 'schoolforge-pool/v2',
+      questions: [
+        {
+          id: 'q1',
+          tipo: 'aperta',
+          difficolta: 2,
+          testo: 'T',
+          soluzione: 'S',
+          maxPoints: 2,
+          maxCharacters: 2000,
+        },
+      ],
+    },
+  };
+
+  it('keeps the toolbar order: Nuova domanda, Genera con IA, Modifica YAML, Elimina pool', async () => {
+    mockLoadPool.mockResolvedValue(VALID_POOL);
+    renderEditor();
+    await screen.findByRole('button', { name: 'Nuova domanda' });
+    const labels = Array.from(document.querySelectorAll('button'))
+      .map((b) => b.textContent?.trim())
+      .filter((t) =>
+        ['Nuova domanda', 'Genera con IA', 'Modifica YAML', 'Elimina pool'].includes(t ?? ''),
+      );
+    expect(labels).toEqual(['Nuova domanda', 'Genera con IA', 'Modifica YAML', 'Elimina pool']);
+  });
+
+  it('gives «Modifica YAML» an icon (IconFileText) in the valid-pool toolbar', async () => {
+    mockLoadPool.mockResolvedValue(VALID_POOL);
+    renderEditor();
+    const btn = await screen.findByRole('button', { name: 'Modifica YAML' });
+    expect(btn.querySelector('svg')).toBeTruthy();
+  });
+
+  it('gives «Modifica YAML» an icon also on the invalid-pool surface', async () => {
+    mockLoadPool.mockResolvedValue({
+      status: 'invalid',
+      errors: [{ field: 'schema', message: 'non valido' }],
+    });
+    renderEditor();
+    const btn = await screen.findByRole('button', { name: 'Modifica YAML' });
+    expect(btn.querySelector('svg')).toBeTruthy();
+  });
+
+  it('gives «Elimina pool» a trash icon and a destructive style already at rest', async () => {
+    mockLoadPool.mockResolvedValue(VALID_POOL);
+    renderEditor();
+    const btn = await screen.findByRole('button', { name: 'Elimina pool' });
+    expect(btn.querySelector('svg')).toBeTruthy();
+    // Stile distruttivo visibile a riposo (non solo in hover).
+    expect(btn.className).toContain('btn-danger');
+    // Conferma preservata: nessuna cancellazione immediata.
+    btn.click();
+    await waitFor(() => expect(screen.getByText(/Eliminare il pool di domande/)).toBeTruthy());
+    expect(mockDeletePool).not.toHaveBeenCalled();
+  });
+});

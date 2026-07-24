@@ -684,6 +684,29 @@
   .toolbar > .menuWrap > button {
     width: 100%;
   }
+  /*
+   * AIGEN-UI-02 — toolbar della lezione: «Azioni» e «Segna svolta» restano
+   * affiancati su due colonne equilibrate anche su mobile. Senza questo
+   * override `.toolbar > .menuWrap { flex: 1 1 100% }` spinge «Azioni» su una
+   * riga intera e «Segna svolta» a capo. Le altre toolbar (corso/UDA) non sono
+   * toccate.
+   */
+  .toolbarLesson {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: stretch;
+  }
+  .toolbarLesson > .menuWrap {
+    flex: initial;
+    min-width: 0;
+  }
+  .toolbarLesson > .menuWrap > button,
+  .toolbarLesson > button {
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    white-space: nowrap;
+  }
 }
 
 /* MOB-01B — lesson content load failure: message + Riprova + technical details. */

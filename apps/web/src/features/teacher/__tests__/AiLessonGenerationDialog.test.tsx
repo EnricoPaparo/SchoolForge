@@ -225,4 +225,13 @@ describe('AiLessonGenerationDialog — AIGEN-UI-01 UI', () => {
     expect(ta.maxLength).toBe(500);
     expect(ta.getAttribute('aria-describedby')).toBe('ai-lesson-guidance-counter');
   });
+
+  it('no longer shows the "Nessun costo è stato ancora generato" note, keeping the useful estimate info', async () => {
+    renderDialog(makeCallables().callables);
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    expect(screen.queryByText(/Nessun costo è stato ancora generato/)).toBeNull();
+    expect(screen.getByText(/Token stimati/)).toBeTruthy();
+    expect(screen.getByText(/Tetto massimo prenotabile/)).toBeTruthy();
+  });
 });

@@ -86,17 +86,13 @@
   padding-left: 1.1rem;
 }
 
-.noCostNote {
-  font-size: 0.85rem;
-  color: var(--text-muted, #555);
-}
-
 .reviewList {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  max-height: 55vh;
+  max-height: 55dvh;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .reviewItem {
@@ -108,20 +104,91 @@
   gap: 0.5rem;
 }
 
+/*
+ * AIGEN-UI-02 — riga metadati compatta: badge tipo + difficoltà (+ caratteri max
+ * sulle aperte) + «Elimina» sulla stessa riga. Il wrap è consentito ma «Elimina»
+ * non occupa mai una riga propria perché non è mai l'unico elemento a capo: la
+ * riga resta ordinata anche a 320px.
+ */
 .reviewHead {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem 0.5rem;
   flex-wrap: wrap;
 }
 
+/* Spinge i controlli (difficoltà/caratteri/elimina) a destra quando c'è spazio. */
+.reviewHeadSpacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.reviewHeadControls {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+/* Pulsante elimina della scheda: distruttivo sobrio, stessa altezza dei mini-stepper. */
+.reviewDeleteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  height: 2rem;
+  padding: 0 0.6rem;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+/*
+ * Badge del tipo di domanda: palette distinta e desaturata, con supporto tema
+ * scuro. Stessa forma/padding/dimensione per i tre tipi.
+ */
 .badge {
   font-size: 0.75rem;
   font-weight: 600;
-  padding: 0.1rem 0.5rem;
+  padding: 0.15rem 0.55rem;
   border-radius: 999px;
-  background: var(--surface-2, #eef);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.badgeAperta {
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+  color: #075985;
+}
+
+.badgeSingola {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.badgeMultipla {
+  background: #ede9fe;
+  border-color: #c4b5fd;
+  color: #5b21b6;
+}
+
+@media (prefers-color-scheme: dark) {
+  .badgeAperta {
+    background: rgba(14, 165, 233, 0.18);
+    border-color: rgba(56, 189, 248, 0.5);
+    color: #7dd3fc;
+  }
+  .badgeSingola {
+    background: rgba(245, 158, 11, 0.18);
+    border-color: rgba(251, 191, 36, 0.5);
+    color: #fcd34d;
+  }
+  .badgeMultipla {
+    background: rgba(139, 92, 246, 0.18);
+    border-color: rgba(167, 139, 250, 0.5);
+    color: #c4b5fd;
+  }
 }
 
 .opzioneRow {
@@ -132,6 +199,25 @@
 
 .opzioneRow input[type='text'] {
   flex: 1 1 auto;
+  min-width: 0;
+}
+
+/*
+ * AIGEN-UI-02 — scrollbar visivamente nascosta nelle sole aree scrollabili dei
+ * dialog AIGEN (dialog stesso, lista di revisione, textarea indicazioni). Lo
+ * scorrimento resta pienamente funzionante con touch, rotellina, trackpad e
+ * tastiera: è nascosto solo il *rendering* della barra. Nessuna regola globale.
+ */
+.reviewList,
+.guidanceTextarea {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge */
+}
+
+.reviewList::-webkit-scrollbar,
+.guidanceTextarea::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 @media (max-width: 640px) {
@@ -140,5 +226,30 @@
   }
   .choice {
     flex-basis: 100%;
+  }
+  /*
+   * A schermi stretti i controlli vanno a capo **in blocco** (badge sopra,
+   * controlli sotto) e restano su una sola riga tra loro: «Elimina» non occupa
+   * mai una riga propria.
+   */
+  .reviewHeadSpacer {
+    flex-basis: 100%;
+  }
+  .reviewHeadControls {
+    flex-wrap: nowrap;
+    width: 100%;
+  }
+  .reviewDeleteBtn {
+    margin-left: auto;
+  }
+}
+
+/* Sotto i 420px il pulsante resta la sola icona per far stare tutto su una riga. */
+@media (max-width: 420px) {
+  .reviewDeleteLabel {
+    display: none;
+  }
+  .reviewDeleteBtn {
+    padding: 0 0.5rem;
   }
 }

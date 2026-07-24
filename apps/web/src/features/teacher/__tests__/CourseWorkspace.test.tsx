@@ -1898,6 +1898,27 @@ describe('CourseWorkspace — lesson toolbar + table wrapping (DUX-08)', () => {
     expect(screen.getByRole('button', { name: /^Segna svolta/i })).toBeTruthy();
   });
 
+  it('keeps «Azioni» and «Segna svolta» in the same two-column lesson toolbar on mobile (AIGEN-UI-02)', async () => {
+    setViewport(true);
+    mockListUdas.mockResolvedValue([uda('uda-01-reti')]);
+    mockListLessons.mockResolvedValue([lesson('l1', 'uda-01-reti', { titolo: 'Lezione A' })]);
+    mockFetchLessonContent.mockResolvedValue('Corpo.');
+    renderWorkspace();
+    await screen.findByRole('table');
+    fireEvent.click(screen.getByRole('button', { name: 'Apri UDA uda-01-reti' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apri lezione Lezione A' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Lezione A' })).toBeTruthy());
+
+    const toolbar = screen.getByTestId('lesson-toolbar');
+    // Modificatore a due colonne applicato solo alla toolbar della lezione.
+    expect(toolbar.className).toMatch(/toolbarLesson/);
+    // Entrambi i comandi vivono nella stessa toolbar (stessa riga su mobile).
+    expect(toolbar.contains(screen.getByRole('button', { name: 'Azioni lezione' }))).toBe(true);
+    expect(toolbar.contains(screen.getByRole('button', { name: /^Segna svolta/i }))).toBe(true);
+    // Su mobile la toolbar della lezione ha esattamente questi due comandi.
+    expect(toolbar.querySelectorAll('button').length).toBe(2);
+  });
+
   it('preserves state, callback and a busy lock on the svolta toggle', async () => {
     let resolveToggle!: () => void;
     mockSetLessonCompleted.mockImplementation(() => new Promise<void>((r) => (resolveToggle = r)));

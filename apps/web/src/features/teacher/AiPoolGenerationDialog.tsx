@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ParsedPool } from '@schoolforge/lesson-contract';
+import {
+  MAX_MAX_CHARACTERS,
+  MIN_MAX_CHARACTERS,
+  type ParsedPool,
+} from '@schoolforge/lesson-contract';
 import { DialogShell } from './workspaceDialogs.js';
-import { QuestionCountStepper } from './QuestionCountStepper.js';
+import { BoundedStepper, QuestionCountStepper } from './QuestionCountStepper.js';
+import { IconTrash } from '../../components/icons.js';
 import styles from './AiPoolGenerationDialog.module.css';
 import {
   buildPoolContentRequest,
@@ -52,6 +57,13 @@ type Phase =
   | 'error';
 
 type CountsDraft = { aperta: string; chiusa_singola: string; chiusa_multipla: string };
+
+/**
+ * Passo dello stepper «Caratteri max» nella revisione bozza: i limiti restano
+ * quelli canonici del contratto (`MIN/MAX_MAX_CHARACTERS`); il passo è solo un
+ * comodo incremento dell'editor, il valore resta digitabile liberamente.
+ */
+const ANSWER_CHARACTERS_STEP = 100;
 
 function parseCount(value: string): number | null {
   const trimmed = value.trim();
@@ -439,7 +451,6 @@ export function AiPoolGenerationDialog({
             <li>Costo stimato: {formatMicroUsd(preview.estimatedCostMicroUsd)}</li>
             <li>Tetto massimo prenotabile: {formatMicroUsd(preview.reservationCostMicroUsd)}</li>
           </ul>
-          <p className={styles.noCostNote}>Nessun costo è stato ancora generato.</p>
           <div className="dialog-actions">
             <button type="button" onClick={invalidateEstimate}>
               Modifica configurazione
@@ -587,6 +598,13 @@ function ProposalQuestionCard({
       : question.tipo === 'chiusa_singola'
         ? 'Chiusa (singola)'
         : 'Chiusa (multipla)';
+  // Palette distinta per tipo (AIGEN-UI-02): nessuno sfondo bianco.
+  const badgeClass =
+    question.tipo === 'aperta'
+      ? styles.badgeAperta
+      : question.tipo === 'chiusa_singola'
+        ? styles.badgeSingola
+        : styles.badgeMultipla;
 
   function toggleSolution(optionIndex: number) {
     if (question.tipo === 'chiusa_singola') {
@@ -601,23 +619,49 @@ function ProposalQuestionCard({
 
   return (
     <div className={styles.reviewItem}>
+      {/*
+       * Riga metadati compatta (AIGEN-UI-02): badge tipo, difficoltà, caratteri
+       * max (solo aperte) ed «Elimina» sulla stessa riga, per recuperare spazio
+       * verticale. «Elimina» resta accanto agli altri controlli anche in wrap.
+       */}
       <div className={styles.reviewHead}>
         <strong>Domanda {ordinal}</strong>
-        <span className={styles.badge}>{tipoLabel}</span>
-        <label>
-          Difficoltà{' '}
-          <input
-            type="number"
+        <span className={`${styles.badge} ${badgeClass}`}>{tipoLabel}</span>
+        <span className={styles.reviewHeadSpacer} />
+        <div className={styles.reviewHeadControls}>
+          <BoundedStepper
+            value={question.difficolta}
             min={1}
             max={5}
-            value={question.difficolta}
-            onChange={(e) => onChange({ difficolta: Number(e.target.value) })}
-            aria-label={`Difficoltà domanda ${ordinal}`}
+            ariaLabel={`Difficoltà domanda ${ordinal}`}
+            decrementLabel={`Diminuisci difficoltà domanda ${ordinal}`}
+            incrementLabel={`Aumenta difficoltà domanda ${ordinal}`}
+            onChange={(difficolta) => onChange({ difficolta })}
           />
-        </label>
-        <button type="button" className="btn-danger" onClick={onDelete}>
-          Elimina
-        </button>
+          {question.tipo === 'aperta' && (
+            <BoundedStepper
+              value={question.maxCharacters}
+              min={MIN_MAX_CHARACTERS}
+              max={MAX_MAX_CHARACTERS}
+              step={ANSWER_CHARACTERS_STEP}
+              ariaLabel={`Caratteri max domanda ${ordinal}`}
+              decrementLabel={`Diminuisci caratteri max domanda ${ordinal}`}
+              incrementLabel={`Aumenta caratteri max domanda ${ordinal}`}
+              onChange={(maxCharacters) => onChange({ maxCharacters })}
+            />
+          )}
+          <button
+            type="button"
+            className={`btn-danger ${styles.reviewDeleteBtn}`}
+            onClick={onDelete}
+            aria-label={`Elimina domanda ${ordinal}`}
+          >
+            <IconTrash size={13} />
+            {/* Su schermi molto stretti resta la sola icona: il nome accessibile
+                è comunque garantito da `aria-label`. */}
+            <span className={styles.reviewDeleteLabel}>Elimina</span>
+          </button>
+        </div>
       </div>
 
       <label className={styles.field}>
@@ -639,17 +683,6 @@ function ProposalQuestionCard({
               value={question.soluzione}
               onChange={(e) => onChange({ soluzione: e.target.value })}
               aria-label={`Soluzione domanda ${ordinal}`}
-            />
-          </label>
-          <label className={styles.field}>
-            Limite caratteri risposta
-            <input
-              type="number"
-              min={1}
-              max={10000}
-              value={question.maxCharacters}
-              onChange={(e) => onChange({ maxCharacters: Number(e.target.value) })}
-              aria-label={`Limite caratteri domanda ${ordinal}`}
             />
           </label>
         </>
