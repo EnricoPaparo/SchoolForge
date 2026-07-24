@@ -3,6 +3,7 @@ import { parsePool } from '@schoolforge/lesson-contract';
 import type { PoolQuestion } from '@schoolforge/lesson-contract';
 import {
   buildPoolFromProposal,
+  maxCharactersForDifficulty,
   optionIdFromIndex,
   proposalToLocalQuestions,
   type LocalProposalQuestion,
@@ -36,12 +37,24 @@ function locals(): LocalProposalQuestion[] {
 }
 
 describe('proposalToLocalQuestions', () => {
-  it('applies the canonical 2000 default maxCharacters to open questions', () => {
+  it('derives maxCharacters from difficulty for open questions (difficolta 3 → 1200)', () => {
     const l = locals();
     expect(l[0].tipo).toBe('aperta');
-    expect(l[0].maxCharacters).toBe(2000);
+    expect(l[0].difficolta).toBe(3);
+    expect(l[0].maxCharacters).toBe(1200);
     expect(l[1].opzioni).toEqual(['TCP', 'UDP']);
     expect(l[2].soluzioneIndici).toEqual([0, 1]);
+  });
+});
+
+describe('maxCharactersForDifficulty (deterministic, fail-closed)', () => {
+  it('maps 1→500, 2→800, 3→1200, 4→1800, 5→2500', () => {
+    expect([1, 2, 3, 4, 5].map(maxCharactersForDifficulty)).toEqual([500, 800, 1200, 1800, 2500]);
+  });
+  it('throws fail-closed for out-of-range or non-integer difficulty', () => {
+    expect(() => maxCharactersForDifficulty(0)).toThrow(RangeError);
+    expect(() => maxCharactersForDifficulty(6)).toThrow(RangeError);
+    expect(() => maxCharactersForDifficulty(2.5)).toThrow(RangeError);
   });
 });
 
@@ -64,7 +77,8 @@ describe('buildPoolFromProposal — new pool', () => {
       expect('peso' in q).toBe(false);
     }
     const aperta = res.pool.questions.find((q) => q.tipo === 'aperta');
-    expect(aperta && 'maxCharacters' in aperta ? aperta.maxCharacters : null).toBe(2000);
+    // difficolta 3 → derived maxCharacters 1200 (the teacher can still edit it).
+    expect(aperta && 'maxCharacters' in aperta ? aperta.maxCharacters : null).toBe(1200);
     // Deterministic ids for a fresh pool.
     expect(res.pool.questions.map((q) => q.id)).toEqual(['ia-1', 'ia-2', 'ia-3']);
     // Option ids distinct + solutions coherent.

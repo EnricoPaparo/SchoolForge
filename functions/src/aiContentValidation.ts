@@ -179,6 +179,24 @@ export function validatePoolProposal(
         'Una risposta singola ha esattamente una soluzione.',
       );
     }
+    // AIGEN-PROMPT-01: una multipla **generata dall'IA** deve avere almeno due
+    // soluzioni corrette e almeno una opzione errata (selezionare tutto non è
+    // corretto). Restrizione sulla sola proposta IA: il contratto canonico del
+    // pool e gli editor esistenti non cambiano.
+    if (tipo === 'chiusa_multipla') {
+      if (soluzioneIndici.length < 2) {
+        throw new AiContentError(
+          'provider_invalid_output',
+          'Una risposta multipla generata deve avere almeno due soluzioni corrette.',
+        );
+      }
+      if (soluzioneIndici.length >= opzioni.length) {
+        throw new AiContentError(
+          'provider_invalid_output',
+          'Una risposta multipla generata deve avere almeno una opzione errata.',
+        );
+      }
+    }
     questions.push({ order: index, tipo, testo, difficolta, opzioni, soluzioneIndici });
   });
 
