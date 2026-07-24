@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildLessonContentRequest,
   buildPoolContentRequest,
   describeAiContentError,
   formatMicroUsd,
@@ -81,5 +82,53 @@ describe('formatMicroUsd', () => {
   it('formats micro-USD integers as USD with 6 decimals', () => {
     expect(formatMicroUsd(1_250_000)).toBe('1.250000 USD');
     expect(formatMicroUsd(0)).toBe('0.000000 USD');
+  });
+});
+
+describe('buildLessonContentRequest (AIGEN-03 closed lesson payload)', () => {
+  it('builds a closed lesson payload, derives hasCurrentContent, omits empty context', () => {
+    const req = buildLessonContentRequest({
+      requestId: REQ,
+      modelProfile: 'economy',
+      depth: 'complete',
+      context: {
+        titolo: '  Le reti  ',
+        sottotitolo: '',
+        udaTitle: 'UDA 1',
+        concettiChiave: ['TCP', '  ', 'IP'],
+        obiettivi: [],
+        currentBody: '## Reti\nContenuto',
+      },
+      teacherGuidance: '  tono formale  ',
+    });
+    expect(req).toEqual({
+      kind: 'lesson',
+      requestId: REQ,
+      modelProfile: 'economy',
+      depth: 'complete',
+      hasCurrentContent: true,
+      teacherGuidance: 'tono formale',
+      titolo: 'Le reti',
+      udaTitle: 'UDA 1',
+      concettiChiave: ['TCP', 'IP'],
+      currentBody: '## Reti\nContenuto',
+    });
+    // Empty sottotitolo/obiettivi omitted; never leaks server-only fields.
+    expect('sottotitolo' in req).toBe(false);
+    expect('obiettivi' in req).toBe(false);
+    expect('modelId' in req).toBe(false);
+    expect('ownerUid' in req).toBe(false);
+  });
+
+  it('omits currentBody and sets hasCurrentContent=false for an empty editor', () => {
+    const req = buildLessonContentRequest({
+      requestId: REQ,
+      modelProfile: 'quality',
+      depth: 'synthetic',
+      context: { titolo: 'T', currentBody: '   ' },
+    });
+    expect(req.hasCurrentContent).toBe(false);
+    expect('currentBody' in req).toBe(false);
+    expect('teacherGuidance' in req).toBe(false);
   });
 });
