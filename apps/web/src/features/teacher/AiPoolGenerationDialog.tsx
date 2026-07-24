@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ParsedPool } from '@schoolforge/lesson-contract';
 import { DialogShell } from './workspaceDialogs.js';
+import { QuestionCountStepper } from './QuestionCountStepper.js';
 import styles from './AiPoolGenerationDialog.module.css';
 import {
   buildPoolContentRequest,
@@ -123,6 +124,9 @@ export function AiPoolGenerationDialog({
   const total = countsValid
     ? parsedCounts.aperta! + parsedCounts.chiusa_singola! + parsedCounts.chiusa_multipla!
     : null;
+  // «+» attivo solo se il totale è valido e sotto il massimo: nessun tipo può
+  // spingere il totale oltre MAX_POOL_TOTAL_QUESTIONS tramite lo stepper.
+  const canIncrement = total !== null && total < MAX_POOL_TOTAL_QUESTIONS;
   const guidanceValid = guidance.length <= MAX_TEACHER_GUIDANCE_CHARS;
   const sourceValid = lessonSource.trim().length > 0;
   const configValid =
@@ -273,15 +277,10 @@ export function AiPoolGenerationDialog({
   const busy = phase === 'previewing' || phase === 'generating' || phase === 'applying';
 
   return (
-    <DialogShell title="Genera pool con IA" onCancel={onClose} busy={busy}>
+    <DialogShell title="Genera pool con IA" onCancel={onClose} busy={busy} variant="wide-scroll">
       {/* 1) CONFIGURAZIONE */}
       {phase === 'configure' && (
         <div className={styles.config}>
-          <p className={styles.intro}>
-            L’IA propone domande a partire dal testo della lezione. Potrai rivedere e modificare
-            ogni domanda prima di applicarla. Nessun costo viene generato prima della conferma.
-          </p>
-
           {/* Profilo modello */}
           <div className={styles.field}>
             <span className={styles.fieldLabel} id="ai-pool-profile-label">
@@ -339,39 +338,33 @@ export function AiPoolGenerationDialog({
           <div className={styles.field}>
             <span className={styles.fieldLabel}>Quantità di domande</span>
             <div className={styles.counts}>
-              <label className={styles.countField}>
-                Aperte
-                <input
-                  type="number"
-                  min={0}
-                  inputMode="numeric"
-                  value={counts.aperta}
-                  onChange={(e) => updateCount('aperta', e.target.value)}
-                  aria-invalid={parsedCounts.aperta === null}
-                />
-              </label>
-              <label className={styles.countField}>
-                Risposta singola
-                <input
-                  type="number"
-                  min={0}
-                  inputMode="numeric"
-                  value={counts.chiusa_singola}
-                  onChange={(e) => updateCount('chiusa_singola', e.target.value)}
-                  aria-invalid={parsedCounts.chiusa_singola === null}
-                />
-              </label>
-              <label className={styles.countField}>
-                Risposta multipla
-                <input
-                  type="number"
-                  min={0}
-                  inputMode="numeric"
-                  value={counts.chiusa_multipla}
-                  onChange={(e) => updateCount('chiusa_multipla', e.target.value)}
-                  aria-invalid={parsedCounts.chiusa_multipla === null}
-                />
-              </label>
+              <QuestionCountStepper
+                label="Aperte"
+                rawValue={counts.aperta}
+                parsedValue={parsedCounts.aperta}
+                onChange={(v) => updateCount('aperta', v)}
+                canIncrement={canIncrement}
+                decrementLabel="Diminuisci domande aperte"
+                incrementLabel="Aumenta domande aperte"
+              />
+              <QuestionCountStepper
+                label="Risposta singola"
+                rawValue={counts.chiusa_singola}
+                parsedValue={parsedCounts.chiusa_singola}
+                onChange={(v) => updateCount('chiusa_singola', v)}
+                canIncrement={canIncrement}
+                decrementLabel="Diminuisci domande a risposta singola"
+                incrementLabel="Aumenta domande a risposta singola"
+              />
+              <QuestionCountStepper
+                label="Risposta multipla"
+                rawValue={counts.chiusa_multipla}
+                parsedValue={parsedCounts.chiusa_multipla}
+                onChange={(v) => updateCount('chiusa_multipla', v)}
+                canIncrement={canIncrement}
+                decrementLabel="Diminuisci domande a risposta multipla"
+                incrementLabel="Aumenta domande a risposta multipla"
+              />
             </div>
             <span className={styles.total}>
               Totale richiesto: {total ?? '—'}
@@ -388,6 +381,7 @@ export function AiPoolGenerationDialog({
             </label>
             <textarea
               id="ai-pool-guidance"
+              className={styles.guidanceTextarea}
               rows={3}
               maxLength={MAX_TEACHER_GUIDANCE_CHARS}
               value={guidance}
