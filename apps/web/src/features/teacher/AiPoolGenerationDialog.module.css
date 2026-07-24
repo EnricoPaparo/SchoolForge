@@ -4,12 +4,6 @@
   gap: 1rem;
 }
 
-.intro {
-  margin: 0;
-  color: var(--text-muted, #555);
-  font-size: 0.9rem;
-}
-
 .field {
   display: flex;
   flex-direction: column;
@@ -58,16 +52,6 @@
   gap: 0.6rem;
 }
 
-.countField {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.countField input {
-  width: 100%;
-}
-
 .total {
   font-weight: 600;
 }
@@ -76,6 +60,19 @@
   font-size: 0.78rem;
   color: var(--text-muted, #666);
   align-self: flex-end;
+}
+
+/*
+ * AIGEN-UI-01 — textarea «Indicazioni aggiuntive» non ridimensionabile: niente
+ * maniglia in basso a destra né deformazione del dialog. Altezza iniziale sobria
+ * con scroll verticale interno quando il testo supera lo spazio. Circoscritta ai
+ * dialog AIGEN (nessuna altra textarea del portale è toccata).
+ */
+.guidanceTextarea {
+  resize: none;
+  min-height: 4.5rem;
+  max-height: 40dvh;
+  overflow-y: auto;
 }
 
 .estimate {

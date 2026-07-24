@@ -244,3 +244,115 @@ describe('AiPoolGenerationDialog', () => {
     expect(screen.queryByRole('button', { name: 'Genera pool' })).toBeNull();
   });
 });
+
+// ─── AIGEN-UI-01 — UI refinements ────────────────────────────────────────────
+describe('AiPoolGenerationDialog — AIGEN-UI-01 UI', () => {
+  function renderConfigure() {
+    const { callables, previewReqs } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Le reti collegano dispositivi."
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={() => {}}
+      />,
+    );
+    return { previewReqs };
+  }
+
+  it('uses the wide-scroll DialogShell variant', () => {
+    renderConfigure();
+    expect(screen.getByRole('dialog').className).toMatch(/dialogWideScroll/);
+  });
+
+  it('no longer shows the pool intro paragraph', () => {
+    renderConfigure();
+    expect(screen.queryByText(/propone domande a partire dal testo della lezione/i)).toBeNull();
+  });
+
+  it('gives the guidance textarea the non-resizable AIGEN class, keeping maxLength and aria-describedby', () => {
+    renderConfigure();
+    const ta = screen.getByLabelText('Indicazioni aggiuntive (facoltative)') as HTMLTextAreaElement;
+    expect(ta.className).toMatch(/guidanceTextarea/);
+    expect(ta.maxLength).toBe(500);
+    expect(ta.getAttribute('aria-describedby')).toBe('ai-pool-guidance-counter');
+  });
+
+  it('renders the three steppers with their initial values and specific aria-labels', () => {
+    renderConfigure();
+    expect((screen.getByLabelText('Aperte') as HTMLInputElement).value).toBe('3');
+    expect((screen.getByLabelText('Risposta singola') as HTMLInputElement).value).toBe('3');
+    expect((screen.getByLabelText('Risposta multipla') as HTMLInputElement).value).toBe('0');
+    for (const name of [
+      'Diminuisci domande aperte',
+      'Aumenta domande aperte',
+      'Diminuisci domande a risposta singola',
+      'Aumenta domande a risposta singola',
+      'Diminuisci domande a risposta multipla',
+      'Aumenta domande a risposta multipla',
+    ]) {
+      expect(screen.getByRole('button', { name })).toBeTruthy();
+    }
+    // No native number spinbuttons for the counts.
+    expect(screen.queryByRole('spinbutton', { name: 'Aperte' })).toBeNull();
+  });
+
+  it('increments and decrements the correct type and updates the requested total', () => {
+    renderConfigure();
+    expect(screen.getByText(/Totale richiesto: 6/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Aumenta domande aperte' }));
+    expect((screen.getByLabelText('Aperte') as HTMLInputElement).value).toBe('4');
+    expect(screen.getByText(/Totale richiesto: 7/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Diminuisci domande aperte' }));
+    expect((screen.getByLabelText('Aperte') as HTMLInputElement).value).toBe('3');
+    expect(screen.getByText(/Totale richiesto: 6/)).toBeTruthy();
+  });
+
+  it('disables «−» at 0 and never goes below 0', () => {
+    renderConfigure();
+    const dec = screen.getByRole('button', {
+      name: 'Diminuisci domande a risposta multipla',
+    }) as HTMLButtonElement;
+    expect(dec.disabled).toBe(true);
+    fireEvent.click(dec); // no-op
+    expect((screen.getByLabelText('Risposta multipla') as HTMLInputElement).value).toBe('0');
+  });
+
+  it('disables every «+» once the total reaches the maximum, without silently correcting manual over-max input', () => {
+    renderConfigure();
+    fireEvent.change(screen.getByLabelText('Aperte'), { target: { value: '30' } });
+    // Manual over-max is preserved (no silent clamp) and flagged by validation.
+    expect((screen.getByLabelText('Aperte') as HTMLInputElement).value).toBe('30');
+    expect(screen.getByText(/massimo 30/)).toBeTruthy();
+    for (const name of [
+      'Aumenta domande aperte',
+      'Aumenta domande a risposta singola',
+      'Aumenta domande a risposta multipla',
+    ]) {
+      expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
+    }
+  });
+
+  it('keeps direct keyboard input working and invalidates the config when empty/malformed', () => {
+    renderConfigure();
+    const aperte = screen.getByLabelText('Aperte') as HTMLInputElement;
+    fireEvent.change(aperte, { target: { value: '5' } });
+    expect(aperte.value).toBe('5');
+    expect(aperte.getAttribute('aria-invalid')).toBe('false');
+    fireEvent.change(aperte, { target: { value: '' } });
+    expect(aperte.getAttribute('aria-invalid')).toBe('true');
+    expect(
+      (screen.getByRole('button', { name: 'Calcola stima' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it('sends the same counts to preview as before (contract unchanged)', async () => {
+    const { previewReqs } = renderConfigure();
+    fireEvent.click(screen.getByRole('button', { name: 'Aumenta domande a risposta multipla' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    expect(previewReqs).toHaveLength(1);
+    expect(previewReqs[0].counts).toEqual({ aperta: 3, chiusa_singola: 3, chiusa_multipla: 1 });
+  });
+});

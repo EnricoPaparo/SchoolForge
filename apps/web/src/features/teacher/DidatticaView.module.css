@@ -324,6 +324,20 @@
   flex-direction: column;
   gap: 0.85rem;
 }
+/*
+ * Variante AIGEN: dialog di generazione IA sempre contenuti nel viewport. Il
+ * backdrop ha già `padding: 1rem`, quindi `100dvh - 2rem` lascia il margine
+ * esterno su desktop e mobile; l'unità dinamica `dvh` tiene conto della tastiera
+ * virtuale. Lo scroll è interno (verticale), mai orizzontale, e `overscroll-
+ * behavior: contain` evita lo scroll-chaining sulla pagina.
+ */
+.dialogWideScroll {
+  max-width: 560px;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
 .dialogTitle {
   font-size: 1.05rem;
   font-weight: 700;

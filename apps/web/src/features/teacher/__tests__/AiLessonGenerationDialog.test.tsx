@@ -205,3 +205,24 @@ describe('AiLessonGenerationDialog', () => {
     expect(c2.previewReqs[0].currentBody).toBe('## Esistente');
   });
 });
+
+// ─── AIGEN-UI-01 — UI refinements ────────────────────────────────────────────
+describe('AiLessonGenerationDialog — AIGEN-UI-01 UI', () => {
+  it('uses the wide-scroll DialogShell variant', () => {
+    renderDialog(makeCallables().callables);
+    expect(screen.getByRole('dialog').className).toMatch(/dialogWideScroll/);
+  });
+
+  it('no longer shows the lesson intro paragraph', () => {
+    renderDialog(makeCallables().callables);
+    expect(screen.queryByText(/propone una bozza completa del corpo Markdown/i)).toBeNull();
+  });
+
+  it('gives the guidance textarea the non-resizable AIGEN class, keeping maxLength and aria-describedby', () => {
+    renderDialog(makeCallables().callables);
+    const ta = screen.getByLabelText('Indicazioni aggiuntive (facoltative)') as HTMLTextAreaElement;
+    expect(ta.className).toMatch(/guidanceTextarea/);
+    expect(ta.maxLength).toBe(500);
+    expect(ta.getAttribute('aria-describedby')).toBe('ai-lesson-guidance-counter');
+  });
+});

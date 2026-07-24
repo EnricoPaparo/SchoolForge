@@ -9,7 +9,7 @@ vi.mock('../../../lib/firebase.js', () => ({ db: {}, storage: {} }));
 
 afterEach(cleanup);
 
-import { ConfirmDialog } from '../workspaceDialogs.js';
+import { ConfirmDialog, DialogShell } from '../workspaceDialogs.js';
 
 function renderConfirm(overrides: Partial<Parameters<typeof ConfirmDialog>[0]> = {}) {
   const onCancel = vi.fn();
@@ -119,5 +119,54 @@ describe('DialogShell accessibility (HARD-02A-FIX / P2-01)', () => {
     const { onConfirm } = renderConfirm();
     fireEvent.click(screen.getByRole('button', { name: 'Elimina' }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DialogShell wide-scroll variant (AIGEN-UI-01)', () => {
+  it('applies a specific verifiable class only for the wide-scroll variant', () => {
+    render(
+      <DialogShell title="AIGEN" onCancel={() => {}} variant="wide-scroll">
+        <button type="button">Ok</button>
+      </DialogShell>,
+    );
+    expect(screen.getByRole('dialog').className).toMatch(/dialogWideScroll/);
+  });
+
+  it('keeps the default variant unchanged (no wide-scroll class)', () => {
+    render(
+      <DialogShell title="Default" onCancel={() => {}}>
+        <button type="button">Ok</button>
+      </DialogShell>,
+    );
+    expect(screen.getByRole('dialog').className).not.toMatch(/dialogWideScroll/);
+  });
+
+  it('does not regress focus trap, Escape and focus restore in the variant', () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" data-testid="trigger" onClick={() => setOpen(true)}>
+            Apri
+          </button>
+          {open && (
+            <DialogShell title="AIGEN" onCancel={() => setOpen(false)} variant="wide-scroll">
+              <button type="button">Azione</button>
+            </DialogShell>
+          )}
+        </>
+      );
+    }
+    render(<Harness />);
+    const trigger = screen.getByTestId('trigger');
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog');
+    // Initial focus moved inside the dialog.
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    // Escape closes and restores focus to the opener.
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 });

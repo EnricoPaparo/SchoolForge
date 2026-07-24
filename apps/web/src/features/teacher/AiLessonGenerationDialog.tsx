@@ -168,15 +168,14 @@ export function AiLessonGenerationDialog({
   const busy = phase === 'previewing' || phase === 'generating';
 
   return (
-    <DialogShell title="Genera bozza lezione con IA" onCancel={onClose} busy={busy}>
+    <DialogShell
+      title="Genera bozza lezione con IA"
+      onCancel={onClose}
+      busy={busy}
+      variant="wide-scroll"
+    >
       {phase === 'configure' && (
         <div className={styles.config}>
-          <p className={styles.intro}>
-            L’IA propone una bozza completa del corpo Markdown della lezione. La bozza è solo
-            locale: potrai modificarla e verrà applicata solo con «Usa questa bozza». Nessun costo
-            viene generato prima della conferma.
-          </p>
-
           {/* Profilo modello */}
           <div className={styles.field}>
             <span className={styles.fieldLabel} id="ai-lesson-profile-label">
@@ -237,6 +236,7 @@ export function AiLessonGenerationDialog({
             </label>
             <textarea
               id="ai-lesson-guidance"
+              className={styles.guidanceTextarea}
               rows={3}
               maxLength={MAX_TEACHER_GUIDANCE_CHARS}
               value={guidance}

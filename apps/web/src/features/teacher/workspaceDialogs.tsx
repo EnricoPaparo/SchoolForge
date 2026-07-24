@@ -56,11 +56,20 @@ export function DialogShell({
   children,
   onCancel,
   busy = false,
+  variant = 'default',
 }: {
   title: string;
   children: ReactNode;
   onCancel: () => void;
   busy?: boolean;
+  /**
+   * `'default'` = shell storica invariata. `'wide-scroll'` (AIGEN) allarga la
+   * superficie ai controlli e vincola l'altezza al viewport dinamico con scroll
+   * verticale interno, così titolo e pulsanti restano sempre raggiungibili anche
+   * con contenuti lunghi o tastiera virtuale. Focus trap/Escape/backdrop/busy
+   * invariati.
+   */
+  variant?: 'default' | 'wide-scroll';
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -120,7 +129,9 @@ export function DialogShell({
     >
       <div
         ref={dialogRef}
-        className={styles.dialog}
+        className={
+          variant === 'wide-scroll' ? `${styles.dialog} ${styles.dialogWideScroll}` : styles.dialog
+        }
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
