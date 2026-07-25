@@ -21,8 +21,15 @@ export const AI_CONTENT_SCHEMA_NAME = 'schoolforge_ai_content';
 /** ~4 caratteri per token; overhead fisso di prompt/schema. Euristica prudente. */
 export const CHARS_PER_TOKEN = 4;
 export const PROMPT_OVERHEAD_TOKENS = 900;
-/** Token di output massimi per singola domanda (testo+opzioni+soluzione). */
-export const OUTPUT_TOKENS_PER_QUESTION = 220;
+/**
+ * Budget tecnico di output del pool. Le domande aperte richiedono soluzioni
+ * formative e potenzialmente svolte passo-passo: il vecchio tetto uniforme di
+ * 220 token per domanda poteva troncare il JSON Structured Output prima della
+ * chiusura. Il budget resta proporzionato al tipo e quindi prudente sui costi.
+ */
+export const POOL_OUTPUT_BASE_TOKENS = 300;
+export const OPEN_QUESTION_OUTPUT_TOKENS = 550;
+export const CLOSED_QUESTION_OUTPUT_TOKENS = 300;
 /**
  * Hard cap **tecnico** dei token di output per profondità lezione (Responses API,
  * prenotazione, budget, memoria, dimensione documentale). NON è un obiettivo di
@@ -42,9 +49,12 @@ export const LESSON_OUTPUT_TOKENS: Readonly<Record<LessonDepth, number>> = {
  */
 export function resolveMaxOutputTokens(request: AiContentRequest): number {
   if (request.kind === 'pool') {
-    const total =
-      request.counts.aperta + request.counts.chiusa_singola + request.counts.chiusa_multipla;
-    return total * OUTPUT_TOKENS_PER_QUESTION;
+    return (
+      POOL_OUTPUT_BASE_TOKENS +
+      request.counts.aperta * OPEN_QUESTION_OUTPUT_TOKENS +
+      (request.counts.chiusa_singola + request.counts.chiusa_multipla) *
+        CLOSED_QUESTION_OUTPUT_TOKENS
+    );
   }
   return LESSON_OUTPUT_TOKENS[request.depth];
 }
@@ -75,7 +85,11 @@ const POOL_QUESTION_APERTA = {
   },
 };
 
-function closedVariant(tipo: 'chiusa_singola' | 'chiusa_multipla') {
+function closedVariant(
+  tipo: 'chiusa_singola' | 'chiusa_multipla',
+  difficulty: { min: number; max: number } = { min: 1, max: 5 },
+) {
+  const isSingle = tipo === 'chiusa_singola';
   return {
     type: 'object',
     additionalProperties: false,
@@ -83,10 +97,24 @@ function closedVariant(tipo: 'chiusa_singola' | 'chiusa_multipla') {
     properties: {
       tipo: { type: 'string', enum: [tipo] },
       testo: { type: 'string' },
-      difficolta: { type: 'integer', minimum: 1, maximum: 5 },
-      opzioni: { type: 'array', items: { type: 'string' } },
+      difficolta: {
+        type: 'integer',
+        minimum: difficulty.min,
+        maximum: difficulty.max,
+      },
+      opzioni: {
+        type: 'array',
+        items: { type: 'string' },
+        minItems: isSingle ? 2 : 3,
+        maxItems: 8,
+      },
       // Indici (0-based) delle opzioni corrette: nessun ID, nessun oggetto libero.
-      soluzione: { type: 'array', items: { type: 'integer', minimum: 0 } },
+      soluzione: {
+        type: 'array',
+        items: { type: 'integer', minimum: 0 },
+        minItems: isSingle ? 1 : 2,
+        ...(isSingle ? { maxItems: 1 } : {}),
+      },
     },
   };
 }
@@ -110,6 +138,48 @@ export const POOL_OUTPUT_SCHEMA: Record<string, unknown> = {
   },
 };
 
+/**
+ * Variante request-specific dello schema pool: Structured Outputs impone già
+ * quantità totale, range di difficoltà e cardinalità minima delle soluzioni.
+ * Il validator runtime resta autorevole per i vincoli relazionali (indici
+ * validi, almeno un distrattore nelle multiple, conteggi esatti per tipo).
+ */
+export function buildPoolOutputSchema(request: Extract<AiContentRequest, { kind: 'pool' }>) {
+  const range =
+    request.level === 'base'
+      ? { min: 1, max: 3 }
+      : request.level === 'advanced'
+        ? { min: 3, max: 5 }
+        : { min: 1, max: 5 };
+  const total =
+    request.counts.aperta + request.counts.chiusa_singola + request.counts.chiusa_multipla;
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['questions'],
+    properties: {
+      questions: {
+        type: 'array',
+        minItems: total,
+        maxItems: total,
+        items: {
+          anyOf: [
+            {
+              ...POOL_QUESTION_APERTA,
+              properties: {
+                ...POOL_QUESTION_APERTA.properties,
+                difficolta: { type: 'integer', minimum: range.min, maximum: range.max },
+              },
+            },
+            closedVariant('chiusa_singola', range),
+            closedVariant('chiusa_multipla', range),
+          ],
+        },
+      },
+    },
+  };
+}
+
 /** Schema lezione strict: solo corpo Markdown. */
 export const LESSON_OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
@@ -128,7 +198,7 @@ export function buildContentStructuredRequest(
   model: string,
 ): OpenAiStructuredRequest {
   const prompt = request.kind === 'pool' ? buildPoolPrompt(request) : buildLessonPrompt(request);
-  const schema = request.kind === 'pool' ? POOL_OUTPUT_SCHEMA : LESSON_OUTPUT_SCHEMA;
+  const schema = request.kind === 'pool' ? buildPoolOutputSchema(request) : LESSON_OUTPUT_SCHEMA;
   return {
     model,
     input: [

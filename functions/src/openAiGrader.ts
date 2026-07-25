@@ -113,6 +113,10 @@ export interface OpenAiStructuredRequest {
 
 export interface OpenAiTransportResponse {
   outputText: string;
+  /** Stato nativo Responses API, quando disponibile. */
+  completionStatus?: 'completed' | 'incomplete';
+  /** Motivo sanitizzato dell'incompletezza, mai contenuto generato. */
+  incompleteReason?: 'max_output_tokens' | 'content_filter' | 'other';
   usage?: {
     inputTokens: number;
     outputTokens: number;
@@ -167,6 +171,8 @@ export class OpenAiTransportError extends Error {
 
 interface OpenAiSdkResponse {
   output_text: string;
+  status?: 'completed' | 'incomplete';
+  incomplete_details?: { reason?: string } | null;
   usage?: {
     input_tokens: number;
     output_tokens: number;
@@ -262,6 +268,17 @@ export class OpenAiSdkTransport implements OpenAiTransport {
       });
       return {
         outputText: response.output_text,
+        ...(response.status ? { completionStatus: response.status } : {}),
+        ...(response.status === 'incomplete'
+          ? {
+              incompleteReason:
+                response.incomplete_details?.reason === 'max_output_tokens'
+                  ? ('max_output_tokens' as const)
+                  : response.incomplete_details?.reason === 'content_filter'
+                    ? ('content_filter' as const)
+                    : ('other' as const),
+            }
+          : {}),
         ...(response.usage
           ? {
               usage: {
