@@ -1376,17 +1376,17 @@ describe('pool validation — chiusa_multipla AI proposal rule', () => {
 });
 
 describe('lesson output hard caps (AIGEN-PROMPT-01)', () => {
-  it('raises the caps to 2500 / 7000 / 12000', () => {
-    expect(resolveMaxOutputTokens(lessonReq({ depth: 'synthetic' }))).toBe(2500);
-    expect(resolveMaxOutputTokens(lessonReq({ depth: 'complete' }))).toBe(7000);
-    expect(resolveMaxOutputTokens(lessonReq({ depth: 'in_depth' }))).toBe(12000);
+  it('allocates enough room for reasoning plus complete Markdown output', () => {
+    expect(resolveMaxOutputTokens(lessonReq({ depth: 'synthetic' }))).toBe(5000);
+    expect(resolveMaxOutputTokens(lessonReq({ depth: 'complete' }))).toBe(9000);
+    expect(resolveMaxOutputTokens(lessonReq({ depth: 'in_depth' }))).toBe(15000);
   });
   it('payload/estimate use exactly the corresponding cap', () => {
     const req = lessonReq({ depth: 'in_depth' });
     const { model, priceListVersion } = resolveContentModel(req.modelProfile);
     const est = estimateContentCost(req, model, priceListVersion, 2);
-    expect(est.maxOutputTokens).toBe(12000);
-    expect(est.reservationOutputTokens).toBe(12000);
+    expect(est.maxOutputTokens).toBe(15000);
+    expect(est.reservationOutputTokens).toBe(15000);
     // Invariant preserved: reservation ≥ estimate, and holds actual ≤ settled ≤ reservation.
     expect(est.reservationCostMicroUsd).toBeGreaterThanOrEqual(est.estimatedCostMicroUsd);
   });
@@ -1412,7 +1412,7 @@ describe('pool output hard caps (AIGEN-POOL-REAL-FIX)', () => {
       poolPayload({ counts: { aperta: 0, chiusa_singola: 2, chiusa_multipla: 0 } }),
     );
     expect(resolveMaxOutputTokens(openOnly)).toBeGreaterThan(resolveMaxOutputTokens(closedOnly));
-    expect(resolveMaxOutputTokens(openOnly)).toBe(1400);
-    expect(resolveMaxOutputTokens(closedOnly)).toBe(900);
+    expect(resolveMaxOutputTokens(openOnly)).toBe(1900);
+    expect(resolveMaxOutputTokens(closedOnly)).toBe(1400);
   });
 });

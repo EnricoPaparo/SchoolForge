@@ -27,7 +27,7 @@ export const PROMPT_OVERHEAD_TOKENS = 900;
  * 220 token per domanda poteva troncare il JSON Structured Output prima della
  * chiusura. Il budget resta proporzionato al tipo e quindi prudente sui costi.
  */
-export const POOL_OUTPUT_BASE_TOKENS = 300;
+export const POOL_OUTPUT_BASE_TOKENS = 800;
 export const OPEN_QUESTION_OUTPUT_TOKENS = 550;
 export const CLOSED_QUESTION_OUTPUT_TOKENS = 300;
 /**
@@ -37,9 +37,9 @@ export const CLOSED_QUESTION_OUTPUT_TOKENS = 300;
  * AIGEN-PROMPT-01 per non troncare lezioni didatticamente complete.
  */
 export const LESSON_OUTPUT_TOKENS: Readonly<Record<LessonDepth, number>> = {
-  synthetic: 2_500,
-  complete: 7_000,
-  in_depth: 12_000,
+  synthetic: 5_000,
+  complete: 9_000,
+  in_depth: 15_000,
 };
 
 /**
