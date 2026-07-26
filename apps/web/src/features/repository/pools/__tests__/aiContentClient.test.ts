@@ -4,7 +4,10 @@ import {
   buildPoolContentRequest,
   describeAiContentError,
   formatMicroUsd,
+  missingLessonRequirements,
   newRequestId,
+  type LessonAiContext,
+  type LessonUdaContext,
 } from '../aiContentClient.js';
 
 const REQ = '11111111-2222-3333-4444-555555555555';
@@ -85,20 +88,43 @@ describe('formatMicroUsd', () => {
   });
 });
 
-describe('buildLessonContentRequest (AIGEN-03 closed lesson payload)', () => {
-  it('builds a closed lesson payload, derives hasCurrentContent, omits empty context', () => {
+/** Contesto completo secondo il contratto AIGEN-CONTEXT-01. */
+const UDA_CONTEXT = {
+  title: 'UDA 1',
+  currentLessonPosition: 2,
+  lessons: [
+    { position: 1, titolo: 'Introduzione', sottotitolo: null },
+    { position: 2, titolo: 'Le reti', sottotitolo: 'Trasporto' },
+    { position: 3, titolo: 'Il routing', sottotitolo: null },
+  ],
+};
+
+function fullContext(over: Partial<LessonAiContext> = {}): LessonAiContext {
+  return {
+    titolo: 'Le reti',
+    sottotitolo: null,
+    difficolta: 'intermedia',
+    udaTitle: 'UDA 1',
+    concettiChiave: ['TCP', 'IP'],
+    obiettivi: ['capire i livelli'],
+    udaContext: UDA_CONTEXT,
+    currentBody: '',
+    ...over,
+  };
+}
+
+describe('buildLessonContentRequest (AIGEN-03 / AIGEN-CONTEXT-01 closed lesson payload)', () => {
+  it('builds a closed lesson payload, derives hasCurrentContent, omits an empty sottotitolo', () => {
     const req = buildLessonContentRequest({
       requestId: REQ,
       modelProfile: 'economy',
       depth: 'complete',
-      context: {
+      context: fullContext({
         titolo: '  Le reti  ',
         sottotitolo: '',
-        udaTitle: 'UDA 1',
         concettiChiave: ['TCP', '  ', 'IP'],
-        obiettivi: [],
         currentBody: '## Reti\nContenuto',
-      },
+      }),
       teacherGuidance: '  tono formale  ',
     });
     expect(req).toEqual({
@@ -109,13 +135,15 @@ describe('buildLessonContentRequest (AIGEN-03 closed lesson payload)', () => {
       hasCurrentContent: true,
       teacherGuidance: 'tono formale',
       titolo: 'Le reti',
+      difficolta: 'intermedia',
       udaTitle: 'UDA 1',
       concettiChiave: ['TCP', 'IP'],
+      obiettivi: ['capire i livelli'],
+      udaContext: UDA_CONTEXT,
       currentBody: '## Reti\nContenuto',
     });
-    // Empty sottotitolo/obiettivi omitted; never leaks server-only fields.
+    // Sottotitolo vuoto omesso; nessun campo server-only.
     expect('sottotitolo' in req).toBe(false);
-    expect('obiettivi' in req).toBe(false);
     expect('modelId' in req).toBe(false);
     expect('ownerUid' in req).toBe(false);
   });
@@ -125,10 +153,110 @@ describe('buildLessonContentRequest (AIGEN-03 closed lesson payload)', () => {
       requestId: REQ,
       modelProfile: 'quality',
       depth: 'synthetic',
-      context: { titolo: 'T', currentBody: '   ' },
+      context: fullContext({ currentBody: '   ' }),
     });
     expect(req.hasCurrentContent).toBe(false);
     expect('currentBody' in req).toBe(false);
     expect('teacherGuidance' in req).toBe(false);
+  });
+
+  it('never sends technical IDs in the UDA outline', () => {
+    const req = buildLessonContentRequest({
+      requestId: REQ,
+      modelProfile: 'economy',
+      depth: 'complete',
+      context: fullContext(),
+    });
+    const serialized = JSON.stringify(req);
+    for (const forbidden of [
+      'lessonId',
+      'udaId',
+      'udaDir',
+      'filename',
+      'storageRef',
+      'publicLessonId',
+      'ownerUid',
+      'importId',
+    ]) {
+      expect(serialized).not.toContain(forbidden);
+    }
+    for (const item of req.udaContext.lessons) {
+      expect(Object.keys(item).sort()).toEqual(['position', 'sottotitolo', 'titolo']);
+    }
+  });
+
+  it('refuses fail-closed to build a payload when required metadata is missing', () => {
+    for (const over of [
+      { titolo: '  ' },
+      { difficolta: null },
+      { concettiChiave: [] },
+      { obiettivi: ['   '] },
+      { udaTitle: null },
+      { udaContext: null },
+    ] as Partial<LessonAiContext>[]) {
+      expect(() =>
+        buildLessonContentRequest({
+          requestId: REQ,
+          modelProfile: 'economy',
+          depth: 'complete',
+          context: fullContext(over),
+        }),
+      ).toThrow(/Metadati della lezione incompleti/);
+    }
+  });
+});
+
+describe('missingLessonRequirements (preflight, AIGEN-CONTEXT-01)', () => {
+  it('accepts a complete context, and a missing sottotitolo does not block', () => {
+    expect(missingLessonRequirements(fullContext())).toEqual([]);
+    expect(missingLessonRequirements(fullContext({ sottotitolo: null }))).toEqual([]);
+    expect(missingLessonRequirements(fullContext({ sottotitolo: '' }))).toEqual([]);
+  });
+
+  it('lists exactly the missing required fields', () => {
+    expect(missingLessonRequirements(fullContext({ titolo: '' }))).toEqual(['titolo']);
+    expect(missingLessonRequirements(fullContext({ difficolta: '  ' }))).toEqual(['difficolta']);
+    expect(missingLessonRequirements(fullContext({ concettiChiave: ['  '] }))).toEqual([
+      'concettiChiave',
+    ]);
+    expect(missingLessonRequirements(fullContext({ obiettivi: [] }))).toEqual(['obiettivi']);
+    expect(missingLessonRequirements(fullContext({ udaTitle: null }))).toEqual(['udaTitle']);
+    expect(missingLessonRequirements(fullContext({ udaContext: null }))).toEqual(['udaContext']);
+    // Più campi mancanti → elenco completo, nell'ordine del contratto.
+    expect(
+      missingLessonRequirements(fullContext({ titolo: '', difficolta: '', obiettivi: [] })),
+    ).toEqual(['titolo', 'difficolta', 'obiettivi']);
+  });
+
+  it('rejects an incoherent UDA outline (empty, unordered, or bad current position)', () => {
+    const bad: LessonUdaContext[] = [
+      { title: 'UDA 1', currentLessonPosition: 1, lessons: [] },
+      {
+        title: 'UDA 1',
+        currentLessonPosition: 1,
+        lessons: [
+          { position: 2, titolo: 'A', sottotitolo: null },
+          { position: 1, titolo: 'B', sottotitolo: null },
+        ],
+      },
+      {
+        title: 'UDA 1',
+        currentLessonPosition: 5,
+        lessons: [{ position: 1, titolo: 'A', sottotitolo: null }],
+      },
+      {
+        title: '  ',
+        currentLessonPosition: 1,
+        lessons: [{ position: 1, titolo: 'A', sottotitolo: null }],
+      },
+      {
+        title: 'UDA 1',
+        currentLessonPosition: 1,
+        lessons: [{ position: 1, titolo: '  ', sottotitolo: null }],
+      },
+    ];
+    for (const udaContext of bad) {
+      expect(missingLessonRequirements(fullContext({ udaContext }))).toContain('udaContext');
+    }
   });
 });

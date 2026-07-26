@@ -45,6 +45,20 @@ afterEach(cleanup);
 
 const STATUS = { busy: false, error: null, saved: false };
 
+/** Contesto completo richiesto da AIGEN-CONTEXT-01 per arrivare alla stima. */
+const FULL_LESSON_AI = {
+  titolo: 'Le reti',
+  difficolta: 'intermedia',
+  udaTitle: 'UDA 1',
+  concettiChiave: ['TCP'],
+  obiettivi: ['capire i livelli'],
+  udaContext: {
+    title: 'UDA 1',
+    currentLessonPosition: 1,
+    lessons: [{ position: 1, titolo: 'Le reti', sottotitolo: null }],
+  },
+};
+
 describe('MarkdownBodyEditor — AIGEN-03 «Genera con IA»', () => {
   it('shows the button only when lessonAi context is provided (edit mode)', () => {
     const { rerender } = render(
@@ -80,7 +94,7 @@ describe('MarkdownBodyEditor — AIGEN-03 «Genera con IA»', () => {
         onSave={onSave}
         onCancel={() => {}}
         onDirtyChange={onDirtyChange}
-        lessonAi={{ titolo: 'Le reti' }}
+        lessonAi={FULL_LESSON_AI}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
@@ -103,7 +117,7 @@ describe('MarkdownBodyEditor — AIGEN-03 «Genera con IA»', () => {
         onSave={() => {}}
         onCancel={() => {}}
         onDirtyChange={() => {}}
-        lessonAi={{ titolo: 'Le reti' }}
+        lessonAi={FULL_LESSON_AI}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));

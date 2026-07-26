@@ -23,9 +23,20 @@ afterEach(cleanup);
 const CONTEXT: LessonAiContext = {
   titolo: 'Le reti',
   sottotitolo: null,
+  difficolta: 'intermedia',
   udaTitle: 'UDA 1',
   concettiChiave: ['TCP', 'IP'],
   obiettivi: ['capire i livelli'],
+  // AIGEN-CONTEXT-01: indice UDA compatto (dall'albero già in memoria).
+  udaContext: {
+    title: 'UDA 1',
+    currentLessonPosition: 2,
+    lessons: [
+      { position: 1, titolo: 'Introduzione', sottotitolo: null },
+      { position: 2, titolo: 'Le reti', sottotitolo: null },
+      { position: 3, titolo: 'Il routing', sottotitolo: null },
+    ],
+  },
   currentBody: '',
 };
 
@@ -233,5 +244,97 @@ describe('AiLessonGenerationDialog — AIGEN-UI-01 UI', () => {
     expect(screen.queryByText(/Nessun costo è stato ancora generato/)).toBeNull();
     expect(screen.getByText(/Token stimati/)).toBeTruthy();
     expect(screen.getByText(/Tetto massimo prenotabile/)).toBeTruthy();
+  });
+});
+
+// ─── AIGEN-CONTEXT-01 — preflight dei metadati obbligatori ───────────────────
+describe('AiLessonGenerationDialog — AIGEN-CONTEXT-01 preflight', () => {
+  /** Rende il dialog con un contesto incompleto e prova a chiedere la stima. */
+  function renderIncomplete(over: Partial<LessonAiContext>) {
+    const c = makeCallables();
+    renderDialog(c.callables, vi.fn(), { ...CONTEXT, ...over });
+    return c;
+  }
+
+  const CASES: Array<[string, Partial<LessonAiContext>, string]> = [
+    ['titolo', { titolo: '  ' }, 'titolo'],
+    ['difficoltà', { difficolta: null }, 'difficoltà'],
+    ['concetti chiave', { concettiChiave: [] }, 'concetti chiave'],
+    ['obiettivi', { obiettivi: ['   '] }, 'obiettivi'],
+    ['titolo UDA', { udaTitle: null }, 'titolo UDA'],
+    ['indice UDA', { udaContext: null }, 'indice della UDA'],
+  ];
+
+  for (const [label, over, expectedField] of CASES) {
+    it(`does not call preview when ${label} is missing, and names the field`, () => {
+      const c = renderIncomplete(over);
+      const btn = screen.getByRole('button', { name: 'Calcola stima' }) as HTMLButtonElement;
+      // Pulsante disabilitato + alert accessibile con il campo mancante.
+      expect(btn.disabled).toBe(true);
+      const alert = screen.getByRole('alert');
+      expect(alert.textContent).toContain('Completa prima le informazioni fondamentali');
+      expect(alert.textContent).toContain(expectedField);
+      // Nessuna callable: nessun run, nessuna prenotazione, nessun costo.
+      fireEvent.click(btn);
+      expect(c.previewReqs).toHaveLength(0);
+      expect(c.generateReqs).toHaveLength(0);
+      // Il dialog resta aperto.
+      expect(screen.getByRole('dialog')).toBeTruthy();
+    });
+  }
+
+  it('lists every missing field at once', () => {
+    renderIncomplete({ titolo: '', difficolta: '', obiettivi: [] });
+    const alert = screen.getByRole('alert');
+    for (const field of ['titolo', 'difficoltà', 'obiettivi']) {
+      expect(alert.textContent).toContain(field);
+    }
+  });
+
+  it('allows generation when only the optional sottotitolo is missing', async () => {
+    const c = makeCallables();
+    renderDialog(c.callables, vi.fn(), { ...CONTEXT, sottotitolo: null });
+    expect(screen.queryByRole('alert')).toBeNull();
+    const btn = screen.getByRole('button', { name: 'Calcola stima' }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    fireEvent.click(btn);
+    await screen.findByText(/Costo stimato/);
+    expect(c.previewReqs).toHaveLength(1);
+    expect('sottotitolo' in c.previewReqs[0]).toBe(false);
+  });
+
+  it('sends difficolta and the UDA outline, identical between preview and generate', async () => {
+    const c = makeCallables();
+    await goToReview(c.callables);
+    expect(c.previewReqs[0].difficolta).toBe('intermedia');
+    expect(c.previewReqs[0].udaContext).toEqual({
+      title: 'UDA 1',
+      currentLessonPosition: 2,
+      lessons: [
+        { position: 1, titolo: 'Introduzione', sottotitolo: null },
+        { position: 2, titolo: 'Le reti', sottotitolo: null },
+        { position: 3, titolo: 'Il routing', sottotitolo: null },
+      ],
+    });
+    // Stesso payload esatto (idempotenza server-side invariata).
+    expect(c.generateReqs[0]).toEqual(c.previewReqs[0]);
+  });
+
+  it('never sends technical identifiers in the payload', async () => {
+    const c = makeCallables();
+    await goToReview(c.callables);
+    const serialized = JSON.stringify(c.previewReqs[0]);
+    for (const forbidden of [
+      'lessonId',
+      'udaId',
+      'udaDir',
+      'filename',
+      'storageRef',
+      'publicLessonId',
+      'ownerUid',
+      'modelId',
+    ]) {
+      expect(serialized).not.toContain(forbidden);
+    }
   });
 });

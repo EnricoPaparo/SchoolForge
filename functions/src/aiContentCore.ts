@@ -95,6 +95,16 @@ export const MAX_TITLE_CHARS = 300;
 /** Tetto ragionevole del contesto quantitativo del pool esistente. */
 export const MAX_EXISTING_POOL_QUESTIONS = 1_000;
 /**
+ * AIGEN-CONTEXT-01 — numero massimo di voci dell'indice UDA. Chiuso e validato:
+ * l'indice resta compatto (solo titoli), quindi l'incremento di token è piccolo
+ * e limitato anche per un'UDA molto lunga.
+ */
+export const MAX_UDA_OUTLINE_ITEMS = 60;
+/** Dimensione UTF-8 massima dell'intero indice UDA serializzato. */
+export const MAX_UDA_OUTLINE_BYTES = 20_000;
+/** Lunghezza massima (caratteri) del valore libero `difficolta` della lezione. */
+export const MAX_DIFFICOLTA_CHARS = 120;
+/**
  * Dimensione UTF-8 complessiva massima della richiesta **normalizzata**. Poco
  * sopra il cap del singolo sorgente (200 KB): impedisce di aggirare il limite
  * gonfiando i metadati (titoli/liste) attorno a un sorgente già al massimo.
@@ -154,18 +164,46 @@ export interface PoolRequest {
   existingPoolQuestionCount: number;
 }
 
+/**
+ * AIGEN-CONTEXT-01 — voce dell'indice compatto dell'UDA. **Solo** posizione e
+ * titolazione: nessun ID tecnico, nessun corpo/pool/concetto/obiettivo delle
+ * altre lezioni, nessun dato studente.
+ */
+export interface LessonUdaOutlineItem {
+  /** Posizione deterministica 1-based nell'ordine canonico dell'UDA. */
+  position: number;
+  titolo: string;
+  sottotitolo: string | null;
+}
+
+/**
+ * Perimetro didattico dell'UDA: serve al modello per evitare ripetizioni di ciò
+ * che precede e anticipazioni di ciò che segue. Costruito dall'albero già in
+ * memoria nel workspace: nessuna nuova lettura.
+ */
+export interface LessonUdaContext {
+  title: string;
+  /** Posizione (1-based) della lezione corrente dentro `lessons`. */
+  currentLessonPosition: number;
+  lessons: LessonUdaOutlineItem[];
+}
+
 export interface LessonRequest {
   kind: 'lesson';
   requestId: string;
   modelProfile: ModelProfile;
   teacherGuidance: string | null;
   depth: LessonDepth;
-  /** Metadati didattici autorevoli. */
-  titolo: string | null;
+  /** Metadati didattici autorevoli: definiscono il perimetro della lezione. */
+  titolo: string;
   sottotitolo: string | null;
+  /** Livello pedagogico richiesto: **non** è `depth` (estensione della trattazione). */
+  difficolta: string;
   concettiChiave: string[];
   obiettivi: string[];
-  udaTitle: string | null;
+  udaTitle: string;
+  /** Indice compatto dell'UDA (perimetro, non contenuto). */
+  udaContext: LessonUdaContext;
   /** Corpo Markdown corrente nell'editor (contesto non attendibile). */
   currentBody: string;
   hasCurrentContent: boolean;
@@ -238,7 +276,20 @@ export function canonicalRequest(request: AiContentRequest): string {
           depth: request.depth,
           titolo: request.titolo,
           sottotitolo: request.sottotitolo,
+          // AIGEN-CONTEXT-01: difficoltà e indice UDA partecipano all'inputHash,
+          // così cambiarli invalida la requestId precedente come ogni altro
+          // campo del payload.
+          difficolta: request.difficolta,
           udaTitle: request.udaTitle,
+          udaContext: {
+            title: request.udaContext.title,
+            currentLessonPosition: request.udaContext.currentLessonPosition,
+            lessons: request.udaContext.lessons.map((l) => ({
+              position: l.position,
+              titolo: l.titolo,
+              sottotitolo: l.sottotitolo,
+            })),
+          },
           concettiChiave: request.concettiChiave,
           obiettivi: request.obiettivi,
           teacherGuidance: request.teacherGuidance,
@@ -313,6 +364,90 @@ function parseTitle(value: unknown, label: string): string | null {
     throw new AiContentError('invalid_input', `${label} troppo lungo.`);
   }
   return trimmed;
+}
+
+/**
+ * Metadato obbligatorio: stringa non vuota entro il cap. A differenza di
+ * `parseTitle` non degrada a `null` — l'assenza è un errore, mai un fallback.
+ */
+function parseRequiredText(value: unknown, label: string, maxChars: number): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new AiContentError('invalid_input', `${label} è obbligatorio.`);
+  }
+  const trimmed = value.trim();
+  if (trimmed.length > maxChars) {
+    throw new AiContentError('invalid_input', `${label} troppo lungo.`);
+  }
+  return trimmed;
+}
+
+/** Lista obbligatoria non vuota (concetti chiave / obiettivi). */
+function parseRequiredStringArray(value: unknown, label: string): string[] {
+  const items = parseStringArray(value, label);
+  if (items.length === 0) {
+    throw new AiContentError('invalid_input', `${label}: serve almeno un elemento.`);
+  }
+  return items;
+}
+
+/**
+ * AIGEN-CONTEXT-01 — validazione **fail-closed** dell'indice UDA. Rifiuta
+ * indice assente/malformato, vuoto o oltre il cap, posizioni non 1-based
+ * consecutive (ordine canonico deterministico), `currentLessonPosition` fuori
+ * range e qualunque proprietà extra — inclusi ID tecnici (lessonId, udaId,
+ * filename, storageRef, publicLessonId), che lo schema chiuso non ammette.
+ */
+function parseUdaContext(value: unknown): LessonUdaContext {
+  if (!isPlainObject(value)) {
+    throw new AiContentError('invalid_input', 'Contesto UDA mancante o non valido.');
+  }
+  assertNoExtraKeys(value, ['title', 'currentLessonPosition', 'lessons']);
+  const title = parseRequiredText(value.title, 'Titolo UDA del contesto', MAX_TITLE_CHARS);
+
+  if (!Array.isArray(value.lessons)) {
+    throw new AiContentError('invalid_input', "L'indice dell'UDA non è valido.");
+  }
+  if (value.lessons.length === 0) {
+    throw new AiContentError('invalid_input', "L'indice dell'UDA non può essere vuoto.");
+  }
+  if (value.lessons.length > MAX_UDA_OUTLINE_ITEMS) {
+    throw new AiContentError('limit_exceeded', "L'indice dell'UDA contiene troppe voci.");
+  }
+
+  const lessons: LessonUdaOutlineItem[] = value.lessons.map((raw, index) => {
+    if (!isPlainObject(raw)) {
+      throw new AiContentError('invalid_input', "Una voce dell'indice UDA non è valida.");
+    }
+    assertNoExtraKeys(raw, ['position', 'titolo', 'sottotitolo']);
+    // Ordine canonico: posizioni 1-based consecutive nell'ordine di invio.
+    if (raw.position !== index + 1) {
+      throw new AiContentError('invalid_input', "L'indice dell'UDA non è ordinato correttamente.");
+    }
+    return {
+      position: raw.position,
+      titolo: parseRequiredText(raw.titolo, "Titolo di una lezione dell'indice", MAX_TITLE_CHARS),
+      sottotitolo: parseTitle(raw.sottotitolo, 'Sottotitolo di una lezione'),
+    };
+  });
+
+  const currentLessonPosition = value.currentLessonPosition;
+  if (
+    typeof currentLessonPosition !== 'number' ||
+    !Number.isInteger(currentLessonPosition) ||
+    currentLessonPosition < 1 ||
+    currentLessonPosition > lessons.length
+  ) {
+    throw new AiContentError(
+      'invalid_input',
+      "La posizione della lezione corrente non è coerente con l'indice dell'UDA.",
+    );
+  }
+
+  const context: LessonUdaContext = { title, currentLessonPosition, lessons };
+  if (utf8ByteLength(JSON.stringify(context)) > MAX_UDA_OUTLINE_BYTES) {
+    throw new AiContentError('content_too_large', "L'indice dell'UDA è troppo grande.");
+  }
+  return context;
 }
 
 /** Cap fail-closed sulla dimensione UTF-8 dell'intera richiesta **normalizzata**. */
@@ -415,9 +550,11 @@ export function validateAiContentRequest(input: unknown): AiContentRequest {
     'depth',
     'titolo',
     'sottotitolo',
+    'difficolta',
     'concettiChiave',
     'obiettivi',
     'udaTitle',
+    'udaContext',
     'currentBody',
     'hasCurrentContent',
   ]);
@@ -431,9 +568,15 @@ export function validateAiContentRequest(input: unknown): AiContentRequest {
       'Il contenuto attuale della lezione è troppo grande.',
     );
   }
-  const titolo = parseTitle(input.titolo, 'Titolo');
+  // AIGEN-CONTEXT-01 — contratto didattico autorevole: titolo, difficoltà,
+  // almeno un concetto, almeno un obiettivo, titolo UDA e indice UDA sono
+  // **obbligatori** e validati fail-closed lato server (la validazione client è
+  // solo UX). Il sottotitolo resta facoltativo. Nessun valore sintetico.
+  const titolo = parseRequiredText(input.titolo, 'Titolo', MAX_TITLE_CHARS);
   const sottotitolo = parseTitle(input.sottotitolo, 'Sottotitolo');
-  const udaTitle = parseTitle(input.udaTitle, 'Titolo UDA');
+  const difficolta = parseRequiredText(input.difficolta, 'Difficoltà', MAX_DIFFICOLTA_CHARS);
+  const udaTitle = parseRequiredText(input.udaTitle, 'Titolo UDA', MAX_TITLE_CHARS);
+  const udaContext = parseUdaContext(input.udaContext);
   const hasCurrentContent =
     typeof input.hasCurrentContent === 'boolean'
       ? input.hasCurrentContent
@@ -446,9 +589,11 @@ export function validateAiContentRequest(input: unknown): AiContentRequest {
     depth: input.depth,
     titolo,
     sottotitolo,
-    concettiChiave: parseStringArray(input.concettiChiave, 'Concetti chiave'),
-    obiettivi: parseStringArray(input.obiettivi, 'Obiettivi'),
+    difficolta,
+    concettiChiave: parseRequiredStringArray(input.concettiChiave, 'Concetti chiave'),
+    obiettivi: parseRequiredStringArray(input.obiettivi, 'Obiettivi'),
     udaTitle,
+    udaContext,
     currentBody,
     hasCurrentContent,
   });
