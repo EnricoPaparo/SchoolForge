@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { DialogShell } from './workspaceDialogs.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
+import { AiReviewExitConfirm } from './AiReviewExitConfirm.js';
 import styles from './AiPoolGenerationDialog.module.css';
 import {
   buildLessonContentRequest,
@@ -200,6 +201,19 @@ export function AiLessonGenerationDialog({
     onClose();
   }
 
+  /**
+   * Torna alla configurazione **senza chiudere il dialog**: scarta la bozza
+   * generata e rigenera la `requestId` (via `invalidateEstimate`), ma conserva
+   * profilo, profondità e indicazioni già scelti dal docente. Nessuna callable,
+   * nessuna write, nessun costo.
+   */
+  function discardDraft() {
+    setResult(null);
+    setDraftBody('');
+    setShowAbandonConfirm(false);
+    invalidateEstimate();
+  }
+
   /** Unica uscita che chiude davvero durante la review; doppio click protetto. */
   function abandonDraft() {
     if (abandonStartedRef.current) return;
@@ -389,18 +403,11 @@ export function AiLessonGenerationDialog({
             <MarkdownRenderer markdown={draftBody} />
           </div>
           {showAbandonConfirm ? (
-            /* Conferma leggera di abbandono: pattern inline, nessun dialog annidato. */
-            <div role="alert">
-              <p>Abbandonare la proposta generata? Le modifiche non applicate andranno perse.</p>
-              <div className="dialog-actions">
-                <button type="button" onClick={() => setShowAbandonConfirm(false)}>
-                  Continua la revisione
-                </button>
-                <button type="button" className="btn-danger" onClick={abandonDraft}>
-                  Abbandona proposta
-                </button>
-              </div>
-            </div>
+            <AiReviewExitConfirm
+              onKeepReviewing={() => setShowAbandonConfirm(false)}
+              onBackToConfigure={discardDraft}
+              onAbandon={abandonDraft}
+            />
           ) : (
             <div className="dialog-actions">
               <button type="button" onClick={() => setShowAbandonConfirm(true)}>

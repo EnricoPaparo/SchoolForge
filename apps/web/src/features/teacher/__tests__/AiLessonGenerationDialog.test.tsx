@@ -432,7 +432,7 @@ describe('AiLessonGenerationDialog — explicit-dismiss during/after generation'
     expect(screen.queryByText(/Abbandonare la proposta generata/)).toBeNull();
   });
 
-  it('«Abbandona proposta» closes once and never applies the draft', async () => {
+  it('«Abbandona e chiudi» closes once and never applies the draft', async () => {
     const onClose = vi.fn();
     const onUseDraft = vi.fn();
     const c = makeCallables();
@@ -450,7 +450,7 @@ describe('AiLessonGenerationDialog — explicit-dismiss during/after generation'
     await screen.findByRole('button', { name: 'Usa questa bozza' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
-    const abandon = screen.getByRole('button', { name: 'Abbandona proposta' });
+    const abandon = screen.getByRole('button', { name: 'Abbandona e chiudi' });
     fireEvent.click(abandon);
     fireEvent.click(abandon); // doppio click protetto
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -470,5 +470,72 @@ describe('AiLessonGenerationDialog — explicit-dismiss during/after generation'
     const keep = screen.getByRole('button', { name: 'Continua la revisione' });
     keep.focus();
     expect(document.activeElement).toBe(keep);
+  });
+});
+
+// ─── «Modifica configurazione»: torna a configure senza chiudere né spendere ──
+describe('AiLessonGenerationDialog — back to configure from review', () => {
+  async function reviewWithCustomConfig() {
+    const onClose = vi.fn();
+    const onUseDraft = vi.fn();
+    const c = makeCallables();
+    render(
+      <AiLessonGenerationDialog
+        context={CONTEXT}
+        callables={c.callables}
+        onUseDraft={onUseDraft}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: /Approfondita/ }));
+    fireEvent.change(screen.getByLabelText('Indicazioni aggiuntive (facoltative)'), {
+      target: { value: 'tono formale' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera bozza' }));
+    await screen.findByRole('button', { name: 'Usa questa bozza' });
+    return { onClose, onUseDraft, ...c };
+  }
+
+  it('offers all three explicit actions in the confirmation', async () => {
+    await reviewWithCustomConfig();
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    for (const name of ['Continua la revisione', 'Modifica configurazione', 'Abbandona e chiudi']) {
+      expect(screen.getByRole('button', { name })).toBeTruthy();
+    }
+  });
+
+  it('returns to configure without closing, discarding the generated draft', async () => {
+    const { onClose, onUseDraft, previewReqs } = await reviewWithCustomConfig();
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica configurazione' }));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Calcola stima' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Usa questa bozza' })).toBeNull();
+    // Nessuna callable aggiuntiva, nessuna applicazione della bozza.
+    expect(previewReqs).toHaveLength(1);
+    expect(onUseDraft).not.toHaveBeenCalled();
+  });
+
+  it('keeps the teacher settings so they can be edited and regenerated', async () => {
+    const { previewReqs } = await reviewWithCustomConfig();
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica configurazione' }));
+
+    expect(
+      (screen.getByLabelText('Indicazioni aggiuntive (facoltative)') as HTMLTextAreaElement).value,
+    ).toBe('tono formale');
+    expect(screen.getByRole('radio', { name: /Approfondita/ }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    expect(previewReqs).toHaveLength(2);
+    expect(previewReqs[1].requestId).not.toBe(previewReqs[0].requestId);
+    expect(previewReqs[1].depth).toBe('in_depth');
+    expect(previewReqs[1].teacherGuidance).toBe('tono formale');
   });
 });

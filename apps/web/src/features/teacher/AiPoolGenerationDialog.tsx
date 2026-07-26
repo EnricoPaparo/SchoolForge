@@ -6,6 +6,7 @@ import {
 } from '@schoolforge/lesson-contract';
 import { DialogShell } from './workspaceDialogs.js';
 import { BoundedStepper, QuestionCountStepper } from './QuestionCountStepper.js';
+import { AiReviewExitConfirm } from './AiReviewExitConfirm.js';
 import { IconTrash } from '../../components/icons.js';
 import styles from './AiPoolGenerationDialog.module.css';
 import {
@@ -237,6 +238,22 @@ export function AiPoolGenerationDialog({
       // Consenti un nuovo tentativo (stessa requestId → idempotente lato server).
       generateStartedRef.current = false;
     }
+  }
+
+  /**
+   * Torna alla configurazione **senza chiudere il dialog**: scarta proposta e
+   * modifiche locali e rigenera la `requestId` (via `invalidateEstimate`), ma
+   * conserva profilo, stile, quantità e indicazioni già scelti dal docente, che
+   * può così correggerli e rigenerare. Nessuna callable, nessuna write, nessun
+   * costo.
+   */
+  function discardProposal() {
+    setResult(null);
+    setLocalQuestions([]);
+    setApplyErrors(null);
+    setShowApplyConfirm(false);
+    setShowAbandonConfirm(false);
+    invalidateEstimate();
   }
 
   /**
@@ -538,19 +555,11 @@ export function AiPoolGenerationDialog({
           )}
 
           {showAbandonConfirm ? (
-            /* Conferma leggera di abbandono: stesso pattern inline della
-               conferma di applicazione, nessun dialog annidato. */
-            <div role="alert">
-              <p>Abbandonare la proposta generata? Le modifiche non applicate andranno perse.</p>
-              <div className="dialog-actions">
-                <button type="button" onClick={() => setShowAbandonConfirm(false)}>
-                  Continua la revisione
-                </button>
-                <button type="button" className="btn-danger" onClick={abandonProposal}>
-                  Abbandona proposta
-                </button>
-              </div>
-            </div>
+            <AiReviewExitConfirm
+              onKeepReviewing={() => setShowAbandonConfirm(false)}
+              onBackToConfigure={discardProposal}
+              onAbandon={abandonProposal}
+            />
           ) : showApplyConfirm ? (
             <div role="alert">
               <p>

@@ -820,7 +820,7 @@ describe('AiPoolGenerationDialog — explicit-dismiss during/after generation', 
     expect(screen.queryByText(/Abbandonare la proposta generata/)).toBeNull();
   });
 
-  it('«Abbandona proposta» closes exactly once, applying nothing', async () => {
+  it('«Abbandona e chiudi» closes exactly once, applying nothing', async () => {
     const onClose = vi.fn();
     const onApply = vi.fn(async () => {});
     const { callables } = makeCallables();
@@ -839,7 +839,7 @@ describe('AiPoolGenerationDialog — explicit-dismiss during/after generation', 
     await screen.findByRole('button', { name: 'Annulla proposta' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
-    const abandon = screen.getByRole('button', { name: 'Abbandona proposta' });
+    const abandon = screen.getByRole('button', { name: 'Abbandona e chiudi' });
     fireEvent.click(abandon);
     fireEvent.click(abandon); // doppio click protetto
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -867,10 +867,92 @@ describe('AiPoolGenerationDialog — explicit-dismiss during/after generation', 
     const alert = screen.getByRole('alert');
     expect(alert.textContent).toContain('Abbandonare la proposta generata?');
     const keep = screen.getByRole('button', { name: 'Continua la revisione' });
-    const abandon = screen.getByRole('button', { name: 'Abbandona proposta' });
+    const abandon = screen.getByRole('button', { name: 'Abbandona e chiudi' });
     keep.focus();
     expect(document.activeElement).toBe(keep);
     abandon.focus();
     expect(document.activeElement).toBe(abandon);
+  });
+});
+
+// ─── «Modifica configurazione»: torna a configure senza chiudere né spendere ──
+describe('AiPoolGenerationDialog — back to configure from review', () => {
+  async function reviewWithCustomConfig() {
+    const onClose = vi.fn();
+    const onApply = vi.fn(async () => {});
+    const c = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={c.callables}
+        onApply={onApply}
+        onClose={onClose}
+      />,
+    );
+    // Impostazioni personalizzate dal docente, che devono sopravvivere.
+    fireEvent.click(screen.getByRole('radio', { name: /Rigoroso/ }));
+    fireEvent.change(screen.getByLabelText('Aperte'), { target: { value: '5' } });
+    fireEvent.change(screen.getByLabelText('Indicazioni aggiuntive (facoltative)'), {
+      target: { value: 'tono formale' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+    return { onClose, onApply, ...c };
+  }
+
+  it('offers all three explicit actions in the confirmation', async () => {
+    await reviewWithCustomConfig();
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    for (const name of ['Continua la revisione', 'Modifica configurazione', 'Abbandona e chiudi']) {
+      expect(screen.getByRole('button', { name })).toBeTruthy();
+    }
+  });
+
+  it('returns to configure without closing, discarding the proposal and local edits', async () => {
+    const { onClose, onApply, previewReqs } = await reviewWithCustomConfig();
+    // Modifica locale che deve essere scartata.
+    fireEvent.change(screen.getByLabelText('Testo domanda 1'), {
+      target: { value: 'Modifica locale' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica configurazione' }));
+
+    // Dialog aperto, fase configure, proposta e modifiche sparite.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Calcola stima' })).toBeTruthy();
+    expect(screen.queryByText('Spiega TCP')).toBeNull();
+    expect(screen.queryByDisplayValue('Modifica locale')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Annulla proposta' })).toBeNull();
+    // Nessuna callable aggiuntiva, nessuna write, nessun costo.
+    expect(previewReqs).toHaveLength(1);
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('keeps the teacher settings so they can be edited and regenerated', async () => {
+    const { previewReqs } = await reviewWithCustomConfig();
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica configurazione' }));
+
+    // Profilo/stile/quantità/indicazioni conservati.
+    expect((screen.getByLabelText('Aperte') as HTMLInputElement).value).toBe('5');
+    expect(
+      (screen.getByLabelText('Indicazioni aggiuntive (facoltative)') as HTMLTextAreaElement).value,
+    ).toBe('tono formale');
+    expect(screen.getByRole('radio', { name: /Rigoroso/ }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    // Il docente corregge e rigenera: nuova requestId, stesse impostazioni.
+    fireEvent.change(screen.getByLabelText('Aperte'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    expect(previewReqs).toHaveLength(2);
+    expect(previewReqs[1].requestId).not.toBe(previewReqs[0].requestId);
+    expect(previewReqs[1].level).toBe('advanced');
+    expect(previewReqs[1].counts.aperta).toBe(2);
+    expect(previewReqs[1].teacherGuidance).toBe('tono formale');
   });
 });
