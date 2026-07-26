@@ -137,3 +137,18 @@ describe('lesson toolbar on mobile', () => {
     expect(mobile).toMatch(/\.toolbar > \.menuWrap\s*\{[^}]*flex:\s*1 1 100%/s);
   });
 });
+
+describe('pool question metadata group (Dim. risposta)', () => {
+  const poolEditor = read('src/features/teacher/QuestionPoolEditor.module.css');
+
+  it('keeps difficulty and answer size in one group that wraps in an orderly way', () => {
+    const block = poolEditor.match(/\.questionMetaGroup\s*\{[^}]*\}/s)?.[0] ?? '';
+    expect(block).toMatch(/display:\s*flex/);
+    // Desktop: stessa riga; schermi stretti: wrap ordinato, nessun overflow.
+    expect(block).toMatch(/flex-wrap:\s*wrap/);
+    expect(block).toMatch(/min-width:\s*0/);
+    // L'allineamento a destra si è spostato dal singolo meta al gruppo.
+    expect(block).toMatch(/margin-left:\s*auto/);
+    expect(poolEditor).not.toMatch(/\.questionMeta\s*\{[^}]*margin-left:\s*auto/s);
+  });
+});

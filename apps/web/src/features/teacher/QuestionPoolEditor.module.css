@@ -436,10 +436,23 @@
   color: var(--color-primary);
 }
 
+/*
+ * Gruppo metadati della scheda domanda (difficoltà + dimensione risposta sulle
+ * aperte). Su desktop resta allineato a destra e su una sola riga; su schermi
+ * stretti va a capo in modo ordinato senza troncare né debordare.
+ */
+.questionMetaGroup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.6rem;
+  margin-left: auto;
+  min-width: 0;
+}
+
 .questionMeta {
   font-size: 0.75rem;
   color: var(--color-text-muted);
-  margin-left: auto;
 }
 
 .questionTesto {
