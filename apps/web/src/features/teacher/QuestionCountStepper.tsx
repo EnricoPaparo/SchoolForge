@@ -12,6 +12,14 @@ import styles from './QuestionCountStepper.module.css';
  * mai corretto silenziosamente — un valore vuoto/fuori range resta tale, marcato
  * `aria-invalid`, e viene intercettato dalla validazione esistente.
  */
+/**
+ * Larghezza del campo valore degli stepper inline. `'compact'` basta per 1–2
+ * cifre (difficoltà); `'wide'` (AIGEN-UI-03) garantisce almeno 5 cifre senza
+ * troncamento, per valori come `1800` o `10000`. Opzionale e retrocompatibile:
+ * l'assenza equivale a `'compact'`, quindi nessun altro stepper cambia.
+ */
+export type StepperWidth = 'compact' | 'wide';
+
 function CompactStepper({
   label,
   value,
@@ -21,6 +29,7 @@ function CompactStepper({
   canIncrement,
   decrementLabel,
   incrementLabel,
+  width = 'compact',
   onDecrement,
   onIncrement,
   onInputChange,
@@ -34,12 +43,19 @@ function CompactStepper({
   canIncrement: boolean;
   decrementLabel: string;
   incrementLabel: string;
+  width?: StepperWidth;
   onDecrement: () => void;
   onIncrement: () => void;
   onInputChange: (raw: string) => void;
 }) {
+  const wrapperClass = [
+    label === undefined ? styles.stepperInline : styles.stepper,
+    width === 'wide' ? styles.stepperWide : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
-    <div className={label === undefined ? styles.stepperInline : styles.stepper}>
+    <div className={wrapperClass}>
       {label !== undefined && <span className={styles.label}>{label}</span>}
       <div className={styles.control}>
         <button
@@ -136,6 +152,7 @@ export function BoundedStepper({
   ariaLabel,
   decrementLabel,
   incrementLabel,
+  width,
   onChange,
 }: {
   value: number;
@@ -145,6 +162,8 @@ export function BoundedStepper({
   ariaLabel: string;
   decrementLabel: string;
   incrementLabel: string;
+  /** `'wide'` per valori fino a 5 cifre; omesso ⇒ compatto (comportamento storico). */
+  width?: StepperWidth;
   onChange: (next: number) => void;
 }) {
   const [raw, setRaw] = useState(() => String(value));
@@ -177,6 +196,7 @@ export function BoundedStepper({
       canIncrement={valid && value < max}
       decrementLabel={decrementLabel}
       incrementLabel={incrementLabel}
+      width={width}
       onDecrement={() => push(clamp(value - step))}
       onIncrement={() => push(clamp(value + step))}
       // Nessuna correzione silenziosa: si propaga il valore digitato così com'è

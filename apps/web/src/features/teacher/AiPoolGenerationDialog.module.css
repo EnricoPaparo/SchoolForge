@@ -117,17 +117,49 @@
   flex-wrap: wrap;
 }
 
-/* Spinge i controlli (difficoltà/caratteri/elimina) a destra quando c'è spazio. */
+/* Spinge «Elimina» a destra sulla prima riga. */
 .reviewHeadSpacer {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.reviewHeadControls {
+/*
+ * AIGEN-UI-03 — riga 2: metadati con label visibili. Su desktop stanno sulla
+ * stessa riga; su schermi stretti il wrap è ordinato, senza sovrapposizioni.
+ */
+.reviewMeta {
   display: flex;
-  align-items: center;
-  gap: 0.4rem;
+  align-items: flex-end;
+  gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+.reviewMetaField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.reviewMetaLabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #555);
+  white-space: nowrap;
+}
+
+/*
+ * Textarea della **sola** review AIGEN: non ridimensionabili manualmente (non
+ * possono deformare il dialog) e con scroll interno quando il testo supera
+ * l'altezza. Nessuna regola globale: le altre textarea del portale — e gli input
+ * di testo delle opzioni chiuse — restano invariati.
+ */
+.reviewTextarea {
+  resize: none;
+  overflow-y: auto;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 /* Pulsante elimina della scheda: distruttivo sobrio, stessa altezza dei mini-stepper. */
@@ -228,17 +260,10 @@
     flex-basis: 100%;
   }
   /*
-   * A schermi stretti i controlli vanno a capo **in blocco** (badge sopra,
-   * controlli sotto) e restano su una sola riga tra loro: «Elimina» non occupa
-   * mai una riga propria.
+   * AIGEN-UI-03 — la prima riga ora porta solo identità + «Elimina»: resta su una
+   * riga sola anche a 320px (il pulsante diventa icona sotto i 420px), quindi lo
+   * spacer non deve più forzare il wrap.
    */
-  .reviewHeadSpacer {
-    flex-basis: 100%;
-  }
-  .reviewHeadControls {
-    flex-wrap: nowrap;
-    width: 100%;
-  }
   .reviewDeleteBtn {
     margin-left: auto;
   }

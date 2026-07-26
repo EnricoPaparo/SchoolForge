@@ -596,8 +596,8 @@ function ProposalQuestionCard({
     question.tipo === 'aperta'
       ? 'Aperta'
       : question.tipo === 'chiusa_singola'
-        ? 'Chiusa (singola)'
-        : 'Chiusa (multipla)';
+        ? 'Risposta singola'
+        : 'Risposta multipla';
   // Palette distinta per tipo (AIGEN-UI-02): nessuno sfondo bianco.
   const badgeClass =
     question.tipo === 'aperta'
@@ -620,15 +620,34 @@ function ProposalQuestionCard({
   return (
     <div className={styles.reviewItem}>
       {/*
-       * Riga metadati compatta (AIGEN-UI-02): badge tipo, difficoltà, caratteri
-       * max (solo aperte) ed «Elimina» sulla stessa riga, per recuperare spazio
-       * verticale. «Elimina» resta accanto agli altri controlli anche in wrap.
+       * AIGEN-UI-03 — riga 1: identità della domanda («Domanda N» + badge tipo) e
+       * l'azione distruttiva a destra. Difficoltà e dimensione risposta stanno
+       * nella riga 2, così la prima riga resta leggibile anche a 320px.
        */}
       <div className={styles.reviewHead}>
         <strong>Domanda {ordinal}</strong>
         <span className={`${styles.badge} ${badgeClass}`}>{tipoLabel}</span>
         <span className={styles.reviewHeadSpacer} />
-        <div className={styles.reviewHeadControls}>
+        <button
+          type="button"
+          className={`btn-danger ${styles.reviewDeleteBtn}`}
+          onClick={onDelete}
+          aria-label={`Elimina domanda ${ordinal}`}
+        >
+          <IconTrash size={13} />
+          {/* Su schermi molto stretti resta la sola icona: il nome accessibile
+              è comunque garantito da `aria-label`. */}
+          <span className={styles.reviewDeleteLabel}>Elimina</span>
+        </button>
+      </div>
+
+      {/*
+       * Riga 2 — metadati con label VISIBILI, associate al controllo da `<label>`
+       * (l'input dello stepper è l'unico controllo etichettabile al suo interno).
+       */}
+      <div className={styles.reviewMeta}>
+        <label className={styles.reviewMetaField}>
+          <span className={styles.reviewMetaLabel}>Difficoltà</span>
           <BoundedStepper
             value={question.difficolta}
             min={1}
@@ -638,36 +657,31 @@ function ProposalQuestionCard({
             incrementLabel={`Aumenta difficoltà domanda ${ordinal}`}
             onChange={(difficolta) => onChange({ difficolta })}
           />
-          {question.tipo === 'aperta' && (
+        </label>
+        {question.tipo === 'aperta' && (
+          <label className={styles.reviewMetaField}>
+            <span className={styles.reviewMetaLabel}>Dim. risposta</span>
             <BoundedStepper
               value={question.maxCharacters}
               min={MIN_MAX_CHARACTERS}
               max={MAX_MAX_CHARACTERS}
               step={ANSWER_CHARACTERS_STEP}
+              // 5 cifre piene: 10000 non deve mai essere troncato.
+              width="wide"
               ariaLabel={`Caratteri max domanda ${ordinal}`}
               decrementLabel={`Diminuisci caratteri max domanda ${ordinal}`}
               incrementLabel={`Aumenta caratteri max domanda ${ordinal}`}
               onChange={(maxCharacters) => onChange({ maxCharacters })}
             />
-          )}
-          <button
-            type="button"
-            className={`btn-danger ${styles.reviewDeleteBtn}`}
-            onClick={onDelete}
-            aria-label={`Elimina domanda ${ordinal}`}
-          >
-            <IconTrash size={13} />
-            {/* Su schermi molto stretti resta la sola icona: il nome accessibile
-                è comunque garantito da `aria-label`. */}
-            <span className={styles.reviewDeleteLabel}>Elimina</span>
-          </button>
-        </div>
+          </label>
+        )}
       </div>
 
       <label className={styles.field}>
         Testo
         <textarea
-          rows={2}
+          className={styles.reviewTextarea}
+          rows={4}
           value={question.testo}
           onChange={(e) => onChange({ testo: e.target.value })}
           aria-label={`Testo domanda ${ordinal}`}
@@ -679,7 +693,8 @@ function ProposalQuestionCard({
           <label className={styles.field}>
             Soluzione di riferimento
             <textarea
-              rows={2}
+              className={styles.reviewTextarea}
+              rows={4}
               value={question.soluzione}
               onChange={(e) => onChange({ soluzione: e.target.value })}
               aria-label={`Soluzione domanda ${ordinal}`}

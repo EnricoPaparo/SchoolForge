@@ -438,17 +438,11 @@ describe('AiPoolGenerationDialog — AIGEN-UI-02 review card', () => {
     await screen.findByText(/la difficoltà deve essere un intero da 1 a 5/i);
   });
 
-  it('shows the delete button beside the metadata controls, deleting only the local draft', async () => {
+  it('deletes a question from the local draft only (no pool write)', async () => {
     const onApply = vi.fn(async () => {});
     const { callables } = makeCallables();
     await goToReview(callables, onApply);
-    const del = screen.getByRole('button', { name: 'Elimina domanda 1' });
-    const diff = screen.getByLabelText('Difficoltà domanda 1');
-    // Stessa riga metadati: condividono il contenitore dei controlli.
-    const controls = del.closest('[class*="reviewHeadControls"]') as HTMLElement;
-    expect(controls).toBeTruthy();
-    expect(controls.contains(diff)).toBe(true);
-    fireEvent.click(del);
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina domanda 1' }));
     await waitFor(() => expect(screen.queryByText('Spiega TCP')).toBeNull());
     // Nessuna scrittura del pool: la cancellazione tocca solo la bozza locale.
     expect(onApply).not.toHaveBeenCalled();
@@ -490,10 +484,10 @@ describe('AiPoolGenerationDialog — AIGEN-UI-02 review card', () => {
     await goToReview(callables);
     const cls = (text: string) => screen.getByText(text).className;
     expect(cls('Aperta')).toMatch(/badgeAperta/);
-    expect(cls('Chiusa (singola)')).toMatch(/badgeSingola/);
-    expect(cls('Chiusa (multipla)')).toMatch(/badgeMultipla/);
+    expect(cls('Risposta singola')).toMatch(/badgeSingola/);
+    expect(cls('Risposta multipla')).toMatch(/badgeMultipla/);
     // Tre classi cromatiche distinte.
-    expect(new Set([cls('Aperta'), cls('Chiusa (singola)'), cls('Chiusa (multipla)')]).size).toBe(
+    expect(new Set([cls('Aperta'), cls('Risposta singola'), cls('Risposta multipla')]).size).toBe(
       3,
     );
   });
@@ -510,5 +504,163 @@ describe('AiPoolGenerationDialog — AIGEN-UI-02 review card', () => {
     const aperta = pool.questions.find((q) => q.tipo === 'aperta')!;
     expect(aperta.difficolta).toBe(4);
     expect(aperta.maxPoints).toBe(aperta.difficolta);
+  });
+});
+
+// ─── AIGEN-UI-03 — struttura definitiva della scheda di review ───────────────
+describe('AiPoolGenerationDialog — AIGEN-UI-03 review card layout', () => {
+  /** Proposta con tutti e tre i tipi, per coprire aperta vs chiuse. */
+  function allTypes(): AiPoolGenerateResult {
+    return generateResult({
+      output: {
+        questions: [
+          {
+            order: 0,
+            tipo: 'aperta',
+            testo: 'Spiega TCP',
+            difficolta: 4,
+            soluzione: 'Affidabile',
+          },
+          {
+            order: 1,
+            tipo: 'chiusa_singola',
+            testo: 'Quale?',
+            difficolta: 2,
+            opzioni: ['TCP', 'UDP'],
+            soluzioneIndici: [0],
+          },
+          {
+            order: 2,
+            tipo: 'chiusa_multipla',
+            testo: 'Quali?',
+            difficolta: 3,
+            opzioni: ['TCP', 'UDP', 'RAM'],
+            soluzioneIndici: [0, 1],
+          },
+        ],
+      },
+    });
+  }
+
+  it('shows «Domanda 1» and the type badge on the header row', async () => {
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables);
+    const title = screen.getByText('Domanda 1');
+    expect(title).toBeTruthy();
+    const badge = screen.getByText('Aperta');
+    // Stessa riga: titolo e badge condividono il contenitore di intestazione.
+    const head = title.closest('[class*="reviewHead"]') as HTMLElement;
+    expect(head).toBeTruthy();
+    expect(head.contains(badge)).toBe(true);
+  });
+
+  it('keeps «Elimina» on the header row, away from the metadata row', async () => {
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables);
+    const del = screen.getByRole('button', { name: 'Elimina domanda 1' });
+    const head = screen.getByText('Domanda 1').closest('[class*="reviewHead"]') as HTMLElement;
+    expect(head.contains(del)).toBe(true);
+    // La riga metadati non contiene «Elimina».
+    const meta = screen
+      .getByLabelText('Difficoltà domanda 1')
+      .closest('[class*="reviewMeta"]') as HTMLElement;
+    expect(meta).toBeTruthy();
+    expect(meta.contains(del)).toBe(false);
+  });
+
+  it('shows a visible «Difficoltà» label associated with its stepper', async () => {
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables);
+    // Label visibile presente per ogni domanda.
+    expect(screen.getAllByText('Difficoltà').length).toBe(3);
+    const input = screen.getByLabelText('Difficoltà domanda 1');
+    const field = input.closest('label') as HTMLLabelElement;
+    expect(field).toBeTruthy();
+    expect(field.textContent).toContain('Difficoltà');
+    expect(field.contains(input)).toBe(true);
+  });
+
+  it('shows «Dim. risposta» only for open questions', async () => {
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables);
+    // Una sola aperta ⇒ una sola label visibile.
+    expect(screen.getAllByText('Dim. risposta')).toHaveLength(1);
+    expect(screen.getByLabelText('Caratteri max domanda 1')).toBeTruthy();
+    // Nessun controllo dimensione per singola (2) e multipla (3).
+    expect(screen.queryByLabelText('Caratteri max domanda 2')).toBeNull();
+    expect(screen.queryByLabelText('Caratteri max domanda 3')).toBeNull();
+  });
+
+  it('renders the review textareas with rows=4 and the non-resizable class', async () => {
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables);
+    const testo = screen.getByLabelText('Testo domanda 1') as HTMLTextAreaElement;
+    const soluzione = screen.getByLabelText('Soluzione domanda 1') as HTMLTextAreaElement;
+    for (const ta of [testo, soluzione]) {
+      expect(ta.tagName).toBe('TEXTAREA');
+      expect(ta.rows).toBe(4);
+      expect(ta.className).toMatch(/reviewTextarea/);
+    }
+    // Le opzioni delle chiuse restano input di testo, invariati.
+    const opzione = screen.getByLabelText('Testo opzione a domanda 2') as HTMLInputElement;
+    expect(opzione.tagName).toBe('INPUT');
+    expect(opzione.className).not.toMatch(/reviewTextarea/);
+  });
+
+  it('shows the full answer-size value, including 1800 and the 10000 maximum', async () => {
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables);
+    const chars = () => screen.getByLabelText('Caratteri max domanda 1') as HTMLInputElement;
+    // difficoltà 4 → 1800 derivato dal mapper, mostrato per intero.
+    expect(chars().value).toBe('1800');
+    // Valore massimo consentito, mostrato integralmente (nessun troncamento).
+    fireEvent.change(chars(), { target: { value: '10000' } });
+    expect(chars().value).toBe('10000');
+    expect(chars().className).toMatch(/input/);
+    const wrapper = chars().closest('[class*="stepperWide"]');
+    expect(wrapper).toBeTruthy();
+  });
+
+  it('keeps specific aria-labels on both steppers and their +/- buttons', async () => {
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables);
+    for (const name of [
+      'Diminuisci difficoltà domanda 1',
+      'Aumenta difficoltà domanda 1',
+      'Diminuisci caratteri max domanda 1',
+      'Aumenta caratteri max domanda 1',
+      'Diminuisci difficoltà domanda 2',
+      'Aumenta difficoltà domanda 2',
+    ]) {
+      expect(screen.getByRole('button', { name })).toBeTruthy();
+    }
+  });
+
+  it('still edits difficolta and maxCharacters in local state only', async () => {
+    const onApply = vi.fn(async () => {});
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables, onApply);
+    fireEvent.click(screen.getByRole('button', { name: 'Aumenta difficoltà domanda 1' }));
+    expect((screen.getByLabelText('Difficoltà domanda 1') as HTMLInputElement).value).toBe('5');
+    fireEvent.click(screen.getByRole('button', { name: 'Aumenta caratteri max domanda 1' }));
+    expect((screen.getByLabelText('Caratteri max domanda 1') as HTMLInputElement).value).toBe(
+      '1900',
+    );
+    // Nessuna applicazione/write durante la revisione.
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('still applies the reviewed pool through the canonical save', async () => {
+    const onApply = vi.fn(async (_pool: ParsedPool) => {});
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables, onApply);
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina domanda 3' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Crea pool' }).at(-1)!);
+    await screen.findByText(/Pool creato con 2 domande/);
+    expect(onApply).toHaveBeenCalledTimes(1);
+    const pool = onApply.mock.calls[0]![0];
+    expect(pool.schema).toBe('schoolforge-pool/v2');
+    expect(pool.questions).toHaveLength(2);
   });
 });

@@ -70,9 +70,9 @@ describe('AIGEN review card compact metadata row', () => {
   it('lays the metadata row out inline with an ordered wrap', () => {
     expect(aigen).toMatch(/\.reviewHead\s*\{[^}]*display:\s*flex/s);
     expect(aigen).toMatch(/\.reviewHead\s*\{[^}]*flex-wrap:\s*wrap/s);
-    // I controlli (difficoltà/caratteri/elimina) restano raggruppati: «Elimina»
-    // non finisce mai da solo su una riga.
-    expect(aigen).toMatch(/\.reviewHeadControls\s*\{[^}]*display:\s*flex/s);
+    // AIGEN-UI-03 — riga 2 dedicata ai metadati, con wrap ordinato su mobile.
+    expect(aigen).toMatch(/\.reviewMeta\s*\{[^}]*display:\s*flex/s);
+    expect(aigen).toMatch(/\.reviewMeta\s*\{[^}]*flex-wrap:\s*wrap/s);
   });
 
   it('aligns the delete button height with the inline steppers', () => {
@@ -84,12 +84,32 @@ describe('AIGEN review card compact metadata row', () => {
     expect(aigen).toMatch(/\.opzioneRow input\[type='text'\]\s*\{[^}]*min-width:\s*0/s);
   });
 
-  it('keeps the metadata controls on one row on mobile, so «Elimina» never takes a row of its own', () => {
+  it('keeps «Elimina» on the header row, shrinking to the icon only under 420px', () => {
     const mobile = aigen.match(/@media \(max-width: 640px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
-    expect(mobile).toMatch(/\.reviewHeadControls\s*\{[^}]*flex-wrap:\s*nowrap/s);
-    // Sotto i 420px resta la sola icona per far stare tutto nella riga.
+    // Spinto a destra della prima riga, mai su una riga propria.
+    expect(mobile).toMatch(/\.reviewDeleteBtn\s*\{[^}]*margin-left:\s*auto/s);
     expect(aigen).toMatch(
       /@media \(max-width: 420px\)[\s\S]*?\.reviewDeleteLabel\s*\{[^}]*display:\s*none/,
+    );
+  });
+
+  it('makes the review textareas non-resizable and internally scrollable, scoped to AIGEN', () => {
+    const block = aigen.match(/\.reviewTextarea\s*\{[^}]*\}/s)?.[0] ?? '';
+    expect(block).toMatch(/resize:\s*none/);
+    expect(block).toMatch(/overflow-y:\s*auto/);
+    expect(block).toMatch(/max-width:\s*100%/);
+    // Regola circoscritta: nessun selettore `textarea` nudo nel modulo AIGEN.
+    expect(aigen).not.toMatch(/^\s*textarea\s*\{/m);
+  });
+
+  it('gives the wide stepper room for at least five digits (10000 never truncated)', () => {
+    const block = stepper.match(/\.stepperWide \.input\s*\{[^}]*\}/s)?.[0] ?? '';
+    const width = /width:\s*(\d+)ch/.exec(block);
+    expect(width).not.toBeNull();
+    expect(Number(width![1])).toBeGreaterThanOrEqual(5);
+    // Non si comprime nemmeno su mobile.
+    expect(stepper).toMatch(
+      /@media \(max-width: 640px\)[\s\S]*?\.stepperInline\.stepperWide \.input\s*\{[^}]*width:\s*6ch/,
     );
   });
 
