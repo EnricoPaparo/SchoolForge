@@ -338,3 +338,137 @@ describe('AiLessonGenerationDialog — AIGEN-CONTEXT-01 preflight', () => {
     }
   });
 });
+
+// ─── AIGEN-UI-03-FOLLOW-UP — la bozza non si perde per un click fuori ────────
+describe('AiLessonGenerationDialog — explicit-dismiss during/after generation', () => {
+  function backdrop() {
+    return screen.getByRole('dialog').parentElement as HTMLElement;
+  }
+
+  function renderWith(onClose: () => void, over: Partial<AiLessonCallables> = {}) {
+    const c = makeCallables(over);
+    render(
+      <AiLessonGenerationDialog
+        context={CONTEXT}
+        callables={c.callables}
+        onUseDraft={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    return c;
+  }
+
+  it('closes on backdrop and Escape in the phases before generation', () => {
+    const onClose = vi.fn();
+    renderWith(onClose);
+    fireEvent.click(backdrop());
+    expect(onClose).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores backdrop and Escape during review, keeping the draft intact', async () => {
+    const onClose = vi.fn();
+    renderWith(onClose);
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera bozza' }));
+    await screen.findByRole('button', { name: 'Usa questa bozza' });
+
+    fireEvent.click(backdrop());
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Usa questa bozza' })).toBeTruthy();
+  });
+
+  it('ignores backdrop and Escape while generating', async () => {
+    const onClose = vi.fn();
+    let release!: () => void;
+    renderWith(onClose, {
+      generate: () =>
+        new Promise((resolve) => {
+          release = () => resolve(generateResult());
+        }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera bozza' }));
+    await screen.findByText(/Generazione della bozza in corso/);
+
+    fireEvent.click(backdrop());
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    release();
+    await screen.findByRole('button', { name: 'Usa questa bozza' });
+  });
+
+  it('«Annulla» during review opens the abandon confirmation instead of closing', async () => {
+    const onClose = vi.fn();
+    renderWith(onClose);
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera bozza' }));
+    await screen.findByRole('button', { name: 'Usa questa bozza' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    expect(
+      screen.getByText(/Abbandonare la proposta generata\? Le modifiche non applicate/),
+    ).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('«Continua la revisione» keeps the generated draft', async () => {
+    const onClose = vi.fn();
+    renderWith(onClose);
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera bozza' }));
+    await screen.findByRole('button', { name: 'Usa questa bozza' });
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continua la revisione' }));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Usa questa bozza' })).toBeTruthy();
+    expect(screen.queryByText(/Abbandonare la proposta generata/)).toBeNull();
+  });
+
+  it('«Abbandona proposta» closes once and never applies the draft', async () => {
+    const onClose = vi.fn();
+    const onUseDraft = vi.fn();
+    const c = makeCallables();
+    render(
+      <AiLessonGenerationDialog
+        context={CONTEXT}
+        callables={c.callables}
+        onUseDraft={onUseDraft}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera bozza' }));
+    await screen.findByRole('button', { name: 'Usa questa bozza' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+    const abandon = screen.getByRole('button', { name: 'Abbandona proposta' });
+    fireEvent.click(abandon);
+    fireEvent.click(abandon); // doppio click protetto
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onUseDraft).not.toHaveBeenCalled();
+  });
+
+  it('exposes the abandon confirmation to the keyboard', async () => {
+    renderWith(vi.fn());
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera bozza' }));
+    await screen.findByRole('button', { name: 'Usa questa bozza' });
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('Abbandonare la proposta generata?');
+    const keep = screen.getByRole('button', { name: 'Continua la revisione' });
+    keep.focus();
+    expect(document.activeElement).toBe(keep);
+  });
+});

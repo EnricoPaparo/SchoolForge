@@ -664,3 +664,213 @@ describe('AiPoolGenerationDialog — AIGEN-UI-03 review card layout', () => {
     expect(pool.questions).toHaveLength(2);
   });
 });
+
+// ─── AIGEN-UI-03-FOLLOW-UP — la proposta non si perde per un click fuori ─────
+describe('AiPoolGenerationDialog — explicit-dismiss during/after generation', () => {
+  function backdrop() {
+    return screen.getByRole('dialog').parentElement as HTMLElement;
+  }
+
+  it('closes on backdrop and Escape in the phases before generation', () => {
+    const onClose = vi.fn();
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(backdrop());
+    expect(onClose).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores backdrop and Escape during review, keeping the proposal intact', async () => {
+    const onClose = vi.fn();
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+
+    fireEvent.click(backdrop());
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    // Proposta e modifiche locali ancora lì.
+    expect(screen.getByText('Spiega TCP')).toBeTruthy();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('ignores backdrop and Escape while generating', async () => {
+    const onClose = vi.fn();
+    let release!: () => void;
+    const { callables } = makeCallables({
+      generate: () =>
+        new Promise((resolve) => {
+          release = () => resolve(generateResult());
+        }),
+    });
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByText(/Generazione del pool in corso/);
+
+    fireEvent.click(backdrop());
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    release();
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+  });
+
+  it('ignores backdrop and Escape while applying', async () => {
+    const onClose = vi.fn();
+    let release!: () => void;
+    const onApply = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const { callables } = makeCallables();
+    await goToReview(callables, onApply);
+    fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Crea pool' }).at(-1)!);
+    await screen.findByText(/Salvataggio del pool/);
+
+    fireEvent.click(backdrop());
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    release();
+    await screen.findByText(/Pool creato con/);
+  });
+
+  it('«Annulla proposta» opens the abandon confirmation instead of discarding', async () => {
+    const onClose = vi.fn();
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    expect(
+      screen.getByText(/Abbandonare la proposta generata\? Le modifiche non applicate/),
+    ).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('«Continua la revisione» keeps the proposal and local edits', async () => {
+    const onClose = vi.fn();
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+    // Modifica locale prima della conferma.
+    fireEvent.change(screen.getByLabelText('Testo domanda 1'), {
+      target: { value: 'Testo modificato dal docente' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continua la revisione' }));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('Testo domanda 1') as HTMLTextAreaElement).value).toBe(
+      'Testo modificato dal docente',
+    );
+    expect(screen.queryByText(/Abbandonare la proposta generata/)).toBeNull();
+  });
+
+  it('«Abbandona proposta» closes exactly once, applying nothing', async () => {
+    const onClose = vi.fn();
+    const onApply = vi.fn(async () => {});
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={onApply}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    const abandon = screen.getByRole('button', { name: 'Abbandona proposta' });
+    fireEvent.click(abandon);
+    fireEvent.click(abandon); // doppio click protetto
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('exposes the abandon confirmation to the keyboard', async () => {
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+
+    // Annuncio accessibile + entrambe le azioni raggiungibili come button.
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('Abbandonare la proposta generata?');
+    const keep = screen.getByRole('button', { name: 'Continua la revisione' });
+    const abandon = screen.getByRole('button', { name: 'Abbandona proposta' });
+    keep.focus();
+    expect(document.activeElement).toBe(keep);
+    abandon.focus();
+    expect(document.activeElement).toBe(abandon);
+  });
+});

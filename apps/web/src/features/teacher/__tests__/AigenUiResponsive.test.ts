@@ -58,11 +58,13 @@ describe('AIGEN scrollbars are hidden, never disabled', () => {
 });
 
 describe('AIGEN guidance textarea', () => {
-  it('is not manually resizable and keeps a sober initial height', () => {
+  it('keeps a sober initial height and internal scroll', () => {
     const block = aigen.match(/\.guidanceTextarea\s*\{[^}]*\}/s)?.[0] ?? '';
-    expect(block).toMatch(/resize:\s*none/);
     expect(block).toMatch(/min-height:/);
     expect(block).toMatch(/max-height:/);
+    expect(block).toMatch(/overflow-y:\s*auto/);
+    // Il divieto di resize è globale (index.css) — vedi `textareaResize.test.ts`.
+    expect(block).not.toMatch(/resize:/);
   });
 });
 
@@ -93,13 +95,12 @@ describe('AIGEN review card compact metadata row', () => {
     );
   });
 
-  it('makes the review textareas non-resizable and internally scrollable, scoped to AIGEN', () => {
+  it('makes the review textareas internally scrollable and width-bounded', () => {
     const block = aigen.match(/\.reviewTextarea\s*\{[^}]*\}/s)?.[0] ?? '';
-    expect(block).toMatch(/resize:\s*none/);
     expect(block).toMatch(/overflow-y:\s*auto/);
     expect(block).toMatch(/max-width:\s*100%/);
-    // Regola circoscritta: nessun selettore `textarea` nudo nel modulo AIGEN.
-    expect(aigen).not.toMatch(/^\s*textarea\s*\{/m);
+    // Il divieto di resize è globale (index.css) — vedi `textareaResize.test.ts`.
+    expect(block).not.toMatch(/resize:/);
   });
 
   it('gives the wide stepper room for at least five digits (10000 never truncated)', () => {

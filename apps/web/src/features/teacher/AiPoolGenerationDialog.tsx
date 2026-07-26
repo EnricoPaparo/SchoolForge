@@ -109,12 +109,15 @@ export function AiPoolGenerationDialog({
   const [error, setError] = useState<string | null>(null);
   const [applyErrors, setApplyErrors] = useState<string[] | null>(null);
   const [showApplyConfirm, setShowApplyConfirm] = useState(false);
+  /** Conferma leggera di abbandono della proposta (AIGEN-UI-03-FOLLOW-UP). */
+  const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
   const [doneMessage, setDoneMessage] = useState('');
 
   const requestIdRef = useRef<string>(newRequestId());
   const previewStartedRef = useRef(false);
   const generateStartedRef = useRef(false);
   const applyStartedRef = useRef(false);
+  const abandonStartedRef = useRef(false);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -236,12 +239,15 @@ export function AiPoolGenerationDialog({
     }
   }
 
-  function discardProposal() {
-    setResult(null);
-    setLocalQuestions([]);
-    setApplyErrors(null);
-    setShowApplyConfirm(false);
-    invalidateEstimate();
+  /**
+   * Unica uscita che chiude davvero durante la review, dopo conferma esplicita.
+   * Protetta dal doppio click: `onClose` è invocato una sola volta.
+   */
+  function abandonProposal() {
+    if (abandonStartedRef.current) return;
+    abandonStartedRef.current = true;
+    setShowAbandonConfirm(false);
+    onClose();
   }
 
   function editQuestion(localKey: string, patch: Partial<LocalProposalQuestion>) {
@@ -288,8 +294,33 @@ export function AiPoolGenerationDialog({
 
   const busy = phase === 'previewing' || phase === 'generating' || phase === 'applying';
 
+  /**
+   * AIGEN-UI-03-FOLLOW-UP — dalla generazione in poi il dialog è
+   * «explicit-dismiss only»: un click fuori o un Escape non devono buttare via
+   * una proposta generata (a costo reale) e le modifiche locali del docente.
+   * Nelle fasi precedenti il comportamento resta quello storico.
+   */
+  const protectedPhase = phase === 'generating' || phase === 'review' || phase === 'applying';
+
+  /** Uscita esplicita: durante la review passa dalla conferma di abbandono. */
+  function requestClose() {
+    if (busy) return;
+    if (phase === 'review') {
+      setShowAbandonConfirm(true);
+      return;
+    }
+    onClose();
+  }
+
   return (
-    <DialogShell title="Genera pool con IA" onCancel={onClose} busy={busy} variant="wide-scroll">
+    <DialogShell
+      title="Genera pool con IA"
+      onCancel={requestClose}
+      busy={busy}
+      variant="wide-scroll"
+      closeOnBackdrop={!protectedPhase}
+      closeOnEscape={!protectedPhase}
+    >
       {/* 1) CONFIGURAZIONE */}
       {phase === 'configure' && (
         <div className={styles.config}>
@@ -506,7 +537,21 @@ export function AiPoolGenerationDialog({
             </ul>
           )}
 
-          {showApplyConfirm ? (
+          {showAbandonConfirm ? (
+            /* Conferma leggera di abbandono: stesso pattern inline della
+               conferma di applicazione, nessun dialog annidato. */
+            <div role="alert">
+              <p>Abbandonare la proposta generata? Le modifiche non applicate andranno perse.</p>
+              <div className="dialog-actions">
+                <button type="button" onClick={() => setShowAbandonConfirm(false)}>
+                  Continua la revisione
+                </button>
+                <button type="button" className="btn-danger" onClick={abandonProposal}>
+                  Abbandona proposta
+                </button>
+              </div>
+            </div>
+          ) : showApplyConfirm ? (
             <div role="alert">
               <p>
                 {isNewPool
@@ -524,7 +569,7 @@ export function AiPoolGenerationDialog({
             </div>
           ) : (
             <div className="dialog-actions">
-              <button type="button" onClick={discardProposal}>
+              <button type="button" onClick={() => setShowAbandonConfirm(true)}>
                 Annulla proposta
               </button>
               <button

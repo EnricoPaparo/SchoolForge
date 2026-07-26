@@ -645,7 +645,6 @@
   border-radius: var(--radius);
   background: var(--color-surface-subtle);
   color: var(--color-text);
-  resize: vertical;
 }
 
 .formTextarea:focus {
@@ -756,7 +755,6 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: max(0.875rem, 16px);
   line-height: 1.5;
-  resize: vertical;
   overflow-x: auto;
 }
 

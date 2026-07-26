@@ -280,6 +280,22 @@ select {
   appearance: none;
 }
 
+/*
+ * AIGEN-UI-03-FOLLOW-UP — nessuna textarea di SchoolForge è ridimensionabile a
+ * mano: la maniglia in basso a destra può deformare dialog, editor e layout
+ * mobile. Regola **unica e globale** (docente, studente, lezioni, informazioni,
+ * pool, verifiche, correzioni, feedback, dialog IA): `resize` non va ridichiarato
+ * nei CSS module. Non serve `!important` perché nessun modulo lo sovrascrive più
+ * — e un test statico (`textareaResize.test.ts`) fallisce se qualcuno lo
+ * reintroduce con un valore diverso da `none`.
+ *
+ * Restano invariati altezza iniziale (`rows`/`min-height`), auto-grow esistenti
+ * e scroll interno: qui si toglie solo il ridimensionamento manuale.
+ */
+textarea {
+  resize: none;
+}
+
 input[type='text']:focus,
 input[type='email']:focus,
 input[type='password']:focus,

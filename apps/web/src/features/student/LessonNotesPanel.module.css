@@ -81,7 +81,6 @@
   min-height: 180px;
   width: 100%;
   box-sizing: border-box;
-  resize: none;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 0.55rem 0.6rem;

@@ -247,7 +247,6 @@
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  resize: vertical;
 }
 
 /* EXAM-UX-03 — contatore caratteri discreto sotto la textarea. */

@@ -63,13 +63,12 @@
 }
 
 /*
- * AIGEN-UI-01 — textarea «Indicazioni aggiuntive» non ridimensionabile: niente
- * maniglia in basso a destra né deformazione del dialog. Altezza iniziale sobria
- * con scroll verticale interno quando il testo supera lo spazio. Circoscritta ai
- * dialog AIGEN (nessuna altra textarea del portale è toccata).
+ * AIGEN-UI-01 — textarea «Indicazioni aggiuntive»: altezza iniziale sobria con
+ * scroll verticale interno quando il testo supera lo spazio. Il divieto di
+ * ridimensionamento manuale è ora una regola **globale** in `index.css`, quindi
+ * `resize` non va ridichiarato qui.
  */
 .guidanceTextarea {
-  resize: none;
   min-height: 4.5rem;
   max-height: 40dvh;
   overflow-y: auto;
@@ -149,13 +148,12 @@
 }
 
 /*
- * Textarea della **sola** review AIGEN: non ridimensionabili manualmente (non
- * possono deformare il dialog) e con scroll interno quando il testo supera
- * l'altezza. Nessuna regola globale: le altre textarea del portale — e gli input
- * di testo delle opzioni chiuse — restano invariati.
+ * Textarea della review AIGEN: scroll interno quando il testo supera l'altezza e
+ * larghezza vincolata alla scheda. Il divieto di ridimensionamento manuale è una
+ * regola **globale** (`index.css`), valida per ogni textarea del portale. Gli
+ * input di testo delle opzioni chiuse restano invariati.
  */
 .reviewTextarea {
-  resize: none;
   overflow-y: auto;
   width: 100%;
   max-width: 100%;
