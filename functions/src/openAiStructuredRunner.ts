@@ -44,6 +44,11 @@ export type StructuredRunOutcome =
        */
       priorBillingRisk: boolean;
     }
+  /** Responses API ha ricevuto/elaborato la richiesta ma non ha completato l'output. */
+  | {
+      status: 'incomplete';
+      reason: 'max_output_tokens' | 'content_filter' | 'other';
+    }
   /** La richiesta **certamente non** ha raggiunto il provider: nessun costo. */
   | { status: 'pre_invocation' }
   /** La richiesta **può** aver raggiunto il provider: settlement conservativo. */
@@ -85,6 +90,12 @@ export async function runStructuredCall(
         timeoutMs: policy.attemptTimeoutMs,
         signal: controller.signal,
       });
+      if (response.completionStatus === 'incomplete') {
+        return {
+          status: 'incomplete',
+          reason: response.incompleteReason ?? 'other',
+        };
+      }
       return {
         status: 'ok',
         outputText: response.outputText,

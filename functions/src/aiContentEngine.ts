@@ -401,9 +401,17 @@ export async function generateContent(
       settledMicroUsd: settled,
       nowMs: ctx.nowMs,
     });
+    if (providerOutcome.reason === 'max_output_tokens') {
+      throw new AiContentError(
+        'output_too_large',
+        'La generazione ha raggiunto il limite di output. Riduci il numero di domande e riprova.',
+      );
+    }
     throw new AiContentError(
       'provider_unavailable',
-      'Il servizio di generazione non è disponibile. Riprova.',
+      providerOutcome.reason === 'content_filter'
+        ? 'La generazione è stata interrotta dai controlli di sicurezza.'
+        : 'Il servizio di generazione non è disponibile. Riprova.',
     );
   }
 
@@ -479,7 +487,14 @@ export async function generateContent(
       settledMicroUsd: settledCost,
       nowMs: ctx.nowMs,
     });
-    if (e instanceof AiContentError) throw e;
+    if (e instanceof AiContentError) {
+      // Diagnostica sanitizzata: nessun prompt, contenuto, UID o requestId.
+      console.warn('ai_content_pool_validation_failed', {
+        kind: request.kind,
+        reason: e.message,
+      });
+      throw e;
+    }
     throw new AiContentError('provider_invalid_output', 'La risposta generata non è valida.');
   }
 

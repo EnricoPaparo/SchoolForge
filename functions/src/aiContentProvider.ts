@@ -42,7 +42,11 @@ export type ContentProviderOutcome =
        */
       priorBillingRisk: boolean;
     }
-  | { status: 'error'; phase: 'pre_invocation' | 'invocation_unknown' };
+  | {
+      status: 'error';
+      phase: 'pre_invocation' | 'invocation_unknown';
+      reason?: 'max_output_tokens' | 'content_filter' | 'other';
+    };
 
 export interface ContentProvider {
   generate(request: AiContentRequest, model: string): Promise<ContentProviderOutcome>;
@@ -120,6 +124,13 @@ class OpenAiContentProvider implements ContentProvider {
     // `max_output_tokens` prenotato è quello trasmesso.
     const httpRequest = buildContentStructuredRequest(request, model);
     const outcome = await runStructuredCall(this.transport, httpRequest, this.deps);
+    if (outcome.status === 'incomplete') {
+      return {
+        status: 'error',
+        phase: 'invocation_unknown',
+        reason: outcome.reason,
+      };
+    }
     if (outcome.status !== 'ok') {
       return { status: 'error', phase: outcome.status };
     }

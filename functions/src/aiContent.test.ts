@@ -18,6 +18,7 @@ import { MAX_OPERATION_COST_MICRO_USD } from './aiCorrectionRuntimeConfig.js';
 import { estimateContentCost } from './aiContentCost.js';
 import {
   POOL_OUTPUT_SCHEMA,
+  buildPoolOutputSchema,
   buildContentStructuredRequest,
   reservationInputTokenUpperBound,
   resolveMaxOutputTokens,
@@ -358,6 +359,32 @@ describe('POOL_OUTPUT_SCHEMA (strict, discriminated)', () => {
       expect(Object.keys(props.soluzione as object).length).toBeGreaterThan(0);
     }
   });
+
+  it('builds request-specific bounds for count, difficulty and closed solutions', () => {
+    const req = validateAiContentRequest(
+      poolPayload({
+        level: 'base',
+        counts: { aperta: 1, chiusa_singola: 1, chiusa_multipla: 1 },
+      }),
+    );
+    if (req.kind !== 'pool') throw new Error('pool expected');
+    const schema = buildPoolOutputSchema(req) as {
+      properties: {
+        questions: {
+          minItems: number;
+          maxItems: number;
+          items: { anyOf: Array<{ properties: Record<string, Record<string, unknown>> }> };
+        };
+      };
+    };
+    expect(schema.properties.questions.minItems).toBe(3);
+    expect(schema.properties.questions.maxItems).toBe(3);
+    const [open, single, multiple] = schema.properties.questions.items.anyOf;
+    expect(open!.properties.difficolta).toMatchObject({ minimum: 1, maximum: 3 });
+    expect(single!.properties.soluzione).toMatchObject({ minItems: 1, maxItems: 1 });
+    expect(multiple!.properties.soluzione).toMatchObject({ minItems: 2 });
+    expect(multiple!.properties.opzioni).toMatchObject({ minItems: 3 });
+  });
 });
 
 // ─── §2 provider wired via mocked transport ──────────────────────────────────
@@ -422,6 +449,28 @@ describe('OpenAI content provider (mocked transport, no real network)', () => {
     });
     const outcome = await provider.generate(req, OPENAI_RUNTIME_LUNA_MODEL);
     expect(outcome).toMatchObject({ status: 'ok', metered: true, usage: null });
+  });
+
+  it('classifies an incomplete max-output response without trying to parse partial JSON', async () => {
+    const provider = createContentProvider({
+      mode: 'openai',
+      transport: {
+        async send() {
+          return {
+            outputText: '{"questions":[',
+            completionStatus: 'incomplete',
+            incompleteReason: 'max_output_tokens',
+            usage: { inputTokens: 900, outputTokens: 1150, totalTokens: 2050 },
+          };
+        },
+      },
+      runnerDeps: { policy: { ...DEFAULT_OPENAI_RETRY_POLICY, maxRetries: 0 } },
+    });
+    await expect(provider.generate(req, OPENAI_RUNTIME_LUNA_MODEL)).resolves.toMatchObject({
+      status: 'error',
+      phase: 'invocation_unknown',
+      reason: 'max_output_tokens',
+    });
   });
 
   it('openai without secret/transport → provider_config_invalid before network', () => {
@@ -796,6 +845,27 @@ describe('generateContent', () => {
     ).rejects.toMatchObject({ code: 'provider_unavailable' });
     const arg = failRun.mock.calls[0]![0] as { settledMicroUsd: number };
     expect(arg.settledMicroUsd).toBeGreaterThan(0);
+  });
+
+  it('max-output incomplete ⇒ clear output_too_large error and conservative settlement', async () => {
+    const failRun = vi.fn(async () => undefined);
+    await expect(
+      generateContent(
+        genReq,
+        ctx,
+        makePorts({
+          callProvider: async () => ({
+            status: 'error',
+            phase: 'invocation_unknown',
+            reason: 'max_output_tokens',
+          }),
+          failRun,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'output_too_large' });
+    expect(
+      (failRun.mock.calls[0]![0] as { settledMicroUsd: number }).settledMicroUsd,
+    ).toBeGreaterThan(0);
   });
 
   it('metered ok without valid usage ⇒ never zero cost (conservative settlement, no completed)', async () => {
@@ -1306,17 +1376,17 @@ describe('pool validation — chiusa_multipla AI proposal rule', () => {
 });
 
 describe('lesson output hard caps (AIGEN-PROMPT-01)', () => {
-  it('raises the caps to 2500 / 7000 / 12000', () => {
-    expect(resolveMaxOutputTokens(lessonReq({ depth: 'synthetic' }))).toBe(2500);
-    expect(resolveMaxOutputTokens(lessonReq({ depth: 'complete' }))).toBe(7000);
-    expect(resolveMaxOutputTokens(lessonReq({ depth: 'in_depth' }))).toBe(12000);
+  it('allocates enough room for reasoning plus complete Markdown output', () => {
+    expect(resolveMaxOutputTokens(lessonReq({ depth: 'synthetic' }))).toBe(5000);
+    expect(resolveMaxOutputTokens(lessonReq({ depth: 'complete' }))).toBe(9000);
+    expect(resolveMaxOutputTokens(lessonReq({ depth: 'in_depth' }))).toBe(15000);
   });
   it('payload/estimate use exactly the corresponding cap', () => {
     const req = lessonReq({ depth: 'in_depth' });
     const { model, priceListVersion } = resolveContentModel(req.modelProfile);
     const est = estimateContentCost(req, model, priceListVersion, 2);
-    expect(est.maxOutputTokens).toBe(12000);
-    expect(est.reservationOutputTokens).toBe(12000);
+    expect(est.maxOutputTokens).toBe(15000);
+    expect(est.reservationOutputTokens).toBe(15000);
     // Invariant preserved: reservation ≥ estimate, and holds actual ≤ settled ≤ reservation.
     expect(est.reservationCostMicroUsd).toBeGreaterThanOrEqual(est.estimatedCostMicroUsd);
   });
@@ -1330,5 +1400,19 @@ describe('lesson output hard caps (AIGEN-PROMPT-01)', () => {
       expect(est.reservationCostMicroUsd).toBeLessThanOrEqual(MAX_OPERATION_COST_MICRO_USD);
     }
     void req;
+  });
+});
+
+describe('pool output hard caps (AIGEN-POOL-REAL-FIX)', () => {
+  it('allocates more output to open solutions than to closed questions', () => {
+    const openOnly = validateAiContentRequest(
+      poolPayload({ counts: { aperta: 2, chiusa_singola: 0, chiusa_multipla: 0 } }),
+    );
+    const closedOnly = validateAiContentRequest(
+      poolPayload({ counts: { aperta: 0, chiusa_singola: 2, chiusa_multipla: 0 } }),
+    );
+    expect(resolveMaxOutputTokens(openOnly)).toBeGreaterThan(resolveMaxOutputTokens(closedOnly));
+    expect(resolveMaxOutputTokens(openOnly)).toBe(1900);
+    expect(resolveMaxOutputTokens(closedOnly)).toBe(1400);
   });
 });
