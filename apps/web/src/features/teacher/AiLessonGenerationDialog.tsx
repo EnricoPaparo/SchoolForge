@@ -402,21 +402,21 @@ export function AiLessonGenerationDialog({
           <div className={styles.reviewItem}>
             <MarkdownRenderer markdown={draftBody} />
           </div>
-          {showAbandonConfirm ? (
+          <div className="dialog-actions">
+            <button type="button" onClick={() => setShowAbandonConfirm(true)}>
+              Annulla
+            </button>
+            <button type="button" className="btn-primary" onClick={useDraft}>
+              Usa questa bozza
+            </button>
+          </div>
+
+          {showAbandonConfirm && (
             <AiReviewExitConfirm
               onKeepReviewing={() => setShowAbandonConfirm(false)}
               onBackToConfigure={discardDraft}
               onAbandon={abandonDraft}
             />
-          ) : (
-            <div className="dialog-actions">
-              <button type="button" onClick={() => setShowAbandonConfirm(true)}>
-                Annulla
-              </button>
-              <button type="button" className="btn-primary" onClick={useDraft}>
-                Usa questa bozza
-              </button>
-            </div>
           )}
         </>
       )}
