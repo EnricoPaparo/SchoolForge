@@ -778,9 +778,11 @@ describe('AiPoolGenerationDialog — explicit-dismiss during/after generation', 
     await screen.findByRole('button', { name: 'Annulla proposta' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
-    expect(
-      screen.getByText(/Abbandonare la proposta generata\? Le modifiche non applicate/),
-    ).toBeTruthy();
+    const confirmation = screen.getByRole('alertdialog', { name: 'Abbandonare la proposta?' });
+    expect(confirmation.getAttribute('aria-modal')).toBe('true');
+    expect(confirmation.textContent).toContain('Le modifiche non applicate andranno perse.');
+    // Il footer della review resta montato e non cambia il layout sottostante.
+    expect(screen.getByRole('button', { name: 'Crea pool' })).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -811,7 +813,7 @@ describe('AiPoolGenerationDialog — explicit-dismiss during/after generation', 
     expect((screen.getByLabelText('Testo domanda 1') as HTMLTextAreaElement).value).toBe(
       'Testo modificato dal docente',
     );
-    expect(screen.queryByText(/Abbandonare la proposta generata/)).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
   it('«Abbandona e chiudi» closes exactly once, applying nothing', async () => {
@@ -857,15 +859,44 @@ describe('AiPoolGenerationDialog — explicit-dismiss during/after generation', 
     await screen.findByRole('button', { name: 'Annulla proposta' });
     fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
 
-    // Annuncio accessibile + entrambe le azioni raggiungibili come button.
-    const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain('Abbandonare la proposta generata?');
+    // Annuncio modale accessibile + tutte le azioni raggiungibili come button.
+    const alert = screen.getByRole('alertdialog');
+    expect(alert.textContent).toContain('Abbandonare la proposta?');
     const keep = screen.getByRole('button', { name: 'Continua la revisione' });
     const abandon = screen.getByRole('button', { name: 'Abbandona e chiudi' });
-    keep.focus();
     expect(document.activeElement).toBe(keep);
     abandon.focus();
     expect(document.activeElement).toBe(abandon);
+  });
+
+  it('backdrop and Escape close only the confirmation modal', async () => {
+    const onClose = vi.fn();
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    const firstConfirmation = screen.getByRole('alertdialog');
+    fireEvent.click(firstConfirmation.parentElement as HTMLElement);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Crea pool' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Crea pool' })).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 
@@ -1067,7 +1098,7 @@ describe('AiPoolGenerationDialog — direct apply (no redundant confirmation)', 
     await goToReview(callables, onApply);
 
     fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
-    expect(screen.getByText(/Abbandonare la proposta generata/)).toBeTruthy();
+    expect(screen.getByRole('alertdialog', { name: 'Abbandonare la proposta?' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Continua la revisione' }));
     expect(screen.getByText('Spiega TCP')).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();

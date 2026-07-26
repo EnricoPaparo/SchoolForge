@@ -411,9 +411,11 @@ describe('AiLessonGenerationDialog — explicit-dismiss during/after generation'
     await screen.findByRole('button', { name: 'Usa questa bozza' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
-    expect(
-      screen.getByText(/Abbandonare la proposta generata\? Le modifiche non applicate/),
-    ).toBeTruthy();
+    const confirmation = screen.getByRole('alertdialog', { name: 'Abbandonare la proposta?' });
+    expect(confirmation.getAttribute('aria-modal')).toBe('true');
+    expect(confirmation.textContent).toContain('Le modifiche non applicate andranno perse.');
+    // Il footer della review resta montato e non cambia il layout sottostante.
+    expect(screen.getByRole('button', { name: 'Usa questa bozza' })).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -429,7 +431,7 @@ describe('AiLessonGenerationDialog — explicit-dismiss during/after generation'
 
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Usa questa bozza' })).toBeTruthy();
-    expect(screen.queryByText(/Abbandonare la proposta generata/)).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
   it('«Abbandona e chiudi» closes once and never applies the draft', async () => {
@@ -465,10 +467,9 @@ describe('AiLessonGenerationDialog — explicit-dismiss during/after generation'
     await screen.findByRole('button', { name: 'Usa questa bozza' });
     fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
 
-    const alert = screen.getByRole('alert');
-    expect(alert.textContent).toContain('Abbandonare la proposta generata?');
+    const alert = screen.getByRole('alertdialog');
+    expect(alert.textContent).toContain('Abbandonare la proposta?');
     const keep = screen.getByRole('button', { name: 'Continua la revisione' });
-    keep.focus();
     expect(document.activeElement).toBe(keep);
   });
 });

@@ -19,4 +19,9 @@ describe('VerificationsView batch toolbar responsive contract', () => {
     expect(css).toMatch(/\.batchToolbar button\s*\{[^}]*width:\s*100%/s);
     expect(css).toMatch(/\.submissionsTableWrap\s*\{[^}]*overflow-x:\s*auto/s);
   });
+
+  it('gives the title more room by keeping the status column compact', () => {
+    expect(css).toMatch(/\.titleColumn\s*\{[^}]*width:\s*25%/s);
+    expect(css).toMatch(/\.statusColumn\s*\{[^}]*width:\s*16%/s);
+  });
 });

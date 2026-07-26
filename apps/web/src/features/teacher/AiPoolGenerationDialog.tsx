@@ -554,32 +554,26 @@ export function AiPoolGenerationDialog({
             </ul>
           )}
 
-          {showAbandonConfirm ? (
+          <div className="dialog-actions">
+            <button type="button" onClick={() => setShowAbandonConfirm(true)}>
+              Annulla proposta
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={localQuestions.length === 0}
+              onClick={() => void doApply()}
+            >
+              {isNewPool ? 'Crea pool' : 'Aggiungi al pool'}
+            </button>
+          </div>
+
+          {showAbandonConfirm && (
             <AiReviewExitConfirm
               onKeepReviewing={() => setShowAbandonConfirm(false)}
               onBackToConfigure={discardProposal}
               onAbandon={abandonProposal}
             />
-          ) : (
-            /*
-             * Applicazione diretta: configurazione, stima, generazione e
-             * revisione sono già state completate, quindi un'ulteriore conferma
-             * sarebbe ridondante. Il doppio click è già impedito dalla guardia
-             * sincrona `applyStartedRef` dentro `doApply`.
-             */
-            <div className="dialog-actions">
-              <button type="button" onClick={() => setShowAbandonConfirm(true)}>
-                Annulla proposta
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={localQuestions.length === 0}
-                onClick={() => void doApply()}
-              >
-                {isNewPool ? 'Crea pool' : 'Aggiungi al pool'}
-              </button>
-            </div>
           )}
         </>
       )}
