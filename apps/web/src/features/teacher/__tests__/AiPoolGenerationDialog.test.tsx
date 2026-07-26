@@ -9,7 +9,7 @@ vi.mock('../../../lib/firebase.js', () => ({
   functions: {},
 }));
 
-import type { ParsedPool } from '@schoolforge/lesson-contract';
+import { parsePool, type ParsedPool } from '@schoolforge/lesson-contract';
 import { AiPoolGenerationDialog } from '../AiPoolGenerationDialog.js';
 import type {
   AiContentCallables,
@@ -177,12 +177,11 @@ describe('AiPoolGenerationDialog', () => {
     const onApply = vi.fn(async (_pool: ParsedPool) => {});
     const { callables } = makeCallables();
     await goToReview(callables, onApply);
-    fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
-    // Light confirm.
-    expect(screen.getByText(/Verrà creato un pool con 2 domande/)).toBeTruthy();
-    const confirmBtn = screen.getAllByRole('button', { name: 'Crea pool' }).at(-1)!;
-    fireEvent.click(confirmBtn);
-    fireEvent.click(confirmBtn); // double-click guard
+    const applyBtn = screen.getByRole('button', { name: 'Crea pool' });
+    // Nessuna conferma intermedia: il primo click applica direttamente.
+    fireEvent.click(applyBtn);
+    fireEvent.click(applyBtn); // guardia sincrona contro il doppio click
+    expect(screen.queryByText(/Verrà creato un pool con/)).toBeNull();
     await screen.findByText(/Pool creato con 2 domande/);
     expect(onApply).toHaveBeenCalledTimes(1);
     // The applied argument is a canonical ParsedPool.
@@ -199,7 +198,6 @@ describe('AiPoolGenerationDialog', () => {
     const { callables } = makeCallables();
     await goToReview(callables, onApply);
     fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Crea pool' }).at(-1)!);
     await screen.findByText(/storage down/);
     // Proposal still there, editable.
     expect(screen.getByText('Spiega TCP')).toBeTruthy();
@@ -434,7 +432,6 @@ describe('AiPoolGenerationDialog — AIGEN-UI-02 review card', () => {
     // Nessuna correzione silenziosa: il valore digitato resta.
     expect((screen.getByLabelText('Difficoltà domanda 1') as HTMLInputElement).value).toBe('9');
     fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Crea pool' }).at(-1)!);
     await screen.findByText(/la difficoltà deve essere un intero da 1 a 5/i);
   });
 
@@ -498,7 +495,6 @@ describe('AiPoolGenerationDialog — AIGEN-UI-02 review card', () => {
     await goToReview(callables, onApply);
     fireEvent.click(screen.getByRole('button', { name: 'Aumenta difficoltà domanda 1' })); // 3 → 4
     fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Crea pool' }).at(-1)!);
     await screen.findByText(/Pool creato con 2 domande/);
     const pool = onApply.mock.calls[0]![0];
     const aperta = pool.questions.find((q) => q.tipo === 'aperta')!;
@@ -656,7 +652,6 @@ describe('AiPoolGenerationDialog — AIGEN-UI-03 review card layout', () => {
     await goToReview(callables, onApply);
     fireEvent.click(screen.getByRole('button', { name: 'Elimina domanda 3' }));
     fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Crea pool' }).at(-1)!);
     await screen.findByText(/Pool creato con 2 domande/);
     expect(onApply).toHaveBeenCalledTimes(1);
     const pool = onApply.mock.calls[0]![0];
@@ -756,7 +751,6 @@ describe('AiPoolGenerationDialog — explicit-dismiss during/after generation', 
     const { callables } = makeCallables();
     await goToReview(callables, onApply);
     fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Crea pool' }).at(-1)!);
     await screen.findByText(/Salvataggio del pool/);
 
     fireEvent.click(backdrop());
@@ -954,5 +948,129 @@ describe('AiPoolGenerationDialog — back to configure from review', () => {
     expect(previewReqs[1].level).toBe('advanced');
     expect(previewReqs[1].counts.aperta).toBe(2);
     expect(previewReqs[1].teacherGuidance).toBe('tono formale');
+  });
+});
+
+// ─── Applicazione diretta: nessuna conferma ridondante ───────────────────────
+describe('AiPoolGenerationDialog — direct apply (no redundant confirmation)', () => {
+  it('applies with a single click on «Crea pool», with no intermediate confirmation', async () => {
+    const onApply = vi.fn(async (_pool: ParsedPool) => {});
+    const { callables } = makeCallables();
+    await goToReview(callables, onApply);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
+    await screen.findByText(/Pool creato con 2 domande/);
+    expect(onApply).toHaveBeenCalledTimes(1);
+    // Nessun testo o pulsante di conferma intermedia.
+    expect(screen.queryByText(/Verrà creato un pool con/)).toBeNull();
+    expect(screen.queryByText(/Verranno aggiunte .* al pool esistente/)).toBeNull();
+  });
+
+  it('applies with a single click on «Aggiungi al pool» for an existing pool', async () => {
+    const existing = parsePool(
+      [
+        '---',
+        'schema: schoolforge-pool/v2',
+        'questions:',
+        '  - id: q1',
+        '    tipo: aperta',
+        '    difficolta: 2',
+        '    testo: Domanda esistente',
+        '    soluzione: Risposta',
+        '---',
+      ].join('\n'),
+    );
+    if (!existing.ok) throw new Error('fixture');
+    const onApply = vi.fn(async (_pool: ParsedPool) => {});
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={existing.pool}
+        callables={callables}
+        onApply={onApply}
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aggiungi al pool' }));
+    await screen.findByText(/2 domande aggiunte al pool/);
+    expect(onApply).toHaveBeenCalledTimes(1);
+    // Le domande esistenti sono preservate e le nuove appese.
+    expect(onApply.mock.calls[0]![0].questions).toHaveLength(3);
+  });
+
+  it('a rapid double click still produces exactly one application', async () => {
+    let release!: () => void;
+    const onApply = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const { callables } = makeCallables();
+    await goToReview(callables, onApply);
+
+    const btn = screen.getByRole('button', { name: 'Crea pool' });
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    expect(onApply).toHaveBeenCalledTimes(1);
+    release();
+    await screen.findByText(/Pool creato con/);
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it('an application error keeps the review with proposal and local edits intact', async () => {
+    const onApply = vi.fn(async () => {
+      throw new Error('storage down');
+    });
+    const { callables } = makeCallables();
+    await goToReview(callables, onApply);
+    fireEvent.change(screen.getByLabelText('Testo domanda 1'), {
+      target: { value: 'Modifica locale del docente' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
+    await screen.findByText(/storage down/);
+    // Resta in review, senza chiusura automatica né pool parziale.
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Annulla proposta' })).toBeTruthy();
+    expect((screen.getByLabelText('Testo domanda 1') as HTMLTextAreaElement).value).toBe(
+      'Modifica locale del docente',
+    );
+    // Ritentare resta possibile.
+    expect(screen.getByRole('button', { name: 'Crea pool' })).toBeTruthy();
+  });
+
+  it('a validation error keeps the review and never calls the canonical save', async () => {
+    const onApply = vi.fn(async () => {});
+    const { callables } = makeCallables();
+    await goToReview(callables, onApply);
+    // Difficoltà fuori range → il mapper rifiuta prima di qualunque write.
+    fireEvent.change(screen.getByLabelText('Difficoltà domanda 1'), { target: { value: '9' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
+    await screen.findByText(/la difficoltà deve essere un intero da 1 a 5/i);
+    expect(onApply).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Annulla proposta' })).toBeTruthy();
+  });
+
+  it('keeps the abandon and back-to-configure confirmations untouched', async () => {
+    const onClose = vi.fn();
+    const onApply = vi.fn(async () => {});
+    const { callables } = makeCallables();
+    await goToReview(callables, onApply);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    expect(screen.getByText(/Abbandonare la proposta generata/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Continua la revisione' }));
+    expect(screen.getByText('Spiega TCP')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onApply).not.toHaveBeenCalled();
   });
 });

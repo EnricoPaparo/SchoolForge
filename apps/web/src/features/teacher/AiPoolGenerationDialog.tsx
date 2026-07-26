@@ -37,7 +37,12 @@ import {
 /**
  * AIGEN-02 — dialog «Genera con IA» del pool. Fasi in-place (il dialog non si
  * chiude mai fra stima e generazione): configurazione → stima → conferma →
- * generazione → revisione locale editabile → conferma → applicazione canonica.
+ * generazione → revisione locale editabile → applicazione canonica.
+ *
+ * L'applicazione parte al **primo** click su «Crea pool»/«Aggiungi al pool»:
+ * configurazione, stima, generazione e revisione sono già state confermate, e
+ * una seconda conferma sarebbe ridondante. Il doppio click è impedito dalla
+ * guardia sincrona `applyStartedRef`.
  *
  * Preview e generate usano la **stessa** `requestId` e lo **stesso** payload
  * normalizzato (idempotenza server-side AIGEN-01). Ogni modifica di
@@ -109,7 +114,6 @@ export function AiPoolGenerationDialog({
   const [localQuestions, setLocalQuestions] = useState<LocalProposalQuestion[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [applyErrors, setApplyErrors] = useState<string[] | null>(null);
-  const [showApplyConfirm, setShowApplyConfirm] = useState(false);
   /** Conferma leggera di abbandono della proposta (AIGEN-UI-03-FOLLOW-UP). */
   const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
   const [doneMessage, setDoneMessage] = useState('');
@@ -229,7 +233,6 @@ export function AiPoolGenerationDialog({
       setResult(res);
       setLocalQuestions(proposalToLocalQuestions(res.output));
       setApplyErrors(null);
-      setShowApplyConfirm(false);
       setPhase('review');
     } catch (err) {
       if (!mountedRef.current) return;
@@ -251,7 +254,6 @@ export function AiPoolGenerationDialog({
     setResult(null);
     setLocalQuestions([]);
     setApplyErrors(null);
-    setShowApplyConfirm(false);
     setShowAbandonConfirm(false);
     invalidateEstimate();
   }
@@ -283,7 +285,6 @@ export function AiPoolGenerationDialog({
     const mapped = buildPoolFromProposal(existingPool?.questions ?? null, localQuestions);
     if (!mapped.ok) {
       setApplyErrors(mapped.errors);
-      setShowApplyConfirm(false);
       return;
     }
     applyStartedRef.current = true;
@@ -302,7 +303,6 @@ export function AiPoolGenerationDialog({
       if (!mountedRef.current) return;
       // In errore: proposta ed edit locali conservati, nessuna write parziale.
       setApplyErrors([err instanceof Error ? err.message : 'Errore durante il salvataggio.']);
-      setShowApplyConfirm(false);
       setPhase('review');
     } finally {
       applyStartedRef.current = false;
@@ -560,23 +560,13 @@ export function AiPoolGenerationDialog({
               onBackToConfigure={discardProposal}
               onAbandon={abandonProposal}
             />
-          ) : showApplyConfirm ? (
-            <div role="alert">
-              <p>
-                {isNewPool
-                  ? `Verrà creato un pool con ${localQuestions.length} domande.`
-                  : `Verranno aggiunte ${localQuestions.length} domande al pool esistente. Le domande attuali non saranno modificate.`}
-              </p>
-              <div className="dialog-actions">
-                <button type="button" onClick={() => setShowApplyConfirm(false)}>
-                  Annulla
-                </button>
-                <button type="button" className="btn-primary" onClick={() => void doApply()}>
-                  {isNewPool ? 'Crea pool' : 'Aggiungi al pool'}
-                </button>
-              </div>
-            </div>
           ) : (
+            /*
+             * Applicazione diretta: configurazione, stima, generazione e
+             * revisione sono già state completate, quindi un'ulteriore conferma
+             * sarebbe ridondante. Il doppio click è già impedito dalla guardia
+             * sincrona `applyStartedRef` dentro `doApply`.
+             */
             <div className="dialog-actions">
               <button type="button" onClick={() => setShowAbandonConfirm(true)}>
                 Annulla proposta
@@ -585,7 +575,7 @@ export function AiPoolGenerationDialog({
                 type="button"
                 className="btn-primary"
                 disabled={localQuestions.length === 0}
-                onClick={() => setShowApplyConfirm(true)}
+                onClick={() => void doApply()}
               >
                 {isNewPool ? 'Crea pool' : 'Aggiungi al pool'}
               </button>
