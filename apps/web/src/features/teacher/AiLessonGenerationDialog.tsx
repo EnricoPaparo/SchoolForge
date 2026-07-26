@@ -7,9 +7,11 @@ import {
   describeAiContentError,
   formatMicroUsd,
   newRequestId,
+  missingLessonRequirements,
   DEFAULT_LESSON_DEPTH,
   DEFAULT_POOL_MODEL_PROFILE,
   LESSON_DEPTH_OPTIONS,
+  LESSON_REQUIRED_FIELD_LABELS,
   MAX_TEACHER_GUIDANCE_CHARS,
   POOL_MODEL_PROFILE_OPTIONS,
   type AiLessonCallables,
@@ -80,6 +82,16 @@ export function AiLessonGenerationDialog({
 
   const guidanceValid = guidance.length <= MAX_TEACHER_GUIDANCE_CHARS;
 
+  /**
+   * AIGEN-CONTEXT-01 — preflight del contratto didattico. Se manca un requisito
+   * non parte nessuna callable, quindi nessuna prenotazione budget, nessun
+   * provider, nessun run e nessun costo. Solo UX: il server rivalida in modo
+   * autorevole. Nessun valore inventato, nessun fallback.
+   */
+  const missingRequirements = missingLessonRequirements(context);
+  const preflightOk = missingRequirements.length === 0;
+  const canEstimate = preflightOk && guidanceValid;
+
   function invalidateEstimate() {
     setPreview(null);
     setPreviewRequest(null);
@@ -112,7 +124,8 @@ export function AiLessonGenerationDialog({
   }
 
   async function requestPreview() {
-    if (previewStartedRef.current || !guidanceValid) return;
+    // Gate fail-closed: senza metadati completi non si chiama nulla.
+    if (previewStartedRef.current || !canEstimate) return;
     previewStartedRef.current = true;
     setError(null);
     setPhase('previewing');
@@ -254,12 +267,26 @@ export function AiLessonGenerationDialog({
             <ul className={styles.estimateList}>
               <li>Titolo: {context.titolo?.trim() || '—'}</li>
               {context.sottotitolo?.trim() && <li>Sottotitolo: {context.sottotitolo.trim()}</li>}
+              <li>Difficoltà: {context.difficolta?.trim() || '—'}</li>
               {context.udaTitle?.trim() && <li>UDA: {context.udaTitle.trim()}</li>}
+              {context.udaContext && (
+                <li>
+                  Posizione nella UDA: {context.udaContext.currentLessonPosition} di{' '}
+                  {context.udaContext.lessons.length}
+                </li>
+              )}
               <li>Concetti chiave: {concettiChiave.length ? concettiChiave.join(', ') : '—'}</li>
               <li>Obiettivi: {obiettivi.length ? obiettivi.join(', ') : '—'}</li>
               <li>{hasCurrentContent ? 'Contenuto attuale presente' : 'Editor vuoto'}</li>
             </ul>
           </div>
+
+          {!preflightOk && (
+            <p role="alert" className="text-error">
+              Completa prima le informazioni fondamentali della lezione:{' '}
+              {missingRequirements.map((f) => LESSON_REQUIRED_FIELD_LABELS[f]).join(', ')}.
+            </p>
+          )}
 
           <div className="dialog-actions">
             <button type="button" onClick={onClose}>
@@ -268,7 +295,7 @@ export function AiLessonGenerationDialog({
             <button
               type="button"
               className="btn-primary"
-              disabled={!guidanceValid}
+              disabled={!canEstimate}
               onClick={() => void requestPreview()}
             >
               Calcola stima

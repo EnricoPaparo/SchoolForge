@@ -78,6 +78,7 @@ import {
   type EditStatus,
   type LessonAiButtonContext,
 } from './lessonEditors.js';
+import { buildLessonUdaContext } from '../repository/pools/lessonUdaContext.js';
 import { exportZip } from './exportZip.js';
 import { downloadMarkdown, downloadPdf, generateMarkdown } from './programmaSvolto.js';
 import { describeImportValidationError } from './importValidationMessage.js';
@@ -1902,10 +1903,19 @@ export function CourseWorkspace({
               lessonAi={{
                 titolo: lessonMetadata.titolo ?? selectedLesson.titolo ?? null,
                 sottotitolo: lessonMetadata.sottotitolo ?? null,
+                difficolta: lessonMetadata.difficolta ?? null,
                 // UDA title già in memoria dall'albero: nessuna nuova query.
                 udaTitle: tree?.udas.find((u) => u.dir === selectedLesson.udaDir)?.titolo ?? null,
                 concettiChiave: lessonMetadata.concettiChiave,
                 obiettivi: lessonMetadata.obiettivi,
+                // AIGEN-CONTEXT-01: indice UDA dallo stesso albero già caricato
+                // (`tree.lessons` è già in ordine canonico): zero nuove letture.
+                udaContext: buildLessonUdaContext({
+                  lessons: tree?.lessons ?? [],
+                  udaDir: selectedLesson.udaDir,
+                  udaTitle: tree?.udas.find((u) => u.dir === selectedLesson.udaDir)?.titolo ?? null,
+                  currentLessonId: selectedLesson.id,
+                }),
               }}
               content={lessonContent}
               loading={lessonLoading}

@@ -268,17 +268,41 @@ export const LESSON_DEPTH_OPTIONS: readonly {
 ];
 
 /** Payload chiuso `kind: 'lesson'` (stesso contratto congelato lato backend). */
+/**
+ * AIGEN-CONTEXT-01 — voce dell'indice compatto dell'UDA inviata al server.
+ * **Solo** posizione e titolazione: nessun `lessonId`/`udaId`/`filename`/
+ * `storageRef`/`publicLessonId`, nessun corpo, pool, concetto o obiettivo delle
+ * altre lezioni, nessun dato studente.
+ */
+export interface LessonUdaOutlineItem {
+  /** Posizione deterministica 1-based nell'ordine canonico dell'UDA. */
+  position: number;
+  titolo: string;
+  sottotitolo: string | null;
+}
+
+export interface LessonUdaContext {
+  title: string;
+  /** Posizione (1-based) della lezione corrente dentro `lessons`. */
+  currentLessonPosition: number;
+  lessons: LessonUdaOutlineItem[];
+}
+
 export interface AiLessonContentRequest {
   kind: 'lesson';
   requestId: string;
   modelProfile: PoolModelProfile;
   teacherGuidance?: string;
   depth: LessonDepth;
-  titolo?: string;
+  /** Metadati obbligatori (il server li rivalida in modo autorevole). */
+  titolo: string;
+  /** Facoltativo: la sua assenza non blocca la generazione. */
   sottotitolo?: string;
-  udaTitle?: string;
-  concettiChiave?: string[];
-  obiettivi?: string[];
+  difficolta: string;
+  udaTitle: string;
+  concettiChiave: string[];
+  obiettivi: string[];
+  udaContext: LessonUdaContext;
   currentBody?: string;
   hasCurrentContent: boolean;
 }
@@ -319,16 +343,77 @@ export interface AiLessonCallables {
 export interface LessonAiContext {
   titolo?: string | null;
   sottotitolo?: string | null;
+  difficolta?: string | null;
   udaTitle?: string | null;
   concettiChiave?: string[];
   obiettivi?: string[];
+  /** Indice compatto dell'UDA, costruito dall'albero già in memoria. */
+  udaContext?: LessonUdaContext | null;
   currentBody: string;
 }
 
 /**
- * Costruisce il payload chiuso `kind: 'lesson'` **normalizzato**. Guidance e campi
- * di contesto vuoti sono omessi (trim); `hasCurrentContent` è derivato dal corpo
- * attuale. Non invia mai model ID/listino/budget/API key/prompt/ownerUid.
+ * AIGEN-CONTEXT-01 — campi obbligatori per poter generare una lezione. Il
+ * sottotitolo resta facoltativo; il corpo attuale non è mai un requisito.
+ */
+export const LESSON_REQUIRED_FIELD_LABELS = {
+  titolo: 'titolo',
+  difficolta: 'difficoltà',
+  concettiChiave: 'concetti chiave',
+  obiettivi: 'obiettivi',
+  udaTitle: 'titolo UDA',
+  udaContext: 'indice della UDA',
+} as const;
+
+export type LessonRequiredField = keyof typeof LESSON_REQUIRED_FIELD_LABELS;
+
+/**
+ * Preflight **puro** del contratto didattico: elenca i campi mancanti senza
+ * inventare valori né applicare fallback. È solo UX — il server rivalida in modo
+ * autorevole — ma evita callable, prenotazione budget, provider, run e costo
+ * quando i metadati non sono completi.
+ */
+export function missingLessonRequirements(context: LessonAiContext): LessonRequiredField[] {
+  const missing: LessonRequiredField[] = [];
+  if (!context.titolo?.trim()) missing.push('titolo');
+  if (!context.difficolta?.trim()) missing.push('difficolta');
+  if (!(context.concettiChiave ?? []).some((c) => c.trim().length > 0)) {
+    missing.push('concettiChiave');
+  }
+  if (!(context.obiettivi ?? []).some((o) => o.trim().length > 0)) missing.push('obiettivi');
+  if (!context.udaTitle?.trim()) missing.push('udaTitle');
+  if (!isCoherentUdaContext(context.udaContext)) missing.push('udaContext');
+  return missing;
+}
+
+/**
+ * Coerenza dell'indice UDA: non vuoto, posizioni 1-based consecutive, titoli non
+ * vuoti e `currentLessonPosition` dentro l'intervallo. Stesse regole che il
+ * server applica fail-closed.
+ */
+function isCoherentUdaContext(uda: LessonUdaContext | null | undefined): boolean {
+  if (!uda || !uda.title.trim() || !Array.isArray(uda.lessons) || uda.lessons.length === 0) {
+    return false;
+  }
+  const positionsOk = uda.lessons.every(
+    (l, i) => l.position === i + 1 && l.titolo.trim().length > 0,
+  );
+  return (
+    positionsOk &&
+    Number.isInteger(uda.currentLessonPosition) &&
+    uda.currentLessonPosition >= 1 &&
+    uda.currentLessonPosition <= uda.lessons.length
+  );
+}
+
+/**
+ * Costruisce il payload chiuso `kind: 'lesson'` **normalizzato**. Guidance e
+ * sottotitolo vuoti sono omessi (trim); `hasCurrentContent` è derivato dal corpo
+ * attuale. Non invia mai model ID/listino/budget/API key/prompt/ownerUid, né ID
+ * tecnici delle lezioni dell'indice.
+ *
+ * I metadati obbligatori sono richiesti dal tipo: chiama prima
+ * `missingLessonRequirements` (il dialog lo fa nel preflight).
  */
 export function buildLessonContentRequest(params: {
   requestId: string;
@@ -338,14 +423,22 @@ export function buildLessonContentRequest(params: {
   teacherGuidance?: string;
 }): AiLessonContentRequest {
   const { context } = params;
+  const missing = missingLessonRequirements(context);
+  if (missing.length > 0) {
+    // Fail-closed anche nel client: nessun payload parziale può partire.
+    throw new Error(
+      `Metadati della lezione incompleti: ${missing
+        .map((f) => LESSON_REQUIRED_FIELD_LABELS[f])
+        .join(', ')}.`,
+    );
+  }
   const guidance = params.teacherGuidance?.trim();
-  const titolo = context.titolo?.trim();
   const sottotitolo = context.sottotitolo?.trim();
-  const udaTitle = context.udaTitle?.trim();
   const concettiChiave = (context.concettiChiave ?? [])
     .map((c) => c.trim())
     .filter((c) => c.length > 0);
   const obiettivi = (context.obiettivi ?? []).map((o) => o.trim()).filter((o) => o.length > 0);
+  const uda = context.udaContext!;
   const currentBody = context.currentBody;
   const hasCurrentContent = currentBody.trim().length > 0;
   return {
@@ -354,12 +447,23 @@ export function buildLessonContentRequest(params: {
     modelProfile: params.modelProfile,
     depth: params.depth,
     hasCurrentContent,
+    titolo: context.titolo!.trim(),
+    difficolta: context.difficolta!.trim(),
+    udaTitle: context.udaTitle!.trim(),
+    concettiChiave,
+    obiettivi,
+    udaContext: {
+      title: uda.title.trim(),
+      currentLessonPosition: uda.currentLessonPosition,
+      // Solo posizione/titolo/sottotitolo: nessun campo tecnico trasferito.
+      lessons: uda.lessons.map((l) => ({
+        position: l.position,
+        titolo: l.titolo.trim(),
+        sottotitolo: l.sottotitolo?.trim() ? l.sottotitolo.trim() : null,
+      })),
+    },
     ...(guidance ? { teacherGuidance: guidance } : {}),
-    ...(titolo ? { titolo } : {}),
     ...(sottotitolo ? { sottotitolo } : {}),
-    ...(udaTitle ? { udaTitle } : {}),
-    ...(concettiChiave.length ? { concettiChiave } : {}),
-    ...(obiettivi.length ? { obiettivi } : {}),
     ...(hasCurrentContent ? { currentBody } : {}),
   };
 }

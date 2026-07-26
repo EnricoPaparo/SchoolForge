@@ -5,6 +5,7 @@ import { functions } from '../../lib/firebase.js';
 import { IconSparkles } from '../../components/icons.js';
 import {
   createAiLessonCallables,
+  type LessonUdaContext,
   type PoolModelProfile,
 } from '../repository/pools/aiContentClient.js';
 import { AiLessonGenerationDialog } from './AiLessonGenerationDialog.js';
@@ -18,9 +19,12 @@ import styles from './lessonEditors.module.css';
 export interface LessonAiButtonContext {
   titolo?: string | null;
   sottotitolo?: string | null;
+  difficolta?: string | null;
   udaTitle?: string | null;
   concettiChiave?: string[];
   obiettivi?: string[];
+  /** AIGEN-CONTEXT-01: indice compatto dell'UDA (dall'albero già in memoria). */
+  udaContext?: LessonUdaContext | null;
   defaultModelProfile?: PoolModelProfile;
 }
 
@@ -96,7 +100,9 @@ export function MarkdownBodyEditor({
           context={{
             titolo: lessonAi.titolo ?? null,
             sottotitolo: lessonAi.sottotitolo ?? null,
+            difficolta: lessonAi.difficolta ?? null,
             udaTitle: lessonAi.udaTitle ?? null,
+            udaContext: lessonAi.udaContext ?? null,
             concettiChiave: lessonAi.concettiChiave ?? [],
             obiettivi: lessonAi.obiettivi ?? [],
             // Il corpo attuale è il draft locale corrente (contesto per il modello).

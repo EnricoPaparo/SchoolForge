@@ -211,6 +211,14 @@ In entrambi i casi, "agli utenti autenticati non-owner" della prima versione di 
 
 **Stato.** Contratto completo, API, sicurezza, costi, emulatori e roadmap SGW-01/02/03 in [storage-gateway-roadmap.md](storage-gateway-roadmap.md). **SGW-01 è implementato, deployato su DEV e verificato su Brave mobile** (Function `repositoryGateway` in `functions/`, client adapter in `apps/web/.../gateway/`, rewrite `/api/repository/**` in `firebase.json`, migrazione delle operazioni singolo-file: editing lezioni/UDA, pool, fallback lezione). Le operazioni batch/prefix restano accesso Storage diretto fino a **SGW-02**.
 
+### ADR-18 — Contesto didattico della generazione IA dalla memoria del workspace (AIGEN-CONTEXT-01)
+
+**Contesto.** La generazione IA di una lezione produceva contenuto poco delimitato: senza i metadati completi della lezione l'argomento restava vago, e senza alcuna nozione delle altre lezioni della stessa UDA il modello poteva ripetere ciò che precede o anticipare ciò che segue.
+
+**Decisione.** Il payload `kind:'lesson'` trasporta (a) i **metadati completi** della lezione corrente come contratto didattico autorevole — titolo, difficoltà, concetti chiave, obiettivi, titolo UDA obbligatori; sottotitolo facoltativo — e (b) un **indice compatto dell'UDA** (`position` 1-based, `titolo`, `sottotitolo`). L'indice è costruito da un builder **puro** a partire dall'albero `tree.udas`/`tree.lessons` **già caricato** in `CourseWorkspace`: nessuna `getDoc`/`getDocs`, query, lettura Storage, listener, polling, Function o documento aggiuntivo, quindi **costo passivo invariato** e nessuna nuova superficie di accesso ai dati. L'indice delimita, non fornisce contenuto: non trasporta corpo Markdown, pool, domande, soluzioni, concetti/obiettivi delle altre lezioni né dati studente, e nessun ID tecnico — l'incremento di token è perciò limitato ai soli titoli.
+
+**Conseguenze.** La validazione è **fail-closed** sul server (metadati obbligatori, ordine 1-based consecutivo, coerenza di `currentLessonPosition`, cap su numero di voci e dimensione, rifiuto di proprietà extra e ID tecnici); il preflight nel dialog è **solo UX** e serve a non consumare budget quando i metadati mancano. `difficolta` e `udaContext` entrano nell'`inputHash`, quindi partecipano a idempotenza e invalidazione della `requestId` come ogni altro campo. Nel prompt i metadati definiscono il **perimetro** e le indicazioni del docente restano autorevoli solo al suo interno; metadati e indice sono **dati**, mai istruzioni eseguibili. La generazione dei pool non è toccata.
+
 ---
 
 ## 4. Architettura logica
