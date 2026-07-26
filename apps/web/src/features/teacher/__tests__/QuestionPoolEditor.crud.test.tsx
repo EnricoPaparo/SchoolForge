@@ -489,3 +489,86 @@ describe('QuestionPoolEditor — UX validation messages', () => {
     await screen.findByText('Lascia almeno una risposta non corretta.');
   });
 });
+
+// ─── Dimensione massima della risposta nelle schede del pool salvato ─────────
+describe('QuestionPoolEditor — «Dim. risposta» on saved open questions', () => {
+  /** Testo del gruppo metadati della scheda che contiene la domanda indicata. */
+  function metaTextFor(testo: string): string {
+    const card = screen.getByText(testo).closest('[class*="questionCard"]') as HTMLElement;
+    const group = card.querySelector('[class*="questionMetaGroup"]') as HTMLElement;
+    // Il markup usa `&nbsp;`: normalizzalo per confronti leggibili.
+    return group.textContent!.replace(/\u00a0/g, ' ');
+  }
+
+  it('shows the Italian-formatted limit for an open question (2000 → 2.000)', async () => {
+    mockLoadPool.mockResolvedValue({ status: 'valid', pool: VALID_POOL });
+    renderEditor();
+    await screen.findByText('Descrivi il modello OSI.');
+    expect(metaTextFor('Descrivi il modello OSI.')).toContain('Dim. risposta: 2.000 caratteri');
+    // Resta accanto alla difficoltà, nello stesso gruppo di metadati.
+    expect(metaTextFor('Descrivi il modello OSI.')).toContain('Difficoltà: 2');
+  });
+
+  it('shows a five-digit limit in full (10000 → 10.000)', async () => {
+    mockLoadPool.mockResolvedValue({
+      status: 'valid',
+      pool: {
+        ...VALID_POOL,
+        questions: [{ ...VALID_POOL.questions[0], maxCharacters: 10000 }],
+      },
+    });
+    renderEditor();
+    await screen.findByText('Descrivi il modello OSI.');
+    expect(metaTextFor('Descrivi il modello OSI.')).toContain('Dim. risposta: 10.000 caratteri');
+  });
+
+  it('does not show the limit for chiusa_singola or chiusa_multipla', async () => {
+    mockLoadPool.mockResolvedValue({
+      status: 'valid',
+      pool: {
+        ...VALID_POOL,
+        questions: [
+          VALID_POOL.questions[1],
+          {
+            id: 'q3',
+            tipo: 'chiusa_multipla' as const,
+            difficolta: 3 as const,
+            maxPoints: 3,
+            testo: 'Quali sono protocolli di trasporto?',
+            opzioni: [
+              { id: 'a', testo: 'TCP' },
+              { id: 'b', testo: 'UDP' },
+              { id: 'c', testo: 'RAM' },
+            ],
+            soluzione: ['a', 'b'],
+          },
+        ],
+      },
+    });
+    renderEditor();
+    await screen.findByText('Quanti livelli ha il modello OSI?');
+    expect(metaTextFor('Quanti livelli ha il modello OSI?')).not.toContain('Dim. risposta');
+    expect(metaTextFor('Quali sono protocolli di trasporto?')).not.toContain('Dim. risposta');
+    expect(screen.queryByText(/Dim\. risposta/)).toBeNull();
+  });
+
+  it('updates the displayed value immediately after saving a new limit', async () => {
+    mockLoadPool.mockResolvedValue({ status: 'valid', pool: VALID_POOL });
+    mockSavePool.mockResolvedValue(undefined);
+    renderEditor();
+    await screen.findByText('Descrivi il modello OSI.');
+    expect(metaTextFor('Descrivi il modello OSI.')).toContain('2.000 caratteri');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica domanda q1' }));
+    const limit = await screen.findByLabelText(/caratteri/i);
+    fireEvent.change(limit, { target: { value: '4500' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva domanda' }));
+
+    await waitFor(() =>
+      expect(metaTextFor('Descrivi il modello OSI.')).toContain('Dim. risposta: 4.500 caratteri'),
+    );
+    // Un solo salvataggio canonico, nessuna nuova lettura del pool.
+    expect(mockSavePool).toHaveBeenCalledTimes(1);
+    expect(mockLoadPool).toHaveBeenCalledTimes(1);
+  });
+});

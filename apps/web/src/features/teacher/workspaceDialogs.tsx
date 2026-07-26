@@ -57,6 +57,8 @@ export function DialogShell({
   onCancel,
   busy = false,
   variant = 'default',
+  closeOnBackdrop = true,
+  closeOnEscape = true,
 }: {
   title: string;
   children: ReactNode;
@@ -70,6 +72,16 @@ export function DialogShell({
    * invariati.
    */
   variant?: 'default' | 'wide-scroll';
+  /**
+   * AIGEN-UI-03-FOLLOW-UP — chiusura «explicit-dismiss only». Con `false` il
+   * click sul backdrop (rispettivamente Escape) non chiude il dialog: serve a
+   * proteggere un lavoro non ancora applicato — per esempio una proposta IA
+   * generata e modificata localmente — da un click accidentale fuori dal dialog.
+   * Default `true` per entrambe: **tutti** gli altri dialog del portale restano
+   * invariati.
+   */
+  closeOnBackdrop?: boolean;
+  closeOnEscape?: boolean;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -95,7 +107,7 @@ export function DialogShell({
 
   function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key === 'Escape') {
-      if (!busy) onCancel();
+      if (!busy && closeOnEscape) onCancel();
       return;
     }
     if (e.key !== 'Tab') return;
@@ -124,7 +136,7 @@ export function DialogShell({
     <div
       className={styles.backdrop}
       onClick={() => {
-        if (!busy) onCancel();
+        if (!busy && closeOnBackdrop) onCancel();
       }}
     >
       <div

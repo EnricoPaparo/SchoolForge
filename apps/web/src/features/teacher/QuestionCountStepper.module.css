@@ -36,6 +36,18 @@
   font-size: 0.85rem;
 }
 
+/*
+ * AIGEN-UI-03 — variante «wide»: il campo valore deve mostrare integralmente
+ * almeno 5 cifre (fino a 10000), senza troncamento. `ch` è l'unità giusta perché
+ * è larga quanto una cifra nel font corrente; il margine extra copre padding e
+ * bordi. Si applica solo dove richiesta: gli altri stepper restano compatti.
+ */
+.stepperWide .input {
+  width: 6ch;
+  flex: 0 0 6ch;
+  padding-inline: 0.25rem;
+}
+
 /* Ingombro ridotto su mobile: i controlli della riga metadati restano su una riga. */
 @media (max-width: 640px) {
   .stepperInline .button {
@@ -44,6 +56,12 @@
   .stepperInline .input {
     width: 2.25rem;
     flex: 0 1 2.25rem;
+    padding-inline: 0.15rem;
+  }
+  /* Anche su mobile la variante wide non comprime le 5 cifre. */
+  .stepperInline.stepperWide .input {
+    width: 6ch;
+    flex: 0 0 6ch;
     padding-inline: 0.15rem;
   }
 }

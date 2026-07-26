@@ -170,3 +170,47 @@ describe('DialogShell wide-scroll variant (AIGEN-UI-01)', () => {
     expect(document.activeElement).toBe(trigger);
   });
 });
+
+describe('DialogShell explicit-dismiss options (AIGEN-UI-03-FOLLOW-UP)', () => {
+  function renderShell(over: { closeOnBackdrop?: boolean; closeOnEscape?: boolean } = {}) {
+    const onCancel = vi.fn();
+    render(
+      <DialogShell title="Protetto" onCancel={onCancel} {...over}>
+        <button type="button">Azione</button>
+      </DialogShell>,
+    );
+    return { onCancel, dialog: screen.getByRole('dialog') };
+  }
+
+  it('closes on backdrop and Escape by default (all other dialogs unchanged)', () => {
+    const { onCancel, dialog } = renderShell();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    fireEvent.click(dialog.parentElement as HTMLElement);
+    expect(onCancel).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores the backdrop click when closeOnBackdrop is false', () => {
+    const { onCancel, dialog } = renderShell({ closeOnBackdrop: false });
+    fireEvent.click(dialog.parentElement as HTMLElement);
+    expect(onCancel).not.toHaveBeenCalled();
+    // Escape resta indipendente.
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores Escape when closeOnEscape is false', () => {
+    const { onCancel, dialog } = renderShell({ closeOnEscape: false });
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(onCancel).not.toHaveBeenCalled();
+    fireEvent.click(dialog.parentElement as HTMLElement);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the focus trap working while dismissal is disabled', () => {
+    const { dialog } = renderShell({ closeOnBackdrop: false, closeOnEscape: false });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+});

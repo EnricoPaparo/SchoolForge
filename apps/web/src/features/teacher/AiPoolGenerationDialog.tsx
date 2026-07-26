@@ -6,6 +6,7 @@ import {
 } from '@schoolforge/lesson-contract';
 import { DialogShell } from './workspaceDialogs.js';
 import { BoundedStepper, QuestionCountStepper } from './QuestionCountStepper.js';
+import { AiReviewExitConfirm } from './AiReviewExitConfirm.js';
 import { IconTrash } from '../../components/icons.js';
 import styles from './AiPoolGenerationDialog.module.css';
 import {
@@ -36,7 +37,12 @@ import {
 /**
  * AIGEN-02 — dialog «Genera con IA» del pool. Fasi in-place (il dialog non si
  * chiude mai fra stima e generazione): configurazione → stima → conferma →
- * generazione → revisione locale editabile → conferma → applicazione canonica.
+ * generazione → revisione locale editabile → applicazione canonica.
+ *
+ * L'applicazione parte al **primo** click su «Crea pool»/«Aggiungi al pool»:
+ * configurazione, stima, generazione e revisione sono già state confermate, e
+ * una seconda conferma sarebbe ridondante. Il doppio click è impedito dalla
+ * guardia sincrona `applyStartedRef`.
  *
  * Preview e generate usano la **stessa** `requestId` e lo **stesso** payload
  * normalizzato (idempotenza server-side AIGEN-01). Ogni modifica di
@@ -108,13 +114,15 @@ export function AiPoolGenerationDialog({
   const [localQuestions, setLocalQuestions] = useState<LocalProposalQuestion[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [applyErrors, setApplyErrors] = useState<string[] | null>(null);
-  const [showApplyConfirm, setShowApplyConfirm] = useState(false);
+  /** Conferma leggera di abbandono della proposta (AIGEN-UI-03-FOLLOW-UP). */
+  const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
   const [doneMessage, setDoneMessage] = useState('');
 
   const requestIdRef = useRef<string>(newRequestId());
   const previewStartedRef = useRef(false);
   const generateStartedRef = useRef(false);
   const applyStartedRef = useRef(false);
+  const abandonStartedRef = useRef(false);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -225,7 +233,6 @@ export function AiPoolGenerationDialog({
       setResult(res);
       setLocalQuestions(proposalToLocalQuestions(res.output));
       setApplyErrors(null);
-      setShowApplyConfirm(false);
       setPhase('review');
     } catch (err) {
       if (!mountedRef.current) return;
@@ -236,12 +243,30 @@ export function AiPoolGenerationDialog({
     }
   }
 
+  /**
+   * Torna alla configurazione **senza chiudere il dialog**: scarta proposta e
+   * modifiche locali e rigenera la `requestId` (via `invalidateEstimate`), ma
+   * conserva profilo, stile, quantità e indicazioni già scelti dal docente, che
+   * può così correggerli e rigenerare. Nessuna callable, nessuna write, nessun
+   * costo.
+   */
   function discardProposal() {
     setResult(null);
     setLocalQuestions([]);
     setApplyErrors(null);
-    setShowApplyConfirm(false);
+    setShowAbandonConfirm(false);
     invalidateEstimate();
+  }
+
+  /**
+   * Unica uscita che chiude davvero durante la review, dopo conferma esplicita.
+   * Protetta dal doppio click: `onClose` è invocato una sola volta.
+   */
+  function abandonProposal() {
+    if (abandonStartedRef.current) return;
+    abandonStartedRef.current = true;
+    setShowAbandonConfirm(false);
+    onClose();
   }
 
   function editQuestion(localKey: string, patch: Partial<LocalProposalQuestion>) {
@@ -260,7 +285,6 @@ export function AiPoolGenerationDialog({
     const mapped = buildPoolFromProposal(existingPool?.questions ?? null, localQuestions);
     if (!mapped.ok) {
       setApplyErrors(mapped.errors);
-      setShowApplyConfirm(false);
       return;
     }
     applyStartedRef.current = true;
@@ -279,7 +303,6 @@ export function AiPoolGenerationDialog({
       if (!mountedRef.current) return;
       // In errore: proposta ed edit locali conservati, nessuna write parziale.
       setApplyErrors([err instanceof Error ? err.message : 'Errore durante il salvataggio.']);
-      setShowApplyConfirm(false);
       setPhase('review');
     } finally {
       applyStartedRef.current = false;
@@ -288,8 +311,33 @@ export function AiPoolGenerationDialog({
 
   const busy = phase === 'previewing' || phase === 'generating' || phase === 'applying';
 
+  /**
+   * AIGEN-UI-03-FOLLOW-UP — dalla generazione in poi il dialog è
+   * «explicit-dismiss only»: un click fuori o un Escape non devono buttare via
+   * una proposta generata (a costo reale) e le modifiche locali del docente.
+   * Nelle fasi precedenti il comportamento resta quello storico.
+   */
+  const protectedPhase = phase === 'generating' || phase === 'review' || phase === 'applying';
+
+  /** Uscita esplicita: durante la review passa dalla conferma di abbandono. */
+  function requestClose() {
+    if (busy) return;
+    if (phase === 'review') {
+      setShowAbandonConfirm(true);
+      return;
+    }
+    onClose();
+  }
+
   return (
-    <DialogShell title="Genera pool con IA" onCancel={onClose} busy={busy} variant="wide-scroll">
+    <DialogShell
+      title="Genera pool con IA"
+      onCancel={requestClose}
+      busy={busy}
+      variant="wide-scroll"
+      closeOnBackdrop={!protectedPhase}
+      closeOnEscape={!protectedPhase}
+    >
       {/* 1) CONFIGURAZIONE */}
       {phase === 'configure' && (
         <div className={styles.config}>
@@ -506,32 +554,28 @@ export function AiPoolGenerationDialog({
             </ul>
           )}
 
-          {showApplyConfirm ? (
-            <div role="alert">
-              <p>
-                {isNewPool
-                  ? `Verrà creato un pool con ${localQuestions.length} domande.`
-                  : `Verranno aggiunte ${localQuestions.length} domande al pool esistente. Le domande attuali non saranno modificate.`}
-              </p>
-              <div className="dialog-actions">
-                <button type="button" onClick={() => setShowApplyConfirm(false)}>
-                  Annulla
-                </button>
-                <button type="button" className="btn-primary" onClick={() => void doApply()}>
-                  {isNewPool ? 'Crea pool' : 'Aggiungi al pool'}
-                </button>
-              </div>
-            </div>
+          {showAbandonConfirm ? (
+            <AiReviewExitConfirm
+              onKeepReviewing={() => setShowAbandonConfirm(false)}
+              onBackToConfigure={discardProposal}
+              onAbandon={abandonProposal}
+            />
           ) : (
+            /*
+             * Applicazione diretta: configurazione, stima, generazione e
+             * revisione sono già state completate, quindi un'ulteriore conferma
+             * sarebbe ridondante. Il doppio click è già impedito dalla guardia
+             * sincrona `applyStartedRef` dentro `doApply`.
+             */
             <div className="dialog-actions">
-              <button type="button" onClick={discardProposal}>
+              <button type="button" onClick={() => setShowAbandonConfirm(true)}>
                 Annulla proposta
               </button>
               <button
                 type="button"
                 className="btn-primary"
                 disabled={localQuestions.length === 0}
-                onClick={() => setShowApplyConfirm(true)}
+                onClick={() => void doApply()}
               >
                 {isNewPool ? 'Crea pool' : 'Aggiungi al pool'}
               </button>
@@ -596,8 +640,8 @@ function ProposalQuestionCard({
     question.tipo === 'aperta'
       ? 'Aperta'
       : question.tipo === 'chiusa_singola'
-        ? 'Chiusa (singola)'
-        : 'Chiusa (multipla)';
+        ? 'Risposta singola'
+        : 'Risposta multipla';
   // Palette distinta per tipo (AIGEN-UI-02): nessuno sfondo bianco.
   const badgeClass =
     question.tipo === 'aperta'
@@ -620,15 +664,34 @@ function ProposalQuestionCard({
   return (
     <div className={styles.reviewItem}>
       {/*
-       * Riga metadati compatta (AIGEN-UI-02): badge tipo, difficoltà, caratteri
-       * max (solo aperte) ed «Elimina» sulla stessa riga, per recuperare spazio
-       * verticale. «Elimina» resta accanto agli altri controlli anche in wrap.
+       * AIGEN-UI-03 — riga 1: identità della domanda («Domanda N» + badge tipo) e
+       * l'azione distruttiva a destra. Difficoltà e dimensione risposta stanno
+       * nella riga 2, così la prima riga resta leggibile anche a 320px.
        */}
       <div className={styles.reviewHead}>
         <strong>Domanda {ordinal}</strong>
         <span className={`${styles.badge} ${badgeClass}`}>{tipoLabel}</span>
         <span className={styles.reviewHeadSpacer} />
-        <div className={styles.reviewHeadControls}>
+        <button
+          type="button"
+          className={`btn-danger ${styles.reviewDeleteBtn}`}
+          onClick={onDelete}
+          aria-label={`Elimina domanda ${ordinal}`}
+        >
+          <IconTrash size={13} />
+          {/* Su schermi molto stretti resta la sola icona: il nome accessibile
+              è comunque garantito da `aria-label`. */}
+          <span className={styles.reviewDeleteLabel}>Elimina</span>
+        </button>
+      </div>
+
+      {/*
+       * Riga 2 — metadati con label VISIBILI, associate al controllo da `<label>`
+       * (l'input dello stepper è l'unico controllo etichettabile al suo interno).
+       */}
+      <div className={styles.reviewMeta}>
+        <label className={styles.reviewMetaField}>
+          <span className={styles.reviewMetaLabel}>Difficoltà</span>
           <BoundedStepper
             value={question.difficolta}
             min={1}
@@ -638,36 +701,31 @@ function ProposalQuestionCard({
             incrementLabel={`Aumenta difficoltà domanda ${ordinal}`}
             onChange={(difficolta) => onChange({ difficolta })}
           />
-          {question.tipo === 'aperta' && (
+        </label>
+        {question.tipo === 'aperta' && (
+          <label className={styles.reviewMetaField}>
+            <span className={styles.reviewMetaLabel}>Dim. risposta</span>
             <BoundedStepper
               value={question.maxCharacters}
               min={MIN_MAX_CHARACTERS}
               max={MAX_MAX_CHARACTERS}
               step={ANSWER_CHARACTERS_STEP}
+              // 5 cifre piene: 10000 non deve mai essere troncato.
+              width="wide"
               ariaLabel={`Caratteri max domanda ${ordinal}`}
               decrementLabel={`Diminuisci caratteri max domanda ${ordinal}`}
               incrementLabel={`Aumenta caratteri max domanda ${ordinal}`}
               onChange={(maxCharacters) => onChange({ maxCharacters })}
             />
-          )}
-          <button
-            type="button"
-            className={`btn-danger ${styles.reviewDeleteBtn}`}
-            onClick={onDelete}
-            aria-label={`Elimina domanda ${ordinal}`}
-          >
-            <IconTrash size={13} />
-            {/* Su schermi molto stretti resta la sola icona: il nome accessibile
-                è comunque garantito da `aria-label`. */}
-            <span className={styles.reviewDeleteLabel}>Elimina</span>
-          </button>
-        </div>
+          </label>
+        )}
       </div>
 
       <label className={styles.field}>
         Testo
         <textarea
-          rows={2}
+          className={styles.reviewTextarea}
+          rows={4}
           value={question.testo}
           onChange={(e) => onChange({ testo: e.target.value })}
           aria-label={`Testo domanda ${ordinal}`}
@@ -679,7 +737,8 @@ function ProposalQuestionCard({
           <label className={styles.field}>
             Soluzione di riferimento
             <textarea
-              rows={2}
+              className={styles.reviewTextarea}
+              rows={4}
               value={question.soluzione}
               onChange={(e) => onChange({ soluzione: e.target.value })}
               aria-label={`Soluzione domanda ${ordinal}`}

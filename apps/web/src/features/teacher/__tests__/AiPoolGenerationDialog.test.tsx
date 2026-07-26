@@ -9,7 +9,7 @@ vi.mock('../../../lib/firebase.js', () => ({
   functions: {},
 }));
 
-import type { ParsedPool } from '@schoolforge/lesson-contract';
+import { parsePool, type ParsedPool } from '@schoolforge/lesson-contract';
 import { AiPoolGenerationDialog } from '../AiPoolGenerationDialog.js';
 import type {
   AiContentCallables,
@@ -177,12 +177,11 @@ describe('AiPoolGenerationDialog', () => {
     const onApply = vi.fn(async (_pool: ParsedPool) => {});
     const { callables } = makeCallables();
     await goToReview(callables, onApply);
-    fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
-    // Light confirm.
-    expect(screen.getByText(/Verrà creato un pool con 2 domande/)).toBeTruthy();
-    const confirmBtn = screen.getAllByRole('button', { name: 'Crea pool' }).at(-1)!;
-    fireEvent.click(confirmBtn);
-    fireEvent.click(confirmBtn); // double-click guard
+    const applyBtn = screen.getByRole('button', { name: 'Crea pool' });
+    // Nessuna conferma intermedia: il primo click applica direttamente.
+    fireEvent.click(applyBtn);
+    fireEvent.click(applyBtn); // guardia sincrona contro il doppio click
+    expect(screen.queryByText(/Verrà creato un pool con/)).toBeNull();
     await screen.findByText(/Pool creato con 2 domande/);
     expect(onApply).toHaveBeenCalledTimes(1);
     // The applied argument is a canonical ParsedPool.
@@ -199,7 +198,6 @@ describe('AiPoolGenerationDialog', () => {
     const { callables } = makeCallables();
     await goToReview(callables, onApply);
     fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Crea pool' }).at(-1)!);
     await screen.findByText(/storage down/);
     // Proposal still there, editable.
     expect(screen.getByText('Spiega TCP')).toBeTruthy();
@@ -434,21 +432,14 @@ describe('AiPoolGenerationDialog — AIGEN-UI-02 review card', () => {
     // Nessuna correzione silenziosa: il valore digitato resta.
     expect((screen.getByLabelText('Difficoltà domanda 1') as HTMLInputElement).value).toBe('9');
     fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Crea pool' }).at(-1)!);
     await screen.findByText(/la difficoltà deve essere un intero da 1 a 5/i);
   });
 
-  it('shows the delete button beside the metadata controls, deleting only the local draft', async () => {
+  it('deletes a question from the local draft only (no pool write)', async () => {
     const onApply = vi.fn(async () => {});
     const { callables } = makeCallables();
     await goToReview(callables, onApply);
-    const del = screen.getByRole('button', { name: 'Elimina domanda 1' });
-    const diff = screen.getByLabelText('Difficoltà domanda 1');
-    // Stessa riga metadati: condividono il contenitore dei controlli.
-    const controls = del.closest('[class*="reviewHeadControls"]') as HTMLElement;
-    expect(controls).toBeTruthy();
-    expect(controls.contains(diff)).toBe(true);
-    fireEvent.click(del);
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina domanda 1' }));
     await waitFor(() => expect(screen.queryByText('Spiega TCP')).toBeNull());
     // Nessuna scrittura del pool: la cancellazione tocca solo la bozza locale.
     expect(onApply).not.toHaveBeenCalled();
@@ -490,10 +481,10 @@ describe('AiPoolGenerationDialog — AIGEN-UI-02 review card', () => {
     await goToReview(callables);
     const cls = (text: string) => screen.getByText(text).className;
     expect(cls('Aperta')).toMatch(/badgeAperta/);
-    expect(cls('Chiusa (singola)')).toMatch(/badgeSingola/);
-    expect(cls('Chiusa (multipla)')).toMatch(/badgeMultipla/);
+    expect(cls('Risposta singola')).toMatch(/badgeSingola/);
+    expect(cls('Risposta multipla')).toMatch(/badgeMultipla/);
     // Tre classi cromatiche distinte.
-    expect(new Set([cls('Aperta'), cls('Chiusa (singola)'), cls('Chiusa (multipla)')]).size).toBe(
+    expect(new Set([cls('Aperta'), cls('Risposta singola'), cls('Risposta multipla')]).size).toBe(
       3,
     );
   });
@@ -504,11 +495,582 @@ describe('AiPoolGenerationDialog — AIGEN-UI-02 review card', () => {
     await goToReview(callables, onApply);
     fireEvent.click(screen.getByRole('button', { name: 'Aumenta difficoltà domanda 1' })); // 3 → 4
     fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Crea pool' }).at(-1)!);
     await screen.findByText(/Pool creato con 2 domande/);
     const pool = onApply.mock.calls[0]![0];
     const aperta = pool.questions.find((q) => q.tipo === 'aperta')!;
     expect(aperta.difficolta).toBe(4);
     expect(aperta.maxPoints).toBe(aperta.difficolta);
+  });
+});
+
+// ─── AIGEN-UI-03 — struttura definitiva della scheda di review ───────────────
+describe('AiPoolGenerationDialog — AIGEN-UI-03 review card layout', () => {
+  /** Proposta con tutti e tre i tipi, per coprire aperta vs chiuse. */
+  function allTypes(): AiPoolGenerateResult {
+    return generateResult({
+      output: {
+        questions: [
+          {
+            order: 0,
+            tipo: 'aperta',
+            testo: 'Spiega TCP',
+            difficolta: 4,
+            soluzione: 'Affidabile',
+          },
+          {
+            order: 1,
+            tipo: 'chiusa_singola',
+            testo: 'Quale?',
+            difficolta: 2,
+            opzioni: ['TCP', 'UDP'],
+            soluzioneIndici: [0],
+          },
+          {
+            order: 2,
+            tipo: 'chiusa_multipla',
+            testo: 'Quali?',
+            difficolta: 3,
+            opzioni: ['TCP', 'UDP', 'RAM'],
+            soluzioneIndici: [0, 1],
+          },
+        ],
+      },
+    });
+  }
+
+  it('shows «Domanda 1» and the type badge on the header row', async () => {
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables);
+    const title = screen.getByText('Domanda 1');
+    expect(title).toBeTruthy();
+    const badge = screen.getByText('Aperta');
+    // Stessa riga: titolo e badge condividono il contenitore di intestazione.
+    const head = title.closest('[class*="reviewHead"]') as HTMLElement;
+    expect(head).toBeTruthy();
+    expect(head.contains(badge)).toBe(true);
+  });
+
+  it('keeps «Elimina» on the header row, away from the metadata row', async () => {
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables);
+    const del = screen.getByRole('button', { name: 'Elimina domanda 1' });
+    const head = screen.getByText('Domanda 1').closest('[class*="reviewHead"]') as HTMLElement;
+    expect(head.contains(del)).toBe(true);
+    // La riga metadati non contiene «Elimina».
+    const meta = screen
+      .getByLabelText('Difficoltà domanda 1')
+      .closest('[class*="reviewMeta"]') as HTMLElement;
+    expect(meta).toBeTruthy();
+    expect(meta.contains(del)).toBe(false);
+  });
+
+  it('shows a visible «Difficoltà» label associated with its stepper', async () => {
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables);
+    // Label visibile presente per ogni domanda.
+    expect(screen.getAllByText('Difficoltà').length).toBe(3);
+    const input = screen.getByLabelText('Difficoltà domanda 1');
+    const field = input.closest('label') as HTMLLabelElement;
+    expect(field).toBeTruthy();
+    expect(field.textContent).toContain('Difficoltà');
+    expect(field.contains(input)).toBe(true);
+  });
+
+  it('shows «Dim. risposta» only for open questions', async () => {
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables);
+    // Una sola aperta ⇒ una sola label visibile.
+    expect(screen.getAllByText('Dim. risposta')).toHaveLength(1);
+    expect(screen.getByLabelText('Caratteri max domanda 1')).toBeTruthy();
+    // Nessun controllo dimensione per singola (2) e multipla (3).
+    expect(screen.queryByLabelText('Caratteri max domanda 2')).toBeNull();
+    expect(screen.queryByLabelText('Caratteri max domanda 3')).toBeNull();
+  });
+
+  it('renders the review textareas with rows=4 and the non-resizable class', async () => {
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables);
+    const testo = screen.getByLabelText('Testo domanda 1') as HTMLTextAreaElement;
+    const soluzione = screen.getByLabelText('Soluzione domanda 1') as HTMLTextAreaElement;
+    for (const ta of [testo, soluzione]) {
+      expect(ta.tagName).toBe('TEXTAREA');
+      expect(ta.rows).toBe(4);
+      expect(ta.className).toMatch(/reviewTextarea/);
+    }
+    // Le opzioni delle chiuse restano input di testo, invariati.
+    const opzione = screen.getByLabelText('Testo opzione a domanda 2') as HTMLInputElement;
+    expect(opzione.tagName).toBe('INPUT');
+    expect(opzione.className).not.toMatch(/reviewTextarea/);
+  });
+
+  it('shows the full answer-size value, including 1800 and the 10000 maximum', async () => {
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables);
+    const chars = () => screen.getByLabelText('Caratteri max domanda 1') as HTMLInputElement;
+    // difficoltà 4 → 1800 derivato dal mapper, mostrato per intero.
+    expect(chars().value).toBe('1800');
+    // Valore massimo consentito, mostrato integralmente (nessun troncamento).
+    fireEvent.change(chars(), { target: { value: '10000' } });
+    expect(chars().value).toBe('10000');
+    expect(chars().className).toMatch(/input/);
+    const wrapper = chars().closest('[class*="stepperWide"]');
+    expect(wrapper).toBeTruthy();
+  });
+
+  it('keeps specific aria-labels on both steppers and their +/- buttons', async () => {
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables);
+    for (const name of [
+      'Diminuisci difficoltà domanda 1',
+      'Aumenta difficoltà domanda 1',
+      'Diminuisci caratteri max domanda 1',
+      'Aumenta caratteri max domanda 1',
+      'Diminuisci difficoltà domanda 2',
+      'Aumenta difficoltà domanda 2',
+    ]) {
+      expect(screen.getByRole('button', { name })).toBeTruthy();
+    }
+  });
+
+  it('still edits difficolta and maxCharacters in local state only', async () => {
+    const onApply = vi.fn(async () => {});
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables, onApply);
+    fireEvent.click(screen.getByRole('button', { name: 'Aumenta difficoltà domanda 1' }));
+    expect((screen.getByLabelText('Difficoltà domanda 1') as HTMLInputElement).value).toBe('5');
+    fireEvent.click(screen.getByRole('button', { name: 'Aumenta caratteri max domanda 1' }));
+    expect((screen.getByLabelText('Caratteri max domanda 1') as HTMLInputElement).value).toBe(
+      '1900',
+    );
+    // Nessuna applicazione/write durante la revisione.
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('still applies the reviewed pool through the canonical save', async () => {
+    const onApply = vi.fn(async (_pool: ParsedPool) => {});
+    const { callables } = makeCallables({ generate: async () => allTypes() });
+    await goToReview(callables, onApply);
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina domanda 3' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
+    await screen.findByText(/Pool creato con 2 domande/);
+    expect(onApply).toHaveBeenCalledTimes(1);
+    const pool = onApply.mock.calls[0]![0];
+    expect(pool.schema).toBe('schoolforge-pool/v2');
+    expect(pool.questions).toHaveLength(2);
+  });
+});
+
+// ─── AIGEN-UI-03-FOLLOW-UP — la proposta non si perde per un click fuori ─────
+describe('AiPoolGenerationDialog — explicit-dismiss during/after generation', () => {
+  function backdrop() {
+    return screen.getByRole('dialog').parentElement as HTMLElement;
+  }
+
+  it('closes on backdrop and Escape in the phases before generation', () => {
+    const onClose = vi.fn();
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(backdrop());
+    expect(onClose).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores backdrop and Escape during review, keeping the proposal intact', async () => {
+    const onClose = vi.fn();
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+
+    fireEvent.click(backdrop());
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    // Proposta e modifiche locali ancora lì.
+    expect(screen.getByText('Spiega TCP')).toBeTruthy();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('ignores backdrop and Escape while generating', async () => {
+    const onClose = vi.fn();
+    let release!: () => void;
+    const { callables } = makeCallables({
+      generate: () =>
+        new Promise((resolve) => {
+          release = () => resolve(generateResult());
+        }),
+    });
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByText(/Generazione del pool in corso/);
+
+    fireEvent.click(backdrop());
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    release();
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+  });
+
+  it('ignores backdrop and Escape while applying', async () => {
+    const onClose = vi.fn();
+    let release!: () => void;
+    const onApply = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const { callables } = makeCallables();
+    await goToReview(callables, onApply);
+    fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
+    await screen.findByText(/Salvataggio del pool/);
+
+    fireEvent.click(backdrop());
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    release();
+    await screen.findByText(/Pool creato con/);
+  });
+
+  it('«Annulla proposta» opens the abandon confirmation instead of discarding', async () => {
+    const onClose = vi.fn();
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    expect(
+      screen.getByText(/Abbandonare la proposta generata\? Le modifiche non applicate/),
+    ).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('«Continua la revisione» keeps the proposal and local edits', async () => {
+    const onClose = vi.fn();
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+    // Modifica locale prima della conferma.
+    fireEvent.change(screen.getByLabelText('Testo domanda 1'), {
+      target: { value: 'Testo modificato dal docente' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continua la revisione' }));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('Testo domanda 1') as HTMLTextAreaElement).value).toBe(
+      'Testo modificato dal docente',
+    );
+    expect(screen.queryByText(/Abbandonare la proposta generata/)).toBeNull();
+  });
+
+  it('«Abbandona e chiudi» closes exactly once, applying nothing', async () => {
+    const onClose = vi.fn();
+    const onApply = vi.fn(async () => {});
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={onApply}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    const abandon = screen.getByRole('button', { name: 'Abbandona e chiudi' });
+    fireEvent.click(abandon);
+    fireEvent.click(abandon); // doppio click protetto
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('exposes the abandon confirmation to the keyboard', async () => {
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+
+    // Annuncio accessibile + entrambe le azioni raggiungibili come button.
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('Abbandonare la proposta generata?');
+    const keep = screen.getByRole('button', { name: 'Continua la revisione' });
+    const abandon = screen.getByRole('button', { name: 'Abbandona e chiudi' });
+    keep.focus();
+    expect(document.activeElement).toBe(keep);
+    abandon.focus();
+    expect(document.activeElement).toBe(abandon);
+  });
+});
+
+// ─── «Modifica configurazione»: torna a configure senza chiudere né spendere ──
+describe('AiPoolGenerationDialog — back to configure from review', () => {
+  async function reviewWithCustomConfig() {
+    const onClose = vi.fn();
+    const onApply = vi.fn(async () => {});
+    const c = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={c.callables}
+        onApply={onApply}
+        onClose={onClose}
+      />,
+    );
+    // Impostazioni personalizzate dal docente, che devono sopravvivere.
+    fireEvent.click(screen.getByRole('radio', { name: /Rigoroso/ }));
+    fireEvent.change(screen.getByLabelText('Aperte'), { target: { value: '5' } });
+    fireEvent.change(screen.getByLabelText('Indicazioni aggiuntive (facoltative)'), {
+      target: { value: 'tono formale' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+    return { onClose, onApply, ...c };
+  }
+
+  it('offers all three explicit actions in the confirmation', async () => {
+    await reviewWithCustomConfig();
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    for (const name of ['Continua la revisione', 'Modifica configurazione', 'Abbandona e chiudi']) {
+      expect(screen.getByRole('button', { name })).toBeTruthy();
+    }
+  });
+
+  it('returns to configure without closing, discarding the proposal and local edits', async () => {
+    const { onClose, onApply, previewReqs } = await reviewWithCustomConfig();
+    // Modifica locale che deve essere scartata.
+    fireEvent.change(screen.getByLabelText('Testo domanda 1'), {
+      target: { value: 'Modifica locale' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica configurazione' }));
+
+    // Dialog aperto, fase configure, proposta e modifiche sparite.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Calcola stima' })).toBeTruthy();
+    expect(screen.queryByText('Spiega TCP')).toBeNull();
+    expect(screen.queryByDisplayValue('Modifica locale')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Annulla proposta' })).toBeNull();
+    // Nessuna callable aggiuntiva, nessuna write, nessun costo.
+    expect(previewReqs).toHaveLength(1);
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it('keeps the teacher settings so they can be edited and regenerated', async () => {
+    const { previewReqs } = await reviewWithCustomConfig();
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica configurazione' }));
+
+    // Profilo/stile/quantità/indicazioni conservati.
+    expect((screen.getByLabelText('Aperte') as HTMLInputElement).value).toBe('5');
+    expect(
+      (screen.getByLabelText('Indicazioni aggiuntive (facoltative)') as HTMLTextAreaElement).value,
+    ).toBe('tono formale');
+    expect(screen.getByRole('radio', { name: /Rigoroso/ }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    // Il docente corregge e rigenera: nuova requestId, stesse impostazioni.
+    fireEvent.change(screen.getByLabelText('Aperte'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    expect(previewReqs).toHaveLength(2);
+    expect(previewReqs[1].requestId).not.toBe(previewReqs[0].requestId);
+    expect(previewReqs[1].level).toBe('advanced');
+    expect(previewReqs[1].counts.aperta).toBe(2);
+    expect(previewReqs[1].teacherGuidance).toBe('tono formale');
+  });
+});
+
+// ─── Applicazione diretta: nessuna conferma ridondante ───────────────────────
+describe('AiPoolGenerationDialog — direct apply (no redundant confirmation)', () => {
+  it('applies with a single click on «Crea pool», with no intermediate confirmation', async () => {
+    const onApply = vi.fn(async (_pool: ParsedPool) => {});
+    const { callables } = makeCallables();
+    await goToReview(callables, onApply);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
+    await screen.findByText(/Pool creato con 2 domande/);
+    expect(onApply).toHaveBeenCalledTimes(1);
+    // Nessun testo o pulsante di conferma intermedia.
+    expect(screen.queryByText(/Verrà creato un pool con/)).toBeNull();
+    expect(screen.queryByText(/Verranno aggiunte .* al pool esistente/)).toBeNull();
+  });
+
+  it('applies with a single click on «Aggiungi al pool» for an existing pool', async () => {
+    const existing = parsePool(
+      [
+        '---',
+        'schema: schoolforge-pool/v2',
+        'questions:',
+        '  - id: q1',
+        '    tipo: aperta',
+        '    difficolta: 2',
+        '    testo: Domanda esistente',
+        '    soluzione: Risposta',
+        '---',
+      ].join('\n'),
+    );
+    if (!existing.ok) throw new Error('fixture');
+    const onApply = vi.fn(async (_pool: ParsedPool) => {});
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={existing.pool}
+        callables={callables}
+        onApply={onApply}
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+    await screen.findByText(/Costo stimato/);
+    fireEvent.click(screen.getByRole('button', { name: 'Genera pool' }));
+    await screen.findByRole('button', { name: 'Annulla proposta' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aggiungi al pool' }));
+    await screen.findByText(/2 domande aggiunte al pool/);
+    expect(onApply).toHaveBeenCalledTimes(1);
+    // Le domande esistenti sono preservate e le nuove appese.
+    expect(onApply.mock.calls[0]![0].questions).toHaveLength(3);
+  });
+
+  it('a rapid double click still produces exactly one application', async () => {
+    let release!: () => void;
+    const onApply = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const { callables } = makeCallables();
+    await goToReview(callables, onApply);
+
+    const btn = screen.getByRole('button', { name: 'Crea pool' });
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    expect(onApply).toHaveBeenCalledTimes(1);
+    release();
+    await screen.findByText(/Pool creato con/);
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it('an application error keeps the review with proposal and local edits intact', async () => {
+    const onApply = vi.fn(async () => {
+      throw new Error('storage down');
+    });
+    const { callables } = makeCallables();
+    await goToReview(callables, onApply);
+    fireEvent.change(screen.getByLabelText('Testo domanda 1'), {
+      target: { value: 'Modifica locale del docente' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
+    await screen.findByText(/storage down/);
+    // Resta in review, senza chiusura automatica né pool parziale.
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Annulla proposta' })).toBeTruthy();
+    expect((screen.getByLabelText('Testo domanda 1') as HTMLTextAreaElement).value).toBe(
+      'Modifica locale del docente',
+    );
+    // Ritentare resta possibile.
+    expect(screen.getByRole('button', { name: 'Crea pool' })).toBeTruthy();
+  });
+
+  it('a validation error keeps the review and never calls the canonical save', async () => {
+    const onApply = vi.fn(async () => {});
+    const { callables } = makeCallables();
+    await goToReview(callables, onApply);
+    // Difficoltà fuori range → il mapper rifiuta prima di qualunque write.
+    fireEvent.change(screen.getByLabelText('Difficoltà domanda 1'), { target: { value: '9' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Crea pool' }));
+    await screen.findByText(/la difficoltà deve essere un intero da 1 a 5/i);
+    expect(onApply).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Annulla proposta' })).toBeTruthy();
+  });
+
+  it('keeps the abandon and back-to-configure confirmations untouched', async () => {
+    const onClose = vi.fn();
+    const onApply = vi.fn(async () => {});
+    const { callables } = makeCallables();
+    await goToReview(callables, onApply);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla proposta' }));
+    expect(screen.getByText(/Abbandonare la proposta generata/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Continua la revisione' }));
+    expect(screen.getByText('Spiega TCP')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onApply).not.toHaveBeenCalled();
   });
 });

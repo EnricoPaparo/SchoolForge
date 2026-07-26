@@ -48,6 +48,15 @@ const TIPO_LABELS: Record<string, string> = {
   chiusa_multipla: 'Chiusa (multipla)',
 };
 
+/**
+ * Formato italiano del limite caratteri mostrato nella scheda domanda:
+ * `2000 → 2.000`, `10000 → 10.000`. `useGrouping: true` è necessario perché il
+ * CLDR italiano, di default, non raggruppa i numeri a quattro cifre.
+ */
+function formatMaxCharacters(value: number): string {
+  return value.toLocaleString('it-IT', { useGrouping: true });
+}
+
 export type PoolCountStatus = 'valid' | 'absent' | 'invalid';
 
 export type QuestionPoolEditorProps = {
@@ -230,8 +239,22 @@ function QuestionCard({
         <span className={styles.questionNumber}>#{index + 1}</span>
         <span className={styles.questionId}>{q.id}</span>
         <span className={styles.questionTipo}>{TIPO_LABELS[q.tipo] ?? q.tipo}</span>
-        <span className={styles.questionMeta}>
-          Difficoltà:&nbsp;{q.difficolta} · Max:&nbsp;{q.maxPoints}&nbsp;pt
+        {/*
+         * Gruppo metadati: difficoltà e — per le sole aperte — dimensione della
+         * risposta. Il limite caratteri arriva dal contratto canonico
+         * (`parsePool` garantisce `maxCharacters` su ogni aperta, col default
+         * 2000 già applicato), quindi nessun fallback di UI: un pool malformato
+         * resta rifiutato a monte dal parser, come già oggi.
+         */}
+        <span className={styles.questionMetaGroup}>
+          <span className={styles.questionMeta}>
+            Difficoltà:&nbsp;{q.difficolta} · Max:&nbsp;{q.maxPoints}&nbsp;pt
+          </span>
+          {q.tipo === 'aperta' && (
+            <span className={styles.questionMeta}>
+              Dim.&nbsp;risposta:&nbsp;{formatMaxCharacters(q.maxCharacters)}&nbsp;caratteri
+            </span>
+          )}
         </span>
         <div className={styles.questionCardActions}>
           <button

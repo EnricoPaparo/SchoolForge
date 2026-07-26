@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { DialogShell } from './workspaceDialogs.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
+import { AiReviewExitConfirm } from './AiReviewExitConfirm.js';
 import styles from './AiPoolGenerationDialog.module.css';
 import {
   buildLessonContentRequest,
@@ -67,10 +68,13 @@ export function AiLessonGenerationDialog({
   const [result, setResult] = useState<AiLessonGenerateResult | null>(null);
   const [draftBody, setDraftBody] = useState('');
   const [error, setError] = useState<string | null>(null);
+  /** Conferma leggera di abbandono della bozza (AIGEN-UI-03-FOLLOW-UP). */
+  const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
 
   const requestIdRef = useRef<string>(newRequestId());
   const previewStartedRef = useRef(false);
   const generateStartedRef = useRef(false);
+  const abandonStartedRef = useRef(false);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -180,12 +184,52 @@ export function AiLessonGenerationDialog({
 
   const busy = phase === 'previewing' || phase === 'generating';
 
+  /**
+   * AIGEN-UI-03-FOLLOW-UP — dalla generazione in poi il dialog è
+   * «explicit-dismiss only»: un click fuori o un Escape non devono buttare via
+   * una bozza generata (a costo reale) non ancora usata.
+   */
+  const protectedPhase = phase === 'generating' || phase === 'review';
+
+  /** Uscita esplicita: durante la review passa dalla conferma di abbandono. */
+  function requestClose() {
+    if (busy) return;
+    if (phase === 'review') {
+      setShowAbandonConfirm(true);
+      return;
+    }
+    onClose();
+  }
+
+  /**
+   * Torna alla configurazione **senza chiudere il dialog**: scarta la bozza
+   * generata e rigenera la `requestId` (via `invalidateEstimate`), ma conserva
+   * profilo, profondità e indicazioni già scelti dal docente. Nessuna callable,
+   * nessuna write, nessun costo.
+   */
+  function discardDraft() {
+    setResult(null);
+    setDraftBody('');
+    setShowAbandonConfirm(false);
+    invalidateEstimate();
+  }
+
+  /** Unica uscita che chiude davvero durante la review; doppio click protetto. */
+  function abandonDraft() {
+    if (abandonStartedRef.current) return;
+    abandonStartedRef.current = true;
+    setShowAbandonConfirm(false);
+    onClose();
+  }
+
   return (
     <DialogShell
       title="Genera bozza lezione con IA"
-      onCancel={onClose}
+      onCancel={requestClose}
       busy={busy}
       variant="wide-scroll"
+      closeOnBackdrop={!protectedPhase}
+      closeOnEscape={!protectedPhase}
     >
       {phase === 'configure' && (
         <div className={styles.config}>
@@ -358,14 +402,22 @@ export function AiLessonGenerationDialog({
           <div className={styles.reviewItem}>
             <MarkdownRenderer markdown={draftBody} />
           </div>
-          <div className="dialog-actions">
-            <button type="button" onClick={onClose}>
-              Annulla
-            </button>
-            <button type="button" className="btn-primary" onClick={useDraft}>
-              Usa questa bozza
-            </button>
-          </div>
+          {showAbandonConfirm ? (
+            <AiReviewExitConfirm
+              onKeepReviewing={() => setShowAbandonConfirm(false)}
+              onBackToConfigure={discardDraft}
+              onAbandon={abandonDraft}
+            />
+          ) : (
+            <div className="dialog-actions">
+              <button type="button" onClick={() => setShowAbandonConfirm(true)}>
+                Annulla
+              </button>
+              <button type="button" className="btn-primary" onClick={useDraft}>
+                Usa questa bozza
+              </button>
+            </div>
+          )}
         </>
       )}
 

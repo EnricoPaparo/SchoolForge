@@ -30,7 +30,6 @@
   width: 100%;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.85rem;
-  resize: vertical;
 }
 .preview {
   border: 1px solid var(--color-border);
@@ -48,7 +47,6 @@
 .field input,
 .field textarea {
   width: 100%;
-  resize: vertical;
 }
 .actions {
   display: flex;
