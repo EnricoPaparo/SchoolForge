@@ -9,6 +9,7 @@ import { resolveActiveSession } from './examSessionService.js';
 import { getOwnStudentDoc } from '../repository/students/studentsService.js';
 import { watchStudentAccessSettings } from '../repository/students/studentAccessService.js';
 import { isExamModeActiveForClass } from '../repository/students/examMode.js';
+import navStyles from '../../components/HeaderSectionNav.module.css';
 import styles from './StudentShell.module.css';
 
 type Section = 'lezioni' | 'verifiche';
@@ -157,15 +158,15 @@ export function StudentShell() {
                 <button
                   key={id}
                   type="button"
-                  className={styles.navBtn}
+                  className={navStyles.navBtn}
                   onClick={() => selectSection(id)}
                   aria-current={activeSection === id ? 'page' : undefined}
                   title={label}
                 >
-                  <span className={styles.navIcon} aria-hidden="true">
+                  <span className={navStyles.navIcon} aria-hidden="true">
                     <SectionIcon section={id} />
                   </span>
-                  <span className={styles.navLabel}>{label}</span>
+                  <span className={navStyles.navLabel}>{label}</span>
                 </button>
               ))}
             </nav>

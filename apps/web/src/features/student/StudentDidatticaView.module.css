@@ -289,11 +289,6 @@
   display: none;
 }
 @media (max-width: 640px) {
-  .toolbar,
-  .searchWrap {
-    width: 100%;
-    max-width: none;
-  }
   .workspaceHeader {
     align-items: flex-start;
   }

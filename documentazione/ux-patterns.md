@@ -91,6 +91,9 @@ multiple e mai tabelle con scroll orizzontale su mobile.
 - su desktop il progresso studente parte blu e segue l'accento arancione della
   card su hover/focus; il comportamento touch resta invariato;
 - mobile: metadati e statistiche su righe ordinate, azioni senza overflow.
+- l'header studente riusa lo stesso modulo CSS opt-in dell'header docente per
+  stato attivo blu, hover/focus arancione e reduced-motion; le shell mantengono
+  separate soltanto struttura e logica di navigazione.
 
 #### Card verifica
 
