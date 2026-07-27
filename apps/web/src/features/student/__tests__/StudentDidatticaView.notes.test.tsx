@@ -85,7 +85,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 async function openCourseAndSelectLesson() {
-  fireEvent.click(await screen.findByRole('button', { name: 'Apri corso Informatica' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Apri il corso Informatica' }));
   // Course overview: no lesson selected yet.
   expect(screen.queryByRole('button', { name: 'Appunti' })).toBeNull();
   // Expand the UDA from the sidebar tree (first match — sidebar precedes overview).
@@ -152,10 +152,10 @@ describe('StudentDidatticaView — Appunti entry point', () => {
 
   it('loads the per-course index once and reuses it when the course is reopened', async () => {
     render(<StudentDidatticaView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Apri corso Informatica' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apri il corso Informatica' }));
     await waitFor(() => expect(mockLoadNoteIndex).toHaveBeenCalledOnce());
     fireEvent.click(screen.getByRole('button', { name: '← Libreria' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Apri corso Informatica' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apri il corso Informatica' }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(mockLoadNoteIndex).toHaveBeenCalledOnce();
   });

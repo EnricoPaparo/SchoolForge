@@ -17,6 +17,7 @@ type CourseRecordCardProps = {
   metrics: CourseRecordMetric[];
   progress?: RecordCardProgress;
   actions?: ReactNode;
+  accentProgressOnInteraction?: boolean;
 };
 
 /** Compatibility wrapper for the shared SchoolForge record-card shell. */

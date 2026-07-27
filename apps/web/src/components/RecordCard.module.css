@@ -221,6 +221,7 @@
   height: 100%;
   border-radius: inherit;
   background: var(--color-brand-blue);
+  transition: background-color var(--transition-brand-interactive);
 }
 
 .actions {
@@ -283,6 +284,10 @@
     color: var(--color-brand-interactive);
   }
 
+  .progressAccent:hover .progressFill {
+    background: var(--color-brand-interactive);
+  }
+
   .card:hover .openCta {
     opacity: 1;
     transform: translateX(0);
@@ -329,6 +334,10 @@
 .card:focus-within .title,
 .card:focus-within .metricIcon {
   color: var(--color-brand-interactive);
+}
+
+.progressAccent:focus-within .progressFill {
+  background: var(--color-brand-interactive);
 }
 
 .card:focus-within .openCta {
@@ -429,6 +438,32 @@
     width: 100%;
   }
 
+  .cardActionsVerification {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'identity'
+      'metrics'
+      'actions'
+      'progress'
+      'errors';
+  }
+
+  .cardActionsVerification .actions {
+    grid-area: actions;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .cardActionsVerification .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cardActionsVerification .actions button {
+    width: 100%;
+    min-width: 0;
+  }
+
   .cardActionsGrid .actions button {
     width: 100%;
     min-width: 0;
@@ -467,6 +502,42 @@
   .errors {
     grid-area: errors;
     padding: 0;
+  }
+}
+
+@media (min-width: 44.01rem) {
+  .cardActionsVerification .content {
+    grid-template-columns: minmax(15rem, 0.9fr) minmax(29rem, 1.55fr);
+  }
+
+  .cardActionsVerification .details {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, auto));
+    justify-content: start;
+  }
+
+  .cardActionsVerification .metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .cardActionsVerification .metric {
+    min-height: 3.55rem;
+  }
+}
+
+@media (max-width: 64rem) and (min-width: 44.01rem) {
+  .cardActionsVerification {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cardActionsVerification .content {
+    grid-template-columns: minmax(14rem, 0.8fr) minmax(28rem, 1.4fr);
+  }
+
+  .cardActionsVerification .actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    padding: 0 1rem 0.8rem;
   }
 }
 
@@ -522,6 +593,10 @@
   .openCta,
   .title,
   .metricIcon {
+    transition: none;
+  }
+
+  .progressFill {
     transition: none;
   }
 

@@ -82,14 +82,24 @@ multiple e mai tabelle con scroll orizzontale su mobile.
 
 - titolo, anno, classi;
 - UDA, lezioni, domande e progresso;
-- docente: apri/rinomina/elimina; studente: apertura e progresso;
+- docente: apri/rinomina/elimina; studente: apertura tramite la superficie e
+  progresso, senza un secondo pulsante `Apri` ridondante;
+- il pulsante sovrapposto conserva il nome accessibile ma non usa il tooltip
+  nativo del browser;
+- in Didattica studente la lista non ha barra di ricerca: il numero contenuto
+  di corsi non giustifica un controllo passivo aggiuntivo;
+- su desktop il progresso studente parte blu e segue l'accento arancione della
+  card su hover/focus; il comportamento touch resta invariato;
 - mobile: metadati e statistiche su righe ordinate, azioni senza overflow.
 
 #### Card verifica
 
-- docente: titolo, programma, classe, anno, stato, date, domande e disponibilità
-  online/PDF; la superficie apre il dettaglio e le azioni restano controlli
-  fratelli con CTA contestuale;
+- docente: titolo, programma, classe, anno e date nella colonna identità;
+  quattro riquadri stabili e indipendenti per `Stato`, `Domande`,
+  `Disponibilità PDF` e `Online`; lo stato è icona + testo, senza un secondo
+  badge bordato dentro il riquadro, e lo switch vive nel riquadro `Online`;
+  la superficie apre il dettaglio e le azioni restano controlli fratelli con
+  CTA contestuale;
 - studente: correzioni restituite, consegne effettuate e verifiche disponibili
   adottano lo stesso telaio, ma senza overlay quando non esiste una destinazione
   neutra e sicura; esame, PDF, ricevuta e correzione richiedono azioni esplicite;
@@ -105,6 +115,10 @@ multiple e mai tabelle con scroll orizzontale su mobile.
 Breakpoint di verifica obbligatori: 1440, 1024, 390 e 320 px. Nessuna feature
 docente è esentata dal mobile. Docente e studente condividono primitive e
 pattern, mantenendo azioni e informazioni specifiche del ruolo.
+
+L'header studente usa le stesse interazioni brand del docente su desktop:
+arancione su hover/focus, sollevamento di 2 px e pressione `scale(0.97)`. Il
+menu compatto mobile non eredita effetti hover desktop.
 
 ---
 

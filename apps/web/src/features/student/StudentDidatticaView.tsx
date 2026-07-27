@@ -6,7 +6,6 @@ import {
   IconLayers,
   IconPanelLeft,
   IconPencil,
-  IconSearch,
 } from '../../components/icons.js';
 import { CourseRecordCard } from '../../components/CourseRecordCard.js';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer.js';
@@ -63,7 +62,6 @@ function lessonsByUda(lessons: StudentLesson[]): Map<string, StudentLesson[]> {
 export function StudentDidatticaView() {
   const { user } = useAuth();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
-  const [search, setSearch] = useState('');
   const [openProgramId, setOpenProgramId] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>({ kind: 'course' });
   const [expandedUdas, setExpandedUdas] = useState<Set<string>>(new Set());
@@ -106,15 +104,6 @@ export function StudentDidatticaView() {
       cancelled = true;
     };
   }, [uid]);
-
-  const filteredPrograms = useMemo(() => {
-    if (state.status !== 'ok') return [];
-    const query = search.trim().toLocaleLowerCase('it');
-    if (!query) return state.programs;
-    return state.programs.filter((program) =>
-      program.title.toLocaleLowerCase('it').includes(query),
-    );
-  }, [search, state]);
 
   if (state.status === 'loading')
     return (
@@ -188,37 +177,11 @@ export function StudentDidatticaView() {
 
   return (
     <section aria-label="Didattica" className={styles.library}>
-      <div className={styles.toolbar}>
-        <div className={styles.searchWrap}>
-          <span className={styles.searchIcon} aria-hidden="true">
-            <IconSearch />
-          </span>
-          <label className={styles.visuallyHidden} htmlFor="student-course-search">
-            Cerca corso
-          </label>
-          <input
-            id="student-course-search"
-            type="search"
-            className={styles.search}
-            placeholder="Cerca…"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
-      </div>
-
       {state.programs.length === 0 ? (
         <p className="state-empty">Nessun corso assegnato alla tua classe.</p>
-      ) : filteredPrograms.length === 0 ? (
-        <div className={styles.emptyState}>
-          <p className={styles.emptyTitle}>Nessun corso trovato</p>
-          <button type="button" onClick={() => setSearch('')}>
-            Azzera ricerca
-          </button>
-        </div>
       ) : (
         <div className={styles.courseList} role="list" aria-label="Corsi disponibili">
-          {filteredPrograms.map((program) => {
+          {state.programs.map((program) => {
             const lessons = state.lessonsByProgram[program.id] ?? [];
             const udaCount = new Set(lessons.map((lesson) => lesson.udaDir)).size;
             const completedLessons = lessons.filter((lesson) => lesson.completed).length;
@@ -244,18 +207,7 @@ export function StudentDidatticaView() {
                   value: completionPercentage,
                   text: `${completedLessons}/${lessons.length} lezioni`,
                 }}
-                actions={
-                  <button
-                    type="button"
-                    className={styles.cardAction}
-                    data-record-card-cue="Apri programma →"
-                    title="Apri corso"
-                    aria-label={`Apri corso ${program.title}`}
-                    onClick={() => openCourse(program.id)}
-                  >
-                    <IconBookOpen size={17} />
-                  </button>
-                }
+                accentProgressOnInteraction
               />
             );
           })}

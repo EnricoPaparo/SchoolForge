@@ -19,7 +19,7 @@ export type RecordCardProgress = {
   text: string;
 };
 
-export type RecordCardActionLayout = 'corner' | 'grid' | 'footer';
+export type RecordCardActionLayout = 'corner' | 'grid' | 'footer' | 'verification';
 
 export type RecordCardProps = {
   title: string;
@@ -34,6 +34,7 @@ export type RecordCardProps = {
   actions?: ReactNode;
   errors?: ReactNode;
   actionLayout?: RecordCardActionLayout;
+  accentProgressOnInteraction?: boolean;
 };
 
 /**
@@ -54,6 +55,7 @@ export function RecordCard({
   actions,
   errors,
   actionLayout = 'corner',
+  accentProgressOnInteraction = false,
 }: RecordCardProps) {
   const initialCue = defaultCue ?? '';
   const [interactionCue, setInteractionCue] = useState(initialCue);
@@ -85,11 +87,14 @@ export function RecordCard({
       ? styles.cardActionsGrid
       : actionLayout === 'footer'
         ? styles.cardActionsFooter
-        : '';
+        : actionLayout === 'verification'
+          ? styles.cardActionsVerification
+          : '';
+  const progressAccentClass = accentProgressOnInteraction ? styles.progressAccent : '';
 
   return (
     <article
-      className={`${styles.card} ${layoutClass}`}
+      className={`${styles.card} ${layoutClass} ${progressAccentClass}`}
       role="listitem"
       aria-label={`${recordLabel} ${title}`}
       onClick={(event) => {
@@ -108,7 +113,6 @@ export function RecordCard({
           type="button"
           className={styles.openSurface}
           aria-label={openLabel}
-          title={openLabel}
           onClick={(event) => {
             event.stopPropagation();
             onOpen?.();

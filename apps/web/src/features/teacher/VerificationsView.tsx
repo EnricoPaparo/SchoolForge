@@ -208,6 +208,31 @@ function sortVerificationsByActivation(list: VerificationItem[]): VerificationIt
  * status itself ("attiva") is redundant with visibility, so it's replaced
  * outright by "Pubblica"/"Nascosta" instead of showing both.
  */
+function StatusText({
+  status,
+  visibility,
+}: {
+  status: 'draft' | 'active' | 'closed';
+  visibility: 'hidden' | 'public';
+}) {
+  if (status === 'active') {
+    const isPublic = visibility === 'public';
+    return (
+      <span
+        className={`${styles.cardStatusText} ${
+          isPublic ? styles.cardStatusPublic : styles.cardStatusMuted
+        }`}
+      >
+        {isPublic ? 'pubblica' : 'nascosta'}
+      </span>
+    );
+  }
+  const labels = { draft: 'bozza', closed: 'chiusa' } as const;
+  return (
+    <span className={`${styles.cardStatusText} ${styles.cardStatusMuted}`}>{labels[status]}</span>
+  );
+}
+
 function StatusBadge({
   status,
   visibility,
@@ -1780,7 +1805,7 @@ export function VerificationsView() {
                     openLabel={`Apri dettaglio verifica ${verification.config.title}`}
                     onOpen={() => void handleSelectVer(verification)}
                     defaultCue="Apri verifica →"
-                    actionLayout="grid"
+                    actionLayout="verification"
                     details={[
                       { label: 'Corso', value: programTitle },
                       { label: 'Classe', value: className },
@@ -1806,7 +1831,7 @@ export function VerificationsView() {
                       {
                         label: 'Stato',
                         value: (
-                          <StatusBadge
+                          <StatusText
                             status={verification.status}
                             visibility={verification.visibility}
                           />
@@ -1820,58 +1845,58 @@ export function VerificationsView() {
                       },
                       {
                         label: 'Disponibilità',
-                        value:
-                          verification.status === 'active'
-                            ? `${verification.onlineEnabled ? 'Online' : 'Offline'} · PDF ${
-                                verification.studentPdfEnabled ? 'sì' : 'no'
-                              }`
-                            : `PDF ${verification.studentPdfEnabled ? 'sì' : 'no'}`,
+                        value: `PDF ${verification.studentPdfEnabled ? 'sì' : 'no'}`,
                         icon: <IconFileText />,
                       },
+                      {
+                        label: 'Online',
+                        value:
+                          verification.status === 'active' ? (
+                            <div className={styles.onlineControl}>
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={verification.onlineEnabled}
+                                data-record-card-cue={`${
+                                  verification.onlineEnabled ? 'Disattiva' : 'Attiva'
+                                } online →`}
+                                aria-label={`${verification.onlineEnabled ? 'Disattiva' : 'Attiva'} online — ${verification.config.title}`}
+                                title={
+                                  verification.config.classId == null
+                                    ? 'Assegna una classe alla verifica per abilitare l’online'
+                                    : verification.onlineEnabled
+                                      ? 'Online attivo'
+                                      : 'Online disattivato'
+                                }
+                                className={`${styles.onlineSwitch} ${
+                                  verification.onlineEnabled ? styles.onlineSwitchOn : ''
+                                }`}
+                                disabled={
+                                  onlineLoadingId === verification.id ||
+                                  (!verification.onlineEnabled &&
+                                    verification.config.classId == null)
+                                }
+                                onClick={() =>
+                                  verification.onlineEnabled
+                                    ? handleStartDisableOnline(verification.id)
+                                    : void handleEnableOnline(verification)
+                                }
+                              >
+                                <span className={styles.onlineSwitchThumb} />
+                              </button>
+                              <span className={styles.onlineLabel}>
+                                {verification.config.classId == null
+                                  ? 'Nessuna classe'
+                                  : verification.onlineEnabled
+                                    ? 'Attivo'
+                                    : 'Disattivato'}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className={styles.cardStatusText}>Non previsto</span>
+                          ),
+                      },
                     ]}
-                    statusControl={
-                      verification.status === 'active' ? (
-                        <div className={styles.onlineControl}>
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={verification.onlineEnabled}
-                            data-record-card-cue={`${
-                              verification.onlineEnabled ? 'Disattiva' : 'Attiva'
-                            } online →`}
-                            aria-label={`${verification.onlineEnabled ? 'Disattiva' : 'Attiva'} online — ${verification.config.title}`}
-                            title={
-                              verification.config.classId == null
-                                ? 'Assegna una classe alla verifica per abilitare l’online'
-                                : verification.onlineEnabled
-                                  ? 'Online attivo'
-                                  : 'Online disattivato'
-                            }
-                            className={`${styles.onlineSwitch} ${
-                              verification.onlineEnabled ? styles.onlineSwitchOn : ''
-                            }`}
-                            disabled={
-                              onlineLoadingId === verification.id ||
-                              (!verification.onlineEnabled && verification.config.classId == null)
-                            }
-                            onClick={() =>
-                              verification.onlineEnabled
-                                ? handleStartDisableOnline(verification.id)
-                                : void handleEnableOnline(verification)
-                            }
-                          >
-                            <span className={styles.onlineSwitchThumb} />
-                          </button>
-                          <span className={styles.onlineLabel}>
-                            {verification.config.classId == null
-                              ? 'Nessuna classe'
-                              : verification.onlineEnabled
-                                ? 'Online attivo'
-                                : 'Online disattivato'}
-                          </span>
-                        </div>
-                      ) : undefined
-                    }
                     actions={
                       <>
                         <button

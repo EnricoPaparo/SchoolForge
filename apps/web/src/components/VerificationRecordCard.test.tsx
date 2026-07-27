@@ -52,13 +52,19 @@ describe('VerificationRecordCard', () => {
     expect(screen.queryByText(/Apri verifica/)).toBeNull();
   });
 
-  it('defines grid/footer layouts and reduced-motion on the shared shell', () => {
+  it('defines verification/grid/footer layouts and reduced-motion on the shared shell', () => {
     const css = readFileSync(
       resolve(process.cwd(), 'src/components/RecordCard.module.css'),
       'utf8',
     );
     expect(css).toMatch(
       /\.cardActionsGrid\s+\.actions\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s,
+    );
+    expect(css).toMatch(
+      /\.cardActionsVerification\s+\.metrics\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.metrics\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s,
     );
     expect(css).toMatch(/\.cardActionsFooter\s+\.actions\s*\{[^}]*flex-wrap:\s*wrap/s);
     expect(css).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?transform:\s*none/);
