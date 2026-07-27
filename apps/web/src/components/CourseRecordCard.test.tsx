@@ -25,6 +25,7 @@ describe('CourseRecordCard', () => {
     expect(document.activeElement).toBe(surface);
     const cta = screen.getByText('Apri programma →');
     expect(cta.getAttribute('aria-hidden')).toBe('true');
+    expect(screen.queryByText('Corso')).toBeNull();
     fireEvent.click(surface);
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
@@ -43,7 +44,11 @@ describe('CourseRecordCard', () => {
             value: 'Quinta A Informatica, Quinta B Informatica, Quinta C Informatica',
           },
         ]}
-        metrics={[{ label: 'Lezioni', value: '12/18' }]}
+        metrics={[
+          { label: 'UDA', value: 8 },
+          { label: 'Lezioni', value: '8/67' },
+          { label: 'Domande', value: '1.000' },
+        ]}
         actions={
           <button type="button" onClick={onRename}>
             Rinomina
@@ -56,6 +61,7 @@ describe('CourseRecordCard', () => {
     expect(onRename).toHaveBeenCalledOnce();
     expect(onOpen).not.toHaveBeenCalled();
     expect(screen.getByText(/Quinta C Informatica/)).toBeTruthy();
+    expect(screen.getByText('1.000')).toBeTruthy();
   });
 });
 
@@ -84,8 +90,15 @@ describe('CourseRecordCard responsive and motion contract', () => {
     expect(css).toMatch(/@media\s*\(max-width:\s*44rem\)/);
     expect(css).toMatch(/@media\s*\(max-width:\s*23rem\)/);
     expect(css).toMatch(/\.metrics\s*\{[^}]*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s);
-    expect(css).toMatch(
-      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.metrics\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
+    for (const breakpoint of ['44rem', '23rem']) {
+      expect(css).toMatch(
+        new RegExp(
+          `@media\\s*\\(max-width:\\s*${breakpoint.replace('.', '\\.')}\\)[\\s\\S]*?\\.metrics\\s*\\{[^}]*repeat\\(3,\\s*minmax\\(0,\\s*1fr\\)\\)`,
+        ),
+      );
+    }
+    expect(css).not.toMatch(
+      /@media\s*\(max-width:[^)]+\)[\s\S]*?\.metrics\s*\{[^}]*(?:repeat\(1,|minmax\(0,\s*1fr\)\s*;)/,
     );
   });
 
@@ -143,6 +156,15 @@ describe('CourseRecordCard responsive and motion contract', () => {
     expect(css).toMatch(
       /\.card:has\(>\s*\.openSurface:hover\)\s*\.accent\s*\{[^}]*background:\s*var\(--color-brand-orange\)/s,
     );
+    expect(css).toMatch(/\.title\s*\{[^}]*color:\s*var\(--color-brand-blue\)/s);
+    expect(css).toMatch(
+      /\.card:has\(>\s*\.openSurface:hover\)\s*\.title\s*\{[^}]*color:\s*var\(--color-brand-orange\)/s,
+    );
+    expect(css).toMatch(
+      /\.card:has\(>\s*\.openSurface:focus-visible\)\s*\.title\s*\{[^}]*color:\s*var\(--color-brand-orange\)/s,
+    );
+    expect(css).not.toMatch(/\.eyebrow\s*\{/);
+    expect(css).not.toMatch(/\.accent::after\s*\{/);
     expect(css).not.toMatch(/\.card:hover\s/);
   });
 
@@ -159,5 +181,25 @@ describe('CourseRecordCard responsive and motion contract', () => {
     // Pointer hover effects exist only for devices that actually support
     // hover; focus-visible remains outside this media query.
     expect(css).toMatch(/@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)/);
+  });
+
+  it('places actions beside identity and keeps metrics and student progress below on mobile', () => {
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?'identity actions'[\s\S]*?'metrics metrics'[\s\S]*?'progress progress'/,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.content\s*\{[^}]*display:\s*contents/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.actions\s*\{[^}]*grid-area:\s*actions/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.metrics\s*\{[^}]*grid-area:\s*metrics/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.progress\s*\{[^}]*grid-area:\s*progress/s,
+    );
+    expect(css).toMatch(/\.title\s*\{[^}]*-webkit-line-clamp:\s*2/s);
+    expect(css).toMatch(/\.metric dd\s*\{[^}]*white-space:\s*nowrap/s);
   });
 });
