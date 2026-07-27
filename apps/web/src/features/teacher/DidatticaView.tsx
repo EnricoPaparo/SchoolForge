@@ -576,6 +576,7 @@ function TeacherCourseCard({ card, onOpen, onRename, onDelete }: TeacherCourseCa
           <button
             type="button"
             className={styles.cardAction}
+            data-course-card-cue="Apri programma →"
             title="Apri corso"
             aria-label={`Apri corso ${card.title}`}
             onClick={onOpen}
@@ -585,6 +586,7 @@ function TeacherCourseCard({ card, onOpen, onRename, onDelete }: TeacherCourseCa
           <button
             type="button"
             className={styles.cardAction}
+            data-course-card-cue="Rinomina programma →"
             title="Rinomina corso"
             aria-label={`Rinomina corso — ${card.title}`}
             onClick={onRename}
@@ -594,6 +596,7 @@ function TeacherCourseCard({ card, onOpen, onRename, onDelete }: TeacherCourseCa
           <button
             type="button"
             className={`${styles.cardAction} ${styles.cardActionDanger}`}
+            data-course-card-cue="Elimina programma →"
             title="Elimina corso"
             aria-label={`Elimina corso — ${card.title}`}
             onClick={onDelete}
