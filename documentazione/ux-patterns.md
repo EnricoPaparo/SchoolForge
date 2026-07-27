@@ -16,6 +16,20 @@ L'interfaccia usa tre livelli, senza librerie UI esterne:
 3. **Pattern di prodotto**: barre filtri, liste di card, toolbar batch e stati
    vuoti. Il contenuto cambia fra docente e studente, non il linguaggio visivo.
 
+### Gerarchia cromatica e interazioni navigative
+
+- Blu/ciano comunica identità stabile, selezione e azione primaria.
+- L'arancione SchoolForge segnala hover e focus delle sole superfici navigabili
+  o esplorative che adottano esplicitamente i token `brand-interactive`.
+- Una sezione selezionata conserva il riempimento blu anche durante
+  l'interazione: bordo, focus e lieve profondità arancioni non sostituiscono lo
+  stato attivo.
+- Rosso resta riservato alle azioni distruttive, verde al successo
+  semanticamente necessario e i neutri alle azioni secondarie.
+- È vietato applicare l'arancione indistintamente a ogni `button`: il pattern è
+  opt-in, con hover limitato ai puntatori fini, focus-visible indipendente e
+  trasformazioni disattivate con `prefers-reduced-motion`.
+
 ### Bottoni
 
 - Ogni azione testuale nuova usa un'icona coerente dal set interno.
