@@ -315,9 +315,16 @@ Nuova sezione/tab nella vista dettaglio verifica. Mostra una riga per ogni stude
 
 **Codice consegna:** generato lato client al momento della consegna come stringa leggibile (es. `SF-2026-A3B7`). Appare nella colonna "Consegnata il" e nella schermata studente.
 
-### 6.3 Chiusura verifica
+### 6.3 Chiusura e riapertura verifica
 
 Comportamento aggiornato da M4-LIFE-01: `closeVerification` imposta `status: 'closed'` e preserva `visibility`. Se resta `public`, la verifica è ancora consultabile/PDF; le Rules negano comunque nuove submission e aggiornamenti di bozze perché richiedono il parent `active`.
+
+`reopenVerification` consente al solo proprietario la transizione inversa
+`closed` → `active`: azzera `closedAt`, aggiorna nello stesso batch la
+proiezione pubblicata e registra l'audit non identificativo
+`verification.reopened`. Visibilità, disponibilità online e PDF studente
+restano invariati; le Rules vietano di modificare contestualmente configurazione
+o altri campi.
 
 ---
 

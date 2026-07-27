@@ -76,5 +76,8 @@ describe('VerificationsView batch toolbar responsive contract', () => {
     expect(css).toMatch(
       /\.createDialogForm\s+\.dialogActions\s*\{[^}]*padding-top:\s*0[^}]*border-top:\s*0/s,
     );
+    expect(css).toMatch(
+      /\.onlineDisableDialog\s+\.dialogActions\s*\{[^}]*padding-top:\s*0[^}]*border-top:\s*0/s,
+    );
   });
 });

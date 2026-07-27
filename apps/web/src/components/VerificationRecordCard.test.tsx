@@ -103,7 +103,10 @@ describe('VerificationRecordCard', () => {
     expect(css).not.toMatch(/\.card:focus-within\s*\{/);
     expect(css).toMatch(/\.card:has\(\[data-record-card-cue\]:focus-visible\)\s+\.openCta\s*\{/);
     expect(css).toMatch(
-      /\.cardActionsVerification\s+\.openCta\s*\{[^}]*bottom:\s*0\.4rem[^}]*left:\s*1\.1rem/s,
+      /\.cardActionsVerification\s+\.openCta\s*\{[^}]*bottom:\s*0\.55rem[^}]*left:\s*1\.1rem/s,
+    );
+    expect(css).toMatch(
+      /\.cardActionsVerification\s+\.details span\s*\{[^}]*border-radius:[^}]*background:/s,
     );
     expect(css).toMatch(
       /\.cardActionsVerification\s+\.metrics\s*>\s*:last-child\s+dd\s*\{[^}]*text-overflow:\s*ellipsis/s,

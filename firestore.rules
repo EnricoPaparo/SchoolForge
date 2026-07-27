@@ -678,18 +678,23 @@ service cloud.firestore {
         && (resource.data.status == 'draft' || resource.data.status == 'closed');
       allow create: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
       // Draft: any owner update allowed.
-      // Active: only close allowed; only status/closedAt/updatedAt may change.
+      // Active: close allowed; closed: reopen allowed. Both lifecycle
+      // transitions may change only status/closedAt/updatedAt.
       // Active/closed: visibility may be toggled without reopening the
       // verification. Closed public projections remain consultable and
       // downloadable, but submission Rules still require active status.
       // Active/closed: only studentPdfEnabled toggled (M3F-09) — see below.
-      // Closed: no other update allowed (studentPdfEnabled is the sole
-      // exception — a closed verification never reopens, but the teacher may
-      // still control student PDF access on it).
+      // Closed: no other update allowed beyond the explicit controls below.
       allow update: if isOwner() && resource.data.status == 'draft';
       allow update: if isOwner()
         && resource.data.status == 'active'
         && request.resource.data.status == 'closed'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'closedAt', 'updatedAt']);
+      allow update: if isOwner()
+        && resource.data.status == 'closed'
+        && request.resource.data.status == 'active'
+        && request.resource.data.closedAt == null
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['status', 'closedAt', 'updatedAt']);
       allow update: if isOwner()
@@ -715,8 +720,8 @@ service cloud.firestore {
       // independent of status/visibility/onlineEnabled/config. Allowed on
       // 'active' AND 'closed' (draft already covered by the any-owner-update
       // rule above) — status itself must never change here, and this never
-      // reopens a closed verification or changes visibility: setting it
-      // true only matters once/if the verification is separately active +
+      // changes lifecycle or visibility: setting it true only matters once/if
+      // the verification is separately active +
       // public + class-assigned (see publishedProjection below).
       allow update: if isOwner()
         && (resource.data.status == 'active' || resource.data.status == 'closed')

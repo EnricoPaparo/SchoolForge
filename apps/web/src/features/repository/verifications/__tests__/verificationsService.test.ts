@@ -56,6 +56,7 @@ import {
   setVerificationOnlineEnabled,
   setVerificationStudentPdfEnabled,
   closeVerification,
+  reopenVerification,
   deleteVerification,
   VERIFICATION_TITLE_MAX_LENGTH,
 } from '../verificationsService.js';
@@ -1115,6 +1116,43 @@ describe('closeVerification', () => {
     );
     expect(mockWriteBatch).not.toHaveBeenCalled();
     expect(mockBatchCommit).not.toHaveBeenCalled();
+  });
+});
+
+// ─── reopenVerification ───────────────────────────────────────────────────────
+
+describe('reopenVerification', () => {
+  it('atomically reopens parent and projection and records an audit event', async () => {
+    const closedDoc: Partial<VerificationDoc> = { status: 'closed', config: VALID_CONFIG };
+    mockGetDoc.mockResolvedValue({ data: () => closedDoc });
+
+    await reopenVerification('ver-id', OWNER_UID, fakeDb);
+
+    expect(mockBatchSet).toHaveBeenCalledTimes(3);
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+    const [, parentData] = mockBatchSet.mock.calls[0];
+    expect(parentData).toMatchObject({ status: 'active', closedAt: null });
+    const [, projectionData, projectionOptions] = mockBatchSet.mock.calls[1];
+    expect(projectionData).toEqual({ status: 'active' });
+    expect(projectionOptions).toEqual({ merge: true });
+    const [, auditData] = mockBatchSet.mock.calls[2];
+    expect(auditData.action).toBe('verification.reopened');
+  });
+
+  it('rejects a missing or non-closed verification before opening a batch', async () => {
+    mockGetDoc.mockResolvedValueOnce({ data: () => undefined });
+    await expect(reopenVerification('ver-id', OWNER_UID, fakeDb)).rejects.toThrow(
+      'Verifica non trovata',
+    );
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+
+    mockGetDoc.mockResolvedValueOnce({
+      data: () => ({ status: 'active', config: VALID_CONFIG }),
+    });
+    await expect(reopenVerification('ver-id', OWNER_UID, fakeDb)).rejects.toThrow(
+      'Verifica non riapribile: non è chiusa',
+    );
+    expect(mockWriteBatch).not.toHaveBeenCalled();
   });
 });
 
