@@ -11,14 +11,14 @@ import { describe, expect, it } from 'vitest';
  */
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 
-const didattica = read('src/features/teacher/DidatticaView.module.css');
+const dialogShell = read('src/components/DialogShell.module.css');
 const aigen = read('src/features/teacher/AiPoolGenerationDialog.module.css');
 const workspace = read('src/features/teacher/CourseWorkspace.module.css');
 const stepper = read('src/features/teacher/QuestionCountStepper.module.css');
 
 describe('AIGEN dialog viewport containment', () => {
   it('bounds the wide-scroll variant to the dynamic viewport with internal vertical scroll', () => {
-    const block = didattica.match(/\.dialogWideScroll\s*\{[^}]*\}/s)?.[0] ?? '';
+    const block = dialogShell.match(/\.dialog\s*\{[^}]*\}/s)?.[0] ?? '';
     expect(block).toMatch(/max-height:\s*calc\(100dvh\s*-\s*2rem\)/);
     expect(block).toMatch(/overflow-y:\s*auto/);
     expect(block).toMatch(/overflow-x:\s*hidden/);
@@ -26,15 +26,15 @@ describe('AIGEN dialog viewport containment', () => {
   });
 
   it('keeps a bounded max-width so the dialog never becomes huge on desktop', () => {
-    expect(didattica).toMatch(/\.dialogWideScroll\s*\{[^}]*max-width:\s*560px/s);
+    expect(dialogShell).toMatch(/\.dialogWideScroll\s*\{[^}]*width:\s*min\(100%,\s*35rem\)/s);
   });
 });
 
 describe('AIGEN scrollbars are hidden, never disabled', () => {
   it('hides the dialog scrollbar on Firefox and WebKit without touching overflow', () => {
-    const block = didattica.match(/\.dialogWideScroll\s*\{[^}]*\}/s)?.[0] ?? '';
+    const block = dialogShell.match(/\.dialog\s*\{[^}]*\}/s)?.[0] ?? '';
     expect(block).toMatch(/scrollbar-width:\s*none/);
-    expect(didattica).toMatch(/\.dialogWideScroll::-webkit-scrollbar\s*\{[^}]*width:\s*0/s);
+    expect(dialogShell).toMatch(/\.dialog::-webkit-scrollbar\s*\{[^}]*width:\s*0/s);
     // Lo scorrimento resta attivo: nessun overflow:hidden sull'asse verticale.
     expect(block).not.toMatch(/overflow-y:\s*hidden/);
     expect(block).not.toMatch(/overflow:\s*hidden/);
@@ -49,7 +49,7 @@ describe('AIGEN scrollbars are hidden, never disabled', () => {
 
   it('does not introduce any global scrollbar rule', () => {
     // Le regole di nascondimento sono sempre qualificate da una classe locale.
-    for (const css of [didattica, aigen]) {
+    for (const css of [dialogShell, aigen]) {
       for (const sel of css.match(/^[^{}]*::-webkit-scrollbar[^{]*\{/gm) ?? []) {
         expect(sel).toMatch(/\./);
       }
