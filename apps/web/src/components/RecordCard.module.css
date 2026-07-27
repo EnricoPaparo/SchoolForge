@@ -161,6 +161,11 @@
   background: color-mix(in srgb, var(--color-surface) 78%, transparent);
 }
 
+.metricInteractive {
+  z-index: 2;
+  pointer-events: auto;
+}
+
 .metricIcon {
   grid-area: icon;
   display: inline-flex;
@@ -322,25 +327,11 @@
   transform: translateX(0);
 }
 
-.card:focus-within {
-  border-color: var(--color-brand-interactive);
-}
-
-.card:focus-within .accent {
-  width: 4px;
+.progressAccent:has(> .openSurface:focus-visible) .progressFill {
   background: var(--color-brand-interactive);
 }
 
-.card:focus-within .title,
-.card:focus-within .metricIcon {
-  color: var(--color-brand-interactive);
-}
-
-.progressAccent:focus-within .progressFill {
-  background: var(--color-brand-interactive);
-}
-
-.card:focus-within .openCta {
+.card:has([data-record-card-cue]:focus-visible) .openCta {
   opacity: 1;
   transform: translateX(0);
 }
@@ -439,29 +430,37 @@
   }
 
   .cardActionsVerification {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
-      'identity'
-      'metrics'
-      'actions'
-      'progress'
-      'errors';
+      'identity actions'
+      'metrics metrics'
+      'progress progress'
+      'errors errors';
   }
 
   .cardActionsVerification .actions {
     grid-area: actions;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    width: 100%;
+    width: auto;
   }
 
   .cardActionsVerification .metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .cardActionsVerification .details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cardActionsVerification .details strong {
+    display: block;
+  }
+
   .cardActionsVerification .actions button {
-    width: 100%;
-    min-width: 0;
+    width: 2.35rem;
+    min-width: 2.35rem;
   }
 
   .cardActionsGrid .actions button {
@@ -506,38 +505,55 @@
 }
 
 @media (min-width: 44.01rem) {
+  .cardActionsVerification {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'identity actions'
+      'metrics metrics'
+      'progress progress'
+      'errors errors';
+    gap: 0.8rem 1rem;
+    padding: 1rem 1rem 1rem 1.25rem;
+  }
+
   .cardActionsVerification .content {
-    grid-template-columns: minmax(15rem, 0.9fr) minmax(29rem, 1.55fr);
+    display: contents;
   }
 
   .cardActionsVerification .details {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, auto));
-    justify-content: start;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .cardActionsVerification .details strong {
+    display: block;
   }
 
   .cardActionsVerification .metrics {
+    grid-area: metrics;
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .cardActionsVerification .metric {
     min-height: 3.55rem;
   }
-}
-
-@media (max-width: 64rem) and (min-width: 44.01rem) {
-  .cardActionsVerification {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .cardActionsVerification .content {
-    grid-template-columns: minmax(14rem, 0.8fr) minmax(28rem, 1.4fr);
+  .cardActionsVerification .identity {
+    grid-area: identity;
   }
 
   .cardActionsVerification .actions {
-    grid-column: 1 / -1;
-    justify-content: flex-end;
-    padding: 0 1rem 0.8rem;
+    grid-area: actions;
+    align-self: start;
+    padding: 0;
+  }
+
+  .cardActionsVerification .progress {
+    grid-area: progress;
+  }
+
+  .cardActionsVerification .errors {
+    grid-area: errors;
+    padding: 0;
   }
 }
 
@@ -584,6 +600,14 @@
 
   .cardActionsGrid .actions {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cardActionsVerification {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .cardActionsVerification .details {
+    grid-template-columns: 1fr;
   }
 }
 

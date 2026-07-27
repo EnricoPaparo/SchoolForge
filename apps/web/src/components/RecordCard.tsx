@@ -5,6 +5,7 @@ export type RecordCardMetric = {
   label: string;
   value: ReactNode;
   icon?: ReactNode;
+  interactive?: boolean;
 };
 
 export type RecordCardDetail = {
@@ -141,7 +142,10 @@ export function RecordCard({
 
         <dl className={styles.metrics}>
           {metrics.map((metric) => (
-            <div className={styles.metric} key={metric.label}>
+            <div
+              className={`${styles.metric} ${metric.interactive ? styles.metricInteractive : ''}`}
+              key={metric.label}
+            >
               {metric.icon && (
                 <span className={styles.metricIcon} aria-hidden="true">
                   {metric.icon}

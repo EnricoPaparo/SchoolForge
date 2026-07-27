@@ -135,6 +135,18 @@ export function IconFileText(props: IconProps = {}) {
   );
 }
 
+/** Wi-Fi signal — online availability */
+export function IconWifi(props: IconProps = {}) {
+  return icon(
+    <>
+      <path d="M5 12.55a11 11 0 0 1 14 0" />
+      <path d="M8.5 16a6 6 0 0 1 7 0" />
+      <line x1="12" y1="20" x2="12.01" y2="20" />
+    </>,
+    props,
+  );
+}
+
 /** File with check — completed lesson */
 export function IconFileCheck(props: IconProps = {}) {
   return icon(
