@@ -85,6 +85,7 @@ import {
   IconEraser,
   IconDownload,
   IconWifi,
+  IconLayers,
 } from '../../components/icons.js';
 import { VerificationRecordCard } from '../../components/VerificationRecordCard.js';
 import { DialogShell } from '../../components/DialogShell.js';
@@ -1828,7 +1829,6 @@ export function VerificationsView() {
                     defaultCue="Apri verifica →"
                     actionLayout="verification"
                     details={[
-                      { label: 'Corso', value: programTitle },
                       { label: 'Classe', value: className },
                       { label: 'Anno', value: schoolYear },
                       {
@@ -1906,6 +1906,11 @@ export function VerificationsView() {
                           ) : (
                             '—'
                           ),
+                      },
+                      {
+                        label: 'Corso',
+                        value: <span title={programTitle}>{programTitle}</span>,
+                        icon: <IconLayers />,
                       },
                     ]}
                     actions={
