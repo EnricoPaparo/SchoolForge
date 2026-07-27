@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   IconBookOpen,
+  IconCircleCheck,
   IconFileText,
   IconLayers,
   IconPanelLeft,
   IconPencil,
   IconSearch,
 } from '../../components/icons.js';
+import { CourseRecordCard } from '../../components/CourseRecordCard.js';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer.js';
 import { ConfirmDialog } from '../../components/ConfirmDialog.js';
 import { useAuth } from '../../lib/auth.js';
@@ -215,55 +217,47 @@ export function StudentDidatticaView() {
           </button>
         </div>
       ) : (
-        <div className={styles.tableWrap}>
-          <table className={styles.table} aria-label="Corsi disponibili">
-            <colgroup>
-              <col className={styles.titleColumn} />
-              <col className={styles.udaColumn} />
-              <col className={styles.lessonsColumn} />
-              <col className={styles.actionsColumn} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th scope="col">Titolo</th>
-                <th scope="col">UDA</th>
-                <th scope="col">Lezioni</th>
-                <th scope="col">Azioni</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredPrograms.map((program) => {
-                const lessons = state.lessonsByProgram[program.id] ?? [];
-                const udaCount = new Set(lessons.map((lesson) => lesson.udaDir)).size;
-                return (
-                  <tr key={program.id} className={styles.courseRow}>
-                    <td className={styles.titleCell} title={program.title}>
-                      <button
-                        type="button"
-                        className={styles.courseTitle}
-                        onClick={() => openCourse(program.id)}
-                      >
-                        {program.title}
-                      </button>
-                    </td>
-                    <td className={styles.numericCell}>{udaCount}</td>
-                    <td className={styles.numericCell}>{lessons.length}</td>
-                    <td className={styles.actionsCell}>
-                      <button
-                        type="button"
-                        className={styles.openButton}
-                        title="Apri corso"
-                        aria-label={`Apri corso ${program.title}`}
-                        onClick={() => openCourse(program.id)}
-                      >
-                        <span aria-hidden="true">📂</span>
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className={styles.courseList} role="list" aria-label="Corsi disponibili">
+          {filteredPrograms.map((program) => {
+            const lessons = state.lessonsByProgram[program.id] ?? [];
+            const udaCount = new Set(lessons.map((lesson) => lesson.udaDir)).size;
+            const completedLessons = lessons.filter((lesson) => lesson.completed).length;
+            const completionPercentage =
+              lessons.length > 0 ? Math.round((completedLessons / lessons.length) * 100) : 0;
+            return (
+              <CourseRecordCard
+                key={program.id}
+                title={program.title}
+                openLabel={`Apri il corso ${program.title}`}
+                onOpen={() => openCourse(program.id)}
+                metrics={[
+                  { label: 'UDA', value: udaCount, icon: <IconLayers size={17} /> },
+                  { label: 'Lezioni', value: lessons.length, icon: <IconFileText size={17} /> },
+                  {
+                    label: 'Svolte',
+                    value: completedLessons,
+                    icon: <IconCircleCheck size={17} />,
+                  },
+                ]}
+                progress={{
+                  label: `Avanzamento ${program.title}`,
+                  value: completionPercentage,
+                  text: `${completedLessons}/${lessons.length} lezioni`,
+                }}
+                actions={
+                  <button
+                    type="button"
+                    className={styles.cardAction}
+                    title="Apri corso"
+                    aria-label={`Apri corso ${program.title}`}
+                    onClick={() => openCourse(program.id)}
+                  >
+                    <IconBookOpen size={17} />
+                  </button>
+                }
+              />
+            );
+          })}
         </div>
       )}
     </section>

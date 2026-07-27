@@ -85,18 +85,19 @@ describe('DidatticaView — loading and rendering', () => {
     expect(screen.getByText(/caricamento/i)).toBeTruthy();
   });
 
-  it('renders a compact course table with all the required metrics', async () => {
+  it('renders a full-width course card with all the required metrics', async () => {
     mockLoadCourseLibrary.mockResolvedValue([card()]);
     renderView();
 
     await waitFor(() => expect(screen.getByText('Sistemi e Reti')).toBeTruthy());
-    const row = within(screen.getByRole('row', { name: /sistemi e reti/i }));
-    expect(row.getByText('2025/2026')).toBeTruthy();
-    expect(row.getByText('4A INF')).toBeTruthy();
-    expect(row.getByText('3')).toBeTruthy(); // UDA
-    expect(row.getByText('9/12')).toBeTruthy(); // lezioni svolte/totali
-    expect(row.getByText('41')).toBeTruthy(); // domande
-    expect(row.getByRole('button', { name: /apri il corso sistemi e reti/i })).toBeTruthy();
+    const courseCard = within(screen.getByRole('listitem', { name: /corso sistemi e reti/i }));
+    expect(courseCard.getByText('2025/2026')).toBeTruthy();
+    expect(courseCard.getByText('4A INF')).toBeTruthy();
+    expect(courseCard.getByText('3')).toBeTruthy(); // UDA
+    expect(courseCard.getByText('9/12')).toBeTruthy(); // lezioni svolte/totali
+    expect(courseCard.getByText('41')).toBeTruthy(); // domande
+    expect(courseCard.getByRole('button', { name: /apri il corso sistemi e reti/i })).toBeTruthy();
+    expect(screen.queryByRole('table')).toBeNull();
   });
 
   it('shows a readable error when loading fails', async () => {
@@ -220,18 +221,23 @@ describe('DidatticaView — open course', () => {
     renderView();
 
     await waitFor(() => expect(screen.getByText('Con Azioni')).toBeTruthy());
-    const row = within(screen.getByRole('row', { name: /con azioni/i }));
-    expect(row.getByRole('button', { name: /apri il corso con azioni/i })).toBeTruthy();
-    expect(row.getByRole('button', { name: /rinomina corso — con azioni/i })).toBeTruthy();
-    expect(row.getByRole('button', { name: /elimina corso — con azioni/i })).toBeTruthy();
+    const courseCard = within(screen.getByRole('listitem', { name: /corso con azioni/i }));
+    expect(courseCard.getByRole('button', { name: /apri il corso con azioni/i })).toBeTruthy();
+    expect(courseCard.getByRole('button', { name: /rinomina corso — con azioni/i })).toBeTruthy();
+    expect(courseCard.getByRole('button', { name: /elimina corso — con azioni/i })).toBeTruthy();
     // Visual labels stay icon-only; accessible names come from aria-label/title.
-    expect(row.queryByText('Apri corso')).toBeNull();
-    expect(row.queryByText('Rinomina corso')).toBeNull();
-    expect(row.queryByText('Elimina corso')).toBeNull();
+    expect(courseCard.queryByText('Apri corso')).toBeNull();
+    expect(courseCard.queryByText('Rinomina corso')).toBeNull();
+    expect(courseCard.queryByText('Elimina corso')).toBeNull();
 
-    // The visible title is itself a second, direct entry point to the same
-    // workspace; the icon action remains available alongside it.
-    fireEvent.click(row.getByRole('button', { name: 'Con Azioni' }));
+    fireEvent.click(courseCard.getByRole('button', { name: /rinomina corso — con azioni/i }));
+    expect(screen.getByRole('dialog', { name: 'Rinomina corso' })).toBeTruthy();
+    expect(screen.queryByText('WORKSPACE: Con Azioni')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+
+    // The full card surface is the primary entry point; actions are siblings
+    // above it and never trigger navigation as a side effect.
+    fireEvent.click(courseCard.getByRole('button', { name: /apri il corso con azioni/i }));
     expect(screen.getByText('WORKSPACE: Con Azioni')).toBeTruthy();
   });
 
@@ -248,8 +254,8 @@ describe('DidatticaView — open course', () => {
     renderView();
 
     await waitFor(() => expect(screen.getByText('Con Azioni')).toBeTruthy());
-    const row = within(screen.getByRole('row', { name: /con azioni/i }));
-    fireEvent.click(row.getByRole('button', { name: /elimina corso — con azioni/i }));
+    const courseCard = within(screen.getByRole('listitem', { name: /corso con azioni/i }));
+    fireEvent.click(courseCard.getByRole('button', { name: /elimina corso — con azioni/i }));
     const confirm = screen.getByRole('button', { name: 'Elimina' });
     fireEvent.click(confirm);
     fireEvent.click(confirm);
@@ -322,11 +328,11 @@ describe('DidatticaView — create and import refresh the library', () => {
     expect(input.programmaTitle).toBe('Importato');
     // The committed result is self-contained: no fragile post-commit read.
     expect(mockLoadCourseLibrary).toHaveBeenCalledOnce();
-    const row = within(screen.getByRole('row', { name: /importato/i }));
-    expect(row.getByText('2025/2026')).toBeTruthy();
-    expect(row.getByText('2')).toBeTruthy();
-    expect(row.getByText('0/5')).toBeTruthy();
-    expect(row.getByText('10')).toBeTruthy();
+    const courseCard = within(screen.getByRole('listitem', { name: /corso importato/i }));
+    expect(courseCard.getByText('2025/2026')).toBeTruthy();
+    expect(courseCard.getByText('2')).toBeTruthy();
+    expect(courseCard.getByText('0/5')).toBeTruthy();
+    expect(courseCard.getByText('10')).toBeTruthy();
   });
 
   it('reveals a committed import even when the previous year filter would hide it', async () => {

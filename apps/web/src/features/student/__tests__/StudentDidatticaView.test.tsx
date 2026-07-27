@@ -75,25 +75,29 @@ describe('StudentDidatticaView — SDUX-01', () => {
     );
   });
 
-  it('renders the read-only course table and filters it by course title', async () => {
+  it('renders read-only course cards with progress and filters them by title', async () => {
     loadWithData();
     render(<StudentDidatticaView />);
-    const table = await screen.findByRole('table', { name: 'Corsi disponibili' });
-    expect(within(table).getByText('Informatica')).toBeTruthy();
-    expect(within(table).getByText('Matematica')).toBeTruthy();
-    expect(within(table).getByRole('columnheader', { name: 'UDA' })).toBeTruthy();
-    expect(within(table).getByRole('columnheader', { name: 'Lezioni' })).toBeTruthy();
+    const list = await screen.findByLabelText('Corsi disponibili');
+    expect(within(list).getByText('Informatica')).toBeTruthy();
+    expect(within(list).getByText('Matematica')).toBeTruthy();
+    const card = within(screen.getByRole('listitem', { name: 'Corso Informatica' }));
+    expect(card.getByText('UDA').parentElement?.textContent).toBe('UDA2');
+    expect(card.getByText('Lezioni').parentElement?.textContent).toBe('Lezioni2');
+    expect(card.getByText('1/2 lezioni')).toBeTruthy();
+    expect(card.getByRole('progressbar', { name: 'Avanzamento Informatica' })).toBeTruthy();
+    expect(screen.queryByRole('table')).toBeNull();
     fireEvent.change(screen.getByRole('searchbox', { name: 'Cerca corso' }), {
       target: { value: 'mate' },
     });
-    expect(within(table).queryByText('Informatica')).toBeNull();
-    expect(within(table).getByText('Matematica')).toBeTruthy();
+    expect(within(list).queryByText('Informatica')).toBeNull();
+    expect(within(list).getByText('Matematica')).toBeTruthy();
   });
 
   it('opens a course, then an UDA and a lesson from the public projection', async () => {
     loadWithData();
     render(<StudentDidatticaView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Informatica' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apri il corso Informatica' }));
     expect(screen.getByRole('region', { name: 'Corso Informatica' })).toBeTruthy();
     expect(screen.getByText('2 UDA · 1/2 lezioni svolte')).toBeTruthy();
     expect(
@@ -150,7 +154,7 @@ describe('StudentDidatticaView — SDUX-01', () => {
     render(<StudentDidatticaView />);
     fireEvent.click(await screen.findByRole('button', { name: 'Apri corso Informatica' }));
     fireEvent.click(screen.getByRole('button', { name: '← Libreria' }));
-    expect(screen.getByRole('table', { name: 'Corsi disponibili' })).toBeTruthy();
+    expect(screen.getByLabelText('Corsi disponibili')).toBeTruthy();
     expect(mockLoadStudentLessons).toHaveBeenCalledTimes(1);
   });
 });

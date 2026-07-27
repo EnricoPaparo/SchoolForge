@@ -56,117 +56,33 @@
   white-space: nowrap;
   border: 0;
 }
-.tableWrap {
+.courseList {
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  max-width: 100%;
   min-width: 0;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  gap: 0.75rem;
 }
 
-.table {
-  width: 100%;
-  min-width: 520px;
-  table-layout: fixed;
-  border-collapse: collapse;
-  font-size: 0.875rem;
-}
-
-.titleColumn {
-  width: 280px;
-}
-
-.udaColumn,
-.lessonsColumn {
-  width: 80px;
-}
-
-.actionsColumn {
-  width: 80px;
-}
-
-.table th {
-  padding: 0.5rem 0.75rem;
-  text-align: left;
-  white-space: nowrap;
-  color: var(--color-text-muted);
-  border-bottom: 2px solid var(--color-border);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.courseRow:hover {
-  background: var(--color-surface-subtle);
-}
-
-.titleCell,
-.numericCell,
-.actionsCell {
-  padding: 0.5625rem 0.75rem;
-  border-bottom: 1px solid var(--color-border);
-  vertical-align: middle;
-}
-
-.courseTitle {
-  display: inline-block;
-  width: auto;
-  max-width: 100%;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  overflow: hidden;
-  color: var(--color-text);
-  font-size: 0.9375rem;
-  font-weight: 600;
-  line-height: inherit;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.courseTitle:hover {
-  color: var(--color-primary);
-  background: transparent;
-}
-
-.courseTitle:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-  border-radius: 2px;
-}
-
-.numericCell {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.openButton {
-  width: 2rem;
-  min-width: 2rem;
-  height: 1.875rem;
+.cardAction {
+  width: 2.45rem;
+  min-width: 2.45rem;
+  height: 2.45rem;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--color-text);
-  background: transparent;
+  background: color-mix(in srgb, var(--color-surface) 86%, transparent);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius);
+  border-radius: calc(var(--radius) + 2px);
   line-height: 1;
 }
 
-.openButton:hover:not(:disabled) {
-  color: var(--color-primary);
-  background: var(--color-surface-subtle);
-  border-color: var(--color-primary);
+.cardAction:hover:not(:disabled) {
+  color: var(--color-brand-blue);
+  background: var(--color-primary-light);
+  border-color: var(--color-brand-blue);
 }
 .emptyState {
   display: flex;
