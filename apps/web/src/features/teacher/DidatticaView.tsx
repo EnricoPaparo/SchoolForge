@@ -18,7 +18,18 @@ import {
 import { describeImportValidationError } from './importValidationMessage.js';
 import { CourseWorkspace } from './CourseWorkspace.js';
 import { TitleDialog, NewCourseDialog, ImportDialog, ConfirmDialog } from './workspaceDialogs.js';
-import { IconPlus, IconSearch, IconUpload } from '../../components/icons.js';
+import { CourseRecordCard } from '../../components/CourseRecordCard.js';
+import {
+  IconBookOpen,
+  IconCircleQuestion,
+  IconFileCheck,
+  IconLayers,
+  IconPencil,
+  IconPlus,
+  IconSearch,
+  IconTrash,
+  IconUpload,
+} from '../../components/icons.js';
 import styles from './DidatticaView.module.css';
 
 const YEAR_ALL = '__all__';
@@ -458,60 +469,22 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
           )}
         </div>
       ) : (
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <colgroup>
-              <col className={styles.titleColumn} />
-              <col className={styles.udaColumn} />
-              <col className={styles.lessonsColumn} />
-              <col className={styles.questionsColumn} />
-              <col className={styles.yearColumn} />
-              <col className={styles.classesColumn} />
-              <col className={styles.actionsColumn} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th className={styles.th} scope="col">
-                  Titolo
-                </th>
-                <th className={styles.th} scope="col">
-                  UDA
-                </th>
-                <th className={styles.th} scope="col">
-                  Lezioni
-                </th>
-                <th className={styles.th} scope="col">
-                  Domande
-                </th>
-                <th className={styles.th} scope="col">
-                  Anno
-                </th>
-                <th className={styles.th} scope="col">
-                  Classi
-                </th>
-                <th className={styles.th} scope="col">
-                  Azioni
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((card) => (
-                <CourseRow
-                  key={card.programId}
-                  card={card}
-                  onOpen={() => setOpenProgramId(card.programId)}
-                  onRename={() => {
-                    setDialogError(null);
-                    setDialog({ kind: 'rename', programId: card.programId, current: card.title });
-                  }}
-                  onDelete={() => {
-                    setDialogError(null);
-                    setDialog({ kind: 'delete', programId: card.programId, title: card.title });
-                  }}
-                />
-              ))}
-            </tbody>
-          </table>
+        <div className={styles.courseList} role="list" aria-label="Corsi disponibili">
+          {filtered.map((card) => (
+            <TeacherCourseCard
+              key={card.programId}
+              card={card}
+              onOpen={() => setOpenProgramId(card.programId)}
+              onRename={() => {
+                setDialogError(null);
+                setDialog({ kind: 'rename', programId: card.programId, current: card.title });
+              }}
+              onDelete={() => {
+                setDialogError(null);
+                setDialog({ kind: 'delete', programId: card.programId, title: card.title });
+              }}
+            />
+          ))}
         </div>
       )}
 
@@ -563,72 +536,73 @@ export function DidatticaView({ ownerUid }: DidatticaViewProps) {
   );
 }
 
-// ── Course table row ──────────────────────────────────────────────────────
+// ── Course record card ────────────────────────────────────────────────────
 
-type CourseRowProps = {
+type TeacherCourseCardProps = {
   card: CourseCard;
   onOpen: () => void;
   onRename: () => void;
   onDelete: () => void;
 };
 
-function CourseRow({ card, onOpen, onRename, onDelete }: CourseRowProps) {
+function TeacherCourseCard({ card, onOpen, onRename, onDelete }: TeacherCourseCardProps) {
   const yearLabel = card.annoScolastico ?? 'Senza anno';
   const classesLabel = card.classNames.length > 0 ? card.classNames.join(', ') : 'Nessuna';
 
   return (
-    <tr className={styles.row}>
-      <td className={styles.td}>
-        <button
-          type="button"
-          className={styles.courseTitle}
-          title={`Apri ${card.title}`}
-          onClick={onOpen}
-        >
-          {card.title}
-        </button>
-      </td>
-      <td className={`${styles.td} ${styles.numericCell}`}>{card.udaCount}</td>
-      <td className={`${styles.td} ${styles.numericCell}`}>
-        {card.lessonsDone}/{card.lessonsTotal}
-      </td>
-      <td className={`${styles.td} ${styles.numericCell}`}>{card.questionsTotal}</td>
-      <td className={styles.td}>{yearLabel}</td>
-      <td className={styles.td} title={classesLabel}>
-        <span className={styles.classesText}>{classesLabel}</span>
-      </td>
-      <td className={styles.tdActions}>
-        <div className={styles.rowActions}>
+    <CourseRecordCard
+      title={card.title}
+      openLabel={`Apri il corso ${card.title}`}
+      onOpen={onOpen}
+      details={[
+        { label: 'Anno', value: yearLabel },
+        { label: 'Classi', value: classesLabel, title: classesLabel },
+      ]}
+      metrics={[
+        { label: 'UDA', value: card.udaCount, icon: <IconLayers size={17} /> },
+        {
+          label: 'Lezioni',
+          value: `${card.lessonsDone}/${card.lessonsTotal}`,
+          icon: <IconFileCheck size={17} />,
+        },
+        {
+          label: 'Domande',
+          value: card.questionsTotal,
+          icon: <IconCircleQuestion size={17} />,
+        },
+      ]}
+      actions={
+        <div className={styles.cardActions}>
           <button
             type="button"
-            className={styles.iconBtn}
+            className={styles.cardAction}
             title="Apri corso"
-            aria-label={`Apri il corso ${card.title}`}
+            aria-label={`Apri corso ${card.title}`}
             onClick={onOpen}
           >
-            <span aria-hidden="true">📂</span>
+            <IconBookOpen size={17} />
           </button>
           <button
             type="button"
-            className={styles.iconBtn}
+            className={styles.cardAction}
             title="Rinomina corso"
             aria-label={`Rinomina corso — ${card.title}`}
             onClick={onRename}
           >
-            <span aria-hidden="true">✏️</span>
+            <IconPencil size={17} />
           </button>
           <button
             type="button"
-            className={styles.iconBtn}
+            className={`${styles.cardAction} ${styles.cardActionDanger}`}
             title="Elimina corso"
             aria-label={`Elimina corso — ${card.title}`}
             onClick={onDelete}
           >
-            <span aria-hidden="true">🗑️</span>
+            <IconTrash size={17} />
           </button>
         </div>
-      </td>
-    </tr>
+      }
+    />
   );
 }
 

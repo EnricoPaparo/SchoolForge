@@ -126,156 +126,52 @@
   border: 0;
 }
 
-/* ── Tabella corsi ───────────────────────────────────────────────── */
-.tableWrap {
+/* ── Record card corsi ───────────────────────────────────────────── */
+.courseList {
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  max-width: 100%;
   min-width: 0;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  gap: 0.75rem;
 }
 
-.table {
-  width: 100%;
-  min-width: 838px;
-  table-layout: fixed;
-  border-collapse: collapse;
-  font-size: 0.875rem;
-}
-
-.titleColumn {
-  width: 220px;
-}
-
-.udaColumn {
-  width: 60px;
-}
-
-.lessonsColumn {
-  width: 85px;
-}
-
-.questionsColumn {
-  width: 90px;
-}
-
-.yearColumn {
-  width: 105px;
-}
-
-.classesColumn {
-  width: 150px;
-}
-
-.actionsColumn {
-  width: 128px;
-}
-
-.th {
-  text-align: left;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-  border-bottom: 2px solid var(--color-border);
-  white-space: nowrap;
-}
-
-.row:hover {
-  background: var(--color-surface-subtle);
-}
-
-.td,
-.tdActions {
-  border-bottom: 1px solid var(--color-border);
-  vertical-align: middle;
-  min-width: 0;
-}
-
-.td {
-  padding: 0.5625rem 0.75rem;
-  overflow-wrap: anywhere;
-}
-
-.tdActions {
-  padding: 0.4375rem 0.75rem;
-}
-
-.courseTitle {
-  display: inline-block;
-  width: auto;
-  max-width: 100%;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.courseTitle:hover {
-  color: var(--color-primary);
-  background: transparent;
-}
-
-.courseTitle:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-  border-radius: 2px;
-}
-
-.numericCell {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.classesText {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-}
-
-.rowActions {
+.cardActions {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.4rem;
 }
 
-.iconBtn {
-  width: 2rem;
-  min-width: 2rem;
-  height: 1.875rem;
+.cardAction {
+  width: 2.45rem;
+  min-width: 2.45rem;
+  height: 2.45rem;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--color-text);
-  background: transparent;
+  background: color-mix(in srgb, var(--color-surface) 86%, transparent);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  font-size: 0.875rem;
+  border-radius: calc(var(--radius) + 2px);
   line-height: 1;
 }
 
-.iconBtn:hover:not(:disabled) {
-  color: var(--color-primary);
-  background: var(--color-surface-subtle);
-  border-color: var(--color-primary);
+.cardAction:hover:not(:disabled) {
+  color: var(--color-brand-blue);
+  background: var(--color-primary-light);
+  border-color: var(--color-brand-blue);
+}
+
+.cardActionDanger {
+  color: var(--color-error);
+  border-color: color-mix(in srgb, var(--color-error-border) 80%, var(--color-border));
+}
+
+.cardActionDanger:hover:not(:disabled) {
+  color: #fff;
+  background: var(--color-error-btn);
+  border-color: var(--color-error-btn);
 }
 
 /* ── Stato vuoto ─────────────────────────────────────────────────── */
