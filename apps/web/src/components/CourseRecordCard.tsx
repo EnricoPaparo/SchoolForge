@@ -56,7 +56,6 @@ export function CourseRecordCard({
 
       <div className={styles.content}>
         <header className={styles.identity}>
-          <span className={styles.eyebrow}>Corso</span>
           <h3 className={styles.title}>{title}</h3>
           {details.length > 0 && (
             <div className={styles.details}>
@@ -67,6 +66,9 @@ export function CourseRecordCard({
               ))}
             </div>
           )}
+          <span className={styles.openCta} aria-hidden="true">
+            Apri programma →
+          </span>
         </header>
 
         <dl className={styles.metrics}>
