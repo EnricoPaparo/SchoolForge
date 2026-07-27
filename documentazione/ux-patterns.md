@@ -87,12 +87,18 @@ multiple e mai tabelle con scroll orizzontale su mobile.
 
 #### Card verifica
 
-- titolo, programma, classe e anno;
-- stato e disponibilità online;
-- numero domande e punteggio massimo;
-- azioni coerenti con lo stato;
+- docente: titolo, programma, classe, anno, stato, date, domande e disponibilità
+  online/PDF; la superficie apre il dettaglio e le azioni restano controlli
+  fratelli con CTA contestuale;
+- studente: correzioni restituite, consegne effettuate e verifiche disponibili
+  adottano lo stesso telaio, ma senza overlay quando non esiste una destinazione
+  neutra e sicura; esame, PDF, ricevuta e correzione richiedono azioni esplicite;
+- mobile docente: azioni in griglia compatta a tre colonne; mobile studente:
+  azioni testuali responsive, senza griglie multi-card;
 - `Nuova verifica` risiede nella barra filtri accanto a
-  `Impostazioni correzione IA`.
+  `Impostazioni correzione IA` e apre `DialogShell`;
+- la tabella delle consegne nel dettaglio verifica resta una tabella dati
+  intenzionale e non adotta questo pattern.
 
 ### Responsive
 

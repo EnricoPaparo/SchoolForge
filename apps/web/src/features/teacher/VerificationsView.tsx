@@ -1,4 +1,4 @@
-import { Fragment, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   activateVerification,
   closeVerification,
@@ -70,6 +70,10 @@ import { deleteSubmissionData } from '../repository/verifications/deleteSubmissi
 import {
   IconBookOpen,
   IconCircleX,
+  IconClipboardCheck,
+  IconFileText,
+  IconCircleQuestion,
+  IconPlus,
   IconTrash,
   IconSparkles,
   IconCircleCheck,
@@ -80,6 +84,8 @@ import {
   IconEraser,
   IconDownload,
 } from '../../components/icons.js';
+import { VerificationRecordCard } from '../../components/VerificationRecordCard.js';
+import { DialogShell } from '../../components/DialogShell.js';
 import type {
   AttentionEvent,
   EquivalentGroupConfig,
@@ -260,6 +266,7 @@ export function VerificationsView() {
   const [newTitle, setNewTitle] = useState('');
   const [newProgramId, setNewProgramId] = useState('');
   const [newClassId, setNewClassId] = useState('');
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -1139,6 +1146,7 @@ export function VerificationsView() {
       setNewTitle('');
       setNewProgramId('');
       setNewClassId('');
+      setCreateDialogOpen(false);
       const updated = await listVerifications(ownerUid, db);
       setVerifications(updated);
       const created = updated.find((v) => v.id === newId);
@@ -1659,576 +1667,539 @@ export function VerificationsView() {
     );
 
   const canActivate = selectedQuestionIds.size >= 1;
+  const closeConfirmVerification = verifications.find((item) => item.id === closeConfirmId);
+  const deleteConfirmVerification = verifications.find((item) => item.id === deleteConfirmId);
+  const onlineDisableVerification = verifications.find(
+    (item) => item.id === onlineDisableConfirmId,
+  );
+  const pdfDisableVerification = verifications.find((item) => item.id === pdfDisableConfirmId);
 
   return (
     <section aria-label="Verifiche" className={styles.container}>
       {!selectedVer && (
-        <form
-          id="new-verification-form"
-          className={styles.newVerificationForm}
-          aria-label="Nuova verifica"
-          onSubmit={(e) => void handleCreate(e)}
-        />
-      )}
+        <>
+          <div className={styles.filters} aria-label="Filtri archivio verifiche">
+            <select
+              aria-label="Filtro anno scolastico"
+              value={yearFilter}
+              onChange={(event) => setYearFilter(event.target.value)}
+            >
+              <option value={FILTER_ALL}>Tutti gli anni</option>
+              {yearOptions.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+              {hasNoYear && <option value={YEAR_NONE}>Senza anno</option>}
+            </select>
+            <select
+              aria-label="Filtro classe"
+              value={classFilter}
+              onChange={(event) => setClassFilter(event.target.value)}
+            >
+              <option value={FILTER_ALL}>Tutte le classi</option>
+              {classOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+              {hasNoClass && <option value={CLASS_NONE}>Nessuna classe</option>}
+            </select>
+            <input
+              className={styles.filterSearch}
+              type="search"
+              placeholder="Cerca verifica…"
+              aria-label="Cerca verifica"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            <div className={styles.filterActions}>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  setCreateError(null);
+                  setCreateDialogOpen(true);
+                }}
+              >
+                <IconPlus />
+                Nuova verifica
+              </button>
+              <button
+                type="button"
+                className={`btn-primary ${styles.aiSettingsBtn}`}
+                disabled={aiPrefs.status !== 'ready'}
+                onClick={() => setAiSettingsOpen(true)}
+              >
+                <IconSparkles />
+                Impostazioni correzione IA
+              </button>
+            </div>
+            {aiPrefs.status === 'error' && renderAiPrefsError()}
+          </div>
 
-      {/* ── Archive filters (VUX-01) ── */}
-      {!selectedVer && verifications.length > 0 && (
-        <div className={styles.filters} aria-label="Filtri archivio verifiche">
-          <select
-            aria-label="Filtro anno scolastico"
-            value={yearFilter}
-            onChange={(e) => setYearFilter(e.target.value)}
-          >
-            <option value={FILTER_ALL}>Tutti gli anni</option>
-            {yearOptions.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-            {hasNoYear && <option value={YEAR_NONE}>Senza anno</option>}
-          </select>
-          <select
-            aria-label="Filtro classe"
-            value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
-          >
-            <option value={FILTER_ALL}>Tutte le classi</option>
-            {classOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-            {hasNoClass && <option value={CLASS_NONE}>Nessuna classe</option>}
-          </select>
-          <input
-            className={styles.filterSearch}
-            type="search"
-            placeholder="Cerca verifica…"
-            aria-label="Cerca verifica"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          {/* TWU-02 — default AI-correction settings for this teacher. Disabled
-              while preferences are loading; in error the persistent message +
-              «Riprova» below drive the recovery. Never opens a form built on
-              invented defaults. */}
-          <button
-            type="button"
-            className={`btn-primary ${styles.aiSettingsBtn}`}
-            disabled={aiPrefs.status !== 'ready'}
-            onClick={() => setAiSettingsOpen(true)}
-          >
-            <IconSparkles />
-            Impostazioni correzione IA
-          </button>
-          {aiPrefs.status === 'error' && renderAiPrefsError()}
-        </div>
-      )}
-
-      {/* ── Verification table ── */}
-      {!selectedVer && (
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <colgroup>
-              <col className={styles.titleColumn} />
-              <col className={styles.courseColumn} />
-              <col className={styles.classColumn} />
-              <col className={styles.yearColumn} />
-              <col className={styles.statusColumn} />
-              <col className={styles.exercisesColumn} />
-              <col className={styles.actionsColumn} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th className={styles.th}>Titolo</th>
-                <th className={styles.th}>Corso</th>
-                <th className={styles.th}>Classe</th>
-                <th className={styles.th}>Anno</th>
-                <th className={styles.th}>Stato</th>
-                <th className={styles.th} title="Esercizi">
-                  Es.
-                </th>
-                <th className={styles.th}>Azioni</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className={styles.createRowInline}>
-                <td className={`${styles.td} ${styles.createCell}`}>
-                  <label className={styles.visuallyHidden} htmlFor="new-ver-title">
-                    Titolo nuova verifica
-                  </label>
-                  <input
-                    id="new-ver-title"
-                    form="new-verification-form"
-                    className={styles.createInput}
-                    type="text"
-                    placeholder="Titolo nuova verifica"
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                  />
-                </td>
-                <td className={`${styles.td} ${styles.createCell}`}>
-                  <label className={styles.visuallyHidden} htmlFor="new-ver-program">
-                    Programma nuova verifica
-                  </label>
-                  <select
-                    id="new-ver-program"
-                    form="new-verification-form"
-                    className={styles.createInput}
-                    value={newProgramId}
-                    onChange={(e) => setNewProgramId(e.target.value)}
-                  >
-                    <option value="">
-                      {readyPrograms.length === 0 ? 'Nessun corso pronto' : 'Corso'}
-                    </option>
-                    {readyPrograms.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.title}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className={`${styles.td} ${styles.createCell}`}>
-                  <label className={styles.visuallyHidden} htmlFor="new-ver-class">
-                    Classe nuova verifica (opzionale)
-                  </label>
-                  <select
-                    id="new-ver-class"
-                    form="new-verification-form"
-                    className={styles.createInput}
-                    value={newClassId}
-                    onChange={(e) => setNewClassId(e.target.value)}
-                  >
-                    <option value="">Nessuna</option>
-                    {classes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className={`${styles.td} ${styles.metaCell} ${styles.yearCell}`}>—</td>
-                <td className={styles.td}>
-                  <span className={`${styles.badge} ${styles.badgeNew}`}>Nuova</span>
-                </td>
-                <td className={`${styles.td} ${styles.metaCell}`}>—</td>
-                <td className={`${styles.tdActions} ${styles.createActionCell}`}>
-                  <button
-                    type="submit"
-                    form="new-verification-form"
-                    className="btn-success"
-                    aria-label="Crea verifica"
-                    disabled={creating || !newTitle.trim() || !newProgramId}
-                  >
-                    {creating ? 'Creazione…' : 'Crea'}
-                  </button>
-                </td>
-              </tr>
-              {createError && (
-                <tr className={styles.createErrorRow}>
-                  <td colSpan={7} className={styles.td}>
-                    <p role="alert" className="text-error">
-                      {createError}
-                    </p>
-                  </td>
-                </tr>
-              )}
-              {verifications.length === 0 && (
-                <tr>
-                  <td colSpan={7} className={styles.emptyTableCell}>
-                    Nessuna verifica. Creane una dalla prima riga.
-                  </td>
-                </tr>
-              )}
-              {verifications.length > 0 && filtered.length === 0 && (
-                <tr>
-                  <td colSpan={7} className={styles.emptyTableCell}>
-                    <p>Nessuna verifica corrisponde ai filtri.</p>
-                    <button type="button" onClick={resetFilters}>
-                      Azzera filtri
-                    </button>
-                  </td>
-                </tr>
-              )}
-              {filtered.map((v) => {
+          {verifications.length === 0 && (
+            <p className="state-empty">Nessuna verifica. Creane una dalla barra superiore.</p>
+          )}
+          {verifications.length > 0 && filtered.length === 0 && (
+            <div className="state-empty">
+              <p>Nessuna verifica corrisponde ai filtri.</p>
+              <button type="button" onClick={resetFilters}>
+                Azzera filtri
+              </button>
+            </div>
+          )}
+          {filtered.length > 0 && (
+            <div className={styles.verificationList} role="list" aria-label="Archivio verifiche">
+              {filtered.map((verification) => {
                 const programTitle =
-                  programs.find((p) => p.id === v.config.programId)?.title ?? v.config.programId;
-                const className = v.config.classId
-                  ? (classes.find((c) => c.id === v.config.classId)?.name ?? v.config.classId)
+                  programs.find((program) => program.id === verification.config.programId)?.title ??
+                  verification.config.programId;
+                const className = verification.config.classId
+                  ? (classes.find((item) => item.id === verification.config.classId)?.name ??
+                    verification.config.classId)
                   : '—';
-                const annoScolastico = verificationYear(v, annoByKey) ?? '—';
+                const schoolYear = verificationYear(verification, annoByKey) ?? '—';
                 const questionCount =
-                  v.status === 'draft'
-                    ? v.config.questionRefs.length
-                    : (v.teacherSnapshot?.questionRefs.length ?? v.config.questionRefs.length);
-
-                if (closeConfirmId === v.id) {
-                  return (
-                    <tr key={v.id} className={styles.confirmRowInline}>
-                      <td colSpan={7} className={styles.td}>
-                        <div
-                          role="region"
-                          aria-label="Conferma chiusura"
-                          className={styles.confirmBox}
-                        >
-                          <p className={styles.confirmMsg}>
-                            Chiudere <strong>{v.config.title}</strong>? Questa operazione non è
-                            reversibile.
-                          </p>
-                          {closeError && (
-                            <p role="alert" className="text-error">
-                              {closeError}
-                            </p>
-                          )}
-                          <div className={styles.confirmRow}>
-                            <button
-                              type="button"
-                              className="btn-success"
-                              disabled={closing}
-                              onClick={() => void handleConfirmClose(v.id)}
-                            >
-                              {closing ? 'Chiusura…' : 'Conferma chiusura'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setCloseConfirmId(null)}
-                              disabled={closing}
-                            >
-                              Annulla
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
-
-                if (deleteConfirmId === v.id) {
-                  return (
-                    <tr key={v.id} className={styles.confirmRowInline}>
-                      <td colSpan={7} className={styles.td}>
-                        <div
-                          role="region"
-                          aria-label="Conferma eliminazione"
-                          className={`${styles.confirmBox} ${styles.confirmBoxDanger}`}
-                        >
-                          <p className={styles.confirmMsg}>
-                            Eliminare definitivamente <strong>{v.config.title}</strong>?
-                            L&apos;operazione è irreversibile e non può essere annullata.
-                          </p>
-                          {deleteError && (
-                            <p role="alert" className="text-error">
-                              {deleteError}
-                            </p>
-                          )}
-                          <div className={styles.confirmRow}>
-                            <button
-                              type="button"
-                              className="btn-danger"
-                              disabled={deleting}
-                              onClick={() => void handleConfirmDelete(v.id)}
-                            >
-                              {deleting ? 'Eliminazione…' : 'Elimina definitivamente'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeleteConfirmId(null)}
-                              disabled={deleting}
-                            >
-                              Annulla
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
-
-                if (onlineDisableConfirmId === v.id) {
-                  return (
-                    <tr key={v.id} className={styles.confirmRowInline}>
-                      <td colSpan={7} className={styles.td}>
-                        <div
-                          role="region"
-                          aria-label="Conferma disattivazione online"
-                          className={styles.confirmBox}
-                        >
-                          <p className={styles.confirmMsg}>
-                            Le bozze esistenti non potranno essere salvate o consegnate finché
-                            l&apos;online resta disabilitato.
-                          </p>
-                          {onlineDisableError && (
-                            <p role="alert" className="text-error">
-                              {onlineDisableError}
-                            </p>
-                          )}
-                          <div className={styles.confirmRow}>
-                            <button
-                              type="button"
-                              className="btn-primary"
-                              disabled={onlineLoadingId === v.id}
-                              onClick={() => void handleConfirmDisableOnline(v.id)}
-                            >
-                              {onlineLoadingId === v.id ? 'Disattivazione…' : 'Disattiva online'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setOnlineDisableConfirmId(null)}
-                              disabled={onlineLoadingId === v.id}
-                            >
-                              Annulla
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
-
-                if (pdfDisableConfirmId === v.id) {
-                  return (
-                    <tr key={v.id} className={styles.confirmRowInline}>
-                      <td colSpan={7} className={styles.td}>
-                        <div
-                          role="region"
-                          aria-label="Conferma disattivazione PDF studente"
-                          className={styles.confirmBox}
-                        >
-                          <p className={styles.confirmMsg}>
-                            Gli studenti non potranno più scaricare il PDF di{' '}
-                            <strong>{v.config.title}</strong>.
-                          </p>
-                          {pdfDisableError && (
-                            <p role="alert" className="text-error">
-                              {pdfDisableError}
-                            </p>
-                          )}
-                          <div className={styles.confirmRow}>
-                            <button
-                              type="button"
-                              className="btn-primary"
-                              disabled={pdfEnabledLoadingId === v.id}
-                              onClick={() => void handleConfirmDisableStudentPdf(v.id)}
-                            >
-                              {pdfEnabledLoadingId === v.id ? 'Disattivazione…' : 'Disattiva PDF'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setPdfDisableConfirmId(null)}
-                              disabled={pdfEnabledLoadingId === v.id}
-                            >
-                              Annulla
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
+                  verification.status === 'draft'
+                    ? verification.config.questionRefs.length
+                    : (verification.teacherSnapshot?.questionRefs.length ??
+                      verification.config.questionRefs.length);
+                const errors = [
+                  pdfErrors[verification.id],
+                  solutionsPdfErrors[verification.id],
+                  onlineErrors[verification.id],
+                  visibilityErrors[verification.id],
+                  pdfEnabledErrors[verification.id],
+                ].filter((message): message is string => Boolean(message));
 
                 return (
-                  <Fragment key={v.id}>
-                    <tr className={styles.row}>
-                      <td className={styles.td}>
+                  <VerificationRecordCard
+                    key={verification.id}
+                    title={verification.config.title}
+                    openLabel={`Apri dettaglio verifica ${verification.config.title}`}
+                    onOpen={() => void handleSelectVer(verification)}
+                    defaultCue="Apri verifica →"
+                    actionLayout="grid"
+                    details={[
+                      { label: 'Corso', value: programTitle },
+                      { label: 'Classe', value: className },
+                      { label: 'Anno', value: schoolYear },
+                      ...(verification.status === 'draft'
+                        ? []
+                        : [
+                            {
+                              label: 'Attivata',
+                              value: formatTimestamp(verification.activatedAt),
+                            },
+                            ...(verification.status === 'closed'
+                              ? [
+                                  {
+                                    label: 'Chiusa',
+                                    value: formatTimestamp(verification.closedAt),
+                                  },
+                                ]
+                              : []),
+                          ]),
+                    ]}
+                    metrics={[
+                      {
+                        label: 'Stato',
+                        value: (
+                          <StatusBadge
+                            status={verification.status}
+                            visibility={verification.visibility}
+                          />
+                        ),
+                        icon: <IconClipboardCheck />,
+                      },
+                      {
+                        label: 'Domande',
+                        value: questionCount,
+                        icon: <IconCircleQuestion />,
+                      },
+                      {
+                        label: 'Disponibilità',
+                        value:
+                          verification.status === 'active'
+                            ? `${verification.onlineEnabled ? 'Online' : 'Offline'} · PDF ${
+                                verification.studentPdfEnabled ? 'sì' : 'no'
+                              }`
+                            : `PDF ${verification.studentPdfEnabled ? 'sì' : 'no'}`,
+                        icon: <IconFileText />,
+                      },
+                    ]}
+                    statusControl={
+                      verification.status === 'active' ? (
+                        <div className={styles.onlineControl}>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={verification.onlineEnabled}
+                            data-record-card-cue={`${
+                              verification.onlineEnabled ? 'Disattiva' : 'Attiva'
+                            } online →`}
+                            aria-label={`${verification.onlineEnabled ? 'Disattiva' : 'Attiva'} online — ${verification.config.title}`}
+                            title={
+                              verification.config.classId == null
+                                ? 'Assegna una classe alla verifica per abilitare l’online'
+                                : verification.onlineEnabled
+                                  ? 'Online attivo'
+                                  : 'Online disattivato'
+                            }
+                            className={`${styles.onlineSwitch} ${
+                              verification.onlineEnabled ? styles.onlineSwitchOn : ''
+                            }`}
+                            disabled={
+                              onlineLoadingId === verification.id ||
+                              (!verification.onlineEnabled && verification.config.classId == null)
+                            }
+                            onClick={() =>
+                              verification.onlineEnabled
+                                ? handleStartDisableOnline(verification.id)
+                                : void handleEnableOnline(verification)
+                            }
+                          >
+                            <span className={styles.onlineSwitchThumb} />
+                          </button>
+                          <span className={styles.onlineLabel}>
+                            {verification.config.classId == null
+                              ? 'Nessuna classe'
+                              : verification.onlineEnabled
+                                ? 'Online attivo'
+                                : 'Online disattivato'}
+                          </span>
+                        </div>
+                      ) : undefined
+                    }
+                    actions={
+                      <>
                         <button
                           type="button"
-                          className={styles.verTitleBtn}
-                          aria-label={`Apri dettaglio verifica ${v.config.title}`}
-                          onClick={() => void handleSelectVer(v)}
+                          className={styles.iconBtn}
+                          title="Scarica PDF studenti"
+                          aria-label={`Scarica PDF studenti — ${verification.config.title}`}
+                          data-record-card-cue="Scarica PDF studenti →"
+                          disabled={pdfLoadingId === verification.id}
+                          onClick={() => void handleDownloadPdf(verification)}
                         >
-                          {v.config.title}
+                          <IconDownload />
                         </button>
-                        {v.status !== 'draft' && (
-                          <span className={styles.verTimestamps}>
-                            <span>Attivata: {formatTimestamp(v.activatedAt)}</span>
-                            {v.status === 'closed' && (
-                              <span>Chiusa: {formatTimestamp(v.closedAt)}</span>
-                            )}
-                          </span>
-                        )}
-                      </td>
-                      <td className={`${styles.td} ${styles.metaCell}`}>{programTitle}</td>
-                      <td className={`${styles.td} ${styles.metaCell}`}>{className}</td>
-                      <td className={`${styles.td} ${styles.metaCell} ${styles.yearCell}`}>
-                        {annoScolastico}
-                      </td>
-                      <td className={styles.td}>
-                        <StatusBadge status={v.status} visibility={v.visibility} />
-                        {v.status === 'active' && (
-                          <div className={styles.onlineControl}>
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={v.onlineEnabled}
-                              aria-label={`${v.onlineEnabled ? 'Disattiva' : 'Attiva'} online — ${v.config.title}`}
-                              title={
-                                v.config.classId == null
-                                  ? 'Assegna una classe alla verifica per abilitare l’online'
-                                  : v.onlineEnabled
-                                    ? 'Online attivo'
-                                    : 'Online disattivato'
-                              }
-                              className={`${styles.onlineSwitch} ${v.onlineEnabled ? styles.onlineSwitchOn : ''}`}
-                              disabled={
-                                onlineLoadingId === v.id ||
-                                (!v.onlineEnabled && v.config.classId == null)
-                              }
-                              onClick={() =>
-                                v.onlineEnabled
-                                  ? handleStartDisableOnline(v.id)
-                                  : void handleEnableOnline(v)
-                              }
-                            >
-                              <span className={styles.onlineSwitchThumb} />
-                            </button>
-                            <span className={styles.onlineLabel}>
-                              {v.config.classId == null
-                                ? 'Nessuna classe'
-                                : v.onlineEnabled
-                                  ? 'Online attivo'
-                                  : 'Online disattivato'}
-                            </span>
-                          </div>
-                        )}
-                      </td>
-                      <td className={`${styles.td} ${styles.metaCell}`}>{questionCount}</td>
-                      <td className={styles.tdActions}>
-                        <div className={styles.actionsWrapper}>
+                        <button
+                          type="button"
+                          className={styles.iconBtn}
+                          title="Scarica PDF soluzioni"
+                          aria-label={`Scarica PDF soluzioni — ${verification.config.title}`}
+                          data-record-card-cue="Scarica PDF soluzioni →"
+                          disabled={solutionsPdfLoadingId === verification.id}
+                          onClick={() => void handleDownloadSolutionsPdf(verification)}
+                        >
+                          <IconBookOpen />
+                        </button>
+                        {(verification.status === 'active' || verification.status === 'closed') && (
                           <button
                             type="button"
                             className={styles.iconBtn}
-                            title="Scarica PDF studenti"
-                            aria-label={`Scarica PDF studenti — ${v.config.title}`}
-                            disabled={pdfLoadingId === v.id}
-                            onClick={() => void handleDownloadPdf(v)}
-                          >
-                            {pdfLoadingId === v.id ? '…' : '⬇️'}
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.iconBtn}
-                            title="Scarica PDF soluzioni"
-                            aria-label={`Scarica PDF soluzioni — ${v.config.title}`}
-                            disabled={solutionsPdfLoadingId === v.id}
-                            onClick={() => void handleDownloadSolutionsPdf(v)}
-                          >
-                            {solutionsPdfLoadingId === v.id ? '…' : '🔑'}
-                          </button>
-                          {(v.status === 'active' || v.status === 'closed') && (
-                            <button
-                              type="button"
-                              className={styles.iconBtn}
-                              title={
-                                v.visibility === 'public'
-                                  ? 'Nascondi allo studente'
-                                  : 'Pubblica allo studente'
-                              }
-                              aria-label={`${v.visibility === 'public' ? 'Nascondi' : 'Pubblica'} allo studente — ${v.config.title}`}
-                              disabled={visibilityLoadingId === v.id}
-                              onClick={() => void handleToggleVisibility(v)}
-                            >
-                              {visibilityLoadingId === v.id
-                                ? '…'
-                                : v.visibility === 'public'
-                                  ? '🙈'
-                                  : '👁️'}
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className={`${styles.iconBtn}${v.studentPdfEnabled ? ` ${styles.iconBtnActive}` : ''}`}
                             title={
-                              v.studentPdfEnabled
-                                ? 'Disabilita PDF studente'
-                                : 'Abilita PDF studente'
+                              verification.visibility === 'public'
+                                ? 'Nascondi allo studente'
+                                : 'Pubblica allo studente'
                             }
-                            aria-label={`${v.studentPdfEnabled ? 'Disabilita' : 'Abilita'} PDF studente — ${v.config.title}`}
-                            aria-pressed={v.studentPdfEnabled}
-                            disabled={pdfEnabledLoadingId === v.id}
-                            onClick={() =>
-                              v.studentPdfEnabled
-                                ? handleStartDisableStudentPdf(v.id)
-                                : void handleEnableStudentPdf(v)
+                            aria-label={`${
+                              verification.visibility === 'public' ? 'Nascondi' : 'Pubblica'
+                            } allo studente — ${verification.config.title}`}
+                            data-record-card-cue={
+                              verification.visibility === 'public'
+                                ? 'Nascondi allo studente →'
+                                : 'Pubblica allo studente →'
                             }
+                            disabled={visibilityLoadingId === verification.id}
+                            onClick={() => void handleToggleVisibility(verification)}
                           >
-                            📄
+                            {verification.visibility === 'public' ? <IconEyeOff /> : <IconEye />}
                           </button>
-                          {v.status === 'active' && (
-                            <button
-                              type="button"
-                              className={styles.iconBtn}
-                              title="Chiudi verifica"
-                              aria-label={`Chiudi verifica — ${v.config.title}`}
-                              onClick={() => handleStartClose(v.id)}
-                            >
-                              🔒
-                            </button>
-                          )}
-                          {(v.status === 'draft' || v.status === 'closed') && (
-                            <button
-                              type="button"
-                              className={styles.iconBtn}
-                              title="Elimina verifica"
-                              aria-label={`Elimina verifica — ${v.config.title}`}
-                              onClick={() => handleStartDelete(v.id)}
-                            >
-                              🗑️
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                    {pdfErrors[v.id] && (
-                      <tr>
-                        <td colSpan={7} className={styles.td}>
-                          <p role="alert" className="text-error">
-                            {pdfErrors[v.id]}
-                          </p>
-                        </td>
-                      </tr>
-                    )}
-                    {solutionsPdfErrors[v.id] && (
-                      <tr>
-                        <td colSpan={7} className={styles.td}>
-                          <p role="alert" className="text-error">
-                            {solutionsPdfErrors[v.id]}
-                          </p>
-                        </td>
-                      </tr>
-                    )}
-                    {onlineErrors[v.id] && (
-                      <tr>
-                        <td colSpan={7} className={styles.td}>
-                          <p role="alert" className="text-error">
-                            {onlineErrors[v.id]}
-                          </p>
-                        </td>
-                      </tr>
-                    )}
-                    {visibilityErrors[v.id] && (
-                      <tr>
-                        <td colSpan={7} className={styles.td}>
-                          <p role="alert" className="text-error">
-                            {visibilityErrors[v.id]}
-                          </p>
-                        </td>
-                      </tr>
-                    )}
-                    {pdfEnabledErrors[v.id] && (
-                      <tr>
-                        <td colSpan={7} className={styles.td}>
-                          <p role="alert" className="text-error">
-                            {pdfEnabledErrors[v.id]}
-                          </p>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
+                        )}
+                        <button
+                          type="button"
+                          className={`${styles.iconBtn}${
+                            verification.studentPdfEnabled ? ` ${styles.iconBtnActive}` : ''
+                          }`}
+                          title={
+                            verification.studentPdfEnabled
+                              ? 'Disabilita PDF studente'
+                              : 'Abilita PDF studente'
+                          }
+                          aria-label={`${
+                            verification.studentPdfEnabled ? 'Disabilita' : 'Abilita'
+                          } PDF studente — ${verification.config.title}`}
+                          aria-pressed={verification.studentPdfEnabled}
+                          data-record-card-cue={
+                            verification.studentPdfEnabled
+                              ? 'Disabilita PDF studente →'
+                              : 'Abilita PDF studente →'
+                          }
+                          disabled={pdfEnabledLoadingId === verification.id}
+                          onClick={() =>
+                            verification.studentPdfEnabled
+                              ? handleStartDisableStudentPdf(verification.id)
+                              : void handleEnableStudentPdf(verification)
+                          }
+                        >
+                          <IconFileText />
+                        </button>
+                        {verification.status === 'active' && (
+                          <button
+                            type="button"
+                            className={styles.iconBtn}
+                            title="Chiudi verifica"
+                            aria-label={`Chiudi verifica — ${verification.config.title}`}
+                            data-record-card-cue="Chiudi verifica →"
+                            onClick={() => handleStartClose(verification.id)}
+                          >
+                            <IconCircleX />
+                          </button>
+                        )}
+                        {(verification.status === 'draft' || verification.status === 'closed') && (
+                          <button
+                            type="button"
+                            className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                            title="Elimina verifica"
+                            aria-label={`Elimina verifica — ${verification.config.title}`}
+                            data-record-card-cue="Elimina verifica →"
+                            onClick={() => handleStartDelete(verification.id)}
+                          >
+                            <IconTrash />
+                          </button>
+                        )}
+                      </>
+                    }
+                    errors={
+                      errors.length > 0
+                        ? errors.map((message) => (
+                            <p key={message} role="alert" className="text-error">
+                              {message}
+                            </p>
+                          ))
+                        : undefined
+                    }
+                  />
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {createDialogOpen && (
+        <DialogShell
+          title="Nuova verifica"
+          busy={creating}
+          onCancel={() => setCreateDialogOpen(false)}
+        >
+          <form className={styles.createDialogForm} onSubmit={(event) => void handleCreate(event)}>
+            <label htmlFor="new-ver-title">Titolo</label>
+            <input
+              id="new-ver-title"
+              type="text"
+              value={newTitle}
+              onChange={(event) => setNewTitle(event.target.value)}
+              autoFocus
+            />
+            <label htmlFor="new-ver-program">Corso</label>
+            <select
+              id="new-ver-program"
+              value={newProgramId}
+              onChange={(event) => setNewProgramId(event.target.value)}
+            >
+              <option value="">
+                {readyPrograms.length === 0 ? 'Nessun corso pronto' : 'Seleziona corso'}
+              </option>
+              {readyPrograms.map((program) => (
+                <option key={program.id} value={program.id}>
+                  {program.title}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="new-ver-class">Classe (opzionale)</label>
+            <select
+              id="new-ver-class"
+              value={newClassId}
+              onChange={(event) => setNewClassId(event.target.value)}
+            >
+              <option value="">Nessuna</option>
+              {classes.map((classItem) => (
+                <option key={classItem.id} value={classItem.id}>
+                  {classItem.name}
+                </option>
+              ))}
+            </select>
+            {createError && (
+              <p role="alert" className="text-error">
+                {createError}
+              </p>
+            )}
+            <div className={styles.dialogActions}>
+              <button type="button" disabled={creating} onClick={() => setCreateDialogOpen(false)}>
+                Annulla
+              </button>
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={creating || !newTitle.trim() || !newProgramId}
+              >
+                {creating ? 'Creazione…' : 'Crea verifica'}
+              </button>
+            </div>
+          </form>
+        </DialogShell>
+      )}
+
+      {closeConfirmVerification && (
+        <DialogShell
+          title="Conferma chiusura"
+          role="alertdialog"
+          busy={closing}
+          onCancel={() => setCloseConfirmId(null)}
+        >
+          <div role="region" aria-label="Conferma chiusura">
+            <p>
+              Chiudere <strong>{closeConfirmVerification.config.title}</strong>? Questa operazione
+              non è reversibile.
+            </p>
+            {closeError && (
+              <p role="alert" className="text-error">
+                {closeError}
+              </p>
+            )}
+            <div className={styles.dialogActions}>
+              <button type="button" disabled={closing} onClick={() => setCloseConfirmId(null)}>
+                Annulla
+              </button>
+              <button
+                type="button"
+                className="btn-success"
+                disabled={closing}
+                onClick={() => void handleConfirmClose(closeConfirmVerification.id)}
+              >
+                {closing ? 'Chiusura…' : 'Conferma chiusura'}
+              </button>
+            </div>
+          </div>
+        </DialogShell>
+      )}
+
+      {deleteConfirmVerification && (
+        <DialogShell
+          title="Conferma eliminazione"
+          role="alertdialog"
+          busy={deleting}
+          onCancel={() => setDeleteConfirmId(null)}
+        >
+          <div role="region" aria-label="Conferma eliminazione">
+            <p>
+              Eliminare definitivamente <strong>{deleteConfirmVerification.config.title}</strong>?
+              L&apos;operazione è irreversibile e non può essere annullata.
+            </p>
+            {deleteError && (
+              <p role="alert" className="text-error">
+                {deleteError}
+              </p>
+            )}
+            <div className={styles.dialogActions}>
+              <button type="button" disabled={deleting} onClick={() => setDeleteConfirmId(null)}>
+                Annulla
+              </button>
+              <button
+                type="button"
+                className="btn-danger"
+                disabled={deleting}
+                onClick={() => void handleConfirmDelete(deleteConfirmVerification.id)}
+              >
+                {deleting ? 'Eliminazione…' : 'Elimina definitivamente'}
+              </button>
+            </div>
+          </div>
+        </DialogShell>
+      )}
+
+      {onlineDisableVerification && (
+        <DialogShell
+          title="Conferma disattivazione online"
+          role="alertdialog"
+          busy={onlineLoadingId === onlineDisableVerification.id}
+          onCancel={() => setOnlineDisableConfirmId(null)}
+        >
+          <div role="region" aria-label="Conferma disattivazione online">
+            <p>
+              Le bozze esistenti non potranno essere salvate o consegnate finché l&apos;online resta
+              disabilitato.
+            </p>
+            {onlineDisableError && (
+              <p role="alert" className="text-error">
+                {onlineDisableError}
+              </p>
+            )}
+            <div className={styles.dialogActions}>
+              <button
+                type="button"
+                disabled={onlineLoadingId === onlineDisableVerification.id}
+                onClick={() => setOnlineDisableConfirmId(null)}
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={onlineLoadingId === onlineDisableVerification.id}
+                onClick={() => void handleConfirmDisableOnline(onlineDisableVerification.id)}
+              >
+                {onlineLoadingId === onlineDisableVerification.id
+                  ? 'Disattivazione…'
+                  : 'Disattiva online'}
+              </button>
+            </div>
+          </div>
+        </DialogShell>
+      )}
+
+      {pdfDisableVerification && (
+        <DialogShell
+          title="Conferma disattivazione PDF studente"
+          role="alertdialog"
+          busy={pdfEnabledLoadingId === pdfDisableVerification.id}
+          onCancel={() => setPdfDisableConfirmId(null)}
+        >
+          <div role="region" aria-label="Conferma disattivazione PDF studente">
+            <p>
+              Gli studenti non potranno più scaricare il PDF di{' '}
+              <strong>{pdfDisableVerification.config.title}</strong>.
+            </p>
+            {pdfDisableError && (
+              <p role="alert" className="text-error">
+                {pdfDisableError}
+              </p>
+            )}
+            <div className={styles.dialogActions}>
+              <button
+                type="button"
+                disabled={pdfEnabledLoadingId === pdfDisableVerification.id}
+                onClick={() => setPdfDisableConfirmId(null)}
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={pdfEnabledLoadingId === pdfDisableVerification.id}
+                onClick={() => void handleConfirmDisableStudentPdf(pdfDisableVerification.id)}
+              >
+                {pdfEnabledLoadingId === pdfDisableVerification.id
+                  ? 'Disattivazione…'
+                  : 'Disattiva PDF'}
+              </button>
+            </div>
+          </div>
+        </DialogShell>
       )}
 
       {/* ── Detail panel — draft configuration only; active/closed show a compact summary ── */}

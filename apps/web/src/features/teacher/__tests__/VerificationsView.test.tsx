@@ -377,7 +377,7 @@ describe('VerificationsView', () => {
     await waitFor(() => expect(screen.getByText(/nessuna verifica/i)).toBeTruthy());
   });
 
-  it('renders a table with the expected columns and status badges', async () => {
+  it('renders the archive as full-width record cards with preserved data and status', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([
       makeDraftVer(),
@@ -412,22 +412,17 @@ describe('VerificationsView', () => {
     ]);
     render(<VerificationsView />);
 
-    const table = await screen.findByRole('table');
-    expect(within(table).getByText('Titolo')).toBeTruthy();
-    expect(within(table).getByText('Classe')).toBeTruthy();
-    expect(within(table).getByRole('columnheader', { name: 'Corso' })).toBeTruthy();
-    expect(within(table).getByText('Stato')).toBeTruthy();
-    expect(within(table).getByText('Es.')).toBeTruthy();
-
-    expect(within(table).getByText('Verifica Algebra')).toBeTruthy();
-    expect(within(table).getByText('Verifica Geometria')).toBeTruthy();
-    expect(within(table).getByText('Verifica Trigonometria')).toBeTruthy();
-    expect(within(table).getByText('bozza')).toBeTruthy();
-    expect(within(table).getByText('nascosta')).toBeTruthy();
-    expect(within(table).getByText('chiusa')).toBeTruthy();
-    // Classe / Corso columns resolved from ids
-    expect(within(table).getAllByText('Classe 3A').length).toBeGreaterThanOrEqual(1);
-    expect(within(table).getAllByText('Matematica').length).toBeGreaterThanOrEqual(1);
+    const list = await screen.findByRole('list', { name: 'Archivio verifiche' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(list).getByText('Verifica Algebra')).toBeTruthy();
+    expect(within(list).getByText('Verifica Geometria')).toBeTruthy();
+    expect(within(list).getByText('Verifica Trigonometria')).toBeTruthy();
+    expect(within(list).getByText('bozza')).toBeTruthy();
+    expect(within(list).getByText('nascosta')).toBeTruthy();
+    expect(within(list).getByText('chiusa')).toBeTruthy();
+    expect(within(list).getAllByText('Classe 3A').length).toBeGreaterThanOrEqual(1);
+    expect(within(list).getAllByText('Matematica').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByRole('table')).toBeNull();
   });
 
   it('shows activatedAt/closedAt timestamps under the title for active and closed verifications', async () => {
@@ -449,9 +444,9 @@ describe('VerificationsView', () => {
     ]);
     render(<VerificationsView />);
 
-    const table = await screen.findByRole('table');
-    expect(within(table).getAllByText(/Attivata:/)).toHaveLength(2);
-    expect(within(table).getByText(/Chiusa:/)).toBeTruthy();
+    const list = await screen.findByRole('list', { name: 'Archivio verifiche' });
+    expect(within(list).getAllByText('Attivata')).toHaveLength(2);
+    expect(within(list).getByText('Chiusa')).toBeTruthy();
   });
 
   it('does not show activation/closure timestamps for a draft verification', async () => {
@@ -459,8 +454,8 @@ describe('VerificationsView', () => {
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
     render(<VerificationsView />);
 
-    const table = await screen.findByRole('table');
-    expect(within(table).queryByText(/Attivata:/)).toBeNull();
+    const list = await screen.findByRole('list', { name: 'Archivio verifiche' });
+    expect(within(list).queryByText('Attivata')).toBeNull();
   });
 
   it('falls back to "—" when an active verification is missing activatedAt (legacy doc)', async () => {
@@ -470,11 +465,12 @@ describe('VerificationsView', () => {
     ]);
     render(<VerificationsView />);
 
-    const table = await screen.findByRole('table');
-    expect(within(table).getByText('Attivata: —')).toBeTruthy();
+    const list = await screen.findByRole('list', { name: 'Archivio verifiche' });
+    expect(within(list).getByText('Attivata')).toBeTruthy();
+    expect(within(list).getAllByText('—').length).toBeGreaterThan(0);
   });
 
-  it('every verification row has the same number of table cells regardless of status (stable actions column)', async () => {
+  it('renders one record card per verification regardless of status', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([
       makeDraftVer(),
@@ -509,27 +505,21 @@ describe('VerificationsView', () => {
     ]);
     render(<VerificationsView />);
 
-    const table = await screen.findByRole('table');
-    const [, createRow, ...bodyRows] = within(table).getAllByRole('row'); // drop header + create row
-    expect(within(createRow).getByLabelText(/titolo nuova verifica/i)).toBeTruthy();
-    const cellCounts = bodyRows.map((row) => within(row).getAllByRole('cell').length);
-    expect(bodyRows).toHaveLength(3);
-    expect(new Set(cellCounts).size).toBe(1);
+    const list = await screen.findByRole('list', { name: 'Archivio verifiche' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(3);
   });
 
-  it('renders creation controls as the first table row', async () => {
+  it('opens creation controls from the toolbar in DialogShell', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('table'));
-
-    const form = screen.getByRole('form', { name: 'Nuova verifica' });
-    const table = screen.getByRole('table');
-    expect(form.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const [, firstBodyRow] = within(table).getAllByRole('row');
-    expect(within(firstBodyRow).getByLabelText(/titolo nuova verifica/i)).toBeTruthy();
-    expect(within(firstBodyRow).getByText('Nuova')).toBeTruthy();
-    expect(within(firstBodyRow).getByRole('button', { name: /crea verifica/i })).toBeTruthy();
+    await screen.findByRole('list', { name: 'Archivio verifiche' });
+    fireEvent.click(screen.getByRole('button', { name: 'Nuova verifica' }));
+    const dialog = screen.getByRole('dialog', { name: 'Nuova verifica' });
+    expect(within(dialog).getByLabelText('Titolo')).toBeTruthy();
+    expect(within(dialog).getByLabelText('Corso')).toBeTruthy();
+    expect(within(dialog).getByLabelText('Classe (opzionale)')).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: 'Crea verifica' })).toBeTruthy();
   });
 
   it('opens verification details as a dedicated level and returns to the list', async () => {
@@ -540,11 +530,11 @@ describe('VerificationsView', () => {
     fireEvent.click(await screen.findByText('Verifica Algebra'));
 
     expect(screen.getByLabelText('Dettaglio verifica')).toBeTruthy();
-    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByRole('list', { name: 'Archivio verifiche' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /torna alle verifiche/i }));
 
-    expect(screen.getByRole('table')).toBeTruthy();
+    expect(screen.getByRole('list', { name: 'Archivio verifiche' })).toBeTruthy();
     expect(screen.queryByLabelText('Dettaglio verifica')).toBeNull();
   });
 
@@ -558,11 +548,14 @@ describe('VerificationsView', () => {
       }),
     ]);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByLabelText(/titolo/i));
+    fireEvent.click(await screen.findByRole('button', { name: 'Nuova verifica' }));
+    const dialog = screen.getByRole('dialog', { name: 'Nuova verifica' });
 
-    fireEvent.change(screen.getByLabelText(/titolo/i), { target: { value: 'Nuova Verifica' } });
-    fireEvent.change(screen.getByLabelText(/programma/i), { target: { value: 'prog-1' } });
-    fireEvent.click(screen.getByRole('button', { name: /crea verifica/i }));
+    fireEvent.change(within(dialog).getByLabelText('Titolo'), {
+      target: { value: 'Nuova Verifica' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Corso'), { target: { value: 'prog-1' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /crea verifica/i }));
 
     await waitFor(() =>
       expect(mockCreateVerification).toHaveBeenCalledWith(
@@ -581,7 +574,8 @@ describe('VerificationsView', () => {
     ]);
     render(<VerificationsView />);
 
-    const picker = await screen.findByLabelText(/programma nuova verifica/i);
+    fireEvent.click(await screen.findByRole('button', { name: 'Nuova verifica' }));
+    const picker = screen.getByLabelText('Corso');
     expect(within(picker).getByRole('option', { name: 'Matematica' })).toBeTruthy();
     expect(within(picker).queryByRole('option', { name: 'Corso vuoto' })).toBeNull();
   });
@@ -710,12 +704,12 @@ describe('VerificationsView', () => {
     await waitFor(() => screen.getByRole('region', { name: /conferma attivazione/i }));
     fireEvent.click(screen.getByRole('button', { name: /conferma attivazione/i }));
 
-    // Back on the list: the draft detail is closed (no activate button) and the
-    // list surface (new-verification title input) is present again.
+    // Back on the list: the draft detail is closed and the archive toolbar is
+    // immediately available again.
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /attiva verifica/i })).toBeNull(),
     );
-    expect(screen.getByPlaceholderText('Titolo nuova verifica')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Nuova verifica' })).toBeTruthy();
     // The row now reflects the refreshed active status.
     expect(screen.getByText('pubblica')).toBeTruthy();
   });
@@ -1226,13 +1220,13 @@ describe('VerificationsView', () => {
     expect(screen.getByRole('button', { name: /elimina verifica/i })).toBeTruthy();
   });
 
-  it('the row delete icon button is neutral (not styled with the danger class)', async () => {
+  it('keeps the card delete action visually destructive', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
     const deleteIconBtn = screen.getByRole('button', { name: /elimina verifica/i });
-    expect(deleteIconBtn.classList.contains('btn-danger')).toBe(false);
+    expect(deleteIconBtn.className).toMatch(/iconBtnDanger/);
   });
 
   it('the "Elimina definitivamente" destructive confirm button stays red (btn-danger)', async () => {
@@ -1588,7 +1582,11 @@ describe('VerificationsView', () => {
 
     expect(screen.queryByRole('region', { name: /conferma eliminazione/i })).toBeNull();
     expect(mockDeleteVerification).not.toHaveBeenCalled();
-    expect(screen.getByText('Verifica Algebra')).toBeTruthy();
+    expect(
+      within(screen.getByRole('list', { name: 'Archivio verifiche' })).getByText(
+        'Verifica Algebra',
+      ),
+    ).toBeTruthy();
   });
 
   it('shows a readable error when deleteVerification fails', async () => {
@@ -1603,7 +1601,11 @@ describe('VerificationsView', () => {
 
     await waitFor(() => expect(within(region).getByRole('alert')).toBeTruthy());
     expect(within(region).getByRole('alert').textContent).toMatch(/non è chiusa/i);
-    expect(screen.getByText('Verifica Algebra')).toBeTruthy();
+    expect(
+      within(screen.getByRole('list', { name: 'Archivio verifiche' })).getByText(
+        'Verifica Algebra',
+      ),
+    ).toBeTruthy();
   });
 });
 
@@ -1682,8 +1684,8 @@ describe('VerificationsView — online toggle (M3F-05)', () => {
     expect(toggle).toHaveProperty('disabled', true);
     // The online status label reads "Nessuna classe" (distinct from the class
     // filter's option of the same text, which also appears now).
-    const table = screen.getByRole('table');
-    expect(within(table).getByText('Nessuna classe')).toBeTruthy();
+    const list = screen.getByRole('list', { name: 'Archivio verifiche' });
+    expect(within(list).getByText('Nessuna classe')).toBeTruthy();
   });
 
   it('shows a readable error when enabling online fails, without crashing', async () => {
@@ -2898,7 +2900,7 @@ describe('VerificationsView — sort order', () => {
   function titlesInOrder() {
     return screen
       .getAllByRole('button', { name: /^Apri dettaglio verifica/ })
-      .map((btn) => btn.textContent);
+      .map((button) => button.getAttribute('aria-label')?.replace('Apri dettaglio verifica ', ''));
   }
 
   it('orders active verifications by activatedAt descending (most recent first)', async () => {
@@ -3008,9 +3010,8 @@ describe('VerificationsView — school year + archive filters (VUX-01)', () => {
     render(<VerificationsView />);
     await screen.findByText('Alfa');
 
-    const table = screen.getByRole('table');
-    // Anno column present, rendered as "—" for this row.
-    expect(within(table).getByRole('columnheader', { name: 'Anno' })).toBeTruthy();
+    const list = screen.getByRole('list', { name: 'Archivio verifiche' });
+    expect(within(list).getByText('Anno')).toBeTruthy();
     await waitFor(() =>
       expect(mockGetImportMeta).toHaveBeenCalledWith('prog-1', 'imp-1', expect.anything()),
     );
@@ -3173,19 +3174,23 @@ describe('VerificationsView — school year + archive filters (VUX-01)', () => {
 
     // First resolution threw → year not cached, not shown yet.
     await waitFor(() => expect(mockGetImportMeta).toHaveBeenCalledTimes(1));
-    expect(within(screen.getByRole('table')).queryByText('2025/2026')).toBeNull();
+    expect(
+      within(screen.getByRole('list', { name: 'Archivio verifiche' })).queryByText('2025/2026'),
+    ).toBeNull();
 
     // A later list update re-runs the effect; the freed key is retried.
     fireEvent.click(screen.getAllByRole('button', { name: /Abilita PDF studente/i })[0]!);
     await waitFor(() => expect(mockSetVerificationStudentPdfEnabled).toHaveBeenCalled());
     await waitFor(() => expect(mockGetImportMeta).toHaveBeenCalledTimes(2));
     await waitFor(() =>
-      expect(within(screen.getByRole('table')).getByText('2025/2026')).toBeTruthy(),
+      expect(
+        within(screen.getByRole('list', { name: 'Archivio verifiche' })).getByText('2025/2026'),
+      ).toBeTruthy(),
     );
   });
 
   // ── TWU-02A — filter-bar layout of «Impostazioni correzione IA» ──────
-  it('keeps «Impostazioni correzione IA» in the same filter toolbar, in DOM order anno → classe → ricerca → impostazioni', async () => {
+  it('keeps creation and AI settings in the filter toolbar after archive filters', async () => {
     setupDefaults();
     mockGetImportMeta.mockResolvedValue({ annoScolastico: '2025/2026' });
     mockListVerifications.mockResolvedValue([verWith('v1', 'Alfa', 'imp-1', 'cls-1')]);
@@ -3196,14 +3201,13 @@ describe('VerificationsView — school year + archive filters (VUX-01)', () => {
     const anno = within(toolbar).getByLabelText('Filtro anno scolastico');
     const classe = within(toolbar).getByLabelText('Filtro classe');
     const cerca = within(toolbar).getByLabelText('Cerca verifica');
+    const create = within(toolbar).getByRole('button', { name: 'Nuova verifica' });
     const settings = within(toolbar).getByRole('button', { name: /Impostazioni correzione IA/ });
 
-    // All four controls live in the SAME toolbar (no separate row/container).
-    for (const el of [anno, classe, cerca, settings]) {
+    for (const el of [anno, classe, cerca, create, settings]) {
       expect(el.closest(`[aria-label="Filtri archivio verifiche"]`)).toBe(toolbar);
     }
-    // DOM order (== tab order): anno → classe → ricerca → impostazioni.
-    const order = [anno, classe, cerca, settings];
+    const order = [anno, classe, cerca, create, settings];
     for (let i = 1; i < order.length; i++) {
       expect(order[i - 1].compareDocumentPosition(order[i])).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     }

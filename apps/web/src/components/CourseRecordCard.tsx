@@ -1,25 +1,13 @@
-import { useState, type FocusEvent, type PointerEvent, type ReactNode } from 'react';
-import styles from './CourseRecordCard.module.css';
+import type { ReactNode } from 'react';
+import {
+  RecordCard,
+  type RecordCardDetail,
+  type RecordCardMetric,
+  type RecordCardProgress,
+} from './RecordCard.js';
 
-const DEFAULT_INTERACTION_CUE = 'Apri programma →';
-
-export type CourseRecordMetric = {
-  label: string;
-  value: ReactNode;
-  icon?: ReactNode;
-};
-
-export type CourseRecordDetail = {
-  label: string;
-  value: string;
-  title?: string;
-};
-
-type CourseRecordProgress = {
-  label: string;
-  value: number;
-  text: string;
-};
+export type CourseRecordMetric = RecordCardMetric;
+export type CourseRecordDetail = RecordCardDetail;
 
 type CourseRecordCardProps = {
   title: string;
@@ -27,122 +15,18 @@ type CourseRecordCardProps = {
   onOpen: () => void;
   details?: CourseRecordDetail[];
   metrics: CourseRecordMetric[];
-  progress?: CourseRecordProgress;
+  progress?: RecordCardProgress;
   actions?: ReactNode;
 };
 
-/**
- * Shared, presentational course record surface. Data loading and mutations stay
- * in the role-specific views; the full-card button is a sibling of the action
- * controls, so the markup never nests interactive elements.
- */
-export function CourseRecordCard({
-  title,
-  openLabel,
-  onOpen,
-  details = [],
-  metrics,
-  progress,
-  actions,
-}: CourseRecordCardProps) {
-  const [interactionCue, setInteractionCue] = useState(DEFAULT_INTERACTION_CUE);
-
-  function cueFromTarget(target: EventTarget | null): string | null {
-    if (!(target instanceof Element)) return null;
-    const action = target.closest<HTMLElement>('[data-course-card-cue]');
-    const cue = action?.dataset.courseCardCue?.trim();
-    return cue || null;
-  }
-
-  function handleActionPointerOver(event: PointerEvent<HTMLDivElement>) {
-    const cue = cueFromTarget(event.target);
-    if (cue) setInteractionCue(cue);
-  }
-
-  function handleActionFocus(event: FocusEvent<HTMLDivElement>) {
-    const cue = cueFromTarget(event.target);
-    if (cue) setInteractionCue(cue);
-  }
-
-  function handleActionBlur(event: FocusEvent<HTMLDivElement>) {
-    if (!event.currentTarget.contains(event.relatedTarget)) {
-      setInteractionCue(DEFAULT_INTERACTION_CUE);
-    }
-  }
-
+/** Compatibility wrapper for the shared SchoolForge record-card shell. */
+export function CourseRecordCard(props: CourseRecordCardProps) {
   return (
-    <article className={styles.card} role="listitem" aria-label={`Corso ${title}`}>
-      <span className={styles.accent} aria-hidden="true" />
-      <button
-        type="button"
-        className={styles.openSurface}
-        aria-label={openLabel}
-        title={openLabel}
-        onClick={onOpen}
-      />
-
-      <div className={styles.content}>
-        <header className={styles.identity}>
-          <h3 className={styles.title}>{title}</h3>
-          {details.length > 0 && (
-            <div className={styles.details}>
-              {details.map((detail) => (
-                <span key={detail.label} title={detail.title}>
-                  <strong>{detail.label}</strong> {detail.value}
-                </span>
-              ))}
-            </div>
-          )}
-          <span className={styles.openCta} aria-hidden="true">
-            {interactionCue}
-          </span>
-        </header>
-
-        <dl className={styles.metrics}>
-          {metrics.map((metric) => (
-            <div className={styles.metric} key={metric.label}>
-              {metric.icon && (
-                <span className={styles.metricIcon} aria-hidden="true">
-                  {metric.icon}
-                </span>
-              )}
-              <dt>{metric.label}</dt>
-              <dd>{metric.value}</dd>
-            </div>
-          ))}
-        </dl>
-
-        {progress && (
-          <div className={styles.progress}>
-            <div className={styles.progressText}>
-              <span>{progress.label}</span>
-              <strong>{progress.text}</strong>
-            </div>
-            <div
-              className={styles.progressTrack}
-              role="progressbar"
-              aria-label={progress.label}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={progress.value}
-            >
-              <span className={styles.progressFill} style={{ width: `${progress.value}%` }} />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {actions && (
-        <div
-          className={styles.actions}
-          onPointerOver={handleActionPointerOver}
-          onPointerLeave={() => setInteractionCue(DEFAULT_INTERACTION_CUE)}
-          onFocus={handleActionFocus}
-          onBlur={handleActionBlur}
-        >
-          {actions}
-        </div>
-      )}
-    </article>
+    <RecordCard
+      {...props}
+      recordLabel="Corso"
+      defaultCue="Apri programma →"
+      actionLayout="corner"
+    />
   );
 }

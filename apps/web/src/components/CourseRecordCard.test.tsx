@@ -50,7 +50,7 @@ describe('CourseRecordCard', () => {
           { label: 'Domande', value: '1.000' },
         ]}
         actions={
-          <button type="button" data-course-card-cue="Rinomina programma →" onClick={onRename}>
+          <button type="button" data-record-card-cue="Rinomina programma →" onClick={onRename}>
             Rinomina
           </button>
         }
@@ -75,10 +75,7 @@ describe('CourseRecordCard', () => {
 });
 
 describe('CourseRecordCard responsive and motion contract', () => {
-  const css = readFileSync(
-    resolve(process.cwd(), 'src/components/CourseRecordCard.module.css'),
-    'utf8',
-  );
+  const css = readFileSync(resolve(process.cwd(), 'src/components/RecordCard.module.css'), 'utf8');
   const teacherCss = readFileSync(
     resolve(process.cwd(), 'src/features/teacher/DidatticaView.module.css'),
     'utf8',
