@@ -53,6 +53,13 @@ import {
 } from './studentCorrectionReturnsService.js';
 import styles from './StudentVerificationsView.module.css';
 import { correctionStatusLabel } from '../repository/corrections/submissionCorrectionStatus.js';
+import { VerificationRecordCard } from '../../components/VerificationRecordCard.js';
+import {
+  IconCircleCheck,
+  IconCircleQuestion,
+  IconClipboardCheck,
+  IconEye,
+} from '../../components/icons.js';
 
 type LoadState =
   | { status: 'loading' }
@@ -534,29 +541,32 @@ export function StudentVerificationsView({
   function renderCorrectionCard(item: StudentCorrectionReturnItem) {
     const returnedLabel = formatActivatedAt(item.returnedAt);
     return (
-      <li key={item.submissionId} className={styles.card}>
-        <div className={styles.cardHeader}>
-          <h3 className={styles.cardTitle}>{item.verificationTitle}</h3>
-          {item.className && <span className={styles.classBadge}>{item.className}</span>}
-        </div>
-
-        <dl className={styles.cardMeta}>
-          {returnedLabel && (
-            <div className={styles.metaItem}>
-              <dt>Restituita</dt>
-              <dd>{returnedLabel}</dd>
-            </div>
-          )}
-          <div className={styles.metaItem}>
-            <dt>Punteggio</dt>
-            <dd>
-              {item.totalPoints}/{item.maxPoints}
-              {item.percentage !== null ? ` (${item.percentage}%)` : ''}
-            </dd>
-          </div>
-        </dl>
-
-        <div className={styles.cardActions}>
+      <VerificationRecordCard
+        key={item.submissionId}
+        title={item.verificationTitle}
+        actionLayout="footer"
+        details={[
+          ...(item.className ? [{ label: 'Classe', value: item.className }] : []),
+          ...(returnedLabel ? [{ label: 'Restituita', value: returnedLabel }] : []),
+        ]}
+        metrics={[
+          {
+            label: 'Punteggio',
+            value: `${item.totalPoints}/${item.maxPoints}`,
+            icon: <IconClipboardCheck />,
+          },
+          {
+            label: 'Percentuale',
+            value: item.percentage === null ? '—' : `${item.percentage}%`,
+            icon: <IconCircleCheck />,
+          },
+          {
+            label: 'Stato',
+            value: 'Restituita',
+            icon: <IconEye />,
+          },
+        ]}
+        actions={
           <button
             type="button"
             className={styles.correctionBtn}
@@ -565,8 +575,8 @@ export function StudentVerificationsView({
           >
             Vedi correzione
           </button>
-        </div>
-      </li>
+        }
+      />
     );
   }
 
@@ -576,109 +586,122 @@ export function StudentVerificationsView({
     const startError = startErrors[item.id];
     const status = onlineStatus[item.id];
 
+    const onlineLabel = !item.onlineEnabled
+      ? 'Non disponibile'
+      : status?.kind === 'receipt'
+        ? correctionStatusLabel(status.receipt.correctionStatus ?? 'submitted')
+        : status?.kind === 'draft'
+          ? 'Bozza salvata'
+          : 'Disponibile';
+    const errors = [
+      item.onlineEnabled && status?.kind === 'error'
+        ? 'Impossibile verificare lo stato della verifica online. Riprova più tardi.'
+        : '',
+      pdfError,
+      startError,
+    ].filter(Boolean);
+
     return (
-      <li key={item.id} className={styles.card}>
-        <div className={styles.cardHeader}>
-          <h3 className={styles.cardTitle}>{item.title}</h3>
-          <div className={styles.cardBadges}>
-            {item.status === 'closed' && <span className={styles.classBadge}>Chiusa</span>}
-            {item.className && <span className={styles.classBadge}>{item.className}</span>}
-          </div>
-        </div>
-
-        <dl className={styles.cardMeta}>
-          {activatedLabel && (
-            <div className={styles.metaItem}>
-              <dt>Data</dt>
-              <dd>{activatedLabel}</dd>
-            </div>
-          )}
-          <div className={styles.metaItem}>
-            <dt>Domande</dt>
-            <dd>{item.questionCount}</dd>
-          </div>
-        </dl>
-
-        <div className={styles.cardActions}>
-          {/* VEX-02A: in `equivalent_variants` il PDF studente è disabilitato e
+      <VerificationRecordCard
+        key={item.id}
+        title={item.title}
+        actionLayout="footer"
+        details={[
+          ...(item.className ? [{ label: 'Classe', value: item.className }] : []),
+          ...(activatedLabel ? [{ label: 'Data', value: activatedLabel }] : []),
+        ]}
+        metrics={[
+          {
+            label: 'Stato',
+            value: item.status === 'closed' ? 'Chiusa' : 'Attiva',
+            icon: <IconClipboardCheck />,
+          },
+          {
+            label: 'Domande',
+            value: item.questionCount,
+            icon: <IconCircleQuestion />,
+          },
+          {
+            label: 'Online',
+            value: onlineLabel,
+            icon: <IconEye />,
+          },
+        ]}
+        actions={
+          <>
+            {/* VEX-02A: in `equivalent_variants` il PDF studente è disabilitato e
               NON mostrato — un PDF dalla proiezione esporrebbe/ometterebbe le
               domande in modo incoerente con la variante assegnata; non esiste
               alcun modo client-side di ottenere il PDF completo. `same_questions`
               mantiene il toggle docente esistente. */}
-          {item.studentPdfEnabled && !isVexItem(item) && (
-            <button
-              type="button"
-              className={styles.pdfBtn}
-              disabled={pdfLoadingId === item.id}
-              aria-label={`Scarica PDF — ${item.title}`}
-              onClick={() => void handleDownloadPdf(item)}
-            >
-              {pdfLoadingId === item.id ? 'Generazione…' : 'Scarica PDF'}
-            </button>
-          )}
+            {item.studentPdfEnabled && !isVexItem(item) && (
+              <button
+                type="button"
+                className={styles.pdfBtn}
+                disabled={pdfLoadingId === item.id}
+                aria-label={`Scarica PDF — ${item.title}`}
+                onClick={() => void handleDownloadPdf(item)}
+              >
+                {pdfLoadingId === item.id ? 'Generazione…' : 'Scarica PDF'}
+              </button>
+            )}
 
-          {item.onlineEnabled && status?.kind === 'receipt' && (
-            <button
-              type="button"
-              className={styles.receiptBtn}
-              aria-label={`${correctionStatusLabel(status.receipt.correctionStatus ?? 'submitted')} — Codice: ${status.receipt.deliveryCode}`}
-              title={`Codice consegna: ${status.receipt.deliveryCode}`}
-              onClick={() => handleShowReceipt(status.receipt)}
-            >
-              <span className={styles.receiptStatus}>
-                {correctionStatusLabel(status.receipt.correctionStatus ?? 'submitted')} — Codice:
-              </span>
-              <span className={styles.receiptCode} title={status.receipt.deliveryCode}>
-                {status.receipt.deliveryCode}
-              </span>
-            </button>
-          )}
+            {item.onlineEnabled && status?.kind === 'receipt' && (
+              <button
+                type="button"
+                className={styles.receiptBtn}
+                aria-label={`${correctionStatusLabel(status.receipt.correctionStatus ?? 'submitted')} — Codice: ${status.receipt.deliveryCode}`}
+                title={`Codice consegna: ${status.receipt.deliveryCode}`}
+                onClick={() => handleShowReceipt(status.receipt)}
+              >
+                <span className={styles.receiptStatus}>
+                  {correctionStatusLabel(status.receipt.correctionStatus ?? 'submitted')} — Codice:
+                </span>
+                <span className={styles.receiptCode} title={status.receipt.deliveryCode}>
+                  {status.receipt.deliveryCode}
+                </span>
+              </button>
+            )}
 
-          {isActiveVerification(item) && item.onlineEnabled && status?.kind === 'draft' && (
-            <button
-              type="button"
-              className="btn-primary"
-              aria-busy={startingId === item.id}
-              disabled={startingId === item.id}
-              onClick={() => void handleStartOrResume(item)}
-            >
-              {startingId === item.id ? 'Apertura…' : 'Riprendi bozza'}
-            </button>
-          )}
-
-          {isActiveVerification(item) &&
-            item.onlineEnabled &&
-            (status === undefined || status.kind === 'none' || status.kind === 'checking') && (
+            {isActiveVerification(item) && item.onlineEnabled && status?.kind === 'draft' && (
               <button
                 type="button"
                 className="btn-primary"
                 aria-busy={startingId === item.id}
-                disabled={
-                  status === undefined || status.kind === 'checking' || startingId === item.id
-                }
+                disabled={startingId === item.id}
                 onClick={() => void handleStartOrResume(item)}
               >
-                {startingId === item.id ? 'Apertura…' : 'Svolgi online'}
+                {startingId === item.id ? 'Apertura…' : 'Riprendi bozza'}
               </button>
             )}
-        </div>
 
-        {item.onlineEnabled && status?.kind === 'error' && (
-          <p role="alert" className={`text-error ${styles.pdfError}`}>
-            Impossibile verificare lo stato della verifica online. Riprova più tardi.
-          </p>
-        )}
-        {pdfError && (
-          <p role="alert" className={`text-error ${styles.pdfError}`}>
-            {pdfError}
-          </p>
-        )}
-        {startError && (
-          <p role="alert" className={`text-error ${styles.pdfError}`}>
-            {startError}
-          </p>
-        )}
-      </li>
+            {isActiveVerification(item) &&
+              item.onlineEnabled &&
+              (status === undefined || status.kind === 'none' || status.kind === 'checking') && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  aria-busy={startingId === item.id}
+                  disabled={
+                    status === undefined || status.kind === 'checking' || startingId === item.id
+                  }
+                  onClick={() => void handleStartOrResume(item)}
+                >
+                  {startingId === item.id ? 'Apertura…' : 'Svolgi online'}
+                </button>
+              )}
+          </>
+        }
+        errors={
+          errors.length > 0
+            ? errors.map((message) => (
+                <p key={message} role="alert" className={`text-error ${styles.pdfError}`}>
+                  {message}
+                </p>
+              ))
+            : undefined
+        }
+      />
     );
   }
 
@@ -689,14 +712,18 @@ export function StudentVerificationsView({
       {returnedItems.length > 0 && (
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>Correzioni restituite</h3>
-          <ul className={styles.list}>{returnedItems.map(renderCorrectionCard)}</ul>
+          <div className={styles.list} role="list">
+            {returnedItems.map(renderCorrectionCard)}
+          </div>
         </div>
       )}
 
       {submittedItems.length > 0 && (
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>Consegne effettuate</h3>
-          <ul className={styles.list}>{submittedItems.map(renderCard)}</ul>
+          <div className={styles.list} role="list">
+            {submittedItems.map(renderCard)}
+          </div>
         </div>
       )}
 
@@ -705,7 +732,9 @@ export function StudentVerificationsView({
           {(returnedItems.length > 0 || submittedItems.length > 0) && (
             <h3 className={styles.groupTitle}>Verifiche disponibili</h3>
           )}
-          <ul className={styles.list}>{availableItems.map(renderCard)}</ul>
+          <div className={styles.list} role="list">
+            {availableItems.map(renderCard)}
+          </div>
         </div>
       )}
     </section>

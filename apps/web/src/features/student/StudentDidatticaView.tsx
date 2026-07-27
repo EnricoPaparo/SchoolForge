@@ -248,7 +248,7 @@ export function StudentDidatticaView() {
                   <button
                     type="button"
                     className={styles.cardAction}
-                    data-course-card-cue="Apri programma →"
+                    data-record-card-cue="Apri programma →"
                     title="Apri corso"
                     aria-label={`Apri corso ${program.title}`}
                     onClick={() => openCourse(program.id)}

@@ -2,7 +2,7 @@
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   width: 100%;
   min-width: 0;
   overflow: hidden;
@@ -233,6 +233,26 @@
   padding: 0.8rem 1rem 0.8rem 0;
 }
 
+.statusControl {
+  position: relative;
+  z-index: 2;
+  align-self: center;
+  min-width: 0;
+}
+
+.errors {
+  position: relative;
+  z-index: 2;
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0 1rem 0.8rem 1.25rem;
+}
+
+.errors > * {
+  margin: 0;
+}
+
 @media (hover: hover) and (pointer: fine) {
   /*
    * The shell reacts to the whole record, including its sibling action
@@ -293,6 +313,25 @@
 }
 
 .card:has(> .openSurface:focus-visible) .openCta {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.card:focus-within {
+  border-color: var(--color-brand-interactive);
+}
+
+.card:focus-within .accent {
+  width: 4px;
+  background: var(--color-brand-interactive);
+}
+
+.card:focus-within .title,
+.card:focus-within .metricIcon {
+  color: var(--color-brand-interactive);
+}
+
+.card:focus-within .openCta {
   opacity: 1;
   transform: translateX(0);
 }
@@ -367,6 +406,68 @@
     height: 2.75rem;
     min-height: 2.75rem;
   }
+
+  .cardActionsGrid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'identity'
+      'metrics'
+      'status'
+      'actions'
+      'progress'
+      'errors';
+  }
+
+  .cardActionsGrid .statusControl {
+    grid-area: status;
+  }
+
+  .cardActionsGrid .actions {
+    grid-area: actions;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .cardActionsGrid .actions button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .cardActionsFooter {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'identity'
+      'metrics'
+      'progress'
+      'status'
+      'actions'
+      'errors';
+  }
+
+  .cardActionsFooter .actions {
+    grid-area: actions;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .cardActionsFooter .actions button {
+    width: auto;
+    min-width: min(100%, 9rem);
+    height: auto;
+    min-height: 2.75rem;
+  }
+
+  .statusControl {
+    grid-area: status;
+    justify-self: start;
+  }
+
+  .errors {
+    grid-area: errors;
+    padding: 0;
+  }
 }
 
 @media (max-width: 23rem) {
@@ -395,6 +496,8 @@
 
   .metric dd {
     font-size: 0.86rem;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   .actions {
@@ -406,6 +509,10 @@
     min-width: 2.35rem;
     height: 2.35rem;
     min-height: 2.35rem;
+  }
+
+  .cardActionsGrid .actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
