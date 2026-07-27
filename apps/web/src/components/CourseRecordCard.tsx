@@ -1,5 +1,7 @@
-import type { ReactNode } from 'react';
+import { useState, type FocusEvent, type PointerEvent, type ReactNode } from 'react';
 import styles from './CourseRecordCard.module.css';
+
+const DEFAULT_INTERACTION_CUE = 'Apri programma →';
 
 export type CourseRecordMetric = {
   label: string;
@@ -43,6 +45,31 @@ export function CourseRecordCard({
   progress,
   actions,
 }: CourseRecordCardProps) {
+  const [interactionCue, setInteractionCue] = useState(DEFAULT_INTERACTION_CUE);
+
+  function cueFromTarget(target: EventTarget | null): string | null {
+    if (!(target instanceof Element)) return null;
+    const action = target.closest<HTMLElement>('[data-course-card-cue]');
+    const cue = action?.dataset.courseCardCue?.trim();
+    return cue || null;
+  }
+
+  function handleActionPointerOver(event: PointerEvent<HTMLDivElement>) {
+    const cue = cueFromTarget(event.target);
+    if (cue) setInteractionCue(cue);
+  }
+
+  function handleActionFocus(event: FocusEvent<HTMLDivElement>) {
+    const cue = cueFromTarget(event.target);
+    if (cue) setInteractionCue(cue);
+  }
+
+  function handleActionBlur(event: FocusEvent<HTMLDivElement>) {
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+      setInteractionCue(DEFAULT_INTERACTION_CUE);
+    }
+  }
+
   return (
     <article className={styles.card} role="listitem" aria-label={`Corso ${title}`}>
       <span className={styles.accent} aria-hidden="true" />
@@ -67,7 +94,7 @@ export function CourseRecordCard({
             </div>
           )}
           <span className={styles.openCta} aria-hidden="true">
-            Apri programma →
+            {interactionCue}
           </span>
         </header>
 
@@ -105,7 +132,17 @@ export function CourseRecordCard({
         )}
       </div>
 
-      {actions && <div className={styles.actions}>{actions}</div>}
+      {actions && (
+        <div
+          className={styles.actions}
+          onPointerOver={handleActionPointerOver}
+          onPointerLeave={() => setInteractionCue(DEFAULT_INTERACTION_CUE)}
+          onFocus={handleActionFocus}
+          onBlur={handleActionBlur}
+        >
+          {actions}
+        </div>
+      )}
     </article>
   );
 }

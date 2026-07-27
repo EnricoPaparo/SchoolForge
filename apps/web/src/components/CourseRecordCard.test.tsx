@@ -50,14 +50,23 @@ describe('CourseRecordCard', () => {
           { label: 'Domande', value: '1.000' },
         ]}
         actions={
-          <button type="button" onClick={onRename}>
+          <button type="button" data-course-card-cue="Rinomina programma →" onClick={onRename}>
             Rinomina
           </button>
         }
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Rinomina' }));
+    const rename = screen.getByRole('button', { name: 'Rinomina' });
+    fireEvent.pointerOver(rename);
+    expect(screen.getByText('Rinomina programma →')).toBeTruthy();
+    fireEvent.focus(rename);
+    expect(screen.getByText('Rinomina programma →')).toBeTruthy();
+    fireEvent.pointerLeave(rename.parentElement!);
+    fireEvent.blur(rename, { relatedTarget: null });
+    expect(screen.getByText('Apri programma →')).toBeTruthy();
+
+    fireEvent.click(rename);
     expect(onRename).toHaveBeenCalledOnce();
     expect(onOpen).not.toHaveBeenCalled();
     expect(screen.getByText(/Quinta C Informatica/)).toBeTruthy();
@@ -139,7 +148,7 @@ describe('CourseRecordCard responsive and motion contract', () => {
     expect(css).not.toMatch(/!\s*important\s*[;}]/);
   });
 
-  it('keeps the whole card active over actions while scoping the opening CTA to its surface', () => {
+  it('keeps the whole card and its contextual CTA active over actions', () => {
     const ctaBlock = css.match(/\.openCta\s*\{[^}]*\}/s)?.[0] ?? '';
     const identityBlock = css.match(/\.identity\s*\{[^}]*\}/s)?.[0] ?? '';
     expect(ctaBlock).toMatch(/position:\s*absolute/);
@@ -147,7 +156,7 @@ describe('CourseRecordCard responsive and motion contract', () => {
     expect(ctaBlock).toMatch(/transform:\s*translateX\(-0\.2rem\)/);
     expect(identityBlock).toMatch(/padding-bottom:\s*1\.15rem/);
     expect(css).toMatch(
-      /\.card:has\(>\s*\.openSurface:hover\)\s*\.openCta\s*\{[^}]*opacity:\s*1[^}]*transform:\s*translateX\(0\)/s,
+      /\.card:hover\s*\.openCta\s*\{[^}]*opacity:\s*1[^}]*transform:\s*translateX\(0\)/s,
     );
     expect(css).toMatch(
       /\.card:has\(>\s*\.openSurface:focus-visible\)\s*\.openCta\s*\{[^}]*opacity:\s*1[^}]*transform:\s*translateX\(0\)/s,
@@ -165,7 +174,7 @@ describe('CourseRecordCard responsive and motion contract', () => {
     );
     expect(css).not.toMatch(/\.eyebrow\s*\{/);
     expect(css).not.toMatch(/\.accent::after\s*\{/);
-    expect(css).not.toMatch(/\.card:hover\s+\.openCta/);
+    expect(css).not.toMatch(/\.openSurface:hover\s+\.openCta/);
   });
 
   it('coordinates metric icons with the card without changing labels, values or actions', () => {

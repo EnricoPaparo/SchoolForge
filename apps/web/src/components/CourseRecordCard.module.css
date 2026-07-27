@@ -263,7 +263,7 @@
     color: var(--color-brand-interactive);
   }
 
-  .card:has(> .openSurface:hover) .openCta {
+  .card:hover .openCta {
     opacity: 1;
     transform: translateX(0);
   }
@@ -424,7 +424,7 @@
   }
 
   .openCta,
-  .card:has(> .openSurface:hover) .openCta,
+  .card:hover .openCta,
   .card:has(> .openSurface:focus-visible) .openCta {
     transform: none;
   }
