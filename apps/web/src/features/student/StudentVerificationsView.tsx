@@ -58,7 +58,10 @@ import {
   IconCircleCheck,
   IconCircleQuestion,
   IconClipboardCheck,
+  IconDownload,
   IconEye,
+  IconRotateCcw,
+  IconChevronRight,
 } from '../../components/icons.js';
 
 type LoadState =
@@ -544,7 +547,7 @@ export function StudentVerificationsView({
       <VerificationRecordCard
         key={item.submissionId}
         title={item.verificationTitle}
-        actionLayout="footer"
+        actionLayout="student-verification"
         details={[
           ...(item.className ? [{ label: 'Classe', value: item.className }] : []),
           ...(returnedLabel ? [{ label: 'Restituita', value: returnedLabel }] : []),
@@ -569,11 +572,12 @@ export function StudentVerificationsView({
         actions={
           <button
             type="button"
-            className={styles.correctionBtn}
+            className={`${styles.iconAction} ${styles.correctionBtn}`}
             aria-label={`Vedi correzione — ${item.verificationTitle}`}
+            title={`Vedi correzione — ${item.verificationTitle}`}
             onClick={() => handleShowCorrection(item.submissionId, item)}
           >
-            Vedi correzione
+            <IconEye />
           </button>
         }
       />
@@ -585,6 +589,13 @@ export function StudentVerificationsView({
     const pdfError = pdfErrors[item.id];
     const startError = startErrors[item.id];
     const status = onlineStatus[item.id];
+    const canDownloadPdf = item.studentPdfEnabled && !isVexItem(item);
+    const canResume = isActiveVerification(item) && item.onlineEnabled && status?.kind === 'draft';
+    const canStart =
+      isActiveVerification(item) &&
+      item.onlineEnabled &&
+      (status === undefined || status.kind === 'none' || status.kind === 'checking');
+    const hasIconActions = canDownloadPdf || canResume || canStart;
 
     const onlineLabel = !item.onlineEnabled
       ? 'Non disponibile'
@@ -605,7 +616,7 @@ export function StudentVerificationsView({
       <VerificationRecordCard
         key={item.id}
         title={item.title}
-        actionLayout="footer"
+        actionLayout="student-verification"
         details={[
           ...(item.className ? [{ label: 'Classe', value: item.className }] : []),
           ...(activatedLabel ? [{ label: 'Data', value: activatedLabel }] : []),
@@ -627,70 +638,89 @@ export function StudentVerificationsView({
             icon: <IconEye />,
           },
         ]}
+        statusControl={
+          item.onlineEnabled && status?.kind === 'receipt' ? (
+            <button
+              type="button"
+              className={styles.receiptBtn}
+              aria-label={`${correctionStatusLabel(status.receipt.correctionStatus ?? 'submitted')} — Codice: ${status.receipt.deliveryCode}`}
+              title={`Codice consegna: ${status.receipt.deliveryCode}`}
+              onClick={() => handleShowReceipt(status.receipt)}
+            >
+              <span className={styles.receiptStatus}>
+                {correctionStatusLabel(status.receipt.correctionStatus ?? 'submitted')} — Codice:
+              </span>
+              <span className={styles.receiptCode} title={status.receipt.deliveryCode}>
+                {status.receipt.deliveryCode}
+              </span>
+            </button>
+          ) : undefined
+        }
         actions={
-          <>
-            {/* VEX-02A: in `equivalent_variants` il PDF studente è disabilitato e
+          hasIconActions ? (
+            <>
+              {/* VEX-02A: in `equivalent_variants` il PDF studente è disabilitato e
               NON mostrato — un PDF dalla proiezione esporrebbe/ometterebbe le
               domande in modo incoerente con la variante assegnata; non esiste
               alcun modo client-side di ottenere il PDF completo. `same_questions`
               mantiene il toggle docente esistente. */}
-            {item.studentPdfEnabled && !isVexItem(item) && (
-              <button
-                type="button"
-                className={styles.pdfBtn}
-                disabled={pdfLoadingId === item.id}
-                aria-label={`Scarica PDF — ${item.title}`}
-                onClick={() => void handleDownloadPdf(item)}
-              >
-                {pdfLoadingId === item.id ? 'Generazione…' : 'Scarica PDF'}
-              </button>
-            )}
-
-            {item.onlineEnabled && status?.kind === 'receipt' && (
-              <button
-                type="button"
-                className={styles.receiptBtn}
-                aria-label={`${correctionStatusLabel(status.receipt.correctionStatus ?? 'submitted')} — Codice: ${status.receipt.deliveryCode}`}
-                title={`Codice consegna: ${status.receipt.deliveryCode}`}
-                onClick={() => handleShowReceipt(status.receipt)}
-              >
-                <span className={styles.receiptStatus}>
-                  {correctionStatusLabel(status.receipt.correctionStatus ?? 'submitted')} — Codice:
-                </span>
-                <span className={styles.receiptCode} title={status.receipt.deliveryCode}>
-                  {status.receipt.deliveryCode}
-                </span>
-              </button>
-            )}
-
-            {isActiveVerification(item) && item.onlineEnabled && status?.kind === 'draft' && (
-              <button
-                type="button"
-                className="btn-primary"
-                aria-busy={startingId === item.id}
-                disabled={startingId === item.id}
-                onClick={() => void handleStartOrResume(item)}
-              >
-                {startingId === item.id ? 'Apertura…' : 'Riprendi bozza'}
-              </button>
-            )}
-
-            {isActiveVerification(item) &&
-              item.onlineEnabled &&
-              (status === undefined || status.kind === 'none' || status.kind === 'checking') && (
+              {canDownloadPdf && (
                 <button
                   type="button"
-                  className="btn-primary"
+                  className={`${styles.iconAction} ${styles.pdfBtn}`}
+                  disabled={pdfLoadingId === item.id}
+                  aria-busy={pdfLoadingId === item.id}
+                  aria-label={`Scarica PDF — ${item.title}`}
+                  title={`Scarica PDF — ${item.title}`}
+                  onClick={() => void handleDownloadPdf(item)}
+                >
+                  {pdfLoadingId === item.id ? (
+                    <span className="spinner" aria-hidden="true" />
+                  ) : (
+                    <IconDownload />
+                  )}
+                </button>
+              )}
+
+              {canResume && (
+                <button
+                  type="button"
+                  className={`btn-primary ${styles.iconAction}`}
                   aria-busy={startingId === item.id}
+                  aria-label={`Riprendi bozza — ${item.title}`}
+                  title={`Riprendi bozza — ${item.title}`}
+                  disabled={startingId === item.id}
+                  onClick={() => void handleStartOrResume(item)}
+                >
+                  {startingId === item.id ? (
+                    <span className="spinner" aria-hidden="true" />
+                  ) : (
+                    <IconRotateCcw />
+                  )}
+                </button>
+              )}
+
+              {canStart && (
+                <button
+                  type="button"
+                  className={`btn-primary ${styles.iconAction}`}
+                  aria-busy={startingId === item.id}
+                  aria-label={`Svolgi online — ${item.title}`}
+                  title={`Svolgi online — ${item.title}`}
                   disabled={
                     status === undefined || status.kind === 'checking' || startingId === item.id
                   }
                   onClick={() => void handleStartOrResume(item)}
                 >
-                  {startingId === item.id ? 'Apertura…' : 'Svolgi online'}
+                  {startingId === item.id ? (
+                    <span className="spinner" aria-hidden="true" />
+                  ) : (
+                    <IconChevronRight />
+                  )}
                 </button>
               )}
-          </>
+            </>
+          ) : undefined
         }
         errors={
           errors.length > 0

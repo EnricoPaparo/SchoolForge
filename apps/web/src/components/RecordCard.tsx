@@ -20,7 +20,12 @@ export type RecordCardProgress = {
   text: string;
 };
 
-export type RecordCardActionLayout = 'corner' | 'grid' | 'footer' | 'verification';
+export type RecordCardActionLayout =
+  | 'corner'
+  | 'grid'
+  | 'footer'
+  | 'verification'
+  | 'student-verification';
 
 export type RecordCardProps = {
   title: string;
@@ -90,7 +95,9 @@ export function RecordCard({
         ? styles.cardActionsFooter
         : actionLayout === 'verification'
           ? styles.cardActionsVerification
-          : '';
+          : actionLayout === 'student-verification'
+            ? styles.cardActionsStudentVerification
+            : '';
   const progressAccentClass = accentProgressOnInteraction ? styles.progressAccent : '';
 
   return (

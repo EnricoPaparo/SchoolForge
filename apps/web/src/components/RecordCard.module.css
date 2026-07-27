@@ -484,6 +484,45 @@
     min-width: 2.35rem;
   }
 
+  .cardActionsStudentVerification {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'identity actions'
+      'metrics metrics'
+      'status status'
+      'errors errors';
+  }
+
+  .cardActionsStudentVerification .content {
+    display: contents;
+  }
+
+  .cardActionsStudentVerification .identity {
+    grid-area: identity;
+  }
+
+  .cardActionsStudentVerification .metrics {
+    grid-area: metrics;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cardActionsStudentVerification .actions {
+    grid-area: actions;
+    align-self: start;
+    justify-content: flex-end;
+    padding: 0;
+  }
+
+  .cardActionsStudentVerification .statusControl {
+    grid-area: status;
+    justify-self: stretch;
+  }
+
+  .cardActionsStudentVerification .errors {
+    grid-area: errors;
+    padding: 0;
+  }
+
   .cardActionsGrid .actions button {
     width: 100%;
     min-width: 0;
@@ -602,6 +641,47 @@
     grid-area: errors;
     padding: 0;
   }
+
+  .cardActionsStudentVerification {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'identity actions'
+      'metrics metrics'
+      'status status'
+      'errors errors';
+    gap: 0.55rem 0.85rem;
+    padding: 0.85rem 0.9rem 0.9rem 1.1rem;
+  }
+
+  .cardActionsStudentVerification .content {
+    display: contents;
+  }
+
+  .cardActionsStudentVerification .identity {
+    grid-area: identity;
+    padding-bottom: 0;
+  }
+
+  .cardActionsStudentVerification .metrics {
+    grid-area: metrics;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cardActionsStudentVerification .actions {
+    grid-area: actions;
+    align-self: start;
+    padding: 0;
+  }
+
+  .cardActionsStudentVerification .statusControl {
+    grid-area: status;
+    justify-self: stretch;
+  }
+
+  .cardActionsStudentVerification .errors {
+    grid-area: errors;
+    padding: 0;
+  }
 }
 
 @media (max-width: 23rem) {
@@ -655,6 +735,13 @@
 
   .cardActionsVerification .details {
     grid-template-columns: 1fr;
+  }
+
+  .cardActionsStudentVerification .actions button {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    height: 2.75rem;
+    min-height: 2.75rem;
   }
 }
 
