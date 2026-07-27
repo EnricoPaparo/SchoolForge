@@ -1,5 +1,4 @@
-import { useEffect, useRef } from 'react';
-import type { KeyboardEvent } from 'react';
+import { DialogShell } from '../../components/DialogShell.js';
 import type { AttentionEvent, AttentionEventType } from '../../types/firestore.js';
 import styles from './AttentionEventsDialog.module.css';
 
@@ -49,14 +48,6 @@ function formatEventTimestamp(ts: number): string {
   return new Date(ts).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'medium' });
 }
 
-function focusableElements(container: HTMLElement): HTMLElement[] {
-  return Array.from(
-    container.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    ),
-  ).filter((el) => !el.hasAttribute('disabled'));
-}
-
 export type AttentionEventsDialogProps = {
   studentName: string;
   events: AttentionEvent[];
@@ -80,106 +71,55 @@ export function AttentionEventsDialog({
   events,
   onClose,
 }: AttentionEventsDialogProps) {
-  const dialogRef = useRef<HTMLDivElement>(null);
   const sortedEvents = [...events].sort((a, b) => a.ts - b.ts);
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const focusables = focusableElements(dialog);
-    (focusables[0] ?? dialog).focus();
-  }, []);
-
-  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.key === 'Escape') {
-      onClose();
-      return;
-    }
-    if (e.key !== 'Tab') return;
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const focusables = focusableElements(dialog);
-    if (focusables.length === 0) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  }
-
   return (
-    <div className={styles.backdrop} onClick={onClose}>
-      <div
-        ref={dialogRef}
-        className={styles.dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="attention-events-dialog-title"
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={handleKeyDown}
-      >
-        <div className={styles.header}>
-          <div>
-            <h2 id="attention-events-dialog-title" className={styles.title}>
-              Eventi di attenzione ({sortedEvents.length})
-            </h2>
-            <p className={styles.subtitle}>{studentName}</p>
-          </div>
-          <button
-            type="button"
-            className={styles.closeBtn}
-            aria-label="Chiudi finestra eventi di attenzione"
-            onClick={onClose}
-          >
-            ✕
-          </button>
-        </div>
+    <DialogShell
+      title={`Eventi di attenzione (${sortedEvents.length})`}
+      onCancel={onClose}
+      variant="wide-scroll"
+    >
+      <p className={styles.subtitle}>{studentName}</p>
 
-        <p className={styles.notice}>
-          Questi eventi sono segnalazioni di attenzione registrate dal browser dello studente, non
-          prova di un comportamento scorretto.
-        </p>
+      <p className={styles.notice}>
+        Questi eventi sono segnalazioni di attenzione registrate dal browser dello studente, non
+        prova di un comportamento scorretto.
+      </p>
 
-        {sortedEvents.length === 0 ? (
-          <p className="state-empty">Nessun evento registrato.</p>
-        ) : (
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th className={styles.th}>Ora</th>
-                  <th className={styles.th}>Evento</th>
-                  <th className={styles.th}>Dettaglio</th>
+      {sortedEvents.length === 0 ? (
+        <p className="state-empty">Nessun evento registrato.</p>
+      ) : (
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th className={styles.th}>Ora</th>
+                <th className={styles.th}>Evento</th>
+                <th className={styles.th}>Dettaglio</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedEvents.map((event, index) => (
+                <tr key={`${event.type}-${event.ts}-${index}`}>
+                  <td className={`${styles.td} ${styles.tdTime}`}>
+                    {formatEventTimestamp(event.ts)}
+                  </td>
+                  <td className={`${styles.td} ${styles.tdEvent}`}>
+                    {shortEventLabel(event.type)}
+                  </td>
+                  <td className={styles.td}>{eventDetail(event.type)}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {sortedEvents.map((event, index) => (
-                  <tr key={`${event.type}-${event.ts}-${index}`}>
-                    <td className={`${styles.td} ${styles.tdTime}`}>
-                      {formatEventTimestamp(event.ts)}
-                    </td>
-                    <td className={`${styles.td} ${styles.tdEvent}`}>
-                      {shortEventLabel(event.type)}
-                    </td>
-                    <td className={styles.td}>{eventDetail(event.type)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div className={styles.actions}>
-          <button type="button" onClick={onClose}>
-            Chiudi
-          </button>
+              ))}
+            </tbody>
+          </table>
         </div>
+      )}
+
+      <div className={styles.actions}>
+        <button type="button" onClick={onClose}>
+          Chiudi
+        </button>
       </div>
-    </div>
+    </DialogShell>
   );
 }
