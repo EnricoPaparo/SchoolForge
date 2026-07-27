@@ -21,6 +21,7 @@ describe('CourseRecordCard', () => {
     const surface = screen.getByRole('button', { name: 'Apri il corso Sistemi e reti' });
     expect(surface.tagName).toBe('BUTTON');
     expect(surface.getAttribute('type')).toBe('button');
+    expect(surface.hasAttribute('title')).toBe(false);
     surface.focus();
     expect(document.activeElement).toBe(surface);
     const cta = screen.getByText('Apri programma →');
@@ -192,6 +193,15 @@ describe('CourseRecordCard responsive and motion contract', () => {
     );
     expect(css).toMatch(
       /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.metricIcon\s*\{[^}]*transition:\s*none/s,
+    );
+  });
+
+  it('uses the orange progress accent only for explicitly opted-in cards', () => {
+    expect(css).toMatch(
+      /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)[\s\S]*?\.progressAccent:hover\s+\.progressFill\s*\{[^}]*--color-brand-interactive/s,
+    );
+    expect(css).toMatch(
+      /\.progressAccent:focus-within\s+\.progressFill\s*\{[^}]*--color-brand-interactive/s,
     );
   });
 

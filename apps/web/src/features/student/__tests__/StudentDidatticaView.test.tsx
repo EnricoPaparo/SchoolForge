@@ -75,7 +75,7 @@ describe('StudentDidatticaView — SDUX-01', () => {
     );
   });
 
-  it('renders read-only course cards with progress and filters them by title', async () => {
+  it('renders all read-only course cards with progress and no redundant search or open action', async () => {
     loadWithData();
     render(<StudentDidatticaView />);
     const list = await screen.findByLabelText('Corsi disponibili');
@@ -87,11 +87,12 @@ describe('StudentDidatticaView — SDUX-01', () => {
     expect(card.getByText('1/2 lezioni')).toBeTruthy();
     expect(card.getByRole('progressbar', { name: 'Avanzamento Informatica' })).toBeTruthy();
     expect(screen.queryByRole('table')).toBeNull();
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Cerca corso' }), {
-      target: { value: 'mate' },
-    });
-    expect(within(list).queryByText('Informatica')).toBeNull();
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(within(list).getByText('Informatica')).toBeTruthy();
     expect(within(list).getByText('Matematica')).toBeTruthy();
+    expect(
+      screen.getAllByRole('button', { name: /Apri il corso/ }).every((button) => !button.title),
+    ).toBe(true);
   });
 
   it('opens a course, then an UDA and a lesson from the public projection', async () => {
@@ -119,7 +120,7 @@ describe('StudentDidatticaView — SDUX-01', () => {
   it('starts with every UDA collapsed and exposes no teacher or pool actions', async () => {
     loadWithData();
     render(<StudentDidatticaView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Apri corso Informatica' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apri il corso Informatica' }));
     expect(screen.queryByRole('button', { name: /Internet e reti/ })).toBeNull();
     for (const forbidden of [
       /Importa/i,
@@ -141,7 +142,7 @@ describe('StudentDidatticaView — SDUX-01', () => {
       lessonsByProgram: { 'prog-a': [{ ...LESSON_1, content: null }] },
     });
     render(<StudentDidatticaView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Apri corso Informatica' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apri il corso Informatica' }));
     const structure = screen.getByRole('complementary', { name: 'Struttura del corso' });
     fireEvent.click(within(structure).getByRole('button', { name: /Reti/ }));
     fireEvent.click(within(structure).getByRole('button', { name: /Internet e reti/ }));
@@ -152,7 +153,7 @@ describe('StudentDidatticaView — SDUX-01', () => {
   it('returns to the library without reloading Firebase data', async () => {
     loadWithData();
     render(<StudentDidatticaView />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Apri corso Informatica' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Apri il corso Informatica' }));
     fireEvent.click(screen.getByRole('button', { name: '← Libreria' }));
     expect(screen.getByLabelText('Corsi disponibili')).toBeTruthy();
     expect(mockLoadStudentLessons).toHaveBeenCalledTimes(1);
