@@ -88,10 +88,13 @@ describe('VerificationRecordCard', () => {
       /\.cardActionsGrid\s+\.actions\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s,
     );
     expect(css).toMatch(
-      /\.cardActionsVerification\s+\.metrics\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/s,
+      /\.cardActionsVerification\s+\.metrics\s*\{[^}]*grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\)/s,
     );
     expect(css).toMatch(
       /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.metrics\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.metrics\s*>\s*:last-child\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s,
     );
     expect(css).toMatch(
       /\.cardActionsVerification\s*\{[^}]*'identity actions'[^}]*'metrics metrics'/s,
@@ -99,6 +102,12 @@ describe('VerificationRecordCard', () => {
     expect(css).toMatch(/\.metricInteractive\s*\{[^}]*z-index:\s*2[^}]*pointer-events:\s*auto/s);
     expect(css).not.toMatch(/\.card:focus-within\s*\{/);
     expect(css).toMatch(/\.card:has\(\[data-record-card-cue\]:focus-visible\)\s+\.openCta\s*\{/);
+    expect(css).toMatch(
+      /\.cardActionsVerification\s+\.openCta\s*\{[^}]*bottom:\s*0\.4rem[^}]*left:\s*1\.1rem/s,
+    );
+    expect(css).toMatch(
+      /\.cardActionsVerification\s+\.metrics\s*>\s*:last-child\s+dd\s*\{[^}]*text-overflow:\s*ellipsis/s,
+    );
     expect(css).toMatch(/\.cardActionsFooter\s+\.actions\s*\{[^}]*flex-wrap:\s*wrap/s);
     expect(css).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?transform:\s*none/);
   });

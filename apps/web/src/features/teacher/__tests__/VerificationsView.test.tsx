@@ -427,10 +427,11 @@ describe('VerificationsView', () => {
     expect(within(list).getAllByText('Domande')).toHaveLength(3);
     expect(within(list).getAllByText('Documento')).toHaveLength(3);
     expect(within(list).getAllByText('Online')).toHaveLength(3);
+    expect(within(list).getAllByText('Corso')).toHaveLength(3);
     expect(within(list).queryByText('Disponibilità')).toBeNull();
     expect(within(list).getAllByRole('switch')).toHaveLength(1);
     for (const card of within(list).getAllByRole('listitem')) {
-      for (const label of ['Corso', 'Classe', 'Anno', 'Attivata', 'Chiusa']) {
+      for (const label of ['Classe', 'Anno', 'Attivata', 'Chiusa']) {
         expect(
           within(card)
             .getAllByText(label)

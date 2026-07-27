@@ -945,6 +945,12 @@
   border-top: 1px solid var(--color-border);
 }
 
+.createDialogForm .dialogActions {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 @media (max-width: 900px) {
   .tableWrap {
     overflow-x: auto;
