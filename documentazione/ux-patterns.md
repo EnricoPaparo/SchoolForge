@@ -55,6 +55,8 @@ L'interfaccia usa tre livelli, senza librerie UI esterne:
 - `busy`, Escape e click sul backdrop governati da proprietà esplicite;
 - variante normale per conferme/form brevi e `wide-scroll` per review o form
   lunghi;
+- i footer azione sono distinti dal contenuto soltanto tramite `gap`, margine
+  e padding: nessun bordo, `<hr>`, pseudo-elemento o ombra inset separatrice;
 - un lavoro locale non salvato non può essere perso con un click accidentale:
   la feature disabilita la chiusura oppure mostra una conferma separata.
 
