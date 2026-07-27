@@ -234,7 +234,13 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .card:has(> .openSurface:hover) {
+  /*
+   * The shell reacts to the whole record, including its sibling action
+   * controls. The opening CTA remains scoped to `.openSurface:hover` below,
+   * so hovering Rename/Delete keeps the card active without suggesting that
+   * those controls will open the course.
+   */
+  .card:hover {
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--color-brand-interactive) 72%, var(--color-border));
     box-shadow:
@@ -242,18 +248,18 @@
       0 0 0 1px rgba(251, 146, 60, 0.07);
   }
 
-  .card:has(> .openSurface:hover) .accent {
+  .card:hover .accent {
     width: 4px;
     background: var(--color-brand-interactive);
     box-shadow: 0 0 12px rgba(251, 146, 60, 0.26);
     filter: brightness(1.08);
   }
 
-  .card:has(> .openSurface:hover) .title {
+  .card:hover .title {
     color: var(--color-brand-interactive);
   }
 
-  .card:has(> .openSurface:hover) .metricIcon {
+  .card:hover .metricIcon {
     color: var(--color-brand-interactive);
   }
 
@@ -412,7 +418,7 @@
     transition: none;
   }
 
-  .card:has(> .openSurface:hover),
+  .card:hover,
   .card:has(> .openSurface:active) {
     transform: none;
   }

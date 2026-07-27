@@ -107,12 +107,12 @@ describe('CourseRecordCard responsive and motion contract', () => {
     expect(globalCss).toMatch(/--transition-brand-interactive:\s*160ms ease/);
     expect(css).toMatch(/transition:[\s\S]*--transition-brand-interactive/);
     expect(css).toMatch(
-      /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)[\s\S]*?\.card:has\(>\s*\.openSurface:hover\)\s*\{[^}]*translateY\(-2px\)/,
+      /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)[\s\S]*?\.card:hover\s*\{[^}]*translateY\(-2px\)/,
     );
     expect(css).toMatch(/\.card:has\(>\s*\.openSurface:active\)\s*\{[^}]*scale\(0\.995\)/s);
     expect(css).toMatch(/\.card:has\(>\s*\.openSurface:focus-visible\)\s*\{[^}]*outline:\s*3px/s);
     expect(css).toMatch(
-      /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.card:has\(>\s*\.openSurface:hover\),[\s\S]*?transform:\s*none/,
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.card:hover,[\s\S]*?transform:\s*none/,
     );
   });
 
@@ -139,7 +139,7 @@ describe('CourseRecordCard responsive and motion contract', () => {
     expect(css).not.toMatch(/!\s*important\s*[;}]/);
   });
 
-  it('reveals the orange CTA and accent only from the opening surface hover or focus', () => {
+  it('keeps the whole card active over actions while scoping the opening CTA to its surface', () => {
     const ctaBlock = css.match(/\.openCta\s*\{[^}]*\}/s)?.[0] ?? '';
     const identityBlock = css.match(/\.identity\s*\{[^}]*\}/s)?.[0] ?? '';
     expect(ctaBlock).toMatch(/position:\s*absolute/);
@@ -152,22 +152,20 @@ describe('CourseRecordCard responsive and motion contract', () => {
     expect(css).toMatch(
       /\.card:has\(>\s*\.openSurface:focus-visible\)\s*\.openCta\s*\{[^}]*opacity:\s*1[^}]*transform:\s*translateX\(0\)/s,
     );
+    expect(css).toMatch(/\.card:hover\s*\{[^}]*border-color:[^}]*--color-brand-interactive/s);
     expect(css).toMatch(
-      /\.card:has\(>\s*\.openSurface:hover\)\s*\{[^}]*border-color:[^}]*--color-brand-interactive/s,
-    );
-    expect(css).toMatch(
-      /\.card:has\(>\s*\.openSurface:hover\)\s*\.accent\s*\{[^}]*background:\s*var\(--color-brand-interactive\)/s,
+      /\.card:hover\s*\.accent\s*\{[^}]*background:\s*var\(--color-brand-interactive\)/s,
     );
     expect(css).toMatch(/\.title\s*\{[^}]*color:\s*var\(--color-brand-blue\)/s);
     expect(css).toMatch(
-      /\.card:has\(>\s*\.openSurface:hover\)\s*\.title\s*\{[^}]*color:\s*var\(--color-brand-interactive\)/s,
+      /\.card:hover\s*\.title\s*\{[^}]*color:\s*var\(--color-brand-interactive\)/s,
     );
     expect(css).toMatch(
       /\.card:has\(>\s*\.openSurface:focus-visible\)\s*\.title\s*\{[^}]*color:\s*var\(--color-brand-interactive\)/s,
     );
     expect(css).not.toMatch(/\.eyebrow\s*\{/);
     expect(css).not.toMatch(/\.accent::after\s*\{/);
-    expect(css).not.toMatch(/\.card:hover\s/);
+    expect(css).not.toMatch(/\.card:hover\s+\.openCta/);
   });
 
   it('coordinates metric icons with the card without changing labels, values or actions', () => {
@@ -175,7 +173,7 @@ describe('CourseRecordCard responsive and motion contract', () => {
       /\.metricIcon\s*\{[^}]*color:\s*var\(--color-brand-blue\)[^}]*--transition-brand-interactive/s,
     );
     expect(css).toMatch(
-      /\.card:has\(>\s*\.openSurface:hover\)\s*\.metricIcon\s*\{[^}]*color:\s*var\(--color-brand-interactive\)/s,
+      /\.card:hover\s*\.metricIcon\s*\{[^}]*color:\s*var\(--color-brand-interactive\)/s,
     );
     expect(css).toMatch(
       /\.card:has\(>\s*\.openSurface:focus-visible\)\s*\.metricIcon\s*\{[^}]*color:\s*var\(--color-brand-interactive\)/s,
