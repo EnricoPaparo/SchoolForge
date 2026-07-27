@@ -696,6 +696,46 @@ export async function closeVerification(
 }
 
 /**
+ * Reopens a closed verification without changing its immutable snapshot,
+ * visibility, online flag or PDF setting. Parent, student projection and audit
+ * are updated atomically so the student-facing status cannot drift.
+ */
+export async function reopenVerification(
+  verificationId: string,
+  ownerUid: string,
+  db: Firestore,
+): Promise<void> {
+  const snap = await getDoc(doc(db, 'verifications', verificationId));
+  const data = snap.data() as VerificationDoc | undefined;
+  if (!data) {
+    throw new Error('Verifica non trovata');
+  }
+  if (data.status !== 'closed') {
+    throw new Error('Verifica non riapribile: non è chiusa');
+  }
+  const batch = writeBatch(db);
+  batch.set(
+    doc(db, 'verifications', verificationId),
+    { status: 'active', closedAt: null, updatedAt: serverTimestamp() },
+    { merge: true },
+  );
+  batch.set(
+    doc(db, 'verifications', verificationId, 'publishedProjection', 'data'),
+    { status: 'active' },
+    { merge: true },
+  );
+  batch.set(doc(collection(db, 'auditEvents')), {
+    actorUid: ownerUid,
+    action: 'verification.reopened',
+    targetId: verificationId,
+    outcome: 'success',
+    reason: null,
+    timestamp: serverTimestamp(),
+  });
+  await batch.commit();
+}
+
+/**
  * Deletes a verification. Allowed for `draft` (discard an unfinished
  * configuration) and `closed` (tidy up an old exam) — never for `active`,
  * which is an immutable snapshot that can only be closed. The security

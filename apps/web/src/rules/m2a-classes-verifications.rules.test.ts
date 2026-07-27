@@ -326,6 +326,38 @@ describe('Firestore rules — verification immutability', () => {
     );
   });
 
+  it('owner can reopen closed -> active changing only status/closedAt/updatedAt', async () => {
+    await seedOwner();
+    const CLOSED_DOC = { ...ACTIVE_DOC, status: 'closed', closedAt: null };
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), CLOSED_DOC);
+    });
+    await assertSucceeds(
+      setDoc(doc(ownerDb(), 'verifications/v1'), {
+        ...CLOSED_DOC,
+        status: 'active',
+        closedAt: null,
+        updatedAt: null,
+      }),
+    );
+  });
+
+  it('owner cannot reopen closed -> active while also modifying config', async () => {
+    await seedOwner();
+    const CLOSED_DOC = { ...ACTIVE_DOC, status: 'closed', closedAt: null };
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'verifications/v1'), CLOSED_DOC);
+    });
+    await assertFails(
+      setDoc(doc(ownerDb(), 'verifications/v1'), {
+        ...CLOSED_DOC,
+        status: 'active',
+        closedAt: null,
+        config: { ...CLOSED_DOC.config, title: 'Cambiato' },
+      }),
+    );
+  });
+
   it('non-owner cannot update a verification in any status', async () => {
     await seedOwner();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {

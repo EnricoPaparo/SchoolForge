@@ -322,8 +322,9 @@ interface PublishedSnapshotItem extends SnapshotItem {
 // Rules sono anche i campi su cui la query filtra; un `get()` verso il
 // padre (per leggere `status`) non è validabile in questo contesto. Per lo
 // Da M4-LIFE-01 anche `status` è duplicato nella proiezione: assente sui
-// legacy significa `active`; `closeVerification` lo porta a `closed`
-// preservando `visibility`. Non contiene mai `soluzione`, `poolStorageRef`,
+// legacy significa `active`; `closeVerification` lo porta a `closed` e
+// `reopenVerification` lo riporta ad `active`, preservando visibilità,
+// disponibilità online e PDF studente. Non contiene mai `soluzione`, `poolStorageRef`,
 // `questionLocalId` o `questionIndexEntryId`.
 interface PublishedProjectionDoc {
   ownerUid: string;

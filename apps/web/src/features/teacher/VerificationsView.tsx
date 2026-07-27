@@ -5,6 +5,7 @@ import {
   createVerification,
   deleteVerification,
   listVerifications,
+  reopenVerification,
   setVerificationOnlineEnabled,
   setVerificationStudentPdfEnabled,
   setVerificationVisibility,
@@ -352,6 +353,10 @@ export function VerificationsView() {
   const [closeConfirmId, setCloseConfirmId] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
+
+  const [reopenConfirmId, setReopenConfirmId] = useState<string | null>(null);
+  const [reopening, setReopening] = useState(false);
+  const [reopenError, setReopenError] = useState<string | null>(null);
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -1395,7 +1400,7 @@ export function VerificationsView() {
   }
 
   async function handleToggleVisibility(v: VerificationItem) {
-    if (v.status !== 'active') return;
+    if (v.status === 'draft') return;
     const nextVisibility: VerificationItem['visibility'] =
       v.visibility === 'public' ? 'hidden' : 'public';
     setVisibilityLoadingId(v.id);
@@ -1438,6 +1443,7 @@ export function VerificationsView() {
     setOnlineDisableConfirmId(id);
     setOnlineDisableError(null);
     setCloseConfirmId(null);
+    setReopenConfirmId(null);
     setDeleteConfirmId(null);
     setPdfDisableConfirmId(null);
   }
@@ -1488,6 +1494,7 @@ export function VerificationsView() {
     setPdfDisableConfirmId(id);
     setPdfDisableError(null);
     setCloseConfirmId(null);
+    setReopenConfirmId(null);
     setDeleteConfirmId(null);
     setOnlineDisableConfirmId(null);
   }
@@ -1558,6 +1565,7 @@ export function VerificationsView() {
   function handleStartClose(id: string) {
     setCloseConfirmId(id);
     setCloseError(null);
+    setReopenConfirmId(null);
     setDeleteConfirmId(null);
     setOnlineDisableConfirmId(null);
     setPdfDisableConfirmId(null);
@@ -1582,10 +1590,39 @@ export function VerificationsView() {
     }
   }
 
+  function handleStartReopen(id: string) {
+    setReopenConfirmId(id);
+    setReopenError(null);
+    setCloseConfirmId(null);
+    setDeleteConfirmId(null);
+    setOnlineDisableConfirmId(null);
+    setPdfDisableConfirmId(null);
+  }
+
+  async function handleConfirmReopen(id: string) {
+    setReopening(true);
+    setReopenError(null);
+    try {
+      await reopenVerification(id, ownerUid, db);
+      setReopenConfirmId(null);
+      const updated = await listVerifications(ownerUid, db);
+      setVerifications(updated);
+      if (selectedVer?.id === id) {
+        const refreshed = updated.find((verification) => verification.id === id);
+        if (refreshed) setSelectedVer(refreshed);
+      }
+    } catch (err) {
+      setReopenError(err instanceof Error ? err.message : 'Errore durante la riapertura.');
+    } finally {
+      setReopening(false);
+    }
+  }
+
   function handleStartDelete(id: string) {
     setDeleteConfirmId(id);
     setDeleteError(null);
     setCloseConfirmId(null);
+    setReopenConfirmId(null);
     setOnlineDisableConfirmId(null);
     setPdfDisableConfirmId(null);
   }
@@ -1715,6 +1752,7 @@ export function VerificationsView() {
 
   const canActivate = selectedQuestionIds.size >= 1;
   const closeConfirmVerification = verifications.find((item) => item.id === closeConfirmId);
+  const reopenConfirmVerification = verifications.find((item) => item.id === reopenConfirmId);
   const deleteConfirmVerification = verifications.find((item) => item.id === deleteConfirmId);
   const onlineDisableVerification = verifications.find(
     (item) => item.id === onlineDisableConfirmId,
@@ -1937,29 +1975,32 @@ export function VerificationsView() {
                         >
                           <IconBookOpen />
                         </button>
-                        {(verification.status === 'active' || verification.status === 'closed') && (
-                          <button
-                            type="button"
-                            className={styles.iconBtn}
-                            title={
-                              verification.visibility === 'public'
+                        <button
+                          type="button"
+                          className={styles.iconBtn}
+                          title={
+                            verification.status === 'draft'
+                              ? 'Attiva prima la verifica'
+                              : verification.visibility === 'public'
                                 ? 'Nascondi allo studente'
                                 : 'Pubblica allo studente'
-                            }
-                            aria-label={`${
-                              verification.visibility === 'public' ? 'Nascondi' : 'Pubblica'
-                            } allo studente — ${verification.config.title}`}
-                            data-record-card-cue={
-                              verification.visibility === 'public'
-                                ? 'Nascondi allo studente →'
-                                : 'Pubblica allo studente →'
-                            }
-                            disabled={visibilityLoadingId === verification.id}
-                            onClick={() => void handleToggleVisibility(verification)}
-                          >
-                            {verification.visibility === 'public' ? <IconEyeOff /> : <IconEye />}
-                          </button>
-                        )}
+                          }
+                          aria-label={`${
+                            verification.visibility === 'public' ? 'Nascondi' : 'Pubblica'
+                          } allo studente — ${verification.config.title}`}
+                          data-record-card-cue={
+                            verification.visibility === 'public'
+                              ? 'Nascondi allo studente →'
+                              : 'Pubblica allo studente →'
+                          }
+                          disabled={
+                            verification.status === 'draft' ||
+                            visibilityLoadingId === verification.id
+                          }
+                          onClick={() => void handleToggleVisibility(verification)}
+                        >
+                          {verification.visibility === 'public' ? <IconEyeOff /> : <IconEye />}
+                        </button>
                         <button
                           type="button"
                           className={`${styles.iconBtn}${
@@ -1988,30 +2029,50 @@ export function VerificationsView() {
                         >
                           <IconFileText />
                         </button>
-                        {verification.status === 'active' && (
+                        {verification.status === 'closed' ? (
                           <button
                             type="button"
                             className={styles.iconBtn}
-                            title="Chiudi verifica"
+                            title="Riapri verifica"
+                            aria-label={`Riapri verifica — ${verification.config.title}`}
+                            data-record-card-cue="Riapri verifica →"
+                            disabled={reopening}
+                            onClick={() => handleStartReopen(verification.id)}
+                          >
+                            <IconRotateCcw />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className={styles.iconBtn}
+                            title={
+                              verification.status === 'active'
+                                ? 'Chiudi verifica'
+                                : 'Attiva prima la verifica'
+                            }
                             aria-label={`Chiudi verifica — ${verification.config.title}`}
                             data-record-card-cue="Chiudi verifica →"
+                            disabled={verification.status !== 'active' || closing}
                             onClick={() => handleStartClose(verification.id)}
                           >
                             <IconCircleX />
                           </button>
                         )}
-                        {(verification.status === 'draft' || verification.status === 'closed') && (
-                          <button
-                            type="button"
-                            className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
-                            title="Elimina verifica"
-                            aria-label={`Elimina verifica — ${verification.config.title}`}
-                            data-record-card-cue="Elimina verifica →"
-                            onClick={() => handleStartDelete(verification.id)}
-                          >
-                            <IconTrash />
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                          title={
+                            verification.status === 'active'
+                              ? 'Chiudi prima la verifica'
+                              : 'Elimina verifica'
+                          }
+                          aria-label={`Elimina verifica — ${verification.config.title}`}
+                          data-record-card-cue="Elimina verifica →"
+                          disabled={verification.status === 'active' || deleting}
+                          onClick={() => handleStartDelete(verification.id)}
+                        >
+                          <IconTrash />
+                        </button>
                       </>
                     }
                     errors={
@@ -2116,8 +2177,8 @@ export function VerificationsView() {
         >
           <div role="region" aria-label="Conferma chiusura">
             <p>
-              Chiudere <strong>{closeConfirmVerification.config.title}</strong>? Questa operazione
-              non è reversibile.
+              Chiudere <strong>{closeConfirmVerification.config.title}</strong>? Potrai riaprirla in
+              seguito.
             </p>
             {closeError && (
               <p role="alert" className="text-error">
@@ -2135,6 +2196,41 @@ export function VerificationsView() {
                 onClick={() => void handleConfirmClose(closeConfirmVerification.id)}
               >
                 {closing ? 'Chiusura…' : 'Conferma chiusura'}
+              </button>
+            </div>
+          </div>
+        </DialogShell>
+      )}
+
+      {reopenConfirmVerification && (
+        <DialogShell
+          title="Conferma riapertura"
+          role="alertdialog"
+          busy={reopening}
+          onCancel={() => setReopenConfirmId(null)}
+        >
+          <div role="region" aria-label="Conferma riapertura">
+            <p>
+              Riaprire <strong>{reopenConfirmVerification.config.title}</strong>? La verifica
+              tornerà attiva mantenendo visibilità, disponibilità online e impostazione PDF
+              correnti.
+            </p>
+            {reopenError && (
+              <p role="alert" className="text-error">
+                {reopenError}
+              </p>
+            )}
+            <div className={styles.dialogActions}>
+              <button type="button" disabled={reopening} onClick={() => setReopenConfirmId(null)}>
+                Annulla
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={reopening}
+                onClick={() => void handleConfirmReopen(reopenConfirmVerification.id)}
+              >
+                {reopening ? 'Riapertura…' : 'Riapri verifica'}
               </button>
             </div>
           </div>
@@ -2182,7 +2278,11 @@ export function VerificationsView() {
           busy={onlineLoadingId === onlineDisableVerification.id}
           onCancel={() => setOnlineDisableConfirmId(null)}
         >
-          <div role="region" aria-label="Conferma disattivazione online">
+          <div
+            className={styles.onlineDisableDialog}
+            role="region"
+            aria-label="Conferma disattivazione online"
+          >
             <p>
               Le bozze esistenti non potranno essere salvate o consegnate finché l&apos;online resta
               disabilitato.

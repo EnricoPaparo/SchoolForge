@@ -19,6 +19,7 @@ const mockSetVerificationVisibility = vi.fn();
 const mockSetVerificationOnlineEnabled = vi.fn();
 const mockSetVerificationStudentPdfEnabled = vi.fn();
 const mockCloseVerification = vi.fn();
+const mockReopenVerification = vi.fn();
 const mockDeleteVerification = vi.fn();
 const mockListQuestionIndex = vi.fn();
 const mockListPrograms = vi.fn();
@@ -65,6 +66,7 @@ vi.mock('../../repository/verifications/verificationsService.js', () => ({
   setVerificationStudentPdfEnabled: (...args: unknown[]) =>
     mockSetVerificationStudentPdfEnabled(...args),
   closeVerification: (...args: unknown[]) => mockCloseVerification(...args),
+  reopenVerification: (...args: unknown[]) => mockReopenVerification(...args),
   deleteVerification: (...args: unknown[]) => mockDeleteVerification(...args),
 }));
 vi.mock('../../repository/verifications/questionIndexService.js', () => ({
@@ -346,6 +348,7 @@ function setupDefaults() {
   mockUpdateVerificationConfig.mockResolvedValue(undefined);
   mockActivateVerification.mockResolvedValue(undefined);
   mockCloseVerification.mockResolvedValue(undefined);
+  mockReopenVerification.mockResolvedValue(undefined);
   mockDeleteVerification.mockResolvedValue(undefined);
   mockLoadSelectedQuestions.mockResolvedValue({ ok: true, questions: [] });
   mockDownloadStudentPdf.mockResolvedValue(undefined);
@@ -813,13 +816,16 @@ describe('VerificationsView', () => {
     );
   });
 
-  it('does not show the visibility toggle for a draft verification', async () => {
+  it('shows the visibility action disabled for a draft verification', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer({ status: 'draft' })]);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
 
-    expect(screen.queryByRole('button', { name: /pubblica allo studente/i })).toBeNull();
+    expect(
+      (screen.getByRole('button', { name: /pubblica allo studente/i }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
     expect(screen.queryByRole('button', { name: /nascondi allo studente/i })).toBeNull();
   });
 
@@ -1226,7 +1232,7 @@ describe('VerificationsView', () => {
       },
     });
 
-  it('shows Scarica PDF studenti, Scarica PDF soluzioni and Chiudi verifica row actions only for active verifications', async () => {
+  it('keeps six action slots on active verifications and disables Elimina', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([activeVerWithSnapshot()]);
     render(<VerificationsView />);
@@ -1234,22 +1240,36 @@ describe('VerificationsView', () => {
     expect(screen.getByRole('button', { name: /scarica pdf studenti/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /scarica pdf soluzioni/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /chiudi verifica/i })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /elimina verifica/i })).toBeNull();
+    expect(
+      (screen.getByRole('button', { name: /elimina verifica/i }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    const card = screen.getByRole('listitem', { name: /verifica verifica algebra/i });
+    expect(within(card).getAllByRole('button')).toHaveLength(7); // six actions + surface
   });
 
-  it('draft verification shows the PDF-enabled toggle, Elimina and PDF download actions (M3F-11C), never Chiudi', async () => {
+  it('keeps six action slots on drafts, disabling visibility and lifecycle controls', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
     expect(screen.getByRole('button', { name: /scarica pdf studenti/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /scarica pdf soluzioni/i })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /chiudi verifica/i })).toBeNull();
-    expect(screen.getByRole('button', { name: /elimina verifica/i })).toBeTruthy();
+    expect(
+      (screen.getByRole('button', { name: /chiudi verifica/i }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole('button', { name: /pubblica allo studente/i }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole('button', { name: /elimina verifica/i }) as HTMLButtonElement).disabled,
+    ).toBe(false);
     expect(screen.getByRole('button', { name: /abilita pdf studente/i })).toBeTruthy();
+    const card = screen.getByRole('listitem', { name: /verifica verifica algebra/i });
+    expect(within(card).getAllByRole('button')).toHaveLength(7);
   });
 
-  it('closed verification shows Scarica PDF studenti, Scarica PDF soluzioni and Elimina (never Chiudi)', async () => {
+  it('shows Riapri instead of Chiudi on closed verifications while keeping six slots', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([closedVer()]);
     render(<VerificationsView />);
@@ -1257,7 +1277,10 @@ describe('VerificationsView', () => {
     expect(screen.getByRole('button', { name: /scarica pdf studenti/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /scarica pdf soluzioni/i })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /chiudi verifica/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /riapri verifica/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /elimina verifica/i })).toBeTruthy();
+    const card = screen.getByRole('listitem', { name: /verifica verifica algebra/i });
+    expect(within(card).getAllByRole('button')).toHaveLength(7);
   });
 
   it('keeps the card delete action visually destructive', async () => {
@@ -1565,6 +1588,25 @@ describe('VerificationsView', () => {
 
     expect(screen.queryByRole('region', { name: /conferma chiusura/i })).toBeNull();
     expect(mockCloseVerification).not.toHaveBeenCalled();
+  });
+
+  it('calls reopenVerification after an explicit reopen confirmation', async () => {
+    setupDefaults();
+    const closed = closedVer();
+    const reopened = { ...closed, status: 'active' as const, closedAt: null };
+    mockListVerifications.mockResolvedValueOnce([closed]).mockResolvedValue([reopened]);
+    render(<VerificationsView />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /riapri verifica/i }));
+    const region = await screen.findByRole('region', { name: /conferma riapertura/i });
+    fireEvent.click(within(region).getByRole('button', { name: 'Riapri verifica' }));
+
+    await waitFor(() =>
+      expect(mockReopenVerification).toHaveBeenCalledWith('ver-1', 'owner-uid', {}),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /chiudi verifica/i })).toBeTruthy(),
+    );
   });
 
   // ─── Delete (row action, draft or closed) ────────────────────────────────────
