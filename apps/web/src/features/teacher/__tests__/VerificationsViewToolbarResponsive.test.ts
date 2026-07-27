@@ -45,6 +45,18 @@ describe('VerificationsView batch toolbar responsive contract', () => {
       /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsGrid\s+\.actions\s*\{[^}]*repeat\(3,\s*minmax\(0,\s*1fr\)\)/,
     );
     expect(recordCardCss).toMatch(/\.card\s*\{[^}]*width:\s*100%[^}]*overflow:\s*hidden/s);
+    expect(recordCardCss).toMatch(
+      /@media\s*\(min-width:\s*44\.01rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity actions'[^}]*'metrics metrics'/,
+    );
+    expect(recordCardCss).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity actions'[^}]*'metrics metrics'/,
+    );
+    expect(recordCardCss).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.actions\s*\{[^}]*repeat\(3,\s*minmax\(0,\s*1fr\)\)/,
+    );
+    expect(recordCardCss).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.actions button\s*\{[^}]*width:\s*2\.35rem[^}]*min-width:\s*2\.35rem/,
+    );
   });
 
   it('keeps creation controls compact and responsive down to 320px', () => {
@@ -55,6 +67,12 @@ describe('VerificationsView batch toolbar responsive contract', () => {
     expect(css).toMatch(
       /@media\s*\(max-width:\s*20rem\)[\s\S]*?\.filterActions\s*\{[^}]*grid-template-columns:\s*1fr/,
     );
-    expect(css).toMatch(/\.createDialogForm\s*\{[^}]*min-width:\s*min\(28rem,/s);
+    expect(css).toMatch(
+      /\.createDialogForm\s*\{[^}]*width:\s*100%[^}]*min-width:\s*0[^}]*box-sizing:\s*border-box/s,
+    );
+    expect(css).toMatch(
+      /\.createDialogForm input,[\s\S]*?\.createDialogForm select\s*\{[^}]*max-width:\s*100%[^}]*box-sizing:\s*border-box/s,
+    );
+    expect(css).toMatch(/\.dialogActions\s*\{[^}]*padding-top:[^}]*border-top:/s);
   });
 });

@@ -57,6 +57,7 @@ import {
   setVerificationStudentPdfEnabled,
   closeVerification,
   deleteVerification,
+  VERIFICATION_TITLE_MAX_LENGTH,
 } from '../verificationsService.js';
 import type { Firestore } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
@@ -212,6 +213,50 @@ describe('createVerification', () => {
     expect(auditData.actorUid).toBe(OWNER_UID);
   });
 
+  it('accepts and trims a title of exactly 100 characters', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ ownerUid: OWNER_UID, activeImportId: 'i1' }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          ownerUid: OWNER_UID,
+          programId: 'p1',
+          importId: 'i1',
+          status: 'active',
+        }),
+      });
+    const title = 'T'.repeat(VERIFICATION_TITLE_MAX_LENGTH);
+
+    await createVerification(
+      { title: ` ${title} `, classId: null, programId: 'p1', importId: 'i1' },
+      OWNER_UID,
+      fakeDb,
+    );
+
+    expect(mockBatchSet.mock.calls[0]?.[1].config.title).toBe(title);
+  });
+
+  it('rejects a 101-character title before reads or writes', async () => {
+    await expect(
+      createVerification(
+        {
+          title: 'T'.repeat(VERIFICATION_TITLE_MAX_LENGTH + 1),
+          classId: null,
+          programId: 'p1',
+          importId: 'i1',
+        },
+        OWNER_UID,
+        fakeDb,
+      ),
+    ).rejects.toThrow('non può superare 100 caratteri');
+
+    expect(mockGetDoc).not.toHaveBeenCalled();
+    expect(mockWriteBatch).not.toHaveBeenCalled();
+  });
+
   it('rejects an empty or stale course before opening a write batch', async () => {
     await expect(
       createVerification(
@@ -276,6 +321,20 @@ describe('updateVerificationConfig', () => {
     expect(mockSetDoc).toHaveBeenCalledTimes(2); // update + audit
     const [, mergedData] = mockSetDoc.mock.calls[0];
     expect(mergedData.config.title).toBe('Nuovo titolo');
+  });
+
+  it('rejects a 101-character title before reads or writes', async () => {
+    await expect(
+      updateVerificationConfig(
+        'ver-id',
+        { title: 'T'.repeat(VERIFICATION_TITLE_MAX_LENGTH + 1) },
+        OWNER_UID,
+        fakeDb,
+      ),
+    ).rejects.toThrow('non può superare 100 caratteri');
+
+    expect(mockGetDoc).not.toHaveBeenCalled();
+    expect(mockSetDoc).not.toHaveBeenCalled();
   });
 
   it('throws when status is not draft', async () => {

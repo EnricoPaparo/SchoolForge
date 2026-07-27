@@ -46,6 +46,21 @@ export type VerificationItem = { id: string } & Omit<
     studentPdfEnabled: boolean;
   };
 
+export const VERIFICATION_TITLE_MAX_LENGTH = 100;
+
+export function normalizeVerificationTitle(title: string): string {
+  const normalized = title.trim();
+  if (normalized.length === 0) {
+    throw new Error('Il titolo della verifica è obbligatorio.');
+  }
+  if (normalized.length > VERIFICATION_TITLE_MAX_LENGTH) {
+    throw new Error(
+      `Il titolo della verifica non può superare ${VERIFICATION_TITLE_MAX_LENGTH} caratteri.`,
+    );
+  }
+  return normalized;
+}
+
 export async function listVerifications(
   ownerUid: string,
   db: Firestore,
@@ -98,6 +113,7 @@ export async function createVerification(
   ownerUid: string,
   db: Firestore,
 ): Promise<string> {
+  const title = normalizeVerificationTitle(config.title);
   if (!config.programId || !config.importId) {
     throw new Error('Seleziona un corso pronto con una importazione attiva.');
   }
@@ -135,6 +151,7 @@ export async function createVerification(
   const auditRef = doc(collection(db, 'auditEvents'));
   const fullConfig: VerificationConfig = {
     ...config,
+    title,
     questionRefs: [],
   };
   const batch = writeBatch(db);
@@ -168,6 +185,10 @@ export async function updateVerificationConfig(
   ownerUid: string,
   db: Firestore,
 ): Promise<void> {
+  const normalizedConfig =
+    config.title === undefined
+      ? config
+      : { ...config, title: normalizeVerificationTitle(config.title) };
   const snap = await getDoc(doc(db, 'verifications', verificationId));
   const data = snap.data() as VerificationDoc;
   if (data.status !== 'draft') {
@@ -175,7 +196,7 @@ export async function updateVerificationConfig(
   }
   await setDoc(
     doc(db, 'verifications', verificationId),
-    { config: { ...data.config, ...config }, updatedAt: serverTimestamp() },
+    { config: { ...data.config, ...normalizedConfig }, updatedAt: serverTimestamp() },
     { merge: true },
   );
   await setDoc(doc(collection(db, 'auditEvents')), {
@@ -195,6 +216,8 @@ export function validateForActivation(config: VerificationConfig): {
   const errors: string[] = [];
   if (!config.title || config.title.trim() === '') {
     errors.push('Il titolo è obbligatorio');
+  } else if (config.title.trim().length > VERIFICATION_TITLE_MAX_LENGTH) {
+    errors.push(`Il titolo non può superare ${VERIFICATION_TITLE_MAX_LENGTH} caratteri`);
   }
   if (!config.programId) {
     errors.push('Il programma è obbligatorio');

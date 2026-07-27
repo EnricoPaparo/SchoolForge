@@ -75,8 +75,6 @@
   color: var(--color-text-muted);
   font-size: 0.82rem;
   font-weight: 750;
-  text-transform: uppercase;
-  letter-spacing: 0.035em;
 }
 
 .cardStatusPublic {
@@ -313,14 +311,6 @@
   cursor: pointer;
 }
 
-/* ── Online switch (row-level, in the Stato cell) ──────────────────── */
-.onlineControl {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  min-width: 0;
-}
-
 .onlineSwitch {
   position: relative;
   flex-shrink: 0;
@@ -365,14 +355,6 @@
 
 .onlineSwitchOn .onlineSwitchThumb {
   transform: translateX(0.8125rem);
-}
-
-.onlineLabel {
-  min-width: 0;
-  font-size: 0.78rem;
-  color: var(--color-text);
-  font-weight: 700;
-  white-space: nowrap;
 }
 
 /* ── Consegne online monitor panel ─────────────────────────────────── */
@@ -640,23 +622,23 @@
 
 /* ── Draft edit form (title/class + Salva bozza) ──────────────────── */
 .draftEditForm {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(10rem, 1fr);
   gap: 0.75rem;
 }
 
-.draftEditForm label {
-  display: flex;
-  flex-direction: column;
+.draftField {
+  display: grid;
   gap: 0.25rem;
+  min-width: 0;
+}
+
+.draftField label {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  flex: 1;
-  min-width: 160px;
 }
 
 .draftEditForm input,
@@ -671,12 +653,7 @@
 
 @media (max-width: 640px) {
   .draftEditForm {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .draftEditForm label {
-    min-width: 0;
+    grid-template-columns: 1fr;
   }
 }
 
@@ -917,26 +894,55 @@
 
 .createDialogForm {
   display: grid;
-  gap: 0.65rem;
-  min-width: min(28rem, calc(100vw - 3rem));
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
-.createDialogForm label {
+.formField {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.createDialogForm label,
+.titleFieldHeader {
   color: var(--color-text-muted);
   font-size: 0.8rem;
   font-weight: 700;
 }
 
+.titleFieldHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.titleCounter {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .createDialogForm input,
 .createDialogForm select {
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .dialogActions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.6rem;
-  margin-top: 0.5rem;
+  min-width: 0;
+  margin-top: 0.25rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--color-border);
 }
 
 @media (max-width: 900px) {

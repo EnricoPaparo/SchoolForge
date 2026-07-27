@@ -201,7 +201,7 @@ describe('CourseRecordCard responsive and motion contract', () => {
       /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)[\s\S]*?\.progressAccent:hover\s+\.progressFill\s*\{[^}]*--color-brand-interactive/s,
     );
     expect(css).toMatch(
-      /\.progressAccent:focus-within\s+\.progressFill\s*\{[^}]*--color-brand-interactive/s,
+      /\.progressAccent:has\(>\s*\.openSurface:focus-visible\)\s+\.progressFill\s*\{[^}]*--color-brand-interactive/s,
     );
   });
 

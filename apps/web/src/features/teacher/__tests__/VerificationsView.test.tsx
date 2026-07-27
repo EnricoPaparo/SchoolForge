@@ -55,6 +55,7 @@ vi.mock('../../../lib/auth.js', () => ({
   useAuth: () => ({ user: { uid: 'owner-uid' } }),
 }));
 vi.mock('../../repository/verifications/verificationsService.js', () => ({
+  VERIFICATION_TITLE_MAX_LENGTH: 100,
   listVerifications: (...args: unknown[]) => mockListVerifications(...args),
   createVerification: (...args: unknown[]) => mockCreateVerification(...args),
   updateVerificationConfig: (...args: unknown[]) => mockUpdateVerificationConfig(...args),
@@ -417,11 +418,28 @@ describe('VerificationsView', () => {
     expect(within(list).getByText('Verifica Algebra')).toBeTruthy();
     expect(within(list).getByText('Verifica Geometria')).toBeTruthy();
     expect(within(list).getByText('Verifica Trigonometria')).toBeTruthy();
-    expect(within(list).getByText('bozza')).toBeTruthy();
-    expect(within(list).getByText('nascosta')).toBeTruthy();
-    expect(within(list).getByText('chiusa')).toBeTruthy();
+    expect(within(list).getByText('Bozza')).toBeTruthy();
+    expect(within(list).getByText('Nascosta')).toBeTruthy();
+    expect(within(list).getAllByText('Chiusa')).toHaveLength(4);
     expect(within(list).getAllByText('Classe 3A').length).toBeGreaterThanOrEqual(1);
     expect(within(list).getAllByText('Matematica').length).toBeGreaterThanOrEqual(1);
+    expect(within(list).getAllByText('Stato')).toHaveLength(3);
+    expect(within(list).getAllByText('Domande')).toHaveLength(3);
+    expect(within(list).getAllByText('Documento')).toHaveLength(3);
+    expect(within(list).getAllByText('Online')).toHaveLength(3);
+    expect(within(list).queryByText('Disponibilità')).toBeNull();
+    expect(within(list).getAllByRole('switch')).toHaveLength(1);
+    for (const card of within(list).getAllByRole('listitem')) {
+      for (const label of ['Corso', 'Classe', 'Anno', 'Attivata', 'Chiusa']) {
+        expect(
+          within(card)
+            .getAllByText(label)
+            .some((element) => element.tagName === 'STRONG'),
+        ).toBe(true);
+      }
+    }
+    const statusValue = within(list).getByText('Bozza').closest('dd');
+    expect(statusValue?.querySelector('[class*="badge"]')).toBeNull();
     expect(screen.queryByRole('table')).toBeNull();
   });
 
@@ -446,16 +464,18 @@ describe('VerificationsView', () => {
 
     const list = await screen.findByRole('list', { name: 'Archivio verifiche' });
     expect(within(list).getAllByText('Attivata')).toHaveLength(2);
-    expect(within(list).getByText('Chiusa')).toBeTruthy();
+    expect(within(list).getAllByText('Chiusa')).toHaveLength(3);
   });
 
-  it('does not show activation/closure timestamps for a draft verification', async () => {
+  it('keeps stable activation/closure metadata slots for a draft verification', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
     render(<VerificationsView />);
 
     const list = await screen.findByRole('list', { name: 'Archivio verifiche' });
-    expect(within(list).queryByText('Attivata')).toBeNull();
+    expect(within(list).getByText('Attivata')).toBeTruthy();
+    expect(within(list).getAllByText('Chiusa')).toHaveLength(1);
+    expect(within(list).getAllByText('—')).toHaveLength(4);
   });
 
   it('falls back to "—" when an active verification is missing activatedAt (legacy doc)', async () => {
@@ -519,7 +539,25 @@ describe('VerificationsView', () => {
     expect(within(dialog).getByLabelText('Titolo')).toBeTruthy();
     expect(within(dialog).getByLabelText('Corso')).toBeTruthy();
     expect(within(dialog).getByLabelText('Classe (opzionale)')).toBeTruthy();
+    expect(within(dialog).getByLabelText('Titolo').getAttribute('maxlength')).toBe('100');
+    expect(within(dialog).getByText('0/100')).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: 'Crea verifica' })).toBeTruthy();
+  });
+
+  it('rejects a 101-character title in the creation dialog without calling the service', async () => {
+    setupDefaults();
+    render(<VerificationsView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Nuova verifica' }));
+    const dialog = screen.getByRole('dialog', { name: 'Nuova verifica' });
+
+    fireEvent.change(within(dialog).getByLabelText('Titolo'), {
+      target: { value: 'T'.repeat(101) },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Corso'), { target: { value: 'prog-1' } });
+    fireEvent.submit(within(dialog).getByLabelText('Titolo').closest('form')!);
+
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('superare 100');
+    expect(mockCreateVerification).not.toHaveBeenCalled();
   });
 
   it('opens verification details as a dedicated level and returns to the list', async () => {
@@ -711,7 +749,7 @@ describe('VerificationsView', () => {
     );
     expect(screen.getByRole('button', { name: 'Nuova verifica' })).toBeTruthy();
     // The row now reflects the refreshed active status.
-    expect(screen.getByText('pubblica')).toBeTruthy();
+    expect(screen.getByText('Pubblica')).toBeTruthy();
   });
 
   it('stays in the detail with the error visible when activation fails', async () => {
@@ -867,8 +905,9 @@ describe('VerificationsView', () => {
     await waitFor(() => screen.getByText('Verifica Algebra'));
     fireEvent.click(screen.getByText('Verifica Algebra'));
 
-    await waitFor(() => screen.getByLabelText(/titolo bozza/i));
-    fireEvent.change(screen.getByLabelText(/titolo bozza/i), {
+    const titleInput = await waitFor(() => screen.getByLabelText(/titolo bozza/i));
+    expect(titleInput.getAttribute('maxlength')).toBe('100');
+    fireEvent.change(titleInput, {
       target: { value: 'Verifica Modificata' },
     });
     fireEvent.click(screen.getByRole('button', { name: /salva bozza/i }));
@@ -1627,6 +1666,10 @@ describe('VerificationsView — online toggle (M3F-05)', () => {
     await waitFor(() =>
       expect(mockSetVerificationOnlineEnabled).toHaveBeenCalledWith('ver-1', true, 'owner-uid', {}),
     );
+    expect(mockSetVerificationOnlineEnabled).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText('Dettaglio verifica')).toBeNull();
+    expect(screen.queryByText('Attivo')).toBeNull();
+    expect(screen.queryByText('Disattivato')).toBeNull();
     expect(screen.queryByRole('region', { name: /conferma disattivazione online/i })).toBeNull();
   });
 
@@ -1682,10 +1725,8 @@ describe('VerificationsView — online toggle (M3F-05)', () => {
 
     const toggle = screen.getByRole('switch', { name: /attiva online/i });
     expect(toggle).toHaveProperty('disabled', true);
-    // The online status label reads "Nessuna classe" (distinct from the class
-    // filter's option of the same text, which also appears now).
-    const list = screen.getByRole('list', { name: 'Archivio verifiche' });
-    expect(within(list).getByText('Nessuna classe')).toBeTruthy();
+    expect(screen.queryByText('Attivo')).toBeNull();
+    expect(screen.queryByText('Disattivato')).toBeNull();
   });
 
   it('shows a readable error when enabling online fails, without crashing', async () => {

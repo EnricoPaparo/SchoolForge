@@ -9,6 +9,7 @@ import {
   setVerificationStudentPdfEnabled,
   setVerificationVisibility,
   updateVerificationConfig,
+  VERIFICATION_TITLE_MAX_LENGTH,
   type VerificationItem,
 } from '../repository/verifications/verificationsService.js';
 import { cleanupOrphanVerificationProjections } from '../repository/verifications/orphanProjectionCleanup.js';
@@ -83,6 +84,7 @@ import {
   IconSend,
   IconEraser,
   IconDownload,
+  IconWifi,
 } from '../../components/icons.js';
 import { VerificationRecordCard } from '../../components/VerificationRecordCard.js';
 import { DialogShell } from '../../components/DialogShell.js';
@@ -223,11 +225,11 @@ function StatusText({
           isPublic ? styles.cardStatusPublic : styles.cardStatusMuted
         }`}
       >
-        {isPublic ? 'pubblica' : 'nascosta'}
+        {isPublic ? 'Pubblica' : 'Nascosta'}
       </span>
     );
   }
-  const labels = { draft: 'bozza', closed: 'chiusa' } as const;
+  const labels = { draft: 'Bozza', closed: 'Chiusa' } as const;
   return (
     <span className={`${styles.cardStatusText} ${styles.cardStatusMuted}`}>{labels[status]}</span>
   );
@@ -1113,6 +1115,13 @@ export function VerificationsView() {
     if (!selectedVer || selectedVer.status !== 'draft') return;
     const title = editDraftTitle.trim();
     if (!title) return;
+    if (title.length > VERIFICATION_TITLE_MAX_LENGTH) {
+      setDraftSaveStatus('error');
+      setDraftSaveError(
+        `Il titolo della verifica non può superare ${VERIFICATION_TITLE_MAX_LENGTH} caratteri.`,
+      );
+      return;
+    }
     const savedRevision = draftRevisionRef.current;
     setSavingDraft(true);
     setDraftSaveStatus('saving');
@@ -1154,6 +1163,12 @@ export function VerificationsView() {
     e.preventDefault();
     const title = newTitle.trim();
     if (!title || !newProgramId) return;
+    if (title.length > VERIFICATION_TITLE_MAX_LENGTH) {
+      setCreateError(
+        `Il titolo della verifica non può superare ${VERIFICATION_TITLE_MAX_LENGTH} caratteri.`,
+      );
+      return;
+    }
     setCreating(true);
     setCreateError(null);
     try {
@@ -1193,6 +1208,12 @@ export function VerificationsView() {
       const title = editDraftTitle.trim();
       if (!title) {
         setActivateError('Inserisci un titolo prima di attivare la verifica.');
+        return;
+      }
+      if (title.length > VERIFICATION_TITLE_MAX_LENGTH) {
+        setActivateError(
+          `Il titolo della verifica non può superare ${VERIFICATION_TITLE_MAX_LENGTH} caratteri.`,
+        );
         return;
       }
       const classId = editDraftClassId || null;
@@ -1810,22 +1831,20 @@ export function VerificationsView() {
                       { label: 'Corso', value: programTitle },
                       { label: 'Classe', value: className },
                       { label: 'Anno', value: schoolYear },
-                      ...(verification.status === 'draft'
-                        ? []
-                        : [
-                            {
-                              label: 'Attivata',
-                              value: formatTimestamp(verification.activatedAt),
-                            },
-                            ...(verification.status === 'closed'
-                              ? [
-                                  {
-                                    label: 'Chiusa',
-                                    value: formatTimestamp(verification.closedAt),
-                                  },
-                                ]
-                              : []),
-                          ]),
+                      {
+                        label: 'Attivata',
+                        value:
+                          verification.status === 'draft'
+                            ? '—'
+                            : formatTimestamp(verification.activatedAt),
+                      },
+                      {
+                        label: 'Chiusa',
+                        value:
+                          verification.status === 'closed'
+                            ? formatTimestamp(verification.closedAt)
+                            : '—',
+                      },
                     ]}
                     metrics={[
                       {
@@ -1844,56 +1863,48 @@ export function VerificationsView() {
                         icon: <IconCircleQuestion />,
                       },
                       {
-                        label: 'Disponibilità',
+                        label: 'Documento',
                         value: `PDF ${verification.studentPdfEnabled ? 'sì' : 'no'}`,
                         icon: <IconFileText />,
                       },
                       {
                         label: 'Online',
+                        icon: <IconWifi />,
+                        interactive: verification.status === 'active',
                         value:
                           verification.status === 'active' ? (
-                            <div className={styles.onlineControl}>
-                              <button
-                                type="button"
-                                role="switch"
-                                aria-checked={verification.onlineEnabled}
-                                data-record-card-cue={`${
-                                  verification.onlineEnabled ? 'Disattiva' : 'Attiva'
-                                } online →`}
-                                aria-label={`${verification.onlineEnabled ? 'Disattiva' : 'Attiva'} online — ${verification.config.title}`}
-                                title={
-                                  verification.config.classId == null
-                                    ? 'Assegna una classe alla verifica per abilitare l’online'
-                                    : verification.onlineEnabled
-                                      ? 'Online attivo'
-                                      : 'Online disattivato'
-                                }
-                                className={`${styles.onlineSwitch} ${
-                                  verification.onlineEnabled ? styles.onlineSwitchOn : ''
-                                }`}
-                                disabled={
-                                  onlineLoadingId === verification.id ||
-                                  (!verification.onlineEnabled &&
-                                    verification.config.classId == null)
-                                }
-                                onClick={() =>
-                                  verification.onlineEnabled
-                                    ? handleStartDisableOnline(verification.id)
-                                    : void handleEnableOnline(verification)
-                                }
-                              >
-                                <span className={styles.onlineSwitchThumb} />
-                              </button>
-                              <span className={styles.onlineLabel}>
-                                {verification.config.classId == null
-                                  ? 'Nessuna classe'
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={verification.onlineEnabled}
+                              data-record-card-cue={`${
+                                verification.onlineEnabled ? 'Disattiva' : 'Attiva'
+                              } online →`}
+                              aria-label={`${verification.onlineEnabled ? 'Disattiva' : 'Attiva'} online — ${verification.config.title}`}
+                              title={
+                                verification.config.classId == null
+                                  ? 'Assegna una classe alla verifica per abilitare l’online'
                                   : verification.onlineEnabled
-                                    ? 'Attivo'
-                                    : 'Disattivato'}
-                              </span>
-                            </div>
+                                    ? 'Online attivo'
+                                    : 'Online disattivato'
+                              }
+                              className={`${styles.onlineSwitch} ${
+                                verification.onlineEnabled ? styles.onlineSwitchOn : ''
+                              }`}
+                              disabled={
+                                onlineLoadingId === verification.id ||
+                                (!verification.onlineEnabled && verification.config.classId == null)
+                              }
+                              onClick={() =>
+                                verification.onlineEnabled
+                                  ? handleStartDisableOnline(verification.id)
+                                  : void handleEnableOnline(verification)
+                              }
+                            >
+                              <span className={styles.onlineSwitchThumb} />
+                            </button>
                           ) : (
-                            <span className={styles.cardStatusText}>Non previsto</span>
+                            '—'
                           ),
                       },
                     ]}
@@ -2022,42 +2033,54 @@ export function VerificationsView() {
           onCancel={() => setCreateDialogOpen(false)}
         >
           <form className={styles.createDialogForm} onSubmit={(event) => void handleCreate(event)}>
-            <label htmlFor="new-ver-title">Titolo</label>
-            <input
-              id="new-ver-title"
-              type="text"
-              value={newTitle}
-              onChange={(event) => setNewTitle(event.target.value)}
-              autoFocus
-            />
-            <label htmlFor="new-ver-program">Corso</label>
-            <select
-              id="new-ver-program"
-              value={newProgramId}
-              onChange={(event) => setNewProgramId(event.target.value)}
-            >
-              <option value="">
-                {readyPrograms.length === 0 ? 'Nessun corso pronto' : 'Seleziona corso'}
-              </option>
-              {readyPrograms.map((program) => (
-                <option key={program.id} value={program.id}>
-                  {program.title}
+            <div className={styles.formField}>
+              <div className={styles.titleFieldHeader}>
+                <label htmlFor="new-ver-title">Titolo</label>
+                <span className={styles.titleCounter} aria-live="polite">
+                  {newTitle.length}/{VERIFICATION_TITLE_MAX_LENGTH}
+                </span>
+              </div>
+              <input
+                id="new-ver-title"
+                type="text"
+                value={newTitle}
+                maxLength={VERIFICATION_TITLE_MAX_LENGTH}
+                onChange={(event) => setNewTitle(event.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className={styles.formField}>
+              <label htmlFor="new-ver-program">Corso</label>
+              <select
+                id="new-ver-program"
+                value={newProgramId}
+                onChange={(event) => setNewProgramId(event.target.value)}
+              >
+                <option value="">
+                  {readyPrograms.length === 0 ? 'Nessun corso pronto' : 'Seleziona corso'}
                 </option>
-              ))}
-            </select>
-            <label htmlFor="new-ver-class">Classe (opzionale)</label>
-            <select
-              id="new-ver-class"
-              value={newClassId}
-              onChange={(event) => setNewClassId(event.target.value)}
-            >
-              <option value="">Nessuna</option>
-              {classes.map((classItem) => (
-                <option key={classItem.id} value={classItem.id}>
-                  {classItem.name}
-                </option>
-              ))}
-            </select>
+                {readyPrograms.map((program) => (
+                  <option key={program.id} value={program.id}>
+                    {program.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.formField}>
+              <label htmlFor="new-ver-class">Classe (opzionale)</label>
+              <select
+                id="new-ver-class"
+                value={newClassId}
+                onChange={(event) => setNewClassId(event.target.value)}
+              >
+                <option value="">Nessuna</option>
+                {classes.map((classItem) => (
+                  <option key={classItem.id} value={classItem.id}>
+                    {classItem.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             {createError && (
               <p role="alert" className="text-error">
                 {createError}
@@ -2248,32 +2271,42 @@ export function VerificationsView() {
           {/* ── Draft: edit title/class ── */}
           {selectedVer.status === 'draft' && (
             <div className={styles.draftEditForm}>
-              <label htmlFor="draft-title">Titolo bozza</label>
-              <input
-                id="draft-title"
-                type="text"
-                value={editDraftTitle}
-                onChange={(e) => {
-                  setEditDraftTitle(e.target.value);
-                  markDraftDirty();
-                }}
-              />
-              <label htmlFor="draft-class">Classe</label>
-              <select
-                id="draft-class"
-                value={editDraftClassId}
-                onChange={(e) => {
-                  setEditDraftClassId(e.target.value);
-                  markDraftDirty();
-                }}
-              >
-                <option value="">— Nessuna classe —</option>
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <div className={styles.draftField}>
+                <div className={styles.titleFieldHeader}>
+                  <label htmlFor="draft-title">Titolo bozza</label>
+                  <span className={styles.titleCounter} aria-live="polite">
+                    {editDraftTitle.length}/{VERIFICATION_TITLE_MAX_LENGTH}
+                  </span>
+                </div>
+                <input
+                  id="draft-title"
+                  type="text"
+                  value={editDraftTitle}
+                  maxLength={VERIFICATION_TITLE_MAX_LENGTH}
+                  onChange={(e) => {
+                    setEditDraftTitle(e.target.value);
+                    markDraftDirty();
+                  }}
+                />
+              </div>
+              <div className={styles.draftField}>
+                <label htmlFor="draft-class">Classe</label>
+                <select
+                  id="draft-class"
+                  value={editDraftClassId}
+                  onChange={(e) => {
+                    setEditDraftClassId(e.target.value);
+                    markDraftDirty();
+                  }}
+                >
+                  <option value="">— Nessuna classe —</option>
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           )}
 

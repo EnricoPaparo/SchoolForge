@@ -52,6 +52,33 @@ describe('VerificationRecordCard', () => {
     expect(screen.queryByText(/Apri verifica/)).toBeNull();
   });
 
+  it('keeps an interactive metric above the overlay and invokes only its control', () => {
+    const onOpen = vi.fn();
+    const onToggle = vi.fn();
+    render(
+      <VerificationRecordCard
+        title="Reti"
+        openLabel="Apri dettaglio verifica Reti"
+        onOpen={onOpen}
+        metrics={[
+          {
+            label: 'Online',
+            value: (
+              <button type="button" role="switch" aria-checked="false" onClick={onToggle}>
+                Cambia online
+              </button>
+            ),
+            interactive: true,
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('switch'));
+    expect(onToggle).toHaveBeenCalledOnce();
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
   it('defines verification/grid/footer layouts and reduced-motion on the shared shell', () => {
     const css = readFileSync(
       resolve(process.cwd(), 'src/components/RecordCard.module.css'),
@@ -66,6 +93,12 @@ describe('VerificationRecordCard', () => {
     expect(css).toMatch(
       /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.metrics\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s,
     );
+    expect(css).toMatch(
+      /\.cardActionsVerification\s*\{[^}]*'identity actions'[^}]*'metrics metrics'/s,
+    );
+    expect(css).toMatch(/\.metricInteractive\s*\{[^}]*z-index:\s*2[^}]*pointer-events:\s*auto/s);
+    expect(css).not.toMatch(/\.card:focus-within\s*\{/);
+    expect(css).toMatch(/\.card:has\(\[data-record-card-cue\]:focus-visible\)\s+\.openCta\s*\{/);
     expect(css).toMatch(/\.cardActionsFooter\s+\.actions\s*\{[^}]*flex-wrap:\s*wrap/s);
     expect(css).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?transform:\s*none/);
   });
