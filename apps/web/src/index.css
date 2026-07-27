@@ -15,6 +15,13 @@
   --color-accent-violet: #a78bfa;
   --color-brand-blue: #38bdf8;
   --color-brand-orange: #fb923c;
+  /* Opt-in only: navigational surfaces use orange while hovered/focused.
+     This token family must not be applied to every button globally. */
+  --color-brand-interactive: var(--color-brand-orange);
+  --color-brand-interactive-border: rgba(251, 146, 60, 0.72);
+  --color-brand-interactive-focus: rgba(251, 146, 60, 0.3);
+  --shadow-brand-interactive: 0 4px 12px rgba(251, 146, 60, 0.18);
+  --transition-brand-interactive: 160ms ease;
 
   --color-surface: #141a24;
   --color-surface-subtle: #090d14;

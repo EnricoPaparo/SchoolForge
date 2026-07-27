@@ -78,6 +78,7 @@ describe('CourseRecordCard responsive and motion contract', () => {
     resolve(process.cwd(), 'src/features/student/StudentDidatticaView.module.css'),
     'utf8',
   );
+  const globalCss = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
 
   it('stays full-width and never creates a multi-card grid', () => {
     expect(css).toMatch(/\.card\s*\{[^}]*width:\s*100%/s);
@@ -103,7 +104,8 @@ describe('CourseRecordCard responsive and motion contract', () => {
   });
 
   it('defines the approved academic-glow interactions and reduced-motion fallback', () => {
-    expect(css).toMatch(/transition:[\s\S]*160ms/);
+    expect(globalCss).toMatch(/--transition-brand-interactive:\s*160ms ease/);
+    expect(css).toMatch(/transition:[\s\S]*--transition-brand-interactive/);
     expect(css).toMatch(
       /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)[\s\S]*?\.card:has\(>\s*\.openSurface:hover\)\s*\{[^}]*translateY\(-2px\)/,
     );
@@ -151,21 +153,42 @@ describe('CourseRecordCard responsive and motion contract', () => {
       /\.card:has\(>\s*\.openSurface:focus-visible\)\s*\.openCta\s*\{[^}]*opacity:\s*1[^}]*transform:\s*translateX\(0\)/s,
     );
     expect(css).toMatch(
-      /\.card:has\(>\s*\.openSurface:hover\)\s*\{[^}]*border-color:[^}]*--color-brand-orange/s,
+      /\.card:has\(>\s*\.openSurface:hover\)\s*\{[^}]*border-color:[^}]*--color-brand-interactive/s,
     );
     expect(css).toMatch(
-      /\.card:has\(>\s*\.openSurface:hover\)\s*\.accent\s*\{[^}]*background:\s*var\(--color-brand-orange\)/s,
+      /\.card:has\(>\s*\.openSurface:hover\)\s*\.accent\s*\{[^}]*background:\s*var\(--color-brand-interactive\)/s,
     );
     expect(css).toMatch(/\.title\s*\{[^}]*color:\s*var\(--color-brand-blue\)/s);
     expect(css).toMatch(
-      /\.card:has\(>\s*\.openSurface:hover\)\s*\.title\s*\{[^}]*color:\s*var\(--color-brand-orange\)/s,
+      /\.card:has\(>\s*\.openSurface:hover\)\s*\.title\s*\{[^}]*color:\s*var\(--color-brand-interactive\)/s,
     );
     expect(css).toMatch(
-      /\.card:has\(>\s*\.openSurface:focus-visible\)\s*\.title\s*\{[^}]*color:\s*var\(--color-brand-orange\)/s,
+      /\.card:has\(>\s*\.openSurface:focus-visible\)\s*\.title\s*\{[^}]*color:\s*var\(--color-brand-interactive\)/s,
     );
     expect(css).not.toMatch(/\.eyebrow\s*\{/);
     expect(css).not.toMatch(/\.accent::after\s*\{/);
     expect(css).not.toMatch(/\.card:hover\s/);
+  });
+
+  it('coordinates metric icons with the card without changing labels, values or actions', () => {
+    expect(css).toMatch(
+      /\.metricIcon\s*\{[^}]*color:\s*var\(--color-brand-blue\)[^}]*--transition-brand-interactive/s,
+    );
+    expect(css).toMatch(
+      /\.card:has\(>\s*\.openSurface:hover\)\s*\.metricIcon\s*\{[^}]*color:\s*var\(--color-brand-interactive\)/s,
+    );
+    expect(css).toMatch(
+      /\.card:has\(>\s*\.openSurface:focus-visible\)\s*\.metricIcon\s*\{[^}]*color:\s*var\(--color-brand-interactive\)/s,
+    );
+    expect(css).not.toMatch(/\.metricIcon:hover/);
+    expect(css).toMatch(/\.metric dt\s*\{[^}]*color:\s*var\(--color-text-muted\)/s);
+    expect(css).toMatch(/\.metric dd\s*\{[^}]*color:\s*var\(--color-text\)/s);
+    expect(teacherCss).toMatch(
+      /\.cardActionDanger:hover:not\(:disabled\)\s*\{[^}]*background:\s*var\(--color-error-btn\)/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.metricIcon\s*\{[^}]*transition:\s*none/s,
+    );
   });
 
   it('never hides content, keeps actions above the overlay and avoids touch overflow', () => {

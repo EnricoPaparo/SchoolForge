@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -202,5 +204,49 @@ describe('TeacherShell', () => {
     fireEvent.click(screen.getByRole('button', { name: /Account:/ }));
     const avatarImg = container.querySelector('img[src="https://example.com/avatar.jpg"]');
     expect(avatarImg).toBeTruthy();
+  });
+});
+
+describe('TeacherShell brand interaction contract', () => {
+  const css = readFileSync(
+    resolve(process.cwd(), 'src/features/teacher/TeacherShell.module.css'),
+    'utf8',
+  );
+  const globalCss = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
+
+  it('keeps the active section blue and uses opt-in orange feedback on desktop', () => {
+    expect(css).toMatch(
+      /\.navBtn\[aria-current='page'\]\s*\{[^}]*background:\s*#2563eb[^}]*border-color:\s*#2563eb/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)[\s\S]*?\.navBtn:not\(\[aria-current='page'\]\):hover:not\(:disabled\)\s*\{[^}]*color:\s*var\(--color-brand-interactive\)[^}]*translateY\(-2px\)/s,
+    );
+    expect(css).toMatch(
+      /\.navBtn\[aria-current='page'\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#2563eb[^}]*border-color:\s*var\(--color-brand-interactive\)[^}]*translateY\(-2px\)/s,
+    );
+    expect(css).toMatch(
+      /\.navBtn:not\(\[aria-current='page'\]\):active:not\(:disabled\),[\s\S]*?scale\(0\.97\)/,
+    );
+  });
+
+  it('provides orange keyboard focus and removes motion when requested', () => {
+    expect(css).toMatch(
+      /\.navBtn:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--color-brand-interactive\)/s,
+    );
+    expect(css).toMatch(
+      /\.navBtn\[aria-current='page'\]:focus-visible\s*\{[^}]*background:\s*#2563eb/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.navBtn:hover:not\(:disabled\),[\s\S]*?transform:\s*none/s,
+    );
+  });
+
+  it('centralizes the brand feedback without making every button orange', () => {
+    expect(globalCss).toMatch(/--color-brand-interactive:\s*var\(--color-brand-orange\)/);
+    expect(globalCss).toMatch(/--transition-brand-interactive:\s*160ms ease/);
+    const globalButtonHover =
+      globalCss.match(/button:hover:not\(:disabled\)\s*\{[^}]*\}/s)?.[0] ?? '';
+    expect(globalButtonHover).not.toContain('--color-brand-interactive');
+    expect(globalButtonHover).not.toContain('--color-brand-orange');
   });
 });
