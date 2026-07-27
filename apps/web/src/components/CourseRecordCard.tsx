@@ -67,6 +67,9 @@ export function CourseRecordCard({
               ))}
             </div>
           )}
+          <span className={styles.openCta} aria-hidden="true">
+            Apri programma →
+          </span>
         </header>
 
         <dl className={styles.metrics}>

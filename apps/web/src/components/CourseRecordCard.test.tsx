@@ -23,6 +23,8 @@ describe('CourseRecordCard', () => {
     expect(surface.getAttribute('type')).toBe('button');
     surface.focus();
     expect(document.activeElement).toBe(surface);
+    const cta = screen.getByText('Apri programma →');
+    expect(cta.getAttribute('aria-hidden')).toBe('true');
     fireEvent.click(surface);
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
@@ -89,11 +91,73 @@ describe('CourseRecordCard responsive and motion contract', () => {
 
   it('defines the approved academic-glow interactions and reduced-motion fallback', () => {
     expect(css).toMatch(/transition:[\s\S]*160ms/);
-    expect(css).toMatch(/\.card:hover\s*\{[^}]*translateY\(-2px\)/s);
-    expect(css).toMatch(/\.card:active\s*\{[^}]*scale\(0\.995\)/s);
-    expect(css).toMatch(/\.openSurface:focus-visible\s*\{[^}]*outline:/s);
     expect(css).toMatch(
-      /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.card:hover,[\s\S]*?transform:\s*none/,
+      /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)[\s\S]*?\.card:has\(>\s*\.openSurface:hover\)\s*\{[^}]*translateY\(-2px\)/,
     );
+    expect(css).toMatch(/\.card:has\(>\s*\.openSurface:active\)\s*\{[^}]*scale\(0\.995\)/s);
+    expect(css).toMatch(/\.card:has\(>\s*\.openSurface:focus-visible\)\s*\{[^}]*outline:\s*3px/s);
+    expect(css).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.card:has\(>\s*\.openSurface:hover\),[\s\S]*?transform:\s*none/,
+    );
+  });
+
+  it('keeps the overlay transparent in every interactive state with deliberate specificity', () => {
+    const transparentStates =
+      css.match(
+        /\.card\s*>\s*\.openSurface,[\s\S]*?\.card\s*>\s*\.openSurface:disabled\s*\{[^}]*\}/,
+      )?.[0] ?? '';
+    for (const state of [
+      '.openSurface',
+      '.openSurface:hover',
+      '.openSurface:hover:not(:disabled)',
+      '.openSurface:active',
+      '.openSurface:active:not(:disabled)',
+      '.openSurface:focus',
+      '.openSurface:focus-visible',
+      '.openSurface:disabled',
+    ]) {
+      expect(transparentStates).toContain(state);
+    }
+    expect(transparentStates).toMatch(/background:\s*transparent/);
+    expect(transparentStates).toMatch(/background-color:\s*transparent/);
+    expect(transparentStates).toMatch(/border-color:\s*transparent/);
+    expect(css).not.toMatch(/!\s*important\s*[;}]/);
+  });
+
+  it('reveals the orange CTA and accent only from the opening surface hover or focus', () => {
+    const ctaBlock = css.match(/\.openCta\s*\{[^}]*\}/s)?.[0] ?? '';
+    const identityBlock = css.match(/\.identity\s*\{[^}]*\}/s)?.[0] ?? '';
+    expect(ctaBlock).toMatch(/position:\s*absolute/);
+    expect(ctaBlock).toMatch(/opacity:\s*0/);
+    expect(ctaBlock).toMatch(/transform:\s*translateX\(-0\.2rem\)/);
+    expect(identityBlock).toMatch(/padding-bottom:\s*1\.15rem/);
+    expect(css).toMatch(
+      /\.card:has\(>\s*\.openSurface:hover\)\s*\.openCta\s*\{[^}]*opacity:\s*1[^}]*transform:\s*translateX\(0\)/s,
+    );
+    expect(css).toMatch(
+      /\.card:has\(>\s*\.openSurface:focus-visible\)\s*\.openCta\s*\{[^}]*opacity:\s*1[^}]*transform:\s*translateX\(0\)/s,
+    );
+    expect(css).toMatch(
+      /\.card:has\(>\s*\.openSurface:hover\)\s*\{[^}]*border-color:[^}]*--color-brand-orange/s,
+    );
+    expect(css).toMatch(
+      /\.card:has\(>\s*\.openSurface:hover\)\s*\.accent\s*\{[^}]*background:\s*var\(--color-brand-orange\)/s,
+    );
+    expect(css).not.toMatch(/\.card:hover\s/);
+  });
+
+  it('never hides content, keeps actions above the overlay and avoids touch overflow', () => {
+    const contentBlock = css.match(/\.content\s*\{[^}]*\}/s)?.[0] ?? '';
+    expect(contentBlock).not.toMatch(/display:\s*none/);
+    expect(contentBlock).not.toMatch(/visibility:\s*hidden/);
+    expect(contentBlock).not.toMatch(/opacity:\s*0/);
+    expect(css).toMatch(/\.openSurface\s*\{[^}]*z-index:\s*1/s);
+    expect(css).toMatch(/\.actions\s*\{[^}]*z-index:\s*2/s);
+    expect(css).toMatch(/\.card\s*\{[^}]*overflow:\s*hidden/s);
+    expect(css).toMatch(/@media\s*\(max-width:\s*44rem\)/);
+    expect(css).toMatch(/@media\s*\(max-width:\s*23rem\)/);
+    // Pointer hover effects exist only for devices that actually support
+    // hover; focus-visible remains outside this media query.
+    expect(css).toMatch(/@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)/);
   });
 });
