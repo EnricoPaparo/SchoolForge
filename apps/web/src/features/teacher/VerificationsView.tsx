@@ -100,7 +100,7 @@ import {
   IconLayers,
 } from '../../components/icons.js';
 import { VerificationRecordCard } from '../../components/VerificationRecordCard.js';
-import { VerificationActionsMenu } from './VerificationActionsMenu.js';
+import { RecordActionsMenu } from './RecordActionsMenu.js';
 import { DialogShell } from '../../components/DialogShell.js';
 import type {
   AttentionEvent,
@@ -2056,8 +2056,9 @@ export function VerificationsView() {
                       // UI-VERIFICHE-06A — un solo pulsante «Azioni» sulla card:
                       // le sei azioni vivono nel menu portalato condiviso, con
                       // handler, disabled, titoli e conferme identici a prima.
-                      <VerificationActionsMenu
+                      <RecordActionsMenu
                         ariaLabel={`Azioni verifica — ${verification.config.title}`}
+                        cue="Apri menu azioni →"
                       >
                         <button
                           type="button"
@@ -2178,7 +2179,7 @@ export function VerificationsView() {
                           <IconTrash size={15} />
                           Elimina verifica
                         </button>
-                      </VerificationActionsMenu>
+                      </RecordActionsMenu>
                     }
                     errors={
                       errors.length > 0
@@ -2260,6 +2261,7 @@ export function VerificationsView() {
                 <input
                   id="new-ver-date"
                   type="date"
+                  className={styles.dateInput}
                   value={newDate}
                   onChange={(event) => setNewDate(event.target.value)}
                 />

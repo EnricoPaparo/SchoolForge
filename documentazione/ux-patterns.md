@@ -108,12 +108,16 @@ multiple e mai tabelle con scroll orizzontale su mobile.
 - studente: correzioni restituite, consegne effettuate e verifiche disponibili
   adottano lo stesso telaio, ma senza overlay quando non esiste una destinazione
   neutra e sicura; esame, PDF, ricevuta e correzione richiedono azioni esplicite;
-- azioni della card verifica docente raccolte in un unico pulsante «Azioni» che
-  apre il menu portalato condiviso (`ActionsMenu`, lo stesso di corso/UDA/lezione
-  in Didattica): il portale su `document.body` evita il ritaglio da parte
+- azioni delle card docente corso e verifica raccolte nello stesso wrapper
+  `RecordActionsMenu`, che apre il menu portalato condiviso `ActionsMenu`:
+  il portale su `document.body` evita il ritaglio da parte
   dell'`overflow` della card, Escape chiude e riporta il focus sul trigger, la
-  selezione di una voce chiude il menu. Lo switch `Online` resta fuori dal menu
+  selezione di una voce esegue prima il relativo handler React e poi chiude il
+  menu; una voce disabilitata non esegue né chiude. Lo switch `Online` resta fuori dal menu
   perché è un controllo di stato, non un'azione;
+- finché il menu di una card è aperto, la card mantiene il proprio stato
+  interattivo arancione anche se il menu vive nel portale; nessun listener
+  nativo anticipa o annulla gli handler React;
 - la CTA di apertura della card compare solo su hover reale
   (`hover: hover` + `pointer: fine`) o focus da tastiera della superficie
   apribile: mai a riposo, mai su touch, con lo spazio riservato in anticipo per

@@ -135,45 +135,6 @@
   gap: 0.75rem;
 }
 
-.cardActions {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.cardAction {
-  width: 2.45rem;
-  min-width: 2.45rem;
-  height: 2.45rem;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text);
-  background: color-mix(in srgb, var(--color-surface) 86%, transparent);
-  border: 1px solid var(--color-border);
-  border-radius: calc(var(--radius) + 2px);
-  line-height: 1;
-}
-
-.cardAction:hover:not(:disabled) {
-  color: var(--color-brand-blue);
-  background: var(--color-primary-light);
-  border-color: var(--color-brand-blue);
-}
-
-.cardActionDanger {
-  color: var(--color-error);
-  border-color: color-mix(in srgb, var(--color-error-border) 80%, var(--color-border));
-}
-
-.cardActionDanger:hover:not(:disabled) {
-  color: #fff;
-  background: var(--color-error-btn);
-  border-color: var(--color-error-btn);
-}
-
 /* ── Stato vuoto ─────────────────────────────────────────────────── */
 .emptyState {
   display: flex;

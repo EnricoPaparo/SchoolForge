@@ -103,8 +103,14 @@ describe('VerificationRecordCard', () => {
     expect(css).toMatch(
       /\.cardActionsVerification\s+\.metrics\s*\{[^}]*grid-auto-columns:\s*var\(--record-metric-size\)[^}]*align-self:\s*center/s,
     );
-    expect(css).toMatch(/\.cardActionsVerification\s*\{[^}]*--record-metric-size:\s*[\d.]+rem/s);
+    expect(css).toMatch(/\.cardActionsVerification\s*\{[^}]*--record-metric-size:\s*9\.25rem/s);
     expect(css).toMatch(/\.cardActionsVerification\s+\.metric\s*\{[^}]*height:\s*[\d.]+rem/s);
+    expect(css).toMatch(
+      /\.cardActionsVerification\s+\.metric\[data-metric-label='Online'\]\s+dd\s*\{[^}]*padding-top:\s*0\.14rem/s,
+    );
+    expect(css).toMatch(
+      /\.card:has\(\.actions\s+\[aria-expanded='true'\]\)\s*\{[^}]*border-color:\s*var\(--color-brand-interactive\)/s,
+    );
     expect(css).not.toMatch(/\.cardActionsVerification\s+\.metrics\s*\{[^}]*max-content/s);
     // UI-VERIFICHE-06B — mobile: «Argomenti» è il terzo riquadro e prende la riga
     // intera; Stato e Online restano affiancati su due colonne uguali.

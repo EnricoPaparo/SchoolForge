@@ -22,6 +22,13 @@ type ActionsMenuProps = {
   anchorRef: RefObject<HTMLButtonElement | null>;
   /** Etichetta accessibile del menu (es. «Azioni corso»). */
   ariaLabel: string;
+  /**
+   * Invocato dal bubbling React dopo l'onClick della voce selezionata.
+   * La chiusura non deve usare un listener DOM nativo sul nodo del menu:
+   * quel listener precederebbe la delega eventi di React e potrebbe smontare
+   * il portale prima che l'handler del pulsante venga eseguito.
+   */
+  onAction?: () => void;
   children: ReactNode;
 };
 
@@ -40,7 +47,7 @@ type ActionsMenuProps = {
  * gestita dal contenitore, che riceve il nodo del menu via `ref` inoltrato.
  */
 export const ActionsMenu = forwardRef<HTMLDivElement, ActionsMenuProps>(function ActionsMenu(
-  { open, anchorRef, ariaLabel, children },
+  { open, anchorRef, ariaLabel, onAction, children },
   ref,
 ) {
   const innerRef = useRef<HTMLDivElement | null>(null);
@@ -103,6 +110,12 @@ export const ActionsMenu = forwardRef<HTMLDivElement, ActionsMenuProps>(function
       role="menu"
       aria-label={ariaLabel}
       className={`${styles.menu} ${styles.menuPortal}`}
+      onClick={(event) => {
+        const item = (event.target as Element | null)?.closest<HTMLElement>('[role="menuitem"]');
+        if (item && !item.matches(':disabled') && item.getAttribute('aria-disabled') !== 'true') {
+          onAction?.();
+        }
+      }}
       style={{
         // Nascosto finché non è misurato, per evitare un flash in posizione 0,0.
         left: pos ? `${pos.left}px` : undefined,

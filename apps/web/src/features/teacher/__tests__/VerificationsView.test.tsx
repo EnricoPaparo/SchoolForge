@@ -4563,13 +4563,15 @@ describe('VerificationsView — data e Argomenti (UI-VERIFICHE-06B)', () => {
     const submit = within(dialog).getByRole('button', { name: /crea verifica/i });
 
     // Campo data inizialmente vuoto: nessun «oggi» scelto in silenzio.
-    expect((within(dialog).getByLabelText('Data') as HTMLInputElement).value).toBe('');
+    const dateInput = within(dialog).getByLabelText('Data') as HTMLInputElement;
+    expect(dateInput.value).toBe('');
+    expect(dateInput.className).toMatch(/dateInput/);
 
     fireEvent.change(within(dialog).getByLabelText('Titolo'), { target: { value: 'V' } });
     fireEvent.change(within(dialog).getByLabelText('Corso'), { target: { value: 'prog-1' } });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
 
-    fireEvent.change(within(dialog).getByLabelText('Data'), { target: { value: '2026-02-02' } });
+    fireEvent.change(dateInput, { target: { value: '2026-02-02' } });
     expect((submit as HTMLButtonElement).disabled).toBe(false);
     expect(mockCreateVerification).not.toHaveBeenCalled();
   });

@@ -223,6 +223,7 @@ export function RecordCard({
             <div
               className={`${styles.metric} ${metric.interactive ? styles.metricInteractive : ''}`}
               key={metric.label}
+              data-metric-label={metric.label}
             >
               {metric.icon && (
                 <span className={styles.metricIcon} aria-hidden="true">
