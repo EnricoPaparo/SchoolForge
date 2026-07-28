@@ -119,7 +119,8 @@ multiple e mai tabelle con scroll orizzontale su mobile.
   interattivo arancione anche se il menu vive nel portale; nessun listener
   nativo anticipa o annulla gli handler React;
 - sulla card verifica docente mobile la CTA contestuale non viene mostrata e
-  non riserva spazio; il singolo trigger «Azioni» occupa tutta la propria riga.
+  non riserva spazio; il trigger «Azioni» diventa icon-only (`…`), mantiene un
+  target touch da 44 px e si allinea in alto a destra sulla riga dell'identità.
   Su desktop dimensioni e fascia CTA restano invariate;
 - la riga compatta `Classe · Anno · Programma` aggiunge l'icona documento
   soltanto quando il PDF è realmente disponibile agli studenti; se disabilitato

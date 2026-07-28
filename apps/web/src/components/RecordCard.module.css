@@ -556,22 +556,22 @@
    * viene mostrata, non riserva una riga vuota. Nessuna altezza fissa.
    */
   .cardActionsVerification {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
-      'identity'
-      'actions'
-      'metrics'
-      'progress'
-      'errors';
+      'identity actions'
+      'metrics metrics'
+      'progress progress'
+      'errors errors';
     gap: 0.6rem;
   }
 
   .cardActionsVerification .actions {
     grid-area: actions;
     display: grid;
-    /* Il solo trigger «Azioni» usa tutta la riga disponibile. */
-    grid-template-columns: minmax(0, 1fr);
-    width: 100%;
+    grid-template-columns: auto;
+    width: auto;
+    justify-self: end;
+    align-self: start;
     padding: 0;
   }
 
@@ -602,7 +602,7 @@
   }
 
   .cardActionsVerification .actions button {
-    width: 100%;
+    width: 2.75rem;
     min-width: 2.75rem;
     min-height: 2.75rem;
   }

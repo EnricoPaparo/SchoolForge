@@ -55,7 +55,7 @@ export function RecordActionsMenu({ ariaLabel, cue, children }: RecordActionsMen
         onClick={() => setOpen((value) => !value)}
       >
         <IconMoreHorizontal size={15} />
-        <span>Azioni</span>
+        <span className={styles.label}>Azioni</span>
       </button>
       <ActionsMenu
         open={open}
