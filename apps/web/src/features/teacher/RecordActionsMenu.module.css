@@ -10,7 +10,12 @@
 }
 
 @media (max-width: 44rem) {
+  .wrapper {
+    width: 100%;
+  }
+
   .trigger {
+    width: 100%;
     min-height: 2.75rem;
     padding-inline: 0.9rem;
   }

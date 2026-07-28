@@ -552,8 +552,8 @@
 
   /*
    * UI-VERIFICHE-05 — sotto il breakpoint l'area metrics passa sotto identity,
-   * mantenendo Stato e Online su due colonne uguali; la CTA resta l'ultima
-   * fascia. Nessuna altezza fissa: il contenuto non viene mai tagliato.
+   * mantenendo Stato e Online su due colonne uguali. La CTA, che su touch non
+   * viene mostrata, non riserva una riga vuota. Nessuna altezza fissa.
    */
   .cardActionsVerification {
     grid-template-columns: minmax(0, 1fr);
@@ -561,7 +561,6 @@
       'identity'
       'actions'
       'metrics'
-      'cta'
       'progress'
       'errors';
     gap: 0.6rem;
@@ -570,9 +569,8 @@
   .cardActionsVerification .actions {
     grid-area: actions;
     display: grid;
-    /* Griglia compatta 3 × 2 per i sei slot azione. */
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.4rem;
+    /* Il solo trigger «Azioni» usa tutta la riga disponibile. */
+    grid-template-columns: minmax(0, 1fr);
     width: 100%;
     padding: 0;
   }
@@ -600,7 +598,7 @@
   }
 
   .cardActionsVerification .openCtaBand {
-    grid-area: cta;
+    display: none;
   }
 
   .cardActionsVerification .actions button {

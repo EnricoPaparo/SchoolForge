@@ -1981,7 +1981,24 @@ export function VerificationsView() {
                     title={verification.config.title}
                     titlePrefix={datePrefix}
                     titleMeta={questionLabel}
-                    metaLine={metaLine}
+                    metaLine={
+                      verification.studentPdfEnabled ? (
+                        <>
+                          {metaLine}
+                          <span aria-hidden="true"> · </span>
+                          <span
+                            className={styles.metaPdfAvailable}
+                            role="img"
+                            aria-label="PDF disponibile agli studenti"
+                            title="PDF disponibile agli studenti"
+                          >
+                            <IconFileText size={14} />
+                          </span>
+                        </>
+                      ) : (
+                        metaLine
+                      )
+                    }
                     openLabel={`Apri dettaglio verifica ${verification.config.title}`}
                     onOpen={() => void handleSelectVer(verification)}
                     defaultCue="Apri verifica →"

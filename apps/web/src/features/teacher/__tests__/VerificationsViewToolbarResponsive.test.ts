@@ -33,7 +33,7 @@ describe('VerificationsView batch toolbar responsive contract', () => {
     expect(css).toMatch(/\.statusColumn\s*\{[^}]*width:\s*16%/s);
   });
 
-  it('keeps verification archives full-width and teacher actions in a 3-column mobile grid', () => {
+  it('keeps verification archives full-width and the lone teacher menu full-width on mobile', () => {
     expect(css).toMatch(
       /\.verificationList\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column[^}]*min-width:\s*0/s,
     );
@@ -49,14 +49,14 @@ describe('VerificationsView batch toolbar responsive contract', () => {
     expect(recordCardCss).toMatch(
       /@media\s*\(min-width:\s*44\.01rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity metrics actions'[^}]*'cta metrics actions'/,
     );
-    // Mobile: metrics sotto identity, CTA ultima fascia.
+    // Mobile: metrics sotto identity; la CTA touch non riserva una fascia vuota.
     expect(recordCardCss).toMatch(
-      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity'[^}]*'actions'[^}]*'metrics'[^}]*'cta'/,
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity'[^}]*'actions'[^}]*'metrics'[^}]*'progress'[^}]*'errors'/,
     );
     expect(recordCardCss).toMatch(
-      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.actions\s*\{[^}]*repeat\(3,\s*minmax\(0,\s*1fr\)\)/,
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.actions\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
     );
-    // Target touch accessibile (≥ 44px) sui sei slot azione.
+    // Target touch accessibile (≥ 44px) sul trigger condiviso.
     expect(recordCardCss).toMatch(
       /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.actions button\s*\{[^}]*min-width:\s*2\.75rem[^}]*min-height:\s*2\.75rem/,
     );

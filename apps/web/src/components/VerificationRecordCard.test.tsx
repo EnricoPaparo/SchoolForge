@@ -136,8 +136,15 @@ describe('VerificationRecordCard', () => {
     );
     expect(css).toMatch(/\.cardActionsVerification\s+\.actions\s*\{[^}]*align-self:\s*start/s);
     // Mobile: metrics sotto identity, Stato e Online su due colonne uguali.
+    // La CTA non riserva una fascia vuota perché su touch non viene mostrata.
     expect(css).toMatch(
-      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity'[^}]*'actions'[^}]*'metrics'[^}]*'cta'/s,
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity'[^}]*'actions'[^}]*'metrics'[^}]*'progress'[^}]*'errors'/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.openCtaBand\s*\{[^}]*display:\s*none/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.actions\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s,
     );
     // Azioni mobile: griglia 3 × 2 con target touch ≥ 44px.
 
