@@ -183,7 +183,7 @@
  * indipendenti dal contenuto (stato testuale, toggle o «—»).
  */
 .cardActionsVerification {
-  --record-metric-size: 8.75rem;
+  --record-metric-size: 9.25rem;
 }
 
 .cardActionsVerification .metric {
@@ -197,6 +197,11 @@
 .cardActionsVerification .metric dd {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Il toggle respira rispetto all'etichetta senza alterare il box condiviso. */
+.cardActionsVerification .metric[data-metric-label='Online'] dd {
+  padding-top: 0.14rem;
 }
 
 /* Il titolo della verifica docente non viene troncato: va a capo ordinatamente. */
@@ -411,6 +416,34 @@
 }
 
 .card:has(> .openSurface:focus-visible) .openCta {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/*
+ * Il menu è portalato fuori dalla card: quando il puntatore entra nel portale
+ * la card non è più :hover. aria-expanded sul trigger mantiene esplicitamente
+ * lo stato visivo della card finché il menu resta aperto.
+ */
+.card:has(.actions [aria-expanded='true']) {
+  border-color: var(--color-brand-interactive);
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(251, 146, 60, 0.08);
+}
+
+.card:has(.actions [aria-expanded='true']) .accent {
+  width: 4px;
+  background: var(--color-brand-interactive);
+  box-shadow: 0 0 12px rgba(251, 146, 60, 0.26);
+}
+
+.card:has(.actions [aria-expanded='true']) .title,
+.card:has(.actions [aria-expanded='true']) .metricIcon {
+  color: var(--color-brand-interactive);
+}
+
+.ctaFollowsCard:has(.actions [aria-expanded='true']) .openCta {
   opacity: 1;
   transform: translateX(0);
 }

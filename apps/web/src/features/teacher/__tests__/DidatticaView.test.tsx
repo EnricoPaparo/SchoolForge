@@ -216,28 +216,31 @@ describe('DidatticaView — open course', () => {
     expect((screen.getByLabelText('Cerca corso') as HTMLInputElement).value).toBe('reti');
   });
 
-  it('exposes open, rename and delete as icon-only row actions', async () => {
+  it('groups open, rename and delete in the shared Actions menu', async () => {
     mockLoadCourseLibrary.mockResolvedValue([card({ title: 'Con Azioni' })]);
     renderView();
 
     await waitFor(() => expect(screen.getByText('Con Azioni')).toBeTruthy());
     const courseCard = within(screen.getByRole('listitem', { name: /corso con azioni/i }));
     expect(courseCard.getByRole('button', { name: /apri il corso con azioni/i })).toBeTruthy();
-    expect(courseCard.getByRole('button', { name: /rinomina corso — con azioni/i })).toBeTruthy();
-    expect(courseCard.getByRole('button', { name: /elimina corso — con azioni/i })).toBeTruthy();
-    // Visual labels stay icon-only; accessible names come from aria-label/title.
-    expect(courseCard.queryByText('Apri corso')).toBeNull();
-    expect(courseCard.queryByText('Rinomina corso')).toBeNull();
-    expect(courseCard.queryByText('Elimina corso')).toBeNull();
+    const trigger = courseCard.getByRole('button', { name: /azioni corso — con azioni/i });
+    expect(courseCard.queryByRole('button', { name: /rinomina corso — con azioni/i })).toBeNull();
+    fireEvent.click(trigger);
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent?.trim())).toEqual([
+      'Apri corso',
+      'Rinomina corso',
+      'Elimina corso',
+    ]);
 
-    fireEvent.click(courseCard.getByRole('button', { name: /rinomina corso — con azioni/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /rinomina corso — con azioni/i }));
     expect(screen.getByRole('dialog', { name: 'Rinomina corso' })).toBeTruthy();
     expect(screen.queryByText('WORKSPACE: Con Azioni')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
 
-    // The full card surface is the primary entry point; actions are siblings
-    // above it and never trigger navigation as a side effect.
-    fireEvent.click(courseCard.getByRole('button', { name: /apri il corso con azioni/i }));
+    // Anche l'azione nel portale esegue il proprio handler prima che il menu
+    // venga chiuso: nessun click viene perso durante lo smontaggio.
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('menuitem', { name: /apri corso con azioni/i }));
     expect(screen.getByText('WORKSPACE: Con Azioni')).toBeTruthy();
   });
 
@@ -255,7 +258,8 @@ describe('DidatticaView — open course', () => {
 
     await waitFor(() => expect(screen.getByText('Con Azioni')).toBeTruthy());
     const courseCard = within(screen.getByRole('listitem', { name: /corso con azioni/i }));
-    fireEvent.click(courseCard.getByRole('button', { name: /elimina corso — con azioni/i }));
+    fireEvent.click(courseCard.getByRole('button', { name: /azioni corso — con azioni/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /elimina corso — con azioni/i }));
     const confirm = screen.getByRole('button', { name: 'Elimina' });
     fireEvent.click(confirm);
     fireEvent.click(confirm);

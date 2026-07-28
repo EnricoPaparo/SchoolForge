@@ -85,6 +85,10 @@ describe('CourseRecordCard responsive and motion contract', () => {
     resolve(process.cwd(), 'src/features/student/StudentDidatticaView.module.css'),
     'utf8',
   );
+  const menuCss = readFileSync(
+    resolve(process.cwd(), 'src/features/teacher/CourseWorkspace.module.css'),
+    'utf8',
+  );
   const globalCss = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
 
   it('stays full-width and never creates a multi-card grid', () => {
@@ -191,9 +195,7 @@ describe('CourseRecordCard responsive and motion contract', () => {
     expect(css).not.toMatch(/\.metricIcon:hover/);
     expect(css).toMatch(/\.metric dt\s*\{[^}]*color:\s*var\(--color-text-muted\)/s);
     expect(css).toMatch(/\.metric dd\s*\{[^}]*color:\s*var\(--color-text\)/s);
-    expect(teacherCss).toMatch(
-      /\.cardActionDanger:hover:not\(:disabled\)\s*\{[^}]*background:\s*var\(--color-error-btn\)/s,
-    );
+    expect(menuCss).toMatch(/\.menuDanger\s*\{[^}]*color:\s*var\(--color-error\)/s);
     expect(css).toMatch(
       /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.metricIcon\s*\{[^}]*transition:\s*none/s,
     );

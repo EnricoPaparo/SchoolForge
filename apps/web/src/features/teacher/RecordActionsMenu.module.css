@@ -1,0 +1,17 @@
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 44rem) {
+  .trigger {
+    min-height: 2.75rem;
+    padding-inline: 0.9rem;
+  }
+}

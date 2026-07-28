@@ -19,6 +19,7 @@ import { describeImportValidationError } from './importValidationMessage.js';
 import { CourseWorkspace } from './CourseWorkspace.js';
 import { TitleDialog, NewCourseDialog, ImportDialog, ConfirmDialog } from './workspaceDialogs.js';
 import { CourseRecordCard } from '../../components/CourseRecordCard.js';
+import { RecordActionsMenu } from './RecordActionsMenu.js';
 import {
   IconBookOpen,
   IconCircleQuestion,
@@ -31,6 +32,7 @@ import {
   IconUpload,
 } from '../../components/icons.js';
 import styles from './DidatticaView.module.css';
+import menuStyles from './CourseWorkspace.module.css';
 
 const YEAR_ALL = '__all__';
 const YEAR_NONE = '__none__';
@@ -572,38 +574,42 @@ function TeacherCourseCard({ card, onOpen, onRename, onDelete }: TeacherCourseCa
         },
       ]}
       actions={
-        <div className={styles.cardActions}>
+        <RecordActionsMenu ariaLabel={`Azioni corso — ${card.title}`} cue="Apri menu azioni →">
           <button
             type="button"
-            className={styles.cardAction}
+            role="menuitem"
             data-record-card-cue="Apri programma →"
             title="Apri corso"
             aria-label={`Apri corso ${card.title}`}
             onClick={onOpen}
           >
             <IconBookOpen size={17} />
+            Apri corso
           </button>
           <button
             type="button"
-            className={styles.cardAction}
+            role="menuitem"
             data-record-card-cue="Rinomina programma →"
             title="Rinomina corso"
             aria-label={`Rinomina corso — ${card.title}`}
             onClick={onRename}
           >
             <IconPencil size={17} />
+            Rinomina corso
           </button>
           <button
             type="button"
-            className={`${styles.cardAction} ${styles.cardActionDanger}`}
+            role="menuitem"
+            className={menuStyles.menuDanger}
             data-record-card-cue="Elimina programma →"
             title="Elimina corso"
             aria-label={`Elimina corso — ${card.title}`}
             onClick={onDelete}
           >
             <IconTrash size={17} />
+            Elimina corso
           </button>
-        </div>
+        </RecordActionsMenu>
       }
     />
   );
