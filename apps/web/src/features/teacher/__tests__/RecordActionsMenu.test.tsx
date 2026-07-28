@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RecordActionsMenu } from '../RecordActionsMenu.js';
@@ -34,5 +36,15 @@ describe('RecordActionsMenu', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Azioni record' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Non disponibile' }));
     expect(screen.getByRole('menu')).toBeTruthy();
+  });
+
+  it('expands the lone trigger across its mobile row without changing desktop', () => {
+    const css = readFileSync(
+      resolve(process.cwd(), 'src/features/teacher/RecordActionsMenu.module.css'),
+      'utf8',
+    );
+    expect(css).toMatch(/@media\s*\(max-width:\s*44rem\)[\s\S]*?\.wrapper\s*\{[^}]*width:\s*100%/s);
+    expect(css).toMatch(/@media\s*\(max-width:\s*44rem\)[\s\S]*?\.trigger\s*\{[^}]*width:\s*100%/s);
+    expect(css.slice(0, css.indexOf('@media'))).not.toMatch(/\.trigger\s*\{[^}]*width:\s*100%/s);
   });
 });

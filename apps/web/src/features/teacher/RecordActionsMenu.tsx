@@ -43,7 +43,7 @@ export function RecordActionsMenu({ ariaLabel, cue, children }: RecordActionsMen
   }, [open]);
 
   return (
-    <div className={menuStyles.menuWrap}>
+    <div className={`${menuStyles.menuWrap} ${styles.wrapper}`}>
       <button
         type="button"
         ref={triggerRef}

@@ -46,7 +46,7 @@ export type RecordCardProps = {
    * UI-VERIFICHE-05 — riga unica e sobria di metadati (es.
    * «3AInf · 2026/2027 · AI Basics»), alternativa compatta a `details`. Opt-in.
    */
-  metaLine?: string;
+  metaLine?: ReactNode;
   openLabel?: string;
   onOpen?: () => void;
   defaultCue?: string;

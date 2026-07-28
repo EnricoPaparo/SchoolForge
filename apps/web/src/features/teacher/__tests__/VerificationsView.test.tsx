@@ -4257,6 +4257,21 @@ describe('VerificationsView — simplified teacher verification card (UI-VERIFIC
     }
   });
 
+  it('adds the document icon to metadata only when the student PDF is enabled', async () => {
+    const list = await renderCards([
+      makeDraftVer({ id: 'pdf-off', studentPdfEnabled: false }),
+      makeDraftVer({ id: 'pdf-on', studentPdfEnabled: true }),
+    ]);
+    const cards = within(list).getAllByRole('listitem', { name: 'Verifica Verifica Algebra' });
+    expect(cards).toHaveLength(2);
+    expect(
+      within(cards[0]!).queryByRole('img', { name: 'PDF disponibile agli studenti' }),
+    ).toBeNull();
+    expect(
+      within(cards[1]!).getByRole('img', { name: 'PDF disponibile agli studenti' }),
+    ).toBeTruthy();
+  });
+
   it('omits a missing class gracefully, never leaving a dangling separator', async () => {
     const list = await renderCards([
       makeDraftVer({ config: { ...makeDraftVer().config, classId: null } }),

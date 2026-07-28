@@ -118,6 +118,12 @@ multiple e mai tabelle con scroll orizzontale su mobile.
 - finché il menu di una card è aperto, la card mantiene il proprio stato
   interattivo arancione anche se il menu vive nel portale; nessun listener
   nativo anticipa o annulla gli handler React;
+- sulla card verifica docente mobile la CTA contestuale non viene mostrata e
+  non riserva spazio; il singolo trigger «Azioni» occupa tutta la propria riga.
+  Su desktop dimensioni e fascia CTA restano invariate;
+- la riga compatta `Classe · Anno · Programma` aggiunge l'icona documento
+  soltanto quando il PDF è realmente disponibile agli studenti; se disabilitato
+  non mostra né icona né separatore residuo;
 - la CTA di apertura della card compare solo su hover reale
   (`hover: hover` + `pointer: fine`) o focus da tastiera della superficie
   apribile: mai a riposo, mai su touch, con lo spazio riservato in anticipo per
