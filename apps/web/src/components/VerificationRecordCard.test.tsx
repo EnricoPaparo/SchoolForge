@@ -98,26 +98,37 @@ describe('VerificationRecordCard', () => {
     expect(css).toMatch(
       /@media\s*\(min-width:\s*44\.01rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity metrics actions'[^}]*'cta metrics actions'/s,
     );
+    // UI-VERIFICHE-06A — riquadri di dimensione uniforme: tracce fisse e uguali,
+    // mai dipendenti dal contenuto, e altezza identica.
     expect(css).toMatch(
-      /\.cardActionsVerification\s+\.metrics\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(5\.5rem,\s*max-content\)\)[^}]*align-self:\s*center/s,
+      /\.cardActionsVerification\s+\.metrics\s*\{[^}]*grid-auto-columns:\s*var\(--record-metric-size\)[^}]*align-self:\s*center/s,
     );
+    expect(css).toMatch(/\.cardActionsVerification\s*\{[^}]*--record-metric-size:\s*[\d.]+rem/s);
+    expect(css).toMatch(/\.cardActionsVerification\s+\.metric\s*\{[^}]*height:\s*[\d.]+rem/s);
+    expect(css).not.toMatch(/\.cardActionsVerification\s+\.metrics\s*\{[^}]*max-content/s);
+    // Mobile: due colonne uguali che si dividono la larghezza.
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.metrics\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s,
+    );
+    // CTA invisibile a riposo, visibile solo su hover/focus della superficie apribile.
+    expect(css).toMatch(/\.openCtaBand\s*\{[^}]*position:\s*static[^}]*opacity:\s*0/s);
+    expect(css).toMatch(
+      /\.cardActionsVerification:has\(> \.openSurface:hover\)\s+\.openCtaBand\s*\{[^}]*opacity:\s*1/s,
+    );
+    expect(css).toMatch(
+      /\.card:has\(> \.openSurface:focus-visible\)\s+\.openCta\s*\{[^}]*opacity:\s*1/s,
+    );
+    // L'hover generico della card è neutralizzato per la variante verifica, dove
+    // conta solo la superficie apribile (contratto della card corso invariato).
+    expect(css).toMatch(/\.cardActionsVerification:hover\s+\.openCtaBand\s*\{[^}]*opacity:\s*0/s);
+    expect(css).toMatch(/\.card:hover\s+\.openCta\s*\{[^}]*opacity:\s*1/s);
     expect(css).toMatch(/\.cardActionsVerification\s+\.actions\s*\{[^}]*align-self:\s*start/s);
     // Mobile: metrics sotto identity, Stato e Online su due colonne uguali.
     expect(css).toMatch(
       /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity'[^}]*'actions'[^}]*'metrics'[^}]*'cta'/s,
     );
-    expect(css).toMatch(
-      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.metrics\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s,
-    );
     // Azioni mobile: griglia 3 × 2 con target touch ≥ 44px.
-    expect(css).toMatch(
-      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.actions\s*\{[^}]*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s,
-    );
-    expect(css).toMatch(
-      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.actions button\s*\{[^}]*min-width:\s*2\.75rem[^}]*min-height:\s*2\.75rem/s,
-    );
-    // La CTA è nel flusso (nessun posizionamento assoluto) e sempre leggibile.
-    expect(css).toMatch(/\.openCtaBand\s*\{[^}]*position:\s*static[^}]*opacity:\s*1/s);
+
     expect(css).toMatch(/\.metricInteractive\s*\{[^}]*z-index:\s*2[^}]*pointer-events:\s*auto/s);
     expect(css).not.toMatch(/\.card:focus-within\s*\{/);
     expect(css).toMatch(/\.card:has\(\[data-record-card-cue\]:focus-visible\)\s+\.openCta\s*\{/);

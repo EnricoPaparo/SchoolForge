@@ -87,6 +87,7 @@ import {
   IconWifi,
 } from '../../components/icons.js';
 import { VerificationRecordCard } from '../../components/VerificationRecordCard.js';
+import { VerificationActionsMenu } from './VerificationActionsMenu.js';
 import { DialogShell } from '../../components/DialogShell.js';
 import type {
   AttentionEvent,
@@ -124,6 +125,8 @@ import {
   type SubmissionMonitorSortKey,
 } from '../repository/verifications/submissionMonitorSort.js';
 import styles from './VerificationsView.module.css';
+// Stili condivisi del menu «Azioni» (voce distruttiva), gli stessi di Didattica.
+import menuStyles from './CourseWorkspace.module.css';
 
 /** Extracts the epoch seconds from a Firestore Timestamp-like value, or null if absent. */
 function timestampSeconds(ts: unknown): number | null {
@@ -1927,32 +1930,37 @@ export function VerificationsView() {
                       },
                     ]}
                     actions={
-                      <>
+                      // UI-VERIFICHE-06A — un solo pulsante «Azioni» sulla card:
+                      // le sei azioni vivono nel menu portalato condiviso, con
+                      // handler, disabled, titoli e conferme identici a prima.
+                      <VerificationActionsMenu
+                        ariaLabel={`Azioni verifica — ${verification.config.title}`}
+                      >
                         <button
                           type="button"
-                          className={styles.iconBtn}
+                          role="menuitem"
                           title="Scarica PDF studenti"
                           aria-label={`Scarica PDF studenti — ${verification.config.title}`}
-                          data-record-card-cue="Scarica PDF studenti →"
                           disabled={pdfLoadingId === verification.id}
                           onClick={() => void handleDownloadPdf(verification)}
                         >
-                          <IconDownload />
+                          <IconDownload size={15} />
+                          Scarica PDF studenti
                         </button>
                         <button
                           type="button"
-                          className={styles.iconBtn}
+                          role="menuitem"
                           title="Scarica PDF soluzioni"
                           aria-label={`Scarica PDF soluzioni — ${verification.config.title}`}
-                          data-record-card-cue="Scarica PDF soluzioni →"
                           disabled={solutionsPdfLoadingId === verification.id}
                           onClick={() => void handleDownloadSolutionsPdf(verification)}
                         >
-                          <IconBookOpen />
+                          <IconBookOpen size={15} />
+                          Scarica PDF soluzioni
                         </button>
                         <button
                           type="button"
-                          className={styles.iconBtn}
+                          role="menuitem"
                           title={
                             verification.status === 'draft'
                               ? 'Attiva prima la verifica'
@@ -1963,24 +1971,24 @@ export function VerificationsView() {
                           aria-label={`${
                             verification.visibility === 'public' ? 'Nascondi' : 'Pubblica'
                           } allo studente — ${verification.config.title}`}
-                          data-record-card-cue={
-                            verification.visibility === 'public'
-                              ? 'Nascondi allo studente →'
-                              : 'Pubblica allo studente →'
-                          }
                           disabled={
                             verification.status === 'draft' ||
                             visibilityLoadingId === verification.id
                           }
                           onClick={() => void handleToggleVisibility(verification)}
                         >
-                          {verification.visibility === 'public' ? <IconEyeOff /> : <IconEye />}
+                          {verification.visibility === 'public' ? (
+                            <IconEyeOff size={15} />
+                          ) : (
+                            <IconEye size={15} />
+                          )}
+                          {verification.visibility === 'public'
+                            ? 'Nascondi allo studente'
+                            : 'Pubblica allo studente'}
                         </button>
                         <button
                           type="button"
-                          className={`${styles.iconBtn}${
-                            verification.studentPdfEnabled ? ` ${styles.iconBtnActive}` : ''
-                          }`}
+                          role="menuitem"
                           title={
                             verification.studentPdfEnabled
                               ? 'Disabilita PDF studente'
@@ -1990,11 +1998,6 @@ export function VerificationsView() {
                             verification.studentPdfEnabled ? 'Disabilita' : 'Abilita'
                           } PDF studente — ${verification.config.title}`}
                           aria-pressed={verification.studentPdfEnabled}
-                          data-record-card-cue={
-                            verification.studentPdfEnabled
-                              ? 'Disabilita PDF studente →'
-                              : 'Abilita PDF studente →'
-                          }
                           disabled={pdfEnabledLoadingId === verification.id}
                           onClick={() =>
                             verification.studentPdfEnabled
@@ -2002,53 +2005,57 @@ export function VerificationsView() {
                               : void handleEnableStudentPdf(verification)
                           }
                         >
-                          <IconFileText />
+                          <IconFileText size={15} />
+                          {verification.studentPdfEnabled
+                            ? 'Disabilita PDF studente'
+                            : 'Abilita PDF studente'}
                         </button>
                         {verification.status === 'closed' ? (
                           <button
                             type="button"
-                            className={styles.iconBtn}
+                            role="menuitem"
                             title="Riapri verifica"
                             aria-label={`Riapri verifica — ${verification.config.title}`}
-                            data-record-card-cue="Riapri verifica →"
                             disabled={reopening}
                             onClick={() => handleStartReopen(verification.id)}
                           >
-                            <IconRotateCcw />
+                            <IconRotateCcw size={15} />
+                            Riapri verifica
                           </button>
                         ) : (
                           <button
                             type="button"
-                            className={styles.iconBtn}
+                            role="menuitem"
                             title={
                               verification.status === 'active'
                                 ? 'Chiudi verifica'
                                 : 'Attiva prima la verifica'
                             }
                             aria-label={`Chiudi verifica — ${verification.config.title}`}
-                            data-record-card-cue="Chiudi verifica →"
                             disabled={verification.status !== 'active' || closing}
                             onClick={() => handleStartClose(verification.id)}
                           >
-                            <IconCircleX />
+                            <IconCircleX size={15} />
+                            Chiudi verifica
                           </button>
                         )}
                         <button
                           type="button"
-                          className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                          role="menuitem"
+                          className={menuStyles.menuDanger}
                           title={
                             verification.status === 'active'
                               ? 'Chiudi prima la verifica'
                               : 'Elimina verifica'
                           }
                           aria-label={`Elimina verifica — ${verification.config.title}`}
-                          data-record-card-cue="Elimina verifica →"
                           disabled={verification.status === 'active' || deleting}
                           onClick={() => handleStartDelete(verification.id)}
                         >
-                          <IconTrash />
+                          <IconTrash size={15} />
+                          Elimina verifica
                         </button>
-                      </>
+                      </VerificationActionsMenu>
                     }
                     errors={
                       errors.length > 0

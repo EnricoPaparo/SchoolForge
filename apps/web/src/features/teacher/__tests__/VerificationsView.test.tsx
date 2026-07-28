@@ -302,6 +302,23 @@ const makeDraftVer = (overrides = {}) => ({
   ...overrides,
 });
 
+/**
+ * UI-VERIFICHE-06A — le sei azioni della card vivono nel menu «Azioni». Questo
+ * helper apre il menu della card indicata (se non è già aperto) e restituisce la
+ * voce richiesta, così i test restano espressi in termini di azione.
+ */
+function menuItem(name: RegExp | string, cardIndex = 0): HTMLButtonElement {
+  const triggers = screen.getAllByRole('button', { name: /^Azioni verifica/ });
+  const trigger = triggers[cardIndex]!;
+  if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger);
+  return screen.getByRole('menuitem', { name }) as HTMLButtonElement;
+}
+
+/** Attende che almeno una card sia renderizzata (trigger «Azioni» presente). */
+function actionsTriggers(): HTMLElement[] {
+  return screen.getAllByRole('button', { name: /^Azioni verifica/ });
+}
+
 const sampleQuestionIndexEntries = [
   {
     id: 'qi-1',
@@ -775,7 +792,7 @@ describe('VerificationsView', () => {
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
 
-    fireEvent.click(screen.getByRole('button', { name: /pubblica allo studente/i }));
+    fireEvent.click(menuItem(/pubblica allo studente/i));
 
     await waitFor(() =>
       expect(mockSetVerificationVisibility).toHaveBeenCalledWith(
@@ -795,7 +812,7 @@ describe('VerificationsView', () => {
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
 
-    fireEvent.click(screen.getByRole('button', { name: /nascondi allo studente/i }));
+    fireEvent.click(menuItem(/nascondi allo studente/i));
 
     await waitFor(() =>
       expect(mockSetVerificationVisibility).toHaveBeenCalledWith(
@@ -813,10 +830,7 @@ describe('VerificationsView', () => {
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
 
-    expect(
-      (screen.getByRole('button', { name: /pubblica allo studente/i }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
+    expect((menuItem(/pubblica allo studente/i) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole('button', { name: /nascondi allo studente/i })).toBeNull();
   });
 
@@ -1095,8 +1109,8 @@ describe('VerificationsView', () => {
     const fakeQuestion = { ref: sampleQuestionRef, testo: 'Domanda?', tipo: 'aperta' as const };
     mockLoadSelectedQuestions.mockResolvedValue({ ok: true, questions: [fakeQuestion] });
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf studenti/i));
 
     await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
     expect(mockLoadSelectedQuestions).toHaveBeenCalledWith([sampleQuestionRef], {});
@@ -1125,8 +1139,8 @@ describe('VerificationsView', () => {
       questions: [fakeQuestion],
     });
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf soluzioni/i));
 
     await waitFor(() => expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalled());
     expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalledWith(
@@ -1141,8 +1155,8 @@ describe('VerificationsView', () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]); // questionRefs: []
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf studenti/i));
 
     await waitFor(() => screen.getByRole('alert'));
     expect(screen.getByRole('alert').textContent).toMatch(/non ha domande selezionate/i);
@@ -1228,14 +1242,14 @@ describe('VerificationsView', () => {
     mockListVerifications.mockResolvedValue([activeVerWithSnapshot()]);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
-    expect(screen.getByRole('button', { name: /scarica pdf studenti/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /scarica pdf soluzioni/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /chiudi verifica/i })).toBeTruthy();
-    expect(
-      (screen.getByRole('button', { name: /elimina verifica/i }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect(menuItem(/scarica pdf studenti/i)).toBeTruthy();
+    expect(menuItem(/scarica pdf soluzioni/i)).toBeTruthy();
+    expect(menuItem(/chiudi verifica/i)).toBeTruthy();
+    expect((menuItem(/elimina verifica/i) as HTMLButtonElement).disabled).toBe(true);
+    // UI-VERIFICHE-06A — sulla card restano solo superficie apribile + «Azioni».
     const card = screen.getByRole('listitem', { name: /verifica verifica algebra/i });
-    expect(within(card).getAllByRole('button')).toHaveLength(7); // six actions + surface
+    expect(within(card).getAllByRole('button')).toHaveLength(2);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(6);
   });
 
   it('keeps six action slots on drafts, disabling visibility and lifecycle controls', async () => {
@@ -1243,21 +1257,15 @@ describe('VerificationsView', () => {
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
-    expect(screen.getByRole('button', { name: /scarica pdf studenti/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /scarica pdf soluzioni/i })).toBeTruthy();
-    expect(
-      (screen.getByRole('button', { name: /chiudi verifica/i }) as HTMLButtonElement).disabled,
-    ).toBe(true);
-    expect(
-      (screen.getByRole('button', { name: /pubblica allo studente/i }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
-    expect(
-      (screen.getByRole('button', { name: /elimina verifica/i }) as HTMLButtonElement).disabled,
-    ).toBe(false);
-    expect(screen.getByRole('button', { name: /abilita pdf studente/i })).toBeTruthy();
+    expect(menuItem(/scarica pdf studenti/i)).toBeTruthy();
+    expect(menuItem(/scarica pdf soluzioni/i)).toBeTruthy();
+    expect((menuItem(/chiudi verifica/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/pubblica allo studente/i) as HTMLButtonElement).disabled).toBe(true);
+    expect((menuItem(/elimina verifica/i) as HTMLButtonElement).disabled).toBe(false);
+    expect(menuItem(/abilita pdf studente/i)).toBeTruthy();
     const card = screen.getByRole('listitem', { name: /verifica verifica algebra/i });
-    expect(within(card).getAllByRole('button')).toHaveLength(7);
+    expect(within(card).getAllByRole('button')).toHaveLength(2);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(6);
   });
 
   it('shows Riapri instead of Chiudi on closed verifications while keeping six slots', async () => {
@@ -1265,13 +1273,14 @@ describe('VerificationsView', () => {
     mockListVerifications.mockResolvedValue([closedVer()]);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
-    expect(screen.getByRole('button', { name: /scarica pdf studenti/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /scarica pdf soluzioni/i })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /chiudi verifica/i })).toBeNull();
-    expect(screen.getByRole('button', { name: /riapri verifica/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /elimina verifica/i })).toBeTruthy();
+    expect(menuItem(/scarica pdf studenti/i)).toBeTruthy();
+    expect(menuItem(/scarica pdf soluzioni/i)).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: /chiudi verifica/i })).toBeNull();
+    expect(menuItem(/riapri verifica/i)).toBeTruthy();
+    expect(menuItem(/elimina verifica/i)).toBeTruthy();
     const card = screen.getByRole('listitem', { name: /verifica verifica algebra/i });
-    expect(within(card).getAllByRole('button')).toHaveLength(7);
+    expect(within(card).getAllByRole('button')).toHaveLength(2);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(6);
   });
 
   it('keeps the card delete action visually destructive', async () => {
@@ -1279,8 +1288,8 @@ describe('VerificationsView', () => {
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
-    const deleteIconBtn = screen.getByRole('button', { name: /elimina verifica/i });
-    expect(deleteIconBtn.className).toMatch(/iconBtnDanger/);
+    const deleteIconBtn = menuItem(/elimina verifica/i);
+    expect(deleteIconBtn.className).toMatch(/menuDanger/);
   });
 
   it('the "Elimina definitivamente" destructive confirm button stays red (btn-danger)', async () => {
@@ -1288,7 +1297,7 @@ describe('VerificationsView', () => {
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
     render(<VerificationsView />);
     await waitFor(() => screen.getByText('Verifica Algebra'));
-    fireEvent.click(screen.getByRole('button', { name: /elimina verifica/i }));
+    fireEvent.click(menuItem(/elimina verifica/i));
     const confirmBtn = await screen.findByRole('button', { name: 'Elimina definitivamente' });
     expect(confirmBtn.classList.contains('btn-danger')).toBe(true);
   });
@@ -1319,8 +1328,8 @@ describe('VerificationsView', () => {
     const fakeQuestion = { ref: sampleQuestionRef, testo: 'Domanda?', tipo: 'aperta' as const };
     mockLoadSelectedQuestions.mockResolvedValue({ ok: true, questions: [fakeQuestion] });
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf studenti/i));
 
     await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
     expect(mockLoadSelectedQuestions).toHaveBeenCalledWith([sampleQuestionRef], {});
@@ -1340,8 +1349,8 @@ describe('VerificationsView', () => {
     });
     mockListVerifications.mockResolvedValue([activeVerNoSnapshot]);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf studenti/i));
 
     await waitFor(() => screen.getByRole('alert'));
     expect(screen.getByRole('alert').textContent).toMatch(
@@ -1356,8 +1365,8 @@ describe('VerificationsView', () => {
     mockListVerifications.mockResolvedValue([activeVerWithSnapshot()]);
     mockLoadSelectedQuestions.mockResolvedValue({ ok: false, error: 'Pool non trovato: gs://...' });
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf studenti/i));
 
     await waitFor(() => screen.getByRole('alert'));
     expect(screen.getByRole('alert').textContent).toMatch(/pool non trovato/i);
@@ -1380,8 +1389,8 @@ describe('VerificationsView', () => {
       questions: [fakeQuestion],
     });
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf soluzioni/i));
 
     await waitFor(() => expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalled());
     expect(mockLoadSelectedQuestionsWithSolutions).toHaveBeenCalledWith([sampleQuestionRef], {});
@@ -1405,8 +1414,8 @@ describe('VerificationsView', () => {
       ],
     });
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf soluzioni/i));
 
     await waitFor(() => expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalled());
   });
@@ -1418,8 +1427,8 @@ describe('VerificationsView', () => {
     const fakeQuestion = { ref: sampleQuestionRef, testo: 'Domanda?', tipo: 'aperta' as const };
     mockLoadSelectedQuestions.mockResolvedValue({ ok: true, questions: [fakeQuestion] });
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf studenti/i));
 
     await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
     expect(mockLoadSelectedQuestions).toHaveBeenCalledWith([sampleQuestionRef], {});
@@ -1442,8 +1451,8 @@ describe('VerificationsView', () => {
     });
     mockListVerifications.mockResolvedValue([activeVerNoSnapshot]);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf soluzioni/i));
 
     await waitFor(() => screen.getByRole('alert'));
     expect(screen.getByRole('alert').textContent).toMatch(
@@ -1461,8 +1470,8 @@ describe('VerificationsView', () => {
       error: 'Pool non trovato: gs://...',
     });
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf soluzioni/i));
 
     await waitFor(() => screen.getByRole('alert'));
     expect(screen.getByRole('alert').textContent).toMatch(/pool non trovato/i);
@@ -1474,8 +1483,8 @@ describe('VerificationsView', () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([activeVerWithEmbeddedSnapshot()]);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf studenti/i));
 
     await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
     expect(mockLoadSelectedQuestions).not.toHaveBeenCalled();
@@ -1490,8 +1499,8 @@ describe('VerificationsView', () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([activeVerWithEmbeddedSnapshot()]);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf soluzioni/i));
 
     await waitFor(() => expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalled());
     expect(mockLoadSelectedQuestionsWithSolutions).not.toHaveBeenCalled();
@@ -1513,11 +1522,11 @@ describe('VerificationsView', () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([closedVerWithEmbeddedSnapshot()]);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf studenti/i));
     await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf soluzioni/i }));
+    fireEvent.click(menuItem(/scarica pdf soluzioni/i));
     await waitFor(() => expect(mockDownloadTeacherSolutionsPdf).toHaveBeenCalled());
 
     expect(mockLoadSelectedQuestions).not.toHaveBeenCalled();
@@ -1535,8 +1544,8 @@ describe('VerificationsView', () => {
       error: 'Pool non trovato',
     });
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /scarica pdf studenti/i }));
-    fireEvent.click(screen.getByRole('button', { name: /scarica pdf studenti/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/scarica pdf studenti/i));
 
     await waitFor(() => expect(mockDownloadStudentPdf).toHaveBeenCalled());
     // No error surfaced despite the (irrelevant, simulated) Storage failure —
@@ -1558,8 +1567,8 @@ describe('VerificationsView', () => {
     mockListVerifications.mockResolvedValueOnce([activeVer]).mockResolvedValue([closed]);
     mockCloseVerification.mockResolvedValue(undefined);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /chiudi verifica/i }));
-    fireEvent.click(screen.getByRole('button', { name: /chiudi verifica/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/chiudi verifica/i));
     await waitFor(() => screen.getByRole('region', { name: /conferma chiusura/i }));
     fireEvent.click(screen.getByRole('button', { name: /conferma chiusura/i }));
 
@@ -1572,8 +1581,8 @@ describe('VerificationsView', () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([activeVerWithSnapshot()]);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /chiudi verifica/i }));
-    fireEvent.click(screen.getByRole('button', { name: /chiudi verifica/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/chiudi verifica/i));
     await waitFor(() => screen.getByRole('region', { name: /conferma chiusura/i }));
     fireEvent.click(screen.getByRole('button', { name: /annulla/i }));
 
@@ -1588,16 +1597,15 @@ describe('VerificationsView', () => {
     mockListVerifications.mockResolvedValueOnce([closed]).mockResolvedValue([reopened]);
     render(<VerificationsView />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /riapri verifica/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/riapri verifica/i));
     const region = await screen.findByRole('region', { name: /conferma riapertura/i });
     fireEvent.click(within(region).getByRole('button', { name: 'Riapri verifica' }));
 
     await waitFor(() =>
       expect(mockReopenVerification).toHaveBeenCalledWith('ver-1', 'owner-uid', {}),
     );
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /chiudi verifica/i })).toBeTruthy(),
-    );
+    await waitFor(() => expect(menuItem(/chiudi verifica/i)).toBeTruthy());
   });
 
   it('uses the same separator-free action footer for reopen and delete confirmations', async () => {
@@ -1605,12 +1613,13 @@ describe('VerificationsView', () => {
     mockListVerifications.mockResolvedValue([closedVer()]);
     render(<VerificationsView />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /riapri verifica/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/riapri verifica/i));
     const reopenRegion = await screen.findByRole('region', { name: /conferma riapertura/i });
     expect(reopenRegion.querySelector('[class*="dialogActions"]')).toBeTruthy();
     fireEvent.click(within(reopenRegion).getByRole('button', { name: 'Annulla' }));
 
-    fireEvent.click(screen.getByRole('button', { name: /elimina verifica/i }));
+    fireEvent.click(menuItem(/elimina verifica/i));
     const deleteRegion = await screen.findByRole('region', { name: /conferma eliminazione/i });
     expect(deleteRegion.querySelector('[class*="dialogActions"]')).toBeTruthy();
   });
@@ -1621,8 +1630,8 @@ describe('VerificationsView', () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([closedVer()]);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /elimina verifica/i }));
-    fireEvent.click(screen.getByRole('button', { name: /elimina verifica/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/elimina verifica/i));
 
     const region = await screen.findByRole('region', { name: /conferma eliminazione/i });
     expect(within(region).getByText(/irreversibile/i)).toBeTruthy();
@@ -1633,8 +1642,8 @@ describe('VerificationsView', () => {
     setupDefaults();
     mockListVerifications.mockResolvedValueOnce([closedVer()]).mockResolvedValue([]);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /elimina verifica/i }));
-    fireEvent.click(screen.getByRole('button', { name: /elimina verifica/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/elimina verifica/i));
     const region = await screen.findByRole('region', { name: /conferma eliminazione/i });
     fireEvent.click(within(region).getByRole('button', { name: /elimina definitivamente/i }));
 
@@ -1648,8 +1657,8 @@ describe('VerificationsView', () => {
     setupDefaults();
     mockListVerifications.mockResolvedValueOnce([makeDraftVer()]).mockResolvedValue([]);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /elimina verifica/i }));
-    fireEvent.click(screen.getByRole('button', { name: /elimina verifica/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/elimina verifica/i));
     const region = await screen.findByRole('region', { name: /conferma eliminazione/i });
     fireEvent.click(within(region).getByRole('button', { name: /elimina definitivamente/i }));
 
@@ -1663,8 +1672,8 @@ describe('VerificationsView', () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([closedVer()]);
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /elimina verifica/i }));
-    fireEvent.click(screen.getByRole('button', { name: /elimina verifica/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/elimina verifica/i));
     const region = await screen.findByRole('region', { name: /conferma eliminazione/i });
     fireEvent.click(within(region).getByRole('button', { name: /annulla/i }));
 
@@ -1682,8 +1691,8 @@ describe('VerificationsView', () => {
     mockListVerifications.mockResolvedValue([closedVer()]);
     mockDeleteVerification.mockRejectedValue(new Error('Verifica non eliminabile: non è chiusa'));
     render(<VerificationsView />);
-    await waitFor(() => screen.getByRole('button', { name: /elimina verifica/i }));
-    fireEvent.click(screen.getByRole('button', { name: /elimina verifica/i }));
+    await waitFor(() => actionsTriggers());
+    fireEvent.click(menuItem(/elimina verifica/i));
     const region = await screen.findByRole('region', { name: /conferma eliminazione/i });
     fireEvent.click(within(region).getByRole('button', { name: /elimina definitivamente/i }));
 
@@ -3175,8 +3184,7 @@ describe('VerificationsView — school year + archive filters (VUX-01)', () => {
     expect(screen.getByText('Storica')).toBeTruthy();
 
     // A later list update (enabling the student PDF re-writes the list state).
-    const pdfButtons = screen.getAllByRole('button', { name: /Abilita PDF studente/i });
-    fireEvent.click(pdfButtons[0]!);
+    fireEvent.click(menuItem(/Abilita PDF studente/i));
     await waitFor(() => expect(mockSetVerificationStudentPdfEnabled).toHaveBeenCalled());
 
     // The manual "all years" choice is preserved (not snapped back to 2025/2026).
@@ -3271,7 +3279,7 @@ describe('VerificationsView — school year + archive filters (VUX-01)', () => {
     ).toBeNull();
 
     // A later list update re-runs the effect; the freed key is retried.
-    fireEvent.click(screen.getAllByRole('button', { name: /Abilita PDF studente/i })[0]!);
+    fireEvent.click(menuItem(/Abilita PDF studente/i, 0));
     await waitFor(() => expect(mockSetVerificationStudentPdfEnabled).toHaveBeenCalled());
     await waitFor(() => expect(mockGetImportMeta).toHaveBeenCalledTimes(2));
     await waitFor(() =>
@@ -4259,48 +4267,171 @@ describe('VerificationsView — simplified teacher verification card (UI-VERIFIC
     expect(screen.getByRole('list', { name: 'Archivio verifiche' })).toBeTruthy();
   });
 
-  it('keeps the six action slots in the approved order', async () => {
-    const list = await renderCards([makeDraftVer()]);
-    const card = within(list).getAllByRole('listitem')[0]!;
-    const actionLabels = [...card.querySelectorAll('[data-record-card-cue]')].map((el) =>
-      el.getAttribute('data-record-card-cue'),
-    );
-    expect(actionLabels).toEqual([
-      'Scarica PDF studenti →',
-      'Scarica PDF soluzioni →',
-      'Pubblica allo studente →',
-      'Abilita PDF studente →',
-      'Chiudi verifica →',
-      'Elimina verifica →',
+  it('keeps the six actions in the approved order inside the menu', async () => {
+    await renderCards([makeDraftVer()]);
+    fireEvent.click(actionsTriggers()[0]!);
+    const labels = screen.getAllByRole('menuitem').map((el) => el.textContent?.trim());
+    expect(labels).toEqual([
+      'Scarica PDF studenti',
+      'Scarica PDF soluzioni',
+      'Pubblica allo studente',
+      'Abilita PDF studente',
+      'Chiudi verifica',
+      'Elimina verifica',
     ]);
   });
 
   it('shares one slot between «Chiudi» and «Riapri»', async () => {
-    const list = await renderCards([makeDraftVer({ id: 'ver-3', status: 'closed' })]);
-    const card = within(list).getAllByRole('listitem')[0]!;
-    const cues = [...card.querySelectorAll('[data-record-card-cue]')].map((el) =>
-      el.getAttribute('data-record-card-cue'),
-    );
-    expect(cues).toHaveLength(6);
-    expect(cues[4]).toBe('Riapri verifica →');
-    expect(cues).not.toContain('Chiudi verifica →');
+    await renderCards([makeDraftVer({ id: 'ver-3', status: 'closed' })]);
+    fireEvent.click(actionsTriggers()[0]!);
+    const labels = screen.getAllByRole('menuitem').map((el) => el.textContent?.trim());
+    expect(labels).toHaveLength(6);
+    expect(labels[4]).toBe('Riapri verifica');
+    expect(labels).not.toContain('Chiudi verifica');
   });
 
   it('always renders «Elimina», disabled while the verification is active', async () => {
-    const list = await renderCards([makeDraftVer({ id: 'ver-2', status: 'active' })]);
-    const del = within(list).getByRole('button', { name: /Elimina verifica/ }) as HTMLButtonElement;
+    await renderCards([makeDraftVer({ id: 'ver-2', status: 'active' })]);
+    const del = menuItem(/Elimina verifica/) as HTMLButtonElement;
     expect(del).toBeTruthy();
     expect(del.disabled).toBe(true);
   });
 
-  it('keeps the contextual CTA, defaulting to «Apri verifica →»', async () => {
+  it('keeps the «Apri verifica →» CTA in the DOM, hidden at rest by CSS', async () => {
     const list = await renderCards([makeDraftVer()]);
-    expect(within(list).getByText('Apri verifica →')).toBeTruthy();
-    // Passando su un'azione la CTA descrive quell'azione…
-    fireEvent.pointerOver(within(list).getByRole('button', { name: /Scarica PDF studenti/ }));
-    expect(within(list).getByText('Scarica PDF studenti →')).toBeTruthy();
-    // …e torna al default uscendo dalla card.
-    fireEvent.pointerLeave(within(list).getAllByRole('listitem')[0]!);
-    expect(within(list).getByText('Apri verifica →')).toBeTruthy();
+    // Il testo resta nel DOM (spazio riservato ⇒ nessun layout shift); la
+    // visibilità è governata da hover/focus della superficie apribile — vedi il
+    // contratto CSS in `VerificationRecordCard.test.tsx`.
+    const cta = within(list).getByText('Apri verifica →');
+    expect(cta.className).toMatch(/openCtaBand/);
+  });
+});
+
+// ─── UI-VERIFICHE-06A — menu Azioni e CTA ───────────────────────────────────
+describe('VerificationsView — Azioni menu and CTA (UI-VERIFICHE-06A)', () => {
+  async function renderOne(over: Record<string, unknown> = {}) {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer(over)]);
+    render(<VerificationsView />);
+    return await screen.findByRole('list', { name: 'Archivio verifiche' });
+  }
+
+  it('exposes exactly one «Azioni» button on the card, and no loose action buttons', async () => {
+    const list = await renderOne();
+    const card = within(list).getAllByRole('listitem')[0]!;
+    const buttons = within(card).getAllByRole('button');
+    // Superficie apribile + «Azioni»: nessun pulsante azione sciolto sulla card.
+    expect(buttons).toHaveLength(2);
+    expect(within(card).getByRole('button', { name: /^Azioni verifica/ })).toBeTruthy();
+    for (const name of [/Scarica PDF/i, /Elimina verifica/i, /Chiudi verifica/i]) {
+      expect(within(card).queryByRole('button', { name })).toBeNull();
+    }
+    // Il menu è chiuso finché non lo si apre.
+    expect(screen.queryAllByRole('menuitem')).toHaveLength(0);
+  });
+
+  it('renders the menu outside the card, so the card overflow cannot clip it', async () => {
+    const list = await renderOne();
+    fireEvent.click(actionsTriggers()[0]!);
+    const menu = screen.getByRole('menu', { name: /^Azioni verifica/ });
+    // Portalato su document.body: non è discendente della card né della lista.
+    expect(list.contains(menu)).toBe(false);
+    expect(menu.parentElement).toBe(document.body);
+  });
+
+  it('marks the trigger with aria-haspopup and reflects the open state', async () => {
+    await renderOne();
+    const trigger = actionsTriggers()[0]!;
+    expect(trigger.getAttribute('aria-haspopup')).toBe('true');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('opening the menu does not open the verification detail', async () => {
+    await renderOne();
+    fireEvent.click(actionsTriggers()[0]!);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(6);
+    // L'archivio resta montato: nessuna navigazione al dettaglio.
+    expect(screen.getByRole('list', { name: 'Archivio verifiche' })).toBeTruthy();
+  });
+
+  it('a menu item runs only its own handler and closes the menu', async () => {
+    await renderOne();
+    fireEvent.click(menuItem(/Abilita PDF studente/i));
+    await waitFor(() => expect(mockSetVerificationStudentPdfEnabled).toHaveBeenCalled());
+    // Nessuna azione collaterale, e il menu si chiude dopo la selezione.
+    expect(mockSetVerificationVisibility).not.toHaveBeenCalled();
+    expect(mockDeleteVerification).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryAllByRole('menuitem')).toHaveLength(0));
+    expect(screen.getByRole('list', { name: 'Archivio verifiche' })).toBeTruthy();
+  });
+
+  it('Escape closes the menu and restores focus to the trigger', async () => {
+    await renderOne();
+    const trigger = actionsTriggers()[0]!;
+    fireEvent.click(trigger);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(6);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryAllByRole('menuitem')).toHaveLength(0));
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('an outside click closes the menu', async () => {
+    await renderOne();
+    fireEvent.click(actionsTriggers()[0]!);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(6);
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(screen.queryAllByRole('menuitem')).toHaveLength(0));
+  });
+
+  it('keeps the online toggle outside the menu and independent from the card', async () => {
+    await renderOne({ id: 'ver-2', status: 'active', onlineEnabled: false });
+    const list = screen.getByRole('list', { name: 'Archivio verifiche' });
+    const card = within(list).getAllByRole('listitem')[0]!;
+    // Il toggle vive nella card, non nel menu.
+    const toggle = within(card).getByRole('switch');
+    fireEvent.click(toggle);
+    await waitFor(() => expect(mockSetVerificationOnlineEnabled).toHaveBeenCalled());
+    expect(screen.queryAllByRole('menuitem')).toHaveLength(0);
+    expect(screen.getByRole('list', { name: 'Archivio verifiche' })).toBeTruthy();
+  });
+
+  it('keeps «Elimina» present, destructive and disabled while the verification is active', async () => {
+    await renderOne({ id: 'ver-2', status: 'active' });
+    const del = menuItem(/Elimina verifica/i);
+    expect(del.disabled).toBe(true);
+    expect(del.className).toMatch(/menuDanger/);
+    // Spiegazione accessibile del perché è disabilitata.
+    expect(del.getAttribute('title')).toBe('Chiudi prima la verifica');
+  });
+
+  it('gives disabled items a coherent explanation', async () => {
+    await renderOne(); // draft
+    expect(menuItem(/Pubblica allo studente/i).disabled).toBe(true);
+    expect(menuItem(/Pubblica allo studente/i).getAttribute('title')).toBe(
+      'Attiva prima la verifica',
+    );
+    expect(menuItem(/Chiudi verifica/i).disabled).toBe(true);
+    expect(menuItem(/Chiudi verifica/i).getAttribute('title')).toBe('Attiva prima la verifica');
+  });
+
+  it('keeps each card menu independent', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer(),
+      makeDraftVer({
+        id: 'ver-2',
+        config: { ...makeDraftVer().config, title: 'Verifica Geometria' },
+      }),
+    ]);
+    render(<VerificationsView />);
+    await screen.findByRole('list', { name: 'Archivio verifiche' });
+    const triggers = actionsTriggers();
+    expect(triggers).toHaveLength(2);
+    fireEvent.click(triggers[0]!);
+    // Un solo menu aperto alla volta: sei voci, non dodici.
+    expect(screen.getAllByRole('menuitem')).toHaveLength(6);
+    expect(triggers[1]!.getAttribute('aria-expanded')).toBe('false');
   });
 });

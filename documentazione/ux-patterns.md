@@ -108,8 +108,17 @@ multiple e mai tabelle con scroll orizzontale su mobile.
 - studente: correzioni restituite, consegne effettuate e verifiche disponibili
   adottano lo stesso telaio, ma senza overlay quando non esiste una destinazione
   neutra e sicura; esame, PDF, ricevuta e correzione richiedono azioni esplicite;
-- mobile docente: azioni in griglia compatta a tre colonne; mobile studente:
-  azioni testuali responsive, senza griglie multi-card;
+- azioni della card verifica docente raccolte in un unico pulsante «Azioni» che
+  apre il menu portalato condiviso (`ActionsMenu`, lo stesso di corso/UDA/lezione
+  in Didattica): il portale su `document.body` evita il ritaglio da parte
+  dell'`overflow` della card, Escape chiude e riporta il focus sul trigger, la
+  selezione di una voce chiude il menu. Lo switch `Online` resta fuori dal menu
+  perché è un controllo di stato, non un'azione;
+- la CTA di apertura della card compare solo su hover reale
+  (`hover: hover` + `pointer: fine`) o focus da tastiera della superficie
+  apribile: mai a riposo, mai su touch, con lo spazio riservato in anticipo per
+  non introdurre spostamenti di layout;
+- mobile studente: azioni testuali responsive, senza griglie multi-card;
 - `Nuova verifica` risiede nella barra filtri accanto a
   `Impostazioni correzione IA` e apre `DialogShell`;
 - la tabella delle consegne nel dettaglio verifica resta una tabella dati
