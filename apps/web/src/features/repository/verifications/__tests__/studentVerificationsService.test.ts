@@ -98,6 +98,10 @@ describe('loadStudentVerifications — class filtering', () => {
         distributionMode: 'same_questions',
         ownerUid: 'owner',
         status: 'active',
+        // UI-VERIFICHE-06B — assenti sulla proiezione legacy di questa fixture:
+        // normalizzati a null, mai a un valore inventato.
+        verificationDate: null,
+        topicOutline: null,
       },
     ]);
   });

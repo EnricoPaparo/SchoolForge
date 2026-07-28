@@ -1,0 +1,46 @@
+/*
+ * Il controllo vive dentro il riquadro metrica: deve leggersi come un valore
+ * cliccabile, non come un pulsante aggiunto sopra la card. Nessuna dimensione
+ * dipendente dal contenuto: il riquadro che lo contiene ha già larghezza e
+ * altezza fisse (UI-VERIFICHE-06A).
+ */
+.topicsBtn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.4rem;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-brand-interactive);
+  font-size: 0.86rem;
+  font-weight: 750;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.topicsBtn:disabled {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .topicsBtn:hover:not(:disabled) {
+    background: none;
+    text-decoration: underline;
+  }
+}
+
+/*
+ * Mobile: il riquadro «Argomenti» occupa l'intera riga, quindi il controllo può
+ * coprirlo tutto e offrire un target touch pieno senza allargare nulla.
+ */
+@media (max-width: 44rem) {
+  .topicsBtn {
+    width: 100%;
+    min-height: 2.75rem;
+    margin: -0.7rem 0;
+    padding: 0.7rem 0;
+  }
+}

@@ -45,6 +45,17 @@ vi.mock('../loadSelectedQuestionsWithSolutions.js', () => ({
     mockLoadSelectedQuestionsWithSolutions(...args),
 }));
 
+// UI-VERIFICHE-06B — l'albero canonico del corso è letto una sola volta,
+// nell'attivazione, per ricostruire autorevolmente il perimetro didattico.
+// Qui è mockato: l'ordine canonico e la deduplicazione hanno i loro test puri
+// in topicOutline.test.ts.
+const mockListUdas = vi.fn();
+const mockListLessons = vi.fn();
+vi.mock('../../programs/programsService.js', () => ({
+  listUdas: (...args: unknown[]) => mockListUdas(...args),
+  listLessons: (...args: unknown[]) => mockListLessons(...args),
+}));
+
 import {
   listVerifications,
   listActiveOnlineVerificationClassIds,
@@ -75,6 +86,7 @@ const VALID_CONFIG: VerificationConfig = {
   classId: 'class-1',
   programId: 'prog-1',
   importId: 'imp-1',
+  verificationDate: '2026-02-02',
   questionRefs: [
     {
       questionIndexEntryId: 'qi-1',
@@ -95,6 +107,11 @@ beforeEach(() => {
   mockCollection.mockReturnValue({ id: 'verifications' });
   mockSetDoc.mockResolvedValue(undefined);
   mockBatchCommit.mockResolvedValue(undefined);
+  mockListUdas.mockResolvedValue([{ dir: 'UDA1', titolo: 'Il Web' }]);
+  mockListLessons.mockResolvedValue([
+    { udaDir: 'UDA1', filename: 'lezione1.md', titolo: 'Come funziona Internet' },
+    { udaDir: 'UDA1', filename: 'lezione2.md', titolo: 'Il server' },
+  ]);
 });
 
 // ─── listVerifications ────────────────────────────────────────────────────────
@@ -190,7 +207,13 @@ describe('createVerification', () => {
         }),
       });
     const id = await createVerification(
-      { title: 'Verifica 1', classId: null, programId: 'p1', importId: 'i1' },
+      {
+        title: 'Verifica 1',
+        classId: null,
+        programId: 'p1',
+        importId: 'i1',
+        verificationDate: '2026-02-02',
+      },
       OWNER_UID,
       fakeDb,
     );
@@ -232,12 +255,35 @@ describe('createVerification', () => {
     const title = 'T'.repeat(VERIFICATION_TITLE_MAX_LENGTH);
 
     await createVerification(
-      { title: ` ${title} `, classId: null, programId: 'p1', importId: 'i1' },
+      {
+        title: ` ${title} `,
+        classId: null,
+        programId: 'p1',
+        importId: 'i1',
+        verificationDate: '2026-02-02',
+      },
       OWNER_UID,
       fakeDb,
     );
 
     expect(mockBatchSet.mock.calls[0]?.[1].config.title).toBe(title);
+  });
+
+  it('accetta una data valida sulla bozza e rifiuta una data impossibile', async () => {
+    const draftDoc: Partial<VerificationDoc> = { status: 'draft', config: VALID_CONFIG };
+    mockGetDoc.mockResolvedValue({ data: () => draftDoc });
+
+    await updateVerificationConfig('ver-id', { verificationDate: '2026-03-15' }, OWNER_UID, fakeDb);
+    expect(mockSetDoc.mock.calls[0]?.[1].config.verificationDate).toBe('2026-03-15');
+
+    vi.clearAllMocks();
+    mockGetDoc.mockResolvedValue({ data: () => draftDoc });
+    await expect(
+      updateVerificationConfig('ver-id', { verificationDate: '2026-02-30' }, OWNER_UID, fakeDb),
+    ).rejects.toThrow(/AAAA-MM-GG/);
+    // Validazione prima di qualunque lettura o scrittura.
+    expect(mockGetDoc).not.toHaveBeenCalled();
+    expect(mockSetDoc).not.toHaveBeenCalled();
   });
 
   it('rejects a 101-character title before reads or writes', async () => {
@@ -248,6 +294,7 @@ describe('createVerification', () => {
           classId: null,
           programId: 'p1',
           importId: 'i1',
+          verificationDate: '2026-02-02',
         },
         OWNER_UID,
         fakeDb,
@@ -261,7 +308,13 @@ describe('createVerification', () => {
   it('rejects an empty or stale course before opening a write batch', async () => {
     await expect(
       createVerification(
-        { title: 'Verifica 1', classId: null, programId: 'p1', importId: '' },
+        {
+          title: 'Verifica 1',
+          classId: null,
+          programId: 'p1',
+          importId: '',
+          verificationDate: '2026-02-02',
+        },
         OWNER_UID,
         fakeDb,
       ),
@@ -280,7 +333,13 @@ describe('createVerification', () => {
 
     await expect(
       createVerification(
-        { title: 'Verifica 1', classId: null, programId: 'p1', importId: 'old-import' },
+        {
+          title: 'Verifica 1',
+          classId: null,
+          programId: 'p1',
+          importId: 'old-import',
+          verificationDate: '2026-02-02',
+        },
         OWNER_UID,
         fakeDb,
       ),
@@ -298,12 +357,71 @@ describe('createVerification', () => {
 
     await expect(
       createVerification(
-        { title: 'Verifica 1', classId: null, programId: 'p1', importId: 'i1' },
+        {
+          title: 'Verifica 1',
+          classId: null,
+          programId: 'p1',
+          importId: 'i1',
+          verificationDate: '2026-02-02',
+        },
         OWNER_UID,
         fakeDb,
       ),
     ).rejects.toThrow("L'importazione attiva del corso non esiste più");
     expect(mockWriteBatch).not.toHaveBeenCalled();
+  });
+  it('richiede una data valida prima di qualunque lettura o scrittura (UI-VERIFICHE-06B)', async () => {
+    for (const verificationDate of [undefined, '', '2026-2-2', '2026-02-30', '02/02/2026']) {
+      vi.clearAllMocks();
+      mockDoc.mockReturnValue(fakeDocRef);
+      mockCollection.mockReturnValue({ id: 'verifications' });
+      await expect(
+        createVerification(
+          {
+            title: 'Verifica 1',
+            classId: null,
+            programId: 'p1',
+            importId: 'i1',
+            verificationDate: verificationDate as string,
+          },
+          OWNER_UID,
+          fakeDb,
+        ),
+      ).rejects.toThrow(/AAAA-MM-GG/);
+      expect(mockGetDoc).not.toHaveBeenCalled();
+      expect(mockWriteBatch).not.toHaveBeenCalled();
+    }
+  });
+
+  it('persiste la data esattamente come indicata, senza normalizzarla', async () => {
+    mockGetDoc
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({ ownerUid: OWNER_UID, activeImportId: 'i1' }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          ownerUid: OWNER_UID,
+          programId: 'p1',
+          importId: 'i1',
+          status: 'active',
+        }),
+      });
+
+    await createVerification(
+      {
+        title: 'Verifica 1',
+        classId: null,
+        programId: 'p1',
+        importId: 'i1',
+        verificationDate: '2024-02-29',
+      },
+      OWNER_UID,
+      fakeDb,
+    );
+
+    expect(mockBatchSet.mock.calls[0]?.[1].config.verificationDate).toBe('2024-02-29');
   });
 });
 
@@ -495,6 +613,85 @@ describe('activateVerification', () => {
     expect(question).not.toHaveProperty('questionLocalId');
     expect(question).not.toHaveProperty('questionIndexEntryId');
     expect(JSON.stringify(projection)).not.toContain('poolStorageRef');
+  });
+
+  // ─── UI-VERIFICHE-06B — data e argomenti congelati all'attivazione ──────────
+
+  it('congela data e argomenti nello snapshot e nella proiezione', async () => {
+    const draftDoc: Partial<VerificationDoc> = { status: 'draft', config: VALID_CONFIG };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(draftDoc);
+
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    const snapshot = capture.getUpdate()?.teacherSnapshot as Record<string, unknown>;
+    expect(snapshot.verificationDate).toBe('2026-02-02');
+    expect(snapshot.topicOutline).toEqual([
+      { udaTitle: 'Il Web', lessonTitles: ['Come funziona Internet'] },
+    ]);
+    const projection = capture.getProjection();
+    expect(projection?.verificationDate).toBe('2026-02-02');
+    expect(projection?.topicOutline).toEqual(snapshot.topicOutline);
+    // Il perimetro pubblicato non contiene nulla oltre i titoli.
+    expect(JSON.stringify(projection?.topicOutline)).not.toContain('UDA1');
+    expect(JSON.stringify(projection?.topicOutline)).not.toContain('lezione1.md');
+  });
+
+  it('ricostruisce il perimetro dai dati canonici e ignora un valore del client', async () => {
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: {
+        ...VALID_CONFIG,
+        // Valore arbitrario salvato nella bozza: non deve mai finire nello
+        // snapshot né nella proiezione.
+        topicOutline: [{ udaTitle: 'FALSO', lessonTitles: ['FALSO'] }],
+      },
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(draftDoc);
+
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    expect(JSON.stringify(capture.getUpdate())).not.toContain('FALSO');
+    expect(JSON.stringify(capture.getProjection())).not.toContain('FALSO');
+    expect(capture.getProjection()?.topicOutline).toEqual([
+      { udaTitle: 'Il Web', lessonTitles: ['Come funziona Internet'] },
+    ]);
+  });
+
+  it('non attiva se il perimetro non è costruibile (fail-closed, nessuna scrittura)', async () => {
+    const draftDoc: Partial<VerificationDoc> = { status: 'draft', config: VALID_CONFIG };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    mockListUdas.mockResolvedValue([{ dir: 'UDA1', titolo: '   ' }]);
+    setupTransactionCapture(draftDoc);
+
+    await expect(
+      activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage),
+    ).rejects.toThrow(/Impossibile attivare/);
+    expect(mockRunTransaction).not.toHaveBeenCalled();
+  });
+
+  it('attiva una bozza legacy senza data, omettendo il campo invece di inventarlo', async () => {
+    const legacyConfig = { ...VALID_CONFIG };
+    delete legacyConfig.verificationDate;
+    const draftDoc: Partial<VerificationDoc> = {
+      status: 'draft',
+      config: legacyConfig as typeof VALID_CONFIG,
+    };
+    mockGetDoc.mockResolvedValue({ exists: () => true, data: () => draftDoc });
+    mockLoadSelectedQuestionsWithSolutions.mockResolvedValue(LOADED_QUESTIONS_OK);
+    const capture = setupTransactionCapture(draftDoc);
+
+    await activateVerification('ver-id', null, OWNER_UID, fakeDb, fakeStorage);
+
+    const snapshot = capture.getUpdate()?.teacherSnapshot as Record<string, unknown>;
+    expect(snapshot).not.toHaveProperty('verificationDate');
+    expect(capture.getProjection()).not.toHaveProperty('verificationDate');
+    // Il perimetro invece è sempre ricostruito: non dipende dalla data.
+    expect(snapshot.topicOutline).toHaveLength(1);
   });
 
   it('writes onlineEnabled: false into publishedProjection when the verification has no toggle yet (M3F-04 preflight)', async () => {

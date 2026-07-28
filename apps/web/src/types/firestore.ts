@@ -452,11 +452,38 @@ export type EquivalentGroupConfig = {
   questionIndexEntryIds: string[];
 };
 
+/**
+ * UI-VERIFICHE-06B — una UDA del perimetro didattico della verifica. Contratto
+ * **chiuso**: solo titoli, mai identificativi, ordini, testi, soluzioni o
+ * metadati tecnici (vedi `topicOutline.ts` per l'elenco esplicito di ciò che è
+ * vietato). Identico per docente e studente.
+ */
+export type VerificationTopicUda = {
+  udaTitle: string;
+  /** Titoli delle lezioni da cui proviene almeno una domanda selezionata. */
+  lessonTitles: string[];
+};
+
 export type VerificationConfig = {
   title: string;
   classId: string | null;
   programId: string;
   importId: string;
+  /**
+   * UI-VERIFICHE-06B — giorno didattico della verifica, formato esatto
+   * `YYYY-MM-DD` (mai un `Timestamp`: è un giorno, non un istante). Obbligatorio
+   * per le verifiche create da qui in avanti e modificabile finché la verifica è
+   * in bozza. Assente sui documenti precedenti: nessuna migrazione, nessun
+   * fallback: la card legacy omette semplicemente la data.
+   */
+  verificationDate?: string;
+  /**
+   * UI-VERIFICHE-06B — perimetro didattico mantenuto coerente con la selezione
+   * delle domande nello **stesso** salvataggio della bozza (nessuna write
+   * dedicata). All'attivazione viene ricostruito e rivalidato autorevolmente dai
+   * dati canonici del corso: il valore del client non è mai la fonte di verità.
+   */
+  topicOutline?: VerificationTopicUda[];
   questionRefs: VerificationQuestionRef[];
   /**
    * VEX (VEX-01A): assente su draft/documenti legacy ⇒ normalizzato a
@@ -529,6 +556,10 @@ export type VerificationTeacherSnapshot = {
   className: string | null;
   programId: string;
   importId: string;
+  /** UI-VERIFICHE-06B — congelata all'attivazione, come gli altri dati didattici. */
+  verificationDate?: string;
+  /** UI-VERIFICHE-06B — perimetro ricostruito autorevolmente e congelato. */
+  topicOutline?: VerificationTopicUda[];
   questionRefs: VerificationQuestionRef[];
   /**
    * VEX: modalità con cui la verifica è stata attivata. Assente su snapshot
@@ -681,6 +712,21 @@ export type PublishedProjectionDoc = {
    * domande effettivamente assegnate arrivano esclusivamente dalla callable.
    */
   distributionMode?: VerificationDistributionMode;
+  /**
+   * UI-VERIFICHE-06B — giorno didattico (`YYYY-MM-DD`), rispecchiato
+   * all'attivazione come `className`/`title`: la card studente lo mostra senza
+   * mai leggere il documento verifica owner-only. Assente sulle proiezioni
+   * precedenti e sulle verifiche legacy senza data ⇒ semplicemente omesso.
+   */
+  verificationDate?: string;
+  /**
+   * UI-VERIFICHE-06B — perimetro didattico. È **lo stesso identico dato** dello
+   * snapshot docente: contiene solo titoli UDA/lezione, quindi non esiste una
+   * versione ridotta per lo studente. In `equivalent_variants` descrive l'unione
+   * delle lezioni di tutte le domande selezionate, comuni e alternative: è quindi
+   * identico per tutti gli studenti e non rivela la variante assegnata.
+   */
+  topicOutline?: VerificationTopicUda[];
   questions: PublicVerificationQuestion[];
   activatedAt: Timestamp | FieldValue;
 };
@@ -1044,6 +1090,26 @@ export type CorrectionReturnDoc = {
   ownerUid: string;
   verificationTitle: string;
   className: string | null;
+  /**
+   * UI-VERIFICHE-06B — giorno didattico e perimetro didattico **copiati dal
+   * `teacherSnapshot` congelato** alla restituzione, non referenziati.
+   *
+   * Stessa ragione per cui `questions` è una copia autosufficiente: una
+   * correzione restituita deve restare leggibile e completa anche quando la
+   * verifica è stata chiusa o nascosta e non compare più nella lista pubblica
+   * dello studente. Dipendere dalla `publishedProjection` significherebbe far
+   * sparire data e argomenti proprio nel momento in cui servono di più.
+   *
+   * `topicOutline` resta il perimetro **generale** della verifica (soli titoli
+   * UDA/lezione): non dice nulla sulla variante assegnata, mentre `questions`
+   * continua a contenere esclusivamente la variante di questo studente.
+   *
+   * Assenti sui documenti restituiti prima di questo campo, e su verifiche il
+   * cui snapshot non li ha: nessuna migrazione, nessun fallback da titoli o
+   * domande, nessun dato inventato.
+   */
+  verificationDate?: string;
+  topicOutline?: VerificationTopicUda[];
   submittedAt: Timestamp | FieldValue;
   returnedAt: Timestamp | FieldValue;
   questions: CorrectionReturnQuestionView[];

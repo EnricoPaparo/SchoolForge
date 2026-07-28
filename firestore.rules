@@ -1232,9 +1232,13 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/corrections/$(submissionId))
         && correctionData(submissionId).ownerUid == request.auth.uid
         && correctionDataAfter(submissionId).status == 'returned'
+        // UI-VERIFICHE-06B: `verificationDate` e `topicOutline` sono OPZIONALI
+        // (assenti su snapshot legacy), quindi entrano in hasOnly ma NON in
+        // hasAll. Il set di chiavi resta chiuso: nessun campo arbitrario.
         && request.resource.data.keys().hasOnly([
              'correctionId', 'verificationId', 'studentUid', 'ownerUid', 'verificationTitle',
-             'className', 'submittedAt', 'returnedAt', 'questions', 'generalFeedback',
+             'className', 'verificationDate', 'topicOutline',
+             'submittedAt', 'returnedAt', 'questions', 'generalFeedback',
              'totalPoints', 'maxPoints', 'percentage', 'visibleToStudent', 'solutionsVisible',
              'updatedAt'
            ])
@@ -1247,7 +1251,19 @@ service cloud.firestore {
         && request.resource.data.correctionId == submissionId
         && request.resource.data.verificationId == correctionData(submissionId).verificationId
         && request.resource.data.studentUid == correctionData(submissionId).studentUid
-        && request.resource.data.ownerUid == request.auth.uid;
+        && request.resource.data.ownerUid == request.auth.uid
+        // Controlli di tipo/dimensione su ciò che le Rules possono verificare in
+        // modo semplice e non fragile. La struttura interna di `topicOutline`
+        // (titoli non vuoti, deduplicazione, ordine canonico, assenza di campi
+        // vietati) resta enforced dai parser/writer canonici lato applicazione:
+        // riprodurla qui significherebbe duplicare in CEL una validazione ricca,
+        // senza poter iterare su liste annidate — vedi `topicOutline.ts`.
+        && (!('verificationDate' in request.resource.data)
+            || (request.resource.data.verificationDate is string
+                && request.resource.data.verificationDate.size() == 10))
+        && (!('topicOutline' in request.resource.data)
+            || (request.resource.data.topicOutline is list
+                && request.resource.data.topicOutline.size() <= 40));
 
       // Update: covers a full rewrite on a later return (after a reopen ->
       // re-complete -> return cycle), the two narrow toggles
@@ -1265,6 +1281,12 @@ service cloud.firestore {
       // per the documented Rules/service boundary above.
       allow update: if isOwner()
         && resource.data.ownerUid == request.auth.uid
+        && (!('verificationDate' in request.resource.data)
+            || (request.resource.data.verificationDate is string
+                && request.resource.data.verificationDate.size() == 10))
+        && (!('topicOutline' in request.resource.data)
+            || (request.resource.data.topicOutline is list
+                && request.resource.data.topicOutline.size() <= 40))
         && request.resource.data.correctionId == resource.data.correctionId
         && request.resource.data.verificationId == resource.data.verificationId
         && request.resource.data.studentUid == resource.data.studentUid

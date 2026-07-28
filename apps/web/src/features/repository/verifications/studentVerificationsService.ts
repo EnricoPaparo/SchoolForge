@@ -3,7 +3,10 @@ import type { Firestore } from 'firebase/firestore';
 import type {
   PublicVerificationQuestion,
   PublishedProjectionDoc,
+  VerificationTopicUda,
 } from '../../../types/firestore.js';
+import { isValidVerificationDate } from './verificationDate.js';
+import { readTopicOutline } from './topicOutline.js';
 import { getOwnStudentDoc } from '../students/studentsService.js';
 import { normalizeOnlineEnabled } from './onlineEnabled.js';
 import { normalizeStudentPdfEnabled } from './studentPdfEnabled.js';
@@ -30,6 +33,18 @@ export type StudentVerificationItem = {
   ownerUid: string;
   /** Missing on legacy projections and normalized to `active`. */
   status: 'active' | 'closed';
+  /**
+   * UI-VERIFICHE-06B — giorno didattico `YYYY-MM-DD` dalla sola proiezione
+   * pubblica. `null` su proiezione legacy o valore malformato: la card omette la
+   * data, non inventa un fallback.
+   */
+  verificationDate: string | null;
+  /**
+   * UI-VERIFICHE-06B — perimetro didattico (soli titoli UDA/lezione) dalla sola
+   * proiezione pubblica. `null` quando assente o malformato: «Argomenti» resta
+   * disabilitato, senza alcuna lettura aggiuntiva.
+   */
+  topicOutline: VerificationTopicUda[] | null;
   /**
    * VEX-02A: instrada il flusso di avvio. `same_questions` (o legacy) resta
    * interamente client-side; `equivalent_variants` passa dalla callable.
@@ -101,6 +116,10 @@ export async function loadStudentVerifications(
         distributionMode: normalizeDistributionMode(data.distributionMode),
         ownerUid: data.ownerUid,
         status: normalizePublishedVerificationStatus(data.status),
+        verificationDate: isValidVerificationDate(data.verificationDate)
+          ? data.verificationDate
+          : null,
+        topicOutline: readTopicOutline(data.topicOutline),
       };
     })
     .filter((item): item is StudentVerificationItem => item !== null)

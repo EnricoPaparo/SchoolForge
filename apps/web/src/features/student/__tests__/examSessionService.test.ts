@@ -33,6 +33,8 @@ const ITEM_A: StudentVerificationItem = {
   distributionMode: 'same_questions' as const,
   ownerUid: 'owner-uid',
   status: 'active',
+  verificationDate: null,
+  topicOutline: null,
 };
 
 const ITEM_B: StudentVerificationItem = {
@@ -47,6 +49,8 @@ const ITEM_B: StudentVerificationItem = {
   distributionMode: 'same_questions' as const,
   ownerUid: 'owner-uid',
   status: 'active',
+  verificationDate: null,
+  topicOutline: null,
 };
 
 const DRAFT = {

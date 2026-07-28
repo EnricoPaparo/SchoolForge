@@ -9,6 +9,8 @@ import {
 
 type VerificationRecordCardProps = {
   title: string;
+  /** UI-VERIFICHE-06B — data didattica mostrata prima del titolo (es. «02/02/2026»). */
+  titlePrefix?: string;
   /** UI-VERIFICHE-05 — qualificatore sulla stessa riga del titolo (es. «8 domande»). */
   titleMeta?: string;
   /** UI-VERIFICHE-05 — riga unica «Classe · Anno · Programma». */
