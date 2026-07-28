@@ -315,6 +315,16 @@
   padding: 0.8rem 1rem 0.8rem 0;
 }
 
+/*
+ * UI-DIDATTICA-ACTIONS-01 — nel layout corso il menu azioni occupa l'angolo
+ * superiore destro, come sulle card verifica, invece di essere centrato
+ * verticalmente lungo l'intera card.
+ */
+.cardActionsCorner .actions {
+  align-self: start;
+  align-items: flex-start;
+}
+
 .statusControl {
   position: relative;
   z-index: 2;
