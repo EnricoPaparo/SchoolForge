@@ -59,6 +59,16 @@ describe('AiCorrectionSettingsDialog (TWU-02)', () => {
     ).toBe('Premia il metodo.');
     // The technical model id is shown as small metadata (informational, not a price).
     expect(screen.getByText('gpt-5.4-nano-2026-03-17')).toBeTruthy();
+    const gradingMode = screen.getByLabelText('Stile di valutazione');
+    expect(gradingMode.getAttribute('aria-describedby')).toBeNull();
+    fireEvent.change(gradingMode, { target: { value: 'compassionate' } });
+    expect(screen.queryByText(/Valorizza la comprensione sostanziale/i)).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    const textarea = screen.getByLabelText('Indicazioni aggiuntive per la correzione');
+    const cancel = screen.getByRole('button', { name: 'Annulla' });
+    expect(
+      textarea.compareDocumentPosition(cancel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('saves the current values and reports success via aria-live', async () => {

@@ -95,12 +95,15 @@ export function AiCorrectionSettingsDialog({
         onChange={change}
         disabled={saving}
         idPrefix="ai-prefs"
+        showGradingModeDescription={false}
       />
 
       {/* Feedback persistente accessibile durante save/success/error. */}
-      <p role="status" aria-live="polite" style={{ minHeight: '1.25rem', margin: '0.5rem 0 0' }}>
-        {saving ? 'Salvataggio…' : status === 'saved' ? 'Impostazioni salvate.' : ''}
-      </p>
+      {(saving || status === 'saved') && (
+        <p role="status" aria-live="polite" style={{ margin: '0.25rem 0 0' }}>
+          {saving ? 'Salvataggio…' : 'Impostazioni salvate.'}
+        </p>
+      )}
       {status === 'error' && errorMsg && (
         <p role="alert" className="text-error" style={{ margin: '0.25rem 0 0' }}>
           {errorMsg}

@@ -28,12 +28,15 @@ export function AiCorrectionSettingsFields({
   onChange,
   disabled = false,
   idPrefix = 'ai-settings',
+  showGradingModeDescription = true,
 }: {
   value: AiCorrectionSettingsValue;
   onChange: (next: AiCorrectionSettingsValue) => void;
   disabled?: boolean;
   /** Prefisso per gli id degli aria-describedby (unico per istanza del dialog). */
   idPrefix?: string;
+  /** Il dialog dei predefiniti può omettere la spiegazione per restare compatto. */
+  showGradingModeDescription?: boolean;
 }) {
   const profileOption = MODEL_PROFILE_OPTIONS.find((o) => o.value === value.modelProfile)!;
   const profileDescId = `${idPrefix}-profile-desc`;
@@ -69,7 +72,7 @@ export function AiCorrectionSettingsFields({
         <span className={styles.fieldLabel}>Stile di valutazione</span>
         <select
           aria-label="Stile di valutazione"
-          aria-describedby={gradingDescId}
+          aria-describedby={showGradingModeDescription ? gradingDescId : undefined}
           value={value.gradingMode}
           disabled={disabled}
           onChange={(e) => onChange({ ...value, gradingMode: e.target.value as GradingMode })}
@@ -81,9 +84,11 @@ export function AiCorrectionSettingsFields({
           ))}
         </select>
       </label>
-      <p id={gradingDescId} className={styles.description}>
-        {gradingModeDescription(value.gradingMode)}
-      </p>
+      {showGradingModeDescription && (
+        <p id={gradingDescId} className={styles.description}>
+          {gradingModeDescription(value.gradingMode)}
+        </p>
+      )}
 
       {/* Indicazioni aggiuntive. */}
       <label className={styles.field}>
