@@ -16,16 +16,61 @@ const studentCss = readFileSync(
 );
 
 describe('VerificationsView batch toolbar responsive contract', () => {
-  it('uses the approved 7 → 2 → 1 grid and keeps the submissions table scrollable', () => {
+  it('uses the approved 7 → 2 grid on desktop and keeps the submissions table scrollable', () => {
     expect(css).toMatch(/\.batchToolbar\s*\{[^}]*repeat\(7,\s*minmax\(0,\s*1fr\)\)/s);
+    // UI-CONSEGNE-01 — sotto 48rem, ma sopra il breakpoint mobile, la toolbar
+    // desktop degrada a due colonne invece di comprimere i sette pulsanti.
     expect(css).toMatch(
-      /@media\s*\(max-width:\s*48rem\)[\s\S]*?\.batchToolbar\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
-    );
-    expect(css).toMatch(
-      /@media\s*\(max-width:\s*24rem\)[\s\S]*?\.batchToolbar\s*\{[^}]*grid-template-columns:\s*1fr/,
+      /@media\s*\(max-width:\s*48rem\)[\s\S]*?\.batchToolbarDesktop\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
     );
     expect(css).toMatch(/\.batchToolbar button\s*\{[^}]*width:\s*100%/s);
     expect(css).toMatch(/\.submissionsTableWrap\s*\{[^}]*overflow-x:\s*auto/s);
+  });
+
+  it('UI-CONSEGNE-01 — toolbar mobile a due controlli e lista card verticale', () => {
+    // Due soli controlli affiancati, che collassano a uno a 24rem.
+    expect(css).toMatch(/\.batchToolbarMobile\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*24rem\)[\s\S]*?\.batchToolbarMobile\s*\{[^}]*grid-template-columns:\s*1fr/,
+    );
+    expect(css).toMatch(/\.batchToolbarMobile\s*>\s*button\s*\{[^}]*min-height:\s*2\.75rem/s);
+    // Lista verticale: una card per riga, mai una griglia affiancata.
+    expect(css).toMatch(
+      /\.submissionCardList\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column[^}]*min-width:\s*0/s,
+    );
+    expect(css).not.toMatch(/\.submissionCardList\s*\{[^}]*grid-template-columns/s);
+    // Card consegna: Punteggio e Visibilità affiancati, Stato a tutta riga.
+    expect(recordCardCss).toMatch(
+      /\.cardActionsSubmission\s+\.metrics\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s,
+    );
+    expect(recordCardCss).toMatch(
+      /\.cardActionsSubmission\s+\.metrics\s*>\s*:nth-child\(3\)\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s,
+    );
+    // Data a sinistra, trigger «…» a destra con target touch pieno.
+    expect(recordCardCss).toMatch(
+      /\.cardActionsSubmission\s+\.actions\s*\{[^}]*justify-self:\s*end/s,
+    );
+    expect(recordCardCss).toMatch(
+      /\.cardActionsSubmission\s+\.actions button\s*\{[^}]*min-width:\s*2\.75rem[^}]*min-height:\s*2\.75rem/s,
+    );
+  });
+
+  it('UI-CONSEGNE-01 — «← Verifiche» è ghost, ciano a riposo e arancione interattivo', () => {
+    expect(css).toMatch(/\.backButton\s*\{[^}]*background:\s*transparent/s);
+    expect(css).toMatch(/\.backButton\s*\{[^}]*color:\s*var\(--color-brand-blue\)/s);
+    expect(css).toMatch(
+      /\.backButton:hover:not\(:disabled\),[\s\S]*?\.backButton:focus-visible\s*\{[^}]*color:\s*var\(--color-brand-interactive\)/s,
+    );
+    // Spostamento della freccia solo su puntatore fine, annullato in reduced-motion.
+    expect(css).toMatch(
+      /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)[\s\S]*?\.backButton:hover:not\(:disabled\)\s+svg\s*\{[^}]*translateX\(-2px\)/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.backButton:focus-visible\s+svg\s*\{[^}]*transform:\s*none/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.backButton\s*\{[^}]*min-height:\s*2\.75rem/s,
+    );
   });
 
   it('gives the title more room by keeping the status column compact', () => {

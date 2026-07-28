@@ -371,9 +371,26 @@
   gap: 0.625rem;
 }
 
+/*
+ * UI-CONSEGNE-01 — su desktop resta la tabella reale: serve al confronto rapido
+ * fra studenti. `overflow-x: auto` è la rete di sicurezza per viewport
+ * intermedie, non il comportamento ordinario.
+ */
 .submissionsTableWrap {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/*
+ * Solo una delle due rappresentazioni è montata (vedi `useMediaQuery`): questa
+ * lista esiste unicamente sotto il breakpoint mobile, quindi non serve
+ * nasconderla altrove.
+ */
+.submissionCardList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
 }
 
 .selectionColumn,
@@ -483,13 +500,37 @@
 .batchMenuCell > button {
   height: 100%;
 }
+/*
+ * UI-CONSEGNE-01 — desktop: i sette comandi restano visibili su una sola riga
+ * finché lo spazio lo consente. Fra 48rem e il breakpoint mobile la griglia
+ * degrada a due colonne invece di comprimere i pulsanti.
+ */
 @media (max-width: 48rem) {
-  .batchToolbar {
+  .batchToolbarDesktop {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/*
+ * Mobile: due soli controlli — azione principale e menu con le altre sei voci.
+ * Anche qui è montata una sola variante alla volta, quindi nessuno screen
+ * reader incontra due volte la stessa azione.
+ */
+.batchToolbarMobile {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  min-width: 0;
+}
+
+.batchToolbarMobile > button {
+  width: 100%;
+  min-height: 2.75rem;
+}
+
 @media (max-width: 24rem) {
-  .batchToolbar {
+  .batchToolbarMobile {
     grid-template-columns: 1fr;
   }
 }
@@ -683,19 +724,64 @@
   flex-wrap: wrap;
 }
 
+/*
+ * UI-CONSEGNE-01 — «← Verifiche»: controllo ghost, non un riquadro pieno.
+ * Ciano a riposo, arancione SchoolForge su hover reale e focus-visible; la
+ * freccia scivola di 2 px solo su puntatore fine. Target touch pieno su mobile.
+ */
 .backButton {
   flex-basis: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   width: fit-content;
   padding-inline: 0;
   border-color: transparent;
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-brand-blue);
   font-weight: 700;
+  transition: color var(--transition-brand-interactive);
 }
 
-.backButton:hover:not(:disabled) {
+.backButton svg {
+  flex: none;
+  transition: transform var(--transition-brand-interactive);
+}
+
+.backButton:hover:not(:disabled),
+.backButton:focus-visible {
   background: transparent;
-  text-decoration: underline;
+  border-color: transparent;
+  color: var(--color-brand-interactive);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .backButton:hover:not(:disabled) svg {
+    transform: translateX(-2px);
+  }
+}
+
+.backButton:focus-visible svg {
+  transform: translateX(-2px);
+}
+
+@media (max-width: 44rem) {
+  .backButton {
+    min-height: 2.75rem;
+    padding-block: 0.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backButton,
+  .backButton svg {
+    transition: none;
+  }
+
+  .backButton:hover:not(:disabled) svg,
+  .backButton:focus-visible svg {
+    transform: none;
+  }
 }
 
 .detailTitle {
