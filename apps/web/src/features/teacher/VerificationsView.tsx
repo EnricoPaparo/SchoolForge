@@ -74,7 +74,6 @@ import {
   IconCircleX,
   IconClipboardCheck,
   IconFileText,
-  IconCircleQuestion,
   IconPlus,
   IconTrash,
   IconSparkles,
@@ -86,7 +85,6 @@ import {
   IconEraser,
   IconDownload,
   IconWifi,
-  IconLayers,
 } from '../../components/icons.js';
 import { VerificationRecordCard } from '../../components/VerificationRecordCard.js';
 import { DialogShell } from '../../components/DialogShell.js';
@@ -1843,7 +1841,7 @@ export function VerificationsView() {
                 const className = verification.config.classId
                   ? (classes.find((item) => item.id === verification.config.classId)?.name ??
                     verification.config.classId)
-                  : '—';
+                  : 'Nessuna classe';
                 const schoolYear = verificationYear(verification, annoByKey) ?? '—';
                 const questionCount =
                   verification.status === 'draft'
@@ -1857,33 +1855,25 @@ export function VerificationsView() {
                   visibilityErrors[verification.id],
                   pdfEnabledErrors[verification.id],
                 ].filter((message): message is string => Boolean(message));
+                // UI-VERIFICHE-05 — presentazione compatta: il conteggio domande
+                // affianca il titolo e classe/anno/programma diventano una sola
+                // riga sobria. Gli stessi dati già caricati, nessuna nuova lettura.
+                const questionLabel = `${questionCount} ${questionCount === 1 ? 'domanda' : 'domande'}`;
+                const metaLine = [className, schoolYear, programTitle]
+                  .map((part) => part?.trim())
+                  .filter((part): part is string => Boolean(part) && part !== '—')
+                  .join(' · ');
 
                 return (
                   <VerificationRecordCard
                     key={verification.id}
                     title={verification.config.title}
+                    titleMeta={questionLabel}
+                    metaLine={metaLine}
                     openLabel={`Apri dettaglio verifica ${verification.config.title}`}
                     onOpen={() => void handleSelectVer(verification)}
                     defaultCue="Apri verifica →"
                     actionLayout="verification"
-                    details={[
-                      { label: 'Classe', value: className },
-                      { label: 'Anno', value: schoolYear },
-                      {
-                        label: 'Attivata',
-                        value:
-                          verification.status === 'draft'
-                            ? '—'
-                            : formatTimestamp(verification.activatedAt),
-                      },
-                      {
-                        label: 'Chiusa',
-                        value:
-                          verification.status === 'closed'
-                            ? formatTimestamp(verification.closedAt)
-                            : '—',
-                      },
-                    ]}
                     metrics={[
                       {
                         label: 'Stato',
@@ -1894,16 +1884,6 @@ export function VerificationsView() {
                           />
                         ),
                         icon: <IconClipboardCheck />,
-                      },
-                      {
-                        label: 'Domande',
-                        value: questionCount,
-                        icon: <IconCircleQuestion />,
-                      },
-                      {
-                        label: 'Documento',
-                        value: `PDF ${verification.studentPdfEnabled ? 'sì' : 'no'}`,
-                        icon: <IconFileText />,
                       },
                       {
                         label: 'Online',
@@ -1944,11 +1924,6 @@ export function VerificationsView() {
                           ) : (
                             '—'
                           ),
-                      },
-                      {
-                        label: 'Corso',
-                        value: <span title={programTitle}>{programTitle}</span>,
-                        icon: <IconLayers />,
                       },
                     ]}
                     actions={

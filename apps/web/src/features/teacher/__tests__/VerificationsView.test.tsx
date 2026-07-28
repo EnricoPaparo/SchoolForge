@@ -423,23 +423,23 @@ describe('VerificationsView', () => {
     expect(within(list).getByText('Verifica Trigonometria')).toBeTruthy();
     expect(within(list).getByText('Bozza')).toBeTruthy();
     expect(within(list).getByText('Nascosta')).toBeTruthy();
-    expect(within(list).getAllByText('Chiusa')).toHaveLength(4);
-    expect(within(list).getAllByText('Classe 3A').length).toBeGreaterThanOrEqual(1);
-    expect(within(list).getAllByText('Matematica').length).toBeGreaterThanOrEqual(1);
+    // «Chiusa» resta solo come stato della verifica chiusa.
+    expect(within(list).getAllByText('Chiusa')).toHaveLength(1);
+    // Classe e programma vivono ora nella riga unica di metadati.
+    expect(within(list).getAllByText(/Classe 3A/).length).toBeGreaterThanOrEqual(1);
+    expect(within(list).getAllByText(/Matematica/).length).toBeGreaterThanOrEqual(1);
+    // UI-VERIFICHE-05 — restano soltanto i riquadri Stato e Online.
     expect(within(list).getAllByText('Stato')).toHaveLength(3);
-    expect(within(list).getAllByText('Domande')).toHaveLength(3);
-    expect(within(list).getAllByText('Documento')).toHaveLength(3);
     expect(within(list).getAllByText('Online')).toHaveLength(3);
-    expect(within(list).getAllByText('Corso')).toHaveLength(3);
+    expect(within(list).queryByText('Domande')).toBeNull();
+    expect(within(list).queryByText('Documento')).toBeNull();
+    expect(within(list).queryByText('Corso')).toBeNull();
     expect(within(list).queryByText('Disponibilità')).toBeNull();
     expect(within(list).getAllByRole('switch')).toHaveLength(1);
+    // Nessuna pill/etichetta Classe, Anno, Attivata o Chiusa.
     for (const card of within(list).getAllByRole('listitem')) {
-      for (const label of ['Classe', 'Anno', 'Attivata', 'Chiusa']) {
-        expect(
-          within(card)
-            .getAllByText(label)
-            .some((element) => element.tagName === 'STRONG'),
-        ).toBe(true);
+      for (const label of ['Classe', 'Anno', 'Attivata']) {
+        expect(within(card).queryAllByText(label, { selector: 'strong' })).toHaveLength(0);
       }
     }
     const statusValue = within(list).getByText('Bozza').closest('dd');
@@ -447,7 +447,7 @@ describe('VerificationsView', () => {
     expect(screen.queryByRole('table')).toBeNull();
   });
 
-  it('shows activatedAt/closedAt timestamps under the title for active and closed verifications', async () => {
+  it('no longer shows activatedAt/closedAt in the card (data preserved, presentation removed)', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([
       makeDraftVer({
@@ -467,31 +467,22 @@ describe('VerificationsView', () => {
     render(<VerificationsView />);
 
     const list = await screen.findByRole('list', { name: 'Archivio verifiche' });
-    expect(within(list).getAllByText('Attivata')).toHaveLength(2);
-    expect(within(list).getAllByText('Chiusa')).toHaveLength(3);
+    expect(within(list).queryByText('Attivata')).toBeNull();
+    // «Chiusa» resta solo come stato, non più come etichetta di data.
+    expect(within(list).getAllByText('Chiusa')).toHaveLength(1);
+    // Nessuna data formattata nella card.
+    expect(within(list).queryByText(/\d{2}\/\d{2}\/\d{4}/)).toBeNull();
   });
 
-  it('keeps stable activation/closure metadata slots for a draft verification', async () => {
+  it('keeps a draft card free of activation/closure slots', async () => {
     setupDefaults();
     mockListVerifications.mockResolvedValue([makeDraftVer()]);
     render(<VerificationsView />);
 
     const list = await screen.findByRole('list', { name: 'Archivio verifiche' });
-    expect(within(list).getByText('Attivata')).toBeTruthy();
-    expect(within(list).getAllByText('Chiusa')).toHaveLength(1);
-    expect(within(list).getAllByText('—')).toHaveLength(4);
-  });
-
-  it('falls back to "—" when an active verification is missing activatedAt (legacy doc)', async () => {
-    setupDefaults();
-    mockListVerifications.mockResolvedValue([
-      makeDraftVer({ id: 'ver-2', status: 'active', activatedAt: null }),
-    ]);
-    render(<VerificationsView />);
-
-    const list = await screen.findByRole('list', { name: 'Archivio verifiche' });
-    expect(within(list).getByText('Attivata')).toBeTruthy();
-    expect(within(list).getAllByText('—').length).toBeGreaterThan(0);
+    expect(within(list).queryByText('Attivata')).toBeNull();
+    expect(within(list).queryByText('Chiusa')).toBeNull();
+    expect(within(list).getByText('Bozza')).toBeTruthy();
   });
 
   it('renders one record card per verification regardless of status', async () => {
@@ -3109,8 +3100,10 @@ describe('VerificationsView — school year + archive filters (VUX-01)', () => {
     render(<VerificationsView />);
     await screen.findByText('Alfa');
 
+    // L'etichetta «Anno» non esiste più: l'anno vive nella riga di metadati e,
+    // quando assente, viene semplicemente omesso (nessun `·` isolato).
     const list = screen.getByRole('list', { name: 'Archivio verifiche' });
-    expect(within(list).getByText('Anno')).toBeTruthy();
+    expect(within(list).queryByText('Anno')).toBeNull();
     await waitFor(() =>
       expect(mockGetImportMeta).toHaveBeenCalledWith('prog-1', 'imp-1', expect.anything()),
     );
@@ -3274,7 +3267,7 @@ describe('VerificationsView — school year + archive filters (VUX-01)', () => {
     // First resolution threw → year not cached, not shown yet.
     await waitFor(() => expect(mockGetImportMeta).toHaveBeenCalledTimes(1));
     expect(
-      within(screen.getByRole('list', { name: 'Archivio verifiche' })).queryByText('2025/2026'),
+      within(screen.getByRole('list', { name: 'Archivio verifiche' })).queryByText(/2025\/2026/),
     ).toBeNull();
 
     // A later list update re-runs the effect; the freed key is retried.
@@ -3283,7 +3276,7 @@ describe('VerificationsView — school year + archive filters (VUX-01)', () => {
     await waitFor(() => expect(mockGetImportMeta).toHaveBeenCalledTimes(2));
     await waitFor(() =>
       expect(
-        within(screen.getByRole('list', { name: 'Archivio verifiche' })).getByText('2025/2026'),
+        within(screen.getByRole('list', { name: 'Archivio verifiche' })).getByText(/2025\/2026/),
       ).toBeTruthy(),
     );
   });
@@ -4184,5 +4177,130 @@ describe('VerificationsView — Azzera correzione (M5-04C)', () => {
       expect(mockLoadCorrectionProgressByStudent.mock.calls.length).toBe(readsBefore + 1),
     );
     expect(checkbox.checked).toBe(true);
+  });
+});
+
+// ─── UI-VERIFICHE-05 — card docente semplificata ────────────────────────────
+describe('VerificationsView — simplified teacher verification card (UI-VERIFICHE-05)', () => {
+  async function renderCards(verifications: unknown[]) {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue(verifications);
+    render(<VerificationsView />);
+    return await screen.findByRole('list', { name: 'Archivio verifiche' });
+  }
+
+  it('shows title and question count on the same semantic line', async () => {
+    const list = await renderCards([
+      makeDraftVer({
+        config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef, sampleQuestionRef] },
+      }),
+    ]);
+    const heading = within(list).getByRole('heading', { name: /Verifica Algebra/ });
+    // Titolo e conteggio vivono nello stesso elemento di intestazione.
+    expect(heading.textContent).toContain('Verifica Algebra');
+    expect(heading.textContent).toContain('2 domande');
+    expect(heading.textContent).toContain('·');
+  });
+
+  it('uses the singular for exactly one question', async () => {
+    const list = await renderCards([
+      makeDraftVer({ config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] } }),
+    ]);
+    const heading = within(list).getByRole('heading', { name: /Verifica Algebra/ });
+    expect(heading.textContent).toContain('1 domanda');
+    expect(heading.textContent).not.toContain('1 domande');
+  });
+
+  it('uses the plural for zero questions', async () => {
+    const list = await renderCards([
+      makeDraftVer({ config: { ...makeDraftVer().config, questionRefs: [] } }),
+    ]);
+    expect(within(list).getByRole('heading', { name: /Verifica Algebra/ }).textContent).toContain(
+      '0 domande',
+    );
+  });
+
+  it('renders a single «Classe · Anno · Programma» metadata line without labels', async () => {
+    const list = await renderCards([makeDraftVer()]);
+    // Una sola riga con i valori disponibili, nessuna etichetta visibile.
+    const meta = within(list).getByText(/Classe 3A/);
+    expect(meta.textContent).toMatch(/Classe 3A · .*Matematica/);
+    for (const label of ['Classe', 'Anno', 'Corso']) {
+      expect(within(list).queryAllByText(label, { selector: 'strong' })).toHaveLength(0);
+    }
+  });
+
+  it('omits a missing class gracefully, never leaving a dangling separator', async () => {
+    const list = await renderCards([
+      makeDraftVer({ config: { ...makeDraftVer().config, classId: null } }),
+    ]);
+    const meta = within(list).getByText(/Nessuna classe/);
+    expect(meta.textContent?.startsWith('·')).toBe(false);
+    expect(meta.textContent?.trim().endsWith('·')).toBe(false);
+  });
+
+  it('keeps only the Stato and Online panels', async () => {
+    const list = await renderCards([makeDraftVer()]);
+    const labels = within(list)
+      .getAllByRole('listitem')
+      .flatMap((card) => [...card.querySelectorAll('dt')].map((dt) => dt.textContent));
+    expect(labels).toEqual(['Stato', 'Online']);
+  });
+
+  it('keeps the online switch independent from the card surface', async () => {
+    const list = await renderCards([
+      makeDraftVer({ id: 'ver-2', status: 'active', onlineEnabled: false }),
+    ]);
+    const switchEl = within(list).getByRole('switch');
+    fireEvent.click(switchEl);
+    // Lo switch agisce da solo: chiama il servizio online e NON apre il dettaglio
+    // (l'archivio resta montato).
+    await waitFor(() => expect(mockSetVerificationOnlineEnabled).toHaveBeenCalled());
+    expect(screen.getByRole('list', { name: 'Archivio verifiche' })).toBeTruthy();
+  });
+
+  it('keeps the six action slots in the approved order', async () => {
+    const list = await renderCards([makeDraftVer()]);
+    const card = within(list).getAllByRole('listitem')[0]!;
+    const actionLabels = [...card.querySelectorAll('[data-record-card-cue]')].map((el) =>
+      el.getAttribute('data-record-card-cue'),
+    );
+    expect(actionLabels).toEqual([
+      'Scarica PDF studenti →',
+      'Scarica PDF soluzioni →',
+      'Pubblica allo studente →',
+      'Abilita PDF studente →',
+      'Chiudi verifica →',
+      'Elimina verifica →',
+    ]);
+  });
+
+  it('shares one slot between «Chiudi» and «Riapri»', async () => {
+    const list = await renderCards([makeDraftVer({ id: 'ver-3', status: 'closed' })]);
+    const card = within(list).getAllByRole('listitem')[0]!;
+    const cues = [...card.querySelectorAll('[data-record-card-cue]')].map((el) =>
+      el.getAttribute('data-record-card-cue'),
+    );
+    expect(cues).toHaveLength(6);
+    expect(cues[4]).toBe('Riapri verifica →');
+    expect(cues).not.toContain('Chiudi verifica →');
+  });
+
+  it('always renders «Elimina», disabled while the verification is active', async () => {
+    const list = await renderCards([makeDraftVer({ id: 'ver-2', status: 'active' })]);
+    const del = within(list).getByRole('button', { name: /Elimina verifica/ }) as HTMLButtonElement;
+    expect(del).toBeTruthy();
+    expect(del.disabled).toBe(true);
+  });
+
+  it('keeps the contextual CTA, defaulting to «Apri verifica →»', async () => {
+    const list = await renderCards([makeDraftVer()]);
+    expect(within(list).getByText('Apri verifica →')).toBeTruthy();
+    // Passando su un'azione la CTA descrive quell'azione…
+    fireEvent.pointerOver(within(list).getByRole('button', { name: /Scarica PDF studenti/ }));
+    expect(within(list).getByText('Scarica PDF studenti →')).toBeTruthy();
+    // …e torna al default uscendo dalla card.
+    fireEvent.pointerLeave(within(list).getAllByRole('listitem')[0]!);
+    expect(within(list).getByText('Apri verifica →')).toBeTruthy();
   });
 });

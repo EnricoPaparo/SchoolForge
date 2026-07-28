@@ -972,6 +972,22 @@
 }
 
 @media (max-width: 640px) {
+  /*
+   * UI-VERIFICHE-05 — su mobile l'interruttore online resta visivamente identico
+   * ma riceve un'area di tocco accessibile (≥ 44 × 44 px) tramite pseudo-elemento
+   * centrato: nessuna modifica alla logica di attivazione/disattivazione, e il
+   * click continua a non aprire il dettaglio della verifica.
+   */
+  .onlineSwitch::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2.75rem;
+    height: 2.75rem;
+    transform: translate(-50%, -50%);
+  }
+
   .createCell {
     min-width: 8.75rem;
   }
