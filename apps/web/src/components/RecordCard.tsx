@@ -25,7 +25,11 @@ export type RecordCardActionLayout =
   | 'grid'
   | 'footer'
   | 'verification'
-  | 'student-verification';
+  | 'student-verification'
+  /** UI-STUDENTI-CLASSI-01 — card studente docente (identità + Classe + 3 riquadri). */
+  | 'student-admin'
+  /** UI-STUDENTI-CLASSI-01 — card classe docente, compatta e senza riquadri. */
+  | 'class-admin';
 
 export type RecordCardProps = {
   title: string;
@@ -47,6 +51,16 @@ export type RecordCardProps = {
    * «3AInf · 2026/2027 · AI Basics»), alternativa compatta a `details`. Opt-in.
    */
   metaLine?: ReactNode;
+  /**
+   * UI-STUDENTI-CLASSI-01 — controllo secondario reso **dentro** il blocco
+   * identità, subito sotto la riga metadati (es. la select «Classe» della card
+   * studente). Opt-in: le card che non lo passano restano identiche.
+   *
+   * Vive nell'identità e non fra le azioni perché è una proprietà del record,
+   * non un'azione discreta: su desktop resta accanto a nome ed email, su mobile
+   * scende a larghezza piena senza cambiare markup.
+   */
+  identityControl?: ReactNode;
   openLabel?: string;
   onOpen?: () => void;
   defaultCue?: string;
@@ -71,6 +85,7 @@ export function RecordCard({
   titlePrefix,
   titleMeta,
   metaLine,
+  identityControl,
   openLabel,
   onOpen,
   defaultCue,
@@ -117,7 +132,11 @@ export function RecordCard({
           ? styles.cardActionsVerification
           : actionLayout === 'student-verification'
             ? styles.cardActionsStudentVerification
-            : '';
+            : actionLayout === 'student-admin'
+              ? styles.cardActionsStudentAdmin
+              : actionLayout === 'class-admin'
+                ? styles.cardActionsClassAdmin
+                : '';
   const progressAccentClass = accentProgressOnInteraction ? styles.progressAccent : '';
   /**
    * Solo la variante verifica **docente** promuove la CTA a fascia autonoma:
@@ -211,6 +230,14 @@ export function RecordCard({
             </span>
           )}
         </header>
+
+        {/*
+         * UI-STUDENTI-CLASSI-01 — il controllo secondario è un elemento di card
+         * a sé, non un figlio di `.identity`: così può stare sotto nome ed email
+         * su desktop e prendere l'intera larghezza su mobile, senza duplicare
+         * markup fra i due casi.
+         */}
+        {identityControl && <div className={styles.identityControl}>{identityControl}</div>}
 
         {interactionCue && cueOutsideIdentity && (
           <span className={`${styles.openCta} ${styles.openCtaBand}`} aria-hidden="true">

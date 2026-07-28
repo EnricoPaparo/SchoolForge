@@ -190,123 +190,115 @@
   min-width: 160px;
 }
 
-/* ── Table ────────────────────────────────────────────────────────── */
-.tableWrap {
-  overflow-x: auto;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-}
-
-.table {
-  width: 100%;
-  min-width: 780px;
-  border-collapse: collapse;
-  font-size: 0.9375rem;
-}
-
-.th {
-  text-align: left;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-  border-bottom: 2px solid var(--color-border);
-  white-space: nowrap;
-}
-
-.row:hover {
-  background: var(--color-surface-subtle);
-}
-
-.td {
-  padding: 0.625rem 0.75rem;
-  border-bottom: 1px solid var(--color-border);
-  vertical-align: middle;
-  white-space: nowrap;
-}
-
-/** Second line of a date/time cell: the time, smaller and muted. */
-.cellTime {
-  display: block;
-  margin-top: 0.125rem;
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-}
-
-.tdActions {
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--color-border);
-  vertical-align: middle;
-}
-
-.actionsWrapper {
+/* ── Lista studenti (UI-STUDENTI-CLASSI-01) ───────────────────────── */
+/* Lista verticale: una card per riga, sempre full-width, mai una griglia. */
+.studentList {
   display: flex;
-  gap: 0.3rem;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+/*
+ * Campo «Classe» dentro il blocco identità: etichetta visibile e select
+ * realmente utilizzabile da tastiera. Nessuna altezza che cambi durante il
+ * salvataggio — la select resta della stessa dimensione anche disabilitata.
+ */
+.classField {
+  display: flex;
   align-items: center;
-  flex-wrap: nowrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.classLabel {
+  flex: none;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
 }
 
 .classSelect {
-  width: auto;
-  min-width: 140px;
+  flex: 0 1 14rem;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.3rem 0.5rem;
   font-size: 0.875rem;
-  padding: 0.25rem 0.5rem;
 }
 
-/* Compact icon-only action buttons — keep the row height stable. */
-.iconBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.875rem;
-  height: 1.875rem;
-  padding: 0;
-  font-size: 0.9375rem;
-  line-height: 1;
-  border-radius: var(--radius);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition:
-    background-color 0.12s,
-    border-color 0.12s;
+/** Seconda riga di un valore data/ora: l'ora, più piccola e attenuata. */
+.cellTime {
+  display: block;
+  margin-top: 0.1rem;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
-.iconBtn:hover:not(:disabled) {
-  background: var(--color-surface-subtle);
+.accessValue {
+  display: block;
+  min-width: 0;
+  line-height: 1.15;
 }
 
-.iconBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+/* Colori stato sobri e semantici, sempre accompagnati dall'etichetta testuale. */
+.statusApproved {
+  color: var(--color-success);
 }
 
-.iconBtnSuccess {
-  border-color: var(--color-success-border);
-  background-color: var(--color-success-bg);
+.statusPending {
+  color: var(--color-warning);
 }
 
-.iconBtnDanger {
-  border-color: var(--color-error-border);
-  background-color: var(--color-error-bg);
+.statusBlocked {
+  color: var(--color-error);
 }
 
+/*
+ * La conferma di rimozione resta ancorata alla card che la riguarda: non è un
+ * overlay e non sposta la lista.
+ */
 .confirmActions {
   display: flex;
-  gap: 0.4rem;
+  flex-wrap: wrap;
   align-items: center;
-  flex-wrap: nowrap;
-  white-space: nowrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.confirmActions button {
+  min-height: 2.25rem;
 }
 
 .confirmText {
-  font-size: 0.8125rem;
   color: var(--color-text);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+@media (max-width: 44rem) {
+  /* Mobile: la select prende tutta la larghezza sotto nome ed email. */
+  .classField {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .classSelect {
+    flex: 1 1 100%;
+    width: 100%;
+    min-height: 2.75rem;
+  }
+
+  .confirmActions {
+    width: 100%;
+  }
+
+  .confirmActions button {
+    flex: 1 1 auto;
+    min-height: 2.75rem;
+  }
 }
 
 .pendingHint {
