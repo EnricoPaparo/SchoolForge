@@ -117,7 +117,7 @@ export function RecordCard({
           ? styles.cardActionsVerification
           : actionLayout === 'student-verification'
             ? styles.cardActionsStudentVerification
-            : '';
+            : styles.cardActionsCorner;
   const progressAccentClass = accentProgressOnInteraction ? styles.progressAccent : '';
   /**
    * Solo la variante verifica **docente** promuove la CTA a fascia autonoma:
