@@ -122,6 +122,9 @@ multiple e mai tabelle con scroll orizzontale su mobile.
   non riserva spazio; il trigger «Azioni» diventa icon-only (`…`), mantiene un
   target touch da 44 px e si allinea in alto a destra sulla riga dell'identità.
   Su desktop dimensioni e fascia CTA restano invariate;
+- sulla card corso docente il trigger «Azioni» si allinea all'angolo superiore
+  destro anche su desktop, coerentemente con la card verifica, e non viene
+  centrato verticalmente rispetto al contenuto;
 - la riga compatta `Classe · Anno · Programma` aggiunge l'icona documento
   soltanto quando il PDF è realmente disponibile agli studenti; se disabilitato
   non mostra né icona né separatore residuo;

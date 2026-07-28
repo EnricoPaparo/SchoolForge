@@ -114,6 +114,12 @@ describe('CourseRecordCard responsive and motion contract', () => {
     );
   });
 
+  it('aligns course actions to the top-right corner', () => {
+    expect(css).toMatch(
+      /\.cardActionsCorner\s+\.actions\s*\{[^}]*align-self:\s*start[^}]*align-items:\s*flex-start/s,
+    );
+  });
+
   it('defines the approved academic-glow interactions and reduced-motion fallback', () => {
     expect(globalCss).toMatch(/--transition-brand-interactive:\s*160ms ease/);
     expect(css).toMatch(/transition:[\s\S]*--transition-brand-interactive/);
