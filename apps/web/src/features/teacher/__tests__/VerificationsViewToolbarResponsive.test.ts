@@ -45,17 +45,20 @@ describe('VerificationsView batch toolbar responsive contract', () => {
       /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsGrid\s+\.actions\s*\{[^}]*repeat\(3,\s*minmax\(0,\s*1fr\)\)/,
     );
     expect(recordCardCss).toMatch(/\.card\s*\{[^}]*width:\s*100%[^}]*overflow:\s*hidden/s);
+    // UI-VERIFICHE-05 — desktop: identity | metrics | actions su tre colonne.
     expect(recordCardCss).toMatch(
-      /@media\s*\(min-width:\s*44\.01rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity actions'[^}]*'metrics metrics'/,
+      /@media\s*\(min-width:\s*44\.01rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity metrics actions'[^}]*'cta metrics actions'/,
     );
+    // Mobile: metrics sotto identity, CTA ultima fascia.
     expect(recordCardCss).toMatch(
-      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity actions'[^}]*'metrics metrics'/,
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity'[^}]*'actions'[^}]*'metrics'[^}]*'cta'/,
     );
     expect(recordCardCss).toMatch(
       /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.actions\s*\{[^}]*repeat\(3,\s*minmax\(0,\s*1fr\)\)/,
     );
+    // Target touch accessibile (≥ 44px) sui sei slot azione.
     expect(recordCardCss).toMatch(
-      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.actions button\s*\{[^}]*width:\s*2\.35rem[^}]*min-width:\s*2\.35rem/,
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.actions button\s*\{[^}]*min-width:\s*2\.75rem[^}]*min-height:\s*2\.75rem/,
     );
   });
 

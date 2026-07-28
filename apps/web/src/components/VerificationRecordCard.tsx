@@ -9,6 +9,10 @@ import {
 
 type VerificationRecordCardProps = {
   title: string;
+  /** UI-VERIFICHE-05 — qualificatore sulla stessa riga del titolo (es. «8 domande»). */
+  titleMeta?: string;
+  /** UI-VERIFICHE-05 — riga unica «Classe · Anno · Programma». */
+  metaLine?: string;
   openLabel?: string;
   onOpen?: () => void;
   defaultCue?: string;

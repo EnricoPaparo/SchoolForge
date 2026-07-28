@@ -30,6 +30,17 @@ export type RecordCardActionLayout =
 export type RecordCardProps = {
   title: string;
   recordLabel: string;
+  /**
+   * UI-VERIFICHE-05 — qualificatore secondario mostrato sulla **stessa riga
+   * semantica** del titolo, separato da `·` (es. «8 domande»). Opt-in: le card
+   * che non lo passano restano identiche.
+   */
+  titleMeta?: string;
+  /**
+   * UI-VERIFICHE-05 — riga unica e sobria di metadati (es.
+   * «3AInf · 2026/2027 · AI Basics»), alternativa compatta a `details`. Opt-in.
+   */
+  metaLine?: string;
   openLabel?: string;
   onOpen?: () => void;
   defaultCue?: string;
@@ -51,6 +62,8 @@ export type RecordCardProps = {
 export function RecordCard({
   title,
   recordLabel,
+  titleMeta,
+  metaLine,
   openLabel,
   onOpen,
   defaultCue,
@@ -99,6 +112,12 @@ export function RecordCard({
             ? styles.cardActionsStudentVerification
             : '';
   const progressAccentClass = accentProgressOnInteraction ? styles.progressAccent : '';
+  /**
+   * Solo la variante verifica **docente** promuove la CTA a fascia autonoma:
+   * le altre card (corso, verifica studente) mantengono la CTA dentro
+   * `identity`, quindi il loro markup e il loro layout non cambiano.
+   */
+  const cueOutsideIdentity = actionLayout === 'verification';
 
   return (
     <article
@@ -130,7 +149,23 @@ export function RecordCard({
 
       <div className={styles.content}>
         <header className={styles.identity}>
-          <h3 className={styles.title}>{title}</h3>
+          {/*
+           * Titolo e qualificatore restano nello **stesso** elemento di
+           * intestazione, così «Reti · 8 domande» è una sola riga semantica e
+           * va a capo in modo ordinato quando serve.
+           */}
+          <h3 className={styles.title}>
+            {title}
+            {titleMeta && (
+              <>
+                <span className={styles.titleSeparator} aria-hidden="true">
+                  {' · '}
+                </span>
+                <span className={styles.titleMeta}>{titleMeta}</span>
+              </>
+            )}
+          </h3>
+          {metaLine && <p className={styles.metaLine}>{metaLine}</p>}
           {details.length > 0 && (
             <div className={styles.details}>
               {details.map((detail) => (
@@ -140,12 +175,20 @@ export function RecordCard({
               ))}
             </div>
           )}
-          {interactionCue && (
+          {/* Nel layout verifica docente la CTA è una fascia autonoma (sotto la
+              riga metadati su desktop, ultima fascia su mobile). */}
+          {interactionCue && !cueOutsideIdentity && (
             <span className={styles.openCta} aria-hidden="true">
               {interactionCue}
             </span>
           )}
         </header>
+
+        {interactionCue && cueOutsideIdentity && (
+          <span className={`${styles.openCta} ${styles.openCtaBand}`} aria-hidden="true">
+            {interactionCue}
+          </span>
+        )}
 
         <dl className={styles.metrics}>
           {metrics.map((metric) => (

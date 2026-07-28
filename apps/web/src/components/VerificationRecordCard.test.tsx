@@ -93,30 +93,34 @@ describe('VerificationRecordCard', () => {
     expect(css).toMatch(
       /\.cardActionsGrid\s+\.actions\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s,
     );
+    // UI-VERIFICHE-05 — desktop: tre aree orizzontali, metrics affiancate al
+    // blocco identità e verticalmente centrate, actions in alto a destra.
     expect(css).toMatch(
-      /\.cardActionsVerification\s+\.metrics\s*\{[^}]*grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\)/s,
+      /@media\s*\(min-width:\s*44\.01rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity metrics actions'[^}]*'cta metrics actions'/s,
+    );
+    expect(css).toMatch(
+      /\.cardActionsVerification\s+\.metrics\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(5\.5rem,\s*max-content\)\)[^}]*align-self:\s*center/s,
+    );
+    expect(css).toMatch(/\.cardActionsVerification\s+\.actions\s*\{[^}]*align-self:\s*start/s);
+    // Mobile: metrics sotto identity, Stato e Online su due colonne uguali.
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s*\{[^}]*'identity'[^}]*'actions'[^}]*'metrics'[^}]*'cta'/s,
     );
     expect(css).toMatch(
       /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.metrics\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s,
     );
+    // Azioni mobile: griglia 3 × 2 con target touch ≥ 44px.
     expect(css).toMatch(
-      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.metrics\s*>\s*:last-child\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s,
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.actions\s*\{[^}]*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s,
     );
     expect(css).toMatch(
-      /\.cardActionsVerification\s*\{[^}]*'identity actions'[^}]*'metrics metrics'/s,
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.actions button\s*\{[^}]*min-width:\s*2\.75rem[^}]*min-height:\s*2\.75rem/s,
     );
+    // La CTA è nel flusso (nessun posizionamento assoluto) e sempre leggibile.
+    expect(css).toMatch(/\.openCtaBand\s*\{[^}]*position:\s*static[^}]*opacity:\s*1/s);
     expect(css).toMatch(/\.metricInteractive\s*\{[^}]*z-index:\s*2[^}]*pointer-events:\s*auto/s);
     expect(css).not.toMatch(/\.card:focus-within\s*\{/);
     expect(css).toMatch(/\.card:has\(\[data-record-card-cue\]:focus-visible\)\s+\.openCta\s*\{/);
-    expect(css).toMatch(
-      /\.cardActionsVerification\s+\.openCta\s*\{[^}]*bottom:\s*0\.55rem[^}]*left:\s*1\.1rem/s,
-    );
-    expect(css).toMatch(
-      /\.cardActionsVerification\s+\.details span\s*\{[^}]*border-radius:[^}]*background:/s,
-    );
-    expect(css).toMatch(
-      /\.cardActionsVerification\s+\.metrics\s*>\s*:last-child\s+dd\s*\{[^}]*text-overflow:\s*ellipsis/s,
-    );
     expect(css).toMatch(/\.cardActionsFooter\s+\.actions\s*\{[^}]*flex-wrap:\s*wrap/s);
     expect(css).toMatch(
       /@media\s*\(min-width:\s*44\.01rem\)[\s\S]*?\.cardActionsStudentVerification\s*\{[^}]*'identity actions'[^}]*'metrics metrics'[^}]*'status status'/s,
