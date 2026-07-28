@@ -40,15 +40,21 @@ describe('VerificationRecordCard', () => {
     render(
       <VerificationRecordCard
         title="Compito"
-        actionLayout="footer"
+        actionLayout="student-verification"
         metrics={[{ label: 'Stato', value: 'Attiva' }]}
-        actions={<button type="button">Svolgi online</button>}
+        statusControl={<button type="button">Consegnata — Codice: SF-TEST</button>}
+        actions={
+          <button type="button" aria-label="Svolgi online — Compito">
+            <span aria-hidden="true">→</span>
+          </button>
+        }
       />,
     );
 
     expect(screen.getByRole('listitem', { name: 'Verifica Compito' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Svolgi online' })).toBeTruthy();
-    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Svolgi online — Compito' })).toBeTruthy();
+    expect(screen.getByText(/Codice: SF-TEST/)).toBeTruthy();
+    expect(screen.getAllByRole('button')).toHaveLength(2);
     expect(screen.queryByText(/Apri verifica/)).toBeNull();
   });
 
@@ -112,6 +118,15 @@ describe('VerificationRecordCard', () => {
       /\.cardActionsVerification\s+\.metrics\s*>\s*:last-child\s+dd\s*\{[^}]*text-overflow:\s*ellipsis/s,
     );
     expect(css).toMatch(/\.cardActionsFooter\s+\.actions\s*\{[^}]*flex-wrap:\s*wrap/s);
+    expect(css).toMatch(
+      /@media\s*\(min-width:\s*44\.01rem\)[\s\S]*?\.cardActionsStudentVerification\s*\{[^}]*'identity actions'[^}]*'metrics metrics'[^}]*'status status'/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsStudentVerification\s+\.actions\s*\{[^}]*grid-area:\s*actions[^}]*justify-content:\s*flex-end/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*23rem\)[\s\S]*?\.cardActionsStudentVerification\s+\.actions button\s*\{[^}]*width:\s*2\.75rem[^}]*min-height:\s*2\.75rem/s,
+    );
     expect(css).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?transform:\s*none/);
   });
 });

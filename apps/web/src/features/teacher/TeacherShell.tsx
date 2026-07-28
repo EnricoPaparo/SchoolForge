@@ -14,6 +14,7 @@ import { TemplateKitView } from './TemplateKitView.js';
 import { VerificationsView } from './VerificationsView.js';
 import { StudentsView } from './StudentsView.js';
 import logoScritta from '../../assets/logo-scritta-schoolforge.png';
+import navStyles from '../../components/HeaderSectionNav.module.css';
 import styles from './TeacherShell.module.css';
 
 type Section = 'didattica' | 'verifiche' | 'studenti' | 'template';
@@ -106,15 +107,15 @@ export function TeacherShell() {
             <button
               key={id}
               type="button"
-              className={styles.navBtn}
+              className={navStyles.navBtn}
               onClick={() => selectSection(id)}
               aria-current={activeSection === id ? 'page' : undefined}
               title={label}
             >
-              <span className={styles.navIcon} aria-hidden="true">
+              <span className={navStyles.navIcon} aria-hidden="true">
                 <SectionIcon section={id} />
               </span>
-              <span className={styles.navLabel}>{label}</span>
+              <span className={navStyles.navLabel}>{label}</span>
               {id === 'studenti' && pendingStudentsCount > 0 && (
                 <span className={styles.navBadge} aria-label={`${pendingStudentsCount} in attesa`}>
                   {pendingStudentsCount}

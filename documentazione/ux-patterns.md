@@ -55,6 +55,8 @@ L'interfaccia usa tre livelli, senza librerie UI esterne:
 - `busy`, Escape e click sul backdrop governati da proprietà esplicite;
 - variante normale per conferme/form brevi e `wide-scroll` per review o form
   lunghi;
+- i footer azione sono distinti dal contenuto soltanto tramite `gap`, margine
+  e padding: nessun bordo, `<hr>`, pseudo-elemento o ombra inset separatrice;
 - un lavoro locale non salvato non può essere perso con un click accidentale:
   la feature disabilita la chiusura oppure mostra una conferma separata.
 
@@ -91,6 +93,9 @@ multiple e mai tabelle con scroll orizzontale su mobile.
 - su desktop il progresso studente parte blu e segue l'accento arancione della
   card su hover/focus; il comportamento touch resta invariato;
 - mobile: metadati e statistiche su righe ordinate, azioni senza overflow.
+- l'header studente riusa lo stesso modulo CSS opt-in dell'header docente per
+  stato attivo blu, hover/focus arancione e reduced-motion; le shell mantengono
+  separate soltanto struttura e logica di navigazione.
 
 #### Card verifica
 

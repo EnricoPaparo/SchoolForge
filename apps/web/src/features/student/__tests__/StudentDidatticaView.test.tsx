@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StudentDidatticaView } from '../StudentDidatticaView.js';
@@ -157,5 +159,17 @@ describe('StudentDidatticaView — SDUX-01', () => {
     fireEvent.click(screen.getByRole('button', { name: '← Libreria' }));
     expect(screen.getByLabelText('Corsi disponibili')).toBeTruthy();
     expect(mockLoadStudentLessons).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('StudentDidatticaView presentation contract', () => {
+  it('does not retain selectors for the removed search toolbar', () => {
+    const css = readFileSync(
+      resolve(process.cwd(), 'src/features/student/StudentDidatticaView.module.css'),
+      'utf8',
+    );
+
+    expect(css).not.toMatch(/\.searchWrap\b/);
+    expect(css).not.toMatch(/\.toolbar\b/);
   });
 });

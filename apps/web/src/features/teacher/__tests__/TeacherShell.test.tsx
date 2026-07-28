@@ -209,12 +209,20 @@ describe('TeacherShell', () => {
 
 describe('TeacherShell brand interaction contract', () => {
   const css = readFileSync(
-    resolve(process.cwd(), 'src/features/teacher/TeacherShell.module.css'),
+    resolve(process.cwd(), 'src/components/HeaderSectionNav.module.css'),
+    'utf8',
+  );
+  const source = readFileSync(
+    resolve(process.cwd(), 'src/features/teacher/TeacherShell.tsx'),
     'utf8',
   );
   const globalCss = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
 
   it('keeps the active section blue and uses opt-in orange feedback on desktop', () => {
+    expect(source).toContain(
+      "import navStyles from '../../components/HeaderSectionNav.module.css'",
+    );
+    expect(source).toContain('className={navStyles.navBtn}');
     expect(css).toMatch(
       /\.navBtn\[aria-current='page'\]\s*\{[^}]*background:\s*#2563eb[^}]*border-color:\s*#2563eb/s,
     );

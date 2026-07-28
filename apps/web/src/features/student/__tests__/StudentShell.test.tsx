@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -174,6 +176,36 @@ describe('StudentShell', () => {
     fireEvent.click(screen.getByRole('button', { name: /Account:/ }));
     expect(screen.queryByText('null')).toBeNull();
     expect(screen.getByText('student@test.com')).toBeTruthy();
+  });
+});
+
+describe('StudentShell shared header interaction contract', () => {
+  const css = readFileSync(
+    resolve(process.cwd(), 'src/components/HeaderSectionNav.module.css'),
+    'utf8',
+  );
+  const source = readFileSync(
+    resolve(process.cwd(), 'src/features/student/StudentShell.tsx'),
+    'utf8',
+  );
+
+  it('uses the same opt-in navigation styles as the teacher shell', () => {
+    expect(source).toContain(
+      "import navStyles from '../../components/HeaderSectionNav.module.css'",
+    );
+    expect(source).toContain('className={navStyles.navBtn}');
+    expect(css).toMatch(
+      /\.navBtn\[aria-current='page'\]\s*\{[^}]*background:\s*#2563eb[^}]*border-color:\s*#2563eb/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)[\s\S]*?\.navBtn:not\(\[aria-current='page'\]\):hover:not\(:disabled\)\s*\{[^}]*color:\s*var\(--color-brand-interactive\)[^}]*translateY\(-2px\)/s,
+    );
+    expect(css).toMatch(
+      /\.navBtn:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--color-brand-interactive\)/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.navBtn:hover:not\(:disabled\),[\s\S]*?transform:\s*none/s,
+    );
   });
 });
 

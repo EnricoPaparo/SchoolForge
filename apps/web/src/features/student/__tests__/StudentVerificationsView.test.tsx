@@ -240,6 +240,32 @@ describe('StudentVerificationsView', () => {
     expect(student).toEqual({ displayName: null, email: 's@test.com' });
   });
 
+  it('renders the PDF action icon-only with a contextual accessible name and stable busy shell', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_A],
+    });
+    mockDownloadStudentPdfFromProjection.mockReturnValue(new Promise(() => {}));
+    render(<StudentVerificationsView />);
+
+    const button = await screen.findByRole('button', {
+      name: 'Scarica PDF — Verifica Reti',
+    });
+    expect(button.getAttribute('title')).toBe('Scarica PDF — Verifica Reti');
+    expect(button.textContent).toBe('');
+    expect(button.querySelector('svg')).toBeTruthy();
+    expect(screen.queryByText('Scarica PDF')).toBeNull();
+
+    const className = button.className;
+    fireEvent.click(button);
+
+    await waitFor(() => expect(button.getAttribute('aria-busy')).toBe('true'));
+    expect(button.className).toBe(className);
+    expect(button.querySelector('.spinner')).toBeTruthy();
+    expect(button.textContent).toBe('');
+    expect(screen.queryByText('Generazione…')).toBeNull();
+  });
+
   it('shows a readable error when PDF generation fails', async () => {
     mockLoadStudentVerifications.mockResolvedValue({
       status: 'ok',
@@ -318,10 +344,40 @@ describe('StudentVerificationsView', () => {
       mockLoadSubmission.mockResolvedValue(null);
       render(<StudentVerificationsView />);
 
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Svolgi online' })).toBeTruthy(),
-      );
+      const button = await screen.findByRole('button', {
+        name: 'Svolgi online — Verifica Online',
+      });
+      expect(button.getAttribute('title')).toBe('Svolgi online — Verifica Online');
+      expect(button.textContent).toBe('');
+      expect(button.querySelector('svg')).toBeTruthy();
+      expect(screen.queryByText('Svolgi online')).toBeNull();
       expect(mockLoadReceipt).toHaveBeenCalledWith('ver-online', 'student-uid', {});
+    });
+
+    it('renders "Riprendi bozza" as an icon-only action while preserving its handler contract', async () => {
+      mockLoadStudentVerifications.mockResolvedValue({
+        status: 'ok',
+        verifications: [VERIFICATION_ONLINE],
+      });
+      mockLoadReceipt.mockResolvedValue(null);
+      mockLoadSubmission
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(DRAFT_SUBMISSION)
+        .mockResolvedValueOnce(DRAFT_SUBMISSION);
+      render(<StudentVerificationsView />);
+
+      const button = await screen.findByRole('button', {
+        name: 'Riprendi bozza — Verifica Online',
+      });
+      expect(button.getAttribute('title')).toBe('Riprendi bozza — Verifica Online');
+      expect(button.textContent).toBe('');
+      expect(button.querySelector('svg')).toBeTruthy();
+      expect(screen.queryByText('Riprendi bozza')).toBeNull();
+
+      fireEvent.click(button);
+
+      expect(mockRequestFullscreenBestEffort).toHaveBeenCalledOnce();
+      await waitFor(() => expect(screen.getByTestId('online-exam-view')).toBeTruthy());
     });
 
     it('keeps a closed public verification downloadable but never startable or resumable', async () => {
@@ -354,6 +410,9 @@ describe('StudentVerificationsView', () => {
       );
       const receiptButton = screen.getByRole('button', { name: /SF-2026-AAAA/ });
       expect(receiptButton.getAttribute('title')).toContain('SF-2026-AAAA');
+      expect(receiptButton.textContent).toContain('Consegnata — Codice:');
+      expect(receiptButton.textContent).toContain('SF-2026-AAAA');
+      expect(receiptButton.parentElement?.className).toContain('statusControl');
       const code = receiptButton.querySelector('[title="SF-2026-AAAA"]');
       expect(code?.className).toContain('receiptCode');
       // The mandatory-session scan (findActiveDraftSession) still calls
@@ -376,8 +435,8 @@ describe('StudentVerificationsView', () => {
 
       await waitFor(() => expect(screen.getByTestId('online-exam-view')).toBeTruthy());
       expect(screen.getByText('Verifica Online')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Riprendi bozza' })).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Svolgi online' })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Riprendi bozza/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Svolgi online/ })).toBeNull();
     });
 
     it('reports the session as active via onSessionActiveChange while auto-resumed, and inactive again after submission', async () => {
@@ -413,9 +472,11 @@ describe('StudentVerificationsView', () => {
       render(<StudentVerificationsView />);
 
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Svolgi online' })).toBeTruthy(),
+        expect(
+          screen.getByRole('button', { name: 'Svolgi online — Verifica Online' }),
+        ).toBeTruthy(),
       );
-      fireEvent.click(screen.getByRole('button', { name: 'Svolgi online' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Svolgi online — Verifica Online' }));
 
       expect(mockRequestFullscreenBestEffort).toHaveBeenCalledOnce();
       await waitFor(() => expect(mockStartSubmission).toHaveBeenCalledOnce());
@@ -489,9 +550,11 @@ describe('StudentVerificationsView', () => {
       render(<StudentVerificationsView />);
 
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Svolgi online' })).toBeTruthy(),
+        expect(
+          screen.getByRole('button', { name: 'Svolgi online — Verifica Online' }),
+        ).toBeTruthy(),
       );
-      fireEvent.click(screen.getByRole('button', { name: 'Svolgi online' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Svolgi online — Verifica Online' }));
 
       await waitFor(() =>
         expect(
@@ -597,9 +660,13 @@ describe('StudentVerificationsView — correction returns (M4-02B)', () => {
 
     render(<StudentVerificationsView />);
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /Vedi correzione — Verifica Reti/ })).toBeTruthy(),
-    );
+    const button = await screen.findByRole('button', {
+      name: 'Vedi correzione — Verifica Reti',
+    });
+    expect(button.getAttribute('title')).toBe('Vedi correzione — Verifica Reti');
+    expect(button.textContent).toBe('');
+    expect(button.querySelector('svg')).toBeTruthy();
+    expect(screen.queryByText('Vedi correzione')).toBeNull();
     expect(
       screen.queryByRole('button', { name: /Vedi correzione — Verifica Basi di dati/ }),
     ).toBeNull();

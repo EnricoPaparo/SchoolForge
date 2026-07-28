@@ -942,19 +942,6 @@
   min-width: 0;
   margin-top: 0.25rem;
   padding-top: 0.9rem;
-  border-top: 1px solid var(--color-border);
-}
-
-.createDialogForm .dialogActions {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: 0;
-}
-
-.onlineDisableDialog .dialogActions {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: 0;
 }
 
 @media (max-width: 900px) {

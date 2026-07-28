@@ -104,7 +104,7 @@ describe('StudentVerificationsView — VEX-02A routing', () => {
   it('same_questions start calls the client flow, never the VEX callable', async () => {
     mockResolveSameQuestionsExam.mockResolvedValue({ submission: draftSubmission, questions: [] });
     await renderWith([sameItem()]);
-    fireEvent.click(screen.getByRole('button', { name: 'Svolgi online' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Svolgi online — Verifica SQ' }));
     await waitFor(() => expect(mockResolveSameQuestionsExam).toHaveBeenCalledTimes(1));
     expect(mockResolveVexExam).not.toHaveBeenCalled();
   });
@@ -117,7 +117,7 @@ describe('StudentVerificationsView — VEX-02A routing', () => {
       }),
     );
     await renderWith([vexItem()]);
-    const btn = screen.getByRole('button', { name: 'Svolgi online' });
+    const btn = screen.getByRole('button', { name: 'Svolgi online — Verifica VEX' });
     fireEvent.click(btn);
     fireEvent.click(btn); // second click during the in-flight callable must be ignored
     expect(mockResolveVexExam).toHaveBeenCalledTimes(1);

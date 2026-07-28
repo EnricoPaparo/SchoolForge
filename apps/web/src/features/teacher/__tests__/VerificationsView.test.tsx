@@ -1609,6 +1609,21 @@ describe('VerificationsView', () => {
     );
   });
 
+  it('uses the same separator-free action footer for reopen and delete confirmations', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([closedVer()]);
+    render(<VerificationsView />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /riapri verifica/i }));
+    const reopenRegion = await screen.findByRole('region', { name: /conferma riapertura/i });
+    expect(reopenRegion.querySelector('[class*="dialogActions"]')).toBeTruthy();
+    fireEvent.click(within(reopenRegion).getByRole('button', { name: 'Annulla' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /elimina verifica/i }));
+    const deleteRegion = await screen.findByRole('region', { name: /conferma eliminazione/i });
+    expect(deleteRegion.querySelector('[class*="dialogActions"]')).toBeTruthy();
+  });
+
   // ─── Delete (row action, draft or closed) ────────────────────────────────────
 
   it('delete confirm panel requires explicit confirmation before calling the service', async () => {
