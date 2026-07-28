@@ -59,6 +59,7 @@ import {
   formatQuestionCountLabel,
   formatVerificationDateIt,
 } from '../repository/verifications/verificationDate.js';
+import { readTopicOutline } from '../repository/verifications/topicOutline.js';
 import {
   IconCircleCheck,
   IconClipboardCheck,
@@ -548,17 +549,17 @@ export function StudentVerificationsView({
 
   function renderCorrectionCard(item: StudentCorrectionReturnItem) {
     const returnedLabel = formatActivatedAt(item.returnedAt);
-    // UI-VERIFICHE-06B — la proiezione delle correzioni restituite è
-    // deliberatamente autosufficiente e non contiene data né argomenti. Qui li si
-    // riusa **solo** se la stessa verifica è ancora nella lista pubblica già
-    // caricata: nessuna lettura aggiuntiva e nessun dato inventato quando la
-    // verifica non è più pubblicata (data omessa, «Argomenti» disabilitato).
-    const published = verifications.find((v) => v.id === item.verificationId) ?? null;
+    // UI-VERIFICHE-06B — data e argomenti arrivano dalla **propria**
+    // `correctionReturns`, dove sono stati copiati dallo snapshot congelato alla
+    // restituzione: la sezione resta completa anche quando la verifica è stata
+    // chiusa o nascosta e non compare più nella lista pubblica. Nessuna lettura
+    // della proiezione pubblica, nessuna dipendenza dalla lista.
+    const topicOutline = readTopicOutline(item.topicOutline);
     return (
       <VerificationRecordCard
         key={item.submissionId}
         title={item.verificationTitle}
-        titlePrefix={formatVerificationDateIt(published?.verificationDate) ?? undefined}
+        titlePrefix={formatVerificationDateIt(item.verificationDate) ?? undefined}
         actionLayout="student-verification"
         details={[
           ...(item.className ? [{ label: 'Classe', value: item.className }] : []),
@@ -587,7 +588,7 @@ export function StudentVerificationsView({
             value: (
               <VerificationTopicsControl
                 verificationTitle={item.verificationTitle}
-                topicOutline={published?.topicOutline ?? null}
+                topicOutline={topicOutline}
               />
             ),
           },

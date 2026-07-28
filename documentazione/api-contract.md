@@ -365,6 +365,26 @@ interface VerificationTopicUda {
   lessonTitles: string[];
 }
 
+// Confine di enforcement (onesto): il contratto chiuso qui descritto è
+// APPLICATIVO — lo garantiscono `buildTopicOutline`/`readTopicOutline`/
+// `assertCopyableTopicOutline`. Le Security Rules garantiscono l'autorizzazione
+// (owner-only sul documento verifica, lettura studente della sola proiezione
+// consentita) e, su `correctionReturns`, un set di chiavi chiuso più un controllo
+// di tipo/dimensione sui due campi. Le Rules NON validano la struttura interna
+// di `topicOutline`: CEL non può iterare liste annidate senza duplicare in modo
+// fragile la validazione applicativa.
+
+// UI-VERIFICHE-06B — `CorrectionReturnDoc.verificationDate` / `.topicOutline`.
+// Copiati dal `teacherSnapshot` congelato nella stessa scrittura atomica della
+// restituzione (singola e batch), per la stessa ragione per cui `questions` è
+// una copia: la correzione restituita deve restare completa anche quando la
+// verifica è chiusa o nascosta e non compare più nella lista pubblica.
+// Mai dalla publishedProjection, mai da valori del client, nessun fallback da
+// titoli o domande. Assenti su snapshot legacy ⇒ omessi (nessuna migrazione);
+// presenti ma malformati ⇒ errore prima di qualunque write.
+// `questions` continua a contenere SOLO la variante assegnata; `topicOutline` è
+// il perimetro generale e non rivela quale variante sia stata assegnata.
+
 // UI-VERIFICHE-06B — `VerificationConfig.verificationDate` / `teacherSnapshot.verificationDate`.
 // Formato ESATTO 'YYYY-MM-DD', giorno di calendario reale. Deliberatamente NON un
 // Timestamp: è un giorno didattico, non un istante — un Timestamp introdurrebbe un

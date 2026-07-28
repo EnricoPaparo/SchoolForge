@@ -1090,6 +1090,26 @@ export type CorrectionReturnDoc = {
   ownerUid: string;
   verificationTitle: string;
   className: string | null;
+  /**
+   * UI-VERIFICHE-06B — giorno didattico e perimetro didattico **copiati dal
+   * `teacherSnapshot` congelato** alla restituzione, non referenziati.
+   *
+   * Stessa ragione per cui `questions` è una copia autosufficiente: una
+   * correzione restituita deve restare leggibile e completa anche quando la
+   * verifica è stata chiusa o nascosta e non compare più nella lista pubblica
+   * dello studente. Dipendere dalla `publishedProjection` significherebbe far
+   * sparire data e argomenti proprio nel momento in cui servono di più.
+   *
+   * `topicOutline` resta il perimetro **generale** della verifica (soli titoli
+   * UDA/lezione): non dice nulla sulla variante assegnata, mentre `questions`
+   * continua a contenere esclusivamente la variante di questo studente.
+   *
+   * Assenti sui documenti restituiti prima di questo campo, e su verifiche il
+   * cui snapshot non li ha: nessuna migrazione, nessun fallback da titoli o
+   * domande, nessun dato inventato.
+   */
+  verificationDate?: string;
+  topicOutline?: VerificationTopicUda[];
   submittedAt: Timestamp | FieldValue;
   returnedAt: Timestamp | FieldValue;
   questions: CorrectionReturnQuestionView[];

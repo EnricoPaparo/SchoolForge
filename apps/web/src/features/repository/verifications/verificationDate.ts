@@ -50,6 +50,16 @@ export function assertValidVerificationDate(value: unknown): string {
 }
 
 /**
+ * Variante fail-closed per la **copia** di una data congelata in un altro
+ * documento. Assente ⇒ `null` (snapshot legacy: il campo viene omesso, mai
+ * inventato); presente ma non conforme ⇒ errore, prima di qualunque scrittura.
+ */
+export function assertCopyableVerificationDate(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  return assertValidVerificationDate(value);
+}
+
+/**
  * `2026-02-02` → `02/02/2026`. Restituisce `null` per qualunque valore assente o
  * non conforme: una data malformata non viene mai mostrata a metà né corretta.
  */

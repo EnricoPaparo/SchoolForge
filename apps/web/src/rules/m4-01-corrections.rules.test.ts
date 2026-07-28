@@ -23,7 +23,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import type { Firestore } from 'firebase/firestore';
-import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIRESTORE_RULES = resolve(__dirname, '../../../../firestore.rules');
@@ -934,6 +934,110 @@ describe('Firestore rules — correctionReturns', () => {
     await seedCompletedCorrection();
 
     await assertSucceeds(returnBatch(ownerDb()));
+  });
+
+  // ─── UI-VERIFICHE-06B follow-up — data e argomenti sulla proiezione ────────
+
+  const RULES_TOPIC_OUTLINE = [{ udaTitle: 'Il Web', lessonTitles: ['Come funziona Internet'] }];
+
+  it('accetta verificationDate e topicOutline sulla proiezione restituita', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCompletedCorrection();
+
+    await assertSucceeds(
+      returnBatch(ownerDb(), {
+        returnOverrides: {
+          verificationDate: '2026-02-02',
+          topicOutline: RULES_TOPIC_OUTLINE,
+        },
+      }),
+    );
+  });
+
+  it('accetta una proiezione legacy senza i due campi opzionali', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCompletedCorrection();
+
+    await assertSucceeds(returnBatch(ownerDb()));
+  });
+
+  it('nega tipi palesemente sbagliati per i due campi (controllo di tipo in Rules)', async () => {
+    for (const bad of [
+      { verificationDate: 20260202 },
+      { verificationDate: '02/02/2026abc' },
+      { topicOutline: 'non-una-lista' },
+    ]) {
+      await testEnv.clearFirestore();
+      await seedBase();
+      await seedSubmittedSubmission();
+      await seedCompletedCorrection();
+      await assertFails(returnBatch(ownerDb(), { returnOverrides: bad }));
+    }
+  });
+
+  it('nega comunque una chiave arbitraria: il set resta chiuso', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCompletedCorrection();
+
+    await assertFails(returnBatch(ownerDb(), { returnOverrides: { campoArbitrario: 'x' } }));
+  });
+
+  it('lo studente proprietario legge i nuovi campi, un altro studente no', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCompletedCorrection();
+    await returnBatch(ownerDb(), {
+      returnOverrides: {
+        verificationDate: '2026-02-02',
+        topicOutline: RULES_TOPIC_OUTLINE,
+        visibleToStudent: true,
+      },
+    });
+
+    const snap = await getDoc(doc(studentDb(), 'correctionReturns', SUBMISSION_ID));
+    expect(snap.exists()).toBe(true);
+    expect(snap.data()?.verificationDate).toBe('2026-02-02');
+    expect(snap.data()?.topicOutline).toEqual(RULES_TOPIC_OUTLINE);
+
+    const otherStudentDb = testEnv
+      .authenticatedContext(OTHER_STUDENT_UID)
+      .firestore() as unknown as Firestore;
+    await assertFails(getDoc(doc(otherStudentDb, 'correctionReturns', SUBMISSION_ID)));
+    await assertFails(
+      getDoc(
+        doc(
+          testEnv.unauthenticatedContext().firestore() as unknown as Firestore,
+          'correctionReturns',
+          SUBMISSION_ID,
+        ),
+      ),
+    );
+  });
+
+  it('lo studente non può scrivere data o argomenti sulla propria proiezione', async () => {
+    await seedBase();
+    await seedSubmittedSubmission();
+    await seedCompletedCorrection();
+    await returnBatch(ownerDb(), {
+      returnOverrides: {
+        verificationDate: '2026-02-02',
+        topicOutline: RULES_TOPIC_OUTLINE,
+      },
+    });
+
+    await assertFails(
+      updateDoc(doc(studentDb(), 'correctionReturns', SUBMISSION_ID), {
+        verificationDate: '2030-01-01',
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(studentDb(), 'correctionReturns', SUBMISSION_ID), {
+        topicOutline: [{ udaTitle: 'Falso', lessonTitles: ['Falso'] }],
+      }),
+    );
   });
 
   it('rejects creating a return projection without transitioning the correction to returned in the same operation', async () => {

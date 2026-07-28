@@ -862,3 +862,85 @@ describe('StudentVerificationsView — data e Argomenti (UI-VERIFICHE-06B)', () 
     expect((trigger as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+describe('StudentVerificationsView — correzioni restituite autosufficienti (UI-VERIFICHE-06B)', () => {
+  const OUTLINE = [{ udaTitle: 'Il Web', lessonTitles: ['Come funziona Internet'] }];
+
+  const RETURN_WITH_TOPICS = {
+    submissionId: 'ver-a_student-uid',
+    correctionId: 'ver-a_student-uid',
+    verificationId: 'ver-a',
+    studentUid: 'student-uid',
+    ownerUid: 'owner-uid',
+    verificationTitle: 'Verifica Reti',
+    className: 'Classe 3A',
+    verificationDate: '2026-02-02',
+    topicOutline: OUTLINE,
+    submittedAt: { seconds: 90 },
+    returnedAt: { seconds: 300 },
+    questions: [
+      {
+        order: 0,
+        tipo: 'aperta' as const,
+        testo: 'Descrivi il modello OSI.',
+        studentAnswer: { tipo: 'aperta' as const, testo: 'risposta' },
+        points: 2,
+        maxPoints: 2,
+      },
+    ],
+    generalFeedback: null,
+    totalPoints: 2,
+    maxPoints: 2,
+    percentage: 100,
+    visibleToStudent: true,
+    solutionsVisible: true,
+  };
+
+  it('mostra data e Argomenti anche quando la verifica non è più nella lista pubblica', async () => {
+    // Verifica chiusa/nascosta ⇒ assente da loadStudentVerifications.
+    mockLoadStudentVerifications.mockResolvedValue({ status: 'ok', verifications: [] });
+    mockLoadStudentCorrectionReturns.mockResolvedValue([RETURN_WITH_TOPICS]);
+
+    render(<StudentVerificationsView />);
+
+    await waitFor(() => expect(screen.getByText('Correzioni restituite')).toBeTruthy());
+    const heading = screen.getByRole('heading', { name: /Verifica Reti/ });
+    expect(heading.textContent).toContain('02/02/2026');
+
+    const trigger = screen.getByRole('button', { name: /^Argomenti della verifica/ });
+    expect((trigger as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: 'Argomenti della verifica' })).toBeTruthy();
+    expect(screen.getByText('Il Web')).toBeTruthy();
+    // Il dato viene dalla propria correctionReturn: nessuna dipendenza dalla lista.
+    expect(mockLoadStudentVerifications).toHaveBeenCalledTimes(1);
+  });
+
+  it('resta compatibile con una correctionReturn legacy priva dei campi', async () => {
+    const legacy: Record<string, unknown> = { ...RETURN_WITH_TOPICS };
+    delete legacy.verificationDate;
+    delete legacy.topicOutline;
+    mockLoadStudentVerifications.mockResolvedValue({ status: 'ok', verifications: [] });
+    mockLoadStudentCorrectionReturns.mockResolvedValue([legacy]);
+
+    render(<StudentVerificationsView />);
+
+    await waitFor(() => expect(screen.getByText('Correzioni restituite')).toBeTruthy());
+    const heading = screen.getByRole('heading', { name: /Verifica Reti/ });
+    expect(heading.textContent).toBe('Verifica Reti');
+    const trigger = screen.getByRole('button', { name: /Argomenti non disponibili/ });
+    expect((trigger as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('ignora un topicOutline malformato invece di mostrarlo a metà', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({ status: 'ok', verifications: [] });
+    mockLoadStudentCorrectionReturns.mockResolvedValue([
+      { ...RETURN_WITH_TOPICS, topicOutline: [{ udaTitle: 'Il Web', lessonTitles: [] }] },
+    ]);
+
+    render(<StudentVerificationsView />);
+
+    await waitFor(() => expect(screen.getByText('Correzioni restituite')).toBeTruthy());
+    expect(screen.getByRole('button', { name: /Argomenti non disponibili/ })).toBeTruthy();
+  });
+});

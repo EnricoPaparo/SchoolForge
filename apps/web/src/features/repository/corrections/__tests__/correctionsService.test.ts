@@ -37,6 +37,7 @@ vi.mock('firebase/firestore', () => ({
 }));
 
 import type { Firestore } from 'firebase/firestore';
+import { runBatchCorrectionAction } from '../batchCorrectionActions.js';
 import type { CorrectionDoc, CorrectionReturnDoc } from '../../../../types/firestore.js';
 import {
   clearCorrection,
@@ -606,6 +607,235 @@ describe('returnCorrection', () => {
 
     const [, event] = mockBatchSet.mock.calls[1]!;
     expect(event.type).toBe('returned');
+  });
+
+  // ─── UI-VERIFICHE-06B follow-up — data e argomenti autosufficienti ─────────
+
+  const TOPIC_OUTLINE = [
+    { udaTitle: 'Il Web', lessonTitles: ['Come funziona Internet', 'Il protocollo HTTP'] },
+  ];
+
+  function seedVerificationWithTopics(extra: Record<string, unknown> = {}) {
+    seedVerification({
+      teacherSnapshot: {
+        title: 'Verifica 1',
+        classId: 'class-a',
+        className: 'Classe A',
+        programId: 'p1',
+        importId: 'i1',
+        verificationDate: '2026-02-02',
+        topicOutline: TOPIC_OUTLINE,
+        questionRefs: [],
+        questions: [
+          { order: 0, tipo: 'aperta', maxPoints: 10, testo: 'D1', soluzione: 'sol0' },
+          { order: 1, tipo: 'aperta', maxPoints: 5, testo: 'D2', soluzione: 'sol1' },
+        ],
+        activatedAt: { seconds: 1, nanoseconds: 0 },
+        ...extra,
+      },
+    });
+  }
+
+  function seedCompleted() {
+    seedCorrection({
+      status: 'completed',
+      evaluations: {
+        '0': { order: 0, points: 8, maxPoints: 10 },
+        '1': { order: 1, points: 4, maxPoints: 5 },
+      },
+      totalPoints: 12,
+      maxPoints: 15,
+      percentage: 80,
+    });
+  }
+
+  it('copia data e argomenti dal teacherSnapshot congelato, senza write aggiuntive', async () => {
+    seedSubmittedSubmission();
+    seedVerificationWithTopics();
+    seedCompleted();
+
+    await returnCorrection(SUBMISSION_ID, fakeDb);
+
+    const [, returnDoc] = mockBatchSet.mock.calls[0]!;
+    expect(returnDoc.verificationDate).toBe('2026-02-02');
+    expect(returnDoc.topicOutline).toEqual(TOPIC_OUTLINE);
+    // Conteggio write invariato rispetto a prima dei nuovi campi.
+    expect(mockWriteBatch).toHaveBeenCalledTimes(1);
+    expect(mockBatchUpdate).toHaveBeenCalledTimes(3);
+    expect(mockBatchSet).toHaveBeenCalledTimes(2);
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
+    // Nessuna lettura della proiezione pubblica reintrodotta.
+    expect(
+      mockGetDoc.mock.calls.some(
+        ([ref]) =>
+          (ref as FakeRef).__path === `verifications/${VERIFICATION_ID}/publishedProjection/data`,
+      ),
+    ).toBe(false);
+  });
+
+  it('copia gli stessi dati anche quando la verifica è chiusa o nascosta', async () => {
+    for (const state of [
+      { status: 'closed', visibility: 'hidden' },
+      { status: 'active', visibility: 'hidden' },
+    ]) {
+      vi.clearAllMocks();
+      store = {};
+      seedSubmittedSubmission();
+      seedVerification({
+        ...state,
+        teacherSnapshot: {
+          title: 'Verifica 1',
+          classId: 'class-a',
+          className: 'Classe A',
+          programId: 'p1',
+          importId: 'i1',
+          verificationDate: '2026-02-02',
+          topicOutline: TOPIC_OUTLINE,
+          questionRefs: [],
+          questions: [
+            { order: 0, tipo: 'aperta', maxPoints: 10, testo: 'D1', soluzione: 'sol0' },
+            { order: 1, tipo: 'aperta', maxPoints: 5, testo: 'D2', soluzione: 'sol1' },
+          ],
+          activatedAt: { seconds: 1, nanoseconds: 0 },
+        },
+      });
+      seedCompleted();
+
+      await returnCorrection(SUBMISSION_ID, fakeDb);
+
+      const [, returnDoc] = mockBatchSet.mock.calls[0]!;
+      expect(returnDoc.verificationDate).toBe('2026-02-02');
+      expect(returnDoc.topicOutline).toEqual(TOPIC_OUTLINE);
+    }
+  });
+
+  it('omette i campi su uno snapshot legacy che non li ha, senza inventarli', async () => {
+    seedSubmittedSubmission();
+    seedVerification();
+    seedCompleted();
+
+    await returnCorrection(SUBMISSION_ID, fakeDb);
+
+    const [, returnDoc] = mockBatchSet.mock.calls[0]!;
+    expect(returnDoc).not.toHaveProperty('verificationDate');
+    expect(returnDoc).not.toHaveProperty('topicOutline');
+    // Il resto della restituzione resta pienamente funzionante.
+    expect(returnDoc.questions).toHaveLength(2);
+  });
+
+  it('fallisce prima di qualunque write con argomenti congelati malformati', async () => {
+    seedSubmittedSubmission();
+    seedVerificationWithTopics({ topicOutline: [{ udaTitle: 'Il Web', lessonTitles: [] }] });
+    seedCompleted();
+
+    await expect(returnCorrection(SUBMISSION_ID, fakeDb)).rejects.toThrow(
+      /argomenti congelati|non sono validi/i,
+    );
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+    expect(mockBatchSet).not.toHaveBeenCalled();
+  });
+
+  it('fallisce prima di qualunque write con una data congelata malformata', async () => {
+    seedSubmittedSubmission();
+    seedVerificationWithTopics({ verificationDate: '2026-02-30' });
+    seedCompleted();
+
+    await expect(returnCorrection(SUBMISSION_ID, fakeDb)).rejects.toThrow(/AAAA-MM-GG/);
+    expect(mockBatchCommit).not.toHaveBeenCalled();
+    expect(mockBatchSet).not.toHaveBeenCalled();
+  });
+
+  it('gli argomenti restituiti non contengono dati vietati né la variante assegnata', async () => {
+    seedSubmittedSubmission();
+    seedVerificationWithTopics();
+    seedCompleted();
+
+    await returnCorrection(SUBMISSION_ID, fakeDb);
+
+    const [, returnDoc] = mockBatchSet.mock.calls[0]!;
+    const serialized = JSON.stringify(returnDoc.topicOutline);
+    for (const forbidden of [
+      'sol0',
+      'sol1',
+      'D1',
+      'D2',
+      'questionIndexEntryId',
+      'poolStorageRef',
+      'assigned',
+      OWNER_UID,
+      STUDENT_UID,
+    ]) {
+      expect(serialized).not.toContain(forbidden);
+    }
+    for (const uda of returnDoc.topicOutline) {
+      expect(Object.keys(uda)).toEqual(['udaTitle', 'lessonTitles']);
+    }
+  });
+
+  it('la restituzione batch produce esattamente lo stesso risultato della singola', async () => {
+    // Il runner batch invoca lo **stesso** `returnCorrection` per ogni riga: qui
+    // lo si esercita davvero (nessun mock del service) su due consegne.
+    const otherStudent = 'student-2';
+    const otherSubmission = `${VERIFICATION_ID}_${otherStudent}`;
+    seedSubmittedSubmission();
+    seedVerificationWithTopics();
+    seedCompleted();
+    seedDoc(`submissions/${otherSubmission}`, {
+      exists: true,
+      data: {
+        submissionId: otherSubmission,
+        verificationId: VERIFICATION_ID,
+        studentUid: otherStudent,
+        ownerUid: OWNER_UID,
+        status: 'submitted',
+        answers: {
+          '0': { tipo: 'aperta', testo: 'risposta 1' },
+          '1': { tipo: 'aperta', testo: 'risposta 2' },
+        },
+        flagged: {},
+        attentionEvents: [],
+        deliveryCode: 'SF-2',
+        verificationTitle: 'Verifica 1',
+        className: 'Classe A',
+        startedAt: { seconds: 1, nanoseconds: 0 },
+        lastSavedAt: { seconds: 2, nanoseconds: 0 },
+        submittedAt: { seconds: 3, nanoseconds: 0 },
+      },
+    });
+    seedDoc(`corrections/${otherSubmission}`, {
+      exists: true,
+      data: correctionFixture({
+        submissionId: otherSubmission,
+        studentUid: otherStudent,
+        status: 'completed',
+        evaluations: {
+          '0': { order: 0, points: 8, maxPoints: 10 },
+          '1': { order: 1, points: 4, maxPoints: 5 },
+        },
+        totalPoints: 12,
+        maxPoints: 15,
+        percentage: 80,
+      }),
+    });
+
+    const results = await runBatchCorrectionAction(
+      'return',
+      [
+        { studentUid: STUDENT_UID, studentName: 'A', submissionId: SUBMISSION_ID },
+        { studentUid: otherStudent, studentName: 'B', submissionId: otherSubmission },
+      ],
+      fakeDb,
+    );
+    expect(results.every((r) => r.outcome === 'succeeded')).toBe(true);
+
+    const returns = mockBatchSet.mock.calls
+      .filter(([ref]) => (ref as FakeRef).__path?.startsWith('correctionReturns/'))
+      .map(([, data]) => data);
+    expect(returns).toHaveLength(2);
+    for (const returnDoc of returns) {
+      expect(returnDoc.verificationDate).toBe('2026-02-02');
+      expect(returnDoc.topicOutline).toEqual(TOPIC_OUTLINE);
+    }
   });
 
   it('rejects returning a correction that is not completed', async () => {

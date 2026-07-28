@@ -38,6 +38,8 @@ import { assertCorrectionReturnWithinLimit } from './correctionReturnSize.js';
 import { correctionProgressFromEvaluations } from './submissionCorrectionStatus.js';
 import { resolveAssignedQuestions } from '../verifications/assignedVariant.js';
 import { normalizeDistributionMode } from '../verifications/vexDistribution.js';
+import { assertCopyableVerificationDate } from '../verifications/verificationDate.js';
+import { assertCopyableTopicOutline } from '../verifications/topicOutline.js';
 
 function mirrorCorrectionProgress(
   batch: ReturnType<typeof writeBatch>,
@@ -672,6 +674,18 @@ export async function returnCorrection(submissionId: string, db: Firestore): Pro
       };
     });
 
+  // UI-VERIFICHE-06B — data e perimetro didattico copiati dallo **snapshot
+  // congelato** (unica fonte autorevole, come titolo/classe e soluzioni). Mai
+  // dalla `publishedProjection`, mai da valori forniti dallo studente, mai
+  // dedotti da titoli o domande. Validati qui: assenti ⇒ omessi (snapshot
+  // legacy), presenti ma malformati ⇒ errore **prima** di qualunque write.
+  const returnedVerificationDate = assertCopyableVerificationDate(
+    verification.teacherSnapshot?.verificationDate,
+  );
+  const returnedTopicOutline = assertCopyableTopicOutline(
+    verification.teacherSnapshot?.topicOutline,
+  );
+
   const correctionReturn: CorrectionReturnDoc = {
     correctionId: submissionId,
     verificationId: correction.verificationId,
@@ -679,6 +693,8 @@ export async function returnCorrection(submissionId: string, db: Firestore): Pro
     ownerUid: correction.ownerUid,
     verificationTitle: verification.teacherSnapshot?.title ?? submission.verificationTitle,
     className: verification.teacherSnapshot?.className ?? submission.className,
+    ...(returnedVerificationDate === null ? {} : { verificationDate: returnedVerificationDate }),
+    ...(returnedTopicOutline === null ? {} : { topicOutline: returnedTopicOutline }),
     submittedAt: submission.submittedAt,
     returnedAt: serverTimestamp(),
     questions,
