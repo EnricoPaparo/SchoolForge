@@ -38,13 +38,20 @@ describe('RecordActionsMenu', () => {
     expect(screen.getByRole('menu')).toBeTruthy();
   });
 
-  it('expands the lone trigger across its mobile row without changing desktop', () => {
+  it('renders a compact icon-only mobile trigger without changing desktop', () => {
     const css = readFileSync(
       resolve(process.cwd(), 'src/features/teacher/RecordActionsMenu.module.css'),
       'utf8',
     );
-    expect(css).toMatch(/@media\s*\(max-width:\s*44rem\)[\s\S]*?\.wrapper\s*\{[^}]*width:\s*100%/s);
-    expect(css).toMatch(/@media\s*\(max-width:\s*44rem\)[\s\S]*?\.trigger\s*\{[^}]*width:\s*100%/s);
-    expect(css.slice(0, css.indexOf('@media'))).not.toMatch(/\.trigger\s*\{[^}]*width:\s*100%/s);
+    expect(css).toMatch(/@media\s*\(max-width:\s*44rem\)[\s\S]*?\.wrapper\s*\{[^}]*width:\s*auto/s);
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.trigger\s*\{[^}]*width:\s*2\.75rem/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.label\s*\{[^}]*clip:\s*rect\(0,\s*0,\s*0,\s*0\)/s,
+    );
+    expect(css.slice(0, css.indexOf('@media'))).not.toMatch(
+      /\.trigger\s*\{[^}]*width:\s*2\.75rem/s,
+    );
   });
 });
