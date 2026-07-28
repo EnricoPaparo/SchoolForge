@@ -117,7 +117,11 @@ multiple e mai tabelle con scroll orizzontale su mobile.
 - la CTA di apertura della card compare solo su hover reale
   (`hover: hover` + `pointer: fine`) o focus da tastiera della superficie
   apribile: mai a riposo, mai su touch, con lo spazio riservato in anticipo per
-  non introdurre spostamenti di layout;
+  non introdurre spostamenti di layout. Il contratto è **opt-in per variante**
+  (`ctaFollowsCard` per corso e verifica studente, `ctaFollowsSurface` per la
+  verifica docente): nessun selettore hover generico sulla CTA e nessuna regola
+  di neutralizzazione, quindi il risultato non dipende dall'ordine delle
+  dichiarazioni CSS;
 - mobile studente: azioni testuali responsive, senza griglie multi-card;
 - `Nuova verifica` risiede nella barra filtri accanto a
   `Impostazioni correzione IA` e apre `DialogShell`;

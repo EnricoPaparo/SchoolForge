@@ -118,10 +118,23 @@ export function RecordCard({
    * `identity`, quindi il loro markup e il loro layout non cambiano.
    */
   const cueOutsideIdentity = actionLayout === 'verification';
+  /**
+   * UI-VERIFICHE-06A follow-up — contratto CTA **opt-in ed esplicito**, non più
+   * affidato all'ordine delle regole CSS. Ogni card dichiara quale superficie
+   * fa comparire la CTA:
+   * - `ctaFollowsCard`: hover su qualunque punto della card (corso, verifica
+   *   studente) — comportamento storico, invariato;
+   * - `ctaFollowsSurface`: solo hover sulla superficie apribile (verifica
+   *   docente), così passare sul pulsante «Azioni» non promette l'apertura.
+   *
+   * Le due classi sono mutuamente esclusive e ognuna ha la propria regola: non
+   * esiste alcun selettore generico che le sovrascriva a valle.
+   */
+  const ctaScopeClass = cueOutsideIdentity ? styles.ctaFollowsSurface : styles.ctaFollowsCard;
 
   return (
     <article
-      className={`${styles.card} ${layoutClass} ${progressAccentClass}`}
+      className={`${styles.card} ${layoutClass} ${ctaScopeClass} ${progressAccentClass}`}
       role="listitem"
       aria-label={`${recordLabel} ${title}`}
       onClick={(event) => {

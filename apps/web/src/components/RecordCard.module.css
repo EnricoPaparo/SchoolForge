@@ -364,24 +364,26 @@
     background: var(--color-brand-interactive);
   }
 
-  .card:hover .openCta {
+  /*
+   * Contratti CTA separati e opt-in (UI-VERIFICHE-06A follow-up). Nessuna
+   * regola generica su `.card`: ogni variante ne dichiara una sola, quindi il
+   * risultato non dipende dall'ordine delle dichiarazioni e nessuna delle due
+   * neutralizza l'altra.
+   *
+   * `ctaFollowsCard` — corso e verifica studente: hover ovunque sulla card.
+   */
+  .ctaFollowsCard:hover .openCta {
     opacity: 1;
     transform: translateX(0);
   }
 
   /*
-   * UI-VERIFICHE-06A — nella card verifica docente la CTA segue **solo** la
-   * superficie apribile: l'hover generico della card (che include il pulsante
-   * «Azioni») non la mostra, così non suggerisce che quel controllo apra il
-   * dettaglio. Le due regole seguono quella generica: la prima la neutralizza a
-   * parità di specificità, la seconda vince con `:has`.
+   * `ctaFollowsSurface` — verifica docente: solo la superficie apribile. Passare
+   * sul pulsante «Azioni» non mostra la CTA, così non promette un'apertura.
    */
-  .cardActionsVerification:hover .openCtaBand {
-    opacity: 0;
-  }
-
-  .cardActionsVerification:has(> .openSurface:hover) .openCtaBand {
+  .ctaFollowsSurface:has(> .openSurface:hover) .openCta {
     opacity: 1;
+    transform: translateX(0);
   }
 }
 
@@ -417,7 +419,7 @@
   background: var(--color-brand-interactive);
 }
 
-.card:has([data-record-card-cue]:focus-visible) .openCta {
+.ctaFollowsCard:has([data-record-card-cue]:focus-visible) .openCta {
   opacity: 1;
   transform: translateX(0);
 }
@@ -832,7 +834,8 @@
   }
 
   .openCta,
-  .card:hover .openCta,
+  .ctaFollowsCard:hover .openCta,
+  .ctaFollowsSurface:has(> .openSurface:hover) .openCta,
   .card:has(> .openSurface:focus-visible) .openCta {
     transform: none;
   }

@@ -113,15 +113,11 @@ describe('VerificationRecordCard', () => {
     // CTA invisibile a riposo, visibile solo su hover/focus della superficie apribile.
     expect(css).toMatch(/\.openCtaBand\s*\{[^}]*position:\s*static[^}]*opacity:\s*0/s);
     expect(css).toMatch(
-      /\.cardActionsVerification:has\(> \.openSurface:hover\)\s+\.openCtaBand\s*\{[^}]*opacity:\s*1/s,
+      /\.ctaFollowsSurface:has\(> \.openSurface:hover\)\s+\.openCta\s*\{[^}]*opacity:\s*1/s,
     );
     expect(css).toMatch(
       /\.card:has\(> \.openSurface:focus-visible\)\s+\.openCta\s*\{[^}]*opacity:\s*1/s,
     );
-    // L'hover generico della card è neutralizzato per la variante verifica, dove
-    // conta solo la superficie apribile (contratto della card corso invariato).
-    expect(css).toMatch(/\.cardActionsVerification:hover\s+\.openCtaBand\s*\{[^}]*opacity:\s*0/s);
-    expect(css).toMatch(/\.card:hover\s+\.openCta\s*\{[^}]*opacity:\s*1/s);
     expect(css).toMatch(/\.cardActionsVerification\s+\.actions\s*\{[^}]*align-self:\s*start/s);
     // Mobile: metrics sotto identity, Stato e Online su due colonne uguali.
     expect(css).toMatch(
@@ -131,7 +127,9 @@ describe('VerificationRecordCard', () => {
 
     expect(css).toMatch(/\.metricInteractive\s*\{[^}]*z-index:\s*2[^}]*pointer-events:\s*auto/s);
     expect(css).not.toMatch(/\.card:focus-within\s*\{/);
-    expect(css).toMatch(/\.card:has\(\[data-record-card-cue\]:focus-visible\)\s+\.openCta\s*\{/);
+    expect(css).toMatch(
+      /\.ctaFollowsCard:has\(\[data-record-card-cue\]:focus-visible\)\s+\.openCta\s*\{/,
+    );
     expect(css).toMatch(/\.cardActionsFooter\s+\.actions\s*\{[^}]*flex-wrap:\s*wrap/s);
     expect(css).toMatch(
       /@media\s*\(min-width:\s*44\.01rem\)[\s\S]*?\.cardActionsStudentVerification\s*\{[^}]*'identity actions'[^}]*'metrics metrics'[^}]*'status status'/s,
@@ -149,5 +147,62 @@ describe('VerificationRecordCard', () => {
       /@media\s*\(max-width:\s*23rem\)[\s\S]*?\.cardActionsStudentVerification\s+\.actions button\s*\{[^}]*width:\s*2\.75rem[^}]*min-height:\s*2\.75rem/s,
     );
     expect(css).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?transform:\s*none/);
+  });
+
+  /**
+   * UI-VERIFICHE-06A follow-up — il comportamento della CTA non deve più
+   * dipendere dall'ordine delle dichiarazioni: ogni variante ha la propria
+   * regola opt-in e nessun selettore generico da neutralizzare a valle.
+   */
+  describe('contratto CTA opt-in, indipendente dall’ordine delle regole', () => {
+    const css = readFileSync(
+      resolve(process.cwd(), 'src/components/RecordCard.module.css'),
+      'utf8',
+    );
+
+    it('non contiene alcun selettore hover generico sulla CTA', () => {
+      // Un `.card:hover ... .openCta` tornerebbe ad applicarsi a **tutte** le
+      // record card, richiedendo una neutralizzazione posizionale: vietato.
+      expect(css).not.toMatch(/(^|[\s,])\.card:hover[^,{]*\.openCta/m);
+      expect(css).not.toMatch(/(^|[\s,])\.card:hover[^,{]*\.openCtaBand/m);
+      // Nessuna regola di soppressione: la variante verifica non deve più
+      // spegnere una regola ereditata.
+      expect(css).not.toMatch(/\.cardActionsVerification:hover\s+\.openCta/);
+      expect(css).not.toMatch(/!\s*important\s*[;}]/);
+    });
+
+    it('dichiara i due contratti separati una sola volta ciascuno', () => {
+      const followsCard = css.match(/\.ctaFollowsCard:hover\s+\.openCta\s*\{/g) ?? [];
+      const followsSurface =
+        css.match(/\.ctaFollowsSurface:has\(> \.openSurface:hover\)\s+\.openCta\s*\{/g) ?? [];
+      expect(followsCard).toHaveLength(1);
+      expect(followsSurface).toHaveLength(1);
+      // Entrambi restano dietro l'hover reale: mai su touch.
+      const hoverBlock = css.slice(css.indexOf('@media (hover: hover) and (pointer: fine)'));
+      expect(hoverBlock).toContain('.ctaFollowsCard:hover .openCta');
+      expect(hoverBlock).toContain('.ctaFollowsSurface:has(> .openSurface:hover) .openCta');
+    });
+
+    it('applica la classe di contratto corretta a ciascuna variante', () => {
+      const { container, unmount } = render(
+        <VerificationRecordCard title="Reti" metrics={[{ label: 'Stato', value: 'Pubblica' }]} />,
+      );
+      const studentCard = container.querySelector('[role="listitem"]');
+      // Senza `actionLayout="verification"` vale il contratto storico.
+      expect(studentCard?.className).toContain('ctaFollowsCard');
+      expect(studentCard?.className).not.toContain('ctaFollowsSurface');
+      unmount();
+
+      const teacher = render(
+        <VerificationRecordCard
+          title="Reti"
+          actionLayout="verification"
+          metrics={[{ label: 'Stato', value: 'Pubblica' }]}
+        />,
+      );
+      const teacherCard = teacher.container.querySelector('[role="listitem"]');
+      expect(teacherCard?.className).toContain('ctaFollowsSurface');
+      expect(teacherCard?.className).not.toContain('ctaFollowsCard');
+    });
   });
 });
