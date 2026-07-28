@@ -747,6 +747,12 @@ describe('StudentsView — contratto CSS responsive (UI-STUDENTI-CLASSI-01)', ()
     );
   });
 
+  it('mantiene il controllo Classe realmente interattivo sopra il contenuto non cliccabile', () => {
+    expect(recordCss).toMatch(
+      /\.identityControl\s*\{[^}]*z-index:\s*2[^}]*pointer-events:\s*auto/s,
+    );
+  });
+
   it('desktop studente: identità, tre riquadri uniformi e azioni in tre aree', () => {
     expect(recordCss).toMatch(
       /@media\s*\(min-width:\s*44\.01rem\)[\s\S]*?\.cardActionsStudentAdmin\s*\{[^}]*'identity metrics actions'/s,
@@ -759,5 +765,11 @@ describe('StudentsView — contratto CSS responsive (UI-STUDENTI-CLASSI-01)', ()
   it('«Nuova classe» è a larghezza piena con altezza sobria e target touch', () => {
     expect(classesCss).toMatch(/\.newClassBtn\s*\{[^}]*width:\s*100%/s);
     expect(classesCss).toMatch(/\.newClassBtn\s*\{[^}]*min-height:\s*2\.75rem/s);
+  });
+
+  it('il campo «Nome classe» usa altezza, spaziatura e superficie moderne', () => {
+    expect(classesCss).toMatch(/\.input\s*\{[^}]*min-height:\s*2\.75rem/s);
+    expect(classesCss).toMatch(/\.input\s*\{[^}]*border-radius:\s*var\(--radius-lg\)/s);
+    expect(classesCss).toMatch(/\.input\s*\{[^}]*background:\s*color-mix/s);
   });
 });

@@ -485,7 +485,10 @@
  * larghezza piena su mobile senza cambiare markup.
  */
 .identityControl {
+  position: relative;
+  z-index: 2;
   min-width: 0;
+  pointer-events: auto;
 }
 
 /*
@@ -803,8 +806,8 @@
       'identity actions'
       'classfield classfield'
       'errors errors';
-    gap: 0.5rem;
-    padding: 0.8rem 0.9rem 0.8rem 1rem;
+    gap: 0.25rem 0.5rem;
+    padding: 0.55rem 0.7rem 0.55rem 0.85rem;
   }
 
   .cardActionsClassAdmin .identityControl {
@@ -819,6 +822,7 @@
   .cardActionsClassAdmin .identity {
     grid-area: identity;
     position: static;
+    align-self: center;
   }
 
   .cardActionsClassAdmin .actions {

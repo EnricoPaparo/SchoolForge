@@ -342,6 +342,15 @@ describe('ClassesTab — allineamento azioni e ripristino del focus (UI-STUDENTI
     );
   });
 
+  it('rende la card classe più compatta soltanto nel layout mobile', () => {
+    expect(recordCss).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsClassAdmin\s*\{[^}]*gap:\s*0\.25rem\s+0\.5rem[^}]*padding:\s*0\.55rem\s+0\.7rem\s+0\.55rem\s+0\.85rem/s,
+    );
+    expect(recordCss).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsClassAdmin\s+\.identity\s*\{[^}]*align-self:\s*center/s,
+    );
+  });
+
   function trigger(): HTMLButtonElement {
     return screen.getByRole('button', { name: /^Azioni classe/ }) as HTMLButtonElement;
   }
