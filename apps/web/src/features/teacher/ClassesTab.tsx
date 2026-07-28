@@ -1,4 +1,11 @@
-import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type MutableRefObject,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { db } from '../../lib/firebase.js';
 import {
   createClass,
@@ -48,12 +55,40 @@ export function ClassesTab({
   const [actionError, setActionError] = useState<string | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   const savingRef = useRef(false);
+  /**
+   * UI-STUDENTI-CLASSI-01 — riferimento stabile al trigger «…» di ciascuna card,
+   * per classe. Serve a riportare il focus **esattamente** su quel trigger quando
+   * la rinomina si chiude (Annulla, Escape, salvataggio riuscito): il pulsante che
+   * ha aperto il flusso è una voce di menu, che a quel punto non esiste più.
+   *
+   * È una mappa e non un singolo ref perché le card sono più d'una: cercare il
+   * pulsante per testo a livello di documento sarebbe fragile e potrebbe colpire
+   * la card sbagliata.
+   */
+  const triggerRefs = useRef(new Map<string, MutableRefObject<HTMLButtonElement | null>>());
+  /** Card a cui restituire il focus alla chiusura dell'editor. */
+  const restoreFocusIdRef = useRef<string | null>(null);
+
+  function triggerRefFor(classId: string): MutableRefObject<HTMLButtonElement | null> {
+    let ref = triggerRefs.current.get(classId);
+    if (!ref) {
+      ref = { current: null };
+      triggerRefs.current.set(classId, ref);
+    }
+    return ref;
+  }
 
   useEffect(() => {
     if (editId) {
       editInputRef.current?.focus();
       editInputRef.current?.select();
+      return;
     }
+    // L'editor si è appena chiuso: il focus torna al trigger della sua card.
+    const restoreId = restoreFocusIdRef.current;
+    if (!restoreId) return;
+    restoreFocusIdRef.current = null;
+    triggerRefs.current.get(restoreId)?.current?.focus();
   }, [editId]);
 
   async function handleCreate(event: FormEvent) {
@@ -82,6 +117,8 @@ export function ClassesTab({
   }
 
   function cancelEdit() {
+    // Il focus torna al trigger della card in modifica (vedi `restoreFocusIdRef`).
+    restoreFocusIdRef.current = editId;
     setEditId(null);
     setEditName('');
     setActionError(null);
@@ -98,6 +135,7 @@ export function ClassesTab({
       // Description is no longer exposed by the UI, but legacy data is preserved.
       await updateClass(item.id, name, item.description ?? null, ownerUid, db);
       onClassRenamed(item.id, name);
+      // Salvataggio riuscito: chiude l'editor e restituisce il focus al trigger.
       cancelEdit();
     } catch {
       setActionError('Impossibile modificare la classe. Riprova.');
@@ -226,7 +264,10 @@ export function ClassesTab({
                   ) : undefined
                 }
                 actions={
-                  <RecordActionsMenu ariaLabel={`Azioni classe — ${item.name}`}>
+                  <RecordActionsMenu
+                    ariaLabel={`Azioni classe — ${item.name}`}
+                    triggerRef={triggerRefFor(item.id)}
+                  >
                     <button
                       type="button"
                       role="menuitem"

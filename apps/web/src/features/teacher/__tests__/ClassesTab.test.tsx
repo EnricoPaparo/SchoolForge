@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -161,9 +163,10 @@ describe('ClassesTab (DUX-05A)', () => {
     expect(mockUpdateClass).not.toHaveBeenCalled();
     // Il nome originale resta quello mostrato: nessuna scrittura, nessun residuo.
     expect(screen.getByRole('heading').textContent).toContain('3A Informatica');
-    // Il ripristino del focus è ora responsabilità del menu condiviso (Escape sul
-    // menu riporta al trigger «…»): l'editor non ha più un proprio pulsante.
     expect(screen.queryByRole('textbox', { name: 'Nome classe' })).toBeNull();
+    // Il focus torna al trigger «…» della stessa card (contratto verificato in
+    // dettaglio nel describe dedicato più sotto).
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Azioni classe/ }));
   });
 
   it('cancels with the explicit button without writing', () => {
@@ -309,5 +312,116 @@ describe('ClassesTab — card e menu azioni (UI-STUDENTI-CLASSI-01)', () => {
     expect(screen.getByText('Nessuna classe ancora creata.')).toBeTruthy();
     // L'azione primaria resta comunque disponibile.
     expect(screen.getByRole('button', { name: 'Nuova classe' })).toBeTruthy();
+  });
+});
+
+describe('ClassesTab — allineamento azioni e ripristino del focus (UI-STUDENTI-CLASSI-01)', () => {
+  const recordCss = readFileSync(
+    resolve(process.cwd(), 'src/components/RecordCard.module.css'),
+    'utf8',
+  );
+
+  it('tiene il trigger «…» in alto a destra, mai centrato verticalmente', () => {
+    const blocks = [...recordCss.matchAll(/\.cardActionsClassAdmin\s+\.actions\s*\{[^}]*\}/g)].map(
+      (m) => m[0],
+    );
+    // Sia la variante mobile sia quella desktop.
+    expect(blocks.length).toBeGreaterThanOrEqual(2);
+    for (const block of blocks) {
+      expect(block).toMatch(/align-self:\s*start/);
+      expect(block).toMatch(/justify-self:\s*end/);
+      expect(block).not.toMatch(/align-self:\s*center/);
+    }
+    // Le altre card non sono state toccate: la verifica docente resta col proprio
+    // contratto e la card studente admin pure.
+    expect(recordCss).toMatch(
+      /\.cardActionsVerification\s+\.actions\s*\{[^}]*align-self:\s*start/s,
+    );
+    expect(recordCss).toMatch(
+      /\.cardActionsStudentAdmin\s+\.actions\s*\{[^}]*align-self:\s*start/s,
+    );
+  });
+
+  function trigger(): HTMLButtonElement {
+    return screen.getByRole('button', { name: /^Azioni classe/ }) as HTMLButtonElement;
+  }
+
+  it('«Modifica classe» porta il focus sull’input', () => {
+    renderTab();
+    fireEvent.click(menuItem('Modifica classe 3A Informatica'));
+    const input = screen.getByRole('textbox', { name: 'Nome classe' });
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('Annulla riporta il focus al trigger della stessa card', () => {
+    renderTab();
+    fireEvent.click(menuItem('Modifica classe 3A Informatica'));
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+
+    expect(screen.queryByRole('textbox', { name: 'Nome classe' })).toBeNull();
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  it('Escape riporta il focus al trigger della stessa card', () => {
+    renderTab();
+    fireEvent.click(menuItem('Modifica classe 3A Informatica'));
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Nome classe' }), { key: 'Escape' });
+
+    expect(mockUpdateClass).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  it('il salvataggio riuscito riporta il focus al trigger della stessa card', async () => {
+    renderTab();
+    fireEvent.click(menuItem('Modifica classe 3A Informatica'));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Nome classe' }), {
+      target: { value: '3A Sistemi' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Nome classe' })).toBeNull());
+    expect(mockUpdateClass).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  it('restituisce il focus al trigger della card giusta quando ce ne sono più d’una', async () => {
+    const twoClasses = [
+      classes[0]!,
+      { id: 'class-2', ownerUid: 'owner-uid', name: '4B Chimica', description: null },
+    ];
+    renderTab({
+      classes: twoClasses,
+      studentCountByClassId: new Map([
+        ['class-1', 3],
+        ['class-2', 2],
+      ]),
+    });
+
+    // Seconda card: apre il menu, modifica, annulla.
+    fireEvent.click(menuItem('Modifica classe 4B Chimica', 1));
+    fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+
+    const triggers = screen.getAllByRole('button', { name: /^Azioni classe/ });
+    expect(document.activeElement).toBe(triggers[1]);
+    expect(document.activeElement).not.toBe(triggers[0]);
+  });
+
+  it('un errore di salvataggio non chiude l’editor, non sposta il focus e non duplica la write', async () => {
+    mockUpdateClass.mockRejectedValueOnce(new Error('duplicate'));
+    renderTab();
+    fireEvent.click(menuItem('Modifica classe 3A Informatica'));
+    const input = screen.getByRole('textbox', { name: 'Nome classe' });
+    fireEvent.change(input, { target: { value: '3A Sistemi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Impossibile modificare la classe. Riprova.',
+    );
+    // Editor ancora aperto col valore digitato, focus non rubato dal trigger.
+    const stillOpen = screen.getByRole('textbox', { name: 'Nome classe' }) as HTMLInputElement;
+    expect(stillOpen.value).toBe('3A Sistemi');
+    expect(document.activeElement).not.toBe(trigger());
+    // Una sola write: il fallimento non ne innesca una seconda da solo.
+    expect(mockUpdateClass).toHaveBeenCalledTimes(1);
   });
 });
