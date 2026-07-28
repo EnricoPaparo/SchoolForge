@@ -31,6 +31,12 @@ export type RecordCardProps = {
   title: string;
   recordLabel: string;
   /**
+   * UI-VERIFICHE-06B — qualificatore mostrato **prima** del titolo, separato da
+   * `·` (es. la data «02/02/2026»). Opt-in e omesso interamente quando assente:
+   * la testata non mostra mai un separatore iniziale o un placeholder inventato.
+   */
+  titlePrefix?: string;
+  /**
    * UI-VERIFICHE-05 — qualificatore secondario mostrato sulla **stessa riga
    * semantica** del titolo, separato da `·` (es. «8 domande»). Opt-in: le card
    * che non lo passano restano identiche.
@@ -62,6 +68,7 @@ export type RecordCardProps = {
 export function RecordCard({
   title,
   recordLabel,
+  titlePrefix,
   titleMeta,
   metaLine,
   openLabel,
@@ -168,6 +175,14 @@ export function RecordCard({
            * va a capo in modo ordinato quando serve.
            */}
           <h3 className={styles.title}>
+            {titlePrefix && (
+              <>
+                <span className={styles.titleMeta}>{titlePrefix}</span>
+                <span className={styles.titleSeparator} aria-hidden="true">
+                  {' · '}
+                </span>
+              </>
+            )}
             {title}
             {titleMeta && (
               <>

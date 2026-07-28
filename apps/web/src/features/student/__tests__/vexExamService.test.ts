@@ -22,6 +22,8 @@ function item(over: Partial<StudentVerificationItem> = {}): StudentVerificationI
     ownerUid: 'owner',
     status: 'active',
     distributionMode: 'equivalent_variants',
+    verificationDate: null,
+    topicOutline: null,
     ...over,
   };
 }

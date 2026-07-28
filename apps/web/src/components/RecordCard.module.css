@@ -550,6 +550,16 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  /*
+   * UI-VERIFICHE-06B — «Argomenti» è il terzo riquadro e prende la riga intera
+   * sotto Stato e Online: le prime due restano su due colonne uguali (mai
+   * compresse a tre o quattro) e il controllo ha spazio per un target touch
+   * pieno. Vale solo per la card verifica docente.
+   */
+  .cardActionsVerification .metrics > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+
   .cardActionsVerification .identity {
     grid-area: identity;
     position: static;
@@ -589,6 +599,16 @@
   }
 
   .cardActionsStudentVerification .metrics > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+
+  /*
+   * UI-VERIFICHE-06B — «Argomenti» si aggiunge come quarta fascia a larghezza
+   * piena, **sotto** le metriche esistenti: il contratto mobile approvato resta
+   * intatto (le prime due affiancate, la terza a tutta riga) e nulla viene
+   * compresso su tre o quattro colonne.
+   */
+  .cardActionsStudentVerification .metrics > :nth-child(4) {
     grid-column: 1 / -1;
   }
 
@@ -739,6 +759,15 @@
   .cardActionsStudentVerification .metrics {
     grid-area: metrics;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /*
+   * UI-VERIFICHE-06B — desktop: con «Argomenti» le colonne diventano quattro
+   * uguali, così i riquadri restano affiancati e della stessa larghezza invece di
+   * andare a capo da soli.
+   */
+  .cardActionsStudentVerification .metrics:has(> :nth-child(4)) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .cardActionsStudentVerification .actions {

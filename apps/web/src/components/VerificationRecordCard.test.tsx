@@ -106,6 +106,16 @@ describe('VerificationRecordCard', () => {
     expect(css).toMatch(/\.cardActionsVerification\s*\{[^}]*--record-metric-size:\s*[\d.]+rem/s);
     expect(css).toMatch(/\.cardActionsVerification\s+\.metric\s*\{[^}]*height:\s*[\d.]+rem/s);
     expect(css).not.toMatch(/\.cardActionsVerification\s+\.metrics\s*\{[^}]*max-content/s);
+    // UI-VERIFICHE-06B — mobile: «Argomenti» è il terzo riquadro e prende la riga
+    // intera; Stato e Online restano affiancati su due colonne uguali.
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.metrics\s*>\s*:nth-child\(3\)\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s,
+    );
+    // Card studente: la quarta fascia («Argomenti») è a larghezza piena e le
+    // metriche esistenti non vengono compresse su quattro colonne su mobile.
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsStudentVerification\s+\.metrics\s*>\s*:nth-child\(4\)\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s,
+    );
     // Mobile: due colonne uguali che si dividono la larghezza.
     expect(css).toMatch(
       /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.cardActionsVerification\s+\.metrics\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s,

@@ -42,6 +42,18 @@ import {
 import { db, functions, storage } from '../../lib/firebase.js';
 import { useAuth } from '../../lib/auth.js';
 import { QuestionPicker } from './QuestionPicker.js';
+import { VerificationTopicsControl } from '../../components/VerificationTopicsControl.js';
+import {
+  formatQuestionCountLabel,
+  formatVerificationDateIt,
+  isValidVerificationDate,
+} from '../repository/verifications/verificationDate.js';
+import {
+  buildTopicOutline,
+  readTopicOutline,
+  TopicOutlineError,
+} from '../repository/verifications/topicOutline.js';
+import { listLessons, listUdas } from '../repository/programs/programsService.js';
 import { AttentionEventsDialog } from './AttentionEventsDialog.js';
 import { CorrectionWorkspace } from './CorrectionWorkspace.js';
 import { AiBatchCorrectionDialog } from './AiBatchCorrectionDialog.js';
@@ -85,6 +97,7 @@ import {
   IconEraser,
   IconDownload,
   IconWifi,
+  IconLayers,
 } from '../../components/icons.js';
 import { VerificationRecordCard } from '../../components/VerificationRecordCard.js';
 import { VerificationActionsMenu } from './VerificationActionsMenu.js';
@@ -296,6 +309,19 @@ export function VerificationsView() {
   const [newTitle, setNewTitle] = useState('');
   const [newProgramId, setNewProgramId] = useState('');
   const [newClassId, setNewClassId] = useState('');
+  // UI-VERIFICHE-06B — stato iniziale **vuoto**: la data non viene mai scelta
+  // silenziosamente (nessun "oggi" implicito); il docente la indica sempre.
+  const [newDate, setNewDate] = useState('');
+  const [editDraftDate, setEditDraftDate] = useState('');
+  /**
+   * UI-VERIFICHE-06B — albero canonico del corso della bozza aperta (UDA e
+   * lezioni con i loro titoli), letto **una volta** insieme al pool. È la sola
+   * fonte dell'ordine canonico del perimetro didattico.
+   */
+  const [courseTree, setCourseTree] = useState<{
+    udas: { dir: string; titolo?: string | null }[];
+    lessons: { udaDir: string; filename: string; titolo?: string | null }[];
+  } | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -951,6 +977,8 @@ export function VerificationsView() {
     setSelectedQuestionIds(new Set(v.config.questionRefs.map((r) => r.questionIndexEntryId)));
     setEditDraftTitle(v.config.title);
     setEditDraftClassId(v.config.classId ?? '');
+    setEditDraftDate(v.config.verificationDate ?? '');
+    setCourseTree(null);
     // VEX-01A: modalità normalizzata fail-closed; gruppi riconciliati con la
     // selezione corrente (scarta entryId non più presenti e gruppi vuoti).
     setDistributionMode(normalizeDistributionMode(v.config.distributionMode));
@@ -971,8 +999,17 @@ export function VerificationsView() {
 
     if (v.status === 'draft' && v.config.programId && v.config.importId) {
       try {
-        const entries = await listQuestionIndex(v.config.programId, v.config.importId, db);
+        // UI-VERIFICHE-06B — l'albero canonico del corso viaggia con la lettura
+        // del pool già necessaria per il picker: serve a comporre il perimetro
+        // didattico durante la selezione. Non c'è alcuna lettura all'apertura
+        // della popup «Argomenti», né sulle liste, né a verifica attivata.
+        const [entries, udas, lessons] = await Promise.all([
+          listQuestionIndex(v.config.programId, v.config.importId, db),
+          listUdas(v.config.programId, v.config.importId, db),
+          listLessons(v.config.programId, v.config.importId, db),
+        ]);
         setQuestionIndex(entries);
+        setCourseTree({ udas, lessons });
       } catch {
         setQuestionIndexError('Impossibile caricare il pool di domande.');
       }
@@ -1141,10 +1178,33 @@ export function VerificationsView() {
       // gruppi vengono riconciliati con la selezione corrente prima di salvare.
       const reconciledGroups = reconcileEquivalentGroups(equivalentGroups, selectedQuestionIds);
       const vexPatch = { distributionMode, equivalentGroups: reconciledGroups };
+      // UI-VERIFICHE-06B — data e perimetro viaggiano nello **stesso** update di
+      // titolo/classe/domande: nessuna scrittura dedicata, nessun listener. Il
+      // perimetro è ricalcolato dall'albero già in memoria; se non è costruibile
+      // (titoli mancanti, lezione rimossa dal corso) la bozza si salva comunque
+      // senza perimetro — l'attivazione lo ricostruirà autorevolmente e, se
+      // ancora incoerente, fallirà lì in modo esplicito.
+      const datePatch = isValidVerificationDate(editDraftDate)
+        ? { verificationDate: editDraftDate }
+        : {};
+      let topicPatch: { topicOutline?: ReturnType<typeof buildTopicOutline> } = {};
+      if (courseTree && questionRefs !== null && questionRefs.length > 0) {
+        try {
+          topicPatch = {
+            topicOutline: buildTopicOutline({
+              questionRefs,
+              udas: courseTree.udas,
+              lessons: courseTree.lessons,
+            }),
+          };
+        } catch (error) {
+          if (!(error instanceof TopicOutlineError)) throw error;
+        }
+      }
       const patch =
         questionRefs === null
-          ? { title, classId, ...vexPatch }
-          : { title, classId, questionRefs, ...vexPatch };
+          ? { title, classId, ...datePatch, ...topicPatch, ...vexPatch }
+          : { title, classId, questionRefs, ...datePatch, ...topicPatch, ...vexPatch };
       await updateVerificationConfig(selectedVer.id, patch, ownerUid, db);
       if (reconciledGroups !== equivalentGroups) setEquivalentGroups(reconciledGroups);
       const updated = { ...selectedVer, config: { ...selectedVer.config, ...patch } };
@@ -1176,6 +1236,10 @@ export function VerificationsView() {
       );
       return;
     }
+    if (!isValidVerificationDate(newDate)) {
+      setCreateError('Indica la data della verifica.');
+      return;
+    }
     setCreating(true);
     setCreateError(null);
     try {
@@ -1186,13 +1250,20 @@ export function VerificationsView() {
       }
       const importId = program.activeImportId;
       const newId = await createVerification(
-        { title, classId: newClassId || null, programId: newProgramId, importId },
+        {
+          title,
+          classId: newClassId || null,
+          programId: newProgramId,
+          importId,
+          verificationDate: newDate,
+        },
         ownerUid,
         db,
       );
       setNewTitle('');
       setNewProgramId('');
       setNewClassId('');
+      setNewDate('');
       setCreateDialogOpen(false);
       const updated = await listVerifications(ownerUid, db);
       setVerifications(updated);
@@ -1230,10 +1301,33 @@ export function VerificationsView() {
       // rejects equivalent_variants before any pool read/transaction/write.
       const reconciledGroups = reconcileEquivalentGroups(equivalentGroups, selectedQuestionIds);
       const vexPatch = { distributionMode, equivalentGroups: reconciledGroups };
+      // UI-VERIFICHE-06B — data e perimetro viaggiano nello **stesso** update di
+      // titolo/classe/domande: nessuna scrittura dedicata, nessun listener. Il
+      // perimetro è ricalcolato dall'albero già in memoria; se non è costruibile
+      // (titoli mancanti, lezione rimossa dal corso) la bozza si salva comunque
+      // senza perimetro — l'attivazione lo ricostruirà autorevolmente e, se
+      // ancora incoerente, fallirà lì in modo esplicito.
+      const datePatch = isValidVerificationDate(editDraftDate)
+        ? { verificationDate: editDraftDate }
+        : {};
+      let topicPatch: { topicOutline?: ReturnType<typeof buildTopicOutline> } = {};
+      if (courseTree && questionRefs !== null && questionRefs.length > 0) {
+        try {
+          topicPatch = {
+            topicOutline: buildTopicOutline({
+              questionRefs,
+              udas: courseTree.udas,
+              lessons: courseTree.lessons,
+            }),
+          };
+        } catch (error) {
+          if (!(error instanceof TopicOutlineError)) throw error;
+        }
+      }
       const patch =
         questionRefs === null
-          ? { title, classId, ...vexPatch }
-          : { title, classId, questionRefs, ...vexPatch };
+          ? { title, classId, ...datePatch, ...topicPatch, ...vexPatch }
+          : { title, classId, questionRefs, ...datePatch, ...topicPatch, ...vexPatch };
       // Activation must freeze exactly what is currently visible in the draft
       // editor, even when the teacher did not click "Salva bozza" first.
       await updateVerificationConfig(selectedVer.id, patch, ownerUid, db);
@@ -1861,7 +1955,21 @@ export function VerificationsView() {
                 // UI-VERIFICHE-05 — presentazione compatta: il conteggio domande
                 // affianca il titolo e classe/anno/programma diventano una sola
                 // riga sobria. Gli stessi dati già caricati, nessuna nuova lettura.
-                const questionLabel = `${questionCount} ${questionCount === 1 ? 'domanda' : 'domande'}`;
+                // UI-VERIFICHE-06B — testata «02/02/2026 · Titolo · 6 Domande»: la
+                // data è congelata nello snapshot dopo l'attivazione, mentre in
+                // bozza vale quella della config. Assente sulle verifiche legacy ⇒
+                // omessa insieme al suo separatore, mai sostituita da un trattino.
+                const questionLabel = formatQuestionCountLabel(questionCount);
+                const datePrefix =
+                  formatVerificationDateIt(
+                    verification.teacherSnapshot?.verificationDate ??
+                      verification.config.verificationDate,
+                  ) ?? undefined;
+                // Perimetro già in memoria: snapshot congelato per le verifiche
+                // attivate, config per le bozze. Nessuna lettura all'apertura.
+                const topicOutline = readTopicOutline(
+                  verification.teacherSnapshot?.topicOutline ?? verification.config.topicOutline,
+                );
                 const metaLine = [className, schoolYear, programTitle]
                   .map((part) => part?.trim())
                   .filter((part): part is string => Boolean(part) && part !== '—')
@@ -1871,6 +1979,7 @@ export function VerificationsView() {
                   <VerificationRecordCard
                     key={verification.id}
                     title={verification.config.title}
+                    titlePrefix={datePrefix}
                     titleMeta={questionLabel}
                     metaLine={metaLine}
                     openLabel={`Apri dettaglio verifica ${verification.config.title}`}
@@ -1927,6 +2036,20 @@ export function VerificationsView() {
                           ) : (
                             '—'
                           ),
+                      },
+                      {
+                        // UI-VERIFICHE-06B — terzo riquadro: controllo cliccabile
+                        // (`interactive`), quindi il click apre la popup e **non**
+                        // la card. Il perimetro è già in memoria: nessuna lettura.
+                        label: 'Argomenti',
+                        icon: <IconLayers />,
+                        interactive: true,
+                        value: (
+                          <VerificationTopicsControl
+                            verificationTitle={verification.config.title}
+                            topicOutline={topicOutline}
+                          />
+                        ),
                       },
                     ]}
                     actions={
@@ -2114,20 +2237,33 @@ export function VerificationsView() {
                 ))}
               </select>
             </div>
-            <div className={styles.formField}>
-              <label htmlFor="new-ver-class">Classe (opzionale)</label>
-              <select
-                id="new-ver-class"
-                value={newClassId}
-                onChange={(event) => setNewClassId(event.target.value)}
-              >
-                <option value="">Nessuna</option>
-                {classes.map((classItem) => (
-                  <option key={classItem.id} value={classItem.id}>
-                    {classItem.name}
-                  </option>
-                ))}
-              </select>
+            {/* UI-VERIFICHE-06B — Classe e Data affiancate su desktop, impilate su
+                mobile: la data è un dato didattico obbligatorio, non un extra. */}
+            <div className={styles.formRow}>
+              <div className={styles.formField}>
+                <label htmlFor="new-ver-class">Classe (opzionale)</label>
+                <select
+                  id="new-ver-class"
+                  value={newClassId}
+                  onChange={(event) => setNewClassId(event.target.value)}
+                >
+                  <option value="">Nessuna</option>
+                  {classes.map((classItem) => (
+                    <option key={classItem.id} value={classItem.id}>
+                      {classItem.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.formField}>
+                <label htmlFor="new-ver-date">Data</label>
+                <input
+                  id="new-ver-date"
+                  type="date"
+                  value={newDate}
+                  onChange={(event) => setNewDate(event.target.value)}
+                />
+              </div>
             </div>
             {createError && (
               <p role="alert" className="text-error">
@@ -2141,7 +2277,9 @@ export function VerificationsView() {
               <button
                 type="submit"
                 className="btn-primary"
-                disabled={creating || !newTitle.trim() || !newProgramId}
+                disabled={
+                  creating || !newTitle.trim() || !newProgramId || !isValidVerificationDate(newDate)
+                }
               >
                 {creating ? 'Creazione…' : 'Crea verifica'}
               </button>
@@ -2372,6 +2510,21 @@ export function VerificationsView() {
                   maxLength={VERIFICATION_TITLE_MAX_LENGTH}
                   onChange={(e) => {
                     setEditDraftTitle(e.target.value);
+                    markDraftDirty();
+                  }}
+                />
+              </div>
+              {/* UI-VERIFICHE-06B — la data resta modificabile finché la verifica è
+                  in bozza, con lo stesso «Salva bozza» di titolo, classe e
+                  domande: nessun percorso e nessuna scrittura aggiuntivi. */}
+              <div className={styles.draftField}>
+                <label htmlFor="draft-date">Data</label>
+                <input
+                  id="draft-date"
+                  type="date"
+                  value={editDraftDate}
+                  onChange={(e) => {
+                    setEditDraftDate(e.target.value);
                     markDraftDirty();
                   }}
                 />

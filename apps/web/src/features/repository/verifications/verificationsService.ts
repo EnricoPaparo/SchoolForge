@@ -14,6 +14,7 @@ import {
 import type { Firestore } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
 import type { ClassItem } from '../classes/classesService.js';
+import { listLessons, listUdas } from '../programs/programsService.js';
 import type {
   ImportDoc,
   ProgramDoc,
@@ -22,8 +23,11 @@ import type {
   VerificationQuestionRef,
   VerificationTeacherQuestionSnapshot,
   VerificationTeacherSnapshot,
+  VerificationTopicUda,
   VerificationVisibility,
 } from '../../../types/firestore.js';
+import { assertValidVerificationDate, isValidVerificationDate } from './verificationDate.js';
+import { buildTopicOutline, TopicOutlineError } from './topicOutline.js';
 import { loadSelectedQuestionsWithSolutions } from './loadSelectedQuestionsWithSolutions.js';
 import { poolQuestionInvariantError } from './poolQuestionInvariant.js';
 import { normalizeOnlineEnabled } from './onlineEnabled.js';
@@ -109,11 +113,17 @@ export async function listActiveOnlineVerificationClassIds(
 }
 
 export async function createVerification(
-  config: Pick<VerificationConfig, 'title' | 'classId' | 'programId' | 'importId'>,
+  config: Pick<
+    VerificationConfig,
+    'title' | 'classId' | 'programId' | 'importId' | 'verificationDate'
+  >,
   ownerUid: string,
   db: Firestore,
 ): Promise<string> {
   const title = normalizeVerificationTitle(config.title);
+  // UI-VERIFICHE-06B: la data è obbligatoria per ogni nuova verifica e validata
+  // in modo rigoroso — nessuna normalizzazione, nessun "oggi" scelto in silenzio.
+  const verificationDate = assertValidVerificationDate(config.verificationDate);
   if (!config.programId || !config.importId) {
     throw new Error('Seleziona un corso pronto con una importazione attiva.');
   }
@@ -152,6 +162,7 @@ export async function createVerification(
   const fullConfig: VerificationConfig = {
     ...config,
     title,
+    verificationDate,
     questionRefs: [],
   };
   const batch = writeBatch(db);
@@ -189,6 +200,11 @@ export async function updateVerificationConfig(
     config.title === undefined
       ? config
       : { ...config, title: normalizeVerificationTitle(config.title) };
+  // UI-VERIFICHE-06B: una data presente nell'update deve essere valida. Nessuna
+  // correzione silenziosa; l'assenza del campo lascia intatta quella salvata.
+  if (normalizedConfig.verificationDate !== undefined) {
+    assertValidVerificationDate(normalizedConfig.verificationDate);
+  }
   const snap = await getDoc(doc(db, 'verifications', verificationId));
   const data = snap.data() as VerificationDoc;
   if (data.status !== 'draft') {
@@ -366,6 +382,35 @@ export async function activateVerification(
   );
   assertTeacherSnapshotQuestionsWithinLimit(teacherQuestions);
 
+  // UI-VERIFICHE-06B — perimetro didattico **ricostruito autorevolmente** dai
+  // dati canonici del corso, non copiato dal draft: il valore mantenuto dal
+  // client durante la selezione serve solo alla preview: qui viene ricalcolato e
+  // rivalidato. Le due letture (`udas`/`lessons`) avvengono una sola volta, nel
+  // percorso di attivazione, prima della transazione — mai a regime, mai
+  // all'apertura della popup, mai nelle liste.
+  const [udas, lessons] = await Promise.all([
+    listUdas(preData.config.programId, preData.config.importId, db),
+    listLessons(preData.config.programId, preData.config.importId, db),
+  ]);
+  let topicOutline: VerificationTopicUda[];
+  try {
+    topicOutline = buildTopicOutline({
+      questionRefs: preData.config.questionRefs,
+      udas,
+      lessons,
+    });
+  } catch (error) {
+    if (error instanceof TopicOutlineError) {
+      throw new Error(`Impossibile attivare: ${error.message}`);
+    }
+    throw error;
+  }
+  // La data è un dato didattico congelato come gli altri. Una bozza legacy senza
+  // data resta attivabile: il campo viene semplicemente omesso ovunque.
+  const verificationDate = isValidVerificationDate(preData.config.verificationDate)
+    ? preData.config.verificationDate
+    : null;
+
   // VEX-01B — snapshot dei gruppi equivalenti costruito **prima** della
   // transazione (puro, nessuna IO): converte gli `questionIndexEntryId` del
   // draft negli `order` (indice in questions[]), calcola `commonQuestionOrders`
@@ -437,6 +482,8 @@ export async function activateVerification(
       className,
       programId: data.config.programId,
       importId: data.config.importId,
+      ...(verificationDate === null ? {} : { verificationDate }),
+      topicOutline,
       questionRefs: data.config.questionRefs,
       questions: teacherQuestions,
       // VEX-01B: modalità + (solo in equivalent_variants) order comuni e gruppi
@@ -476,6 +523,11 @@ export async function activateVerification(
       // owner-only. In `equivalent_variants` `questions` sopra contiene SOLO le
       // domande comuni (le alternative non sono mai leggibili dalla proiezione).
       distributionMode,
+      // UI-VERIFICHE-06B: data e perimetro rispecchiati nella proiezione così che
+      // la card studente li mostri senza mai leggere il documento owner-only. Il
+      // perimetro è lo stesso identico dato dello snapshot: contiene solo titoli.
+      ...(verificationDate === null ? {} : { verificationDate }),
+      topicOutline,
       questions: publicQuestions,
       activatedAt: serverTimestamp(),
     });

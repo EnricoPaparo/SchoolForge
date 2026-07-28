@@ -54,14 +54,19 @@ import {
 import styles from './StudentVerificationsView.module.css';
 import { correctionStatusLabel } from '../repository/corrections/submissionCorrectionStatus.js';
 import { VerificationRecordCard } from '../../components/VerificationRecordCard.js';
+import { VerificationTopicsControl } from '../../components/VerificationTopicsControl.js';
+import {
+  formatQuestionCountLabel,
+  formatVerificationDateIt,
+} from '../repository/verifications/verificationDate.js';
 import {
   IconCircleCheck,
-  IconCircleQuestion,
   IconClipboardCheck,
   IconDownload,
   IconEye,
   IconRotateCcw,
   IconChevronRight,
+  IconLayers,
 } from '../../components/icons.js';
 
 type LoadState =
@@ -543,10 +548,17 @@ export function StudentVerificationsView({
 
   function renderCorrectionCard(item: StudentCorrectionReturnItem) {
     const returnedLabel = formatActivatedAt(item.returnedAt);
+    // UI-VERIFICHE-06B — la proiezione delle correzioni restituite è
+    // deliberatamente autosufficiente e non contiene data né argomenti. Qui li si
+    // riusa **solo** se la stessa verifica è ancora nella lista pubblica già
+    // caricata: nessuna lettura aggiuntiva e nessun dato inventato quando la
+    // verifica non è più pubblicata (data omessa, «Argomenti» disabilitato).
+    const published = verifications.find((v) => v.id === item.verificationId) ?? null;
     return (
       <VerificationRecordCard
         key={item.submissionId}
         title={item.verificationTitle}
+        titlePrefix={formatVerificationDateIt(published?.verificationDate) ?? undefined}
         actionLayout="student-verification"
         details={[
           ...(item.className ? [{ label: 'Classe', value: item.className }] : []),
@@ -567,6 +579,17 @@ export function StudentVerificationsView({
             label: 'Stato',
             value: 'Restituita',
             icon: <IconEye />,
+          },
+          {
+            label: 'Argomenti',
+            icon: <IconLayers />,
+            interactive: true,
+            value: (
+              <VerificationTopicsControl
+                verificationTitle={item.verificationTitle}
+                topicOutline={published?.topicOutline ?? null}
+              />
+            ),
           },
         ]}
         actions={
@@ -616,6 +639,11 @@ export function StudentVerificationsView({
       <VerificationRecordCard
         key={item.id}
         title={item.title}
+        // UI-VERIFICHE-06B — stessa testata del docente: «02/02/2026 · Titolo ·
+        // 6 Domande». La data viene dalla sola proiezione pubblica; assente su
+        // proiezione legacy ⇒ omessa, mai sostituita.
+        titlePrefix={formatVerificationDateIt(item.verificationDate) ?? undefined}
+        titleMeta={formatQuestionCountLabel(item.questionCount)}
         actionLayout="student-verification"
         details={[
           ...(item.className ? [{ label: 'Classe', value: item.className }] : []),
@@ -628,14 +656,22 @@ export function StudentVerificationsView({
             icon: <IconClipboardCheck />,
           },
           {
-            label: 'Domande',
-            value: item.questionCount,
-            icon: <IconCircleQuestion />,
-          },
-          {
             label: 'Online',
             value: onlineLabel,
             icon: <IconEye />,
+          },
+          {
+            // UI-VERIFICHE-06B — stesso controllo e stessa popup del docente, sullo
+            // stesso dato sicuro della proiezione pubblica. Nessuna lettura al click.
+            label: 'Argomenti',
+            icon: <IconLayers />,
+            interactive: true,
+            value: (
+              <VerificationTopicsControl
+                verificationTitle={item.title}
+                topicOutline={item.topicOutline}
+              />
+            ),
           },
         ]}
         statusControl={

@@ -333,9 +333,48 @@ interface PublishedProjectionDoc {
   classId: string | null;      // M3L-D — null = verifica mai assegnata a una classe, mai visibile
   visibility: 'hidden' | 'public';
   status?: 'active' | 'closed'; // legacy assente = active
+  verificationDate?: string;   // UI-VERIFICHE-06B — giorno didattico 'YYYY-MM-DD', assente sui legacy
+  topicOutline?: VerificationTopicUda[]; // UI-VERIFICHE-06B — solo titoli UDA/lezione
   questions: PublicVerificationQuestion[];
   activatedAt: Timestamp;
 }
+
+// UI-VERIFICHE-06B — perimetro didattico («Argomenti»). Contratto CHIUSO: dice di
+// cosa parla la verifica, mai cosa chiede. È lo stesso identico dato nello
+// snapshot docente e nella proiezione studente — non esiste una versione ridotta,
+// perché non c'è nulla da ridurre.
+//
+// Contiene ESCLUSIVAMENTE: titolo UDA + titoli delle lezioni da cui proviene
+// almeno una domanda selezionata.
+// Non contiene MAI: id UDA/lezione, filename, order, questionLocalId,
+// questionIndexEntryId, poolStorageRef, testi delle domande, opzioni, soluzioni,
+// punteggi, difficoltà, dati/UID studente, riferimenti Firebase, alternative VEX
+// o qualunque metadato tecnico.
+//
+// Ordine: UDA nell'ordine canonico del corso, lezioni nell'ordine canonico
+// dentro l'UDA — mai alfabetico, mai l'ordine di selezione. Deduplicato.
+// Costruzione fail-closed (titolo mancante o lezione non più nel corso ⇒ errore,
+// mai un perimetro parziale); ricostruito e rivalidato autorevolmente
+// all'attivazione, mai copiato dal client.
+//
+// VEX: è l'UNIONE delle lezioni di tutte le domande selezionate — comuni e
+// alternative insieme. È quindi identico per ogni studente e non rivela quale
+// variante sia stata assegnata; non tocca assignedQuestionOrders né il flusso VEX.
+interface VerificationTopicUda {
+  udaTitle: string;
+  lessonTitles: string[];
+}
+
+// UI-VERIFICHE-06B — `VerificationConfig.verificationDate` / `teacherSnapshot.verificationDate`.
+// Formato ESATTO 'YYYY-MM-DD', giorno di calendario reale. Deliberatamente NON un
+// Timestamp: è un giorno didattico, non un istante — un Timestamp introdurrebbe un
+// fuso orario e farebbe scivolare la data di un giorno a seconda di dove viene letta.
+// Nessuna normalizzazione silenziosa ('2026-2-3', '02/02/2026', spazi ai bordi e Date
+// sono rifiutati, non corretti); nessun limite arbitrario a passato o futuro.
+// Obbligatoria per ogni nuova verifica, modificabile finché la verifica è in bozza,
+// congelata nello snapshot/proiezione all'attivazione.
+// Compatibilità: assente sui documenti preesistenti — nessuna migrazione, nessun
+// fallback; la card legacy omette semplicemente la data, senza separatore residuo.
 
 interface PublicVerificationQuestion {
   order: number;

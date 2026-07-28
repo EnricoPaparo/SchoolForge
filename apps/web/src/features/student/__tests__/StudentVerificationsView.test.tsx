@@ -203,7 +203,9 @@ describe('StudentVerificationsView', () => {
 
     await waitFor(() => expect(screen.getByText('Verifica Reti')).toBeTruthy());
     expect(screen.getByText('Classe 3A')).toBeTruthy();
-    expect(screen.getByText('2')).toBeTruthy();
+    // UI-VERIFICHE-06B — il conteggio vive nella testata («… · 2 Domande»),
+    // non più in un riquadro metrica dedicato.
+    expect(screen.getByText('2 Domande')).toBeTruthy();
   });
 
   it('handles a verification with no class and no activation date', async () => {
@@ -794,5 +796,69 @@ describe('StudentVerificationsView — correction returns (M4-02B)', () => {
     expect(screen.getAllByText('Verifica Reti')).toHaveLength(1);
     // VERIFICATION_B (no return) still shows in "Verifiche disponibili".
     expect(screen.getByText('Verifica Basi di dati')).toBeTruthy();
+  });
+});
+
+// ─── UI-VERIFICHE-06B — data e Argomenti lato studente ───────────────────────
+
+describe('StudentVerificationsView — data e Argomenti (UI-VERIFICHE-06B)', () => {
+  const OUTLINE = [
+    { udaTitle: 'Il Web', lessonTitles: ['Come funziona Internet'] },
+    { udaTitle: 'Intelligenza artificiale', lessonTitles: ['Introduzione ai modelli linguistici'] },
+  ];
+
+  it('usa la stessa testata del docente, dalla sola proiezione pubblica', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [{ ...VERIFICATION_A, verificationDate: '2026-02-02', topicOutline: OUTLINE }],
+    });
+    render(<StudentVerificationsView />);
+
+    const heading = await screen.findByRole('heading', { name: /Verifica Reti/ });
+    expect(heading.textContent).toBe('02/02/2026 · Verifica Reti · 2 Domande');
+  });
+
+  it('omette la data su una proiezione legacy senza inventarla', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_A],
+    });
+    render(<StudentVerificationsView />);
+
+    const heading = await screen.findByRole('heading', { name: /Verifica Reti/ });
+    expect(heading.textContent).toBe('Verifica Reti · 2 Domande');
+  });
+
+  it('apre gli Argomenti con lo stesso dato sicuro, senza letture aggiuntive', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [{ ...VERIFICATION_A, verificationDate: '2026-02-02', topicOutline: OUTLINE }],
+    });
+    render(<StudentVerificationsView />);
+
+    const trigger = await screen.findByRole('button', { name: /^Argomenti della verifica/ });
+    const readsBefore = mockLoadStudentVerifications.mock.calls.length;
+    fireEvent.click(trigger);
+
+    expect(screen.getByRole('dialog', { name: 'Argomenti della verifica' })).toBeTruthy();
+    expect(screen.getByText('Il Web')).toBeTruthy();
+    expect(screen.getByText('Introduzione ai modelli linguistici')).toBeTruthy();
+    expect(mockLoadStudentVerifications.mock.calls.length).toBe(readsBefore);
+    // Nulla di docente-only o tecnico nella popup.
+    const html = document.body.innerHTML;
+    for (const forbidden of ['soluzione', 'poolStorageRef', 'questionIndexEntryId', 'ownerUid']) {
+      expect(html).not.toContain(forbidden);
+    }
+  });
+
+  it('mostra Argomenti disabilitato quando la proiezione non lo contiene', async () => {
+    mockLoadStudentVerifications.mockResolvedValue({
+      status: 'ok',
+      verifications: [VERIFICATION_A],
+    });
+    render(<StudentVerificationsView />);
+
+    const trigger = await screen.findByRole('button', { name: /Argomenti non disponibili/ });
+    expect((trigger as HTMLButtonElement).disabled).toBe(true);
   });
 });

@@ -210,6 +210,25 @@ Numero di **varianti possibili** = prodotto del numero di alternative di ogni gr
    - **crea o recupera atomicamente** l'assegnazione;
    - restituisce **solo** le domande assegnate **senza soluzioni** (forma `PublicVerificationQuestion`).
 
+### 4.1a Perimetro didattico («Argomenti», UI-VERIFICHE-06B)
+
+`topicOutline` sulla proiezione pubblica descrive il perimetro didattico
+**complessivo** della verifica: l'**unione** delle lezioni da cui provengono le
+domande selezionate, comuni e alternative insieme.
+
+Conseguenze vincolanti, in `equivalent_variants` come in `same_questions`:
+
+1. non contiene testi né identificativi delle alternative — solo titoli UDA e
+   titoli di lezione (contratto chiuso, vedi `api-contract.md`);
+2. è **identico per tutti gli studenti**, quindi non è un canale laterale: non
+   rivela quale variante sia stata assegnata, né quante alternative esistano;
+3. non altera in alcun modo `assignedQuestionOrders`, l'assegnazione atomica, la
+   callable o il flusso VEX: è un dato descrittivo, congelato all'attivazione
+   insieme allo snapshot, e nessun percorso VEX lo legge o lo scrive;
+4. la regola §4.1.2 resta intatta: le domande assegnate continuano ad arrivare
+   **solo** dalla callable, e la proiezione continua a contenere le sole domande
+   comuni.
+
 ### 4.2 Concorrenza e idempotenza
 
 4. Primo avvio concorrente (due tab/reload): una **transazione** garantisce **una sola**

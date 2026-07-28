@@ -99,9 +99,15 @@ vi.mock('../../repository/corrections/correctionArchiveExport.js', async (import
 vi.mock('../../repository/classes/classesService.js', () => ({
   listClasses: (...args: unknown[]) => mockListClasses(...args),
 }));
+const mockListUdas = vi.fn();
+const mockListLessons = vi.fn();
 vi.mock('../../repository/programs/programsService.js', () => ({
   listPrograms: (...args: unknown[]) => mockListPrograms(...args),
   getImportMeta: (...args: unknown[]) => mockGetImportMeta(...args),
+  // UI-VERIFICHE-06B — albero canonico letto una sola volta all'apertura della
+  // bozza, insieme al pool, per comporre il perimetro didattico.
+  listUdas: (...args: unknown[]) => mockListUdas(...args),
+  listLessons: (...args: unknown[]) => mockListLessons(...args),
 }));
 vi.mock('../../repository/students/studentsService.js', () => ({
   listStudents: (...args: unknown[]) => mockListStudents(...args),
@@ -362,6 +368,11 @@ function setupDefaults() {
   mockGetImportMeta.mockResolvedValue(null);
   mockListClasses.mockResolvedValue([sampleClass]);
   mockListQuestionIndex.mockResolvedValue(sampleQuestionIndexEntries);
+  mockListUdas.mockResolvedValue([{ dir: 'UDA1', titolo: 'Il Web' }]);
+  mockListLessons.mockResolvedValue([
+    { udaDir: 'UDA1', filename: 'lezione1.md', titolo: 'Come funziona Internet' },
+    { udaDir: 'UDA1', filename: 'lezione2.md', titolo: 'Il protocollo HTTP' },
+  ]);
   mockUpdateVerificationConfig.mockResolvedValue(undefined);
   mockActivateVerification.mockResolvedValue(undefined);
   mockCloseVerification.mockResolvedValue(undefined);
@@ -605,11 +616,18 @@ describe('VerificationsView', () => {
       target: { value: 'Nuova Verifica' },
     });
     fireEvent.change(within(dialog).getByLabelText('Corso'), { target: { value: 'prog-1' } });
+    // UI-VERIFICHE-06B — la data è obbligatoria: senza, «Crea verifica» resta
+    // disabilitato (coperto da un test dedicato più sotto).
+    fireEvent.change(within(dialog).getByLabelText('Data'), { target: { value: '2026-02-02' } });
     fireEvent.click(within(dialog).getByRole('button', { name: /crea verifica/i }));
 
     await waitFor(() =>
       expect(mockCreateVerification).toHaveBeenCalledWith(
-        expect.objectContaining({ title: 'Nuova Verifica', programId: 'prog-1' }),
+        expect.objectContaining({
+          title: 'Nuova Verifica',
+          programId: 'prog-1',
+          verificationDate: '2026-02-02',
+        }),
         'owner-uid',
         {},
       ),
@@ -1246,9 +1264,10 @@ describe('VerificationsView', () => {
     expect(menuItem(/scarica pdf soluzioni/i)).toBeTruthy();
     expect(menuItem(/chiudi verifica/i)).toBeTruthy();
     expect((menuItem(/elimina verifica/i) as HTMLButtonElement).disabled).toBe(true);
-    // UI-VERIFICHE-06A — sulla card restano solo superficie apribile + «Azioni».
+    // UI-VERIFICHE-06A/06B — sulla card restano superficie apribile, «Azioni» e
+    // il controllo «Argomenti»: nessun pulsante azione sciolto.
     const card = screen.getByRole('listitem', { name: /verifica verifica algebra/i });
-    expect(within(card).getAllByRole('button')).toHaveLength(2);
+    expect(within(card).getAllByRole('button')).toHaveLength(3);
     expect(screen.getAllByRole('menuitem')).toHaveLength(6);
   });
 
@@ -1264,7 +1283,7 @@ describe('VerificationsView', () => {
     expect((menuItem(/elimina verifica/i) as HTMLButtonElement).disabled).toBe(false);
     expect(menuItem(/abilita pdf studente/i)).toBeTruthy();
     const card = screen.getByRole('listitem', { name: /verifica verifica algebra/i });
-    expect(within(card).getAllByRole('button')).toHaveLength(2);
+    expect(within(card).getAllByRole('button')).toHaveLength(3);
     expect(screen.getAllByRole('menuitem')).toHaveLength(6);
   });
 
@@ -1279,7 +1298,7 @@ describe('VerificationsView', () => {
     expect(menuItem(/riapri verifica/i)).toBeTruthy();
     expect(menuItem(/elimina verifica/i)).toBeTruthy();
     const card = screen.getByRole('listitem', { name: /verifica verifica algebra/i });
-    expect(within(card).getAllByRole('button')).toHaveLength(2);
+    expect(within(card).getAllByRole('button')).toHaveLength(3);
     expect(screen.getAllByRole('menuitem')).toHaveLength(6);
   });
 
@@ -4206,7 +4225,7 @@ describe('VerificationsView — simplified teacher verification card (UI-VERIFIC
     const heading = within(list).getByRole('heading', { name: /Verifica Algebra/ });
     // Titolo e conteggio vivono nello stesso elemento di intestazione.
     expect(heading.textContent).toContain('Verifica Algebra');
-    expect(heading.textContent).toContain('2 domande');
+    expect(heading.textContent).toContain('2 Domande');
     expect(heading.textContent).toContain('·');
   });
 
@@ -4215,7 +4234,7 @@ describe('VerificationsView — simplified teacher verification card (UI-VERIFIC
       makeDraftVer({ config: { ...makeDraftVer().config, questionRefs: [sampleQuestionRef] } }),
     ]);
     const heading = within(list).getByRole('heading', { name: /Verifica Algebra/ });
-    expect(heading.textContent).toContain('1 domanda');
+    expect(heading.textContent).toContain('1 Domanda');
     expect(heading.textContent).not.toContain('1 domande');
   });
 
@@ -4224,7 +4243,7 @@ describe('VerificationsView — simplified teacher verification card (UI-VERIFIC
       makeDraftVer({ config: { ...makeDraftVer().config, questionRefs: [] } }),
     ]);
     expect(within(list).getByRole('heading', { name: /Verifica Algebra/ }).textContent).toContain(
-      '0 domande',
+      '0 Domande',
     );
   });
 
@@ -4247,12 +4266,13 @@ describe('VerificationsView — simplified teacher verification card (UI-VERIFIC
     expect(meta.textContent?.trim().endsWith('·')).toBe(false);
   });
 
-  it('keeps only the Stato and Online panels', async () => {
+  it('keeps the Stato, Online and Argomenti panels', async () => {
     const list = await renderCards([makeDraftVer()]);
     const labels = within(list)
       .getAllByRole('listitem')
       .flatMap((card) => [...card.querySelectorAll('dt')].map((dt) => dt.textContent));
-    expect(labels).toEqual(['Stato', 'Online']);
+    // UI-VERIFICHE-06B — il terzo riquadro «Argomenti» si affianca ai due esistenti.
+    expect(labels).toEqual(['Stato', 'Online', 'Argomenti']);
   });
 
   it('keeps the online switch independent from the card surface', async () => {
@@ -4320,8 +4340,8 @@ describe('VerificationsView — Azioni menu and CTA (UI-VERIFICHE-06A)', () => {
     const list = await renderOne();
     const card = within(list).getAllByRole('listitem')[0]!;
     const buttons = within(card).getAllByRole('button');
-    // Superficie apribile + «Azioni»: nessun pulsante azione sciolto sulla card.
-    expect(buttons).toHaveLength(2);
+    // Superficie apribile + «Azioni» + «Argomenti»: nessun pulsante azione sciolto.
+    expect(buttons).toHaveLength(3);
     expect(within(card).getByRole('button', { name: /^Azioni verifica/ })).toBeTruthy();
     for (const name of [/Scarica PDF/i, /Elimina verifica/i, /Chiudi verifica/i]) {
       expect(within(card).queryByRole('button', { name })).toBeNull();
@@ -4433,5 +4453,168 @@ describe('VerificationsView — Azioni menu and CTA (UI-VERIFICHE-06A)', () => {
     // Un solo menu aperto alla volta: sei voci, non dodici.
     expect(screen.getAllByRole('menuitem')).toHaveLength(6);
     expect(triggers[1]!.getAttribute('aria-expanded')).toBe('false');
+  });
+});
+
+// ─── UI-VERIFICHE-06B — data, testata e riquadro Argomenti ───────────────────
+
+describe('VerificationsView — data e Argomenti (UI-VERIFICHE-06B)', () => {
+  const OUTLINE = [
+    { udaTitle: 'Il Web', lessonTitles: ['Come funziona Internet', 'Il protocollo HTTP'] },
+  ];
+
+  async function renderCards(verifications: unknown[]) {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue(verifications);
+    render(<VerificationsView />);
+    return await screen.findByRole('list', { name: 'Archivio verifiche' });
+  }
+
+  it('compone la testata «data · titolo · N Domande» in ordine e con i separatori giusti', async () => {
+    const base = makeDraftVer();
+    const list = await renderCards([
+      makeDraftVer({
+        config: {
+          ...base.config,
+          verificationDate: '2026-02-02',
+          questionRefs: [sampleQuestionRef, sampleQuestionRef],
+        },
+      }),
+    ]);
+    const heading = within(list).getByRole('heading', { name: /Verifica Algebra/ });
+    expect(heading.textContent).toBe('02/02/2026 · Verifica Algebra · 2 Domande');
+  });
+
+  it('usa il singolare per una sola domanda', async () => {
+    const base = makeDraftVer();
+    const list = await renderCards([
+      makeDraftVer({
+        config: {
+          ...base.config,
+          verificationDate: '2026-12-31',
+          questionRefs: [sampleQuestionRef],
+        },
+      }),
+    ]);
+    const heading = within(list).getByRole('heading', { name: /Verifica Algebra/ });
+    expect(heading.textContent).toBe('31/12/2026 · Verifica Algebra · 1 Domanda');
+  });
+
+  it('omette la data sulle verifiche legacy, senza separatore iniziale né trattino', async () => {
+    const list = await renderCards([makeDraftVer()]);
+    const heading = within(list).getByRole('heading', { name: /Verifica Algebra/ });
+    expect(heading.textContent).toBe('Verifica Algebra · 0 Domande');
+    expect(heading.textContent!.startsWith('·')).toBe(false);
+    expect(heading.textContent).not.toContain('—');
+  });
+
+  it('preferisce la data congelata nello snapshot a quella della config', async () => {
+    const base = makeDraftVer();
+    const list = await renderCards([
+      makeDraftVer({
+        status: 'active',
+        config: { ...base.config, verificationDate: '2026-02-02' },
+        teacherSnapshot: {
+          ...base.config,
+          verificationDate: '2026-01-10',
+          questionRefs: [sampleQuestionRef],
+          activatedAt: null,
+        },
+      }),
+    ]);
+    const heading = within(list).getByRole('heading', { name: /Verifica Algebra/ });
+    expect(heading.textContent).toContain('10/01/2026');
+    expect(heading.textContent).not.toContain('02/02/2026');
+  });
+
+  it('apre gli Argomenti dal riquadro senza aprire la card e senza nuove letture', async () => {
+    const base = makeDraftVer();
+    const list = await renderCards([
+      makeDraftVer({ config: { ...base.config, topicOutline: OUTLINE } }),
+    ]);
+    const readsBefore = mockListQuestionIndex.mock.calls.length;
+
+    const trigger = within(list).getByRole('button', { name: /^Argomenti della verifica/ });
+    fireEvent.click(trigger);
+
+    expect(screen.getByRole('dialog', { name: 'Argomenti della verifica' })).toBeTruthy();
+    expect(screen.getByText('Il Web')).toBeTruthy();
+    expect(screen.getByText('Come funziona Internet')).toBeTruthy();
+    // La lista resta montata: il click NON ha aperto il dettaglio verifica.
+    expect(screen.getByRole('list', { name: 'Archivio verifiche' })).toBeTruthy();
+    // Nessuna lettura aggiuntiva innescata dall'apertura.
+    expect(mockListQuestionIndex.mock.calls.length).toBe(readsBefore);
+  });
+
+  it('disabilita Argomenti sulle verifiche legacy senza perimetro', async () => {
+    const list = await renderCards([makeDraftVer()]);
+    const trigger = within(list).getByRole('button', { name: /Argomenti non disponibili/ });
+    expect((trigger as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(trigger);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('richiede una data valida prima di abilitare «Crea verifica»', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([]);
+    render(<VerificationsView />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Nuova verifica' }));
+    const dialog = screen.getByRole('dialog', { name: 'Nuova verifica' });
+    const submit = within(dialog).getByRole('button', { name: /crea verifica/i });
+
+    // Campo data inizialmente vuoto: nessun «oggi» scelto in silenzio.
+    expect((within(dialog).getByLabelText('Data') as HTMLInputElement).value).toBe('');
+
+    fireEvent.change(within(dialog).getByLabelText('Titolo'), { target: { value: 'V' } });
+    fireEvent.change(within(dialog).getByLabelText('Corso'), { target: { value: 'prog-1' } });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(within(dialog).getByLabelText('Data'), { target: { value: '2026-02-02' } });
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    expect(mockCreateVerification).not.toHaveBeenCalled();
+  });
+});
+
+describe('VerificationsView — bozza: data e perimetro in un solo salvataggio (UI-VERIFICHE-06B)', () => {
+  async function openDraft() {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([
+      makeDraftVer({ config: { ...makeDraftVer().config, verificationDate: '2026-02-02' } }),
+    ]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => screen.getByLabelText(/seleziona domanda q1/i));
+  }
+
+  it('salva data e perimetro nello stesso update di titolo, classe e domande', async () => {
+    await openDraft();
+    // La data della bozza è modificabile e precompilata con quella salvata.
+    const dateInput = screen.getByLabelText('Data') as HTMLInputElement;
+    expect(dateInput.value).toBe('2026-02-02');
+    fireEvent.change(dateInput, { target: { value: '2026-03-15' } });
+    fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByRole('button', { name: /salva bozza/i }));
+
+    await waitFor(() => expect(mockUpdateVerificationConfig).toHaveBeenCalled());
+    // Una sola scrittura: nessun update dedicato per data o argomenti.
+    expect(mockUpdateVerificationConfig).toHaveBeenCalledTimes(1);
+    const [, configArg] = mockUpdateVerificationConfig.mock.calls[0];
+    expect(configArg.verificationDate).toBe('2026-03-15');
+    expect(configArg.topicOutline).toEqual([
+      { udaTitle: 'Il Web', lessonTitles: ['Come funziona Internet'] },
+    ]);
+    expect(configArg.title).toBe('Verifica Algebra');
+    expect(configArg.questionRefs).toHaveLength(1);
+  });
+
+  it('legge l’albero del corso una sola volta, insieme al pool, e mai riaprendo gli argomenti', async () => {
+    await openDraft();
+    expect(mockListUdas).toHaveBeenCalledTimes(1);
+    expect(mockListLessons).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
+    fireEvent.click(screen.getByLabelText(/seleziona domanda q1/i));
+    expect(mockListUdas).toHaveBeenCalledTimes(1);
+    expect(mockListLessons).toHaveBeenCalledTimes(1);
   });
 });
