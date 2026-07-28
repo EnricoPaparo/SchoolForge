@@ -136,6 +136,18 @@ multiple e mai tabelle con scroll orizzontale su mobile.
   verifica docente): nessun selettore hover generico sulla CTA e nessuna regola
   di neutralizzazione, quindi il risultato non dipende dall'ordine delle
   dichiarazioni CSS;
+- **Studenti e Classi (UI-STUDENTI-CLASSI-01)** adottano lo stesso linguaggio:
+  liste verticali di record card full-width al posto delle tabelle con scroll
+  orizzontale, azioni discrete nel menu «…» condiviso (`RecordActionsMenu`),
+  eliminazione in rosso. La card classe mostra «Nome classe · N studenti» dal
+  conteggio già derivato dagli studenti caricati e **non** è cliccabile: non
+  esiste una vista di dettaglio classe, quindi la card non finge di aprirsi.
+  «Nuova classe» è un'azione a larghezza piena e altezza sobria (≈44 px) sopra la
+  lista, che apre `DialogShell`;
+- un controllo che descrive il record — non un'azione — resta **nella card**, non
+  nel menu: la select «Classe» dello studente ha una label visibile, sta sotto
+  nome ed email e su mobile occupa l'intera larghezza della card. Spostarla nel
+  menu la trasformerebbe in un'azione a due passaggi senza alcun guadagno;
 - mobile studente: azioni testuali responsive, senza griglie multi-card;
 - `Nuova verifica` risiede nella barra filtri accanto a
   `Impostazioni correzione IA` e apre `DialogShell`;

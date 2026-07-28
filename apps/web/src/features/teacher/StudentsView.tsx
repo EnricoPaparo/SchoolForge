@@ -21,6 +21,17 @@ import {
 } from '../repository/students/studentsService.js';
 import type { StudentStatus } from '../../types/firestore.js';
 import { ClassesTab, type ClassesTabItem } from './ClassesTab.js';
+import { RecordCard } from '../../components/RecordCard.js';
+import { RecordActionsMenu } from './RecordActionsMenu.js';
+import {
+  IconCircleCheck,
+  IconCircleX,
+  IconClipboardCheck,
+  IconRotateCcw,
+  IconSend,
+  IconTrash,
+} from '../../components/icons.js';
+import menuStyles from './CourseWorkspace.module.css';
 import styles from './StudentsView.module.css';
 
 type StudentsTab = 'students' | 'classes';
@@ -31,16 +42,22 @@ const STATUS_LABEL: Record<StudentStatus, string> = {
   blocked: 'Bloccato',
 };
 
-const STATUS_BADGE_CLASS: Record<StudentStatus, string> = {
-  pending: 'badge-warning',
-  approved: 'badge-ok',
-  blocked: 'badge-error',
+/**
+ * UI-STUDENTI-CLASSI-01 — colore sobrio e semantico del valore «Stato» dentro il
+ * riquadro metrica: verde approvato, ambra in attesa, rosso bloccato. Il colore
+ * accompagna l'etichetta testuale, non la sostituisce.
+ */
+const STATUS_TEXT_CLASS: Record<StudentStatus, string> = {
+  pending: 'statusPending',
+  approved: 'statusApproved',
+  blocked: 'statusBlocked',
 };
 
 /**
  * Splits a Firestore timestamp into a date line and an "HH:mm" time line so the
- * table can show the date on top and the time in small text below it, saving
- * horizontal space. Returns `null` for missing/legacy values.
+ * card can show the date on top and the time in small text below it, saving
+ * horizontal space. Returns `null` for missing/legacy values — mai una data
+ * inventata, mai una migrazione.
  */
 function formatDateTime(value: Timestamp | unknown): { date: string; time: string } | null {
   if (value && typeof (value as Timestamp).toDate === 'function') {
@@ -64,35 +81,6 @@ interface Props {
   ownerUid: string;
   /** Called after any action that can change the pending count, so TeacherShell can refresh its nav badge. */
   onStudentsChanged?: () => void;
-}
-
-function IconButton({
-  icon,
-  label,
-  variant,
-  disabled,
-  onClick,
-}: {
-  icon: string;
-  label: string;
-  variant?: 'success' | 'danger';
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  const variantClass = variant === 'success' ? styles.iconBtnSuccess : '';
-  const dangerClass = variant === 'danger' ? styles.iconBtnDanger : '';
-  return (
-    <button
-      type="button"
-      className={`${styles.iconBtn} ${variantClass} ${dangerClass}`}
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      <span aria-hidden="true">{icon}</span>
-    </button>
-  );
 }
 
 function ToggleCard({
@@ -572,34 +560,38 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
           ) : filteredStudents.length === 0 ? (
             <p className="state-empty">Nessuno studente trovato.</p>
           ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th className={styles.th}>Nome</th>
-                    <th className={styles.th}>Email</th>
-                    <th className={styles.th}>Stato</th>
-                    <th className={styles.th}>Classe</th>
-                    <th className={styles.th}>Ultimo accesso</th>
-                    <th className={styles.th} aria-label="Azioni"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredStudents.map((s) => (
-                    <tr key={s.id} className={styles.row}>
-                      <td className={styles.td}>{s.displayName ?? '—'}</td>
-                      <td className={styles.td}>{s.email}</td>
-                      <td className={styles.td}>
-                        <span className={`badge ${STATUS_BADGE_CLASS[s.status]}`}>
-                          {STATUS_LABEL[s.status]}
-                        </span>
-                      </td>
-                      <td className={styles.td}>
+            <div className={styles.studentList} role="list" aria-label="Elenco studenti">
+              {filteredStudents.map((s) => {
+                const name = s.displayName ?? s.email;
+                const busy = actionLoadingId === s.id;
+                const first = formatDateTime(s.firstPortalAccessAt);
+                const last = formatDateTime(s.lastPortalAccessAt);
+                return (
+                  <RecordCard
+                    key={s.id}
+                    recordLabel="Studente"
+                    title={s.displayName ?? '—'}
+                    metaLine={s.email}
+                    actionLayout="student-admin"
+                    identityControl={
+                      /*
+                       * UI-STUDENTI-CLASSI-01 — la classe resta modificabile
+                       * direttamente dalla card, non nel menu «…»: è una
+                       * proprietà dello studente, non un'azione discreta. Stessi
+                       * handler, stesso salvataggio immediato e stesso stato busy
+                       * di prima; il click sulla select non apre né la card (che
+                       * non ha superficie apribile) né il menu.
+                       */
+                      <div className={styles.classField}>
+                        <label className={styles.classLabel} htmlFor={`student-class-${s.id}`}>
+                          Classe
+                        </label>
                         <select
-                          aria-label={`Classe di ${s.displayName ?? s.email}`}
+                          id={`student-class-${s.id}`}
+                          aria-label={`Classe di ${name}`}
                           className={styles.classSelect}
                           value={s.classId ?? ''}
-                          disabled={actionLoadingId === s.id}
+                          disabled={busy}
                           onChange={(e) => handleClassChange(s.id, e)}
                         >
                           <option value="">Nessuna classe</option>
@@ -609,88 +601,131 @@ export function StudentsView({ ownerUid, onStudentsChanged }: Props) {
                             </option>
                           ))}
                         </select>
-                      </td>
-                      <td className={styles.td}>
-                        {(() => {
-                          const dt = formatDateTime(s.lastPortalAccessAt);
-                          return dt ? (
-                            <>
-                              <span>{dt.date}</span>
-                              <span className={styles.cellTime}>{dt.time}</span>
-                            </>
-                          ) : (
-                            '—'
-                          );
-                        })()}
-                      </td>
-                      <td className={styles.tdActions}>
-                        {deleteConfirmId === s.id ? (
-                          <div className={styles.confirmActions}>
-                            <span className={styles.confirmText}>Rimuovere?</span>
-                            <IconButton
-                              icon="✔️"
-                              label="Conferma rimozione"
-                              variant="danger"
-                              disabled={actionLoadingId === s.id}
-                              onClick={() =>
-                                void runAction(s.id, () => removeStudent(s.id, ownerUid, db))
-                              }
-                            />
-                            <IconButton
-                              icon="✖️"
-                              label="Annulla rimozione"
-                              onClick={() => setDeleteConfirmId(null)}
-                            />
-                          </div>
+                      </div>
+                    }
+                    metrics={[
+                      {
+                        label: 'Stato',
+                        icon: <IconClipboardCheck />,
+                        value: (
+                          <span className={styles[STATUS_TEXT_CLASS[s.status]]}>
+                            {STATUS_LABEL[s.status]}
+                          </span>
+                        ),
+                      },
+                      {
+                        label: 'Primo accesso',
+                        icon: <IconCircleCheck />,
+                        value: first ? (
+                          <span className={styles.accessValue}>
+                            {first.date}
+                            <span className={styles.cellTime}>{first.time}</span>
+                          </span>
                         ) : (
-                          <div className={styles.actionsWrapper}>
-                            {s.status !== 'approved' && (
-                              <IconButton
-                                icon="✅"
-                                label="Approva"
-                                variant="success"
-                                disabled={actionLoadingId === s.id}
-                                onClick={() =>
-                                  void runAction(s.id, () => approveStudent(s.id, ownerUid, db))
-                                }
-                              />
-                            )}
-                            {s.status !== 'blocked' && (
-                              <IconButton
-                                icon="⛔"
-                                label="Blocca"
-                                variant="danger"
-                                disabled={actionLoadingId === s.id}
-                                onClick={() =>
-                                  void runAction(s.id, () => blockStudent(s.id, ownerUid, db))
-                                }
-                              />
-                            )}
-                            {s.status !== 'pending' && (
-                              <IconButton
-                                icon="↩️"
-                                label="Rimetti in attesa"
-                                disabled={actionLoadingId === s.id}
-                                onClick={() =>
-                                  void runAction(s.id, () =>
-                                    resetStudentToPending(s.id, ownerUid, db),
-                                  )
-                                }
-                              />
-                            )}
-                            <IconButton
-                              icon="🗑️"
-                              label="Rimuovi"
-                              disabled={actionLoadingId === s.id}
-                              onClick={() => setDeleteConfirmId(s.id)}
-                            />
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          '—'
+                        ),
+                      },
+                      {
+                        label: 'Ultimo accesso',
+                        icon: <IconRotateCcw />,
+                        value: last ? (
+                          <span className={styles.accessValue}>
+                            {last.date}
+                            <span className={styles.cellTime}>{last.time}</span>
+                          </span>
+                        ) : (
+                          '—'
+                        ),
+                      },
+                    ]}
+                    actions={
+                      <RecordActionsMenu ariaLabel={`Azioni studente — ${name}`}>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          title="Approva"
+                          aria-label={`Approva ${name}`}
+                          disabled={busy || s.status === 'approved'}
+                          onClick={() =>
+                            void runAction(s.id, () => approveStudent(s.id, ownerUid, db))
+                          }
+                        >
+                          <IconCircleCheck size={15} />
+                          <span>Approva</span>
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          title="Blocca"
+                          aria-label={`Blocca ${name}`}
+                          disabled={busy || s.status === 'blocked'}
+                          onClick={() =>
+                            void runAction(s.id, () => blockStudent(s.id, ownerUid, db))
+                          }
+                        >
+                          <IconCircleX size={15} />
+                          <span>Blocca</span>
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          title="Rimetti in attesa"
+                          aria-label={`Rimetti in attesa ${name}`}
+                          disabled={busy || s.status === 'pending'}
+                          onClick={() =>
+                            void runAction(s.id, () => resetStudentToPending(s.id, ownerUid, db))
+                          }
+                        >
+                          <IconSend size={15} />
+                          <span>Rimetti in attesa</span>
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className={menuStyles.menuDanger}
+                          title="Rimuovi studente"
+                          aria-label={`Rimuovi ${name}`}
+                          disabled={busy}
+                          onClick={() => setDeleteConfirmId(s.id)}
+                        >
+                          <IconTrash size={15} />
+                          <span>Rimuovi studente</span>
+                        </button>
+                      </RecordActionsMenu>
+                    }
+                    errors={
+                      deleteConfirmId === s.id ? (
+                        /* La conferma resta ancorata alla card che la riguarda:
+                           la lista non si sposta e nessun'altra card cambia. */
+                        <div
+                          className={styles.confirmActions}
+                          role="group"
+                          aria-label={`Conferma rimozione di ${name}`}
+                        >
+                          <span className={styles.confirmText}>Rimuovere {name}?</span>
+                          <button
+                            type="button"
+                            className="btn-danger"
+                            disabled={busy}
+                            onClick={() =>
+                              void runAction(s.id, () => removeStudent(s.id, ownerUid, db))
+                            }
+                          >
+                            {busy ? 'Rimozione…' : 'Conferma'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => setDeleteConfirmId(null)}
+                          >
+                            Annulla
+                          </button>
+                        </div>
+                      ) : undefined
+                    }
+                  />
+                );
+              })}
             </div>
           )}
           {pendingCount > 0 && (

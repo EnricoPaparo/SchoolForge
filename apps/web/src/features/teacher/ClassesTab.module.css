@@ -1,8 +1,88 @@
 .container {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.9rem;
   min-width: 0;
+}
+
+/*
+ * UI-STUDENTI-CLASSI-01 — azione primaria della sezione: larghezza piena ma
+ * altezza sobria (44–48 px), così resta evidente senza diventare un banner.
+ */
+.newClassBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.6rem 1rem;
+  font-weight: 700;
+}
+
+/* Lista verticale: una card per riga, sempre full-width, mai una griglia. */
+.classList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+/*
+ * Rinomina ed eliminazione restano in linea nella card, con gli stessi handler,
+ * conferme e guardie di prima: cambia solo la superficie che li ospita.
+ */
+.editRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.editRow button {
+  min-height: 2.25rem;
+}
+
+.input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.confirmText {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.createForm {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.formField {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.createForm label {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+/* Nessuna linea separatrice sopra i pulsanti del dialog: solo spazio. */
+.dialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
 }
 
 .visuallyHidden {
@@ -17,127 +97,18 @@
   border: 0;
 }
 
-.tableWrap {
-  overflow-x: auto;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-}
-
-.table {
-  width: 100%;
-  min-width: 480px;
-  table-layout: fixed;
-  border-collapse: collapse;
-  font-size: 0.9375rem;
-}
-
-.classColumn {
-  width: 58%;
-}
-
-.studentsColumn {
-  width: 14%;
-}
-
-.actionsColumn {
-  width: 28%;
-}
-
-.th {
-  padding: 0.5rem 0.75rem;
-  border-bottom: 2px solid var(--color-border);
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-align: left;
-  text-transform: uppercase;
-}
-
-.thActions {
-  text-align: right;
-}
-
-.td {
-  padding: 0.625rem 0.75rem;
-  border-bottom: 1px solid var(--color-border);
-  vertical-align: middle;
-}
-
-.row:hover {
-  background: var(--color-surface-subtle);
-}
-
-.createRow {
-  background: color-mix(in srgb, var(--color-primary-light) 42%, var(--color-surface));
-}
-
-.input {
-  width: 100%;
-  min-width: 0;
-  padding: 0.4375rem 0.5625rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-}
-
-.input:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 1px;
-}
-
-.className {
-  color: var(--color-text);
-  font-weight: 600;
-}
-
-.createAction {
-  text-align: right;
-  white-space: nowrap;
-}
-
-.createAction button {
-  min-width: 5.5rem;
-}
-
-.actionsCell {
-  text-align: right;
-  white-space: nowrap;
-}
-
-.actions,
-.iconActions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.4rem;
-}
-
-.confirmText {
-  color: var(--color-text-muted);
-  font-size: 0.8125rem;
-}
-
-.iconButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  padding: 0;
-}
-
-@media (max-width: 560px) {
-  .table {
-    min-width: 430px;
+@media (max-width: 44rem) {
+  .editRow {
+    width: 100%;
   }
 
-  .th,
-  .td {
-    padding-inline: 0.55rem;
+  .editRow button {
+    flex: 1 1 auto;
+    min-height: 2.75rem;
+  }
+
+  .dialogActions button {
+    flex: 1 1 auto;
+    min-height: 2.75rem;
   }
 }
