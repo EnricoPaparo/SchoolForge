@@ -163,16 +163,40 @@
 }
 
 /*
- * UI-VERIFICHE-05 — CTA della verifica docente come fascia autonoma: sta nel
- * flusso (niente posizionamento assoluto), è sempre leggibile e cambia soltanto
- * testo al passaggio/focus su un'azione, quindi non provoca layout shift e non
- * lascia un hover persistente sui dispositivi touch.
+ * UI-VERIFICHE-05/06A — CTA della verifica docente come fascia autonoma nel
+ * flusso (niente posizionamento assoluto). **Invisibile a riposo**: lo spazio
+ * resta comunque riservato da `min-height`, quindi comparire/scomparire non
+ * provoca alcun layout shift. Diventa visibile solo su hover reale o
+ * focus-visible della superficie apribile (regole più sotto), mai su touch e
+ * mai passando sul pulsante «Azioni».
  */
 .openCtaBand {
   position: static;
-  opacity: 1;
+  opacity: 0;
   transform: none;
   min-height: 1rem;
+}
+
+/*
+ * UI-VERIFICHE-06A — dimensione condivisa dei riquadri metrica della card
+ * verifica docente. Larghezza e altezza identiche per ogni riquadro,
+ * indipendenti dal contenuto (stato testuale, toggle o «—»).
+ */
+.cardActionsVerification {
+  --record-metric-size: 8.75rem;
+}
+
+.cardActionsVerification .metric {
+  min-height: 2.9rem;
+  height: 2.9rem;
+  padding: 0.45rem 0.6rem;
+  align-content: center;
+}
+
+/* Il valore non deve mai allargare o alzare il riquadro. */
+.cardActionsVerification .metric dd {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Il titolo della verifica docente non viene troncato: va a capo ordinatamente. */
@@ -340,7 +364,24 @@
     background: var(--color-brand-interactive);
   }
 
-  .card:hover .openCta {
+  /*
+   * Contratti CTA separati e opt-in (UI-VERIFICHE-06A follow-up). Nessuna
+   * regola generica su `.card`: ogni variante ne dichiara una sola, quindi il
+   * risultato non dipende dall'ordine delle dichiarazioni e nessuna delle due
+   * neutralizza l'altra.
+   *
+   * `ctaFollowsCard` — corso e verifica studente: hover ovunque sulla card.
+   */
+  .ctaFollowsCard:hover .openCta {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  /*
+   * `ctaFollowsSurface` — verifica docente: solo la superficie apribile. Passare
+   * sul pulsante «Azioni» non mostra la CTA, così non promette un'apertura.
+   */
+  .ctaFollowsSurface:has(> .openSurface:hover) .openCta {
     opacity: 1;
     transform: translateX(0);
   }
@@ -378,7 +419,7 @@
   background: var(--color-brand-interactive);
 }
 
-.card:has([data-record-card-cue]:focus-visible) .openCta {
+.ctaFollowsCard:has([data-record-card-cue]:focus-visible) .openCta {
   opacity: 1;
   transform: translateX(0);
 }
@@ -505,6 +546,7 @@
 
   .cardActionsVerification .metrics {
     grid-area: metrics;
+    /* Colonne uguali che si dividono la larghezza: nessun overflow a 320px. */
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -632,16 +674,19 @@
     display: contents;
   }
 
+  /*
+   * UI-VERIFICHE-06A — riquadri di dimensione **uniforme**: due tracce fisse e
+   * uguali, mai `max-content`, così «Pubblica», «Chiusa», il toggle o «—» non
+   * cambiano la larghezza del riquadro. Il contenitore resta pronto ad accogliere
+   * un terzo riquadro (UI-VERIFICHE-06B) senza riscrivere l'anatomia.
+   */
   .cardActionsVerification .metrics {
     grid-area: metrics;
-    /* Compatte: non si allargano a occupare la card. */
-    grid-template-columns: repeat(2, minmax(5.5rem, max-content));
+    grid-auto-flow: column;
+    grid-auto-columns: var(--record-metric-size);
+    grid-template-columns: none;
     align-self: center;
     gap: 0.5rem;
-  }
-
-  .cardActionsVerification .metric {
-    min-height: 2.9rem;
   }
 
   .cardActionsVerification .identity {
@@ -789,7 +834,8 @@
   }
 
   .openCta,
-  .card:hover .openCta,
+  .ctaFollowsCard:hover .openCta,
+  .ctaFollowsSurface:has(> .openSurface:hover) .openCta,
   .card:has(> .openSurface:focus-visible) .openCta {
     transform: none;
   }

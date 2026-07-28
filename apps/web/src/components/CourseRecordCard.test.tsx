@@ -153,8 +153,11 @@ describe('CourseRecordCard responsive and motion contract', () => {
     expect(ctaBlock).toMatch(/opacity:\s*0/);
     expect(ctaBlock).toMatch(/transform:\s*translateX\(-0\.2rem\)/);
     expect(identityBlock).toMatch(/padding-bottom:\s*1\.15rem/);
+    // UI-VERIFICHE-06A follow-up — la card corso resta sul contratto «hover
+    // ovunque», ora dichiarato con la classe opt-in `ctaFollowsCard` invece che
+    // con un selettore generico su `.card`.
     expect(css).toMatch(
-      /\.card:hover\s*\.openCta\s*\{[^}]*opacity:\s*1[^}]*transform:\s*translateX\(0\)/s,
+      /\.ctaFollowsCard:hover\s*\.openCta\s*\{[^}]*opacity:\s*1[^}]*transform:\s*translateX\(0\)/s,
     );
     expect(css).toMatch(
       /\.card:has\(>\s*\.openSurface:focus-visible\)\s*\.openCta\s*\{[^}]*opacity:\s*1[^}]*transform:\s*translateX\(0\)/s,
