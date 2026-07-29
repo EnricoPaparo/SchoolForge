@@ -6,10 +6,11 @@
  */
 .nav {
   /*
-   * L'anello della domanda corrente vive 3px fuori dal bottone. Questo spazio
-   * impedisce che venga tagliato dai navigatori con overflow-y: hidden.
+   * L'anello della domanda corrente vive fuori dal bottone e, su fine pointer,
+   * sale di 2px durante l'hover. Il margine superiore copre entrambe le
+   * estensioni; quello inferiore conserva la geometria a riposo.
    */
-  padding-block: 0.25rem;
+  padding-block: 0.5rem 0.25rem;
   padding-inline: 0.25rem;
 }
 
