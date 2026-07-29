@@ -202,17 +202,22 @@ export async function runScheduleForceClose(
         `submissions/${submissionIdFor(input.verificationId, studentUid)}`,
       );
       /*
-       * Ogni studente riceve **il proprio** istante di partenza: `requestedAt` è
-       * letto qui, dentro il worker, e la scadenza è esattamente 60 secondi
-       * dopo. Calcolarli una volta sola prima del batch avrebbe accorciato il
-       * preavviso di chi viene elaborato per ultimo.
+       * Ogni studente riceve **il proprio** preavviso, e lo riceve a partire
+       * dall'istante del tentativo **realmente committato**: `requestedAt` è
+       * letto dentro il callback transazionale, dopo `tx.get` e subito prima di
+       * `tx.update`. Firestore può rieseguire il callback in caso di conflitto:
+       * calcolare l'istante fuori dalla transazione avrebbe persistito i
+       * timestamp di un tentativo scartato, accorciando il preavviso reale.
+       *
+       * `scheduled` viene riassegnata a ogni tentativo, quindi dopo il commit
+       * contiene esclusivamente i valori dell'ultimo — quelli davvero scritti —
+       * e sono quelli che finiscono nella task.
        */
-      const requestedAtDate = now();
-      const deadlineAt = new Date(requestedAtDate.getTime() + FORCE_CLOSE_GRACE_SECONDS * 1000);
-
       let scheduled: { requestId: string; deadlineMs: number } | null = null;
       try {
         const outcome = await db.runTransaction(async (tx: Transaction) => {
+          // Ogni tentativo riparte da zero: nessun residuo del precedente.
+          scheduled = null;
           const snap = await tx.get(submissionRef);
           const submission = snap.exists ? toScheduleSnapshot(snap.data() as DocumentData) : null;
           const decision = decideScheduleFor({
@@ -222,9 +227,11 @@ export async function runScheduleForceClose(
             submission,
           });
           if (decision === 'already_scheduled' && submission) {
-            // **Recupero**: la programmazione esiste già. Si riaccoda la task con
-            // gli stessi `requestId` e scadenza persistiti — nessuna nuova
-            // finestra, nessuna seconda scrittura.
+            /*
+             * **Recupero**: la programmazione esiste già. Si riaccoda la task
+             * con gli stessi `requestId` e scadenza **persistiti** — nessuna
+             * lettura dell'orologio, nessuna nuova finestra, nessuna scrittura.
+             */
             const markers = readMarkerState(submission);
             if (markers.kind === 'present') {
               scheduled = { requestId: markers.requestId, deadlineMs: markers.deadlineMs };
@@ -232,6 +239,11 @@ export async function runScheduleForceClose(
             return decision;
           }
           if (decision !== 'scheduled') return decision;
+
+          // Istante del **questo** tentativo, letto dopo la verifica di
+          // eleggibilità e immediatamente prima della scrittura.
+          const requestedAtDate = now();
+          const deadlineAt = new Date(requestedAtDate.getTime() + FORCE_CLOSE_GRACE_SECONDS * 1000);
           const requestId = generateRequestId(secureRandomIntBelow);
           scheduled = { requestId, deadlineMs: deadlineAt.getTime() };
           // Unica scrittura della programmazione: tre marcatori server-only,

@@ -1387,6 +1387,104 @@ describe('OnlineExamView — chiusura programmata dal docente (FORCE-SUBMIT-02)'
     }
   });
 
+  it('cleanup dei marcatori durante il backoff ⇒ nessun falso alert, verifica sbloccata', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(null);
+      const { onSubmitted } = renderView();
+
+      await act(async () => {
+        handlers().onRequest(deadlineIn(-1));
+        handlers().onUnavailable();
+        // Un solo tick: i tentativi sono ancora in corso.
+        await vi.advanceTimersByTimeAsync(600);
+      });
+
+      // Il server ha ripulito la programmazione mentre il retry è nel backoff.
+      await act(async () => {
+        handlers().onRequest(null);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      // Nessun alert appartenente a una richiesta che non esiste più…
+      expect(
+        screen
+          .queryAllByRole('alert')
+          .some((el) => el.textContent?.includes('Non è stato possibile verificare')),
+      ).toBe(false);
+      // …e la verifica è tornata utilizzabile.
+      expect(
+        (screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled,
+      ).toBe(false);
+      expect(onSubmitted).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('una nuova programmazione invalida il retry della precedente', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(null);
+      renderView();
+
+      const first = deadlineIn(-1);
+      await act(async () => {
+        handlers().onRequest(first);
+        handlers().onUnavailable();
+        await vi.advanceTimersByTimeAsync(600);
+      });
+
+      // Arriva una richiesta **diversa** mentre il vecchio retry è in corso.
+      const second = { ...deadlineIn(60), requestId: 'zzzzzzzzzzzzzzzzzzzzzzzz' };
+      await act(async () => {
+        handlers().onRequest(second);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      // Il vecchio tentativo non può marcare come fallita la nuova richiesta.
+      expect(
+        screen
+          .queryAllByRole('alert')
+          .some((el) => el.textContent?.includes('Non è stato possibile verificare')),
+      ).toBe(false);
+      // La nuova richiesta è quella mostrata, con i controlli ancora attivi.
+      expect(screen.getByText('Chiusura richiesta dal docente')).toBeTruthy();
+      expect(
+        (screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled,
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('la ricevuta della richiesta corrente chiude la sessione una sola volta', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(RECEIPT);
+      const { onSubmitted } = renderView();
+
+      await act(async () => {
+        handlers().onRequest(deadlineIn(-1));
+        handlers().onUnavailable();
+        handlers().onUnavailable();
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(onSubmitted).toHaveBeenCalledWith(RECEIPT);
+      expect(onSubmitted).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('nessun aggiornamento di stato dopo lo smontaggio', async () => {
     vi.useFakeTimers();
     try {

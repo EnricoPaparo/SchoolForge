@@ -179,6 +179,14 @@ export function OnlineExamView({
   const seenForceCloseRef = useRef<string | null>(null);
   /** Una lettura puntuale della ricevuta è già in corso (mai due in parallelo). */
   const receiptProbeRef = useRef(false);
+  /**
+   * Generazione della richiesta di chiusura **attualmente** osservata. Ogni
+   * probe della ricevuta cattura il valore corrente e lo riverifica dopo ogni
+   * attesa: se nel frattempo la richiesta è stata rimossa o sostituita, il
+   * tentativo si spegne in silenzio invece di scrivere stato — o peggio, un
+   * errore — che appartiene a una richiesta che non esiste più.
+   */
+  const probeGenerationRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -301,8 +309,18 @@ export function OnlineExamView({
    * segnale che la chiusura server-side è avvenuta. Nessun polling, nessun
    * secondo tentativo automatico.
    */
+  /** Invalida ogni probe in corso: da qui in poi i loro esiti sono ignorati. */
+  function invalidateReceiptProbes(): void {
+    probeGenerationRef.current += 1;
+  }
+
   async function resolveClosureFromReceipt(): Promise<boolean> {
     if (sessionEndedRef.current || receiptProbeRef.current) return false;
+    // La richiesta a cui questo tentativo appartiene. Tutto ciò che segue vale
+    // **solo** per lei.
+    const generation = probeGenerationRef.current;
+    const stillCurrent = () =>
+      mountedRef.current && !sessionEndedRef.current && probeGenerationRef.current === generation;
     receiptProbeRef.current = true;
     try {
       /*
@@ -311,12 +329,16 @@ export function OnlineExamView({
        * lettura lascerebbe lo studente su una schermata bloccata. I tentativi
        * si esauriscono in ~5 s; poi si dichiara un errore ricaricabile.
        */
-      if (mountedRef.current) setReceiptError(false);
+      if (stillCurrent()) setReceiptError(false);
       for (const delay of RECEIPT_RETRY_DELAYS_MS) {
         if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
-        // Fra un tentativo e l'altro la vista può essere stata smontata, o la
-        // sessione può essere finita da un'altra via: mai scrivere stato dopo.
-        if (!mountedRef.current || sessionEndedRef.current) return false;
+        /*
+         * Fra un tentativo e l'altro possono essere successe tre cose: la vista
+         * è stata smontata, la sessione è finita per un'altra via, oppure la
+         * chiusura programmata è stata rimossa o sostituita. In tutti e tre i
+         * casi questo tentativo non ha più titolo per scrivere nulla.
+         */
+        if (!stillCurrent()) return false;
         let receipt: SubmissionReceiptDoc | null = null;
         try {
           receipt = await loadReceipt(verificationId, studentUid, db);
@@ -325,8 +347,9 @@ export function OnlineExamView({
         }
         if (!receipt) continue;
         // Guardia sincrona **unica**: qualunque via arrivi qui per prima chiude
-        // la sessione, e `onSubmitted` non può essere invocata due volte.
-        if (sessionEndedRef.current) return false;
+        // la sessione, e `onSubmitted` non può essere invocata due volte. La
+        // ricevuta vale solo se appartiene ancora alla richiesta corrente.
+        if (!stillCurrent()) return false;
         sessionEndedRef.current = true;
         dirtyRef.current = false;
         bufferedEventsRef.current = [];
@@ -334,14 +357,16 @@ export function OnlineExamView({
           setSessionEnded(true);
           setSaveError(null);
           setSubmitError(null);
+          setReceiptError(false);
           setConfirmOpen(false);
         }
         endSessionAfterDelivery();
         onSubmitted(receipt);
         return true;
       }
-      // Tentativi esauriti: errore esplicito e ricaricabile con «Riprova».
-      if (mountedRef.current && !sessionEndedRef.current) setReceiptError(true);
+      // Tentativi esauriti: errore esplicito e ricaricabile con «Riprova» — ma
+      // solo se riguarda ancora la richiesta che stiamo mostrando.
+      if (stillCurrent()) setReceiptError(true);
       return false;
     } finally {
       // Sempre eseguito: una risoluzione fallita non deve bloccare la
@@ -365,9 +390,13 @@ export function OnlineExamView({
           if (!mountedRef.current || sessionEndedRef.current) return;
           setForceClose(request);
           if (request === null) {
-            // La programmazione è sparita senza ricevuta: la chiusura è fallita
-            // in modo permanente e il server ha ripulito. La verifica torna
-            // utilizzabile e l'errore non ha più ragione di essere mostrato.
+            /*
+             * La programmazione è sparita senza ricevuta: la chiusura è fallita
+             * in modo permanente e il server ha ripulito. Ogni probe in corso
+             * viene invalidato **subito**, così non potrà mostrare un errore su
+             * una richiesta che non esiste più; la verifica torna utilizzabile.
+             */
+            invalidateReceiptProbes();
             seenForceCloseRef.current = null;
             setForceCloseExpired(false);
             setReceiptError(false);
@@ -377,7 +406,11 @@ export function OnlineExamView({
           // lavoro già scritto localmente non deve dipendere dai riflessi dello
           // studente. Una sola volta per richiesta.
           if (seenForceCloseRef.current !== request.requestId) {
+            // Richiesta **diversa**: i tentativi della precedente non devono
+            // poter scrivere nulla su questa.
+            invalidateReceiptProbes();
             seenForceCloseRef.current = request.requestId;
+            setReceiptError(false);
             setForceCloseExpired(remainingSeconds(request.deadlineMs, Date.now()) <= 0);
             if (dirtyRef.current) void persistDraft();
           }
@@ -390,7 +423,11 @@ export function OnlineExamView({
     } catch {
       unsubscribe = undefined;
     }
-    return () => unsubscribe?.();
+    return () => {
+      // Smontaggio: nessun probe superstite deve poter aggiornare lo stato.
+      invalidateReceiptProbes();
+      unsubscribe?.();
+    };
     // Il listener dipende solo dall'identità della consegna, stabile per mount.
   }, [verificationId, studentUid]);
 

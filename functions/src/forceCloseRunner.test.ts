@@ -62,13 +62,27 @@ class FakeDb {
     };
   }
 
+  /**
+   * Numero di tentativi da **scartare** prima di committare: riproduce il
+   * riavvio del callback che Firestore esegue su conflitto. Le scritture del
+   * tentativo scartato non vengono applicate, esattamente come in produzione.
+   */
+  abortAttempts = 0;
+
   async runTransaction<T>(fn: (tx: FakeTx) => Promise<T>): Promise<T> {
-    this.transactions += 1;
-    return fn(new FakeTx(this));
+    for (let attempt = 0; ; attempt += 1) {
+      this.transactions += 1;
+      const tx = new FakeTx(this);
+      const result = await fn(tx);
+      if (attempt < this.abortAttempts) continue; // tentativo scartato: 0 write
+      tx.commit();
+      return result;
+    }
   }
 }
 
 class FakeTx {
+  private readonly buffered: { path: string; kind: 'update' | 'set'; data: Doc }[] = [];
   constructor(private readonly db: FakeDb) {}
   async get(ref: { path: string }) {
     this.db.reads.push(ref.path);
@@ -76,10 +90,14 @@ class FakeTx {
     return { exists: data !== undefined, data: () => data };
   }
   update(ref: { path: string }, data: Doc) {
-    this.db.apply(ref.path, 'update', data);
+    this.buffered.push({ path: ref.path, kind: 'update', data });
   }
   set(ref: { path: string }, data: Doc) {
-    this.db.apply(ref.path, 'set', data);
+    this.buffered.push({ path: ref.path, kind: 'set', data });
+  }
+  /** Applica le scritture solo al commit: un tentativo scartato non lascia nulla. */
+  commit(): void {
+    for (const write of this.buffered) this.db.apply(write.path, write.kind, write.data);
   }
 }
 
@@ -410,6 +428,66 @@ describe('runScheduleForceClose — 60 secondi pieni per ogni studente', () => {
     const first = db.docs.get(`submissions/${VERIFICATION}_s0`)!.forceCloseDeadline as Timestamp;
     const last = db.docs.get(`submissions/${VERIFICATION}_s59`)!.forceCloseDeadline as Timestamp;
     expect(last.toMillis()).toBeGreaterThan(first.toMillis());
+  });
+
+  it('un retry della transazione persiste gli istanti del tentativo committato', async () => {
+    db.seed(`submissions/${VERIFICATION}_a`, draftDoc('a'));
+    // Il primo tentativo viene scartato (conflitto); il secondo commit avviene
+    // 10 secondi più tardi.
+    db.abortAttempts = 1;
+
+    const result = await runScheduleForceClose(
+      asDb(db),
+      OWNER,
+      { verificationId: VERIFICATION, studentUids: ['a'] },
+      enqueue as never,
+      progressiveClock(10_000),
+    );
+
+    expect(result.results[0]!.outcome).toBe('scheduled');
+    expect(db.transactions).toBe(2);
+    // Una sola scrittura: quella del tentativo committato.
+    expect(db.writes).toHaveLength(1);
+
+    const doc = db.docs.get(`submissions/${VERIFICATION}_a`)!;
+    const requestedAt = (doc.forceCloseRequestedAt as Timestamp).toMillis();
+    const deadline = (doc.forceCloseDeadline as Timestamp).toMillis();
+    // I timestamp appartengono al **secondo** tentativo, non al primo.
+    expect(requestedAt).toBe(NOW.getTime() + 10_000);
+    // Dalla scrittura committata restano 60 secondi pieni.
+    expect(deadline - requestedAt).toBe(60_000);
+
+    // La task usa la scadenza del secondo tentativo.
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]!.payload.deadlineMs).toBe(deadline);
+    expect(enqueued[0]!.options.scheduleTime.getTime()).toBe(deadline);
+    expect(enqueued[0]!.payload.requestId).toBe(doc.forceCloseRequestId);
+    // …e non quella che il primo tentativo avrebbe prodotto.
+    expect(enqueued[0]!.payload.deadlineMs).not.toBe(NOW.getTime() + 60_000);
+  });
+
+  it('il recupero non legge l’orologio: usa solo i timestamp persistiti', async () => {
+    db.seed(`submissions/${VERIFICATION}_a`, draftDoc('a'));
+    await schedule(['a']);
+    const doc = db.docs.get(`submissions/${VERIFICATION}_a`)!;
+    const persistedDeadline = (doc.forceCloseDeadline as Timestamp).toMillis();
+    enqueued = [];
+    db.writes = [];
+
+    // Orologio molto avanzato: se il recupero lo usasse, la scadenza cambierebbe.
+    await runScheduleForceClose(
+      asDb(db),
+      OWNER,
+      { verificationId: VERIFICATION, studentUids: ['a'] },
+      enqueue as never,
+      () => new Date(NOW.getTime() + 3_600_000),
+    );
+
+    expect(db.writes).toHaveLength(0);
+    expect(enqueued[0]!.payload.deadlineMs).toBe(persistedDeadline);
+    expect(
+      (db.docs.get(`submissions/${VERIFICATION}_a`)!.forceCloseDeadline as Timestamp).toMillis(),
+    ).toBe(persistedDeadline);
   });
 
   it('una programmazione scritta con preavviso diverso da 60 s è incoerente', async () => {
