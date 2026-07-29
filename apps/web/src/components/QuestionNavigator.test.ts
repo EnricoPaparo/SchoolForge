@@ -23,6 +23,7 @@ const reviewCss = readFileSync(
 describe('QuestionNavigator visual contract', () => {
   it('reserves vertical room for the complete current-question ring', () => {
     expect(sharedCss).toMatch(/\.nav\s*\{[^}]*padding-block:\s*0\.25rem/s);
+    expect(sharedCss).toMatch(/\.nav\s*\{[^}]*padding-inline:\s*0\.25rem/s);
     expect(sharedCss).toMatch(
       /\.current::after\s*\{[^}]*inset:\s*-0\.25rem[^}]*border:\s*2px solid var\(--color-primary\)/s,
     );
@@ -30,8 +31,9 @@ describe('QuestionNavigator visual contract', () => {
 
   it('uses the SchoolForge orange interaction only on fine pointers', () => {
     expect(sharedCss).toMatch(
-      /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)[\s\S]*?\.item:hover:not\(:disabled\)\s*\{[^}]*var\(--color-brand-interactive\)[^}]*translateY\(-1px\) scale\(1\.08\)/s,
+      /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)[\s\S]*?\.item:hover:not\(:disabled\)\s*\{[^}]*var\(--color-brand-interactive\)[^}]*translateY\(-2px\) scale\(1\.06\)/s,
     );
+    expect(sharedCss).toMatch(/180ms cubic-bezier\(0\.22,\s*1,\s*0\.36,\s*1\)/);
     expect(sharedCss).toMatch(
       /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?transform:\s*none/s,
     );
