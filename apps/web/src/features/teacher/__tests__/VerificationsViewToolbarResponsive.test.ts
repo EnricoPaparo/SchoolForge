@@ -73,6 +73,30 @@ describe('VerificationsView batch toolbar responsive contract', () => {
     );
   });
 
+  it('UI-CONSEGNE-03 — compone l’intestazione desktop e mobile senza righe duplicate', () => {
+    // Desktop: ritorno | Consegne online | solo badge di stato.
+    expect(css).toMatch(/\.detailTopRow\s*\{[^}]*grid-template-areas:\s*'back monitor status'/s);
+    expect(css).toMatch(
+      /@media\s*\(min-width:\s*44\.01rem\)[\s\S]*?\.detailStatusBox\s*\{[^}]*padding:\s*0[^}]*border:\s*0[^}]*background:\s*transparent/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(min-width:\s*44\.01rem\)[\s\S]*?\.detailStatusBox\s*>\s*span:first-child\s*\{[^}]*display:\s*none/s,
+    );
+    // Titolo e comandi export condividono una riga su desktop.
+    expect(css).toMatch(
+      /\.detailTitleRow\s*\{[^}]*display:\s*flex[^}]*justify-content:\s*space-between/s,
+    );
+    // Mobile: intestazione in due righe e tre comandi export uguali.
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.detailTopRow\s*\{[^}]*'back status'[^}]*'monitor monitor'/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.monitorActions\s*\{[^}]*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s,
+    );
+    // Il menu batch segue subito i comandi: nessun margine verticale artificiale.
+    expect(css).toMatch(/\.batchToolbarMobile\s*\{[^}]*margin-top:\s*0/s);
+  });
+
   it('gives the title more room by keeping the status column compact', () => {
     expect(css).toMatch(/\.titleColumn\s*\{[^}]*width:\s*25%/s);
     expect(css).toMatch(/\.statusColumn\s*\{[^}]*width:\s*16%/s);

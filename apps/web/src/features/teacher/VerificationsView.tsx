@@ -161,6 +161,16 @@ function formatTimestamp(ts: unknown): string {
   });
 }
 
+/** Mobile cards only need the compact submission time; desktop keeps date + time. */
+function formatTime(ts: unknown): string {
+  const seconds = timestampSeconds(ts);
+  if (seconds === null) return '—';
+  return new Date(seconds * 1000).toLocaleTimeString('it-IT', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 function formatPercentage(item: SubmissionMonitorItem | null): string {
   const summary = item?.correctionSummary;
   if (!summary || summary.percentage === null || item?.correctionStatus === 'submitted') return '—';
@@ -2544,12 +2554,92 @@ export function VerificationsView() {
                   <span className={styles.backLongLabel}>Torna alle </span>verifiche
                 </span>
               </button>
+              {selectedVer.status !== 'draft' && (
+                <div className={styles.monitorTitleGroup}>
+                  <h3 className={styles.createTitle}>Consegne online</h3>
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    className={styles.refreshStatus}
+                    data-state={
+                      monitorRefreshing
+                        ? 'loading'
+                        : monitorRefreshError
+                          ? 'error'
+                          : monitorRefreshedAt
+                            ? 'success'
+                            : 'idle'
+                    }
+                  >
+                    {monitorRefreshing
+                      ? 'Aggiornamento…'
+                      : monitorRefreshError
+                        ? 'Aggiornamento non riuscito'
+                        : monitorRefreshedAt
+                          ? `Aggiornato alle ${monitorRefreshedAt}`
+                          : ''}
+                  </span>
+                </div>
+              )}
               <div className={styles.detailStatusBox}>
                 <span>Stato</span>
                 <StatusBadge status={selectedVer.status} visibility={selectedVer.visibility} />
               </div>
             </div>
-            <h2 className={styles.detailTitle}>{selectedVer.config.title}</h2>
+            <div className={styles.detailTitleRow}>
+              <h2 className={styles.detailTitle}>{selectedVer.config.title}</h2>
+              {selectedVer.status !== 'draft' && (
+                <div className={styles.monitorActions}>
+                  <button
+                    type="button"
+                    className={styles.refreshBtn}
+                    aria-label="Aggiorna consegne"
+                    disabled={monitorStudents === null || monitorRefreshing}
+                    onClick={() => void refreshMonitor()}
+                  >
+                    <IconRotateCcw />
+                    <span className={styles.refreshLabel}>
+                      {monitorRefreshing ? 'Aggiornamento…' : 'Aggiorna'}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    aria-label="Esporta CSV"
+                    disabled={
+                      monitorStudents === null ||
+                      monitorItems === null ||
+                      sortedMonitorRows.length === 0
+                    }
+                    onClick={handleExportCorrectionRegisterCsv}
+                  >
+                    <span className={styles.exportLongLabel}>Esporta CSV</span>
+                    <span className={styles.exportShortLabel}>CSV</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    aria-label="Esporta PDF"
+                    disabled={
+                      monitorStudents === null ||
+                      monitorItems === null ||
+                      sortedMonitorRows.length === 0 ||
+                      exportingPdf
+                    }
+                    onClick={() => void handleExportCorrectionRegisterPdf()}
+                  >
+                    {exportingPdf ? (
+                      'Generazione…'
+                    ) : (
+                      <>
+                        <span className={styles.exportLongLabel}>Esporta PDF</span>
+                        <span className={styles.exportShortLabel}>PDF</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
             {selectedVer.status !== 'draft' && (
               <p className={styles.detailMeta}>
                 <span>{programTitle(selectedVer, programs)}</span>
@@ -2767,84 +2857,6 @@ export function VerificationsView() {
           {/* ── Consegne online monitor (M3F-05) — hidden entirely for draft (M3F-11C) ── */}
           {selectedVer.status !== 'draft' && (
             <div role="region" aria-label="Consegne online" className={styles.monitorPanel}>
-              <div className={styles.monitorHeader}>
-                {/* TWU-02A — title + inline refresh status (no separate row, no
-                    layout shift of the table). aria-live only on the status. */}
-                <div className={styles.monitorTitleGroup}>
-                  <h3 className={styles.createTitle}>Consegne online</h3>
-                  <span
-                    role="status"
-                    aria-live="polite"
-                    className={styles.refreshStatus}
-                    data-state={
-                      monitorRefreshing
-                        ? 'loading'
-                        : monitorRefreshError
-                          ? 'error'
-                          : monitorRefreshedAt
-                            ? 'success'
-                            : 'idle'
-                    }
-                  >
-                    {monitorRefreshing
-                      ? 'Aggiornamento…'
-                      : monitorRefreshError
-                        ? 'Aggiornamento non riuscito'
-                        : monitorRefreshedAt
-                          ? `Aggiornato alle ${monitorRefreshedAt}`
-                          : ''}
-                  </span>
-                </div>
-                <div className={styles.monitorActions}>
-                  <button
-                    type="button"
-                    className={styles.refreshBtn}
-                    aria-label="Aggiorna consegne"
-                    disabled={monitorStudents === null || monitorRefreshing}
-                    onClick={() => void refreshMonitor()}
-                  >
-                    <IconRotateCcw />
-                    <span className={styles.refreshLabel}>
-                      {monitorRefreshing ? 'Aggiornamento…' : 'Aggiorna'}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    aria-label="Esporta CSV"
-                    disabled={
-                      monitorStudents === null ||
-                      monitorItems === null ||
-                      sortedMonitorRows.length === 0
-                    }
-                    onClick={handleExportCorrectionRegisterCsv}
-                  >
-                    <span className={styles.exportLongLabel}>Esporta CSV</span>
-                    <span className={styles.exportShortLabel}>CSV</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    aria-label="Esporta PDF"
-                    disabled={
-                      monitorStudents === null ||
-                      monitorItems === null ||
-                      sortedMonitorRows.length === 0 ||
-                      exportingPdf
-                    }
-                    onClick={() => void handleExportCorrectionRegisterPdf()}
-                  >
-                    {exportingPdf ? (
-                      'Generazione…'
-                    ) : (
-                      <>
-                        <span className={styles.exportLongLabel}>Esporta PDF</span>
-                        <span className={styles.exportShortLabel}>PDF</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
               {/* TWU-02 — if the AI preferences failed to load, «Correggi con IA»
                   must not start on invented defaults: show the persistent error
                   + «Riprova» and disable the button until preferences are ready. */}
@@ -3283,7 +3295,7 @@ export function VerificationsView() {
                             stateLabel={row.stateLabel}
                             score={formatPercentage(item)}
                             visibility={showVisibility && visibility ? visibility : null}
-                            submittedAt={item ? formatTimestamp(item.submittedAt) : '—'}
+                            submittedAt={item ? formatTime(item.submittedAt) : '—'}
                             selectable={selectable}
                             selected={aiSelectedUids.has(row.studentUid)}
                             onToggleSelected={(selected) =>
