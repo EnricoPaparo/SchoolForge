@@ -429,6 +429,72 @@ Requisiti di sicurezza congelati per `equivalent_variants` (dettaglio in
 
 ---
 
+## 8c. Chiusura e consegna forzata dal docente (FORCE-SUBMIT-01 — implementato)
+
+Il docente può acquisire e chiudere una verifica online che lo studente ha **iniziato ma non
+consegnato**. La transizione `draft → submitted` è **server-side e transazionale** (callable
+`forceSubmitSubmission`, Admin SDK): non esiste alcun percorso client per ottenerla.
+
+- **Autorizzazione fail-closed**, nell'ordine: autenticazione → verifica esistente →
+  `verification.ownerUid == auth.uid` → submission esistente → coerenza dei campi identitari
+  (`submissionId` deterministico, `verificationId`, `studentUid`, `ownerUid`). Ogni incoerenza è
+  un errore: nessun documento inatteso viene mai «riparato».
+- **Input chiuso** `{ verificationId, studentUid }`. Il client non può proporre `ownerUid`,
+  `submissionId`, `answers`, `deliveryCode`, `status`, timestamp né `forcedByTeacher`: qualunque
+  chiave extra è rifiutata prima di ogni lettura. L'id della consegna è **sempre** ricalcolato
+  server-side come `${verificationId}_${studentUid}`, e il codice consegna è generato server-side
+  (`SF-YYYY-XXXX`, RNG `node:crypto`).
+- **Nessuna consegna viene mai creata.** Se lo studente non ha iniziato, non esiste alcuna
+  submission e l'operazione fallisce con `not-found`: non si materializza mai una consegna vuota a
+  nome di uno studente che non ha svolto la verifica.
+- **`forcedByTeacher` è server-only** ed è il letterale `true`, **assente** (mai `false`) sulle
+  consegne normali. Le Rules non sono state modificate: i key-set chiusi già in vigore lo rendono
+  impossibile da scrivere per il client — `submissions` create/update e `submissionReceipts` create
+  usano `keys().hasOnly([...])`/`diff().affectedKeys().hasOnly([...])` che non includono il campo,
+  quindi ogni tentativo dello studente (con `true`, `false` o qualunque valore) è negato. Solo
+  l'Admin SDK, che bypassa le Rules, può scriverlo. Test emulator dedicati
+  (`force-submit-01-forced-close.rules.test.ts`) lo dimostrano, insieme al fatto che dopo la
+  chiusura lo studente non può più modificare né leggere la submission, che un altro studente non
+  legge la ricevuta, che lo studente proprietario legge la propria ricevuta forzata, che non esiste
+  accesso anonimo e che la consegna normale non regredisce.
+- **Ciò che non viene toccato.** La chiusura congela l'**ultima versione già salvata**:
+  `answers`, `flagged`, `attentionEvents`, `assignedQuestionOrders`, `assignedAnswerKeys` e
+  `startedAt` restano invariati, e **`lastSavedAt` non viene mai riscritto** — sovrascriverlo
+  cancellerebbe l'unica traccia di quanto fosse vecchia la versione acquisita. Il testo che lo
+  studente non ha mai autosalvato **non è recuperabile**, e l'interfaccia lo dichiara nella
+  conferma.
+- **Coerenza richiesta anche per non fare nulla.** Confermare un esito senza scritture non è
+  gratis dal punto di vista della sicurezza: sia il replay di una chiusura forzata sia una consegna
+  normale già avvenuta richiedono una ricevuta esistente e **completamente coerente** con la
+  submission (identità, `deliveryCode`, `submittedAt` confrontato in modo deterministico,
+  `verificationTitle`, `className`) e un marcatore coerente su **entrambi** i documenti —
+  `true` per la chiusura forzata, completamente assente per la consegna normale. Qualunque
+  divergenza è `failed_precondition` con zero scritture: non si conferma mai come riuscito uno
+  stato che non lo è. Analogamente una submission ancora `draft` **non può** avere una ricevuta:
+  se esiste, l'operazione fallisce chiuso invece di sovrascriverla.
+- **Metadati validati prima di scrivere.** Titolo verifica (stringa canonica non vuota),
+  `className` (stringa canonica **oppure** `null`) e campi identitari sono validati fail-closed
+  prima di comporre le due scritture. La callable non inventa e non normalizza mai un metadato
+  mancante o malformato.
+- **Id validati sui byte.** Il limite Firestore sugli id documento è espresso in **byte UTF-8**:
+  gli id in ingresso e l'id concatenato `${verificationId}_${studentUid}` sono verificati sulla
+  dimensione reale in byte (≤ 1500) e sulle forme riservate **prima** di costruire qualunque
+  `DocumentReference`.
+- **Concorrenza.** Verifica, submission e ricevuta sono lette **dentro** la transazione: un
+  autosave o una consegna dello studente in corso fanno ripartire la transazione con dati freschi.
+  Una consegna normale avvenuta nel frattempo non viene **mai** sovrascritta (`already_submitted`,
+  zero scritture). Un replay di una chiusura già completata è idempotente (zero scritture, nessun
+  nuovo codice) e richiede una ricevuta esistente e coerente, altrimenti è fail-closed.
+- **Trasparenza verso lo studente.** La ricevuta porta lo stesso marcatore, e la schermata di
+  conferma dice esplicitamente «Consegna acquisita dal docente»: lo studente non viene mai indotto
+  a credere di aver consegnato lui. Se una scrittura dello studente viene respinta perché la
+  consegna è stata chiusa, il portale esegue **una sola** lettura puntuale della ricevuta (nessun
+  listener, nessun polling) e chiude la sessione mostrando la conferma reale.
+- **Risposta sanitizzata:** `{ status: 'submitted' | 'already_submitted' }` — nessun uid, nessun
+  contenuto, nessun codice consegna. I log non contengono id, uid o contenuti.
+
+---
+
 ## 9. Backup, costi e incidenti
 
 - I Markdown e gli asset in Cloud Storage sono intrinsecamente portabili e protetti dalla ridondanza nativa di Storage; non è previsto alcun job di backup dedicato.

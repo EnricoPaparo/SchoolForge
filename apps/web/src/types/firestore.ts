@@ -813,8 +813,25 @@ export type SubmissionDoc = {
   verificationTitle: string;
   className: string | null;
   startedAt: Timestamp;
+  /**
+   * Ultimo salvataggio **reale dello studente**. FORCE-SUBMIT-01 non lo tocca:
+   * una chiusura forzata dal docente non è un salvataggio, e sovrascriverlo
+   * cancellerebbe l'unica traccia di quanto fosse vecchia la versione acquisita.
+   */
   lastSavedAt: Timestamp | FieldValue;
   submittedAt: Timestamp | FieldValue | null;
+  /**
+   * FORCE-SUBMIT-01 — presente **solo** quando la consegna è stata acquisita e
+   * chiusa dal docente («Chiudi e consegna») invece che inviata dallo studente.
+   * Assente su ogni consegna normale: il campo è un marcatore, non un flag, e
+   * l'unico valore ammesso è il letterale `true` (mai `false`).
+   *
+   * Server-only: lo scrive esclusivamente la callable `forceSubmitSubmission`
+   * tramite Admin SDK. Le Security Rules non lo includono in nessun key-set
+   * consentito al client, quindi né lo studente né il docente possono crearlo,
+   * modificarlo o rimuoverlo con una scrittura diretta.
+   */
+  forcedByTeacher?: true;
   /**
    * VEX (VEX-01B): presente SOLO in `equivalent_variants`. Scritto UNA SOLA
    * VOLTA dal server (callable `assignVerificationVariant`, Admin SDK) al primo
@@ -862,6 +879,14 @@ export type SubmissionReceiptDoc = {
   className: string | null;
   deliveryCode: string;
   submittedAt: Timestamp | FieldValue;
+  /**
+   * FORCE-SUBMIT-01 — mirror del marcatore sulla submission, scritto nella
+   * stessa transazione. Serve allo studente, che dopo la consegna può leggere
+   * soltanto questo documento: è così che il portale sa mostrare «Consegna
+   * acquisita dal docente» invece della conferma di invio ordinaria.
+   * Server-only e assente sulle consegne normali, come sulla submission.
+   */
+  forcedByTeacher?: true;
   /** Same minimal lifecycle mirror as SubmissionDoc; never contains scores or feedback. */
   correctionStatus?: SubmissionCorrectionStatus;
   correctionStatusUpdatedAt?: Timestamp | FieldValue;

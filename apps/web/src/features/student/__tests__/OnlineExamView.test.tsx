@@ -994,3 +994,72 @@ describe('OnlineExamView — VEX-02A variant guard', () => {
     expect('2' in payload.answers).toBe(true); // unfiltered — existing behavior
   });
 });
+
+// ─── FORCE-SUBMIT-01 — chiusura forzata rilevata dallo studente ─────────────
+
+describe('OnlineExamView — chiusura forzata dal docente (FORCE-SUBMIT-01)', () => {
+  const FORCED_RECEIPT = {
+    submissionId: 'v1_student-uid',
+    verificationId: 'v1',
+    studentUid: 'student-uid',
+    ownerUid: 'owner-uid',
+    verificationTitle: 'Verifica Reti',
+    className: 'Classe 3A',
+    deliveryCode: 'SF-2026-QRST',
+    submittedAt: { seconds: 1_800_000_000 },
+    forcedByTeacher: true,
+  };
+
+  it('un autosave respinto con ricevuta esistente chiude la sessione con quella ricevuta', async () => {
+    mockSaveDraft.mockRejectedValue({ code: 'permission-denied' });
+    mockLoadReceipt.mockResolvedValue(FORCED_RECEIPT);
+    const { onSubmitted } = renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salva bozza' }));
+
+    await waitFor(() => expect(onSubmitted).toHaveBeenCalledWith(FORCED_RECEIPT));
+    // Nessun messaggio d'errore fuorviante: la consegna esiste davvero.
+    expect(screen.queryByText(/chiusa o disabilitata/)).toBeNull();
+    // Esattamente UNA lettura puntuale, solo dopo il fallimento: nessun polling.
+    expect(mockLoadReceipt).toHaveBeenCalledTimes(1);
+    expect(mockLoadReceipt).toHaveBeenCalledWith('v1', 'student-uid', expect.anything());
+  });
+
+  it('nessuna ricevuta ⇒ resta l’errore ordinario, la sessione non si chiude', async () => {
+    mockSaveDraft.mockRejectedValue({ code: 'permission-denied' });
+    mockLoadReceipt.mockResolvedValue(null);
+    const { onSubmitted } = renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salva bozza' }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/la verifica potrebbe essere stata chiusa o disabilitata/),
+      ).toBeTruthy(),
+    );
+    expect(onSubmitted).not.toHaveBeenCalled();
+  });
+
+  it('un errore non compatibile non provoca alcuna lettura della ricevuta', async () => {
+    mockSaveDraft.mockRejectedValue({ code: 'unavailable' });
+    const { onSubmitted } = renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salva bozza' }));
+
+    await waitFor(() => expect(mockSaveDraft).toHaveBeenCalled());
+    expect(mockLoadReceipt).not.toHaveBeenCalled();
+    expect(onSubmitted).not.toHaveBeenCalled();
+  });
+
+  it('anche la consegna respinta si risolve nella ricevuta esistente, una sola volta', async () => {
+    mockSubmitSubmission.mockRejectedValue({ code: 'permission-denied' });
+    mockLoadReceipt.mockResolvedValue(FORCED_RECEIPT);
+    const { onSubmitted } = renderView();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Consegna' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Conferma consegna' }));
+
+    await waitFor(() => expect(onSubmitted).toHaveBeenCalledWith(FORCED_RECEIPT));
+    expect(mockLoadReceipt).toHaveBeenCalledTimes(1);
+  });
+});

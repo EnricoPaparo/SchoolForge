@@ -438,6 +438,19 @@ sequenceDiagram
 
 M3-full (completato) non introduce reset di una submission consegnata: la consegna è immutabile per decisione di prodotto, non riapribile nemmeno dal docente (D-M3F-04).
 
+**FORCE-SUBMIT-01 — chiusura e consegna forzata (implementato).** Il docente può acquisire e
+chiudere una verifica online che lo studente ha **iniziato ma non consegnato**. La transizione
+`draft → submitted` non è una scrittura client: avviene nella callable transazionale
+`forceSubmitSubmission` (Admin SDK). Il nucleo decisionale è puro e testabile
+(`functions/src/forceSubmitCore.ts`), il wiring Firestore è sottile
+(`functions/src/forceSubmitGateway.ts`) — stesso schema di `assignVerificationVariant`. La
+transazione legge verifica, submission e ricevuta e, nel solo caso applicabile, esegue **due
+scritture** nello stesso commit; il replay non scrive nulla. La consegna resta immutabile una
+volta chiusa (D-M3F-04 invariata): la chiusura forzata **non** riapre nulla, congela l'ultima
+versione già salvata senza toccare `lastSavedAt` né i contenuti, e non crea mai una consegna per
+uno studente che non ha iniziato. `forcedByTeacher` (letterale `true`, assente sulle consegne
+normali) è server-only e distingue la ricevuta nella schermata di conferma dello studente.
+
 ### 8.2 Cloud Functions
 
 M3-lite non usa Cloud Functions. Le uniche Cloud Function della baseline corrente appartengono al modulo AI (M5/V2):
@@ -446,6 +459,7 @@ M3-lite non usa Cloud Functions. Le uniche Cloud Function della baseline corrent
 |---|---|---|
 | `aiCorrectionPreview` (M5/V2) | SPA docente | Preflight owner-only, eleggibilità e stima; nessun grader, nessun token. |
 | `aiCorrectionRun` (M5/V2) | SPA docente | Chiuse deterministiche e aperte tramite `AiGrader`; provider reale solo su DEV dietro config fail-closed e kill switch. |
+| `forceSubmitSubmission` (FORCE-SUBMIT-01) | SPA docente | Acquisisce e chiude una consegna rimasta in bozza: input chiuso `{ verificationId, studentUid }`, autorizzazione owner fail-closed, transazione idempotente con due sole scritture, risposta sanitizzata. Contratto in [`api-contract.md`](api-contract.md) §1.2. |
 
 [→ Sequenza correzione AI (V2)](diagrammi/sequence-correzione-ai.md)
 

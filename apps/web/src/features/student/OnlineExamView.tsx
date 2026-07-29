@@ -69,6 +69,18 @@ function restrictToAssigned<T>(
   return out;
 }
 
+/**
+ * FORCE-SUBMIT-01 — un `permission-denied` su un autosave o una consegna è
+ * compatibile con una chiusura appena effettuata dal docente: la submission non
+ * è più `draft`, quindi le Rules negano la scrittura. È l'unico caso in cui vale
+ * la pena leggere la ricevuta, e la lettura avviene **una sola volta**, dopo il
+ * fallimento — mai a regime, mai in polling.
+ */
+function isClosedByTeacherCandidate(err: unknown): boolean {
+  const code = (err as { code?: string } | null)?.code;
+  return code === 'permission-denied';
+}
+
 function saveErrorMessage(err: unknown): string {
   const code = (err as { code?: string } | null)?.code;
   if (code === 'permission-denied') {
@@ -169,6 +181,40 @@ export function OnlineExamView({
     revisionRef.current += 1;
   }
 
+  /**
+   * FORCE-SUBMIT-01 — dopo una scrittura negata, verifica **una sola volta** se
+   * esiste già una ricevuta coerente: significa che la consegna è stata chiusa
+   * (dal docente o da una consegna concorrente) e lo svolgimento deve terminare
+   * ordinatamente, mostrando la ricevuta invece di un errore.
+   *
+   * Restituisce `true` se ha chiuso la sessione. Nessun listener, nessun
+   * polling: una lettura puntuale, solo su fallimento compatibile.
+   */
+  async function endSessionIfClosedByTeacher(err: unknown): Promise<boolean> {
+    if (!isClosedByTeacherCandidate(err) || sessionEndedRef.current) return false;
+    let receipt: SubmissionReceiptDoc | null = null;
+    try {
+      receipt = await loadReceipt(verificationId, studentUid, db);
+    } catch {
+      // La lettura stessa è fallita: si torna al normale percorso d'errore.
+      return false;
+    }
+    if (!receipt) return false;
+    // Da qui in poi nessun'altra scrittura: la consegna è chiusa.
+    sessionEndedRef.current = true;
+    dirtyRef.current = false;
+    bufferedEventsRef.current = [];
+    if (mountedRef.current) {
+      setSessionEnded(true);
+      setSaveError(null);
+      setSubmitError(null);
+      setConfirmOpen(false);
+    }
+    endSessionAfterDelivery();
+    onSubmitted(receipt);
+    return true;
+  }
+
   async function persistDraft(): Promise<void> {
     if (savingRef.current || submittingRef.current || sessionEndedRef.current) return;
     savingRef.current = true;
@@ -203,6 +249,10 @@ export function OnlineExamView({
           );
         }
       } catch (err) {
+        // Se il docente ha appena chiuso la consegna, la ricevuta esiste già:
+        // in quel caso si esce dallo svolgimento invece di mostrare un errore
+        // di rete che non descrive quanto è successo.
+        if (await endSessionIfClosedByTeacher(err)) return;
         if (mountedRef.current && !sessionEndedRef.current) {
           setSaveError(saveErrorMessage(err));
         }
@@ -332,6 +382,9 @@ export function OnlineExamView({
         db,
       );
     } catch (err) {
+      // Stessa lettura puntuale della ricevuta: una consegna negata perché il
+      // docente ha già chiuso non è un errore da mostrare allo studente.
+      if (await endSessionIfClosedByTeacher(err)) return;
       // Delivery itself failed: resume autosave, stay in fullscreen and leave
       // the form editable with its dirty revision intact.
       submittingRef.current = false;
