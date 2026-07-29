@@ -122,11 +122,53 @@
   gap: 0.5rem;
 }
 
+.desktopActionIcon {
+  display: inline-flex;
+}
+
 .fullscreenBtn {
   border-color: var(--color-warning-border);
   background: var(--color-warning-bg);
   color: var(--color-warning);
   font-weight: 600;
+}
+
+/*
+ * Desktop: stato e feedback non possono più spostare i comandi. I pulsanti
+ * vivono su una riga autonoma, centrata, con la stessa larghezza. Il contratto
+ * mobile sotto i 640 px resta quello preesistente.
+ */
+@media (min-width: 641px) {
+  .controlRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'header status'
+      'actions actions';
+  }
+
+  .examHeaderInfo {
+    grid-area: header;
+  }
+
+  .examStatus {
+    grid-area: status;
+    justify-content: flex-end;
+  }
+
+  .examActions {
+    grid-area: actions;
+    flex-wrap: nowrap;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .examActions button {
+    flex: 0 1 12rem;
+    justify-content: center;
+    width: 12rem;
+    min-width: 0;
+  }
 }
 
 /* ── Question navigator — second row inside .controlPanel ────────
@@ -331,6 +373,10 @@
 
   .examActions button {
     flex: 1;
+  }
+
+  .desktopActionIcon {
+    display: none;
   }
 }
 

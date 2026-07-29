@@ -486,12 +486,11 @@
   }
 }
 
-/* M5-04A/TWU-03A — barra azioni batch sopra la tabella: pulsanti di dimensione
-   uniforme (icona + testo centrati), griglia responsive 7 → 2 → 1 colonne,
-   nessun overflow orizzontale (minmax(0, 1fr)). */
+/* M5-04A/TWU-03A/FORCE-SUBMIT-02 — otto azioni in una griglia desktop 4 × 2:
+   pulsanti leggibili e uniformi senza comprimere etichette o icone. */
 .batchToolbar {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.5rem;
   margin-top: 0;
 }
@@ -504,11 +503,7 @@
 .batchMenuCell > button {
   height: 100%;
 }
-/*
- * UI-CONSEGNE-01 — desktop: i sette comandi restano visibili su una sola riga
- * finché lo spazio lo consente. Fra 48rem e il breakpoint mobile la griglia
- * degrada a due colonne invece di comprimere i pulsanti.
- */
+/* Fra 48rem e il breakpoint mobile la griglia degrada a due colonne. */
 @media (max-width: 48rem) {
   .batchToolbarDesktop {
     grid-template-columns: repeat(2, minmax(0, 1fr));

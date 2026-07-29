@@ -3447,10 +3447,10 @@ describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)
     return screen.findByRole('region', { name: 'Consegne online' });
   }
 
-  it('disables «Correggi con IA» until a row is selected and there is no per-row AI button', async () => {
+  it('disables «Correzione IA» until a row is selected and there is no per-row AI button', async () => {
     setupDefaults();
     const region = await openWith(twoSubmissions);
-    const button = within(region).getByRole('button', { name: /Correggi con IA/ });
+    const button = within(region).getByRole('button', { name: 'Correzione IA' });
     expect((button as HTMLButtonElement).disabled).toBe(true);
     // No per-row AI button.
     expect(within(region).queryByRole('button', { name: /Correggi con IA — /i })).toBeNull();
@@ -3461,7 +3461,7 @@ describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)
     fireEvent.click(annaBox);
     expect(annaBox.checked).toBe(true);
     expect((button as HTMLButtonElement).disabled).toBe(false);
-    expect(within(region).getByRole('button', { name: /Correggi con IA \(1\)/ })).toBeTruthy();
+    expect((button as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('uses a compact semantic selection column and keeps the Actions column rendered', async () => {
@@ -3601,7 +3601,9 @@ describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)
     ).toBe(true);
     expect(brunoBox.checked).toBe(true);
     // Anna è l'unica consegnata: la correzione IA resta su di lei soltanto.
-    expect(within(region).getByRole('button', { name: /Correggi con IA \(2\)/ })).toBeTruthy();
+    expect(
+      (within(region).getByRole('button', { name: 'Correzione IA' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 
   it('una riga «Non iniziata» resta non selezionabile', async () => {
@@ -3638,7 +3640,9 @@ describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)
       within(table).getByRole('button', { name: 'Ordina per percentuale crescente' }),
     );
     // Anna is still the only selected row after re-sorting.
-    expect(within(region).getByRole('button', { name: /Correggi con IA \(1\)/ })).toBeTruthy();
+    expect(
+      (within(region).getByRole('button', { name: 'Correzione IA' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
     const annaBox = within(region).getByRole('checkbox', {
       name: 'Seleziona consegna — Anna',
     }) as HTMLInputElement;
@@ -3649,7 +3653,7 @@ describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)
     setupDefaults();
     const region = await openWith(twoSubmissions);
     fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
-    fireEvent.click(within(region).getByRole('button', { name: /Correggi con IA/ }));
+    fireEvent.click(within(region).getByRole('button', { name: 'Correzione IA' }));
     const dialog = await screen.findByTestId('ai-batch-dialog');
     expect(within(dialog).getByText('IDs: ver-1_stud-a')).toBeTruthy();
   });
@@ -3668,7 +3672,7 @@ describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)
     // Even with a row selected, the AI action stays disabled (never runs on defaults).
     fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
     const aiButton = within(region).getByRole('button', {
-      name: /Correggi con IA/,
+      name: 'Correzione IA',
     }) as HTMLButtonElement;
     expect(aiButton.disabled).toBe(true);
     expect(screen.queryByTestId('ai-batch-dialog')).toBeNull();
@@ -3814,7 +3818,7 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
     });
     const buttons = within(toolbar).getAllByRole('button');
     expect(buttons.map((button) => button.textContent?.trim())).toEqual([
-      'Correggi con IA',
+      'Correzione IA',
       'Completa',
       'Restituisci',
       'Visibilità',
@@ -3888,7 +3892,7 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
     expect(within(dialog).getByText('action: return')).toBeTruthy();
     expect(within(dialog).getByText('rows: stud-a')).toBeTruthy();
     for (const name of [
-      'Correggi con IA',
+      'Correzione IA',
       'Completa',
       'Riapri',
       'Restituisci',
@@ -4003,7 +4007,9 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
     setupDefaults();
     const region = await openWith();
     fireEvent.click(within(region).getByRole('checkbox', { name: 'Seleziona tutte le consegne' }));
-    expect(within(region).getByRole('button', { name: /Correggi con IA \(2\)/ })).toBeTruthy();
+    expect(
+      (within(region).getByRole('button', { name: 'Correzione IA' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
 
     const readsBefore = mockLoadCorrectionProgressByStudent.mock.calls.length;
     fireEvent.click(within(region).getByRole('button', { name: 'Azzera' }));
@@ -4016,7 +4022,6 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
       expect(mockLoadCorrectionProgressByStudent.mock.calls.length).toBe(readsBefore + 1),
     );
     // Selection is unchanged: both rows stay selected (persistent selection).
-    expect(within(region).getByRole('button', { name: /Correggi con IA \(2\)/ })).toBeTruthy();
     for (const name of ['Anna', 'Bruno']) {
       const box = within(region).getByRole('checkbox', {
         name: `Seleziona consegna — ${name}`,
@@ -4033,7 +4038,9 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
     const dialog = await screen.findByTestId('batch-actions-dialog');
     fireEvent.click(within(dialog).getByText('Chiudi azioni'));
     // Selection untouched.
-    expect(within(region).getByRole('button', { name: /Correggi con IA \(2\)/ })).toBeTruthy();
+    expect(
+      (within(region).getByRole('button', { name: 'Correzione IA' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 
   it('M5-04A: manual selection and deselection still work', async () => {
@@ -4041,10 +4048,14 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
     const region = await openWith();
     const anna = within(region).getByRole('checkbox', { name: 'Seleziona consegna — Anna' });
     fireEvent.click(anna);
-    expect(within(region).getByRole('button', { name: /Correggi con IA \(1\)/ })).toBeTruthy();
+    expect(
+      (within(region).getByRole('button', { name: 'Correzione IA' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
     fireEvent.click(anna);
-    // Back to no selection → the counted suffix disappears and buttons disable.
-    expect(within(region).queryByRole('button', { name: /Correggi con IA \(/ })).toBeNull();
+    // Back to no selection → the stable label remains and the actions disable.
+    expect(
+      (within(region).getByRole('button', { name: 'Correzione IA' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
     expect(
       (within(region).getByRole('button', { name: 'Completa' }) as HTMLButtonElement).disabled,
     ).toBe(true);
@@ -4054,7 +4065,7 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
     setupDefaults();
     const region = await openWith();
     for (const name of [
-      'Correggi con IA',
+      'Correzione IA',
       'Completa',
       'Riapri',
       'Restituisci',
@@ -4957,7 +4968,7 @@ describe('VerificationsView — toolbar azioni massive (UI-CONSEGNE-01)', () => 
       .getAllByRole('button')
       .map((b) => b.textContent?.trim());
     expect(labels).toEqual([
-      'Correggi con IA',
+      'Correzione IA',
       'Completa',
       'Restituisci',
       'Visibilità',
