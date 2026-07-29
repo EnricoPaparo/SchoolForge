@@ -1,0 +1,21 @@
+.wrapper {
+  position: relative;
+  min-width: 0;
+}
+
+/*
+ * UI-CONSEGNE-01 — azione secondaria della toolbar mobile: stessa altezza del
+ * pulsante primario «Correggi con IA», con target touch pieno.
+ */
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.8rem;
+  font-size: 0.875rem;
+  font-weight: 650;
+  white-space: nowrap;
+}

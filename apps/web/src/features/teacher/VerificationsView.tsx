@@ -98,9 +98,13 @@ import {
   IconDownload,
   IconWifi,
   IconLayers,
+  IconChevronLeft,
 } from '../../components/icons.js';
 import { VerificationRecordCard } from '../../components/VerificationRecordCard.js';
 import { RecordActionsMenu } from './RecordActionsMenu.js';
+import { SubmissionRecordCard } from './SubmissionRecordCard.js';
+import { BatchActionsMobileMenu } from './BatchActionsMobileMenu.js';
+import { MOBILE_VIEWPORT_QUERY, useMediaQuery } from '../../lib/useMediaQuery.js';
 import { DialogShell } from '../../components/DialogShell.js';
 import type {
   AttentionEvent,
@@ -499,6 +503,27 @@ export function VerificationsView() {
     () => sortedMonitorRows.filter((r) => r.item?.status === 'submitted').map((r) => r.studentUid),
     [sortedMonitorRows],
   );
+  /**
+   * UI-CONSEGNE-01 — una sola rappresentazione delle consegne è montata alla
+   * volta: tabella su desktop, card su mobile. Le due condividono dati,
+   * ordinamento, selezione e handler; a cambiare è solo il markup.
+   */
+  const isMobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY);
+
+  /**
+   * UI-CONSEGNE-01 — condizione `disabled` **unica** per le azioni massive:
+   * la toolbar desktop e il menu mobile la leggono entrambe, quindi non possono
+   * divergere. «Correggi con IA» vi aggiunge soltanto la disponibilità delle
+   * preferenze IA, esattamente come prima.
+   */
+  const batchActionsDisabled =
+    aiSelectedUids.size === 0 ||
+    aiDialogOpen ||
+    batchAction !== null ||
+    batchReturnVisibilityAction !== null ||
+    archiveExportBusy ||
+    archiveEligibility !== null;
+
   const allSelectableSelected =
     selectableUids.length > 0 && selectableUids.every((uid) => aiSelectedUids.has(uid));
   const aiSelectedSubmissionIds = useMemo(
@@ -2498,12 +2523,20 @@ export function VerificationsView() {
       {selectedVer && (
         <div className={styles.detail} aria-label="Dettaglio verifica">
           <div className={styles.detailHeader}>
+            {/*
+             * UI-CONSEGNE-01 — controllo di ritorno sobrio: freccia del set
+             * icone + testo «Verifiche». Ciano a riposo, arancione su
+             * hover/focus, spostamento della freccia solo su puntatore fine e
+             * solo fuori da reduced-motion. Handler e routing invariati.
+             */}
             <button
               type="button"
               className={styles.backButton}
+              aria-label="Torna alle verifiche"
               onClick={() => setSelectedVer(null)}
             >
-              ← Torna alle verifiche
+              <IconChevronLeft size={16} />
+              <span>Verifiche</span>
             </button>
             <h2 className={styles.detailTitle}>{selectedVer.config.title}</h2>
             <StatusBadge status={selectedVer.status} visibility={selectedVer.visibility} />
@@ -2782,110 +2815,110 @@ export function VerificationsView() {
               {/* M5-04A/TWU-03A/CORR-PDF-01: ordine operativo stabile e
                   griglia responsive 7 → 2 → 1, con Azzera sempre ultimo e
                   unico distruttivo. */}
-              <div
-                className={styles.batchToolbar}
-                role="group"
-                aria-label="Azioni sulle consegne selezionate"
-              >
-                <button
-                  type="button"
-                  className="btn-primary"
-                  disabled={
-                    aiSelectedUids.size === 0 ||
-                    aiDialogOpen ||
-                    batchAction !== null ||
-                    batchReturnVisibilityAction !== null ||
-                    archiveExportBusy ||
-                    archiveEligibility !== null ||
-                    aiPrefs.status !== 'ready'
-                  }
-                  onClick={() => setAiDialogOpen(true)}
+              {!isMobileViewport && (
+                <div
+                  className={`${styles.batchToolbar} ${styles.batchToolbarDesktop}`}
+                  role="group"
+                  aria-label="Azioni sulle consegne selezionate"
                 >
-                  <IconSparkles />
-                  Correggi con IA
-                  {aiSelectedUids.size > 0 ? ` (${aiSelectedUids.size})` : ''}
-                </button>
-                {(
-                  [
-                    { action: 'complete', label: 'Completa', Icon: IconCircleCheck },
-                    { action: 'return', label: 'Restituisci', Icon: IconSend },
-                  ] as const
-                ).map(({ action, label, Icon }) => (
                   <button
-                    key={action}
                     type="button"
                     className="btn-primary"
-                    disabled={
-                      aiSelectedUids.size === 0 ||
-                      aiDialogOpen ||
-                      batchAction !== null ||
-                      batchReturnVisibilityAction !== null ||
-                      archiveExportBusy ||
-                      archiveEligibility !== null
-                    }
-                    onClick={() => setBatchAction(action)}
+                    disabled={batchActionsDisabled || aiPrefs.status !== 'ready'}
+                    onClick={() => setAiDialogOpen(true)}
                   >
-                    <Icon />
-                    {label}
+                    <IconSparkles />
+                    Correggi con IA
+                    {aiSelectedUids.size > 0 ? ` (${aiSelectedUids.size})` : ''}
                   </button>
-                ))}
-                <BatchVisibilityMenu
-                  disabled={
-                    aiSelectedUids.size === 0 ||
-                    aiDialogOpen ||
-                    batchAction !== null ||
-                    batchReturnVisibilityAction !== null ||
-                    archiveExportBusy ||
-                    archiveEligibility !== null
-                  }
-                  contextKey={selectedVer?.id ?? ''}
-                  onSelect={setBatchReturnVisibilityAction}
-                />
-                <button
-                  type="button"
-                  className="btn-primary"
-                  disabled={
-                    aiSelectedUids.size === 0 ||
-                    aiDialogOpen ||
-                    batchAction !== null ||
-                    batchReturnVisibilityAction !== null ||
-                    archiveExportBusy ||
-                    archiveEligibility !== null
-                  }
-                  onClick={() => void handleCorrectionArchiveExport()}
-                >
-                  {archiveExportBusy ? (
-                    <span className="spinner" aria-hidden="true" />
-                  ) : (
-                    <IconDownload />
-                  )}
-                  {archiveExportBusy ? 'Preparazione…' : 'PDF correzioni'}
-                </button>
-                {(
-                  [
-                    { action: 'reopen', label: 'Riapri', Icon: IconRotateCcw },
-                    { action: 'clear', label: 'Azzera', Icon: IconEraser },
-                  ] as const
-                ).map(({ action, label, Icon }) => (
+                  {(
+                    [
+                      { action: 'complete', label: 'Completa', Icon: IconCircleCheck },
+                      { action: 'return', label: 'Restituisci', Icon: IconSend },
+                    ] as const
+                  ).map(({ action, label, Icon }) => (
+                    <button
+                      key={action}
+                      type="button"
+                      className="btn-primary"
+                      disabled={batchActionsDisabled}
+                      onClick={() => setBatchAction(action)}
+                    >
+                      <Icon />
+                      {label}
+                    </button>
+                  ))}
+                  <BatchVisibilityMenu
+                    disabled={batchActionsDisabled}
+                    contextKey={selectedVer?.id ?? ''}
+                    onSelect={setBatchReturnVisibilityAction}
+                  />
                   <button
-                    key={action}
                     type="button"
-                    className={action === 'clear' ? 'btn-danger' : 'btn-primary'}
-                    disabled={
-                      aiSelectedUids.size === 0 ||
-                      aiDialogOpen ||
-                      batchAction !== null ||
-                      batchReturnVisibilityAction !== null ||
-                      archiveExportBusy ||
-                      archiveEligibility !== null
-                    }
-                    onClick={() => setBatchAction(action)}
+                    className="btn-primary"
+                    disabled={batchActionsDisabled}
+                    onClick={() => void handleCorrectionArchiveExport()}
                   >
-                    <Icon />
-                    {label}
+                    {archiveExportBusy ? (
+                      <span className="spinner" aria-hidden="true" />
+                    ) : (
+                      <IconDownload />
+                    )}
+                    {archiveExportBusy ? 'Preparazione…' : 'PDF correzioni'}
                   </button>
-                ))}
-              </div>
+                  {(
+                    [
+                      { action: 'reopen', label: 'Riapri', Icon: IconRotateCcw },
+                      { action: 'clear', label: 'Azzera', Icon: IconEraser },
+                    ] as const
+                  ).map(({ action, label, Icon }) => (
+                    <button
+                      key={action}
+                      type="button"
+                      className={action === 'clear' ? 'btn-danger' : 'btn-primary'}
+                      disabled={batchActionsDisabled}
+                      onClick={() => setBatchAction(action)}
+                    >
+                      <Icon />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/*
+               * UI-CONSEGNE-01 — versione mobile della **stessa** toolbar: azione
+               * principale «Correggi con IA» e un unico menu con le altre sei
+               * voci, nello stesso ordine. Le condizioni `disabled`, il conteggio
+               * e gli handler sono letteralmente gli stessi della variante
+               * desktop: nessuna funzione duplicata, nessuna nuova popup.
+               */}
+              {isMobileViewport && (
+                <div
+                  className={styles.batchToolbarMobile}
+                  role="group"
+                  aria-label="Azioni sulle consegne selezionate"
+                >
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={batchActionsDisabled || aiPrefs.status !== 'ready'}
+                    onClick={() => setAiDialogOpen(true)}
+                  >
+                    <IconSparkles />
+                    Correggi con IA
+                    {aiSelectedUids.size > 0 ? ` (${aiSelectedUids.size})` : ''}
+                  </button>
+                  <BatchActionsMobileMenu
+                    disabled={batchActionsDisabled}
+                    selectedCount={aiSelectedUids.size}
+                    contextKey={selectedVer?.id ?? ''}
+                    archiveExportBusy={archiveExportBusy}
+                    onBatchAction={setBatchAction}
+                    onVisibilityAction={setBatchReturnVisibilityAction}
+                    onArchiveExport={() => void handleCorrectionArchiveExport()}
+                  />
+                </div>
+              )}
               <>
                 {/* TWU-02A: the refresh status now lives inline in the header
                     above (no separate row → no table layout shift). */}
@@ -2941,6 +2974,7 @@ export function VerificationsView() {
                   <p className="state-empty">Nessuno studente approvato in questa classe.</p>
                 )}
                 {!monitorError &&
+                  !isMobileViewport &&
                   monitorStudents !== null &&
                   monitorStudents.length > 0 &&
                   monitorItems !== null && (
@@ -3183,6 +3217,83 @@ export function VerificationsView() {
                           })}
                         </tbody>
                       </table>
+                    </div>
+                  )}
+
+                {/*
+                 * UI-CONSEGNE-01 — sotto il breakpoint la tabella è nascosta con
+                 * `display: none` (quindi esclusa anche dall'albero di
+                 * accessibilità) e la stessa collezione — `sortedMonitorRows`,
+                 * già filtrata e ordinata — viene resa come card full-width.
+                 * Nessuno stato duplicato: selezione, ordinamento e handler sono
+                 * esattamente quelli della tabella.
+                 */}
+                {!monitorError &&
+                  isMobileViewport &&
+                  monitorStudents !== null &&
+                  monitorStudents.length > 0 &&
+                  monitorItems !== null && (
+                    <div
+                      className={styles.submissionCardList}
+                      role="list"
+                      aria-label="Consegne online"
+                    >
+                      {sortedMonitorRows.map((row) => {
+                        const item = row.item;
+                        const studentName = row.studentName;
+                        const eventsCount = item?.attentionEventsCount ?? 0;
+                        const selectable = item?.status === 'submitted';
+                        const submissionId = `${selectedVer.id}_${row.studentUid}`;
+                        const visibility = correctionReturnVisibility.get(submissionId);
+                        const showVisibility =
+                          correctionProgress.get(row.studentUid)?.status === 'returned' &&
+                          visibility?.studentUid === row.studentUid;
+                        const canOpenCorrection = item?.status === 'submitted';
+                        return (
+                          <SubmissionRecordCard
+                            key={row.studentUid}
+                            studentName={studentName}
+                            metaLine={`Valutate ${formatValutate(row.studentUid)} · ${eventsCount} ${
+                              eventsCount === 1 ? 'evento' : 'eventi'
+                            }`}
+                            stateLabel={row.stateLabel}
+                            score={formatPercentage(item)}
+                            visibility={showVisibility && visibility ? visibility : null}
+                            submittedAt={item ? formatTimestamp(item.submittedAt) : '—'}
+                            selectable={selectable}
+                            selected={aiSelectedUids.has(row.studentUid)}
+                            onToggleSelected={() => toggleRowSelected(row.studentUid)}
+                            onOpenCorrection={
+                              canOpenCorrection
+                                ? () =>
+                                    setCorrectionTarget({
+                                      submissionId,
+                                      studentUid: row.studentUid,
+                                      studentName,
+                                    })
+                                : undefined
+                            }
+                            eventsCount={eventsCount}
+                            onShowEvents={() =>
+                              handleOpenAttentionEvents(studentName, item?.attentionEvents ?? [])
+                            }
+                            deleteState={
+                              !item
+                                ? 'absent'
+                                : item.correctionStatus === 'returned'
+                                  ? 'returned'
+                                  : 'deletable'
+                            }
+                            deleteDisabled={deletingSubmission}
+                            onDelete={() =>
+                              setSubmissionDeleteTarget({
+                                studentUid: row.studentUid,
+                                studentName,
+                              })
+                            }
+                          />
+                        );
+                      })}
                     </div>
                   )}
               </>

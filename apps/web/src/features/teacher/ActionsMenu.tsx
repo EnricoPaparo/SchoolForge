@@ -112,9 +112,13 @@ export const ActionsMenu = forwardRef<HTMLDivElement, ActionsMenuProps>(function
       className={`${styles.menu} ${styles.menuPortal}`}
       onClick={(event) => {
         const item = (event.target as Element | null)?.closest<HTMLElement>('[role="menuitem"]');
-        if (item && !item.matches(':disabled') && item.getAttribute('aria-disabled') !== 'true') {
-          onAction?.();
+        if (!item || item.matches(':disabled') || item.getAttribute('aria-disabled') === 'true') {
+          return;
         }
+        // UI-CONSEGNE-01 — una voce che apre un sottolivello (`aria-haspopup`)
+        // non è un'azione: selezionarla non deve chiudere il menu che la ospita.
+        if (item.getAttribute('aria-haspopup')) return;
+        onAction?.();
       }}
       style={{
         // Nascosto finché non è misurato, per evitare un flash in posizione 0,0.

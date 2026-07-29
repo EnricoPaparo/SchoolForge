@@ -519,6 +519,93 @@
 
 
 @media (max-width: 44rem) {
+  /*
+   * UI-CONSEGNE-01 — card consegna: montata **solo** sotto il breakpoint mobile
+   * (su desktop resta la tabella). La doppia classe `.card.cardActionsSubmission`
+   * è deliberata: vince sulla regola generica `.card` di questo stesso media
+   * query senza dipendere dall'ordine delle dichiarazioni.
+   * Quattro fasce: identità + selezione, Punteggio/Visibilità affiancati, Stato a
+   * larghezza piena, data di consegna + trigger «…».
+   */
+  .card.cardActionsSubmission {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'identity select'
+      'metrics metrics'
+      'status actions'
+      'errors errors';
+    gap: 0.6rem;
+    padding: 0.8rem 0.9rem 0.8rem 1rem;
+  }
+
+  .card.cardActionsSubmission .content {
+    display: contents;
+  }
+
+  .card.cardActionsSubmission .identity {
+    grid-area: identity;
+    position: static;
+    padding-bottom: 0;
+  }
+
+  /* Prima fascia: nome a sinistra, checkbox di selezione a destra. */
+  .card.cardActionsSubmission .identityControl {
+    grid-area: select;
+    align-self: start;
+    justify-self: end;
+    min-width: 0;
+  }
+
+  /* Punteggio e Visibilità su due colonne uguali; Stato prende la riga intera. */
+  .card.cardActionsSubmission .metrics {
+    grid-area: metrics;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .card.cardActionsSubmission .metrics > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+
+  .card.cardActionsSubmission .metric {
+    min-height: 2.9rem;
+    padding: 0.45rem 0.6rem;
+    align-content: center;
+  }
+
+  .card.cardActionsSubmission .metric dd {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Ultima fascia: data a sinistra, trigger «…» a destra con target touch pieno. */
+  .card.cardActionsSubmission .statusControl {
+    grid-area: status;
+    align-self: center;
+    justify-self: start;
+    min-width: 0;
+    padding: 0;
+  }
+
+  .card.cardActionsSubmission .actions {
+    grid-area: actions;
+    align-self: center;
+    justify-self: end;
+    padding: 0;
+  }
+
+  .card.cardActionsSubmission .actions button {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    height: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  .card.cardActionsSubmission .errors {
+    grid-area: errors;
+    padding: 0;
+  }
+
   .card {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:

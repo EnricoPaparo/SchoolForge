@@ -29,7 +29,9 @@ export type RecordCardActionLayout =
   /** UI-STUDENTI-CLASSI-01 — card studente docente (identità + Classe + 3 riquadri). */
   | 'student-admin'
   /** UI-STUDENTI-CLASSI-01 — card classe docente, compatta e senza riquadri. */
-  | 'class-admin';
+  | 'class-admin'
+  /** UI-CONSEGNE-01 — card consegna (solo mobile): riga della tabella consegne. */
+  | 'submission';
 
 export type RecordCardProps = {
   title: string;
@@ -136,7 +138,9 @@ export function RecordCard({
               ? styles.cardActionsStudentAdmin
               : actionLayout === 'class-admin'
                 ? styles.cardActionsClassAdmin
-                : styles.cardActionsCorner;
+                : actionLayout === 'submission'
+                  ? styles.cardActionsSubmission
+                  : styles.cardActionsCorner;
   const progressAccentClass = accentProgressOnInteraction ? styles.progressAccent : '';
   /**
    * Solo la variante verifica **docente** promuove la CTA a fascia autonoma:
@@ -165,7 +169,15 @@ export function RecordCard({
       aria-label={`${recordLabel} ${title}`}
       onClick={(event) => {
         if (!onOpen || !(event.target instanceof Element)) return;
-        if (event.target.closest('button')) return;
+        /*
+         * UI-CONSEGNE-01 — il click su un qualunque controllo interno non deve
+         * mai aprire il record: prima si escludevano solo i `button`, quindi una
+         * checkbox o una select dentro la card (selezione consegna, classe
+         * studente) sarebbe caduta nel fallback di apertura.
+         */
+        if (event.target.closest('button, a, input, select, textarea, label, [role="menuitem"]')) {
+          return;
+        }
         onOpen();
       }}
       onPointerOver={handleActionPointerOver}

@@ -4635,3 +4635,381 @@ describe('VerificationsView — bozza: data e perimetro in un solo salvataggio (
     expect(mockListLessons).toHaveBeenCalledTimes(1);
   });
 });
+
+// ─── UI-CONSEGNE-01 — fixture condivise dalle suite consegne ─────────────────
+
+/** Verifica attiva con classe assegnata: apre il monitor consegne. */
+const consegneVer = (overrides = {}) =>
+  makeDraftVer({
+    status: 'active',
+    onlineEnabled: true,
+    teacherSnapshot: {
+      title: 'Verifica Algebra',
+      classId: 'cls-1',
+      className: 'Classe 3A',
+      programId: 'prog-1',
+      importId: 'imp-1',
+      questionRefs: [sampleQuestionRef],
+      activatedAt: null,
+    },
+    ...overrides,
+  });
+
+const consegneStudents = [
+  {
+    id: 'stud-b',
+    ownerUid: 'owner-uid',
+    uid: 'stud-b',
+    email: 'b@x.it',
+    displayName: 'Bruno',
+    status: 'approved' as const,
+    classId: 'cls-1',
+    createdAt: null,
+    updatedAt: null,
+    lastLoginAt: null,
+  },
+  {
+    id: 'stud-a',
+    ownerUid: 'owner-uid',
+    uid: 'stud-a',
+    email: 'a@x.it',
+    displayName: 'Anna',
+    status: 'approved' as const,
+    classId: 'cls-1',
+    createdAt: null,
+    updatedAt: null,
+    lastLoginAt: null,
+  },
+];
+
+// ─── UI-CONSEGNE-01 — consegne: tabella desktop, card mobile ─────────────────
+
+describe('VerificationsView — consegne responsive (UI-CONSEGNE-01)', () => {
+  /** Attiva la viewport mobile per il montaggio successivo. */
+  function useMobileViewport(matches: boolean) {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      configurable: true,
+      value: (query: string) => ({
+        matches,
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      }),
+    });
+  }
+
+  afterEach(() => {
+    // Ripristina il default jsdom (matchMedia assente ⇒ variante desktop).
+    delete (window as unknown as { matchMedia?: unknown }).matchMedia;
+  });
+
+  const SUBMITTED = {
+    studentUid: 'stud-a',
+    status: 'submitted' as const,
+    lastSavedAt: { seconds: 100, nanoseconds: 0 },
+    submittedAt: { seconds: 200, nanoseconds: 0 },
+    deliveryCode: 'SF-2026-A1B2',
+    attentionEventsCount: 3,
+  };
+
+  async function openMonitor(mobile: boolean, items: unknown[] = [SUBMITTED]) {
+    useMobileViewport(mobile);
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([consegneVer()]);
+    mockListStudents.mockResolvedValue(consegneStudents);
+    let pushItems: (rows: unknown[]) => void = () => {};
+    mockWatchSubmissions.mockImplementation((_v, _o, _db, onChange) => {
+      pushItems = onChange;
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => expect(mockWatchSubmissions).toHaveBeenCalled());
+    pushItems(items);
+    await waitFor(() => expect(screen.getByLabelText('Consegne online')).toBeTruthy());
+  }
+
+  function submissionCard(name: string): HTMLElement {
+    return screen.getByRole('listitem', { name: `Consegna ${name}` });
+  }
+
+  it('desktop: mostra la tabella con le sue intestazioni e nessuna card', async () => {
+    await openMonitor(false);
+
+    const table = screen.getByRole('table');
+    expect(table).toBeTruthy();
+    const headers = within(table)
+      .getAllByRole('columnheader')
+      .map((h) => h.textContent?.replace(/[▲▼↕↑↓]/g, '').trim());
+    expect(headers).toEqual([
+      '',
+      'Studente',
+      'Stato',
+      'Valutate',
+      'Percentuale',
+      'Consegna',
+      'Visibilità',
+      'Eventi',
+      'Azioni',
+    ]);
+    expect(screen.queryByRole('list', { name: 'Consegne online' })).toBeNull();
+  });
+
+  it('mobile: sostituisce la tabella con una card per consegna', async () => {
+    await openMonitor(true);
+
+    expect(screen.queryByRole('table')).toBeNull();
+    const list = screen.getByRole('list', { name: 'Consegne online' });
+    const cards = within(list).getAllByRole('listitem');
+    // Stessa collezione filtrata e ordinata della tabella: Anna e Bruno.
+    expect(cards).toHaveLength(2);
+    expect(within(cards[0]!).getByRole('heading').textContent).toBe('Anna');
+  });
+
+  it('mobile: Punteggio e Visibilità affiancati, Stato a tutta riga', async () => {
+    await openMonitor(true);
+
+    const card = submissionCard('Anna');
+    const labels = [...card.querySelectorAll('dt')].map((dt) => dt.textContent);
+    expect(labels).toEqual(['Punteggio', 'Visibilità', 'Stato']);
+    // Lo stato è testo, non solo colore.
+    expect(within(card).getByText('Consegnata')).toBeTruthy();
+    // Visibilità non disponibile ⇒ «—», mai un valore inventato.
+    expect(within(card).getByLabelText('Visibilità non disponibile')).toBeTruthy();
+  });
+
+  it('mobile: la checkbox condivide la selezione e aggiorna le azioni massive', async () => {
+    await openMonitor(true);
+
+    const aiButton = screen.getByRole('button', { name: /Correggi con IA/ });
+    expect((aiButton as HTMLButtonElement).disabled).toBe(true);
+
+    const checkbox = within(submissionCard('Anna')).getByRole('checkbox', {
+      name: 'Seleziona consegna — Anna',
+    }) as HTMLInputElement;
+    fireEvent.click(checkbox);
+
+    expect(checkbox.checked).toBe(true);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Correggi con IA \(1\)/ })).toBeTruthy(),
+    );
+    // Deselezionando, le azioni massive tornano disabilitate.
+    fireEvent.click(checkbox);
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('button', { name: /Correggi con IA/ }) as HTMLButtonElement).disabled,
+      ).toBe(true),
+    );
+  });
+
+  it('mobile: la checkbox non apre la correzione', async () => {
+    await openMonitor(true);
+
+    fireEvent.click(
+      within(submissionCard('Anna')).getByRole('checkbox', { name: 'Seleziona consegna — Anna' }),
+    );
+    // Il workspace di correzione non è montato: la lista consegne resta visibile.
+    expect(screen.getByRole('list', { name: 'Consegne online' })).toBeTruthy();
+  });
+
+  it('mobile: il menu di riga non apre la correzione e offre «Visualizza eventi»', async () => {
+    await openMonitor(true);
+
+    const card = submissionCard('Anna');
+    fireEvent.click(within(card).getByRole('button', { name: /^Azioni consegna/ }));
+    expect(screen.getByRole('list', { name: 'Consegne online' })).toBeTruthy();
+
+    const events = screen.getByRole('menuitem', { name: /Eventi di attenzione — Anna/ });
+    expect((events as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(events);
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+  });
+
+  it('mobile: la superficie della card apre la correzione quando consentito', async () => {
+    await openMonitor(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apri correzione — Anna' }));
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Consegne online' })).toBeNull());
+  });
+
+  it('mobile: una consegna non apribile non espone alcuna superficie di apertura', async () => {
+    await openMonitor(true);
+    // Bruno non ha consegnato: nessun «Apri correzione» per lui.
+    expect(screen.queryByRole('button', { name: 'Apri correzione — Bruno' })).toBeNull();
+  });
+
+  it('nessuna interattività annidata nelle card consegna', async () => {
+    await openMonitor(true);
+    for (const button of screen.getAllByRole('button')) {
+      expect(button.querySelector('button')).toBeNull();
+    }
+  });
+});
+
+describe('VerificationsView — toolbar azioni massive (UI-CONSEGNE-01)', () => {
+  function useMobileViewport(matches: boolean) {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      configurable: true,
+      value: (query: string) => ({
+        matches,
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      }),
+    });
+  }
+
+  afterEach(() => {
+    delete (window as unknown as { matchMedia?: unknown }).matchMedia;
+  });
+
+  async function openMonitor(mobile: boolean) {
+    useMobileViewport(mobile);
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([consegneVer()]);
+    mockListStudents.mockResolvedValue(consegneStudents);
+    let pushItems: (rows: unknown[]) => void = () => {};
+    mockWatchSubmissions.mockImplementation((_v, _o, _db, onChange) => {
+      pushItems = onChange;
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => expect(mockWatchSubmissions).toHaveBeenCalled());
+    pushItems([
+      {
+        studentUid: 'stud-a',
+        status: 'submitted',
+        lastSavedAt: { seconds: 100, nanoseconds: 0 },
+        submittedAt: { seconds: 200, nanoseconds: 0 },
+        deliveryCode: 'SF-2026-A1B2',
+        attentionEventsCount: 0,
+      },
+    ]);
+    await waitFor(() => expect(screen.getByLabelText('Consegne online')).toBeTruthy());
+  }
+
+  it('desktop: sette comandi nell’ordine approvato, con Azzera ultimo e distruttivo', async () => {
+    await openMonitor(false);
+
+    const toolbar = screen.getByRole('group', { name: 'Azioni sulle consegne selezionate' });
+    const labels = within(toolbar)
+      .getAllByRole('button')
+      .map((b) => b.textContent?.trim());
+    expect(labels).toEqual([
+      'Correggi con IA',
+      'Completa',
+      'Restituisci',
+      'Visibilità',
+      'PDF correzioni',
+      'Riapri',
+      'Azzera',
+    ]);
+    const azzera = within(toolbar).getByRole('button', { name: 'Azzera' });
+    expect(azzera.className).toMatch(/btn-danger/);
+  });
+
+  it('mobile: soltanto «Correggi con IA» e «Azioni selezionate»', async () => {
+    await openMonitor(true);
+
+    const toolbar = screen.getByRole('group', { name: 'Azioni sulle consegne selezionate' });
+    const buttons = within(toolbar).getAllByRole('button');
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]!.textContent).toContain('Correggi con IA');
+    expect(buttons[1]!.getAttribute('aria-label')).toMatch(/^Azioni selezionate/);
+  });
+
+  it('mobile: il menu contiene le altre sei azioni nello stesso ordine', async () => {
+    await openMonitor(true);
+
+    fireEvent.click(
+      within(
+        screen
+          .getByRole('checkbox', { name: 'Seleziona consegna — Anna' })
+          .closest('[role="listitem"]') as HTMLElement,
+      ).getByRole('checkbox'),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^Azioni selezionate/ }));
+
+    const items = screen.getAllByRole('menuitem').map((i) => i.textContent?.trim());
+    expect(items).toEqual([
+      'Completa',
+      'Restituisci',
+      'Visibilità',
+      'PDF correzioni',
+      'Riapri',
+      'Azzera',
+    ]);
+    const azzera = screen.getByRole('menuitem', { name: 'Azzera' });
+    expect(azzera.className).toMatch(/menuDanger/);
+  });
+
+  it('mobile: «Visibilità» apre il secondo livello senza chiudere il menu', async () => {
+    await openMonitor(true);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Azioni selezionate/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Visibilità' }));
+
+    const items = screen.getAllByRole('menuitem').map((i) => i.textContent?.trim());
+    expect(items).toEqual([
+      'Visibilità',
+      'Rendi visibili',
+      'Nascondi allo studente',
+      'Mostra soluzioni',
+      'Nascondi soluzioni',
+    ]);
+  });
+
+  it('mobile: le azioni restano disabilitate senza selezione, come su desktop', async () => {
+    await openMonitor(true);
+
+    const trigger = screen.getByRole('button', { name: /^Azioni selezionate/ });
+    expect((trigger as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (screen.getByRole('button', { name: /Correggi con IA/ }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it('mobile: una voce del menu invoca lo stesso flusso della toolbar desktop', async () => {
+    await openMonitor(true);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Azioni selezionate/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Completa' }));
+
+    // Stesso dialog di conferma batch della toolbar desktop: nessuna nuova popup.
+    await waitFor(() => expect(screen.getByTestId('batch-actions-dialog')).toBeTruthy());
+    expect(screen.getByText('action: complete')).toBeTruthy();
+  });
+});
+
+describe('VerificationsView — controllo di ritorno (UI-CONSEGNE-01)', () => {
+  it('«← Verifiche» conserva l’handler di navigazione', async () => {
+    setupDefaults();
+    mockListVerifications.mockResolvedValue([makeDraftVer()]);
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+
+    const back = await screen.findByRole('button', { name: 'Torna alle verifiche' });
+    expect(back.textContent).toBe('Verifiche');
+    fireEvent.click(back);
+
+    await waitFor(() =>
+      expect(screen.getByRole('list', { name: 'Archivio verifiche' })).toBeTruthy(),
+    );
+  });
+});

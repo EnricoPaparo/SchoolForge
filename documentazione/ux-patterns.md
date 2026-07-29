@@ -63,6 +63,34 @@ L'interfaccia usa tre livelli, senza librerie UI esterne:
 Non sono ammesse nuove implementazioni locali di backdrop, focus trap o
 contenimento nel viewport.
 
+### Collezioni operative ad alta densità
+
+**Le collezioni operative ad alta densità usano tabella su desktop e card
+full-width su mobile; entrambe condividono dati, ordinamento, selezione e
+handler.** La tabella serve al confronto rapido fra righe e non va convertita in
+card su desktop; sotto il breakpoint condiviso (`44rem`) la stessa collezione —
+già filtrata e ordinata — viene resa come lista verticale di record card, senza
+scorrimento orizzontale.
+
+- **una sola** delle due rappresentazioni è montata alla volta (vedi
+  `useMediaQuery`): nascondere l'altra con `display: none` la lascerebbe
+  comunque nel DOM, e uno screen reader incontrerebbe due volte la stessa riga;
+- nessuno stato duplicato: selezione, ordinamento, refresh, stati busy/errore e
+  handler sono quelli della vista, non della singola rappresentazione;
+- le azioni per riga vivono nel menu «…» portalato condiviso; la superficie
+  della card apre lo stesso workspace della riga desktop, quando quella riga è
+  realmente apribile;
+- checkbox, select e menu sono **fratelli** della superficie apribile: un click
+  su un controllo interno non apre mai il record;
+- le toolbar massive seguono lo stesso principio: su desktop tutti i comandi
+  visibili, su mobile l'azione principale più un unico menu con le restanti,
+  nello stesso ordine, con le **stesse** condizioni `disabled` e gli **stessi**
+  handler;
+- il controllo di ritorno di una vista di dettaglio è ghost, non un riquadro
+  pieno: icona freccia + testo, ciano a riposo, arancione su hover reale e
+  focus-visible, spostamento di 2 px solo su puntatore fine e annullato con
+  `prefers-reduced-motion`, target touch 44 px su mobile.
+
 ### Card di record
 
 Didattica e Verifiche usano liste di card a larghezza piena, mai griglie di card
