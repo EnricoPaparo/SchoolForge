@@ -10,6 +10,7 @@
    * impedisce che venga tagliato dai navigatori con overflow-y: hidden.
    */
   padding-block: 0.25rem;
+  padding-inline: 0.25rem;
 }
 
 .item {
@@ -26,11 +27,11 @@
   font-weight: 700;
   line-height: 1;
   transition:
-    color var(--transition-brand-interactive),
-    border-color var(--transition-brand-interactive),
-    background-color var(--transition-brand-interactive),
-    box-shadow var(--transition-brand-interactive),
-    transform var(--transition-brand-interactive);
+    color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .current::after {
@@ -41,8 +42,8 @@
   content: '';
   pointer-events: none;
   transition:
-    border-color var(--transition-brand-interactive),
-    box-shadow var(--transition-brand-interactive);
+    border-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .item:focus-visible {
@@ -63,8 +64,10 @@
     border-color: var(--color-brand-interactive);
     background: color-mix(in srgb, var(--color-surface) 88%, var(--color-brand-interactive));
     color: var(--color-brand-interactive);
-    box-shadow: 0 5px 12px rgba(0, 0, 0, 0.28);
-    transform: translateY(-1px) scale(1.08);
+    box-shadow:
+      0 6px 14px rgba(0, 0, 0, 0.26),
+      0 0 10px rgba(251, 146, 60, 0.16);
+    transform: translateY(-2px) scale(1.06);
   }
 
   .item:hover:not(:disabled)::after {
