@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { IconTriangleAlert } from '../../components/icons.js';
 import styles from './ForceCloseBanner.module.css';
 import { formatRemaining, isUrgent, remainingSeconds } from './forceCloseWatch.js';
 
@@ -55,7 +56,10 @@ export function ForceCloseBanner({
        */}
       <div className={styles.banner} role="alert">
         <div className={styles.texts}>
-          <p className={styles.title}>Chiusura richiesta dal docente</p>
+          <p className={styles.title}>
+            <IconTriangleAlert size={16} aria-hidden="true" />
+            <span>Chiusura verifica in corso…</span>
+          </p>
           <p className={styles.deadline}>
             {expired ? (
               'Chiusura in corso…'
