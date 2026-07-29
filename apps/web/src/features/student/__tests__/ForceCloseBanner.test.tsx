@@ -32,10 +32,11 @@ describe('ForceCloseBanner', () => {
     renderBanner();
 
     const banner = screen.getByRole('alert');
-    expect(banner.textContent).toContain('Chiusura richiesta dal docente');
+    expect(banner.textContent).toContain('Chiusura verifica in corso…');
     expect(banner.textContent).toContain('Salva il lavoro entro');
     expect(banner.textContent).toContain('01:00');
     expect(banner.textContent).toContain('Ultimo salvataggio: 10:42');
+    expect(banner.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Salva ora' })).toBeTruthy();
     // Il countdown non è annunciato a ogni secondo.
     expect(banner.querySelector('[aria-live]')).toBeNull();

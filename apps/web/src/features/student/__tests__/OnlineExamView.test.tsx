@@ -1150,7 +1150,7 @@ describe('OnlineExamView — chiusura programmata dal docente (FORCE-SUBMIT-02)'
   it('senza richiesta non mostra alcun banner', () => {
     captureWatch();
     renderView();
-    expect(screen.queryByText('Chiusura richiesta dal docente')).toBeNull();
+    expect(screen.queryByText('Chiusura verifica in corso…')).toBeNull();
   });
 
   it('alla comparsa mostra il banner e salva immediatamente il lavoro sporco', async () => {
@@ -1166,7 +1166,7 @@ describe('OnlineExamView — chiusura programmata dal docente (FORCE-SUBMIT-02)'
       handlers().onRequest(deadlineIn(60));
     });
 
-    expect(screen.getByText('Chiusura richiesta dal docente')).toBeTruthy();
+    expect(screen.getByText('Chiusura verifica in corso…')).toBeTruthy();
     await waitFor(() => expect(mockSaveDraft).toHaveBeenCalledTimes(1));
   });
 
@@ -1456,7 +1456,7 @@ describe('OnlineExamView — chiusura programmata dal docente (FORCE-SUBMIT-02)'
           .some((el) => el.textContent?.includes('Non è stato possibile verificare')),
       ).toBe(false);
       // La nuova richiesta è quella mostrata, con i controlli ancora attivi.
-      expect(screen.getByText('Chiusura richiesta dal docente')).toBeTruthy();
+      expect(screen.getByText('Chiusura verifica in corso…')).toBeTruthy();
       expect(
         (screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled,
       ).toBe(false);
@@ -1637,12 +1637,12 @@ describe('OnlineExamView — chiusura programmata dal docente (FORCE-SUBMIT-02)'
     await act(async () => {
       handlers().onRequest(deadlineIn(-1));
     });
-    expect(screen.getByText('Chiusura richiesta dal docente')).toBeTruthy();
+    expect(screen.getByText('Chiusura verifica in corso…')).toBeTruthy();
 
     await act(async () => {
       handlers().onRequest(null);
     });
-    expect(screen.queryByText('Chiusura richiesta dal docente')).toBeNull();
+    expect(screen.queryByText('Chiusura verifica in corso…')).toBeNull();
     expect((screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled).toBe(
       false,
     );
