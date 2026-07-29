@@ -2131,20 +2131,20 @@ describe('VerificationsView — consegne online monitor (M3F-05)', () => {
 
   it('TWU-02A — shows the refresh status inline in the «Consegne online» header (no separate row, aria-live)', async () => {
     await openMonitor();
-    const region = screen.getByRole('region', { name: 'Consegne online' });
-    fireEvent.click(within(region).getByRole('button', { name: 'Aggiorna consegne' }));
+    screen.getByRole('region', { name: 'Consegne online' });
+    fireEvent.click(screen.getByRole('button', { name: 'Aggiorna consegne' }));
 
-    const status = await within(region).findByText(/Aggiornato alle \d{2}:\d{2}:\d{2}/);
+    const status = await screen.findByText(/Aggiornato alle \d{2}:\d{2}:\d{2}/);
     // The old standalone "Aggiornato ora" line is gone.
     expect(screen.queryByText('Aggiornato ora')).toBeNull();
     // The status is a polite live region…
     const live = status.closest('[aria-live="polite"]');
     expect(live).not.toBeNull();
     // …and lives in the same header group as the «Consegne online» title.
-    const heading = within(region).getByRole('heading', { name: 'Consegne online' });
+    const heading = screen.getByRole('heading', { name: 'Consegne online' });
     expect(live!.parentElement).toBe(heading.parentElement);
     // Exactly one status element (no duplicate).
-    expect(within(region).getAllByText(/Aggiornato alle/)).toHaveLength(1);
+    expect(screen.getAllByText(/Aggiornato alle/)).toHaveLength(1);
   });
 
   it('preserves selection and sort while refreshing, updating «Valutate» after success', async () => {
@@ -2516,19 +2516,19 @@ describe('VerificationsView — correction register CSV (M4-03A)', () => {
 
   it('keeps export disabled while loading, then enables it for the visible student rows', async () => {
     let deliver!: (items: unknown[]) => void;
-    const region = await openMonitor((callback) => {
+    await openMonitor((callback) => {
       deliver = callback;
     });
-    const exportButton = within(region).getByRole('button', { name: 'Esporta CSV' });
+    const exportButton = screen.getByRole('button', { name: 'Esporta CSV' });
     expect((exportButton as HTMLButtonElement).disabled).toBe(true);
     deliver([]);
     await waitFor(() => expect((exportButton as HTMLButtonElement).disabled).toBe(false));
   });
 
   it('keeps export disabled when the register has no student rows', async () => {
-    const region = await openMonitor(() => {}, []);
+    await openMonitor(() => {}, []);
     expect(
-      (within(region).getByRole('button', { name: 'Esporta CSV' }) as HTMLButtonElement).disabled,
+      (screen.getByRole('button', { name: 'Esporta CSV' }) as HTMLButtonElement).disabled,
     ).toBe(true);
   });
 
@@ -2541,7 +2541,7 @@ describe('VerificationsView — correction register CSV (M4-03A)', () => {
     const readsBefore = mockListStudents.mock.calls.length;
     const listenersBefore = mockWatchSubmissions.mock.calls.length;
 
-    fireEvent.click(within(region).getByRole('button', { name: 'Esporta CSV' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Esporta CSV' }));
 
     expect(mockDownloadCorrectionRegisterCsv).toHaveBeenCalledOnce();
     const [csv, filename] = mockDownloadCorrectionRegisterCsv.mock.calls[0] as [string, string];
@@ -2558,7 +2558,7 @@ describe('VerificationsView — correction register CSV (M4-03A)', () => {
       throw new Error('download failed');
     });
     const region = await openMonitor((callback) => callback(submissions));
-    fireEvent.click(within(region).getByRole('button', { name: 'Esporta CSV' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Esporta CSV' }));
     expect((await within(region).findByRole('alert')).textContent).toBe(
       'Impossibile esportare il Registro Correzioni. Riprova.',
     );
@@ -2568,23 +2568,23 @@ describe('VerificationsView — correction register CSV (M4-03A)', () => {
   // ── PDF export (M4-03B) ──────────────────────────────────────────────
   it('keeps Esporta PDF disabled while loading, then enables it for the visible rows', async () => {
     let deliver!: (items: unknown[]) => void;
-    const region = await openMonitor((callback) => {
+    await openMonitor((callback) => {
       deliver = callback;
     });
-    const pdfButton = within(region).getByRole('button', { name: 'Esporta PDF' });
+    const pdfButton = screen.getByRole('button', { name: 'Esporta PDF' });
     expect((pdfButton as HTMLButtonElement).disabled).toBe(true);
     deliver([]);
     await waitFor(() =>
       expect(
-        (within(region).getByRole('button', { name: 'Esporta PDF' }) as HTMLButtonElement).disabled,
+        (screen.getByRole('button', { name: 'Esporta PDF' }) as HTMLButtonElement).disabled,
       ).toBe(false),
     );
   });
 
   it('keeps Esporta PDF disabled when there are no student rows', async () => {
-    const region = await openMonitor(() => {}, []);
+    await openMonitor(() => {}, []);
     expect(
-      (within(region).getByRole('button', { name: 'Esporta PDF' }) as HTMLButtonElement).disabled,
+      (screen.getByRole('button', { name: 'Esporta PDF' }) as HTMLButtonElement).disabled,
     ).toBe(true);
   });
 
@@ -2598,7 +2598,7 @@ describe('VerificationsView — correction register CSV (M4-03A)', () => {
     const readsBefore = mockListStudents.mock.calls.length;
     const listenersBefore = mockWatchSubmissions.mock.calls.length;
 
-    fireEvent.click(within(region).getByRole('button', { name: 'Esporta PDF' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Esporta PDF' }));
 
     await waitFor(() => expect(mockDownloadCorrectionRegisterPdf).toHaveBeenCalledOnce());
     const [params] = mockDownloadCorrectionRegisterPdf.mock.calls[0] as [
@@ -2617,8 +2617,8 @@ describe('VerificationsView — correction register CSV (M4-03A)', () => {
     mockDownloadCorrectionRegisterPdf.mockImplementation(
       () => new Promise<void>((r) => (resolve = r)),
     );
-    const region = await openMonitor((callback) => callback(submissions));
-    const pdfButton = within(region).getByRole('button', { name: /Esporta PDF|Generazione/ });
+    await openMonitor((callback) => callback(submissions));
+    const pdfButton = screen.getByRole('button', { name: /Esporta PDF|Generazione/ });
     fireEvent.click(pdfButton);
     fireEvent.click(pdfButton);
     resolve();
@@ -2628,20 +2628,20 @@ describe('VerificationsView — correction register CSV (M4-03A)', () => {
   it('shows a PDF error without breaking the monitor; CSV still works', async () => {
     mockDownloadCorrectionRegisterPdf.mockRejectedValueOnce(new Error('pdf failed'));
     const region = await openMonitor((callback) => callback(submissions));
-    fireEvent.click(within(region).getByRole('button', { name: 'Esporta PDF' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Esporta PDF' }));
     expect((await within(region).findByRole('alert')).textContent).toBe(
       'Impossibile generare il PDF del riepilogo. Riprova.',
     );
     expect(within(region).getByRole('table')).toBeTruthy();
     // CSV export still works after a PDF failure.
-    fireEvent.click(within(region).getByRole('button', { name: 'Esporta CSV' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Esporta CSV' }));
     expect(mockDownloadCorrectionRegisterCsv).toHaveBeenCalledOnce();
   });
 
   it('shows explicit stale-chunk recovery for the correction register without auto reload', async () => {
     mockDownloadCorrectionRegisterPdf.mockRejectedValueOnce(new PdfModuleLoadError('stale_chunk'));
     const region = await openMonitor((callback) => callback(submissions));
-    fireEvent.click(within(region).getByRole('button', { name: 'Esporta PDF' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Esporta PDF' }));
     expect(
       await within(region).findByText(
         'SchoolForge è stato aggiornato. Ricarica la pagina e riprova.',
@@ -4777,11 +4777,15 @@ describe('VerificationsView — consegne responsive (UI-CONSEGNE-01)', () => {
 
     const card = submissionCard('Anna');
     const labels = [...card.querySelectorAll('dt')].map((dt) => dt.textContent);
-    expect(labels).toEqual(['Punteggio', 'Visibilità', 'Stato', 'Data consegna']);
+    expect(labels).toEqual(['Punteggio', 'Visibilità', 'Stato', 'Consegna']);
     // Lo stato è testo, non solo colore.
     expect(within(card).getByText('Consegnata')).toBeTruthy();
     // Visibilità non disponibile ⇒ «—», mai un valore inventato.
     expect(within(card).getByLabelText('Visibilità non disponibile')).toBeTruthy();
+    // Mobile mostra soltanto l'orario: la data completa resta nella tabella desktop.
+    const deliveryMetric = [...card.querySelectorAll('dd')].at(3);
+    expect(deliveryMetric?.textContent).toMatch(/^\d{2}:\d{2}$/);
+    expect(deliveryMetric?.textContent).not.toContain('/');
   });
 
   it('mobile: la checkbox condivide la selezione e aggiorna le azioni massive', async () => {
@@ -4828,17 +4832,25 @@ describe('VerificationsView — consegne responsive (UI-CONSEGNE-01)', () => {
     expect(screen.queryByRole('menuitem', { name: /event/i })).toBeNull();
   });
 
-  it('mobile: la superficie della card apre la correzione quando consentito', async () => {
+  it('mobile: la superficie è neutra e la correzione si apre soltanto dal menu Azioni', async () => {
     await openMonitor(true);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Apri correzione — Anna' }));
+    const card = submissionCard('Anna');
+    fireEvent.click(card);
+    expect(screen.getByRole('list', { name: 'Consegne online' })).toBeTruthy();
+    expect(within(card).queryByRole('button', { name: 'Apri correzione — Anna' })).toBeNull();
+
+    fireEvent.click(within(card).getByRole('button', { name: /^Azioni consegna/ }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Apri correzione — Anna' }));
     await waitFor(() => expect(screen.queryByRole('list', { name: 'Consegne online' })).toBeNull());
   });
 
-  it('mobile: una consegna non apribile non espone alcuna superficie di apertura', async () => {
+  it('mobile: una consegna non apribile non espone l’azione di correzione', async () => {
     await openMonitor(true);
-    // Bruno non ha consegnato: nessun «Apri correzione» per lui.
-    expect(screen.queryByRole('button', { name: 'Apri correzione — Bruno' })).toBeNull();
+    // Bruno non ha consegnato e non ha altre azioni: nessun trigger o superficie.
+    expect(
+      within(submissionCard('Bruno')).queryByRole('button', { name: /Apri correzione|Azioni/ }),
+    ).toBeNull();
   });
 
   it('nessuna interattività annidata nelle card consegna', async () => {

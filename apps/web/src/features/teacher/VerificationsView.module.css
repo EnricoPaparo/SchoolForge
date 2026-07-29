@@ -493,7 +493,7 @@
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0.5rem;
-  margin-top: 0.75rem;
+  margin-top: 0;
 }
 .batchToolbar button {
   width: 100%;
@@ -522,7 +522,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0.5rem;
-  margin-top: 0.75rem;
+  margin-top: 0;
   min-width: 0;
 }
 
@@ -720,13 +720,14 @@
 }
 
 .detailHeaderSummary {
-  margin-bottom: -0.65rem;
+  margin-bottom: -0.9rem;
 }
 
 .detailTopRow {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'back monitor status';
+  align-items: center;
   gap: 1rem;
   min-width: 0;
 }
@@ -735,6 +736,7 @@
  * Controllo di navigazione reale, compatto e coerente con gli altri pulsanti.
  */
 .backButton {
+  grid-area: back;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -776,6 +778,10 @@
 
 @media (max-width: 44rem) {
   .detailTopRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'back status'
+      'monitor monitor';
     align-items: center;
   }
 
@@ -795,6 +801,10 @@
   .monitorTitleGroup,
   .monitorActions {
     width: 100%;
+  }
+
+  .monitorTitleGroup {
+    justify-content: center;
   }
 
   .monitorActions {
@@ -836,23 +846,34 @@
 }
 
 .detailTitle {
-  margin: 0.3rem 0 0;
+  min-width: 0;
+  margin: 0;
   font-size: clamp(1.25rem, 2vw, 1.55rem);
   font-weight: 700;
   line-height: 1.2;
+}
+
+.detailTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  min-width: 0;
+  margin-top: 0.3rem;
 }
 
 .detailMeta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0;
+  gap: 0.15rem 0.35rem;
   margin: 0.05rem 0 0;
   font-size: 0.8125rem;
   color: var(--color-text-muted);
 }
 
 .detailStatusBox {
+  grid-area: status;
   display: grid;
   gap: 0.2rem;
   min-width: 7rem;
@@ -868,6 +889,41 @@
   font-weight: 700;
   letter-spacing: 0.045em;
   text-transform: uppercase;
+}
+
+.detailTopRow .monitorTitleGroup {
+  grid-area: monitor;
+  justify-self: center;
+}
+
+@media (min-width: 44.01rem) {
+  /*
+   * Desktop: lo stato torna al solo badge testuale. Il riquadro esterno resta
+   * esclusivamente nel layout mobile, dove aiuta a separare l'informazione.
+   */
+  .detailStatusBox {
+    display: flex;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .detailStatusBox > span:first-child {
+    display: none;
+  }
+}
+
+@media (max-width: 44rem) {
+  .detailTitleRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .monitorPanel {
+    gap: 0.45rem;
+  }
 }
 
 .detailPdfIcon {

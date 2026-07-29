@@ -42,9 +42,9 @@ export type SubmissionRecordCardProps = {
  * arrivano dal monitor, esattamente come per la riga desktop, così le due
  * rappresentazioni non possono divergere.
  *
- * La superficie apribile e i controlli interni sono elementi **fratelli**
- * (contratto `RecordCard`): checkbox e menu non annidano pulsanti dentro
- * pulsanti e non fanno partire l'apertura della correzione.
+ * La card mobile è deliberatamente **neutra**: il tap sulla superficie non apre
+ * nulla. Correzione, eventi, selezione ed eliminazione hanno controlli
+ * espliciti e indipendenti, evitando conflitti fra gesture touch.
  */
 export function SubmissionRecordCard({
   studentName,
@@ -85,11 +85,8 @@ export function SubmissionRecordCard({
         </>
       }
       actionLayout="submission"
-      openLabel={onOpenCorrection ? `Apri correzione — ${studentName}` : undefined}
-      onOpen={onOpenCorrection}
       identityControl={
-        // La checkbox è la stessa selezione della riga desktop; vive fuori dalla
-        // superficie apribile, quindi spuntarla non apre mai la correzione.
+        // La checkbox è la stessa selezione della riga desktop.
         <label className={styles.selectLabel}>
           <input
             type="checkbox"
@@ -153,40 +150,53 @@ export function SubmissionRecordCard({
           value: <span className={styles.stateValue}>{stateLabel}</span>,
         },
         {
-          label: 'Data consegna',
+          label: 'Consegna',
           icon: <IconCalendar />,
           value: <span className={styles.submittedAt}>{submittedAt}</span>,
         },
       ]}
       actions={
-        deleteState !== 'absent' ? (
+        onOpenCorrection || deleteState !== 'absent' ? (
           <RecordActionsMenu ariaLabel={`Azioni consegna — ${studentName}`}>
-            {deleteState === 'returned' ? (
+            {onOpenCorrection && (
               <button
                 type="button"
                 role="menuitem"
-                className={menuStyles.menuDanger}
-                title="La correzione è già stata restituita: la consegna non è eliminabile."
-                aria-label={`Consegna non eliminabile (correzione restituita) — ${studentName}`}
-                disabled
+                title="Apri correzione"
+                aria-label={`Apri correzione — ${studentName}`}
+                onClick={onOpenCorrection}
               >
-                <IconTrash size={15} />
-                <span>Elimina consegna</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                role="menuitem"
-                className={menuStyles.menuDanger}
-                title="Elimina consegna"
-                aria-label={`Elimina consegna — ${studentName}`}
-                disabled={deleteDisabled}
-                onClick={onDelete}
-              >
-                <IconTrash size={15} />
-                <span>Elimina consegna</span>
+                <IconEye size={15} />
+                <span>Apri correzione</span>
               </button>
             )}
+            {deleteState !== 'absent' &&
+              (deleteState === 'returned' ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={menuStyles.menuDanger}
+                  title="La correzione è già stata restituita: la consegna non è eliminabile."
+                  aria-label={`Consegna non eliminabile (correzione restituita) — ${studentName}`}
+                  disabled
+                >
+                  <IconTrash size={15} />
+                  <span>Elimina consegna</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={menuStyles.menuDanger}
+                  title="Elimina consegna"
+                  aria-label={`Elimina consegna — ${studentName}`}
+                  disabled={deleteDisabled}
+                  onClick={onDelete}
+                >
+                  <IconTrash size={15} />
+                  <span>Elimina consegna</span>
+                </button>
+              ))}
           </RecordActionsMenu>
         ) : undefined
       }
