@@ -26,6 +26,7 @@ import {
   type ForceCloseRequest,
 } from './forceCloseWatch.js';
 import questionNavigatorStyles from '../../components/QuestionNavigator.module.css';
+import { IconFileCheck, IconPanelLeft, IconSend } from '../../components/icons.js';
 
 /** Dirty-only autosave: at most one write every two minutes, never per keystroke. */
 const AUTOSAVE_INTERVAL_MS = 120_000;
@@ -709,6 +710,9 @@ export function OnlineExamView({
                 onClick={requestFullscreenBestEffort}
                 disabled={submitting}
               >
+                <span className={styles.desktopActionIcon}>
+                  <IconPanelLeft />
+                </span>
                 Torna a schermo intero
               </button>
             )}
@@ -717,6 +721,9 @@ export function OnlineExamView({
               onClick={() => void persistDraft()}
               disabled={saving || controlsLocked}
             >
+              <span className={styles.desktopActionIcon}>
+                <IconFileCheck />
+              </span>
               {saving ? 'Salvataggio…' : 'Salva bozza'}
             </button>
             <button
@@ -725,6 +732,9 @@ export function OnlineExamView({
               onClick={() => setConfirmOpen(true)}
               disabled={controlsLocked}
             >
+              <span className={styles.desktopActionIcon}>
+                <IconSend />
+              </span>
               Consegna
             </button>
           </div>

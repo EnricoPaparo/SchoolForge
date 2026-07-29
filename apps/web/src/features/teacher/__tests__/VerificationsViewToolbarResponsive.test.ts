@@ -20,10 +20,10 @@ const submissionCardCss = readFileSync(
 );
 
 describe('VerificationsView batch toolbar responsive contract', () => {
-  it('uses the approved 7 → 2 grid on desktop and keeps the submissions table scrollable', () => {
-    expect(css).toMatch(/\.batchToolbar\s*\{[^}]*repeat\(7,\s*minmax\(0,\s*1fr\)\)/s);
-    // UI-CONSEGNE-01 — sotto 48rem, ma sopra il breakpoint mobile, la toolbar
-    // desktop degrada a due colonne invece di comprimere i sette pulsanti.
+  it('uses the approved 4 × 2 desktop grid and keeps the submissions table scrollable', () => {
+    expect(css).toMatch(/\.batchToolbar\s*\{[^}]*repeat\(4,\s*minmax\(0,\s*1fr\)\)/s);
+    // Sotto 48rem, ma sopra il breakpoint mobile, la toolbar desktop degrada
+    // a due colonne invece di comprimere le otto azioni.
     expect(css).toMatch(
       /@media\s*\(max-width:\s*48rem\)[\s\S]*?\.batchToolbarDesktop\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
     );

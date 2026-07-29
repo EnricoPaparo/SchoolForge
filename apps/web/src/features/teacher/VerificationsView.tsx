@@ -2977,9 +2977,9 @@ export function VerificationsView() {
                   must not start on invented defaults: show the persistent error
                   + «Riprova» and disable the button until preferences are ready. */}
               {aiPrefs.status === 'error' && renderAiPrefsError()}
-              {/* M5-04A/TWU-03A/CORR-PDF-01: ordine operativo stabile e
-                  griglia responsive 7 → 2 → 1, con Azzera sempre ultimo e
-                  unico distruttivo. */}
+              {/* M5-04A/TWU-03A/CORR-PDF-01/FORCE-SUBMIT-02: ordine operativo
+                  stabile in una griglia desktop 4 × 2. Su mobile tutte le
+                  azioni restano nel menu dedicato. */}
               {!isMobileViewport && (
                 <div
                   className={`${styles.batchToolbar} ${styles.batchToolbarDesktop}`}
@@ -2993,8 +2993,7 @@ export function VerificationsView() {
                     onClick={() => setAiDialogOpen(true)}
                   >
                     <IconSparkles />
-                    Correggi con IA
-                    {aiSelectedUids.size > 0 ? ` (${aiSelectedUids.size})` : ''}
+                    Correzione IA
                   </button>
                   {(
                     [
