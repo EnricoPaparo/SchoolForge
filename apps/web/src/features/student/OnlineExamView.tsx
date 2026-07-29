@@ -147,8 +147,12 @@ export function OnlineExamView({
    * una schermata bloccata e muta.
    */
   const [receiptError, setReceiptError] = useState(false);
-  /** Un nuovo tentativo è in corso: guardia anti-doppio-click su «Riprova». */
-  const [receiptRetrying, setReceiptRetrying] = useState(false);
+  /**
+   * Generazione per cui «Riprova» è in corso, oppure `null`. Anche questa è
+   * legata alla richiesta: il `finally` di un tentativo vecchio non deve
+   * riabilitare o modificare il pulsante della richiesta nuova.
+   */
+  const [receiptRetrying, setReceiptRetrying] = useState<number | null>(null);
 
   // Refs mirror the state above so the 60s autosave interval (set up once)
   // and the deterrence event handlers (also set up once) always see the
@@ -177,8 +181,15 @@ export function OnlineExamView({
   const revisionRef = useRef(0);
   /** Richiesta di chiusura già vista: il salvataggio immediato scatta una volta sola. */
   const seenForceCloseRef = useRef<string | null>(null);
-  /** Una lettura puntuale della ricevuta è già in corso (mai due in parallelo). */
-  const receiptProbeRef = useRef(false);
+  /**
+   * Generazione del probe **attualmente in corso**, oppure `null`.
+   *
+   * Non è un booleano globale di proposito: un tentativo rimasto indietro,
+   * appartenente a una richiesta ormai sostituita, non deve impedire l'avvio
+   * del tentativo della richiesta nuova — né azzerarne la guardia quando
+   * finalmente termina.
+   */
+  const activeProbeGenerationRef = useRef<number | null>(null);
   /**
    * Generazione della richiesta di chiusura **attualmente** osservata. Ogni
    * probe della ricevuta cattura il valore corrente e lo riverifica dopo ogni
@@ -315,13 +326,16 @@ export function OnlineExamView({
   }
 
   async function resolveClosureFromReceipt(): Promise<boolean> {
-    if (sessionEndedRef.current || receiptProbeRef.current) return false;
+    if (sessionEndedRef.current) return false;
     // La richiesta a cui questo tentativo appartiene. Tutto ciò che segue vale
     // **solo** per lei.
     const generation = probeGenerationRef.current;
+    // Si rifiuta l'avvio **solo** se un probe è già in corso per questa stessa
+    // generazione: un probe di una richiesta precedente non blocca la nuova.
+    if (activeProbeGenerationRef.current === generation) return false;
     const stillCurrent = () =>
       mountedRef.current && !sessionEndedRef.current && probeGenerationRef.current === generation;
-    receiptProbeRef.current = true;
+    activeProbeGenerationRef.current = generation;
     try {
       /*
        * Retry **limitato** con breve backoff, non polling: la chiusura
@@ -369,9 +383,14 @@ export function OnlineExamView({
       if (stillCurrent()) setReceiptError(true);
       return false;
     } finally {
-      // Sempre eseguito: una risoluzione fallita non deve bloccare la
-      // successiva (per esempio dopo un salvataggio respinto).
-      receiptProbeRef.current = false;
+      /*
+       * Si libera la guardia **solo** se contiene ancora la propria generazione:
+       * se nel frattempo è partito il probe di una richiesta successiva, questo
+       * `finally` non deve cancellarne lo stato.
+       */
+      if (activeProbeGenerationRef.current === generation) {
+        activeProbeGenerationRef.current = null;
+      }
     }
   }
 
@@ -634,16 +653,21 @@ export function OnlineExamView({
           <button
             type="button"
             className="btn-primary"
-            disabled={receiptRetrying}
+            disabled={receiptRetrying !== null}
             onClick={() => {
-              if (receiptProbeRef.current) return;
-              setReceiptRetrying(true);
+              const generation = probeGenerationRef.current;
+              // Anti-doppio-click sulla **richiesta corrente**.
+              if (activeProbeGenerationRef.current === generation) return;
+              setReceiptRetrying(generation);
               void resolveClosureFromReceipt().finally(() => {
-                if (mountedRef.current) setReceiptRetrying(false);
+                // Solo il proprio tentativo può riabilitare il pulsante.
+                if (mountedRef.current) {
+                  setReceiptRetrying((prev) => (prev === generation ? null : prev));
+                }
               });
             }}
           >
-            {receiptRetrying ? 'Verifica…' : 'Riprova'}
+            {receiptRetrying !== null ? 'Verifica…' : 'Riprova'}
           </button>
         </div>
       )}

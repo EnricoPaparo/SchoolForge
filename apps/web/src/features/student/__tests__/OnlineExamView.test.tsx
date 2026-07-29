@@ -5,6 +5,7 @@ import { OnlineExamView } from '../OnlineExamView.js';
 import type { SubmissionDoc } from '../../../types/firestore.js';
 import type * as ExamDeterrenceModule from '../examDeterrence.js';
 import type * as ForceCloseWatchModule from '../forceCloseWatch.js';
+import { RECEIPT_RETRY_DELAYS_MS } from '../forceCloseWatch.js';
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {} }));
 
@@ -1480,6 +1481,84 @@ describe('OnlineExamView — chiusura programmata dal docente (FORCE-SUBMIT-02)'
 
       expect(onSubmitted).toHaveBeenCalledWith(RECEIPT);
       expect(onSubmitted).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('un probe obsoleto non blocca né altera quello della richiesta successiva', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      const { onSubmitted } = renderView();
+
+      // 1) Richiesta A. 2) La sua consegna non è più leggibile: probe in corso.
+      const requestA = deadlineIn(-1);
+      mockLoadReceipt.mockResolvedValue(null);
+      await act(async () => {
+        handlers().onRequest(requestA);
+      });
+      await act(async () => {
+        handlers().onUnavailable();
+        // Backoff: il probe di A è a metà strada.
+        await vi.advanceTimersByTimeAsync(600);
+      });
+      const callsDuringA = mockLoadReceipt.mock.calls.length;
+      expect(callsDuringA).toBeGreaterThan(0);
+
+      // 3) Arriva la richiesta B mentre A è ancora in volo.
+      const requestB = { ...deadlineIn(-1), requestId: 'zzzzzzzzzzzzzzzzzzzzzzzz' };
+      await act(async () => {
+        handlers().onRequest(requestB);
+      });
+
+      // 4) onUnavailable di B **prima** che A termini. 5) Il probe di B parte
+      //    subito: la ricevuta di B viene trovata al primo tentativo.
+      mockLoadReceipt.mockResolvedValue(RECEIPT);
+      await act(async () => {
+        handlers().onUnavailable();
+      });
+
+      // 7) La ricevuta di B chiude la sessione esattamente una volta.
+      expect(onSubmitted).toHaveBeenCalledWith(RECEIPT);
+      expect(onSubmitted).toHaveBeenCalledTimes(1);
+      // Il probe di B non ha dovuto attendere la fine di quello di A.
+      expect(mockLoadReceipt.mock.calls.length).toBe(callsDuringA + 1);
+
+      // 6) A termina più tardi: non scrive stato e non riapre nulla.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(onSubmitted).toHaveBeenCalledTimes(1);
+      expect(
+        screen
+          .queryAllByRole('alert')
+          .some((el) => el.textContent?.includes('Non è stato possibile verificare')),
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('due onUnavailable per la **stessa** richiesta ⇒ un solo probe', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(null);
+      renderView();
+
+      await act(async () => {
+        handlers().onRequest(deadlineIn(-1));
+      });
+      await act(async () => {
+        handlers().onUnavailable();
+        handlers().onUnavailable();
+        handlers().onUnavailable();
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      // Un solo ciclo di tentativi, non tre.
+      expect(mockLoadReceipt.mock.calls.length).toBe(RECEIPT_RETRY_DELAYS_MS.length);
     } finally {
       vi.useRealTimers();
     }
