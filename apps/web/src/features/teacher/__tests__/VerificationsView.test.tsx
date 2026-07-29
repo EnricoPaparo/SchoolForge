@@ -4772,12 +4772,12 @@ describe('VerificationsView — consegne responsive (UI-CONSEGNE-01)', () => {
     expect(within(cards[0]!).getByRole('heading').textContent).toBe('Anna');
   });
 
-  it('mobile: Punteggio e Visibilità affiancati, Stato a tutta riga', async () => {
+  it('mobile: metriche disposte in due righe da due', async () => {
     await openMonitor(true);
 
     const card = submissionCard('Anna');
     const labels = [...card.querySelectorAll('dt')].map((dt) => dt.textContent);
-    expect(labels).toEqual(['Punteggio', 'Visibilità', 'Stato']);
+    expect(labels).toEqual(['Punteggio', 'Visibilità', 'Stato', 'Data consegna']);
     // Lo stato è testo, non solo colore.
     expect(within(card).getByText('Consegnata')).toBeTruthy();
     // Visibilità non disponibile ⇒ «—», mai un valore inventato.
@@ -4787,8 +4787,7 @@ describe('VerificationsView — consegne responsive (UI-CONSEGNE-01)', () => {
   it('mobile: la checkbox condivide la selezione e aggiorna le azioni massive', async () => {
     await openMonitor(true);
 
-    const aiButton = screen.getByRole('button', { name: /Correggi con IA/ });
-    expect((aiButton as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Azioni consegne' })).toBeTruthy();
 
     const checkbox = within(submissionCard('Anna')).getByRole('checkbox', {
       name: 'Seleziona consegna — Anna',
@@ -4797,14 +4796,12 @@ describe('VerificationsView — consegne responsive (UI-CONSEGNE-01)', () => {
 
     expect(checkbox.checked).toBe(true);
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: /Correggi con IA \(1\)/ })).toBeTruthy(),
+      expect(screen.getByRole('button', { name: 'Azioni consegne (1)' })).toBeTruthy(),
     );
     // Deselezionando, le azioni massive tornano disabilitate.
     fireEvent.click(checkbox);
     await waitFor(() =>
-      expect(
-        (screen.getByRole('button', { name: /Correggi con IA/ }) as HTMLButtonElement).disabled,
-      ).toBe(true),
+      expect(screen.getByRole('button', { name: 'Azioni consegne' })).toBeTruthy(),
     );
   });
 
@@ -4818,17 +4815,17 @@ describe('VerificationsView — consegne responsive (UI-CONSEGNE-01)', () => {
     expect(screen.getByRole('list', { name: 'Consegne online' })).toBeTruthy();
   });
 
-  it('mobile: il menu di riga non apre la correzione e offre «Visualizza eventi»', async () => {
+  it('mobile: gli eventi sono cliccabili nella riga informativa e non nel menu', async () => {
     await openMonitor(true);
 
     const card = submissionCard('Anna');
-    fireEvent.click(within(card).getByRole('button', { name: /^Azioni consegna/ }));
+    fireEvent.click(within(card).getByRole('button', { name: '3 eventi' }));
     expect(screen.getByRole('list', { name: 'Consegne online' })).toBeTruthy();
-
-    const events = screen.getByRole('menuitem', { name: /Eventi di attenzione — Anna/ });
-    expect((events as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(events);
     await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chiudi' }));
+    fireEvent.click(within(card).getByRole('button', { name: /^Azioni consegna/ }));
+    expect(screen.queryByRole('menuitem', { name: /event/i })).toBeNull();
   });
 
   it('mobile: la superficie della card apre la correzione quando consentito', async () => {
@@ -4921,17 +4918,17 @@ describe('VerificationsView — toolbar azioni massive (UI-CONSEGNE-01)', () => 
     expect(azzera.className).toMatch(/btn-danger/);
   });
 
-  it('mobile: soltanto «Correggi con IA» e «Azioni selezionate»', async () => {
+  it('mobile: espone un solo menu «Azioni»', async () => {
     await openMonitor(true);
 
     const toolbar = screen.getByRole('group', { name: 'Azioni sulle consegne selezionate' });
     const buttons = within(toolbar).getAllByRole('button');
-    expect(buttons).toHaveLength(2);
-    expect(buttons[0]!.textContent).toContain('Correggi con IA');
-    expect(buttons[1]!.getAttribute('aria-label')).toMatch(/^Azioni selezionate/);
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]!.textContent).toBe('Azioni');
+    expect(buttons[0]!.getAttribute('aria-label')).toMatch(/^Azioni consegne/);
   });
 
-  it('mobile: il menu contiene le altre sei azioni nello stesso ordine', async () => {
+  it('mobile: il menu contiene selezione, IA e le altre sei azioni nello stesso ordine', async () => {
     await openMonitor(true);
 
     fireEvent.click(
@@ -4941,10 +4938,12 @@ describe('VerificationsView — toolbar azioni massive (UI-CONSEGNE-01)', () => 
           .closest('[role="listitem"]') as HTMLElement,
       ).getByRole('checkbox'),
     );
-    fireEvent.click(screen.getByRole('button', { name: /^Azioni selezionate/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Azioni consegne/ }));
 
     const items = screen.getAllByRole('menuitem').map((i) => i.textContent?.trim());
     expect(items).toEqual([
+      'Deseleziona tutte',
+      'Correggi con IA',
       'Completa',
       'Restituisci',
       'Visibilità',
@@ -4960,7 +4959,7 @@ describe('VerificationsView — toolbar azioni massive (UI-CONSEGNE-01)', () => 
     await openMonitor(true);
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
-    fireEvent.click(screen.getByRole('button', { name: /^Azioni selezionate/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Azioni consegne/ }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Visibilità' }));
 
     const items = screen.getAllByRole('menuitem').map((i) => i.textContent?.trim());
@@ -4973,13 +4972,25 @@ describe('VerificationsView — toolbar azioni massive (UI-CONSEGNE-01)', () => 
     ]);
   });
 
-  it('mobile: le azioni restano disabilitate senza selezione, come su desktop', async () => {
+  it('mobile: senza selezione il menu resta disponibile per «Seleziona tutte»', async () => {
     await openMonitor(true);
 
-    const trigger = screen.getByRole('button', { name: /^Azioni selezionate/ });
-    expect((trigger as HTMLButtonElement).disabled).toBe(true);
+    const trigger = screen.getByRole('button', { name: /^Azioni consegne/ });
+    expect((trigger as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(trigger);
     expect(
-      (screen.getByRole('button', { name: /Correggi con IA/ }) as HTMLButtonElement).disabled,
+      (screen.getByRole('menuitem', { name: 'Correggi con IA' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole('menuitem', { name: 'Seleziona tutte' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Seleziona tutte' }));
+    expect(
+      (
+        screen.getByRole('checkbox', {
+          name: 'Seleziona consegna — Anna',
+        }) as HTMLInputElement
+      ).checked,
     ).toBe(true);
   });
 
@@ -4987,7 +4998,7 @@ describe('VerificationsView — toolbar azioni massive (UI-CONSEGNE-01)', () => 
     await openMonitor(true);
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Seleziona consegna — Anna' }));
-    fireEvent.click(screen.getByRole('button', { name: /^Azioni selezionate/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Azioni consegne/ }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Completa' }));
 
     // Stesso dialog di conferma batch della toolbar desktop: nessuna nuova popup.
@@ -5005,7 +5016,7 @@ describe('VerificationsView — controllo di ritorno (UI-CONSEGNE-01)', () => {
     fireEvent.click(screen.getByText('Verifica Algebra'));
 
     const back = await screen.findByRole('button', { name: 'Torna alle verifiche' });
-    expect(back.textContent).toBe('Verifiche');
+    expect(back.textContent).toBe('Torna alle verifiche');
     fireEvent.click(back);
 
     await waitFor(() =>

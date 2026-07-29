@@ -13,6 +13,7 @@ import {
   IconMoreHorizontal,
   IconRotateCcw,
   IconSend,
+  IconSparkles,
 } from '../../components/icons.js';
 import type { BatchAction } from '../repository/corrections/batchCorrectionActions.js';
 import type { BatchReturnVisibilityAction } from '../repository/corrections/batchReturnVisibility.js';
@@ -27,13 +28,19 @@ const VISIBILITY_ITEMS = [
 ] as const;
 
 export type BatchActionsMobileMenuProps = {
-  /** Stessa condizione della toolbar desktop: non ne esiste una seconda. */
-  disabled: boolean;
+  /** Disabilita l'apertura solo se non esistono righe selezionabili o durante un'operazione. */
+  menuDisabled: boolean;
+  /** Stessa condizione delle azioni massive desktop: richiede una selezione. */
+  actionsDisabled: boolean;
   /** Conteggio delle consegne selezionate, mostrato nel nome accessibile. */
   selectedCount: number;
+  allSelectableSelected: boolean;
   /** Cambia quando cambia la verifica: chiude il menu senza ricordare il livello. */
   contextKey: string;
   archiveExportBusy: boolean;
+  aiCorrectionDisabled: boolean;
+  onToggleSelectAll: () => void;
+  onAiCorrection: () => void;
   onBatchAction: (action: BatchAction) => void;
   onVisibilityAction: (action: BatchReturnVisibilityAction) => void;
   onArchiveExport: () => void;
@@ -50,10 +57,15 @@ export type BatchActionsMobileMenuProps = {
  * torna sempre alla radice quando il menu si chiude.
  */
 export function BatchActionsMobileMenu({
-  disabled,
+  menuDisabled,
+  actionsDisabled,
   selectedCount,
+  allSelectableSelected,
   contextKey,
   archiveExportBusy,
+  aiCorrectionDisabled,
+  onToggleSelectAll,
+  onAiCorrection,
   onBatchAction,
   onVisibilityAction,
   onArchiveExport,
@@ -75,8 +87,8 @@ export function BatchActionsMobileMenu({
   }, [contextKey]);
 
   useEffect(() => {
-    if (disabled) close(false);
-  }, [disabled]);
+    if (menuDisabled) close(false);
+  }, [menuDisabled]);
 
   useEffect(() => {
     if (!open) return;
@@ -113,26 +125,39 @@ export function BatchActionsMobileMenu({
         className={styles.trigger}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`Azioni selezionate${countSuffix}`}
-        disabled={disabled}
+        aria-label={`Azioni consegne${countSuffix}`}
+        disabled={menuDisabled}
         onClick={() => setOpen((value) => !value)}
       >
         <IconMoreHorizontal size={15} />
-        <span>Azioni selezionate{countSuffix}</span>
+        <span>Azioni{countSuffix}</span>
       </button>
       <ActionsMenu
         open={open}
         anchorRef={triggerRef}
-        ariaLabel={`Azioni selezionate${countSuffix}`}
+        ariaLabel={`Azioni consegne${countSuffix}`}
         ref={menuRef}
         onAction={() => close(true)}
       >
         {level === 'root' ? (
           <>
+            <button type="button" role="menuitem" onClick={onToggleSelectAll}>
+              <IconCircleCheck size={15} />
+              <span>{allSelectableSelected ? 'Deseleziona tutte' : 'Seleziona tutte'}</span>
+            </button>
             <button
               type="button"
               role="menuitem"
-              disabled={disabled}
+              disabled={actionsDisabled || aiCorrectionDisabled}
+              onClick={onAiCorrection}
+            >
+              <IconSparkles size={15} />
+              <span>Correggi con IA</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={actionsDisabled}
               onClick={() => onBatchAction('complete')}
             >
               <IconCircleCheck size={15} />
@@ -141,7 +166,7 @@ export function BatchActionsMobileMenu({
             <button
               type="button"
               role="menuitem"
-              disabled={disabled}
+              disabled={actionsDisabled}
               onClick={() => onBatchAction('return')}
             >
               <IconSend size={15} />
@@ -152,7 +177,7 @@ export function BatchActionsMobileMenu({
               role="menuitem"
               aria-haspopup="menu"
               aria-expanded={false}
-              disabled={disabled}
+              disabled={actionsDisabled}
               onClick={() => setLevel('visibility')}
             >
               <IconEye size={15} />
@@ -162,7 +187,7 @@ export function BatchActionsMobileMenu({
             <button
               type="button"
               role="menuitem"
-              disabled={disabled}
+              disabled={actionsDisabled}
               onClick={() => onArchiveExport()}
             >
               {archiveExportBusy ? (
@@ -175,7 +200,7 @@ export function BatchActionsMobileMenu({
             <button
               type="button"
               role="menuitem"
-              disabled={disabled}
+              disabled={actionsDisabled}
               onClick={() => onBatchAction('reopen')}
             >
               <IconRotateCcw size={15} />
@@ -185,7 +210,7 @@ export function BatchActionsMobileMenu({
               type="button"
               role="menuitem"
               className={menuStyles.menuDanger}
-              disabled={disabled}
+              disabled={actionsDisabled}
               onClick={() => onBatchAction('clear')}
             >
               <IconEraser size={15} />
@@ -209,7 +234,7 @@ export function BatchActionsMobileMenu({
                 key={action}
                 type="button"
                 role="menuitem"
-                disabled={disabled}
+                disabled={actionsDisabled}
                 onClick={() => onVisibilityAction(action)}
               >
                 <Icon size={15} />
