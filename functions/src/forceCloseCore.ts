@@ -157,8 +157,32 @@ export interface ScheduleSubmissionSnapshot {
  */
 export type MarkerState =
   | { kind: 'absent' }
-  | { kind: 'present'; requestId: string; deadlineKey: string }
+  | {
+      kind: 'present';
+      requestId: string;
+      deadlineKey: string;
+      requestedAtMs: number;
+      deadlineMs: number;
+    }
   | { kind: 'malformed' };
+
+/** Millisecondi epoch di un timestamp Firestore-like, o `null`. */
+export function timestampMillis(value: unknown): number | null {
+  const key = timestampKey(value);
+  if (key === null) return null;
+  const [seconds, nanos] = key.split('.') as [string, string];
+  return Number(seconds) * 1000 + Math.floor(Number(nanos) / 1e6);
+}
+
+/**
+ * Il preavviso è **esattamente** 60 secondi: la relazione fra i due timestamp
+ * persistiti è essa stessa parte del contratto e viene verificata ovunque sia
+ * autorevole. Una coppia che non la rispetta non è una programmazione valida —
+ * prometterebbe allo studente un tempo diverso da quello dichiarato.
+ */
+export function hasExactGrace(requestedAtMs: number, deadlineMs: number): boolean {
+  return deadlineMs - requestedAtMs === FORCE_CLOSE_GRACE_SECONDS * 1000;
+}
 
 export function readMarkerState(submission: {
   forceCloseRequestId: unknown;
@@ -173,14 +197,25 @@ export function readMarkerState(submission: {
   if (present === 0) return { kind: 'absent' };
   if (present !== 3) return { kind: 'malformed' };
   const deadlineKey = timestampKey(submission.forceCloseDeadline);
+  const deadlineMs = timestampMillis(submission.forceCloseDeadline);
+  const requestedAtMs = timestampMillis(submission.forceCloseRequestedAt);
   if (
     !isCanonicalRequestId(submission.forceCloseRequestId) ||
     deadlineKey === null ||
-    timestampKey(submission.forceCloseRequestedAt) === null
+    deadlineMs === null ||
+    requestedAtMs === null ||
+    // Relazione esatta fra i due istanti: parte del contratto, non un dettaglio.
+    !hasExactGrace(requestedAtMs, deadlineMs)
   ) {
     return { kind: 'malformed' };
   }
-  return { kind: 'present', requestId: submission.forceCloseRequestId, deadlineKey };
+  return {
+    kind: 'present',
+    requestId: submission.forceCloseRequestId,
+    deadlineKey,
+    requestedAtMs,
+    deadlineMs,
+  };
 }
 
 /**

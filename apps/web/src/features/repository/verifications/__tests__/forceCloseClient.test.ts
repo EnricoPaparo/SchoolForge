@@ -11,6 +11,7 @@ const {
   describeScheduleOutcome,
   forceCloseExclusionFor,
   groupScheduleOutcomes,
+  isForceCloseRecovery,
   planForceClose,
   FORCE_CLOSE_GRACE_SECONDS,
   MAX_FORCE_CLOSE_BATCH,
@@ -91,13 +92,21 @@ describe('forceCloseExclusionFor / planForceClose — derivazione unica', () => 
     ['non iniziata (undefined)', { item: undefined }, 'not_started'],
     ['già consegnata', { item: { status: 'submitted' } }, 'already_submitted'],
     ['correzione avviata', { correction: { status: 'in_progress' } }, 'correction_started'],
-    [
-      'chiusura già programmata',
-      { item: { status: 'draft', forceCloseDeadline: { seconds: 1, nanoseconds: 0 } } },
-      'already_scheduled',
-    ],
   ])('esclude «%s»', (_label, over, expected) => {
     expect(forceCloseExclusionFor(candidate(over) as never)).toBe(expected);
+  });
+
+  /*
+   * Una chiusura già programmata **non** è un'esclusione: ripetere l'operazione
+   * è la procedura di recupero di una programmazione rimasta senza task.
+   */
+  it('una chiusura già programmata resta eleggibile, come recupero', () => {
+    const scheduled = candidate({
+      item: { status: 'draft', forceCloseDeadline: { seconds: 1, nanoseconds: 0 } },
+    });
+    expect(forceCloseExclusionFor(scheduled as never)).toBeNull();
+    expect(isForceCloseRecovery(scheduled as never)).toBe(true);
+    expect(isForceCloseRecovery(candidate() as never)).toBe(false);
   });
 
   it('partiziona una selezione mista senza errori', () => {
@@ -113,12 +122,7 @@ describe('forceCloseExclusionFor / planForceClose — derivazione unica', () => 
   });
 
   it('ogni motivo ha una spiegazione sintetica non vuota', () => {
-    for (const reason of [
-      'not_started',
-      'already_submitted',
-      'correction_started',
-      'already_scheduled',
-    ] as const) {
+    for (const reason of ['not_started', 'already_submitted', 'correction_started'] as const) {
       expect(describeForceCloseExclusion(reason).length).toBeGreaterThan(0);
     }
   });
@@ -145,7 +149,7 @@ describe('groupScheduleOutcomes — riepilogo degli esiti', () => {
 
   it('un esito che richiede intervento manuale è distinto da un fallimento pulito', () => {
     expect(describeScheduleOutcome('failed_cleanup')).not.toBe(describeScheduleOutcome('failed'));
-    expect(describeScheduleOutcome('failed_cleanup')).toMatch(/manuale/);
+    expect(describeScheduleOutcome('failed_cleanup')).toMatch(/ripeti/i);
   });
 
   it('non elenca categorie vuote', () => {

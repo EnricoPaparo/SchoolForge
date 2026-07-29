@@ -230,7 +230,7 @@ describe('runScheduleForceClose — programmazione', () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it('richiesta ripetuta (doppio click) ⇒ nessuna seconda task, esito idempotente', async () => {
+  it('richiesta ripetuta ⇒ nessuna nuova finestra e nessuna seconda scrittura', async () => {
     db.seed(`submissions/${VERIFICATION}_a`, draftDoc('a'));
 
     const first = await schedule(['a']);
@@ -238,8 +238,13 @@ describe('runScheduleForceClose — programmazione', () => {
 
     expect(first.results[0]!.outcome).toBe('scheduled');
     expect(second.results[0]!.outcome).toBe('already_scheduled');
-    expect(enqueue).toHaveBeenCalledTimes(1);
+    // Una sola scrittura: la seconda richiesta non riprogramma nulla…
     expect(db.writes).toHaveLength(1);
+    // …ma riaccoda **la stessa** task (recupero idempotente): stesso id, stesso
+    // requestId, stessa scadenza. Nessuna nuova finestra di 60 secondi.
+    expect(enqueued).toHaveLength(2);
+    expect(enqueued[1]!.options.id).toBe(enqueued[0]!.options.id);
+    expect(enqueued[1]!.payload).toEqual(enqueued[0]!.payload);
   });
 
   it('selezione mista: ogni riga il suo esito, task solo per le bozze', async () => {
@@ -263,9 +268,13 @@ describe('runScheduleForceClose — programmazione', () => {
   it('enqueue fallito ⇒ compensazione e nessuna programmazione residua', async () => {
     db.seed(`submissions/${VERIFICATION}_a`, draftDoc('a'));
     db.seed(`submissions/${VERIFICATION}_b`, draftDoc('b'));
-    enqueue.mockImplementationOnce(async () => {
-      throw new Error('coda non disponibile');
-    });
+    // Fallisce **sempre** per 'a': i retry limitati si esauriscono.
+    enqueue.mockImplementation(
+      async (payload: Record<string, unknown>, options: EnqueueOptions) => {
+        if (payload.studentUid === 'a') throw new Error('coda non disponibile');
+        enqueued.push({ payload, options });
+      },
+    );
 
     const result = await schedule(['a', 'b']);
 
@@ -293,15 +302,15 @@ describe('runScheduleForceClose — programmazione', () => {
 
   it('compensazione fallita ⇒ failed_cleanup esplicito, mai un successo apparente', async () => {
     db.seed(`submissions/${VERIFICATION}_a`, draftDoc('a'));
-    enqueue.mockImplementationOnce(async () => {
+    enqueue.mockImplementation(async () => {
       throw new Error('coda non disponibile');
     });
-    // La prima transazione (programmazione) riesce, la seconda (pulizia) no.
+    // La prima transazione (programmazione) riesce, le successive (pulizia) no.
     const realRunTransaction = db.runTransaction.bind(db);
     let calls = 0;
     db.runTransaction = (async (fn: never) => {
       calls += 1;
-      if (calls === 2) throw new Error('Firestore non disponibile');
+      if (calls >= 2) throw new Error('Firestore non disponibile');
       return realRunTransaction(fn);
     }) as typeof db.runTransaction;
 
@@ -314,7 +323,7 @@ describe('runScheduleForceClose — programmazione', () => {
 
   it('la compensazione non tocca mai una programmazione diversa', async () => {
     db.seed(`submissions/${VERIFICATION}_a`, draftDoc('a'));
-    enqueue.mockImplementationOnce(async () => {
+    enqueue.mockImplementation(async () => {
       // Nel frattempo un'altra programmazione ha preso il posto della nostra.
       const path = `submissions/${VERIFICATION}_a`;
       db.docs.set(path, { ...db.docs.get(path)!, forceCloseRequestId: 'z'.repeat(24) });
@@ -355,6 +364,199 @@ describe('runScheduleForceClose — programmazione', () => {
 
     const ids = enqueued.map((e) => e.payload.requestId);
     expect(new Set(ids).size).toBe(2);
+  });
+});
+
+describe('runScheduleForceClose — 60 secondi pieni per ogni studente', () => {
+  /** Orologio che avanza a ogni lettura: simula un batch che dura nel tempo. */
+  function progressiveClock(stepMs: number) {
+    let current = NOW.getTime();
+    return () => {
+      const value = new Date(current);
+      current += stepMs;
+      return value;
+    };
+  }
+
+  it('anche l’ultimo dei 60 studenti ha esattamente 60 secondi', async () => {
+    const uids = Array.from({ length: 60 }, (_, i) => `s${i}`);
+    uids.forEach((uid) => db.seed(`submissions/${VERIFICATION}_${uid}`, draftDoc(uid)));
+
+    // 250 ms per studente: alla fine del batch sono passati ~15 secondi.
+    const result = await runScheduleForceClose(
+      asDb(db),
+      OWNER,
+      { verificationId: VERIFICATION, studentUids: uids },
+      enqueue as never,
+      progressiveClock(250),
+    );
+
+    expect(result.results.filter((r) => r.outcome === 'scheduled')).toHaveLength(60);
+
+    for (const uid of uids) {
+      const doc = db.docs.get(`submissions/${VERIFICATION}_${uid}`)!;
+      const requestedAt = doc.forceCloseRequestedAt as Timestamp;
+      const deadline = doc.forceCloseDeadline as Timestamp;
+      // Relazione esatta, studente per studente.
+      expect(deadline.toMillis() - requestedAt.toMillis()).toBe(60_000);
+      // La task è schedulata sulla **propria** scadenza.
+      const task = enqueued.find((e) => e.payload.studentUid === uid)!;
+      expect(task.payload.deadlineMs).toBe(deadline.toMillis());
+      expect(task.options.scheduleTime.getTime()).toBe(deadline.toMillis());
+    }
+
+    // Il primo e l'ultimo studente hanno scadenze diverse — ed è corretto così:
+    // ciascuno riceve il preavviso pieno a partire dal proprio istante.
+    const first = db.docs.get(`submissions/${VERIFICATION}_s0`)!.forceCloseDeadline as Timestamp;
+    const last = db.docs.get(`submissions/${VERIFICATION}_s59`)!.forceCloseDeadline as Timestamp;
+    expect(last.toMillis()).toBeGreaterThan(first.toMillis());
+  });
+
+  it('una programmazione scritta con preavviso diverso da 60 s è incoerente', async () => {
+    // Documento manomesso: 30 secondi invece di 60.
+    db.seed(`submissions/${VERIFICATION}_a`, {
+      ...draftDoc('a'),
+      forceCloseRequestId: 'a'.repeat(24),
+      forceCloseRequestedAt: Timestamp.fromMillis(NOW.getTime()),
+      forceCloseDeadline: Timestamp.fromMillis(NOW.getTime() + 30_000),
+    });
+
+    const result = await schedule(['a']);
+
+    expect(result.results[0]!.outcome).toBe('incoherent');
+    expect(db.writes).toHaveLength(0);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('runScheduleForceClose — recupero di una programmazione orfana', () => {
+  it('enqueue fallisce una volta e riesce al tentativo successivo', async () => {
+    db.seed(`submissions/${VERIFICATION}_a`, draftDoc('a'));
+    let attempts = 0;
+    enqueue.mockImplementation(
+      async (payload: Record<string, unknown>, options: EnqueueOptions) => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('coda momentaneamente non disponibile');
+        enqueued.push({ payload, options });
+      },
+    );
+
+    const result = await schedule(['a']);
+
+    expect(result.results[0]!.outcome).toBe('scheduled');
+    expect(attempts).toBe(2);
+    // Nessuna compensazione: la programmazione è valida.
+    expect(db.docs.get(`submissions/${VERIFICATION}_a`)!.forceCloseRequestId).toBeTruthy();
+  });
+
+  it('orfano dopo failed_cleanup: riprogrammare riaccoda la **stessa** task', async () => {
+    db.seed(`submissions/${VERIFICATION}_a`, draftDoc('a'));
+    // Primo tentativo: enqueue e pulizia falliscono ⇒ marcatori orfani.
+    enqueue.mockImplementation(async () => {
+      throw new Error('coda non disponibile');
+    });
+    const realRunTransaction = db.runTransaction.bind(db);
+    let calls = 0;
+    db.runTransaction = (async (fn: never) => {
+      calls += 1;
+      if (calls >= 2) throw new Error('Firestore non disponibile');
+      return realRunTransaction(fn);
+    }) as typeof db.runTransaction;
+
+    const first = await schedule(['a']);
+    expect(first.results[0]!.outcome).toBe('failed_cleanup');
+
+    const orphan = db.docs.get(`submissions/${VERIFICATION}_a`)!;
+    const orphanRequestId = orphan.forceCloseRequestId as string;
+    const orphanDeadline = (orphan.forceCloseDeadline as Timestamp).toMillis();
+
+    // Recupero: la coda torna disponibile e il docente ripete l'operazione.
+    db.runTransaction = realRunTransaction as typeof db.runTransaction;
+    db.writes = [];
+    enqueue.mockImplementation(
+      async (payload: Record<string, unknown>, options: EnqueueOptions) => {
+        enqueued.push({ payload, options });
+      },
+    );
+
+    const second = await schedule(['a']);
+
+    expect(second.results[0]!.outcome).toBe('already_scheduled');
+    // Stessa programmazione: nessuna nuova finestra, nessuna nuova scrittura.
+    expect(db.writes).toHaveLength(0);
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]!.payload.requestId).toBe(orphanRequestId);
+    expect(enqueued[0]!.payload.deadlineMs).toBe(orphanDeadline);
+    expect(enqueued[0]!.options.id).toBe(`fc-${orphanRequestId}`);
+    // I marcatori sono rimasti quelli di prima.
+    const recovered = db.docs.get(`submissions/${VERIFICATION}_a`)!;
+    expect(recovered.forceCloseRequestId).toBe(orphanRequestId);
+    expect((recovered.forceCloseDeadline as Timestamp).toMillis()).toBe(orphanDeadline);
+  });
+
+  it('task già esistente durante il recupero ⇒ successo idempotente', async () => {
+    db.seed(`submissions/${VERIFICATION}_a`, draftDoc('a'));
+    await schedule(['a']);
+    enqueue.mockImplementation(async () => {
+      throw Object.assign(new Error('Requested entity already exists'), { code: 6 });
+    });
+    db.writes = [];
+
+    const result = await schedule(['a']);
+
+    expect(result.results[0]!.outcome).toBe('already_scheduled');
+    expect(db.writes).toHaveLength(0);
+  });
+
+  it('il recupero non modifica una programmazione sostituita', async () => {
+    db.seed(`submissions/${VERIFICATION}_a`, draftDoc('a'));
+    await schedule(['a']);
+    const path = `submissions/${VERIFICATION}_a`;
+    // Un'altra programmazione ha preso il posto della prima.
+    const replaced = {
+      ...db.docs.get(path)!,
+      forceCloseRequestId: 'z'.repeat(24),
+      forceCloseRequestedAt: Timestamp.fromMillis(NOW.getTime() + 600_000),
+      forceCloseDeadline: Timestamp.fromMillis(NOW.getTime() + 660_000),
+    };
+    db.docs.set(path, replaced);
+    db.writes = [];
+    enqueued = [];
+
+    const result = await schedule(['a']);
+
+    expect(result.results[0]!.outcome).toBe('already_scheduled');
+    expect(db.writes).toHaveLength(0);
+    // Riaccoda **quella corrente**, non la vecchia.
+    expect(enqueued[0]!.payload.requestId).toBe('z'.repeat(24));
+    expect(db.docs.get(path)!.forceCloseRequestId).toBe('z'.repeat(24));
+  });
+
+  it('nessuna via lascia uno studente senza task e senza possibilità di recupero', async () => {
+    db.seed(`submissions/${VERIFICATION}_a`, draftDoc('a'));
+    enqueue.mockImplementation(async () => {
+      throw new Error('coda non disponibile');
+    });
+
+    const result = await schedule(['a']);
+    const outcome = result.results[0]!.outcome;
+    const doc = db.docs.get(`submissions/${VERIFICATION}_a`)!;
+    const stillMarked = 'forceCloseRequestId' in doc;
+
+    // O i marcatori sono stati rimossi (nessun banner orfano)…
+    // …oppure restano, ma l'esito lo dichiara ed è recuperabile riprovando.
+    expect(stillMarked ? outcome === 'failed_cleanup' : outcome === 'failed').toBe(true);
+
+    if (stillMarked) {
+      enqueue.mockImplementation(
+        async (payload: Record<string, unknown>, options: EnqueueOptions) => {
+          enqueued.push({ payload, options });
+        },
+      );
+      const recovery = await schedule(['a']);
+      expect(recovery.results[0]!.outcome).toBe('already_scheduled');
+      expect(enqueued).toHaveLength(1);
+    }
   });
 });
 
@@ -494,8 +696,10 @@ describe('runForceCloseTask — esecuzione alla scadenza', () => {
   it('stessa richiesta ma scadenza diversa ⇒ programmazione sostituita, no-op', async () => {
     const payload = await scheduleAndGetTask('a');
     const path = `submissions/${VERIFICATION}_a`;
+    // Programmazione successiva: coerente in sé (60 s esatti) ma diversa.
     db.docs.set(path, {
       ...db.docs.get(path)!,
+      forceCloseRequestedAt: Timestamp.fromMillis(DEADLINE.getTime() + 60_000),
       forceCloseDeadline: Timestamp.fromMillis(DEADLINE.getTime() + 120_000),
     });
     db.writes = [];

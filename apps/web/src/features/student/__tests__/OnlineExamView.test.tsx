@@ -1102,7 +1102,7 @@ describe('OnlineExamView — chiusura forzata dal docente (FORCE-SUBMIT-01)', ()
 // ─── FORCE-SUBMIT-02 — preavviso di chiusura ────────────────────────────────
 
 describe('OnlineExamView — chiusura programmata dal docente (FORCE-SUBMIT-02)', () => {
-  const REQUEST = { requestId: 'abcdefghijklmnopqrstuvwx', deadlineMs: 0 };
+  const REQUEST = { requestId: 'abcdefghijklmnopqrstuvwx', deadlineMs: 0, requestedAtMs: 0 };
   const RECEIPT = {
     submissionId: 'v1_student-uid',
     verificationId: 'v1',
@@ -1130,7 +1130,8 @@ describe('OnlineExamView — chiusura programmata dal docente (FORCE-SUBMIT-02)'
   }
 
   function deadlineIn(seconds: number) {
-    return { ...REQUEST, deadlineMs: Date.now() + seconds * 1000 };
+    const deadlineMs = Date.now() + seconds * 1000;
+    return { ...REQUEST, deadlineMs, requestedAtMs: deadlineMs - 60_000 };
   }
 
   it('apre un solo listener sulla propria consegna e lo chiude allo smontaggio', () => {
@@ -1276,6 +1277,111 @@ describe('OnlineExamView — chiusura programmata dal docente (FORCE-SUBMIT-02)'
         await vi.advanceTimersByTimeAsync(60_000);
       });
       expect(mockLoadReceipt).toHaveBeenCalledTimes(attempts);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('esauriti i tentativi mostra un errore accessibile e «Riprova» funzionante', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(null);
+      const { onSubmitted } = renderView();
+
+      await act(async () => {
+        handlers().onUnavailable();
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      const alert = screen
+        .getAllByRole('alert')
+        .find((el) => el.textContent?.includes('Non è stato possibile verificare'))!;
+      expect(alert).toBeTruthy();
+      expect(alert.textContent).toContain(
+        'Non è stato possibile verificare la consegna acquisita.',
+      );
+
+      // «Riprova» riavvia lo stesso retry limitato e stavolta trova la ricevuta.
+      mockLoadReceipt.mockResolvedValue(RECEIPT);
+      const retry = within(alert).getByRole('button', { name: 'Riprova' });
+      await act(async () => {
+        fireEvent.click(retry);
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(onSubmitted).toHaveBeenCalledWith(RECEIPT);
+      expect(onSubmitted).toHaveBeenCalledTimes(1);
+      expect(
+        screen
+          .queryAllByRole('alert')
+          .some((el) => el.textContent?.includes('Non è stato possibile verificare')),
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('doppio click su «Riprova» ⇒ un solo ciclo di tentativi', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(null);
+      renderView();
+
+      await act(async () => {
+        handlers().onUnavailable();
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      const attemptsAfterFirst = mockLoadReceipt.mock.calls.length;
+
+      const alert = screen
+        .getAllByRole('alert')
+        .find((el) => el.textContent?.includes('Non è stato possibile verificare'))!;
+      const retry = within(alert).getByRole('button', { name: 'Riprova' });
+      await act(async () => {
+        fireEvent.click(retry);
+        fireEvent.click(retry);
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      // Un solo ciclo aggiuntivo, non due.
+      expect(mockLoadReceipt.mock.calls.length).toBe(attemptsAfterFirst * 2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('chiusura fallita in modo permanente: il server ripulisce e la verifica si sblocca', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(null);
+      renderView();
+
+      // Scadenza passata: controlli bloccati, poi tentativi esauriti.
+      await act(async () => {
+        handlers().onRequest(deadlineIn(-1));
+        handlers().onUnavailable();
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(
+        (screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled,
+      ).toBe(true);
+
+      // Il server ha rimosso i marcatori senza ricevuta: si torna operativi.
+      await act(async () => {
+        handlers().onRequest(null);
+      });
+
+      expect(
+        (screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled,
+      ).toBe(false);
+      expect(
+        screen
+          .queryAllByRole('alert')
+          .some((el) => el.textContent?.includes('Non è stato possibile verificare')),
+      ).toBe(false);
     } finally {
       vi.useRealTimers();
     }

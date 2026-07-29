@@ -33,7 +33,8 @@ export type ScheduleOutcome =
   /**
    * La programmazione è stata scritta ma la task non è stata accodata **e** la
    * pulizia non è riuscita: lo studente potrebbe vedere un banner che non porta
-   * ad alcuna chiusura. Va mostrato come tale, mai confuso con un successo.
+   * ad alcuna chiusura. Va mostrato come tale, mai confuso con un successo — ed
+   * è **recuperabile**: basta ripetere «Chiudi consegne» sulla stessa riga.
    */
   | 'failed_cleanup';
 
@@ -80,11 +81,7 @@ export function describeScheduleForceCloseError(err: unknown): string {
  * usano tutti, quindi il conteggio mostrato e ciò che viene realmente inviato
  * non possono divergere.
  */
-export type ForceCloseExclusion =
-  | 'not_started'
-  | 'already_submitted'
-  | 'correction_started'
-  | 'already_scheduled';
+export type ForceCloseExclusion = 'not_started' | 'already_submitted' | 'correction_started';
 
 export interface ForceCloseCandidate {
   studentUid: string;
@@ -100,8 +97,18 @@ export function forceCloseExclusionFor(candidate: ForceCloseCandidate): ForceClo
   // Una correzione esiste solo su una consegna già acquisita: con una bozza non
   // è un caso raggiungibile, ma la guardia resta esplicita e testabile.
   if (candidate.correction) return 'correction_started';
-  if (candidate.item.forceCloseDeadline) return 'already_scheduled';
+  /*
+   * Una chiusura **già programmata** non è un'esclusione: ripetere l'operazione
+   * è la procedura di **recupero** di una programmazione rimasta senza task
+   * (`failed_cleanup`). Il server riaccoda la stessa richiesta con la stessa
+   * scadenza, senza aprire una nuova finestra e senza riscrivere nulla.
+   */
   return null;
+}
+
+/** La riga ha già una chiusura programmata: sarà un recupero, non una novità. */
+export function isForceCloseRecovery(candidate: ForceCloseCandidate): boolean {
+  return Boolean(candidate.item?.forceCloseDeadline);
 }
 
 export interface ForceClosePlan {
@@ -135,8 +142,6 @@ export function describeForceCloseExclusion(reason: ForceCloseExclusion): string
       return 'Già consegnata';
     case 'correction_started':
       return 'Correzione avviata';
-    case 'already_scheduled':
-      return 'Chiusura già programmata';
   }
 }
 
@@ -146,7 +151,7 @@ export function describeScheduleOutcome(outcome: ScheduleOutcome): string {
     case 'scheduled':
       return 'Programmate';
     case 'already_scheduled':
-      return 'Già programmate';
+      return 'Già programmate (task ripristinata)';
     case 'not_started':
       return 'Non iniziate';
     case 'already_submitted':
@@ -156,7 +161,7 @@ export function describeScheduleOutcome(outcome: ScheduleOutcome): string {
     case 'failed':
       return 'Non riuscite';
     case 'failed_cleanup':
-      return 'Non riuscite — richiedono una verifica manuale';
+      return 'Non riuscite — ripeti l’operazione sulle stesse righe per ripristinarle';
   }
 }
 

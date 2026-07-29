@@ -536,9 +536,13 @@ resta e viene riusato dalla task.
   transazione, e nessun disegno può renderle atomiche. La scrittura dei marcatori viene **prima**
   (così non può esistere una task senza il marcatore che la rende riconoscibile); il nome della task
   è derivato dal `requestId`, quindi un retry dell'accodamento non crea duplicati; se l'accodamento
-  fallisce si esegue una **compensazione transazionale condizionata allo stesso `requestId`**, che
-  non tocca mai una programmazione diversa; se anche la compensazione fallisce l'esito è
-  `failed_cleanup` — esplicito e azionabile, mai un successo apparente.
+  fallisce — dopo **tentativi limitati**, tutti con lo stesso nome task deterministico — si esegue
+  una **compensazione transazionale condizionata allo stesso `requestId`**, a sua volta con
+  tentativi limitati, che non tocca mai una programmazione diversa. Se anche la compensazione
+  fallisce l'esito è `failed_cleanup`: esplicito, mai un successo apparente, e **recuperabile
+  dall'applicazione** — ripetere «Chiudi consegne» sulle stesse righe riaccoda la task già
+  persistita con lo stesso `requestId` e la **stessa scadenza**, senza aprire una nuova finestra e
+  senza riscrivere nulla. Procedura operativa in [`runbook-operativo-v1.md`](runbook-operativo-v1.md) §9b.
 - **Nessuno studente resta bloccato.** Ogni via terminale della task porta a uno di quattro esiti:
   consegna forzata con ricevuta; consegna normale già effettuata **con rimozione dei marcatori**;
   programmazione non più valida **con rimozione dei marcatori**; oppure errore permanente sui
@@ -546,6 +550,12 @@ resta e viene riusato dalla task.
   presenti + nessuna ricevuta» è vietata ed è verificata da un test dedicato su tutti gli scenari.
   Gli errori infrastrutturali temporanei sono propagati perché Cloud Tasks ritenti; quelli
   permanenti non vengono inghiottiti lasciando il documento bloccato.
+- **Sessanta secondi per ciascuno.** `forceCloseRequestedAt` e `forceCloseDeadline` sono calcolati
+  **per singolo studente**, dallo stesso istante letto dall'orologio della Function e scritti come
+  `Timestamp` espliciti: anche l'ultimo di un batch da 60 riceve il preavviso pieno. La relazione
+  `deadline − requestedAt === 60 s` è parte del contratto ed è verificata fail-closed ovunque sia
+  autorevole — server, task e client: una coppia che non la rispetta non è una programmazione valida
+  e non produce alcun banner.
 - **Mai una chiusura anticipata.** Il payload della task porta anche la scadenza canonica: se la
   coda consegna prima del tempo la task **rilancia** invece di chiudere, e viene ritentata.
 - **Trasparenza.** Il banner dichiara la richiesta e il tempo residuo, il countdown è **ricalcolato

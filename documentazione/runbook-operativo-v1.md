@@ -285,6 +285,49 @@ Checklist ordinata, **nessuna azione distruttiva automatica**:
 
 ---
 
+## 9b. Chiusura programmata orfana (FORCE-SUBMIT-02)
+
+**Sintomo.** Il riepilogo della chiusura multipla riporta «Non riuscite — ripeti l'operazione sulle
+stesse righe per ripristinarle» (`failed_cleanup`). Significa che i marcatori di programmazione sono
+stati scritti sulla consegna, l'accodamento della Cloud Task **non** è riuscito nemmeno dopo i
+tentativi previsti, e nemmeno la compensazione è riuscita. Lo studente vede un banner di preavviso
+che, da solo, non porterebbe ad alcuna chiusura.
+
+**Perché può accadere.** Firestore e Cloud Tasks non condividono una transazione: la scrittura viene
+prima, l'accodamento dopo. Il caso è raro (richiede due indisponibilità consecutive) ma possibile.
+
+**Recupero — procedura normale, dall'applicazione.**
+
+1. Nella schermata consegne selezionare **le stesse righe** riportate come non riuscite.
+2. Premere di nuovo **«Chiudi consegne»**. Il dialog dichiara quante righe hanno già una chiusura
+   programmata e che verrà usata **la scadenza originale**.
+3. Confermare. Il server **non riprogramma nulla**: rilegge `requestId` e scadenza già persistiti e
+   riaccoda la **stessa** task, con lo stesso nome deterministico `fc-{requestId}`. Non si apre una
+   nuova finestra di 60 secondi e non viene eseguita alcuna scrittura.
+4. L'esito atteso è **«Già programmate (task ripristinata)»**. Se la task esisteva già, Cloud Tasks
+   risponde `ALREADY_EXISTS` e l'operazione è comunque un successo.
+5. L'operazione è idempotente e sicura da ripetere: se nel frattempo una **programmazione diversa**
+   ha preso il posto della precedente, viene riaccodata quella corrente e la vecchia non viene
+   toccata.
+
+**Se la coda resta indisponibile.** Ripetere il punto 2 quando Cloud Tasks torna operativa. Nel
+frattempo la consegna resta una normale bozza: **lo studente può continuare a lavorare e a
+consegnare normalmente**, e una consegna normale rende la programmazione ininfluente.
+
+**Annullamento in sicurezza (fallback amministrativo).** Se si vuole revocare la chiusura invece di
+ripristinarla, rimuovere dalla consegna **tutti e tre** i marcatori
+(`forceCloseRequestId`, `forceCloseDeadline`, `forceCloseRequestedAt`) con un'unica operazione
+amministrativa, **solo dopo** aver verificato che `forceCloseRequestId` sia ancora quello atteso —
+per non cancellare una programmazione nel frattempo sostituita. Rimuoverne solo alcuni lascerebbe
+uno stato parziale: la task, se esiste, lo riconosce come incoerente e ripulisce da sé, ma il banner
+sparisce solo quando i tre campi sono assenti insieme.
+
+**Verifica finale.** Il banner dello studente scompare o mostra il countdown corretto; alla scadenza
+la consegna passa a «Consegna acquisita dal docente». Nessuno studente deve restare con scadenza
+superata, marcatori presenti e nessuna ricevuta.
+
+---
+
 ## 10. Checklist mensile minima (pochi minuti)
 
 - [ ] **Costi:** picco anomalo negli ultimi 30 giorni? (Firestore R/W/D, Storage, Hosting, Functions) — §4.2

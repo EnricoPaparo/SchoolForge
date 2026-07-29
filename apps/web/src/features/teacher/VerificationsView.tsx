@@ -113,6 +113,7 @@ import {
   describeScheduleOutcome,
   FORCE_CLOSE_GRACE_SECONDS,
   groupScheduleOutcomes,
+  isForceCloseRecovery,
   planForceClose,
   type ForceClosePlan,
   type ScheduleForceCloseResponse,
@@ -3644,6 +3645,18 @@ export function VerificationsView() {
                   <dd>{forceClosePlan.excluded.length}</dd>
                 </div>
               </dl>
+              {/*
+               * FORCE-SUBMIT-02 — righe già programmate: ripetere l'operazione
+               * è il **recupero** di una programmazione rimasta senza task.
+               * Non riapre una finestra: la scadenza resta quella originale.
+               */}
+              {forceClosePlan.eligible.some(isForceCloseRecovery) && (
+                <p className={styles.forceSubmitNote}>
+                  {forceClosePlan.eligible.filter(isForceCloseRecovery).length} di queste hanno già
+                  una chiusura programmata: verrà solo ripristinata la loro chiusura, con la
+                  scadenza originale e senza un nuovo preavviso.
+                </p>
+              )}
               {forceClosePlan.excluded.length > 0 && (
                 <ul className={styles.forceCloseExclusions}>
                   {[...new Set(forceClosePlan.excluded.map((e) => e.reason))].map((reason) => (

@@ -141,6 +141,14 @@ export function OnlineExamView({
   const [forceClose, setForceClose] = useState<ForceCloseRequest | null>(null);
   /** La scadenza è passata: i controlli sono bloccati in attesa della ricevuta. */
   const [forceCloseExpired, setForceCloseExpired] = useState(false);
+  /**
+   * I tentativi di leggere la ricevuta si sono esauriti senza trovarla: lo
+   * studente deve vedere un errore esplicito e poter riprovare, non restare su
+   * una schermata bloccata e muta.
+   */
+  const [receiptError, setReceiptError] = useState(false);
+  /** Un nuovo tentativo è in corso: guardia anti-doppio-click su «Riprova». */
+  const [receiptRetrying, setReceiptRetrying] = useState(false);
 
   // Refs mirror the state above so the 60s autosave interval (set up once)
   // and the deterrence event handlers (also set up once) always see the
@@ -303,6 +311,7 @@ export function OnlineExamView({
        * lettura lascerebbe lo studente su una schermata bloccata. I tentativi
        * si esauriscono in ~5 s; poi si dichiara un errore ricaricabile.
        */
+      if (mountedRef.current) setReceiptError(false);
       for (const delay of RECEIPT_RETRY_DELAYS_MS) {
         if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
         // Fra un tentativo e l'altro la vista può essere stata smontata, o la
@@ -331,6 +340,8 @@ export function OnlineExamView({
         onSubmitted(receipt);
         return true;
       }
+      // Tentativi esauriti: errore esplicito e ricaricabile con «Riprova».
+      if (mountedRef.current && !sessionEndedRef.current) setReceiptError(true);
       return false;
     } finally {
       // Sempre eseguito: una risoluzione fallita non deve bloccare la
@@ -354,8 +365,12 @@ export function OnlineExamView({
           if (!mountedRef.current || sessionEndedRef.current) return;
           setForceClose(request);
           if (request === null) {
+            // La programmazione è sparita senza ricevuta: la chiusura è fallita
+            // in modo permanente e il server ha ripulito. La verifica torna
+            // utilizzabile e l'errore non ha più ragione di essere mostrato.
             seenForceCloseRef.current = null;
             setForceCloseExpired(false);
+            setReceiptError(false);
             return;
           }
           // Salvataggio immediato best-effort alla comparsa della richiesta: il
@@ -570,6 +585,30 @@ export function OnlineExamView({
           saving={saving}
           onSaveNow={() => void persistDraft()}
         />
+      )}
+      {/*
+       * FORCE-SUBMIT-02 — i tentativi di verifica della ricevuta si sono
+       * esauriti. Non è un vicolo cieco: il messaggio è annunciato e «Riprova»
+       * riavvia lo **stesso** retry limitato, senza alcun polling permanente.
+       */}
+      {receiptError && !sessionEnded && (
+        <div role="alert" className={styles.receiptErrorBox}>
+          <span>Non è stato possibile verificare la consegna acquisita.</span>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={receiptRetrying}
+            onClick={() => {
+              if (receiptProbeRef.current) return;
+              setReceiptRetrying(true);
+              void resolveClosureFromReceipt().finally(() => {
+                if (mountedRef.current) setReceiptRetrying(false);
+              });
+            }}
+          >
+            {receiptRetrying ? 'Verifica…' : 'Riprova'}
+          </button>
+        </div>
       )}
       {/* Header and navigator stay unified, but scroll in normal page flow. */}
       <div className={styles.controlPanel}>

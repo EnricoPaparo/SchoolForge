@@ -19,7 +19,19 @@
  *  - se anche la compensazione fallisce, l'esito è `failed_cleanup`: uno stato
  *    esplicito e azionabile, mai un successo apparente;
  *  - il nome della task è derivato dal `requestId`, quindi un retry
- *    dell'accodamento non può creare un duplicato.
+ *    dell'accodamento non può creare un duplicato;
+ *  - se resta comunque un marcatore orfano (`failed_cleanup`), **riprogrammare
+ *    la stessa riga è la procedura di recupero**: la callable riaccoda la task
+ *    già persistita con lo stesso `requestId` e la stessa scadenza, senza
+ *    aprire una nuova finestra di 60 secondi.
+ *
+ * **Istante della programmazione:** `requestedAt` e `deadline` sono scritti come
+ * `Timestamp` espliciti derivati dallo **stesso** istante letto dall'orologio
+ * della Function (non dal client, e non da `serverTimestamp()`): solo così la
+ * relazione `deadline - requestedAt === 60 s` è verificabile — con la sentinella
+ * server i due valori non sarebbero confrontabili al momento della scrittura.
+ * Entrambi sono calcolati **per singolo studente**, così anche l'ultimo di un
+ * batch da 60 riceve 60 secondi pieni.
  */
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { DocumentData, Firestore, Transaction } from 'firebase-admin/firestore';
@@ -182,9 +194,6 @@ export async function runScheduleForceClose(
     throw new ForceCloseError('permission_denied', 'Verifica non di questo docente.');
   }
 
-  const deadlineAt = new Date(now().getTime() + FORCE_CLOSE_GRACE_SECONDS * 1000);
-  const deadline = Timestamp.fromDate(deadlineAt);
-
   const results = await mapWithConcurrency(
     input.studentUids,
     FORCE_CLOSE_SCHEDULE_CONCURRENCY,
@@ -192,51 +201,76 @@ export async function runScheduleForceClose(
       const submissionRef = db.doc(
         `submissions/${submissionIdFor(input.verificationId, studentUid)}`,
       );
-      let requestId: string | null = null;
+      /*
+       * Ogni studente riceve **il proprio** istante di partenza: `requestedAt` è
+       * letto qui, dentro il worker, e la scadenza è esattamente 60 secondi
+       * dopo. Calcolarli una volta sola prima del batch avrebbe accorciato il
+       * preavviso di chi viene elaborato per ultimo.
+       */
+      const requestedAtDate = now();
+      const deadlineAt = new Date(requestedAtDate.getTime() + FORCE_CLOSE_GRACE_SECONDS * 1000);
+
+      let scheduled: { requestId: string; deadlineMs: number } | null = null;
       try {
         const outcome = await db.runTransaction(async (tx: Transaction) => {
           const snap = await tx.get(submissionRef);
+          const submission = snap.exists ? toScheduleSnapshot(snap.data() as DocumentData) : null;
           const decision = decideScheduleFor({
             callerUid,
             verificationId: input.verificationId,
             studentUid,
-            submission: snap.exists ? toScheduleSnapshot(snap.data() as DocumentData) : null,
+            submission,
           });
+          if (decision === 'already_scheduled' && submission) {
+            // **Recupero**: la programmazione esiste già. Si riaccoda la task con
+            // gli stessi `requestId` e scadenza persistiti — nessuna nuova
+            // finestra, nessuna seconda scrittura.
+            const markers = readMarkerState(submission);
+            if (markers.kind === 'present') {
+              scheduled = { requestId: markers.requestId, deadlineMs: markers.deadlineMs };
+            }
+            return decision;
+          }
           if (decision !== 'scheduled') return decision;
-          requestId = generateRequestId(secureRandomIntBelow);
-          // Unica scrittura della programmazione: tre marcatori server-only.
+          const requestId = generateRequestId(secureRandomIntBelow);
+          scheduled = { requestId, deadlineMs: deadlineAt.getTime() };
+          // Unica scrittura della programmazione: tre marcatori server-only,
+          // derivati dallo stesso istante e quindi verificabili fra loro.
           tx.update(
             submissionRef,
-            scheduleWrite(requestId, deadline, FieldValue.serverTimestamp()).submissionUpdate,
+            scheduleWrite(
+              requestId,
+              Timestamp.fromDate(deadlineAt),
+              Timestamp.fromDate(requestedAtDate),
+            ).submissionUpdate,
           );
           return decision;
         });
 
-        if (outcome !== 'scheduled' || requestId === null) return { studentUid, outcome };
-        const scheduledRequestId: string = requestId;
+        if (scheduled === null) return { studentUid, outcome };
+        const { requestId, deadlineMs } = scheduled as {
+          requestId: string;
+          deadlineMs: number;
+        };
 
-        try {
-          await enqueue(
-            {
-              verificationId: input.verificationId,
-              studentUid,
-              ownerUid: callerUid,
-              requestId: scheduledRequestId,
-              deadlineMs: deadlineAt.getTime(),
-            },
-            { scheduleTime: deadlineAt, id: taskNameFor(scheduledRequestId) },
-          );
-        } catch (enqueueError) {
-          if (isAlreadyExistsError(enqueueError)) {
-            // Task già presente con lo stesso nome: l'accodamento era riuscito.
-            return { studentUid, outcome: 'scheduled' };
-          }
-          const cleaned = await clearOwnMarkers(db, submissionRef, scheduledRequestId);
-          // Senza task il marcatore sarebbe una promessa vuota: se non si è
-          // potuto rimuovere, lo si dichiara invece di fingere un successo.
-          return { studentUid, outcome: cleaned ? 'failed' : 'failed_cleanup' };
+        const enqueued = await enqueueWithRetry(enqueue, {
+          verificationId: input.verificationId,
+          studentUid,
+          ownerUid: callerUid,
+          requestId,
+          deadlineMs,
+        });
+        if (enqueued) return { studentUid, outcome };
+
+        if (outcome === 'already_scheduled') {
+          // Recupero fallito: la programmazione preesistente resta orfana, ma
+          // riprovare è sempre possibile. Non si cancella nulla qui.
+          return { studentUid, outcome: 'failed_cleanup' };
         }
-        return { studentUid, outcome: 'scheduled' };
+        // Senza task il marcatore sarebbe una promessa vuota: si compensa, e se
+        // non si riesce lo si dichiara invece di fingere un successo.
+        const cleaned = await clearOwnMarkers(db, submissionRef, requestId);
+        return { studentUid, outcome: cleaned ? 'failed' : 'failed_cleanup' };
       } catch {
         return { studentUid, outcome: 'failed' };
       }
@@ -245,6 +279,35 @@ export async function runScheduleForceClose(
 
   return scheduleResult(results);
 }
+
+/** Tentativi di accodamento prima di arrendersi (il primo più due retry). */
+export const ENQUEUE_ATTEMPTS = 3;
+
+/**
+ * Accodamento con retry **limitato** e id deterministico: ogni tentativo usa lo
+ * stesso nome, quindi non può creare duplicati, e un `ALREADY_EXISTS` è la prova
+ * che l'operazione era già andata a buon fine.
+ */
+async function enqueueWithRetry(
+  enqueue: ForceCloseTaskEnqueue,
+  payload: ForceCloseTaskPayload,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < ENQUEUE_ATTEMPTS; attempt += 1) {
+    try {
+      await enqueue(payload, {
+        scheduleTime: new Date(payload.deadlineMs),
+        id: taskNameFor(payload.requestId),
+      });
+      return true;
+    } catch (err) {
+      if (isAlreadyExistsError(err)) return true;
+    }
+  }
+  return false;
+}
+
+/** Tentativi della compensazione prima di dichiarare `failed_cleanup`. */
+export const CLEANUP_ATTEMPTS = 3;
 
 /**
  * Compensazione **transazionale e condizionata**: rimuove i marcatori solo se
@@ -257,18 +320,21 @@ async function clearOwnMarkers(
   submissionRef: ReturnType<Firestore['doc']>,
   requestId: string,
 ): Promise<boolean> {
-  try {
-    await db.runTransaction(async (tx: Transaction) => {
-      const snap = await tx.get(submissionRef);
-      if (!snap.exists) return;
-      const markers = readMarkerState(toScheduleSnapshot(snap.data() as DocumentData));
-      if (markers.kind !== 'present' || markers.requestId !== requestId) return;
-      tx.update(submissionRef, clearMarkersUpdate());
-    });
-    return true;
-  } catch {
-    return false;
+  for (let attempt = 0; attempt < CLEANUP_ATTEMPTS; attempt += 1) {
+    try {
+      await db.runTransaction(async (tx: Transaction) => {
+        const snap = await tx.get(submissionRef);
+        if (!snap.exists) return;
+        const markers = readMarkerState(toScheduleSnapshot(snap.data() as DocumentData));
+        if (markers.kind !== 'present' || markers.requestId !== requestId) return;
+        tx.update(submissionRef, clearMarkersUpdate());
+      });
+      return true;
+    } catch {
+      // Riprova: una indisponibilità momentanea non deve produrre un orfano.
+    }
   }
+  return false;
 }
 
 // ── Esecuzione della task ──────────────────────────────────────────────────────

@@ -333,3 +333,26 @@
     flex: 1;
   }
 }
+
+/*
+ * FORCE-SUBMIT-02 — la verifica della ricevuta non è riuscita: messaggio
+ * esplicito e azione di recupero, mai una schermata bloccata e muta.
+ */
+.receiptErrorBox {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-error-border);
+  border-radius: var(--radius);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  font-size: 0.875rem;
+}
+
+.receiptErrorBox button {
+  min-height: 2.75rem;
+}

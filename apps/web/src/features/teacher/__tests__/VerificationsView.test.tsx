@@ -5281,13 +5281,34 @@ describe('VerificationsView — chiusura multipla (FORCE-SUBMIT-02)', () => {
     expect(mockScheduleForceClose).toHaveBeenCalledTimes(2);
   });
 
-  it('esclude una consegna con chiusura già programmata', async () => {
+  /*
+   * FORCE-SUBMIT-02 — una chiusura già programmata resta eleggibile: ripetere
+   * l'operazione è la procedura di recupero di una programmazione rimasta senza
+   * task, e il dialog lo dichiara esplicitamente.
+   */
+  it('una consegna già programmata è recuperabile ripetendo l’operazione', async () => {
+    mockScheduleForceClose.mockResolvedValue({
+      graceSeconds: 60,
+      results: [{ studentUid: 'stud-a', outcome: 'already_scheduled' }],
+    });
     await openMonitor(false, [
       { ...DRAFT_A, forceCloseDeadline: { seconds: 999, nanoseconds: 0 } },
     ]);
     selectRow('Anna');
 
-    expect(toolbarButton().disabled).toBe(true);
+    expect(toolbarButton().disabled).toBe(false);
+    fireEvent.click(toolbarButton());
+
+    const dialog = await screen.findByRole('alertdialog');
+    // Il dialog dichiara che non si apre una nuova finestra (testo interpolato,
+    // quindi spezzato su più nodi: si confronta il contenuto del dialog).
+    expect(dialog.textContent).toMatch(/già una chiusura programmata/);
+    expect(dialog.textContent).toMatch(/scadenza originale e senza un nuovo preavviso/);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Avvia chiusura' }));
+    await waitFor(() =>
+      expect(within(dialog).getByText(/Già programmate \(task ripristinata\): 1/)).toBeTruthy(),
+    );
   });
 
   it('mobile: stessa azione come ultima voce del menu batch, stesso handler', async () => {

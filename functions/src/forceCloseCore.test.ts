@@ -271,6 +271,8 @@ describe('readMarkerState — i tre marcatori sono un fatto unico', () => {
       kind: 'present',
       requestId: REQUEST_ID,
       deadlineKey: '1800000060.000000000',
+      requestedAtMs: 1_800_000_000_000,
+      deadlineMs: 1_800_000_060_000,
     });
   });
 
@@ -283,6 +285,10 @@ describe('readMarkerState — i tre marcatori sono un fatto unico', () => {
     ['requestId non canonico', { ...scheduled(), forceCloseRequestId: 'X' }],
     ['deadline non timestamp', { ...scheduled(), forceCloseDeadline: 123 }],
     ['requestedAt non timestamp', { ...scheduled(), forceCloseRequestedAt: 'ieri' }],
+    // Il preavviso è esattamente 60 s: una coppia che non lo rispetta non è una
+    // programmazione valida, prometterebbe un tempo diverso da quello dichiarato.
+    ['preavviso più corto di 60 s', { ...scheduled(), forceCloseDeadline: ts(1_800_000_030) }],
+    ['preavviso più lungo di 60 s', { ...scheduled(), forceCloseDeadline: ts(1_800_000_120) }],
   ])('«%s» ⇒ malformed', (_label, snapshot) => {
     expect(readMarkerState(snapshot as never).kind).toBe('malformed');
   });
@@ -368,7 +374,13 @@ describe('decideForceCloseTask — esecuzione fail-closed e no-op-safe', () => {
   });
 
   it('la deadline persistita deve combaciare con quella della task', () => {
-    const otherDeadline = draft(scheduled({ forceCloseDeadline: ts(1_800_000_999) }));
+    // Programmazione successiva: coerente in sé (60 s esatti) ma diversa.
+    const otherDeadline = draft(
+      scheduled({
+        forceCloseRequestedAt: ts(1_800_000_939),
+        forceCloseDeadline: ts(1_800_000_999),
+      }),
+    );
     expect(decide(otherDeadline)).toEqual({ kind: 'noop', reason: 'superseded' });
   });
 

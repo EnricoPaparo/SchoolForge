@@ -18,6 +18,9 @@ import { submissionId } from './submissionsService.js';
  * chiamante risolve leggendo la ricevuta.
  */
 
+/** Preavviso di contratto, in secondi. Coincide con la costante server. */
+export const FORCE_CLOSE_GRACE_SECONDS = 60;
+
 export interface ForceCloseRequest {
   requestId: string;
   /** Scadenza server-side, in millisecondi epoch. */
@@ -46,6 +49,10 @@ export function toForceCloseRequest(
   const deadlineMs = timestampToMillis(forceCloseDeadline);
   const requestedAtMs = timestampToMillis(forceCloseRequestedAt);
   if (deadlineMs === null || requestedAtMs === null) return null;
+  // Il preavviso è **esattamente** 60 secondi: stessa verifica del server. Una
+  // coppia che non la rispetta non è una programmazione valida, e mostrarne il
+  // countdown prometterebbe allo studente un tempo che nessuno gli garantisce.
+  if (deadlineMs - requestedAtMs !== FORCE_CLOSE_GRACE_SECONDS * 1000) return null;
   return { requestId, deadlineMs, requestedAtMs };
 }
 
