@@ -21,8 +21,8 @@ const reviewCss = readFileSync(
 );
 
 describe('QuestionNavigator visual contract', () => {
-  it('reserves vertical room for the complete current-question ring', () => {
-    expect(sharedCss).toMatch(/\.nav\s*\{[^}]*padding-block:\s*0\.25rem/s);
+  it('reserves vertical room for the complete current-question ring, including hover lift', () => {
+    expect(sharedCss).toMatch(/\.nav\s*\{[^}]*padding-block:\s*0\.5rem 0\.25rem/s);
     expect(sharedCss).toMatch(/\.nav\s*\{[^}]*padding-inline:\s*0\.25rem/s);
     expect(sharedCss).toMatch(
       /\.current::after\s*\{[^}]*inset:\s*-0\.25rem[^}]*border:\s*2px solid var\(--color-primary\)/s,
