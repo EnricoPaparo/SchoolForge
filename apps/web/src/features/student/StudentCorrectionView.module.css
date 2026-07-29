@@ -121,25 +121,6 @@
   display: none;
 }
 
-.navItem {
-  flex-shrink: 0;
-  width: 1.875rem;
-  height: 1.875rem;
-  padding: 0;
-  border-radius: 50%;
-  font-size: 0.75rem;
-  font-weight: 700;
-  line-height: 1;
-  border: 2px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-}
-
-.navItemCurrent {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 1px;
-}
-
 /* ── Body ──────────────────────────────────────────────────────── */
 .questionCard {
   background: var(--color-surface);

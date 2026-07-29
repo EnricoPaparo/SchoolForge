@@ -21,7 +21,7 @@ type ConfirmationViewProps = {
 
 /**
  * Post-delivery confirmation screen (D-M3F-05/§7.3). Shows only what the
- * receipt itself carries: title, className, delivery timestamp and code —
+ * receipt itself carries: title, delivery timestamp and code —
  * never questions or answers, which live only on the (now student-unreadable)
  * SubmissionDoc. Rendered whenever the student's submission is already
  * `submitted`, including after a page refresh — there is no separate "form"
@@ -35,8 +35,6 @@ export function ConfirmationView({ receipt, onBackToList }: ConfirmationViewProp
       <div className={styles.card}>
         <p className={styles.badge}>✓ Consegna effettuata</p>
         <h2 className={styles.title}>{receipt.verificationTitle}</h2>
-        {receipt.className && <p className={styles.className}>{receipt.className}</p>}
-
         <dl className={styles.meta}>
           {submittedLabel && (
             <div className={styles.metaItem}>

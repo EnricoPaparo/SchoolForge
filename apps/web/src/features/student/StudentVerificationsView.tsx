@@ -448,6 +448,7 @@ export function StudentVerificationsView({
         verificationId={view.item.id}
         title={view.item.title}
         className={view.item.className}
+        studentName={user?.displayName?.trim() || user?.email || 'Studente'}
         ownerUid={view.item.ownerUid}
         studentUid={uid ?? ''}
         questions={view.questions}

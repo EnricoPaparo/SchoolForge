@@ -18,6 +18,7 @@ import { countFilled, isAnswerFilled } from './examAnswers.js';
 import { shuffleWithRng } from './examShuffle.js';
 import { effectiveMaxCharacters } from '@schoolforge/lesson-contract';
 import styles from './OnlineExamView.module.css';
+import questionNavigatorStyles from '../../components/QuestionNavigator.module.css';
 
 /** Dirty-only autosave: at most one write every two minutes, never per keystroke. */
 const AUTOSAVE_INTERVAL_MS = 120_000;
@@ -26,6 +27,7 @@ type OnlineExamViewProps = {
   verificationId: string;
   title: string;
   className: string | null;
+  studentName: string;
   ownerUid: string;
   studentUid: string;
   questions: PublicVerificationQuestion[];
@@ -93,6 +95,7 @@ export function OnlineExamView({
   verificationId,
   title,
   className,
+  studentName,
   ownerUid,
   studentUid,
   questions,
@@ -379,6 +382,7 @@ export function OnlineExamView({
         <div className={styles.controlRow}>
           <div className={styles.examHeaderInfo}>
             <h2 className={styles.examTitle}>{title}</h2>
+            <span className={styles.examStudent}>{studentName}</span>
             {className && <span className={styles.examClass}>{className}</span>}
             <span className={styles.examBadge}>Modalità verifica</span>
           </div>
@@ -432,7 +436,10 @@ export function OnlineExamView({
           </div>
         </div>
 
-        <nav aria-label="Navigatore domande" className={styles.questionNav}>
+        <nav
+          aria-label="Navigatore domande"
+          className={`${styles.questionNav} ${questionNavigatorStyles.nav}`}
+        >
           {displayQuestions.map((q, displayIndex) => {
             const key = String(q.order);
             const displayNumber = displayIndex + 1;
@@ -450,7 +457,7 @@ export function OnlineExamView({
               <button
                 key={q.order}
                 type="button"
-                className={`${styles.navItem} ${navClass}`}
+                className={`${questionNavigatorStyles.item} ${navClass}`}
                 title={`Domanda ${displayNumber} — ${navLabel}`}
                 aria-label={`Vai alla domanda ${displayNumber} — ${navLabel}`}
                 onClick={() =>

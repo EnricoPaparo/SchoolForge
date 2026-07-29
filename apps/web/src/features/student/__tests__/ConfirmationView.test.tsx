@@ -17,11 +17,11 @@ const RECEIPT: SubmissionReceiptDoc = {
 };
 
 describe('ConfirmationView', () => {
-  it('shows title, class, delivery timestamp, code and the immutability notice', () => {
+  it('shows title, delivery timestamp, code and the immutability notice without the class', () => {
     render(<ConfirmationView receipt={RECEIPT} onBackToList={vi.fn()} />);
 
     expect(screen.getByText('Verifica Reti')).toBeTruthy();
-    expect(screen.getByText('Classe 3A')).toBeTruthy();
+    expect(screen.queryByText('Classe 3A')).toBeNull();
     expect(screen.getByText('SF-2026-A3B7')).toBeTruthy();
     expect(screen.getByText('Consegna effettuata', { exact: false })).toBeTruthy();
     expect(
@@ -37,7 +37,7 @@ describe('ConfirmationView', () => {
     expect(screen.queryByRole('checkbox')).toBeNull();
   });
 
-  it('omits the class line when className is null', () => {
+  it('keeps the class hidden also for legacy receipts that still carry it', () => {
     render(<ConfirmationView receipt={{ ...RECEIPT, className: null }} onBackToList={vi.fn()} />);
     expect(screen.queryByText('Classe 3A')).toBeNull();
   });

@@ -14,6 +14,10 @@ const studentCss = readFileSync(
   resolve(process.cwd(), 'src/features/student/StudentVerificationsView.module.css'),
   'utf8',
 );
+const submissionCardCss = readFileSync(
+  resolve(process.cwd(), 'src/features/teacher/SubmissionRecordCard.module.css'),
+  'utf8',
+);
 
 describe('VerificationsView batch toolbar responsive contract', () => {
   it('uses the approved 7 → 2 grid on desktop and keeps the submissions table scrollable', () => {
@@ -51,6 +55,10 @@ describe('VerificationsView batch toolbar responsive contract', () => {
     expect(recordCardCss).toMatch(
       /\.cardActionsSubmission\s+\.actions button\s*\{[^}]*min-width:\s*2\.75rem[^}]*min-height:\s*2\.75rem/s,
     );
+    // La riga metadati resta neutra; solo il link eventi riacquista hit-testing.
+    expect(submissionCardCss).toMatch(
+      /\.eventsLink\s*\{[^}]*z-index:\s*2[^}]*pointer-events:\s*auto/s,
+    );
   });
 
   it('UI-CONSEGNE-02 — «Torna alle verifiche» è un vero pulsante', () => {
@@ -77,11 +85,9 @@ describe('VerificationsView batch toolbar responsive contract', () => {
     // Desktop: ritorno | Consegne online | solo badge di stato.
     expect(css).toMatch(/\.detailTopRow\s*\{[^}]*grid-template-areas:\s*'back monitor status'/s);
     expect(css).toMatch(
-      /@media\s*\(min-width:\s*44\.01rem\)[\s\S]*?\.detailStatusBox\s*\{[^}]*padding:\s*0[^}]*border:\s*0[^}]*background:\s*transparent/s,
+      /\.detailStatusBox\s*\{[^}]*padding:\s*0[^}]*border:\s*0[^}]*background:\s*transparent/s,
     );
-    expect(css).toMatch(
-      /@media\s*\(min-width:\s*44\.01rem\)[\s\S]*?\.detailStatusBox\s*>\s*span:first-child\s*\{[^}]*display:\s*none/s,
-    );
+    expect(css).toMatch(/\.detailStatusBox\s*>\s*span:first-child\s*\{[^}]*display:\s*none/s);
     // Titolo e comandi export condividono una riga su desktop.
     expect(css).toMatch(
       /\.detailTitleRow\s*\{[^}]*display:\s*flex[^}]*justify-content:\s*space-between/s,
@@ -92,6 +98,12 @@ describe('VerificationsView batch toolbar responsive contract', () => {
     );
     expect(css).toMatch(
       /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.monitorActions\s*\{[^}]*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.detailHeaderSummary\s*\{[^}]*'title'[^}]*'meta'[^}]*'actions'/s,
+    );
+    expect(css).toMatch(
+      /@media\s*\(max-width:\s*44rem\)[\s\S]*?\.backLabel::after\s*\{[^}]*content:\s*attr\(data-mobile-label\)/s,
     );
     // Il menu batch segue subito i comandi: nessun margine verticale artificiale.
     expect(css).toMatch(/\.batchToolbarMobile\s*\{[^}]*margin-top:\s*0/s);

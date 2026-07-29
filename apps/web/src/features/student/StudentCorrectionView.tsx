@@ -6,6 +6,7 @@ import {
   type StudentCorrectionReturnItem,
 } from './studentCorrectionReturnsService.js';
 import styles from './StudentCorrectionView.module.css';
+import questionNavigatorStyles from '../../components/QuestionNavigator.module.css';
 
 type StudentCorrectionViewProps = {
   submissionId: string;
@@ -229,14 +230,19 @@ export function StudentCorrectionView({
           </div>
         )}
 
-        <nav aria-label="Navigatore domande" className={styles.questionNav}>
+        <nav
+          aria-label="Navigatore domande"
+          className={`${styles.questionNav} ${questionNavigatorStyles.nav}`}
+        >
           {orders.map((order) => {
             const isCurrent = order === currentOrder;
             return (
               <button
                 key={order}
                 type="button"
-                className={`${styles.navItem}${isCurrent ? ` ${styles.navItemCurrent}` : ''}`}
+                className={`${questionNavigatorStyles.item}${
+                  isCurrent ? ` ${questionNavigatorStyles.current}` : ''
+                }`}
                 title={`Domanda ${order + 1}`}
                 aria-label={`Vai alla domanda ${order + 1}`}
                 aria-current={isCurrent ? 'true' : undefined}
