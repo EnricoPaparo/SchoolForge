@@ -7,6 +7,7 @@ import {
   IconClipboardCheck,
   IconEye,
   IconEyeOff,
+  IconFileCheck,
   IconTriangleAlert,
   IconTrash,
 } from '../../components/icons.js';
@@ -34,6 +35,13 @@ export type SubmissionRecordCardProps = {
   deleteState: SubmissionDeleteState;
   deleteDisabled: boolean;
   onDelete: () => void;
+  /**
+   * FORCE-SUBMIT-01 — spiegazione del perché «Chiudi e consegna» non è
+   * disponibile, oppure `null` quando l'azione è eseguibile. Arriva dalla
+   * **stessa** derivazione usata dalla tabella desktop.
+   */
+  forceSubmitBlockedLabel: string | null;
+  onForceSubmit: () => void;
 };
 
 /**
@@ -62,6 +70,8 @@ export function SubmissionRecordCard({
   deleteState,
   deleteDisabled,
   onDelete,
+  forceSubmitBlockedLabel,
+  onForceSubmit,
 }: SubmissionRecordCardProps) {
   return (
     <RecordCard
@@ -170,6 +180,21 @@ export function SubmissionRecordCard({
                 <span>Apri correzione</span>
               </button>
             )}
+            <button
+              type="button"
+              role="menuitem"
+              title={forceSubmitBlockedLabel ?? 'Chiudi e consegna'}
+              aria-label={
+                forceSubmitBlockedLabel
+                  ? `Chiudi e consegna non disponibile — ${studentName}: ${forceSubmitBlockedLabel}`
+                  : `Chiudi e consegna — ${studentName}`
+              }
+              disabled={forceSubmitBlockedLabel !== null}
+              onClick={onForceSubmit}
+            >
+              <IconFileCheck size={15} />
+              <span>Chiudi e consegna</span>
+            </button>
             {deleteState !== 'absent' &&
               (deleteState === 'returned' ? (
                 <button

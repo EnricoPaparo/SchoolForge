@@ -42,6 +42,32 @@ describe('ConfirmationView', () => {
     expect(screen.queryByText('Classe 3A')).toBeNull();
   });
 
+  // FORCE-SUBMIT-01 — la consegna acquisita dal docente non deve essere
+  // indistinguibile da quella premuta dallo studente.
+  it('distingue la consegna acquisita dal docente', () => {
+    render(
+      <ConfirmationView receipt={{ ...RECEIPT, forcedByTeacher: true }} onBackToList={vi.fn()} />,
+    );
+
+    expect(screen.getByRole('region', { name: 'Consegna acquisita dal docente' })).toBeTruthy();
+    expect(screen.getByText('✓ Consegna acquisita dal docente')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Il docente ha acquisito l’ultima versione salvata. Non è possibile modificarla.',
+      ),
+    ).toBeTruthy();
+    // Stesso codice consegna canonico della consegna ordinaria.
+    expect(screen.getByText('SF-2026-A3B7')).toBeTruthy();
+    // Nessun contenuto di risposta, come per la consegna normale.
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('la consegna normale non menziona mai il docente', () => {
+    render(<ConfirmationView receipt={RECEIPT} onBackToList={vi.fn()} />);
+    expect(screen.queryByText(/acquisita dal docente/)).toBeNull();
+    expect(screen.getByRole('region', { name: 'Consegna effettuata' })).toBeTruthy();
+  });
+
   it('calls onBackToList when the back button is clicked', () => {
     const onBackToList = vi.fn();
     render(<ConfirmationView receipt={RECEIPT} onBackToList={onBackToList} />);

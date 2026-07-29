@@ -5,6 +5,7 @@ import type * as CorrectionArchiveExportModule from '../../repository/correction
 import type * as CorrectionProgressModule from '../../repository/corrections/correctionProgressService.js';
 import type * as CorrectionReturnVisibilityModule from '../../repository/corrections/correctionReturnVisibilityService.js';
 import type * as TeacherAiPrefsModule from '../../repository/corrections/teacherAiPreferencesService.js';
+import type * as ForceSubmitClientModule from '../../repository/verifications/forceSubmitClient.js';
 import { PdfModuleLoadError } from '../../../lib/pdfModuleLoader.js';
 
 afterEach(cleanup);
@@ -78,6 +79,21 @@ vi.mock('../../repository/verifications/submissionsMonitorService.js', () => ({
 vi.mock('../../repository/verifications/deleteSubmissionData.js', () => ({
   deleteSubmissionData: (...args: unknown[]) => mockDeleteSubmissionData(...args),
 }));
+// FORCE-SUBMIT-01 — solo la callable è sostituita: le funzioni pure
+// (`forceSubmitBlockedReason`, i messaggi) restano quelle reali, così la matrice
+// enabled/disabled testata qui è esattamente quella usata in produzione.
+const mockForceSubmit = vi.hoisted(() =>
+  vi.fn(async (..._args: unknown[]) => ({
+    status: 'submitted' as const,
+  })),
+);
+vi.mock('../../repository/verifications/forceSubmitClient.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof ForceSubmitClientModule>();
+  return {
+    ...actual,
+    createForceSubmitSubmission: () => mockForceSubmit,
+  };
+});
 vi.mock('../../repository/corrections/correctionRegisterExport.js', async (importOriginal) => {
   const actual = await importOriginal<typeof CorrectionRegisterExportModule>();
   return {
@@ -5034,5 +5050,192 @@ describe('VerificationsView — controllo di ritorno (UI-CONSEGNE-01)', () => {
     await waitFor(() =>
       expect(screen.getByRole('list', { name: 'Archivio verifiche' })).toBeTruthy(),
     );
+  });
+});
+
+// ─── FORCE-SUBMIT-01 — «Chiudi e consegna» ──────────────────────────────────
+
+describe('VerificationsView — chiusura forzata (FORCE-SUBMIT-01)', () => {
+  function useMobileViewport(matches: boolean) {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      configurable: true,
+      value: (query: string) => ({
+        matches,
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      }),
+    });
+  }
+
+  afterEach(() => {
+    delete (window as unknown as { matchMedia?: unknown }).matchMedia;
+    mockForceSubmit.mockReset();
+  });
+
+  const DRAFT_A = {
+    studentUid: 'stud-a',
+    status: 'draft' as const,
+    lastSavedAt: { seconds: 100, nanoseconds: 0 },
+    submittedAt: null,
+    deliveryCode: null,
+    attentionEventsCount: 0,
+  };
+  const SUBMITTED_B = {
+    studentUid: 'stud-b',
+    status: 'submitted' as const,
+    lastSavedAt: { seconds: 100, nanoseconds: 0 },
+    submittedAt: { seconds: 200, nanoseconds: 0 },
+    deliveryCode: 'SF-2026-A1B2',
+    attentionEventsCount: 0,
+  };
+
+  async function openMonitor(mobile: boolean, items: unknown[]) {
+    useMobileViewport(mobile);
+    setupDefaults();
+    // Nessuna correzione avviata: `setupDefaults()` non tocca questo mock, che
+    // altrimenti conserverebbe il valore impostato da una suite precedente.
+    mockLoadCorrectionProgressByStudent.mockResolvedValue(new Map());
+    mockListVerifications.mockResolvedValue([consegneVer()]);
+    mockListStudents.mockResolvedValue(consegneStudents);
+    let pushItems: (rows: unknown[]) => void = () => {};
+    mockWatchSubmissions.mockImplementation((_v, _o, _db, onChange) => {
+      pushItems = onChange;
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => expect(mockWatchSubmissions).toHaveBeenCalled());
+    pushItems(items);
+    await waitFor(() => expect(screen.getByLabelText('Consegne online')).toBeTruthy());
+  }
+
+  it('desktop: azione abilitata su una bozza, disabilitata e spiegata altrove', async () => {
+    // Anna ha una bozza; Bruno ha già consegnato; nessuna riga per chi non ha iniziato.
+    await openMonitor(false, [DRAFT_A, SUBMITTED_B]);
+
+    expect(screen.getByRole('button', { name: 'Chiudi e consegna — Anna' })).toBeTruthy();
+    const blocked = screen.getByRole('button', {
+      name: 'Chiudi e consegna non disponibile — Bruno: La verifica è già stata consegnata.',
+    });
+    expect((blocked as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('desktop: studente che non ha iniziato ⇒ azione disabilitata, nessuna chiamata', async () => {
+    await openMonitor(false, []);
+
+    const blocked = screen.getByRole('button', {
+      name: 'Chiudi e consegna non disponibile — Anna: Lo studente non ha ancora iniziato la verifica.',
+    });
+    expect((blocked as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(blocked);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(mockForceSubmit).not.toHaveBeenCalled();
+  });
+
+  it('conferma esplicita e una sola callable con la sola coppia (verifica, studente)', async () => {
+    mockForceSubmit.mockResolvedValue({ status: 'submitted' });
+    await openMonitor(false, [DRAFT_A]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chiudi e consegna — Anna' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/non ancora salvate/i)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Chiudi e consegna' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    expect(mockForceSubmit).toHaveBeenCalledTimes(1);
+    expect(mockForceSubmit).toHaveBeenCalledWith({
+      verificationId: 'ver-1',
+      studentUid: 'stud-a',
+    });
+    // Nessun nuovo listener e nessuna rilettura: il listener esistente converge.
+    expect(mockWatchSubmissions).toHaveBeenCalledTimes(1);
+  });
+
+  it('annullare non esegue nulla', async () => {
+    await openMonitor(false, [DRAFT_A]);
+    fireEvent.click(screen.getByRole('button', { name: 'Chiudi e consegna — Anna' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(mockForceSubmit).not.toHaveBeenCalled();
+  });
+
+  it('doppio click sulla conferma ⇒ una sola chiamata', async () => {
+    let resolveCall: (v: { status: 'submitted' }) => void = () => {};
+    mockForceSubmit.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCall = resolve;
+        }),
+    );
+    await openMonitor(false, [DRAFT_A]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chiudi e consegna — Anna' }));
+    const dialog = await screen.findByRole('alertdialog');
+    const confirm = within(dialog).getByRole('button', { name: /Chiudi e consegna|Chiusura/ });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(mockForceSubmit).toHaveBeenCalledTimes(1);
+
+    resolveCall({ status: 'submitted' });
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(mockForceSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('errore: messaggio leggibile nel dialog, che resta aperto e ritentabile', async () => {
+    mockForceSubmit.mockRejectedValueOnce({ code: 'functions/failed-precondition' });
+    await openMonitor(false, [DRAFT_A]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chiudi e consegna — Anna' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Chiudi e consegna' }));
+
+    await waitFor(() => expect(within(dialog).getByText(/non è più in bozza/i)).toBeTruthy());
+    expect(screen.getByRole('alertdialog')).toBeTruthy();
+
+    mockForceSubmit.mockResolvedValueOnce({ status: 'submitted' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Chiudi e consegna' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(mockForceSubmit).toHaveBeenCalledTimes(2);
+  });
+
+  it('mobile: la stessa azione vive nel menu della card, con lo stesso stato', async () => {
+    mockForceSubmit.mockResolvedValue({ status: 'submitted' });
+    await openMonitor(true, [DRAFT_A, SUBMITTED_B]);
+
+    const anna = screen.getByRole('listitem', { name: 'Consegna Anna' });
+    fireEvent.click(within(anna).getByRole('button', { name: /^Azioni consegna/ }));
+    const item = screen.getByRole('menuitem', { name: /Chiudi e consegna/ });
+    expect((item as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(item);
+
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Chiudi e consegna' }));
+    await waitFor(() => expect(mockForceSubmit).toHaveBeenCalledTimes(1));
+    expect(mockForceSubmit).toHaveBeenCalledWith({
+      verificationId: 'ver-1',
+      studentUid: 'stud-a',
+    });
+  });
+
+  it('mobile: su una consegna già effettuata la voce è disabilitata e spiegata', async () => {
+    await openMonitor(true, [DRAFT_A, SUBMITTED_B]);
+
+    const bruno = screen.getByRole('listitem', { name: 'Consegna Bruno' });
+    fireEvent.click(within(bruno).getByRole('button', { name: /^Azioni consegna/ }));
+    const item = screen.getByRole('menuitem', { name: /Chiudi e consegna/ });
+    expect((item as HTMLButtonElement).disabled).toBe(true);
+    expect(item.getAttribute('title')).toBe('La verifica è già stata consegnata.');
+    fireEvent.click(item);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(mockForceSubmit).not.toHaveBeenCalled();
   });
 });

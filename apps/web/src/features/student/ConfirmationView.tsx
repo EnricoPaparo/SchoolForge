@@ -31,9 +31,23 @@ export function ConfirmationView({ receipt, onBackToList }: ConfirmationViewProp
   const submittedLabel = formatSubmittedAt(receipt.submittedAt);
 
   return (
-    <section aria-label="Consegna effettuata" className={styles.container}>
+    <section
+      aria-label={
+        receipt.forcedByTeacher === true ? 'Consegna acquisita dal docente' : 'Consegna effettuata'
+      }
+      className={styles.container}
+    >
       <div className={styles.card}>
-        <p className={styles.badge}>✓ Consegna effettuata</p>
+        {/*
+         * FORCE-SUBMIT-01 — quando la consegna è stata acquisita dal docente lo
+         * studente deve leggerlo esplicitamente: non ha premuto lui «Consegna»,
+         * e una conferma identica a quella ordinaria sarebbe fuorviante.
+         */}
+        <p className={styles.badge}>
+          {receipt.forcedByTeacher === true
+            ? '✓ Consegna acquisita dal docente'
+            : '✓ Consegna effettuata'}
+        </p>
         <h2 className={styles.title}>{receipt.verificationTitle}</h2>
         <dl className={styles.meta}>
           {submittedLabel && (
@@ -49,7 +63,9 @@ export function ConfirmationView({ receipt, onBackToList }: ConfirmationViewProp
         </dl>
 
         <p className={styles.immutableNotice}>
-          La tua consegna è stata registrata. Non è possibile modificarla.
+          {receipt.forcedByTeacher === true
+            ? 'Il docente ha acquisito l’ultima versione salvata. Non è possibile modificarla.'
+            : 'La tua consegna è stata registrata. Non è possibile modificarla.'}
         </p>
 
         <button type="button" className={styles.backBtn} onClick={onBackToList}>

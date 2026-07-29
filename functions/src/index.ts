@@ -17,3 +17,7 @@ export { cleanupProgramLessonNotes } from './programNotesCleanup.js';
 // VEX-01B — callable di assegnazione idempotente delle varianti equivalenti
 // (server-side, isolamento delle alternative). Vedi documentazione/vex-contract.md.
 export { assignVerificationVariant } from './verificationVariantGateway.js';
+// FORCE-SUBMIT-01 — callable con cui il docente acquisisce e chiude una verifica
+// online rimasta in bozza (transizione draft → submitted server-side e
+// transazionale). Vedi documentazione/api-contract.md.
+export { forceSubmitSubmission } from './forceSubmitGateway.js';
