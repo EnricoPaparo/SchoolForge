@@ -1,8 +1,11 @@
+import { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OnlineExamView } from '../OnlineExamView.js';
 import type { SubmissionDoc } from '../../../types/firestore.js';
 import type * as ExamDeterrenceModule from '../examDeterrence.js';
+import type * as ForceCloseWatchModule from '../forceCloseWatch.js';
+import { RECEIPT_RETRY_DELAYS_MS } from '../forceCloseWatch.js';
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {} }));
 
@@ -14,6 +17,17 @@ vi.mock('../submissionsService.js', () => ({
   submitSubmission: (...args: unknown[]) => mockSubmitSubmission(...args),
   loadReceipt: (...args: unknown[]) => mockLoadReceipt(...args),
 }));
+
+// FORCE-SUBMIT-02 — il listener della propria chiusura programmata è sostituito
+// da una porta pilotabile: le funzioni pure del countdown restano quelle reali.
+const mockWatchOwnForceClose = vi.fn();
+vi.mock('../forceCloseWatch.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof ForceCloseWatchModule>();
+  return {
+    ...actual,
+    watchOwnForceClose: (...args: unknown[]) => mockWatchOwnForceClose(...args),
+  };
+});
 
 const mockAttachDeterrenceListeners = vi.fn();
 vi.mock('../examDeterrence.js', async () => {
@@ -28,6 +42,7 @@ afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
   mockAttachDeterrenceListeners.mockReturnValue(vi.fn());
+  mockWatchOwnForceClose.mockReturnValue(vi.fn());
   mockSaveDraft.mockResolvedValue(undefined);
 });
 
@@ -98,6 +113,27 @@ function renderView(overrides: Partial<Parameters<typeof OnlineExamView>[0]> = {
   };
   render(<OnlineExamView {...props} />);
   return { onSubmitted };
+}
+
+/** Come `renderView`, ma espone anche `unmount` (cleanup del listener). */
+function renderViewWithUnmount(overrides: Partial<Parameters<typeof OnlineExamView>[0]> = {}) {
+  const onSubmitted = vi.fn();
+  const view = render(
+    <OnlineExamView
+      verificationId="v1"
+      title="Verifica Reti"
+      className="Classe 3A"
+      studentName="Mario Rossi"
+      ownerUid="owner-uid"
+      studentUid="student-uid"
+      questions={QUESTIONS}
+      submission={emptySubmission()}
+      onSubmitted={onSubmitted}
+      rng={IDENTITY_RNG}
+      {...overrides}
+    />,
+  );
+  return { onSubmitted, unmount: view.unmount };
 }
 
 describe('OnlineExamView — question rendering', () => {
@@ -1061,5 +1097,598 @@ describe('OnlineExamView — chiusura forzata dal docente (FORCE-SUBMIT-01)', ()
 
     await waitFor(() => expect(onSubmitted).toHaveBeenCalledWith(FORCED_RECEIPT));
     expect(mockLoadReceipt).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── FORCE-SUBMIT-02 — preavviso di chiusura ────────────────────────────────
+
+describe('OnlineExamView — chiusura programmata dal docente (FORCE-SUBMIT-02)', () => {
+  const REQUEST = { requestId: 'abcdefghijklmnopqrstuvwx', deadlineMs: 0, requestedAtMs: 0 };
+  const RECEIPT = {
+    submissionId: 'v1_student-uid',
+    verificationId: 'v1',
+    studentUid: 'student-uid',
+    ownerUid: 'owner-uid',
+    verificationTitle: 'Verifica Reti',
+    className: 'Classe 3A',
+    deliveryCode: 'SF-2026-QRST',
+    submittedAt: { seconds: 1_800_000_000 },
+    forcedByTeacher: true,
+  };
+
+  /** Cattura gli handler passati al listener e ne restituisce il controllo. */
+  function captureWatch() {
+    const unsubscribe = vi.fn();
+    let handlers: {
+      onRequest: (r: typeof REQUEST | null) => void;
+      onUnavailable: () => void;
+    } = { onRequest: () => {}, onUnavailable: () => {} };
+    mockWatchOwnForceClose.mockImplementation((..._args: unknown[]) => {
+      handlers = _args[3] as typeof handlers;
+      return unsubscribe;
+    });
+    return { unsubscribe, handlers: () => handlers };
+  }
+
+  function deadlineIn(seconds: number) {
+    const deadlineMs = Date.now() + seconds * 1000;
+    return { ...REQUEST, deadlineMs, requestedAtMs: deadlineMs - 60_000 };
+  }
+
+  it('apre un solo listener sulla propria consegna e lo chiude allo smontaggio', () => {
+    const { unsubscribe } = captureWatch();
+    const { unmount } = renderViewWithUnmount();
+
+    expect(mockWatchOwnForceClose).toHaveBeenCalledTimes(1);
+    expect(mockWatchOwnForceClose.mock.calls[0]![0]).toBe('v1');
+    expect(mockWatchOwnForceClose.mock.calls[0]![1]).toBe('student-uid');
+
+    unmount();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('senza richiesta non mostra alcun banner', () => {
+    captureWatch();
+    renderView();
+    expect(screen.queryByText('Chiusura richiesta dal docente')).toBeNull();
+  });
+
+  it('alla comparsa mostra il banner e salva immediatamente il lavoro sporco', async () => {
+    const { handlers } = captureWatch();
+    renderView();
+
+    // Lo studente ha scritto qualcosa: la bozza è sporca.
+    fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
+      target: { value: 'Risposta in corso.' },
+    });
+
+    await act(async () => {
+      handlers().onRequest(deadlineIn(60));
+    });
+
+    expect(screen.getByText('Chiusura richiesta dal docente')).toBeTruthy();
+    await waitFor(() => expect(mockSaveDraft).toHaveBeenCalledTimes(1));
+  });
+
+  it('non salva due volte per la stessa richiesta', async () => {
+    const { handlers } = captureWatch();
+    renderView();
+    fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
+      target: { value: 'Risposta.' },
+    });
+
+    const request = deadlineIn(60);
+    await act(async () => {
+      handlers().onRequest(request);
+    });
+    await waitFor(() => expect(mockSaveDraft).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      handlers().onRequest(request);
+    });
+    expect(mockSaveDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it('fino alla scadenza si può ancora compilare, salvare e consegnare', async () => {
+    const { handlers } = captureWatch();
+    renderView();
+    await act(async () => {
+      handlers().onRequest(deadlineIn(60));
+    });
+
+    const textarea = screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement;
+    expect(textarea.disabled).toBe(false);
+    fireEvent.change(textarea, { target: { value: 'Ancora modificabile.' } });
+    expect(textarea.value).toBe('Ancora modificabile.');
+    expect((screen.getByRole('button', { name: 'Consegna' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    // «Salva ora» del banner usa lo stesso salvataggio della vista.
+    fireEvent.click(screen.getByRole('button', { name: 'Salva ora' }));
+    await waitFor(() => expect(mockSaveDraft).toHaveBeenCalled());
+  });
+
+  it('alla scadenza blocca immediatamente i controlli', async () => {
+    const { handlers } = captureWatch();
+    renderView();
+    await act(async () => {
+      handlers().onRequest(deadlineIn(-1));
+    });
+
+    expect((screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled).toBe(
+      true,
+    );
+    expect((screen.getByRole('button', { name: 'Consegna' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByText('Chiusura in corso…')).toBeTruthy();
+  });
+
+  it('la ricevuta non ancora propagata viene ritentata, senza polling infinito', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      // I primi due tentativi non trovano nulla: la chiusura non è ancora
+      // propagata al client.
+      mockLoadReceipt
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(RECEIPT);
+      const { onSubmitted } = renderView();
+
+      await act(async () => {
+        handlers().onUnavailable();
+      });
+      expect(onSubmitted).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(onSubmitted).toHaveBeenCalledWith(RECEIPT);
+      expect(onSubmitted).toHaveBeenCalledTimes(1);
+      // Tentativi **limitati**: esauriti quelli previsti, non si riprova più.
+      const attempts = mockLoadReceipt.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(mockLoadReceipt).toHaveBeenCalledTimes(attempts);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ricevuta mai trovata: i tentativi si esauriscono, nessun polling permanente', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(null);
+      const { onSubmitted } = renderView();
+
+      await act(async () => {
+        handlers().onUnavailable();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(onSubmitted).not.toHaveBeenCalled();
+      const attempts = mockLoadReceipt.mock.calls.length;
+      expect(attempts).toBeLessThanOrEqual(4);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(mockLoadReceipt).toHaveBeenCalledTimes(attempts);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('esauriti i tentativi mostra un errore accessibile e «Riprova» funzionante', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(null);
+      const { onSubmitted } = renderView();
+
+      await act(async () => {
+        handlers().onUnavailable();
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      const alert = screen
+        .getAllByRole('alert')
+        .find((el) => el.textContent?.includes('Non è stato possibile verificare'))!;
+      expect(alert).toBeTruthy();
+      expect(alert.textContent).toContain(
+        'Non è stato possibile verificare la consegna acquisita.',
+      );
+
+      // «Riprova» riavvia lo stesso retry limitato e stavolta trova la ricevuta.
+      mockLoadReceipt.mockResolvedValue(RECEIPT);
+      const retry = within(alert).getByRole('button', { name: 'Riprova' });
+      await act(async () => {
+        fireEvent.click(retry);
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(onSubmitted).toHaveBeenCalledWith(RECEIPT);
+      expect(onSubmitted).toHaveBeenCalledTimes(1);
+      expect(
+        screen
+          .queryAllByRole('alert')
+          .some((el) => el.textContent?.includes('Non è stato possibile verificare')),
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('doppio click su «Riprova» ⇒ un solo ciclo di tentativi', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(null);
+      renderView();
+
+      await act(async () => {
+        handlers().onUnavailable();
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      const attemptsAfterFirst = mockLoadReceipt.mock.calls.length;
+
+      const alert = screen
+        .getAllByRole('alert')
+        .find((el) => el.textContent?.includes('Non è stato possibile verificare'))!;
+      const retry = within(alert).getByRole('button', { name: 'Riprova' });
+      await act(async () => {
+        fireEvent.click(retry);
+        fireEvent.click(retry);
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      // Un solo ciclo aggiuntivo, non due.
+      expect(mockLoadReceipt.mock.calls.length).toBe(attemptsAfterFirst * 2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('chiusura fallita in modo permanente: il server ripulisce e la verifica si sblocca', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(null);
+      renderView();
+
+      // Scadenza passata: controlli bloccati, poi tentativi esauriti.
+      await act(async () => {
+        handlers().onRequest(deadlineIn(-1));
+        handlers().onUnavailable();
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(
+        (screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled,
+      ).toBe(true);
+
+      // Il server ha rimosso i marcatori senza ricevuta: si torna operativi.
+      await act(async () => {
+        handlers().onRequest(null);
+      });
+
+      expect(
+        (screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled,
+      ).toBe(false);
+      expect(
+        screen
+          .queryAllByRole('alert')
+          .some((el) => el.textContent?.includes('Non è stato possibile verificare')),
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cleanup dei marcatori durante il backoff ⇒ nessun falso alert, verifica sbloccata', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(null);
+      const { onSubmitted } = renderView();
+
+      await act(async () => {
+        handlers().onRequest(deadlineIn(-1));
+        handlers().onUnavailable();
+        // Un solo tick: i tentativi sono ancora in corso.
+        await vi.advanceTimersByTimeAsync(600);
+      });
+
+      // Il server ha ripulito la programmazione mentre il retry è nel backoff.
+      await act(async () => {
+        handlers().onRequest(null);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      // Nessun alert appartenente a una richiesta che non esiste più…
+      expect(
+        screen
+          .queryAllByRole('alert')
+          .some((el) => el.textContent?.includes('Non è stato possibile verificare')),
+      ).toBe(false);
+      // …e la verifica è tornata utilizzabile.
+      expect(
+        (screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled,
+      ).toBe(false);
+      expect(onSubmitted).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('una nuova programmazione invalida il retry della precedente', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(null);
+      renderView();
+
+      const first = deadlineIn(-1);
+      await act(async () => {
+        handlers().onRequest(first);
+        handlers().onUnavailable();
+        await vi.advanceTimersByTimeAsync(600);
+      });
+
+      // Arriva una richiesta **diversa** mentre il vecchio retry è in corso.
+      const second = { ...deadlineIn(60), requestId: 'zzzzzzzzzzzzzzzzzzzzzzzz' };
+      await act(async () => {
+        handlers().onRequest(second);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      // Il vecchio tentativo non può marcare come fallita la nuova richiesta.
+      expect(
+        screen
+          .queryAllByRole('alert')
+          .some((el) => el.textContent?.includes('Non è stato possibile verificare')),
+      ).toBe(false);
+      // La nuova richiesta è quella mostrata, con i controlli ancora attivi.
+      expect(screen.getByText('Chiusura richiesta dal docente')).toBeTruthy();
+      expect(
+        (screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled,
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('la ricevuta della richiesta corrente chiude la sessione una sola volta', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(RECEIPT);
+      const { onSubmitted } = renderView();
+
+      await act(async () => {
+        handlers().onRequest(deadlineIn(-1));
+        handlers().onUnavailable();
+        handlers().onUnavailable();
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(onSubmitted).toHaveBeenCalledWith(RECEIPT);
+      expect(onSubmitted).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('un probe obsoleto non blocca né altera quello della richiesta successiva', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      const { onSubmitted } = renderView();
+
+      // 1) Richiesta A. 2) La sua consegna non è più leggibile: probe in corso.
+      const requestA = deadlineIn(-1);
+      mockLoadReceipt.mockResolvedValue(null);
+      await act(async () => {
+        handlers().onRequest(requestA);
+      });
+      await act(async () => {
+        handlers().onUnavailable();
+        // Backoff: il probe di A è a metà strada.
+        await vi.advanceTimersByTimeAsync(600);
+      });
+      const callsDuringA = mockLoadReceipt.mock.calls.length;
+      expect(callsDuringA).toBeGreaterThan(0);
+
+      // 3) Arriva la richiesta B mentre A è ancora in volo.
+      const requestB = { ...deadlineIn(-1), requestId: 'zzzzzzzzzzzzzzzzzzzzzzzz' };
+      await act(async () => {
+        handlers().onRequest(requestB);
+      });
+
+      // 4) onUnavailable di B **prima** che A termini. 5) Il probe di B parte
+      //    subito: la ricevuta di B viene trovata al primo tentativo.
+      mockLoadReceipt.mockResolvedValue(RECEIPT);
+      await act(async () => {
+        handlers().onUnavailable();
+      });
+
+      // 7) La ricevuta di B chiude la sessione esattamente una volta.
+      expect(onSubmitted).toHaveBeenCalledWith(RECEIPT);
+      expect(onSubmitted).toHaveBeenCalledTimes(1);
+      // Il probe di B non ha dovuto attendere la fine di quello di A.
+      expect(mockLoadReceipt.mock.calls.length).toBe(callsDuringA + 1);
+
+      // 6) A termina più tardi: non scrive stato e non riapre nulla.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(onSubmitted).toHaveBeenCalledTimes(1);
+      expect(
+        screen
+          .queryAllByRole('alert')
+          .some((el) => el.textContent?.includes('Non è stato possibile verificare')),
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('due onUnavailable per la **stessa** richiesta ⇒ un solo probe', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(null);
+      renderView();
+
+      await act(async () => {
+        handlers().onRequest(deadlineIn(-1));
+      });
+      await act(async () => {
+        handlers().onUnavailable();
+        handlers().onUnavailable();
+        handlers().onUnavailable();
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      // Un solo ciclo di tentativi, non tre.
+      expect(mockLoadReceipt.mock.calls.length).toBe(RECEIPT_RETRY_DELAYS_MS.length);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('nessun aggiornamento di stato dopo lo smontaggio', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(RECEIPT);
+      const onSubmitted = vi.fn();
+      const view = render(
+        <OnlineExamView
+          verificationId="v1"
+          title="Verifica Reti"
+          className="Classe 3A"
+          studentName="Mario Rossi"
+          ownerUid="owner-uid"
+          studentUid="student-uid"
+          questions={QUESTIONS}
+          submission={emptySubmission()}
+          onSubmitted={onSubmitted}
+          rng={IDENTITY_RNG}
+        />,
+      );
+      // Prima lettura in volo, poi la vista sparisce.
+      mockLoadReceipt.mockImplementationOnce(async () => {
+        view.unmount();
+        return null;
+      });
+
+      await act(async () => {
+        handlers().onUnavailable();
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(onSubmitted).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('quando la consegna non è più leggibile risolve la ricevuta una sola volta', async () => {
+    const { handlers } = captureWatch();
+    mockLoadReceipt.mockResolvedValue(RECEIPT);
+    const { onSubmitted } = renderView();
+
+    await act(async () => {
+      handlers().onUnavailable();
+      handlers().onUnavailable();
+    });
+
+    await waitFor(() => expect(onSubmitted).toHaveBeenCalledWith(RECEIPT));
+    expect(onSubmitted).toHaveBeenCalledTimes(1);
+    expect(mockLoadReceipt).toHaveBeenCalledTimes(1);
+  });
+
+  it('nessuna ricevuta ⇒ la sessione continua, nessuna chiusura inventata', async () => {
+    const { handlers } = captureWatch();
+    mockLoadReceipt.mockResolvedValue(null);
+    const { onSubmitted } = renderView();
+
+    await act(async () => {
+      handlers().onUnavailable();
+    });
+
+    expect(onSubmitted).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it('la richiesta rimossa fa sparire il banner e sblocca i controlli', async () => {
+    const { handlers } = captureWatch();
+    renderView();
+    await act(async () => {
+      handlers().onRequest(deadlineIn(-1));
+    });
+    expect(screen.getByText('Chiusura richiesta dal docente')).toBeTruthy();
+
+    await act(async () => {
+      handlers().onRequest(null);
+    });
+    expect(screen.queryByText('Chiusura richiesta dal docente')).toBeNull();
+    expect((screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it('StrictMode: il doppio montaggio non lascia listener orfani', () => {
+    const unsubscribes: ReturnType<typeof vi.fn>[] = [];
+    mockWatchOwnForceClose.mockImplementation(() => {
+      const unsubscribe = vi.fn();
+      unsubscribes.push(unsubscribe);
+      return unsubscribe;
+    });
+
+    const view = render(
+      <StrictMode>
+        <OnlineExamView
+          verificationId="v1"
+          title="Verifica Reti"
+          className="Classe 3A"
+          studentName="Mario Rossi"
+          ownerUid="owner-uid"
+          studentUid="student-uid"
+          questions={QUESTIONS}
+          submission={emptySubmission()}
+          onSubmitted={vi.fn()}
+          rng={IDENTITY_RNG}
+        />
+      </StrictMode>,
+    );
+
+    // React 18 in StrictMode monta, smonta e rimonta gli effetti: ogni
+    // sottoscrizione deve avere la propria disiscrizione.
+    expect(unsubscribes.length).toBeGreaterThan(0);
+    expect(unsubscribes.slice(0, -1).every((u) => u.mock.calls.length === 1)).toBe(true);
+
+    view.unmount();
+    expect(unsubscribes.every((u) => u.mock.calls.length === 1)).toBe(true);
+  });
+
+  it('un listener che non si apre non impedisce di svolgere la verifica', () => {
+    mockWatchOwnForceClose.mockImplementation(() => {
+      throw new Error('listener non disponibile');
+    });
+    renderView();
+    expect((screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled).toBe(
+      false,
+    );
   });
 });

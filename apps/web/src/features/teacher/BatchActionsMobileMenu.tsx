@@ -8,6 +8,7 @@ import {
   IconChevronRight,
   IconDownload,
   IconEraser,
+  IconFileCheck,
   IconEye,
   IconEyeOff,
   IconMoreHorizontal,
@@ -43,6 +44,12 @@ export type BatchActionsMobileMenuProps = {
   onAiCorrection: () => void;
   onBatchAction: (action: BatchAction) => void;
   onVisibilityAction: (action: BatchReturnVisibilityAction) => void;
+  /**
+   * FORCE-SUBMIT-02 — quante righe selezionate sono davvero chiudibili. Stessa
+   * derivazione della toolbar desktop e del dialog di conferma.
+   */
+  forceCloseEligibleCount: number;
+  onForceClose: () => void;
   onArchiveExport: () => void;
 };
 
@@ -69,6 +76,8 @@ export function BatchActionsMobileMenu({
   onBatchAction,
   onVisibilityAction,
   onArchiveExport,
+  forceCloseEligibleCount,
+  onForceClose,
 }: BatchActionsMobileMenuProps) {
   const [open, setOpen] = useState(false);
   const [level, setLevel] = useState<'root' | 'visibility'>('root');
@@ -215,6 +224,30 @@ export function BatchActionsMobileMenu({
             >
               <IconEraser size={15} />
               <span>Azzera</span>
+            </button>
+            {/*
+             * FORCE-SUBMIT-02 — ultima voce del menu batch: su mobile non si
+             * aggiunge un ottavo pulsante visibile. Stesso handler, stessa
+             * eleggibilità e stessa conferma del desktop.
+             */}
+            <button
+              type="button"
+              role="menuitem"
+              title={
+                forceCloseEligibleCount === 0
+                  ? 'Nessuna consegna selezionata è in bozza.'
+                  : `Chiudi ${forceCloseEligibleCount} consegne`
+              }
+              aria-label={
+                forceCloseEligibleCount === 0
+                  ? 'Chiudi consegne non disponibile: nessuna consegna selezionata è in bozza.'
+                  : `Chiudi consegne (${forceCloseEligibleCount})`
+              }
+              disabled={actionsDisabled || forceCloseEligibleCount === 0}
+              onClick={onForceClose}
+            >
+              <IconFileCheck size={15} />
+              <span>Chiudi consegne</span>
             </button>
           </>
         ) : (

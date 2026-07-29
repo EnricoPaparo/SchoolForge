@@ -1,0 +1,116 @@
+/*
+ * FORCE-SUBMIT-02 — banner di preavviso della chiusura richiesta dal docente.
+ *
+ * `position: fixed` deliberato: deve restare visibile durante lo scroll e in
+ * fullscreen, dove la pagina non è più il contesto di scroll. Lo spazio
+ * equivalente è riservato nel flusso da `.spacer`, così il banner non copre mai
+ * il titolo dell'esame né il navigatore delle domande.
+ */
+
+.banner {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  /* Sopra il contenuto, sotto i dialog (DialogShell usa un livello superiore). */
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: min(34rem, calc(100vw - 2rem));
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-warning, #d97706);
+  border-radius: 0.75rem;
+  background: var(--color-surface, #fff);
+  box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 18%);
+  color: var(--color-text, #1f2937);
+}
+
+/* Spazio riservato nel flusso: il contenuto sottostante non finisce mai coperto. */
+.spacer {
+  height: 4.5rem;
+}
+
+.texts {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.deadline {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.countdown {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.countdownUrgent {
+  color: var(--color-danger, #dc2626);
+}
+
+.lastSaved {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #6b7280);
+}
+
+.saveBtn {
+  flex: 0 0 auto;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0 1rem;
+}
+
+/*
+ * Mobile: quasi a tutta larghezza, due righe ordinate (testi sopra, pulsante
+ * sotto a piena larghezza) e rispetto della safe-area superiore.
+ */
+@media (max-width: 30rem) {
+  .banner {
+    top: calc(0.5rem + env(safe-area-inset-top, 0px));
+    left: env(safe-area-inset-left, 0px);
+    right: env(safe-area-inset-right, 0px);
+    transform: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    width: auto;
+    margin: 0 0.5rem;
+  }
+
+  .saveBtn {
+    width: 100%;
+  }
+
+  .spacer {
+    height: 7.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .banner {
+    animation: forceCloseAppear 160ms ease-out;
+  }
+}
+
+@keyframes forceCloseAppear {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}

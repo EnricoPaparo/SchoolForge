@@ -421,17 +421,38 @@ export interface ForceSubmitWrites {
  * proposito: la chiusura non tocca né i contenuti né la traccia dell'ultimo
  * salvataggio reale dello studente.
  */
+export interface ForceSubmitWriteOptions {
+  /**
+   * FORCE-SUBMIT-02 — sentinella con cui rimuovere i marcatori della chiusura
+   * programmata (`FieldValue.delete()` lato Admin). Presente solo quando la
+   * chiusura nasce da una programmazione: i tre campi si esauriscono nello
+   * **stesso** update, senza una seconda scrittura.
+   */
+  clearScheduleMarkers?: unknown;
+}
+
 export function forceSubmitWrites(
   decision: Extract<ForceSubmitDecision, { kind: 'apply' }>,
   input: ForceSubmitInput,
   now: unknown,
+  options: ForceSubmitWriteOptions = {},
 ): ForceSubmitWrites {
+  const clear = options.clearScheduleMarkers;
+  const scheduleCleanup =
+    clear === undefined
+      ? {}
+      : {
+          forceCloseRequestId: clear,
+          forceCloseDeadline: clear,
+          forceCloseRequestedAt: clear,
+        };
   return {
     submissionUpdate: {
       status: 'submitted',
       deliveryCode: decision.deliveryCode,
       submittedAt: now,
       forcedByTeacher: true,
+      ...scheduleCleanup,
     },
     receipt: {
       submissionId: decision.submissionId,

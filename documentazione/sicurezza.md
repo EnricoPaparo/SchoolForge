@@ -495,6 +495,76 @@ consegnato**. La transizione `draft → submitted` è **server-side e transazion
 
 ---
 
+## 8d. Chiusura multipla con preavviso (FORCE-SUBMIT-02 — implementato)
+
+La chiusura forzata è ora **solo** massiva e **solo** con 60 secondi di preavviso. La callable per
+singola consegna di FORCE-SUBMIT-01 è stata **rimossa**: lasciarla avrebbe significato mantenere una
+via per chiudere una verifica senza il preavviso promesso allo studente. Il suo core transazionale
+resta e viene riusato dalla task.
+
+- **Due momenti, due Function.** `scheduleForceCloseSubmissions` (callable owner-only) programma;
+  `runScheduledForceClose` (task queue Cloud Tasks, `scheduleTime` a +60 s) esegue. Nessuna Function
+  resta in attesa per un minuto, nessun `setTimeout` del browser partecipa alla decisione: la
+  chiusura avviene anche se docente e studente chiudono tutto.
+- **Input chiuso e limitato.** `{ verificationId, studentUids[] }`, uid unici, cap esplicito di 60
+  (una classe abbondante), id validati come document ID Firestore sui **byte UTF-8** — compreso
+  l'id consegna concatenato — prima di costruire qualunque riferimento. Il client non propone
+  `ownerUid`, `requestId`, scadenza, durata del preavviso né stato.
+- **Nessuna consegna viene mai creata.** Uno studente che non ha iniziato produce `not_started`:
+  zero scritture, zero task, nessun documento materializzato a suo nome.
+- **Programmare non consegna.** L'unica scrittura della programmazione sono tre marcatori
+  server-only. Stato, `answers`, `flagged`, `attentionEvents` e `lastSavedAt` restano intatti: fino
+  alla scadenza lo studente può ancora salvare **e consegnare normalmente**.
+- **I marcatori sono server-only ma leggibili dall'interessato.** Le Rules non sono state
+  modificate: i key-set chiusi già in vigore non li includono, quindi né lo studente né il docente
+  possono crearli, modificarli o rimuoverli con una scrittura diretta — mentre `allow get` sulla
+  propria bozza li rende leggibili proprio allo studente che ne è oggetto. È questa combinazione a
+  permettere il banner con **un solo** listener su **un solo** documento, senza query, senza
+  polling e senza alcuna collezione o indice aggiuntivo.
+  `force-submit-02-scheduled-close.rules.test.ts` lo dimostra: lo studente legge la propria
+  richiesta; un altro studente e un client anonimo no; il client non può crearla, alterarne la
+  scadenza, cambiarne il `requestId` né rimuoverla per sottrarsi alla chiusura (nemmeno dentro il
+  batch della consegna normale); il salvataggio durante il preavviso è ammesso e **conserva** i
+  marcatori; dopo la chiusura ogni scrittura è negata.
+- **Idempotenza e concorrenza.** Una riga già programmata risponde `already_scheduled` senza una
+  seconda task: doppio click e retry sono innocui. La task agisce solo se ritrova esattamente la
+  propria richiesta: consegna normale avvenuta nel frattempo, riprogrammazione con un altro
+  `requestId`, programmazione rimossa, consegna eliminata, verifica passata ad altri, consegna
+  doppia o tardiva della task ⇒ **no-op sicuro con zero scritture**, mai un errore ritentabile su
+  uno stato già corretto. Una consegna normale non viene **mai** trasformata in `forcedByTeacher`.
+- **Compensazione e limiti dichiarati.** Firestore e Cloud Tasks **non** condividono una
+  transazione, e nessun disegno può renderle atomiche. La scrittura dei marcatori viene **prima**
+  (così non può esistere una task senza il marcatore che la rende riconoscibile); il nome della task
+  è derivato dal `requestId`, quindi un retry dell'accodamento non crea duplicati; se l'accodamento
+  fallisce — dopo **tentativi limitati**, tutti con lo stesso nome task deterministico — si esegue
+  una **compensazione transazionale condizionata allo stesso `requestId`**, a sua volta con
+  tentativi limitati, che non tocca mai una programmazione diversa. Se anche la compensazione
+  fallisce l'esito è `failed_cleanup`: esplicito, mai un successo apparente, e **recuperabile
+  dall'applicazione** — ripetere «Chiudi consegne» sulle stesse righe riaccoda la task già
+  persistita con lo stesso `requestId` e la **stessa scadenza**, senza aprire una nuova finestra e
+  senza riscrivere nulla. Procedura operativa in [`runbook-operativo-v1.md`](runbook-operativo-v1.md) §9b.
+- **Nessuno studente resta bloccato.** Ogni via terminale della task porta a uno di quattro esiti:
+  consegna forzata con ricevuta; consegna normale già effettuata **con rimozione dei marcatori**;
+  programmazione non più valida **con rimozione dei marcatori**; oppure errore permanente sui
+  metadati, che rimuove comunque i marcatori. La combinazione «scadenza superata + marcatori
+  presenti + nessuna ricevuta» è vietata ed è verificata da un test dedicato su tutti gli scenari.
+  Gli errori infrastrutturali temporanei sono propagati perché Cloud Tasks ritenti; quelli
+  permanenti non vengono inghiottiti lasciando il documento bloccato.
+- **Sessanta secondi per ciascuno.** `forceCloseRequestedAt` e `forceCloseDeadline` sono calcolati
+  **per singolo studente**, dallo stesso istante letto dall'orologio della Function e scritti come
+  `Timestamp` espliciti: anche l'ultimo di un batch da 60 riceve il preavviso pieno. La relazione
+  `deadline − requestedAt === 60 s` è parte del contratto ed è verificata fail-closed ovunque sia
+  autorevole — server, task e client: una coppia che non la rispetta non è una programmazione valida
+  e non produce alcun banner.
+- **Mai una chiusura anticipata.** Il payload della task porta anche la scadenza canonica: se la
+  coda consegna prima del tempo la task **rilancia** invece di chiudere, e viene ritentata.
+- **Trasparenza.** Il banner dichiara la richiesta e il tempo residuo, il countdown è **ricalcolato
+  dalla scadenza server-side** a ogni tick (un contatore che decrementa prometterebbe più tempo del
+  reale dopo una scheda sospesa), e alla scadenza i controlli si bloccano subito. La ricevuta resta
+  quella di FORCE-SUBMIT-01, con «Consegna acquisita dal docente».
+
+---
+
 ## 9. Backup, costi e incidenti
 
 - I Markdown e gli asset in Cloud Storage sono intrinsecamente portabili e protetti dalla ridondanza nativa di Storage; non è previsto alcun job di backup dedicato.

@@ -832,6 +832,25 @@ export type SubmissionDoc = {
    * modificarlo o rimuoverlo con una scrittura diretta.
    */
   forcedByTeacher?: true;
+
+  /**
+   * FORCE-SUBMIT-02 — marcatori della **chiusura programmata**, scritti insieme
+   * dalla callable `scheduleForceCloseSubmissions` e rimossi nello stesso update
+   * che consegna la bozza (o quando la programmazione decade).
+   *
+   * Server-only esattamente come `forcedByTeacher`: i key-set chiusi delle Rules
+   * non li includono, quindi lo studente non può crearli, modificarli né
+   * rimuoverli — ma **può leggerli** sulla propria bozza, ed è così che il
+   * portale mostra il banner di preavviso senza alcun listener aggiuntivo.
+   *
+   * Vivono e muoiono insieme: o ci sono tutti e tre, o non c'è nessuno.
+   * Presenti solo mentre `status === 'draft'`.
+   */
+  forceCloseRequestId?: string;
+  /** Istante oltre il quale la task server-side acquisisce la bozza. */
+  forceCloseDeadline?: Timestamp;
+  /** Istante in cui il docente ha programmato la chiusura. */
+  forceCloseRequestedAt?: Timestamp;
   /**
    * VEX (VEX-01B): presente SOLO in `equivalent_variants`. Scritto UNA SOLA
    * VOLTA dal server (callable `assignVerificationVariant`, Admin SDK) al primo

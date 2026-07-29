@@ -5,7 +5,7 @@ import type * as CorrectionArchiveExportModule from '../../repository/correction
 import type * as CorrectionProgressModule from '../../repository/corrections/correctionProgressService.js';
 import type * as CorrectionReturnVisibilityModule from '../../repository/corrections/correctionReturnVisibilityService.js';
 import type * as TeacherAiPrefsModule from '../../repository/corrections/teacherAiPreferencesService.js';
-import type * as ForceSubmitClientModule from '../../repository/verifications/forceSubmitClient.js';
+import type * as ForceCloseClientModule from '../../repository/verifications/forceCloseClient.js';
 import { PdfModuleLoadError } from '../../../lib/pdfModuleLoader.js';
 
 afterEach(cleanup);
@@ -79,19 +79,20 @@ vi.mock('../../repository/verifications/submissionsMonitorService.js', () => ({
 vi.mock('../../repository/verifications/deleteSubmissionData.js', () => ({
   deleteSubmissionData: (...args: unknown[]) => mockDeleteSubmissionData(...args),
 }));
-// FORCE-SUBMIT-01 — solo la callable è sostituita: le funzioni pure
-// (`forceSubmitBlockedReason`, i messaggi) restano quelle reali, così la matrice
-// enabled/disabled testata qui è esattamente quella usata in produzione.
-const mockForceSubmit = vi.hoisted(() =>
+// FORCE-SUBMIT-02 — solo la callable è sostituita: le funzioni pure
+// (`planForceClose`, i messaggi) restano quelle reali, così l'eleggibilità
+// testata qui è esattamente quella usata in produzione.
+const mockScheduleForceClose = vi.hoisted(() =>
   vi.fn(async (..._args: unknown[]) => ({
-    status: 'submitted' as const,
+    graceSeconds: 60,
+    results: [] as { studentUid: string; outcome: string }[],
   })),
 );
-vi.mock('../../repository/verifications/forceSubmitClient.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof ForceSubmitClientModule>();
+vi.mock('../../repository/verifications/forceCloseClient.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof ForceCloseClientModule>();
   return {
     ...actual,
-    createForceSubmitSubmission: () => mockForceSubmit,
+    createScheduleForceClose: () => mockScheduleForceClose,
   };
 });
 vi.mock('../../repository/corrections/correctionRegisterExport.js', async (importOriginal) => {
@@ -3573,19 +3574,23 @@ describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)
     expect(within(annaRow).getByLabelText('Visibilità non disponibile').textContent).toBe('—');
   });
 
-  it('disables the checkbox for a non-submitted row and select-all covers only submitted rows', async () => {
+  /*
+   * FORCE-SUBMIT-02 — è selezionabile ogni riga con una consegna reale, anche in
+   * bozza: «Chiudi consegne» agisce proprio sulle bozze. «Correggi con IA»
+   * continua però a contare le sole consegne effettuate.
+   */
+  it('una bozza è selezionabile, ma la correzione IA conta solo le consegne effettuate', async () => {
     setupDefaults();
     const region = await openWith(twoSubmissions);
     const brunoBox = within(region).getByRole('checkbox', {
       name: 'Seleziona consegna — Bruno',
     }) as HTMLInputElement;
-    expect(brunoBox.disabled).toBe(true);
+    expect(brunoBox.disabled).toBe(false);
 
     const selectAll = within(region).getByRole('checkbox', {
       name: 'Seleziona tutte le consegne',
     }) as HTMLInputElement;
     fireEvent.click(selectAll);
-    // Only Anna (submitted) becomes selected.
     expect(selectAll.checked).toBe(true);
     expect(
       (
@@ -3594,7 +3599,22 @@ describe('VerificationsView — batch AI selection & «Correggi con IA» (M5-03)
         }) as HTMLInputElement
       ).checked,
     ).toBe(true);
-    expect(within(region).getByRole('button', { name: /Correggi con IA \(1\)/ })).toBeTruthy();
+    expect(brunoBox.checked).toBe(true);
+    // Anna è l'unica consegnata: la correzione IA resta su di lei soltanto.
+    expect(within(region).getByRole('button', { name: /Correggi con IA \(2\)/ })).toBeTruthy();
+  });
+
+  it('una riga «Non iniziata» resta non selezionabile', async () => {
+    setupDefaults();
+    // Solo Anna ha iniziato: Bruno non ha alcuna consegna.
+    const region = await openWith([twoSubmissions[0]!]);
+    expect(
+      (
+        within(region).getByRole('checkbox', {
+          name: 'Seleziona consegna — Bruno',
+        }) as HTMLInputElement
+      ).disabled,
+    ).toBe(true);
   });
 
   it('keeps the selection stable (by id) across a re-sort', async () => {
@@ -3801,10 +3821,13 @@ describe('VerificationsView — batch actions Completa/Riapri/Restituisci/Azzera
       'PDF correzioni',
       'Riapri',
       'Azzera',
+      'Chiudi consegne',
     ]);
+    // Azzera resta l'unica azione distruttiva; «Chiudi consegne» è warning.
     expect(buttons.filter((button) => button.classList.contains('btn-danger'))).toEqual([
       buttons[6],
     ]);
+    expect(buttons[7]!.className).toMatch(/btn-warning/);
   });
 
   it('exports one completed selection directly and preserves its checkbox', async () => {
@@ -4926,7 +4949,7 @@ describe('VerificationsView — toolbar azioni massive (UI-CONSEGNE-01)', () => 
     await waitFor(() => expect(screen.getByLabelText('Consegne online')).toBeTruthy());
   }
 
-  it('desktop: sette comandi nell’ordine approvato, con Azzera ultimo e distruttivo', async () => {
+  it('desktop: otto comandi nell’ordine approvato, con «Chiudi consegne» dopo «Azzera»', async () => {
     await openMonitor(false);
 
     const toolbar = screen.getByRole('group', { name: 'Azioni sulle consegne selezionate' });
@@ -4941,9 +4964,15 @@ describe('VerificationsView — toolbar azioni massive (UI-CONSEGNE-01)', () => 
       'PDF correzioni',
       'Riapri',
       'Azzera',
+      'Chiudi consegne',
     ]);
+    // FORCE-SUBMIT-02 — immediatamente a destra di «Azzera», stile warning.
+    expect(labels[labels.indexOf('Azzera') + 1]).toBe('Chiudi consegne');
     const azzera = within(toolbar).getByRole('button', { name: 'Azzera' });
     expect(azzera.className).toMatch(/btn-danger/);
+    expect(within(toolbar).getByRole('button', { name: /^Chiudi consegne/ }).className).toMatch(
+      /btn-warning/,
+    );
   });
 
   it('mobile: espone un solo menu «Azioni»', async () => {
@@ -4956,7 +4985,7 @@ describe('VerificationsView — toolbar azioni massive (UI-CONSEGNE-01)', () => 
     expect(buttons[0]!.getAttribute('aria-label')).toMatch(/^Azioni consegne/);
   });
 
-  it('mobile: il menu contiene selezione, IA e le altre sei azioni nello stesso ordine', async () => {
+  it('mobile: il menu contiene selezione, IA e le altre azioni nello stesso ordine', async () => {
     await openMonitor(true);
 
     fireEvent.click(
@@ -4978,7 +5007,10 @@ describe('VerificationsView — toolbar azioni massive (UI-CONSEGNE-01)', () => 
       'PDF correzioni',
       'Riapri',
       'Azzera',
+      'Chiudi consegne',
     ]);
+    // FORCE-SUBMIT-02 — ultima voce: nessun ottavo pulsante visibile su mobile.
+    expect(items.at(-1)).toBe('Chiudi consegne');
     const azzera = screen.getByRole('menuitem', { name: 'Azzera' });
     expect(azzera.className).toMatch(/menuDanger/);
   });
@@ -5053,9 +5085,9 @@ describe('VerificationsView — controllo di ritorno (UI-CONSEGNE-01)', () => {
   });
 });
 
-// ─── FORCE-SUBMIT-01 — «Chiudi e consegna» ──────────────────────────────────
+// ─── FORCE-SUBMIT-02 — «Chiudi consegne» (azione batch) ─────────────────────
 
-describe('VerificationsView — chiusura forzata (FORCE-SUBMIT-01)', () => {
+describe('VerificationsView — chiusura multipla (FORCE-SUBMIT-02)', () => {
   function useMobileViewport(matches: boolean) {
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
@@ -5075,7 +5107,7 @@ describe('VerificationsView — chiusura forzata (FORCE-SUBMIT-01)', () => {
 
   afterEach(() => {
     delete (window as unknown as { matchMedia?: unknown }).matchMedia;
-    mockForceSubmit.mockReset();
+    mockScheduleForceClose.mockReset();
   });
 
   const DRAFT_A = {
@@ -5098,8 +5130,6 @@ describe('VerificationsView — chiusura forzata (FORCE-SUBMIT-01)', () => {
   async function openMonitor(mobile: boolean, items: unknown[]) {
     useMobileViewport(mobile);
     setupDefaults();
-    // Nessuna correzione avviata: `setupDefaults()` non tocca questo mock, che
-    // altrimenti conserverebbe il valore impostato da una suite precedente.
     mockLoadCorrectionProgressByStudent.mockResolvedValue(new Map());
     mockListVerifications.mockResolvedValue([consegneVer()]);
     mockListStudents.mockResolvedValue(consegneStudents);
@@ -5116,126 +5146,273 @@ describe('VerificationsView — chiusura forzata (FORCE-SUBMIT-01)', () => {
     await waitFor(() => expect(screen.getByLabelText('Consegne online')).toBeTruthy());
   }
 
-  it('desktop: azione abilitata su una bozza, disabilitata e spiegata altrove', async () => {
-    // Anna ha una bozza; Bruno ha già consegnato; nessuna riga per chi non ha iniziato.
+  /** Seleziona la riga indicata (tabella o card, stessa checkbox accessibile). */
+  function selectRow(name: string) {
+    fireEvent.click(screen.getByRole('checkbox', { name: `Seleziona consegna — ${name}` }));
+  }
+
+  function toolbarButton() {
+    return screen.getByRole('button', { name: /^Chiudi consegne/ }) as HTMLButtonElement;
+  }
+
+  it('nessuna azione «Chiudi e consegna» per singola riga', async () => {
     await openMonitor(false, [DRAFT_A, SUBMITTED_B]);
 
-    expect(screen.getByRole('button', { name: 'Chiudi e consegna — Anna' })).toBeTruthy();
-    const blocked = screen.getByRole('button', {
-      name: 'Chiudi e consegna non disponibile — Bruno: La verifica è già stata consegnata.',
-    });
-    expect((blocked as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /Chiudi e consegna/ })).toBeNull();
+    // Nemmeno nel menu della card mobile.
+    cleanup();
+    await openMonitor(true, [DRAFT_A]);
+    fireEvent.click(
+      within(screen.getByRole('listitem', { name: 'Consegna Anna' })).getByRole('button', {
+        name: /^Azioni consegna/,
+      }),
+    );
+    expect(screen.queryByRole('menuitem', { name: /Chiudi e consegna/ })).toBeNull();
   });
 
-  it('desktop: studente che non ha iniziato ⇒ azione disabilitata, nessuna chiamata', async () => {
-    await openMonitor(false, []);
+  it('disabilitata senza selezione e con una selezione senza bozze', async () => {
+    await openMonitor(false, [DRAFT_A, SUBMITTED_B]);
 
-    const blocked = screen.getByRole('button', {
-      name: 'Chiudi e consegna non disponibile — Anna: Lo studente non ha ancora iniziato la verifica.',
-    });
-    expect((blocked as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(blocked);
-    expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(mockForceSubmit).not.toHaveBeenCalled();
+    expect(toolbarButton().disabled).toBe(true);
+    expect(toolbarButton().getAttribute('aria-label')).toMatch(/non disponibile/);
+
+    // Solo una consegna già effettuata: nessuna riga eleggibile.
+    selectRow('Bruno');
+    expect(toolbarButton().disabled).toBe(true);
+
+    // Aggiungendo la bozza l'azione diventa disponibile e conta 1.
+    selectRow('Anna');
+    expect(toolbarButton().disabled).toBe(false);
+    expect(toolbarButton().getAttribute('aria-label')).toBe('Chiudi consegne (1)');
   });
 
-  it('conferma esplicita e una sola callable con la sola coppia (verifica, studente)', async () => {
-    mockForceSubmit.mockResolvedValue({ status: 'submitted' });
-    await openMonitor(false, [DRAFT_A]);
+  it('la conferma mostra eleggibili, escluse e la durata fissa', async () => {
+    await openMonitor(false, [DRAFT_A, SUBMITTED_B]);
+    selectRow('Anna');
+    selectRow('Bruno');
+    fireEvent.click(toolbarButton());
 
-    fireEvent.click(screen.getByRole('button', { name: 'Chiudi e consegna — Anna' }));
     const dialog = await screen.findByRole('alertdialog');
-    expect(within(dialog).getByText(/non ancora salvate/i)).toBeTruthy();
+    expect(within(dialog).getByText('Chiudere le consegne selezionate?')).toBeTruthy();
+    expect(within(dialog).getByText(/60 secondi/)).toBeTruthy();
+    expect(within(dialog).getByText('Consegne da chiudere').nextSibling?.textContent).toBe('1');
+    expect(within(dialog).getByText('Selezioni escluse').nextSibling?.textContent).toBe('1');
+    expect(within(dialog).getByText(/Già consegnata: 1/)).toBeTruthy();
+    expect(within(dialog).getByText(/non ancora salvate/)).toBeTruthy();
+  });
 
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Chiudi e consegna' }));
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-
-    expect(mockForceSubmit).toHaveBeenCalledTimes(1);
-    expect(mockForceSubmit).toHaveBeenCalledWith({
-      verificationId: 'ver-1',
-      studentUid: 'stud-a',
+  it('invia solo le righe eleggibili, una sola volta', async () => {
+    mockScheduleForceClose.mockResolvedValue({
+      graceSeconds: 60,
+      results: [{ studentUid: 'stud-a', outcome: 'scheduled' }],
     });
-    // Nessun nuovo listener e nessuna rilettura: il listener esistente converge.
+    await openMonitor(false, [DRAFT_A, SUBMITTED_B]);
+    selectRow('Anna');
+    selectRow('Bruno');
+    fireEvent.click(toolbarButton());
+
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Avvia chiusura' }));
+
+    await waitFor(() => expect(mockScheduleForceClose).toHaveBeenCalledTimes(1));
+    expect(mockScheduleForceClose).toHaveBeenCalledWith({
+      verificationId: 'ver-1',
+      studentUids: ['stud-a'],
+    });
+    // Il dialog resta aperto e mostra gli esiti raggruppati.
+    await waitFor(() => expect(within(dialog).getByText(/Programmate: 1/)).toBeTruthy());
+    // Nessun nuovo listener: il monitor esistente converge da solo.
     expect(mockWatchSubmissions).toHaveBeenCalledTimes(1);
   });
 
-  it('annullare non esegue nulla', async () => {
-    await openMonitor(false, [DRAFT_A]);
-    fireEvent.click(screen.getByRole('button', { name: 'Chiudi e consegna — Anna' }));
-    const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }));
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(mockForceSubmit).not.toHaveBeenCalled();
-  });
-
-  it('doppio click sulla conferma ⇒ una sola chiamata', async () => {
-    let resolveCall: (v: { status: 'submitted' }) => void = () => {};
-    mockForceSubmit.mockImplementation(
+  it('doppio click su «Avvia chiusura» ⇒ una sola chiamata', async () => {
+    let resolveCall: (v: {
+      graceSeconds: number;
+      results: { studentUid: string; outcome: string }[];
+    }) => void = () => {};
+    mockScheduleForceClose.mockImplementation(
       () =>
         new Promise((resolve) => {
           resolveCall = resolve;
         }),
     );
     await openMonitor(false, [DRAFT_A]);
+    selectRow('Anna');
+    fireEvent.click(toolbarButton());
 
-    fireEvent.click(screen.getByRole('button', { name: 'Chiudi e consegna — Anna' }));
     const dialog = await screen.findByRole('alertdialog');
-    const confirm = within(dialog).getByRole('button', { name: /Chiudi e consegna|Chiusura/ });
+    const confirm = within(dialog).getByRole('button', { name: /Avvia chiusura|Avvio/ });
     fireEvent.click(confirm);
     fireEvent.click(confirm);
-    expect(mockForceSubmit).toHaveBeenCalledTimes(1);
+    expect(mockScheduleForceClose).toHaveBeenCalledTimes(1);
 
-    resolveCall({ status: 'submitted' });
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(mockForceSubmit).toHaveBeenCalledTimes(1);
+    resolveCall({ graceSeconds: 60, results: [{ studentUid: 'stud-a', outcome: 'scheduled' }] });
+    await waitFor(() => expect(within(dialog).getByText(/Programmate: 1/)).toBeTruthy());
+    expect(mockScheduleForceClose).toHaveBeenCalledTimes(1);
   });
 
-  it('errore: messaggio leggibile nel dialog, che resta aperto e ritentabile', async () => {
-    mockForceSubmit.mockRejectedValueOnce({ code: 'functions/failed-precondition' });
+  it('annullare non esegue nulla', async () => {
     await openMonitor(false, [DRAFT_A]);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Chiudi e consegna — Anna' }));
+    selectRow('Anna');
+    fireEvent.click(toolbarButton());
     const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Chiudi e consegna' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }));
 
-    await waitFor(() => expect(within(dialog).getByText(/non è più in bozza/i)).toBeTruthy());
-    expect(screen.getByRole('alertdialog')).toBeTruthy();
-
-    mockForceSubmit.mockResolvedValueOnce({ status: 'submitted' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Chiudi e consegna' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(mockForceSubmit).toHaveBeenCalledTimes(2);
+    expect(mockScheduleForceClose).not.toHaveBeenCalled();
   });
 
-  it('mobile: la stessa azione vive nel menu della card, con lo stesso stato', async () => {
-    mockForceSubmit.mockResolvedValue({ status: 'submitted' });
-    await openMonitor(true, [DRAFT_A, SUBMITTED_B]);
-
-    const anna = screen.getByRole('listitem', { name: 'Consegna Anna' });
-    fireEvent.click(within(anna).getByRole('button', { name: /^Azioni consegna/ }));
-    const item = screen.getByRole('menuitem', { name: /Chiudi e consegna/ });
-    expect((item as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(item);
+  it('errore: messaggio leggibile, dialog aperto e operazione ritentabile', async () => {
+    mockScheduleForceClose.mockRejectedValueOnce({ code: 'functions/permission-denied' });
+    await openMonitor(false, [DRAFT_A]);
+    selectRow('Anna');
+    fireEvent.click(toolbarButton());
 
     const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Chiudi e consegna' }));
-    await waitFor(() => expect(mockForceSubmit).toHaveBeenCalledTimes(1));
-    expect(mockForceSubmit).toHaveBeenCalledWith({
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Avvia chiusura' }));
+    await waitFor(() => expect(within(dialog).getByText(/questo account/)).toBeTruthy());
+
+    mockScheduleForceClose.mockResolvedValueOnce({
+      graceSeconds: 60,
+      results: [{ studentUid: 'stud-a', outcome: 'scheduled' }],
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Avvia chiusura' }));
+    await waitFor(() => expect(within(dialog).getByText(/Programmate: 1/)).toBeTruthy());
+    expect(mockScheduleForceClose).toHaveBeenCalledTimes(2);
+  });
+
+  /*
+   * FORCE-SUBMIT-02 — una chiusura già programmata resta eleggibile: ripetere
+   * l'operazione è la procedura di recupero di una programmazione rimasta senza
+   * task, e il dialog lo dichiara esplicitamente.
+   */
+  it('una consegna già programmata è recuperabile ripetendo l’operazione', async () => {
+    mockScheduleForceClose.mockResolvedValue({
+      graceSeconds: 60,
+      results: [{ studentUid: 'stud-a', outcome: 'already_scheduled' }],
+    });
+    await openMonitor(false, [
+      { ...DRAFT_A, forceCloseDeadline: { seconds: 999, nanoseconds: 0 } },
+    ]);
+    selectRow('Anna');
+
+    expect(toolbarButton().disabled).toBe(false);
+    fireEvent.click(toolbarButton());
+
+    const dialog = await screen.findByRole('alertdialog');
+    // Il dialog dichiara che non si apre una nuova finestra (testo interpolato,
+    // quindi spezzato su più nodi: si confronta il contenuto del dialog).
+    expect(dialog.textContent).toMatch(/già una chiusura programmata/);
+    expect(dialog.textContent).toMatch(/scadenza originale e senza un nuovo preavviso/);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Avvia chiusura' }));
+    await waitFor(() =>
+      expect(within(dialog).getByText(/Già programmate \(task ripristinata\): 1/)).toBeTruthy(),
+    );
+  });
+
+  it('mobile: stessa azione come ultima voce del menu batch, stesso handler', async () => {
+    mockScheduleForceClose.mockResolvedValue({
+      graceSeconds: 60,
+      results: [{ studentUid: 'stud-a', outcome: 'scheduled' }],
+    });
+    await openMonitor(true, [DRAFT_A]);
+    selectRow('Anna');
+    fireEvent.click(screen.getByRole('button', { name: /^Azioni consegne/ }));
+
+    const items = screen.getAllByRole('menuitem');
+    const last = items.at(-1)!;
+    expect(last.textContent?.trim()).toBe('Chiudi consegne');
+    expect((last as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(last);
+
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Avvia chiusura' }));
+    await waitFor(() => expect(mockScheduleForceClose).toHaveBeenCalledTimes(1));
+    expect(mockScheduleForceClose).toHaveBeenCalledWith({
       verificationId: 'ver-1',
-      studentUid: 'stud-a',
+      studentUids: ['stud-a'],
     });
   });
+});
 
-  it('mobile: su una consegna già effettuata la voce è disabilitata e spiegata', async () => {
-    await openMonitor(true, [DRAFT_A, SUBMITTED_B]);
+// ─── UI-CONSEGNE-02 — colonna Azioni e colonna Eventi ───────────────────────
 
-    const bruno = screen.getByRole('listitem', { name: 'Consegna Bruno' });
-    fireEvent.click(within(bruno).getByRole('button', { name: /^Azioni consegna/ }));
-    const item = screen.getByRole('menuitem', { name: /Chiudi e consegna/ });
-    expect((item as HTMLButtonElement).disabled).toBe(true);
-    expect(item.getAttribute('title')).toBe('La verifica è già stata consegnata.');
-    fireEvent.click(item);
-    expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(mockForceSubmit).not.toHaveBeenCalled();
+describe('VerificationsView — tabella desktop (UI-CONSEGNE-02)', () => {
+  async function openTable(items: unknown[]) {
+    setupDefaults();
+    mockLoadCorrectionProgressByStudent.mockResolvedValue(new Map());
+    mockListVerifications.mockResolvedValue([consegneVer()]);
+    mockListStudents.mockResolvedValue(consegneStudents);
+    let pushItems: (rows: unknown[]) => void = () => {};
+    mockWatchSubmissions.mockImplementation((_v, _o, _db, onChange) => {
+      pushItems = onChange;
+      return vi.fn();
+    });
+    render(<VerificationsView />);
+    await waitFor(() => screen.getByText('Verifica Algebra'));
+    fireEvent.click(screen.getByText('Verifica Algebra'));
+    await waitFor(() => expect(mockWatchSubmissions).toHaveBeenCalled());
+    pushItems(items);
+    await waitFor(() => expect(screen.getByLabelText('Consegne online')).toBeTruthy());
+    return screen.getByRole('table');
+  }
+
+  /** L'ultima cella di una riga è la colonna «Azioni». */
+  function actionsCell(studentName: string): HTMLElement {
+    const row = screen
+      .getAllByRole('row')
+      .find((r) => within(r).queryByText(studentName) !== null)!;
+    return within(row).getAllByRole('cell').at(-1)!;
+  }
+
+  it('una riga con azioni non mostra alcun «—»', async () => {
+    await openTable([
+      {
+        studentUid: 'stud-a',
+        status: 'draft',
+        lastSavedAt: { seconds: 1, nanoseconds: 0 },
+        submittedAt: null,
+        deliveryCode: null,
+        attentionEventsCount: 0,
+      },
+    ]);
+
+    const cell = actionsCell('Anna');
+    expect(within(cell).getAllByRole('button').length).toBeGreaterThan(0);
+    expect(cell.textContent).not.toContain('—');
+  });
+
+  it('una riga senza consegna mostra esattamente un «—»', async () => {
+    await openTable([]);
+
+    const cell = actionsCell('Anna');
+    expect(within(cell).queryAllByRole('button')).toHaveLength(0);
+    expect(cell.textContent?.match(/—/g) ?? []).toHaveLength(1);
+  });
+
+  it('header e cella «Eventi» condividono la stessa classe compatta', async () => {
+    const table = await openTable([
+      {
+        studentUid: 'stud-a',
+        status: 'submitted',
+        lastSavedAt: { seconds: 1, nanoseconds: 0 },
+        submittedAt: { seconds: 2, nanoseconds: 0 },
+        deliveryCode: 'SF-2026-A1B2',
+        attentionEventsCount: 3,
+      },
+    ]);
+
+    const header = within(table)
+      .getAllByRole('columnheader')
+      .find((h) => h.textContent?.includes('Eventi'))!;
+    expect(header.className).toMatch(/eventsHeader/);
+    const row = screen.getAllByRole('row').find((r) => within(r).queryByText('Anna') !== null)!;
+    const cell = within(row)
+      .getAllByRole('cell')
+      .find((c) => c.className.includes('eventsCell'))!;
+    expect(cell).toBeTruthy();
+    // Il conteggio resta accessibile come controllo.
+    expect(within(cell).getByRole('button', { name: /Eventi di attenzione/ })).toBeTruthy();
   });
 });

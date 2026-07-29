@@ -438,7 +438,19 @@ sequenceDiagram
 
 M3-full (completato) non introduce reset di una submission consegnata: la consegna è immutabile per decisione di prodotto, non riapribile nemmeno dal docente (D-M3F-04).
 
-**FORCE-SUBMIT-01 — chiusura e consegna forzata (implementato).** Il docente può acquisire e
+**FORCE-SUBMIT-02 — chiusura multipla con preavviso (implementato).** La chiusura forzata è
+un'azione **massiva** sulle consegne selezionate, con 60 secondi di preavviso allo studente, ed è
+divisa in due Function: `scheduleForceCloseSubmissions` (callable owner-only) scrive tre marcatori
+server-only sulle sole bozze eleggibili e accoda una Cloud Task per ciascuna;
+`runScheduledForceClose` (task queue) esegue alla scadenza riusando il core FORCE-SUBMIT-01. Nessuna
+Function resta in attesa, nessun timer del browser è autorevole, e la chiusura avviene anche se
+docente e studente chiudono il browser. Lo studente osserva la propria richiesta con **un solo**
+listener sul proprio documento — i marcatori sono server-only in scrittura ma leggibili
+dall'interessato — e fino alla scadenza continua a salvare e può ancora consegnare normalmente. La
+callable per singola consegna di FORCE-SUBMIT-01 è stata rimossa: consentiva di chiudere senza il
+preavviso promesso.
+
+**FORCE-SUBMIT-01 — nucleo transazionale della chiusura (implementato).** Il docente può acquisire e
 chiudere una verifica online che lo studente ha **iniziato ma non consegnato**. La transizione
 `draft → submitted` non è una scrittura client: avviene nella callable transazionale
 `forceSubmitSubmission` (Admin SDK). Il nucleo decisionale è puro e testabile
@@ -459,7 +471,8 @@ M3-lite non usa Cloud Functions. Le uniche Cloud Function della baseline corrent
 |---|---|---|
 | `aiCorrectionPreview` (M5/V2) | SPA docente | Preflight owner-only, eleggibilità e stima; nessun grader, nessun token. |
 | `aiCorrectionRun` (M5/V2) | SPA docente | Chiuse deterministiche e aperte tramite `AiGrader`; provider reale solo su DEV dietro config fail-closed e kill switch. |
-| `forceSubmitSubmission` (FORCE-SUBMIT-01) | SPA docente | Acquisisce e chiude una consegna rimasta in bozza: input chiuso `{ verificationId, studentUid }`, autorizzazione owner fail-closed, transazione idempotente con due sole scritture, risposta sanitizzata. Contratto in [`api-contract.md`](api-contract.md) §1.2. |
+| `scheduleForceCloseSubmissions` (FORCE-SUBMIT-02) | SPA docente | Programma la chiusura delle consegne selezionate: input chiuso `{ verificationId, studentUids[] }` con cap 60, autorizzazione owner fail-closed, una scrittura di marcatori server-only e una Cloud Task per bozza eleggibile. Contratto in [`api-contract.md`](api-contract.md) §1.2. |
+| `runScheduledForceClose` (FORCE-SUBMIT-02) | Cloud Tasks | Esegue la chiusura a +60 s: rilegge lo stato in transazione e riusa il core FORCE-SUBMIT-01 per le due sole scritture. Idempotente e no-op-safe su retry, riprogrammazione o consegna normale sopravvenuta. |
 
 [→ Sequenza correzione AI (V2)](diagrammi/sequence-correzione-ai.md)
 

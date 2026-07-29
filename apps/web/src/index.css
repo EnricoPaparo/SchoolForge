@@ -229,6 +229,23 @@ button.btn-danger:hover:not(:disabled) {
   border-color: var(--color-error-btn);
 }
 
+/*
+ * FORCE-SUBMIT-02 — variante «warning»: azione seria ma **non distruttiva**
+ * (acquisisce il lavoro già salvato, non cancella nulla). Deliberatamente
+ * distinta da `.btn-danger`, riservato alle azioni che perdono dati.
+ */
+button.btn-warning {
+  color: var(--color-warning);
+  border-color: var(--color-warning-border);
+  background-color: var(--color-warning-bg);
+}
+
+button.btn-warning:hover:not(:disabled) {
+  color: #1f2937;
+  background-color: var(--color-warning);
+  border-color: var(--color-warning);
+}
+
 /* Success button variant */
 button.btn-success {
   color: #fff;
