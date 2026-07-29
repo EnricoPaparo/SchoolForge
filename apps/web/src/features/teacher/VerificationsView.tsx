@@ -516,13 +516,14 @@ export function VerificationsView() {
    * divergere. «Correggi con IA» vi aggiunge soltanto la disponibilità delle
    * preferenze IA, esattamente come prima.
    */
-  const batchActionsDisabled =
-    aiSelectedUids.size === 0 ||
+  const batchOperationBusy =
     aiDialogOpen ||
     batchAction !== null ||
     batchReturnVisibilityAction !== null ||
     archiveExportBusy ||
     archiveEligibility !== null;
+  const batchActionsDisabled = aiSelectedUids.size === 0 || batchOperationBusy;
+  const mobileBatchMenuDisabled = selectableUids.length === 0 || batchOperationBusy;
 
   const allSelectableSelected =
     selectableUids.length > 0 && selectableUids.every((uid) => aiSelectedUids.has(uid));
@@ -553,13 +554,17 @@ export function VerificationsView() {
     [selectedVer, sortedMonitorRows, aiSelectedUids, correctionProgress],
   );
 
-  function toggleRowSelected(uid: string): void {
+  function setRowSelected(uid: string, selected: boolean): void {
     setAiSelectedUids((prev) => {
       const next = new Set(prev);
-      if (next.has(uid)) next.delete(uid);
-      else next.add(uid);
+      if (selected) next.add(uid);
+      else next.delete(uid);
       return next;
     });
+  }
+
+  function toggleRowSelected(uid: string): void {
+    setRowSelected(uid, !aiSelectedUids.has(uid));
   }
 
   function toggleSelectAll(): void {
@@ -2522,27 +2527,62 @@ export function VerificationsView() {
       {/* ── Detail panel — draft configuration only; active/closed show a compact summary ── */}
       {selectedVer && (
         <div className={styles.detail} aria-label="Dettaglio verifica">
-          <div className={styles.detailHeader}>
-            {/*
-             * UI-CONSEGNE-01 — controllo di ritorno sobrio: freccia del set
-             * icone + testo «Verifiche». Ciano a riposo, arancione su
-             * hover/focus, spostamento della freccia solo su puntatore fine e
-             * solo fuori da reduced-motion. Handler e routing invariati.
-             */}
-            <button
-              type="button"
-              className={styles.backButton}
-              aria-label="Torna alle verifiche"
-              onClick={() => setSelectedVer(null)}
-            >
-              <IconChevronLeft size={16} />
-              <span>Verifiche</span>
-            </button>
+          <div
+            className={`${styles.detailHeader} ${
+              selectedVer.status !== 'draft' ? styles.detailHeaderSummary : ''
+            }`}
+          >
+            <div className={styles.detailTopRow}>
+              <button
+                type="button"
+                className={styles.backButton}
+                aria-label="Torna alle verifiche"
+                onClick={() => setSelectedVer(null)}
+              >
+                <IconChevronLeft size={16} />
+                <span>
+                  <span className={styles.backLongLabel}>Torna alle </span>verifiche
+                </span>
+              </button>
+              <div className={styles.detailStatusBox}>
+                <span>Stato</span>
+                <StatusBadge status={selectedVer.status} visibility={selectedVer.visibility} />
+              </div>
+            </div>
             <h2 className={styles.detailTitle}>{selectedVer.config.title}</h2>
-            <StatusBadge status={selectedVer.status} visibility={selectedVer.visibility} />
-            <span className={styles.pdfStatusBadge} aria-live="polite">
-              PDF studente: {selectedVer.studentPdfEnabled ? 'abilitato' : 'disabilitato'}
-            </span>
+            {selectedVer.status !== 'draft' && (
+              <p className={styles.detailMeta}>
+                <span>{programTitle(selectedVer, programs)}</span>
+                {selectedVer.config.classId && (
+                  <>
+                    <span aria-hidden="true"> · </span>
+                    <span>
+                      {classes.find((c) => c.id === selectedVer.config.classId)?.name ??
+                        selectedVer.config.classId}
+                    </span>
+                  </>
+                )}
+                <span aria-hidden="true"> · </span>
+                <span>
+                  Domande configurate:{' '}
+                  {(selectedVer.teacherSnapshot?.questionRefs.length ??
+                    selectedVer.config.questionRefs.length) ||
+                    0}
+                </span>
+                {selectedVer.studentPdfEnabled && (
+                  <>
+                    <span aria-hidden="true"> · </span>
+                    <span
+                      className={styles.detailPdfIcon}
+                      title="PDF disponibile agli studenti"
+                      aria-label="PDF disponibile agli studenti"
+                    >
+                      <IconFileText size={15} />
+                    </span>
+                  </>
+                )}
+              </p>
+            )}
           </div>
 
           {/* ── Draft: edit title/class ── */}
@@ -2724,19 +2764,6 @@ export function VerificationsView() {
             </>
           )}
 
-          {/* ── Active / closed: compact read-only summary — actions live in the table row ── */}
-          {selectedVer.status !== 'draft' && (
-            <p className={styles.detailMeta}>
-              Programma: {programTitle(selectedVer, programs)}
-              {selectedVer.config.classId &&
-                ` · Classe: ${classes.find((c) => c.id === selectedVer.config.classId)?.name ?? selectedVer.config.classId}`}
-              {' · Domande configurate: '}
-              {(selectedVer.teacherSnapshot?.questionRefs.length ??
-                selectedVer.config.questionRefs.length) ||
-                0}
-            </p>
-          )}
-
           {/* ── Consegne online monitor (M3F-05) — hidden entirely for draft (M3F-11C) ── */}
           {selectedVer.status !== 'draft' && (
             <div role="region" aria-label="Consegne online" className={styles.monitorPanel}>
@@ -2784,6 +2811,7 @@ export function VerificationsView() {
                   <button
                     type="button"
                     className="btn-primary"
+                    aria-label="Esporta CSV"
                     disabled={
                       monitorStudents === null ||
                       monitorItems === null ||
@@ -2791,11 +2819,13 @@ export function VerificationsView() {
                     }
                     onClick={handleExportCorrectionRegisterCsv}
                   >
-                    Esporta CSV
+                    <span className={styles.exportLongLabel}>Esporta CSV</span>
+                    <span className={styles.exportShortLabel}>CSV</span>
                   </button>
                   <button
                     type="button"
                     className="btn-primary"
+                    aria-label="Esporta PDF"
                     disabled={
                       monitorStudents === null ||
                       monitorItems === null ||
@@ -2804,7 +2834,14 @@ export function VerificationsView() {
                     }
                     onClick={() => void handleExportCorrectionRegisterPdf()}
                   >
-                    {exportingPdf ? 'Generazione…' : 'Esporta PDF'}
+                    {exportingPdf ? (
+                      'Generazione…'
+                    ) : (
+                      <>
+                        <span className={styles.exportLongLabel}>Esporta PDF</span>
+                        <span className={styles.exportShortLabel}>PDF</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -2885,34 +2922,23 @@ export function VerificationsView() {
                   ))}
                 </div>
               )}
-              {/*
-               * UI-CONSEGNE-01 — versione mobile della **stessa** toolbar: azione
-               * principale «Correggi con IA» e un unico menu con le altre sei
-               * voci, nello stesso ordine. Le condizioni `disabled`, il conteggio
-               * e gli handler sono letteralmente gli stessi della variante
-               * desktop: nessuna funzione duplicata, nessuna nuova popup.
-               */}
+              {/* Su mobile tutte le azioni massive vivono nello stesso menu. */}
               {isMobileViewport && (
                 <div
                   className={styles.batchToolbarMobile}
                   role="group"
                   aria-label="Azioni sulle consegne selezionate"
                 >
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    disabled={batchActionsDisabled || aiPrefs.status !== 'ready'}
-                    onClick={() => setAiDialogOpen(true)}
-                  >
-                    <IconSparkles />
-                    Correggi con IA
-                    {aiSelectedUids.size > 0 ? ` (${aiSelectedUids.size})` : ''}
-                  </button>
                   <BatchActionsMobileMenu
-                    disabled={batchActionsDisabled}
+                    menuDisabled={mobileBatchMenuDisabled}
+                    actionsDisabled={batchActionsDisabled}
                     selectedCount={aiSelectedUids.size}
+                    allSelectableSelected={allSelectableSelected}
                     contextKey={selectedVer?.id ?? ''}
                     archiveExportBusy={archiveExportBusy}
+                    aiCorrectionDisabled={aiPrefs.status !== 'ready'}
+                    onToggleSelectAll={toggleSelectAll}
+                    onAiCorrection={() => setAiDialogOpen(true)}
                     onBatchAction={setBatchAction}
                     onVisibilityAction={setBatchReturnVisibilityAction}
                     onArchiveExport={() => void handleCorrectionArchiveExport()}
@@ -3253,16 +3279,16 @@ export function VerificationsView() {
                           <SubmissionRecordCard
                             key={row.studentUid}
                             studentName={studentName}
-                            metaLine={`Valutate ${formatValutate(row.studentUid)} · ${eventsCount} ${
-                              eventsCount === 1 ? 'evento' : 'eventi'
-                            }`}
+                            evaluatedLabel={`Valutate ${formatValutate(row.studentUid)}`}
                             stateLabel={row.stateLabel}
                             score={formatPercentage(item)}
                             visibility={showVisibility && visibility ? visibility : null}
                             submittedAt={item ? formatTimestamp(item.submittedAt) : '—'}
                             selectable={selectable}
                             selected={aiSelectedUids.has(row.studentUid)}
-                            onToggleSelected={() => toggleRowSelected(row.studentUid)}
+                            onToggleSelected={(selected) =>
+                              setRowSelected(row.studentUid, selected)
+                            }
                             onOpenCorrection={
                               canOpenCorrection
                                 ? () =>

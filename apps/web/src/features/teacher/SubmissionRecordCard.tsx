@@ -2,6 +2,7 @@ import { RecordCard } from '../../components/RecordCard.js';
 import { RecordActionsMenu } from './RecordActionsMenu.js';
 import {
   IconBookOpen,
+  IconCalendar,
   IconCircleX,
   IconClipboardCheck,
   IconEye,
@@ -18,14 +19,14 @@ export type SubmissionDeleteState = 'absent' | 'returned' | 'deletable';
 export type SubmissionRecordCardProps = {
   studentName: string;
   /** Dettagli secondari già mostrati dalla tabella (valutate, numero eventi). */
-  metaLine: string;
+  evaluatedLabel: string;
   stateLabel: string;
   score: string;
   visibility: { visibleToStudent: boolean; solutionsVisible: boolean } | null;
   submittedAt: string;
   selectable: boolean;
   selected: boolean;
-  onToggleSelected: () => void;
+  onToggleSelected: (selected: boolean) => void;
   /** Presente solo quando la riga desktop è realmente apribile. */
   onOpenCorrection?: () => void;
   eventsCount: number;
@@ -47,7 +48,7 @@ export type SubmissionRecordCardProps = {
  */
 export function SubmissionRecordCard({
   studentName,
-  metaLine,
+  evaluatedLabel,
   stateLabel,
   score,
   visibility,
@@ -66,7 +67,23 @@ export function SubmissionRecordCard({
     <RecordCard
       recordLabel="Consegna"
       title={studentName}
-      metaLine={metaLine}
+      metaLine={
+        <>
+          <span>{evaluatedLabel}</span>
+          <span aria-hidden="true"> · </span>
+          <button
+            type="button"
+            className={styles.eventsLink}
+            disabled={eventsCount === 0}
+            onClick={(event) => {
+              event.stopPropagation();
+              onShowEvents();
+            }}
+          >
+            {eventsCount} {eventsCount === 1 ? 'evento' : 'eventi'}
+          </button>
+        </>
+      }
       actionLayout="submission"
       openLabel={onOpenCorrection ? `Apri correzione — ${studentName}` : undefined}
       onOpen={onOpenCorrection}
@@ -79,7 +96,8 @@ export function SubmissionRecordCard({
             aria-label={`Seleziona consegna — ${studentName}`}
             checked={selected}
             disabled={!selectable}
-            onChange={onToggleSelected}
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => onToggleSelected(event.currentTarget.checked)}
           />
         </label>
       }
@@ -130,28 +148,20 @@ export function SubmissionRecordCard({
           ),
         },
         {
-          // Fascia a larghezza piena: icona + testo, mai il solo colore.
           label: 'Stato',
           icon: <IconTriangleAlert />,
           value: <span className={styles.stateValue}>{stateLabel}</span>,
         },
+        {
+          label: 'Data consegna',
+          icon: <IconCalendar />,
+          value: <span className={styles.submittedAt}>{submittedAt}</span>,
+        },
       ]}
-      statusControl={<span className={styles.submittedAt}>{submittedAt}</span>}
       actions={
-        <RecordActionsMenu ariaLabel={`Azioni consegna — ${studentName}`}>
-          <button
-            type="button"
-            role="menuitem"
-            title="Visualizza eventi"
-            aria-label={`Eventi di attenzione — ${studentName}`}
-            disabled={eventsCount === 0}
-            onClick={onShowEvents}
-          >
-            <IconTriangleAlert size={15} />
-            <span>Visualizza eventi ({eventsCount})</span>
-          </button>
-          {deleteState !== 'absent' &&
-            (deleteState === 'returned' ? (
+        deleteState !== 'absent' ? (
+          <RecordActionsMenu ariaLabel={`Azioni consegna — ${studentName}`}>
+            {deleteState === 'returned' ? (
               <button
                 type="button"
                 role="menuitem"
@@ -176,8 +186,9 @@ export function SubmissionRecordCard({
                 <IconTrash size={15} />
                 <span>Elimina consegna</span>
               </button>
-            ))}
-        </RecordActionsMenu>
+            )}
+          </RecordActionsMenu>
+        ) : undefined
       }
     />
   );

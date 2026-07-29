@@ -444,6 +444,10 @@
   flex: 0 0 auto;
 }
 
+.exportShortLabel {
+  display: none;
+}
+
 /* TWU-01 — «Aggiorna» toolbar button: neutral/secondary look, icon + label
    aligned like the other toolbar buttons. */
 .refreshBtn {
@@ -512,13 +516,11 @@
 }
 
 /*
- * Mobile: due soli controlli — azione principale e menu con le altre sei voci.
- * Anche qui è montata una sola variante alla volta, quindi nessuno screen
- * reader incontra due volte la stessa azione.
+ * Mobile: un solo menu contiene selezione e tutte le azioni massive.
  */
 .batchToolbarMobile {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.5rem;
   margin-top: 0.75rem;
   min-width: 0;
@@ -527,12 +529,6 @@
 .batchToolbarMobile > button {
   width: 100%;
   min-height: 2.75rem;
-}
-
-@media (max-width: 24rem) {
-  .batchToolbarMobile {
-    grid-template-columns: 1fr;
-  }
 }
 
 .sortHeaderButton {
@@ -718,29 +714,42 @@
 }
 
 .detailHeader {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.detailHeaderSummary {
+  margin-bottom: -0.65rem;
+}
+
+.detailTopRow {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
 }
 
 /*
- * UI-CONSEGNE-01 — «← Verifiche»: controllo ghost, non un riquadro pieno.
- * Ciano a riposo, arancione SchoolForge su hover reale e focus-visible; la
- * freccia scivola di 2 px solo su puntatore fine. Target touch pieno su mobile.
+ * Controllo di navigazione reale, compatto e coerente con gli altri pulsanti.
  */
 .backButton {
-  flex-basis: 100%;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
   width: fit-content;
-  padding-inline: 0;
-  border-color: transparent;
-  background: transparent;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
   color: var(--color-brand-blue);
   font-weight: 700;
-  transition: color var(--transition-brand-interactive);
+  transition:
+    color var(--transition-brand-interactive),
+    border-color var(--transition-brand-interactive),
+    transform var(--transition-brand-interactive);
 }
 
 .backButton svg {
@@ -750,8 +759,8 @@
 
 .backButton:hover:not(:disabled),
 .backButton:focus-visible {
-  background: transparent;
-  border-color: transparent;
+  background: var(--color-surface);
+  border-color: var(--color-brand-interactive);
   color: var(--color-brand-interactive);
 }
 
@@ -766,9 +775,51 @@
 }
 
 @media (max-width: 44rem) {
+  .detailTopRow {
+    align-items: center;
+  }
+
+  .detailStatusBox {
+    min-width: 6.25rem;
+  }
+
   .backButton {
     min-height: 2.75rem;
     padding-block: 0.5rem;
+  }
+
+  .monitorHeader {
+    align-items: stretch;
+  }
+
+  .monitorTitleGroup,
+  .monitorActions {
+    width: 100%;
+  }
+
+  .monitorActions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .monitorActions button {
+    justify-content: center;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .exportLongLabel {
+    display: none;
+  }
+
+  .exportShortLabel {
+    display: inline;
+  }
+}
+
+@media (max-width: 24rem) {
+  .backLongLabel {
+    display: none;
   }
 }
 
@@ -785,20 +836,44 @@
 }
 
 .detailTitle {
-  font-size: 1.125rem;
+  margin: 0.3rem 0 0;
+  font-size: clamp(1.25rem, 2vw, 1.55rem);
   font-weight: 700;
-  flex: 1;
+  line-height: 1.2;
 }
 
 .detailMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 0.05rem 0 0;
   font-size: 0.8125rem;
   color: var(--color-text-muted);
 }
 
-.pdfStatusBadge {
-  font-size: 0.8125rem;
-  font-weight: 600;
+.detailStatusBox {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 7rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-surface) 78%, transparent);
+}
+
+.detailStatusBox > span:first-child {
   color: var(--color-text-muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.detailPdfIcon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-brand-blue);
 }
 
 /* ── Confirmation panel ──────────────────────────────────────────── */

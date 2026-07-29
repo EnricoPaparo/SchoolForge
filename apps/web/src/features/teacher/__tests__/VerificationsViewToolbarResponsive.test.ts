@@ -27,26 +27,24 @@ describe('VerificationsView batch toolbar responsive contract', () => {
     expect(css).toMatch(/\.submissionsTableWrap\s*\{[^}]*overflow-x:\s*auto/s);
   });
 
-  it('UI-CONSEGNE-01 — toolbar mobile a due controlli e lista card verticale', () => {
-    // Due soli controlli affiancati, che collassano a uno a 24rem.
-    expect(css).toMatch(/\.batchToolbarMobile\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
+  it('UI-CONSEGNE-02 — toolbar mobile a un controllo e lista card verticale', () => {
     expect(css).toMatch(
-      /@media\s*\(max-width:\s*24rem\)[\s\S]*?\.batchToolbarMobile\s*\{[^}]*grid-template-columns:\s*1fr/,
+      /\.batchToolbarMobile\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s,
     );
-    expect(css).toMatch(/\.batchToolbarMobile\s*>\s*button\s*\{[^}]*min-height:\s*2\.75rem/s);
     // Lista verticale: una card per riga, mai una griglia affiancata.
     expect(css).toMatch(
       /\.submissionCardList\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column[^}]*min-width:\s*0/s,
     );
     expect(css).not.toMatch(/\.submissionCardList\s*\{[^}]*grid-template-columns/s);
-    // Card consegna: Punteggio e Visibilità affiancati, Stato a tutta riga.
+    // Card consegna: quattro metriche in una griglia 2×2.
     expect(recordCardCss).toMatch(
       /\.cardActionsSubmission\s+\.metrics\s*\{[^}]*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s,
     );
+    expect(recordCardCss).not.toMatch(/\.cardActionsSubmission\s+\.metrics\s*>\s*:nth-child\(3\)/s);
+    // Checkbox a sinistra e trigger «…» a destra con target touch pieno.
     expect(recordCardCss).toMatch(
-      /\.cardActionsSubmission\s+\.metrics\s*>\s*:nth-child\(3\)\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s,
+      /\.card\.cardActionsSubmission\s*\{[^}]*'select identity actions'/s,
     );
-    // Data a sinistra, trigger «…» a destra con target touch pieno.
     expect(recordCardCss).toMatch(
       /\.cardActionsSubmission\s+\.actions\s*\{[^}]*justify-self:\s*end/s,
     );
@@ -55,8 +53,10 @@ describe('VerificationsView batch toolbar responsive contract', () => {
     );
   });
 
-  it('UI-CONSEGNE-01 — «← Verifiche» è ghost, ciano a riposo e arancione interattivo', () => {
-    expect(css).toMatch(/\.backButton\s*\{[^}]*background:\s*transparent/s);
+  it('UI-CONSEGNE-02 — «Torna alle verifiche» è un vero pulsante', () => {
+    expect(css).toMatch(
+      /\.backButton\s*\{[^}]*border:\s*1px solid var\(--color-border\)[^}]*background:\s*var\(--color-surface\)/s,
+    );
     expect(css).toMatch(/\.backButton\s*\{[^}]*color:\s*var\(--color-brand-blue\)/s);
     expect(css).toMatch(
       /\.backButton:hover:not\(:disabled\),[\s\S]*?\.backButton:focus-visible\s*\{[^}]*color:\s*var\(--color-brand-interactive\)/s,
