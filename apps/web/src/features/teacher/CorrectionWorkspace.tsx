@@ -25,6 +25,7 @@ import {
 } from '../repository/corrections/correctionsService.js';
 import type { AnswerValue, QuestionEvaluation } from '../../types/firestore.js';
 import styles from './CorrectionWorkspace.module.css';
+import questionNavigatorStyles from '../../components/QuestionNavigator.module.css';
 
 export type CorrectionWorkspaceProps = {
   submissionId: string;
@@ -581,7 +582,10 @@ export function CorrectionWorkspace({
           </div>
         </div>
 
-        <nav aria-label="Navigatore domande" className={styles.questionNav}>
+        <nav
+          aria-label="Navigatore domande"
+          className={`${styles.questionNav} ${questionNavigatorStyles.nav}`}
+        >
           {orders.map((order) => {
             const parsed = parsePoints(edit.evaluations[String(order)]?.pointsText ?? '');
             const maxPoints = correction.evaluations[String(order)]?.maxPoints ?? 0;
@@ -597,9 +601,11 @@ export function CorrectionWorkspace({
               <button
                 key={order}
                 type="button"
-                className={`${styles.navItem}${evaluated ? ` ${styles.navItemEvaluated}` : ''}${
-                  invalid ? ` ${styles.navItemInvalid}` : ''
-                }${isCurrent ? ` ${styles.navItemCurrent}` : ''}`}
+                className={`${questionNavigatorStyles.item}${
+                  evaluated ? ` ${styles.navItemEvaluated}` : ''
+                }${invalid ? ` ${styles.navItemInvalid}` : ''}${
+                  isCurrent ? ` ${questionNavigatorStyles.current}` : ''
+                }`}
                 title={`Domanda ${order + 1} — ${statusLabel}`}
                 aria-label={`Vai alla domanda ${order + 1} — ${statusLabel}`}
                 aria-current={isCurrent ? 'true' : undefined}

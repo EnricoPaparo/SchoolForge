@@ -37,12 +37,6 @@
   overflow-wrap: anywhere;
 }
 
-.className {
-  margin: -0.5rem 0 0;
-  font-size: 0.875rem;
-  color: var(--color-text-muted);
-}
-
 .meta {
   display: flex;
   flex-direction: column;

@@ -87,6 +87,7 @@ function renderView(overrides: Partial<Parameters<typeof OnlineExamView>[0]> = {
     verificationId: 'v1',
     title: 'Verifica Reti',
     className: 'Classe 3A',
+    studentName: 'Mario Rossi',
     ownerUid: 'owner-uid',
     studentUid: 'student-uid',
     questions: QUESTIONS,
@@ -100,6 +101,13 @@ function renderView(overrides: Partial<Parameters<typeof OnlineExamView>[0]> = {
 }
 
 describe('OnlineExamView — question rendering', () => {
+  it('shows the student identity in the exam information panel', () => {
+    renderView();
+
+    expect(screen.getByText('Mario Rossi')).toBeTruthy();
+    expect(screen.getByText('Classe 3A')).toBeTruthy();
+  });
+
   it('renders aperta as a textarea, chiusa_singola as radios, chiusa_multipla as checkboxes', () => {
     renderView();
 
@@ -884,6 +892,7 @@ function renderReorder(rng: () => number) {
       verificationId="v1"
       title="Verifica Reti"
       className="Classe 3A"
+      studentName="Mario Rossi"
       ownerUid="owner-uid"
       studentUid="student-uid"
       questions={QUESTIONS}

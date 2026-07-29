@@ -2550,8 +2550,8 @@ export function VerificationsView() {
                 onClick={() => setSelectedVer(null)}
               >
                 <IconChevronLeft size={16} />
-                <span>
-                  <span className={styles.backLongLabel}>Torna alle </span>verifiche
+                <span className={styles.backLabel} data-mobile-label="Verifiche">
+                  Torna alle verifiche
                 </span>
               </button>
               {selectedVer.status !== 'draft' && (

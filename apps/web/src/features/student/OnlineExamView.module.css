@@ -11,16 +11,15 @@
    Header row + question navigator share a single panel and remain in
    normal document flow: the whole panel now scrolls naturally with the
    questions instead of covering content while the student moves down.
-   Background is the approved slightly-raised panel surface
-   (`--color-surface-raised`, a solid hex — fully opaque, not translucent)
-   so it reads as the same visual family as Didattica panels/tables and
-   question text never shows through while scrolled underneath. */
+   Usa la stessa superficie delle domande, distinta da un accento arancione
+   SchoolForge: è un'intestazione, non una seconda card domanda. */
 .controlPanel {
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, var(--color-brand-interactive));
+  border-left: 3px solid var(--color-brand-interactive);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   padding: 0.875rem 1.125rem;
@@ -60,6 +59,16 @@
   border-radius: 999px;
   background: var(--color-primary-light);
   color: var(--color-primary);
+  white-space: nowrap;
+}
+
+.examStudent {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-brand-interactive) 14%, var(--color-surface));
+  color: var(--color-brand-interactive);
   white-space: nowrap;
 }
 
@@ -132,7 +141,7 @@
   gap: 0.375rem;
   /* Same visual family as the panel above, gently separated by a thin
      rule rather than a second heavy box (UI-POLISH-01). */
-  padding-top: 0.5rem;
+  margin-top: 0.25rem;
   border-top: 1px solid var(--color-border);
   overflow-x: auto;
   overflow-y: hidden;
@@ -145,20 +154,6 @@
 
 .questionNav::-webkit-scrollbar {
   display: none;
-}
-
-.navItem {
-  flex-shrink: 0;
-  width: 1.875rem;
-  height: 1.875rem;
-  padding: 0;
-  border-radius: 50%;
-  font-size: 0.75rem;
-  font-weight: 700;
-  line-height: 1;
-  border: 2px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
 }
 
 .navItemFilled {

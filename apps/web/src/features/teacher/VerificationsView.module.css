@@ -777,7 +777,27 @@
 }
 
 @media (max-width: 44rem) {
+  .backLabel {
+    font-size: 0;
+  }
+
+  .backLabel::after {
+    content: attr(data-mobile-label);
+    font-size: 0.875rem;
+  }
+
+  .detailHeaderSummary {
+    grid-template-areas:
+      'top'
+      'title'
+      'meta'
+      'actions';
+    gap: 0.35rem;
+    margin-bottom: -0.9rem;
+  }
+
   .detailTopRow {
+    grid-area: top;
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       'back status'
@@ -785,8 +805,21 @@
     align-items: center;
   }
 
-  .detailStatusBox {
-    min-width: 6.25rem;
+  .detailHeaderSummary .detailTitleRow {
+    display: contents;
+  }
+
+  .detailHeaderSummary .detailTitle {
+    grid-area: title;
+  }
+
+  .detailHeaderSummary .detailMeta {
+    grid-area: meta;
+    margin-top: 0;
+  }
+
+  .detailHeaderSummary .monitorActions {
+    grid-area: actions;
   }
 
   .backButton {
@@ -824,12 +857,6 @@
 
   .exportShortLabel {
     display: inline;
-  }
-}
-
-@media (max-width: 24rem) {
-  .backLongLabel {
-    display: none;
   }
 }
 
@@ -874,21 +901,15 @@
 
 .detailStatusBox {
   grid-area: status;
-  display: grid;
-  gap: 0.2rem;
-  min-width: 7rem;
-  padding: 0.45rem 0.65rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  display: flex;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .detailStatusBox > span:first-child {
-  color: var(--color-text-muted);
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.045em;
-  text-transform: uppercase;
+  display: none;
 }
 
 .detailTopRow .monitorTitleGroup {
@@ -896,31 +917,7 @@
   justify-self: center;
 }
 
-@media (min-width: 44.01rem) {
-  /*
-   * Desktop: lo stato torna al solo badge testuale. Il riquadro esterno resta
-   * esclusivamente nel layout mobile, dove aiuta a separare l'informazione.
-   */
-  .detailStatusBox {
-    display: flex;
-    min-width: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-
-  .detailStatusBox > span:first-child {
-    display: none;
-  }
-}
-
 @media (max-width: 44rem) {
-  .detailTitleRow {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
   .monitorPanel {
     gap: 0.45rem;
   }
