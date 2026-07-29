@@ -562,6 +562,21 @@
   white-space: nowrap;
 }
 
+/*
+ * UI-CONSEGNE-02 — la colonna «Eventi» conteneva un solo numero ma occupava la
+ * larghezza di default di una cella meta, ed era una delle ragioni per cui la
+ * tabella sforava il contenitore a 1024 px. Header e cella condividono la
+ * stessa larghezza fissa e compatta, con il contenuto centrato; la larghezza
+ * basta per il conteggio massimo previsto (200 eventi, tre cifre).
+ */
+.eventsHeader,
+.eventsCell {
+  width: 4.25rem;
+  min-width: 4.25rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .visibilityHeader,
 .visibilityCell {
   width: 5.5rem;
@@ -1350,4 +1365,40 @@
   color: var(--color-text-muted);
   font-size: 0.8125rem;
   line-height: 1.45;
+}
+
+/*
+ * FORCE-SUBMIT-02 — riepilogo della conferma di chiusura multipla: due numeri
+ * leggibili a colpo d'occhio (da chiudere / escluse) e l'elenco dei motivi.
+ */
+.forceCloseSummary {
+  display: flex;
+  gap: 1.5rem;
+  margin: 0.75rem 0;
+}
+
+.forceCloseSummary div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.forceCloseSummary dt {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+
+.forceCloseSummary dd {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.forceCloseExclusions {
+  margin: 0 0 0.75rem;
+  padding-left: 1.1rem;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
 }

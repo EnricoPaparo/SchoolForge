@@ -35,6 +35,12 @@ export type SubmissionMonitorItem = {
   assignedAnswerKeys?: string[];
   correctionStatus: NonNullable<SubmissionDoc['correctionStatus']>;
   correctionSummary: SubmissionDoc['correctionSummary'] | null;
+  /**
+   * FORCE-SUBMIT-02 — scadenza della chiusura programmata, se presente. Arriva
+   * con il documento già letto dal listener: nessuna lettura aggiuntiva. Serve
+   * solo a escludere dalla selezione una riga già programmata.
+   */
+  forceCloseDeadline?: SubmissionDoc['forceCloseDeadline'];
   attentionEventsCount: number;
   /** Sanitized: `type` + `ts` only, same shape as `AttentionEvent` — never answers/flagged. */
   attentionEvents: AttentionEvent[];
@@ -54,6 +60,7 @@ function toMonitorItem(data: SubmissionDoc): SubmissionMonitorItem {
     ...(data.assignedAnswerKeys ? { assignedAnswerKeys: [...data.assignedAnswerKeys] } : {}),
     correctionStatus: normalizeSubmissionCorrectionStatus(data.correctionStatus),
     correctionSummary: data.correctionSummary ?? null,
+    ...(data.forceCloseDeadline ? { forceCloseDeadline: data.forceCloseDeadline } : {}),
     attentionEventsCount: attentionEvents.length,
     attentionEvents,
   };

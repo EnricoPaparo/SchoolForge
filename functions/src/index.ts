@@ -17,7 +17,13 @@ export { cleanupProgramLessonNotes } from './programNotesCleanup.js';
 // VEX-01B — callable di assegnazione idempotente delle varianti equivalenti
 // (server-side, isolamento delle alternative). Vedi documentazione/vex-contract.md.
 export { assignVerificationVariant } from './verificationVariantGateway.js';
-// FORCE-SUBMIT-01 — callable con cui il docente acquisisce e chiude una verifica
-// online rimasta in bozza (transizione draft → submitted server-side e
-// transazionale). Vedi documentazione/api-contract.md.
-export { forceSubmitSubmission } from './forceSubmitGateway.js';
+// FORCE-SUBMIT-02 — la chiusura forzata è **solo** batch e con preavviso: la
+// callable per singola consegna di FORCE-SUBMIT-01 è stata rimossa, perché
+// avrebbe permesso di chiudere una verifica senza i 60 secondi promessi allo
+// studente. Il suo core transazionale (`forceSubmitCore.ts`) resta ed è riusato
+// dalla task `runScheduledForceClose`.
+// FORCE-SUBMIT-02 — chiusura multipla con preavviso di 60 secondi:
+// `scheduleForceCloseSubmissions` programma (callable owner-only) e
+// `runScheduledForceClose` esegue alla scadenza (task queue Cloud Tasks).
+// Vedi documentazione/api-contract.md.
+export { scheduleForceCloseSubmissions, runScheduledForceClose } from './forceCloseGateway.js';

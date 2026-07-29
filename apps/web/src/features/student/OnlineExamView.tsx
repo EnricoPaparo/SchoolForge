@@ -18,6 +18,8 @@ import { countFilled, isAnswerFilled } from './examAnswers.js';
 import { shuffleWithRng } from './examShuffle.js';
 import { effectiveMaxCharacters } from '@schoolforge/lesson-contract';
 import styles from './OnlineExamView.module.css';
+import { ForceCloseBanner } from './ForceCloseBanner.js';
+import { remainingSeconds, watchOwnForceClose, type ForceCloseRequest } from './forceCloseWatch.js';
 import questionNavigatorStyles from '../../components/QuestionNavigator.module.css';
 
 /** Dirty-only autosave: at most one write every two minutes, never per keystroke. */
@@ -127,6 +129,13 @@ export function OnlineExamView({
   const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [deterrenceNotice, setDeterrenceNotice] = useState<string | null>(null);
+  /**
+   * FORCE-SUBMIT-02 — chiusura programmata dal docente sulla **propria**
+   * consegna, osservata da un unico listener sul proprio documento.
+   */
+  const [forceClose, setForceClose] = useState<ForceCloseRequest | null>(null);
+  /** La scadenza è passata: i controlli sono bloccati in attesa della ricevuta. */
+  const [forceCloseExpired, setForceCloseExpired] = useState(false);
 
   // Refs mirror the state above so the 60s autosave interval (set up once)
   // and the deterrence event handlers (also set up once) always see the
@@ -153,6 +162,10 @@ export function OnlineExamView({
   // must not be discarded as "already saved" — dirty stays true so the next
   // autosave tick (or a manual save) picks it up.
   const revisionRef = useRef(0);
+  /** Richiesta di chiusura già vista: il salvataggio immediato scatta una volta sola. */
+  const seenForceCloseRef = useRef<string | null>(null);
+  /** Una lettura puntuale della ricevuta è già in corso (mai due in parallelo). */
+  const receiptProbeRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -269,6 +282,96 @@ export function OnlineExamView({
     }
   }
 
+  /**
+   * FORCE-SUBMIT-02 — risolve la fine sessione leggendo **una sola volta** la
+   * ricevuta. Usata quando la propria bozza smette di essere leggibile: è il
+   * segnale che la chiusura server-side è avvenuta. Nessun polling, nessun
+   * secondo tentativo automatico.
+   */
+  async function resolveClosureFromReceipt(): Promise<boolean> {
+    if (sessionEndedRef.current || receiptProbeRef.current) return false;
+    receiptProbeRef.current = true;
+    try {
+      const receipt = await loadReceipt(verificationId, studentUid, db);
+      if (!receipt) return false;
+      // Guardia sincrona **unica**: qualunque via arrivi qui per prima chiude la
+      // sessione, e `onSubmitted` non può essere invocata due volte.
+      if (sessionEndedRef.current) return false;
+      sessionEndedRef.current = true;
+      dirtyRef.current = false;
+      bufferedEventsRef.current = [];
+      if (mountedRef.current) {
+        setSessionEnded(true);
+        setSaveError(null);
+        setSubmitError(null);
+        setConfirmOpen(false);
+      }
+      endSessionAfterDelivery();
+      onSubmitted(receipt);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      receiptProbeRef.current = false;
+    }
+  }
+
+  /*
+   * Unico listener dello svolgimento: la **propria** submission, sul percorso
+   * deterministico. Aperto all'ingresso nella vista e chiuso all'uscita — mai un
+   * listener globale, mai polling, e nessun listener fuori da qui.
+   */
+  useEffect(() => {
+    // Osservare è un servizio, non un prerequisito: se il listener non si apre,
+    // lo studente deve poter comunque svolgere la verifica.
+    let unsubscribe: (() => void) | undefined;
+    try {
+      unsubscribe = watchOwnForceClose(verificationId, studentUid, db, {
+        onRequest: (request) => {
+          if (!mountedRef.current || sessionEndedRef.current) return;
+          setForceClose(request);
+          if (request === null) {
+            seenForceCloseRef.current = null;
+            setForceCloseExpired(false);
+            return;
+          }
+          // Salvataggio immediato best-effort alla comparsa della richiesta: il
+          // lavoro già scritto localmente non deve dipendere dai riflessi dello
+          // studente. Una sola volta per richiesta.
+          if (seenForceCloseRef.current !== request.requestId) {
+            seenForceCloseRef.current = request.requestId;
+            setForceCloseExpired(remainingSeconds(request.deadlineMs, Date.now()) <= 0);
+            if (dirtyRef.current) void persistDraft();
+          }
+        },
+        onUnavailable: () => {
+          if (!mountedRef.current || sessionEndedRef.current) return;
+          void resolveClosureFromReceipt();
+        },
+      });
+    } catch {
+      unsubscribe = undefined;
+    }
+    return () => unsubscribe?.();
+    // Il listener dipende solo dall'identità della consegna, stabile per mount.
+  }, [verificationId, studentUid]);
+
+  /*
+   * Scadenza: un solo timer, ricalcolato dalla deadline server-side. Non decide
+   * nulla di autorevole — la chiusura la esegue la task — ma blocca subito i
+   * controlli, così l'interfaccia non promette un tempo che non c'è più.
+   */
+  useEffect(() => {
+    if (forceClose === null) return;
+    const tick = () => {
+      if (!mountedRef.current) return;
+      if (remainingSeconds(forceClose.deadlineMs, Date.now()) <= 0) setForceCloseExpired(true);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [forceClose]);
+
   // Autosave: only when dirty, at most once every 120s — never on every
   // keystroke. A single interval set up once; refs keep it reading current
   // data without needing to be torn down and recreated.
@@ -320,7 +423,10 @@ export function OnlineExamView({
   const filledCount = countFilled(orders, answers);
   const flaggedCount = orders.filter((o) => flagged[String(o)]).length;
   const totalCount = questions.length;
-  const controlsLocked = submitting || sessionEnded;
+  // Alla scadenza i controlli si bloccano immediatamente, senza attendere che
+  // la scrittura server-side si propaghi: da quell'istante ciò che lo studente
+  // scrive non può più essere acquisito.
+  const controlsLocked = submitting || sessionEnded || forceCloseExpired;
 
   // EXAM-UX-03 — ordine casuale LOCALE delle domande (deterrente leggero).
   // Calcolato una sola volta per (mount, verificationId) e memorizzato in un ref:
@@ -430,6 +536,18 @@ export function OnlineExamView({
 
   return (
     <section aria-label={`Verifica online — ${title}`} className={styles.container}>
+      {/*
+       * FORCE-SUBMIT-02 — preavviso del docente. Non chiudibile, sempre in
+       * viewport, con lo spazio equivalente riservato nel flusso subito sotto.
+       */}
+      {forceClose !== null && !sessionEnded && (
+        <ForceCloseBanner
+          deadlineMs={forceClose.deadlineMs}
+          lastSavedLabel={lastSavedLabel}
+          saving={saving}
+          onSaveNow={() => void persistDraft()}
+        />
+      )}
       {/* Header and navigator stay unified, but scroll in normal page flow. */}
       <div className={styles.controlPanel}>
         <div className={styles.controlRow}>

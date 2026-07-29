@@ -107,11 +107,16 @@ import { SubmissionRecordCard } from './SubmissionRecordCard.js';
 import { BatchActionsMobileMenu } from './BatchActionsMobileMenu.js';
 import { MOBILE_VIEWPORT_QUERY, useMediaQuery } from '../../lib/useMediaQuery.js';
 import {
-  createForceSubmitSubmission,
-  describeForceSubmitBlocked,
-  describeForceSubmitError,
-  forceSubmitBlockedReason,
-} from '../repository/verifications/forceSubmitClient.js';
+  createScheduleForceClose,
+  describeForceCloseExclusion,
+  describeScheduleForceCloseError,
+  describeScheduleOutcome,
+  FORCE_CLOSE_GRACE_SECONDS,
+  groupScheduleOutcomes,
+  planForceClose,
+  type ForceClosePlan,
+  type ScheduleForceCloseResponse,
+} from '../repository/verifications/forceCloseClient.js';
 import { DialogShell } from '../../components/DialogShell.js';
 import type {
   AttentionEvent,
@@ -448,13 +453,16 @@ export function VerificationsView() {
    * FORCE-SUBMIT-01 — riga per cui è aperta la conferma di «Chiudi e consegna»,
    * e guardia sincrona anti-doppio-click sulla callable.
    */
-  const [forceSubmitTarget, setForceSubmitTarget] = useState<{
-    studentUid: string;
-    studentName: string;
-  } | null>(null);
-  const [forceSubmitBusyUid, setForceSubmitBusyUid] = useState<string | null>(null);
-  const [forceSubmitError, setForceSubmitError] = useState<string | null>(null);
-  const forceSubmitInFlightRef = useRef(false);
+  /**
+   * FORCE-SUBMIT-02 — conferma della chiusura multipla: contiene il piano già
+   * partizionato, così ciò che il dialog mostra è esattamente ciò che verrà
+   * inviato.
+   */
+  const [forceClosePlan, setForceClosePlan] = useState<ForceClosePlan | null>(null);
+  const [forceCloseBusy, setForceCloseBusy] = useState(false);
+  const [forceCloseError, setForceCloseError] = useState<string | null>(null);
+  const [forceCloseResult, setForceCloseResult] = useState<ScheduleForceCloseResponse | null>(null);
+  const forceCloseInFlightRef = useRef(false);
 
   const [submissionDeleteTarget, setSubmissionDeleteTarget] = useState<{
     studentUid: string;
@@ -508,7 +516,7 @@ export function VerificationsView() {
   >(new Map());
   const aiCallables = useMemo(() => createAiCorrectionCallables(functions), []);
   /** FORCE-SUBMIT-01 — wrapper tipizzato della callable, creato una sola volta. */
-  const forceSubmitSubmissionRef = useRef(createForceSubmitSubmission(functions));
+  const scheduleForceCloseRef = useRef(createScheduleForceClose(functions));
 
   const sortedMonitorRows = useMemo(() => {
     if (!monitorStudents || !monitorItems) return [];
@@ -530,8 +538,17 @@ export function VerificationsView() {
   }, [monitorStudents, monitorItems, monitorSort]);
 
   // ── Batch AI selection helpers (M5-03) ────────────────────────────
+  /*
+   * FORCE-SUBMIT-02 — è selezionabile ogni riga con una consegna **reale**,
+   * anche in bozza: «Chiudi consegne» agisce proprio sulle bozze. Le righe «Non
+   * iniziata» restano non selezionabili, perché non esiste nulla su cui agire.
+   *
+   * Le azioni di correzione non cambiano perimetro: la loro eleggibilità è
+   * calcolata a parte (`computeEligibility`) e una bozza vi risulta esclusa con
+   * un motivo esplicito, esattamente come prima.
+   */
   const selectableUids = useMemo(
-    () => sortedMonitorRows.filter((r) => r.item?.status === 'submitted').map((r) => r.studentUid),
+    () => sortedMonitorRows.filter((r) => r.item != null).map((r) => r.studentUid),
     [sortedMonitorRows],
   );
   /**
@@ -556,11 +573,38 @@ export function VerificationsView() {
   const batchActionsDisabled = aiSelectedUids.size === 0 || batchOperationBusy;
   const mobileBatchMenuDisabled = selectableUids.length === 0 || batchOperationBusy;
 
+  /**
+   * FORCE-SUBMIT-02 — quante righe selezionate sono davvero chiudibili. Stessa
+   * derivazione del dialog e del menu mobile: il conteggio mostrato e ciò che
+   * viene inviato non possono divergere.
+   */
+  const forceCloseEligibleCount = useMemo(
+    () =>
+      planForceClose(
+        sortedMonitorRows
+          .filter((row) => aiSelectedUids.has(row.studentUid))
+          .map((row) => ({
+            studentUid: row.studentUid,
+            studentName: row.studentName,
+            item: row.item,
+            correction: correctionProgress.get(row.studentUid) ?? null,
+          })),
+      ).eligible.length,
+    [sortedMonitorRows, aiSelectedUids, correctionProgress],
+  );
+
   const allSelectableSelected =
     selectableUids.length > 0 && selectableUids.every((uid) => aiSelectedUids.has(uid));
+  // La correzione IA opera solo su consegne effettuate: una bozza selezionata
+  // per la chiusura non deve produrre una chiamata destinata a essere rifiutata.
   const aiSelectedSubmissionIds = useMemo(
-    () => (selectedVer ? [...aiSelectedUids].map((uid) => `${selectedVer.id}_${uid}`) : []),
-    [aiSelectedUids, selectedVer],
+    () =>
+      selectedVer
+        ? sortedMonitorRows
+            .filter((r) => aiSelectedUids.has(r.studentUid) && r.item?.status === 'submitted')
+            .map((r) => `${selectedVer.id}_${r.studentUid}`)
+        : [],
+    [aiSelectedUids, selectedVer, sortedMonitorRows],
   );
   // M5-04: righe selezionate arricchite col progresso già letto (stesso dato di
   // «Valutate», nessuna lettura aggiuntiva) per calcolare l'eleggibilità.
@@ -1723,26 +1767,49 @@ export function VerificationsView() {
    * callable server-side. Nessuna rilettura manuale: il listener già aperto sul
    * monitor porta la riga da «In corso» a «Consegnata» da solo.
    */
-  async function handleConfirmForceSubmit() {
-    if (!selectedVer || !forceSubmitTarget) return;
-    // Guardia sincrona: due click nello stesso render non partono entrambi.
-    if (forceSubmitInFlightRef.current) return;
-    forceSubmitInFlightRef.current = true;
-    const { studentUid } = forceSubmitTarget;
-    setForceSubmitBusyUid(studentUid);
-    setForceSubmitError(null);
+  /**
+   * FORCE-SUBMIT-02 — programma la chiusura per le sole righe eleggibili.
+   * Guardia sincrona anti-doppio-click; il dialog resta aperto e mostra gli
+   * esiti restituiti dal server, raggruppati per categoria.
+   */
+  async function handleConfirmForceClose() {
+    if (!selectedVer || !forceClosePlan) return;
+    if (forceCloseInFlightRef.current) return;
+    if (forceClosePlan.eligible.length === 0) return;
+    forceCloseInFlightRef.current = true;
+    setForceCloseBusy(true);
+    setForceCloseError(null);
     try {
-      await forceSubmitSubmissionRef.current({
+      const response = await scheduleForceCloseRef.current({
         verificationId: selectedVer.id,
-        studentUid,
+        studentUids: forceClosePlan.eligible.map((c) => c.studentUid),
       });
-      setForceSubmitTarget(null);
+      setForceCloseResult(response);
     } catch (err) {
-      setForceSubmitError(describeForceSubmitError(err));
+      setForceCloseError(describeScheduleForceCloseError(err));
     } finally {
-      forceSubmitInFlightRef.current = false;
-      setForceSubmitBusyUid(null);
+      forceCloseInFlightRef.current = false;
+      setForceCloseBusy(false);
     }
+  }
+
+  /** Apre la conferma partizionando la selezione corrente. */
+  function openForceCloseConfirm(): void {
+    if (!selectedVer) return;
+    setForceCloseError(null);
+    setForceCloseResult(null);
+    setForceClosePlan(
+      planForceClose(
+        sortedMonitorRows
+          .filter((row) => aiSelectedUids.has(row.studentUid))
+          .map((row) => ({
+            studentUid: row.studentUid,
+            studentName: row.studentName,
+            item: row.item,
+            correction: correctionProgress.get(row.studentUid) ?? null,
+          })),
+      ),
+    );
   }
 
   function handleStartClose(id: string) {
@@ -2980,6 +3047,32 @@ export function VerificationsView() {
                       {label}
                     </button>
                   ))}
+                  {/*
+                   * FORCE-SUBMIT-02 — «Chiudi consegne»: subito a destra di
+                   * «Azzera». Stile warning, non distruttivo: non cancella
+                   * nulla, acquisisce il lavoro già salvato. Disabilitato se
+                   * nessuna riga selezionata è eleggibile, così il click non
+                   * apre mai una conferma che non può concludere nulla.
+                   */}
+                  <button
+                    type="button"
+                    className="btn-warning"
+                    title={
+                      forceCloseEligibleCount === 0
+                        ? 'Nessuna consegna selezionata è in bozza.'
+                        : `Chiudi ${forceCloseEligibleCount} consegne con ${FORCE_CLOSE_GRACE_SECONDS} secondi di preavviso`
+                    }
+                    aria-label={
+                      forceCloseEligibleCount === 0
+                        ? 'Chiudi consegne non disponibile: nessuna consegna selezionata è in bozza.'
+                        : `Chiudi consegne (${forceCloseEligibleCount})`
+                    }
+                    disabled={batchActionsDisabled || forceCloseEligibleCount === 0}
+                    onClick={openForceCloseConfirm}
+                  >
+                    <IconFileCheck />
+                    Chiudi consegne
+                  </button>
                 </div>
               )}
               {/* Su mobile tutte le azioni massive vivono nello stesso menu. */}
@@ -3002,6 +3095,8 @@ export function VerificationsView() {
                     onBatchAction={setBatchAction}
                     onVisibilityAction={setBatchReturnVisibilityAction}
                     onArchiveExport={() => void handleCorrectionArchiveExport()}
+                    forceCloseEligibleCount={forceCloseEligibleCount}
+                    onForceClose={openForceCloseConfirm}
                   />
                 </div>
               )}
@@ -3125,7 +3220,10 @@ export function VerificationsView() {
                             <th className={`${styles.th} ${styles.visibilityHeader}`}>
                               Visibilità
                             </th>
-                            <th className={styles.th} aria-sort={monitorSortAria('events')}>
+                            <th
+                              className={`${styles.th} ${styles.eventsHeader}`}
+                              aria-sort={monitorSortAria('events')}
+                            >
                               <button
                                 type="button"
                                 className={styles.sortHeaderButton}
@@ -3144,7 +3242,7 @@ export function VerificationsView() {
                             const stateLabel = row.stateLabel;
                             const studentName = row.studentName;
                             const eventsCount = item?.attentionEventsCount ?? 0;
-                            const selectable = item?.status === 'submitted';
+                            const selectable = item != null;
                             const submissionId = `${selectedVer.id}_${row.studentUid}`;
                             const visibility = correctionReturnVisibility.get(submissionId);
                             const showVisibility =
@@ -3152,11 +3250,6 @@ export function VerificationsView() {
                               visibility?.studentUid === row.studentUid;
                             // FORCE-SUBMIT-01 — unica derivazione enabled/disabled,
                             // condivisa con la card mobile.
-                            const forceBlocked = forceSubmitBlockedReason({
-                              item,
-                              correction: correctionProgress.get(row.studentUid) ?? null,
-                              busy: forceSubmitBusyUid === row.studentUid,
-                            });
                             return (
                               <tr key={row.studentUid} className={styles.row}>
                                 <td className={`${styles.td} ${styles.selectionCell}`}>
@@ -3226,7 +3319,7 @@ export function VerificationsView() {
                                     <span aria-label="Visibilità non disponibile">—</span>
                                   )}
                                 </td>
-                                <td className={`${styles.td} ${styles.metaCell}`}>
+                                <td className={`${styles.td} ${styles.eventsCell}`}>
                                   {eventsCount > 0 ? (
                                     <button
                                       type="button"
@@ -3247,7 +3340,16 @@ export function VerificationsView() {
                                 </td>
                                 <td className={`${styles.td} ${styles.metaCell}`}>
                                   <div className={styles.actionsWrapper}>
-                                    {item?.status === 'submitted' ? (
+                                    {/*
+                                     * UI-CONSEGNE-02 — il «—» rappresenta
+                                     * l'assenza di azioni: va mostrato una
+                                     * sola volta e solo quando la riga non ne
+                                     * ha davvero nessuna. La riga ha sempre
+                                     * almeno il cestino quando esiste una
+                                     * consegna, quindi il trattino riguarda
+                                     * esclusivamente le righe senza consegna.
+                                     */}
+                                    {item?.status === 'submitted' && (
                                       <button
                                         type="button"
                                         className={styles.iconBtn}
@@ -3263,40 +3365,8 @@ export function VerificationsView() {
                                       >
                                         ✏️
                                       </button>
-                                    ) : (
-                                      !(item && selectedVer.status === 'closed') && '—'
                                     )}
-                                    {/*
-                                     * FORCE-SUBMIT-01 — «Chiudi e consegna»:
-                                     * sempre presente, disabilitato quando non
-                                     * applicabile, con la spiegazione nel titolo
-                                     * e nel nome accessibile. Non apre la
-                                     * correzione e non propaga il click.
-                                     */}
-                                    <button
-                                      type="button"
-                                      className={styles.iconBtn}
-                                      title={
-                                        forceBlocked
-                                          ? describeForceSubmitBlocked(forceBlocked)
-                                          : 'Chiudi e consegna'
-                                      }
-                                      aria-label={
-                                        forceBlocked
-                                          ? `Chiudi e consegna non disponibile — ${studentName}: ${describeForceSubmitBlocked(forceBlocked)}`
-                                          : `Chiudi e consegna — ${studentName}`
-                                      }
-                                      disabled={forceBlocked !== null}
-                                      onClick={() => {
-                                        setForceSubmitError(null);
-                                        setForceSubmitTarget({
-                                          studentUid: row.studentUid,
-                                          studentName,
-                                        });
-                                      }}
-                                    >
-                                      <IconFileCheck />
-                                    </button>
+                                    {!item && '—'}
                                     {/* M5-06B — delete a real submission on an
                                         active OR closed verification, as long as
                                         the correction was never returned. A
@@ -3366,7 +3436,7 @@ export function VerificationsView() {
                         const item = row.item;
                         const studentName = row.studentName;
                         const eventsCount = item?.attentionEventsCount ?? 0;
-                        const selectable = item?.status === 'submitted';
+                        const selectable = item != null;
                         const submissionId = `${selectedVer.id}_${row.studentUid}`;
                         const visibility = correctionReturnVisibility.get(submissionId);
                         const showVisibility =
@@ -3374,11 +3444,6 @@ export function VerificationsView() {
                           visibility?.studentUid === row.studentUid;
                         const canOpenCorrection = item?.status === 'submitted';
                         // FORCE-SUBMIT-01 — stessa derivazione della tabella.
-                        const forceBlocked = forceSubmitBlockedReason({
-                          item,
-                          correction: correctionProgress.get(row.studentUid) ?? null,
-                          busy: forceSubmitBusyUid === row.studentUid,
-                        });
                         return (
                           <SubmissionRecordCard
                             key={row.studentUid}
@@ -3421,16 +3486,6 @@ export function VerificationsView() {
                                 studentName,
                               })
                             }
-                            forceSubmitBlockedLabel={
-                              forceBlocked ? describeForceSubmitBlocked(forceBlocked) : null
-                            }
-                            onForceSubmit={() => {
-                              setForceSubmitError(null);
-                              setForceSubmitTarget({
-                                studentUid: row.studentUid,
-                                studentName,
-                              });
-                            }}
                           />
                         );
                       })}
@@ -3558,51 +3613,91 @@ export function VerificationsView() {
        * `busy`), così un click fuori non lascia l'operazione a metà senza esito
        * visibile. L'errore resta nel dialog, che conserva il contesto.
        */}
-      {forceSubmitTarget && (
+      {forceClosePlan !== null && (
         <DialogShell
-          title="Chiudere e consegnare la verifica?"
+          title="Chiudere le consegne selezionate?"
           role="alertdialog"
-          busy={forceSubmitBusyUid !== null}
-          closeOnBackdrop={forceSubmitBusyUid === null}
-          closeOnEscape={forceSubmitBusyUid === null}
+          busy={forceCloseBusy}
+          closeOnBackdrop={!forceCloseBusy}
+          closeOnEscape={!forceCloseBusy}
           onCancel={() => {
-            if (forceSubmitBusyUid !== null) return;
-            setForceSubmitTarget(null);
-            setForceSubmitError(null);
+            if (forceCloseBusy) return;
+            setForceClosePlan(null);
+            setForceCloseError(null);
+            setForceCloseResult(null);
           }}
         >
-          <p>
-            Verrà acquisita l’ultima versione salvata di{' '}
-            <strong>{forceSubmitTarget.studentName}</strong>. Lo studente non potrà più modificarla.
-          </p>
-          <p className={styles.forceSubmitNote}>
-            Eventuali modifiche non ancora salvate sul dispositivo dello studente non possono essere
-            recuperate.
-          </p>
-          {forceSubmitError && (
+          {forceCloseResult === null ? (
+            <>
+              <p>
+                Gli studenti interessati avranno{' '}
+                <strong>{FORCE_CLOSE_GRACE_SECONDS} secondi</strong> per salvare o consegnare. Alla
+                scadenza verrà acquisita automaticamente l’ultima versione salvata.
+              </p>
+              <dl className={styles.forceCloseSummary}>
+                <div>
+                  <dt>Consegne da chiudere</dt>
+                  <dd>{forceClosePlan.eligible.length}</dd>
+                </div>
+                <div>
+                  <dt>Selezioni escluse</dt>
+                  <dd>{forceClosePlan.excluded.length}</dd>
+                </div>
+              </dl>
+              {forceClosePlan.excluded.length > 0 && (
+                <ul className={styles.forceCloseExclusions}>
+                  {[...new Set(forceClosePlan.excluded.map((e) => e.reason))].map((reason) => (
+                    <li key={reason}>
+                      {describeForceCloseExclusion(reason)}:{' '}
+                      {forceClosePlan.excluded.filter((e) => e.reason === reason).length}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className={styles.forceSubmitNote}>
+                Eventuali modifiche non ancora salvate sul dispositivo dello studente non possono
+                essere recuperate.
+              </p>
+            </>
+          ) : (
+            <>
+              <p>Chiusura programmata. Esiti:</p>
+              <ul className={styles.forceCloseExclusions}>
+                {groupScheduleOutcomes(forceCloseResult).map(({ outcome, count }) => (
+                  <li key={outcome}>
+                    {describeScheduleOutcome(outcome)}: {count}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {forceCloseError && (
             <p role="alert" className="text-error">
-              {forceSubmitError}
+              {forceCloseError}
             </p>
           )}
           <div className={styles.dialogActions}>
             <button
               type="button"
-              disabled={forceSubmitBusyUid !== null}
+              disabled={forceCloseBusy}
               onClick={() => {
-                setForceSubmitTarget(null);
-                setForceSubmitError(null);
+                setForceClosePlan(null);
+                setForceCloseError(null);
+                setForceCloseResult(null);
               }}
             >
-              Annulla
+              {forceCloseResult === null ? 'Annulla' : 'Chiudi'}
             </button>
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={forceSubmitBusyUid !== null}
-              onClick={() => void handleConfirmForceSubmit()}
-            >
-              {forceSubmitBusyUid !== null ? 'Chiusura…' : 'Chiudi e consegna'}
-            </button>
+            {forceCloseResult === null && (
+              <button
+                type="button"
+                className="btn-warning"
+                disabled={forceCloseBusy || forceClosePlan.eligible.length === 0}
+                onClick={() => void handleConfirmForceClose()}
+              >
+                {forceCloseBusy ? 'Avvio…' : 'Avvia chiusura'}
+              </button>
+            )}
           </div>
         </DialogShell>
       )}

@@ -1,8 +1,10 @@
+import { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OnlineExamView } from '../OnlineExamView.js';
 import type { SubmissionDoc } from '../../../types/firestore.js';
 import type * as ExamDeterrenceModule from '../examDeterrence.js';
+import type * as ForceCloseWatchModule from '../forceCloseWatch.js';
 
 vi.mock('../../../lib/firebase.js', () => ({ db: {} }));
 
@@ -14,6 +16,17 @@ vi.mock('../submissionsService.js', () => ({
   submitSubmission: (...args: unknown[]) => mockSubmitSubmission(...args),
   loadReceipt: (...args: unknown[]) => mockLoadReceipt(...args),
 }));
+
+// FORCE-SUBMIT-02 — il listener della propria chiusura programmata è sostituito
+// da una porta pilotabile: le funzioni pure del countdown restano quelle reali.
+const mockWatchOwnForceClose = vi.fn();
+vi.mock('../forceCloseWatch.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof ForceCloseWatchModule>();
+  return {
+    ...actual,
+    watchOwnForceClose: (...args: unknown[]) => mockWatchOwnForceClose(...args),
+  };
+});
 
 const mockAttachDeterrenceListeners = vi.fn();
 vi.mock('../examDeterrence.js', async () => {
@@ -28,6 +41,7 @@ afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
   mockAttachDeterrenceListeners.mockReturnValue(vi.fn());
+  mockWatchOwnForceClose.mockReturnValue(vi.fn());
   mockSaveDraft.mockResolvedValue(undefined);
 });
 
@@ -98,6 +112,27 @@ function renderView(overrides: Partial<Parameters<typeof OnlineExamView>[0]> = {
   };
   render(<OnlineExamView {...props} />);
   return { onSubmitted };
+}
+
+/** Come `renderView`, ma espone anche `unmount` (cleanup del listener). */
+function renderViewWithUnmount(overrides: Partial<Parameters<typeof OnlineExamView>[0]> = {}) {
+  const onSubmitted = vi.fn();
+  const view = render(
+    <OnlineExamView
+      verificationId="v1"
+      title="Verifica Reti"
+      className="Classe 3A"
+      studentName="Mario Rossi"
+      ownerUid="owner-uid"
+      studentUid="student-uid"
+      questions={QUESTIONS}
+      submission={emptySubmission()}
+      onSubmitted={onSubmitted}
+      rng={IDENTITY_RNG}
+      {...overrides}
+    />,
+  );
+  return { onSubmitted, unmount: view.unmount };
 }
 
 describe('OnlineExamView — question rendering', () => {
@@ -1061,5 +1096,219 @@ describe('OnlineExamView — chiusura forzata dal docente (FORCE-SUBMIT-01)', ()
 
     await waitFor(() => expect(onSubmitted).toHaveBeenCalledWith(FORCED_RECEIPT));
     expect(mockLoadReceipt).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── FORCE-SUBMIT-02 — preavviso di chiusura ────────────────────────────────
+
+describe('OnlineExamView — chiusura programmata dal docente (FORCE-SUBMIT-02)', () => {
+  const REQUEST = { requestId: 'abcdefghijklmnopqrstuvwx', deadlineMs: 0 };
+  const RECEIPT = {
+    submissionId: 'v1_student-uid',
+    verificationId: 'v1',
+    studentUid: 'student-uid',
+    ownerUid: 'owner-uid',
+    verificationTitle: 'Verifica Reti',
+    className: 'Classe 3A',
+    deliveryCode: 'SF-2026-QRST',
+    submittedAt: { seconds: 1_800_000_000 },
+    forcedByTeacher: true,
+  };
+
+  /** Cattura gli handler passati al listener e ne restituisce il controllo. */
+  function captureWatch() {
+    const unsubscribe = vi.fn();
+    let handlers: {
+      onRequest: (r: typeof REQUEST | null) => void;
+      onUnavailable: () => void;
+    } = { onRequest: () => {}, onUnavailable: () => {} };
+    mockWatchOwnForceClose.mockImplementation((..._args: unknown[]) => {
+      handlers = _args[3] as typeof handlers;
+      return unsubscribe;
+    });
+    return { unsubscribe, handlers: () => handlers };
+  }
+
+  function deadlineIn(seconds: number) {
+    return { ...REQUEST, deadlineMs: Date.now() + seconds * 1000 };
+  }
+
+  it('apre un solo listener sulla propria consegna e lo chiude allo smontaggio', () => {
+    const { unsubscribe } = captureWatch();
+    const { unmount } = renderViewWithUnmount();
+
+    expect(mockWatchOwnForceClose).toHaveBeenCalledTimes(1);
+    expect(mockWatchOwnForceClose.mock.calls[0]![0]).toBe('v1');
+    expect(mockWatchOwnForceClose.mock.calls[0]![1]).toBe('student-uid');
+
+    unmount();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('senza richiesta non mostra alcun banner', () => {
+    captureWatch();
+    renderView();
+    expect(screen.queryByText('Chiusura richiesta dal docente')).toBeNull();
+  });
+
+  it('alla comparsa mostra il banner e salva immediatamente il lavoro sporco', async () => {
+    const { handlers } = captureWatch();
+    renderView();
+
+    // Lo studente ha scritto qualcosa: la bozza è sporca.
+    fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
+      target: { value: 'Risposta in corso.' },
+    });
+
+    await act(async () => {
+      handlers().onRequest(deadlineIn(60));
+    });
+
+    expect(screen.getByText('Chiusura richiesta dal docente')).toBeTruthy();
+    await waitFor(() => expect(mockSaveDraft).toHaveBeenCalledTimes(1));
+  });
+
+  it('non salva due volte per la stessa richiesta', async () => {
+    const { handlers } = captureWatch();
+    renderView();
+    fireEvent.change(screen.getByLabelText('Risposta alla domanda 1'), {
+      target: { value: 'Risposta.' },
+    });
+
+    const request = deadlineIn(60);
+    await act(async () => {
+      handlers().onRequest(request);
+    });
+    await waitFor(() => expect(mockSaveDraft).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      handlers().onRequest(request);
+    });
+    expect(mockSaveDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it('fino alla scadenza si può ancora compilare, salvare e consegnare', async () => {
+    const { handlers } = captureWatch();
+    renderView();
+    await act(async () => {
+      handlers().onRequest(deadlineIn(60));
+    });
+
+    const textarea = screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement;
+    expect(textarea.disabled).toBe(false);
+    fireEvent.change(textarea, { target: { value: 'Ancora modificabile.' } });
+    expect(textarea.value).toBe('Ancora modificabile.');
+    expect((screen.getByRole('button', { name: 'Consegna' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    // «Salva ora» del banner usa lo stesso salvataggio della vista.
+    fireEvent.click(screen.getByRole('button', { name: 'Salva ora' }));
+    await waitFor(() => expect(mockSaveDraft).toHaveBeenCalled());
+  });
+
+  it('alla scadenza blocca immediatamente i controlli', async () => {
+    const { handlers } = captureWatch();
+    renderView();
+    await act(async () => {
+      handlers().onRequest(deadlineIn(-1));
+    });
+
+    expect((screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled).toBe(
+      true,
+    );
+    expect((screen.getByRole('button', { name: 'Consegna' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByText('Chiusura in corso…')).toBeTruthy();
+  });
+
+  it('quando la consegna non è più leggibile risolve la ricevuta una sola volta', async () => {
+    const { handlers } = captureWatch();
+    mockLoadReceipt.mockResolvedValue(RECEIPT);
+    const { onSubmitted } = renderView();
+
+    await act(async () => {
+      handlers().onUnavailable();
+      handlers().onUnavailable();
+    });
+
+    await waitFor(() => expect(onSubmitted).toHaveBeenCalledWith(RECEIPT));
+    expect(onSubmitted).toHaveBeenCalledTimes(1);
+    expect(mockLoadReceipt).toHaveBeenCalledTimes(1);
+  });
+
+  it('nessuna ricevuta ⇒ la sessione continua, nessuna chiusura inventata', async () => {
+    const { handlers } = captureWatch();
+    mockLoadReceipt.mockResolvedValue(null);
+    const { onSubmitted } = renderView();
+
+    await act(async () => {
+      handlers().onUnavailable();
+    });
+
+    expect(onSubmitted).not.toHaveBeenCalled();
+    expect((screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it('la richiesta rimossa fa sparire il banner e sblocca i controlli', async () => {
+    const { handlers } = captureWatch();
+    renderView();
+    await act(async () => {
+      handlers().onRequest(deadlineIn(-1));
+    });
+    expect(screen.getByText('Chiusura richiesta dal docente')).toBeTruthy();
+
+    await act(async () => {
+      handlers().onRequest(null);
+    });
+    expect(screen.queryByText('Chiusura richiesta dal docente')).toBeNull();
+    expect((screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it('StrictMode: il doppio montaggio non lascia listener orfani', () => {
+    const unsubscribes: ReturnType<typeof vi.fn>[] = [];
+    mockWatchOwnForceClose.mockImplementation(() => {
+      const unsubscribe = vi.fn();
+      unsubscribes.push(unsubscribe);
+      return unsubscribe;
+    });
+
+    const view = render(
+      <StrictMode>
+        <OnlineExamView
+          verificationId="v1"
+          title="Verifica Reti"
+          className="Classe 3A"
+          studentName="Mario Rossi"
+          ownerUid="owner-uid"
+          studentUid="student-uid"
+          questions={QUESTIONS}
+          submission={emptySubmission()}
+          onSubmitted={vi.fn()}
+          rng={IDENTITY_RNG}
+        />
+      </StrictMode>,
+    );
+
+    // React 18 in StrictMode monta, smonta e rimonta gli effetti: ogni
+    // sottoscrizione deve avere la propria disiscrizione.
+    expect(unsubscribes.length).toBeGreaterThan(0);
+    expect(unsubscribes.slice(0, -1).every((u) => u.mock.calls.length === 1)).toBe(true);
+
+    view.unmount();
+    expect(unsubscribes.every((u) => u.mock.calls.length === 1)).toBe(true);
+  });
+
+  it('un listener che non si apre non impedisce di svolgere la verifica', () => {
+    mockWatchOwnForceClose.mockImplementation(() => {
+      throw new Error('listener non disponibile');
+    });
+    renderView();
+    expect((screen.getByLabelText('Risposta alla domanda 1') as HTMLTextAreaElement).disabled).toBe(
+      false,
+    );
   });
 });
