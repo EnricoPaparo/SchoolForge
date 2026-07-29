@@ -29,7 +29,13 @@ export type ScheduleOutcome =
   | 'not_started'
   | 'already_submitted'
   | 'incoherent'
-  | 'failed';
+  | 'failed'
+  /**
+   * La programmazione è stata scritta ma la task non è stata accodata **e** la
+   * pulizia non è riuscita: lo studente potrebbe vedere un banner che non porta
+   * ad alcuna chiusura. Va mostrato come tale, mai confuso con un successo.
+   */
+  | 'failed_cleanup';
 
 export interface ScheduleForceCloseResponse {
   graceSeconds: number;
@@ -149,6 +155,8 @@ export function describeScheduleOutcome(outcome: ScheduleOutcome): string {
       return 'Escluse';
     case 'failed':
       return 'Non riuscite';
+    case 'failed_cleanup':
+      return 'Non riuscite — richiedono una verifica manuale';
   }
 }
 
@@ -160,6 +168,7 @@ export const SCHEDULE_OUTCOME_ORDER: ScheduleOutcome[] = [
   'already_submitted',
   'incoherent',
   'failed',
+  'failed_cleanup',
 ];
 
 export function groupScheduleOutcomes(

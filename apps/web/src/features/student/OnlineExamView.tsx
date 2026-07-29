@@ -19,7 +19,12 @@ import { shuffleWithRng } from './examShuffle.js';
 import { effectiveMaxCharacters } from '@schoolforge/lesson-contract';
 import styles from './OnlineExamView.module.css';
 import { ForceCloseBanner } from './ForceCloseBanner.js';
-import { remainingSeconds, watchOwnForceClose, type ForceCloseRequest } from './forceCloseWatch.js';
+import {
+  RECEIPT_RETRY_DELAYS_MS,
+  remainingSeconds,
+  watchOwnForceClose,
+  type ForceCloseRequest,
+} from './forceCloseWatch.js';
 import questionNavigatorStyles from '../../components/QuestionNavigator.module.css';
 
 /** Dirty-only autosave: at most one write every two minutes, never per keystroke. */
@@ -292,26 +297,44 @@ export function OnlineExamView({
     if (sessionEndedRef.current || receiptProbeRef.current) return false;
     receiptProbeRef.current = true;
     try {
-      const receipt = await loadReceipt(verificationId, studentUid, db);
-      if (!receipt) return false;
-      // Guardia sincrona **unica**: qualunque via arrivi qui per prima chiude la
-      // sessione, e `onSubmitted` non può essere invocata due volte.
-      if (sessionEndedRef.current) return false;
-      sessionEndedRef.current = true;
-      dirtyRef.current = false;
-      bufferedEventsRef.current = [];
-      if (mountedRef.current) {
-        setSessionEnded(true);
-        setSaveError(null);
-        setSubmitError(null);
-        setConfirmOpen(false);
+      /*
+       * Retry **limitato** con breve backoff, non polling: la chiusura
+       * server-side e la sua propagazione non sono simultanee, e una singola
+       * lettura lascerebbe lo studente su una schermata bloccata. I tentativi
+       * si esauriscono in ~5 s; poi si dichiara un errore ricaricabile.
+       */
+      for (const delay of RECEIPT_RETRY_DELAYS_MS) {
+        if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+        // Fra un tentativo e l'altro la vista può essere stata smontata, o la
+        // sessione può essere finita da un'altra via: mai scrivere stato dopo.
+        if (!mountedRef.current || sessionEndedRef.current) return false;
+        let receipt: SubmissionReceiptDoc | null = null;
+        try {
+          receipt = await loadReceipt(verificationId, studentUid, db);
+        } catch {
+          receipt = null;
+        }
+        if (!receipt) continue;
+        // Guardia sincrona **unica**: qualunque via arrivi qui per prima chiude
+        // la sessione, e `onSubmitted` non può essere invocata due volte.
+        if (sessionEndedRef.current) return false;
+        sessionEndedRef.current = true;
+        dirtyRef.current = false;
+        bufferedEventsRef.current = [];
+        if (mountedRef.current) {
+          setSessionEnded(true);
+          setSaveError(null);
+          setSubmitError(null);
+          setConfirmOpen(false);
+        }
+        endSessionAfterDelivery();
+        onSubmitted(receipt);
+        return true;
       }
-      endSessionAfterDelivery();
-      onSubmitted(receipt);
-      return true;
-    } catch {
       return false;
     } finally {
+      // Sempre eseguito: una risoluzione fallita non deve bloccare la
+      // successiva (per esempio dopo un salvataggio respinto).
       receiptProbeRef.current = false;
     }
   }

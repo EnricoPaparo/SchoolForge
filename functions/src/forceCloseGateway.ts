@@ -13,8 +13,10 @@ import {
   type ScheduleForceCloseResult,
 } from './forceCloseCore.js';
 import {
+  ForceCloseTooEarlyError,
   runForceCloseTask,
   runScheduleForceClose,
+  type ForceCloseEnqueueOptions,
   type ForceCloseTaskEnqueue,
 } from './forceCloseRunner.js';
 
@@ -37,16 +39,31 @@ export const FORCE_CLOSE_REGION = 'us-central1';
 /** Nome della coda: coincide con il nome della Function task-queue. */
 export const FORCE_CLOSE_QUEUE = 'runScheduledForceClose';
 
+/**
+ * Riferimento **completo** della coda.
+ *
+ * `getFunctions().taskQueue(name, extensionId)` accetta come secondo argomento
+ * un `extensionId`, **non** una region: passarvi `us-central1` faceva risolvere
+ * un percorso inesistente. La forma corretta per una coda regionale è il nome
+ * qualificato `locations/{region}/functions/{queue}`, con un solo argomento.
+ */
+export const FORCE_CLOSE_QUEUE_PATH = `locations/${FORCE_CLOSE_REGION}/functions/${FORCE_CLOSE_QUEUE}`;
+
 if (getApps().length === 0) initializeApp();
 
-/** Accodamento reale su Cloud Tasks. Una task per submission eleggibile. */
+/**
+ * Accodamento reale su Cloud Tasks. Una task per submission eleggibile, con
+ * nome deterministico derivato dal `requestId`: un retry dell'accodamento non
+ * può creare un duplicato (Cloud Tasks risponde `ALREADY_EXISTS`, che il runner
+ * interpreta correttamente come «era già fatto»).
+ */
 export const enqueueForceCloseTask: ForceCloseTaskEnqueue = async (
   payload: ForceCloseTaskPayload,
-  scheduleTime: Date,
+  options: ForceCloseEnqueueOptions,
 ) => {
-  await getFunctions().taskQueue(FORCE_CLOSE_QUEUE, FORCE_CLOSE_REGION).enqueue(payload, {
-    scheduleTime,
-  });
+  await getFunctions()
+    .taskQueue(FORCE_CLOSE_QUEUE_PATH)
+    .enqueue(payload, { scheduleTime: options.scheduleTime, id: options.id });
 };
 
 // ── Wiring Functions ───────────────────────────────────────────────────────────
@@ -63,7 +80,14 @@ function toHttpsError(err: ForceCloseError): HttpsError {
 }
 
 export const scheduleForceCloseSubmissions = onCall(
-  { region: FORCE_CLOSE_REGION, minInstances: 0, maxInstances: 3 },
+  {
+    region: FORCE_CLOSE_REGION,
+    minInstances: 0,
+    maxInstances: 3,
+    // Un batch pieno (60 studenti) fa 1 lettura + fino a 60 transazioni e 60
+    // accodamenti, con concorrenza limitata: il default di 60 s sarebbe stretto.
+    timeoutSeconds: 300,
+  },
   async (request: CallableRequest): Promise<ScheduleForceCloseResult> => {
     const started = Date.now();
     try {
@@ -113,8 +137,18 @@ export const runScheduledForceClose = onTaskDispatched(
       const outcome = await runForceCloseTask(getFirestore(), request.data);
       logger.info('runScheduledForceClose', { outcome, durationMs: Date.now() - started });
     } catch (err) {
+      if (err instanceof ForceCloseTooEarlyError) {
+        // Consegna anticipata della coda: si rilancia perché Cloud Tasks
+        // ritenti dopo il backoff. Chiudere in anticipo romperebbe la promessa
+        // fatta allo studente.
+        logger.warn('runScheduledForceClose', {
+          outcome: 'too_early',
+          remainingMs: err.remainingMs,
+        });
+        throw err;
+      }
       if (err instanceof ForceCloseError || err instanceof ForceSubmitError) {
-        // Stato incoerente o payload non valido: non è un errore ritentabile.
+        // Payload non valido: nessun retry potrebbe ripararlo.
         logger.error('runScheduledForceClose', {
           outcome: err.code,
           durationMs: Date.now() - started,

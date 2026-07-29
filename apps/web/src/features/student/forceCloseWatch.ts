@@ -22,23 +22,31 @@ export interface ForceCloseRequest {
   requestId: string;
   /** Scadenza server-side, in millisecondi epoch. */
   deadlineMs: number;
+  /** Istante della programmazione, in millisecondi epoch. */
+  requestedAtMs: number;
 }
 
 /**
  * Estrae la richiesta di chiusura da una submission, se e solo se è coerente:
- * bozza, entrambi i marcatori presenti e ben formati. Un documento incompleto
- * o già consegnato non produce mai un banner.
+ * bozza e **tutti e tre** i marcatori presenti e ben formati — sono un fatto
+ * unico, esattamente come lato server. Uno stato parziale non produce mai un
+ * banner: mostrarne uno senza scadenza valida significherebbe promettere allo
+ * studente un tempo che nessuno gli garantisce.
  */
 export function toForceCloseRequest(
   data: Partial<SubmissionDoc> | undefined,
 ): ForceCloseRequest | null {
   if (!data || data.status !== 'draft') return null;
-  const requestId = data.forceCloseRequestId;
-  const deadline = data.forceCloseDeadline;
+  const { forceCloseRequestId: requestId, forceCloseDeadline, forceCloseRequestedAt } = data;
+  const present = [requestId, forceCloseDeadline, forceCloseRequestedAt].filter(
+    (v) => v !== undefined,
+  ).length;
+  if (present !== 3) return null;
   if (typeof requestId !== 'string' || requestId.length === 0) return null;
-  const deadlineMs = timestampToMillis(deadline);
-  if (deadlineMs === null) return null;
-  return { requestId, deadlineMs };
+  const deadlineMs = timestampToMillis(forceCloseDeadline);
+  const requestedAtMs = timestampToMillis(forceCloseRequestedAt);
+  if (deadlineMs === null || requestedAtMs === null) return null;
+  return { requestId, deadlineMs, requestedAtMs };
 }
 
 /** Converte un Timestamp Firestore-like in millisecondi, o `null` se non lo è. */
@@ -115,3 +123,16 @@ export const FORCE_CLOSE_URGENT_SECONDS = 10;
 export function isUrgent(seconds: number): boolean {
   return seconds <= FORCE_CLOSE_URGENT_SECONDS;
 }
+
+// ── Risoluzione della ricevuta ────────────────────────────────────────────────
+
+/**
+ * Ritardi dei tentativi di lettura della ricevuta, in millisecondi.
+ *
+ * La chiusura server-side e la propagazione al client non sono simultanee: una
+ * sola lettura subito dopo l'errore del listener è fragile e lascerebbe lo
+ * studente su una schermata bloccata. Il retry è **limitato** e breve — non è
+ * polling: si esaurisce in circa 5 secondi e poi si ferma, lasciando un errore
+ * esplicito e ricaricabile.
+ */
+export const RECEIPT_RETRY_DELAYS_MS = [0, 500, 1500, 3000] as const;

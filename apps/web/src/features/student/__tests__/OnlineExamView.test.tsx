@@ -1221,6 +1221,103 @@ describe('OnlineExamView — chiusura programmata dal docente (FORCE-SUBMIT-02)'
     expect(screen.getByText('Chiusura in corso…')).toBeTruthy();
   });
 
+  it('la ricevuta non ancora propagata viene ritentata, senza polling infinito', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      // I primi due tentativi non trovano nulla: la chiusura non è ancora
+      // propagata al client.
+      mockLoadReceipt
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(RECEIPT);
+      const { onSubmitted } = renderView();
+
+      await act(async () => {
+        handlers().onUnavailable();
+      });
+      expect(onSubmitted).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(onSubmitted).toHaveBeenCalledWith(RECEIPT);
+      expect(onSubmitted).toHaveBeenCalledTimes(1);
+      // Tentativi **limitati**: esauriti quelli previsti, non si riprova più.
+      const attempts = mockLoadReceipt.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(mockLoadReceipt).toHaveBeenCalledTimes(attempts);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ricevuta mai trovata: i tentativi si esauriscono, nessun polling permanente', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(null);
+      const { onSubmitted } = renderView();
+
+      await act(async () => {
+        handlers().onUnavailable();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(onSubmitted).not.toHaveBeenCalled();
+      const attempts = mockLoadReceipt.mock.calls.length;
+      expect(attempts).toBeLessThanOrEqual(4);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(mockLoadReceipt).toHaveBeenCalledTimes(attempts);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('nessun aggiornamento di stato dopo lo smontaggio', async () => {
+    vi.useFakeTimers();
+    try {
+      const { handlers } = captureWatch();
+      mockLoadReceipt.mockResolvedValue(RECEIPT);
+      const onSubmitted = vi.fn();
+      const view = render(
+        <OnlineExamView
+          verificationId="v1"
+          title="Verifica Reti"
+          className="Classe 3A"
+          studentName="Mario Rossi"
+          ownerUid="owner-uid"
+          studentUid="student-uid"
+          questions={QUESTIONS}
+          submission={emptySubmission()}
+          onSubmitted={onSubmitted}
+          rng={IDENTITY_RNG}
+        />,
+      );
+      // Prima lettura in volo, poi la vista sparisce.
+      mockLoadReceipt.mockImplementationOnce(async () => {
+        view.unmount();
+        return null;
+      });
+
+      await act(async () => {
+        handlers().onUnavailable();
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(onSubmitted).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('quando la consegna non è più leggibile risolve la ricevuta una sola volta', async () => {
     const { handlers } = captureWatch();
     mockLoadReceipt.mockResolvedValue(RECEIPT);

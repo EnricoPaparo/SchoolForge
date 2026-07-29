@@ -2,15 +2,17 @@ import { describe, expect, it } from 'vitest';
 import {
   decideForceCloseTask,
   decideScheduleFor,
-  deadlineMatches,
   FORCE_CLOSE_GRACE_SECONDS,
   FORCE_CLOSE_MARKER_FIELDS,
   ForceCloseError,
   generateRequestId,
   isCanonicalRequestId,
   MAX_FORCE_CLOSE_BATCH,
+  millisToTimestampKey,
   parseForceCloseTaskPayload,
   parseScheduleForceCloseInput,
+  readMarkerState,
+  taskNameFor,
   scheduleResult,
   scheduleWrite,
   type ScheduleSubmissionSnapshot,
@@ -37,6 +39,17 @@ function draft(over: Partial<ScheduleSubmissionSnapshot> = {}): ScheduleSubmissi
     forcedByTeacher: undefined,
     forceCloseRequestId: undefined,
     forceCloseDeadline: undefined,
+    forceCloseRequestedAt: undefined,
+    ...over,
+  };
+}
+
+/** I tre marcatori coerenti di una programmazione attiva. */
+function scheduled(over: Record<string, unknown> = {}) {
+  return {
+    forceCloseRequestId: REQUEST_ID,
+    forceCloseDeadline: DEADLINE,
+    forceCloseRequestedAt: ts(1_800_000_000),
     ...over,
   };
 }
@@ -162,11 +175,7 @@ describe('decideScheduleFor — eleggibilità per studente', () => {
   });
 
   it('chiusura già programmata ⇒ no-op idempotente, non un errore', () => {
-    expect(
-      decideScheduleFor(
-        scheduleCtx(draft({ forceCloseRequestId: REQUEST_ID, forceCloseDeadline: DEADLINE })),
-      ),
-    ).toBe('already_scheduled');
+    expect(decideScheduleFor(scheduleCtx(draft(scheduled())))).toBe('already_scheduled');
   });
 
   it('submission incoerente con verifica, studente o owner ⇒ incoherent', () => {
@@ -187,9 +196,14 @@ describe('decideScheduleFor — eleggibilità per studente', () => {
     for (const patch of [
       { forceCloseRequestId: REQUEST_ID },
       { forceCloseDeadline: DEADLINE },
-      { forceCloseRequestId: 'corto', forceCloseDeadline: DEADLINE },
-      { forceCloseRequestId: REQUEST_ID, forceCloseDeadline: 'domani' },
-      { forceCloseRequestId: REQUEST_ID, forceCloseDeadline: null },
+      { forceCloseRequestedAt: DEADLINE },
+      // Due su tre: stato parziale, mai «riparato».
+      { forceCloseRequestId: REQUEST_ID, forceCloseDeadline: DEADLINE },
+      { forceCloseDeadline: DEADLINE, forceCloseRequestedAt: DEADLINE },
+      { ...scheduled(), forceCloseRequestId: 'corto' },
+      { ...scheduled(), forceCloseDeadline: 'domani' },
+      { ...scheduled(), forceCloseDeadline: null },
+      { ...scheduled(), forceCloseRequestedAt: 'ieri' },
     ]) {
       expect(decideScheduleFor(scheduleCtx(draft(patch)))).toBe('incoherent');
     }
@@ -241,84 +255,162 @@ describe('scheduleResult — risposta sanitizzata', () => {
   });
 });
 
+describe('readMarkerState — i tre marcatori sono un fatto unico', () => {
+  const base = {
+    forceCloseRequestId: undefined,
+    forceCloseDeadline: undefined,
+    forceCloseRequestedAt: undefined,
+  };
+
+  it('tutti assenti ⇒ absent', () => {
+    expect(readMarkerState(base)).toEqual({ kind: 'absent' });
+  });
+
+  it('tutti presenti e ben formati ⇒ present, con chiave scadenza canonica', () => {
+    expect(readMarkerState(scheduled())).toEqual({
+      kind: 'present',
+      requestId: REQUEST_ID,
+      deadlineKey: '1800000060.000000000',
+    });
+  });
+
+  it.each([
+    ['solo requestId', { ...base, forceCloseRequestId: REQUEST_ID }],
+    ['solo deadline', { ...base, forceCloseDeadline: DEADLINE }],
+    ['solo requestedAt', { ...base, forceCloseRequestedAt: DEADLINE }],
+    ['manca requestedAt', { ...scheduled(), forceCloseRequestedAt: undefined }],
+    ['manca deadline', { ...scheduled(), forceCloseDeadline: undefined }],
+    ['requestId non canonico', { ...scheduled(), forceCloseRequestId: 'X' }],
+    ['deadline non timestamp', { ...scheduled(), forceCloseDeadline: 123 }],
+    ['requestedAt non timestamp', { ...scheduled(), forceCloseRequestedAt: 'ieri' }],
+  ])('«%s» ⇒ malformed', (_label, snapshot) => {
+    expect(readMarkerState(snapshot as never).kind).toBe('malformed');
+  });
+});
+
+describe('taskNameFor — nome deterministico e opaco', () => {
+  it('deriva dal requestId senza esporre uid o id verifica', () => {
+    expect(taskNameFor(REQUEST_ID)).toBe(`fc-${REQUEST_ID}`);
+    expect(taskNameFor(REQUEST_ID)).toBe(taskNameFor(REQUEST_ID));
+    expect(taskNameFor(REQUEST_ID)).not.toContain(VERIFICATION);
+    expect(taskNameFor(REQUEST_ID)).not.toContain(STUDENT);
+    expect(taskNameFor(REQUEST_ID)).toMatch(/^[A-Za-z0-9_-]{1,500}$/);
+  });
+
+  it('rifiuta un requestId non canonico', () => {
+    expect(() => taskNameFor('corto')).toThrow(ForceCloseError);
+  });
+});
+
 describe('parseForceCloseTaskPayload — payload chiuso anche server→server', () => {
   const valid = {
     verificationId: VERIFICATION,
     studentUid: STUDENT,
     ownerUid: OWNER,
     requestId: REQUEST_ID,
+    deadlineMs: 1_800_000_060_000,
   };
 
-  it('accetta esattamente le quattro chiavi attese', () => {
+  it('accetta esattamente le cinque chiavi attese, deadline inclusa', () => {
     expect(parseForceCloseTaskPayload({ ...valid })).toEqual(valid);
   });
 
   it('rifiuta chiavi extra o mancanti', () => {
-    expect(() => parseForceCloseTaskPayload({ ...valid, deadline: DEADLINE })).toThrow(
+    expect(() => parseForceCloseTaskPayload({ ...valid, graceSeconds: 60 })).toThrow(
       /chiavi non ammesse/,
     );
-    expect(() => parseForceCloseTaskPayload({ verificationId: VERIFICATION })).toThrow(
-      /chiavi non ammesse/,
-    );
+    const withoutDeadline = { ...valid } as Record<string, unknown>;
+    delete withoutDeadline.deadlineMs;
+    expect(() => parseForceCloseTaskPayload(withoutDeadline)).toThrow(/chiavi non ammesse/);
   });
 
-  it('rifiuta id e requestId malformati', () => {
+  it('rifiuta id, requestId e deadline malformati', () => {
     expect(() => parseForceCloseTaskPayload({ ...valid, verificationId: 'a/b' })).toThrow(
       /verificationId/,
     );
     expect(() => parseForceCloseTaskPayload({ ...valid, studentUid: '' })).toThrow(/studentUid/);
     expect(() => parseForceCloseTaskPayload({ ...valid, ownerUid: '   ' })).toThrow(/ownerUid/);
     expect(() => parseForceCloseTaskPayload({ ...valid, requestId: 'corto' })).toThrow(/requestId/);
+    for (const bad of [0, -1, 1.5, NaN, '1800000060000', null]) {
+      expect(() => parseForceCloseTaskPayload({ ...valid, deadlineMs: bad })).toThrow(/deadlineMs/);
+    }
   });
 });
 
 describe('decideForceCloseTask — esecuzione fail-closed e no-op-safe', () => {
+  const DEADLINE_MS = 1_800_000_060_000;
   const payload = {
     verificationId: VERIFICATION,
     studentUid: STUDENT,
     ownerUid: OWNER,
     requestId: REQUEST_ID,
+    deadlineMs: DEADLINE_MS,
   };
-  const scheduled = draft({ forceCloseRequestId: REQUEST_ID, forceCloseDeadline: DEADLINE });
+  const ours = draft(scheduled());
+  const decide = (submission: unknown, nowMs = DEADLINE_MS) =>
+    decideForceCloseTask({
+      payload,
+      submission: submission as ScheduleSubmissionSnapshot | null,
+      nowMs,
+    });
 
-  it('esegue quando ritrova esattamente la propria richiesta', () => {
-    expect(decideForceCloseTask({ payload, submission: scheduled })).toBe('run');
+  it('chiude solo se ritrova esattamente la propria richiesta e la scadenza è passata', () => {
+    expect(decide(ours)).toEqual({ kind: 'run' });
+    expect(decide(ours, DEADLINE_MS + 5_000)).toEqual({ kind: 'run' });
+  });
+
+  it('consegna anticipata della coda ⇒ too_early, mai una chiusura in anticipo', () => {
+    expect(decide(ours, DEADLINE_MS - 1)).toEqual({ kind: 'too_early', remainingMs: 1 });
+    expect(decide(ours, DEADLINE_MS - 30_000)).toEqual({
+      kind: 'too_early',
+      remainingMs: 30_000,
+    });
+  });
+
+  it('la deadline persistita deve combaciare con quella della task', () => {
+    const otherDeadline = draft(scheduled({ forceCloseDeadline: ts(1_800_000_999) }));
+    expect(decide(otherDeadline)).toEqual({ kind: 'noop', reason: 'superseded' });
+  });
+
+  it('un altro requestId è una programmazione diversa: mai cancellata da noi', () => {
+    const other = draft(scheduled({ forceCloseRequestId: 'z'.repeat(24) }));
+    expect(decide(other)).toEqual({ kind: 'noop', reason: 'superseded' });
   });
 
   it.each([
-    ['consegna eliminata', null],
-    ['consegna normale nel frattempo', draft({ status: 'submitted' })],
-    ['chiusura già eseguita', draft({ status: 'submitted', forcedByTeacher: true })],
-    ['bozza già marcata', draft({ forcedByTeacher: true })],
-    ['programmazione rimossa', draft()],
+    ['consegna eliminata', null, 'submission_missing'],
+    ['programmazione già rimossa', draft(), 'markers_absent'],
     [
-      'riprogrammata con un’altra richiesta',
-      draft({ forceCloseRequestId: 'z'.repeat(24), forceCloseDeadline: DEADLINE }),
+      'documento estraneo senza i nostri marcatori',
+      draft({ studentUid: 'altro' }),
+      'identity_mismatch',
     ],
-    ['deadline malformata', draft({ forceCloseRequestId: REQUEST_ID, forceCloseDeadline: 'x' })],
-    ['submission incoerente', { ...scheduled, studentUid: 'altro' }],
-    ['owner diverso', { ...scheduled, ownerUid: 'altro' }],
-  ])('«%s» ⇒ no-op sicuro, mai un errore ritentabile', (_label, submission) => {
-    expect(
-      decideForceCloseTask({
-        payload,
-        submission: submission as ScheduleSubmissionSnapshot | null,
-      }),
-    ).toBe('noop_superseded');
+  ])('«%s» ⇒ noop, nulla da ripulire', (_label, submission, reason) => {
+    expect(decide(submission)).toEqual({ kind: 'noop', reason });
+  });
+
+  it.each([
+    ['consegna normale durante la finestra', { ...ours, status: 'submitted' }, 'already_submitted'],
+    ['bozza già marcata', { ...ours, forcedByTeacher: true }, 'already_forced'],
+    ['marcatori parziali', draft({ forceCloseRequestId: REQUEST_ID }), 'markers_malformed'],
+    [
+      'documento incoerente ma con i nostri marcatori',
+      { ...ours, studentUid: 'altro' },
+      'submission_incoherent',
+    ],
+  ])('«%s» ⇒ cleanup: mai un banner scaduto senza ricevuta', (_label, submission, reason) => {
+    expect(decide(submission)).toEqual({ kind: 'cleanup', reason });
   });
 
   it('un retry dopo l’esecuzione è idempotente', () => {
-    // Dopo la chiusura la submission è submitted, marcata e senza marcatori.
     const afterClose = draft({ status: 'submitted', forcedByTeacher: true });
-    expect(decideForceCloseTask({ payload, submission: afterClose })).toBe('noop_superseded');
+    expect(decide(afterClose)).toEqual({ kind: 'noop', reason: 'markers_absent' });
   });
 });
 
-describe('deadlineMatches — confronto deterministico', () => {
-  it('combacia solo su istanti riconoscibili e uguali', () => {
-    expect(deadlineMatches(DEADLINE, { _seconds: 1_800_000_060, _nanoseconds: 0 })).toBe(true);
-    expect(deadlineMatches(DEADLINE, ts(1_800_000_061))).toBe(false);
-    expect(deadlineMatches(null, null)).toBe(false);
-    expect(deadlineMatches(undefined, DEADLINE)).toBe(false);
+describe('millisToTimestampKey', () => {
+  it('produce la stessa chiave canonica di un Timestamp equivalente', () => {
+    expect(millisToTimestampKey(1_800_000_060_000)).toBe('1800000060.000000000');
+    expect(millisToTimestampKey(1_500)).toBe('1.500000000');
   });
 });

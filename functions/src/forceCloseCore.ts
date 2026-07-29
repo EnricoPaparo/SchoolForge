@@ -19,7 +19,6 @@
 import {
   isCanonicalMetadataString,
   isValidDocumentId,
-  sameTimestamp,
   submissionIdFor,
   timestampKey,
   type ForceSubmitInput,
@@ -149,6 +148,39 @@ export interface ScheduleSubmissionSnapshot {
   forcedByTeacher: unknown;
   forceCloseRequestId: unknown;
   forceCloseDeadline: unknown;
+  forceCloseRequestedAt: unknown;
+}
+
+/**
+ * I tre marcatori sono un **unico** fatto: o ci sono tutti e sono ben formati,
+ * o non c'è nessuno. Uno stato parziale non viene mai «riparato» in silenzio.
+ */
+export type MarkerState =
+  | { kind: 'absent' }
+  | { kind: 'present'; requestId: string; deadlineKey: string }
+  | { kind: 'malformed' };
+
+export function readMarkerState(submission: {
+  forceCloseRequestId: unknown;
+  forceCloseDeadline: unknown;
+  forceCloseRequestedAt: unknown;
+}): MarkerState {
+  const present = [
+    submission.forceCloseRequestId,
+    submission.forceCloseDeadline,
+    submission.forceCloseRequestedAt,
+  ].filter((v) => v !== undefined).length;
+  if (present === 0) return { kind: 'absent' };
+  if (present !== 3) return { kind: 'malformed' };
+  const deadlineKey = timestampKey(submission.forceCloseDeadline);
+  if (
+    !isCanonicalRequestId(submission.forceCloseRequestId) ||
+    deadlineKey === null ||
+    timestampKey(submission.forceCloseRequestedAt) === null
+  ) {
+    return { kind: 'malformed' };
+  }
+  return { kind: 'present', requestId: submission.forceCloseRequestId, deadlineKey };
 }
 
 /**
@@ -198,19 +230,11 @@ export function decideScheduleFor(context: ScheduleDecisionContext): ScheduleOut
   // Una bozza non può portare il marcatore di chiusura effettuata.
   if (submission.forcedByTeacher !== undefined) return 'incoherent';
 
-  const hasRequest = submission.forceCloseRequestId !== undefined;
-  const hasDeadline = submission.forceCloseDeadline !== undefined;
-  if (hasRequest !== hasDeadline) return 'incoherent';
-  if (hasRequest) {
-    // I due campi vivono e muoiono insieme e devono essere ben formati.
-    if (
-      !isCanonicalRequestId(submission.forceCloseRequestId) ||
-      timestampKey(submission.forceCloseDeadline) === null
-    ) {
-      return 'incoherent';
-    }
-    return 'already_scheduled';
-  }
+  // I tre marcatori vivono e muoiono insieme: uno stato parziale o malformato è
+  // incoerente e non viene sovrascritto.
+  const markers = readMarkerState(submission);
+  if (markers.kind === 'malformed') return 'incoherent';
+  if (markers.kind === 'present') return 'already_scheduled';
   return 'scheduled';
 }
 
@@ -255,7 +279,14 @@ export const FORCE_CLOSE_MARKER_FIELDS = [
 
 export interface ScheduleStudentResult {
   studentUid: string;
-  outcome: ScheduleOutcome | 'failed';
+  /**
+   * `failed` — l'operazione non è riuscita ma non ha lasciato traccia.
+   * `failed_cleanup` — la programmazione è stata scritta, l'accodamento è
+   * fallito **e** la compensazione non è riuscita: lo studente potrebbe vedere
+   * un banner senza chiusura. È uno stato esplicito e azionabile, mai
+   * confuso con un successo.
+   */
+  outcome: ScheduleOutcome | 'failed' | 'failed_cleanup';
 }
 
 export interface ScheduleForceCloseResult {
@@ -283,23 +314,35 @@ export interface ForceCloseTaskPayload {
   studentUid: string;
   ownerUid: string;
   requestId: string;
+  /**
+   * Scadenza **canonica** della programmazione, in millisecondi epoch. Viaggia
+   * nel payload perché la task deve poter riconoscere una programmazione
+   * *sostituita* anche quando il `requestId` coincidesse per errore, e perché
+   * deve sapere se sta girando **prima** del tempo (consegna anticipata della
+   * coda) senza fidarsi del solo documento.
+   */
+  deadlineMs: number;
 }
 
 /**
  * Il payload della task è prodotto da noi, ma viene comunque validato in modo
  * **chiuso** all'arrivo: una coda è un canale, e un canale non è mai una fonte
- * di verità. Chiavi extra, id malformati o `requestId` non canonico ⇒ errore.
+ * di verità. Chiavi extra, id malformati, `requestId` non canonico o deadline
+ * non finita ⇒ errore.
  */
 export function parseForceCloseTaskPayload(raw: unknown): ForceCloseTaskPayload {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     throw new ForceCloseError('invalid_input', 'Payload task non valido.');
   }
   const keys = Object.keys(raw).sort();
-  const expected = ['ownerUid', 'requestId', 'studentUid', 'verificationId'];
+  const expected = ['deadlineMs', 'ownerUid', 'requestId', 'studentUid', 'verificationId'];
   if (keys.length !== expected.length || expected.some((k, i) => keys[i] !== k)) {
     throw new ForceCloseError('invalid_input', 'Payload task non valido: chiavi non ammesse.');
   }
-  const { verificationId, studentUid, ownerUid, requestId } = raw as Record<string, unknown>;
+  const { verificationId, studentUid, ownerUid, requestId, deadlineMs } = raw as Record<
+    string,
+    unknown
+  >;
   if (typeof verificationId !== 'string' || !isValidDocumentId(verificationId)) {
     throw new ForceCloseError('invalid_input', 'verificationId non valido.');
   }
@@ -312,10 +355,13 @@ export function parseForceCloseTaskPayload(raw: unknown): ForceCloseTaskPayload 
   if (!isCanonicalRequestId(requestId)) {
     throw new ForceCloseError('invalid_input', 'requestId non valido.');
   }
+  if (typeof deadlineMs !== 'number' || !Number.isSafeInteger(deadlineMs) || deadlineMs <= 0) {
+    throw new ForceCloseError('invalid_input', 'deadlineMs non valido.');
+  }
   if (!isValidDocumentId(submissionIdFor(verificationId, studentUid))) {
     throw new ForceCloseError('invalid_input', 'Identificatore consegna non valido.');
   }
-  return { verificationId, studentUid, ownerUid, requestId };
+  return { verificationId, studentUid, ownerUid, requestId, deadlineMs };
 }
 
 /** L'input FORCE-SUBMIT-01 corrispondente a una task. */
@@ -324,57 +370,123 @@ export function forceSubmitInputForTask(payload: ForceCloseTaskPayload): ForceSu
 }
 
 /**
- * Decisione di **esecuzione**, valutata sullo stato riletto in transazione.
- *
- * - `run`: la bozza porta ancora esattamente questa richiesta ⇒ si chiude.
- * - `noop_superseded`: nel frattempo lo studente ha consegnato normalmente, il
- *   docente ha programmato un'altra chiusura, la programmazione è stata
- *   rimossa, oppure la chiusura è già stata eseguita. In tutti questi casi la
- *   task non deve fare nulla e **non** deve fallire: un errore farebbe ripetere
- *   il retry su uno stato che è già quello giusto.
+ * Nome deterministico della Cloud Task, derivato dal `requestId` opaco. Cloud
+ * Tasks rifiuta un nome già usato: accodare due volte la **stessa**
+ * programmazione è quindi impossibile, anche se la callable viene ritentata.
+ * Il nome non contiene uid né id verifica.
  */
-export type ForceCloseTaskDecision = 'run' | 'noop_superseded';
+export function taskNameFor(requestId: string): string {
+  if (!isCanonicalRequestId(requestId)) {
+    throw new ForceCloseError('invalid_input', 'requestId non valido.');
+  }
+  return `fc-${requestId}`;
+}
+
+/**
+ * Esito della decisione di esecuzione. Ogni via è **terminale e non ambigua**:
+ * non esiste un percorso che lasci una scadenza superata con i marcatori ancora
+ * presenti e nessuna ricevuta.
+ *
+ * - `run` — la bozza porta ancora **esattamente** questa programmazione e la
+ *   scadenza è passata: si chiude.
+ * - `too_early` — la coda ha consegnato in anticipo: **non** si chiude prima
+ *   della scadenza, si lascia ritentare.
+ * - `cleanup` — questa programmazione non è più eseguibile ma i suoi marcatori
+ *   sono ancora sul documento (tipicamente: lo studente ha consegnato
+ *   normalmente durante la finestra). Vanno rimossi, **condizionatamente a
+ *   questo `requestId`**, altrimenti lo studente resterebbe con un banner
+ *   scaduto e nessuna ricevuta.
+ * - `noop` — non c'è nulla da fare **e** nulla da ripulire: consegna eliminata,
+ *   programmazione già rimossa, oppure una programmazione **diversa** ha preso
+ *   il posto di questa (che non va mai cancellata da noi).
+ */
+export type ForceCloseTaskDecision =
+  | { kind: 'run' }
+  | { kind: 'too_early'; remainingMs: number }
+  | { kind: 'cleanup'; reason: ForceCloseCleanupReason }
+  | { kind: 'noop'; reason: ForceCloseNoopReason };
+
+export type ForceCloseCleanupReason =
+  | 'already_submitted'
+  | 'already_forced'
+  | 'markers_malformed'
+  | 'submission_incoherent';
+
+export type ForceCloseNoopReason =
+  | 'submission_missing'
+  | 'identity_mismatch'
+  | 'markers_absent'
+  | 'superseded';
 
 export interface ForceCloseTaskContext {
   payload: ForceCloseTaskPayload;
   submission: ScheduleSubmissionSnapshot | null;
+  /** Orologio iniettabile: nessun test dipende dal tempo reale. */
+  nowMs: number;
 }
 
 /**
- * Fail-closed **e** no-op-safe: la task agisce solo se ritrova esattamente la
- * bozza che aveva programmato. Non ripara documenti, non ricrea consegne, non
- * sovrascrive mai una consegna normale.
+ * Fail-closed **e** no-op-safe. La task agisce solo se ritrova esattamente la
+ * bozza che aveva programmato, con lo stesso `requestId` **e** la stessa
+ * scadenza; e solo dopo che la scadenza è realmente passata.
+ *
+ * Non ripara documenti, non ricrea consegne, non sovrascrive mai una consegna
+ * normale e non rimuove mai la programmazione di qualcun altro.
  */
 export function decideForceCloseTask(context: ForceCloseTaskContext): ForceCloseTaskDecision {
-  const { payload, submission } = context;
-  // La consegna può essere stata eliminata dal docente: nulla da fare.
-  if (!submission) return 'noop_superseded';
+  const { payload, submission, nowMs } = context;
+  if (!submission) return { kind: 'noop', reason: 'submission_missing' };
 
   const expectedId = submissionIdFor(payload.verificationId, payload.studentUid);
-  const coherent =
+  const identityOk =
     submission.submissionId === expectedId &&
     submission.verificationId === payload.verificationId &&
     submission.studentUid === payload.studentUid &&
     submission.ownerUid === payload.ownerUid;
-  if (!coherent) return 'noop_superseded';
 
-  // Già consegnata (normalmente o da una chiusura precedente): mai sovrascritta.
-  if (submission.status !== 'draft') return 'noop_superseded';
-  if (submission.forcedByTeacher !== undefined) return 'noop_superseded';
+  const markers = readMarkerState(submission);
+  /** I marcatori sul documento appartengono **a questa** programmazione? */
+  const isOurs =
+    markers.kind === 'present' &&
+    markers.requestId === payload.requestId &&
+    markers.deadlineKey === millisToTimestampKey(payload.deadlineMs);
 
-  // La richiesta deve essere ancora **questa**: una riprogrammazione successiva
-  // ha un altro `requestId` e vince, questa task diventa obsoleta.
-  if (submission.forceCloseRequestId !== payload.requestId) return 'noop_superseded';
-  if (timestampKey(submission.forceCloseDeadline) === null) return 'noop_superseded';
+  if (!identityOk) {
+    // Documento incoerente: se porta comunque i nostri marcatori vanno tolti,
+    // altrimenti non è affar nostro.
+    return isOurs
+      ? { kind: 'cleanup', reason: 'submission_incoherent' }
+      : { kind: 'noop', reason: 'identity_mismatch' };
+  }
 
-  return 'run';
+  if (markers.kind === 'absent') return { kind: 'noop', reason: 'markers_absent' };
+  if (markers.kind === 'malformed') {
+    // Stato parziale: non lo si interpreta, lo si rimuove. È l'unico modo per
+    // non lasciare lo studente con un banner che non scadrà mai.
+    return { kind: 'cleanup', reason: 'markers_malformed' };
+  }
+  if (!isOurs) return { kind: 'noop', reason: 'superseded' };
+
+  if (submission.status !== 'draft') {
+    // La consegna normale dello studente ha vinto: non la si tocca, ma i
+    // marcatori residui vanno rimossi.
+    return { kind: 'cleanup', reason: 'already_submitted' };
+  }
+  if (submission.forcedByTeacher !== undefined) {
+    return { kind: 'cleanup', reason: 'already_forced' };
+  }
+
+  if (nowMs < payload.deadlineMs) {
+    // Consegna anticipata della coda: mai chiudere prima del tempo promesso.
+    return { kind: 'too_early', remainingMs: payload.deadlineMs - nowMs };
+  }
+
+  return { kind: 'run' };
 }
 
-/**
- * Verifica che la deadline ritrovata sia quella attesa. Usato dove la task
- * conosce anche l'istante programmato (retry con payload integro): il confronto
- * è deterministico, mai basato sull'orologio locale.
- */
-export function deadlineMatches(submissionDeadline: unknown, expected: unknown): boolean {
-  return sameTimestamp(submissionDeadline, expected);
+/** Chiave canonica equivalente a `timestampKey`, a partire da millisecondi. */
+export function millisToTimestampKey(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const nanos = (ms - seconds * 1000) * 1e6;
+  return `${seconds}.${String(nanos).padStart(9, '0')}`;
 }

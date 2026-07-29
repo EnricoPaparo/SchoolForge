@@ -532,8 +532,22 @@ resta e viene riusato dalla task.
   `requestId`, programmazione rimossa, consegna eliminata, verifica passata ad altri, consegna
   doppia o tardiva della task ⇒ **no-op sicuro con zero scritture**, mai un errore ritentabile su
   uno stato già corretto. Una consegna normale non viene **mai** trasformata in `forcedByTeacher`.
-- **Compensazione.** Se l'accodamento della task fallisce, i marcatori vengono rimossi: lo studente
-  non resta con un banner che non porta a nessuna chiusura.
+- **Compensazione e limiti dichiarati.** Firestore e Cloud Tasks **non** condividono una
+  transazione, e nessun disegno può renderle atomiche. La scrittura dei marcatori viene **prima**
+  (così non può esistere una task senza il marcatore che la rende riconoscibile); il nome della task
+  è derivato dal `requestId`, quindi un retry dell'accodamento non crea duplicati; se l'accodamento
+  fallisce si esegue una **compensazione transazionale condizionata allo stesso `requestId`**, che
+  non tocca mai una programmazione diversa; se anche la compensazione fallisce l'esito è
+  `failed_cleanup` — esplicito e azionabile, mai un successo apparente.
+- **Nessuno studente resta bloccato.** Ogni via terminale della task porta a uno di quattro esiti:
+  consegna forzata con ricevuta; consegna normale già effettuata **con rimozione dei marcatori**;
+  programmazione non più valida **con rimozione dei marcatori**; oppure errore permanente sui
+  metadati, che rimuove comunque i marcatori. La combinazione «scadenza superata + marcatori
+  presenti + nessuna ricevuta» è vietata ed è verificata da un test dedicato su tutti gli scenari.
+  Gli errori infrastrutturali temporanei sono propagati perché Cloud Tasks ritenti; quelli
+  permanenti non vengono inghiottiti lasciando il documento bloccato.
+- **Mai una chiusura anticipata.** Il payload della task porta anche la scadenza canonica: se la
+  coda consegna prima del tempo la task **rilancia** invece di chiudere, e viene ritentata.
 - **Trasparenza.** Il banner dichiara la richiesta e il tempo residuo, il countdown è **ricalcolato
   dalla scadenza server-side** a ogni tick (un contatore che decrementa prometterebbe più tempo del
   reale dopo una scheda sospesa), e alla scadenza i controlli si bloccano subito. La ricevuta resta

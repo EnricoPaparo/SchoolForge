@@ -15,17 +15,24 @@ const {
 } = await import('../forceCloseWatch.js');
 
 const DEADLINE = { seconds: 1_800_000_060, nanoseconds: 0 };
+const REQUESTED_AT = { seconds: 1_800_000_000, nanoseconds: 0 };
 const REQUEST_ID = 'abcdefghijklmnopqrstuvwx';
 
+/** I tre marcatori coerenti, come li scrive la callable. */
+const MARKERS = {
+  forceCloseRequestId: REQUEST_ID,
+  forceCloseDeadline: DEADLINE,
+  forceCloseRequestedAt: REQUESTED_AT,
+};
+const REQUEST = {
+  requestId: REQUEST_ID,
+  deadlineMs: 1_800_000_060_000,
+  requestedAtMs: 1_800_000_000_000,
+};
+
 describe('toForceCloseRequest — solo richieste coerenti', () => {
-  it('riconosce una bozza con entrambi i marcatori', () => {
-    expect(
-      toForceCloseRequest({
-        status: 'draft',
-        forceCloseRequestId: REQUEST_ID,
-        forceCloseDeadline: DEADLINE as never,
-      }),
-    ).toEqual({ requestId: REQUEST_ID, deadlineMs: 1_800_000_060_000 });
+  it('riconosce una bozza con tutti e tre i marcatori', () => {
+    expect(toForceCloseRequest({ status: 'draft', ...MARKERS } as never)).toEqual(REQUEST);
   });
 
   it.each([
@@ -84,18 +91,8 @@ describe('watchOwnForceClose — un solo listener sul proprio documento', () => 
 
   it('propaga la richiesta corrente e la sua rimozione', () => {
     const { handlers, next } = setup();
-    next()({
-      exists: () => true,
-      data: () => ({
-        status: 'draft',
-        forceCloseRequestId: REQUEST_ID,
-        forceCloseDeadline: DEADLINE,
-      }),
-    });
-    expect(handlers.onRequest).toHaveBeenCalledWith({
-      requestId: REQUEST_ID,
-      deadlineMs: 1_800_000_060_000,
-    });
+    next()({ exists: () => true, data: () => ({ status: 'draft', ...MARKERS }) });
+    expect(handlers.onRequest).toHaveBeenCalledWith(REQUEST);
 
     next()({ exists: () => true, data: () => ({ status: 'draft' }) });
     expect(handlers.onRequest).toHaveBeenLastCalledWith(null);

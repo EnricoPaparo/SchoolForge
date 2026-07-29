@@ -143,6 +143,11 @@ describe('groupScheduleOutcomes — riepilogo degli esiti', () => {
     ]);
   });
 
+  it('un esito che richiede intervento manuale è distinto da un fallimento pulito', () => {
+    expect(describeScheduleOutcome('failed_cleanup')).not.toBe(describeScheduleOutcome('failed'));
+    expect(describeScheduleOutcome('failed_cleanup')).toMatch(/manuale/);
+  });
+
   it('non elenca categorie vuote', () => {
     expect(groupScheduleOutcomes({ graceSeconds: 60, results: [] })).toEqual([]);
   });
@@ -155,6 +160,7 @@ describe('groupScheduleOutcomes — riepilogo degli esiti', () => {
       'already_submitted',
       'incoherent',
       'failed',
+      'failed_cleanup',
     ] as const) {
       expect(describeScheduleOutcome(outcome).length).toBeGreaterThan(0);
     }
