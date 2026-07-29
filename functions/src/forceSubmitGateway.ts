@@ -16,7 +16,6 @@ import {
   type ForceSubmitErrorCode,
   type ForceSubmitResult,
   type ReceiptSnapshot,
-  type SubmissionMetadata,
   type SubmissionSnapshot,
 } from './forceSubmitCore.js';
 
@@ -48,6 +47,9 @@ function toSubmissionSnapshot(data: DocumentData): SubmissionSnapshot {
     status: data.status,
     deliveryCode: data.deliveryCode,
     forcedByTeacher: data.forcedByTeacher,
+    verificationTitle: data.verificationTitle,
+    className: data.className,
+    submittedAt: data.submittedAt,
   };
 }
 
@@ -59,6 +61,9 @@ function toReceiptSnapshot(data: DocumentData): ReceiptSnapshot {
     ownerUid: data.ownerUid,
     deliveryCode: data.deliveryCode,
     forcedByTeacher: data.forcedByTeacher,
+    verificationTitle: data.verificationTitle,
+    className: data.className,
+    submittedAt: data.submittedAt,
   };
 }
 
@@ -108,14 +113,12 @@ export async function runForceSubmitTransaction(
 
     if (decision.kind !== 'apply') return resultForDecision(decision);
 
-    const submission = submissionSnap.data() as DocumentData;
-    // Payload composto dal core puro (contenuto ed esclusioni sono testati lì).
-    const writes = forceSubmitWrites(
-      decision,
-      input,
-      submission as unknown as SubmissionMetadata,
-      FieldValue.serverTimestamp(),
-    );
+    /*
+     * Payload composto dal core puro a partire dai soli valori già validati
+     * nella decisione (contenuto ed esclusioni sono testati lì): il gateway non
+     * rilegge né normalizza alcun metadato.
+     */
+    const writes = forceSubmitWrites(decision, input, FieldValue.serverTimestamp());
 
     tx.update(submissionRef, writes.submissionUpdate);
     tx.set(receiptRef, writes.receipt);

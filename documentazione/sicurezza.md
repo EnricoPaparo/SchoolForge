@@ -463,6 +463,23 @@ consegnato**. La transizione `draft → submitted` è **server-side e transazion
   cancellerebbe l'unica traccia di quanto fosse vecchia la versione acquisita. Il testo che lo
   studente non ha mai autosalvato **non è recuperabile**, e l'interfaccia lo dichiara nella
   conferma.
+- **Coerenza richiesta anche per non fare nulla.** Confermare un esito senza scritture non è
+  gratis dal punto di vista della sicurezza: sia il replay di una chiusura forzata sia una consegna
+  normale già avvenuta richiedono una ricevuta esistente e **completamente coerente** con la
+  submission (identità, `deliveryCode`, `submittedAt` confrontato in modo deterministico,
+  `verificationTitle`, `className`) e un marcatore coerente su **entrambi** i documenti —
+  `true` per la chiusura forzata, completamente assente per la consegna normale. Qualunque
+  divergenza è `failed_precondition` con zero scritture: non si conferma mai come riuscito uno
+  stato che non lo è. Analogamente una submission ancora `draft` **non può** avere una ricevuta:
+  se esiste, l'operazione fallisce chiuso invece di sovrascriverla.
+- **Metadati validati prima di scrivere.** Titolo verifica (stringa canonica non vuota),
+  `className` (stringa canonica **oppure** `null`) e campi identitari sono validati fail-closed
+  prima di comporre le due scritture. La callable non inventa e non normalizza mai un metadato
+  mancante o malformato.
+- **Id validati sui byte.** Il limite Firestore sugli id documento è espresso in **byte UTF-8**:
+  gli id in ingresso e l'id concatenato `${verificationId}_${studentUid}` sono verificati sulla
+  dimensione reale in byte (≤ 1500) e sulle forme riservate **prima** di costruire qualunque
+  `DocumentReference`.
 - **Concorrenza.** Verifica, submission e ricevuta sono lette **dentro** la transazione: un
   autosave o una consegna dello studente in corso fanno ripartire la transazione con dati freschi.
   Una consegna normale avvenuta nel frattempo non viene **mai** sovrascritta (`already_submitted`,
