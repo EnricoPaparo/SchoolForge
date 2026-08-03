@@ -1,0 +1,1472 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SchoolForge — Prototipo manuale digitale (LESSON-MANUAL-00)</title>
+    <!--
+      LESSON-MANUAL-00 — prototipo STANDALONE, non collegato al runtime.
+
+      Nessuna rete, nessuna libreria, nessun font esterno, nessuna immagine
+      esterna, nessun dato Firebase, nessuna persistenza. Serve unicamente a far
+      valutare al docente la resa proposta, a confronto con quella attuale,
+      prima di autorizzare qualunque implementazione.
+
+      Il contenuto della lezione è **identico** nelle due modalità: cambia solo
+      la classe applicata al contenitore. La modalità «Attuale» riproduce le
+      regole reali di `.prose` (apps/web/src/index.css), senza peggiorarle.
+    -->
+    <style>
+      /* ── Token: gli stessi valori di apps/web/src/index.css ───────────── */
+      :root {
+        --color-primary: #3b82f6;
+        --color-brand-blue: #38bdf8;
+        --color-brand-orange: #fb923c;
+        --color-surface: #141a24;
+        --color-surface-subtle: #090d14;
+        --color-surface-raised: #1d2532;
+        --color-border: #334052;
+        --color-text: #e7ebf2;
+        --color-text-muted: #93a0b4;
+        --color-warning: #fbbf24;
+        --color-success: #4ade80;
+        --color-error: #f87171;
+        --color-focus-ring: rgba(59, 130, 246, 0.35);
+        --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Monaco, Consolas,
+          monospace;
+        --radius: 6px;
+        --radius-lg: 10px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+        /* Le ancore dell'indice non finiscono sotto la barra di confronto. */
+        scroll-padding-top: 5rem;
+      }
+
+      body {
+        margin: 0;
+        background: var(--color-surface-subtle);
+        color: var(--color-text);
+        font-family: var(--font-sans);
+        /* Nessun overflow orizzontale a nessuna larghezza. */
+        overflow-x: hidden;
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--color-brand-orange);
+        outline-offset: 2px;
+        border-radius: 3px;
+      }
+
+      .skip-link {
+        position: absolute;
+        left: 0.5rem;
+        top: -3rem;
+        z-index: 20;
+        padding: 0.5rem 0.9rem;
+        border-radius: var(--radius);
+        background: var(--color-surface-raised);
+        color: var(--color-text);
+        transition: top 120ms ease;
+      }
+
+      .skip-link:focus {
+        top: 0.5rem;
+      }
+
+      /* ── Barra di confronto (solo prototipo, non fa parte del contratto) ── */
+      .proto-bar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.6rem 1rem;
+        border-bottom: 1px solid var(--color-border);
+        background: rgba(9, 13, 20, 0.92);
+        backdrop-filter: blur(6px);
+      }
+
+      .proto-bar__label {
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+      }
+
+      .proto-switch {
+        display: inline-flex;
+        border: 1px solid var(--color-border);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .proto-switch button {
+        min-height: 2.25rem;
+        padding: 0 0.9rem;
+        border: 0;
+        background: transparent;
+        color: var(--color-text-muted);
+        font: inherit;
+        font-size: 0.8125rem;
+        cursor: pointer;
+      }
+
+      .proto-switch button[aria-pressed='true'] {
+        background: var(--color-primary);
+        color: #fff;
+        font-weight: 600;
+      }
+
+      .proto-note {
+        flex: 1 1 14rem;
+        min-width: 0;
+        margin: 0;
+        font-size: 0.75rem;
+        color: var(--color-text-muted);
+      }
+
+      /* ── Guscio: riproduce il contesto reale (sidebar del corso + pagina) ── */
+      .shell {
+        display: grid;
+        grid-template-columns: 15rem minmax(0, 1fr);
+        gap: 0;
+        min-height: 100vh;
+      }
+
+      .course-rail {
+        border-right: 1px solid var(--color-border);
+        padding: 1.25rem 1rem;
+        background: var(--color-surface);
+        font-size: 0.8125rem;
+        color: var(--color-text-muted);
+      }
+
+      .course-rail__title {
+        margin: 0 0 0.75rem;
+        font-size: 0.6875rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .course-rail ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .course-rail li + li {
+        margin-top: 0.35rem;
+      }
+
+      .course-rail li[aria-current='true'] {
+        color: var(--color-text);
+        font-weight: 600;
+      }
+
+      .page {
+        min-width: 0;
+        padding: 1.5rem 1.25rem 4rem;
+      }
+
+      /* ── Testata della lezione ─────────────────────────────────────────── */
+      .lesson-head {
+        max-width: 60rem;
+        margin: 0 auto 1.75rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--color-border);
+      }
+
+      .lesson-head__uda {
+        margin: 0 0 0.4rem;
+        font-size: 0.75rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+      }
+
+      .lesson-head__title {
+        margin: 0;
+        font-size: 1.75rem;
+        line-height: 1.2;
+        letter-spacing: -0.01em;
+      }
+
+      .lesson-head__subtitle {
+        margin: 0.4rem 0 0;
+        font-size: 1rem;
+        color: var(--color-text-muted);
+      }
+
+      .lesson-head__meta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.4rem 1.25rem;
+        margin-top: 0.9rem;
+        font-size: 0.8125rem;
+        color: var(--color-text-muted);
+      }
+
+      .lesson-head__meta dt {
+        display: inline;
+        font-weight: 600;
+        color: var(--color-text);
+      }
+
+      .lesson-head__meta dd {
+        display: inline;
+        margin: 0 0 0 0.3rem;
+      }
+
+      .lesson-head__meta > div {
+        min-width: 0;
+      }
+
+      .pill {
+        display: inline-block;
+        padding: 0.1rem 0.5rem;
+        border: 1px solid var(--color-border);
+        border-radius: 999px;
+        color: var(--color-text);
+        font-size: 0.75rem;
+      }
+
+      /* ── Impaginazione a due colonne: indice + corpo ───────────────────── */
+      .lesson-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 2rem;
+        max-width: 60rem;
+        margin: 0 auto;
+      }
+
+      .is-manual .lesson-layout.has-toc {
+        grid-template-columns: minmax(0, 1fr) 13rem;
+      }
+
+      .lesson-body {
+        min-width: 0;
+      }
+
+      /* ── Indice laterale (solo modalità Manuale, solo da 3 heading) ────── */
+      .toc {
+        position: sticky;
+        top: 4.5rem;
+        align-self: start;
+        max-height: calc(100vh - 6rem);
+        overflow-y: auto;
+        padding-left: 0.9rem;
+        border-left: 1px solid var(--color-border);
+        font-size: 0.8125rem;
+      }
+
+      .toc__title {
+        margin: 0 0 0.6rem;
+        font-size: 0.6875rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+      }
+
+      .toc ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .toc li + li {
+        margin-top: 0.3rem;
+      }
+
+      .toc li[data-level='3'] {
+        padding-left: 0.75rem;
+      }
+
+      .toc a {
+        display: block;
+        padding: 0.1rem 0;
+        color: var(--color-text-muted);
+        text-decoration: none;
+        line-height: 1.4;
+      }
+
+      .toc a:hover {
+        color: var(--color-text);
+      }
+
+      .toc a[aria-current='true'] {
+        color: var(--color-brand-blue);
+        font-weight: 600;
+      }
+
+      /* Indice mobile: controllo compatto, mai sticky. */
+      .toc-mobile {
+        display: none;
+        margin: 0 0 1.5rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: var(--color-surface);
+      }
+
+      .toc-mobile > summary {
+        padding: 0.65rem 0.85rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .toc-mobile > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .toc-mobile > summary::after {
+        content: '▾';
+        float: right;
+        color: var(--color-text-muted);
+      }
+
+      .toc-mobile[open] > summary::after {
+        content: '▴';
+      }
+
+      .toc-mobile nav {
+        padding: 0 0.85rem 0.75rem;
+      }
+
+      .toc-mobile ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-size: 0.8125rem;
+      }
+
+      .toc-mobile li + li {
+        margin-top: 0.35rem;
+      }
+
+      .toc-mobile li[data-level='3'] {
+        padding-left: 0.85rem;
+      }
+
+      .toc-mobile a {
+        display: block;
+        min-height: 2.25rem;
+        padding: 0.4rem 0;
+        color: var(--color-text-muted);
+        text-decoration: none;
+      }
+
+      /* ── Modalità ATTUALE: identica a `.prose` di index.css ───────────── */
+      .prose {
+        color: var(--color-text);
+        line-height: 1.75;
+        font-size: 0.9375rem;
+        max-width: 100%;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .prose h1,
+      .prose h2,
+      .prose h3,
+      .prose h4 {
+        margin-top: 1.5em;
+        margin-bottom: 0.5em;
+      }
+
+      .prose h1 {
+        font-size: 1.5rem;
+      }
+      .prose h2 {
+        font-size: 1.25rem;
+      }
+      .prose h3 {
+        font-size: 1.05rem;
+      }
+
+      .prose p {
+        margin-bottom: 0.875em;
+        overflow-wrap: anywhere;
+      }
+
+      .prose ul,
+      .prose ol {
+        margin-bottom: 0.875em;
+        padding-left: 1.5em;
+      }
+
+      .prose li {
+        margin-bottom: 0.25em;
+      }
+
+      .prose code {
+        font-family: var(--font-mono);
+        font-size: 0.875em;
+        background-color: var(--color-surface-subtle);
+        border: 1px solid var(--color-border);
+        border-radius: 3px;
+        padding: 0.1em 0.35em;
+      }
+
+      .prose pre {
+        background-color: var(--color-surface-subtle);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 1rem 1.25rem;
+        overflow-x: auto;
+        max-width: 100%;
+        margin-bottom: 1em;
+        font-size: 0.875em;
+        line-height: 1.65;
+      }
+
+      .prose pre code {
+        background: none;
+        border: none;
+        padding: 0;
+        font-size: inherit;
+        white-space: pre;
+      }
+
+      .prose a {
+        color: var(--color-primary);
+        text-decoration: underline;
+      }
+
+      .prose blockquote {
+        border-left: 4px solid var(--color-border);
+        margin-left: 0;
+        padding-left: 1rem;
+        color: var(--color-text-muted);
+        font-style: italic;
+      }
+
+      .prose table {
+        display: block;
+        overflow-x: auto;
+        max-width: 100%;
+        border-collapse: collapse;
+        width: 100%;
+        margin-bottom: 1em;
+        font-size: 0.9rem;
+      }
+
+      .prose th,
+      .prose td {
+        border: 1px solid var(--color-border);
+        padding: 0.4rem 0.75rem;
+        text-align: left;
+      }
+
+      .prose th {
+        background-color: var(--color-surface-subtle);
+        font-weight: 600;
+      }
+
+      /* ── Modalità MANUALE ──────────────────────────────────────────────
+         Tutto ciò che segue è additivo e vive sotto `.is-manual`: rimuovere la
+         classe ripristina esattamente la resa attuale, senza altre modifiche. */
+
+      .is-manual .prose {
+        font-size: 1rem;
+        line-height: 1.75;
+        /* Colonna di lettura editoriale: ~78 caratteri, mai tutta la viewport. */
+        max-width: 42rem;
+      }
+
+      /* Con l'indice il corpo resta comodo; senza indice si centra. */
+      .is-manual .lesson-layout:not(.has-toc) .prose {
+        margin-inline: auto;
+      }
+
+      .is-manual .prose h2,
+      .is-manual .prose h3 {
+        scroll-margin-top: 5rem;
+      }
+
+      .is-manual .prose h2 {
+        margin-top: 2.75rem;
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.4rem;
+        border-bottom: 1px solid var(--color-border);
+        color: var(--color-brand-blue);
+        font-size: 1.375rem;
+        letter-spacing: -0.005em;
+      }
+
+      .is-manual .prose h3 {
+        margin-top: 1.75rem;
+        margin-bottom: 0.5rem;
+        color: var(--color-text);
+        font-size: 1.0625rem;
+        font-weight: 650;
+      }
+
+      .is-manual .prose p {
+        margin-bottom: 1.05rem;
+      }
+
+      .is-manual .prose > p + p {
+        margin-top: 0;
+      }
+
+      /* Ancora discreta: invisibile a riposo, raggiungibile da tastiera. */
+      .is-manual .heading-anchor {
+        margin-left: 0.4rem;
+        color: var(--color-text-muted);
+        font-size: 0.8em;
+        text-decoration: none;
+        opacity: 0;
+        transition: opacity 120ms ease;
+      }
+
+      .is-manual .prose h2:hover .heading-anchor,
+      .is-manual .prose h3:hover .heading-anchor,
+      .is-manual .heading-anchor:focus-visible {
+        opacity: 1;
+      }
+
+      /* ── Callout semantici ─────────────────────────────────────────────── */
+      .callout {
+        --callout-accent: var(--color-border);
+        margin: 1.5rem 0;
+        padding: 0.85rem 1rem 0.85rem 1.05rem;
+        border: 1px solid var(--color-border);
+        border-left: 3px solid var(--callout-accent);
+        border-radius: var(--radius);
+        background: var(--color-surface);
+      }
+
+      .callout__title {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin: 0 0 0.4rem;
+        color: var(--callout-accent);
+        font-size: 0.8125rem;
+        font-weight: 650;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .callout__title svg {
+        flex: 0 0 auto;
+      }
+
+      .callout > :last-child {
+        margin-bottom: 0;
+      }
+
+      .callout--definition {
+        --callout-accent: var(--color-brand-blue);
+      }
+      .callout--example {
+        --callout-accent: var(--color-text-muted);
+      }
+      .callout--important {
+        --callout-accent: var(--color-brand-orange);
+      }
+      .callout--warning {
+        --callout-accent: var(--color-warning);
+      }
+      .callout--solution {
+        --callout-accent: var(--color-success);
+      }
+
+      /* SOLUTION richiudibile: controllo nativo, contenuto mai perso. */
+      .callout--solution > summary {
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .callout--solution > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .callout--solution > summary .callout__title {
+        margin-bottom: 0;
+      }
+
+      .callout--solution > summary .callout__hint {
+        margin-left: auto;
+        font-size: 0.75rem;
+        font-weight: 400;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--color-text-muted);
+      }
+
+      .callout--solution[open] > summary .callout__title {
+        margin-bottom: 0.5rem;
+      }
+
+      /*
+       * Modalità ATTUALE: il marcatore `[!DEFINITION]` non è supportato dal
+       * renderer odierno, quindi il blocco resta un normale blockquote e il
+       * marcatore compare come testo letterale. È la resa reale di oggi, non
+       * una versione peggiorata a scopo dimostrativo.
+       */
+      body:not(.is-manual) .callout {
+        border: 0;
+        border-left: 4px solid var(--color-border);
+        border-radius: 0;
+        margin: 0 0 0.875em;
+        padding: 0 0 0 1rem;
+        background: none;
+        color: var(--color-text-muted);
+        font-style: italic;
+      }
+
+      body:not(.is-manual) .callout__title {
+        display: block;
+        margin: 0;
+        color: inherit;
+        font-size: inherit;
+        font-weight: inherit;
+        letter-spacing: 0;
+        text-transform: none;
+      }
+
+      body:not(.is-manual) .callout__title svg,
+      body:not(.is-manual) .callout__hint,
+      body:not(.is-manual) .heading-anchor,
+      body:not(.is-manual) .toc,
+      body:not(.is-manual) .toc-mobile,
+      body:not(.is-manual) .code-copy {
+        display: none;
+      }
+
+      /* Il marcatore letterale si vede solo nella modalità attuale. */
+      .callout__marker {
+        display: none;
+      }
+
+      body:not(.is-manual) .callout__marker {
+        display: inline;
+      }
+
+      body:not(.is-manual) .callout__label {
+        display: none;
+      }
+
+      /* ── Liste ─────────────────────────────────────────────────────────── */
+      .is-manual .prose ul,
+      .is-manual .prose ol {
+        margin-bottom: 1.05rem;
+        padding-left: 1.35rem;
+      }
+
+      .is-manual .prose li {
+        margin-bottom: 0.4rem;
+      }
+
+      .is-manual .prose li::marker {
+        color: var(--color-brand-blue);
+      }
+
+      .is-manual .prose li > ul,
+      .is-manual .prose li > ol {
+        margin-top: 0.4rem;
+        margin-bottom: 0;
+      }
+
+      /* Checklist: `- [ ]` / `- [x]`, già prodotte da marked in GFM. */
+      .is-manual .prose .task-list {
+        padding-left: 0;
+        list-style: none;
+      }
+
+      .is-manual .prose .task-list li {
+        display: flex;
+        gap: 0.55rem;
+        align-items: flex-start;
+      }
+
+      .is-manual .prose .task-list input {
+        margin-top: 0.35rem;
+        accent-color: var(--color-primary);
+      }
+
+      /* Procedura numerata: cerchi discreti e filo verticale tenue. */
+      .is-manual .procedure {
+        margin: 1.5rem 0;
+        padding-left: 0;
+        list-style: none;
+        counter-reset: step;
+      }
+
+      .is-manual .procedure > li {
+        position: relative;
+        margin-bottom: 1rem;
+        padding-left: 2.35rem;
+        counter-increment: step;
+      }
+
+      .is-manual .procedure > li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 0.05rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.6rem;
+        height: 1.6rem;
+        border: 1px solid var(--color-border);
+        border-radius: 999px;
+        background: var(--color-surface);
+        color: var(--color-brand-blue);
+        font-size: 0.8125rem;
+        font-weight: 650;
+      }
+
+      .is-manual .procedure > li:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        left: 0.8rem;
+        top: 1.85rem;
+        bottom: -0.75rem;
+        width: 1px;
+        background: var(--color-border);
+      }
+
+      /* ── Tabelle ───────────────────────────────────────────────────────── */
+      .is-manual .table-wrap {
+        margin: 1.5rem 0;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        /* Lo scroll resta confinato alla tabella: la pagina non scorre mai. */
+        overflow-x: auto;
+        max-width: 100%;
+      }
+
+      .is-manual .table-wrap table {
+        display: table;
+        width: 100%;
+        margin: 0;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+      }
+
+      .is-manual .table-wrap th,
+      .is-manual .table-wrap td {
+        border: 0;
+        border-bottom: 1px solid var(--color-border);
+        padding: 0.55rem 0.85rem;
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      .is-manual .table-wrap th {
+        background: var(--color-surface);
+        color: var(--color-text);
+        font-weight: 650;
+      }
+
+      .is-manual .table-wrap tbody tr:last-child td {
+        border-bottom: 0;
+      }
+
+      /* ── Codice ────────────────────────────────────────────────────────── */
+      .is-manual .code-block {
+        position: relative;
+        margin: 1.5rem 0;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: var(--color-surface);
+        overflow: hidden;
+      }
+
+      .is-manual .code-block__bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.35rem 0.5rem 0.35rem 0.85rem;
+        border-bottom: 1px solid var(--color-border);
+        font-size: 0.75rem;
+        color: var(--color-text-muted);
+      }
+
+      .is-manual .code-block pre {
+        margin: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+      }
+
+      .code-copy {
+        min-height: 2rem;
+        padding: 0 0.6rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: transparent;
+        color: var(--color-text-muted);
+        font: inherit;
+        font-size: 0.75rem;
+        cursor: pointer;
+      }
+
+      .code-copy:hover {
+        color: var(--color-text);
+      }
+
+      /* ── Placeholder formule e diagrammi (nessuna libreria) ────────────── */
+      .figure {
+        margin: 1.5rem 0;
+        padding: 1rem;
+        border: 1px dashed var(--color-border);
+        border-radius: var(--radius);
+        background: var(--color-surface);
+        text-align: center;
+      }
+
+      .figure__body {
+        font-family: var(--font-mono);
+        font-size: 0.95rem;
+        color: var(--color-text);
+        overflow-x: auto;
+      }
+
+      .figure figcaption {
+        margin-top: 0.6rem;
+        font-size: 0.75rem;
+        color: var(--color-text-muted);
+      }
+
+      .figure--error .figure__body {
+        color: var(--color-error);
+        font-size: 0.8125rem;
+      }
+
+      .figure__stub {
+        display: inline-block;
+        padding: 0.15rem 0.5rem;
+        border: 1px solid var(--color-border);
+        border-radius: 999px;
+        margin-bottom: 0.75rem;
+        font-family: var(--font-sans);
+        font-size: 0.6875rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+      }
+
+      .lesson-foot {
+        max-width: 60rem;
+        margin: 3rem auto 0;
+        padding-top: 1rem;
+        border-top: 1px solid var(--color-border);
+        font-size: 0.8125rem;
+        color: var(--color-text-muted);
+      }
+
+      /* ── Responsive ────────────────────────────────────────────────────── */
+      @media (max-width: 60rem) {
+        .shell {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .course-rail {
+          display: none;
+        }
+
+        .is-manual .lesson-layout.has-toc {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .is-manual .toc {
+          display: none;
+        }
+
+        .is-manual .toc-mobile {
+          display: block;
+        }
+
+        .is-manual .prose {
+          /* Su schermi stretti la colonna usa tutta la larghezza disponibile. */
+          max-width: 100%;
+        }
+
+        .page {
+          padding: 1rem 0.9rem 3rem;
+        }
+
+        .lesson-head__title {
+          font-size: 1.4rem;
+        }
+      }
+
+      @media (max-width: 22.5rem) {
+        .page {
+          padding: 0.85rem 0.7rem 2.5rem;
+        }
+
+        .lesson-head__title {
+          font-size: 1.25rem;
+        }
+
+        .is-manual .procedure > li {
+          padding-left: 2.1rem;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+
+        * {
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body class="is-manual">
+    <a class="skip-link" href="#lesson-body">Vai al contenuto della lezione</a>
+
+    <div class="proto-bar">
+      <span class="proto-bar__label">Prototipo LESSON-MANUAL-00</span>
+      <div class="proto-switch" role="group" aria-label="Modalità di confronto">
+        <button type="button" data-mode="current" aria-pressed="false">Attuale</button>
+        <button type="button" data-mode="manual" aria-pressed="true">Manuale</button>
+      </div>
+      <p class="proto-note">
+        Il contenuto è identico nelle due modalità: cambia solo la presentazione.
+      </p>
+      <div class="proto-switch" role="group" aria-label="Heading della lezione">
+        <button type="button" data-headings="few" aria-pressed="false">2 heading</button>
+        <button type="button" data-headings="many" aria-pressed="true">6 heading</button>
+      </div>
+    </div>
+
+    <div class="shell">
+      <!-- Contesto reale: la sidebar del corso non deve mai essere coperta. -->
+      <aside class="course-rail" aria-label="Struttura del corso">
+        <p class="course-rail__title">Reti e protocolli</p>
+        <ul>
+          <li>UDA 1 — Il Web</li>
+          <li aria-current="true">· Il protocollo HTTP</li>
+          <li>· Indirizzi e DNS</li>
+          <li>UDA 2 — Sicurezza</li>
+        </ul>
+      </aside>
+
+      <main class="page">
+        <!-- ── A. Testata compatta ─────────────────────────────────────── -->
+        <header class="lesson-head">
+          <p class="lesson-head__uda">UDA 1 — Il Web · Lezione 2 di 5</p>
+          <h1 class="lesson-head__title">Il protocollo HTTP</h1>
+          <p class="lesson-head__subtitle">
+            Come un browser e un server si scambiano richieste e risposte
+          </p>
+          <dl class="lesson-head__meta">
+            <div><dt>Difficoltà</dt> <dd><span class="pill">Intermedia</span></dd></div>
+            <div>
+              <dt>Concetti chiave</dt>
+              <dd>richiesta, risposta, metodo, stato, header</dd>
+            </div>
+            <div>
+              <dt>Obiettivi</dt>
+              <dd>riconoscere i metodi principali; interpretare un codice di stato</dd>
+            </div>
+          </dl>
+        </header>
+
+        <div class="lesson-layout has-toc" id="lesson-layout">
+          <div class="lesson-body" id="lesson-body">
+            <!-- ── D. Indice mobile ───────────────────────────────────── -->
+            <details class="toc-mobile" id="toc-mobile">
+              <summary>In questa lezione</summary>
+              <nav aria-label="Indice della lezione (mobile)">
+                <ul id="toc-mobile-list"></ul>
+              </nav>
+            </details>
+
+            <article class="prose">
+              <p>
+                Ogni volta che apri una pagina, il browser non «scarica un sito»: apre una
+                conversazione con un server e le pone una domanda molto precisa. Quella
+                conversazione segue regole fisse, e quelle regole si chiamano
+                <strong>HTTP</strong>. Capirle significa smettere di vedere il Web come una scatola
+                nera.
+              </p>
+
+              <h2 id="s1">1. Che cosa significa «protocollo»</h2>
+              <p>
+                Un protocollo è un accordo preventivo sul formato dei messaggi. Nessuna delle due
+                parti deve indovinare: il client sa come formulare la domanda, il server sa dove
+                trovarne le parti. Senza questo accordo, ogni server parlerebbe una lingua diversa e
+                nessun browser potrebbe funzionare ovunque.
+              </p>
+
+              <blockquote class="callout callout--definition">
+                <p class="callout__title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 16v-4M12 8h.01" />
+                  </svg>
+                  <span class="callout__marker">[!DEFINITION]</span>
+                  <span class="callout__label">Definizione</span>
+                </p>
+                <p>
+                  <strong>HTTP</strong> (HyperText Transfer Protocol) è il protocollo applicativo
+                  con cui un client richiede una risorsa a un server e ne riceve la rappresentazione.
+                  È senza stato: ogni richiesta è indipendente dalle precedenti.
+                </p>
+              </blockquote>
+
+              <p>
+                «Senza stato» è la proprietà che spiega quasi tutto il resto: sessioni, cookie e
+                token esistono proprio perché il protocollo, da solo, non ricorda nulla fra una
+                richiesta e l'altra.
+              </p>
+
+              <h2 id="s2">2. Anatomia di una richiesta</h2>
+              <p>
+                Una richiesta HTTP è testo strutturato. La prima riga dichiara che cosa si vuole
+                fare e su quale risorsa; seguono gli header, e in alcuni casi un corpo.
+              </p>
+
+              <h3 id="s2-1">2.1 I metodi principali</h3>
+              <ul>
+                <li><code>GET</code> — chiede una rappresentazione, senza modificare nulla.</li>
+                <li><code>POST</code> — invia dati che il server elabora.</li>
+                <li>
+                  <code>PUT</code> e <code>DELETE</code> — sostituiscono o rimuovono una risorsa:
+                  <ul>
+                    <li><code>PUT</code> è idempotente: ripeterlo non cambia l'esito.</li>
+                    <li><code>DELETE</code> su una risorsa già rimossa non è un errore nuovo.</li>
+                  </ul>
+                </li>
+              </ul>
+
+              <blockquote class="callout callout--example">
+                <p class="callout__title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                    <path d="M4 6h16M4 12h10M4 18h7" />
+                  </svg>
+                  <span class="callout__marker">[!EXAMPLE]</span>
+                  <span class="callout__label">Esempio</span>
+                </p>
+                <p>
+                  Aprire una scheda prodotto è una <code>GET</code>. Premere «Aggiungi al carrello»
+                  è una <code>POST</code>: la prima non lascia traccia, la seconda sì.
+                </p>
+              </blockquote>
+
+              <h3 id="s2-2">2.2 Gli header</h3>
+              <p>
+                Gli header trasportano i metadati della conversazione: che formato accetto, in che
+                lingua, con quale identità. Sono coppie <code>Nome: valore</code>, una per riga.
+              </p>
+
+              <div class="code-block">
+                <div class="code-block__bar">
+                  <span>http</span>
+                  <button type="button" class="code-copy" data-copy>Copia</button>
+                </div>
+                <pre><code>GET /prodotti/42 HTTP/1.1
+Host: esempio.it
+Accept: text/html
+Accept-Language: it-IT</code></pre>
+              </div>
+
+              <h2 id="s3">3. La risposta e i codici di stato</h2>
+              <p>
+                Il server risponde con un codice numerico che dichiara l'esito prima ancora del
+                contenuto. Le classi di codici sono cinque e vanno lette come categorie, non come
+                numeri da memorizzare uno per uno.
+              </p>
+
+              <div class="table-wrap">
+                <table>
+                  <caption class="visually-hidden-caption" hidden>Classi dei codici di stato</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Classe</th>
+                      <th scope="col">Significato</th>
+                      <th scope="col">Esempio</th>
+                      <th scope="col">Chi deve intervenire</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>2xx</td>
+                      <td>Successo</td>
+                      <td>200 OK</td>
+                      <td>nessuno</td>
+                    </tr>
+                    <tr>
+                      <td>3xx</td>
+                      <td>Redirezione</td>
+                      <td>301 Moved Permanently</td>
+                      <td>il client, seguendo</td>
+                    </tr>
+                    <tr>
+                      <td>4xx</td>
+                      <td>Errore del client</td>
+                      <td>404 Not Found</td>
+                      <td>chi ha fatto la richiesta</td>
+                    </tr>
+                    <tr>
+                      <td>5xx</td>
+                      <td>Errore del server</td>
+                      <td>500 Internal Server Error</td>
+                      <td>chi gestisce il server</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <blockquote class="callout callout--important">
+                <p class="callout__title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                    <path d="M12 3l9 16H3z" />
+                    <path d="M12 10v4M12 17h.01" />
+                  </svg>
+                  <span class="callout__marker">[!IMPORTANT]</span>
+                  <span class="callout__label">Importante</span>
+                </p>
+                <p>
+                  Un <code>404</code> non significa «il sito è rotto»: significa che
+                  <em>quella</em> risorsa non esiste su <em>quel</em> server. La distinzione fra
+                  4xx e 5xx dice a chi tocca risolvere il problema.
+                </p>
+              </blockquote>
+
+              <h2 id="s4">4. Osservare una richiesta reale</h2>
+              <p>
+                Il modo più rapido per capire HTTP è guardarlo mentre accade, con gli strumenti già
+                presenti nel browser.
+              </p>
+
+              <ol class="procedure">
+                <li>Apri gli strumenti di sviluppo e seleziona la scheda «Rete».</li>
+                <li>Ricarica la pagina tenendo la scheda aperta.</li>
+                <li>Scegli la prima richiesta dell'elenco: è il documento HTML.</li>
+                <li>
+                  Confronta metodo, codice di stato e header con quanto descritto nelle sezioni
+                  precedenti.
+                </li>
+              </ol>
+
+              <blockquote class="callout callout--warning">
+                <p class="callout__title">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                    <path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" />
+                    <path d="M12 9v4M12 17h.01" />
+                  </svg>
+                  <span class="callout__marker">[!WARNING]</span>
+                  <span class="callout__label">Attenzione</span>
+                </p>
+                <p>
+                  Gli header di una richiesta reale possono contenere token di sessione. Non
+                  copiarli in un documento condiviso e non incollarli in una consegna.
+                </p>
+              </blockquote>
+
+              <h2 id="s5">5. Esercizio</h2>
+              <p>
+                Un utente segnala che il salvataggio di un modulo «non funziona». Nella scheda Rete
+                compare una <code>POST</code> con stato <code>413</code>.
+              </p>
+
+              <ul class="task-list">
+                <li><input type="checkbox" disabled /> Individua la classe del codice.</li>
+                <li><input type="checkbox" disabled /> Stabilisci a chi tocca intervenire.</li>
+                <li><input type="checkbox" disabled /> Proponi una verifica concreta.</li>
+              </ul>
+
+              <details class="callout callout--solution">
+                <summary>
+                  <span class="callout__title">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                      <path d="M20 6L9 17l-5-5" />
+                    </svg>
+                    <span class="callout__marker">[!SOLUTION]</span>
+                    <span class="callout__label">Soluzione</span>
+                    <span class="callout__hint">mostra / nascondi</span>
+                  </span>
+                </summary>
+                <p>
+                  <code>413</code> è un 4xx: l'errore è nella richiesta, non nel server. Significa
+                  «payload troppo grande»: il modulo sta inviando un allegato oltre il limite
+                  accettato. La verifica è ridurre l'allegato e ripetere l'invio.
+                </p>
+              </details>
+
+              <h2 id="s6">6. Rappresentazioni formali</h2>
+              <p>
+                Alcuni contenuti si leggono meglio come formula o come schema. I due blocchi che
+                seguono mostrano <strong>soltanto come verrebbero presentati</strong>: in questa
+                fase non è installata né eseguita alcuna libreria.
+              </p>
+
+              <figure class="figure">
+                <span class="figure__stub">Formula — anteprima statica</span>
+                <div class="figure__body">T<sub>totale</sub> = T<sub>DNS</sub> + T<sub>TCP</sub> + T<sub>TLS</sub> + T<sub>richiesta</sub></div>
+                <figcaption>Tempo complessivo di una richiesta HTTPS a freddo.</figcaption>
+              </figure>
+
+              <figure class="figure">
+                <span class="figure__stub">Diagramma — anteprima statica</span>
+                <div class="figure__body">Client &nbsp;──&nbsp; richiesta &nbsp;──▶&nbsp; Server<br />Client &nbsp;◀──&nbsp; risposta &nbsp;──&nbsp; Server</div>
+                <figcaption>Scambio elementare fra client e server.</figcaption>
+              </figure>
+
+              <figure class="figure figure--error">
+                <span class="figure__stub">Fallback di errore</span>
+                <div class="figure__body">
+                  Diagramma non visualizzabile: la sintassi del blocco non è valida. Il testo
+                  originale resta leggibile e non viene modificato.
+                </div>
+              </figure>
+
+              <p>
+                Chiudere qui il percorso significa avere in mano il vocabolario minimo per leggere
+                qualunque scambio HTTP: metodo, risorsa, header, stato. Tutto il resto — cache,
+                autenticazione, compressione — si appoggia a queste quattro parole.
+              </p>
+            </article>
+          </div>
+
+          <!-- ── D. Indice desktop ─────────────────────────────────────── -->
+          <nav class="toc" id="toc" aria-label="Indice della lezione">
+            <p class="toc__title">In questa lezione</p>
+            <ul id="toc-list"></ul>
+          </nav>
+        </div>
+
+        <footer class="lesson-foot">
+          <p>Fine della lezione · UDA 1 — Il Web · Il protocollo HTTP</p>
+        </footer>
+      </main>
+    </div>
+    <script>
+      // LESSON-MANUAL-00 — script del solo prototipo. Nessuna rete, nessuna
+      // persistenza, nessun localStorage: ricaricando si torna allo stato
+      // iniziale. Non fa parte del contratto da implementare.
+      (function () {
+        'use strict';
+
+        var body = document.body;
+        var layout = document.getElementById('lesson-layout');
+        var article = document.querySelector('.prose');
+        var tocList = document.getElementById('toc-list');
+        var tocMobileList = document.getElementById('toc-mobile-list');
+        var tocMobile = document.getElementById('toc-mobile');
+        var MIN_HEADINGS = 3;
+        var observer = null;
+
+        /** Heading significativi correntemente visibili nell'articolo. */
+        function visibleHeadings() {
+          return Array.prototype.filter.call(
+            article.querySelectorAll('h2[id], h3[id]'),
+            function (heading) {
+              return heading.hidden !== true;
+            },
+          );
+        }
+
+        function clear(node) {
+          while (node.firstChild) node.removeChild(node.firstChild);
+        }
+
+        function buildTocInto(list, headings) {
+          clear(list);
+          headings.forEach(function (heading) {
+            var item = document.createElement('li');
+            item.setAttribute('data-level', heading.tagName === 'H2' ? '2' : '3');
+            var link = document.createElement('a');
+            link.href = '#' + heading.id;
+            link.textContent = heading.textContent.replace(/\s*#\s*$/, '').trim();
+            item.appendChild(link);
+            list.appendChild(item);
+          });
+        }
+
+        /** Ancore discrete: invisibili a riposo, raggiungibili da tastiera. */
+        function addAnchors(headings) {
+          headings.forEach(function (heading) {
+            if (heading.querySelector('.heading-anchor')) return;
+            var anchor = document.createElement('a');
+            anchor.className = 'heading-anchor';
+            anchor.href = '#' + heading.id;
+            anchor.textContent = '#';
+            anchor.setAttribute('aria-label', 'Link alla sezione ' + heading.textContent.trim());
+            heading.appendChild(anchor);
+          });
+        }
+
+        /** Evidenziazione sobria della sezione corrente. */
+        function trackCurrentSection(headings) {
+          if (observer) observer.disconnect();
+          if (typeof IntersectionObserver !== 'function') return;
+          observer = new IntersectionObserver(
+            function (entries) {
+              entries.forEach(function (entry) {
+                if (!entry.isIntersecting) return;
+                var links = document.querySelectorAll('#toc-list a');
+                Array.prototype.forEach.call(links, function (link) {
+                  var active = link.getAttribute('href') === '#' + entry.target.id;
+                  if (active) link.setAttribute('aria-current', 'true');
+                  else link.removeAttribute('aria-current');
+                });
+              });
+            },
+            { rootMargin: '-20% 0px -70% 0px' },
+          );
+          headings.forEach(function (heading) {
+            observer.observe(heading);
+          });
+        }
+
+        /**
+         * L'indice compare solo con almeno tre heading significativi; sotto
+         * quella soglia il corpo resta centrato e nessun indice viene mostrato.
+         */
+        function refreshToc() {
+          var headings = visibleHeadings();
+          var enoughHeadings = headings.length >= MIN_HEADINGS;
+          layout.classList.toggle('has-toc', enoughHeadings);
+          document.getElementById('toc').hidden = !enoughHeadings;
+          tocMobile.hidden = !enoughHeadings;
+          if (!enoughHeadings) {
+            clear(tocList);
+            clear(tocMobileList);
+            if (observer) observer.disconnect();
+            return;
+          }
+          buildTocInto(tocList, headings);
+          buildTocInto(tocMobileList, headings);
+          addAnchors(headings);
+          trackCurrentSection(headings);
+        }
+
+        /** Modalità di confronto: cambia solo la presentazione, mai il testo. */
+        function setMode(mode) {
+          body.classList.toggle('is-manual', mode === 'manual');
+          Array.prototype.forEach.call(
+            document.querySelectorAll('[data-mode]'),
+            function (button) {
+              button.setAttribute(
+                'aria-pressed',
+                button.getAttribute('data-mode') === mode ? 'true' : 'false',
+              );
+            },
+          );
+        }
+
+        /**
+         * Stato di prova con pochi heading: le sezioni oltre la seconda vengono
+         * nascoste per mostrare il comportamento «meno di 3 heading».
+         */
+        function setHeadingCount(preset) {
+          var few = preset === 'few';
+          var ids = ['s3', 's4', 's5', 's6'];
+          ids.forEach(function (id) {
+            var heading = document.getElementById(id);
+            if (!heading) return;
+            var node = heading;
+            while (node) {
+              var next = node.nextElementSibling;
+              node.hidden = few;
+              if (next && next.tagName === 'H2') break;
+              node = next;
+            }
+          });
+          // Restano soltanto due heading di primo livello: sotto la soglia di
+          // tre, l'indice non deve comparire in nessuna delle due varianti.
+          ['s2-1', 's2-2'].forEach(function (id) {
+            var subHeading = document.getElementById(id);
+            if (subHeading) subHeading.hidden = few;
+          });
+          Array.prototype.forEach.call(
+            document.querySelectorAll('[data-headings]'),
+            function (button) {
+              button.setAttribute(
+                'aria-pressed',
+                button.getAttribute('data-headings') === preset ? 'true' : 'false',
+              );
+            },
+          );
+          refreshToc();
+        }
+
+        document.addEventListener('click', function (event) {
+          var target = event.target;
+          if (!(target instanceof Element)) return;
+
+          var modeButton = target.closest('[data-mode]');
+          if (modeButton) {
+            setMode(modeButton.getAttribute('data-mode'));
+            return;
+          }
+
+          var headingButton = target.closest('[data-headings]');
+          if (headingButton) {
+            setHeadingCount(headingButton.getAttribute('data-headings'));
+            return;
+          }
+
+          var copyButton = target.closest('[data-copy]');
+          if (copyButton) {
+            var block = copyButton.closest('.code-block');
+            var code = block ? block.querySelector('code') : null;
+            if (!code) return;
+            var original = copyButton.textContent;
+            // Nessuna promessa non mantenuta: si dichiara l'esito reale.
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(code.textContent).then(
+                function () {
+                  copyButton.textContent = 'Copiato';
+                  setTimeout(function () {
+                    copyButton.textContent = original;
+                  }, 1500);
+                },
+                function () {
+                  copyButton.textContent = 'Non riuscito';
+                  setTimeout(function () {
+                    copyButton.textContent = original;
+                  }, 1500);
+                },
+              );
+            } else {
+              copyButton.textContent = 'Non disponibile';
+              setTimeout(function () {
+                copyButton.textContent = original;
+              }, 1500);
+            }
+          }
+        });
+
+        // L'indice mobile si chiude dopo la navigazione: nessun elemento
+        // sticky invasivo resta aperto sopra il contenuto.
+        tocMobileList.addEventListener('click', function (event) {
+          if (event.target instanceof Element && event.target.closest('a')) {
+            tocMobile.open = false;
+          }
+        });
+
+        refreshToc();
+      })();
+    </script>
+  </body>
+</html>
