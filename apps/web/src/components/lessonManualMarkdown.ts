@@ -234,10 +234,3 @@ export function parseLessonMarkdown(markdown: string): LessonParseResult {
 
   return { html: DOMPurify.sanitize(withIds, SANITIZE_CONFIG), headings };
 }
-
-/** Soglia sotto la quale l'indice non viene mostrato (contratto §4). */
-export const MIN_TOC_HEADINGS = 3;
-
-export function shouldShowToc(headings: LessonHeading[]): boolean {
-  return headings.length >= MIN_TOC_HEADINGS;
-}

@@ -622,22 +622,14 @@ label {
    e ogni altra superficie Markdown restano sul percorso legacy. */
 
 /*
- * Contesto di container query: la scelta fra indice laterale e indice compatto
- * dipende dallo spazio **realmente disponibile** per la lezione, non dalla
- * larghezza del viewport. Nella vista docente la sidebar del corso sottrae
- * ~270 px, e un breakpoint sul viewport comprimerebbe la colonna di lettura
- * fino a ~51 caratteri a 1024 px.
+ * La colonna editoriale è unica e centrata: nessun elemento affiancato sottrae
+ * spazio al testo quando la sidebar docente è aperta.
  */
 .lesson-manual-scope {
-  container-type: inline-size;
-  container-name: lesson;
   min-width: 0;
 }
 
 .lesson-manual {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 2rem;
   min-width: 0;
 }
 
@@ -652,7 +644,7 @@ label {
   line-height: 1.75;
 }
 
-.lesson-manual:not(.lesson-manual--with-toc) .prose--manual {
+.lesson-manual .prose--manual {
   margin-inline: auto;
 }
 
@@ -873,122 +865,6 @@ label {
 
 .lm-callout--solution[open] > summary {
   margin-bottom: 0.5rem;
-}
-
-/* ── Indice ───────────────────────────────────────────────────────────────── */
-
-.lm-toc {
-  display: none;
-}
-
-.lm-toc__title {
-  margin: 0 0 0.6rem;
-  font-size: 0.6875rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-}
-
-.lm-toc__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 0.8125rem;
-}
-
-.lm-toc__list li + li {
-  margin-top: 0.3rem;
-}
-
-.lm-toc__list li[data-level='3'] {
-  padding-left: 0.75rem;
-}
-
-.lm-toc__list a {
-  display: block;
-  padding: 0.1rem 0;
-  color: var(--color-text-muted);
-  text-decoration: none;
-  line-height: 1.4;
-}
-
-.lm-toc__list a:hover {
-  color: var(--color-text);
-}
-
-.lm-toc__list a[aria-current='true'] {
-  color: var(--color-brand-blue);
-  font-weight: 600;
-}
-
-/* Indice compatto: default su schermi stretti, mai sticky. */
-.lm-toc-mobile {
-  margin: 0 0 1.5rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-}
-
-.lm-toc-mobile > summary {
-  padding: 0.65rem 0.85rem;
-  min-height: 2.75rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.lm-toc-mobile nav {
-  max-height: min(12rem, 36vh);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 0.15rem 0.85rem 0.65rem;
-  scrollbar-gutter: stable;
-  -webkit-overflow-scrolling: touch;
-}
-
-.lm-toc-mobile .lm-toc__list {
-  display: grid;
-  gap: 0.125rem;
-}
-
-.lm-toc-mobile .lm-toc__list li + li {
-  margin-top: 0;
-}
-
-.lm-toc-mobile .lm-toc__list a {
-  min-height: 2.75rem;
-  padding: 0.35rem 0;
-  line-height: 1.3;
-}
-
-/*
- * Soglia dell'indice laterale: 57rem, cioè esattamente la somma di ciò che
- * serve — colonna di lettura 42rem + indice 13rem + gap 2rem. Sotto questa
- * misura l'indice laterale ruberebbe spazio alla lettura, quindi si passa alla
- * variante compatta invece di comprimere il testo.
- *
- * Dove le container query non sono supportate, la regola non si applica e resta
- * l'indice compatto: una degradazione sicura, mai una colonna illeggibile.
- */
-@container lesson (min-width: 57rem) {
-  .lesson-manual--with-toc {
-    grid-template-columns: minmax(0, 1fr) 13rem;
-  }
-
-  .lm-toc {
-    display: block;
-    position: sticky;
-    top: 1rem;
-    align-self: start;
-    max-height: calc(100vh - 3rem);
-    overflow-y: auto;
-    padding-left: 0.9rem;
-    border-left: 1px solid var(--color-border);
-  }
-
-  .lm-toc-mobile {
-    display: none;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

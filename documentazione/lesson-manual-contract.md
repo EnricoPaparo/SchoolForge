@@ -148,10 +148,10 @@ Solo variabili già definite in `apps/web/src/index.css`. **Nessun nuovo token.*
 | Uso | Token |
 |---|---|
 | Sfondo pagina | `--color-surface-subtle` |
-| Superfici (callout, barre, indice mobile) | `--color-surface` |
+| Superfici (callout e barre) | `--color-surface` |
 | Testo / testo attenuato | `--color-text` / `--color-text-muted` |
 | Bordi e separatori | `--color-border` |
-| **Struttura e navigazione** (H2, marcatori, sezione corrente, numeri di passo) | `--color-brand-blue` |
+| **Struttura** (H2 e marcatori) | `--color-brand-blue` |
 | **Interazione e contenuti realmente importanti** | `--color-brand-orange` |
 | Avvertenze | `--color-warning` |
 | Soluzioni | `--color-success` |
@@ -167,8 +167,8 @@ navigabili e callout `IMPORTANT`.
 
 | Larghezza | Comportamento |
 |---|---|
-| ≥ 60rem (960 px) | Due colonne: corpo `max-width: 42rem` + indice `13rem` sticky. Sidebar del corso invariata e mai coperta. |
-| < 60rem | Una colonna. Indice laterale nascosto, sostituito dal controllo «In questa lezione». Corpo a larghezza piena, `padding` 0.9rem. |
+| ≥ 60rem (960 px) | Colonna editoriale unica, centrata, `max-width: 42rem`. Sidebar del corso invariata e mai coperta. |
+| < 60rem | Una colonna a larghezza disponibile, sempre entro il contenitore della lezione. |
 | ≤ 22.5rem (360 px) | `padding` 0.7rem, H1 ridotto, indentazione della procedura ridotta. |
 
 Invariante: **nessun overflow orizzontale della pagina a nessuna larghezza**.
@@ -177,23 +177,14 @@ un blocco di codice.
 
 ---
 
-## 4. Regole dell'indice
+## 4. Struttura degli heading
 
-- Compare **solo** con **almeno 3** heading significativi (`h2`/`h3`). Sotto la
-  soglia non esiste e il corpo resta centrato.
-- Costruito dagli heading **già presenti**: nessuna lettura, nessuna query,
-  nessun listener Firebase, nessun campo persistito.
-- Desktop: colonna stretta sticky a destra, separata da un filo verticale, senza
-  riempimento proprio. Sezione corrente evidenziata **solo** con colore e peso
-  (`aria-current="true"`), mai con un blocco pieno.
-- Non riduce il corpo sotto la misura di lettura e non copre la sidebar del corso.
-- Mobile: `<details>` «In questa lezione», chiuso di default, **non sticky**, che
-  si richiude dopo la navigazione. Quando è aperto, l'elenco ha altezza massima
-  confinata e scorrimento interno: non può occupare gran parte della lezione.
-- Le ancore sugli heading sono discrete: invisibili a riposo, visibili su hover e
-  su `:focus-visible`, con `aria-label` esplicito.
+L'indice «In questa lezione», sia compatto sia laterale, è stato rimosso dopo la
+review visiva in DEV: interrompeva la lettura e duplicava la struttura già resa
+chiara dagli heading. Il corpo resta sempre centrato e non esistono osservatori,
+listener o controlli di navigazione aggiuntivi.
 
-### 4.1 Identificatori degli heading
+### 4.1 Identificatori tecnici degli heading
 
 - **Slug deterministici**: lo stesso testo produce sempre lo stesso identificatore,
   a parità di contenuto e indipendentemente dall'ordine di rendering. Nessun
@@ -209,26 +200,7 @@ un blocco di codice.
 - **Nessun identificatore proveniente da HTML non attendibile.** Lo slug è
   derivato **solo** dal `textContent` di nodi DOM **già sanificati**: mai da
   stringhe HTML grezze, mai da un attributo `id` presente nel Markdown sorgente.
-  Un `id` fornito dall'autore viene ignorato ai fini dell'indice.
-
-### 4.2 Vincoli di runtime dell'indice
-
-- **Un solo `IntersectionObserver`** per vista lezione, creato una volta e
-  riusato. Vietato un osservatore per heading.
-- **Nessun listener per heading**: né `scroll`, né `resize`, né handler
-  individuali. L'osservatore aggiorna esclusivamente `aria-current`.
-- **Cleanup allo smontaggio**: `disconnect()` nella funzione di pulizia
-  dell'effetto, e prima di ogni ricostruzione dell'indice. Nessun osservatore
-  superstite dopo un cambio di lezione.
-- **Nessuna scrittura nella cronologia durante lo scroll**: niente
-  `history.replaceState`/`pushState` per riflettere la sezione corrente. Il
-  pulsante «indietro» del browser non deve mai riempirsi di sezioni attraversate.
-- **Click dell'indice**: oltre allo scroll, il focus si sposta sulla sezione di
-  destinazione. Gli heading ricevono `tabindex="-1"` (focalizzabili da codice,
-  fuori dall'ordine di tabulazione) e `focus({ preventScroll: true })`; il
-  contorno di focus compare solo con `:focus-visible`, non a ogni click.
-- **`prefers-reduced-motion: reduce`** disattiva `scroll-behavior: smooth`: la
-  navigazione diventa istantanea, non assente.
+  Un `id` fornito dall'autore non diventa mai l'identificatore tecnico dell'heading.
 
 ---
 
@@ -372,7 +344,6 @@ risultare uguale nel testo e migliore solo nella forma.
 ## 9. Accessibilità
 
 - Un solo `H1` per pagina; ordine dei livelli non saltato.
-- Indice come `<nav aria-label>`; sezione corrente con `aria-current="true"`.
 - Callout `SOLUTION` con `<details>`/`<summary>` nativi.
 - `:focus-visible` sempre presente e con contrasto sufficiente; nessun
   `outline: none` senza sostituto.
@@ -380,7 +351,6 @@ risultare uguale nel testo e migliore solo nella forma.
   testuale.
 - `prefers-reduced-motion: reduce` disattiva `scroll-behavior: smooth`,
   transizioni e animazioni.
-- Target tattili ≥ 44 px per i controlli dell'indice mobile e del pulsante Copia.
 - Contrasto verificato sui token esistenti; nessun nuovo colore introdotto.
 
 ---
@@ -441,9 +411,7 @@ Mermaid — peso del bundle, superficie di sicurezza, rendering asincrono, stamp
 | Parser isolato (§5.2) | `createLessonMarked()` costruisce una `Marked` dedicata; nessun `marked.use()` globale |
 | Pipeline (§5.1) | `parseLessonMarkdown()`: parser → HTML → `DOMPurify.sanitize()` → render; unico `dangerouslySetInnerHTML` sull'output sanificato |
 | Slug (§4.1) | `headingSlug()` + `nextHeadingId()`, id iniettati **prima** della sanificazione |
-| Ancore non dirottabili | `findHeading()` risolve solo `h2`/`h3` con quell'id |
-| Indice (§4.2) | `LessonManualBody`: un solo `IntersectionObserver`, `disconnect()` allo smontaggio e prima di ogni ricostruzione, `preventDefault()` sul click (nessuna voce di cronologia) |
-| Soglia 3 heading | `shouldShowToc()` |
+| Indice | Rimosso dopo la review DEV; nessun controllo «In questa lezione», osservatore o listener |
 | Callout (§5) | Cinque tipi nel renderer del blockquote; marcatore ignoto ⇒ blockquote letterale; `SOLUTION` come `<details>` |
 | CSS additivo | Blocco `LESSON-MANUAL-01` in coda a `index.css`, tutto sotto `.prose--manual` / `.lesson-manual` / `.lm-` |
 
@@ -456,26 +424,23 @@ Mermaid — peso del bundle, superficie di sicurezza, rendering asincrono, stamp
    superfici non opt-in.
 3. CSS additivo sotto un unico selettore radice (`.prose--manual`), senza
    modificare una sola riga di `.prose`.
-4. Testata, indice e ancore **solo** nelle due viste lezione (docente e
-   studente), con resa equivalente fra i due ruoli.
+4. Resa manuale **solo** nelle due viste lezione (docente e studente),
+   equivalente fra i due ruoli. L'indice proposto originariamente è stato
+   rimosso dopo la review DEV.
 5. **Callout riconosciuti prima della sanificazione** (§5.1): parser → HTML →
    DOMPurify → render. Nessuna iniezione di HTML post-sanitize.
-6. **Slug e indice** secondo §4.1/§4.2: slug deterministici, suffisso progressivo
-   sui duplicati, accenti normalizzati, `id` mai da HTML non attendibile, un solo
-   `IntersectionObserver` con cleanup allo smontaggio, nessun listener per
-   heading, nessuna scrittura nella cronologia durante lo scroll, click
-   dell'indice che sposta anche il focus, `prefers-reduced-motion` rispettato.
+6. **Slug tecnici** secondo §4.1: deterministici, suffisso progressivo sui
+   duplicati, accenti normalizzati e `id` mai derivati da HTML non attendibile.
 7. Attivazione iniziale **solo in DEV**, dietro un interruttore esplicito.
 8. Test obbligatori:
    - **isolamento del parser**: render legacy → render lesson → render legacy
      produce lo stesso DOM (§5.2);
    - nessuna estensione callout nelle anteprime editor/IA;
    - resa equivalente docente/studente;
-   - nessun indice sotto i 3 heading;
+   - nessun indice, indipendentemente dal numero di heading;
    - marcatore sconosciuto invariato;
    - slug deterministici e suffissi progressivi sui duplicati, accenti inclusi;
-   - un solo osservatore, disconnesso allo smontaggio;
-   - nessuna voce aggiunta alla cronologia durante lo scroll;
+   - nessun `IntersectionObserver` o listener di navigazione;
    - contratto CSS statico contro le regressioni.
 9. Smoke reale a 1440/1024/390/320 px sulle due viste.
 

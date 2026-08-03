@@ -6,11 +6,9 @@ import { marked } from 'marked';
 import '../MarkdownRenderer.js';
 import {
   headingSlug,
-  MIN_TOC_HEADINGS,
   nextHeadingId,
   parseCalloutType,
   parseLessonMarkdown,
-  shouldShowToc,
 } from '../lessonManualMarkdown.js';
 
 /**
@@ -189,19 +187,7 @@ describe('slug e heading', () => {
   });
 });
 
-describe('soglia dell’indice', () => {
-  it('nessun indice con 0, 1 o 2 heading', () => {
-    for (const source of ['Solo testo', '## Uno\n', '## Uno\n\n## Due\n']) {
-      expect(shouldShowToc(parseLessonMarkdown(source).headings)).toBe(false);
-    }
-  });
-
-  it('indice a partire da tre heading', () => {
-    const { headings } = parseLessonMarkdown('## Uno\n\n## Due\n\n### Tre\n');
-    expect(headings).toHaveLength(MIN_TOC_HEADINGS);
-    expect(shouldShowToc(headings)).toBe(true);
-  });
-
+describe('ordine degli heading', () => {
   it('l’ordine è quello del documento', () => {
     const { headings } = parseLessonMarkdown('## A\n\n### B\n\n## C\n');
     expect(headings.map((h) => h.text)).toEqual(['A', 'B', 'C']);
