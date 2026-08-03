@@ -113,35 +113,44 @@ export function LessonManualBody({ markdown }: { markdown: string }) {
     target.focus({ preventScroll: true });
   }
 
+  /*
+   * Il contenitore esterno dichiara il **container query context**: la scelta
+   * fra indice laterale e indice compatto dipende dallo spazio realmente
+   * disponibile per la lezione, non dalla larghezza del viewport. Nella vista
+   * docente la sidebar del corso sottrae ~270 px, e una media query sul
+   * viewport avrebbe compresso la colonna di lettura fino a ~51 caratteri.
+   */
   return (
-    <div className={`lesson-manual${showToc ? ' lesson-manual--with-toc' : ''}`}>
-      <div className="lesson-manual__body" ref={bodyRef}>
+    <div className="lesson-manual-scope">
+      <div className={`lesson-manual${showToc ? ' lesson-manual--with-toc' : ''}`}>
+        <div className="lesson-manual__body" ref={bodyRef}>
+          {showToc && (
+            <details className="lm-toc-mobile">
+              <summary>In questa lezione</summary>
+              <nav aria-label="Indice della lezione">
+                <TocLinks
+                  headings={headings}
+                  currentId={currentId}
+                  onNavigate={(id) => {
+                    navigateTo(id);
+                  }}
+                />
+              </nav>
+            </details>
+          )}
+          {/*
+           * Unico `dangerouslySetInnerHTML` ammesso: l'HTML finale restituito da
+           * DOMPurify. Nessun markup viene aggiunto dopo la sanificazione.
+           */}
+          <div className="prose prose--manual" dangerouslySetInnerHTML={{ __html: html }} />
+        </div>
         {showToc && (
-          <details className="lm-toc-mobile">
-            <summary>In questa lezione</summary>
-            <nav aria-label="Indice della lezione">
-              <TocLinks
-                headings={headings}
-                currentId={currentId}
-                onNavigate={(id) => {
-                  navigateTo(id);
-                }}
-              />
-            </nav>
-          </details>
+          <nav className="lm-toc" aria-label="Indice della lezione">
+            <p className="lm-toc__title">In questa lezione</p>
+            <TocLinks headings={headings} currentId={currentId} onNavigate={navigateTo} />
+          </nav>
         )}
-        {/*
-         * Unico `dangerouslySetInnerHTML` ammesso: l'HTML finale restituito da
-         * DOMPurify. Nessun markup viene aggiunto dopo la sanificazione.
-         */}
-        <div className="prose prose--manual" dangerouslySetInnerHTML={{ __html: html }} />
       </div>
-      {showToc && (
-        <nav className="lm-toc" aria-label="Indice della lezione">
-          <p className="lm-toc__title">In questa lezione</p>
-          <TocLinks headings={headings} currentId={currentId} onNavigate={navigateTo} />
-        </nav>
-      )}
     </div>
   );
 }

@@ -621,6 +621,19 @@ label {
    Usata solo dalle due viste lezione (docente e studente): editor, anteprima IA
    e ogni altra superficie Markdown restano sul percorso legacy. */
 
+/*
+ * Contesto di container query: la scelta fra indice laterale e indice compatto
+ * dipende dallo spazio **realmente disponibile** per la lezione, non dalla
+ * larghezza del viewport. Nella vista docente la sidebar del corso sottrae
+ * ~270 px, e un breakpoint sul viewport comprimerebbe la colonna di lettura
+ * fino a ~51 caratteri a 1024 px.
+ */
+.lesson-manual-scope {
+  container-type: inline-size;
+  container-name: lesson;
+  min-width: 0;
+}
+
 .lesson-manual {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -723,47 +736,26 @@ label {
   accent-color: var(--color-primary);
 }
 
-/* Procedure: numeri in cerchi discreti e filo verticale tenue. Solo liste
-   ordinate di primo livello, mai una timeline. */
-.prose--manual > ol {
-  padding-left: 0;
-  list-style: none;
-  counter-reset: lm-step;
+/*
+ * Liste ordinate: resa **neutra** per impostazione predefinita.
+ *
+ * Il prototipo proponeva numeri in cerchi con un filo verticale — ottimo su una
+ * procedura, fuori luogo su una classifica o su un elenco puramente
+ * enumerativo, che il Markdown non permette di distinguere. Senza una sintassi
+ * dedicata (fuori scope in questa PR) l'unica scelta onesta è la resa sobria:
+ * numerazione leggibile e spaziatura editoriale, uguale per tutti.
+ */
+.prose--manual ol {
+  list-style: decimal;
 }
 
-.prose--manual > ol > li {
-  position: relative;
-  margin-bottom: 1rem;
-  padding-left: 2.35rem;
-  counter-increment: lm-step;
-}
-
-.prose--manual > ol > li::before {
-  content: counter(lm-step);
-  position: absolute;
-  left: 0;
-  top: 0.05rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.6rem;
-  height: 1.6rem;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
+.prose--manual ol > li::marker {
   color: var(--color-brand-blue);
-  font-size: 0.8125rem;
   font-weight: 650;
 }
 
-.prose--manual > ol > li:not(:last-child)::after {
-  content: '';
-  position: absolute;
-  left: 0.8rem;
-  top: 1.85rem;
-  bottom: -0.75rem;
-  width: 1px;
-  background: var(--color-border);
+.prose--manual > ol > li {
+  padding-left: 0.15rem;
 }
 
 /* Blockquote ordinario: editoriale e neutro, chiaramente distinto dai callout. */
@@ -954,8 +946,16 @@ label {
   padding: 0.55rem 0;
 }
 
-/* Da 60rem l'indice diventa una colonna laterale stretta e sticky. */
-@media (min-width: 60rem) {
+/*
+ * Soglia dell'indice laterale: 57rem, cioè esattamente la somma di ciò che
+ * serve — colonna di lettura 42rem + indice 13rem + gap 2rem. Sotto questa
+ * misura l'indice laterale ruberebbe spazio alla lettura, quindi si passa alla
+ * variante compatta invece di comprimere il testo.
+ *
+ * Dove le container query non sono supportate, la regola non si applica e resta
+ * l'indice compatto: una degradazione sicura, mai una colonna illeggibile.
+ */
+@container lesson (min-width: 57rem) {
   .lesson-manual--with-toc {
     grid-template-columns: minmax(0, 1fr) 13rem;
   }
