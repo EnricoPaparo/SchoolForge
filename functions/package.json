@@ -9,6 +9,7 @@
     "benchmark:m5-quality": "node lib/m5QualityBenchmarkCli.js",
     "benchmark:m5-quality:compare": "node lib/m5ModelComparisonCli.js",
     "benchmark:m5-quality:reevaluate": "node lib/m5ReevaluateCli.js",
+    "benchmark:lesson-manual-quality": "node lib/lessonManualQualityCli.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
