@@ -25,6 +25,9 @@
 
 import { POOL_LEVEL_DIFFICULTY, type PoolRequest, type LessonRequest } from './aiContentCore.js';
 
+/** Da congelare in ogni benchmark; va incrementata a ogni modifica dei prompt. */
+export const AI_CONTENT_PROMPT_VERSION = 'aigen-prompt-01-context-01-v1' as const;
+
 /**
  * Preambolo di sicurezza comune (livello 1), il più autorevole del prompt.
  * Distingue esplicitamente le indicazioni del docente (autorevoli) dai dati non

@@ -134,6 +134,38 @@ Evidenze e correzioni necessarie:
 | Costo reale in questa attività | 0 |
 | Verdetto prompt | `NON_DISPONIBILE` |
 
+## Estensione LESSON-TUNE-01
+
+Il dataset storico da 6 casi resta congelato e riproducibile. Il programma di
+tuning serio usa ora l'estensione separata descritta in
+[`lesson-tune-01-protocol.md`](lesson-tune-01-protocol.md): 12 scenari totali,
+8 utilizzabili per il tuning e 4 holdout riservati all'esame finale del prompt
+candidato.
+
+Dry-run complessivo, senza secret né rete:
+
+```powershell
+pnpm --filter @schoolforge/functions build
+pnpm --filter @schoolforge/functions benchmark:lesson-tune-quality
+pnpm --filter @schoolforge/functions benchmark:lesson-tune-quality -- --benchmark-split=tuning
+pnpm --filter @schoolforge/functions benchmark:lesson-tune-quality -- --benchmark-split=holdout
+```
+
+Tetti congelati del 3 agosto 2026 sul profilo `economy`:
+
+| Piano | Chiamate | Tentativi massimi | Stima | Tetto prudenziale |
+|---|---:|---:|---:|---:|
+| Completo (solo riepilogo) | 12 | 24 | 162.393 µUSD | 349.894 µUSD |
+| Tuning | 8 | 16 | 94.084 µUSD | 204.710 µUSD |
+| Holdout | 4 | 8 | 68.309 µUSD | 145.184 µUSD |
+
+L'esecuzione reale dell'intero set è vietata. Ogni split richiede i due flag di
+costo già noti, Node 22, TTY, chiave letta per ultima e una frase distinta:
+`ESEGUI 8 LEZIONI TUNING REALI` oppure
+`ESEGUI 4 LEZIONI HOLDOUT REALI`. Questi comandi non sono autorizzati da questo
+documento. Il report registra anche `AI_CONTENT_PROMPT_VERSION`, che deve essere
+incrementata a ogni modifica del prompt.
+
 ## Vincoli
 
 - nessun dato studente o docente nei campioni;
