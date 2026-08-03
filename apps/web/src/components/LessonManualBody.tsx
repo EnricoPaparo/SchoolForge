@@ -65,6 +65,7 @@ export function LessonManualBody({ markdown }: { markdown: string }) {
   const showToc = shouldShowToc(headings);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const mobileTocRef = useRef<HTMLDetailsElement>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -125,7 +126,7 @@ export function LessonManualBody({ markdown }: { markdown: string }) {
       <div className={`lesson-manual${showToc ? ' lesson-manual--with-toc' : ''}`}>
         <div className="lesson-manual__body" ref={bodyRef}>
           {showToc && (
-            <details className="lm-toc-mobile">
+            <details className="lm-toc-mobile" ref={mobileTocRef}>
               <summary>In questa lezione</summary>
               <nav aria-label="Indice della lezione">
                 <TocLinks
@@ -133,6 +134,7 @@ export function LessonManualBody({ markdown }: { markdown: string }) {
                   currentId={currentId}
                   onNavigate={(id) => {
                     navigateTo(id);
+                    if (mobileTocRef.current) mobileTocRef.current.open = false;
                   }}
                 />
               </nav>

@@ -188,7 +188,8 @@ un blocco di codice.
   (`aria-current="true"`), mai con un blocco pieno.
 - Non riduce il corpo sotto la misura di lettura e non copre la sidebar del corso.
 - Mobile: `<details>` «In questa lezione», chiuso di default, **non sticky**, che
-  si richiude dopo la navigazione.
+  si richiude dopo la navigazione. Quando è aperto, l'elenco ha altezza massima
+  confinata e scorrimento interno: non può occupare gran parte della lezione.
 - Le ancore sugli heading sono discrete: invisibili a riposo, visibili su hover e
   su `:focus-visible`, con `aria-label` esplicito.
 

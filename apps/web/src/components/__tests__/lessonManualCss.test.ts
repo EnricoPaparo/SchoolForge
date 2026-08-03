@@ -115,9 +115,11 @@ describe('accessibilità e movimento', () => {
     expect(manualBlock).toMatch(/h2:focus-visible,[\s\S]{0,80}\{\s*outline:\s*2px/);
   });
 
-  it('i controlli dell’indice compatto hanno un target comodo', () => {
+  it('l’indice compatto mantiene target comodi ma confina le liste lunghe', () => {
     expect(manualBlock).toMatch(/\.lm-toc-mobile > summary\s*\{[^}]*min-height:\s*2\.75rem/);
     expect(manualBlock).toMatch(/\.lm-toc-mobile \.lm-toc__list a\s*\{[^}]*min-height:\s*2\.75rem/);
+    expect(manualBlock).toMatch(/\.lm-toc-mobile nav\s*\{[^}]*max-height:\s*min\(12rem, 36vh\)/);
+    expect(manualBlock).toMatch(/\.lm-toc-mobile nav\s*\{[^}]*overflow-y:\s*auto/);
   });
 
   it('rispetta prefers-reduced-motion', () => {

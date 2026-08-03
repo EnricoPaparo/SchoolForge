@@ -72,7 +72,9 @@ describe('soglia dell’indice', () => {
     const items = desktop.querySelectorAll('li');
     expect(items[2]!.getAttribute('data-level')).toBe('3');
 
-    expect(container.querySelector('.lm-toc-mobile')).not.toBeNull();
+    const compact = container.querySelector('.lm-toc-mobile') as HTMLDetailsElement;
+    expect(compact).not.toBeNull();
+    expect(compact.open).toBe(false);
     expect(screen.getAllByText('In questa lezione').length).toBe(2);
   });
 });
@@ -129,6 +131,18 @@ describe('IntersectionObserver', () => {
 });
 
 describe('navigazione dall’indice', () => {
+  it('richiude l’indice compatto dopo la navigazione', () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const { container } = render(<LessonManualBody markdown={SIX} />);
+    const compact = container.querySelector('.lm-toc-mobile') as HTMLDetailsElement;
+    compact.open = true;
+
+    fireEvent.click(within(compact).getByRole('link', { name: 'Quattro' }));
+
+    expect(compact.open).toBe(false);
+    expect(document.activeElement).toBe(container.querySelector('h2#quattro'));
+  });
+
   it('porta la sezione in vista, le sposta il focus e non tocca la cronologia', () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
