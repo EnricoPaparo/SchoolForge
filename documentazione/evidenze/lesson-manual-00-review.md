@@ -39,6 +39,8 @@ autorizzata finché questa checklist non è compilata e l'esito finale non è
 | 11 | **Formule / diagrammi (placeholder)** — la presentazione proposta è accettabile | ☐ sì ☐ no | |
 | 12 | **Confronto attuale/manuale** — il confronto è onesto e il miglioramento è reale | ☐ sì ☐ no | |
 | 13 | **Accessibilità** — focus sempre visibile, navigazione da tastiera possibile, nessun movimento fastidioso | ☐ sì ☐ no | |
+| 14 | **Navigazione dall'indice** — cliccando una voce si arriva alla sezione *e* il punto di lettura si sposta davvero (provalo anche solo da tastiera) | ☐ sì ☐ no | |
+| 15 | **Cronologia pulita** — dopo aver scorso la lezione, il pulsante «indietro» del browser non è pieno di passaggi intermedi | ☐ sì ☐ no | |
 
 ## Domande aperte per il docente
 
@@ -51,6 +53,21 @@ autorizzata finché questa checklist non è compilata e l'esito finale non è
 4. I cinque callout coprono i tuoi bisogni reali, o ne manca uno (per esempio
    «Approfondimento») / ne avanza uno?
 5. Il pulsante «Copia» sui blocchi di codice serve nella tua materia?
+
+## Vincoli tecnici già congelati (non oggetto di questa review)
+
+Questi punti sono decisi nel contratto e non richiedono una valutazione estetica;
+sono elencati perché la loro violazione, in LESSON-MANUAL-01, è motivo di rifiuto
+indipendentemente dall'esito grafico:
+
+- pipeline `Markdown → parser controllato → HTML → DOMPurify → render`, con
+  **divieto assoluto** di iniettare HTML dopo la sanificazione (§5.1);
+- **parser isolato** per la variante lesson: nessun `marked.use()` globale, e il
+  renderer legacy deve produrre lo stesso DOM prima e dopo (§5.2);
+- slug deterministici, suffissi progressivi sui duplicati, accenti stabili, `id`
+  mai derivati da HTML non attendibile (§4.1);
+- un solo `IntersectionObserver` con cleanup, nessun listener per heading,
+  nessuna scrittura nella cronologia durante lo scroll (§4.2).
 
 ## Esito
 

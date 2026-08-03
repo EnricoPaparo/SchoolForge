@@ -494,6 +494,19 @@
         scroll-margin-top: 5rem;
       }
 
+      /* Gli heading sono focalizzabili solo da codice: il contorno compare
+         quando il focus arriva davvero dalla tastiera, non a ogni click. */
+      .prose h2:focus,
+      .prose h3:focus {
+        outline: none;
+      }
+
+      .prose h2:focus-visible,
+      .prose h3:focus-visible {
+        outline: 2px solid var(--color-brand-orange);
+        outline-offset: 4px;
+      }
+
       .is-manual .prose h2 {
         margin-top: 2.75rem;
         margin-bottom: 0.75rem;
@@ -1305,6 +1318,10 @@ Accept-Language: it-IT</code></pre>
         /** Ancore discrete: invisibili a riposo, raggiungibili da tastiera. */
         function addAnchors(headings) {
           headings.forEach(function (heading) {
+            // Focalizzabile da codice ma non nell'ordine di tabulazione: senza
+            // questo, il click sull'indice sposta la vista ma non il focus, e
+            // chi naviga da tastiera o con screen reader resta indietro.
+            heading.setAttribute('tabindex', '-1');
             if (heading.querySelector('.heading-anchor')) return;
             var anchor = document.createElement('a');
             anchor.className = 'heading-anchor';
@@ -1457,11 +1474,27 @@ Accept-Language: it-IT</code></pre>
           }
         });
 
+        /**
+         * Navigazione dall'indice: oltre allo scroll si sposta anche il
+         * **focus** sulla sezione di destinazione. Nessuna scrittura nella
+         * cronologia oltre a quella dell'ancora nativa, e nessuna durante lo
+         * scroll: l'osservatore aggiorna solo `aria-current`.
+         */
+        function focusTargetSection(event) {
+          var link = event.target instanceof Element ? event.target.closest('a') : null;
+          if (!link) return;
+          var target = document.getElementById(link.getAttribute('href').slice(1));
+          if (target) target.focus({ preventScroll: true });
+        }
+
+        tocList.addEventListener('click', focusTargetSection);
+
         // L'indice mobile si chiude dopo la navigazione: nessun elemento
         // sticky invasivo resta aperto sopra il contenuto.
         tocMobileList.addEventListener('click', function (event) {
           if (event.target instanceof Element && event.target.closest('a')) {
             tocMobile.open = false;
+            focusTargetSection(event);
           }
         });
 

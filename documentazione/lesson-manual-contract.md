@@ -179,6 +179,43 @@ un blocco di codice.
 - Le ancore sugli heading sono discrete: invisibili a riposo, visibili su hover e
   su `:focus-visible`, con `aria-label` esplicito.
 
+### 4.1 Identificatori degli heading
+
+- **Slug deterministici**: lo stesso testo produce sempre lo stesso identificatore,
+  a parità di contenuto e indipendentemente dall'ordine di rendering. Nessun
+  identificatore casuale, nessun contatore globale che dipenda da quante lezioni
+  sono già state renderizzate nella sessione.
+- **Duplicati distinti da un suffisso progressivo** nell'ordine del documento:
+  `#derivate`, `#derivate-2`, `#derivate-3`. Il primo non porta suffisso.
+- **Caratteri accentati gestiti stabilmente**: normalizzazione `NFKD` +
+  rimozione dei segni diacritici + minuscolo con locale `it`, così `Perché`,
+  `perche` e `PERCHÉ` convergono sullo stesso slug in modo prevedibile su ogni
+  browser. Uno slug che risultasse vuoto ricade su un valore fisso (`sezione`)
+  più il suffisso progressivo.
+- **Nessun identificatore proveniente da HTML non attendibile.** Lo slug è
+  derivato **solo** dal `textContent` di nodi DOM **già sanificati**: mai da
+  stringhe HTML grezze, mai da un attributo `id` presente nel Markdown sorgente.
+  Un `id` fornito dall'autore viene ignorato ai fini dell'indice.
+
+### 4.2 Vincoli di runtime dell'indice
+
+- **Un solo `IntersectionObserver`** per vista lezione, creato una volta e
+  riusato. Vietato un osservatore per heading.
+- **Nessun listener per heading**: né `scroll`, né `resize`, né handler
+  individuali. L'osservatore aggiorna esclusivamente `aria-current`.
+- **Cleanup allo smontaggio**: `disconnect()` nella funzione di pulizia
+  dell'effetto, e prima di ogni ricostruzione dell'indice. Nessun osservatore
+  superstite dopo un cambio di lezione.
+- **Nessuna scrittura nella cronologia durante lo scroll**: niente
+  `history.replaceState`/`pushState` per riflettere la sezione corrente. Il
+  pulsante «indietro» del browser non deve mai riempirsi di sezioni attraversate.
+- **Click dell'indice**: oltre allo scroll, il focus si sposta sulla sezione di
+  destinazione. Gli heading ricevono `tabindex="-1"` (focalizzabili da codice,
+  fuori dall'ordine di tabulazione) e `focus({ preventScroll: true })`; il
+  contorno di focus compare solo con `:focus-visible`, non a ogni click.
+- **`prefers-reduced-motion: reduce`** disattiva `scroll-behavior: smooth`: la
+  navigazione diventa istantanea, non assente.
+
 ---
 
 ## 5. Contratto dei callout
@@ -211,6 +248,57 @@ forzato in `@media print`. Nessun contenuto è mai nascosto in modo irreversibil
 **Markdown legacy:** un blockquote senza marcatore resta un blockquote ordinario.
 Un marcatore sconosciuto (`> [!TIP]`) resta testo letterale: nessuna invenzione,
 nessuna perdita.
+
+### 5.1 Pipeline autorevole dei callout
+
+L'ordine è vincolante e non negoziabile:
+
+```
+Markdown sorgente
+  → parser Markdown/callout controllato   (riconosce i cinque marcatori)
+  → HTML
+  → DOMPurify.sanitize()                  (ultimo passaggio che vede stringhe)
+  → render
+```
+
+- **È vietata qualunque iniezione di HTML successiva alla sanificazione.** Nessun
+  `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`,
+  `template.innerHTML` o `dangerouslySetInnerHTML` su contenuto prodotto **dopo**
+  `DOMPurify.sanitize()`.
+- **La soluzione preferita è il parsing prima della sanificazione finale**: i
+  callout vengono riconosciuti dal parser, che emette markup già strutturato, e
+  quel markup passa poi per DOMPurify come tutto il resto. Le classi e i tag
+  usati dai callout devono quindi essere ammessi dalla configurazione di
+  sanificazione, non aggirarla.
+- Se una trasformazione dovesse comunque avvenire **dopo** la sanificazione, può
+  operare **soltanto creando nodi React controllati** — elementi costruiti dal
+  codice, con testo preso da `textContent` di nodi già sanificati — e **mai**
+  tramite assegnazione di HTML. Questa resta una via di ripiego, non il disegno.
+- Vale lo stesso per gli identificatori degli heading e per l'indice: si opera su
+  nodi DOM già ripuliti, leggendone il testo, senza reintrodurre stringhe HTML.
+
+### 5.2 Isolamento del parser
+
+Il renderer attuale registra la propria estensione dei link con `marked.use()`
+**sull'istanza globale del modulo**. Aggiungere lì l'estensione dei callout
+cambierebbe il comportamento di *tutte* le superfici, incluse le anteprime
+editor e IA, che devono restare invariate. Vincoli:
+
+- **La variante lesson non deve registrare estensioni tramite `marked.use()`
+  sull'istanza globale.** Nessuna configurazione condivisa, nessun effetto
+  collaterale a livello di modulo.
+- Deve usare un **parser o un'istanza isolata** (per esempio una `Marked`
+  dedicata, costruita una volta e usata solo dalla variante lesson).
+- **Il `MarkdownRenderer` legacy mantiene output e comportamento invariati**,
+  byte per byte, anche quando la variante lesson è stata caricata e usata nella
+  stessa sessione.
+- **Nessuna estensione callout deve apparire nelle superfici non opt-in**: nelle
+  anteprime editor e IA un `> [!DEFINITION]` continua a comparire come
+  blockquote con il marcatore letterale, esattamente come oggi.
+- **Test futuro obbligatorio**: renderizzare con il renderer legacy, poi
+  renderizzare con la variante lesson, poi **renderizzare di nuovo con il
+  legacy** — il DOM prodotto dal legacy prima e dopo deve essere identico. È il
+  solo modo per dimostrare che nessuna registrazione globale è avvenuta.
 
 ---
 
@@ -285,11 +373,16 @@ risultare uguale nel testo e migliore solo nella forma.
 
 ## 10. Sicurezza
 
-- La catena `marked` → `DOMPurify.sanitize()` **non cambia**: nessun bypass,
-  nessun `dangerouslySetInnerHTML` aggiuntivo su contenuto non sanificato.
-- Se in futuro gli `id` degli heading saranno generati, lo saranno **dopo** la
-  sanificazione, su nodi DOM già ripuliti, con slug derivato dal testo — mai da
-  HTML grezzo.
+- **DOMPurify resta l'ultimo passaggio che vede stringhe**: parser → HTML →
+  `sanitize()` → render. Nessun bypass, nessuna iniezione di HTML successiva
+  alla sanificazione, in nessuna forma (`innerHTML`, `insertAdjacentHTML`,
+  `dangerouslySetInnerHTML` su contenuto post-sanitize). Dettaglio in §5.1.
+- I callout sono riconosciuti **prima** della sanificazione, da un parser
+  isolato (§5.2): il loro markup attraversa DOMPurify come qualunque altro
+  contenuto, invece di essere aggiunto dopo.
+- Gli `id` degli heading sono generati su **nodi DOM già ripuliti**, con slug
+  derivato dal solo `textContent` — mai da HTML grezzo e mai da un `id` fornito
+  nel Markdown sorgente.
 - Nessuna esecuzione di codice contenuto nel Markdown.
 - I link mantengono `target="_blank" rel="noopener noreferrer"`.
 - Nessuna rete aggiuntiva, nessun font esterno, nessuna risorsa remota.
@@ -328,19 +421,35 @@ Mermaid — peso del bundle, superficie di sicurezza, rendering asincrono, stamp
 
 **LESSON-MANUAL-01 — scope esatto proposto** (da autorizzare, non incluso qui):
 
-1. Variante **opt-in** del renderer: `<MarkdownRenderer variant="lesson" />`,
-   che aggiunge una classe e nient'altro. `variant` assente ⇒ comportamento
-   odierno, byte per byte.
-2. CSS additivo sotto un unico selettore radice (`.prose--manual`), senza
+1. Variante **opt-in** del renderer: `<MarkdownRenderer variant="lesson" />`.
+   `variant` assente ⇒ comportamento odierno, byte per byte.
+2. **Parser isolato** per la variante lesson (§5.2): istanza dedicata, **mai**
+   `marked.use()` sull'istanza globale, nessuna estensione visibile alle
+   superfici non opt-in.
+3. CSS additivo sotto un unico selettore radice (`.prose--manual`), senza
    modificare una sola riga di `.prose`.
-3. Testata, indice e ancore **solo** nelle due viste lezione (docente e
+4. Testata, indice e ancore **solo** nelle due viste lezione (docente e
    studente), con resa equivalente fra i due ruoli.
-4. Callout: parsing dei cinque marcatori **dopo** la sanificazione.
-5. Attivazione iniziale **solo in DEV**, dietro un interruttore esplicito.
-6. Test: resa equivalente docente/studente; nessun indice sotto i 3 heading;
-   marcatore sconosciuto invariato; anteprime editor/IA non toccate; contratto
-   CSS statico contro le regressioni.
-7. Smoke reale a 1440/1024/390/320 px sulle due viste.
+5. **Callout riconosciuti prima della sanificazione** (§5.1): parser → HTML →
+   DOMPurify → render. Nessuna iniezione di HTML post-sanitize.
+6. **Slug e indice** secondo §4.1/§4.2: slug deterministici, suffisso progressivo
+   sui duplicati, accenti normalizzati, `id` mai da HTML non attendibile, un solo
+   `IntersectionObserver` con cleanup allo smontaggio, nessun listener per
+   heading, nessuna scrittura nella cronologia durante lo scroll, click
+   dell'indice che sposta anche il focus, `prefers-reduced-motion` rispettato.
+7. Attivazione iniziale **solo in DEV**, dietro un interruttore esplicito.
+8. Test obbligatori:
+   - **isolamento del parser**: render legacy → render lesson → render legacy
+     produce lo stesso DOM (§5.2);
+   - nessuna estensione callout nelle anteprime editor/IA;
+   - resa equivalente docente/studente;
+   - nessun indice sotto i 3 heading;
+   - marcatore sconosciuto invariato;
+   - slug deterministici e suffissi progressivi sui duplicati, accenti inclusi;
+   - un solo osservatore, disconnesso allo smontaggio;
+   - nessuna voce aggiunta alla cronologia durante lo scroll;
+   - contratto CSS statico contro le regressioni.
+9. Smoke reale a 1440/1024/390/320 px sulle due viste.
 
 Fuori da LESSON-MANUAL-01: KaTeX, Mermaid, prompt IA, evidenziazione della
 sintassi, stampa/PDF della lezione, sostituzione del renderer corrente.
