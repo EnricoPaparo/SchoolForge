@@ -603,7 +603,10 @@ function LessonContent({
           Contenuto temporaneamente non disponibile.
         </p>
       ) : (
-        <MarkdownRenderer markdown={lesson.content} />
+        // LESSON-MANUAL-01 — vista lezione studente: stessa variante del docente,
+        // quindi resa equivalente fra i due ruoli. Titolo, sottotitolo e metadati
+        // restano nella testata esistente, senza duplicazioni.
+        <MarkdownRenderer markdown={lesson.content} variant="lesson" />
       )}
     </article>
   );

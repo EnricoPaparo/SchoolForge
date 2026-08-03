@@ -1,7 +1,12 @@
 # LESSON-MANUAL-00 — evidenza di review docente
 
-**Stato: PENDING.** Nessun gate è superato. Nessuna implementazione è
-autorizzata finché questa checklist non è compilata e l'esito finale non è
+**Stato: PENDING.** Nessun gate è superato.
+
+**Aggiornamento (LESSON-MANUAL-01):** la resa è ora disponibile nel runtime come
+**variante opt-in** delle due viste lezione, quindi la valutazione può avvenire
+sull'applicazione reale invece che sul solo prototipo. Questo **non** cambia lo
+stato del gate: il renderer legacy resta disponibile e nessuna sostituzione
+definitiva è autorizzata finché questa checklist non è compilata con esito
 `APPROVATO`.
 
 - **Oggetto:** proposta di resa delle lezioni Markdown come manuale digitale.
@@ -12,6 +17,16 @@ autorizzata finché questa checklist non è compilata e l'esito finale non è
   nessuna dipendenza, nessun deploy.
 
 ## Come valutare
+
+Puoi valutare in due modi: sull'applicazione (consigliato, è la resa reale) o
+sul prototipo (utile per il confronto affiancato «Attuale / Manuale», che
+l'applicazione non offre).
+
+**Sull'applicazione:** apri una lezione dal portale docente e la stessa lezione
+dal portale studente — la resa deve essere equivalente. L'anteprima dell'editor
+e quella della generazione IA devono invece essere rimaste **come prima**.
+
+**Sul prototipo:**
 
 1. Apri il prototipo nel browser.
 2. Usa l'interruttore **Attuale / Manuale** in alto: il contenuto è identico
