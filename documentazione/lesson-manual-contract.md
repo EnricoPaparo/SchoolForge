@@ -1,18 +1,18 @@
 # Manuale digitale delle lezioni — contratto grafico (LESSON-MANUAL-00)
 
-> **Stato: LESSON-MANUAL-01 implementato come variante opt-in; Gate umano
-> ancora PENDING.** Le decisioni qui congelate sono ora realizzate nel runtime
-> web, ma **solo** come variante attivabile per le due viste lezione: il
-> renderer legacy resta disponibile e predefinito ovunque altro. La sostituzione
-> del renderer corrente come resa unica richiede ancora l'approvazione della
-> review ([`evidenze/lesson-manual-00-review.md`](evidenze/lesson-manual-00-review.md)).
+> **Stato: LESSON-MANUAL-01 implementato come variante opt-in e approvato nella
+> review visiva DEV dopo la rimozione dell'indice. LESSON-MANUAL-02 definito,
+> qualità dei contenuti IA ancora NON DISPONIBILE.** La resa manuale è attiva
+> solo nelle due viste lezione; il renderer legacy resta predefinito nelle
+> anteprime e nelle altre superfici. Il protocollo qualitativo è in
+> [`evidenze/lesson-manual-02-quality-review.md`](evidenze/lesson-manual-02-quality-review.md).
 > Il prototipo [`prototipi/lesson-manual.html`](prototipi/lesson-manual.html)
 > resta il riferimento visivo.
 >
 > **Attuazione (LESSON-MANUAL-01):**
 > `components/lessonManualMarkdown.ts` (istanza `Marked` isolata, callout, slug,
-> pipeline di sanificazione), `components/LessonManualBody.tsx` (indice,
-> osservatore, navigazione), blocco CSS additivo in coda a `index.css`,
+> pipeline di sanificazione), `components/LessonManualBody.tsx` (corpo manuale
+> senza indice né osservatore), blocco CSS additivo in coda a `index.css`,
 > `<MarkdownRenderer variant="lesson" />` in `CourseWorkspace` e
 > `StudentDidatticaView`.
 >
@@ -105,8 +105,9 @@ Questa fase esiste per non ripetere quell'errore: si valuta il prototipo
 Tipografia e colonna di lettura; gerarchia e spaziatura degli heading; colore
 strutturale sugli H2; ritmo dei paragrafi; marcatori di lista; contenitore
 scrollabile e intestazione delle tabelle; barra del linguaggio sui blocchi di
-codice; `id` e ancore generate dagli heading; indice derivato dagli heading
-esistenti; testata composta dai metadati **già presenti** nel front-matter.
+codice; `id` tecnici generati dagli heading. L'indice derivato dagli heading è
+stato provato in DEV e poi rimosso: occupava troppo spazio rispetto al valore
+offerto.
 
 ### 0.6 Richiede convenzioni Markdown (e, in futuro, prompt IA)
 
@@ -120,20 +121,17 @@ introdotta ora, e **nessun prompt IA viene modificato in questa fase**.
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│ UDA 1 — Il Web · Lezione 2 di 5          (contesto, 12px) │
-│ Il protocollo HTTP                       (H1, 28px)       │
-│ Come browser e server si scambiano…      (sottotitolo)    │
-│ Difficoltà · Concetti chiave · Obiettivi (riga metadati)  │
+│ testata e metadati già forniti dalla vista lezione        │
 ├───────────────────────────────────────────────────────────┤
-│ corpo di lettura (max 42rem)          │ indice (13rem)    │
-│                                       │ sticky, discreto  │
+│          corpo di lettura centrato (max 42rem)            │
+│          heading · paragrafi · callout · liste            │
 └───────────────────────────────────────────────────────────┘
 ```
 
-**Testata** — riga di contesto UDA (secondaria, maiuscoletto attenuato); H1;
-sottotitolo solo se presente; riga metadati compatta `<dl>` con difficoltà,
-concetti chiave, obiettivi. Un unico bordo inferiore la separa dal corpo:
-**nessuna card**, nessun hero, nessun riquadro colorato.
+**Testata** — resta responsabilità delle viste docente e studente, che già
+mostrano titolo, sottotitolo e metadati. Il renderer manuale non li duplica e
+si occupa soltanto del corpo Markdown: **nessuna card**, nessun hero e nessun
+riquadro colorato aggiunto automaticamente.
 
 **Vietato inventare dati.** Nessun tempo di lettura stimato, nessun conteggio di
 parole, nessun «livello» non presente nel front-matter. Un metadato assente non
@@ -167,8 +165,8 @@ navigabili e callout `IMPORTANT`.
 
 | Larghezza | Comportamento |
 |---|---|
-| ≥ 60rem (960 px) | Colonna editoriale unica, centrata, `max-width: 42rem`. Sidebar del corso invariata e mai coperta. |
-| < 60rem | Una colonna a larghezza disponibile, sempre entro il contenitore della lezione. |
+| Contenitore ≥ 57rem | Colonna editoriale unica, centrata, `max-width: 42rem`. Sidebar del corso invariata e mai coperta. |
+| Contenitore < 57rem | Una colonna a larghezza disponibile, sempre entro il contenitore della lezione. |
 | ≤ 22.5rem (360 px) | `padding` 0.7rem, H1 ridotto, indentazione della procedura ridotta. |
 
 Invariante: **nessun overflow orizzontale della pagina a nessuna larghezza**.
@@ -260,8 +258,8 @@ Markdown sorgente
   operare **soltanto creando nodi React controllati** — elementi costruiti dal
   codice, con testo preso da `textContent` di nodi già sanificati — e **mai**
   tramite assegnazione di HTML. Questa resta una via di ripiego, non il disegno.
-- Vale lo stesso per gli identificatori degli heading e per l'indice: si opera su
-  nodi DOM già ripuliti, leggendone il testo, senza reintrodurre stringhe HTML.
+- Vale lo stesso per gli identificatori degli heading: si opera prima della
+  sanificazione finale e non si reintroducono stringhe HTML dopo DOMPurify.
 
 ### 5.2 Isolamento del parser
 
@@ -310,9 +308,9 @@ reso come H2 dal punto di vista visivo, mantenendo il tag originale.
 
 **Liste** — marcatori ciano; interlinea più ampia; annidamento leggibile senza
 separatori. Le checklist GFM restano caselle native disabilitate, allineate al
-testo. La **procedura numerata** (opt-in, classe applicata a una lista ordinata)
-usa numeri in cerchi da 1.6rem e un filo verticale tenue: due dettagli, non una
-timeline.
+testo. Le liste ordinate mantengono marcatori decimali sobri: il Markdown non
+distingue con certezza una procedura da una semplice enumerazione, quindi non
+vengono applicati cerchi o timeline automaticamente.
 
 **Tabelle** — avvolte in un contenitore con `overflow-x: auto` e bordo proprio:
 lo scroll è confinato alla tabella e non produce mai scroll di pagina. Header
@@ -334,7 +332,7 @@ normalizzati.** Una lezione esistente resa con la nuova presentazione deve
 risultare uguale nel testo e migliore solo nella forma.
 
 - Nessun marcatore di callout ⇒ nessun callout: blockquote ordinari.
-- Meno di 3 heading ⇒ nessun indice, corpo centrato.
+- Qualunque numero di heading ⇒ nessun indice, corpo centrato.
 - Nessun front-matter ⇒ testata ridotta al solo titolo.
 - Tabelle o codice molto larghi ⇒ scroll interno, mai troncamento.
 - Nessuna trasformazione persistente, in nessun momento.
@@ -465,3 +463,33 @@ sintassi, stampa/PDF della lezione, sostituzione del renderer corrente.
    resta pienamente leggibile con la resa attuale.
 9. **Gate umano obbligatorio** prima di sostituire il renderer corrente come
    predefinito. Fino ad allora la resa attuale resta quella ufficiale.
+
+---
+
+## 15. Gate qualitativo dei contenuti IA (LESSON-MANUAL-02)
+
+La review grafica non autorizza modifiche al prompt. Prima si misura il prompt
+attuale con:
+
+- sei scenari didattici congelati in
+  [`evidenze/lesson-manual-02-scenarios.json`](evidenze/lesson-manual-02-scenarios.json);
+- quindici dimensioni osservabili, blocker e soglie non mediate alla cieca in
+  [`evidenze/lesson-manual-02-rubric.md`](evidenze/lesson-manual-02-rubric.md);
+- protocollo operativo e scheda di review in
+  [`evidenze/lesson-manual-02-quality-review.md`](evidenze/lesson-manual-02-quality-review.md).
+
+Il verdetto può essere `PROMPT_INVARIATO`, `FIX_LEGGERO`,
+`REVISIONE_SOSTANZIALE` o `NON_DISPONIBILE`. Alla data di questo contratto è
+`NON_DISPONIBILE`: nessun campione è stato generato durante la progettazione.
+Ogni esecuzione reale richiede stima e autorizzazione esplicita; un confronto
+fra profili è un benchmark distinto.
+
+Il problema deve essere attribuito prima di intervenire:
+
+- prompt, se il difetto pedagogico ricorre con input completi;
+- renderer, se il Markdown corretto viene presentato male nelle viste reali;
+- metadati, se il perimetro fornito è povero o incoerente;
+- variabilità del modello, se l'anomalia è isolata e non riproducibile.
+
+LESSON-MANUAL-02 non modifica prompt, renderer, payload, modelli, listini,
+budget, dati o infrastruttura.
