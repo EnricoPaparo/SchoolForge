@@ -613,3 +613,373 @@ label {
   background-color: var(--color-surface-subtle);
   font-weight: 600;
 }
+
+/* ── LESSON-MANUAL-01 — variante «manuale digitale» ─────────────────────────
+   Interamente ADDITIVA e opt-in: tutto vive sotto `.prose--manual` o sotto le
+   classi `lesson-manual`/`lm-`. Nessuna regola di `.prose` è stata modificata,
+   quindi rimuovere l'opt-in ripristina esattamente la resa precedente.
+   Usata solo dalle due viste lezione (docente e studente): editor, anteprima IA
+   e ogni altra superficie Markdown restano sul percorso legacy. */
+
+/*
+ * Contesto di container query: la scelta fra indice laterale e indice compatto
+ * dipende dallo spazio **realmente disponibile** per la lezione, non dalla
+ * larghezza del viewport. Nella vista docente la sidebar del corso sottrae
+ * ~270 px, e un breakpoint sul viewport comprimerebbe la colonna di lettura
+ * fino a ~51 caratteri a 1024 px.
+ */
+.lesson-manual-scope {
+  container-type: inline-size;
+  container-name: lesson;
+  min-width: 0;
+}
+
+.lesson-manual {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem;
+  min-width: 0;
+}
+
+.lesson-manual__body {
+  min-width: 0;
+}
+
+/* Colonna di lettura editoriale: ~78 caratteri, mai tutta la viewport. */
+.prose--manual {
+  max-width: 42rem;
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+.lesson-manual:not(.lesson-manual--with-toc) .prose--manual {
+  margin-inline: auto;
+}
+
+.prose--manual h2,
+.prose--manual h3 {
+  scroll-margin-top: 4rem;
+}
+
+/* Heading focalizzabili solo da codice: il contorno compare quando il focus
+   arriva davvero dalla tastiera, non a ogni click dell'indice. */
+.prose--manual h2:focus,
+.prose--manual h3:focus {
+  outline: none;
+}
+
+.prose--manual h2:focus-visible,
+.prose--manual h3:focus-visible {
+  outline: 2px solid var(--color-brand-orange);
+  outline-offset: 4px;
+}
+
+/* Spaziatura asimmetrica: molto spazio PRIMA della sezione, poco dentro. */
+.prose--manual h2 {
+  margin-top: 2.75rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-brand-blue);
+  font-size: 1.375rem;
+}
+
+.prose--manual h3 {
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+  font-size: 1.0625rem;
+  font-weight: 650;
+}
+
+/* H1 legacy nel corpo: reso come una sezione, senza riscrivere il contenuto. */
+.prose--manual h1 {
+  margin-top: 2.75rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-brand-blue);
+  font-size: 1.5rem;
+}
+
+.prose--manual p {
+  margin-bottom: 1.05rem;
+}
+
+.prose--manual ul,
+.prose--manual ol {
+  margin-bottom: 1.05rem;
+  padding-left: 1.35rem;
+}
+
+.prose--manual li {
+  margin-bottom: 0.4rem;
+}
+
+.prose--manual li::marker {
+  color: var(--color-brand-blue);
+}
+
+.prose--manual li > ul,
+.prose--manual li > ol {
+  margin-top: 0.4rem;
+  margin-bottom: 0;
+}
+
+/* Checklist GFM: caselle native allineate al testo. */
+.prose--manual li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -1.35rem;
+}
+
+.prose--manual li > input[type='checkbox'] {
+  margin-right: 0.45rem;
+  accent-color: var(--color-primary);
+}
+
+/*
+ * Liste ordinate: resa **neutra** per impostazione predefinita.
+ *
+ * Il prototipo proponeva numeri in cerchi con un filo verticale — ottimo su una
+ * procedura, fuori luogo su una classifica o su un elenco puramente
+ * enumerativo, che il Markdown non permette di distinguere. Senza una sintassi
+ * dedicata (fuori scope in questa PR) l'unica scelta onesta è la resa sobria:
+ * numerazione leggibile e spaziatura editoriale, uguale per tutti.
+ */
+.prose--manual ol {
+  list-style: decimal;
+}
+
+.prose--manual ol > li::marker {
+  color: var(--color-brand-blue);
+  font-weight: 650;
+}
+
+.prose--manual > ol > li {
+  padding-left: 0.15rem;
+}
+
+/* Blockquote ordinario: editoriale e neutro, chiaramente distinto dai callout. */
+.prose--manual blockquote {
+  margin: 1.5rem 0;
+  padding: 0.25rem 0 0.25rem 1.1rem;
+  border-left: 2px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-style: normal;
+}
+
+/* Tabelle: scroll confinato al contenitore, header distinto, nessuna zebratura. */
+.prose--manual table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+  margin: 1.5rem 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.prose--manual th,
+.prose--manual td {
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.55rem 0.85rem;
+}
+
+.prose--manual th {
+  background: var(--color-surface);
+  font-weight: 650;
+}
+
+.prose--manual tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.prose--manual pre {
+  margin: 1.5rem 0;
+  background: var(--color-surface);
+}
+
+/* ── Callout ──────────────────────────────────────────────────────────────── */
+
+.lm-callout {
+  --lm-accent: var(--color-border);
+  margin: 1.5rem 0;
+  padding: 0.85rem 1rem 0.85rem 1.05rem;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--lm-accent);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.lm-callout__title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.4rem;
+  color: var(--lm-accent);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lm-callout__icon {
+  flex: 0 0 auto;
+}
+
+.lm-callout__body > :last-child {
+  margin-bottom: 0;
+}
+
+.lm-callout--definition {
+  --lm-accent: var(--color-brand-blue);
+}
+.lm-callout--example {
+  --lm-accent: var(--color-text-muted);
+}
+.lm-callout--important {
+  --lm-accent: var(--color-brand-orange);
+}
+.lm-callout--warning {
+  --lm-accent: var(--color-warning);
+}
+.lm-callout--solution {
+  --lm-accent: var(--color-success);
+}
+
+/* SOLUTION: controllo nativo, contenuto sempre nel DOM, nessuna persistenza. */
+.lm-callout--solution > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.lm-callout--solution > summary::-webkit-details-marker {
+  display: none;
+}
+
+.lm-callout--solution > summary .lm-callout__title {
+  margin-bottom: 0;
+}
+
+.lm-callout__hint {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.lm-callout--solution[open] > summary {
+  margin-bottom: 0.5rem;
+}
+
+/* ── Indice ───────────────────────────────────────────────────────────────── */
+
+.lm-toc {
+  display: none;
+}
+
+.lm-toc__title {
+  margin: 0 0 0.6rem;
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.lm-toc__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8125rem;
+}
+
+.lm-toc__list li + li {
+  margin-top: 0.3rem;
+}
+
+.lm-toc__list li[data-level='3'] {
+  padding-left: 0.75rem;
+}
+
+.lm-toc__list a {
+  display: block;
+  padding: 0.1rem 0;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  line-height: 1.4;
+}
+
+.lm-toc__list a:hover {
+  color: var(--color-text);
+}
+
+.lm-toc__list a[aria-current='true'] {
+  color: var(--color-brand-blue);
+  font-weight: 600;
+}
+
+/* Indice compatto: default su schermi stretti, mai sticky. */
+.lm-toc-mobile {
+  margin: 0 0 1.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.lm-toc-mobile > summary {
+  padding: 0.65rem 0.85rem;
+  min-height: 2.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lm-toc-mobile nav {
+  padding: 0 0.85rem 0.75rem;
+}
+
+.lm-toc-mobile .lm-toc__list a {
+  min-height: 2.75rem;
+  padding: 0.55rem 0;
+}
+
+/*
+ * Soglia dell'indice laterale: 57rem, cioè esattamente la somma di ciò che
+ * serve — colonna di lettura 42rem + indice 13rem + gap 2rem. Sotto questa
+ * misura l'indice laterale ruberebbe spazio alla lettura, quindi si passa alla
+ * variante compatta invece di comprimere il testo.
+ *
+ * Dove le container query non sono supportate, la regola non si applica e resta
+ * l'indice compatto: una degradazione sicura, mai una colonna illeggibile.
+ */
+@container lesson (min-width: 57rem) {
+  .lesson-manual--with-toc {
+    grid-template-columns: minmax(0, 1fr) 13rem;
+  }
+
+  .lm-toc {
+    display: block;
+    position: sticky;
+    top: 1rem;
+    align-self: start;
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+    padding-left: 0.9rem;
+    border-left: 1px solid var(--color-border);
+  }
+
+  .lm-toc-mobile {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lesson-manual,
+  .lesson-manual * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

@@ -1,10 +1,23 @@
 # Manuale digitale delle lezioni — contratto grafico (LESSON-MANUAL-00)
 
-> **Stato: PROPOSTA, non implementata.** Questo documento congela le decisioni
-> grafiche e i confini; non descrive codice esistente. Il prototipo di
-> riferimento è [`prototipi/lesson-manual.html`](prototipi/lesson-manual.html),
-> standalone e non collegato al runtime. Nessuna riga di questo contratto è
-> attiva finché il Gate umano non approva LESSON-MANUAL-01.
+> **Stato: LESSON-MANUAL-01 implementato come variante opt-in; Gate umano
+> ancora PENDING.** Le decisioni qui congelate sono ora realizzate nel runtime
+> web, ma **solo** come variante attivabile per le due viste lezione: il
+> renderer legacy resta disponibile e predefinito ovunque altro. La sostituzione
+> del renderer corrente come resa unica richiede ancora l'approvazione della
+> review ([`evidenze/lesson-manual-00-review.md`](evidenze/lesson-manual-00-review.md)).
+> Il prototipo [`prototipi/lesson-manual.html`](prototipi/lesson-manual.html)
+> resta il riferimento visivo.
+>
+> **Attuazione (LESSON-MANUAL-01):**
+> `components/lessonManualMarkdown.ts` (istanza `Marked` isolata, callout, slug,
+> pipeline di sanificazione), `components/LessonManualBody.tsx` (indice,
+> osservatore, navigazione), blocco CSS additivo in coda a `index.css`,
+> `<MarkdownRenderer variant="lesson" />` in `CourseWorkspace` e
+> `StudentDidatticaView`.
+>
+> **Non implementato e fuori scope:** KaTeX, Mermaid, formule e diagrammi
+> renderizzati, prompt IA, evidenziazione della sintassi, stampa/PDF.
 
 ---
 
@@ -419,7 +432,21 @@ Mermaid — peso del bundle, superficie di sicurezza, rendering asincrono, stamp
 
 ## 13. Piano di implementazione successivo
 
-**LESSON-MANUAL-01 — scope esatto proposto** (da autorizzare, non incluso qui):
+**LESSON-MANUAL-01 — implementato.** Corrispondenza fra contratto e codice:
+
+| Vincolo | Dove è attuato |
+|---|---|
+| Variante opt-in | `MarkdownRenderer` accetta `variant="lesson"`; senza prop, percorso legacy invariato |
+| Parser isolato (§5.2) | `createLessonMarked()` costruisce una `Marked` dedicata; nessun `marked.use()` globale |
+| Pipeline (§5.1) | `parseLessonMarkdown()`: parser → HTML → `DOMPurify.sanitize()` → render; unico `dangerouslySetInnerHTML` sull'output sanificato |
+| Slug (§4.1) | `headingSlug()` + `nextHeadingId()`, id iniettati **prima** della sanificazione |
+| Ancore non dirottabili | `findHeading()` risolve solo `h2`/`h3` con quell'id |
+| Indice (§4.2) | `LessonManualBody`: un solo `IntersectionObserver`, `disconnect()` allo smontaggio e prima di ogni ricostruzione, `preventDefault()` sul click (nessuna voce di cronologia) |
+| Soglia 3 heading | `shouldShowToc()` |
+| Callout (§5) | Cinque tipi nel renderer del blockquote; marcatore ignoto ⇒ blockquote letterale; `SOLUTION` come `<details>` |
+| CSS additivo | Blocco `LESSON-MANUAL-01` in coda a `index.css`, tutto sotto `.prose--manual` / `.lesson-manual` / `.lm-` |
+
+**Scope originale, per confronto:**
 
 1. Variante **opt-in** del renderer: `<MarkdownRenderer variant="lesson" />`.
    `variant` assente ⇒ comportamento odierno, byte per byte.

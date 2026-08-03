@@ -2563,8 +2563,13 @@ function LessonDetail({
               {!loading && !error && content !== null && content.trim() === '' && (
                 <p className="state-empty">Nessun contenuto disponibile per questa lezione.</p>
               )}
+              {/*
+                LESSON-MANUAL-01 — la sola vista lezione del docente adotta la
+                variante «manuale». Titolo e sottotitolo restano dove sono, nella
+                testata della vista: il renderer non li ripete.
+              */}
               {!loading && !error && content !== null && content.trim() !== '' && (
-                <MarkdownRenderer markdown={content} />
+                <MarkdownRenderer markdown={content} variant="lesson" />
               )}
             </>
           )
