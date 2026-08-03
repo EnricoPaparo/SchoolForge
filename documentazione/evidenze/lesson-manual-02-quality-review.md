@@ -1,8 +1,9 @@
 # LESSON-MANUAL-02 — protocollo di review qualitativa
 
-> **Stato: NON DISPONIBILE.** Gli scenari e la rubrica sono congelati, ma in
-> questa attività non è stata generata alcuna lezione e non è stato sostenuto
-> alcun costo. Nessun verdetto sulla qualità del prompt è quindi dichiarabile.
+> **Stato: NON DISPONIBILE.** Gli scenari, la rubrica e il runner locale
+> LESSON-MANUAL-03 sono disponibili, ma non è stata generata alcuna lezione e
+> non è stato sostenuto alcun costo. Nessun verdetto sulla qualità del prompt è
+> quindi dichiarabile.
 
 ## Obiettivo
 
@@ -67,6 +68,41 @@ I payload completi e machine-readable sono in
     progettazione. Ogni modifica richiede un nuovo datasetVersion o una nuova
     promptContractVersion e un confronto separato.
 
+## Runner LESSON-MANUAL-03
+
+Il runner locale riusa il parser autorevole del payload, il prompt e lo schema
+Structured Output del runtime, il mapping server-side `economy` → modello/
+listino, la validazione dell'output e le formule di costo già esistenti. Non
+scrive su Firestore o Storage; eventuali Markdown e report reali vivono solo in
+`functions/lib/`, già ignorata da Git.
+
+Dry-run, predefinito e privo di secret/rete:
+
+```powershell
+pnpm --filter @schoolforge/functions build
+pnpm --filter @schoolforge/functions benchmark:lesson-manual-quality
+```
+
+Dry-run congelato del 3 agosto 2026:
+
+- profilo: `economy` (`gpt-5.4-nano-2026-03-17`, listino
+  `v2-2026-07-17-hg-m5`);
+- 6 chiamate pianificate, massimo 12 tentativi;
+- stima informativa: 78.698 µUSD (0,078698 USD);
+- tetto prudenziale: 169.910 µUSD (0,169910 USD).
+
+Comando reale — **da non eseguire senza una nuova autorizzazione esplicita**:
+
+```powershell
+pnpm --filter @schoolforge/functions benchmark:lesson-manual-quality -- --execute-real-openai --i-understand-this-costs-money
+```
+
+Richiede inoltre Node 22, terminale interattivo, `OPENAI_API_KEY` disponibile
+solo nella sessione e la frase esatta `ESEGUI 6 LEZIONI REALI`. Un flag
+sconosciuto, un profilo diverso, Node diverso da 22, conferma errata o chiave
+assente termina prima del provider. Il runner si ferma al primo output invalido
+e non pubblica un report parziale.
+
 ## Scheda da compilare per ogni scenario
 
 ```text
@@ -91,6 +127,7 @@ Evidenze e correzioni necessarie:
 |---|---|
 | Scenari congelati | Disponibili |
 | Rubrica congelata | Disponibile |
+| Runner e dry-run | Disponibili |
 | Output reali | Assenti |
 | Review docente | Non eseguita |
 | Chiamate provider in questa attività | 0 |
