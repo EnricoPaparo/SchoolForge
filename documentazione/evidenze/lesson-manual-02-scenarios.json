@@ -1,0 +1,163 @@
+{
+  "datasetVersion": "lesson-manual-02-scenarios-v1",
+  "rubricVersion": "lesson-manual-02-rubric-v1",
+  "generatedSamplesIncluded": false,
+  "primaryModelProfile": "economy",
+  "scenarios": [
+    {
+      "id": "LM02-01",
+      "category": "introductory_theory",
+      "titolo": "Che cos'è una rete informatica",
+      "sottotitolo": "Nodi, collegamenti e scambio di informazioni",
+      "difficolta": "1 — introduttiva",
+      "concettiChiave": ["nodo", "collegamento", "protocollo", "risorsa condivisa"],
+      "obiettivi": [
+        "Definire una rete informatica con parole proprie",
+        "Distinguere nodi, collegamenti e protocolli",
+        "Riconoscere esempi quotidiani di risorse condivise"
+      ],
+      "udaTitle": "Fondamenti di reti",
+      "udaContext": {
+        "title": "Fondamenti di reti",
+        "currentLessonPosition": 1,
+        "lessons": [
+          { "position": 1, "titolo": "Che cos'è una rete informatica", "sottotitolo": "Nodi, collegamenti e scambio di informazioni" },
+          { "position": 2, "titolo": "Tipi di rete e topologie", "sottotitolo": "LAN, WAN e forme di collegamento" },
+          { "position": 3, "titolo": "Il modello a livelli", "sottotitolo": "Perché i protocolli sono organizzati" }
+        ]
+      },
+      "depth": "synthetic",
+      "teacherGuidance": "Usa esempi vicini alla vita scolastica senza anticipare topologie e modello a livelli."
+    },
+    {
+      "id": "LM02-02",
+      "category": "technical_procedure",
+      "titolo": "Configurare un indirizzo IPv4 statico",
+      "sottotitolo": "Procedura, controlli e diagnosi degli errori comuni",
+      "difficolta": "3 — intermedia",
+      "concettiChiave": ["indirizzo IPv4", "subnet mask", "gateway predefinito", "DNS", "verifica della configurazione"],
+      "obiettivi": [
+        "Configurare correttamente i parametri IPv4 di un host",
+        "Verificare la configurazione con controlli progressivi",
+        "Diagnosticare errori comuni senza procedere per tentativi casuali"
+      ],
+      "udaTitle": "Configurazione e diagnostica di rete",
+      "udaContext": {
+        "title": "Configurazione e diagnostica di rete",
+        "currentLessonPosition": 2,
+        "lessons": [
+          { "position": 1, "titolo": "Indirizzi IPv4 e subnet mask", "sottotitolo": "Struttura e appartenenza alla rete" },
+          { "position": 2, "titolo": "Configurare un indirizzo IPv4 statico", "sottotitolo": "Procedura, controlli e diagnosi degli errori comuni" },
+          { "position": 3, "titolo": "DHCP", "sottotitolo": "Assegnazione automatica dei parametri di rete" }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": "Presenta la procedura in passi verificabili e associa a ogni parametro la conseguenza concreta di un valore errato."
+    },
+    {
+      "id": "LM02-03",
+      "category": "practical_examples",
+      "titolo": "Conduzione, convezione e irraggiamento",
+      "sottotitolo": "Riconoscere i meccanismi di trasferimento del calore",
+      "difficolta": "2 — base",
+      "concettiChiave": ["conduzione", "convezione", "irraggiamento", "trasferimento di energia"],
+      "obiettivi": [
+        "Distinguere i tre meccanismi di trasferimento del calore",
+        "Classificare situazioni reali motivando la scelta",
+        "Comprendere che più meccanismi possono agire contemporaneamente"
+      ],
+      "udaTitle": "Energia termica",
+      "udaContext": {
+        "title": "Energia termica",
+        "currentLessonPosition": 2,
+        "lessons": [
+          { "position": 1, "titolo": "Temperatura e calore", "sottotitolo": "Due grandezze da non confondere" },
+          { "position": 2, "titolo": "Conduzione, convezione e irraggiamento", "sottotitolo": "Riconoscere i meccanismi di trasferimento del calore" },
+          { "position": 3, "titolo": "Equilibrio termico", "sottotitolo": "Evoluzione dei sistemi a contatto" }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": "Costruisci la spiegazione attorno a esempi osservabili e includi almeno un caso in cui agiscono più meccanismi insieme."
+    },
+    {
+      "id": "LM02-04",
+      "category": "worked_exercises",
+      "titolo": "Equazioni di primo grado: metodo e verifica",
+      "sottotitolo": "Dalla trasformazione dell'equazione al controllo del risultato",
+      "difficolta": "3 — intermedia",
+      "concettiChiave": ["principi di equivalenza", "isolamento dell'incognita", "controllo della soluzione", "errori di segno"],
+      "obiettivi": [
+        "Risolvere equazioni di primo grado motivando ogni trasformazione",
+        "Verificare una soluzione per sostituzione",
+        "Riconoscere e correggere gli errori di segno più frequenti"
+      ],
+      "udaTitle": "Equazioni e problemi",
+      "udaContext": {
+        "title": "Equazioni e problemi",
+        "currentLessonPosition": 2,
+        "lessons": [
+          { "position": 1, "titolo": "Uguaglianze e principi di equivalenza", "sottotitolo": "Le trasformazioni che conservano le soluzioni" },
+          { "position": 2, "titolo": "Equazioni di primo grado: metodo e verifica", "sottotitolo": "Dalla trasformazione dell'equazione al controllo del risultato" },
+          { "position": 3, "titolo": "Problemi risolvibili con equazioni", "sottotitolo": "Tradurre un testo in un modello algebrico" }
+        ]
+      },
+      "depth": "in_depth",
+      "teacherGuidance": "Inserisci esercizi di difficoltà crescente con soluzione completa, passaggio per passaggio e verifica finale; commenta almeno un errore tipico."
+    },
+    {
+      "id": "LM02-05",
+      "category": "advanced_in_depth",
+      "titolo": "Normalizzazione dei database fino alla terza forma normale",
+      "sottotitolo": "Dipendenze, anomalie e decomposizione delle relazioni",
+      "difficolta": "5 — avanzata",
+      "concettiChiave": ["dipendenza funzionale", "chiave candidata", "prima forma normale", "seconda forma normale", "terza forma normale", "decomposizione"],
+      "obiettivi": [
+        "Individuare dipendenze funzionali e chiavi candidate",
+        "Riconoscere violazioni di 1NF, 2NF e 3NF",
+        "Normalizzare una relazione motivando ogni decomposizione",
+        "Valutare le anomalie eliminate dal nuovo schema"
+      ],
+      "udaTitle": "Progettazione logica dei database",
+      "udaContext": {
+        "title": "Progettazione logica dei database",
+        "currentLessonPosition": 4,
+        "lessons": [
+          { "position": 1, "titolo": "Dal modello concettuale al modello relazionale", "sottotitolo": "Traduzione di entità e relazioni" },
+          { "position": 2, "titolo": "Chiavi e vincoli di integrità", "sottotitolo": "Identificare e proteggere i dati" },
+          { "position": 3, "titolo": "Dipendenze funzionali", "sottotitolo": "Determinanti e attributi dipendenti" },
+          { "position": 4, "titolo": "Normalizzazione dei database fino alla terza forma normale", "sottotitolo": "Dipendenze, anomalie e decomposizione delle relazioni" },
+          { "position": 5, "titolo": "Progettazione fisica e indici", "sottotitolo": "Prestazioni e accesso ai dati" }
+        ]
+      },
+      "depth": "in_depth",
+      "teacherGuidance": "Usa un caso unitario abbastanza ricco da attraversare 1NF, 2NF e 3NF; esplicita dipendenze, chiavi, anomalie e motivazione di ogni decomposizione."
+    },
+    {
+      "id": "LM02-06",
+      "category": "uda_boundary",
+      "titolo": "Affidabilità TCP: numerazione, ACK e ritrasmissione",
+      "sottotitolo": "Come TCP rileva e recupera segmenti mancanti",
+      "difficolta": "4 — avanzata",
+      "concettiChiave": ["numero di sequenza", "acknowledgement", "timeout", "ritrasmissione", "ordinamento dei segmenti"],
+      "obiettivi": [
+        "Spiegare il ruolo dei numeri di sequenza e degli ACK",
+        "Ricostruire cosa accade quando un segmento viene perso",
+        "Distinguere l'affidabilità di TCP dall'instradamento svolto da IP"
+      ],
+      "udaTitle": "Dalla rete al trasporto",
+      "udaContext": {
+        "title": "Dalla rete al trasporto",
+        "currentLessonPosition": 3,
+        "lessons": [
+          { "position": 1, "titolo": "Indirizzamento e instradamento IP", "sottotitolo": "Portare i pacchetti fra reti diverse" },
+          { "position": 2, "titolo": "Porte e multiplexing", "sottotitolo": "Associare i flussi alle applicazioni" },
+          { "position": 3, "titolo": "Affidabilità TCP: numerazione, ACK e ritrasmissione", "sottotitolo": "Come TCP rileva e recupera segmenti mancanti" },
+          { "position": 4, "titolo": "Controllo di flusso e congestione", "sottotitolo": "Adattare la velocità di trasmissione" },
+          { "position": 5, "titolo": "Protocolli applicativi", "sottotitolo": "HTTP, DNS e posta elettronica" }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": "Puoi richiamare brevemente IP e le porte, ma non ripetere l'instradamento e non anticipare controllo di congestione o protocolli applicativi. Usa una sequenza numerica concreta per mostrare perdita, ACK e ritrasmissione."
+    }
+  ]
+}
