@@ -40,59 +40,16 @@ describe('colonna di lettura', () => {
   });
 
   it('senza indice il corpo è centrato', () => {
-    expect(manualBlock).toMatch(
-      /lesson-manual:not\(\.lesson-manual--with-toc\)[^{]*\{[^}]*margin-inline:\s*auto/,
-    );
+    expect(manualBlock).toMatch(/\.lesson-manual \.prose--manual\s*\{[^}]*margin-inline:\s*auto/);
   });
 });
 
-describe('indice', () => {
-  /*
-   * Il breakpoint deve derivare dallo **spazio reale** della lezione, non dal
-   * viewport: nella vista docente la sidebar del corso sottrae ~270 px, e una
-   * media query comprimeva la colonna fino a ~51 caratteri a 1024 px.
-   */
-  it('usa una container query, non una media query sul viewport', () => {
-    expect(manualBlock).toMatch(/\.lesson-manual-scope\s*\{[^}]*container-type:\s*inline-size/);
-    expect(manualBlock).toMatch(/\.lesson-manual-scope\s*\{[^}]*container-name:\s*lesson/);
-    expect(manualBlock).toMatch(/@container lesson \(min-width: 57rem\)/);
-    // Nessuna media query sul viewport decide più la presenza dell'indice.
-    expect(manualBlock).not.toMatch(/@media \(min-width:[^)]*\)[^{]*\{[\s\S]{0,400}?\.lm-toc\s*\{/);
-  });
-
-  it('la soglia è la somma reale di corpo, indice e gap', () => {
-    // 42rem (corpo) + 13rem (indice) + 2rem (gap) = 57rem.
-    expect(manualBlock).toMatch(/\.prose--manual\s*\{[^}]*max-width:\s*42rem/);
-    expect(manualBlock).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) 13rem/);
-    expect(manualBlock).toMatch(/\.lesson-manual\s*\{[^}]*gap:\s*2rem/);
-    expect(manualBlock).toMatch(/min-width: 57rem/);
-  });
-
-  it('sopra la soglia l’indice è laterale e sticky, e quello compatto sparisce', () => {
-    const query = manualBlock.slice(manualBlock.indexOf('@container lesson (min-width: 57rem)'));
-    expect(query).toMatch(/\.lesson-manual--with-toc\s*\{[^}]*grid-template-columns/);
-    expect(query).toMatch(/\.lm-toc\s*\{[^}]*position:\s*sticky/);
-    expect(query).toMatch(/\.lm-toc-mobile\s*\{[^}]*display:\s*none/);
-  });
-
-  it('sotto quella soglia l’indice laterale non esiste', () => {
-    expect(manualBlock).toMatch(/\.lm-toc\s*\{\s*display:\s*none/);
-  });
-
-  it('l’indice compatto non è sticky', () => {
-    const mobile = manualBlock.slice(
-      manualBlock.indexOf('.lm-toc-mobile {'),
-      manualBlock.indexOf('@container lesson'),
-    );
-    expect(mobile).not.toContain('position: sticky');
-  });
-
-  it('la sezione corrente è evidenziata solo con colore e peso', () => {
-    const rule = manualBlock.slice(manualBlock.indexOf(".lm-toc__list a[aria-current='true']"));
-    const body = rule.slice(0, rule.indexOf('}'));
-    expect(body).toMatch(/color:/);
-    expect(body).toMatch(/font-weight:/);
-    expect(body).not.toMatch(/background/);
+describe('indice rimosso dopo la review DEV', () => {
+  it('non conserva CSS, container query o layout a due colonne', () => {
+    expect(manualBlock).not.toContain('.lm-toc');
+    expect(manualBlock).not.toContain('lesson-manual--with-toc');
+    expect(manualBlock).not.toContain('@container lesson');
+    expect(manualBlock).not.toMatch(/grid-template-columns/);
   });
 });
 
@@ -113,13 +70,6 @@ describe('accessibilità e movimento', () => {
   it('gli heading mostrano il focus solo con :focus-visible', () => {
     expect(manualBlock).toMatch(/\.prose--manual h2:focus,[\s\S]{0,60}\{\s*outline:\s*none/);
     expect(manualBlock).toMatch(/h2:focus-visible,[\s\S]{0,80}\{\s*outline:\s*2px/);
-  });
-
-  it('l’indice compatto mantiene target comodi ma confina le liste lunghe', () => {
-    expect(manualBlock).toMatch(/\.lm-toc-mobile > summary\s*\{[^}]*min-height:\s*2\.75rem/);
-    expect(manualBlock).toMatch(/\.lm-toc-mobile \.lm-toc__list a\s*\{[^}]*min-height:\s*2\.75rem/);
-    expect(manualBlock).toMatch(/\.lm-toc-mobile nav\s*\{[^}]*max-height:\s*min\(12rem, 36vh\)/);
-    expect(manualBlock).toMatch(/\.lm-toc-mobile nav\s*\{[^}]*overflow-y:\s*auto/);
   });
 
   it('rispetta prefers-reduced-motion', () => {
