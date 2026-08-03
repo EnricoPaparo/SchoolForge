@@ -938,12 +938,27 @@ label {
 }
 
 .lm-toc-mobile nav {
-  padding: 0 0.85rem 0.75rem;
+  max-height: min(12rem, 36vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.15rem 0.85rem 0.65rem;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.lm-toc-mobile .lm-toc__list {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.lm-toc-mobile .lm-toc__list li + li {
+  margin-top: 0;
 }
 
 .lm-toc-mobile .lm-toc__list a {
   min-height: 2.75rem;
-  padding: 0.55rem 0;
+  padding: 0.35rem 0;
+  line-height: 1.3;
 }
 
 /*
