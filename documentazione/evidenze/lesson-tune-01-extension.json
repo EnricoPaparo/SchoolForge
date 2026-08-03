@@ -1,0 +1,170 @@
+{
+  "extensionVersion": "lesson-tune-01-extension-v1",
+  "baseDatasetVersion": "lesson-manual-02-scenarios-v1",
+  "rubricVersion": "lesson-manual-02-rubric-v1",
+  "generatedSamplesIncluded": false,
+  "scenarios": [
+    {
+      "id": "LT01-07",
+      "split": "tuning",
+      "category": "historical_source_analysis",
+      "titolo": "Leggere una fonte storica: autore, contesto e intenzione",
+      "sottotitolo": "Distinguere ciò che la fonte dice da ciò che possiamo inferire",
+      "difficolta": "3 — intermedia",
+      "concettiChiave": ["fonte primaria", "contesto", "punto di vista", "attendibilità", "inferenza"],
+      "obiettivi": [
+        "Distinguere osservazione e interpretazione di una fonte",
+        "Ricostruire autore, destinatario, contesto e intenzione",
+        "Valutare limiti e attendibilità senza ridurre la fonte a vera o falsa"
+      ],
+      "udaTitle": "Il lavoro dello storico",
+      "udaContext": {
+        "title": "Il lavoro dello storico",
+        "currentLessonPosition": 3,
+        "lessons": [
+          { "position": 1, "titolo": "Tracce, fonti e documenti", "sottotitolo": "Come il passato diventa conoscibile" },
+          { "position": 2, "titolo": "Fonti primarie e secondarie", "sottotitolo": "Origine e funzione delle testimonianze" },
+          { "position": 3, "titolo": "Leggere una fonte storica: autore, contesto e intenzione", "sottotitolo": "Distinguere ciò che la fonte dice da ciò che possiamo inferire" },
+          { "position": 4, "titolo": "Confrontare fonti discordanti", "sottotitolo": "Corroborazione e conflitto fra testimonianze" }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": "Usa un breve esempio inventato ma dichiaratamente esemplificativo; mostra il metodo di analisi senza anticipare il confronto sistematico fra fonti discordanti."
+    },
+    {
+      "id": "LT01-08",
+      "split": "tuning",
+      "category": "misconception_correction",
+      "titolo": "Massa e peso non sono la stessa cosa",
+      "sottotitolo": "Comprendere grandezze, unità di misura e relazione fisica",
+      "difficolta": "2 — base",
+      "concettiChiave": ["massa", "forza peso", "accelerazione di gravità", "chilogrammo", "newton"],
+      "obiettivi": [
+        "Distinguere massa e forza peso sul piano concettuale",
+        "Usare correttamente chilogrammo e newton",
+        "Applicare P = m·g in situazioni semplici spiegandone il significato"
+      ],
+      "udaTitle": "Forze e movimento",
+      "udaContext": {
+        "title": "Forze e movimento",
+        "currentLessonPosition": 2,
+        "lessons": [
+          { "position": 1, "titolo": "Che cos'è una forza", "sottotitolo": "Interazioni ed effetti sul moto" },
+          { "position": 2, "titolo": "Massa e peso non sono la stessa cosa", "sottotitolo": "Comprendere grandezze, unità di misura e relazione fisica" },
+          { "position": 3, "titolo": "Le leggi della dinamica", "sottotitolo": "Forza risultante e accelerazione" }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": "Parti dall'errore quotidiano «peso 60 kg», correggilo senza umiliare lo studente e includi un calcolo sulla Terra e uno qualitativo sulla Luna."
+    },
+    {
+      "id": "LT01-09",
+      "split": "tuning",
+      "category": "programming_debugging",
+      "titolo": "Trovare un errore in un ciclo Python",
+      "sottotitolo": "Tracciare lo stato del programma invece di procedere per tentativi",
+      "difficolta": "3 — intermedia",
+      "concettiChiave": ["ciclo for", "range", "indice", "stato delle variabili", "tracciamento"],
+      "obiettivi": [
+        "Eseguire manualmente il tracciamento di un ciclo",
+        "Distinguere errore di sintassi, runtime e logica",
+        "Correggere un errore off-by-one motivando la modifica"
+      ],
+      "udaTitle": "Programmazione iterativa",
+      "udaContext": {
+        "title": "Programmazione iterativa",
+        "currentLessonPosition": 4,
+        "lessons": [
+          { "position": 1, "titolo": "Ripetere istruzioni con for", "sottotitolo": "Iterazione su sequenze" },
+          { "position": 2, "titolo": "La funzione range", "sottotitolo": "Estremi, passo e valori prodotti" },
+          { "position": 3, "titolo": "Accumulatori e contatori", "sottotitolo": "Aggiornare lo stato a ogni iterazione" },
+          { "position": 4, "titolo": "Trovare un errore in un ciclo Python", "sottotitolo": "Tracciare lo stato del programma invece di procedere per tentativi" },
+          { "position": 5, "titolo": "Cicli annidati", "sottotitolo": "Iterazioni su due dimensioni" }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": "Usa due frammenti di codice brevi, una tabella di traccia e una correzione motivata; non introdurre cicli annidati."
+    },
+    {
+      "id": "LT01-10",
+      "split": "tuning",
+      "category": "argumentative_reasoning",
+      "titolo": "Costruire un'argomentazione: tesi, ragioni ed evidenze",
+      "sottotitolo": "Dalla semplice opinione a una posizione sostenuta",
+      "difficolta": "3 — intermedia",
+      "concettiChiave": ["tesi", "argomento", "evidenza", "controargomento", "confutazione"],
+      "obiettivi": [
+        "Distinguere una tesi da una preferenza personale",
+        "Collegare ragioni ed evidenze alla tesi",
+        "Considerare un controargomento e rispondere in modo pertinente"
+      ],
+      "udaTitle": "Scrittura argomentativa",
+      "udaContext": {
+        "title": "Scrittura argomentativa",
+        "currentLessonPosition": 2,
+        "lessons": [
+          { "position": 1, "titolo": "Opinioni e questioni discutibili", "sottotitolo": "Quando ha senso argomentare" },
+          { "position": 2, "titolo": "Costruire un'argomentazione: tesi, ragioni ed evidenze", "sottotitolo": "Dalla semplice opinione a una posizione sostenuta" },
+          { "position": 3, "titolo": "Organizzare il testo argomentativo", "sottotitolo": "Introduzione, sviluppo e conclusione" },
+          { "position": 4, "titolo": "Fallacie argomentative", "sottotitolo": "Riconoscere ragionamenti ingannevoli" }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": "Sviluppa un esempio scolastico controverso ma non politico; fai vedere perché una ragione è pertinente e un'altra no, senza anticipare una tassonomia delle fallacie."
+    },
+    {
+      "id": "LT01-11",
+      "split": "holdout",
+      "category": "stoichiometric_problem",
+      "titolo": "Dal rapporto molare alla massa dei prodotti",
+      "sottotitolo": "Risolvere un problema stechiometrico controllando unità e passaggi",
+      "difficolta": "4 — avanzata",
+      "concettiChiave": ["equazione bilanciata", "mole", "massa molare", "rapporto stechiometrico", "controllo dimensionale"],
+      "obiettivi": [
+        "Ricavare rapporti molari da un'equazione bilanciata",
+        "Convertire massa, moli e massa del prodotto in una catena motivata",
+        "Controllare plausibilità e unità del risultato"
+      ],
+      "udaTitle": "Calcoli chimici",
+      "udaContext": {
+        "title": "Calcoli chimici",
+        "currentLessonPosition": 3,
+        "lessons": [
+          { "position": 1, "titolo": "La mole e il numero di Avogadro", "sottotitolo": "Contare particelle attraverso la massa" },
+          { "position": 2, "titolo": "Bilanciare le reazioni chimiche", "sottotitolo": "Conservazione degli atomi" },
+          { "position": 3, "titolo": "Dal rapporto molare alla massa dei prodotti", "sottotitolo": "Risolvere un problema stechiometrico controllando unità e passaggi" },
+          { "position": 4, "titolo": "Reagente limitante", "sottotitolo": "Quando un reagente si esaurisce per primo" }
+        ]
+      },
+      "depth": "in_depth",
+      "teacherGuidance": "Svolgi almeno due problemi completi con dati realistici, esplicita ogni conversione e verifica le unità; non introdurre il reagente limitante."
+    },
+    {
+      "id": "LT01-12",
+      "split": "holdout",
+      "category": "systems_modeling",
+      "titolo": "Feedback positivo e negativo nei sistemi",
+      "sottotitolo": "Capire come una conseguenza può amplificare o contrastare una variazione",
+      "difficolta": "4 — avanzata",
+      "concettiChiave": ["sistema", "variabile", "retroazione", "feedback positivo", "feedback negativo", "equilibrio dinamico"],
+      "obiettivi": [
+        "Riconoscere la struttura causale di un circuito di feedback",
+        "Distinguere feedback positivo e negativo dagli esiti desiderabili o indesiderabili",
+        "Costruire e spiegare semplici catene causali in contesti diversi"
+      ],
+      "udaTitle": "Pensare per sistemi",
+      "udaContext": {
+        "title": "Pensare per sistemi",
+        "currentLessonPosition": 3,
+        "lessons": [
+          { "position": 1, "titolo": "Elementi e confini di un sistema", "sottotitolo": "Scegliere cosa osservare" },
+          { "position": 2, "titolo": "Relazioni causali", "sottotitolo": "Leggere variazioni e conseguenze" },
+          { "position": 3, "titolo": "Feedback positivo e negativo nei sistemi", "sottotitolo": "Capire come una conseguenza può amplificare o contrastare una variazione" },
+          { "position": 4, "titolo": "Ritardi e comportamenti inattesi", "sottotitolo": "Perché gli effetti non sono sempre immediati" }
+        ]
+      },
+      "depth": "in_depth",
+      "teacherGuidance": "Confronta esempi biologici, ambientali e organizzativi; evita di associare positivo a buono e negativo a cattivo; non sviluppare il tema dei ritardi."
+    }
+  ]
+}
