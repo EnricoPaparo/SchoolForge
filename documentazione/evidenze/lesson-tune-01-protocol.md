@@ -113,8 +113,8 @@ profilo chiuso; il client non passa identificatori tecnici.
 
 L'esecuzione reale quality richiede gli stessi due flag, Node 22, TTY, chiave
 letta per ultima e la frase distinta `ESEGUI 8 LEZIONI TUNING REALI QUALITY`.
-Il profilo quality con split `all` o `holdout`, valori sconosciuti e flag
-duplicati vengono rifiutati prima di chiave e provider. Nessuna autorizzazione
+Il profilo quality senza split esplicito, valori sconosciuti e flag duplicati
+vengono rifiutati prima di dataset, chiave e provider. Nessuna autorizzazione
 reale è concessa da questo documento.
 
 Il confronto reale quality è stato completato 8/8 il 4 agosto 2026. Sette
@@ -124,7 +124,21 @@ scenari sono `PASS`, senza blocker: verdetto tuning **PROMPT_INVARIATO** sul
 profilo quality. Review completa:
 [`lesson-tune-06-quality-review.md`](lesson-tune-06-quality-review.md).
 
-I quattro holdout restano ineseguiti e il runner continua a rifiutare
-`quality + holdout`. L'eventuale apertura di quel percorso richiede una modifica
-separata, un nuovo dry-run e una nuova autorizzazione economica; i risultati
-holdout non potranno essere usati per ritoccare il candidato congelato.
+I quattro holdout restano ineseguiti. Dopo il congelamento del candidato, il
+runner ammette ora anche il solo percorso esplicito `quality + holdout`:
+
+```powershell
+pnpm --filter @schoolforge/functions build
+pnpm --filter @schoolforge/functions benchmark:lesson-tune-quality -- --benchmark-split=holdout --benchmark-model-profile=quality
+```
+
+Dry-run holdout quality del 4 agosto 2026: `gpt-5.6-luna`, listino
+`v5-2026-07-20-luna-dev`, 4 chiamate, massimo 8 tentativi, stima 328.037 µUSD
+(0,328037 USD), tetto prudenziale 741.080 µUSD (0,741080 USD), zero secret,
+provider e rete. L'esecuzione reale resta protetta dai due flag, da Node 22,
+TTY, chiave letta per ultima e dalla frase distinta
+`ESEGUI 4 LEZIONI HOLDOUT REALI QUALITY`.
+
+Questa preparazione non autorizza l'esecuzione reale. Serve una nuova
+autorizzazione economica dopo il merge; gli output holdout saranno generati una
+sola volta e non potranno essere usati per ritoccare il candidato congelato.
