@@ -67,5 +67,10 @@ esecuzione reale richiede una nuova autorizzazione esplicita dopo il dry-run.
 
 ## Stato
 
-Dataset e protocollo congelati. Nessuna generazione reale autorizzata. Verdetto
-del prompt: **NON DISPONIBILE**.
+Dataset e protocollo congelati. Baseline `tuning` reale completata il 4 agosto
+2026: 8/8 campioni, costo 33.237 µUSD, zero Firestore/Storage. La review tecnica
+ha prodotto **REVISIONE_SOSTANZIALE** e il candidato A
+`lesson-tune-01-candidate-a-v1`; resta obbligatoria la conferma disciplinare del
+docente. I 4 `holdout` non sono stati eseguiti e non possono essere usati prima
+del congelamento del candidato. Evidenze in
+[`lesson-tune-01-baseline-review.md`](lesson-tune-01-baseline-review.md).

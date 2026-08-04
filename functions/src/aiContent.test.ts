@@ -1328,11 +1328,42 @@ describe('lesson pedagogical contract', () => {
   });
   it('asks for cognitive progression, examples and worked exercise solutions', () => {
     expect(built.user).toMatch(/spiega ogni concetto nuovo prima di utilizzarlo/);
-    expect(built.user).toMatch(/soluzioni svolte/);
-    expect(built.user).toMatch(/metodo, passaggi e motivazioni/);
+    expect(built.user).toMatch(/svolgili integralmente passo passo/);
+    expect(built.user).toMatch(/motivando metodo, passaggi/);
+  });
+  it('makes exercises conditional on their actual pedagogical value', () => {
+    expect(built.user).toMatch(/sostenere la spiegazione, non sostituirla né accorciarla/);
+    expect(built.user).toMatch(/operativo, procedurale, tecnico o di calcolo/);
+    expect(built.user).toMatch(/prevalentemente teorico/);
+    expect(built.user).toMatch(/al massimo una o due domande di autoverifica/);
+    expect(built.user).toMatch(/comprensione, collegamento o ragionamento, non semplice memoria/);
+    expect(built.user).toMatch(/se un’attività non aggiunge valore didattico, omettila/);
+    expect(built.user).toMatch(/non comprimere definizioni, spiegazioni o nessi causali/);
+  });
+  it('requires epistemic precision and labels hypothetical evidence', () => {
+    expect(built.user).toMatch(/non presentare come fatti dati, misure, studi/);
+    expect(built.user).toMatch(/caso è ipotetico o costruito a scopo didattico/);
+    expect(built.user).toMatch(/dipende da condizioni, contesto o eccezioni/);
+    expect(built.user).toMatch(/non deve insegnare un meccanismo causale falso/);
+  });
+  it('produces a proportional lesson body compatible with the current renderer', () => {
+    expect(built.user).toMatch(/produci solo il CORPO della lezione/);
+    expect(built.user).toMatch(/heading da H2 in poi/);
+    expect(built.user).toMatch(/evita un titolo per ogni breve paragrafo/);
+    expect(built.user).toMatch(/non separare meccanicamente tutte le sezioni/);
+    expect(built.user).toMatch(/> \[!DEFINITION\]/);
+    expect(built.user).toMatch(/non usare LaTeX/);
+    expect(built.user).toMatch(/né Mermaid/);
+    expect(built.user).toMatch(/formule ed equazioni in testo piano/);
+    expect(built.user).toMatch(/non aggiungere automaticamente un riepilogo/);
+  });
+  it('requires a silent final consistency and proofreading pass', () => {
+    expect(built.user).toMatch(/controllo finale di correttezza, ortografia/);
+    expect(built.user).toMatch(/nomi delle variabili, simboli, unità, calcoli, soluzioni/);
+    expect(built.user).toMatch(/soltanto il Markdown finale corretto/);
   });
   it('does NOT force a summary, ban blog/marketing, or set length/paragraph targets', () => {
-    expect(built.user).not.toMatch(/riepilogo/i);
+    expect(built.user).toMatch(/non aggiungere automaticamente un riepilogo/);
     expect(built.user).not.toMatch(/blog/i);
     expect(built.user).not.toMatch(/marketing/i);
     expect(built.user).not.toMatch(/esattamente \d+ paragrafi/i);
