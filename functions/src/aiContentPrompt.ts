@@ -26,7 +26,7 @@
 import { POOL_LEVEL_DIFFICULTY, type PoolRequest, type LessonRequest } from './aiContentCore.js';
 
 /** Da congelare in ogni benchmark; va incrementata a ogni modifica dei prompt. */
-export const AI_CONTENT_PROMPT_VERSION = 'lesson-tune-01-candidate-b-v1' as const;
+export const AI_CONTENT_PROMPT_VERSION = 'lesson-tune-01-candidate-c-v1' as const;
 
 /**
  * Preambolo di sicurezza comune (livello 1), il più autorevole del prompt.
@@ -245,10 +245,17 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '  limite quando senza quella precisazione potrebbe nascere una misconcezione.',
     '- in un caso diagnostico, la causa proposta deve spiegare TUTTI i sintomi dichiarati; se più',
     '  cause restano compatibili, non presentarne una come certa o unica;',
+    '- un test diagnostico può sostenere o escludere ipotesi, ma non dimostra da solo che un intero',
+    '  parametro o sistema sia corretto: dichiara che cosa il risultato consente davvero di dedurre;',
     '- in un esercizio di analisi dell’errore, verifica che il passaggio indicato sia davvero errato',
     '  e non una trasformazione equivalente o un procedimento alternativo corretto;',
     '- un esempio, dato o resoconto ipotetico non può essere usato come evidenza reale per una',
-    '  conclusione generale, anche se è stato dichiarato costruito a scopo didattico.',
+    '  conclusione generale, anche se è stato dichiarato costruito a scopo didattico;',
+    '- ogni esempio e affermazione deve rispettare definizioni, formule e condizioni già introdotte:',
+    '  confronta esplicitamente premesse e conclusione ed elimina qualsiasi contraddizione interna;',
+    '- se due casi hanno uguali tutte le grandezze da cui dipende un risultato nelle stesse',
+    '  condizioni, non affermare che quel risultato può differire senza indicare quale condizione',
+    '  causalmente rilevante cambia.',
     '',
     'Produci tutto il contenuto necessario per rendere la lezione didatticamente completa, chiara e',
     'autosufficiente. Non sacrificare spiegazioni, esempi o passaggi necessari per ragioni di',
@@ -278,7 +285,9 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '  evita un titolo per ogni breve paragrafo e non usare separatori orizzontali `---`;',
     '- sono supportati Markdown comune, heading da H2 in poi, liste, tabelle, blocchi di codice e i',
     '  callout > [!DEFINITION], > [!EXAMPLE], > [!IMPORTANT], > [!WARNING], > [!SOLUTION]; usa i',
-    '  callout con moderazione e solo quando la funzione semantica è reale;',
+    '  callout con moderazione e solo quando la funzione semantica è reale; dopo il marcatore, ogni',
+    '  riga del contenuto del callout deve iniziare con `>` e il callout non può essere vuoto o',
+    '  contenere soltanto un titolo;',
     '- non usare LaTeX o delimitatori/comandi matematici come \\( ... \\), \\[ ... \\], $...$,',
     '  $$...$$, \\frac o \\boxed, né Mermaid: scrivi per ora formule ed equazioni in testo piano',
     '  leggibile o in codice Markdown, usando simboli Unicode quando utili;',
@@ -287,13 +296,14 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '',
     'Prima di rispondere esegui in silenzio questo controllo finale obbligatorio:',
     '1) ricalcola da zero ogni esercizio usando i dati originali e verifica ogni soluzione;',
-    '2) verifica che ogni spiegazione causale e ogni diagnosi siano compatibili con tutti i fatti;',
+    '2) confronta ogni esempio e conclusione con definizioni, formule, condizioni e fatti già',
+    '   dichiarati; verifica che diagnosi e nessi causali non dicano più di quanto provano i dati;',
     '3) elimina ogni riferimento all’indice, a lezioni precedenti/successive o a ciò che sarà',
     '   studiato in seguito;',
     '4) verifica numero e collocazione delle attività, sintassi Markdown e assenza di LaTeX,',
     '   Mermaid, HTML, front matter e separatori orizzontali;',
-    '5) correggi ortografia, terminologia italiana, nomi delle variabili, simboli, unità, calcoli,',
-    '   soluzioni e coerenza interna.',
+    '5) correggi ortografia, parole spezzate, etichette residue, terminologia italiana, nomi delle',
+    '   variabili, simboli, unità, calcoli, soluzioni e coerenza interna.',
     'Restituisci soltanto il Markdown finale corretto.',
     '',
     'Scegli tu il tono e l’organizzazione più efficaci entro questi criteri. Vincoli tecnici: solo',

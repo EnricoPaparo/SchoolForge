@@ -71,11 +71,13 @@ Dataset e protocollo congelati. Baseline `tuning` reale completata il 4 agosto
 2026: 8/8 campioni, costo 33.237 µUSD, zero Firestore/Storage. La review tecnica
 ha prodotto **REVISIONE_SOSTANZIALE**. Il candidato A è stato poi eseguito sugli
 stessi 8 casi (35.026 µUSD): ha eliminato il LaTeX ma conserva due blocker di
-correttezza, quindi è respinto. Il candidato B
-`lesson-tune-01-candidate-b-v1` ha superato test e dry-run: 8 chiamate
-pianificate, massimo 16 tentativi, stima 94.084 µUSD e tetto 215.978 µUSD;
-zero secret e zero rete. Resta
+correttezza, quindi è respinto. Il candidato B è stato eseguito sugli stessi
+otto casi (33.597 µUSD): corregge i due blocker precedenti ma introduce una
+contraddizione centrale fra massa e forza peso e resta respinto. Il candidato C
+`lesson-tune-01-candidate-c-v1` ha superato test e dry-run: 8 chiamate, massimo
+16 tentativi, stima 94.084 µUSD, tetto 218.798 µUSD, zero secret/rete. Resta
 obbligatoria la conferma disciplinare del docente. I 4 `holdout` non sono stati
 eseguiti e non possono essere usati prima del congelamento del candidato.
 Evidenze: [`lesson-tune-01-baseline-review.md`](lesson-tune-01-baseline-review.md)
-e [`lesson-tune-02-candidate-a-review.md`](lesson-tune-02-candidate-a-review.md).
+[`lesson-tune-02-candidate-a-review.md`](lesson-tune-02-candidate-a-review.md) e
+[`lesson-tune-03-candidate-b-review.md`](lesson-tune-03-candidate-b-review.md).
