@@ -1351,9 +1351,15 @@ describe('lesson pedagogical contract', () => {
     expect(built.user).toMatch(/non deve insegnare un meccanismo causale falso/);
     expect(built.user).toMatch(/causa proposta deve spiegare TUTTI i sintomi/);
     expect(built.user).toMatch(/non presentarne una come certa o unica/);
+    expect(built.user).toMatch(/test diagnostico può sostenere o escludere ipotesi/);
+    expect(built.user).toMatch(/non dimostra da solo che un intero/);
     expect(built.user).toMatch(/passaggio indicato sia davvero errato/);
     expect(built.user).toMatch(/non una trasformazione equivalente/);
     expect(built.user).toMatch(/non può essere usato come evidenza reale/);
+    expect(built.user).toMatch(/rispettare definizioni, formule e condizioni già introdotte/);
+    expect(built.user).toMatch(/elimina qualsiasi contraddizione interna/);
+    expect(built.user).toMatch(/uguali tutte le grandezze da cui dipende un risultato/);
+    expect(built.user).toMatch(/condizione\s+causalmente rilevante cambia/);
   });
   it('produces a proportional lesson body compatible with the current renderer', () => {
     expect(built.user).toMatch(/produci solo il CORPO della lezione/);
@@ -1361,6 +1367,8 @@ describe('lesson pedagogical contract', () => {
     expect(built.user).toMatch(/evita un titolo per ogni breve paragrafo/);
     expect(built.user).toMatch(/non usare separatori orizzontali `---`/);
     expect(built.user).toMatch(/> \[!DEFINITION\]/);
+    expect(built.user).toMatch(/ogni\s+riga del contenuto del callout deve iniziare con `>`/);
+    expect(built.user).toMatch(/non può essere vuoto o\s+contenere soltanto un titolo/);
     expect(built.user).toMatch(/non usare LaTeX/);
     expect(built.user).toMatch(/né Mermaid/);
     expect(built.user).toMatch(/formule ed equazioni in testo piano/);
@@ -1369,11 +1377,13 @@ describe('lesson pedagogical contract', () => {
   it('requires a silent final consistency and proofreading pass', () => {
     expect(built.user).toMatch(/controllo finale obbligatorio/);
     expect(built.user).toMatch(/ricalcola da zero ogni esercizio/);
-    expect(built.user).toMatch(/compatibili con tutti i fatti/);
+    expect(built.user).toMatch(/confronta ogni esempio e conclusione con definizioni/);
+    expect(built.user).toMatch(/non dicano più di quanto provano i dati/);
     expect(built.user).toMatch(/elimina ogni riferimento all’indice/);
     expect(built.user).toMatch(/lezioni precedenti\/successive/);
     expect(built.user).toMatch(/numero e collocazione delle attività/);
-    expect(built.user).toMatch(/correggi ortografia, terminologia italiana/);
+    expect(built.user).toMatch(/correggi ortografia, parole spezzate, etichette residue/);
+    expect(built.user).toMatch(/terminologia italiana, nomi delle/);
     expect(built.user).toMatch(/soltanto il Markdown finale corretto/);
   });
   it('does NOT force a summary, ban blog/marketing, or set length/paragraph targets', () => {
