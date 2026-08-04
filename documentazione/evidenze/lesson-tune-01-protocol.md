@@ -116,3 +116,15 @@ letta per ultima e la frase distinta `ESEGUI 8 LEZIONI TUNING REALI QUALITY`.
 Il profilo quality con split `all` o `holdout`, valori sconosciuti e flag
 duplicati vengono rifiutati prima di chiave e provider. Nessuna autorizzazione
 reale è concessa da questo documento.
+
+Il confronto reale quality è stato completato 8/8 il 4 agosto 2026. Sette
+costi noti sommano 150.771 µUSD; `LM02-04` ha billing risk, quindi il totale
+effettivo non è determinabile; tetto prudenziale 1.070.842 µUSD. Tutti gli otto
+scenari sono `PASS`, senza blocker: verdetto tuning **PROMPT_INVARIATO** sul
+profilo quality. Review completa:
+[`lesson-tune-06-quality-review.md`](lesson-tune-06-quality-review.md).
+
+I quattro holdout restano ineseguiti e il runner continua a rifiutare
+`quality + holdout`. L'eventuale apertura di quel percorso richiede una modifica
+separata, un nuovo dry-run e una nuova autorizzazione economica; i risultati
+holdout non potranno essere usati per ritoccare il candidato congelato.
