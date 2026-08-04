@@ -26,7 +26,7 @@
 import { POOL_LEVEL_DIFFICULTY, type PoolRequest, type LessonRequest } from './aiContentCore.js';
 
 /** Da congelare in ogni benchmark; va incrementata a ogni modifica dei prompt. */
-export const AI_CONTENT_PROMPT_VERSION = 'lesson-tune-01-candidate-a-v1' as const;
+export const AI_CONTENT_PROMPT_VERSION = 'lesson-tune-01-candidate-b-v1' as const;
 
 /**
  * Preambolo di sicurezza comune (livello 1), il più autorevole del prompt.
@@ -226,11 +226,12 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '- applica concretamente tutte le INDICAZIONI_DOCENTE compatibili.',
     '',
     'Attività ed esercizi devono sostenere la spiegazione, non sostituirla né accorciarla:',
-    '- se il contenuto è operativo, procedurale, tecnico o di calcolo, inserisci solo gli esempi o',
+    '- se il contenuto è operativo, procedurale, tecnico o di calcolo, inserisci pochi esempi o',
     '  esercizi realmente utili; svolgili integralmente passo passo, motivando metodo, passaggi,',
     '  risultato, controllo ed errori tipici pertinenti;',
-    '- se il contenuto è prevalentemente teorico, usa al massimo una o due domande di autoverifica',
-    '  risolte che richiedano comprensione, collegamento o ragionamento, non semplice memoria;',
+    '- se il contenuto è prevalentemente teorico, puoi creare al massimo UNA sola sezione di',
+    '  attività/autoverifica, contenente non più di due domande risolte che richiedano comprensione,',
+    '  collegamento o ragionamento, non semplice memoria; non distribuire altre attività altrove;',
     '- se un’attività non aggiunge valore didattico, omettila; non creare raccolte ripetitive e non',
     '  lasciare esercizi senza soluzione nel corpo della lezione;',
     '- non comprimere definizioni, spiegazioni o nessi causali per fare spazio agli esercizi.',
@@ -242,6 +243,12 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '  l’ambito invece di trasformarlo in una regola assoluta;',
     '- una semplificazione didattica non deve insegnare un meccanismo causale falso: indicane il',
     '  limite quando senza quella precisazione potrebbe nascere una misconcezione.',
+    '- in un caso diagnostico, la causa proposta deve spiegare TUTTI i sintomi dichiarati; se più',
+    '  cause restano compatibili, non presentarne una come certa o unica;',
+    '- in un esercizio di analisi dell’errore, verifica che il passaggio indicato sia davvero errato',
+    '  e non una trasformazione equivalente o un procedimento alternativo corretto;',
+    '- un esempio, dato o resoconto ipotetico non può essere usato come evidenza reale per una',
+    '  conclusione generale, anche se è stato dichiarato costruito a scopo didattico.',
     '',
     'Produci tutto il contenuto necessario per rendere la lezione didatticamente completa, chiara e',
     'autosufficiente. Non sacrificare spiegazioni, esempi o passaggi necessari per ragioni di',
@@ -268,8 +275,7 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '- produci solo il CORPO della lezione: non ripetere titolo, sottotitolo, UDA, metadati, elenco',
     '  degli obiettivi o una formula fissa come «obiettivi raggiunti»;',
     '- usa una struttura proporzionata al contenuto: crea sezioni solo per reali cambi concettuali,',
-    '  evita un titolo per ogni breve paragrafo e non separare meccanicamente tutte le sezioni con',
-    '  linee orizzontali;',
+    '  evita un titolo per ogni breve paragrafo e non usare separatori orizzontali `---`;',
     '- sono supportati Markdown comune, heading da H2 in poi, liste, tabelle, blocchi di codice e i',
     '  callout > [!DEFINITION], > [!EXAMPLE], > [!IMPORTANT], > [!WARNING], > [!SOLUTION]; usa i',
     '  callout con moderazione e solo quando la funzione semantica è reale;',
@@ -279,8 +285,15 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '- non aggiungere automaticamente un riepilogo o una checklist finale: falli solo se apportano',
     '  un vantaggio didattico concreto e non ripetono quanto già spiegato.',
     '',
-    'Prima di rispondere esegui in silenzio un controllo finale di correttezza, ortografia,',
-    'terminologia, nomi delle variabili, simboli, unità, calcoli, soluzioni e coerenza interna.',
+    'Prima di rispondere esegui in silenzio questo controllo finale obbligatorio:',
+    '1) ricalcola da zero ogni esercizio usando i dati originali e verifica ogni soluzione;',
+    '2) verifica che ogni spiegazione causale e ogni diagnosi siano compatibili con tutti i fatti;',
+    '3) elimina ogni riferimento all’indice, a lezioni precedenti/successive o a ciò che sarà',
+    '   studiato in seguito;',
+    '4) verifica numero e collocazione delle attività, sintassi Markdown e assenza di LaTeX,',
+    '   Mermaid, HTML, front matter e separatori orizzontali;',
+    '5) correggi ortografia, terminologia italiana, nomi delle variabili, simboli, unità, calcoli,',
+    '   soluzioni e coerenza interna.',
     'Restituisci soltanto il Markdown finale corretto.',
     '',
     'Scegli tu il tono e l’organizzazione più efficaci entro questi criteri. Vincoli tecnici: solo',
