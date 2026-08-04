@@ -26,7 +26,7 @@
 import { POOL_LEVEL_DIFFICULTY, type PoolRequest, type LessonRequest } from './aiContentCore.js';
 
 /** Da congelare in ogni benchmark; va incrementata a ogni modifica dei prompt. */
-export const AI_CONTENT_PROMPT_VERSION = 'aigen-prompt-01-context-01-v1' as const;
+export const AI_CONTENT_PROMPT_VERSION = 'lesson-tune-01-candidate-a-v1' as const;
 
 /**
  * Preambolo di sicurezza comune (livello 1), il più autorevole del prompt.
@@ -223,10 +223,25 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '  passaggi importanti;',
     '- usa esempi concreti quando facilitano l’apprendimento e chiarisci i passaggi difficili;',
     '- fissa adeguatamente concetti chiave e obiettivi forniti;',
-    '- includi casi pratici, esempi o esercizi quando coerenti; se includi esercizi, fornisci anche',
-    '  le soluzioni svolte, mostrando metodo, passaggi e motivazioni (non solo il risultato), in',
-    '  passaggi leggibili;',
     '- applica concretamente tutte le INDICAZIONI_DOCENTE compatibili.',
+    '',
+    'Attività ed esercizi devono sostenere la spiegazione, non sostituirla né accorciarla:',
+    '- se il contenuto è operativo, procedurale, tecnico o di calcolo, inserisci solo gli esempi o',
+    '  esercizi realmente utili; svolgili integralmente passo passo, motivando metodo, passaggi,',
+    '  risultato, controllo ed errori tipici pertinenti;',
+    '- se il contenuto è prevalentemente teorico, usa al massimo una o due domande di autoverifica',
+    '  risolte che richiedano comprensione, collegamento o ragionamento, non semplice memoria;',
+    '- se un’attività non aggiunge valore didattico, omettila; non creare raccolte ripetitive e non',
+    '  lasciare esercizi senza soluzione nel corpo della lezione;',
+    '- non comprimere definizioni, spiegazioni o nessi causali per fare spazio agli esercizi.',
+    '',
+    'Rigorosità disciplinare ed epistemica:',
+    '- non presentare come fatti dati, misure, studi, testimonianze o osservazioni inventati;',
+    '  dichiara esplicitamente quando un caso è ipotetico o costruito a scopo didattico;',
+    '- quando un comportamento dipende da condizioni, contesto o eccezioni rilevanti, dichiarane',
+    '  l’ambito invece di trasformarlo in una regola assoluta;',
+    '- una semplificazione didattica non deve insegnare un meccanismo causale falso: indicane il',
+    '  limite quando senza quella precisazione potrebbe nascere una misconcezione.',
     '',
     'Produci tutto il contenuto necessario per rendere la lezione didatticamente completa, chiara e',
     'autosufficiente. Non sacrificare spiegazioni, esempi o passaggi necessari per ragioni di',
@@ -249,8 +264,27 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '- NON citare allo studente l’indice, «la lezione precedente/successiva» o altri riferimenti al',
     '  meccanismo interno: scrivi una lezione che si legge da sola.',
     '',
-    'Scegli tu la struttura, il tono e l’organizzazione più efficaci. Vincoli tecnici: solo corpo',
-    'Markdown (nessun front matter, nessun HTML, nessuno script).',
+    'Struttura editoriale e compatibilità SchoolForge:',
+    '- produci solo il CORPO della lezione: non ripetere titolo, sottotitolo, UDA, metadati, elenco',
+    '  degli obiettivi o una formula fissa come «obiettivi raggiunti»;',
+    '- usa una struttura proporzionata al contenuto: crea sezioni solo per reali cambi concettuali,',
+    '  evita un titolo per ogni breve paragrafo e non separare meccanicamente tutte le sezioni con',
+    '  linee orizzontali;',
+    '- sono supportati Markdown comune, heading da H2 in poi, liste, tabelle, blocchi di codice e i',
+    '  callout > [!DEFINITION], > [!EXAMPLE], > [!IMPORTANT], > [!WARNING], > [!SOLUTION]; usa i',
+    '  callout con moderazione e solo quando la funzione semantica è reale;',
+    '- non usare LaTeX o delimitatori/comandi matematici come \\( ... \\), \\[ ... \\], $...$,',
+    '  $$...$$, \\frac o \\boxed, né Mermaid: scrivi per ora formule ed equazioni in testo piano',
+    '  leggibile o in codice Markdown, usando simboli Unicode quando utili;',
+    '- non aggiungere automaticamente un riepilogo o una checklist finale: falli solo se apportano',
+    '  un vantaggio didattico concreto e non ripetono quanto già spiegato.',
+    '',
+    'Prima di rispondere esegui in silenzio un controllo finale di correttezza, ortografia,',
+    'terminologia, nomi delle variabili, simboli, unità, calcoli, soluzioni e coerenza interna.',
+    'Restituisci soltanto il Markdown finale corretto.',
+    '',
+    'Scegli tu il tono e l’organizzazione più efficaci entro questi criteri. Vincoli tecnici: solo',
+    'corpo Markdown (nessun front matter, nessun HTML, nessuno script).',
     request.hasCurrentContent
       ? 'Usa il CONTENUTO_ATTUALE come contesto e producine una nuova versione completa.'
       : 'Non esiste contenuto attuale: produci una nuova bozza.',
