@@ -8,6 +8,7 @@ import {
 import {
   LESSON_TUNE_COST_ACK_FLAG,
   LESSON_TUNE_EXECUTE_FLAG,
+  LESSON_TUNE_PROFILE_FLAG_PREFIX,
   runLessonTuneCli,
   type LessonTuneCliDeps,
 } from './lessonTuneQualityCli.js';
@@ -52,7 +53,7 @@ describe('LESSON-TUNE-01 CLI', () => {
   it('mostra il piano completo in dry-run senza leggere la chiave', async () => {
     const d = deps();
     await expect(runLessonTuneCli(d)).resolves.toBe('dry-run');
-    expect(d.buildPlan).toHaveBeenCalledWith(data, 'all');
+    expect(d.buildPlan).toHaveBeenCalledWith(data, 'all', 'economy');
     expect(d.getApiKey).not.toHaveBeenCalled();
     expect(d.createProvider).not.toHaveBeenCalled();
     expect(d.writeOutput).not.toHaveBeenCalled();
@@ -69,6 +70,25 @@ describe('LESSON-TUNE-01 CLI', () => {
     await expect(runLessonTuneCli(split)).rejects.toThrow(/Split benchmark/);
     const unknown = deps({ argv: ['--benchmark-model=quality'] });
     await expect(runLessonTuneCli(unknown)).rejects.toThrow(/Flag non supportato/);
+    const unknownProfile = deps({ argv: [`${LESSON_TUNE_PROFILE_FLAG_PREFIX}other`] });
+    await expect(runLessonTuneCli(unknownProfile)).rejects.toThrow(/Profilo modello/);
+    const duplicateProfile = deps({
+      argv: [
+        `${LESSON_TUNE_PROFILE_FLAG_PREFIX}economy`,
+        `${LESSON_TUNE_PROFILE_FLAG_PREFIX}quality`,
+      ],
+    });
+    await expect(runLessonTuneCli(duplicateProfile)).rejects.toThrow(/un solo profilo/);
+  });
+
+  it('mostra il piano quality tuning senza leggere chiave o costruire provider', async () => {
+    const d = deps({
+      argv: ['--benchmark-split=tuning', `${LESSON_TUNE_PROFILE_FLAG_PREFIX}quality`],
+    });
+    await expect(runLessonTuneCli(d)).resolves.toBe('dry-run');
+    expect(d.buildPlan).toHaveBeenCalledWith(data, 'tuning', 'quality');
+    expect(d.getApiKey).not.toHaveBeenCalled();
+    expect(d.createProvider).not.toHaveBeenCalled();
   });
 
   it('genera soltanto gli otto scenari tuning con conferma dedicata', async () => {
@@ -100,6 +120,49 @@ describe('LESSON-TUNE-01 CLI', () => {
     });
     await expect(runLessonTuneCli(valid)).resolves.toBe('executed');
     expect(contentProvider.generate).toHaveBeenCalledTimes(4);
+  });
+
+  it('esegue quality soltanto sul tuning con frase dedicata e modello Luna', async () => {
+    const denied = deps({
+      argv: [
+        '--benchmark-split=holdout',
+        `${LESSON_TUNE_PROFILE_FLAG_PREFIX}quality`,
+        LESSON_TUNE_EXECUTE_FLAG,
+        LESSON_TUNE_COST_ACK_FLAG,
+      ],
+    });
+    await expect(runLessonTuneCli(denied)).rejects.toThrow(/esclusivamente.*tuning/);
+    expect(denied.getApiKey).not.toHaveBeenCalled();
+
+    const wrongConfirmation = deps({
+      argv: [
+        '--benchmark-split=tuning',
+        `${LESSON_TUNE_PROFILE_FLAG_PREFIX}quality`,
+        LESSON_TUNE_EXECUTE_FLAG,
+        LESSON_TUNE_COST_ACK_FLAG,
+      ],
+    });
+    await expect(runLessonTuneCli(wrongConfirmation)).rejects.toThrow(/Conferma non valida/);
+    expect(wrongConfirmation.getApiKey).not.toHaveBeenCalled();
+
+    const contentProvider = provider();
+    const valid = deps({
+      argv: [
+        '--benchmark-split=tuning',
+        `${LESSON_TUNE_PROFILE_FLAG_PREFIX}quality`,
+        LESSON_TUNE_EXECUTE_FLAG,
+        LESSON_TUNE_COST_ACK_FLAG,
+      ],
+      confirm: vi.fn(async () => 'ESEGUI 8 LEZIONI TUNING REALI QUALITY'),
+      createProvider: vi.fn(() => contentProvider),
+    });
+    await expect(runLessonTuneCli(valid)).resolves.toBe('executed');
+    expect(contentProvider.generate).toHaveBeenCalledTimes(8);
+    expect(vi.mocked(contentProvider.generate).mock.calls[0]?.[0].modelProfile).toBe('quality');
+    expect(vi.mocked(contentProvider.generate).mock.calls[0]?.[1]).toBe('gpt-5.6-luna');
+    const params = vi.mocked(valid.writeOutput).mock.calls[0]?.[0];
+    expect(params?.plan.modelProfile).toBe('quality');
+    expect(params?.samples.every((sample) => sample.fileName.endsWith('-quality.md'))).toBe(true);
   });
 
   it('mantiene Node 22, TTY e chiave come precondizioni fail-closed', async () => {

@@ -87,3 +87,32 @@ Evidenze: [`lesson-tune-01-baseline-review.md`](lesson-tune-01-baseline-review.m
 [`lesson-tune-02-candidate-a-review.md`](lesson-tune-02-candidate-a-review.md) e
 [`lesson-tune-03-candidate-b-review.md`](lesson-tune-03-candidate-b-review.md),
 [`lesson-tune-04-candidate-c-review.md`](lesson-tune-04-candidate-c-review.md).
+
+## Confronto modello sul candidato D
+
+Il candidato D è stato eseguito 8/8 su `economy`: sette costi noti sommano
+29.510 µUSD; `LM02-04` ha billing risk, quindi il totale reale non è
+determinabile; tetto prudenziale 221.610 µUSD. Due blocker (`LM02-02` IPv4 e
+`LM02-03` trasferimento termico) dimostrano che aggiungere altre istruzioni al
+prompt non è il prossimo esperimento informativo. Review completa:
+[`lesson-tune-05-candidate-d-review.md`](lesson-tune-05-candidate-d-review.md).
+
+Il runner accetta ora il profilo server-side `quality` **solo** insieme allo
+split `tuning`:
+
+```powershell
+pnpm --filter @schoolforge/functions build
+pnpm --filter @schoolforge/functions benchmark:lesson-tune-quality -- --benchmark-split=tuning --benchmark-model-profile=quality
+```
+
+Dry-run quality del 4 agosto 2026: `gpt-5.6-luna`, listino
+`v5-2026-07-20-luna-dev`, 8 chiamate, massimo 16 tentativi, stima
+451.904 µUSD (0,451904 USD), tetto prudenziale 1.070.842 µUSD (1,070842 USD),
+zero secret e zero rete. Modello/listino sono risolti esclusivamente dal
+profilo chiuso; il client non passa identificatori tecnici.
+
+L'esecuzione reale quality richiede gli stessi due flag, Node 22, TTY, chiave
+letta per ultima e la frase distinta `ESEGUI 8 LEZIONI TUNING REALI QUALITY`.
+Il profilo quality con split `all` o `holdout`, valori sconosciuti e flag
+duplicati vengono rifiutati prima di chiave e provider. Nessuna autorizzazione
+reale è concessa da questo documento.
