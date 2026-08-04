@@ -124,21 +124,26 @@ scenari sono `PASS`, senza blocker: verdetto tuning **PROMPT_INVARIATO** sul
 profilo quality. Review completa:
 [`lesson-tune-06-quality-review.md`](lesson-tune-06-quality-review.md).
 
-I quattro holdout restano ineseguiti. Dopo il congelamento del candidato, il
-runner ammette ora anche il solo percorso esplicito `quality + holdout`:
+I quattro holdout sono stati eseguiti una sola volta il 4 agosto 2026, dopo il
+congelamento del candidato, tramite il solo percorso esplicito
+`quality + holdout`:
 
 ```powershell
 pnpm --filter @schoolforge/functions build
 pnpm --filter @schoolforge/functions benchmark:lesson-tune-quality -- --benchmark-split=holdout --benchmark-model-profile=quality
 ```
 
-Dry-run holdout quality del 4 agosto 2026: `gpt-5.6-luna`, listino
+Il dry-run holdout quality precedente aveva fissato: `gpt-5.6-luna`, listino
 `v5-2026-07-20-luna-dev`, 4 chiamate, massimo 8 tentativi, stima 328.037 µUSD
 (0,328037 USD), tetto prudenziale 741.080 µUSD (0,741080 USD), zero secret,
 provider e rete. L'esecuzione reale resta protetta dai due flag, da Node 22,
 TTY, chiave letta per ultima e dalla frase distinta
 `ESEGUI 4 LEZIONI HOLDOUT REALI QUALITY`.
 
-Questa preparazione non autorizza l'esecuzione reale. Serve una nuova
-autorizzazione economica dopo il merge; gli output holdout saranno generati una
-sola volta e non potranno essere usati per ritoccare il candidato congelato.
+L'esecuzione reale autorizzata ha prodotto 4/4 output, senza billing risk, per
+un costo effettivo complessivo di 124.993 µUSD (0,124993 USD), senza scritture
+Firestore/Storage. I quattro scenari sono tutti `PASS`; insieme al tuning
+quality il candidato D raggiunge 12/12 `PASS` e il verdetto finale è
+**PROMPT_INVARIATO**. Gli output non hanno motivato alcuna modifica del prompt.
+Review completa:
+[`lesson-tune-07-quality-holdout-review.md`](lesson-tune-07-quality-holdout-review.md).
