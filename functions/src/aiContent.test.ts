@@ -1360,6 +1360,11 @@ describe('lesson pedagogical contract', () => {
     expect(built.user).toMatch(/elimina qualsiasi contraddizione interna/);
     expect(built.user).toMatch(/uguali tutte le grandezze da cui dipende un risultato/);
     expect(built.user).toMatch(/condizione\s+causalmente rilevante cambia/);
+    expect(built.user).toMatch(/tutti i dati, i vincoli, le etichette/);
+    expect(built.user).toMatch(/premesse sono incompatibili/);
+    expect(built.user).toMatch(/correggi o sostituisci il caso/);
+    expect(built.user).toMatch(/termine tecnico e ogni categoria/);
+    expect(built.user).toMatch(/solo se ne soddisfa la definizione/);
   });
   it('produces a proportional lesson body compatible with the current renderer', () => {
     expect(built.user).toMatch(/produci solo il CORPO della lezione/);
@@ -1379,6 +1384,8 @@ describe('lesson pedagogical contract', () => {
     expect(built.user).toMatch(/ricalcola da zero ogni esercizio/);
     expect(built.user).toMatch(/confronta ogni esempio e conclusione con definizioni/);
     expect(built.user).toMatch(/non dicano più di quanto provano i dati/);
+    expect(built.user).toMatch(/tutte le premesse di ogni caso possano coesistere/);
+    expect(built.user).toMatch(/appartengano davvero alle categorie dichiarate/);
     expect(built.user).toMatch(/elimina ogni riferimento all’indice/);
     expect(built.user).toMatch(/lezioni precedenti\/successive/);
     expect(built.user).toMatch(/numero e collocazione delle attività/);

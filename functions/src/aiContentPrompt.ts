@@ -26,7 +26,7 @@
 import { POOL_LEVEL_DIFFICULTY, type PoolRequest, type LessonRequest } from './aiContentCore.js';
 
 /** Da congelare in ogni benchmark; va incrementata a ogni modifica dei prompt. */
-export const AI_CONTENT_PROMPT_VERSION = 'lesson-tune-01-candidate-c-v1' as const;
+export const AI_CONTENT_PROMPT_VERSION = 'lesson-tune-01-candidate-d-v1' as const;
 
 /**
  * Preambolo di sicurezza comune (livello 1), il più autorevole del prompt.
@@ -256,6 +256,13 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '- se due casi hanno uguali tutte le grandezze da cui dipende un risultato nelle stesse',
     '  condizioni, non affermare che quel risultato può differire senza indicare quale condizione',
     '  causalmente rilevante cambia.',
+    '- prima di proporre o risolvere un caso, verifica che tutti i dati, i vincoli, le etichette',
+    '  «corretto/errato» e gli stati attesi possano coesistere secondo le definizioni della',
+    '  disciplina; se le premesse sono incompatibili, correggi o sostituisci il caso prima di',
+    '  mostrarlo, senza costruire una soluzione su presupposti contraddittori;',
+    '- usa ogni termine tecnico e ogni categoria nel significato disciplinare appropriato:',
+    '  un esempio può essere collocato sotto una categoria solo se ne soddisfa la definizione;',
+    '  mantieni distinti termini con ruoli diversi e non cambiare significato durante la lezione.',
     '',
     'Produci tutto il contenuto necessario per rendere la lezione didatticamente completa, chiara e',
     'autosufficiente. Non sacrificare spiegazioni, esempi o passaggi necessari per ragioni di',
@@ -298,11 +305,14 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '1) ricalcola da zero ogni esercizio usando i dati originali e verifica ogni soluzione;',
     '2) confronta ogni esempio e conclusione con definizioni, formule, condizioni e fatti già',
     '   dichiarati; verifica che diagnosi e nessi causali non dicano più di quanto provano i dati;',
-    '3) elimina ogni riferimento all’indice, a lezioni precedenti/successive o a ciò che sarà',
+    '3) verifica da zero che tutte le premesse di ogni caso possano coesistere e che esempi,',
+    '   termini tecnici ed etichette appartengano davvero alle categorie dichiarate; se il caso è',
+    '   incoerente, correggilo o sostituiscilo prima di produrre l’output;',
+    '4) elimina ogni riferimento all’indice, a lezioni precedenti/successive o a ciò che sarà',
     '   studiato in seguito;',
-    '4) verifica numero e collocazione delle attività, sintassi Markdown e assenza di LaTeX,',
+    '5) verifica numero e collocazione delle attività, sintassi Markdown e assenza di LaTeX,',
     '   Mermaid, HTML, front matter e separatori orizzontali;',
-    '5) correggi ortografia, parole spezzate, etichette residue, terminologia italiana, nomi delle',
+    '6) correggi ortografia, parole spezzate, etichette residue, terminologia italiana, nomi delle',
     '   variabili, simboli, unità, calcoli, soluzioni e coerenza interna.',
     'Restituisci soltanto il Markdown finale corretto.',
     '',
