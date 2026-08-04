@@ -29,13 +29,16 @@ const ECONOMY_CONFIRMATIONS: Readonly<Record<Exclude<LessonTunePlanSplit, 'all'>
   tuning: 'ESEGUI 8 LEZIONI TUNING REALI',
   holdout: 'ESEGUI 4 LEZIONI HOLDOUT REALI',
 };
-const QUALITY_TUNING_CONFIRMATION = 'ESEGUI 8 LEZIONI TUNING REALI QUALITY';
+const QUALITY_CONFIRMATIONS: Readonly<Record<Exclude<LessonTunePlanSplit, 'all'>, string>> = {
+  tuning: 'ESEGUI 8 LEZIONI TUNING REALI QUALITY',
+  holdout: 'ESEGUI 4 LEZIONI HOLDOUT REALI QUALITY',
+};
 
 function confirmationFor(
   split: Exclude<LessonTunePlanSplit, 'all'>,
   modelProfile: ModelProfile,
 ): string {
-  return modelProfile === 'quality' ? QUALITY_TUNING_CONFIRMATION : ECONOMY_CONFIRMATIONS[split];
+  return modelProfile === 'quality' ? QUALITY_CONFIRMATIONS[split] : ECONOMY_CONFIRMATIONS[split];
 }
 
 export interface LessonTuneGeneratedSample {
@@ -158,8 +161,8 @@ export async function runLessonTuneCli(deps: LessonTuneCliDeps): Promise<'dry-ru
 
   const split = parseSplit(deps.argv);
   const modelProfile = parseModelProfile(deps.argv);
-  if (modelProfile === 'quality' && split !== 'tuning') {
-    throw new Error('Il profilo quality è ammesso esclusivamente sullo split tuning.');
+  if (modelProfile === 'quality' && split === 'all') {
+    throw new Error('Il profilo quality richiede uno split esplicito: tuning oppure holdout.');
   }
   const dataset = await deps.loadDataset();
   const plan = deps.buildPlan(dataset, split, modelProfile);

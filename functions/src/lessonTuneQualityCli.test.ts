@@ -81,14 +81,27 @@ describe('LESSON-TUNE-01 CLI', () => {
     await expect(runLessonTuneCli(duplicateProfile)).rejects.toThrow(/un solo profilo/);
   });
 
-  it('mostra il piano quality tuning senza leggere chiave o costruire provider', async () => {
-    const d = deps({
+  it('mostra i piani quality tuning e holdout senza leggere chiave o costruire provider', async () => {
+    const tuning = deps({
       argv: ['--benchmark-split=tuning', `${LESSON_TUNE_PROFILE_FLAG_PREFIX}quality`],
     });
-    await expect(runLessonTuneCli(d)).resolves.toBe('dry-run');
-    expect(d.buildPlan).toHaveBeenCalledWith(data, 'tuning', 'quality');
-    expect(d.getApiKey).not.toHaveBeenCalled();
-    expect(d.createProvider).not.toHaveBeenCalled();
+    await expect(runLessonTuneCli(tuning)).resolves.toBe('dry-run');
+    expect(tuning.buildPlan).toHaveBeenCalledWith(data, 'tuning', 'quality');
+    expect(tuning.getApiKey).not.toHaveBeenCalled();
+    expect(tuning.createProvider).not.toHaveBeenCalled();
+
+    const holdout = deps({
+      argv: ['--benchmark-split=holdout', `${LESSON_TUNE_PROFILE_FLAG_PREFIX}quality`],
+    });
+    await expect(runLessonTuneCli(holdout)).resolves.toBe('dry-run');
+    expect(holdout.buildPlan).toHaveBeenCalledWith(data, 'holdout', 'quality');
+    expect(holdout.getApiKey).not.toHaveBeenCalled();
+    expect(holdout.createProvider).not.toHaveBeenCalled();
+
+    const missingSplit = deps({ argv: [`${LESSON_TUNE_PROFILE_FLAG_PREFIX}quality`] });
+    await expect(runLessonTuneCli(missingSplit)).rejects.toThrow(/split esplicito/);
+    expect(missingSplit.loadDataset).not.toHaveBeenCalled();
+    expect(missingSplit.getApiKey).not.toHaveBeenCalled();
   });
 
   it('genera soltanto gli otto scenari tuning con conferma dedicata', async () => {
@@ -122,8 +135,8 @@ describe('LESSON-TUNE-01 CLI', () => {
     expect(contentProvider.generate).toHaveBeenCalledTimes(4);
   });
 
-  it('esegue quality soltanto sul tuning con frase dedicata e modello Luna', async () => {
-    const denied = deps({
+  it('protegge quality tuning e holdout con frasi distinte e modello Luna', async () => {
+    const wrongHoldoutConfirmation = deps({
       argv: [
         '--benchmark-split=holdout',
         `${LESSON_TUNE_PROFILE_FLAG_PREFIX}quality`,
@@ -131,8 +144,8 @@ describe('LESSON-TUNE-01 CLI', () => {
         LESSON_TUNE_COST_ACK_FLAG,
       ],
     });
-    await expect(runLessonTuneCli(denied)).rejects.toThrow(/esclusivamente.*tuning/);
-    expect(denied.getApiKey).not.toHaveBeenCalled();
+    await expect(runLessonTuneCli(wrongHoldoutConfirmation)).rejects.toThrow(/Conferma non valida/);
+    expect(wrongHoldoutConfirmation.getApiKey).not.toHaveBeenCalled();
 
     const wrongConfirmation = deps({
       argv: [
@@ -163,6 +176,29 @@ describe('LESSON-TUNE-01 CLI', () => {
     const params = vi.mocked(valid.writeOutput).mock.calls[0]?.[0];
     expect(params?.plan.modelProfile).toBe('quality');
     expect(params?.samples.every((sample) => sample.fileName.endsWith('-quality.md'))).toBe(true);
+
+    const holdoutProvider = provider();
+    const validHoldout = deps({
+      argv: [
+        '--benchmark-split=holdout',
+        `${LESSON_TUNE_PROFILE_FLAG_PREFIX}quality`,
+        LESSON_TUNE_EXECUTE_FLAG,
+        LESSON_TUNE_COST_ACK_FLAG,
+      ],
+      confirm: vi.fn(async () => 'ESEGUI 4 LEZIONI HOLDOUT REALI QUALITY'),
+      createProvider: vi.fn(() => holdoutProvider),
+    });
+    await expect(runLessonTuneCli(validHoldout)).resolves.toBe('executed');
+    expect(holdoutProvider.generate).toHaveBeenCalledTimes(4);
+    expect(vi.mocked(holdoutProvider.generate).mock.calls[0]?.[0].modelProfile).toBe('quality');
+    expect(vi.mocked(holdoutProvider.generate).mock.calls[0]?.[1]).toBe('gpt-5.6-luna');
+    const holdoutParams = vi.mocked(validHoldout.writeOutput).mock.calls[0]?.[0];
+    expect(holdoutParams?.split).toBe('holdout');
+    expect(holdoutParams?.samples).toHaveLength(4);
+    expect(holdoutParams?.samples.every((sample) => sample.split === 'holdout')).toBe(true);
+    expect(holdoutParams?.samples.every((sample) => sample.fileName.endsWith('-quality.md'))).toBe(
+      true,
+    );
   });
 
   it('mantiene Node 22, TTY e chiave come precondizioni fail-closed', async () => {

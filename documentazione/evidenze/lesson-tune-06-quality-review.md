@@ -94,8 +94,8 @@ Il candidato D viene congelato per il profilo `quality` sullo split tuning.
 Prima di qualunque promozione servono, in ordine:
 
 1. review docente degli otto Markdown originali nelle viste reali;
-2. una modifica separata del runner che renda raggiungibile `quality` solo sullo
-   split `holdout`, mantenendo l'attuale fail-closed fino al merge;
+2. preparazione separata del runner che renda raggiungibile `quality` sul solo
+   split `holdout`, mantenendo split e profilo espliciti;
 3. dry-run dei quattro holdout con tetto economico esplicito;
 4. nuova autorizzazione economica, distinta da quella già consumata;
 5. esecuzione unica dei quattro holdout e verdetto finale senza ritoccare il

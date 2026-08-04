@@ -82,12 +82,31 @@ describe('LESSON-TUNE-01 dataset e piano', () => {
     const dataset = await loadLessonTuneDataset();
     const economy = buildLessonTuneExecutionPlan(dataset, 'tuning', 'economy');
     const quality = buildLessonTuneExecutionPlan(dataset, 'tuning', 'quality');
+    const economyHoldout = buildLessonTuneExecutionPlan(dataset, 'holdout', 'economy');
+    const qualityHoldout = buildLessonTuneExecutionPlan(dataset, 'holdout', 'quality');
     expect(quality.modelProfile).toBe('quality');
     expect(quality.model).toBe('gpt-5.6-luna');
     expect(quality.priceListVersion).toBe('v5-2026-07-20-luna-dev');
     expect(quality.plannedCalls).toBe(8);
     expect(quality.maximumProviderAttempts).toBe(economy.maximumProviderAttempts);
     expect(quality.costUpperBoundMicroUsd).toBeGreaterThan(economy.costUpperBoundMicroUsd);
+    expect(qualityHoldout.modelProfile).toBe('quality');
+    expect(qualityHoldout.model).toBe('gpt-5.6-luna');
+    expect(qualityHoldout.priceListVersion).toBe('v5-2026-07-20-luna-dev');
+    expect(qualityHoldout.plannedCalls).toBe(4);
+    expect(qualityHoldout.maximumProviderAttempts).toBe(8);
+    expect(qualityHoldout.estimatedCostMicroUsd).toBe(328_037);
+    expect(qualityHoldout.costUpperBoundMicroUsd).toBe(741_080);
+    expect(qualityHoldout.scenarios.map((scenario) => scenario.id)).toEqual([
+      'LM02-05',
+      'LM02-06',
+      'LT01-11',
+      'LT01-12',
+    ]);
+    expect(qualityHoldout.maximumProviderAttempts).toBe(economyHoldout.maximumProviderAttempts);
+    expect(qualityHoldout.costUpperBoundMicroUsd).toBeGreaterThan(
+      economyHoldout.costUpperBoundMicroUsd,
+    );
   });
 
   it('costruisce richieste lezione chiuse con requestId stabile per scenario', async () => {
