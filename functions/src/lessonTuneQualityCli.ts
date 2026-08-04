@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { actualCostMicroUsd } from './aiCorrectionCost.js';
+import type { ModelProfile } from './aiCorrectionModelProfile.js';
 import { resolveContentModel, type LessonRequest } from './aiContentCore.js';
 import { createContentProvider, type ContentProvider } from './aiContentProvider.js';
 import { AI_CONTENT_PROMPT_VERSION } from './aiContentPrompt.js';
@@ -22,11 +23,20 @@ import { LESSON_MANUAL_QUALITY_PROFILE } from './lessonManualQualityBenchmark.js
 export const LESSON_TUNE_EXECUTE_FLAG = '--execute-real-openai';
 export const LESSON_TUNE_COST_ACK_FLAG = '--i-understand-this-costs-money';
 export const LESSON_TUNE_SPLIT_FLAG_PREFIX = '--benchmark-split=';
+export const LESSON_TUNE_PROFILE_FLAG_PREFIX = '--benchmark-model-profile=';
 
-const CONFIRMATIONS: Readonly<Record<Exclude<LessonTunePlanSplit, 'all'>, string>> = {
+const ECONOMY_CONFIRMATIONS: Readonly<Record<Exclude<LessonTunePlanSplit, 'all'>, string>> = {
   tuning: 'ESEGUI 8 LEZIONI TUNING REALI',
   holdout: 'ESEGUI 4 LEZIONI HOLDOUT REALI',
 };
+const QUALITY_TUNING_CONFIRMATION = 'ESEGUI 8 LEZIONI TUNING REALI QUALITY';
+
+function confirmationFor(
+  split: Exclude<LessonTunePlanSplit, 'all'>,
+  modelProfile: ModelProfile,
+): string {
+  return modelProfile === 'quality' ? QUALITY_TUNING_CONFIRMATION : ECONOMY_CONFIRMATIONS[split];
+}
 
 export interface LessonTuneGeneratedSample {
   scenarioId: string;
@@ -44,7 +54,7 @@ export interface LessonTuneLocalReport {
   promptVersion: typeof AI_CONTENT_PROMPT_VERSION;
   split: Exclude<LessonTunePlanSplit, 'all'>;
   generatedAt: string;
-  modelProfile: typeof LESSON_MANUAL_QUALITY_PROFILE;
+  modelProfile: ModelProfile;
   model: string;
   priceListVersion: string;
   samples: LessonTuneGeneratedSample[];
@@ -59,7 +69,11 @@ export interface LessonTuneCliDeps {
   stdoutIsTTY: boolean;
   nodeMajorVersion: number;
   loadDataset: () => Promise<LessonTuneDataset>;
-  buildPlan: (dataset: LessonTuneDataset, split: LessonTunePlanSplit) => LessonTuneExecutionPlan;
+  buildPlan: (
+    dataset: LessonTuneDataset,
+    split: LessonTunePlanSplit,
+    modelProfile: ModelProfile,
+  ) => LessonTuneExecutionPlan;
   confirm: (prompt: string) => Promise<string>;
   createProvider: (apiKey: string) => ContentProvider;
   writeOutput: (params: {
@@ -84,6 +98,17 @@ function parseSplit(argv: readonly string[]): LessonTunePlanSplit {
   return value;
 }
 
+function parseModelProfile(argv: readonly string[]): ModelProfile {
+  const flags = argv.filter((arg) => arg.startsWith(LESSON_TUNE_PROFILE_FLAG_PREFIX));
+  if (flags.length > 1) throw new Error('Specificare un solo profilo modello benchmark.');
+  if (flags.length === 0) return LESSON_MANUAL_QUALITY_PROFILE;
+  const value = flags[0]?.slice(LESSON_TUNE_PROFILE_FLAG_PREFIX.length);
+  if (value !== 'economy' && value !== 'quality') {
+    throw new Error('Profilo modello benchmark non supportato: usare economy oppure quality.');
+  }
+  return value;
+}
+
 function usageValue(value: number | undefined): number | null {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 }
@@ -93,6 +118,7 @@ async function generateOne(
   request: LessonRequest,
   scenarioId: string,
   split: Exclude<LessonTunePlanSplit, 'all'>,
+  modelProfile: ModelProfile,
   model: string,
   priceListVersion: string,
 ): Promise<LessonTuneGeneratedSample & { body: string }> {
@@ -110,7 +136,7 @@ async function generateOne(
   return {
     scenarioId,
     split,
-    fileName: `lesson-tune-01-${scenarioId}-economy.md`,
+    fileName: `lesson-tune-01-${scenarioId}-${modelProfile}.md`,
     inputTokens,
     outputTokens,
     actualCostMicroUsd: actual,
@@ -123,13 +149,20 @@ export async function runLessonTuneCli(deps: LessonTuneCliDeps): Promise<'dry-ru
   const allowed = new Set([LESSON_TUNE_EXECUTE_FLAG, LESSON_TUNE_COST_ACK_FLAG]);
   const unknownFlags = deps.argv.filter(
     (arg) =>
-      arg.startsWith('--') && !allowed.has(arg) && !arg.startsWith(LESSON_TUNE_SPLIT_FLAG_PREFIX),
+      arg.startsWith('--') &&
+      !allowed.has(arg) &&
+      !arg.startsWith(LESSON_TUNE_SPLIT_FLAG_PREFIX) &&
+      !arg.startsWith(LESSON_TUNE_PROFILE_FLAG_PREFIX),
   );
   if (unknownFlags.length > 0) throw new Error(`Flag non supportato: ${unknownFlags.join(', ')}.`);
 
   const split = parseSplit(deps.argv);
+  const modelProfile = parseModelProfile(deps.argv);
+  if (modelProfile === 'quality' && split !== 'tuning') {
+    throw new Error('Il profilo quality è ammesso esclusivamente sullo split tuning.');
+  }
   const dataset = await deps.loadDataset();
-  const plan = deps.buildPlan(dataset, split);
+  const plan = deps.buildPlan(dataset, split, modelProfile);
   deps.log(JSON.stringify({ ...plan, promptVersion: AI_CONTENT_PROMPT_VERSION }, null, 2));
 
   if (!deps.argv.includes(LESSON_TUNE_EXECUTE_FLAG)) {
@@ -148,9 +181,9 @@ export async function runLessonTuneCli(deps: LessonTuneCliDeps): Promise<'dry-ru
   if (!deps.stdinIsTTY || !deps.stdoutIsTTY) {
     throw new Error('Esecuzione reale negata senza terminale interattivo.');
   }
-  const confirmation = CONFIRMATIONS[split];
+  const confirmation = confirmationFor(split, modelProfile);
   const answer = await deps.confirm(
-    `Per confermare ${plan.plannedCalls} chiamate pianificate (fino a ${plan.maximumProviderAttempts} tentativi) sullo split ${split}, digitare esattamente “${confirmation}”: `,
+    `Per confermare ${plan.plannedCalls} chiamate pianificate (fino a ${plan.maximumProviderAttempts} tentativi) sullo split ${split} e profilo ${modelProfile}, digitare esattamente “${confirmation}”: `,
   );
   if (answer !== confirmation) throw new Error('Conferma non valida: benchmark annullato.');
 
@@ -158,15 +191,16 @@ export async function runLessonTuneCli(deps: LessonTuneCliDeps): Promise<'dry-ru
   if (!apiKey) throw new Error('OPENAI_API_KEY non disponibile: benchmark annullato.');
   const provider = deps.createProvider(apiKey);
   const generatedAt = deps.now().toISOString();
-  const { model, priceListVersion } = resolveContentModel(LESSON_MANUAL_QUALITY_PROFILE);
+  const { model, priceListVersion } = resolveContentModel(modelProfile);
   const samples: Array<LessonTuneGeneratedSample & { body: string }> = [];
   for (const scenario of selectLessonTuneScenarios(dataset, split)) {
     samples.push(
       await generateOne(
         provider,
-        buildLessonTuneRequest(scenario),
+        buildLessonTuneRequest(scenario, modelProfile),
         scenario.id,
         scenario.split,
+        modelProfile,
         model,
         priceListVersion,
       ),
@@ -208,7 +242,7 @@ async function defaultWriteOutput(params: {
     promptVersion: AI_CONTENT_PROMPT_VERSION,
     split: params.split,
     generatedAt: params.generatedAt,
-    modelProfile: LESSON_MANUAL_QUALITY_PROFILE,
+    modelProfile: params.plan.modelProfile,
     model: params.plan.model,
     priceListVersion: params.plan.priceListVersion,
     samples: publicSamples,

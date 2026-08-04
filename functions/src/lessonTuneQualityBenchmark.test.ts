@@ -78,6 +78,18 @@ describe('LESSON-TUNE-01 dataset e piano', () => {
     );
   });
 
+  it('produce un piano quality separato con Luna e listino server-side accoppiato', async () => {
+    const dataset = await loadLessonTuneDataset();
+    const economy = buildLessonTuneExecutionPlan(dataset, 'tuning', 'economy');
+    const quality = buildLessonTuneExecutionPlan(dataset, 'tuning', 'quality');
+    expect(quality.modelProfile).toBe('quality');
+    expect(quality.model).toBe('gpt-5.6-luna');
+    expect(quality.priceListVersion).toBe('v5-2026-07-20-luna-dev');
+    expect(quality.plannedCalls).toBe(8);
+    expect(quality.maximumProviderAttempts).toBe(economy.maximumProviderAttempts);
+    expect(quality.costUpperBoundMicroUsd).toBeGreaterThan(economy.costUpperBoundMicroUsd);
+  });
+
   it('costruisce richieste lezione chiuse con requestId stabile per scenario', async () => {
     const dataset = await loadLessonTuneDataset();
     const first = buildLessonTuneRequest(dataset.scenarios[0]!);
@@ -86,6 +98,7 @@ describe('LESSON-TUNE-01 dataset e piano', () => {
     expect(last.requestId).toBe('00000000-0000-4000-9000-000000000012');
     expect(last.kind).toBe('lesson');
     expect(last.hasCurrentContent).toBe(false);
+    expect(buildLessonTuneRequest(dataset.scenarios[0]!, 'quality').modelProfile).toBe('quality');
   });
 
   it('rifiuta proprietà extra, versioni e split modificati', async () => {

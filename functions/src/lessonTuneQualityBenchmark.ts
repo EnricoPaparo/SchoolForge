@@ -8,6 +8,7 @@ import {
   type LessonUdaContext,
 } from './aiContentCore.js';
 import { estimateContentCost } from './aiContentCost.js';
+import type { ModelProfile } from './aiCorrectionModelProfile.js';
 import {
   loadLessonManualQualityDataset,
   LESSON_MANUAL_QUALITY_DATASET_VERSION,
@@ -80,7 +81,7 @@ export interface LessonTuneExecutionPlan {
   datasetVersion: typeof LESSON_TUNE_DATASET_VERSION;
   rubricVersion: typeof LESSON_MANUAL_QUALITY_RUBRIC_VERSION;
   split: LessonTunePlanSplit;
-  modelProfile: typeof LESSON_MANUAL_QUALITY_PROFILE;
+  modelProfile: ModelProfile;
   model: string;
   priceListVersion: string;
   plannedCalls: number;
@@ -113,11 +114,15 @@ function requestIdForScenario(id: string): string {
   return `00000000-0000-4000-9000-${String(numeric).padStart(12, '0')}`;
 }
 
-function validateScenarioRequest(raw: Record<string, unknown>, id: string): LessonRequest {
+function validateScenarioRequest(
+  raw: Record<string, unknown>,
+  id: string,
+  modelProfile: ModelProfile = LESSON_MANUAL_QUALITY_PROFILE,
+): LessonRequest {
   const validated = validateAiContentRequest({
     kind: 'lesson',
     requestId: requestIdForScenario(id),
-    modelProfile: LESSON_MANUAL_QUALITY_PROFILE,
+    modelProfile,
     teacherGuidance: raw.teacherGuidance,
     depth: raw.depth,
     titolo: raw.titolo,
@@ -248,8 +253,15 @@ export async function loadLessonTuneDataset(
   };
 }
 
-export function buildLessonTuneRequest(scenario: LessonTuneScenario): LessonRequest {
-  return validateScenarioRequest(scenario as unknown as Record<string, unknown>, scenario.id);
+export function buildLessonTuneRequest(
+  scenario: LessonTuneScenario,
+  modelProfile: ModelProfile = LESSON_MANUAL_QUALITY_PROFILE,
+): LessonRequest {
+  return validateScenarioRequest(
+    scenario as unknown as Record<string, unknown>,
+    scenario.id,
+    modelProfile,
+  );
 }
 
 export function selectLessonTuneScenarios(
@@ -264,13 +276,14 @@ export function selectLessonTuneScenarios(
 export function buildLessonTuneExecutionPlan(
   dataset: LessonTuneDataset,
   split: LessonTunePlanSplit = 'all',
+  modelProfile: ModelProfile = LESSON_MANUAL_QUALITY_PROFILE,
 ): LessonTuneExecutionPlan {
   if (!LESSON_TUNE_PLAN_SPLITS.includes(split)) throw new Error('Split benchmark non supportato.');
   const maxAttempts = maxAttemptsForPolicy(DEFAULT_OPENAI_RETRY_POLICY);
-  const { model, priceListVersion } = resolveContentModel(LESSON_MANUAL_QUALITY_PROFILE);
+  const { model, priceListVersion } = resolveContentModel(modelProfile);
   const scenarios = selectLessonTuneScenarios(dataset, split).map((scenario) => {
     const estimate = estimateContentCost(
-      buildLessonTuneRequest(scenario),
+      buildLessonTuneRequest(scenario, modelProfile),
       model,
       priceListVersion,
       maxAttempts,
@@ -293,7 +306,7 @@ export function buildLessonTuneExecutionPlan(
     datasetVersion: dataset.datasetVersion,
     rubricVersion: dataset.rubricVersion,
     split,
-    modelProfile: LESSON_MANUAL_QUALITY_PROFILE,
+    modelProfile,
     model,
     priceListVersion,
     plannedCalls: scenarios.length,
