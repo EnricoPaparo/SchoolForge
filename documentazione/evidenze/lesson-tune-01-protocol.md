@@ -74,10 +74,16 @@ stessi 8 casi (35.026 µUSD): ha eliminato il LaTeX ma conserva due blocker di
 correttezza, quindi è respinto. Il candidato B è stato eseguito sugli stessi
 otto casi (33.597 µUSD): corregge i due blocker precedenti ma introduce una
 contraddizione centrale fra massa e forza peso e resta respinto. Il candidato C
-`lesson-tune-01-candidate-c-v1` ha superato test e dry-run: 8 chiamate, massimo
-16 tentativi, stima 94.084 µUSD, tetto 218.798 µUSD, zero secret/rete. Resta
-obbligatoria la conferma disciplinare del docente. I 4 `holdout` non sono stati
-eseguiti e non possono essere usati prima del congelamento del candidato.
+è stato eseguito sugli stessi otto casi: sette costi noti sommano 27.618 µUSD,
+mentre `LT01-09` ha billing risk e impedisce di dichiarare un totale effettivo;
+il tetto prudenziale è 218.798 µUSD. C corregge il blocker di B ma fallisce su
+un esercizio IPv4 con premesse incompatibili. Il candidato D
+`lesson-tune-01-candidate-d-v1` aggiunge audit generale di compatibilità delle
+premesse e precisione terminologica. Test e dry-run D sono verdi: 8 chiamate,
+massimo 16 tentativi, stima 94.084 µUSD e tetto prudenziale 221.610 µUSD; zero
+secret e zero rete. I 4 `holdout` non sono stati eseguiti e non possono essere
+usati prima del congelamento del candidato.
 Evidenze: [`lesson-tune-01-baseline-review.md`](lesson-tune-01-baseline-review.md)
 [`lesson-tune-02-candidate-a-review.md`](lesson-tune-02-candidate-a-review.md) e
-[`lesson-tune-03-candidate-b-review.md`](lesson-tune-03-candidate-b-review.md).
+[`lesson-tune-03-candidate-b-review.md`](lesson-tune-03-candidate-b-review.md),
+[`lesson-tune-04-candidate-c-review.md`](lesson-tune-04-candidate-c-review.md).
