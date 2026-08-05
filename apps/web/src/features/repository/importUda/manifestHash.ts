@@ -9,7 +9,7 @@
  * FNV-1a over a canonical string: no async crypto, no Firebase — safe to unit
  * test and to call inside pure payload building.
  */
-function fnv1a(input: string): string {
+export function fnv1a(input: string): string {
   let hash = 0x811c9dc5;
   for (let i = 0; i < input.length; i++) {
     hash ^= input.charCodeAt(i);
