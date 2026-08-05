@@ -1,7 +1,10 @@
 # STRUCTURE-IMPORT — Importazione di UDA e lezioni senza contenuto
 
-> **Stato:** progettato, non implementato. Questo documento congela formato,
-> UX, sicurezza, costi e roadmap. Non autorizza merge, deploy o migrazioni.
+> **Stato:** contratto congelato; **STRUCTURE-IMPORT-01 implementato** (solo
+> strato puro: parser, validatori, modelli e planner). Nessuna importazione
+> reale è disponibile: non esistono ancora voci di menu, dialog, scritture
+> Firestore o upload. `02A`, `02B`, `03` e il Gate GSTRUCT restano aperti.
+> Questo documento non autorizza merge, deploy o migrazioni.
 
 ## 1. Obiettivo
 
@@ -243,7 +246,7 @@ di generazione; non introduce chiamate aggiuntive.
 | Pacchetto | Scope | Stato/DoD |
 |---|---|---|
 | **STRUCTURE-IMPORT-00** | Contratto, formati, UX, protocollo, costi e roadmap. | Questo documento; solo documentazione. |
-| **STRUCTURE-IMPORT-01** | Parser YAML isolati, validatori fail-closed, normalizzazione, template scaricabili, planner puro di ID/order/manifest e test di collisione. Nessuna UI e nessuna scrittura. | Suite di fixture valide/malformate, alias/duplicati/extra key/limiti; nessun runtime Firebase mutato. |
+| **STRUCTURE-IMPORT-01** ✅ | Parser YAML isolati, validatori fail-closed, normalizzazione, template scaricabili, planner puro di ID/order/manifest e test di collisione. Nessuna UI e nessuna scrittura. | **Implementato** in `apps/web/src/features/repository/structureImport/`. Suite completa su fixture valide/malformate, alias/ancore/tag/documenti multipli/chiavi duplicate/extra key/limiti; helper canonici estratti in `repository/canonicalNaming.ts` senza cambiare il comportamento di `createUda`/`createLesson`; test statico di purezza sull'intera chiusura transitiva degli import. Nessun runtime Firebase mutato. |
 | **STRUCTURE-IMPORT-02A** | `Azioni corso → Importa struttura UDA`, dialog, preview e append atomico delle UDA. | Nessun risultato parziale; retry idempotente; cleanup limitato; UI aggiornata senza refetch. |
 | **STRUCTURE-IMPORT-02B** | `Azioni UDA → Importa lezioni`, dialog, preview, append atomico, corpi vuoti/pool assenti e filtro UI studente degli scheletri vuoti. | Nessuna lezione nella UDA sbagliata; conteggi/ordine/proiezioni coerenti; nessuna card vuota lato studente. |
 | **STRUCTURE-IMPORT-03** | Contesto IA UDA bounded (`descrizione`, `competenze`, `obiettivi`) dai dati già in memoria. | Zero nuove letture; payload/inputHash/stima aggiornati; gerarchia prompt invariata salvo il nuovo contesto autorevole. |
@@ -260,3 +263,110 @@ di generazione; non introduce chiamate aggiuntive.
 - listener, polling, nuova Cloud Function o nuovo indice impliciti;
 - deploy PROD.
 
+## 14. Stato dell'implementazione — STRUCTURE-IMPORT-01
+
+Solo lo strato puro. Nulla di quanto segue legge o scrive Firestore o Storage,
+e nulla è ancora raggiungibile dall'interfaccia.
+
+### 14.1 Moduli
+
+Tutti in `apps/web/src/features/repository/structureImport/`:
+
+| Modulo | Ruolo |
+|---|---|
+| `limits.ts` | Limiti, estensioni ammesse e identificatori esatti dei due schemi. |
+| `types.ts` | Errori tipizzati, metadati normalizzati, artefatti pianificati e i due manifest. |
+| `decodeStructureImportFile.ts` | Caricamento **byte-first**: estensione, limite dimensionale sui byte originali, decodifica UTF-8 in modalità fatale, rimozione del BOM. |
+| `parseStructureYaml.ts` | Lettura YAML fail-closed: un solo documento, nessuna chiave duplicata, nessuna ancora/alias, nessun tag esplicito, radice oggetto. |
+| `entryFields.ts` | Regole di campo condivise: chiave chiusa, stringhe non vuote, liste limitate, chiave di confronto dei titoli. |
+| `validateStructureRoot.ts` | Radice chiusa (`schema` + elenco), schema esatto, limiti dell'elenco, collisioni di titolo. |
+| `validateUdaMetadataFile.ts` | Contratto §3. |
+| `validateLessonMetadataFile.ts` | Contratto §4, con divieto esplicito dei campi di contenuto. |
+| `structureImportTemplates.ts` | I due modelli canonici, verificati in round-trip dai parser reali. |
+| `structureManifestCanonical.ts` | **Serializzazione canonica** del manifest — non un'identità: vedi §14.2. |
+| `planUdaMetadataAppend.ts` | Manifest §7.1. |
+| `planLessonMetadataAppend.ts` | Manifest §7.2. |
+| `index.ts` | Superficie pubblica del pacchetto. |
+
+Gli helper canonici condivisi con i servizi esistenti vivono in
+`apps/web/src/features/repository/canonicalNaming.ts`: `toDocId`, `slugify`,
+numerazione e `order` di UDA e lezioni, nomi e path canonici, mappatura del
+front matter. Sono stati **estratti** da `import/buildImportPayload.ts` e da
+`editor/repositoryEditorService.ts` a comportamento invariato: il planner li
+riusa invece di ri-derivarli, e un test di regressione fissa ogni caso limite
+già gestito (buchi di numerazione, `order` legacy assente, slug degenere).
+
+### 14.2 Identità di un tentativo: SHA-256 in 02A/02B
+
+Lo strato puro produce `manifestCanonical`, la serializzazione canonica e
+stabile dell'intero manifest. **Non è un'identità.** L'identità autorevole del
+tentativo è:
+
+```
+SHA-256(manifestCanonical)
+```
+
+e la calcola l'adapter runtime di STRUCTURE-IMPORT-02A/02B con Web Crypto
+(`crypto.subtle.digest`), **prima** del lease, dello staging e di qualunque
+scrittura. Non è calcolata qui per una sola ragione: `subtle.digest` è
+asincrona, e i planner devono restare puri e sincroni. 02A/02B possono
+persistere il solo hash: la serializzazione completa non deve essere salvata.
+
+La serializzazione garantisce che *manifest uguali producano stringhe uguali* e
+*manifest diversi producano stringhe diverse*: chiavi ordinate (l'ordine delle
+proprietà non è semantico), ordine degli array conservato (lo è), proprietà
+`undefined` omesse, valori con escape JSON e chiavi con lunghezza prefissata,
+più un tag di versione del formato. L'assenza di collisioni è responsabilità di
+SHA-256, non di questo strato: nessun test dichiara che «ogni modifica produce
+sicuramente un hash diverso».
+
+Il fingerprint **FNV-1a a 32 bit** usato dal vecchio flusso «Importa UDA»
+(`importUda/manifestHash.ts`) resta un valore **diagnostico non autorevole** ed
+è deliberatamente non riusato qui: 32 bit collidono troppo facilmente per
+decidere uguaglianza, replay, lease o idempotenza. Quel flusso è rimasto
+invariato.
+
+### 14.3 Codifica: byte-first e UTF-8 fatale
+
+Il percorso autorevole parte dai byte originali (`Uint8Array`/`ArrayBuffer`),
+mai da testo già decodificato:
+
+1. estensione `.yaml`/`.yml` verificata prima di leggere qualsiasi cosa;
+2. limite di 256.000 byte misurato **sui byte originali**, prima della
+   decodifica;
+3. decodifica con `TextDecoder('utf-8', { fatal: true })`: byte non validi o
+   sequenze troncate producono l'errore stabile `invalid_encoding`;
+4. eventuale BOM UTF-8 rimosso.
+
+**02A/02B devono usare `file.arrayBuffer()`** e passare i byte. `File.text()`
+non è una sorgente ammessa: sostituisce silenziosamente i byte non validi con
+U+FFFD, e un file corrotto verrebbe importato con i titoli rovinati invece di
+essere rifiutato. Un test statico vieta `.text()`, `FileReader`, `readAsText` e
+`Blob(` nei moduli del pacchetto.
+
+`TextDecoder`/`TextEncoder` sono ammessi come primitive pure di piattaforma:
+nessun DOM, nessuna rete, nessun temporizzatore.
+
+### 14.4 Confine puro
+
+Un test statico percorre l'intera chiusura transitiva degli import a partire dai
+nuovi moduli e vieta di raggiungere Firebase, Firebase Admin, Cloud Functions,
+React, React Router, il gateway Storage e l'inizializzazione Firebase; verifica
+inoltre che l'unica dipendenza esterna raggiunta sia `yaml`, già presente nel
+progetto, e che nessun modulo usi API del browser o temporizzatori.
+
+### 14.5 Scelte da confermare in 02A/02B
+
+- **Ordine legacy delle lezioni.** Il planner, a differenza di `createLesson`,
+  ricade sul prefisso `lezione-XXX` quando una lezione esistente non ha `order`
+  (è la stessa fonte legacy che `reorderLesson` già usa). Appendere una lezione
+  alla volta rende innocuo trattarla come `-1`; appenderne quaranta a una UDA
+  legacy no. Il comportamento runtime di `createLesson` resta invariato.
+- **Identità del tentativo.** 02A/02B devono calcolare `SHA-256` e usarlo come
+  chiave di idempotenza; una `requestId` riusata con un hash diverso deve
+  fallire chiusa.
+- **`createdAt` della proiezione.** Il manifest non lo contiene: è un timestamp
+  di server e un planner puro non deve inventarlo. Lo aggiungerà il commit.
+- **Collisioni tecniche.** I guardrail su id e Storage path sono difese in
+  profondità: con la numerazione canonica non dovrebbero essere raggiungibili,
+  e il preflight reale di 02A/02B resta comunque obbligatorio.

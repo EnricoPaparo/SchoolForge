@@ -2,8 +2,13 @@ import { parsePool } from '@schoolforge/lesson-contract';
 import { parseLessonMetadata } from '../validation/lessonMetadata.js';
 import { assertLessonContentSize } from '../programs/lessonContentSize.js';
 import { newPublicLessonId } from '../programs/publicLessonId.js';
+import { toDocId } from '../canonicalNaming.js';
 import type { ImportValidationResult, RawFile } from '../validation/types.js';
 import type { ImportPayload } from './types.js';
+
+// Re-exported so the historical import path keeps working; the implementation
+// now lives in the shared pure module (see canonicalNaming.ts).
+export { toDocId };
 
 const QUESTION_PREVIEW_MAX_LENGTH = 100;
 
@@ -188,9 +193,4 @@ export function buildImportPayload(params: {
     questionIndex,
     publicLessons,
   };
-}
-
-/** Converts a path/filename fragment into a safe Firestore document ID. */
-export function toDocId(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_-]/g, '_');
 }

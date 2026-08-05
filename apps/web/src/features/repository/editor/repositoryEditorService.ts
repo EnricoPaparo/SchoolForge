@@ -24,7 +24,21 @@ import {
 import { parseLessonMetadata } from '../validation/lessonMetadata.js';
 import { assertLessonContentSize } from '../programs/lessonContentSize.js';
 import { newPublicLessonId, resolvePublicLessonId } from '../programs/publicLessonId.js';
-import { toDocId } from '../import/buildImportPayload.js';
+import {
+  lessonFrontMatterFields,
+  lessonOrderFromFilename,
+  maxLessonNumber,
+  maxLessonOrder,
+  maxUdaNumber,
+  maxUdaOrder,
+  toDocId,
+  udaDirName,
+  udaFrontMatterFields,
+  udaOrderFromDir,
+  udaStorageBasePath,
+  importStoragePath,
+  lessonFileName,
+} from '../canonicalNaming.js';
 import type { LessonMetadata, UdaMetadata } from '../validation/types.js';
 import type {
   ImportDoc,
@@ -159,62 +173,6 @@ export async function updateProgramMetadata(params: {
   }
 
   return fields;
-}
-
-/**
- * Deterministic, filesystem-safe slug for a lesson title: lowercase,
- * diacritics stripped, anything outside [a-z0-9] collapsed to a single
- * hyphen, leading/trailing hyphens trimmed. Never empty — falls back to
- * "lezione" so a title made entirely of symbols still yields a valid
- * filename.
- */
-const COMBINING_DIACRITICS_RE = /[\u0300-\u036f]/g;
-
-function slugify(input: string): string {
-  const slug = input
-    .normalize('NFD')
-    .replace(COMBINING_DIACRITICS_RE, '')
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return slug || 'lezione';
-}
-
-/** Maps parsed lesson metadata to the YAML front matter keys used on disk. */
-function lessonFrontMatterFields(metadata: LessonMetadata): EditableFrontMatter {
-  return {
-    titolo: metadata.titolo,
-    sottotitolo: metadata.sottotitolo,
-    difficolta: metadata.difficolta,
-    concetti_chiave: metadata.concettiChiave,
-    obiettivi: metadata.obiettivi,
-  };
-}
-
-function udaOrderFromDir(dir: string | undefined): number | null {
-  const match = /^uda-(\d+)(?:-|$)/.exec(dir ?? '');
-  return match ? Number(match[1]) - 1 : null;
-}
-
-/** Same reasoning as `udaOrderFromDir`, for a lesson's `lezione-XXX` filename prefix. */
-function lessonOrderFromFilename(filename: string | undefined): number | null {
-  const match = /^lezione-(\d+)(?:-|\.md$)/.exec(filename ?? '');
-  return match ? Number(match[1]) - 1 : null;
-}
-
-/**
- * Maps a UDA's `titolo` plus its metadata to the YAML front matter keys used
- * on disk. `titolo` is passed explicitly (the canonical value at create time)
- * and takes precedence over any `metadata.titolo`.
- */
-function udaFrontMatterFields(titolo: string, metadata: UdaMetadata): EditableFrontMatter {
-  return {
-    titolo,
-    descrizione: metadata.descrizione,
-    competenze: metadata.competenze,
-    obiettivi: metadata.obiettivi,
-  };
 }
 
 type RepositoryAuditAction =
@@ -511,15 +469,12 @@ export async function createLesson(params: {
   const existingSnap = await getDocs(query(lessonsRef, where('udaDir', '==', udaDir)));
   const existingLessons = existingSnap.docs.map((d) => d.data() as Partial<LessonDoc>);
 
-  const maxNumber = existingLessons.reduce((max, lesson) => {
-    const match = /^lezione-(\d+)-/.exec(lesson.filename ?? '');
-    return match ? Math.max(max, Number(match[1])) : max;
-  }, 0);
-  const maxOrder = existingLessons.reduce((max, lesson) => Math.max(max, lesson.order ?? -1), -1);
+  const maxNumber = maxLessonNumber(existingLessons);
+  const maxOrder = maxLessonOrder(existingLessons);
 
-  const filename = `lezione-${String(maxNumber + 1).padStart(3, '0')}-${slugify(titolo)}.md`;
+  const filename = lessonFileName(maxNumber + 1, titolo);
   const path = `${udaDir}/${filename}`;
-  const storageRef = `repository/${ownerUid}/imports/${importId}/${path}`;
+  const storageRef = importStoragePath(ownerUid, importId, path);
   const lessonId = `${udaId}_${toDocId(filename.replace(/\.md$/, ''))}`;
   // A lesson created inside a legacy import still gets an import-scoped
   // publicLessons id (HARD-02B-1) — the projection collection is program-wide,
@@ -630,18 +585,12 @@ export async function createUda(params: {
   const existingSnap = await getDocs(udasRef);
   const existingUdas = existingSnap.docs.map((d) => d.data() as Partial<UdaDoc>);
 
-  const maxNumber = existingUdas.reduce((max, uda) => {
-    const match = /^uda-(\d+)-/.exec(uda.dir ?? '');
-    return match ? Math.max(max, Number(match[1])) : max;
-  }, 0);
-  const maxOrder = existingUdas.reduce(
-    (max, uda) => Math.max(max, uda.order ?? udaOrderFromDir(uda.dir) ?? -1),
-    -1,
-  );
+  const maxNumber = maxUdaNumber(existingUdas);
+  const maxOrder = maxUdaOrder(existingUdas);
 
-  const dir = `uda-${String(maxNumber + 1).padStart(2, '0')}-${slugify(titolo)}`;
+  const dir = udaDirName(maxNumber + 1, titolo);
   const filename = `${dir}.md`;
-  const storageBasePath = `repository/${ownerUid}/imports/${importId}/${dir}`;
+  const storageBasePath = udaStorageBasePath(ownerUid, importId, dir);
   const udaId = toDocId(dir);
   const order = maxOrder + 1;
 
