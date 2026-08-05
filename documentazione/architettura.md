@@ -156,6 +156,18 @@ Un eventuale M3-full (specifica rinviata) selezionerebbe dal `publishedSnapshot`
 
 **Decisione.** «Importa UDA» aggiunge **una sola UDA** all'`activeImportId` esistente senza cambiarlo. Il `UdaDoc` è il **commit marker**: lezioni e `questionIndex` sono scritti in staging chunked prima del commit ma restano logicamente invisibili finché la UDA non ha il suo `UdaDoc`; il commit finale crea in **una transazione** `UdaDoc` + tutte le `publicLessons` e aggiorna i metadata. Una **lease singola** sull'import (`udaAppendLease`) esclude append concorrenti e blocca create/reorder/delete UDA finché è valida; i reader ordinari intersecano lezioni e UDA già caricate (`committedUdas.ts`) senza query aggiuntive. Upload esclusivamente via SGW same-origin (concorrenza 3); cleanup pre-commit idempotente limitato al manifest del tentativo, mai ai dati preesistenti.
 
+### ADR-11c — Importazione strutturale metadata-only (pianificata)
+
+**Decisione proposta.** STRUCTURE-IMPORT aggiunge, senza sostituire gli import
+ZIP, due append YAML: più UDA dal menu Azioni del corso e più lezioni dal menu
+Azioni dell'UDA. I file non accettano ID tecnici, corpo, pool o soluzioni. Il
+servizio calcola in anticipo l'intero manifest, riusa la mutua esclusione
+dell'import attivo, carica file canonici vuoti via SGW e pubblica il batch con
+un commit Firestore atomico; il cleanup è limitato al manifest. Dettagli e
+roadmap in [structure-metadata-import-roadmap.md](structure-metadata-import-roadmap.md).
+
+**Stato:** solo design; nessun comportamento runtime corrente cambia.
+
 **Motivazione.** L'append diretto riusa path, editor, cancellazione ed export import-scoped senza riscrivere il corso, mantenendo l'invisibilità atomica per lo studente (nessuna proiezione parziale) e senza nuove Function, Rule o indici. Storage e Firestore restano non-transazionali insieme: la sicurezza deriva dall'assenza del commit marker e dalla cleanup manifest-based, non da un rollback distribuito.
 
 ### ADR-12 — Proiezioni read-only dedicate per lo studente (M3-lite)

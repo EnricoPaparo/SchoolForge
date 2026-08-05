@@ -17,6 +17,12 @@ DEV; Importa UDA ed export archivistico per studente hanno superato lo smoke
 desktop/mobile/Brave. **Gate GTWU superato (PASS)** — vedi
 [evidenze/gtwu-checklist-finale.md](evidenze/gtwu-checklist-finale.md).
 
+**STRUCTURE-IMPORT — progettato, non implementato.** Importazione append-only
+di UDA e lezioni **senza contenuto**, tramite due file YAML versionati e le
+azioni contestuali già presenti in Didattica. Include una fase separata per
+usare nel prompt le competenze/obiettivi UDA senza nuove letture. Contratto e
+roadmap in [structure-metadata-import-roadmap.md](structure-metadata-import-roadmap.md).
+
 **Hardening finale (HARD) — completato.** **Gate GHARD superato (PASS, 15/07/2026):** 0 P0/P1, i P2 F01/F02/F03 risolti, fix accessibilità P2 e import resiliente F06 completati; residui P3 accettati con soglie esplicite. Evidenze finali in [evidenze/ghard-checklist-finale.md](evidenze/ghard-checklist-finale.md). HARD-03 resta condizionato a misure reali e non blocca la V1. Il PASS non autorizza provisioning o deploy PROD.
 
 **Didattica studente (SDUX) — completata.** Libreria corsi e workspace corso/UDA/lezione read-only su sole proiezioni pubbliche; nessun componente/service docente, pool o accesso Storage. SDUX-02 e Modalità verifica confermati su DEV — vedi [student-didattica-ux-roadmap.md](student-didattica-ux-roadmap.md).
@@ -46,6 +52,7 @@ SchoolForge è un repository didattico Markdown-first per un solo docente. Se è
 11. [evoluzioni-apprendimento-roadmap.md](evoluzioni-apprendimento-roadmap.md) — roadmap approvata post-polish: calibrazione IA, pool senza peso, appunti, varianti equivalenti e boost grafico.
 12. [vex-contract.md](vex-contract.md) — VEX varianti equivalenti: contratto, builder assistito docente, assegnazione server-side idempotente, svolgimento, correzione/IA/restituzione sulla variante. VEX-01A→02C implementati e distribuiti su DEV; **Gate GVEX PASS**. Prototipo builder: [prototipi/vex-builder.html](prototipi/vex-builder.html).
 13. [teacher-workflow-upgrades-roadmap.md](teacher-workflow-upgrades-roadmap.md) — TWU: rifiniture e miglioramenti del flusso docente. TWU-01→04B, CORR-PDF-01 e recovery chunk completati; contratto Importa UDA in [uda-import-contract.md](uda-import-contract.md), export archivistico in [correction-archive-export-contract.md](correction-archive-export-contract.md). **Gate GTWU PASS** — [evidenze](evidenze/gtwu-checklist-finale.md).
+14. [structure-metadata-import-roadmap.md](structure-metadata-import-roadmap.md) — importazione strutturale append-only: UDA e lezioni con soli metadati, nessun contenuto/pool/IA durante l'import.
 
 ## Per sviluppare un modulo
 
@@ -70,6 +77,7 @@ Parti da [piano-implementazione.md](piano-implementazione.md) per la specifica d
 | [ux-product-roadmap.md](ux-product-roadmap.md) | Roadmap UX/Product Polish (UX-01–06). | Per pianificare e implementare il polish UI. |
 | [repository-editor-roadmap.md](repository-editor-roadmap.md) | Roadmap Repository Editor (RE-00–RE-07, implementato). | Per consultare decisioni tecniche e scope dell'editor UDA/lezioni. |
 | [question-editor-roadmap.md](question-editor-roadmap.md) | Roadmap Question Editor (QE-00–QE-05, completato): editor pool domande Markdown-first, senza reimport ZIP. | Per consultare contratto, decisioni e implementazione della sezione "Domande". |
+| [structure-metadata-import-roadmap.md](structure-metadata-import-roadmap.md) | Contratto e roadmap STRUCTURE-IMPORT: file YAML di sole UDA/lezioni metadata, append atomico, UI nei menu Azioni e fase contesto IA UDA. | Per implementare la preparazione massiva degli scheletri didattici senza contenuti. |
 | [m3-full-roadmap.md](m3-full-roadmap.md) | Specifica M3-full: verifiche online, consegne, monitor, sessione obbligatoria e modalità verifica. Roadmap M3F-00–M3F-11C, completata — Gate G5 superato. | Per consultare il modello dati/Rules di M3-full o lo stato del Gate G5. |
 | [storage-gateway-roadmap.md](storage-gateway-roadmap.md) | Contratto e roadmap del **Repository Storage Gateway** same-origin (SGW-00–03). **SGW-01/02A verificati su DEV; SGW-02B batch-read implementato nel codice; restano SGW-02C import e SGW-03.** | Per capire il gateway, l'ultimo accesso Storage diretto e i prossimi passi. |
 | [didattica-ux-roadmap.md](didattica-ux-roadmap.md) | Specifica UX del redesign "Didattica" (DUX-00–10A + Gate GDUX). **DUX-01–10A completati; Gate GDUX superato (PASS)** — vedi [evidenze/gdux-checklist-finale.md](evidenze/gdux-checklist-finale.md). | Per consultare architettura informativa, invarianti di sicurezza/costo e prossimo Gate. |

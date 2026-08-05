@@ -23,10 +23,16 @@ Il piano trasforma la baseline in pacchetti di lavoro eseguibili da agenti di co
 | QE — Question Editor | Editor pool domande Markdown-first (`.pool.md`): crea/modifica/elimina domande dal portale, aggiorna `questionIndex` su Firestore senza reimport ZIP. Nessuna AI, nessuna Cloud Function. Specifica in `question-editor-roadmap.md`. | Sì |
 | M3-full — Verifiche online e consegne studenti ✅ | Avvio online, salvataggio bozza, consegna immutabile, codice consegna, modalità verifica (deterrenza leggera), monitor consegne docente. Nessuna Cloud Function. Completato — Gate G5 superato, vedi `m3-full-roadmap.md` e `documentazione/evidenze/g5-m3-full-checklist-finale.md`. | Sì |
 | M4 — Correzione ed export | Punteggi, percentuali, rettifiche, eliminazione e `Esporta verifiche` in PDF/Markdown/CSV. Dipende da M3-full. | Sì |
+| STRUCTURE-IMPORT — Scheletri didattici | Append massivo e validato di UDA e lezioni con soli metadati YAML; nessun contenuto, pool o chiamata IA durante l'import. Specifica in `structure-metadata-import-roadmap.md`. | Sì |
 
 **M5 — Correzione assistita da IA**: la progettazione **M5-00** è completata (contratto, UX batch, sicurezza, cost model — [m5-ai-assisted-roadmap.md](m5-ai-assisted-roadmap.md)); l'implementazione (M5-01→M5-05, Gate G7) non è ancora avviata. Vedi l'Appendice C in fondo. M5 non fa parte del perimetro della V1.
 
 Il Modulo 3 (Portale digitale) è diviso in **M3-lite** e **M3-full**, entrambi completati; Gate G5 superato per M3-full. Dopo M3-lite sono stati completati **RE — Repository Editor** (RE-00 → RE-07) e **QE — Question Editor** (QE-00 → QE-05). **M4 — Correzione ed export è completato**: correzione, restituzione, ciclo di vita, Registro Correzioni, CSV ed export PDF (M4-00→M4-04) sono completati (Markdown rinviato per assenza di caso d'uso); **Gate G6 superato** — vedi `documentazione/evidenze/g6-m4-checklist-finale.md`.
+
+**STRUCTURE-IMPORT-00 è progettato e non ancora implementato.** La sequenza
+autorizzata è 01 parser/planner puri → 02A import UDA → 02B import lezioni → 03
+contesto UDA per la generazione IA → Gate GSTRUCT. Nessuna fase successiva può
+dichiarare implementata la precedente senza le evidenze previste nel contratto.
 
 ---
 
