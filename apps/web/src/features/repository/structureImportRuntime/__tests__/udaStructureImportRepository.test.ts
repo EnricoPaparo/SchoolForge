@@ -59,9 +59,10 @@ function harness(overrides: Partial<UdaStructureImportDeps> = {}): Harness {
   const base: UdaStructureImportDeps = {
     loadContext: track('loadContext', async () => CONTEXT),
     hashManifest: track('hashManifest', (canonical) => computeManifestHash(canonical)),
-    findCommittedAttempt: track('findCommittedAttempt', async () => 'none' as const),
+    probeAttempt: track('probeAttempt', async () => 'none' as const),
     preflight: track('preflight', async () => ({ collision: null })),
     acquireLease: track('acquireLease', async () => 'acquired' as const),
+    renewLease: track('renewLease', async () => 'renewed' as const),
     uploadStorage: track('uploadStorage', async (files) => {
       uploaded.push(...files);
     }),
@@ -113,10 +114,11 @@ describe('append riuscito', () => {
     expect(seq).toEqual([
       'loadContext',
       'hashManifest',
-      'findCommittedAttempt',
+      'probeAttempt',
       'preflight',
       'acquireLease',
       'uploadStorage',
+      'renewLease',
       'commit',
     ]);
     expect(calls).not.toContain('cleanup');
@@ -214,7 +216,7 @@ describe('hash indisponibile', () => {
 
 describe('idempotenza', () => {
   it('stesso requestId e stesso hash: replay senza riscrivere nulla', async () => {
-    const { deps, calls } = harness({ findCommittedAttempt: async () => 'committed' as const });
+    const { deps, calls } = harness({ probeAttempt: async () => 'committed' as const });
     const result = await importUdaStructure(INPUT, deps);
     expect(result.status).toBe('committed');
     if (result.status === 'committed') expect(result.udaCount).toBe(2);
@@ -224,7 +226,7 @@ describe('idempotenza', () => {
   });
 
   it('stesso requestId e hash diverso: fail-closed, zero scritture', async () => {
-    const { deps, calls } = harness({ findCommittedAttempt: async () => 'conflict' as const });
+    const { deps, calls } = harness({ probeAttempt: async () => 'conflict' as const });
     const result = await importUdaStructure(INPUT, deps);
     expect(result.status).toBe('not_applied');
     if (result.status === 'not_applied') expect(result.reason).toBe('conflict');
@@ -235,7 +237,7 @@ describe('idempotenza', () => {
   it('l’hash passato alle porte è lo stesso ovunque, e vale 64 esadecimali', async () => {
     const seen: string[] = [];
     const { deps } = harness({
-      findCommittedAttempt: async ({ manifestHash }) => {
+      probeAttempt: async ({ manifestHash }: { manifestHash: string }) => {
         seen.push(manifestHash);
         return 'none' as const;
       },
@@ -261,7 +263,7 @@ describe('collisioni e concorrenza', () => {
     const result = await importUdaStructure(INPUT, deps);
     expect(result.status).toBe('not_applied');
     if (result.status === 'not_applied') expect(result.reason).toBe('collision');
-    expect(calls).toEqual(['loadContext', 'hashManifest', 'findCommittedAttempt', 'preflight']);
+    expect(calls).toEqual(['loadContext', 'hashManifest', 'probeAttempt', 'preflight']);
   });
 
   it('una collisione Storage blocca allo stesso modo', async () => {

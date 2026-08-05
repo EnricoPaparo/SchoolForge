@@ -15,6 +15,8 @@ import {
   writeText,
 } from '../gateway/repositoryGatewayClient.js';
 import { computeManifestHash } from './manifestHash.js';
+import { checkCommitPreconditions, classifyAttempt, mayCleanupAttempt } from './attemptState.js';
+import type { AttemptExpectation, AttemptRecord, LeaseRecord } from './attemptState.js';
 import type {
   UdaStructureImportContext,
   UdaStructureImportDeps,
@@ -62,7 +64,27 @@ async function mapWithConcurrency<T>(
   }
 }
 
-export function createFirestoreUdaStructureImportDeps(db: Firestore): UdaStructureImportDeps {
+/**
+ * Injectable clock: the lease expiry checks are the whole point of the commit
+ * preconditions, so tests must be able to move time without waiting.
+ */
+export function createFirestoreUdaStructureImportDeps(
+  db: Firestore,
+  options: { now?: () => number } = {},
+): UdaStructureImportDeps {
+  const now = options.now ?? (() => Date.now());
+
+  const expectationOf = (
+    requestId: string,
+    manifestHash: string,
+    manifest: { udaIds: string[]; storagePaths: string[] },
+  ): AttemptExpectation => ({
+    requestId,
+    manifestHash,
+    udaIds: manifest.udaIds,
+    storagePaths: manifest.storagePaths,
+  });
+
   return {
     async loadContext(programId): Promise<UdaStructureImportContext | null> {
       const programSnap = await getDoc(doc(db, 'programs', programId));
@@ -93,16 +115,15 @@ export function createFirestoreUdaStructureImportDeps(db: Firestore): UdaStructu
       return computeManifestHash(manifestCanonical);
     },
 
-    async findCommittedAttempt({ programId, activeImportId, requestId, manifestHash }) {
+    async probeAttempt({ programId, activeImportId, requestId, manifestHash, manifest }) {
       const snap = await getDoc(doc(db, attemptPath(programId, activeImportId, requestId)));
-      if (!snap.exists()) return 'none';
-      const data = snap.data() as { manifestHash?: string; status?: string };
-      // Same request id with a different plan is never a replay: fail closed.
-      if (data.manifestHash !== manifestHash) return 'conflict';
-      return data.status === 'committed' ? 'committed' : 'none';
+      return classifyAttempt(
+        snap.exists() ? (snap.data() as AttemptRecord) : null,
+        expectationOf(requestId, manifestHash, manifest),
+      );
     },
 
-    async preflight({ programId, context, manifest }) {
+    async preflight({ programId, context, manifest, ownedStoragePaths }) {
       const base = importBase(programId, context.activeImportId);
       const refs: Array<{ id: string; ref: DocumentReference }> = manifest.udaIds.map((id) => ({
         id,
@@ -116,8 +137,13 @@ export function createFirestoreUdaStructureImportDeps(db: Firestore): UdaStructu
         const hit = snaps.findIndex((snap) => snap.exists());
         if (hit !== -1) return { collision: { kind: 'uda', id: batch[hit]!.id } };
       }
-      if (manifest.storagePaths.length > 0) {
-        const results = await readTexts(manifest.storagePaths);
+      // On a resume, the paths the same attempt already uploaded are excluded:
+      // the attempt record proved they are its own. Everything else that exists
+      // is still a blocking collision.
+      const owned = new Set(ownedStoragePaths);
+      const toCheck = manifest.storagePaths.filter((path) => !owned.has(path));
+      if (toCheck.length > 0) {
+        const results = await readTexts(toCheck);
         const existing = results.find((entry) => entry.ok);
         if (existing) return { collision: { kind: 'storage', id: existing.path } };
       }
@@ -140,11 +166,18 @@ export function createFirestoreUdaStructureImportDeps(db: Firestore): UdaStructu
         const lease = (
           importSnap.data() as { udaAppendLease?: { requestId: string; expiresAt: number } }
         ).udaAppendLease;
-        const now = Date.now();
+        const currentTime = now();
         // Another live attempt holds it — including a ZIP "Importa UDA".
-        if (lease && lease.requestId !== requestId && lease.expiresAt > now) return 'busy' as const;
+        if (
+          lease &&
+          lease.requestId !== requestId &&
+          typeof lease.expiresAt === 'number' &&
+          lease.expiresAt > currentTime
+        ) {
+          return 'busy' as const;
+        }
 
-        const expiresAt = now + LEASE_TTL_MS;
+        const expiresAt = currentTime + LEASE_TTL_MS;
         tx.set(
           importRef,
           { udaAppendLease: { requestId, manifestHash, expiresAt } },
@@ -168,6 +201,31 @@ export function createFirestoreUdaStructureImportDeps(db: Firestore): UdaStructu
       });
     },
 
+    async renewLease({ programId, activeImportId, requestId, manifestHash }) {
+      return runTransaction(db, async (tx) => {
+        const importRef = doc(db, importBase(programId, activeImportId));
+        const importSnap = await tx.get(importRef);
+        if (!importSnap.exists()) return 'lost' as const;
+        const lease = (importSnap.data() as { udaAppendLease?: LeaseRecord }).udaAppendLease;
+        // Renewed only when it is still ours and still carries this plan: a
+        // lease taken over by someone else is never «renewed» back.
+        if (
+          !lease ||
+          lease.requestId !== requestId ||
+          lease.manifestHash !== manifestHash ||
+          typeof lease.expiresAt !== 'number'
+        ) {
+          return 'lost' as const;
+        }
+        tx.set(
+          importRef,
+          { udaAppendLease: { requestId, manifestHash, expiresAt: now() + LEASE_TTL_MS } },
+          { merge: true },
+        );
+        return 'renewed' as const;
+      });
+    },
+
     async uploadStorage(files) {
       await mapWithConcurrency(files, STORAGE_CONCURRENCY, (file) =>
         writeText(file.path, file.content),
@@ -179,28 +237,39 @@ export function createFirestoreUdaStructureImportDeps(db: Firestore): UdaStructu
       await runTransaction(db, async (tx) => {
         const programRef = doc(db, 'programs', programId);
         const importRef = doc(db, base);
+        const attemptRef = doc(db, attemptPath(programId, manifest.importId, requestId));
         const udaRefs = manifest.udaIds.map((id) => doc(db, `${base}/udas/${id}`));
-        const [programSnap, importSnap, ...udaSnaps] = await Promise.all([
+        const [programSnap, importSnap, attemptSnap, ...udaSnaps] = await Promise.all([
           tx.get(programRef),
           tx.get(importRef),
+          tx.get(attemptRef),
           ...udaRefs.map((ref) => tx.get(ref)),
         ]);
 
         if (!programSnap.exists() || !importSnap.exists()) throw new Error('import_missing');
-        if ((programSnap.data() as ProgramDoc).activeImportId !== manifest.importId) {
-          throw new Error('active_import_changed');
-        }
+        const program = programSnap.data() as ProgramDoc;
+        if (program.activeImportId !== manifest.importId) throw new Error('active_import_changed');
+        // The owner is authoritative here too: the manifest was built from the
+        // program document, and the program document must still say the same.
+        if (program.ownerUid !== manifest.ownerUid) throw new Error('owner_changed');
+
+        // A lease that is absent, expired, malformed or another attempt's is
+        // NOT a permission to write: in all those cases someone else may
+        // already have changed numbering, order or destination since the plan
+        // was built. Nothing is repaired here — the commit simply aborts.
+        const failure = checkCommitPreconditions({
+          lease: (importSnap.data() as { udaAppendLease?: LeaseRecord }).udaAppendLease ?? null,
+          attempt: attemptSnap.exists() ? (attemptSnap.data() as AttemptRecord) : null,
+          expected: expectationOf(requestId, manifestHash, manifest),
+          now: now(),
+        });
+        if (failure) throw new Error(failure);
+
         // Re-checked inside the transaction: the preflight is an early exit, not
         // the guarantee. Nothing may be overwritten.
         if (udaSnaps.some((snap) => snap.exists())) throw new Error('uda_collision');
 
-        const importData = importSnap.data() as {
-          udaCount?: number;
-          udaAppendLease?: { requestId: string };
-        };
-        if (importData.udaAppendLease && importData.udaAppendLease.requestId !== requestId) {
-          throw new Error('lease_lost');
-        }
+        const importData = importSnap.data() as { udaCount?: number };
 
         // Every UDA lands in this one transaction: they become visible together
         // or not at all. A UdaDoc is its own commit marker.
@@ -217,8 +286,8 @@ export function createFirestoreUdaStructureImportDeps(db: Firestore): UdaStructu
         );
         tx.set(programRef, { updatedAt: serverTimestamp() }, { merge: true });
         tx.set(
-          doc(db, attemptPath(programId, manifest.importId, requestId)),
-          { status: 'committed', manifestHash, committedAt: serverTimestamp() },
+          attemptRef,
+          { status: 'committed', committedAt: serverTimestamp() },
           { merge: true },
         );
         tx.set(doc(collection(db, 'auditEvents')), {
@@ -232,21 +301,23 @@ export function createFirestoreUdaStructureImportDeps(db: Firestore): UdaStructu
       });
     },
 
-    async cleanup({ programId, activeImportId, manifest, requestId }) {
+    async cleanup({ programId, activeImportId, manifest, requestId, manifestHash }) {
       try {
         const base = importBase(programId, activeImportId);
-        // Never touch anything this attempt actually committed.
-        const committed = await getDoc(doc(db, attemptPath(programId, activeImportId, requestId)));
-        if (
-          committed.exists() &&
-          (committed.data() as { status?: string }).status === 'committed'
-        ) {
-          return 'done';
-        }
+        const attemptRef = doc(db, attemptPath(programId, activeImportId, requestId));
+        const attemptSnap = await getDoc(attemptRef);
+        const expected = expectationOf(requestId, manifestHash, manifest);
+        const record = attemptSnap.exists() ? (attemptSnap.data() as AttemptRecord) : null;
+
+        // The record is the proof of ownership. Without it — committed,
+        // replaced, malformed or simply absent — nothing is deleted: an old
+        // execution waking up late must never remove the lease, the record or
+        // the files of the attempt that replaced it.
+        if (!mayCleanupAttempt(record, expected)) return 'done';
 
         // Manifest-scoped only: exactly the paths this attempt uploaded. Never a
         // prefix delete, never a pre-existing file — a path that already existed
-        // would have blocked the preflight, so nothing here predates the attempt.
+        // and was not ours would have blocked the preflight.
         await mapWithConcurrency(manifest.storagePaths, STORAGE_CONCURRENCY, async (path) => {
           try {
             await deleteFile(path);
@@ -257,16 +328,23 @@ export function createFirestoreUdaStructureImportDeps(db: Firestore): UdaStructu
 
         await runTransaction(db, async (tx) => {
           const importRef = doc(db, base);
-          const importSnap = await tx.get(importRef);
+          const [importSnap, freshAttempt] = await Promise.all([
+            tx.get(importRef),
+            tx.get(attemptRef),
+          ]);
+          // Re-verified inside the transaction: between the read above and here
+          // the attempt may have been committed or replaced.
+          const fresh = freshAttempt.exists() ? (freshAttempt.data() as AttemptRecord) : null;
+          if (!mayCleanupAttempt(fresh, expected)) return;
+
           if (importSnap.exists()) {
-            const lease = (importSnap.data() as { udaAppendLease?: { requestId: string } })
-              .udaAppendLease;
+            const lease = (importSnap.data() as { udaAppendLease?: LeaseRecord }).udaAppendLease;
             // Only ever release our own lease.
             if (lease && lease.requestId === requestId) {
               tx.set(importRef, { udaAppendLease: null }, { merge: true });
             }
           }
-          tx.delete(doc(db, attemptPath(programId, activeImportId, requestId)));
+          tx.delete(attemptRef);
         });
         return 'done';
       } catch {

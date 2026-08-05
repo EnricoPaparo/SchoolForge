@@ -395,7 +395,82 @@ Nessun rollback distribuito è dichiarato.
 Le UDA importate non contengono lezioni e **non producono alcuna proiezione
 studente**.
 
-### 14.6 Scelte da confermare in 02B
+### 14.6 Stato del tentativo, precondizioni e recovery
+
+Il record del tentativo vive in
+`programs/{p}/imports/{i}/structureImportAttempts/{requestId}` e la sua
+classificazione è pura e testabile (`structureImportRuntime/attemptState.ts`):
+
+| Stato | Condizione | Effetto |
+|---|---|---|
+| `none` | nessun record | tentativo nuovo |
+| `committed` | stesso `requestId` e hash, `status: 'committed'` | replay: successo, zero scritture |
+| `conflict` | stesso `requestId`, hash diverso | fail-closed |
+| `resumable` | stesso `requestId` e hash, `kind: 'uda'`, `udaIds` e `storagePaths` identici, `status: 'reserved'` | riprendibile |
+| `incoherent` | record parziale, malformato o divergente | fail-closed, **mai riparato né sovrascritto** |
+
+**Precondizioni del commit** (tutte obbligatorie, verificate dentro la
+transazione con un clock iniettabile): `activeImportId` invariato; `ownerUid`
+del programma ancora uguale a quello del manifest; lease **presente**, ben
+formata, non scaduta, con lo stesso `requestId` e lo stesso `manifestHash`;
+record del tentativo presente, coerente e ancora `reserved`; nessuna delle
+`UdaDoc` di destinazione già esistente. Un lease assente o scaduto **non** è un
+permesso: è la condizione in cui numerazione, `order` o destinazione possono
+essere già cambiati. Nulla viene riparato nel commit: si aborta.
+
+Poiché l'upload può durare, prima del commit il lease viene **rinnovato in modo
+condizionato**: solo se è ancora nostro e porta ancora questo hash. Un rinnovo
+fallito aborta il tentativo.
+
+**Recovery dopo `cleanup_pending`.** Un tentativo `resumable` riprende con la
+stessa identità e la stessa finestra: i path elencati nel suo record non sono
+collisioni estranee, mentre qualunque altro path esistente blocca. La strategia
+scelta — unica e documentata — è il **re-upload idempotente** degli stessi
+contenuti: il contenuto è fissato dal manifest di cui il record porta l'hash,
+quindi la riscrittura è byte-identica. Nessun cleanup condizionato dei file
+seguito da un secondo preflight.
+
+**Cleanup condizionato.** Cancella solo se il record dimostra la proprietà:
+stesso `requestId`, stesso `manifestHash`, stesso `kind`, stessi `udaIds`,
+stessi `storagePaths`, tentativo non committato — riverificato dentro la
+transazione. Un'esecuzione vecchia che si risvegliasse non può quindi rimuovere
+lease, record o file del tentativo che l'ha sostituita. Mai un cleanup per
+prefisso, mai un dato preesistente.
+
+**Limite noto.** Se il commit riesce ma l'esito si perde *e* l'albero locale è
+già stato aggiornato, un retry con lo stesso file viene respinto sui titoli già
+presenti (`duplicate_title_in_destination`) invece che riconosciuto come replay:
+la sonda del tentativo arriva dopo la costruzione del piano. È fail-closed e non
+duplica nulla, ma il messaggio parla di titoli anziché di «già importato».
+
+### 14.7 Costo reale di un import
+
+Contato dal codice, non stimato.
+
+**Letture.** 1 documento programma + 1 query sulle UDA dell'import — fatturata
+per documenti restituiti, quindi *E* letture con *E* UDA esistenti — + 1 lettura
+del record del tentativo + *N* letture puntuali di preflight + 1 lettura batch
+Storage via gateway. Nella transazione di commit: 1 programma + 1 import + 1
+record tentativo + *N* documenti UDA.
+
+**Scritture.** Transazione di prenotazione: 2 (campo lease sul documento import
++ record del tentativo). Transazione finale: *N* `UdaDoc` + 1 import
+(`udaCount` e rilascio lease) + 1 programma (`updatedAt`) + 1 record del
+tentativo (`committed`) + 1 audit = *N* + 4. Rinnovo del lease prima del commit:
+1. **Totale su un import riuscito: N + 7 scritture**, in due transazioni più il
+rinnovo.
+
+**Cleanup/recovery**, solo in caso di errore pre-commit: fino a *N* delete su
+Storage + 1 scrittura (rilascio lease) + 1 delete (record del tentativo).
+
+**Upload.** *N*, con concorrenza massima 3.
+
+**Callable/Functions/IA:** zero. Nessun listener, nessun polling, nessuna
+lettura all'apertura ordinaria del corso.
+
+Con *N* = 40 e *E* = 10: ~57 letture, 47 scritture, 40 upload.
+
+### 14.8 Scelte da confermare in 02B
 
 - **Ordine legacy delle lezioni.** Il planner, a differenza di `createLesson`,
   ricade sul prefisso `lezione-XXX` quando una lezione esistente non ha `order`
