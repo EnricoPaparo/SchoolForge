@@ -228,7 +228,7 @@ describe('manifest e hash', () => {
   it('è stabile a parità di input', () => {
     const a = plan([lesson('A'), lesson('B')]);
     const b = plan([lesson('A'), lesson('B')]);
-    expect(a.manifestHash).toBe(b.manifestHash);
+    expect(a.manifestCanonical).toBe(b.manifestCanonical);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 
@@ -236,7 +236,7 @@ describe('manifest e hash', () => {
     const a = plan([lesson('A', { difficolta: 'base' })]);
     const b = plan([lesson('A', { difficolta: 'avanzata' })]);
     expect(a.lessons[0]!.lessonId).toBe(b.lessons[0]!.lessonId);
-    expect(a.manifestHash).not.toBe(b.manifestHash);
+    expect(a.manifestCanonical).not.toBe(b.manifestCanonical);
   });
 
   it('cambia se cambia la UDA di destinazione', () => {
@@ -249,7 +249,7 @@ describe('manifest e hash', () => {
       existingLessons: [],
     });
     expect(b.ok).toBe(true);
-    if (b.ok) expect(a.manifestHash).not.toBe(b.value.manifestHash);
+    if (b.ok) expect(a.manifestCanonical).not.toBe(b.value.manifestCanonical);
   });
 
   it('distingue un manifest UDA da uno lezioni', () => {

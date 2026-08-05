@@ -12,6 +12,9 @@ import { planUdaMetadataAppend } from '../planUdaMetadataAppend.js';
 import { planLessonMetadataAppend } from '../planLessonMetadataAppend.js';
 import { utf8ByteLength, STRUCTURE_IMPORT_LIMITS } from '../limits.js';
 
+/** I modelli sono testi costanti: il percorso reale li riceverà come byte. */
+const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
+
 /**
  * STRUCTURE-IMPORT-01 — i due modelli canonici. Il round-trip è il punto: un
  * modello che il validatore rifiuterebbe insegnerebbe un formato sbagliato al
@@ -20,7 +23,7 @@ import { utf8ByteLength, STRUCTURE_IMPORT_LIMITS } from '../limits.js';
 
 describe('round-trip: i modelli sono accettati dai parser reali', () => {
   it('il modello UDA è valido e normalizza come atteso', () => {
-    const result = validateUdaMetadataFile(UDA_METADATA_TEMPLATE, {
+    const result = validateUdaMetadataFile(utf8(UDA_METADATA_TEMPLATE), {
       filename: UDA_TEMPLATE_FILENAME,
     });
     expect(result.ok).toBe(true);
@@ -33,7 +36,7 @@ describe('round-trip: i modelli sono accettati dai parser reali', () => {
   });
 
   it('il modello lezioni è valido e normalizza come atteso', () => {
-    const result = validateLessonMetadataFile(LESSON_METADATA_TEMPLATE, {
+    const result = validateLessonMetadataFile(utf8(LESSON_METADATA_TEMPLATE), {
       filename: LESSON_TEMPLATE_FILENAME,
     });
     expect(result.ok).toBe(true);
@@ -50,7 +53,7 @@ describe('round-trip: i modelli sono accettati dai parser reali', () => {
   });
 
   it('ogni modello attraversa anche il planner senza errori', () => {
-    const udas = validateUdaMetadataFile(UDA_METADATA_TEMPLATE);
+    const udas = validateUdaMetadataFile(utf8(UDA_METADATA_TEMPLATE));
     expect(udas.ok).toBe(true);
     if (!udas.ok) return;
     const udaPlan = planUdaMetadataAppend({
@@ -68,7 +71,7 @@ describe('round-trip: i modelli sono accettati dai parser reali', () => {
       ]);
     }
 
-    const lessons = validateLessonMetadataFile(LESSON_METADATA_TEMPLATE);
+    const lessons = validateLessonMetadataFile(utf8(LESSON_METADATA_TEMPLATE));
     expect(lessons.ok).toBe(true);
     if (!lessons.ok) return;
     const lessonPlan = planLessonMetadataAppend({
@@ -87,8 +90,8 @@ describe('round-trip: i modelli sono accettati dai parser reali', () => {
   });
 
   it('il modello UDA non è accettato come file lezioni, e viceversa', () => {
-    expect(validateLessonMetadataFile(UDA_METADATA_TEMPLATE).ok).toBe(false);
-    expect(validateUdaMetadataFile(LESSON_METADATA_TEMPLATE).ok).toBe(false);
+    expect(validateLessonMetadataFile(utf8(UDA_METADATA_TEMPLATE)).ok).toBe(false);
+    expect(validateUdaMetadataFile(utf8(LESSON_METADATA_TEMPLATE)).ok).toBe(false);
   });
 });
 

@@ -20,6 +20,7 @@ export type StructureImportErrorCode =
   | 'invalid_extension'
   | 'empty_file'
   | 'file_too_large'
+  | 'invalid_encoding'
   | 'malformed_yaml'
   | 'multiple_documents'
   | 'duplicate_key'
@@ -207,9 +208,16 @@ export interface PlannedLesson {
 // ── Manifests ────────────────────────────────────────────────────────────────
 
 /**
+ * The manifest fields that are not the serialization itself. Splitting the
+ * type this way makes it impossible to forget that `manifestCanonical` is
+ * derived from everything else and can never contain itself.
+ */
+export type ManifestBody<T> = Omit<T, 'manifestCanonical'>;
+
+/**
  * Closed manifest of a UDA append attempt. Sufficient for 02A to preflight
  * collisions, know every id and Storage path the attempt creates, clean up
- * exactly those on failure, and recognize a replay by `manifestHash`.
+ * exactly those on failure, and derive the attempt's authoritative identity.
  */
 export interface UdaStructureImportManifest {
   kind: 'uda';
@@ -220,7 +228,15 @@ export interface UdaStructureImportManifest {
   /** Sorted, deduplicated — the exact cleanup surface. */
   udaIds: string[];
   storagePaths: string[];
-  manifestHash: string;
+  /**
+   * Canonical, stable serialization of every other field of this manifest.
+   *
+   * **Not an identity by itself.** The authoritative identity of the attempt is
+   * `SHA-256(manifestCanonical)`, computed by the 02A/02B runtime adapter via
+   * Web Crypto before the lease, the staging and any write. Only that hash need
+   * be persisted; this string does not have to be.
+   */
+  manifestCanonical: string;
 }
 
 /** Closed manifest of a lesson append attempt. Same reasoning, for 02B. */
@@ -237,7 +253,15 @@ export interface LessonStructureImportManifest {
   storagePaths: string[];
   /** Single increment to apply to the parent UDA's `lessonCount`. */
   lessonCountIncrement: number;
-  manifestHash: string;
+  /**
+   * Canonical, stable serialization of every other field of this manifest.
+   *
+   * **Not an identity by itself.** The authoritative identity of the attempt is
+   * `SHA-256(manifestCanonical)`, computed by the 02A/02B runtime adapter via
+   * Web Crypto before the lease, the staging and any write. Only that hash need
+   * be persisted; this string does not have to be.
+   */
+  manifestCanonical: string;
 }
 
 export type StructureImportManifest = UdaStructureImportManifest | LessonStructureImportManifest;

@@ -3,6 +3,12 @@ import { validateLessonMetadataFile } from '../validateLessonMetadataFile.js';
 import { STRUCTURE_IMPORT_LIMITS } from '../limits.js';
 
 /**
+ * L'API pubblica è byte-first: i test passano sempre dai byte, così il percorso
+ * esercitato è esattamente quello che userà la UI.
+ */
+const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+/**
  * STRUCTURE-IMPORT-01 — contratto chiuso del file lezioni
  * (structure-metadata-import-roadmap.md §4). L'accento è sul divieto assoluto
  * di contenuto: una lezione importata nasce sempre con il corpo vuoto, quindi
@@ -23,14 +29,14 @@ lessons:
 `;
 
 function codeOf(text: string, existingTitles: string[] = []): string {
-  const result = validateLessonMetadataFile(text, { existingTitles });
+  const result = validateLessonMetadataFile(utf8(text), { existingTitles });
   expect(result.ok).toBe(false);
   return result.ok ? 'ok' : result.error.code;
 }
 
 describe('file valido', () => {
   it('accetta il formato canonico e normalizza', () => {
-    const result = validateLessonMetadataFile(VALID, { filename: 'schoolforge-lezioni.yml' });
+    const result = validateLessonMetadataFile(utf8(VALID), { filename: 'schoolforge-lezioni.yml' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value).toEqual([
@@ -46,7 +52,7 @@ describe('file valido', () => {
 
   it('il sottotitolo assente diventa null', () => {
     const result = validateLessonMetadataFile(
-      VALID.replace('    sottotitolo: Dispositivi e comunicazione\n', ''),
+      utf8(VALID.replace('    sottotitolo: Dispositivi e comunicazione\n', '')),
     );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value[0]!.sottotitolo).toBeNull();
@@ -54,7 +60,7 @@ describe('file valido', () => {
 
   it('il sottotitolo presente ma vuoto diventa null, come l’assenza', () => {
     const result = validateLessonMetadataFile(
-      VALID.replace('Dispositivi e comunicazione', '"   "'),
+      utf8(VALID.replace('Dispositivi e comunicazione', '"   "')),
     );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value[0]!.sottotitolo).toBeNull();
@@ -69,7 +75,7 @@ ${['Gamma', 'Alfa', 'Beta']
       `  - titolo: ${titolo}\n    difficolta: base\n    concettiChiave:\n      - c\n    obiettivi:\n      - o\n`,
   )
   .join('')}`;
-    const result = validateLessonMetadataFile(text);
+    const result = validateLessonMetadataFile(utf8(text));
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.map((l) => l.titolo)).toEqual(['Gamma', 'Alfa', 'Beta']);
   });
@@ -81,7 +87,9 @@ ${['Gamma', 'Alfa', 'Beta']
         (_, i) =>
           `  - titolo: L${i}\n    difficolta: base\n    concettiChiave:\n      - c\n    obiettivi:\n      - o\n`,
       ).join('')}`;
-    expect(validateLessonMetadataFile(build(STRUCTURE_IMPORT_LIMITS.MAX_LESSONS)).ok).toBe(true);
+    expect(validateLessonMetadataFile(utf8(build(STRUCTURE_IMPORT_LIMITS.MAX_LESSONS))).ok).toBe(
+      true,
+    );
     expect(codeOf(build(STRUCTURE_IMPORT_LIMITS.MAX_LESSONS + 1))).toBe('too_many_items');
   });
 });
@@ -127,7 +135,7 @@ describe('campi vietati', () => {
       'questionCount',
     ]) {
       const text = VALID.replace('    difficolta:', `    ${key}: x\n    difficolta:`);
-      const result = validateLessonMetadataFile(text);
+      const result = validateLessonMetadataFile(utf8(text));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.code).toBe('forbidden_property');
@@ -139,7 +147,7 @@ describe('campi vietati', () => {
 
   it('il messaggio di un campo vietato spiega che il file contiene solo metadati', () => {
     const result = validateLessonMetadataFile(
-      VALID.replace('    difficolta:', '    body: "# Titolo"\n    difficolta:'),
+      utf8(VALID.replace('    difficolta:', '    body: "# Titolo"\n    difficolta:')),
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain('solo metadati');
@@ -186,7 +194,9 @@ lessons:
     ).toBe('value_too_long');
     expect(
       validateLessonMetadataFile(
-        VALID.replace('introduttiva', 'x'.repeat(STRUCTURE_IMPORT_LIMITS.MAX_DIFFICULTY_LENGTH)),
+        utf8(
+          VALID.replace('introduttiva', 'x'.repeat(STRUCTURE_IMPORT_LIMITS.MAX_DIFFICULTY_LENGTH)),
+        ),
       ).ok,
     ).toBe(true);
   });
@@ -242,11 +252,11 @@ lessons:
   it('due titoli che differiscono negli spazi interni restano distinti', () => {
     // Il confronto normalizza solo il trim esterno: non tocca il testo scritto
     // dal docente, quindi «La  rete» e «La rete» sono due titoli diversi.
-    expect(validateLessonMetadataFile(twice('La rete', '"La  rete"')).ok).toBe(true);
+    expect(validateLessonMetadataFile(utf8(twice('La rete', '"La  rete"'))).ok).toBe(true);
   });
 
   it('rifiuta un titolo già presente nella UDA di destinazione', () => {
-    const result = validateLessonMetadataFile(VALID, {
+    const result = validateLessonMetadataFile(utf8(VALID), {
       existingTitles: ["CHE COS'È UNA RETE"],
     });
     expect(result.ok).toBe(false);
@@ -254,6 +264,6 @@ lessons:
   });
 
   it('accetta titoli diversi', () => {
-    expect(validateLessonMetadataFile(twice('La rete', 'Il protocollo')).ok).toBe(true);
+    expect(validateLessonMetadataFile(utf8(twice('La rete', 'Il protocollo'))).ok).toBe(true);
   });
 });

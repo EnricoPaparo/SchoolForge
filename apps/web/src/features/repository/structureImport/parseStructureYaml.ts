@@ -1,5 +1,6 @@
 import { parseAllDocuments, visit } from 'yaml';
-import { STRUCTURE_IMPORT_EXTENSIONS, STRUCTURE_IMPORT_LIMITS, utf8ByteLength } from './limits.js';
+import { decodeStructureImportFile } from './decodeStructureImportFile.js';
+import type { StructureImportBytes } from './decodeStructureImportFile.js';
 import type {
   StructureImportError,
   StructureImportFileKind,
@@ -23,8 +24,13 @@ import type {
  *   these formats needs to override a type);
  * - a root that is not a mapping.
  *
- * Pure module: no Firebase, no React, no browser API beyond `TextEncoder`,
- * no network, no filesystem. It receives text that the caller already decoded.
+ * The authoritative entry point is `parseStructureYaml`, which takes the
+ * **original bytes**: extension, size limit and strict UTF-8 decoding all
+ * happen before a single character is parsed (see `decodeStructureImportFile`).
+ * `parseStructureYamlText` is the same parser over already-decoded text; it
+ * exists for internal reuse and tests and must not be reached from the UI.
+ *
+ * Pure module: no Firebase, no React, no DOM, no network, no filesystem.
  */
 
 function error(
@@ -35,56 +41,34 @@ function error(
   return { code, message, fileKind };
 }
 
-/**
- * Accepts only `.yaml`/`.yml`. The check is on the name, not on the MIME type:
- * browsers report YAML inconsistently, and the extension is what the teacher
- * actually controls.
- */
-export function hasAcceptedExtension(filename: string): boolean {
-  const lower = filename.toLowerCase();
-  return STRUCTURE_IMPORT_EXTENSIONS.some((ext) => lower.endsWith(ext));
-}
-
 export interface ParseStructureYamlOptions {
   fileKind: StructureImportFileKind;
-  /** When provided, its extension is validated before anything is parsed. */
+  /** When provided, its extension is validated before anything is decoded. */
   filename?: string;
 }
 
 /**
- * Parses `text` into a plain root mapping, or returns the single blocking
- * error that stops the whole file. Never partially accepts a file: one problem
- * rejects everything (contract §5).
+ * Authoritative entry point: original bytes in, plain root mapping out.
+ * Extension, size limit and strict UTF-8 decoding are applied first; a single
+ * problem rejects the whole file (contract §5).
  */
 export function parseStructureYaml(
-  text: string,
+  bytes: StructureImportBytes,
   options: ParseStructureYamlOptions,
 ): StructureImportResult<Record<string, unknown>> {
-  const { fileKind, filename } = options;
+  const decoded = decodeStructureImportFile(bytes, options);
+  if (!decoded.ok) return decoded;
+  return parseStructureYamlText(decoded.value, options.fileKind);
+}
 
-  if (filename !== undefined && !hasAcceptedExtension(filename)) {
-    return {
-      ok: false,
-      error: error(
-        'invalid_extension',
-        'Sono accettati solo file YAML con estensione .yaml o .yml.',
-        fileKind,
-      ),
-    };
-  }
-
-  const bytes = utf8ByteLength(text);
-  if (bytes > STRUCTURE_IMPORT_LIMITS.MAX_FILE_BYTES) {
-    return {
-      ok: false,
-      error: error(
-        'file_too_large',
-        `Il file supera il limite di ${STRUCTURE_IMPORT_LIMITS.MAX_FILE_BYTES} byte.`,
-        fileKind,
-      ),
-    };
-  }
-
+/**
+ * The parser proper, over already-decoded text. Internal: the UI must go
+ * through `parseStructureYaml` so that encoding is never assumed.
+ */
+export function parseStructureYamlText(
+  text: string,
+  fileKind: StructureImportFileKind,
+): StructureImportResult<Record<string, unknown>> {
   if (text.trim().length === 0) {
     return { ok: false, error: error('empty_file', 'Il file è vuoto.', fileKind) };
   }

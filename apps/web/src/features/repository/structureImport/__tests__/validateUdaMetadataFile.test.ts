@@ -3,6 +3,12 @@ import { validateUdaMetadataFile } from '../validateUdaMetadataFile.js';
 import { STRUCTURE_IMPORT_LIMITS } from '../limits.js';
 
 /**
+ * L'API pubblica è byte-first: i test passano sempre dai byte, così il percorso
+ * esercitato è esattamente quello che userà la UI.
+ */
+const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+/**
  * STRUCTURE-IMPORT-01 — contratto chiuso del file UDA
  * (structure-metadata-import-roadmap.md §3).
  */
@@ -18,14 +24,14 @@ udas:
 `;
 
 function codeOf(text: string, existingTitles: string[] = []): string {
-  const result = validateUdaMetadataFile(text, { existingTitles });
+  const result = validateUdaMetadataFile(utf8(text), { existingTitles });
   expect(result.ok).toBe(false);
   return result.ok ? 'ok' : result.error.code;
 }
 
 describe('file valido', () => {
   it('accetta il formato canonico e normalizza', () => {
-    const result = validateUdaMetadataFile(VALID, { filename: 'schoolforge-udas.yaml' });
+    const result = validateUdaMetadataFile(utf8(VALID), { filename: 'schoolforge-udas.yaml' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value).toEqual([
@@ -40,7 +46,7 @@ describe('file valido', () => {
 
   it('accetta indifferentemente .yaml e .yml', () => {
     for (const filename of ['a.yaml', 'a.yml']) {
-      expect(validateUdaMetadataFile(VALID, { filename }).ok).toBe(true);
+      expect(validateUdaMetadataFile(utf8(VALID), { filename }).ok).toBe(true);
     }
   });
 
@@ -53,7 +59,7 @@ udas:
     obiettivi:
       - Comprendere perché la città cresce
 `;
-    const result = validateUdaMetadataFile(text);
+    const result = validateUdaMetadataFile(utf8(text));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value[0]!.titolo).toBe('Città, energia e società');
@@ -69,7 +75,7 @@ udas:
     obiettivi:
       - "  un  obiettivo  "
 `;
-    const result = validateUdaMetadataFile(text);
+    const result = validateUdaMetadataFile(utf8(text));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value[0]!.titolo).toBe('Le  reti   locali');
@@ -77,7 +83,7 @@ udas:
   });
 
   it('la descrizione assente diventa null', () => {
-    const result = validateUdaMetadataFile(VALID.replace(/\n {4}descrizione:.*/, ''));
+    const result = validateUdaMetadataFile(utf8(VALID.replace(/\n {4}descrizione:.*/, '')));
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value[0]!.descrizione).toBeNull();
   });
@@ -88,7 +94,7 @@ udas:
 ${['Terza', 'Prima', 'Seconda']
   .map((titolo) => `  - titolo: ${titolo}\n    competenze:\n      - c\n    obiettivi:\n      - o\n`)
   .join('')}`;
-    const result = validateUdaMetadataFile(text);
+    const result = validateUdaMetadataFile(utf8(text));
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.map((u) => u.titolo)).toEqual(['Terza', 'Prima', 'Seconda']);
   });
@@ -135,7 +141,7 @@ describe('schema e radice', () => {
       { length: STRUCTURE_IMPORT_LIMITS.MAX_UDAS },
       (_, i) => `  - titolo: U${i}\n    competenze:\n      - c\n    obiettivi:\n      - o\n`,
     ).join('')}`;
-    const result = validateUdaMetadataFile(text);
+    const result = validateUdaMetadataFile(utf8(text));
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value).toHaveLength(40);
   });
@@ -157,7 +163,7 @@ describe('campi della voce', () => {
   it('rifiuta esplicitamente i campi di contenuto e quelli tecnici', () => {
     for (const key of ['body', 'content', 'lezioni', 'pool', 'id', 'order', 'dir']) {
       const text = VALID.replace('    descrizione:', `    ${key}: x\n    descrizione:`);
-      const result = validateUdaMetadataFile(text);
+      const result = validateUdaMetadataFile(utf8(text));
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error.code).toBe('forbidden_property');
     }
@@ -189,7 +195,7 @@ udas:
       'Introduzione alle reti',
       'x'.repeat(STRUCTURE_IMPORT_LIMITS.MAX_TEXT_LENGTH),
     );
-    expect(validateUdaMetadataFile(text).ok).toBe(true);
+    expect(validateUdaMetadataFile(utf8(text)).ok).toBe(true);
   });
 
   it('rifiuta un titolo non stringa: nessuna coercizione silenziosa', () => {
@@ -226,7 +232,7 @@ udas:
       / {4}obiettivi:\n {6}- .*\n/,
       '    obiettivi:\n      - primo\n      - "  "\n',
     );
-    const result = validateUdaMetadataFile(text);
+    const result = validateUdaMetadataFile(utf8(text));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('empty_value');
@@ -268,7 +274,7 @@ udas:
   });
 
   it('rifiuta un titolo già presente nella destinazione', () => {
-    const result = validateUdaMetadataFile(VALID, {
+    const result = validateUdaMetadataFile(utf8(VALID), {
       existingTitles: ['  introduzione ALLE reti '],
     });
     expect(result.ok).toBe(false);
@@ -280,6 +286,6 @@ udas:
   });
 
   it('accetta titoli diversi', () => {
-    expect(validateUdaMetadataFile(twice('Le reti', 'I protocolli')).ok).toBe(true);
+    expect(validateUdaMetadataFile(utf8(twice('Le reti', 'I protocolli'))).ok).toBe(true);
   });
 });

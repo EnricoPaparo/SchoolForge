@@ -130,6 +130,8 @@ describe('confine puro dei moduli STRUCTURE-IMPORT', () => {
   });
 
   it('nessun modulo tocca API del browser o temporizzatori', () => {
+    // `TextDecoder`/`TextEncoder` sono ammessi: sono primitive pure di
+    // piattaforma, senza DOM, rete né stato condiviso.
     const banned = [
       'document.',
       'window.',
@@ -149,6 +151,25 @@ describe('confine puro dei moduli STRUCTURE-IMPORT', () => {
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/(^|[^:])\/\/.*$/gm, '$1');
       for (const token of banned) {
+        expect(`${file.replace(`${srcRoot}/`, '')}:${source.includes(token)}`).toBe(
+          `${file.replace(`${srcRoot}/`, '')}:false`,
+        );
+      }
+    }
+  });
+
+  it('nessun modulo legge un File come testo: il percorso è byte-first', () => {
+    // `File.text()` e `FileReader.readAsText` sostituiscono i byte UTF-8 non
+    // validi con U+FFFD: un file corrotto verrebbe importato con i titoli
+    // rovinati invece di essere rifiutato. 02A/02B devono usare
+    // `file.arrayBuffer()`.
+    for (const file of sourceFilesIn(moduleDir)) {
+      // Solo il codice: i commenti nominano `File.text()` proprio per spiegare
+      // perché non va usato.
+      const source = readFileSync(file, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(^|[^:])\/\/.*$/gm, '$1');
+      for (const token of ['.text()', 'FileReader', 'readAsText', 'Blob(']) {
         expect(`${file.replace(`${srcRoot}/`, '')}:${source.includes(token)}`).toBe(
           `${file.replace(`${srcRoot}/`, '')}:false`,
         );

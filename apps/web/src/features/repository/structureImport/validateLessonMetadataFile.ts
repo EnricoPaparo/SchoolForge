@@ -1,5 +1,7 @@
 import { LESSON_METADATA_SCHEMA, STRUCTURE_IMPORT_LIMITS } from './limits.js';
-import { parseStructureYaml } from './parseStructureYaml.js';
+import { parseStructureYamlText } from './parseStructureYaml.js';
+import { decodeStructureImportFile } from './decodeStructureImportFile.js';
+import type { StructureImportBytes } from './decodeStructureImportFile.js';
 import { assertClosedKeySet, readStringField, readStringListField } from './entryFields.js';
 import { assertNoTitleCollisions, readRootEnvelope } from './validateStructureRoot.js';
 import type { NormalizedLessonMetadata, StructureImportResult } from './types.js';
@@ -73,13 +75,27 @@ export interface ValidateLessonMetadataOptions {
  * in file order (which is also the append order).
  */
 export function validateLessonMetadataFile(
-  text: string,
+  bytes: StructureImportBytes,
   options: ValidateLessonMetadataOptions = {},
 ): StructureImportResult<NormalizedLessonMetadata[]> {
-  const parsed = parseStructureYaml(text, {
+  const decoded = decodeStructureImportFile(bytes, {
     fileKind: 'lesson',
     ...(options.filename === undefined ? {} : { filename: options.filename }),
   });
+  if (!decoded.ok) return decoded;
+  return validateLessonMetadataFileText(decoded.value, options);
+}
+
+/**
+ * The validator proper, over already-decoded text. Internal: the UI must go
+ * through the byte-first entry point above, so that a file with invalid UTF-8
+ * can never be silently repaired into something importable.
+ */
+export function validateLessonMetadataFileText(
+  text: string,
+  options: ValidateLessonMetadataOptions = {},
+): StructureImportResult<NormalizedLessonMetadata[]> {
+  const parsed = parseStructureYamlText(text, 'lesson');
   if (!parsed.ok) return parsed;
 
   const envelope = readRootEnvelope(parsed.value, {

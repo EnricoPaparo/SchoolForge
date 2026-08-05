@@ -222,7 +222,7 @@ describe('manifest e hash', () => {
   it('è stabile a parità di input', () => {
     const a = plan([uda('Le reti'), uda('I protocolli')]);
     const b = plan([uda('Le reti'), uda('I protocolli')]);
-    expect(a.manifestHash).toBe(b.manifestHash);
+    expect(a.manifestCanonical).toBe(b.manifestCanonical);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 
@@ -230,7 +230,7 @@ describe('manifest e hash', () => {
     const a = plan([uda('Le reti', { obiettivi: ['o1'] })]);
     const b = plan([uda('Le reti', { obiettivi: ['o2'] })]);
     expect(a.udas[0]!.dir).toBe(b.udas[0]!.dir);
-    expect(a.manifestHash).not.toBe(b.manifestHash);
+    expect(a.manifestCanonical).not.toBe(b.manifestCanonical);
   });
 
   it('cambia se cambia la destinazione', () => {
@@ -242,13 +242,13 @@ describe('manifest e hash', () => {
       existingUdas: [],
     });
     expect(b.ok).toBe(true);
-    if (b.ok) expect(a.manifestHash).not.toBe(b.value.manifestHash);
+    if (b.ok) expect(a.manifestCanonical).not.toBe(b.value.manifestCanonical);
   });
 
   it('cambia se cambia l’ordine delle voci nel file', () => {
     const a = plan([uda('Alfa'), uda('Beta')]);
     const b = plan([uda('Beta'), uda('Alfa')]);
-    expect(a.manifestHash).not.toBe(b.manifestHash);
+    expect(a.manifestCanonical).not.toBe(b.manifestCanonical);
   });
 
   it('è interamente serializzabile', () => {

@@ -8,9 +8,10 @@ import {
   maxLessonOrder,
   toDocId,
 } from '../canonicalNaming.js';
-import { computeStructureManifestHash } from './structureManifestHash.js';
+import { canonicalizeManifest } from './structureManifestCanonical.js';
 import { assertNoTitleCollisions } from './validateStructureRoot.js';
 import type {
+  ManifestBody,
   ExistingLessonForPlan,
   LessonStructureImportManifest,
   NormalizedLessonMetadata,
@@ -168,34 +169,23 @@ export function planLessonMetadataAppend(
     });
   }
 
-  const manifestHash = computeStructureManifestHash({
+  const body: ManifestBody<LessonStructureImportManifest> = {
     kind: 'lesson',
+    ownerUid,
     programId,
     importId,
     udaId,
-    documentIds: planned.map((lesson) => lesson.lessonId),
-    projectionIds: planned.map((lesson) => lesson.publicLessonId),
-    files: planned.map((lesson) => ({ path: lesson.storageRef, content: lesson.content })),
-    orders: planned.map((lesson) => lesson.order),
-  });
-
-  return {
-    ok: true,
-    value: {
-      kind: 'lesson',
-      ownerUid,
-      programId,
-      importId,
-      udaId,
-      udaDir,
-      lessons: planned,
-      lessonIds: planned.map((lesson) => lesson.lessonId),
-      publicLessonIds: planned.map((lesson) => lesson.publicLessonId),
-      storagePaths: planned.map((lesson) => lesson.storageRef),
-      // A single increment for the whole batch, as the contract requires —
-      // never one `increment(1)` per lesson.
-      lessonCountIncrement: planned.length,
-      manifestHash,
-    },
+    udaDir,
+    lessons: planned,
+    lessonIds: planned.map((lesson) => lesson.lessonId),
+    publicLessonIds: planned.map((lesson) => lesson.publicLessonId),
+    storagePaths: planned.map((lesson) => lesson.storageRef),
+    // A single increment for the whole batch, as the contract requires —
+    // never one `increment(1)` per lesson.
+    lessonCountIncrement: planned.length,
   };
+
+  // Serializzazione canonica dell'intero manifest, non un hash: l'identità
+  // autorevole è `SHA-256(manifestCanonical)` e la calcola l'adapter di 02B.
+  return { ok: true, value: { ...body, manifestCanonical: canonicalizeManifest(body) } };
 }

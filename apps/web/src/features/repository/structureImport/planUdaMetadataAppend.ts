@@ -7,9 +7,10 @@ import {
   udaFrontMatterFields,
   udaStorageBasePath,
 } from '../canonicalNaming.js';
-import { computeStructureManifestHash } from './structureManifestHash.js';
+import { canonicalizeManifest } from './structureManifestCanonical.js';
 import { assertNoTitleCollisions } from './validateStructureRoot.js';
 import type {
+  ManifestBody,
   ExistingUdaForPlan,
   NormalizedUdaMetadata,
   PlannedUda,
@@ -147,28 +148,17 @@ export function planUdaMetadataAppend(
     });
   }
 
-  const manifestHash = computeStructureManifestHash({
+  const body: ManifestBody<UdaStructureImportManifest> = {
     kind: 'uda',
+    ownerUid,
     programId,
     importId,
-    udaId: null,
-    documentIds: planned.map((uda) => uda.udaId),
-    projectionIds: [],
-    files: planned.map((uda) => ({ path: uda.storagePath, content: uda.content })),
-    orders: planned.map((uda) => uda.order),
-  });
-
-  return {
-    ok: true,
-    value: {
-      kind: 'uda',
-      ownerUid,
-      programId,
-      importId,
-      udas: planned,
-      udaIds: planned.map((uda) => uda.udaId),
-      storagePaths: planned.map((uda) => uda.storagePath),
-      manifestHash,
-    },
+    udas: planned,
+    udaIds: planned.map((uda) => uda.udaId),
+    storagePaths: planned.map((uda) => uda.storagePath),
   };
+
+  // Serializzazione canonica dell'intero manifest, non un hash: l'identità
+  // autorevole è `SHA-256(manifestCanonical)` e la calcola l'adapter di 02A.
+  return { ok: true, value: { ...body, manifestCanonical: canonicalizeManifest(body) } };
 }

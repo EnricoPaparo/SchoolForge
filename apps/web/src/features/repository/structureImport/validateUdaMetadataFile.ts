@@ -1,5 +1,7 @@
 import { STRUCTURE_IMPORT_LIMITS, UDA_METADATA_SCHEMA } from './limits.js';
-import { parseStructureYaml } from './parseStructureYaml.js';
+import { parseStructureYamlText } from './parseStructureYaml.js';
+import { decodeStructureImportFile } from './decodeStructureImportFile.js';
+import type { StructureImportBytes } from './decodeStructureImportFile.js';
 import { assertClosedKeySet, readStringField, readStringListField } from './entryFields.js';
 import { assertNoTitleCollisions, readRootEnvelope } from './validateStructureRoot.js';
 import type { NormalizedUdaMetadata, StructureImportResult } from './types.js';
@@ -63,13 +65,27 @@ export interface ValidateUdaMetadataOptions {
  * file order (which is also the append order).
  */
 export function validateUdaMetadataFile(
-  text: string,
+  bytes: StructureImportBytes,
   options: ValidateUdaMetadataOptions = {},
 ): StructureImportResult<NormalizedUdaMetadata[]> {
-  const parsed = parseStructureYaml(text, {
+  const decoded = decodeStructureImportFile(bytes, {
     fileKind: 'uda',
     ...(options.filename === undefined ? {} : { filename: options.filename }),
   });
+  if (!decoded.ok) return decoded;
+  return validateUdaMetadataFileText(decoded.value, options);
+}
+
+/**
+ * The validator proper, over already-decoded text. Internal: the UI must go
+ * through the byte-first entry point above, so that a file with invalid UTF-8
+ * can never be silently repaired into something importable.
+ */
+export function validateUdaMetadataFileText(
+  text: string,
+  options: ValidateUdaMetadataOptions = {},
+): StructureImportResult<NormalizedUdaMetadata[]> {
+  const parsed = parseStructureYamlText(text, 'uda');
   if (!parsed.ok) return parsed;
 
   const envelope = readRootEnvelope(parsed.value, {
