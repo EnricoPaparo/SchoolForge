@@ -5,7 +5,12 @@ import type {
   UdaStructureImportDeps,
 } from '../udaStructureImportRepository.js';
 import { computeManifestHash } from '../manifestHash.js';
-import { checkCommitPreconditions, classifyAttempt, mayCleanupAttempt } from '../attemptState.js';
+import {
+  checkCommitPreconditions,
+  classifyAttempt,
+  classifySourceAttempt,
+  mayCleanupAttempt,
+} from '../attemptState.js';
 import type { AttemptExpectation, AttemptRecord, LeaseRecord } from '../attemptState.js';
 
 /**
@@ -79,8 +84,14 @@ function backend(): Backend {
     manifest: { udaIds: string[]; storagePaths: string[] },
   ): AttemptExpectation => ({
     requestId,
+    sourceHash: state.attempts.get(requestId)?.sourceHash as string,
+    programId: 'prog-1',
+    importId: state.activeImportId,
     manifestHash,
-    udaIds: manifest.udaIds,
+    kind: 'uda' as const,
+    udaId: null,
+    documentIds: manifest.udaIds,
+    publicLessonIds: [],
     storagePaths: manifest.storagePaths,
   });
 
@@ -99,7 +110,19 @@ function backend(): Backend {
       };
     },
 
-    hashManifest: (canonical) => computeManifestHash(canonical),
+    hashCanonical: (canonical) => computeManifestHash(canonical),
+
+    async probeSourceAttempt({ requestId, sourceHash }) {
+      calls.push('probeSourceAttempt');
+      return classifySourceAttempt(state.attempts.get(requestId) ?? null, {
+        requestId,
+        sourceHash,
+        kind: 'uda',
+        programId: 'prog-1',
+        importId: state.activeImportId,
+        udaId: null,
+      });
+    },
 
     async probeAttempt({ requestId, manifestHash, manifest }) {
       calls.push('probeAttempt');
@@ -205,10 +228,13 @@ function backend(): Backend {
       if (outcome === 'acquired') {
         state.attempts.set(params.requestId, {
           requestId: params.requestId,
+          sourceHash: params.sourceHash,
+          programId: 'prog-1',
+          importId: state.activeImportId,
           manifestHash: params.manifestHash,
           kind: 'uda',
           status: 'reserved',
-          udaIds: [...params.manifest.udaIds],
+          documentIds: [...params.manifest.udaIds],
           storagePaths: [...params.manifest.storagePaths],
         });
       }
@@ -274,7 +300,7 @@ describe('recovery dopo cleanup_pending', () => {
     expect(b.state.audit).toBe(1);
   });
 
-  it('un retry dopo un commit riuscito non duplica UDA, conteggi, audit o file', async () => {
+  it('un retry dopo un commit riuscito è riconosciuto come replay, non come duplicato', async () => {
     const b = backend();
     await importUdaStructure(INPUT, b.deps);
     const afterFirst = {
@@ -284,14 +310,14 @@ describe('recovery dopo cleanup_pending', () => {
       files: b.state.storage.size,
     };
 
-    // Stesso requestId e stesso file, ma le UDA ora esistono davvero: il piano
-    // si ferma sui titoli già presenti, prima ancora della sonda del tentativo.
-    // È fail-closed e non duplica nulla; il prezzo è un messaggio che parla di
-    // titoli anziché di «già importato» (limite noto, documentato in roadmap).
+    // Stesso requestId e stesso file, con le UDA ormai presenti: la sonda di
+    // **sorgente** precede il planner, quindi il tentativo è riconosciuto come
+    // replay invece di infrangersi sui titoli duplicati.
     const replay = await importUdaStructure(INPUT, b.deps);
-    expect(replay.status).toBe('validation_failed');
-    if (replay.status === 'validation_failed') {
-      expect(replay.error.code).toBe('duplicate_title_in_destination');
+    expect(replay.status).toBe('committed_replay');
+    if (replay.status === 'committed_replay') {
+      expect(replay.udaCount).toBe(2);
+      expect(replay.requiresReload).toBe(true);
     }
     expect(b.state.udas.size).toBe(afterFirst.udas);
     expect(b.state.udaCount).toBe(afterFirst.count);
@@ -317,7 +343,7 @@ describe('recovery dopo cleanup_pending', () => {
     const before = { udas: b.state.udas.size, audit: b.state.audit, count: b.state.udaCount };
 
     const replay = await importUdaStructure(INPUT, deps);
-    expect(replay.status).toBe('committed');
+    expect(replay.status).toBe('committed_replay');
     expect(b.state.udas.size).toBe(before.udas);
     expect(b.state.audit).toBe(before.audit);
     expect(b.state.udaCount).toBe(before.count);
@@ -333,14 +359,15 @@ describe('recovery dopo cleanup_pending', () => {
       manifestHash: 'non-verrà-usato',
       kind: 'uda',
       status: 'reserved',
-      udaIds: ['uda-99-altro'],
+      documentIds: ['uda-99-altro'],
       storagePaths: ['repository/owner-1/imports/imp-1/uda-99-altro/uda-99-altro.md'],
     });
     const result = await importUdaStructure(INPUT, b.deps);
-    // Hash diverso ⇒ conflitto; il record resta intatto.
+    // Record privo di `sourceHash`: non è dimostrabile che descriva questo
+    // tentativo, quindi è incoerente e non viene riparato.
     expect(result.status).toBe('not_applied');
-    if (result.status === 'not_applied') expect(result.reason).toBe('conflict');
-    expect(b.state.attempts.get('req-1')!['udaIds']).toEqual(['uda-99-altro']);
+    if (result.status === 'not_applied') expect(result.reason).toBe('incoherent_attempt');
+    expect(b.state.attempts.get('req-1')!['documentIds']).toEqual(['uda-99-altro']);
     expect(b.state.udas.size).toBe(0);
   });
 
@@ -374,10 +401,13 @@ describe('recovery dopo cleanup_pending', () => {
     // Un tentativo diverso ha preso il posto: stesso requestId, altro piano.
     b.state.attempts.set('req-1', {
       requestId: 'req-1',
+      sourceHash: 'd'.repeat(64),
+      programId: 'prog-1',
+      importId: 'imp-1',
       manifestHash: 'c'.repeat(64),
       kind: 'uda',
       status: 'reserved',
-      udaIds: ['uda-07-altro'],
+      documentIds: ['uda-07-altro'],
       storagePaths: ['repository/owner-1/imports/imp-1/uda-07-altro/uda-07-altro.md'],
     });
     b.state.storage.set('repository/owner-1/imports/imp-1/uda-07-altro/uda-07-altro.md', 'x');
@@ -388,6 +418,7 @@ describe('recovery dopo cleanup_pending', () => {
       activeImportId: 'imp-1',
       requestId: 'req-1',
       manifestHash: 'a'.repeat(64),
+      sourceHash: 'q'.repeat(64),
       manifest: {
         kind: 'uda',
         ownerUid: 'owner-1',
@@ -415,6 +446,7 @@ describe('recovery dopo cleanup_pending', () => {
       activeImportId: 'imp-1',
       requestId: 'req-1',
       manifestHash: 'a'.repeat(64),
+      sourceHash: 'q'.repeat(64),
       manifest: {
         kind: 'uda',
         ownerUid: 'owner-1',
@@ -429,6 +461,71 @@ describe('recovery dopo cleanup_pending', () => {
     expect(outcome).toBe('done');
     expect(b.state.storage.size).toBe(files);
     expect(b.state.udas.size).toBe(2);
+  });
+});
+
+describe('replay dopo una risposta persa', () => {
+  it('il retry è riconosciuto senza planner, preflight, lease, upload o commit', async () => {
+    const b = backend();
+    const first = await importUdaStructure(INPUT, b.deps);
+    expect(first.status).toBe('committed');
+
+    b.calls.length = 0;
+    const replay = await importUdaStructure(INPUT, b.deps);
+
+    expect(replay.status).toBe('committed_replay');
+    if (replay.status === 'committed_replay') {
+      expect(replay.udaIds).toEqual(['uda-01-le-reti', 'uda-02-i-protocolli']);
+      expect(replay.udaCount).toBe(2);
+      expect(replay.requiresReload).toBe(true);
+    }
+    // Dopo il riconoscimento non si fa altro: nessuna scrittura, nessun upload,
+    // e soprattutto nessun planner che si infrangerebbe sui titoli duplicati.
+    expect(b.calls).toEqual(['loadContext', 'probeSourceAttempt']);
+    expect(b.state.udas.size).toBe(2);
+    expect(b.state.udaCount).toBe(2);
+    expect(b.state.audit).toBe(1);
+    expect(b.state.storage.size).toBe(2);
+    expect(b.state.lease).toBeNull();
+  });
+
+  it('stesso requestId con file modificato: conflitto, mai un secondo import', async () => {
+    const b = backend();
+    await importUdaStructure(INPUT, b.deps);
+    const altro = new TextEncoder().encode(`schema: schoolforge-uda-metadata/v1
+udas:
+  - titolo: Tutt'altra UDA
+    competenze:
+      - c
+    obiettivi:
+      - o
+`);
+    const result = await importUdaStructure({ ...INPUT, bytes: altro }, b.deps);
+    expect(result.status).toBe('not_applied');
+    if (result.status === 'not_applied') expect(result.reason).toBe('conflict');
+    expect(b.state.udas.size).toBe(2);
+    expect(b.state.audit).toBe(1);
+  });
+
+  it('stessa sorgente ma piano divergente dopo una mutazione concorrente: fail-closed', async () => {
+    const b = backend();
+    b.fail.commit = true;
+    b.fail.cleanupStorage = true;
+    expect((await importUdaStructure(INPUT, b.deps)).status).toBe('cleanup_pending');
+    delete b.fail.commit;
+    delete b.fail.cleanupStorage;
+
+    // Nel frattempo qualcun altro ha aggiunto una UDA: la numerazione si sposta
+    // e il piano non è più quello prenotato.
+    b.state.udas.set('uda-01-altra', { dir: 'uda-01-altra', order: 0, titolo: 'Altra' });
+
+    const retry = await importUdaStructure(INPUT, b.deps);
+    expect(retry.status).toBe('not_applied');
+    if (retry.status === 'not_applied') expect(retry.reason).toBe('incoherent_attempt');
+    // Nessuna UDA nuova, nessun conteggio, nessun audit.
+    expect([...b.state.udas.keys()]).toEqual(['uda-01-altra']);
+    expect(b.state.udaCount).toBe(0);
+    expect(b.state.audit).toBe(0);
   });
 });
 

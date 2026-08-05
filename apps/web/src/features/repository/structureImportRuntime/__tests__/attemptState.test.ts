@@ -18,8 +18,14 @@ import type { AttemptExpectation } from '../attemptState.js';
 
 const EXPECTED: AttemptExpectation = {
   requestId: 'req-1',
+  sourceHash: 's'.repeat(64),
+  programId: 'prog-1',
+  importId: 'imp-1',
   manifestHash: 'a'.repeat(64),
-  udaIds: ['uda-01-a', 'uda-02-b'],
+  kind: 'uda',
+  udaId: null,
+  publicLessonIds: [],
+  documentIds: ['uda-01-a', 'uda-02-b'],
   storagePaths: [
     'repository/o/imports/i/uda-01-a/uda-01-a.md',
     'repository/o/imports/i/uda-02-b/uda-02-b.md',
@@ -28,10 +34,13 @@ const EXPECTED: AttemptExpectation = {
 
 const RESERVED = {
   requestId: EXPECTED.requestId,
+  sourceHash: EXPECTED.sourceHash,
+  programId: EXPECTED.programId,
+  importId: EXPECTED.importId,
   manifestHash: EXPECTED.manifestHash,
   kind: 'uda',
   status: 'reserved',
-  udaIds: [...EXPECTED.udaIds],
+  documentIds: [...EXPECTED.documentIds],
   storagePaths: [...EXPECTED.storagePaths],
 };
 
@@ -48,10 +57,22 @@ describe('classificazione del tentativo', () => {
     expect(classifyAttempt({ ...RESERVED, status: 'committed' }, EXPECTED)).toBe('committed');
   });
 
-  it('stesso requestId con hash diverso: conflitto, mai un secondo import', () => {
+  it('stessa sorgente ma piano diverso: incoerente, mai un secondo import', () => {
+    // Il piano prenotato non è più quello corrente: una mutazione concorrente ha
+    // spostato numerazione o `order`. Fail-closed, senza riparazioni.
     expect(classifyAttempt({ ...RESERVED, manifestHash: 'b'.repeat(64) }, EXPECTED)).toBe(
-      'conflict',
+      'incoherent',
     );
+  });
+
+  it('sorgente diversa: conflitto — il docente ha cambiato il file', () => {
+    expect(classifyAttempt({ ...RESERVED, sourceHash: 'z'.repeat(64) }, EXPECTED)).toBe('conflict');
+  });
+
+  it('record privo di sourceHash: incoerente, mai riparato', () => {
+    const legacy = { ...RESERVED } as Record<string, unknown>;
+    delete legacy['sourceHash'];
+    expect(classifyAttempt(legacy as never, EXPECTED)).toBe('incoherent');
   });
 
   it('record parziale o malformato: incoerente, non riparabile', () => {
@@ -60,12 +81,14 @@ describe('classificazione del tentativo', () => {
       { ...RESERVED, requestId: 'altro' },
       { ...RESERVED, manifestHash: undefined },
       { ...RESERVED, manifestHash: 42 },
+      { ...RESERVED, sourceHash: undefined },
+      { ...RESERVED, sourceHash: 7 },
       { ...RESERVED, kind: undefined },
       { ...RESERVED, kind: 'lesson' },
       { ...RESERVED, status: undefined },
       { ...RESERVED, status: 'boh' },
-      { ...RESERVED, udaIds: undefined },
-      { ...RESERVED, udaIds: 'uda-01-a' },
+      { ...RESERVED, documentIds: undefined },
+      { ...RESERVED, documentIds: 'uda-01-a' },
       { ...RESERVED, storagePaths: [1, 2] },
     ];
     for (const record of cases) {
@@ -74,8 +97,10 @@ describe('classificazione del tentativo', () => {
   });
 
   it('path o id divergenti: incoerente, non riprendibile', () => {
-    expect(classifyAttempt({ ...RESERVED, udaIds: ['uda-01-a'] }, EXPECTED)).toBe('incoherent');
-    expect(classifyAttempt({ ...RESERVED, udaIds: ['uda-02-b', 'uda-01-a'] }, EXPECTED)).toBe(
+    expect(classifyAttempt({ ...RESERVED, documentIds: ['uda-01-a'] }, EXPECTED)).toBe(
+      'incoherent',
+    );
+    expect(classifyAttempt({ ...RESERVED, documentIds: ['uda-02-b', 'uda-01-a'] }, EXPECTED)).toBe(
       'incoherent',
     );
     expect(
@@ -84,11 +109,17 @@ describe('classificazione del tentativo', () => {
   });
 
   it('l’hash è controllato prima della forma: un piano diverso è sempre un conflitto', () => {
-    // Un record con hash diverso *e* path diversi resta un conflitto, non un
-    // incoerente: è il retry legittimo di un file modificato.
+    // Sorgente diversa *e* piano diverso resta un conflitto, non un incoerente:
+    // è il retry legittimo di un file modificato.
     expect(
       classifyAttempt(
-        { ...RESERVED, manifestHash: 'b'.repeat(64), udaIds: ['x'], storagePaths: ['y'] },
+        {
+          ...RESERVED,
+          sourceHash: 'z'.repeat(64),
+          manifestHash: 'b'.repeat(64),
+          documentIds: ['x'],
+          storagePaths: ['y'],
+        },
         EXPECTED,
       ),
     ).toBe('conflict');
@@ -205,6 +236,7 @@ describe('guardia del cleanup', () => {
     expect(mayCleanupAttempt(null, EXPECTED)).toBe(false);
     expect(mayCleanupAttempt({ ...RESERVED, status: 'committed' }, EXPECTED)).toBe(false);
     expect(mayCleanupAttempt({ ...RESERVED, manifestHash: 'b'.repeat(64) }, EXPECTED)).toBe(false);
+    expect(mayCleanupAttempt({ ...RESERVED, sourceHash: 'z'.repeat(64) }, EXPECTED)).toBe(false);
     expect(mayCleanupAttempt({ ...RESERVED, storagePaths: ['altro'] }, EXPECTED)).toBe(false);
     expect(mayCleanupAttempt({ ...RESERVED, kind: 'lesson' }, EXPECTED)).toBe(false);
   });

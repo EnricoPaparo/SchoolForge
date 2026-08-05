@@ -58,7 +58,8 @@ function harness(overrides: Partial<UdaStructureImportDeps> = {}): Harness {
 
   const base: UdaStructureImportDeps = {
     loadContext: track('loadContext', async () => CONTEXT),
-    hashManifest: track('hashManifest', (canonical) => computeManifestHash(canonical)),
+    hashCanonical: track('hashCanonical', (canonical) => computeManifestHash(canonical)),
+    probeSourceAttempt: track('probeSourceAttempt', async () => ({ state: 'none' }) as const),
     probeAttempt: track('probeAttempt', async () => 'none' as const),
     preflight: track('preflight', async () => ({ collision: null })),
     acquireLease: track('acquireLease', async () => 'acquired' as const),
@@ -113,7 +114,9 @@ describe('append riuscito', () => {
     await importUdaStructure(INPUT, deps);
     expect(seq).toEqual([
       'loadContext',
-      'hashManifest',
+      'hashCanonical',
+      'probeSourceAttempt',
+      'hashCanonical',
       'probeAttempt',
       'preflight',
       'acquireLease',
@@ -188,7 +191,9 @@ describe('validazione locale: nessuna operazione Firebase', () => {
     if (result.status === 'validation_failed') {
       expect(result.error.code).toBe('duplicate_title_in_destination');
     }
-    expect(calls).toEqual(['loadContext']);
+    // Il planner arriva dopo l'identità di sorgente e la sua sonda: nessuna
+    // scrittura, ma la sonda è già stata interrogata.
+    expect(calls).toEqual(['loadContext', 'hashCanonical', 'probeSourceAttempt']);
   });
 
   it('senza import attivo non scrive nulla', async () => {
@@ -203,30 +208,42 @@ describe('validazione locale: nessuna operazione Firebase', () => {
 describe('hash indisponibile', () => {
   it('fallisce chiuso prima di lease, upload e commit', async () => {
     const { deps, calls } = harness({
-      hashManifest: async () => {
+      hashCanonical: async () => {
         throw new Error('Web Crypto non disponibile.');
       },
     });
     const result = await importUdaStructure(INPUT, deps);
     expect(result.status).toBe('not_applied');
     if (result.status === 'not_applied') expect(result.reason).toBe('hash_unavailable');
-    expect(calls).toEqual(['loadContext', 'hashManifest']);
+    expect(calls).toEqual(['loadContext', 'hashCanonical']);
   });
 });
 
 describe('idempotenza', () => {
   it('stesso requestId e stesso hash: replay senza riscrivere nulla', async () => {
-    const { deps, calls } = harness({ probeAttempt: async () => 'committed' as const });
+    const { deps, calls } = harness({
+      probeSourceAttempt: async () =>
+        ({
+          state: 'committed',
+          documentIds: ['uda-01-le-reti', 'uda-02-i-protocolli'],
+          publicLessonIds: [],
+        }) as const,
+    });
     const result = await importUdaStructure(INPUT, deps);
-    expect(result.status).toBe('committed');
-    if (result.status === 'committed') expect(result.udaCount).toBe(2);
+    expect(result.status).toBe('committed_replay');
+    if (result.status === 'committed_replay') {
+      expect(result.udaCount).toBe(2);
+      expect(result.requiresReload).toBe(true);
+    }
     expect(calls).not.toContain('acquireLease');
     expect(calls).not.toContain('uploadStorage');
     expect(calls).not.toContain('commit');
   });
 
   it('stesso requestId e hash diverso: fail-closed, zero scritture', async () => {
-    const { deps, calls } = harness({ probeAttempt: async () => 'conflict' as const });
+    const { deps, calls } = harness({
+      probeSourceAttempt: async () => ({ state: 'conflict' }) as const,
+    });
     const result = await importUdaStructure(INPUT, deps);
     expect(result.status).toBe('not_applied');
     if (result.status === 'not_applied') expect(result.reason).toBe('conflict');
@@ -241,11 +258,11 @@ describe('idempotenza', () => {
         seen.push(manifestHash);
         return 'none' as const;
       },
-      acquireLease: async ({ manifestHash }) => {
+      acquireLease: async ({ manifestHash }: { manifestHash: string }) => {
         seen.push(manifestHash);
         return 'acquired' as const;
       },
-      commit: async ({ manifestHash }) => {
+      commit: async ({ manifestHash }: { manifestHash: string }) => {
         seen.push(manifestHash);
       },
     });
@@ -263,7 +280,14 @@ describe('collisioni e concorrenza', () => {
     const result = await importUdaStructure(INPUT, deps);
     expect(result.status).toBe('not_applied');
     if (result.status === 'not_applied') expect(result.reason).toBe('collision');
-    expect(calls).toEqual(['loadContext', 'hashManifest', 'probeAttempt', 'preflight']);
+    expect(calls).toEqual([
+      'loadContext',
+      'hashCanonical',
+      'probeSourceAttempt',
+      'hashCanonical',
+      'probeAttempt',
+      'preflight',
+    ]);
   });
 
   it('una collisione Storage blocca allo stesso modo', async () => {

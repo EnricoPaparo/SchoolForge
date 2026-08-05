@@ -1,5 +1,7 @@
 import { planUdaMetadataAppend, validateUdaMetadataFile } from '../structureImport/index.js';
-import type { AttemptClassification } from './attemptState.js';
+import { runStructureAppend } from './structureAppendProtocol.js';
+import { canonicalizeSource } from './structureSourceCanonical.js';
+import type { AttemptClassification, SourceProbe } from './attemptState.js';
 import type {
   ExistingUdaForPlan,
   NormalizedUdaMetadata,
@@ -57,7 +59,18 @@ export interface UdaStructureImportDeps {
   /** Reads program + active import + existing UDAs. `null` when there is no active import. */
   loadContext(programId: string): Promise<UdaStructureImportContext | null>;
   /** `hex(SHA-256(UTF8(manifestCanonical)))`. Throws — fail-closed — when unavailable. */
-  hashManifest(manifestCanonical: string): Promise<string>;
+  /** `hex(SHA-256(UTF8(canonical)))` — usato sia per la sorgente sia per il piano. */
+  hashCanonical(canonical: string): Promise<string>;
+  /**
+   * Sonda **di sorgente**, prima del planner: riconosce un replay anche quando
+   * il commit precedente ha già modificato la destinazione.
+   */
+  probeSourceAttempt(params: {
+    programId: string;
+    activeImportId: string;
+    requestId: string;
+    sourceHash: string;
+  }): Promise<SourceProbe>;
   /**
    * Classifies the attempt record for `requestId` against the current plan
    * (see `classifyAttempt`): `'none'`, `'committed'`, `'conflict'`,
@@ -88,6 +101,7 @@ export interface UdaStructureImportDeps {
     activeImportId: string;
     requestId: string;
     manifestHash: string;
+    sourceHash: string;
     manifest: UdaStructureImportManifest;
   }): Promise<'acquired' | 'busy'>;
   /** Upload exactly the manifest files through the same-origin gateway, concurrency ≤ 3. */
@@ -111,6 +125,7 @@ export interface UdaStructureImportDeps {
    */
   commit(params: {
     programId: string;
+    sourceHash: string;
     manifest: UdaStructureImportManifest;
     requestId: string;
     manifestHash: string;
@@ -123,6 +138,7 @@ export interface UdaStructureImportDeps {
   cleanup(params: {
     programId: string;
     activeImportId: string;
+    sourceHash: string;
     manifest: UdaStructureImportManifest;
     requestId: string;
     manifestHash: string;
@@ -159,6 +175,18 @@ export type UdaStructureImportNotAppliedReason =
 
 export type UdaStructureImportResult =
   | {
+      /**
+       * Replay riconosciuto dopo un commit la cui risposta si era persa. Gli id
+       * e il conteggio vengono dal record persistito, non da un piano
+       * ricostruito sulla destinazione ormai modificata: per questo la vista
+       * locale va ricaricata invece di essere aggiornata a mano.
+       */
+      status: 'committed_replay';
+      udaIds: string[];
+      udaCount: number;
+      requiresReload: true;
+    }
+  | {
       status: 'committed';
       udaIds: string[];
       udaCount: number;
@@ -190,6 +218,7 @@ const COPY = {
   preCommit: 'Importazione non applicata: il corso è rimasto invariato. Puoi riprovare.',
   cleanupPending:
     'Importazione non applicata. Alcuni dati tecnici del tentativo devono ancora essere rimossi: riprova fra poco.',
+  hashUnavailable: "Impossibile calcolare l'impronta dell'importazione.",
 } as const;
 
 /**
@@ -221,8 +250,53 @@ export async function importUdaStructure(
     return { status: 'not_applied', message: COPY.ownerMismatch, reason: 'owner_mismatch' };
   }
 
-  // Titles already in the destination are re-checked here against the freshly
-  // read state, not against whatever the dialog showed a minute ago.
+  // 3. Identità della **sorgente**, calcolabile prima del planner: è ciò che
+  // permette di riconoscere un replay quando il commit precedente ha già
+  // scritto le UDA e il planner le vedrebbe come duplicati.
+  let sourceHash: string;
+  try {
+    sourceHash = await deps.hashCanonical(
+      canonicalizeSource({
+        kind: 'uda',
+        ownerUid: context.ownerUid,
+        programId: input.programId,
+        importId: context.activeImportId,
+        udas: validation.value,
+      }),
+    );
+  } catch (error) {
+    return {
+      status: 'not_applied',
+      message: error instanceof Error ? error.message : COPY.hashUnavailable,
+      reason: 'hash_unavailable',
+    };
+  }
+
+  // 4. Sonda di sorgente: prima del planner, del preflight, del lease e di
+  // qualunque scrittura.
+  const source = await deps.probeSourceAttempt({
+    programId: input.programId,
+    activeImportId: context.activeImportId,
+    requestId: input.requestId,
+    sourceHash,
+  });
+  if (source.state === 'committed') {
+    return {
+      status: 'committed_replay',
+      udaIds: source.documentIds,
+      udaCount: source.documentIds.length,
+      requiresReload: true,
+    };
+  }
+  if (source.state === 'conflict') {
+    return { status: 'not_applied', message: COPY.conflict, reason: 'conflict' };
+  }
+  if (source.state === 'incoherent') {
+    return { status: 'not_applied', message: COPY.incoherentAttempt, reason: 'incoherent_attempt' };
+  }
+
+  // 5. Piano. I titoli già presenti nella destinazione sono ricontrollati
+  // contro lo stato appena letto, non contro quello che il dialog mostrava.
   const plan = planUdaMetadataAppend({
     ownerUid: context.ownerUid,
     programId: input.programId,
@@ -233,132 +307,64 @@ export async function importUdaStructure(
   if (!plan.ok) return { status: 'validation_failed', error: plan.error };
   const manifest = plan.value;
 
-  // 3. Authoritative identity. Computed BEFORE the lease, the upload and any
-  // write: if it cannot be computed, nothing happens at all.
-  let manifestHash: string;
-  try {
-    manifestHash = await deps.hashManifest(manifest.manifestCanonical);
-  } catch (error) {
+  // 6–11. Identità del piano, verifica del tentativo, preflight, lease, upload,
+  // rinnovo e commit: protocollo condiviso con l'import delle lezioni.
+  const outcome = await runStructureAppend(
+    { manifest, requestId: input.requestId, sourceHash, copy: COPY },
+    {
+      hashCanonical: (canonical) => deps.hashCanonical(canonical),
+      probeAttempt: ({ requestId, manifestHash }) =>
+        deps.probeAttempt({
+          programId: input.programId,
+          activeImportId: context.activeImportId,
+          requestId,
+          manifestHash,
+          manifest,
+        }),
+      preflight: ({ ownedStoragePaths }) =>
+        deps.preflight({ programId: input.programId, context, manifest, ownedStoragePaths }),
+      acquireLease: ({ requestId, manifestHash, sourceHash: source }) =>
+        deps.acquireLease({
+          programId: input.programId,
+          activeImportId: context.activeImportId,
+          requestId,
+          manifestHash,
+          sourceHash: source,
+          manifest,
+        }),
+      uploadStorage: (files) => deps.uploadStorage(files),
+      renewLease: ({ requestId, manifestHash }) =>
+        deps.renewLease({
+          programId: input.programId,
+          activeImportId: context.activeImportId,
+          requestId,
+          manifestHash,
+        }),
+      commit: ({ requestId, manifestHash }) =>
+        deps.commit({ programId: input.programId, manifest, requestId, manifestHash, sourceHash }),
+      cleanup: ({ requestId, manifestHash }) =>
+        deps.cleanup({
+          programId: input.programId,
+          activeImportId: context.activeImportId,
+          manifest,
+          requestId,
+          manifestHash,
+          sourceHash,
+        }),
+      filesOf: (m) => m.udas.map((uda) => ({ path: uda.storagePath, content: uda.content })),
+    },
+  );
+
+  if (outcome.status === 'committed') {
     return {
-      status: 'not_applied',
-      message:
-        error instanceof Error
-          ? error.message
-          : "Impossibile calcolare l'impronta dell'importazione.",
-      reason: 'hash_unavailable',
+      status: 'committed',
+      udaIds: manifest.udaIds,
+      udaCount: manifest.udas.length,
+      titles: manifest.udas.map((uda) => uda.metadata.titolo),
+      manifest,
     };
   }
-
-  const success = (): UdaStructureImportResult => ({
-    status: 'committed',
-    udaIds: manifest.udaIds,
-    udaCount: manifest.udas.length,
-    titles: manifest.udas.map((uda) => uda.metadata.titolo),
-    manifest,
-  });
-
-  // 4. Attempt state machine. A retry of the same request with the same plan is
-  // a replay or a resume; anything else fails closed.
-  const attempt = await deps.probeAttempt({
-    programId: input.programId,
-    activeImportId: context.activeImportId,
-    requestId: input.requestId,
-    manifestHash,
-    manifest,
-  });
-  if (attempt === 'committed') return success();
-  if (attempt === 'conflict') {
-    return { status: 'not_applied', message: COPY.conflict, reason: 'conflict' };
-  }
-  if (attempt === 'incoherent') {
-    // Never repaired and never overwritten automatically: a human decides.
-    return {
-      status: 'not_applied',
-      message: COPY.incoherentAttempt,
-      reason: 'incoherent_attempt',
-    };
-  }
-
-  // 5. Collision preflight — still zero writes and zero uploads.
-  //
-  // On a resume, the files this same attempt already uploaded are not foreign
-  // collisions: the attempt record proved they carry this exact `requestId`,
-  // this exact `manifestHash` and this exact path list. Any other existing path
-  // still blocks, and an existing UDA document always blocks.
-  const { collision } = await deps.preflight({
-    programId: input.programId,
-    context,
-    manifest,
-    ownedStoragePaths: attempt === 'resumable' ? manifest.storagePaths : [],
-  });
-  if (collision) {
-    return { status: 'not_applied', message: COPY.collision, reason: 'collision' };
-  }
-
-  // 6. First writes: attempt record + lease.
-  const lease = await deps.acquireLease({
-    programId: input.programId,
-    activeImportId: context.activeImportId,
-    requestId: input.requestId,
-    manifestHash,
-    manifest,
-  });
-  if (lease === 'busy') {
-    return { status: 'not_applied', message: COPY.busy, reason: 'busy' };
-  }
-
-  const cleanupAndReturn = async (
-    reason: UdaStructureImportNotAppliedReason,
-  ): Promise<UdaStructureImportResult> => {
-    const outcome = await deps.cleanup({
-      programId: input.programId,
-      activeImportId: context.activeImportId,
-      manifest,
-      requestId: input.requestId,
-      manifestHash,
-    });
-    if (outcome === 'pending') return { status: 'cleanup_pending', message: COPY.cleanupPending };
-    return { status: 'not_applied', message: COPY.preCommit, reason };
-  };
-
-  try {
-    // Re-uploading the same paths on a resume is deliberate and safe: the
-    // content is fixed by the manifest whose hash the attempt record carries,
-    // so the write is byte-identical to what is already there. This is the
-    // single recovery strategy — no conditional delete, no second preflight.
-    await deps.uploadStorage(
-      manifest.udas.map((uda) => ({ path: uda.storagePath, content: uda.content })),
-    );
-  } catch {
-    return cleanupAndReturn('upload_failed');
-  }
-
-  // A slow upload must not be followed by a commit on an expired lease.
-  const renewal = await deps.renewLease({
-    programId: input.programId,
-    activeImportId: context.activeImportId,
-    requestId: input.requestId,
-    manifestHash,
-  });
-  if (renewal === 'lost') {
-    return cleanupAndReturn('lease_lost');
-  }
-
-  try {
-    await deps.commit({
-      programId: input.programId,
-      manifest,
-      requestId: input.requestId,
-      manifestHash,
-    });
-  } catch {
-    return cleanupAndReturn('commit_failed');
-  }
-
-  // Committed: every new UDA is visible together. Nothing after this point may
-  // downgrade the result to a failure — a post-commit refresh problem is the
-  // UI's business, not the import's.
-  return success();
+  return outcome;
 }
 
 /** Re-exported for the UI's summary rendering — no second parsing pass. */

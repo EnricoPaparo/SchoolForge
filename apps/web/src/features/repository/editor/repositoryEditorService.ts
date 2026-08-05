@@ -54,6 +54,7 @@ import {
   type VerificationForRepositoryGuard,
 } from './repositoryEditorGuards.js';
 import { assertNoActiveUdaAppendLease } from '../importUda/udaImportLease.js';
+import { assertNoActiveLessonAppendLease } from '../structureImportRuntime/lessonAppendLease.js';
 
 // SGW-01: gli accessi Storage singolo-file passano dal gateway same-origin, non
 // più da `firebase/storage` diretto (che su Brave fallisce con timeout ~120 s).
@@ -465,6 +466,10 @@ export async function createLesson(params: {
   const titolo = fields.titolo.trim();
   if (!titolo) throw new Error('Il titolo della lezione è obbligatorio.');
 
+  // Mutual exclusion with an in-flight "Importa lezioni" append on THIS UDA
+  // (STRUCTURE-IMPORT-02B): the numbering base must not move under it.
+  await assertNoActiveLessonAppendLease(programId, importId, udaId, db);
+
   const lessonsRef = collection(db, 'programs', programId, 'imports', importId, 'lessons');
   const existingSnap = await getDocs(query(lessonsRef, where('udaDir', '==', udaDir)));
   const existingLessons = existingSnap.docs.map((d) => d.data() as Partial<LessonDoc>);
@@ -695,9 +700,17 @@ export async function reorderLesson(params: {
   lessonId: string;
   neighborLessonId: string;
   ownerUid: string;
+  /**
+   * Parent UDA. **Obbligatorio**: un parametro opzionale avrebbe permesso a un
+   * chiamante distratto di saltare del tutto il controllo del lease, e una
+   * mutazione che salta il lease è esattamente ciò che il protocollo di import
+   * non può tollerare — anche se uno scambio, di per sé, non sposta la base di
+   * numerazione.
+   */
+  udaId: string;
   db: Firestore;
 }): Promise<{ order: number; neighborOrder: number }> {
-  const { programId, importId, lessonId, neighborLessonId, ownerUid, db } = params;
+  const { programId, importId, lessonId, neighborLessonId, ownerUid, udaId, db } = params;
   const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
   const neighborRef = doc(
     db,
@@ -717,6 +730,9 @@ export async function reorderLesson(params: {
   if (lesson.udaDir !== neighbor.udaDir) {
     throw new Error('Le lezioni non appartengono alla stessa UDA.');
   }
+
+  // Mutual exclusion with an in-flight structural lesson import on this UDA.
+  await assertNoActiveLessonAppendLease(programId, importId, udaId, db);
 
   const order = neighbor.order ?? lessonOrderFromFilename(neighbor.filename) ?? 0;
   const neighborOrder = lesson.order ?? lessonOrderFromFilename(lesson.filename) ?? 0;
@@ -903,6 +919,7 @@ export async function deleteLesson(params: {
     db,
   );
   if (blockers.length > 0) throw new RepositoryDeleteBlockedError(blockers);
+  await assertNoActiveLessonAppendLease(programId, importId, udaId, db);
 
   const questionIndexSnap = await getDocs(
     query(
@@ -963,8 +980,11 @@ export async function deleteUda(params: {
 
   const blockers = await getUdaDeleteBlockers(ownerUid, programId, importId, uda.dir, db);
   if (blockers.length > 0) throw new RepositoryDeleteBlockedError(blockers);
-  // Mutual exclusion with an in-flight "Importa UDA" staged append.
+  // Mutual exclusion with an in-flight "Importa UDA" staged append, and with a
+  // structural lesson import on this very UDA: deleting it would pull the
+  // destination out from under an attempt that is about to commit.
   await assertNoActiveUdaAppendLease(programId, importId, db);
+  await assertNoActiveLessonAppendLease(programId, importId, udaId, db);
 
   const lessonsRef = collection(db, 'programs', programId, 'imports', importId, 'lessons');
   const [lessonsSnap, questionIndexSnap] = await Promise.all([

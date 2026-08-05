@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const css = readFileSync(resolve(__dirname, '../DidatticaView.module.css'), 'utf8');
 const dialog = readFileSync(resolve(__dirname, '../ImportUdaStructureDialog.tsx'), 'utf8');
+const lessonDialog = readFileSync(resolve(__dirname, '../ImportLessonStructureDialog.tsx'), 'utf8');
 
 const rule = css.slice(css.indexOf('.structureSummary {'));
 const body = rule.slice(0, rule.indexOf('}'));
@@ -39,10 +40,27 @@ describe('elenco di riepilogo', () => {
 
   it('i comandi restano fuori dall’area che scorre', () => {
     expect(dialog.indexOf('styles.dialogActions')).toBeGreaterThan(dialog.indexOf('</ol>'));
+    expect(lessonDialog.indexOf('styles.dialogActions')).toBeGreaterThan(
+      lessonDialog.indexOf('</ol>'),
+    );
+  });
+
+  it('i comandi sono ancorati in fondo al dialog, in entrambi gli import', () => {
+    // Limitare l'elenco non basta su schermi molto bassi: misurato a 320x640,
+    // il pulsante di conferma finiva sotto la piega.
+    const actions = css.slice(css.indexOf('.structureActions {'));
+    const actionsBody = actions.slice(0, actions.indexOf('}'));
+    expect(actionsBody).toMatch(/position:\s*sticky/);
+    expect(actionsBody).toMatch(/bottom:\s*-1\.25rem/);
+    // Nessuna linea separatrice sopra i pulsanti.
+    expect(actionsBody).not.toMatch(/border/);
+    expect(dialog).toContain('styles.structureActions');
+    expect(lessonDialog).toContain('styles.structureActions');
   });
 
   it('nessuna textarea ridimensionabile e nessun separatore sopra i pulsanti', () => {
     expect(dialog).not.toContain('<textarea');
+    expect(lessonDialog).not.toContain('<textarea');
     expect(body).not.toMatch(/border-top/);
     const actions = css.slice(css.indexOf('.dialogActions {'));
     expect(actions.slice(0, actions.indexOf('}'))).not.toMatch(/border-top/);
@@ -53,6 +71,8 @@ describe('conformità del dialog', () => {
   it('usa DialogShell, che porta viewport, scroll interno e chiusura sicura', () => {
     expect(dialog).toContain("import { DialogShell } from '../../components/DialogShell.js'");
     expect(dialog).toContain('<DialogShell title="Importa struttura UDA"');
+    expect(lessonDialog).toContain('<DialogShell title="Importa lezioni"');
+    expect(lessonDialog).toContain('busy={busy}');
     // `busy` è ciò che DialogShell usa per bloccare Escape e backdrop.
     expect(dialog).toContain('busy={busy}');
   });

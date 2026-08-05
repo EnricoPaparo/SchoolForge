@@ -3,11 +3,13 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
   runTransaction,
   serverTimestamp,
+  where,
 } from 'firebase/firestore';
 import type { DocumentReference, Firestore } from 'firebase/firestore';
-import type { ProgramDoc, UdaDoc } from '../../../types/firestore.js';
+import type { LessonDoc, ProgramDoc, UdaDoc } from '../../../types/firestore.js';
 import {
   deleteFile,
   isFileNotFound,
@@ -22,33 +24,34 @@ import {
   mayCleanupAttempt,
 } from './attemptState.js';
 import type { AttemptExpectation, AttemptRecord, LeaseRecord } from './attemptState.js';
+import { LESSON_APPEND_LEASE_FIELD, LESSON_LEASE_TTL_MS } from './lessonAppendLease.js';
 import type {
-  UdaStructureImportContext,
-  UdaStructureImportDeps,
-} from './udaStructureImportRepository.js';
+  LessonStructureImportContext,
+  LessonStructureImportDeps,
+} from './lessonStructureImportRepository.js';
 
 /**
- * STRUCTURE-IMPORT-02A — Firestore + same-origin Storage Gateway implementation
- * of the append ports.
+ * STRUCTURE-IMPORT-02B — implementazione Firestore + Storage Gateway
+ * dell'append di lezioni.
  *
- * It deliberately reuses the protocol "Importa UDA" already established
- * (uda-import-contract §5.1, §8) instead of inventing a second one: the same
- * `udaAppendLease` field on the import document provides mutual exclusion, so
- * an in-flight structural import also blocks manual create/reorder/delete of a
- * UDA — `assertNoActiveUdaAppendLease` already reads that exact field — and two
- * tabs cannot append at the same time. The attempt records live in their own
- * collection because their manifest shape differs.
+ * **Lease per singola UDA.** A differenza dell'append di UDA, che deve
+ * escludere tutto il corso, qui basta escludere la UDA di destinazione: il
+ * lease vive sul documento della UDA (`lessonAppendLease`), quindi due UDA
+ * diverse possono essere popolate in parallelo, mentre creazione, riordino ed
+ * eliminazione di lezioni **di quella UDA** sono bloccate finché l'import è in
+ * volo (vedi `assertNoActiveLessonAppendLease`).
  *
- * Everything written here stays under `programs/{programId}/**` and
- * `repository/{ownerUid}/imports/{importId}/**`, both already owner-only under
- * the current Rules: this task adds no Rule, no Function, no index.
+ * I record dei tentativi vivono in una collezione dedicata
+ * (`lessonStructureImportAttempts`): un tentativo di import UDA non può in
+ * nessun caso essere scambiato per un replay di un import lezioni, e la
+ * classificazione controlla comunque `kind` e `udaId`.
+ *
+ * Tutto ciò che viene scritto sta sotto `programs/{programId}/**` e
+ * `repository/{ownerUid}/imports/**`, già owner-only con le Rules correnti:
+ * nessuna Rule, Function o indice aggiunto.
  */
 
-/** Lease validity window — same as the ZIP append, so the two cannot deadlock each other. */
-const LEASE_TTL_MS = 5 * 60 * 1000;
-/** Gateway upload/delete concurrency (contract §8). */
 const STORAGE_CONCURRENCY = 3;
-/** Point-read fan-out per round of the collision preflight. */
 const PREFLIGHT_CHUNK = 50;
 
 function importBase(programId: string, importId: string): string {
@@ -56,7 +59,7 @@ function importBase(programId: string, importId: string): string {
 }
 
 function attemptPath(programId: string, importId: string, requestId: string): string {
-  return `${importBase(programId, importId)}/structureImportAttempts/${requestId}`;
+  return `${importBase(programId, importId)}/lessonStructureImportAttempts/${requestId}`;
 }
 
 async function mapWithConcurrency<T>(
@@ -69,14 +72,10 @@ async function mapWithConcurrency<T>(
   }
 }
 
-/**
- * Injectable clock: the lease expiry checks are the whole point of the commit
- * preconditions, so tests must be able to move time without waiting.
- */
-export function createFirestoreUdaStructureImportDeps(
+export function createFirestoreLessonStructureImportDeps(
   db: Firestore,
   options: { now?: () => number } = {},
-): UdaStructureImportDeps {
+): LessonStructureImportDeps {
   const now = options.now ?? (() => Date.now());
 
   const expectationOf = (
@@ -84,39 +83,57 @@ export function createFirestoreUdaStructureImportDeps(
     requestId: string,
     sourceHash: string,
     manifestHash: string,
-    manifest: { importId: string; udaIds: string[]; storagePaths: string[] },
+    manifest: {
+      importId: string;
+      udaId: string;
+      lessonIds: string[];
+      publicLessonIds: string[];
+      storagePaths: string[];
+    },
   ): AttemptExpectation => ({
     requestId,
     sourceHash,
     programId,
     importId: manifest.importId,
     manifestHash,
-    kind: 'uda',
-    udaId: null,
-    documentIds: manifest.udaIds,
-    publicLessonIds: [],
+    kind: 'lesson',
+    udaId: manifest.udaId,
+    documentIds: manifest.lessonIds,
+    publicLessonIds: manifest.publicLessonIds,
     storagePaths: manifest.storagePaths,
   });
 
   return {
-    async loadContext(programId): Promise<UdaStructureImportContext | null> {
+    async loadContext({ programId, udaId }): Promise<LessonStructureImportContext | null> {
       const programSnap = await getDoc(doc(db, 'programs', programId));
       if (!programSnap.exists()) return null;
       const program = programSnap.data() as ProgramDoc;
       if (!program.activeImportId) return null;
-      // One collection read, scoped to this course's active import: never a
-      // global scan, and never on an ordinary course open.
-      const udasSnap = await getDocs(
-        collection(db, `${importBase(programId, program.activeImportId)}/udas`),
+
+      const base = importBase(programId, program.activeImportId);
+      const udaSnap = await getDoc(doc(db, `${base}/udas/${udaId}`));
+      // La UDA deve esistere **dentro l'import attivo**: una UDA sostituita o
+      // appartenente a un import precedente non è una destinazione valida.
+      if (!udaSnap.exists()) return null;
+      const uda = udaSnap.data() as UdaDoc;
+      if (uda.importId !== program.activeImportId) return null;
+
+      // Solo le lezioni di questa UDA: query mirata, mai una scansione.
+      const lessonsSnap = await getDocs(
+        query(collection(db, `${base}/lessons`), where('udaDir', '==', uda.dir)),
       );
+
       return {
         ownerUid: program.ownerUid,
         activeImportId: program.activeImportId,
-        existingUdas: udasSnap.docs.map((d) => {
-          const data = d.data() as Partial<UdaDoc>;
+        udaId,
+        udaDir: uda.dir,
+        udaTitle: uda.titolo ?? null,
+        existingLessons: lessonsSnap.docs.map((d) => {
+          const data = d.data() as Partial<LessonDoc>;
           return {
-            udaId: d.id,
-            dir: data.dir,
+            lessonId: d.id,
+            filename: data.filename,
             order: data.order,
             titolo: data.titolo ?? null,
           };
@@ -126,15 +143,15 @@ export function createFirestoreUdaStructureImportDeps(
 
     hashCanonical: (canonical) => computeManifestHash(canonical),
 
-    async probeSourceAttempt({ programId, activeImportId, requestId, sourceHash }) {
+    async probeSourceAttempt({ programId, activeImportId, udaId, requestId, sourceHash }) {
       const snap = await getDoc(doc(db, attemptPath(programId, activeImportId, requestId)));
       return classifySourceAttempt(snap.exists() ? (snap.data() as AttemptRecord) : null, {
         requestId,
         sourceHash,
-        kind: 'uda',
+        kind: 'lesson',
         programId,
         importId: activeImportId,
-        udaId: null,
+        udaId,
       });
     },
 
@@ -150,21 +167,31 @@ export function createFirestoreUdaStructureImportDeps(
 
     async preflight({ programId, context, manifest, ownedStoragePaths }) {
       const base = importBase(programId, context.activeImportId);
-      const refs: Array<{ id: string; ref: DocumentReference }> = manifest.udaIds.map((id) => ({
-        id,
-        ref: doc(db, `${base}/udas/${id}`),
-      }));
-      // Bounded point reads: any existing target — even a pre-existing orphan —
-      // blocks the whole attempt.
+      const refs: Array<{
+        kind: 'lesson' | 'publicLesson';
+        id: string;
+        ref: DocumentReference;
+      }> = [
+        ...manifest.lessonIds.map((id) => ({
+          kind: 'lesson' as const,
+          id,
+          ref: doc(db, `${base}/lessons/${id}`),
+        })),
+        ...manifest.publicLessonIds.map((id) => ({
+          kind: 'publicLesson' as const,
+          id,
+          ref: doc(db, `publicLessons/${id}`),
+        })),
+      ];
       for (let i = 0; i < refs.length; i += PREFLIGHT_CHUNK) {
         const batch = refs.slice(i, i + PREFLIGHT_CHUNK);
         const snaps = await Promise.all(batch.map((entry) => getDoc(entry.ref)));
         const hit = snaps.findIndex((snap) => snap.exists());
-        if (hit !== -1) return { collision: { kind: 'uda', id: batch[hit]!.id } };
+        if (hit !== -1) {
+          return { collision: { kind: batch[hit]!.kind, id: batch[hit]!.id } };
+        }
       }
-      // On a resume, the paths the same attempt already uploaded are excluded:
-      // the attempt record proved they are its own. Everything else that exists
-      // is still a blocking collision.
+
       const owned = new Set(ownedStoragePaths);
       const toCheck = manifest.storagePaths.filter((path) => !owned.has(path));
       if (toCheck.length > 0) {
@@ -178,6 +205,7 @@ export function createFirestoreUdaStructureImportDeps(
     async acquireLease({
       programId,
       activeImportId,
+      udaId,
       requestId,
       manifestHash,
       sourceHash,
@@ -185,21 +213,17 @@ export function createFirestoreUdaStructureImportDeps(
     }) {
       return runTransaction(db, async (tx) => {
         const programRef = doc(db, 'programs', programId);
-        const importRef = doc(db, importBase(programId, activeImportId));
-        const [programSnap, importSnap] = await Promise.all([
-          tx.get(programRef),
-          tx.get(importRef),
-        ]);
-        if (!programSnap.exists() || !importSnap.exists()) return 'busy' as const;
-        // The destination must still be the one the plan was built against.
+        const udaRef = doc(db, `${importBase(programId, activeImportId)}/udas/${udaId}`);
+        const [programSnap, udaSnap] = await Promise.all([tx.get(programRef), tx.get(udaRef)]);
+        if (!programSnap.exists() || !udaSnap.exists()) return 'busy' as const;
         if ((programSnap.data() as ProgramDoc).activeImportId !== activeImportId) {
           return 'busy' as const;
         }
-        const lease = (
-          importSnap.data() as { udaAppendLease?: { requestId: string; expiresAt: number } }
-        ).udaAppendLease;
+
+        const lease = (udaSnap.data() as Record<string, LeaseRecord | undefined>)[
+          LESSON_APPEND_LEASE_FIELD
+        ];
         const currentTime = now();
-        // Another live attempt holds it — including a ZIP "Importa UDA".
         if (
           lease &&
           lease.requestId !== requestId &&
@@ -209,10 +233,10 @@ export function createFirestoreUdaStructureImportDeps(
           return 'busy' as const;
         }
 
-        const expiresAt = currentTime + LEASE_TTL_MS;
+        const expiresAt = currentTime + LESSON_LEASE_TTL_MS;
         tx.set(
-          importRef,
-          { udaAppendLease: { requestId, manifestHash, expiresAt } },
+          udaRef,
+          { [LESSON_APPEND_LEASE_FIELD]: { requestId, manifestHash, expiresAt } },
           { merge: true },
         );
         tx.set(
@@ -221,10 +245,12 @@ export function createFirestoreUdaStructureImportDeps(
             requestId,
             sourceHash,
             manifestHash,
-            kind: 'uda',
+            kind: 'lesson',
             programId,
             importId: activeImportId,
-            documentIds: manifest.udaIds,
+            udaId,
+            documentIds: manifest.lessonIds,
+            publicLessonIds: manifest.publicLessonIds,
             storagePaths: manifest.storagePaths,
             status: 'reserved',
             expiresAt,
@@ -236,14 +262,20 @@ export function createFirestoreUdaStructureImportDeps(
       });
     },
 
-    async renewLease({ programId, activeImportId, requestId, manifestHash }) {
+    async uploadStorage(files) {
+      await mapWithConcurrency(files, STORAGE_CONCURRENCY, (file) =>
+        writeText(file.path, file.content),
+      );
+    },
+
+    async renewLease({ programId, activeImportId, udaId, requestId, manifestHash }) {
       return runTransaction(db, async (tx) => {
-        const importRef = doc(db, importBase(programId, activeImportId));
-        const importSnap = await tx.get(importRef);
-        if (!importSnap.exists()) return 'lost' as const;
-        const lease = (importSnap.data() as { udaAppendLease?: LeaseRecord }).udaAppendLease;
-        // Renewed only when it is still ours and still carries this plan: a
-        // lease taken over by someone else is never «renewed» back.
+        const udaRef = doc(db, `${importBase(programId, activeImportId)}/udas/${udaId}`);
+        const udaSnap = await tx.get(udaRef);
+        if (!udaSnap.exists()) return 'lost' as const;
+        const lease = (udaSnap.data() as Record<string, LeaseRecord | undefined>)[
+          LESSON_APPEND_LEASE_FIELD
+        ];
         if (
           !lease ||
           lease.requestId !== requestId ||
@@ -253,69 +285,71 @@ export function createFirestoreUdaStructureImportDeps(
           return 'lost' as const;
         }
         tx.set(
-          importRef,
-          { udaAppendLease: { requestId, manifestHash, expiresAt: now() + LEASE_TTL_MS } },
+          udaRef,
+          {
+            [LESSON_APPEND_LEASE_FIELD]: {
+              requestId,
+              manifestHash,
+              expiresAt: now() + LESSON_LEASE_TTL_MS,
+            },
+          },
           { merge: true },
         );
         return 'renewed' as const;
       });
     },
 
-    async uploadStorage(files) {
-      await mapWithConcurrency(files, STORAGE_CONCURRENCY, (file) =>
-        writeText(file.path, file.content),
-      );
-    },
-
     async commit({ programId, manifest, requestId, manifestHash, sourceHash }) {
       const base = importBase(programId, manifest.importId);
       await runTransaction(db, async (tx) => {
         const programRef = doc(db, 'programs', programId);
-        const importRef = doc(db, base);
+        const udaRef = doc(db, `${base}/udas/${manifest.udaId}`);
         const attemptRef = doc(db, attemptPath(programId, manifest.importId, requestId));
-        const udaRefs = manifest.udaIds.map((id) => doc(db, `${base}/udas/${id}`));
-        const [programSnap, importSnap, attemptSnap, ...udaSnaps] = await Promise.all([
+        const lessonRefs = manifest.lessonIds.map((id) => doc(db, `${base}/lessons/${id}`));
+        const publicRefs = manifest.publicLessonIds.map((id) => doc(db, `publicLessons/${id}`));
+
+        const [programSnap, udaSnap, attemptSnap, ...targetSnaps] = await Promise.all([
           tx.get(programRef),
-          tx.get(importRef),
+          tx.get(udaRef),
           tx.get(attemptRef),
-          ...udaRefs.map((ref) => tx.get(ref)),
+          ...lessonRefs.map((ref) => tx.get(ref)),
+          ...publicRefs.map((ref) => tx.get(ref)),
         ]);
 
-        if (!programSnap.exists() || !importSnap.exists()) throw new Error('import_missing');
+        if (!programSnap.exists()) throw new Error('program_missing');
         const program = programSnap.data() as ProgramDoc;
         if (program.activeImportId !== manifest.importId) throw new Error('active_import_changed');
-        // The owner is authoritative here too: the manifest was built from the
-        // program document, and the program document must still say the same.
         if (program.ownerUid !== manifest.ownerUid) throw new Error('owner_changed');
+        if (!udaSnap.exists()) throw new Error('uda_missing');
+        const uda = udaSnap.data() as UdaDoc;
+        // La UDA deve essere ancora quella su cui il piano è stato costruito:
+        // una `dir` diversa significa numerazione e path diversi.
+        if (uda.dir !== manifest.udaDir) throw new Error('uda_changed');
 
-        // A lease that is absent, expired, malformed or another attempt's is
-        // NOT a permission to write: in all those cases someone else may
-        // already have changed numbering, order or destination since the plan
-        // was built. Nothing is repaired here — the commit simply aborts.
         const failure = checkCommitPreconditions({
-          lease: (importSnap.data() as { udaAppendLease?: LeaseRecord }).udaAppendLease ?? null,
+          lease:
+            (udaSnap.data() as Record<string, LeaseRecord | undefined>)[
+              LESSON_APPEND_LEASE_FIELD
+            ] ?? null,
           attempt: attemptSnap.exists() ? (attemptSnap.data() as AttemptRecord) : null,
           expected: expectationOf(programId, requestId, sourceHash, manifestHash, manifest),
           now: now(),
         });
         if (failure) throw new Error(failure);
 
-        // Re-checked inside the transaction: the preflight is an early exit, not
-        // the guarantee. Nothing may be overwritten.
-        if (udaSnaps.some((snap) => snap.exists())) throw new Error('uda_collision');
+        // Nessun documento di destinazione — tecnico o proiezione — può esistere.
+        if (targetSnaps.some((snap) => snap.exists())) throw new Error('lesson_collision');
 
-        const importData = importSnap.data() as { udaCount?: number };
-
-        // Every UDA lands in this one transaction: they become visible together
-        // or not at all. A UdaDoc is its own commit marker.
-        for (const [index, planned] of manifest.udas.entries()) {
-          tx.set(udaRefs[index]!, { ...planned.doc, sourceRequestId: requestId });
+        for (const [index, planned] of manifest.lessons.entries()) {
+          tx.set(lessonRefs[index]!, { ...planned.doc, sourceRequestId: requestId });
+          tx.set(publicRefs[index]!, { ...planned.publicLesson, createdAt: serverTimestamp() });
         }
+        // Un solo incremento per l'intero lotto, e rilascio del lease.
         tx.set(
-          importRef,
+          udaRef,
           {
-            udaCount: (importData.udaCount ?? 0) + manifest.udas.length,
-            udaAppendLease: null,
+            lessonCount: (uda.lessonCount ?? 0) + manifest.lessonCountIncrement,
+            [LESSON_APPEND_LEASE_FIELD]: null,
           },
           { merge: true },
         );
@@ -327,8 +361,8 @@ export function createFirestoreUdaStructureImportDeps(
         );
         tx.set(doc(collection(db, 'auditEvents')), {
           actorUid: manifest.ownerUid,
-          action: 'uda.structureImported',
-          targetId: manifest.importId,
+          action: 'lesson.structureImported',
+          targetId: manifest.udaId,
           outcome: 'success',
           reason: null,
           timestamp: serverTimestamp(),
@@ -338,21 +372,14 @@ export function createFirestoreUdaStructureImportDeps(
 
     async cleanup({ programId, activeImportId, manifest, requestId, manifestHash, sourceHash }) {
       try {
-        const base = importBase(programId, activeImportId);
         const attemptRef = doc(db, attemptPath(programId, activeImportId, requestId));
-        const attemptSnap = await getDoc(attemptRef);
         const expected = expectationOf(programId, requestId, sourceHash, manifestHash, manifest);
+        const attemptSnap = await getDoc(attemptRef);
         const record = attemptSnap.exists() ? (attemptSnap.data() as AttemptRecord) : null;
-
-        // The record is the proof of ownership. Without it — committed,
-        // replaced, malformed or simply absent — nothing is deleted: an old
-        // execution waking up late must never remove the lease, the record or
-        // the files of the attempt that replaced it.
+        // Senza un record che dimostri la proprietà — committato, sostituito,
+        // di un'altra UDA, di un altro tipo o malformato — non si cancella nulla.
         if (!mayCleanupAttempt(record, expected)) return 'done';
 
-        // Manifest-scoped only: exactly the paths this attempt uploaded. Never a
-        // prefix delete, never a pre-existing file — a path that already existed
-        // and was not ours would have blocked the preflight.
         await mapWithConcurrency(manifest.storagePaths, STORAGE_CONCURRENCY, async (path) => {
           try {
             await deleteFile(path);
@@ -362,21 +389,19 @@ export function createFirestoreUdaStructureImportDeps(
         });
 
         await runTransaction(db, async (tx) => {
-          const importRef = doc(db, base);
-          const [importSnap, freshAttempt] = await Promise.all([
-            tx.get(importRef),
-            tx.get(attemptRef),
-          ]);
-          // Re-verified inside the transaction: between the read above and here
-          // the attempt may have been committed or replaced.
+          const udaRef = doc(db, `${importBase(programId, activeImportId)}/udas/${manifest.udaId}`);
+          const [udaSnap, freshAttempt] = await Promise.all([tx.get(udaRef), tx.get(attemptRef)]);
+          // Riverificato dentro la transazione: fra la lettura e qui il
+          // tentativo può essere stato committato o sostituito.
           const fresh = freshAttempt.exists() ? (freshAttempt.data() as AttemptRecord) : null;
           if (!mayCleanupAttempt(fresh, expected)) return;
 
-          if (importSnap.exists()) {
-            const lease = (importSnap.data() as { udaAppendLease?: LeaseRecord }).udaAppendLease;
-            // Only ever release our own lease.
+          if (udaSnap.exists()) {
+            const lease = (udaSnap.data() as Record<string, LeaseRecord | undefined>)[
+              LESSON_APPEND_LEASE_FIELD
+            ];
             if (lease && lease.requestId === requestId) {
-              tx.set(importRef, { udaAppendLease: null }, { merge: true });
+              tx.set(udaRef, { [LESSON_APPEND_LEASE_FIELD]: null }, { merge: true });
             }
           }
           tx.delete(attemptRef);

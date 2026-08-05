@@ -57,6 +57,10 @@ import { importUda } from '../repository/importUda/importUdaRepository.js';
 import { importUdaStructure } from '../repository/structureImportRuntime/udaStructureImportRepository.js';
 import { createFirestoreUdaStructureImportDeps } from '../repository/structureImportRuntime/udaStructureImportDeps.js';
 import { ImportUdaStructureDialog } from './ImportUdaStructureDialog.js';
+import { importLessonStructure } from '../repository/structureImportRuntime/lessonStructureImportRepository.js';
+import { createFirestoreLessonStructureImportDeps } from '../repository/structureImportRuntime/lessonStructureImportDeps.js';
+import { ImportLessonStructureDialog } from './ImportLessonStructureDialog.js';
+import { resolveUdaTitle } from '../repository/programs/udaTitle.js';
 import { createFirestoreUdaImportDeps } from '../repository/importUda/udaImportDeps.js';
 import { filterCommittedLessons } from '../repository/programs/committedUdas.js';
 import type { RawFile } from '../repository/validation/types.js';
@@ -263,6 +267,7 @@ type WsDialog =
   | { kind: 'importCourse' }
   | { kind: 'importUda' }
   | { kind: 'importUdaStructure' }
+  | { kind: 'importLessonStructure'; udaId: string }
   | { kind: 'classes' }
   | { kind: 'info' }
   | { kind: 'deleteCourse' }
@@ -305,6 +310,7 @@ export function CourseWorkspace({
   // as a synchronous double-click guard for the import confirm.
   const udaImportRequestIdRef = useRef<string | null>(null);
   const udaStructureRequestIdRef = useRef<string | null>(null);
+  const lessonStructureRequestIdRef = useRef<string | null>(null);
   const udaImportInFlightRef = useRef(false);
   // Non-blocking notice after a successful re-import whose deferred
   // publicLessons cleanup was postponed (cleanupPending) — HARD-02B-2.
@@ -636,6 +642,7 @@ export function CourseWorkspace({
       // Same reasoning for the metadata-only append: a freshly opened dialog is
       // a new operation, a retry inside the open dialog is the same one.
       if (kind.kind === 'importUdaStructure') udaStructureRequestIdRef.current = null;
+      if (kind.kind === 'importLessonStructure') lessonStructureRequestIdRef.current = null;
       setWsDialog(kind);
     });
   }
@@ -751,6 +758,98 @@ export function CourseWorkspace({
   }
 
   /**
+   * STRUCTURE-IMPORT-02B — append di lezioni «scheletro» nella UDA scelta.
+   *
+   * Risolve con il numero di lezioni aggiunte, o `null` se l'import non è stato
+   * applicato, così il dialog conserva file e riepilogo per il retry. Il
+   * `requestId` sopravvive ai retry: stesso requestId e stesso manifest sono un
+   * replay, mai un secondo import.
+   */
+  async function handleImportLessonStructure(
+    udaId: string,
+    bytes: Uint8Array,
+    filename: string,
+  ): Promise<number | null> {
+    if (!card.activeImportId) return null;
+    if (!lessonStructureRequestIdRef.current) {
+      lessonStructureRequestIdRef.current = crypto.randomUUID();
+    }
+    const requestId = lessonStructureRequestIdRef.current;
+    setWsNotice(null);
+    setWsError(null);
+    let added: number | null = null;
+    await withBusy(async () => {
+      try {
+        const result = await importLessonStructure(
+          { programId: card.programId, udaId, ownerUid, requestId, bytes, filename },
+          createFirestoreLessonStructureImportDeps(db),
+        );
+        if (!mountedRef.current) return;
+        if (result.status === 'validation_failed') {
+          setWsError(result.error.message);
+          return;
+        }
+        if (result.status === 'not_applied' || result.status === 'cleanup_pending') {
+          setWsError(result.message);
+          return;
+        }
+        if (result.status === 'committed_replay') {
+          // Un tentativo precedente era già andato a buon fine e la risposta si
+          // era persa. Gli id vengono dal record persistito, non da un piano
+          // ricostruito: l'albero locale non va indovinato, va ricaricato.
+          added = result.lessonCount;
+          lessonStructureRequestIdRef.current = null;
+          setWsNotice(
+            `${result.lessonCount} lezioni erano già state importate da questo tentativo. Ricarica la vista per vederle.`,
+          );
+          return;
+        }
+        // Committato: le lezioni sono vive. Da qui nulla può declassare
+        // l'esito a errore.
+        added = result.lessonCount;
+        lessonStructureRequestIdRef.current = null;
+        let refreshDeferred = false;
+        try {
+          // Nessun refetch: il manifest è esattamente ciò che il commit ha
+          // scritto. Le nuove lezioni entrano sotto la loro UDA, in ordine
+          // canonico, e i conteggi seguono.
+          const appended: LessonItem[] = result.manifest.lessons.map((planned) => ({
+            id: planned.lessonId,
+            ...planned.doc,
+            completed: false,
+          }));
+          setTree((prev) => {
+            if (!prev) return prev;
+            const next = {
+              udas: prev.udas.map((u) =>
+                u.id === udaId ? { ...u, lessonCount: (u.lessonCount ?? 0) + appended.length } : u,
+              ),
+              lessons: sortLessons([...prev.lessons, ...appended]),
+            };
+            patchCardCounts(next);
+            return next;
+          });
+          // Nessuna selezione automatica: aprire una lezione vuota non aiuta.
+        } catch {
+          refreshDeferred = true;
+        }
+        setWsNotice(
+          refreshDeferred
+            ? `${result.lessonCount} lezioni importate. La vista non si è aggiornata completamente; verrà riallineata al prossimo caricamento.`
+            : `${result.lessonCount} lezioni importate, con corpo vuoto e senza pool. Nessuna lezione esistente è stata modificata.`,
+        );
+      } catch (err) {
+        if (mountedRef.current) {
+          setWsError(
+            err instanceof Error ? err.message : "Errore durante l'importazione delle lezioni.",
+          );
+        }
+      }
+    });
+    return added;
+  }
+
+  /**
    * STRUCTURE-IMPORT-02A — metadata-only append of UDAs from a YAML file.
    *
    * Resolves with the number of UDAs added, or `null` when the import did not
@@ -781,6 +880,17 @@ export function CourseWorkspace({
         }
         if (result.status === 'not_applied' || result.status === 'cleanup_pending') {
           setWsError(result.message);
+          return;
+        }
+        if (result.status === 'committed_replay') {
+          // Stesso caso dell'import lezioni: il commit era già avvenuto e la
+          // risposta si era persa. Nessuna ricostruzione locale, solo il
+          // conteggio autorevole e l'invito a ricaricare.
+          added = result.udaCount;
+          udaStructureRequestIdRef.current = null;
+          setWsNotice(
+            `${result.udaCount} UDA erano già state importate da questo tentativo. Ricarica la vista per vederle.`,
+          );
           return;
         }
         // Committed: every new UDA is live. Nothing below may turn this into an
@@ -1368,6 +1478,10 @@ export function CourseWorkspace({
     if (neighborIndex < 0 || neighborIndex >= lessonsInUda.length) return;
     const lesson = lessonsInUda[index]!;
     const neighbor = lessonsInUda[neighborIndex]!;
+    // La UDA è nota dal `dir`: serve al guardrail contro un import di lezioni
+    // in volo su questa stessa UDA, ed è obbligatoria.
+    const parentUdaId = tree.udas.find((u) => u.dir === udaDir)?.id;
+    if (!parentUdaId) return;
     setReorderBusy(true);
     setReorderError(null);
     void (async () => {
@@ -1378,6 +1492,7 @@ export function CourseWorkspace({
           lessonId: lesson.id,
           neighborLessonId: neighbor.id,
           ownerUid,
+          udaId: parentUdaId,
           db,
         });
         if (!mountedRef.current) return;
@@ -1833,6 +1948,16 @@ export function CourseWorkspace({
                   <button
                     type="button"
                     role="menuitem"
+                    onClick={() =>
+                      openDialog({ kind: 'importLessonStructure', udaId: selectedUda.id })
+                    }
+                  >
+                    <IconUpload size={15} />
+                    Importa lezioni
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
                     onClick={() => openDialog({ kind: 'editUda', udaId: selectedUda.id })}
                   >
                     <IconPencil size={15} />
@@ -2119,6 +2244,17 @@ export function CourseWorkspace({
           error={wsError}
           onCancel={closeDialog}
           onConfirm={handleImportUdaStructure}
+        />
+      )}
+      {wsDialog.kind === 'importLessonStructure' && selectedUda && (
+        <ImportLessonStructureDialog
+          udaTitle={resolveUdaTitle(selectedUda.dir, selectedUda.titolo)}
+          busy={wsBusy}
+          error={wsError}
+          onCancel={closeDialog}
+          onConfirm={(bytes, filename) =>
+            handleImportLessonStructure(wsDialog.udaId, bytes, filename)
+          }
         />
       )}
       {wsDialog.kind === 'classes' && (
