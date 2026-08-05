@@ -1,10 +1,10 @@
 # STRUCTURE-IMPORT — Importazione di UDA e lezioni senza contenuto
 
-> **Stato:** contratto congelato; **STRUCTURE-IMPORT-01 implementato** (solo
-> strato puro: parser, validatori, modelli e planner). Nessuna importazione
-> reale è disponibile: non esistono ancora voci di menu, dialog, scritture
-> Firestore o upload. `02A`, `02B`, `03` e il Gate GSTRUCT restano aperti.
-> Questo documento non autorizza merge, deploy o migrazioni.
+> **Stato:** contratto congelato; **STRUCTURE-IMPORT-01 e 02A implementati**.
+> L'importazione delle **UDA** è reale e disponibile in `Azioni corso →
+> Importa struttura UDA`. L'importazione delle **lezioni** non esiste ancora.
+> `02B`, `03` e il Gate GSTRUCT restano aperti. Questo documento non autorizza
+> merge, deploy o migrazioni.
 
 ## 1. Obiettivo
 
@@ -247,7 +247,7 @@ di generazione; non introduce chiamate aggiuntive.
 |---|---|---|
 | **STRUCTURE-IMPORT-00** | Contratto, formati, UX, protocollo, costi e roadmap. | Questo documento; solo documentazione. |
 | **STRUCTURE-IMPORT-01** ✅ | Parser YAML isolati, validatori fail-closed, normalizzazione, template scaricabili, planner puro di ID/order/manifest e test di collisione. Nessuna UI e nessuna scrittura. | **Implementato** in `apps/web/src/features/repository/structureImport/`. Suite completa su fixture valide/malformate, alias/ancore/tag/documenti multipli/chiavi duplicate/extra key/limiti; helper canonici estratti in `repository/canonicalNaming.ts` senza cambiare il comportamento di `createUda`/`createLesson`; test statico di purezza sull'intera chiusura transitiva degli import. Nessun runtime Firebase mutato. |
-| **STRUCTURE-IMPORT-02A** | `Azioni corso → Importa struttura UDA`, dialog, preview e append atomico delle UDA. | Nessun risultato parziale; retry idempotente; cleanup limitato; UI aggiornata senza refetch. |
+| **STRUCTURE-IMPORT-02A** ✅ | `Azioni corso → Importa struttura UDA`, dialog, preview e append atomico delle UDA. | **Implementato.** Un solo commit transazionale rende visibili insieme tutte le UDA; identità del tentativo `requestId` + `SHA-256(manifestCanonical)`; cleanup limitato al manifest; albero locale aggiornato dal manifest, senza refetch. Nessuna Rule, Function, indice o dipendenza aggiunta. |
 | **STRUCTURE-IMPORT-02B** | `Azioni UDA → Importa lezioni`, dialog, preview, append atomico, corpi vuoti/pool assenti e filtro UI studente degli scheletri vuoti. | Nessuna lezione nella UDA sbagliata; conteggi/ordine/proiezioni coerenti; nessuna card vuota lato studente. |
 | **STRUCTURE-IMPORT-03** | Contesto IA UDA bounded (`descrizione`, `competenze`, `obiettivi`) dai dati già in memoria. | Zero nuove letture; payload/inputHash/stima aggiornati; gerarchia prompt invariata salvo il nuovo contesto autorevole. |
 | **Gate GSTRUCT** | Smoke DEV docente/studente e chiusura evidenze. | Import UDA + lezioni, collisione, retry, mobile/Brave, generazione IA da uno scheletro, nessuna esposizione di card vuote. |
@@ -355,7 +355,122 @@ React, React Router, il gateway Storage e l'inizializzazione Firebase; verifica
 inoltre che l'unica dipendenza esterna raggiunta sia `yaml`, già presente nel
 progetto, e che nessun modulo usi API del browser o temporizzatori.
 
-### 14.5 Scelte da confermare in 02A/02B
+### 14.5 Protocollo runtime di 02A
+
+Moduli in `apps/web/src/features/repository/structureImportRuntime/`:
+`manifestHash.ts` (SHA-256 Web Crypto), `udaStructureImportRepository.ts`
+(orchestratore a porte iniettate, senza Firebase) e `udaStructureImportDeps.ts`
+(implementazione Firestore + Storage Gateway). La UI è
+`features/teacher/ImportUdaStructureDialog.tsx`, richiamata dal menu `Azioni`
+del corso.
+
+Ordine fail-closed, invariato e verificato dai test:
+
+1. validazione locale **byte-first** (`file.arrayBuffer()`, mai `File.text()`);
+2. lettura autorevole delle sole UDA del corso corrente;
+3. piano puro con `planUdaMetadataAppend`;
+4. `manifestHash = hex(SHA-256(UTF8(manifestCanonical)))`;
+5. sonda di replay su `requestId` + `manifestHash`;
+6. preflight collisioni (id UDA e Storage path) — **zero scritture** fino a qui;
+7. lease + record del tentativo;
+8. upload dei soli file del manifest, concorrenza 3;
+9. **commit unico transazionale**: tutte le `UdaDoc`, i conteggi, l'audit e il
+   rilascio del lease;
+10. aggiornamento locale dell'albero dal manifest;
+11. in caso di errore pre-commit, cleanup idempotente limitato al manifest.
+
+**Non esiste una fase di staging**, e non per dimenticanza: una `UdaDoc` è il
+proprio marcatore di commit, quindi non c'è alcun documento invisibile da
+scrivere in anticipo. Le uniche scritture pre-commit sono il lease e il record
+del tentativo.
+
+Il lease riusato è lo stesso campo `udaAppendLease` del flusso «Importa UDA»:
+un import strutturale in corso blocca anche creazione, riordino ed eliminazione
+manuale di una UDA, e due schede non possono importare insieme. Firestore e
+Storage non condividono una transazione: la mitigazione è l'upload dei soli file
+del manifest e il loro cleanup mirato — un file caricato senza commit resta un
+orfano dentro i path del tentativo, mai una modifica di contenuti esistenti.
+Nessun rollback distribuito è dichiarato.
+
+Le UDA importate non contengono lezioni e **non producono alcuna proiezione
+studente**.
+
+### 14.6 Stato del tentativo, precondizioni e recovery
+
+Il record del tentativo vive in
+`programs/{p}/imports/{i}/structureImportAttempts/{requestId}` e la sua
+classificazione è pura e testabile (`structureImportRuntime/attemptState.ts`):
+
+| Stato | Condizione | Effetto |
+|---|---|---|
+| `none` | nessun record | tentativo nuovo |
+| `committed` | stesso `requestId` e hash, `status: 'committed'` | replay: successo, zero scritture |
+| `conflict` | stesso `requestId`, hash diverso | fail-closed |
+| `resumable` | stesso `requestId` e hash, `kind: 'uda'`, `udaIds` e `storagePaths` identici, `status: 'reserved'` | riprendibile |
+| `incoherent` | record parziale, malformato o divergente | fail-closed, **mai riparato né sovrascritto** |
+
+**Precondizioni del commit** (tutte obbligatorie, verificate dentro la
+transazione con un clock iniettabile): `activeImportId` invariato; `ownerUid`
+del programma ancora uguale a quello del manifest; lease **presente**, ben
+formata, non scaduta, con lo stesso `requestId` e lo stesso `manifestHash`;
+record del tentativo presente, coerente e ancora `reserved`; nessuna delle
+`UdaDoc` di destinazione già esistente. Un lease assente o scaduto **non** è un
+permesso: è la condizione in cui numerazione, `order` o destinazione possono
+essere già cambiati. Nulla viene riparato nel commit: si aborta.
+
+Poiché l'upload può durare, prima del commit il lease viene **rinnovato in modo
+condizionato**: solo se è ancora nostro e porta ancora questo hash. Un rinnovo
+fallito aborta il tentativo.
+
+**Recovery dopo `cleanup_pending`.** Un tentativo `resumable` riprende con la
+stessa identità e la stessa finestra: i path elencati nel suo record non sono
+collisioni estranee, mentre qualunque altro path esistente blocca. La strategia
+scelta — unica e documentata — è il **re-upload idempotente** degli stessi
+contenuti: il contenuto è fissato dal manifest di cui il record porta l'hash,
+quindi la riscrittura è byte-identica. Nessun cleanup condizionato dei file
+seguito da un secondo preflight.
+
+**Cleanup condizionato.** Cancella solo se il record dimostra la proprietà:
+stesso `requestId`, stesso `manifestHash`, stesso `kind`, stessi `udaIds`,
+stessi `storagePaths`, tentativo non committato — riverificato dentro la
+transazione. Un'esecuzione vecchia che si risvegliasse non può quindi rimuovere
+lease, record o file del tentativo che l'ha sostituita. Mai un cleanup per
+prefisso, mai un dato preesistente.
+
+**Limite noto.** Se il commit riesce ma l'esito si perde *e* l'albero locale è
+già stato aggiornato, un retry con lo stesso file viene respinto sui titoli già
+presenti (`duplicate_title_in_destination`) invece che riconosciuto come replay:
+la sonda del tentativo arriva dopo la costruzione del piano. È fail-closed e non
+duplica nulla, ma il messaggio parla di titoli anziché di «già importato».
+
+### 14.7 Costo reale di un import
+
+Contato dal codice, non stimato.
+
+**Letture.** 1 documento programma + 1 query sulle UDA dell'import — fatturata
+per documenti restituiti, quindi *E* letture con *E* UDA esistenti — + 1 lettura
+del record del tentativo + *N* letture puntuali di preflight + 1 lettura batch
+Storage via gateway. Nella transazione di commit: 1 programma + 1 import + 1
+record tentativo + *N* documenti UDA.
+
+**Scritture.** Transazione di prenotazione: 2 (campo lease sul documento import
++ record del tentativo). Transazione finale: *N* `UdaDoc` + 1 import
+(`udaCount` e rilascio lease) + 1 programma (`updatedAt`) + 1 record del
+tentativo (`committed`) + 1 audit = *N* + 4. Rinnovo del lease prima del commit:
+1. **Totale su un import riuscito: N + 7 scritture**, in due transazioni più il
+rinnovo.
+
+**Cleanup/recovery**, solo in caso di errore pre-commit: fino a *N* delete su
+Storage + 1 scrittura (rilascio lease) + 1 delete (record del tentativo).
+
+**Upload.** *N*, con concorrenza massima 3.
+
+**Callable/Functions/IA:** zero. Nessun listener, nessun polling, nessuna
+lettura all'apertura ordinaria del corso.
+
+Con *N* = 40 e *E* = 10: ~57 letture, 47 scritture, 40 upload.
+
+### 14.8 Scelte da confermare in 02B
 
 - **Ordine legacy delle lezioni.** Il planner, a differenza di `createLesson`,
   ricade sul prefisso `lezione-XXX` quando una lezione esistente non ha `order`

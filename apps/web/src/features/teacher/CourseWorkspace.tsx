@@ -54,6 +54,9 @@ import type { RepositoryDeleteBlocker } from '../repository/editor/repositoryEdi
 import { importRepository } from '../repository/import/importRepository.js';
 import { readZipFile } from '../repository/import/readZipFile.js';
 import { importUda } from '../repository/importUda/importUdaRepository.js';
+import { importUdaStructure } from '../repository/structureImportRuntime/udaStructureImportRepository.js';
+import { createFirestoreUdaStructureImportDeps } from '../repository/structureImportRuntime/udaStructureImportDeps.js';
+import { ImportUdaStructureDialog } from './ImportUdaStructureDialog.js';
 import { createFirestoreUdaImportDeps } from '../repository/importUda/udaImportDeps.js';
 import { filterCommittedLessons } from '../repository/programs/committedUdas.js';
 import type { RawFile } from '../repository/validation/types.js';
@@ -259,6 +262,7 @@ type WsDialog =
   | { kind: 'renameCourse' }
   | { kind: 'importCourse' }
   | { kind: 'importUda' }
+  | { kind: 'importUdaStructure' }
   | { kind: 'classes' }
   | { kind: 'info' }
   | { kind: 'deleteCourse' }
@@ -300,6 +304,7 @@ export function CourseWorkspace({
   // retries of the same attempt (reset when the dialog opens/closes). Also acts
   // as a synchronous double-click guard for the import confirm.
   const udaImportRequestIdRef = useRef<string | null>(null);
+  const udaStructureRequestIdRef = useRef<string | null>(null);
   const udaImportInFlightRef = useRef(false);
   // Non-blocking notice after a successful re-import whose deferred
   // publicLessons cleanup was postponed (cleanupPending) — HARD-02B-2.
@@ -628,6 +633,9 @@ export function CourseWorkspace({
       // Fresh "Importa UDA" operation → fresh idempotency token. Retries of the
       // SAME attempt (dialog kept open on error) keep the token.
       if (kind.kind === 'importUda') udaImportRequestIdRef.current = null;
+      // Same reasoning for the metadata-only append: a freshly opened dialog is
+      // a new operation, a retry inside the open dialog is the same one.
+      if (kind.kind === 'importUdaStructure') udaStructureRequestIdRef.current = null;
       setWsDialog(kind);
     });
   }
@@ -740,6 +748,83 @@ export function CourseWorkspace({
           setWsError(err instanceof Error ? err.message : "Errore durante l'importazione.");
       }
     });
+  }
+
+  /**
+   * STRUCTURE-IMPORT-02A — metadata-only append of UDAs from a YAML file.
+   *
+   * Resolves with the number of UDAs added, or `null` when the import did not
+   * apply, so the dialog can keep the file and the summary for a retry. The
+   * `requestId` survives those retries: the same request with the same manifest
+   * hash is a replay, never a second import.
+   */
+  async function handleImportUdaStructure(
+    bytes: Uint8Array,
+    filename: string,
+  ): Promise<number | null> {
+    if (!card.activeImportId) return null;
+    if (!udaStructureRequestIdRef.current) udaStructureRequestIdRef.current = crypto.randomUUID();
+    const requestId = udaStructureRequestIdRef.current;
+    setWsNotice(null);
+    setWsError(null);
+    let added: number | null = null;
+    await withBusy(async () => {
+      try {
+        const result = await importUdaStructure(
+          { programId: card.programId, ownerUid, requestId, bytes, filename },
+          createFirestoreUdaStructureImportDeps(db),
+        );
+        if (!mountedRef.current) return;
+        if (result.status === 'validation_failed') {
+          setWsError(result.error.message);
+          return;
+        }
+        if (result.status === 'not_applied' || result.status === 'cleanup_pending') {
+          setWsError(result.message);
+          return;
+        }
+        // Committed: every new UDA is live. Nothing below may turn this into an
+        // error — at worst the local view is stale and says so.
+        added = result.udaCount;
+        udaStructureRequestIdRef.current = null;
+        let refreshDeferred = false;
+        try {
+          // No refetch: the manifest is exactly what the commit wrote, so the
+          // new UDAs are appended locally, already in canonical order.
+          const appended: UdaItem[] = result.manifest.udas.map((planned) => ({
+            id: planned.udaId,
+            ...planned.doc,
+          }));
+          setTree((prev) => {
+            if (!prev) return prev;
+            const next = { ...prev, udas: sortUdas([...prev.udas, ...appended]) };
+            patchCardCounts(next);
+            return next;
+          });
+          setCollapsedUdas((prev) => {
+            const next = new Set(prev);
+            for (const uda of appended) next.add(uda.id);
+            return next;
+          });
+        } catch {
+          refreshDeferred = true;
+        }
+        setWsNotice(
+          refreshDeferred
+            ? `${result.udaCount} UDA importate. La vista non si è aggiornata completamente; verrà riallineata al prossimo caricamento.`
+            : `${result.udaCount} UDA importate. Nessuna UDA esistente è stata modificata.`,
+        );
+      } catch (err) {
+        if (mountedRef.current) {
+          setWsError(
+            err instanceof Error
+              ? err.message
+              : "Errore durante l'importazione della struttura UDA.",
+          );
+        }
+      }
+    });
+    return added;
   }
 
   function handleImportUda(files: RawFile[]) {
@@ -1620,6 +1705,15 @@ export function CourseWorkspace({
                     type="button"
                     role="menuitem"
                     disabled={!card.hasImport}
+                    onClick={() => openDialog({ kind: 'importUdaStructure' })}
+                  >
+                    <IconLayers size={15} />
+                    Importa struttura UDA
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={!card.hasImport}
                     onClick={() => void handleExportZip()}
                   >
                     <IconDownload size={15} />
@@ -2016,6 +2110,15 @@ export function CourseWorkspace({
           error={wsError}
           onCancel={closeDialog}
           onConfirm={handleImportUda}
+        />
+      )}
+      {wsDialog.kind === 'importUdaStructure' && (
+        <ImportUdaStructureDialog
+          courseTitle={card.title}
+          busy={wsBusy}
+          error={wsError}
+          onCancel={closeDialog}
+          onConfirm={handleImportUdaStructure}
         />
       )}
       {wsDialog.kind === 'classes' && (
