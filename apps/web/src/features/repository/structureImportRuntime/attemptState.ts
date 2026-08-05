@@ -21,6 +21,11 @@ export type AttemptStatus = 'reserved' | 'committed';
 /** Ciò che il record del tentativo contiene, come arriva da Firestore. */
 export interface AttemptRecord {
   requestId?: unknown;
+  /** Identità della sorgente, calcolabile prima del planner. */
+  sourceHash?: unknown;
+  /** Destinazione: corso e import su cui il tentativo è stato costruito. */
+  programId?: unknown;
+  importId?: unknown;
   manifestHash?: unknown;
   kind?: unknown;
   status?: unknown;
@@ -42,21 +47,91 @@ export interface LeaseRecord {
 }
 
 /** L'identità e la forma attesa del tentativo corrente. */
-export interface AttemptExpectation {
+/**
+ * Ciò che identifica un tentativo **prima** che il piano esista: richiesta,
+ * sorgente e destinazione. È quanto basta a riconoscere un replay senza dover
+ * rileggere la destinazione già modificata dal commit precedente.
+ */
+export interface SourceExpectation {
   requestId: string;
-  manifestHash: string;
-  /**
-   * The kind of append. A UDA attempt is never a valid replay for a lesson
-   * import, and vice versa: the identity includes what the attempt creates.
-   */
+  sourceHash: string;
   kind: 'uda' | 'lesson';
-  /** Destination UDA for a lesson append; `null` for a UDA append. */
+  programId: string;
+  importId: string;
+  /** UDA di destinazione per le lezioni; `null` per le UDA. */
   udaId: string | null;
+}
+
+export interface AttemptExpectation extends SourceExpectation {
+  manifestHash: string;
   /** Document ids the plan creates, in order. */
   documentIds: readonly string[];
   /** Projection ids the plan creates, in order (empty for a UDA append). */
   publicLessonIds: readonly string[];
   storagePaths: readonly string[];
+}
+
+/**
+ * Esito della sonda **di sorgente**, eseguita prima del planner.
+ *
+ * `committed` porta con sé il risultato minimo persistito nel record: è ciò che
+ * permette di rispondere a un replay senza ricostruire un manifest sulla
+ * destinazione ormai modificata — cosa che produrrebbe id e numerazioni
+ * diverse da quelle realmente scritte.
+ */
+export type SourceProbe =
+  | { state: 'none' }
+  | { state: 'reserved' }
+  | { state: 'conflict' }
+  | { state: 'incoherent' }
+  | { state: 'committed'; documentIds: string[]; publicLessonIds: string[] };
+
+/**
+ * Classifica un record rispetto a richiesta, sorgente e destinazione, senza
+ * conoscere il piano.
+ *
+ * Un record privo di `sourceHash` — legacy o parziale — è `incoherent`: non
+ * viene mai «riparato» né riscritto, perché non è dimostrabile che descriva
+ * questo tentativo.
+ */
+export function classifySourceAttempt(
+  record: AttemptRecord | null,
+  expected: SourceExpectation,
+): SourceProbe {
+  if (record === null) return { state: 'none' };
+
+  if (typeof record.requestId !== 'string' || record.requestId !== expected.requestId) {
+    return { state: 'incoherent' };
+  }
+  // Nessun `sourceHash`: record scritto da una versione precedente del
+  // protocollo, o troncato. Non è riparabile e non è questo tentativo.
+  if (typeof record.sourceHash !== 'string') return { state: 'incoherent' };
+  // Stessa richiesta, sorgente diversa: il docente ha cambiato il file.
+  if (record.sourceHash !== expected.sourceHash) return { state: 'conflict' };
+
+  // Stessa sorgente ma altro bersaglio: non è questo tentativo.
+  if (record.kind !== expected.kind) return { state: 'conflict' };
+  if (record.programId !== undefined && record.programId !== expected.programId) {
+    return { state: 'conflict' };
+  }
+  if (record.importId !== undefined && record.importId !== expected.importId) {
+    return { state: 'conflict' };
+  }
+  const recordUdaId = record.udaId === undefined ? null : record.udaId;
+  if (recordUdaId !== expected.udaId) return { state: 'conflict' };
+
+  if (record.status === 'committed') {
+    // Il risultato deve essere leggibile e ben formato, altrimenti il replay
+    // non ha nulla di autorevole da restituire.
+    if (!isStringArray(record.documentIds)) return { state: 'incoherent' };
+    const publicLessonIds = isStringArray(record.publicLessonIds) ? record.publicLessonIds : [];
+    if (expected.kind === 'lesson' && !isStringArray(record.publicLessonIds)) {
+      return { state: 'incoherent' };
+    }
+    return { state: 'committed', documentIds: record.documentIds, publicLessonIds };
+  }
+  if (record.status === 'reserved') return { state: 'reserved' };
+  return { state: 'incoherent' };
 }
 
 export type AttemptClassification =
@@ -100,8 +175,13 @@ export function classifyAttempt(
     // significa un documento corrotto o riusato, mai il nostro tentativo.
     return 'incoherent';
   }
+  if (typeof record.sourceHash !== 'string') return 'incoherent';
+  if (record.sourceHash !== expected.sourceHash) return 'conflict';
   if (typeof record.manifestHash !== 'string') return 'incoherent';
-  if (record.manifestHash !== expected.manifestHash) return 'conflict';
+  // Stessa sorgente ma piano diverso: la destinazione è cambiata sotto il
+  // tentativo (una mutazione concorrente ha spostato numerazione o `order`).
+  // Fail-closed: il record non descrive ciò che stiamo per scrivere.
+  if (record.manifestHash !== expected.manifestHash) return 'incoherent';
 
   // The kind is part of the identity: an attempt that created UDAs can never
   // stand in for one that must create lessons.

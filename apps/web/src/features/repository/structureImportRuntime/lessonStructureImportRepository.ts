@@ -1,6 +1,7 @@
 import { planLessonMetadataAppend, validateLessonMetadataFile } from '../structureImport/index.js';
 import { runStructureAppend } from './structureAppendProtocol.js';
-import type { AttemptClassification } from './attemptState.js';
+import { canonicalizeSource } from './structureSourceCanonical.js';
+import type { AttemptClassification, SourceProbe } from './attemptState.js';
 import type {
   ExistingLessonForPlan,
   LessonStructureImportManifest,
@@ -56,7 +57,19 @@ export interface LessonStructureImportDeps {
     programId: string;
     udaId: string;
   }): Promise<LessonStructureImportContext | null>;
-  hashManifest(manifestCanonical: string): Promise<string>;
+  /** `hex(SHA-256(UTF8(canonical)))` — usato sia per la sorgente sia per il piano. */
+  hashCanonical(canonical: string): Promise<string>;
+  /**
+   * Sonda **di sorgente**, prima del planner: riconosce un replay anche quando
+   * il commit precedente ha già creato le lezioni.
+   */
+  probeSourceAttempt(params: {
+    programId: string;
+    activeImportId: string;
+    udaId: string;
+    requestId: string;
+    sourceHash: string;
+  }): Promise<SourceProbe>;
   probeAttempt(params: {
     programId: string;
     activeImportId: string;
@@ -78,6 +91,7 @@ export interface LessonStructureImportDeps {
     udaId: string;
     requestId: string;
     manifestHash: string;
+    sourceHash: string;
     manifest: LessonStructureImportManifest;
   }): Promise<'acquired' | 'busy'>;
   uploadStorage(files: Array<{ path: string; content: string }>): Promise<void>;
@@ -95,6 +109,7 @@ export interface LessonStructureImportDeps {
    */
   commit(params: {
     programId: string;
+    sourceHash: string;
     manifest: LessonStructureImportManifest;
     requestId: string;
     manifestHash: string;
@@ -102,6 +117,7 @@ export interface LessonStructureImportDeps {
   cleanup(params: {
     programId: string;
     activeImportId: string;
+    sourceHash: string;
     manifest: LessonStructureImportManifest;
     requestId: string;
     manifestHash: string;
@@ -135,6 +151,17 @@ export type LessonStructureImportNotAppliedReason =
   | 'commit_failed';
 
 export type LessonStructureImportResult =
+  | {
+      /**
+       * Replay riconosciuto dopo un commit la cui risposta si era persa: id e
+       * conteggio vengono dal record persistito, non da un piano ricostruito
+       * sulla destinazione ormai modificata.
+       */
+      status: 'committed_replay';
+      lessonIds: string[];
+      lessonCount: number;
+      requiresReload: true;
+    }
   | {
       status: 'committed';
       lessonIds: string[];
@@ -189,7 +216,53 @@ export async function importLessonStructure(
     return { status: 'not_applied', message: COPY.ownerMismatch, reason: 'owner_mismatch' };
   }
 
-  // 4. Manifest puro. I titoli già presenti nella UDA sono ricontrollati contro
+  // 4. Identità della **sorgente**, calcolabile prima del planner: riconosce un
+  // replay anche quando il commit precedente ha già creato le lezioni e il
+  // planner le vedrebbe come titoli duplicati.
+  let sourceHash: string;
+  try {
+    sourceHash = await deps.hashCanonical(
+      canonicalizeSource({
+        kind: 'lesson',
+        ownerUid: context.ownerUid,
+        programId: input.programId,
+        importId: context.activeImportId,
+        udaId: context.udaId,
+        lessons: validation.value,
+      }),
+    );
+  } catch (error) {
+    return {
+      status: 'not_applied',
+      message: error instanceof Error ? error.message : COPY.hashUnavailable,
+      reason: 'hash_unavailable',
+    };
+  }
+
+  // 5. Sonda di sorgente, prima di planner, preflight, lease e scritture.
+  const source = await deps.probeSourceAttempt({
+    programId: input.programId,
+    activeImportId: context.activeImportId,
+    udaId: context.udaId,
+    requestId: input.requestId,
+    sourceHash,
+  });
+  if (source.state === 'committed') {
+    return {
+      status: 'committed_replay',
+      lessonIds: source.documentIds,
+      lessonCount: source.documentIds.length,
+      requiresReload: true,
+    };
+  }
+  if (source.state === 'conflict') {
+    return { status: 'not_applied', message: COPY.conflict, reason: 'conflict' };
+  }
+  if (source.state === 'incoherent') {
+    return { status: 'not_applied', message: COPY.incoherentAttempt, reason: 'incoherent_attempt' };
+  }
+
+  // 6. Manifest puro. I titoli già presenti nella UDA sono ricontrollati contro
   // lo stato appena letto, non contro quello che il dialog mostrava prima.
   const plan = planLessonMetadataAppend({
     ownerUid: context.ownerUid,
@@ -203,11 +276,11 @@ export async function importLessonStructure(
   if (!plan.ok) return { status: 'validation_failed', error: plan.error };
   const manifest = plan.value;
 
-  // 5–12. Protocollo condiviso con 02A.
+  // 7–13. Protocollo condiviso con 02A.
   const outcome = await runStructureAppend(
-    { manifest, requestId: input.requestId, copy: COPY },
+    { manifest, requestId: input.requestId, sourceHash, copy: COPY },
     {
-      hashManifest: (canonical) => deps.hashManifest(canonical),
+      hashCanonical: (canonical) => deps.hashCanonical(canonical),
       probeAttempt: ({ requestId, manifestHash }) =>
         deps.probeAttempt({
           programId: input.programId,
@@ -218,13 +291,14 @@ export async function importLessonStructure(
         }),
       preflight: ({ ownedStoragePaths }) =>
         deps.preflight({ programId: input.programId, context, manifest, ownedStoragePaths }),
-      acquireLease: ({ requestId, manifestHash }) =>
+      acquireLease: ({ requestId, manifestHash, sourceHash: source }) =>
         deps.acquireLease({
           programId: input.programId,
           activeImportId: context.activeImportId,
           udaId: context.udaId,
           requestId,
           manifestHash,
+          sourceHash: source,
           manifest,
         }),
       uploadStorage: (files) => deps.uploadStorage(files),
@@ -237,7 +311,7 @@ export async function importLessonStructure(
           manifestHash,
         }),
       commit: ({ requestId, manifestHash }) =>
-        deps.commit({ programId: input.programId, manifest, requestId, manifestHash }),
+        deps.commit({ programId: input.programId, manifest, requestId, manifestHash, sourceHash }),
       cleanup: ({ requestId, manifestHash }) =>
         deps.cleanup({
           programId: input.programId,
@@ -245,6 +319,7 @@ export async function importLessonStructure(
           manifest,
           requestId,
           manifestHash,
+          sourceHash,
         }),
       filesOf: (m) =>
         m.lessons.map((lesson) => ({ path: lesson.storageRef, content: lesson.content })),

@@ -295,7 +295,11 @@ front matter. Sono stati **estratti** da `import/buildImportPayload.ts` e da
 riusa invece di ri-derivarli, e un test di regressione fissa ogni caso limite
 già gestito (buchi di numerazione, `order` legacy assente, slug degenere).
 
-### 14.2 Identità di un tentativo: SHA-256 in 02A/02B
+### 14.2 SHA-256 autorevole, FNV diagnostico
+
+> L'identità completa di un tentativo è a **due livelli** e vive in §14.7:
+> `sourceHash` prima del planner, `manifestHash` dopo. Questa sezione resta il
+> riferimento sul *perché* SHA-256 e non FNV, e su *dove* viene calcolato.
 
 Lo strato puro produce `manifestCanonical`, la serializzazione canonica e
 stabile dell'intero manifest. **Non è un'identità.** L'identità autorevole del
@@ -436,40 +440,106 @@ transazione. Un'esecuzione vecchia che si risvegliasse non può quindi rimuovere
 lease, record o file del tentativo che l'ha sostituita. Mai un cleanup per
 prefisso, mai un dato preesistente.
 
-**Limite noto.** Se il commit riesce ma l'esito si perde *e* l'albero locale è
-già stato aggiornato, un retry con lo stesso file viene respinto sui titoli già
-presenti (`duplicate_title_in_destination`) invece che riconosciuto come replay:
-la sonda del tentativo arriva dopo la costruzione del piano. È fail-closed e non
-duplica nulla, ma il messaggio parla di titoli anziché di «già importato».
+### 14.7 Identità a due livelli e replay
 
-### 14.7 Costo reale di un import
+Un tentativo è identificato da **due** hash SHA-256, entrambi su serializzazione
+canonica e nessuno dei due FNV:
 
-Contato dal codice, non stimato.
+| | `sourceHash` | `manifestHash` |
+|---|---|---|
+| Calcolato | **prima** del planner | dopo il planner |
+| Copre | versione del protocollo, `kind`, owner autorevole, `programId`, `activeImportId`, `udaId` (solo lezioni), metadati normalizzati e ordinati del file | il piano completo: id, `order`, filename, Storage path, contenuti |
+| Risponde a | «è la stessa richiesta sullo stesso bersaglio?» | «è lo stesso identico piano?» |
+| Governa | riconoscimento del replay | lease, resume, commit |
 
-**Letture.** 1 documento programma + 1 query sulle UDA dell'import — fatturata
-per documenti restituiti, quindi *E* letture con *E* UDA esistenti — + 1 lettura
-del record del tentativo + *N* letture puntuali di preflight + 1 lettura batch
-Storage via gateway. Nella transazione di commit: 1 programma + 1 import + 1
-record tentativo + *N* documenti UDA.
+Il primo esiste per una ragione precisa: dopo un commit riuscito la cui risposta
+si è persa, i documenti importati **sono già nella destinazione**, il planner li
+vede come duplicati e il tentativo fallirebbe *prima* di poter essere
+riconosciuto come replay. Il `sourceHash` non dipende dalla destinazione, quindi
+resta uguale e il replay viene riconosciuto.
 
-**Scritture.** Transazione di prenotazione: 2 (campo lease sul documento import
-+ record del tentativo). Transazione finale: *N* `UdaDoc` + 1 import
-(`udaCount` e rilascio lease) + 1 programma (`updatedAt`) + 1 record del
-tentativo (`committed`) + 1 audit = *N* + 4. Rinnovo del lease prima del commit:
-1. **Totale su un import riuscito: N + 7 scritture**, in due transazioni più il
-rinnovo.
+**Ordine definitivo:**
 
-**Cleanup/recovery**, solo in caso di errore pre-commit: fino a *N* delete su
-Storage + 1 scrittura (rilascio lease) + 1 delete (record del tentativo).
+1. validazione byte-first;
+2. lettura autorevole della destinazione;
+3. costruzione canonica della sorgente;
+4. `sourceHash`;
+5. sonda del tentativo su `requestId` + `sourceHash` + destinazione;
+6. `committed` coerente ⇒ **replay riuscito**, senza planner, preflight, lease,
+   upload o scritture;
+7. `conflict` / `incoherent` ⇒ fail-closed;
+8. `none` / `reserved` ⇒ planner;
+9. `manifestHash`;
+10. verifica del manifest contro l'eventuale tentativo `resumable`;
+11. preflight, lease, upload, rinnovo, commit.
 
-**Upload.** *N*, con concorrenza massima 3.
+Stesso `requestId` con file modificato ⇒ `conflict`. Stessa sorgente su un'altra
+destinazione ⇒ `conflict`. Record legacy o parziale privo dei nuovi campi ⇒
+`incoherent`, mai riparato. Stessa sorgente ma piano divergente — una mutazione
+concorrente ha spostato numerazione o `order` fra prenotazione e retry ⇒
+`incoherent`, fail-closed.
 
-**Callable/Functions/IA:** zero. Nessun listener, nessun polling, nessuna
-lettura all'apertura ordinaria del corso.
+**Esito del replay.** Non viene ricostruito alcun manifest sulla destinazione
+ormai modificata: il risultato è `committed_replay`, con gli id e il conteggio
+**persistiti nel record** e `requiresReload: true`. La UI mostra il successo e
+invita a ricaricare, senza inventare documenti locali e senza ripetere l'import.
 
-Con *N* = 40 e *E* = 10: ~57 letture, 47 scritture, 40 upload.
+### 14.8 Costi, contati dal codice
 
-### 14.8 STRUCTURE-IMPORT-02B — import delle lezioni
+Le query Firestore sono fatturate **per documento restituito**, e ogni `tx.get`
+dentro una transazione è una lettura. Le formule seguenti separano Firestore,
+Storage Gateway e upload.
+
+**02A — import di N UDA, con E UDA già presenti nell'import**
+
+| Fase | Letture Firestore | Scritture Firestore | Storage Gateway |
+|---|---|---|---|
+| Lettura destinazione | 1 (programma) + E (query UDA) | — | — |
+| Sonda di sorgente | 1 (record tentativo) | — | — |
+| Verifica del piano | 1 (record tentativo) | — | — |
+| Preflight | N (`UdaDoc`) | — | 1 lettura batch di N path |
+| Prenotazione (transazione) | 2 (programma, import) | 2 (lease, record) | — |
+| Upload | — | — | N upload, concorrenza 3 |
+| Rinnovo (transazione) | 1 (import) | 1 (lease) | — |
+| Commit (transazione) | 3 (programma, import, record) + N (`UdaDoc`) | N + 4 (N `UdaDoc`, import, programma, record, audit) | — |
+
+Totali su un import riuscito: **letture = E + 2N + 9**, **scritture = N + 7**,
+**upload = N**, più 1 lettura batch Storage.
+Cleanup (solo su errore pre-commit): 1 lettura + 1 lettura in transazione, 1
+scrittura (rilascio lease) + 1 delete (record), fino a N delete su Storage.
+
+Esempi con ipotesi esplicite: N=2, E=0 → 13 letture, 9 scritture, 2 upload ·
+N=10, E=10 → 39 letture, 17 scritture, 10 upload · N=40, E=20 → 109 letture,
+47 scritture, 40 upload.
+
+**02B — import di N lezioni, con E lezioni già presenti nella UDA**
+
+| Fase | Letture Firestore | Scritture Firestore | Storage Gateway |
+|---|---|---|---|
+| Lettura destinazione | 1 (programma) + 1 (UDA) + E (query lezioni della UDA) | — | — |
+| Sonda di sorgente | 1 (record tentativo) | — | — |
+| Verifica del piano | 1 (record tentativo) | — | — |
+| Preflight | N (`LessonDoc`) + N (`publicLessons`) | — | 1 lettura batch di N path |
+| Prenotazione (transazione) | 2 (programma, UDA) | 2 (lease sulla UDA, record) | — |
+| Upload | — | — | N upload, concorrenza 3 |
+| Rinnovo (transazione) | 1 (UDA) | 1 (lease) | — |
+| Commit (transazione) | 3 (programma, UDA, record) + 2N (`LessonDoc` e proiezioni) | 2N + 4 (N `LessonDoc`, N proiezioni, UDA con `lessonCount` e lease, programma, record, audit) | — |
+
+Totali su un import riuscito: **letture = E + 4N + 10**, **scritture = 2N + 7**,
+**upload = N**, più 1 lettura batch Storage.
+Cleanup (solo su errore pre-commit): 1 + 1 letture, 1 scrittura + 1 delete, fino
+a N delete su Storage.
+
+Esempi con ipotesi esplicite: N=3, E=0 → 22 letture, 13 scritture, 3 upload ·
+N=15, E=0 → 70 letture, 37 scritture, 15 upload · N=15, E=20 → 90 letture, 37
+scritture, 15 upload · N=40, E=20 → 190 letture, 87 scritture, 40 upload.
+
+**Costo passivo: zero** in entrambi i flussi — nessun listener, nessun polling,
+nessuna lettura all'apertura ordinaria di corso o UDA, nessuna callable, nessuna
+Function, nessuna chiamata IA. Le mutazioni manuali di una lezione pagano **una
+lettura in più** (il documento UDA, per il lease), e solo quando il docente muta.
+
+### 14.9 STRUCTURE-IMPORT-02B — import delle lezioni
 
 **UI.** `Didattica → corso → UDA → Azioni → Importa lezioni`, agisce solo sulla
 UDA da cui il menu è stato aperto; la destinazione è nominata nel dialog perché
@@ -513,26 +583,9 @@ percorso di pubblicazione — verificato: `updateLessonMarkdownBody` aggiorna gi
 card. **Non è un confine di sicurezza:** la proiezione resta tecnicamente
 leggibile secondo le Rules correnti.
 
-**Costi di un import di N lezioni** (contati dal codice; *E* = lezioni già
-presenti nella UDA):
+I costi sono nella tabella di §14.8, insieme a quelli di 02A.
 
-- letture: 1 programma + 1 UDA + 1 query lezioni (*E* documenti) + 1 record
-  tentativo + 2N punti di preflight (`LessonDoc` e proiezioni) + 1 batch
-  Storage; nel commit 1 programma + 1 UDA + 1 tentativo + 2N documenti;
-- scritture: prenotazione **2** (lease sulla UDA + record), rinnovo **1**,
-  commit **2N + 4** (N `LessonDoc` + N proiezioni + UDA + programma + record +
-  audit) → **totale 2N + 7**;
-- upload: N, concorrenza 3; cleanup solo su errore pre-commit: fino a N delete
-  + 1 scrittura + 1 delete;
-- callable, Functions e IA: zero.
-
-Indicativi: N=3 → ~13 letture, 13 scritture, 3 upload; N=15 → ~49 letture, 37
-scritture, 15 upload; N=40 → ~124 letture, 87 scritture, 40 upload.
-
-Le mutazioni manuali di una lezione pagano ora **una lettura in più** (il
-documento della UDA, per il lease), e solo quando il docente muta davvero.
-
-### 14.9 Scelte da confermare in 03
+### 14.10 Scelte da confermare in 03
 
 - **Ordine legacy delle lezioni.** Il planner, a differenza di `createLesson`,
   ricade sul prefisso `lezione-XXX` quando una lezione esistente non ha `order`

@@ -5,7 +5,12 @@ import type {
   LessonStructureImportDeps,
 } from '../lessonStructureImportRepository.js';
 import { computeManifestHash } from '../manifestHash.js';
-import { checkCommitPreconditions, classifyAttempt, mayCleanupAttempt } from '../attemptState.js';
+import {
+  checkCommitPreconditions,
+  classifyAttempt,
+  classifySourceAttempt,
+  mayCleanupAttempt,
+} from '../attemptState.js';
 import type { AttemptExpectation, AttemptRecord, LeaseRecord } from '../attemptState.js';
 
 /**
@@ -87,6 +92,9 @@ function backend(): Backend {
     },
   ): AttemptExpectation => ({
     requestId,
+    sourceHash: state.attempts.get(requestId)?.sourceHash as string,
+    programId: 'prog-1',
+    importId: state.activeImportId,
     manifestHash,
     kind: 'lesson',
     udaId: manifest.udaId,
@@ -114,7 +122,19 @@ function backend(): Backend {
       };
     },
 
-    hashManifest: (canonical) => computeManifestHash(canonical),
+    hashCanonical: (canonical) => computeManifestHash(canonical),
+
+    async probeSourceAttempt({ requestId, sourceHash }) {
+      calls.push('probeSourceAttempt');
+      return classifySourceAttempt(state.attempts.get(requestId) ?? null, {
+        requestId,
+        sourceHash,
+        kind: 'lesson',
+        programId: 'prog-1',
+        importId: state.activeImportId,
+        udaId: state.udaId,
+      });
+    },
 
     async probeAttempt({ requestId, manifestHash, manifest }) {
       calls.push('probeAttempt');
@@ -143,7 +163,7 @@ function backend(): Backend {
       return { collision: null };
     },
 
-    async acquireLease({ udaId, requestId, manifestHash, manifest }) {
+    async acquireLease({ udaId, requestId, manifestHash, sourceHash, manifest }) {
       calls.push('acquireLease');
       const lease = state.leases.get(udaId);
       if (
@@ -157,6 +177,9 @@ function backend(): Backend {
       state.leases.set(udaId, { requestId, manifestHash, expiresAt: state.now + LEASE_TTL });
       state.attempts.set(requestId, {
         requestId,
+        sourceHash,
+        programId: 'prog-1',
+        importId: state.activeImportId,
         manifestHash,
         kind: 'lesson',
         udaId,
@@ -266,6 +289,7 @@ describe('append nella UDA corretta', () => {
     await importLessonStructure(INPUT, b.deps);
     expect(b.calls).toEqual([
       'loadContext',
+      'probeSourceAttempt',
       'probeAttempt',
       'preflight',
       'acquireLease',
@@ -322,7 +346,7 @@ describe('append nella UDA corretta', () => {
     if (result.status === 'validation_failed') {
       expect(result.error.code).toBe('duplicate_title_in_destination');
     }
-    expect(b.calls).toEqual(['loadContext']);
+    expect(b.calls).toEqual(['loadContext', 'probeSourceAttempt']);
   });
 
   it('UTF-8 non valido è rifiutato prima di qualunque lettura', async () => {
@@ -511,8 +535,14 @@ describe('identità del tentativo', () => {
   it('un tentativo di import UDA non è mai un replay di un import lezioni', async () => {
     const b = backend();
     // Record ben formato ma di tipo `uda`.
+    // Record ben formato — `sourceHash` incluso — ma di tipo `uda`: la sonda di
+    // sorgente lo rifiuta proprio perché il kind fa parte dell'identità.
+    const sourceHash = await computeManifestHash('qualunque sorgente');
     b.state.attempts.set('req-1', {
       requestId: 'req-1',
+      sourceHash,
+      programId: 'prog-1',
+      importId: 'imp-1',
       manifestHash: 'a'.repeat(64),
       kind: 'uda',
       documentIds: ['uda-01-reti'],
@@ -521,6 +551,7 @@ describe('identità del tentativo', () => {
     });
     const result = await importLessonStructure(INPUT, b.deps);
     expect(result.status).toBe('not_applied');
+    // Sorgente diversa ⇒ conflitto; se coincidesse, sarebbe il kind a farlo.
     if (result.status === 'not_applied') expect(result.reason).toBe('conflict');
     expect(b.state.lessons.size).toBe(0);
   });
@@ -539,7 +570,8 @@ describe('identità del tentativo', () => {
     b.state.publicLessons.clear();
     const second = await importLessonStructure(INPUT, b.deps);
     expect(second.status).toBe('not_applied');
-    if (second.status === 'not_applied') expect(second.reason).toBe('incoherent_attempt');
+    // Stessa sorgente ma altro bersaglio: non è questo tentativo.
+    if (second.status === 'not_applied') expect(second.reason).toBe('conflict');
   });
 
   it('un record malformato blocca senza essere sovrascritto', async () => {
@@ -549,6 +581,73 @@ describe('identità del tentativo', () => {
     expect(result.status).toBe('not_applied');
     if (result.status === 'not_applied') expect(result.reason).toBe('incoherent_attempt');
     expect(b.state.attempts.get('req-1')).toEqual({ requestId: 'req-1', status: 'reserved' });
+  });
+});
+
+describe('replay dopo una risposta persa', () => {
+  it('il retry è riconosciuto senza planner, preflight, lease, upload o commit', async () => {
+    const b = backend();
+    expect((await importLessonStructure(INPUT, b.deps)).status).toBe('committed');
+
+    b.calls.length = 0;
+    const replay = await importLessonStructure(INPUT, b.deps);
+
+    expect(replay.status).toBe('committed_replay');
+    if (replay.status === 'committed_replay') {
+      expect(replay.lessonCount).toBe(2);
+      expect(replay.requiresReload).toBe(true);
+      expect(replay.lessonIds).toHaveLength(2);
+    }
+    expect(b.calls).toEqual(['loadContext', 'probeSourceAttempt']);
+    expect(b.state.lessons.size).toBe(2);
+    expect(b.state.publicLessons.size).toBe(2);
+    expect(b.state.lessonCount).toBe(2);
+    expect(b.state.audit).toBe(1);
+    expect(b.state.storage.size).toBe(2);
+  });
+
+  it('stesso requestId con file modificato: conflitto, mai un secondo import', async () => {
+    const b = backend();
+    await importLessonStructure(INPUT, b.deps);
+    const altro = utf8(`schema: schoolforge-lesson-metadata/v1
+lessons:
+  - titolo: Tutt'altra lezione
+    difficolta: base
+    concettiChiave:
+      - c
+    obiettivi:
+      - o
+`);
+    const result = await importLessonStructure({ ...INPUT, bytes: altro }, b.deps);
+    expect(result.status).toBe('not_applied');
+    if (result.status === 'not_applied') expect(result.reason).toBe('conflict');
+    expect(b.state.lessons.size).toBe(2);
+    expect(b.state.publicLessons.size).toBe(2);
+    expect(b.state.audit).toBe(1);
+  });
+
+  it('stessa sorgente ma piano divergente dopo una mutazione concorrente: fail-closed', async () => {
+    const b = backend();
+    b.fail.commit = true;
+    b.fail.cleanupStorage = true;
+    expect((await importLessonStructure(INPUT, b.deps)).status).toBe('cleanup_pending');
+    delete b.fail.commit;
+    delete b.fail.cleanupStorage;
+
+    // Un'altra lezione è comparsa: numerazione e `order` si spostano.
+    b.state.lessons.set('altra', {
+      filename: 'lezione-001-altra.md',
+      order: 0,
+      titolo: 'Altra',
+    });
+
+    const retry = await importLessonStructure(INPUT, b.deps);
+    expect(retry.status).toBe('not_applied');
+    if (retry.status === 'not_applied') expect(retry.reason).toBe('incoherent_attempt');
+    expect(b.state.lessons.size).toBe(1);
+    expect(b.state.publicLessons.size).toBe(0);
+    expect(b.state.lessonCount).toBe(0);
+    expect(b.state.audit).toBe(0);
   });
 });
 
@@ -611,7 +710,7 @@ describe('recovery', () => {
       files: b.state.storage.size,
     };
     const replay = await importLessonStructure(INPUT, deps);
-    expect(replay.status).toBe('committed');
+    expect(replay.status).toBe('committed_replay');
     expect(b.state.lessons.size).toBe(before.lessons);
     expect(b.state.publicLessons.size).toBe(before.projections);
     expect(b.state.lessonCount).toBe(before.count);
@@ -624,6 +723,9 @@ describe('recovery', () => {
     const b = backend();
     b.state.attempts.set('req-1', {
       requestId: 'req-1',
+      sourceHash: 'd'.repeat(64),
+      programId: 'prog-1',
+      importId: 'imp-1',
       manifestHash: 'c'.repeat(64),
       kind: 'lesson',
       udaId: 'uda-01-reti',
@@ -647,6 +749,7 @@ describe('recovery', () => {
       activeImportId: 'imp-1',
       requestId: 'req-1',
       manifestHash: 'a'.repeat(64),
+      sourceHash: 'q'.repeat(64),
       manifest: {
         kind: 'lesson',
         ownerUid: 'owner-1',

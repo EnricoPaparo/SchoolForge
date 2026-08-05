@@ -701,13 +701,13 @@ export async function reorderLesson(params: {
   neighborLessonId: string;
   ownerUid: string;
   /**
-   * Parent UDA. Optional because a swap can never move the append base — it
-   * exchanges two existing `order` values, so the maximum is unchanged — which
-   * makes the lease check defence in depth rather than a correctness
-   * requirement. When the caller knows the UDA (the workspace always does), the
-   * guard runs and a structural lesson import in flight blocks the reorder.
+   * Parent UDA. **Obbligatorio**: un parametro opzionale avrebbe permesso a un
+   * chiamante distratto di saltare del tutto il controllo del lease, e una
+   * mutazione che salta il lease è esattamente ciò che il protocollo di import
+   * non può tollerare — anche se uno scambio, di per sé, non sposta la base di
+   * numerazione.
    */
-  udaId?: string;
+  udaId: string;
   db: Firestore;
 }): Promise<{ order: number; neighborOrder: number }> {
   const { programId, importId, lessonId, neighborLessonId, ownerUid, udaId, db } = params;
@@ -732,7 +732,7 @@ export async function reorderLesson(params: {
   }
 
   // Mutual exclusion with an in-flight structural lesson import on this UDA.
-  if (udaId) await assertNoActiveLessonAppendLease(programId, importId, udaId, db);
+  await assertNoActiveLessonAppendLease(programId, importId, udaId, db);
 
   const order = neighbor.order ?? lessonOrderFromFilename(neighbor.filename) ?? 0;
   const neighborOrder = lesson.order ?? lessonOrderFromFilename(lesson.filename) ?? 0;

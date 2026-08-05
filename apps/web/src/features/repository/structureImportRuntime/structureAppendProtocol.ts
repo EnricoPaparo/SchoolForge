@@ -13,9 +13,18 @@ import type { AttemptClassification } from './attemptState.js';
  * del file, la lettura della destinazione e la costruzione del manifest puro.
  * Quando arriva qui, il piano esiste già e non cambia più.
  *
+ * L'identità è a **due livelli** e il primo vive fuori di qui:
+ *
+ * - `sourceHash` — richiesta, owner autorevole, destinazione e metadati del
+ *   file — è calcolabile *prima* del planner, e serve a riconoscere un replay
+ *   anche quando il commit precedente ha già modificato la destinazione;
+ * - `manifestHash` — il piano completo, con id, `order` e path — governa
+ *   lease, resume e commit, ed è ciò di cui si occupa questa funzione.
+ *
  * Ordine fisso, fail-closed a ogni passo:
  *
- *   SHA-256 → sonda tentativo → preflight → lease → upload → rinnovo → commit
+ *   SHA-256 del manifest → verifica del tentativo → preflight → lease →
+ *   upload → rinnovo → commit
  *
  * Nessuna scrittura prima che il preflight sia verde. Ogni fallimento dopo il
  * lease esegue un cleanup limitato al manifest del tentativo.
@@ -40,8 +49,12 @@ export interface AppendCollision {
 }
 
 export interface StructureAppendPorts<M extends AppendManifestLike> {
-  /** `hex(SHA-256(UTF8(manifestCanonical)))`. Deve sollevare se non calcolabile. */
-  hashManifest(manifestCanonical: string): Promise<string>;
+  /** `hex(SHA-256(UTF8(canonical)))`. Deve sollevare se non calcolabile. */
+  hashCanonical(canonical: string): Promise<string>;
+  /**
+   * Verifica il record del tentativo **contro il piano**: un `resumable` deve
+   * descrivere esattamente questo manifest, altrimenti fallisce chiuso.
+   */
   probeAttempt(params: {
     manifest: M;
     requestId: string;
@@ -56,6 +69,8 @@ export interface StructureAppendPorts<M extends AppendManifestLike> {
     manifest: M;
     requestId: string;
     manifestHash: string;
+    /** Persistito nel record: è la chiave del riconoscimento di un replay. */
+    sourceHash: string;
   }): Promise<'acquired' | 'busy'>;
   uploadStorage(files: Array<{ path: string; content: string }>): Promise<void>;
   renewLease(params: {
@@ -101,16 +116,16 @@ export interface AppendCopy {
 }
 
 export async function runStructureAppend<M extends AppendManifestLike>(
-  params: { manifest: M; requestId: string; copy: AppendCopy },
+  params: { manifest: M; requestId: string; sourceHash: string; copy: AppendCopy },
   ports: StructureAppendPorts<M>,
 ): Promise<StructureAppendOutcome> {
-  const { manifest, requestId, copy } = params;
+  const { manifest, requestId, sourceHash, copy } = params;
 
-  // 1. Identità autorevole. Calcolata PRIMA del lease, dell'upload e di
+  // 1. Identità del piano. Calcolata PRIMA del lease, dell'upload e di
   // qualunque scrittura: se non è calcolabile, non accade nulla.
   let manifestHash: string;
   try {
-    manifestHash = await ports.hashManifest(manifest.manifestCanonical);
+    manifestHash = await ports.hashCanonical(manifest.manifestCanonical);
   } catch (error) {
     return {
       status: 'not_applied',
@@ -119,7 +134,10 @@ export async function runStructureAppend<M extends AppendManifestLike>(
     };
   }
 
-  // 2. Macchina degli stati del tentativo.
+  // 2. Il record del tentativo deve descrivere **questo** piano. La sonda di
+  // sorgente ha già escluso il replay e il cambio di file; qui si intercetta il
+  // caso in cui una mutazione concorrente ha spostato numerazione o `order` fra
+  // la prenotazione e il retry: il piano non è più quello prenotato.
   const attempt = await ports.probeAttempt({ manifest, requestId, manifestHash });
   if (attempt === 'committed') return { status: 'committed' };
   if (attempt === 'conflict') {
@@ -147,7 +165,7 @@ export async function runStructureAppend<M extends AppendManifestLike>(
   }
 
   // 4. Prime scritture: record del tentativo + lease.
-  const lease = await ports.acquireLease({ manifest, requestId, manifestHash });
+  const lease = await ports.acquireLease({ manifest, requestId, manifestHash, sourceHash });
   if (lease === 'busy') {
     return { status: 'not_applied', message: copy.busy, reason: 'busy' };
   }

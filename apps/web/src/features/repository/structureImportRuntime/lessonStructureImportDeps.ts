@@ -17,7 +17,12 @@ import {
   writeText,
 } from '../gateway/repositoryGatewayClient.js';
 import { computeManifestHash } from './manifestHash.js';
-import { checkCommitPreconditions, classifyAttempt, mayCleanupAttempt } from './attemptState.js';
+import {
+  checkCommitPreconditions,
+  classifyAttempt,
+  classifySourceAttempt,
+  mayCleanupAttempt,
+} from './attemptState.js';
 import type { AttemptExpectation, AttemptRecord, LeaseRecord } from './attemptState.js';
 import { LESSON_APPEND_LEASE_FIELD, LESSON_LEASE_TTL_MS } from './lessonAppendLease.js';
 import type {
@@ -74,9 +79,12 @@ export function createFirestoreLessonStructureImportDeps(
   const now = options.now ?? (() => Date.now());
 
   const expectationOf = (
+    programId: string,
     requestId: string,
+    sourceHash: string,
     manifestHash: string,
     manifest: {
+      importId: string;
       udaId: string;
       lessonIds: string[];
       publicLessonIds: string[];
@@ -84,6 +92,9 @@ export function createFirestoreLessonStructureImportDeps(
     },
   ): AttemptExpectation => ({
     requestId,
+    sourceHash,
+    programId,
+    importId: manifest.importId,
     manifestHash,
     kind: 'lesson',
     udaId: manifest.udaId,
@@ -130,13 +141,27 @@ export function createFirestoreLessonStructureImportDeps(
       };
     },
 
-    hashManifest: (manifestCanonical) => computeManifestHash(manifestCanonical),
+    hashCanonical: (canonical) => computeManifestHash(canonical),
+
+    async probeSourceAttempt({ programId, activeImportId, udaId, requestId, sourceHash }) {
+      const snap = await getDoc(doc(db, attemptPath(programId, activeImportId, requestId)));
+      return classifySourceAttempt(snap.exists() ? (snap.data() as AttemptRecord) : null, {
+        requestId,
+        sourceHash,
+        kind: 'lesson',
+        programId,
+        importId: activeImportId,
+        udaId,
+      });
+    },
 
     async probeAttempt({ programId, activeImportId, requestId, manifestHash, manifest }) {
       const snap = await getDoc(doc(db, attemptPath(programId, activeImportId, requestId)));
+      const record = snap.exists() ? (snap.data() as AttemptRecord) : null;
+      const sourceHash = typeof record?.sourceHash === 'string' ? record.sourceHash : '';
       return classifyAttempt(
-        snap.exists() ? (snap.data() as AttemptRecord) : null,
-        expectationOf(requestId, manifestHash, manifest),
+        record,
+        expectationOf(programId, requestId, sourceHash, manifestHash, manifest),
       );
     },
 
@@ -177,7 +202,15 @@ export function createFirestoreLessonStructureImportDeps(
       return { collision: null };
     },
 
-    async acquireLease({ programId, activeImportId, udaId, requestId, manifestHash, manifest }) {
+    async acquireLease({
+      programId,
+      activeImportId,
+      udaId,
+      requestId,
+      manifestHash,
+      sourceHash,
+      manifest,
+    }) {
       return runTransaction(db, async (tx) => {
         const programRef = doc(db, 'programs', programId);
         const udaRef = doc(db, `${importBase(programId, activeImportId)}/udas/${udaId}`);
@@ -210,8 +243,11 @@ export function createFirestoreLessonStructureImportDeps(
           doc(db, attemptPath(programId, activeImportId, requestId)),
           {
             requestId,
+            sourceHash,
             manifestHash,
             kind: 'lesson',
+            programId,
+            importId: activeImportId,
             udaId,
             documentIds: manifest.lessonIds,
             publicLessonIds: manifest.publicLessonIds,
@@ -263,7 +299,7 @@ export function createFirestoreLessonStructureImportDeps(
       });
     },
 
-    async commit({ programId, manifest, requestId, manifestHash }) {
+    async commit({ programId, manifest, requestId, manifestHash, sourceHash }) {
       const base = importBase(programId, manifest.importId);
       await runTransaction(db, async (tx) => {
         const programRef = doc(db, 'programs', programId);
@@ -296,7 +332,7 @@ export function createFirestoreLessonStructureImportDeps(
               LESSON_APPEND_LEASE_FIELD
             ] ?? null,
           attempt: attemptSnap.exists() ? (attemptSnap.data() as AttemptRecord) : null,
-          expected: expectationOf(requestId, manifestHash, manifest),
+          expected: expectationOf(programId, requestId, sourceHash, manifestHash, manifest),
           now: now(),
         });
         if (failure) throw new Error(failure);
@@ -334,10 +370,10 @@ export function createFirestoreLessonStructureImportDeps(
       });
     },
 
-    async cleanup({ programId, activeImportId, manifest, requestId, manifestHash }) {
+    async cleanup({ programId, activeImportId, manifest, requestId, manifestHash, sourceHash }) {
       try {
         const attemptRef = doc(db, attemptPath(programId, activeImportId, requestId));
-        const expected = expectationOf(requestId, manifestHash, manifest);
+        const expected = expectationOf(programId, requestId, sourceHash, manifestHash, manifest);
         const attemptSnap = await getDoc(attemptRef);
         const record = attemptSnap.exists() ? (attemptSnap.data() as AttemptRecord) : null;
         // Senza un record che dimostri la proprietà — committato, sostituito,

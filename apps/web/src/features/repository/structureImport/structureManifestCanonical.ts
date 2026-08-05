@@ -86,5 +86,20 @@ function serialize(value: Serializable): string {
  * `manifestCanonical` field: a serialization cannot contain itself.
  */
 export function canonicalizeManifest(body: unknown): string {
-  return `${MANIFEST_CANONICAL_VERSION}\n${serialize(body as Serializable)}`;
+  return canonicalizeWithVersion(MANIFEST_CANONICAL_VERSION, body);
+}
+
+/**
+ * The same canonical serialization under an explicit version tag, for the other
+ * closed structures the protocol needs to identify — today the **source** of an
+ * import (see `structureSourceCanonical.ts`), whose hash must be computable
+ * *before* the planner runs.
+ *
+ * The tag is part of the output: two structures serialized under different tags
+ * can never collide, and changing how one of them is built changes every
+ * identity derived from it instead of silently equating two incompatible
+ * things.
+ */
+export function canonicalizeWithVersion(version: string, body: unknown): string {
+  return `${version}\n${serialize(body as Serializable)}`;
 }

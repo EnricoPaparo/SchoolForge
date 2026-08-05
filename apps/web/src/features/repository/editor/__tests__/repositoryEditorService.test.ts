@@ -39,6 +39,18 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: () => mockServerTimestamp(),
 }));
 
+/**
+ * STRUCTURE-IMPORT-02B: la guardia del lease per UDA è un collaboratore, qui
+ * simulato. Le sequenze di `getDoc` di questi test descrivono il servizio, non
+ * il lease; il comportamento della guardia ha i suoi test dedicati, e più sotto
+ * si verifica che ogni mutazione la interroghi davvero.
+ */
+const mockAssertLessonLease = vi.fn(async (..._args: unknown[]) => undefined);
+vi.mock('../../structureImportRuntime/lessonAppendLease.js', () => ({
+  assertNoActiveLessonAppendLease: (...args: unknown[]) => mockAssertLessonLease(...args),
+  LESSON_APPEND_LEASE_BUSY_MESSAGE: 'Importazione di lezioni in corso su questa UDA.',
+}));
+
 const mockReadText = vi.fn();
 const mockWriteText = vi.fn();
 const mockDeleteFile = vi.fn();
@@ -1169,6 +1181,7 @@ describe('reorderLesson', () => {
         importId: 'imp-1',
         lessonId: 'lesson-1',
         neighborLessonId: 'lesson-2',
+        udaId: 'uda-01-reti',
         ownerUid: OWNER_UID,
         db: fakeDb,
       }),
@@ -1190,6 +1203,7 @@ describe('reorderLesson', () => {
         importId: 'imp-1',
         lessonId: 'lesson-1',
         neighborLessonId: 'lesson-2',
+        udaId: 'uda-01-reti',
         ownerUid: OWNER_UID,
         db: fakeDb,
       }),
@@ -1213,6 +1227,7 @@ describe('reorderLesson', () => {
         importId: 'imp-1',
         lessonId: 'lesson-1',
         neighborLessonId: 'lesson-2',
+        udaId: 'uda-01-reti',
         ownerUid: OWNER_UID,
         db: fakeDb,
       }),
@@ -1238,6 +1253,7 @@ describe('reorderLesson', () => {
       importId: 'imp-1',
       lessonId: 'lesson-1',
       neighborLessonId: 'lesson-2',
+      udaId: 'uda-01-reti',
       ownerUid: OWNER_UID,
       db: fakeDb,
     });
@@ -1284,6 +1300,7 @@ describe('reorderLesson', () => {
       importId: 'imp-1',
       lessonId: 'lesson-1',
       neighborLessonId: 'lesson-2',
+      udaId: 'uda-01-reti',
       ownerUid: OWNER_UID,
       db: fakeDb,
     });
@@ -1313,6 +1330,7 @@ describe('reorderLesson', () => {
       importId: 'imp-1',
       lessonId: 'lesson-1',
       neighborLessonId: 'lesson-2',
+      udaId: 'uda-01-reti',
       ownerUid: OWNER_UID,
       db: fakeDb,
     });
@@ -1339,6 +1357,7 @@ describe('reorderLesson', () => {
       importId: 'imp-1',
       lessonId: 'lesson-2',
       neighborLessonId: 'lesson-3',
+      udaId: 'uda-01-reti',
       ownerUid: OWNER_UID,
       db: fakeDb,
     });
@@ -1366,6 +1385,7 @@ describe('reorderLesson', () => {
         importId: 'imp-1',
         lessonId: 'lesson-1',
         neighborLessonId: 'lesson-2',
+        udaId: 'uda-01-reti',
         ownerUid: OWNER_UID,
         db: fakeDb,
       }),

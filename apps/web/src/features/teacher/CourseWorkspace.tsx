@@ -793,6 +793,17 @@ export function CourseWorkspace({
           setWsError(result.message);
           return;
         }
+        if (result.status === 'committed_replay') {
+          // Un tentativo precedente era già andato a buon fine e la risposta si
+          // era persa. Gli id vengono dal record persistito, non da un piano
+          // ricostruito: l'albero locale non va indovinato, va ricaricato.
+          added = result.lessonCount;
+          lessonStructureRequestIdRef.current = null;
+          setWsNotice(
+            `${result.lessonCount} lezioni erano già state importate da questo tentativo. Ricarica la vista per vederle.`,
+          );
+          return;
+        }
         // Committato: le lezioni sono vive. Da qui nulla può declassare
         // l'esito a errore.
         added = result.lessonCount;
@@ -869,6 +880,17 @@ export function CourseWorkspace({
         }
         if (result.status === 'not_applied' || result.status === 'cleanup_pending') {
           setWsError(result.message);
+          return;
+        }
+        if (result.status === 'committed_replay') {
+          // Stesso caso dell'import lezioni: il commit era già avvenuto e la
+          // risposta si era persa. Nessuna ricostruzione locale, solo il
+          // conteggio autorevole e l'invito a ricaricare.
+          added = result.udaCount;
+          udaStructureRequestIdRef.current = null;
+          setWsNotice(
+            `${result.udaCount} UDA erano già state importate da questo tentativo. Ricarica la vista per vederle.`,
+          );
           return;
         }
         // Committed: every new UDA is live. Nothing below may turn this into an
@@ -1457,8 +1479,9 @@ export function CourseWorkspace({
     const lesson = lessonsInUda[index]!;
     const neighbor = lessonsInUda[neighborIndex]!;
     // La UDA è nota dal `dir`: serve al guardrail contro un import di lezioni
-    // in volo su questa stessa UDA.
+    // in volo su questa stessa UDA, ed è obbligatoria.
     const parentUdaId = tree.udas.find((u) => u.dir === udaDir)?.id;
+    if (!parentUdaId) return;
     setReorderBusy(true);
     setReorderError(null);
     void (async () => {
@@ -1469,7 +1492,7 @@ export function CourseWorkspace({
           lessonId: lesson.id,
           neighborLessonId: neighbor.id,
           ownerUid,
-          ...(parentUdaId === undefined ? {} : { udaId: parentUdaId }),
+          udaId: parentUdaId,
           db,
         });
         if (!mountedRef.current) return;

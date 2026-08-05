@@ -15,7 +15,12 @@ import {
   writeText,
 } from '../gateway/repositoryGatewayClient.js';
 import { computeManifestHash } from './manifestHash.js';
-import { checkCommitPreconditions, classifyAttempt, mayCleanupAttempt } from './attemptState.js';
+import {
+  checkCommitPreconditions,
+  classifyAttempt,
+  classifySourceAttempt,
+  mayCleanupAttempt,
+} from './attemptState.js';
 import type { AttemptExpectation, AttemptRecord, LeaseRecord } from './attemptState.js';
 import type {
   UdaStructureImportContext,
@@ -75,11 +80,16 @@ export function createFirestoreUdaStructureImportDeps(
   const now = options.now ?? (() => Date.now());
 
   const expectationOf = (
+    programId: string,
     requestId: string,
+    sourceHash: string,
     manifestHash: string,
-    manifest: { udaIds: string[]; storagePaths: string[] },
+    manifest: { importId: string; udaIds: string[]; storagePaths: string[] },
   ): AttemptExpectation => ({
     requestId,
+    sourceHash,
+    programId,
+    importId: manifest.importId,
     manifestHash,
     kind: 'uda',
     udaId: null,
@@ -114,15 +124,27 @@ export function createFirestoreUdaStructureImportDeps(
       };
     },
 
-    hashManifest(manifestCanonical) {
-      return computeManifestHash(manifestCanonical);
+    hashCanonical: (canonical) => computeManifestHash(canonical),
+
+    async probeSourceAttempt({ programId, activeImportId, requestId, sourceHash }) {
+      const snap = await getDoc(doc(db, attemptPath(programId, activeImportId, requestId)));
+      return classifySourceAttempt(snap.exists() ? (snap.data() as AttemptRecord) : null, {
+        requestId,
+        sourceHash,
+        kind: 'uda',
+        programId,
+        importId: activeImportId,
+        udaId: null,
+      });
     },
 
     async probeAttempt({ programId, activeImportId, requestId, manifestHash, manifest }) {
       const snap = await getDoc(doc(db, attemptPath(programId, activeImportId, requestId)));
+      const record = snap.exists() ? (snap.data() as AttemptRecord) : null;
+      const sourceHash = typeof record?.sourceHash === 'string' ? record.sourceHash : '';
       return classifyAttempt(
-        snap.exists() ? (snap.data() as AttemptRecord) : null,
-        expectationOf(requestId, manifestHash, manifest),
+        record,
+        expectationOf(programId, requestId, sourceHash, manifestHash, manifest),
       );
     },
 
@@ -153,7 +175,14 @@ export function createFirestoreUdaStructureImportDeps(
       return { collision: null };
     },
 
-    async acquireLease({ programId, activeImportId, requestId, manifestHash, manifest }) {
+    async acquireLease({
+      programId,
+      activeImportId,
+      requestId,
+      manifestHash,
+      sourceHash,
+      manifest,
+    }) {
       return runTransaction(db, async (tx) => {
         const programRef = doc(db, 'programs', programId);
         const importRef = doc(db, importBase(programId, activeImportId));
@@ -190,8 +219,11 @@ export function createFirestoreUdaStructureImportDeps(
           doc(db, attemptPath(programId, activeImportId, requestId)),
           {
             requestId,
+            sourceHash,
             manifestHash,
             kind: 'uda',
+            programId,
+            importId: activeImportId,
             documentIds: manifest.udaIds,
             storagePaths: manifest.storagePaths,
             status: 'reserved',
@@ -235,7 +267,7 @@ export function createFirestoreUdaStructureImportDeps(
       );
     },
 
-    async commit({ programId, manifest, requestId, manifestHash }) {
+    async commit({ programId, manifest, requestId, manifestHash, sourceHash }) {
       const base = importBase(programId, manifest.importId);
       await runTransaction(db, async (tx) => {
         const programRef = doc(db, 'programs', programId);
@@ -263,7 +295,7 @@ export function createFirestoreUdaStructureImportDeps(
         const failure = checkCommitPreconditions({
           lease: (importSnap.data() as { udaAppendLease?: LeaseRecord }).udaAppendLease ?? null,
           attempt: attemptSnap.exists() ? (attemptSnap.data() as AttemptRecord) : null,
-          expected: expectationOf(requestId, manifestHash, manifest),
+          expected: expectationOf(programId, requestId, sourceHash, manifestHash, manifest),
           now: now(),
         });
         if (failure) throw new Error(failure);
@@ -304,12 +336,12 @@ export function createFirestoreUdaStructureImportDeps(
       });
     },
 
-    async cleanup({ programId, activeImportId, manifest, requestId, manifestHash }) {
+    async cleanup({ programId, activeImportId, manifest, requestId, manifestHash, sourceHash }) {
       try {
         const base = importBase(programId, activeImportId);
         const attemptRef = doc(db, attemptPath(programId, activeImportId, requestId));
         const attemptSnap = await getDoc(attemptRef);
-        const expected = expectationOf(requestId, manifestHash, manifest);
+        const expected = expectationOf(programId, requestId, sourceHash, manifestHash, manifest);
         const record = attemptSnap.exists() ? (attemptSnap.data() as AttemptRecord) : null;
 
         // The record is the proof of ownership. Without it — committed,

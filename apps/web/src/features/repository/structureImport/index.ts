@@ -41,7 +41,11 @@ export {
 } from './structureImportTemplates.js';
 export { planUdaMetadataAppend } from './planUdaMetadataAppend.js';
 export { planLessonMetadataAppend } from './planLessonMetadataAppend.js';
-export { canonicalizeManifest, MANIFEST_CANONICAL_VERSION } from './structureManifestCanonical.js';
+export {
+  canonicalizeManifest,
+  canonicalizeWithVersion,
+  MANIFEST_CANONICAL_VERSION,
+} from './structureManifestCanonical.js';
 export type {
   ExistingLessonForPlan,
   ExistingUdaForPlan,
