@@ -195,6 +195,29 @@
   max-height: 40vh;
   overflow-y: auto;
 }
+/*
+ * STRUCTURE-IMPORT-02A — elenco di riepilogo dell'import struttura UDA.
+ * Stessa soluzione già usata da `.checklist`: l'elenco scorre dentro di sé, così
+ * il footer del dialog resta raggiungibile anche con 40 UDA e su 320 px.
+ */
+.structureSummary {
+  margin: 0;
+  padding-left: 1.25rem;
+  max-height: 38vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* Su schermi bassi l'elenco cede altezza per primo: i comandi vengono prima. */
+@media (max-height: 45rem) {
+  .structureSummary {
+    max-height: 24vh;
+  }
+}
+
 .checklistItem {
   display: flex;
   align-items: center;
