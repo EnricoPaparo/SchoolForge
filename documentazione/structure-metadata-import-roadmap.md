@@ -1,10 +1,9 @@
 # STRUCTURE-IMPORT — Importazione di UDA e lezioni senza contenuto
 
-> **Stato:** contratto congelato; **STRUCTURE-IMPORT-01 e 02A implementati**.
-> L'importazione delle **UDA** è reale e disponibile in `Azioni corso →
-> Importa struttura UDA`. L'importazione delle **lezioni** non esiste ancora.
-> `02B`, `03` e il Gate GSTRUCT restano aperti. Questo documento non autorizza
-> merge, deploy o migrazioni.
+> **Stato:** contratto congelato; **STRUCTURE-IMPORT-01, 02A e 02B
+> implementati**. Sono reali sia `Azioni corso → Importa struttura UDA` sia
+> `Azioni UDA → Importa lezioni`. `03` (contesto IA) e il Gate GSTRUCT restano
+> aperti. Questo documento non autorizza merge, deploy o migrazioni.
 
 ## 1. Obiettivo
 
@@ -248,7 +247,7 @@ di generazione; non introduce chiamate aggiuntive.
 | **STRUCTURE-IMPORT-00** | Contratto, formati, UX, protocollo, costi e roadmap. | Questo documento; solo documentazione. |
 | **STRUCTURE-IMPORT-01** ✅ | Parser YAML isolati, validatori fail-closed, normalizzazione, template scaricabili, planner puro di ID/order/manifest e test di collisione. Nessuna UI e nessuna scrittura. | **Implementato** in `apps/web/src/features/repository/structureImport/`. Suite completa su fixture valide/malformate, alias/ancore/tag/documenti multipli/chiavi duplicate/extra key/limiti; helper canonici estratti in `repository/canonicalNaming.ts` senza cambiare il comportamento di `createUda`/`createLesson`; test statico di purezza sull'intera chiusura transitiva degli import. Nessun runtime Firebase mutato. |
 | **STRUCTURE-IMPORT-02A** ✅ | `Azioni corso → Importa struttura UDA`, dialog, preview e append atomico delle UDA. | **Implementato.** Un solo commit transazionale rende visibili insieme tutte le UDA; identità del tentativo `requestId` + `SHA-256(manifestCanonical)`; cleanup limitato al manifest; albero locale aggiornato dal manifest, senza refetch. Nessuna Rule, Function, indice o dipendenza aggiunta. |
-| **STRUCTURE-IMPORT-02B** | `Azioni UDA → Importa lezioni`, dialog, preview, append atomico, corpi vuoti/pool assenti e filtro UI studente degli scheletri vuoti. | Nessuna lezione nella UDA sbagliata; conteggi/ordine/proiezioni coerenti; nessuna card vuota lato studente. |
+| **STRUCTURE-IMPORT-02B** ✅ | `Azioni UDA → Importa lezioni`, dialog, preview, append atomico, corpi vuoti/pool assenti e filtro UI studente degli scheletri vuoti. | **Implementato.** Stessa macchina di 02A (`structureAppendProtocol`), lease **per singola UDA**, commit unico con `LessonDoc` + `publicLessons` + incremento unico di `lessonCount`; identità del tentativo estesa a `kind` e UDA di destinazione; filtro studente sulle proiezioni con `content` vuoto. Nessuna Rule, Function, indice o dipendenza aggiunta. |
 | **STRUCTURE-IMPORT-03** | Contesto IA UDA bounded (`descrizione`, `competenze`, `obiettivi`) dai dati già in memoria. | Zero nuove letture; payload/inputHash/stima aggiornati; gerarchia prompt invariata salvo il nuovo contesto autorevole. |
 | **Gate GSTRUCT** | Smoke DEV docente/studente e chiusura evidenze. | Import UDA + lezioni, collisione, retry, mobile/Brave, generazione IA da uno scheletro, nessuna esposizione di card vuote. |
 
@@ -470,7 +469,70 @@ lettura all'apertura ordinaria del corso.
 
 Con *N* = 40 e *E* = 10: ~57 letture, 47 scritture, 40 upload.
 
-### 14.8 Scelte da confermare in 02B
+### 14.8 STRUCTURE-IMPORT-02B — import delle lezioni
+
+**UI.** `Didattica → corso → UDA → Azioni → Importa lezioni`, agisce solo sulla
+UDA da cui il menu è stato aperto; la destinazione è nominata nel dialog perché
+il file non la contiene. Stessi cinque stati e stesso linguaggio di 02A.
+
+**Protocollo condiviso.** Identità, sonda del tentativo, preflight, lease,
+upload, rinnovo condizionato, commit e cleanup vivono in
+`structureImportRuntime/structureAppendProtocol.ts`, usato **sia** da 02A **sia**
+da 02B: una sola macchina, non due simili. Restano specifici del tipo di import
+la validazione del file, la lettura della destinazione e il piano.
+
+**Identità del tentativo.** Estesa: oltre a `requestId` e
+`SHA-256(manifestCanonical)` comprende ora `kind` (`uda` | `lesson`), la UDA di
+destinazione, gli id dei documenti, gli id delle proiezioni e i path. Un
+tentativo di import UDA non può quindi valere come replay di un import lezioni,
+né un tentativo su un'altra UDA. I record vivono in una collezione dedicata
+(`lessonStructureImportAttempts`).
+
+**Lease per singola UDA.** Il lease dell'append lezioni vive sul documento della
+UDA (`lessonAppendLease`), non sull'import: due UDA diverse si possono popolare
+in parallelo, mentre creazione, riordino ed eliminazione di lezioni **di quella
+UDA** — e l'eliminazione della UDA stessa — sono bloccate finché l'import è in
+volo. È la granularità più stretta ottenibile senza toccare Rules, Function o
+indici. Il commit esige lease presente, valida, non scaduta, dello stesso
+`requestId` e dello stesso `manifestHash`, con rinnovo condizionato prima del
+commit, esattamente come 02A.
+
+**Commit atomico.** Una sola transazione crea tutti i `LessonDoc`, tutte le
+proiezioni `publicLessons`, applica l'**incremento unico** di `lessonCount`,
+scrive l'audit, marca il tentativo `committed` e rilascia il lease. Riverifica
+programma, owner, `activeImportId`, UDA (esistenza e `dir` invariata), lease,
+record del tentativo e assenza di **ogni** documento e proiezione di
+destinazione. Nessun documento di staging visibile.
+
+**Visibilità studente.** `loadStudentLessons` omette le proiezioni il cui
+`content` è presente ma vuoto o composto di soli spazi. Una proiezione legacy
+priva del campo (`null`, pre M3F-08) **non** è filtrata: la UI la gestisce già a
+parte. Il primo salvataggio di un corpo reale la rende visibile senza un secondo
+percorso di pubblicazione — verificato: `updateLessonMarkdownBody` aggiorna già
+`publicLessons.content`. Nessun listener, nessun polling, nessuna lettura per
+card. **Non è un confine di sicurezza:** la proiezione resta tecnicamente
+leggibile secondo le Rules correnti.
+
+**Costi di un import di N lezioni** (contati dal codice; *E* = lezioni già
+presenti nella UDA):
+
+- letture: 1 programma + 1 UDA + 1 query lezioni (*E* documenti) + 1 record
+  tentativo + 2N punti di preflight (`LessonDoc` e proiezioni) + 1 batch
+  Storage; nel commit 1 programma + 1 UDA + 1 tentativo + 2N documenti;
+- scritture: prenotazione **2** (lease sulla UDA + record), rinnovo **1**,
+  commit **2N + 4** (N `LessonDoc` + N proiezioni + UDA + programma + record +
+  audit) → **totale 2N + 7**;
+- upload: N, concorrenza 3; cleanup solo su errore pre-commit: fino a N delete
+  + 1 scrittura + 1 delete;
+- callable, Functions e IA: zero.
+
+Indicativi: N=3 → ~13 letture, 13 scritture, 3 upload; N=15 → ~49 letture, 37
+scritture, 15 upload; N=40 → ~124 letture, 87 scritture, 40 upload.
+
+Le mutazioni manuali di una lezione pagano ora **una lettura in più** (il
+documento della UDA, per il lease), e solo quando il docente muta davvero.
+
+### 14.9 Scelte da confermare in 03
 
 - **Ordine legacy delle lezioni.** Il planner, a differenza di `createLesson`,
   ricade sul prefisso `lezione-XXX` quando una lezione esistente non ha `order`

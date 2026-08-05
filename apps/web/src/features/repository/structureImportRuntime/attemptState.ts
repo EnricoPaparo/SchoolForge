@@ -24,7 +24,12 @@ export interface AttemptRecord {
   manifestHash?: unknown;
   kind?: unknown;
   status?: unknown;
-  udaIds?: unknown;
+  /** Destination UDA — only meaningful for a lesson append. */
+  udaId?: unknown;
+  /** Document ids the attempt creates: `udaIds` for UDAs, `lessonIds` for lessons. */
+  documentIds?: unknown;
+  /** Projection ids, only for a lesson append. */
+  publicLessonIds?: unknown;
   storagePaths?: unknown;
   expiresAt?: unknown;
 }
@@ -40,7 +45,17 @@ export interface LeaseRecord {
 export interface AttemptExpectation {
   requestId: string;
   manifestHash: string;
-  udaIds: readonly string[];
+  /**
+   * The kind of append. A UDA attempt is never a valid replay for a lesson
+   * import, and vice versa: the identity includes what the attempt creates.
+   */
+  kind: 'uda' | 'lesson';
+  /** Destination UDA for a lesson append; `null` for a UDA append. */
+  udaId: string | null;
+  /** Document ids the plan creates, in order. */
+  documentIds: readonly string[];
+  /** Projection ids the plan creates, in order (empty for a UDA append). */
+  publicLessonIds: readonly string[];
   storagePaths: readonly string[];
 }
 
@@ -88,10 +103,24 @@ export function classifyAttempt(
   if (typeof record.manifestHash !== 'string') return 'incoherent';
   if (record.manifestHash !== expected.manifestHash) return 'conflict';
 
-  if (record.kind !== 'uda') return 'incoherent';
-  if (!isStringArray(record.udaIds) || !isStringArray(record.storagePaths)) return 'incoherent';
-  if (!sameSequence(record.udaIds, expected.udaIds)) return 'incoherent';
+  // The kind is part of the identity: an attempt that created UDAs can never
+  // stand in for one that must create lessons.
+  if (record.kind !== expected.kind) return 'incoherent';
+  // And so is the destination UDA: a lesson attempt on another UDA is not this
+  // attempt, even with the same requestId and the same hash.
+  const recordUdaId = record.udaId === undefined ? null : record.udaId;
+  if (recordUdaId !== expected.udaId) return 'incoherent';
+
+  if (!isStringArray(record.documentIds) || !isStringArray(record.storagePaths)) {
+    return 'incoherent';
+  }
+  if (!sameSequence(record.documentIds, expected.documentIds)) return 'incoherent';
   if (!sameSequence(record.storagePaths, expected.storagePaths)) return 'incoherent';
+  // Projections exist only for lessons; when expected, they must match exactly.
+  if (expected.publicLessonIds.length > 0 || record.publicLessonIds !== undefined) {
+    if (!isStringArray(record.publicLessonIds)) return 'incoherent';
+    if (!sameSequence(record.publicLessonIds, expected.publicLessonIds)) return 'incoherent';
+  }
 
   if (record.status === 'committed') return 'committed';
   if (record.status === 'reserved') return 'resumable';
@@ -159,7 +188,8 @@ export function checkCommitPreconditions(params: {
  *
  * Il caso che questa guardia esiste per impedire: una vecchia esecuzione che si
  * risveglia e cancella lease, record e file di un tentativo che nel frattempo
- * l'ha sostituita.
+ * l'ha sostituita — o, peggio, di un tentativo di un altro tipo o su un'altra
+ * UDA.
  */
 export function mayCleanupAttempt(
   record: AttemptRecord | null,

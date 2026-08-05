@@ -81,7 +81,10 @@ export function createFirestoreUdaStructureImportDeps(
   ): AttemptExpectation => ({
     requestId,
     manifestHash,
-    udaIds: manifest.udaIds,
+    kind: 'uda',
+    udaId: null,
+    documentIds: manifest.udaIds,
+    publicLessonIds: [],
     storagePaths: manifest.storagePaths,
   });
 
@@ -189,7 +192,7 @@ export function createFirestoreUdaStructureImportDeps(
             requestId,
             manifestHash,
             kind: 'uda',
-            udaIds: manifest.udaIds,
+            documentIds: manifest.udaIds,
             storagePaths: manifest.storagePaths,
             status: 'reserved',
             expiresAt,

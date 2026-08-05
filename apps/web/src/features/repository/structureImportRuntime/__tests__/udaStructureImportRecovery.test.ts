@@ -80,7 +80,10 @@ function backend(): Backend {
   ): AttemptExpectation => ({
     requestId,
     manifestHash,
-    udaIds: manifest.udaIds,
+    kind: 'uda' as const,
+    udaId: null,
+    documentIds: manifest.udaIds,
+    publicLessonIds: [],
     storagePaths: manifest.storagePaths,
   });
 
@@ -208,7 +211,7 @@ function backend(): Backend {
           manifestHash: params.manifestHash,
           kind: 'uda',
           status: 'reserved',
-          udaIds: [...params.manifest.udaIds],
+          documentIds: [...params.manifest.udaIds],
           storagePaths: [...params.manifest.storagePaths],
         });
       }
@@ -333,14 +336,14 @@ describe('recovery dopo cleanup_pending', () => {
       manifestHash: 'non-verrà-usato',
       kind: 'uda',
       status: 'reserved',
-      udaIds: ['uda-99-altro'],
+      documentIds: ['uda-99-altro'],
       storagePaths: ['repository/owner-1/imports/imp-1/uda-99-altro/uda-99-altro.md'],
     });
     const result = await importUdaStructure(INPUT, b.deps);
     // Hash diverso ⇒ conflitto; il record resta intatto.
     expect(result.status).toBe('not_applied');
     if (result.status === 'not_applied') expect(result.reason).toBe('conflict');
-    expect(b.state.attempts.get('req-1')!['udaIds']).toEqual(['uda-99-altro']);
+    expect(b.state.attempts.get('req-1')!['documentIds']).toEqual(['uda-99-altro']);
     expect(b.state.udas.size).toBe(0);
   });
 
@@ -377,7 +380,7 @@ describe('recovery dopo cleanup_pending', () => {
       manifestHash: 'c'.repeat(64),
       kind: 'uda',
       status: 'reserved',
-      udaIds: ['uda-07-altro'],
+      documentIds: ['uda-07-altro'],
       storagePaths: ['repository/owner-1/imports/imp-1/uda-07-altro/uda-07-altro.md'],
     });
     b.state.storage.set('repository/owner-1/imports/imp-1/uda-07-altro/uda-07-altro.md', 'x');

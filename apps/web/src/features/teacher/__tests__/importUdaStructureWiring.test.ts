@@ -42,10 +42,12 @@ describe('voce di menu', () => {
     expect(entry).toContain('disabled={!card.hasImport}');
   });
 
-  it('non compare nel menu Azioni della UDA: 02A importa solo UDA', () => {
+  it('non compare nel menu Azioni della UDA: l’import delle UDA vive sul corso', () => {
     const udaMenu = workspace.slice(workspace.indexOf('ariaLabel="Azioni UDA"'));
     expect(udaMenu).not.toContain('Importa struttura UDA');
-    expect(udaMenu).not.toContain('Importa lezioni');
+    // «Importa lezioni» invece ci vive: è STRUCTURE-IMPORT-02B, e agisce sulla
+    // sola UDA da cui il menu è stato aperto.
+    expect(udaMenu).toContain('Importa lezioni');
   });
 });
 

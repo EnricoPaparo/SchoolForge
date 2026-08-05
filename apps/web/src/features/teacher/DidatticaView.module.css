@@ -218,6 +218,29 @@
   }
 }
 
+/*
+ * STRUCTURE-IMPORT — i comandi restano ancorati in fondo al dialog.
+ * Limitare l'altezza dell'elenco non basta su schermi molto bassi (misurato a
+ * 320×640: il pulsante di conferma finiva sotto la piega). Ancorandoli, il
+ * footer è raggiungibile a qualunque viewport e con qualunque numero di voci.
+ * Nessuna linea separatrice: solo il fondo del dialog che scorre sotto.
+ */
+.structureActions {
+  position: sticky;
+  bottom: -1.25rem;
+  margin-bottom: -1.25rem;
+  padding-block: 0.6rem 1.25rem;
+  background: var(--color-surface-raised);
+}
+
+@media (max-width: 30rem) {
+  .structureActions {
+    bottom: -1rem;
+    margin-bottom: -1rem;
+    padding-bottom: 1rem;
+  }
+}
+
 .checklistItem {
   display: flex;
   align-items: center;

@@ -19,7 +19,10 @@ import type { AttemptExpectation } from '../attemptState.js';
 const EXPECTED: AttemptExpectation = {
   requestId: 'req-1',
   manifestHash: 'a'.repeat(64),
-  udaIds: ['uda-01-a', 'uda-02-b'],
+  kind: 'uda',
+  udaId: null,
+  publicLessonIds: [],
+  documentIds: ['uda-01-a', 'uda-02-b'],
   storagePaths: [
     'repository/o/imports/i/uda-01-a/uda-01-a.md',
     'repository/o/imports/i/uda-02-b/uda-02-b.md',
@@ -31,7 +34,7 @@ const RESERVED = {
   manifestHash: EXPECTED.manifestHash,
   kind: 'uda',
   status: 'reserved',
-  udaIds: [...EXPECTED.udaIds],
+  documentIds: [...EXPECTED.documentIds],
   storagePaths: [...EXPECTED.storagePaths],
 };
 
@@ -64,8 +67,8 @@ describe('classificazione del tentativo', () => {
       { ...RESERVED, kind: 'lesson' },
       { ...RESERVED, status: undefined },
       { ...RESERVED, status: 'boh' },
-      { ...RESERVED, udaIds: undefined },
-      { ...RESERVED, udaIds: 'uda-01-a' },
+      { ...RESERVED, documentIds: undefined },
+      { ...RESERVED, documentIds: 'uda-01-a' },
       { ...RESERVED, storagePaths: [1, 2] },
     ];
     for (const record of cases) {
@@ -74,8 +77,10 @@ describe('classificazione del tentativo', () => {
   });
 
   it('path o id divergenti: incoerente, non riprendibile', () => {
-    expect(classifyAttempt({ ...RESERVED, udaIds: ['uda-01-a'] }, EXPECTED)).toBe('incoherent');
-    expect(classifyAttempt({ ...RESERVED, udaIds: ['uda-02-b', 'uda-01-a'] }, EXPECTED)).toBe(
+    expect(classifyAttempt({ ...RESERVED, documentIds: ['uda-01-a'] }, EXPECTED)).toBe(
+      'incoherent',
+    );
+    expect(classifyAttempt({ ...RESERVED, documentIds: ['uda-02-b', 'uda-01-a'] }, EXPECTED)).toBe(
       'incoherent',
     );
     expect(
@@ -88,7 +93,7 @@ describe('classificazione del tentativo', () => {
     // incoerente: è il retry legittimo di un file modificato.
     expect(
       classifyAttempt(
-        { ...RESERVED, manifestHash: 'b'.repeat(64), udaIds: ['x'], storagePaths: ['y'] },
+        { ...RESERVED, manifestHash: 'b'.repeat(64), documentIds: ['x'], storagePaths: ['y'] },
         EXPECTED,
       ),
     ).toBe('conflict');

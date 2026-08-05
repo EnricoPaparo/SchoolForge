@@ -1,4 +1,5 @@
 import { planUdaMetadataAppend, validateUdaMetadataFile } from '../structureImport/index.js';
+import { runStructureAppend } from './structureAppendProtocol.js';
 import type { AttemptClassification } from './attemptState.js';
 import type {
   ExistingUdaForPlan,
@@ -190,6 +191,7 @@ const COPY = {
   preCommit: 'Importazione non applicata: il corso è rimasto invariato. Puoi riprovare.',
   cleanupPending:
     'Importazione non applicata. Alcuni dati tecnici del tentativo devono ancora essere rimossi: riprova fra poco.',
+  hashUnavailable: "Impossibile calcolare l'impronta dell'importazione.",
 } as const;
 
 /**
@@ -233,132 +235,63 @@ export async function importUdaStructure(
   if (!plan.ok) return { status: 'validation_failed', error: plan.error };
   const manifest = plan.value;
 
-  // 3. Authoritative identity. Computed BEFORE the lease, the upload and any
-  // write: if it cannot be computed, nothing happens at all.
-  let manifestHash: string;
-  try {
-    manifestHash = await deps.hashManifest(manifest.manifestCanonical);
-  } catch (error) {
+  // 3–8. Identità, sonda del tentativo, preflight, lease, upload, rinnovo e
+  // commit sono il protocollo condiviso con l'import delle lezioni: una sola
+  // macchina, non due simili.
+  const outcome = await runStructureAppend(
+    { manifest, requestId: input.requestId, copy: COPY },
+    {
+      hashManifest: (canonical) => deps.hashManifest(canonical),
+      probeAttempt: ({ requestId, manifestHash }) =>
+        deps.probeAttempt({
+          programId: input.programId,
+          activeImportId: context.activeImportId,
+          requestId,
+          manifestHash,
+          manifest,
+        }),
+      preflight: ({ ownedStoragePaths }) =>
+        deps.preflight({ programId: input.programId, context, manifest, ownedStoragePaths }),
+      acquireLease: ({ requestId, manifestHash }) =>
+        deps.acquireLease({
+          programId: input.programId,
+          activeImportId: context.activeImportId,
+          requestId,
+          manifestHash,
+          manifest,
+        }),
+      uploadStorage: (files) => deps.uploadStorage(files),
+      renewLease: ({ requestId, manifestHash }) =>
+        deps.renewLease({
+          programId: input.programId,
+          activeImportId: context.activeImportId,
+          requestId,
+          manifestHash,
+        }),
+      commit: ({ requestId, manifestHash }) =>
+        deps.commit({ programId: input.programId, manifest, requestId, manifestHash }),
+      cleanup: ({ requestId, manifestHash }) =>
+        deps.cleanup({
+          programId: input.programId,
+          activeImportId: context.activeImportId,
+          manifest,
+          requestId,
+          manifestHash,
+        }),
+      filesOf: (m) => m.udas.map((uda) => ({ path: uda.storagePath, content: uda.content })),
+    },
+  );
+
+  if (outcome.status === 'committed') {
     return {
-      status: 'not_applied',
-      message:
-        error instanceof Error
-          ? error.message
-          : "Impossibile calcolare l'impronta dell'importazione.",
-      reason: 'hash_unavailable',
+      status: 'committed',
+      udaIds: manifest.udaIds,
+      udaCount: manifest.udas.length,
+      titles: manifest.udas.map((uda) => uda.metadata.titolo),
+      manifest,
     };
   }
-
-  const success = (): UdaStructureImportResult => ({
-    status: 'committed',
-    udaIds: manifest.udaIds,
-    udaCount: manifest.udas.length,
-    titles: manifest.udas.map((uda) => uda.metadata.titolo),
-    manifest,
-  });
-
-  // 4. Attempt state machine. A retry of the same request with the same plan is
-  // a replay or a resume; anything else fails closed.
-  const attempt = await deps.probeAttempt({
-    programId: input.programId,
-    activeImportId: context.activeImportId,
-    requestId: input.requestId,
-    manifestHash,
-    manifest,
-  });
-  if (attempt === 'committed') return success();
-  if (attempt === 'conflict') {
-    return { status: 'not_applied', message: COPY.conflict, reason: 'conflict' };
-  }
-  if (attempt === 'incoherent') {
-    // Never repaired and never overwritten automatically: a human decides.
-    return {
-      status: 'not_applied',
-      message: COPY.incoherentAttempt,
-      reason: 'incoherent_attempt',
-    };
-  }
-
-  // 5. Collision preflight — still zero writes and zero uploads.
-  //
-  // On a resume, the files this same attempt already uploaded are not foreign
-  // collisions: the attempt record proved they carry this exact `requestId`,
-  // this exact `manifestHash` and this exact path list. Any other existing path
-  // still blocks, and an existing UDA document always blocks.
-  const { collision } = await deps.preflight({
-    programId: input.programId,
-    context,
-    manifest,
-    ownedStoragePaths: attempt === 'resumable' ? manifest.storagePaths : [],
-  });
-  if (collision) {
-    return { status: 'not_applied', message: COPY.collision, reason: 'collision' };
-  }
-
-  // 6. First writes: attempt record + lease.
-  const lease = await deps.acquireLease({
-    programId: input.programId,
-    activeImportId: context.activeImportId,
-    requestId: input.requestId,
-    manifestHash,
-    manifest,
-  });
-  if (lease === 'busy') {
-    return { status: 'not_applied', message: COPY.busy, reason: 'busy' };
-  }
-
-  const cleanupAndReturn = async (
-    reason: UdaStructureImportNotAppliedReason,
-  ): Promise<UdaStructureImportResult> => {
-    const outcome = await deps.cleanup({
-      programId: input.programId,
-      activeImportId: context.activeImportId,
-      manifest,
-      requestId: input.requestId,
-      manifestHash,
-    });
-    if (outcome === 'pending') return { status: 'cleanup_pending', message: COPY.cleanupPending };
-    return { status: 'not_applied', message: COPY.preCommit, reason };
-  };
-
-  try {
-    // Re-uploading the same paths on a resume is deliberate and safe: the
-    // content is fixed by the manifest whose hash the attempt record carries,
-    // so the write is byte-identical to what is already there. This is the
-    // single recovery strategy — no conditional delete, no second preflight.
-    await deps.uploadStorage(
-      manifest.udas.map((uda) => ({ path: uda.storagePath, content: uda.content })),
-    );
-  } catch {
-    return cleanupAndReturn('upload_failed');
-  }
-
-  // A slow upload must not be followed by a commit on an expired lease.
-  const renewal = await deps.renewLease({
-    programId: input.programId,
-    activeImportId: context.activeImportId,
-    requestId: input.requestId,
-    manifestHash,
-  });
-  if (renewal === 'lost') {
-    return cleanupAndReturn('lease_lost');
-  }
-
-  try {
-    await deps.commit({
-      programId: input.programId,
-      manifest,
-      requestId: input.requestId,
-      manifestHash,
-    });
-  } catch {
-    return cleanupAndReturn('commit_failed');
-  }
-
-  // Committed: every new UDA is visible together. Nothing after this point may
-  // downgrade the result to a failure — a post-commit refresh problem is the
-  // UI's business, not the import's.
-  return success();
+  return outcome;
 }
 
 /** Re-exported for the UI's summary rendering — no second parsing pass. */

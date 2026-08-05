@@ -18,6 +18,14 @@ export type StudentLesson = { id: string } & Omit<PublicLessonDoc, 'content'> & 
     content: string | null;
   };
 
+/**
+ * `true` per una proiezione il cui corpo è presente ma vuoto o composto di soli
+ * spazi: lo scheletro di una lezione importata e non ancora scritta.
+ */
+export function isEmptySkeleton(content: string | null): boolean {
+  return typeof content === 'string' && content.trim() === '';
+}
+
 export type StudentLessonsResult =
   | { status: 'no-class' }
   | {
@@ -94,6 +102,19 @@ export async function loadStudentLessons(
             content: normalizeLessonContent(raw.content),
           } as StudentLesson;
         })
+        // STRUCTURE-IMPORT-02B: una lezione importata come scheletro ha corpo
+        // vuoto. Mostrarla produrrebbe una card che non porta nulla, quindi
+        // viene omessa finché il docente non salva o genera un contenuto reale
+        // — il salvataggio canonico aggiorna `publicLessons.content` e la
+        // rende visibile senza altre letture e senza un secondo percorso di
+        // pubblicazione.
+        //
+        // Filtro di prodotto, **non** un confine di sicurezza: la proiezione
+        // resta tecnicamente leggibile secondo le Rules correnti.
+        //
+        // `null` non è filtrato: è una proiezione legacy priva del campo
+        // `content` (pre M3F-08), che la UI gestisce già a parte.
+        .filter((lesson) => !isEmptySkeleton(lesson.content))
         .sort(
           (a, b) =>
             a.udaDir.localeCompare(b.udaDir) ||
