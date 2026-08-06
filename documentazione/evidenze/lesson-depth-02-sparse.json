@@ -1,0 +1,255 @@
+{
+  "datasetVersion": "lesson-depth-02-sparse-v1",
+  "baseDatasetVersion": "lesson-manual-02-scenarios-v1",
+  "rubricVersion": "lesson-manual-02-rubric-v1",
+  "generatedSamplesIncluded": false,
+  "scenarios": [
+    {
+      "id": "LD02-01",
+      "split": "tuning",
+      "category": "grammar_single_concept",
+      "titolo": "Il complemento oggetto",
+      "sottotitolo": null,
+      "difficolta": "2 — base",
+      "concettiChiave": [
+        "complemento oggetto"
+      ],
+      "obiettivi": [
+        "Riconoscere il complemento oggetto in una frase"
+      ],
+      "udaTitle": "L'analisi logica della frase semplice",
+      "udaContext": {
+        "title": "L'analisi logica della frase semplice",
+        "currentLessonPosition": 2,
+        "lessons": [
+          {
+            "position": 1,
+            "titolo": "Soggetto e predicato",
+            "sottotitolo": "I due elementi essenziali"
+          },
+          {
+            "position": 2,
+            "titolo": "Il complemento oggetto",
+            "sottotitolo": null
+          },
+          {
+            "position": 3,
+            "titolo": "I complementi indiretti",
+            "sottotitolo": "Termine, specificazione, luogo"
+          }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": null
+    },
+    {
+      "id": "LD02-02",
+      "split": "tuning",
+      "category": "physics_single_concept",
+      "titolo": "La densità",
+      "sottotitolo": null,
+      "difficolta": "2 — base",
+      "concettiChiave": [
+        "densità"
+      ],
+      "obiettivi": [
+        "Calcolare la densità di un corpo a partire da massa e volume"
+      ],
+      "udaTitle": "Le grandezze fisiche e la loro misura",
+      "udaContext": {
+        "title": "Le grandezze fisiche e la loro misura",
+        "currentLessonPosition": 3,
+        "lessons": [
+          {
+            "position": 1,
+            "titolo": "Grandezze e unità di misura",
+            "sottotitolo": null
+          },
+          {
+            "position": 2,
+            "titolo": "Massa e volume",
+            "sottotitolo": null
+          },
+          {
+            "position": 3,
+            "titolo": "La densità",
+            "sottotitolo": null
+          },
+          {
+            "position": 4,
+            "titolo": "Gli strumenti di misura",
+            "sottotitolo": "Portata e sensibilità"
+          }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": null
+    },
+    {
+      "id": "LD02-03",
+      "split": "tuning",
+      "category": "history_two_concepts",
+      "titolo": "La rivoluzione industriale inglese",
+      "sottotitolo": null,
+      "difficolta": "3 — intermedia",
+      "concettiChiave": [
+        "macchina a vapore",
+        "fabbrica"
+      ],
+      "obiettivi": [
+        "Spiegare perché la rivoluzione industriale nasce in Inghilterra",
+        "Descrivere il passaggio dalla bottega alla fabbrica"
+      ],
+      "udaTitle": "L'età delle rivoluzioni",
+      "udaContext": {
+        "title": "L'età delle rivoluzioni",
+        "currentLessonPosition": 2,
+        "lessons": [
+          {
+            "position": 1,
+            "titolo": "La rivoluzione agricola",
+            "sottotitolo": "Recinzioni e nuove colture"
+          },
+          {
+            "position": 2,
+            "titolo": "La rivoluzione industriale inglese",
+            "sottotitolo": null
+          },
+          {
+            "position": 3,
+            "titolo": "La questione sociale",
+            "sottotitolo": "Condizioni operaie e primi sindacati"
+          }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": null
+    },
+    {
+      "id": "LD02-04",
+      "split": "tuning",
+      "category": "programming_two_concepts",
+      "titolo": "Le funzioni",
+      "sottotitolo": null,
+      "difficolta": "3 — intermedia",
+      "concettiChiave": [
+        "parametro",
+        "valore di ritorno"
+      ],
+      "obiettivi": [
+        "Scrivere una funzione con parametri e valore di ritorno",
+        "Distinguere definizione e chiamata di una funzione"
+      ],
+      "udaTitle": "Programmazione strutturata",
+      "udaContext": {
+        "title": "Programmazione strutturata",
+        "currentLessonPosition": 3,
+        "lessons": [
+          {
+            "position": 1,
+            "titolo": "Variabili e tipi",
+            "sottotitolo": null
+          },
+          {
+            "position": 2,
+            "titolo": "Le strutture di controllo",
+            "sottotitolo": "Selezione e iterazione"
+          },
+          {
+            "position": 3,
+            "titolo": "Le funzioni",
+            "sottotitolo": null
+          },
+          {
+            "position": 4,
+            "titolo": "Liste e cicli sulle collezioni",
+            "sottotitolo": null
+          }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": null
+    },
+    {
+      "id": "LD02-05",
+      "split": "tuning",
+      "category": "biology_three_concepts",
+      "titolo": "La fotosintesi clorofilliana",
+      "sottotitolo": null,
+      "difficolta": "3 — intermedia",
+      "concettiChiave": [
+        "clorofilla",
+        "anidride carbonica",
+        "glucosio"
+      ],
+      "obiettivi": [
+        "Descrivere che cosa entra e che cosa esce dalla fotosintesi",
+        "Spiegare il ruolo della luce nel processo"
+      ],
+      "udaTitle": "La cellula e l'energia",
+      "udaContext": {
+        "title": "La cellula e l'energia",
+        "currentLessonPosition": 2,
+        "lessons": [
+          {
+            "position": 1,
+            "titolo": "La cellula vegetale",
+            "sottotitolo": "Parete, vacuolo e cloroplasti"
+          },
+          {
+            "position": 2,
+            "titolo": "La fotosintesi clorofilliana",
+            "sottotitolo": null
+          },
+          {
+            "position": 3,
+            "titolo": "La respirazione cellulare",
+            "sottotitolo": null
+          }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": null
+    },
+    {
+      "id": "LD02-06",
+      "split": "tuning",
+      "category": "math_two_concepts_in_depth",
+      "titolo": "Il teorema di Pitagora",
+      "sottotitolo": null,
+      "difficolta": "3 — intermedia",
+      "concettiChiave": [
+        "ipotenusa",
+        "cateto"
+      ],
+      "obiettivi": [
+        "Applicare il teorema per trovare un lato mancante",
+        "Riconoscere quando il teorema è applicabile"
+      ],
+      "udaTitle": "Il triangolo rettangolo",
+      "udaContext": {
+        "title": "Il triangolo rettangolo",
+        "currentLessonPosition": 2,
+        "lessons": [
+          {
+            "position": 1,
+            "titolo": "Classificazione dei triangoli",
+            "sottotitolo": null
+          },
+          {
+            "position": 2,
+            "titolo": "Il teorema di Pitagora",
+            "sottotitolo": null
+          },
+          {
+            "position": 3,
+            "titolo": "Applicazioni al piano cartesiano",
+            "sottotitolo": "Distanza fra due punti"
+          }
+        ]
+      },
+      "depth": "in_depth",
+      "teacherGuidance": null
+    }
+  ]
+}

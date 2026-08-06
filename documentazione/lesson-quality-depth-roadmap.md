@@ -148,7 +148,37 @@ il caso che lo genera. Il pacchetto:
 scenario, verdetto esplicito. Un peggioramento del perimetro è un **blocker**:
 significherebbe che il modello ha smesso di divagare meno.
 
-**Costo stimato:** ~0,25 USD per il ciclo di tuning, ~0,13 USD per l'holdout.
+**Stato:** il dataset è pronto — `evidenze/lesson-depth-02-sparse.json`, sei
+scenari su sei discipline con 1, 2 e 3 concetti chiave, tutti senza indicazioni
+docente, di cui uno a profondità `in_depth` per separare le due variabili. Il
+modulo `lessonDepthSparseBenchmark.ts` lo consegna al pianificatore esistente,
+quindi non esiste un secondo runner. **Resta da eseguire** (D3).
+
+Il dataset è deliberatamente **separato** da quello congelato di LESSON-TUNE-01,
+che non viene toccato: le evidenze 01→07 devono restare riproducibili
+esattamente com'erano.
+
+**Esecuzione:**
+
+```
+cd functions
+SPARSE=1 OPENAI_API_KEY=… npx tsx src/lessonTuneQualityCli.ts --split tuning --profile quality
+```
+
+Va lanciato **due volte**: una su `main` (candidato D, la baseline) e una sul
+ramo di LESSON-DEPTH-01 (candidato E). Il confronto è fra i due report.
+
+**Costo reale, calcolato dal pianificatore:**
+
+| Profilo | Chiamate | Stima | Tetto prudenziale |
+|---|---:|---:|---:|
+| `economy` | 6 | 0,076 USD | 0,176 USD |
+| `quality` | 6 | 0,366 USD | 0,850 USD |
+
+Due esecuzioni su `quality` costano quindi circa **0,73 USD stimati**, con un
+tetto prudenziale di 1,70 USD: rientra nel budget mensile da 5 USD, ma non è
+trascurabile come sembrava. Su `economy` il ciclo completo sta sotto i 0,16 USD
+e resta un'opzione se serve solo l'ordine di grandezza della differenza.
 
 ### LESSON-DEPTH-03 — limiti di spesa
 
