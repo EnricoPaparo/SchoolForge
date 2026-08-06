@@ -2,11 +2,10 @@
  * STRUCTURE-IMPORT-01 — modelli YAML canonici.
  *
  * Sono l'**unica fonte autorevole** degli esempi: la sezione Template li usa
- * per la visualizzazione, per il pulsante Copia e per il pulsante Scarica, e un
- * test di round-trip li parsa con i validatori reali. Nessuno dei tre percorsi
- * ha una propria copia del testo, quindi ciò che il docente vede, copia e
- * scarica è sempre lo stesso byte per byte, e un modello non può allontanarsi
- * dallo schema che dovrebbe insegnare.
+ * per la visualizzazione e per il pulsante Copia, mentre un test di round-trip
+ * li parsa con i validatori reali. Nessuno dei due percorsi ha una propria copia
+ * del testo, quindi ciò che il docente vede e copia è sempre lo stesso byte per
+ * byte, e un modello non può allontanarsi dallo schema che dovrebbe insegnare.
  *
  * STRUCTURE-TEMPLATE-GENERIC-01 — i modelli sono **segnaposto generici**, non
  * esempi disciplinari. Da quando lo YAML si incolla in una textarea, un esempio

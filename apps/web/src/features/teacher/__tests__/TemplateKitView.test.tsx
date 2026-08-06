@@ -2,9 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LESSON_METADATA_TEMPLATE,
-  LESSON_TEMPLATE_FILENAME,
   UDA_METADATA_TEMPLATE,
-  UDA_TEMPLATE_FILENAME,
 } from '../../repository/structureImport/index.js';
 
 afterEach(() => {
@@ -66,15 +64,16 @@ describe('TemplateKitView', () => {
     );
   });
 
-  it('resta l’unico punto autorevole degli esempi, con Copia e Scarica intatti', () => {
+  it('offre la sola azione Copia per gli esempi strutturali', () => {
     // STRUCTURE-IMPORT-UI-PASTE-01 — i dialog di importazione hanno perso
     // «Scarica modello YAML»: da qui in poi gli esempi si prendono solo di qui,
-    // quindi Copia e Scarica sono l'unico modo per ottenerli.
+    // e la copia diretta è l'unico flusso necessario per incollarli.
     render(<TemplateKitView />);
     for (const nome of ['Struttura UDA — YAML', 'Struttura lezioni — YAML']) {
       expect(screen.getByRole('button', { name: `Copia ${nome}` })).toBeTruthy();
-      expect(screen.getByRole('button', { name: `Scarica ${nome}` })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: `Scarica ${nome}` })).toBeNull();
     }
+    expect(screen.getAllByRole('button', { name: /^Copia / })).toHaveLength(3);
     expect(screen.getByRole('button', { name: 'Scarica kit completo (ZIP)' })).toBeTruthy();
   });
 
@@ -108,30 +107,10 @@ describe('TemplateKitView', () => {
     expect(screen.queryByText('Esempio copiato negli appunti.')).toBeNull();
   });
 
-  it('copia e download consegnano gli stessi identici byte della costante', async () => {
-    // STRUCTURE-TEMPLATE-GENERIC-01 — visualizzazione, copia e download hanno
-    // un'unica fonte: se divergessero, il docente potrebbe incollare un testo
-    // diverso da quello che ha letto e non capire perché l'import lo rifiuta.
+  it('visualizzazione e copia consegnano gli stessi identici byte della costante', async () => {
+    // STRUCTURE-TEMPLATE-GENERIC-01 — visualizzazione e copia hanno un'unica
+    // fonte, così il docente incolla esattamente il testo che ha letto.
     render(<TemplateKitView />);
-    const blobs: string[] = [];
-    const click = vi.fn();
-    const createElement = document.createElement.bind(document);
-    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
-      if (tag === 'a') return { href: '', download: '', click } as unknown as HTMLAnchorElement;
-      return createElement(tag);
-    });
-    vi.stubGlobal(
-      'Blob',
-      class {
-        constructor(parts: string[]) {
-          blobs.push(parts.join(''));
-        }
-      },
-    );
-    vi.stubGlobal('URL', {
-      createObjectURL: vi.fn().mockReturnValue('blob:yaml'),
-      revokeObjectURL: vi.fn(),
-    });
 
     for (const [nome, canonical] of [
       ['Struttura UDA — YAML', UDA_METADATA_TEMPLATE],
@@ -139,41 +118,12 @@ describe('TemplateKitView', () => {
     ] as const) {
       fireEvent.click(screen.getByRole('button', { name: `Copia ${nome}` }));
       expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith(canonical);
-      fireEvent.click(screen.getByRole('button', { name: `Scarica ${nome}` }));
-      const scaricato = blobs[blobs.length - 1];
-      expect(scaricato).toBe(canonical);
-      // Byte-identici, non solo uguali come stringa.
       const copiato = vi.mocked(navigator.clipboard.writeText).mock.lastCall![0] as string;
       expect(Array.from(new TextEncoder().encode(copiato))).toEqual(
-        Array.from(new TextEncoder().encode(scaricato!)),
+        Array.from(new TextEncoder().encode(canonical)),
       );
-      // …e ciò che viene mostrato è la stessa cosa.
       expect(screen.getByLabelText(`Esempio ${nome}`).textContent).toBe(canonical);
     }
-  });
-
-  it('downloads each YAML with its canonical filename', () => {
-    render(<TemplateKitView />);
-    const click = vi.fn();
-    const createElement = document.createElement.bind(document);
-    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
-      if (tag === 'a') return { href: '', download: '', click } as unknown as HTMLAnchorElement;
-      return createElement(tag);
-    });
-    vi.stubGlobal('URL', {
-      createObjectURL: vi.fn().mockReturnValue('blob:yaml'),
-      revokeObjectURL: vi.fn(),
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Scarica Struttura UDA — YAML' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Scarica Struttura lezioni — YAML' }));
-
-    expect(click).toHaveBeenCalledTimes(2);
-    const anchors = vi
-      .mocked(document.createElement)
-      .mock.results.filter((result) => result.value && (result.value as HTMLAnchorElement).download)
-      .map((result) => (result.value as HTMLAnchorElement).download);
-    expect(anchors).toEqual([UDA_TEMPLATE_FILENAME, LESSON_TEMPLATE_FILENAME]);
   });
 
   it('uses icon-only controls for single-template downloads', () => {

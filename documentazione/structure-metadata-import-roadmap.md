@@ -733,10 +733,11 @@ valorizzati: chi copia vede la forma intera, non una versione minima da
 indovinare. Il round-trip con i validatori reali è invariato e resta la difesa
 principale — un modello si può ripulire fino a romperlo, e i test lo impediscono.
 
-Le costanti sono l'unica fonte autorevole per visualizzazione, copia e download
-della sezione Template: un test verifica che i tre percorsi consegnino gli stessi
+Le costanti sono l'unica fonte autorevole per visualizzazione e copia della
+sezione Template: un test verifica che i due percorsi consegnino gli stessi
 identici byte, così il docente non può incollare un testo diverso da quello che
-ha letto. Layout, pulsanti, filename canonici e comportamento responsive
+ha letto. Il download YAML è stato rimosso perché il flusso operativo è
+copia → incolla. Layout e comportamento responsive
 (tre colonne desktop, due tablet, una mobile) restano invariati, misurati in
 Chromium a 1440, 1024, 820, 390 e 320 px.
 

@@ -2,9 +2,7 @@ import { useState } from 'react';
 import { IconCopy, IconDownload } from '../../components/icons.js';
 import {
   LESSON_METADATA_TEMPLATE,
-  LESSON_TEMPLATE_FILENAME,
   UDA_METADATA_TEMPLATE,
-  UDA_TEMPLATE_FILENAME,
 } from '../repository/structureImport/index.js';
 import { downloadKitZip, downloadTemplate, TEMPLATES } from './templateKit.js';
 import styles from './TemplateKitView.module.css';
@@ -34,33 +32,20 @@ const EXAMPLES = [
     title: 'Struttura ZIP',
     description: 'Organizzazione completa di corso, UDA, lezioni e pool.',
     content: ZIP_STRUCTURE,
-    filename: null,
   },
   {
     id: 'uda',
     title: 'Struttura UDA — YAML',
     description: 'Metadati di più UDA da aggiungere in coda a un corso.',
     content: UDA_METADATA_TEMPLATE,
-    filename: UDA_TEMPLATE_FILENAME,
   },
   {
     id: 'lesson',
     title: 'Struttura lezioni — YAML',
     description: 'Metadati di più lezioni vuote da aggiungere a una UDA.',
     content: LESSON_METADATA_TEMPLATE,
-    filename: LESSON_TEMPLATE_FILENAME,
   },
 ] as const;
-
-function downloadText(content: string, filename: string): void {
-  const blob = new Blob([content], { type: 'text/yaml;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
 
 export function TemplateKitView() {
   const [zipping, setZipping] = useState(false);
@@ -148,9 +133,7 @@ export function TemplateKitView() {
           <li>Usa il kit ZIP per importare un programma completo di contenuti e pool.</li>
           <li>Usa il modello UDA per aggiungere in blocco i metadati delle UDA a un corso.</li>
           <li>Usa il modello lezioni dentro l’UDA a cui vuoi aggiungere le lezioni vuote.</li>
-          <li>
-            Copia l’esempio oppure scarica il relativo YAML, poi compilalo senza cambiare lo schema.
-          </li>
+          <li>Copia l’esempio, poi compilalo senza cambiare lo schema.</li>
         </ol>
       </div>
 
@@ -175,18 +158,6 @@ export function TemplateKitView() {
                     <IconCopy size={16} />
                     <span>{copiedId === example.id ? 'Copiato' : 'Copia'}</span>
                   </button>
-                  {example.filename && (
-                    <button
-                      type="button"
-                      className={styles.exampleAction}
-                      onClick={() => downloadText(example.content, example.filename)}
-                      aria-label={`Scarica ${example.title}`}
-                      title={`Scarica ${example.title}`}
-                    >
-                      <IconDownload size={16} />
-                      <span>Scarica</span>
-                    </button>
-                  )}
                 </div>
               </header>
               <pre className={styles.exampleCode} aria-label={`Esempio ${example.title}`}>
