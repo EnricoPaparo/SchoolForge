@@ -108,6 +108,50 @@ describe('TemplateKitView', () => {
     expect(screen.queryByText('Esempio copiato negli appunti.')).toBeNull();
   });
 
+  it('copia e download consegnano gli stessi identici byte della costante', async () => {
+    // STRUCTURE-TEMPLATE-GENERIC-01 — visualizzazione, copia e download hanno
+    // un'unica fonte: se divergessero, il docente potrebbe incollare un testo
+    // diverso da quello che ha letto e non capire perché l'import lo rifiuta.
+    render(<TemplateKitView />);
+    const blobs: string[] = [];
+    const click = vi.fn();
+    const createElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      if (tag === 'a') return { href: '', download: '', click } as unknown as HTMLAnchorElement;
+      return createElement(tag);
+    });
+    vi.stubGlobal(
+      'Blob',
+      class {
+        constructor(parts: string[]) {
+          blobs.push(parts.join(''));
+        }
+      },
+    );
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn().mockReturnValue('blob:yaml'),
+      revokeObjectURL: vi.fn(),
+    });
+
+    for (const [nome, canonical] of [
+      ['Struttura UDA — YAML', UDA_METADATA_TEMPLATE],
+      ['Struttura lezioni — YAML', LESSON_METADATA_TEMPLATE],
+    ] as const) {
+      fireEvent.click(screen.getByRole('button', { name: `Copia ${nome}` }));
+      expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith(canonical);
+      fireEvent.click(screen.getByRole('button', { name: `Scarica ${nome}` }));
+      const scaricato = blobs[blobs.length - 1];
+      expect(scaricato).toBe(canonical);
+      // Byte-identici, non solo uguali come stringa.
+      const copiato = vi.mocked(navigator.clipboard.writeText).mock.lastCall![0] as string;
+      expect(Array.from(new TextEncoder().encode(copiato))).toEqual(
+        Array.from(new TextEncoder().encode(scaricato!)),
+      );
+      // …e ciò che viene mostrato è la stessa cosa.
+      expect(screen.getByLabelText(`Esempio ${nome}`).textContent).toBe(canonical);
+    }
+  });
+
   it('downloads each YAML with its canonical filename', () => {
     render(<TemplateKitView />);
     const click = vi.fn();

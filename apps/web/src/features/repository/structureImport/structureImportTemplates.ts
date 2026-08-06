@@ -1,77 +1,79 @@
 /**
- * STRUCTURE-IMPORT-01 — canonical, downloadable YAML templates.
+ * STRUCTURE-IMPORT-01 — modelli YAML canonici.
  *
- * These are the files the future dialog will offer under «Scarica modello
- * YAML». They are deterministic constants, not generated text: byte-identical
- * on every download, so two teachers comparing their files see the same
- * starting point. A round-trip test parses each one with the real validator, so
- * a template can never drift away from the schema it is supposed to teach.
+ * Sono l'**unica fonte autorevole** degli esempi: la sezione Template li usa
+ * per la visualizzazione, per il pulsante Copia e per il pulsante Scarica, e un
+ * test di round-trip li parsa con i validatori reali. Nessuno dei tre percorsi
+ * ha una propria copia del testo, quindi ciò che il docente vede, copia e
+ * scarica è sempre lo stesso byte per byte, e un modello non può allontanarsi
+ * dallo schema che dovrebbe insegnare.
  *
- * They deliberately contain no id, no path, no body and no pool — the very
- * things the format forbids — and end with a single trailing newline.
+ * STRUCTURE-TEMPLATE-GENERIC-01 — i modelli sono **segnaposto generici**, non
+ * esempi disciplinari. Da quando lo YAML si incolla in una textarea, un esempio
+ * concreto smette di essere un aiuto: il docente dovrebbe cancellarlo riga per
+ * riga prima di scrivere il proprio, e i commenti `#` sono la parte che più
+ * facilmente sopravvive per sbaglio all'incollaggio. Qui non c'è nulla da
+ * ripulire: si sostituiscono i valori e si importa.
  *
- * Pure module: strings only. Turning one into a download is UI work and belongs
- * to STRUCTURE-IMPORT-02A/02B.
+ * `schema` resta, ed è l'unica riga da non toccare: è la proprietà che i
+ * validatori esigono per riconoscere il formato.
+ *
+ * Non contengono id, path, order, corpo Markdown, pool o dati studente — le
+ * cose che il formato vieta — e terminano con una sola newline finale.
+ *
+ * Modulo puro: solo stringhe.
  */
 
 export const UDA_TEMPLATE_FILENAME = 'schoolforge-udas.yaml';
 export const LESSON_TEMPLATE_FILENAME = 'schoolforge-lezioni.yaml';
 
-export const UDA_METADATA_TEMPLATE = `# Modello SchoolForge — UDA senza contenuto.
-# Aggiunge nuove UDA in coda a quelle esistenti: non modifica e non sostituisce
-# nulla. Il contenuto delle lezioni non si scrive qui.
-schema: schoolforge-uda-metadata/v1
+export const UDA_METADATA_TEMPLATE = `schema: schoolforge-uda-metadata/v1
 
 udas:
-  - titolo: Introduzione alle reti
-    descrizione: Fondamenti della comunicazione tra dispositivi.
+  - titolo: Titolo della prima UDA
+    descrizione: Breve descrizione della prima UDA
     competenze:
-      - Comprendere il funzionamento generale di una rete
-      - Distinguere i principali dispositivi di rete
+      - Prima competenza sviluppata dalla UDA
+      - Seconda competenza sviluppata dalla UDA
     obiettivi:
-      - Conoscere il concetto di protocollo
-      - Comprendere il ruolo degli indirizzi IP
+      - Primo obiettivo didattico della UDA
+      - Secondo obiettivo didattico della UDA
 
-  - titolo: Il livello di trasporto
-    descrizione: Affidabilità e comunicazione end-to-end.
+  - titolo: Titolo della seconda UDA
+    descrizione: Breve descrizione della seconda UDA
     competenze:
-      - Analizzare una comunicazione TCP e UDP
+      - Prima competenza sviluppata dalla UDA
+      - Seconda competenza sviluppata dalla UDA
     obiettivi:
-      - Comprendere affidabilità e ritrasmissione
-      - Confrontare TCP e UDP
+      - Primo obiettivo didattico della UDA
+      - Secondo obiettivo didattico della UDA
 `;
 
-export const LESSON_METADATA_TEMPLATE = `# Modello SchoolForge — lezioni senza contenuto.
-# Aggiunge nuove lezioni in coda a quelle della UDA aperta. Ogni lezione nasce
-# con il corpo vuoto: il testo si scrive poi nell'editor o si genera con l'IA.
-schema: schoolforge-lesson-metadata/v1
+export const LESSON_METADATA_TEMPLATE = `schema: schoolforge-lesson-metadata/v1
 
 lessons:
-  - titolo: Che cos'è una rete
-    sottotitolo: Dispositivi, collegamenti e comunicazione
-    difficolta: introduttiva
+  - titolo: Titolo della prima lezione
+    sottotitolo: Breve sottotitolo della prima lezione
+    difficolta: Livello di difficoltà della prima lezione
     concettiChiave:
-      - nodo
-      - collegamento
-      - protocollo
+      - Primo concetto chiave della lezione
+      - Secondo concetto chiave della lezione
     obiettivi:
-      - Definire correttamente una rete informatica
-      - Distinguere nodi e collegamenti
+      - Primo obiettivo didattico della lezione
+      - Secondo obiettivo didattico della lezione
 
-  - titolo: Indirizzi IP e instradamento
-    sottotitolo: Come i pacchetti raggiungono la destinazione
-    difficolta: intermedia
+  - titolo: Titolo della seconda lezione
+    sottotitolo: Breve sottotitolo della seconda lezione
+    difficolta: Livello di difficoltà della seconda lezione
     concettiChiave:
-      - indirizzo IP
-      - pacchetto
-      - router
-      - instradamento
+      - Primo concetto chiave della lezione
+      - Secondo concetto chiave della lezione
     obiettivi:
-      - Comprendere la funzione dell'indirizzo IP
-      - Ricostruire il percorso logico di un pacchetto
+      - Primo obiettivo didattico della lezione
+      - Secondo obiettivo didattico della lezione
 `;
 
-/** The two templates, in the shape a future download helper will consume. */
+/** I due modelli, nella forma che la sezione Template consuma. */
 export const STRUCTURE_IMPORT_TEMPLATES = [
   { filename: UDA_TEMPLATE_FILENAME, content: UDA_METADATA_TEMPLATE },
   { filename: LESSON_TEMPLATE_FILENAME, content: LESSON_METADATA_TEMPLATE },

@@ -19,6 +19,12 @@ const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
  * STRUCTURE-IMPORT-01 — i due modelli canonici. Il round-trip è il punto: un
  * modello che il validatore rifiuterebbe insegnerebbe un formato sbagliato al
  * docente, e nessuno se ne accorgerebbe finché non prova a importarlo.
+ *
+ * STRUCTURE-TEMPLATE-GENERIC-01 — da quando lo YAML si incolla, il modello deve
+ * anche essere **immediatamente utilizzabile**: niente commenti da cancellare,
+ * niente esempio disciplinare da riscrivere. Le prove qui sotto difendono le due
+ * cose insieme, perché sono in tensione: un modello si può ripulire fino a
+ * romperlo.
  */
 
 describe('round-trip: i modelli sono accettati dai parser reali', () => {
@@ -29,10 +35,19 @@ describe('round-trip: i modelli sono accettati dai parser reali', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value).toHaveLength(2);
-    expect(result.value[0]!.titolo).toBe('Introduzione alle reti');
-    expect(result.value[0]!.descrizione).toBe('Fondamenti della comunicazione tra dispositivi.');
-    expect(result.value[0]!.competenze).toHaveLength(2);
-    expect(result.value[1]!.titolo).toBe('Il livello di trasporto');
+    // Ogni campo del formato è rappresentato: il modello mostra la forma
+    // completa, non una versione minima da indovinare.
+    expect(result.value[0]).toEqual({
+      titolo: 'Titolo della prima UDA',
+      descrizione: 'Breve descrizione della prima UDA',
+      competenze: [
+        'Prima competenza sviluppata dalla UDA',
+        'Seconda competenza sviluppata dalla UDA',
+      ],
+      obiettivi: ['Primo obiettivo didattico della UDA', 'Secondo obiettivo didattico della UDA'],
+    });
+    expect(result.value[1]!.titolo).toBe('Titolo della seconda UDA');
+    expect(result.value[1]!.descrizione).toBe('Breve descrizione della seconda UDA');
   });
 
   it('il modello lezioni è valido e normalizza come atteso', () => {
@@ -42,14 +57,21 @@ describe('round-trip: i modelli sono accettati dai parser reali', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value).toHaveLength(2);
-    expect(result.value[0]!.titolo).toBe("Che cos'è una rete");
-    expect(result.value[0]!.difficolta).toBe('introduttiva');
-    expect(result.value[1]!.concettiChiave).toEqual([
-      'indirizzo IP',
-      'pacchetto',
-      'router',
-      'instradamento',
-    ]);
+    expect(result.value[0]).toEqual({
+      titolo: 'Titolo della prima lezione',
+      sottotitolo: 'Breve sottotitolo della prima lezione',
+      difficolta: 'Livello di difficoltà della prima lezione',
+      concettiChiave: [
+        'Primo concetto chiave della lezione',
+        'Secondo concetto chiave della lezione',
+      ],
+      obiettivi: [
+        'Primo obiettivo didattico della lezione',
+        'Secondo obiettivo didattico della lezione',
+      ],
+    });
+    expect(result.value[1]!.titolo).toBe('Titolo della seconda lezione');
+    expect(result.value[1]!.sottotitolo).toBe('Breve sottotitolo della seconda lezione');
   });
 
   it('ogni modello attraversa anche il planner senza errori', () => {
@@ -66,8 +88,8 @@ describe('round-trip: i modelli sono accettati dai parser reali', () => {
     expect(udaPlan.ok).toBe(true);
     if (udaPlan.ok) {
       expect(udaPlan.value.udas.map((u) => u.dir)).toEqual([
-        'uda-01-introduzione-alle-reti',
-        'uda-02-il-livello-di-trasporto',
+        'uda-01-titolo-della-prima-uda',
+        'uda-02-titolo-della-seconda-uda',
       ]);
     }
 
@@ -136,5 +158,219 @@ describe('forma dei modelli', () => {
       'schoolforge-udas.yaml',
       'schoolforge-lezioni.yaml',
     ]);
+  });
+});
+
+/**
+ * STRUCTURE-TEMPLATE-GENERIC-01 — il modello è pronto all'uso.
+ *
+ * Il criterio è netto: quello che il docente copia deve poter essere incollato e
+ * importato senza cancellare una sola riga. Ogni cosa che va tolta prima
+ * dell'uso — un commento, un esempio di rete, un `...` — è lavoro scaricato
+ * sull'utente e viene bloccata qui.
+ */
+describe('modelli generici e pronti all’uso', () => {
+  const templates = [
+    ['UDA', UDA_METADATA_TEMPLATE, 'schema: schoolforge-uda-metadata/v1'],
+    ['lezioni', LESSON_METADATA_TEMPLATE, 'schema: schoolforge-lesson-metadata/v1'],
+  ] as const;
+
+  it('iniziano con la propria proprietà `schema`, che resta obbligatoria', () => {
+    for (const [, template, schema] of templates) {
+      // Prima riga, non una riga qualsiasi: è ciò che il validatore cerca per
+      // riconoscere il formato, e l'unica riga che il docente non deve toccare.
+      expect(template.split('\n')[0]).toBe(schema);
+    }
+  });
+
+  it('non contengono alcuna riga di commento YAML', () => {
+    for (const [nome, template] of templates) {
+      const commenti = template.split('\n').filter((riga) => riga.trimStart().startsWith('#'));
+      expect(commenti, `modello ${nome}`).toEqual([]);
+      expect(template).not.toContain('#');
+    }
+  });
+
+  it('non usano puntini di sospensione o segnaposto da sostituire a mano', () => {
+    for (const [, template] of templates) {
+      expect(template).not.toContain('...');
+      expect(template).not.toContain('…');
+      expect(template).not.toMatch(/<[^>]*inserisci[^>]*>/i);
+      expect(template).not.toContain('TODO');
+    }
+  });
+
+  it('non contengono più gli esempi disciplinari concreti', () => {
+    for (const [, template] of templates) {
+      for (const concreto of [
+        'rete',
+        'reti',
+        'TCP',
+        'UDP',
+        'indirizzo IP',
+        'router',
+        'protocollo',
+        'pacchetto',
+        'instradamento',
+        'nodo',
+        'dispositiv',
+      ]) {
+        expect(template.toLowerCase()).not.toContain(concreto.toLowerCase());
+      }
+    }
+  });
+
+  it('non contengono spiegazioni sul funzionamento dell’importazione', () => {
+    for (const [, template] of templates) {
+      for (const spiegazione of ['Modello SchoolForge', 'in coda', 'editor', 'IA', 'importa']) {
+        expect(template).not.toContain(spiegazione);
+      }
+    }
+  });
+
+  it('usano segnaposto generici che dicono implicitamente cosa inserire', () => {
+    expect(UDA_METADATA_TEMPLATE).toContain('titolo: Titolo della prima UDA');
+    expect(UDA_METADATA_TEMPLATE).toContain('- Primo obiettivo didattico della UDA');
+    expect(LESSON_METADATA_TEMPLATE).toContain('titolo: Titolo della prima lezione');
+    expect(LESSON_METADATA_TEMPLATE).toContain('- Primo concetto chiave della lezione');
+    // «obiettivo», mai «obbiettivo».
+    for (const [, template] of templates) {
+      expect(template).not.toContain('obbiettiv');
+      expect(template).toContain('obiettiv');
+    }
+  });
+
+  it('mostrano due voci complete, con tutti i campi del formato', () => {
+    const uda = validateUdaMetadataFile(utf8(UDA_METADATA_TEMPLATE));
+    expect(uda.ok).toBe(true);
+    if (uda.ok) {
+      expect(uda.value).toHaveLength(2);
+      for (const voce of uda.value) {
+        expect(voce.titolo.length).toBeGreaterThan(0);
+        expect(voce.descrizione).not.toBeNull();
+        expect(voce.competenze).toHaveLength(2);
+        expect(voce.obiettivi).toHaveLength(2);
+      }
+    }
+
+    const lezioni = validateLessonMetadataFile(utf8(LESSON_METADATA_TEMPLATE));
+    expect(lezioni.ok).toBe(true);
+    if (lezioni.ok) {
+      expect(lezioni.value).toHaveLength(2);
+      for (const voce of lezioni.value) {
+        expect(voce.titolo.length).toBeGreaterThan(0);
+        expect(voce.sottotitolo).not.toBeNull();
+        expect(voce.difficolta.length).toBeGreaterThan(0);
+        expect(voce.concettiChiave).toHaveLength(2);
+        expect(voce.obiettivi).toHaveLength(2);
+      }
+    }
+  });
+
+  it('non contengono id, order, path, corpo Markdown, pool o dati studente', () => {
+    for (const [, template] of templates) {
+      for (const tecnico of [
+        'id:',
+        'udaId',
+        'lessonId',
+        'order',
+        'ordine',
+        'path',
+        'dir:',
+        'slug',
+        'storage',
+        'body',
+        'content',
+        'markdown',
+        '##',
+        'pool',
+        'domande',
+        'soluzion',
+        'studente',
+        'classe',
+        'firebase',
+        'firestore',
+      ]) {
+        expect(template.toLowerCase()).not.toContain(tecnico.toLowerCase());
+      }
+    }
+  });
+});
+
+/**
+ * STRUCTURE-TEMPLATE-GENERIC-01 — testo definitivo, byte per byte.
+ *
+ * Le prove precedenti descrivono proprietà («nessun commento», «due voci»); qui
+ * si fissa il contenuto esatto. Serve perché ciò che il docente copia è il testo
+ * letterale: una riga in più, un'indentazione diversa o una newline finale
+ * doppia sono differenze che nessuna prova per proprietà noterebbe.
+ */
+describe('contenuto definitivo dei modelli', () => {
+  it('il modello UDA è esattamente questo', () => {
+    expect(UDA_METADATA_TEMPLATE).toBe(
+      [
+        'schema: schoolforge-uda-metadata/v1',
+        '',
+        'udas:',
+        '  - titolo: Titolo della prima UDA',
+        '    descrizione: Breve descrizione della prima UDA',
+        '    competenze:',
+        '      - Prima competenza sviluppata dalla UDA',
+        '      - Seconda competenza sviluppata dalla UDA',
+        '    obiettivi:',
+        '      - Primo obiettivo didattico della UDA',
+        '      - Secondo obiettivo didattico della UDA',
+        '',
+        '  - titolo: Titolo della seconda UDA',
+        '    descrizione: Breve descrizione della seconda UDA',
+        '    competenze:',
+        '      - Prima competenza sviluppata dalla UDA',
+        '      - Seconda competenza sviluppata dalla UDA',
+        '    obiettivi:',
+        '      - Primo obiettivo didattico della UDA',
+        '      - Secondo obiettivo didattico della UDA',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('il modello lezioni è esattamente questo', () => {
+    expect(LESSON_METADATA_TEMPLATE).toBe(
+      [
+        'schema: schoolforge-lesson-metadata/v1',
+        '',
+        'lessons:',
+        '  - titolo: Titolo della prima lezione',
+        '    sottotitolo: Breve sottotitolo della prima lezione',
+        '    difficolta: Livello di difficoltà della prima lezione',
+        '    concettiChiave:',
+        '      - Primo concetto chiave della lezione',
+        '      - Secondo concetto chiave della lezione',
+        '    obiettivi:',
+        '      - Primo obiettivo didattico della lezione',
+        '      - Secondo obiettivo didattico della lezione',
+        '',
+        '  - titolo: Titolo della seconda lezione',
+        '    sottotitolo: Breve sottotitolo della seconda lezione',
+        '    difficolta: Livello di difficoltà della seconda lezione',
+        '    concettiChiave:',
+        '      - Primo concetto chiave della lezione',
+        '      - Secondo concetto chiave della lezione',
+        '    obiettivi:',
+        '      - Primo obiettivo didattico della lezione',
+        '      - Secondo obiettivo didattico della lezione',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('sono UTF-8 valido e sopravvivono al giro byte → testo', () => {
+    for (const template of [UDA_METADATA_TEMPLATE, LESSON_METADATA_TEMPLATE]) {
+      const bytes = utf8(template);
+      expect(new TextDecoder('utf-8', { fatal: true }).decode(bytes)).toBe(template);
+    }
+    // «difficoltà» ha un carattere multibyte: se la codifica si rompesse, si
+    // romperebbe qui.
+    expect(LESSON_METADATA_TEMPLATE).toContain('difficoltà');
   });
 });
