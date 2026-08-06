@@ -158,15 +158,30 @@ Il dataset è deliberatamente **separato** da quello congelato di LESSON-TUNE-01
 che non viene toccato: le evidenze 01→07 devono restare riproducibili
 esattamente com'erano.
 
-**Esecuzione:**
+**Esecuzione.** Il CLI è compilato, quindi si passa da `pnpm build`. Senza i due
+flag espliciti l'esecuzione è una simulazione a costo zero, che è il modo giusto
+di controllare il piano prima di pagare:
 
-```
+```bash
 cd functions
-SPARSE=1 OPENAI_API_KEY=… npx tsx src/lessonTuneQualityCli.ts --split tuning --profile quality
+pnpm build
+
+# 1. Simulazione: stampa il piano e i costi, non chiama nessuno.
+SPARSE=1 pnpm benchmark:lesson-tune-quality \
+  --benchmark-split=tuning --benchmark-model-profile=quality
+
+# 2. Esecuzione reale.
+SPARSE=1 OPENAI_API_KEY=… pnpm benchmark:lesson-tune-quality \
+  --benchmark-split=tuning --benchmark-model-profile=quality \
+  --execute-real-openai --i-understand-this-costs-money
 ```
 
 Va lanciato **due volte**: una su `main` (candidato D, la baseline) e una sul
 ramo di LESSON-DEPTH-01 (candidato E). Il confronto è fra i due report.
+
+L'output finisce in `functions/lib/lesson-tune-01-tuning-<timestamp>/`, con
+`lesson-tune-01-report.json` — token, costi ed esiti per scenario — accanto ai
+Markdown generati, uno per scenario.
 
 **Costo reale, calcolato dal pianificatore:**
 
