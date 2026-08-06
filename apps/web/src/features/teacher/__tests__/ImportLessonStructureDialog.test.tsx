@@ -1,7 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ImportLessonStructureDialog } from '../ImportLessonStructureDialog.js';
-import { LESSON_METADATA_TEMPLATE } from '../../repository/structureImport/index.js';
+import {
+  LESSON_METADATA_TEMPLATE,
+  LESSON_SIMPLE_TEMPLATE,
+} from '../../repository/structureImport/index.js';
 
 /**
  * STRUCTURE-IMPORT-02B + STRUCTURE-IMPORT-UI-PASTE-01 — il dialog «Importa
@@ -52,7 +55,7 @@ function renderDialog(overrides: Partial<Parameters<typeof ImportLessonStructure
 }
 
 const area = (): HTMLTextAreaElement =>
-  screen.getByLabelText('Struttura lezioni in YAML') as HTMLTextAreaElement;
+  screen.getByLabelText('Struttura delle lezioni') as HTMLTextAreaElement;
 
 const verifyButton = (): HTMLButtonElement =>
   screen.getByRole('button', { name: 'Verifica struttura' }) as HTMLButtonElement;
@@ -74,11 +77,7 @@ describe('anatomia della finestra', () => {
     expect(textarea.value).toBe('');
     expect(Number(textarea.getAttribute('rows'))).toBeGreaterThanOrEqual(12);
     expect(textarea.getAttribute('aria-describedby')).toBe('import-lesson-structure-help');
-    expect(
-      screen.getByText(
-        'Incolla qui la struttura YAML. Puoi copiare un esempio dalla sezione Template.',
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText(/Incolla la struttura copiata dalla sezione Template/)).toBeTruthy();
     expect(dialog.querySelectorAll('textarea')).toHaveLength(1);
   });
 
@@ -173,12 +172,31 @@ lessons:
     expect(await screen.findByRole('alert')).toBeTruthy();
   });
 
-  it('il modello canonico della sezione Template completa il round-trip', async () => {
+  it('il modello della sezione Template completa il round-trip', async () => {
+    renderDialog();
+    paste(LESSON_SIMPLE_TEMPLATE);
+    verify();
+    expect(await screen.findByText(/2 lezioni verranno aggiunte/)).toBeTruthy();
+    expect(screen.getByText('Titolo della prima lezione')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('lo YAML resta importabile, senza selettori né passaggi in più', async () => {
     renderDialog();
     paste(LESSON_METADATA_TEMPLATE);
     verify();
-    expect(await screen.findByText(/lezioni verranno aggiunte/)).toBeTruthy();
+    expect(await screen.findByText(/2 lezioni verranno aggiunte/)).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('radio')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  it('una struttura di UDA viene indirizzata alla finestra giusta', async () => {
+    const { onConfirm } = renderDialog();
+    paste('UDA: Prima unità\nCompetenze:\n- Una\nObiettivi:\n- Uno\n');
+    verify();
+    expect((await screen.findByRole('alert')).textContent ?? '').toContain('Importa struttura UDA');
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 });
 

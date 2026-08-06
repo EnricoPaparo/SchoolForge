@@ -107,9 +107,21 @@ export function validateLessonMetadataFileText(
   });
   if (!envelope.ok) return envelope;
 
+  return normalizeLessonEntries(envelope.value, options);
+}
+
+/**
+ * Normalizzazione voce per voce, condivisa fra formato YAML e formato semplice.
+ * Vedi `normalizeUdaEntries`: il contratto didattico ha una sola
+ * implementazione, indipendente dalla sintassi di ingresso.
+ */
+export function normalizeLessonEntries(
+  entries: readonly Record<string, unknown>[],
+  options: ValidateLessonMetadataOptions = {},
+): StructureImportResult<NormalizedLessonMetadata[]> {
   const lessons: NormalizedLessonMetadata[] = [];
 
-  for (const [index, entry] of envelope.value.entries()) {
+  for (const [index, entry] of entries.entries()) {
     const closed = assertClosedKeySet(entry, LESSON_ENTRY_KEYS, LESSON_FORBIDDEN_KEYS, {
       fileKind: 'lesson',
       index,

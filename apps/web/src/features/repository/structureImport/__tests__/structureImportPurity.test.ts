@@ -99,6 +99,12 @@ describe('confine puro dei moduli STRUCTURE-IMPORT', () => {
       'features/repository/structureImport/validateLessonMetadataFile.ts',
       'features/repository/structureImport/planUdaMetadataAppend.ts',
       'features/repository/structureImport/planLessonMetadataAppend.ts',
+      // STRUCTURE-IMPORT-SIMPLE-01: il parser semplice e l'adapter di ingresso
+      // sono dentro lo stesso confine — niente React, niente Firebase, niente
+      // API del browser oltre a TextDecoder.
+      'features/repository/structureImport/simpleStructureLines.ts',
+      'features/repository/structureImport/parseSimpleStructure.ts',
+      'features/repository/structureImport/structureInputAdapter.ts',
       // Helper canonici condivisi: fanno parte del confine, non un'eccezione.
       'features/repository/canonicalNaming.ts',
       'features/repository/validation/frontMatter.ts',

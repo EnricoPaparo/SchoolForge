@@ -1,6 +1,6 @@
 import { type FormEvent, useRef, useState } from 'react';
 import { DialogShell } from '../../components/DialogShell.js';
-import { validateUdaMetadataFile } from '../repository/structureImport/index.js';
+import { parseUdaStructureInput } from '../repository/structureImport/index.js';
 import type { NormalizedUdaMetadata } from '../repository/structureImport/index.js';
 import styles from './DidatticaView.module.css';
 
@@ -12,19 +12,23 @@ import styles from './DidatticaView.module.css';
  * riepilogo lo dice esplicitamente, perché un docente che si aspetta i corpi
  * delle lezioni lo scoprirebbe altrimenti solo dopo.
  *
- * STRUCTURE-IMPORT-UI-PASTE-01 — il docente **incolla** lo YAML invece di
+ * STRUCTURE-IMPORT-UI-PASTE-01 — il docente **incolla** la struttura invece di
  * scegliere un file. Il file era il vero costo del flusso: obbligava a salvare
  * un modello su disco, ritrovarlo, e scoprire solo al secondo passaggio che
  * l'estensione o la codifica non andavano bene. Gli esempi copiabili vivono
  * nella sezione Template, che resta l'unico punto autorevole.
  *
  * Il percorso di validazione **non cambia**: il testo incollato diventa byte
- * UTF-8 con `TextEncoder` e viene consegnato alla stessa API byte-first di
- * STRUCTURE-IMPORT-01, che applica limite sui byte, decodifica UTF-8 fatale,
- * parser e validatori nell'ordine di sempre. Nessun parser testuale parallelo, e
- * nessuna API permissiva di lettura file: qui non si legge più alcun file.
+ * UTF-8 con `TextEncoder` e viene consegnato all'unica porta byte-first
+ * (`parseUdaStructureInput`), che applica limite sui byte, decodifica UTF-8
+ * fatale, riconosce la sintassi e chiama i validatori di sempre. Nessuna API
+ * permissiva di lettura file: qui non si legge più alcun file.
  *
- * `variant="wide-scroll"`: lo YAML ha bisogno di larghezza, ed è la stessa
+ * STRUCTURE-IMPORT-SIMPLE-01 — la finestra non sa quale delle due sintassi ha
+ * davanti, e non deve saperlo: nessun selettore di formato, nessuna modalità
+ * avanzata, nessuna conversione. Il riconoscimento vive nell'adapter.
+ *
+ * `variant="wide-scroll"`: la struttura ha bisogno di larghezza, ed è la stessa
  * variante già usata dai dialog di generazione IA — non una misura inventata qui.
  */
 
@@ -66,7 +70,7 @@ export function ImportUdaStructureDialog({
   function verify(): void {
     setLocalError(null);
     const bytes = new TextEncoder().encode(yaml);
-    const validation = validateUdaMetadataFile(bytes);
+    const validation = parseUdaStructureInput(bytes);
     if (!validation.ok) {
       // Il testo resta dov'è: si corregge, non si reincolla da capo.
       setLocalError(validation.error.message);
@@ -116,14 +120,14 @@ export function ImportUdaStructureDialog({
         ) : (
           <>
             <p className={styles.dialogHint}>
-              Aggiunge nuove UDA al corso «{courseTitle}» a partire da una struttura YAML di soli
+              Aggiunge nuove UDA al corso «{courseTitle}» a partire da una struttura di soli
               metadati. Le UDA esistenti non vengono modificate. Non importa lezioni, contenuti o
               pool di domande.
             </p>
 
             {state.phase === 'input' && (
               <label className={styles.dialogLabel} htmlFor="import-uda-structure-yaml">
-                Struttura UDA in YAML
+                Struttura delle UDA
                 <textarea
                   id="import-uda-structure-yaml"
                   ref={textareaRef}
@@ -145,7 +149,8 @@ export function ImportUdaStructureDialog({
 
             {state.phase === 'input' && (
               <p id="import-uda-structure-help" className={styles.dialogHint}>
-                Incolla qui la struttura YAML. Puoi copiare un esempio dalla sezione Template.
+                Incolla la struttura copiata dalla sezione Template. Spazi, righe vuote e simboli
+                degli elenchi vengono riconosciuti automaticamente.
               </p>
             )}
 

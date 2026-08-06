@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   LESSON_METADATA_TEMPLATE,
+  LESSON_SIMPLE_TEMPLATE,
+  UDA_SIMPLE_TEMPLATE,
   LESSON_TEMPLATE_FILENAME,
   STRUCTURE_IMPORT_TEMPLATES,
   UDA_METADATA_TEMPLATE,
   UDA_TEMPLATE_FILENAME,
 } from '../structureImportTemplates.js';
+import { parseSimpleLessonStructure, parseSimpleUdaStructure } from '../parseSimpleStructure.js';
 import { validateUdaMetadataFile } from '../validateUdaMetadataFile.js';
 import { validateLessonMetadataFile } from '../validateLessonMetadataFile.js';
 import { planUdaMetadataAppend } from '../planUdaMetadataAppend.js';
@@ -372,5 +375,165 @@ describe('contenuto definitivo dei modelli', () => {
     // «difficoltà» ha un carattere multibyte: se la codifica si rompesse, si
     // romperebbe qui.
     expect(LESSON_METADATA_TEMPLATE).toContain('difficoltà');
+  });
+});
+
+/**
+ * STRUCTURE-TEMPLATE-GENERIC-01 + STRUCTURE-IMPORT-SIMPLE-01 — i modelli che la
+ * sezione Template mostra e copia.
+ *
+ * Sono la prima cosa che un docente vede del formato, quindi *sono* la
+ * documentazione: se contenessero una riga che l'importazione poi rifiuta,
+ * insegnerebbero un errore. Il round-trip con i parser reali è la difesa, il
+ * testo esatto è il contratto.
+ */
+describe('modelli semplici della sezione Template', () => {
+  const semplici = [
+    ['UDA', UDA_SIMPLE_TEMPLATE],
+    ['lezioni', LESSON_SIMPLE_TEMPLATE],
+  ] as const;
+
+  it('il modello UDA è esattamente questo', () => {
+    expect(UDA_SIMPLE_TEMPLATE).toBe(
+      [
+        'UDA: Titolo della prima UDA',
+        'Descrizione: Breve descrizione della prima UDA',
+        'Competenze:',
+        '- Prima competenza sviluppata dalla UDA',
+        '- Seconda competenza sviluppata dalla UDA',
+        'Obiettivi:',
+        '- Primo obiettivo didattico della UDA',
+        '- Secondo obiettivo didattico della UDA',
+        'UDA: Titolo della seconda UDA',
+        'Descrizione: Breve descrizione della seconda UDA',
+        'Competenze:',
+        '- Prima competenza sviluppata dalla UDA',
+        '- Seconda competenza sviluppata dalla UDA',
+        'Obiettivi:',
+        '- Primo obiettivo didattico della UDA',
+        '- Secondo obiettivo didattico della UDA',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('il modello lezioni è esattamente questo', () => {
+    expect(LESSON_SIMPLE_TEMPLATE).toBe(
+      [
+        'LEZIONE: Titolo della prima lezione',
+        'Sottotitolo: Breve sottotitolo della prima lezione',
+        'Difficoltà: Livello di difficoltà della prima lezione',
+        'Concetti chiave:',
+        '- Primo concetto chiave della lezione',
+        '- Secondo concetto chiave della lezione',
+        'Obiettivi:',
+        '- Primo obiettivo didattico della lezione',
+        '- Secondo obiettivo didattico della lezione',
+        'LEZIONE: Titolo della seconda lezione',
+        'Sottotitolo: Breve sottotitolo della seconda lezione',
+        'Difficoltà: Livello di difficoltà della seconda lezione',
+        'Concetti chiave:',
+        '- Primo concetto chiave della lezione',
+        '- Secondo concetto chiave della lezione',
+        'Obiettivi:',
+        '- Primo obiettivo didattico della lezione',
+        '- Secondo obiettivo didattico della lezione',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('nessuna traccia di YAML: né schema, né rientri, né righe vuote', () => {
+    for (const [nome, template] of semplici) {
+      expect(template, nome).not.toContain('schema:');
+      expect(template).not.toContain('---');
+      const righe = template.split('\n').slice(0, -1);
+      // Nessun rientro: ogni riga comincia a colonna zero.
+      expect(righe.filter((riga) => /^\s/.test(riga))).toEqual([]);
+      // Nessuna riga vuota in mezzo.
+      expect(righe.filter((riga) => riga.trim() === '')).toEqual([]);
+      // Nessun commento, nessun segnaposto da sostituire a mano.
+      expect(template).not.toContain('#');
+      expect(template).not.toContain('...');
+      expect(template).not.toMatch(/<[^>]*inserisci[^>]*>/i);
+    }
+  });
+
+  it('terminano con una sola newline', () => {
+    for (const [, template] of semplici) {
+      expect(template.endsWith('\n')).toBe(true);
+      expect(template.endsWith('\n\n')).toBe(false);
+    }
+  });
+
+  it('nessun esempio disciplinare, nessun dato tecnico', () => {
+    for (const [, template] of semplici) {
+      for (const vietato of [
+        'rete',
+        'reti',
+        'TCP',
+        'UDP',
+        'router',
+        'protocollo',
+        'id:',
+        'order',
+        'path',
+        'storage',
+        'body',
+        'markdown',
+        '##',
+        'pool',
+        'domande',
+        'studente',
+        'firebase',
+      ]) {
+        expect(template.toLowerCase()).not.toContain(vietato.toLowerCase());
+      }
+    }
+  });
+
+  it('usa «obiettivo», mai «obbiettivo»', () => {
+    for (const [, template] of semplici) {
+      expect(template).not.toContain('obbiettiv');
+      expect(template).toContain('obiettiv');
+    }
+  });
+
+  it('round-trip con i parser reali: due voci complete per ciascuno', () => {
+    const uda = parseSimpleUdaStructure(UDA_SIMPLE_TEMPLATE);
+    expect(uda.ok).toBe(true);
+    if (uda.ok) {
+      expect(uda.value).toHaveLength(2);
+      for (const voce of uda.value) {
+        expect(voce.titolo.length).toBeGreaterThan(0);
+        expect(voce.descrizione).not.toBeNull();
+        expect(voce.competenze).toHaveLength(2);
+        expect(voce.obiettivi).toHaveLength(2);
+      }
+    }
+
+    const lezioni = parseSimpleLessonStructure(LESSON_SIMPLE_TEMPLATE);
+    expect(lezioni.ok).toBe(true);
+    if (lezioni.ok) {
+      expect(lezioni.value).toHaveLength(2);
+      for (const voce of lezioni.value) {
+        expect(voce.sottotitolo).not.toBeNull();
+        expect(voce.difficolta.length).toBeGreaterThan(0);
+        expect(voce.concettiChiave).toHaveLength(2);
+        expect(voce.obiettivi).toHaveLength(2);
+      }
+    }
+  });
+
+  it('il modello UDA non è accettato come lezioni, e viceversa', () => {
+    expect(parseSimpleLessonStructure(UDA_SIMPLE_TEMPLATE).ok).toBe(false);
+    expect(parseSimpleUdaStructure(LESSON_SIMPLE_TEMPLATE).ok).toBe(false);
+  });
+
+  it('i modelli YAML restano esportati per compatibilità', () => {
+    // Non sono più mostrati, ma restano importabili: chi ne ha uno salvato non
+    // deve riscriverlo.
+    expect(UDA_METADATA_TEMPLATE).toContain('schema: schoolforge-uda-metadata/v1');
+    expect(LESSON_METADATA_TEMPLATE).toContain('schema: schoolforge-lesson-metadata/v1');
   });
 });

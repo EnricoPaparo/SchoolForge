@@ -17,9 +17,12 @@
  *    an identity, and never a 32-bit fingerprint.
  *
  * The text-only entry points (`parseStructureYamlText`,
- * `validateUdaMetadataFileText`, `validateLessonMetadataFileText`) are
- * deliberately **not** re-exported here: they exist for internal reuse and
- * tests, and the UI must never reach them.
+ * `validateUdaMetadataFileText`, `validateLessonMetadataFileText`,
+ * `parseSimpleUdaStructure`, `parseSimpleLessonStructure`) are deliberately
+ * **not** re-exported here: they exist for internal reuse and tests, and the UI
+ * must never reach them. L'unica porta della UI è
+ * `parse{Uda,Lesson}StructureInput`, che è byte-first e riconosce da sola quale
+ * delle due sintassi ha davanti (STRUCTURE-IMPORT-SIMPLE-01).
  */
 export {
   STRUCTURE_IMPORT_EXTENSIONS,
@@ -34,11 +37,19 @@ export { validateUdaMetadataFile, UDA_ENTRY_KEYS } from './validateUdaMetadataFi
 export { validateLessonMetadataFile, LESSON_ENTRY_KEYS } from './validateLessonMetadataFile.js';
 export {
   LESSON_METADATA_TEMPLATE,
+  LESSON_SIMPLE_TEMPLATE,
   LESSON_TEMPLATE_FILENAME,
   STRUCTURE_IMPORT_TEMPLATES,
   UDA_METADATA_TEMPLATE,
+  UDA_SIMPLE_TEMPLATE,
   UDA_TEMPLATE_FILENAME,
 } from './structureImportTemplates.js';
+export {
+  detectStructureFormat,
+  parseLessonStructureInput,
+  parseUdaStructureInput,
+} from './structureInputAdapter.js';
+export type { StructureInputFormat } from './structureInputAdapter.js';
 export { planUdaMetadataAppend } from './planUdaMetadataAppend.js';
 export { planLessonMetadataAppend } from './planLessonMetadataAppend.js';
 export {

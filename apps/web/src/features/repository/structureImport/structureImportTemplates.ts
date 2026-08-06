@@ -1,4 +1,11 @@
 /**
+ * Modelli canonici dell'importazione strutturale.
+ *
+ * STRUCTURE-IMPORT-SIMPLE-01 — dal formato semplice in poi la sezione Template
+ * mostra e copia `UDA_SIMPLE_TEMPLATE` e `LESSON_SIMPLE_TEMPLATE`. I due modelli
+ * YAML restano qui, esportati e verificati in round-trip, perché lo YAML resta
+ * importabile: sono compatibilità, non più didattica.
+ *
  * STRUCTURE-IMPORT-01 — modelli YAML canonici.
  *
  * Sono l'**unica fonte autorevole** degli esempi: la sezione Template li usa
@@ -70,6 +77,56 @@ lessons:
     obiettivi:
       - Primo obiettivo didattico della lezione
       - Secondo obiettivo didattico della lezione
+`;
+
+// ── Formato semplice (STRUCTURE-IMPORT-SIMPLE-01) ────────────────────────────
+
+/**
+ * Ciò che la sezione Template mostra e copia.
+ *
+ * Niente `schema:`, niente rientri, niente righe vuote, niente virgolette: solo
+ * etichette in italiano e trattini. È la forma che un docente riscrive senza
+ * pensarci e che sopravvive al passaggio da una chat, da un documento o da un
+ * modello AI — i tre luoghi da cui questo testo arriva davvero.
+ *
+ * Lo YAML resta importabile, ma non è più ciò che si insegna.
+ */
+export const UDA_SIMPLE_TEMPLATE = `UDA: Titolo della prima UDA
+Descrizione: Breve descrizione della prima UDA
+Competenze:
+- Prima competenza sviluppata dalla UDA
+- Seconda competenza sviluppata dalla UDA
+Obiettivi:
+- Primo obiettivo didattico della UDA
+- Secondo obiettivo didattico della UDA
+UDA: Titolo della seconda UDA
+Descrizione: Breve descrizione della seconda UDA
+Competenze:
+- Prima competenza sviluppata dalla UDA
+- Seconda competenza sviluppata dalla UDA
+Obiettivi:
+- Primo obiettivo didattico della UDA
+- Secondo obiettivo didattico della UDA
+`;
+
+export const LESSON_SIMPLE_TEMPLATE = `LEZIONE: Titolo della prima lezione
+Sottotitolo: Breve sottotitolo della prima lezione
+Difficoltà: Livello di difficoltà della prima lezione
+Concetti chiave:
+- Primo concetto chiave della lezione
+- Secondo concetto chiave della lezione
+Obiettivi:
+- Primo obiettivo didattico della lezione
+- Secondo obiettivo didattico della lezione
+LEZIONE: Titolo della seconda lezione
+Sottotitolo: Breve sottotitolo della seconda lezione
+Difficoltà: Livello di difficoltà della seconda lezione
+Concetti chiave:
+- Primo concetto chiave della lezione
+- Secondo concetto chiave della lezione
+Obiettivi:
+- Primo obiettivo didattico della lezione
+- Secondo obiettivo didattico della lezione
 `;
 
 /** I due modelli, nella forma che la sezione Template consuma. */

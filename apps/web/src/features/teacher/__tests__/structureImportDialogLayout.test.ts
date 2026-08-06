@@ -143,20 +143,45 @@ describe('nessuna lettura di file nel percorso', () => {
     }
   });
 
-  it('la codifica passa da TextEncoder e finisce nel validatore già esistente', () => {
-    for (const [source, validator] of [
-      [dialog, 'validateUdaMetadataFile'],
-      [lessonDialog, 'validateLessonMetadataFile'],
+  it('la codifica passa da TextEncoder e finisce nell’unica porta byte-first', () => {
+    // STRUCTURE-IMPORT-SIMPLE-01 — la finestra non chiama più un validatore di
+    // un formato specifico: chiama l'adapter, che riconosce da solo la sintassi.
+    for (const [source, entry] of [
+      [dialog, 'parseUdaStructureInput'],
+      [lessonDialog, 'parseLessonStructureInput'],
     ] as const) {
       const encode = source.indexOf('new TextEncoder().encode(yaml)');
-      const validate = source.indexOf(`${validator}(bytes)`);
+      const validate = source.indexOf(`${entry}(bytes)`);
       expect(encode).toBeGreaterThan(-1);
-      // L'ordine è vincolante: prima i byte, poi il validatore byte-first.
+      // L'ordine è vincolante: prima i byte, poi la porta byte-first.
       expect(validate).toBeGreaterThan(encode);
-      // Nessun parser o validatore parallelo introdotto qui.
+      // Nessun parser, validatore o riconoscimento di formato duplicato qui.
       expect(source).not.toContain('parseStructureYaml');
       expect(source).not.toContain('MetadataFileText');
-      expect(source.split(validator).length - 1).toBe(2);
+      expect(source).not.toContain('parseSimple');
+      expect(source).not.toContain('detectStructureFormat');
+      // Una sola invocazione: nessun secondo percorso di validazione.
+      expect(source.split(`${entry}(bytes)`).length - 1).toBe(1);
+    }
+  });
+
+  it('nessun selettore di formato, modalità avanzata o conversione nelle finestre', () => {
+    // I commenti *parlano* dei due formati per spiegare che la finestra non li
+    // distingue: qui interessa ciò che il docente vede e può toccare.
+    const senzaCommenti = (source: string) =>
+      source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    for (const source of [senzaCommenti(dialog), senzaCommenti(lessonDialog)]) {
+      for (const vietato of [
+        'type="radio"',
+        'type="checkbox"',
+        '<select',
+        'avanzat',
+        'converti',
+        'Converti',
+        'formato semplice',
+      ]) {
+        expect(source).not.toContain(vietato);
+      }
     }
   });
 });

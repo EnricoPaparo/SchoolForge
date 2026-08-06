@@ -1,4 +1,4 @@
-import { planLessonMetadataAppend, validateLessonMetadataFile } from '../structureImport/index.js';
+import { planLessonMetadataAppend, parseLessonStructureInput } from '../structureImport/index.js';
 import { runStructureAppend } from './structureAppendProtocol.js';
 import { canonicalizeSource } from './structureSourceCanonical.js';
 import type { AttemptClassification, SourceProbe } from './attemptState.js';
@@ -199,7 +199,7 @@ export async function importLessonStructure(
   deps: LessonStructureImportDeps,
 ): Promise<LessonStructureImportResult> {
   // 1. Validazione locale byte-first. Zero operazioni Firebase finora.
-  const validation = validateLessonMetadataFile(input.bytes, {
+  const validation = parseLessonStructureInput(input.bytes, {
     ...(input.filename === undefined ? {} : { filename: input.filename }),
   });
   if (!validation.ok) return { status: 'validation_failed', error: validation.error };
