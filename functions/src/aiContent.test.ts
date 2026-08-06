@@ -16,7 +16,11 @@ import {
 } from './aiContentCore.js';
 import { resolveAiFeatureMode } from './aiCorrectionGatewayCore.js';
 import { validateLessonProposal, validatePoolProposal } from './aiContentValidation.js';
-import { buildLessonPrompt, buildPoolPrompt } from './aiContentPrompt.js';
+import {
+  AI_CONTENT_PROMPT_VERSION,
+  buildLessonPrompt,
+  buildPoolPrompt,
+} from './aiContentPrompt.js';
 import { MAX_OPERATION_COST_MICRO_USD } from './aiCorrectionRuntimeConfig.js';
 import { estimateContentCost } from './aiContentCost.js';
 import {
@@ -26,6 +30,7 @@ import {
   estimateInputTokens,
   reservationInputTokenUpperBound,
   resolveMaxOutputTokens,
+  LESSON_OUTPUT_TOKENS,
 } from './aiContentPayload.js';
 import { createContentProvider, selectContentProvider } from './aiContentProvider.js';
 import { canMarkProviderPending } from './aiContentPending.js';
@@ -1413,13 +1418,13 @@ describe('lesson pedagogical contract', () => {
   });
   it('describes depth pedagogically per value, not as a character count', () => {
     expect(buildLessonPrompt(lessonReq({ depth: 'synthetic' }) as never).user).toMatch(
-      /sintetica: essenziale ma completa/,
+      /sintetica: OGNI concetto chiave/,
     );
     expect(buildLessonPrompt(lessonReq({ depth: 'complete' }) as never).user).toMatch(
-      /completa: trattazione piena/,
+      /completa: OGNI concetto chiave/,
     );
     expect(buildLessonPrompt(lessonReq({ depth: 'in_depth' }) as never).user).toMatch(
-      /approfondita: trattazione estesa/,
+      /approfondita: OGNI concetto chiave/,
     );
   });
   it('fences current content as untrusted and guidance as authoritative within the perimeter', () => {
@@ -1464,16 +1469,16 @@ describe('pool validation — chiusa_multipla AI proposal rule', () => {
 
 describe('lesson output hard caps (AIGEN-PROMPT-01)', () => {
   it('allocates enough room for reasoning plus complete Markdown output', () => {
-    expect(resolveMaxOutputTokens(lessonReq({ depth: 'synthetic' }))).toBe(5000);
-    expect(resolveMaxOutputTokens(lessonReq({ depth: 'complete' }))).toBe(9000);
-    expect(resolveMaxOutputTokens(lessonReq({ depth: 'in_depth' }))).toBe(15000);
+    expect(resolveMaxOutputTokens(lessonReq({ depth: 'synthetic' }))).toBe(8_000);
+    expect(resolveMaxOutputTokens(lessonReq({ depth: 'complete' }))).toBe(14_000);
+    expect(resolveMaxOutputTokens(lessonReq({ depth: 'in_depth' }))).toBe(18_000);
   });
   it('payload/estimate use exactly the corresponding cap', () => {
     const req = lessonReq({ depth: 'in_depth' });
     const { model, priceListVersion } = resolveContentModel(req.modelProfile);
     const est = estimateContentCost(req, model, priceListVersion, 2);
-    expect(est.maxOutputTokens).toBe(15000);
-    expect(est.reservationOutputTokens).toBe(15000);
+    expect(est.maxOutputTokens).toBe(18_000);
+    expect(est.reservationOutputTokens).toBe(18_000);
     // Invariant preserved: reservation ≥ estimate, and holds actual ≤ settled ≤ reservation.
     expect(est.reservationCostMicroUsd).toBeGreaterThanOrEqual(est.estimatedCostMicroUsd);
   });
@@ -2042,8 +2047,6 @@ describe('STRUCTURE-IMPORT-03 — blocco CONTESTO_GENERALE_UDA nel prompt', () =
 });
 
 describe('STRUCTURE-IMPORT-03 — il tuning validato resta invariato', () => {
-  const sha = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
-
   it('il prompt del pool è byte-identico a prima della modifica', () => {
     // Riferimenti calcolati sul codice precedente a STRUCTURE-IMPORT-03: se
     // cambiano, il pool è stato toccato — cosa che questo task esclude.
@@ -2054,12 +2057,14 @@ describe('STRUCTURE-IMPORT-03 — il tuning validato resta invariato', () => {
     expect(sha(pool.user)).toBe('08a6105b5a40c1cdfff722171e854b6fb68e224738f26b829dd47c95e1d60d31');
   });
 
-  it('su UDA legacy il prompt utente della lezione è byte-identico a prima', () => {
-    // Nessun campo nuovo ⇒ nessun blocco nuovo ⇒ nessuna riga cambiata: la
-    // prova più stretta che il tuning pedagogico non è stato riscritto.
+  it('il prompt utente della lezione è ancorato al candidato E', () => {
+    // LESSON-DEPTH-01 ha riscritto **intenzionalmente** il contratto di
+    // profondità: l'ancora non dice più «identico a prima», dice «identico a
+    // ciò che è stato misurato». Se cambia senza che qualcuno rifaccia il
+    // benchmark, questo test lo ferma — che è il motivo per cui esiste.
     const legacy = buildLessonPrompt(lessonReq({ udaContext: legacyUdaContext() }) as never);
     expect(sha(legacy.user)).toBe(
-      '5988edc83350d204bb5549fcef0c71b84ba3fc1046ca8d560783e47824265b49',
+      '6cb8c31ef2c9c60e57446a633887c23671d7a7aaa8f3ece89c4ee5278e4a47fe',
     );
   });
 
@@ -2068,5 +2073,132 @@ describe('STRUCTURE-IMPORT-03 — il tuning validato resta invariato', () => {
     const pool = buildPoolPrompt(poolReq() as never);
     expect(pool.system).not.toContain('CONTESTO_GENERALE_UDA');
     expect(pool.user).not.toContain('CONTESTO_GENERALE_UDA');
+  });
+});
+
+// ─── LESSON-DEPTH-01 ─────────────────────────────────────────────────────────
+
+/**
+ * LESSON-DEPTH-01 — i concetti chiave dicono CHE COSA, non QUANTO.
+ *
+ * Il difetto che questa fase corregge era misurabile: il prompt usava l'elenco
+ * dei concetti chiave sia come perimetro sia come budget di contenuto, quindi
+ * una lezione con due concetti usciva lunga la metà di una con cinque. Ma per un
+ * docente una lezione è una lezione: se ne dichiara due, vuole quei due trattati
+ * a fondo, non mezza lezione.
+ *
+ * La difesa è delicata in entrambe le direzioni, e per questo i test guardano
+ * anche il confine: un prompt che invita ad approfondire senza dire dove
+ * fermarsi produrrebbe lezioni che divagano, che è l'altro modo di essere
+ * inutili.
+ */
+const sha = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
+
+describe('LESSON-DEPTH-01 — profondità e perimetro', () => {
+  const built = buildLessonPrompt(lessonReq() as never);
+
+  it('separa esplicitamente che cosa trattare da quanto scrivere', () => {
+    expect(built.user).toMatch(/CONCETTI CHIAVE dicono CHE COSA va trattato, non QUANTO scrivere/);
+    expect(built.user).toMatch(/non è mezza lezione/);
+  });
+
+  it('l’unità di misura è la lezione scolastica, non il numero di voci', () => {
+    expect(built.user).toMatch(/unità di misura è la LEZIONE SCOLASTICA completa/);
+    expect(built.user).toMatch(/qualunque sia il numero di voci ricevute/);
+  });
+
+  it('meno concetti chiave ⇒ più profondità, non meno testo', () => {
+    expect(built.user).toMatch(/MENO concetti chiave ricevi, PIÙ a fondo vanno trattati/);
+    expect(built.user).toMatch(/non in numero di argomenti/);
+  });
+
+  it('i concetti di supporto sono compito del modello, non del docente', () => {
+    expect(built.user).toMatch(/individua e introduci tu i CONCETTI DI SUPPORTO/);
+    expect(built.user).toMatch(/è compito tuo,\s*\n?\s*non del docente/);
+  });
+
+  it('il confine contro le divagazioni è verificabile, non un’esortazione', () => {
+    // Senza un criterio decidibile, «non spaziare troppo» non è applicabile:
+    // qui il modello ha un test da eseguire su ogni contenuto che aggiunge.
+    expect(built.user).toMatch(/è DENTRO il perimetro/);
+    expect(built.user).toMatch(/è FUORI se la/);
+    expect(built.user).toMatch(/Ciò che è fuori non va/);
+  });
+
+  it('più profondo non significa più ampio: la distinzione è scritta', () => {
+    expect(built.user).toMatch(/non un argomento diverso né più AMPIO/);
+    expect(built.user).toMatch(/più PROFONDO/);
+    expect(built.user).toMatch(/non allarga il perimetro/);
+  });
+
+  it('ogni profondità è ancorata al singolo concetto chiave', () => {
+    for (const depth of ['synthetic', 'complete', 'in_depth'] as const) {
+      const prompt = buildLessonPrompt(lessonReq({ depth }) as never);
+      expect(prompt.user).toMatch(/OGNI concetto chiave/);
+    }
+    // I tre livelli restano distinguibili: la profondità continua a significare
+    // qualcosa, non è diventata una parola sola per tutti.
+    const testi = new Set(
+      (['synthetic', 'complete', 'in_depth'] as const).map(
+        (depth) => buildLessonPrompt(lessonReq({ depth }) as never).user,
+      ),
+    );
+    expect(testi.size).toBe(3);
+  });
+
+  it('il controllo finale può far crescere il testo, e lo fa per primo', () => {
+    const controllo = built.user.slice(built.user.indexOf('controllo finale obbligatorio'));
+    expect(controllo).toMatch(/1\) verifica che OGNI concetto chiave/);
+    expect(controllo).toMatch(/ESPANDILA prima di rispondere/);
+    // Prima della potatura: un passaggio di revisione che comincia da «elimina»
+    // comprime, ed è esattamente ciò che accadeva.
+    expect(controllo.indexOf('ESPANDILA')).toBeLessThan(
+      controllo.indexOf('elimina ogni riferimento'),
+    );
+  });
+
+  it('i tetti alle attività seguono la profondità richiesta', () => {
+    const completa = buildLessonPrompt(lessonReq({ depth: 'complete' }) as never);
+    const approfondita = buildLessonPrompt(lessonReq({ depth: 'in_depth' }) as never);
+    expect(completa.user).toMatch(/al massimo UNA sola sezione/);
+    expect(approfondita.user).toMatch(/al massimo DUE sezioni/);
+    expect(approfondita.user).toMatch(/quattro domande risolte/);
+  });
+
+  it('la versione del prompt è stata incrementata: il benchmark va rifatto', () => {
+    // Il dataset congela la versione: lasciarla a «candidate-d» farebbe passare
+    // per misurato un prompt che non lo è.
+    expect(AI_CONTENT_PROMPT_VERSION).toBe('lesson-depth-01-candidate-e-v1');
+    expect(AI_CONTENT_PROMPT_VERSION).not.toContain('candidate-d');
+  });
+
+  it('il prompt del pool resta byte-identico: qui non si tocca', () => {
+    const pool = buildPoolPrompt(poolReq() as never);
+    expect(sha(pool.system)).toBe(
+      '667c96bb26ed12895fa6deb8b83962d45cd63878c2d7c1041ceb915f5278aa28',
+    );
+    expect(sha(pool.user)).toBe('08a6105b5a40c1cdfff722171e854b6fb68e224738f26b829dd47c95e1d60d31');
+  });
+});
+
+describe('LESSON-DEPTH-01 — tetti di output e limite di costo', () => {
+  it('i tetti sono più larghi, ma restano sotto il limite per operazione', () => {
+    expect(LESSON_OUTPUT_TOKENS.synthetic).toBe(8_000);
+    expect(LESSON_OUTPUT_TOKENS.complete).toBe(14_000);
+    expect(LESSON_OUTPUT_TOKENS.in_depth).toBe(18_000);
+    // Il vincolo vero non è tecnico ma economico, e vale sulla prenotazione a
+    // due tentativi: superarlo non produrrebbe lezioni più lunghe, produrrebbe
+    // generazioni rifiutate dal controllo di budget.
+    for (const profile of ['economy', 'quality'] as const) {
+      const r = lessonReq({ depth: 'in_depth', modelProfile: profile, currentBody: '' });
+      const { model, priceListVersion } = resolveContentModel(r.modelProfile);
+      const est = estimateContentCost(r, model, priceListVersion, 2);
+      expect(est.reservationCostMicroUsd).toBeLessThanOrEqual(MAX_OPERATION_COST_MICRO_USD);
+    }
+  });
+
+  it('la profondità continua a ordinare i tetti', () => {
+    expect(LESSON_OUTPUT_TOKENS.synthetic).toBeLessThan(LESSON_OUTPUT_TOKENS.complete);
+    expect(LESSON_OUTPUT_TOKENS.complete).toBeLessThan(LESSON_OUTPUT_TOKENS.in_depth);
   });
 });

@@ -89,7 +89,7 @@ describe('LESSON-MANUAL-03 dataset e piano', () => {
     expect(plan.estimatedCostMicroUsd).toBeGreaterThan(0);
     expect(plan.costUpperBoundMicroUsd).toBeGreaterThanOrEqual(plan.estimatedCostMicroUsd);
     expect(plan.scenarios.map((scenario) => scenario.maxOutputTokens)).toEqual([
-      5_000, 9_000, 9_000, 9_000, 15_000, 15_000,
+      8_000, 14_000, 14_000, 14_000, 18_000, 18_000,
     ]);
   });
 });

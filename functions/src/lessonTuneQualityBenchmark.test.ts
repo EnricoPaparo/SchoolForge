@@ -95,12 +95,12 @@ describe('LESSON-TUNE-01 dataset e piano', () => {
     expect(qualityHoldout.priceListVersion).toBe('v5-2026-07-20-luna-dev');
     expect(qualityHoldout.plannedCalls).toBe(4);
     expect(qualityHoldout.maximumProviderAttempts).toBe(8);
-    expect(qualityHoldout.estimatedCostMicroUsd).toBe(328_037);
+    expect(qualityHoldout.estimatedCostMicroUsd).toBe(412_037);
     // STRUCTURE-IMPORT-03: il limite superiore è calcolato sui byte della
     // richiesta realmente trasmessa, e il preambolo di sicurezza della lezione
     // ora nomina anche CONTESTO_GENERALE_UDA. La stima resta invariata perché
     // gli scenari sono UDA legacy, prive dei tre campi nuovi.
-    expect(qualityHoldout.costUpperBoundMicroUsd).toBe(741_512);
+    expect(qualityHoldout.costUpperBoundMicroUsd).toBe(925_946);
     expect(qualityHoldout.scenarios.map((scenario) => scenario.id)).toEqual([
       'LM02-05',
       'LM02-06',

@@ -36,10 +36,29 @@ export const CLOSED_QUESTION_OUTPUT_TOKENS = 300;
  * lunghezza: il prompt non chiede mai di raggiungere questi valori. Alzati in
  * AIGEN-PROMPT-01 per non troncare lezioni didatticamente complete.
  */
+/**
+ * LESSON-DEPTH-01 — tetti rialzati.
+ *
+ * Non erano il collo di bottiglia: misurato, il modello si fermava intorno alla
+ * metà del budget concesso. Ma una volta che il prompt gli chiede davvero di
+ * approfondire — e soprattutto di approfondire *di più* quando i concetti chiave
+ * sono pochi — il tetto può diventare vincolante sul serio, e un troncamento a
+ * metà lezione è il peggior esito possibile.
+ *
+ * Il tetto non può sparire: `max_output_tokens` è ciò su cui si regge la
+ * prenotazione di budget prima della chiamata.
+ *
+ * E non può nemmeno crescere a piacere. Il limite reale non è tecnico ma
+ * economico: `MAX_OPERATION_COST_MICRO_USD` (0,25 USD) vale sulla prenotazione,
+ * che copre **due** tentativi. Con il listino `quality` questo colloca il
+ * massimo teorico di `in_depth` poco sotto i 19.000 token; 18.000 lascia il
+ * margine che serve a input più ricchi senza far rifiutare la generazione dal
+ * controllo di budget — un rifiuto sarebbe peggio di una lezione corta.
+ */
 export const LESSON_OUTPUT_TOKENS: Readonly<Record<LessonDepth, number>> = {
-  synthetic: 5_000,
-  complete: 9_000,
-  in_depth: 15_000,
+  synthetic: 8_000,
+  complete: 14_000,
+  in_depth: 18_000,
 };
 
 /**
