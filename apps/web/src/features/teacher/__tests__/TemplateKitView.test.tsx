@@ -66,6 +66,18 @@ describe('TemplateKitView', () => {
     );
   });
 
+  it('resta l’unico punto autorevole degli esempi, con Copia e Scarica intatti', () => {
+    // STRUCTURE-IMPORT-UI-PASTE-01 — i dialog di importazione hanno perso
+    // «Scarica modello YAML»: da qui in poi gli esempi si prendono solo di qui,
+    // quindi Copia e Scarica sono l'unico modo per ottenerli.
+    render(<TemplateKitView />);
+    for (const nome of ['Struttura UDA — YAML', 'Struttura lezioni — YAML']) {
+      expect(screen.getByRole('button', { name: `Copia ${nome}` })).toBeTruthy();
+      expect(screen.getByRole('button', { name: `Scarica ${nome}` })).toBeTruthy();
+    }
+    expect(screen.getByRole('button', { name: 'Scarica kit completo (ZIP)' })).toBeTruthy();
+  });
+
   it('shows the exact canonical YAML templates instead of duplicating example strings', () => {
     render(<TemplateKitView />);
     expect(screen.getByLabelText('Esempio Struttura UDA — YAML').textContent).toBe(

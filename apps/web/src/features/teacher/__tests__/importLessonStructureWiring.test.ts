@@ -43,7 +43,7 @@ describe('voce di menu', () => {
     // L'id viaggia nel dialog, e il dialog lo restituisce all'handler: non si
     // usa mai una selezione implicita che potrebbe essere cambiata nel mentre.
     expect(workspace).toContain("kind: 'importLessonStructure'; udaId: string");
-    expect(workspace).toContain('handleImportLessonStructure(wsDialog.udaId, bytes, filename)');
+    expect(workspace).toContain('handleImportLessonStructure(wsDialog.udaId, bytes)');
   });
 
   it('mostra al docente la UDA di destinazione', () => {

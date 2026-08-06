@@ -200,6 +200,32 @@
  * Stessa soluzione già usata da `.checklist`: l'elenco scorre dentro di sé, così
  * il footer del dialog resta raggiungibile anche con 40 UDA e su 320 px.
  */
+/*
+ * STRUCTURE-IMPORT-UI-PASTE-01 — area in cui il docente incolla lo YAML.
+ *
+ * Monospace perché lo YAML è indentazione: un font proporzionale nasconde
+ * esattamente l'errore più frequente. Scorre dentro di sé come il riepilogo, così
+ * un file lungo non spinge i comandi fuori dalla viewport, e su schermi bassi
+ * cede altezza per prima. `resize` non è dichiarato qui: la regola globale di
+ * `index.css` vale già per tutte le textarea ed è l'unica autorevole.
+ */
+.structureTextarea {
+  width: 100%;
+  min-height: 17rem;
+  max-height: 42vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  tab-size: 2;
+  /* `pre-wrap`, non `pre`: l'indentazione resta visibile ma le righe lunghe
+     vanno a capo invece di imporre uno scroll orizzontale a 320 px. */
+  white-space: pre-wrap;
+  font-weight: 400;
+  color: var(--color-text);
+}
+
 .structureSummary {
   margin: 0;
   padding-left: 1.25rem;
@@ -215,6 +241,11 @@
 @media (max-height: 45rem) {
   .structureSummary {
     max-height: 24vh;
+  }
+  /* L'area di incollaggio cede altezza insieme al riepilogo, mai i comandi. */
+  .structureTextarea {
+    min-height: 11rem;
+    max-height: 30vh;
   }
 }
 

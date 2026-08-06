@@ -1,31 +1,30 @@
 import { type FormEvent, useRef, useState } from 'react';
 import { DialogShell } from '../../components/DialogShell.js';
-import {
-  LESSON_METADATA_TEMPLATE,
-  LESSON_TEMPLATE_FILENAME,
-  validateLessonMetadataFile,
-} from '../repository/structureImport/index.js';
+import { validateLessonMetadataFile } from '../repository/structureImport/index.js';
 import type { NormalizedLessonMetadata } from '../repository/structureImport/index.js';
 import styles from './DidatticaView.module.css';
 
 /**
  * STRUCTURE-IMPORT-02B — «Importa lezioni».
  *
- * Aggiunge lezioni **vuote** alla UDA da cui il docente ha aperto il menu: il
- * file non contiene alcun riferimento alla destinazione, quindi la UDA è
+ * Aggiunge lezioni **vuote** alla UDA da cui il docente ha aperto il menu: la
+ * struttura non contiene alcun riferimento alla destinazione, quindi la UDA è
  * mostrata esplicitamente nel riepilogo — è l'unico modo che il docente ha per
  * accorgersi di aver aperto il menu sbagliato prima di confermare.
  *
- * Stesso linguaggio UX di «Importa struttura UDA»: lettura byte-first con
- * `file.arrayBuffer()` (mai `File.text()`, che riparerebbe i byte UTF-8 non
- * validi), validazione locale prima di qualunque operazione Firebase, download
- * del modello canonico interamente lato client.
+ * STRUCTURE-IMPORT-UI-PASTE-01 — stesso linguaggio UX di «Importa struttura
+ * UDA»: si incolla lo YAML, non si sceglie un file. Il testo incollato diventa
+ * byte UTF-8 con `TextEncoder` e passa dalla stessa API byte-first di
+ * STRUCTURE-IMPORT-01: limite sui byte, decodifica fatale, parser e validatori
+ * invariati. Nessun parser testuale parallelo, nessuna lettura di file.
+ *
+ * `variant="wide-scroll"`: lo YAML ha bisogno di larghezza, ed è la stessa
+ * variante già usata dai dialog di generazione IA — non una misura inventata qui.
  */
 
 type DialogState =
-  | { phase: 'select' }
-  | { phase: 'validating' }
-  | { phase: 'summary'; bytes: Uint8Array; filename: string; lessons: NormalizedLessonMetadata[] }
+  | { phase: 'input' }
+  | { phase: 'summary'; bytes: Uint8Array; lessons: NormalizedLessonMetadata[] }
   | { phase: 'done'; count: number };
 
 export function ImportLessonStructureDialog({
@@ -41,67 +40,56 @@ export function ImportLessonStructureDialog({
   error: string | null;
   onCancel: () => void;
   /** Risolve con il numero di lezioni aggiunte, o `null` se l'import non è stato applicato. */
-  onConfirm: (bytes: Uint8Array, filename: string) => Promise<number | null>;
+  onConfirm: (bytes: Uint8Array) => Promise<number | null>;
 }) {
-  const [state, setState] = useState<DialogState>({ phase: 'select' });
+  const [state, setState] = useState<DialogState>({ phase: 'input' });
+  const [yaml, setYaml] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
-  const runIdRef = useRef(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Guardia sincrona: `busy` è stato React asincrono e lascerebbe passare un
   // doppio click nello stesso tick.
   const inFlightRef = useRef(false);
 
-  async function handleFile(file: File | null): Promise<void> {
-    const runId = ++runIdRef.current;
+  /**
+   * Fase 1 → 2. Ordine vincolante: stringa → byte UTF-8 → limite sui byte →
+   * parser e validatori esistenti. Nessuna correzione, normalizzazione o
+   * riformattazione del testo prima della codifica.
+   */
+  function verify(): void {
     setLocalError(null);
-    setState({ phase: 'select' });
-    if (!file) return;
-    setState({ phase: 'validating' });
-    try {
-      const buffer = await file.arrayBuffer();
-      if (runId !== runIdRef.current) return;
-      const bytes = new Uint8Array(buffer);
-      const validation = validateLessonMetadataFile(bytes, { filename: file.name });
-      if (runId !== runIdRef.current) return;
-      if (!validation.ok) {
-        setLocalError(validation.error.message);
-        setState({ phase: 'select' });
-        return;
-      }
-      setState({ phase: 'summary', bytes, filename: file.name, lessons: validation.value });
-    } catch {
-      if (runId !== runIdRef.current) return;
-      setLocalError('Impossibile leggere il file selezionato. Riprova.');
-      setState({ phase: 'select' });
+    const bytes = new TextEncoder().encode(yaml);
+    const validation = validateLessonMetadataFile(bytes);
+    if (!validation.ok) {
+      setLocalError(validation.error.message);
+      textareaRef.current?.focus();
+      return;
     }
-  }
-
-  function downloadTemplate(): void {
-    const blob = new Blob([LESSON_METADATA_TEMPLATE], { type: 'text/yaml;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = LESSON_TEMPLATE_FILENAME;
-    link.click();
-    URL.revokeObjectURL(url);
+    setState({ phase: 'summary', bytes, lessons: validation.value });
   }
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
-    if (state.phase !== 'summary' || busy || inFlightRef.current) return;
+    if (busy || inFlightRef.current) return;
+    if (state.phase === 'input') {
+      verify();
+      return;
+    }
+    if (state.phase !== 'summary') return;
     inFlightRef.current = true;
     try {
-      const count = await onConfirm(state.bytes, state.filename);
-      // Su errore il riepilogo resta com'è: si riprova senza riscegliere il file.
+      const count = await onConfirm(state.bytes);
+      // Su errore il riepilogo resta com'è: si riprova senza reincollare.
       if (count !== null) setState({ phase: 'done', count });
     } finally {
       inFlightRef.current = false;
     }
   }
 
-  const canSubmit = state.phase === 'summary' && !busy;
+  const hasText = yaml.trim().length > 0;
+  const canSubmit = state.phase === 'input' ? hasText && !busy : state.phase === 'summary' && !busy;
 
   return (
-    <DialogShell title="Importa lezioni" onCancel={onCancel} busy={busy}>
+    <DialogShell title="Importa lezioni" onCancel={onCancel} busy={busy} variant="wide-scroll">
       <form onSubmit={(event) => void submit(event)} className={styles.dialogForm}>
         {state.phase === 'done' ? (
           <p className={styles.dialogMessage} role="status">
@@ -113,37 +101,45 @@ export function ImportLessonStructureDialog({
         ) : (
           <>
             <p className={styles.dialogHint}>
-              Aggiunge nuove lezioni <strong>vuote</strong> alla UDA «{udaTitle}» a partire da un
-              file YAML di soli metadati. Non importa e non genera il corpo delle lezioni, e non
-              crea domande o pool.
+              Aggiunge nuove lezioni <strong>vuote</strong> alla UDA «{udaTitle}» a partire da una
+              struttura YAML di soli metadati. Non importa e non genera il corpo delle lezioni, e
+              non crea domande o pool.
             </p>
 
-            <label className={styles.dialogLabel}>
-              File YAML delle lezioni
-              <input
-                type="file"
-                accept=".yaml,.yml"
-                autoFocus
-                aria-label="File YAML delle lezioni"
-                disabled={busy}
-                onChange={(event) => void handleFile(event.target.files?.[0] ?? null)}
-              />
-            </label>
+            {state.phase === 'input' && (
+              <label className={styles.dialogLabel} htmlFor="import-lesson-structure-yaml">
+                Struttura lezioni in YAML
+                <textarea
+                  id="import-lesson-structure-yaml"
+                  ref={textareaRef}
+                  className={styles.structureTextarea}
+                  rows={14}
+                  autoFocus
+                  spellCheck={false}
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  autoComplete="off"
+                  disabled={busy}
+                  aria-invalid={localError !== null}
+                  aria-describedby="import-lesson-structure-help"
+                  value={yaml}
+                  onChange={(event) => setYaml(event.target.value)}
+                />
+              </label>
+            )}
 
-            <p className={styles.dialogHint}>
-              <button type="button" onClick={downloadTemplate} disabled={busy}>
-                Scarica modello YAML
-              </button>
-            </p>
+            {state.phase === 'input' && (
+              <p id="import-lesson-structure-help" className={styles.dialogHint}>
+                Incolla qui la struttura YAML. Puoi copiare un esempio dalla sezione Template.
+              </p>
+            )}
 
             <p role="status" aria-live="polite" aria-busy={busy} className={styles.dialogHint}>
-              {state.phase === 'validating'
-                ? 'Controllo del file in corso…'
-                : busy
-                  ? 'Importazione in corso… Non chiudere questa finestra.'
-                  : state.phase === 'summary'
-                    ? `${state.lessons.length} lezioni verranno aggiunte in coda a quelle della UDA «${udaTitle}».`
-                    : ''}
+              {busy
+                ? 'Importazione in corso… Non chiudere questa finestra.'
+                : state.phase === 'summary'
+                  ? `${state.lessons.length} lezioni verranno aggiunte in coda a quelle della UDA «${udaTitle}».`
+                  : ''}
             </p>
 
             {state.phase === 'summary' && (
@@ -184,7 +180,11 @@ export function ImportLessonStructureDialog({
           </button>
           {state.phase !== 'done' && (
             <button type="submit" className="btn-primary" disabled={!canSubmit}>
-              {busy ? 'Importazione…' : 'Importa lezioni'}
+              {state.phase === 'input'
+                ? 'Verifica struttura'
+                : busy
+                  ? 'Importazione…'
+                  : 'Importa lezioni'}
             </button>
           )}
         </div>
