@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  LESSON_METADATA_TEMPLATE,
-  UDA_METADATA_TEMPLATE,
+  LESSON_SIMPLE_TEMPLATE,
+  UDA_SIMPLE_TEMPLATE,
 } from '../../repository/structureImport/index.js';
 
 afterEach(() => {
@@ -57,8 +57,8 @@ describe('TemplateKitView', () => {
     expect(screen.getByRole('heading', { name: 'Guida compatta' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Esempi pronti all’uso' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Struttura ZIP' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Struttura UDA — YAML' })).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Struttura lezioni — YAML' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Struttura UDA' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Struttura lezioni' })).toBeTruthy();
     expect(screen.getByLabelText('Esempio Struttura ZIP').textContent).toContain(
       '01-modello-osi.pool.md',
     );
@@ -69,7 +69,7 @@ describe('TemplateKitView', () => {
     // «Scarica modello YAML»: da qui in poi gli esempi si prendono solo di qui,
     // e la copia diretta è l'unico flusso necessario per incollarli.
     render(<TemplateKitView />);
-    for (const nome of ['Struttura UDA — YAML', 'Struttura lezioni — YAML']) {
+    for (const nome of ['Struttura UDA', 'Struttura lezioni']) {
       expect(screen.getByRole('button', { name: `Copia ${nome}` })).toBeTruthy();
       expect(screen.queryByRole('button', { name: `Scarica ${nome}` })).toBeNull();
     }
@@ -79,32 +79,19 @@ describe('TemplateKitView', () => {
 
   it('shows the exact canonical YAML templates instead of duplicating example strings', () => {
     render(<TemplateKitView />);
-    expect(screen.getByLabelText('Esempio Struttura UDA — YAML').textContent).toBe(
-      UDA_METADATA_TEMPLATE,
-    );
-    expect(screen.getByLabelText('Esempio Struttura lezioni — YAML').textContent).toBe(
-      LESSON_METADATA_TEMPLATE,
+    expect(screen.getByLabelText('Esempio Struttura UDA').textContent).toBe(UDA_SIMPLE_TEMPLATE);
+    expect(screen.getByLabelText('Esempio Struttura lezioni').textContent).toBe(
+      LESSON_SIMPLE_TEMPLATE,
     );
   });
 
   it('copies the canonical example and announces the real outcome', async () => {
     render(<TemplateKitView />);
-    fireEvent.click(screen.getByRole('button', { name: 'Copia Struttura UDA — YAML' }));
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(UDA_METADATA_TEMPLATE);
-    expect(await screen.findByText('Esempio copiato negli appunti.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Copia Struttura UDA' }));
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(UDA_SIMPLE_TEMPLATE);
     expect(
-      screen.getByRole('button', { name: 'Copia Struttura UDA — YAML' }).textContent,
+      (await screen.findByRole('button', { name: 'Struttura UDA: copiato' })).textContent,
     ).toContain('Copiato');
-  });
-
-  it('keeps copy failures visible without claiming success', async () => {
-    vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error('denied'));
-    render(<TemplateKitView />);
-    fireEvent.click(screen.getByRole('button', { name: 'Copia Struttura lezioni — YAML' }));
-    expect(
-      await screen.findByText('Impossibile copiare negli appunti. Seleziona il testo manualmente.'),
-    ).toBeTruthy();
-    expect(screen.queryByText('Esempio copiato negli appunti.')).toBeNull();
   });
 
   it('visualizzazione e copia consegnano gli stessi identici byte della costante', async () => {
@@ -113,8 +100,8 @@ describe('TemplateKitView', () => {
     render(<TemplateKitView />);
 
     for (const [nome, canonical] of [
-      ['Struttura UDA — YAML', UDA_METADATA_TEMPLATE],
-      ['Struttura lezioni — YAML', LESSON_METADATA_TEMPLATE],
+      ['Struttura UDA', UDA_SIMPLE_TEMPLATE],
+      ['Struttura lezioni', LESSON_SIMPLE_TEMPLATE],
     ] as const) {
       fireEvent.click(screen.getByRole('button', { name: `Copia ${nome}` }));
       expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith(canonical);

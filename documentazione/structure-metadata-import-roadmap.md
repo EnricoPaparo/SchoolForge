@@ -1,7 +1,7 @@
 # STRUCTURE-IMPORT — Importazione di UDA e lezioni senza contenuto
 
-> **Stato:** contratto congelato; **STRUCTURE-IMPORT-01, 02A, 02B e 03
-> implementati**. Sono reali sia `Azioni corso → Importa struttura UDA` sia
+> **Stato:** contratto congelato; **STRUCTURE-IMPORT-01, 02A, 02B, 03 e
+> SIMPLE-01 implementati**. Sono reali sia `Azioni corso → Importa struttura UDA` sia
 > `Azioni UDA → Importa lezioni`, e la generazione lezione riceve il contesto
 > generale dell'UDA. **Il Gate GSTRUCT resta aperto.** Questo documento non
 > autorizza merge, deploy o migrazioni.
@@ -743,3 +743,93 @@ Chromium a 1440, 1024, 820, 390 e 320 px.
 
 Parser, validatori, planner e runtime non sono stati toccati: sono i modelli a
 rispettare il contratto esistente.
+
+### 14.15 STRUCTURE-IMPORT-SIMPLE-01 — un formato che si scrive senza istruzioni
+
+**Il problema.** Lo YAML chiede al docente di essere preciso su cose che non
+hanno alcun significato didattico: quanti spazi di rientro, quale carattere per
+l'elenco, se il valore va fra virgolette, se serve `schema:`. Chi incolla da un
+documento, da una chat o da una risposta AI arriva quasi sempre con una di
+quelle differenze — e si vede rifiutare un contenuto perfettamente sensato con un
+messaggio che parla di sintassi.
+
+**Il formato semplice.** Etichette in italiano e trattini, nient'altro:
+
+```text
+UDA: Titolo della prima UDA
+Descrizione: Breve descrizione della prima UDA
+Competenze:
+- Prima competenza sviluppata dalla UDA
+Obiettivi:
+- Primo obiettivo didattico della UDA
+```
+
+Nessuno `schema:`, nessun rientro, nessuna riga vuota, nessun commento. Una nuova
+`UDA:` (o `LEZIONE:`) chiude da sola la voce precedente: non esistono separatori
+obbligatori.
+
+**Tollerante sulla forma, rigido sul contenuto.** È la regola che governa tutto.
+Vengono assorbiti — perché non cambiano ciò che il docente ha scritto — rientri
+con spazi o tab, righe vuote, CRLF/LF/CR, BOM, separatori `---`, etichette in
+qualunque combinazione di maiuscole, `Difficoltà`/`Difficolta`,
+`Obiettivi`/`Obbiettivi`, spazi attorno ai due punti, i simboli `-`, `*`, `•`,
+`·`, `–`, `—`, gli elenchi numerati `1.`/`1)`, le voci senza simbolo dentro una
+sezione già aperta, le virgolette esterne (dritte, curve, caporali) e un blocco
+di codice Markdown che avvolga tutto.
+
+Gli apostrofi seguono una regola propria, ed è una regola italiana: `'900`,
+`’800`, `'60` sono elisioni di secolo o decennio, non virgolette aperte. Un
+apostrofo iniziale toglie una coppia **solo** se il valore finisce con lo stesso
+carattere; altrimenti resta testo. Il costo di sbagliare è asimmetrico —
+rifiutare «'900 e società di massa» come virgoletta non chiusa respingerebbe un
+titolo sensato senza che il docente possa capire cosa correggere, mentre leggere
+`'Titolo'` come testo lascia due apostrofi visibili e correggibili. Le virgolette
+vere (`"`, `“`, `‘`, `«`) restano invece strette: nessuna parola italiana comincia
+così, quindi una apertura senza chiusura significa testo troncato. Restano invece errori una riga prima della
+prima voce, un titolo o una difficoltà mancanti, un elenco obbligatorio assente o
+vuoto, un campo o una sezione ripetuti, un'etichetta sconosciuta, una voce vuota,
+virgolette aperte e non chiuse, un fence malformato, un titolo duplicato, i
+limiti superati e ogni riga non collocabile. Nulla viene ignorato e nessun valore
+viene inventato.
+
+Due decisioni meritano di essere esplicite. Una riga che comincia con un simbolo
+di elenco è **sempre** una voce, anche quando contiene i due punti — altrimenti
+«- Obiettivo: capire le reti» diventerebbe un campo sconosciuto. E una riga senza
+simbolo che somiglia a un'etichetta sbagliata fallisce con il suggerimento:
+«Riga 8: campo «Obietivi» non riconosciuto. Forse intendevi «Obiettivi»?».
+
+**Una sola porta.** `parse{Uda,Lesson}StructureInput` è l'unico ingresso: limite
+sui byte, decodifica UTF-8 fatale, rimozione del BOM, prima riga significativa →
+formato. `schema:` va allo YAML storico, `UDA:` e `LEZIONE:` ai due parser
+semplici, tutto il resto è `unknown_format`. Non esiste alcun fallback «prova
+l'uno, poi prova l'altro»: trasformerebbe l'errore di un formato nell'errore
+dell'altro, e il docente si vedrebbe spiegare il problema sbagliato. Una
+struttura di lezioni aperta dalla finestra UDA — o viceversa — produce
+`wrong_structure_kind`, con l'indicazione della finestra giusta.
+
+**Il contratto didattico non è duplicato.** Il parser semplice produce voci nella
+stessa forma che il parser YAML consegna ai normalizzatori condivisi
+(`normalizeUdaEntries`, `normalizeLessonEntries`): da lì in poi limiti, messaggi,
+DTO, serializzazione canonica, `sourceHash`, `manifestHash`, planner, lease,
+commit e cleanup sono gli stessi. Il percorso YAML è invariato, byte per byte.
+
+**Identità.** Rientri, righe vuote, simboli di elenco e virgolette esterne non
+entrano nell'identità del tentativo: trentaquattro grafie diverse dello stesso
+contenuto producono un solo DTO e un solo `sourceHash`. Anche lo stesso contenuto
+scritto in YAML e in formato semplice è lo stesso tentativo — chi cambia sintassi
+senza cambiare una parola non crea un secondo import.
+
+**Nelle due finestre.** Nessun selettore di formato, nessuna modalità avanzata,
+nessuna conversione, nessun passaggio in più: la finestra non sa quale sintassi
+ha davanti. Il flusso resta incolla → «Verifica struttura» → riepilogo → conferma
+→ runtime esistente.
+
+**Sezione Template.** Mostra e copia soltanto i modelli semplici; i modelli YAML
+restano esportati come compatibilità, non più come didattica. L'esito della copia
+vive nel pulsante della card — `Copia`, `Copiato`, `Riprova` — e il messaggio
+globale sotto la griglia è stato rimosso insieme al contenitore che gli riservava
+una riga: misurato in Chromium a 1440, 1024, 390 e 320 px, dimensione del
+pulsante e altezza della pagina restano identiche fra i tre stati.
+
+**Costi.** Invariati: parsing e riconoscimento sono interamente client-side, e
+nulla cambia in letture, scritture, upload o callable.

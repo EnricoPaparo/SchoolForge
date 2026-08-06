@@ -1,7 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ImportUdaStructureDialog } from '../ImportUdaStructureDialog.js';
-import { UDA_METADATA_TEMPLATE } from '../../repository/structureImport/index.js';
+import {
+  UDA_METADATA_TEMPLATE,
+  UDA_SIMPLE_TEMPLATE,
+} from '../../repository/structureImport/index.js';
 
 /**
  * STRUCTURE-IMPORT-02A + STRUCTURE-IMPORT-UI-PASTE-01 — il dialog «Importa
@@ -50,7 +53,7 @@ function renderDialog(overrides: Partial<Parameters<typeof ImportUdaStructureDia
 }
 
 const area = (): HTMLTextAreaElement =>
-  screen.getByLabelText('Struttura UDA in YAML') as HTMLTextAreaElement;
+  screen.getByLabelText('Struttura delle UDA') as HTMLTextAreaElement;
 
 const verifyButton = (): HTMLButtonElement =>
   screen.getByRole('button', { name: 'Verifica struttura' }) as HTMLButtonElement;
@@ -72,11 +75,7 @@ describe('anatomia della finestra', () => {
     expect(textarea.tagName).toBe('TEXTAREA');
     expect(textarea.value).toBe('');
     expect(Number(textarea.getAttribute('rows'))).toBeGreaterThanOrEqual(12);
-    expect(
-      screen.getByText(
-        'Incolla qui la struttura YAML. Puoi copiare un esempio dalla sezione Template.',
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText(/Incolla la struttura copiata dalla sezione Template/)).toBeTruthy();
     // Il testo di supporto è associato al controllo, non solo vicino.
     expect(textarea.getAttribute('aria-describedby')).toBe('import-uda-structure-help');
     expect(dialog.querySelectorAll('textarea')).toHaveLength(1);
@@ -179,13 +178,35 @@ udas:
     expect(await screen.findByRole('alert')).toBeTruthy();
   });
 
-  it('il modello canonico della sezione Template completa il round-trip', async () => {
+  it('il modello della sezione Template completa il round-trip', async () => {
+    renderDialog();
+    paste(UDA_SIMPLE_TEMPLATE);
+    verify();
+    // Il modello è pensato per essere copiato e incollato così com'è.
+    expect(await screen.findByText(/2 UDA verranno aggiunte/)).toBeTruthy();
+    expect(screen.getByText('Titolo della prima UDA')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('lo YAML resta importabile, senza selettori né passaggi in più', async () => {
+    // STRUCTURE-IMPORT-SIMPLE-01 — compatibilità: chi ha già uno YAML non deve
+    // convertirlo, e la finestra non gli chiede di dichiarare cosa sta incollando.
     renderDialog();
     paste(UDA_METADATA_TEMPLATE);
     verify();
-    // Il modello è pensato per essere copiato e incollato così com'è.
-    expect(await screen.findByText(/UDA verranno aggiunte/)).toBeTruthy();
+    expect(await screen.findByText(/2 UDA verranno aggiunte/)).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('radio')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+
+  it('una struttura di lezioni viene indirizzata alla finestra giusta', async () => {
+    const { onConfirm } = renderDialog();
+    paste('LEZIONE: Prima lezione\nDifficoltà: base\nConcetti chiave:\n- Uno\nObiettivi:\n- Uno\n');
+    verify();
+    expect((await screen.findByRole('alert')).textContent ?? '').toContain('Importa lezioni');
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 });
 

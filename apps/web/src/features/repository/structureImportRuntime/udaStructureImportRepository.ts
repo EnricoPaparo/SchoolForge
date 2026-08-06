@@ -1,4 +1,4 @@
-import { planUdaMetadataAppend, validateUdaMetadataFile } from '../structureImport/index.js';
+import { planUdaMetadataAppend, parseUdaStructureInput } from '../structureImport/index.js';
 import { runStructureAppend } from './structureAppendProtocol.js';
 import { canonicalizeSource } from './structureSourceCanonical.js';
 import type { AttemptClassification, SourceProbe } from './attemptState.js';
@@ -232,7 +232,7 @@ export async function importUdaStructure(
   deps: UdaStructureImportDeps,
 ): Promise<UdaStructureImportResult> {
   // 1. Local, byte-first validation. Zero Firebase operations so far.
-  const validation = validateUdaMetadataFile(input.bytes, {
+  const validation = parseUdaStructureInput(input.bytes, {
     ...(input.filename === undefined ? {} : { filename: input.filename }),
   });
   if (!validation.ok) return { status: 'validation_failed', error: validation.error };

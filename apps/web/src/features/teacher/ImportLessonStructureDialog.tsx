@@ -1,6 +1,6 @@
 import { type FormEvent, useRef, useState } from 'react';
 import { DialogShell } from '../../components/DialogShell.js';
-import { validateLessonMetadataFile } from '../repository/structureImport/index.js';
+import { parseLessonStructureInput } from '../repository/structureImport/index.js';
 import type { NormalizedLessonMetadata } from '../repository/structureImport/index.js';
 import styles from './DidatticaView.module.css';
 
@@ -13,12 +13,15 @@ import styles from './DidatticaView.module.css';
  * accorgersi di aver aperto il menu sbagliato prima di confermare.
  *
  * STRUCTURE-IMPORT-UI-PASTE-01 — stesso linguaggio UX di «Importa struttura
- * UDA»: si incolla lo YAML, non si sceglie un file. Il testo incollato diventa
- * byte UTF-8 con `TextEncoder` e passa dalla stessa API byte-first di
- * STRUCTURE-IMPORT-01: limite sui byte, decodifica fatale, parser e validatori
- * invariati. Nessun parser testuale parallelo, nessuna lettura di file.
+ * UDA»: si incolla la struttura, non si sceglie un file. Il testo diventa byte
+ * UTF-8 con `TextEncoder` e passa dall'unica porta byte-first
+ * (`parseLessonStructureInput`): limite sui byte, decodifica fatale,
+ * riconoscimento della sintassi, validatori invariati.
  *
- * `variant="wide-scroll"`: lo YAML ha bisogno di larghezza, ed è la stessa
+ * STRUCTURE-IMPORT-SIMPLE-01 — nessun selettore di formato e nessun passaggio
+ * in più: la finestra non distingue formato semplice e YAML.
+ *
+ * `variant="wide-scroll"`: la struttura ha bisogno di larghezza, ed è la stessa
  * variante già usata dai dialog di generazione IA — non una misura inventata qui.
  */
 
@@ -58,7 +61,7 @@ export function ImportLessonStructureDialog({
   function verify(): void {
     setLocalError(null);
     const bytes = new TextEncoder().encode(yaml);
-    const validation = validateLessonMetadataFile(bytes);
+    const validation = parseLessonStructureInput(bytes);
     if (!validation.ok) {
       setLocalError(validation.error.message);
       textareaRef.current?.focus();
@@ -102,13 +105,13 @@ export function ImportLessonStructureDialog({
           <>
             <p className={styles.dialogHint}>
               Aggiunge nuove lezioni <strong>vuote</strong> alla UDA «{udaTitle}» a partire da una
-              struttura YAML di soli metadati. Non importa e non genera il corpo delle lezioni, e
-              non crea domande o pool.
+              struttura di soli metadati. Non importa e non genera il corpo delle lezioni, e non
+              crea domande o pool.
             </p>
 
             {state.phase === 'input' && (
               <label className={styles.dialogLabel} htmlFor="import-lesson-structure-yaml">
-                Struttura lezioni in YAML
+                Struttura delle lezioni
                 <textarea
                   id="import-lesson-structure-yaml"
                   ref={textareaRef}
@@ -130,7 +133,8 @@ export function ImportLessonStructureDialog({
 
             {state.phase === 'input' && (
               <p id="import-lesson-structure-help" className={styles.dialogHint}>
-                Incolla qui la struttura YAML. Puoi copiare un esempio dalla sezione Template.
+                Incolla la struttura copiata dalla sezione Template. Spazi, righe vuote e simboli
+                degli elenchi vengono riconosciuti automaticamente.
               </p>
             )}
 

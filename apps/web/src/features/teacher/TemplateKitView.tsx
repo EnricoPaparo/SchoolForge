@@ -1,8 +1,13 @@
-import { useState } from 'react';
-import { IconCopy, IconDownload } from '../../components/icons.js';
+import { useEffect, useRef, useState } from 'react';
 import {
-  LESSON_METADATA_TEMPLATE,
-  UDA_METADATA_TEMPLATE,
+  IconCircleCheck,
+  IconCopy,
+  IconDownload,
+  IconTriangleAlert,
+} from '../../components/icons.js';
+import {
+  LESSON_SIMPLE_TEMPLATE,
+  UDA_SIMPLE_TEMPLATE,
 } from '../repository/structureImport/index.js';
 import { downloadKitZip, downloadTemplate, TEMPLATES } from './templateKit.js';
 import styles from './TemplateKitView.module.css';
@@ -35,23 +40,46 @@ const EXAMPLES = [
   },
   {
     id: 'uda',
-    title: 'Struttura UDA — YAML',
+    title: 'Struttura UDA',
     description: 'Metadati di più UDA da aggiungere in coda a un corso.',
-    content: UDA_METADATA_TEMPLATE,
+    content: UDA_SIMPLE_TEMPLATE,
   },
   {
     id: 'lesson',
-    title: 'Struttura lezioni — YAML',
+    title: 'Struttura lezioni',
     description: 'Metadati di più lezioni vuote da aggiungere a una UDA.',
-    content: LESSON_METADATA_TEMPLATE,
+    content: LESSON_SIMPLE_TEMPLATE,
   },
 ] as const;
+
+/**
+ * Esito della copia, sempre riferito a **una sola** card. L'esito vive nel
+ * pulsante che il docente ha premuto: un messaggio in fondo alla pagina
+ * costringeva a cercare altrove la conferma di un gesto fatto qui, e comparendo
+ * spostava il contenuto sotto la griglia.
+ */
+type CopyOutcome = { id: string; status: 'copied' | 'error' };
+
+/** Quanto resta visibile la conferma prima di tornare a «Copia». */
+const COPY_FEEDBACK_MS = 2_000;
 
 export function TemplateKitView() {
   const [zipping, setZipping] = useState(false);
   const [zipError, setZipError] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [copyError, setCopyError] = useState(false);
+  const [copyOutcome, setCopyOutcome] = useState<CopyOutcome | null>(null);
+  const [announcement, setAnnouncement] = useState('');
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // La clipboard è asincrona: senza questa guardia una risposta tardiva
+  // aggiornerebbe lo stato di un componente già smontato.
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current);
+    };
+  }, []);
 
   async function handleDownloadZip() {
     setZipping(true);
@@ -65,14 +93,30 @@ export function TemplateKitView() {
     }
   }
 
-  async function handleCopy(id: string, content: string): Promise<void> {
-    setCopyError(false);
+  async function handleCopy(id: string, title: string, content: string): Promise<void> {
+    // Un secondo click riparte da capo: nessun esito residuo di un tentativo
+    // precedente può sovrapporsi a quello nuovo.
+    if (resetTimerRef.current !== null) clearTimeout(resetTimerRef.current);
+    setCopyOutcome(null);
+    setAnnouncement('');
     try {
       await navigator.clipboard.writeText(content);
-      setCopiedId(id);
+      if (!mountedRef.current) return;
+      setCopyOutcome({ id, status: 'copied' });
+      setAnnouncement(`${title}: esempio copiato negli appunti.`);
+      resetTimerRef.current = setTimeout(() => {
+        if (!mountedRef.current) return;
+        setCopyOutcome(null);
+        setAnnouncement('');
+      }, COPY_FEEDBACK_MS);
     } catch {
-      setCopiedId(null);
-      setCopyError(true);
+      // Un fallimento non dichiara mai successo, e resta finché il docente non
+      // riprova: è lui a dover decidere cosa fare, non un timer.
+      if (!mountedRef.current) return;
+      setCopyOutcome({ id, status: 'error' });
+      setAnnouncement(
+        `${title}: impossibile copiare negli appunti. Seleziona il testo manualmente.`,
+      );
     }
   }
 
@@ -133,12 +177,17 @@ export function TemplateKitView() {
           <li>Usa il kit ZIP per importare un programma completo di contenuti e pool.</li>
           <li>Usa il modello UDA per aggiungere in blocco i metadati delle UDA a un corso.</li>
           <li>Usa il modello lezioni dentro l’UDA a cui vuoi aggiungere le lezioni vuote.</li>
-          <li>Copia l’esempio, poi compilalo senza cambiare lo schema.</li>
+          <li>Copia l’esempio, poi sostituisci i valori mantenendo le etichette.</li>
         </ol>
       </div>
 
       <div className={styles.contentSection}>
         <h2 className={styles.sectionTitle}>Esempi pronti all’uso</h2>
+        {/* L'esito è annunciato qui e mostrato nel pulsante: questa regione non
+            occupa spazio e non può spostare nulla. */}
+        <span className={styles.srOnly} role="status" aria-live="polite">
+          {announcement}
+        </span>
         <div className={styles.examplesGrid}>
           {EXAMPLES.map((example) => (
             <article key={example.id} className={styles.exampleCard}>
@@ -148,16 +197,38 @@ export function TemplateKitView() {
                   <p>{example.description}</p>
                 </div>
                 <div className={styles.exampleActions}>
-                  <button
-                    type="button"
-                    className={styles.exampleAction}
-                    onClick={() => void handleCopy(example.id, example.content)}
-                    aria-label={`Copia ${example.title}`}
-                    title={`Copia ${example.title}`}
-                  >
-                    <IconCopy size={16} />
-                    <span>{copiedId === example.id ? 'Copiato' : 'Copia'}</span>
-                  </button>
+                  {(() => {
+                    const outcome = copyOutcome?.id === example.id ? copyOutcome.status : undefined;
+                    const label =
+                      outcome === 'copied' ? 'Copiato' : outcome === 'error' ? 'Riprova' : 'Copia';
+                    const accessible =
+                      outcome === 'copied'
+                        ? `${example.title}: copiato`
+                        : outcome === 'error'
+                          ? `Riprova a copiare ${example.title}`
+                          : `Copia ${example.title}`;
+                    return (
+                      <button
+                        type="button"
+                        className={styles.exampleAction}
+                        data-state={outcome ?? 'idle'}
+                        onClick={() => void handleCopy(example.id, example.title, example.content)}
+                        aria-label={accessible}
+                        title={accessible}
+                      >
+                        {outcome === 'copied' ? (
+                          <IconCircleCheck size={16} />
+                        ) : outcome === 'error' ? (
+                          <IconTriangleAlert size={16} />
+                        ) : (
+                          <IconCopy size={16} />
+                        )}
+                        {/* Larghezza riservata alla parola più lunga: i tre stati
+                            non cambiano la dimensione del pulsante. */}
+                        <span className={styles.exampleActionLabel}>{label}</span>
+                      </button>
+                    );
+                  })()}
                 </div>
               </header>
               <pre className={styles.exampleCode} aria-label={`Esempio ${example.title}`}>
@@ -166,13 +237,6 @@ export function TemplateKitView() {
             </article>
           ))}
         </div>
-        <p className={styles.copyStatus} role="status" aria-live="polite">
-          {copyError
-            ? 'Impossibile copiare negli appunti. Seleziona il testo manualmente.'
-            : copiedId
-              ? 'Esempio copiato negli appunti.'
-              : ''}
-        </p>
       </div>
     </section>
   );

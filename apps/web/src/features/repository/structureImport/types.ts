@@ -29,6 +29,15 @@ export type StructureImportErrorCode =
   | 'invalid_root'
   | 'missing_schema'
   | 'unknown_schema'
+  // Formato semplice (STRUCTURE-IMPORT-SIMPLE-01)
+  | 'unknown_format'
+  | 'wrong_structure_kind'
+  | 'malformed_fence'
+  | 'orphan_line'
+  | 'ambiguous_line'
+  | 'unknown_label'
+  | 'duplicate_section'
+  | 'unbalanced_quotes'
   // Structure-level (validators)
   | 'unknown_property'
   | 'forbidden_property'
@@ -58,6 +67,13 @@ export interface StructureImportError {
   index?: number;
   /** Logical field or path (e.g. `competenze`, `obiettivi[2]`), when applicable. */
   field?: string;
+  /**
+   * Riga **1-based del testo incollato dal docente**, quando l'errore nasce da
+   * una riga precisa. Il formato semplice si legge riga per riga, quindi «riga
+   * 8» è l'informazione che permette davvero di correggere; per lo YAML resta
+   * assente, come prima.
+   */
+  line?: number;
 }
 
 export type StructureImportResult<T> =

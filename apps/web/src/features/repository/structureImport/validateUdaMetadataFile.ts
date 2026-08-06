@@ -97,9 +97,26 @@ export function validateUdaMetadataFileText(
   });
   if (!envelope.ok) return envelope;
 
+  return normalizeUdaEntries(envelope.value, options);
+}
+
+/**
+ * Normalizzazione voce per voce, condivisa fra il formato YAML e il formato
+ * semplice di STRUCTURE-IMPORT-SIMPLE-01.
+ *
+ * Esiste perché il contratto didattico — chiavi ammesse, obbligatorietà, limiti,
+ * messaggi, collisioni di titolo — deve avere **una sola** implementazione: due
+ * sintassi di ingresso, la stessa verità sul contenuto. Il parser semplice
+ * costruisce voci nella stessa forma che il parser YAML produce e le consegna
+ * qui, quindi non può divergere.
+ */
+export function normalizeUdaEntries(
+  entries: readonly Record<string, unknown>[],
+  options: ValidateUdaMetadataOptions = {},
+): StructureImportResult<NormalizedUdaMetadata[]> {
   const udas: NormalizedUdaMetadata[] = [];
 
-  for (const [index, entry] of envelope.value.entries()) {
+  for (const [index, entry] of entries.entries()) {
     const closed = assertClosedKeySet(entry, UDA_ENTRY_KEYS, UDA_FORBIDDEN_KEYS, {
       fileKind: 'uda',
       index,
