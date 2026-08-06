@@ -2127,12 +2127,13 @@ export function CourseWorkspace({
                 udaTitle: tree?.udas.find((u) => u.dir === selectedLesson.udaDir)?.titolo ?? null,
                 concettiChiave: lessonMetadata.concettiChiave,
                 obiettivi: lessonMetadata.obiettivi,
-                // AIGEN-CONTEXT-01: indice UDA dallo stesso albero già caricato
+                // AIGEN-CONTEXT-01 + STRUCTURE-IMPORT-03: indice e contesto
+                // generale dell'UDA dallo stesso albero già caricato
                 // (`tree.lessons` è già in ordine canonico): zero nuove letture.
                 udaContext: buildLessonUdaContext({
                   lessons: tree?.lessons ?? [],
                   udaDir: selectedLesson.udaDir,
-                  udaTitle: tree?.udas.find((u) => u.dir === selectedLesson.udaDir)?.titolo ?? null,
+                  uda: tree?.udas.find((u) => u.dir === selectedLesson.udaDir) ?? null,
                   currentLessonId: selectedLesson.id,
                 }),
               }}

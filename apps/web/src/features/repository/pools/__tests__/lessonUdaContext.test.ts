@@ -18,7 +18,7 @@ function build(over: Partial<Parameters<typeof buildLessonUdaContext>[0]> = {}) 
   return buildLessonUdaContext({
     lessons: TREE,
     udaDir: 'uda-01',
-    udaTitle: 'UDA 1',
+    uda: { titolo: 'UDA 1' },
     currentLessonId: 'l2',
     ...over,
   });
@@ -56,7 +56,7 @@ describe('buildLessonUdaContext', () => {
     const ctx = buildLessonUdaContext({
       lessons: reordered,
       udaDir: 'uda-01',
-      udaTitle: 'UDA 1',
+      uda: { titolo: 'UDA 1' },
       currentLessonId: 'l1',
     });
     expect(ctx!.lessons.map((l) => l.titolo)).toEqual(['Il routing', 'Introduzione', 'Le reti']);
@@ -88,8 +88,9 @@ describe('buildLessonUdaContext', () => {
 
   it('fails closed instead of inventing an outline', () => {
     // UDA senza titolo.
-    expect(build({ udaTitle: null })).toBeNull();
-    expect(build({ udaTitle: '   ' })).toBeNull();
+    expect(build({ uda: { titolo: null } })).toBeNull();
+    expect(build({ uda: { titolo: '   ' } })).toBeNull();
+    expect(build({ uda: null })).toBeNull();
     // Nessuna lezione nella UDA.
     expect(build({ udaDir: 'uda-99' })).toBeNull();
     expect(build({ lessons: [] })).toBeNull();
@@ -104,5 +105,70 @@ describe('buildLessonUdaContext', () => {
         ],
       }),
     ).toBeNull();
+  });
+});
+
+/**
+ * STRUCTURE-IMPORT-03 — contesto generale dell'UDA.
+ *
+ * I tre campi arrivano dalla **stessa** UDA già in memoria e vivono nello stesso
+ * oggetto dell'indice: nessun secondo oggetto parallelo, nessuna lettura
+ * aggiuntiva. Questo file è per costruzione la prova che non ci sono letture:
+ * il builder è puro e non riceve nemmeno un handle Firestore.
+ */
+describe('contesto generale dell’UDA', () => {
+  it('trasporta descrizione, competenze e obiettivi dell’UDA in memoria', () => {
+    const ctx = build({
+      uda: {
+        titolo: 'UDA 1',
+        descrizione: '  Le reti locali e il loro funzionamento.  ',
+        competenze: ['  Progettare una LAN  ', 'Configurare indirizzi'],
+        obiettivi: ['Riconoscere i livelli', '  Usare il modello ISO/OSI'],
+      },
+    });
+    expect(ctx!.descrizione).toBe('Le reti locali e il loro funzionamento.');
+    expect(ctx!.competenze).toEqual(['Progettare una LAN', 'Configurare indirizzi']);
+    expect(ctx!.obiettivi).toEqual(['Riconoscere i livelli', 'Usare il modello ISO/OSI']);
+  });
+
+  it('legacy: descrizione assente ⇒ null, liste assenti ⇒ vuote', () => {
+    for (const uda of [
+      { titolo: 'UDA 1' },
+      { titolo: 'UDA 1', descrizione: null, competenze: null, obiettivi: null },
+      { titolo: 'UDA 1', descrizione: '   ', competenze: [], obiettivi: [] },
+    ]) {
+      const ctx = build({ uda });
+      expect(ctx!.descrizione).toBeNull();
+      expect(ctx!.competenze).toEqual([]);
+      expect(ctx!.obiettivi).toEqual([]);
+    }
+  });
+
+  it('valore presente ma malformato: fail-closed, nessun valore inventato', () => {
+    const malformed = [
+      { titolo: 'UDA 1', descrizione: 42 as unknown as string },
+      { titolo: 'UDA 1', competenze: 'una sola' as unknown as string[] },
+      { titolo: 'UDA 1', competenze: [1, 2] as unknown as string[] },
+      { titolo: 'UDA 1', obiettivi: { a: 1 } as unknown as string[] },
+      { titolo: 'UDA 1', obiettivi: ['ok', null] as unknown as string[] },
+    ];
+    for (const uda of malformed) {
+      expect(build({ uda })).toBeNull();
+    }
+  });
+
+  it('non attinge mai dal corpo Markdown né da altre fonti', () => {
+    // Il builder riceve solo l'UDA e le lezioni: non esiste un parametro da cui
+    // possa derivare una descrizione dal contenuto.
+    const ctx = build({ uda: { titolo: 'UDA 1' } });
+    expect(ctx!.descrizione).toBeNull();
+    expect(Object.keys(ctx!).sort()).toEqual([
+      'competenze',
+      'currentLessonPosition',
+      'descrizione',
+      'lessons',
+      'obiettivi',
+      'title',
+    ]);
   });
 });

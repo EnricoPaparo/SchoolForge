@@ -283,6 +283,15 @@ export interface LessonUdaOutlineItem {
 
 export interface LessonUdaContext {
   title: string;
+  /**
+   * STRUCTURE-IMPORT-03 — contesto generale dell'UDA, con i nomi canonici
+   * italiani di `UdaDoc`. `null` quando l'UDA non ha descrizione; liste vuote
+   * per le UDA legacy prive di competenze o obiettivi. Il server rivalida in
+   * modo autorevole.
+   */
+  descrizione: string | null;
+  competenze: string[];
+  obiettivi: string[];
   /** Posizione (1-based) della lezione corrente dentro `lessons`. */
   currentLessonPosition: number;
   lessons: LessonUdaOutlineItem[];
@@ -454,6 +463,11 @@ export function buildLessonContentRequest(params: {
     obiettivi,
     udaContext: {
       title: uda.title.trim(),
+      // STRUCTURE-IMPORT-03 — contesto generale dell'UDA: già normalizzato al
+      // confine di mapping (`buildLessonUdaContext`), qui solo trasportato.
+      descrizione: uda.descrizione,
+      competenze: uda.competenze,
+      obiettivi: uda.obiettivi,
       currentLessonPosition: uda.currentLessonPosition,
       // Solo posizione/titolo/sottotitolo: nessun campo tecnico trasferito.
       lessons: uda.lessons.map((l) => ({

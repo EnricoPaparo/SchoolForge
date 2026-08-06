@@ -30,6 +30,9 @@ const CONTEXT: LessonAiContext = {
   // AIGEN-CONTEXT-01: indice UDA compatto (dall'albero già in memoria).
   udaContext: {
     title: 'UDA 1',
+    descrizione: 'Le reti locali e il loro funzionamento.',
+    competenze: ['Progettare una LAN'],
+    obiettivi: ['Riconoscere i livelli'],
     currentLessonPosition: 2,
     lessons: [
       { position: 1, titolo: 'Introduzione', sottotitolo: null },
@@ -309,6 +312,10 @@ describe('AiLessonGenerationDialog — AIGEN-CONTEXT-01 preflight', () => {
     expect(c.previewReqs[0].difficolta).toBe('intermedia');
     expect(c.previewReqs[0].udaContext).toEqual({
       title: 'UDA 1',
+      // STRUCTURE-IMPORT-03 — contesto generale dell'UDA, dallo stesso oggetto.
+      descrizione: 'Le reti locali e il loro funzionamento.',
+      competenze: ['Progettare una LAN'],
+      obiettivi: ['Riconoscere i livelli'],
       currentLessonPosition: 2,
       lessons: [
         { position: 1, titolo: 'Introduzione', sottotitolo: null },

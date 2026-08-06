@@ -67,7 +67,13 @@ export function estimateInputTokens(request: AiContentRequest): number {
       : request.currentBody.length +
         (request.teacherGuidance?.length ?? 0) +
         request.concettiChiave.join('').length +
-        request.obiettivi.join('').length;
+        request.obiettivi.join('').length +
+        // STRUCTURE-IMPORT-03 — il contesto generale dell'UDA finisce nel prompt
+        // effettivo, quindi entra anche nella stima: senza, una UDA con
+        // descrizione lunga costerebbe più di quanto la stima lascia prevedere.
+        (request.udaContext.descrizione?.length ?? 0) +
+        request.udaContext.competenze.join('').length +
+        request.udaContext.obiettivi.join('').length;
   return Math.ceil(chars / CHARS_PER_TOKEN) + PROMPT_OVERHEAD_TOKENS;
 }
 

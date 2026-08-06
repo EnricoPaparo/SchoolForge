@@ -91,6 +91,9 @@ describe('formatMicroUsd', () => {
 /** Contesto completo secondo il contratto AIGEN-CONTEXT-01. */
 const UDA_CONTEXT = {
   title: 'UDA 1',
+  descrizione: 'Le reti locali e il loro funzionamento.',
+  competenze: ['Progettare una LAN'],
+  obiettivi: ['Riconoscere i livelli'],
   currentLessonPosition: 2,
   lessons: [
     { position: 1, titolo: 'Introduzione', sottotitolo: null },
@@ -230,8 +233,9 @@ describe('missingLessonRequirements (preflight, AIGEN-CONTEXT-01)', () => {
 
   it('rejects an incoherent UDA outline (empty, unordered, or bad current position)', () => {
     const bad: LessonUdaContext[] = [
-      { title: 'UDA 1', currentLessonPosition: 1, lessons: [] },
+      { ...UDA_CONTEXT, currentLessonPosition: 1, lessons: [] },
       {
+        ...UDA_CONTEXT,
         title: 'UDA 1',
         currentLessonPosition: 1,
         lessons: [
@@ -240,16 +244,19 @@ describe('missingLessonRequirements (preflight, AIGEN-CONTEXT-01)', () => {
         ],
       },
       {
+        ...UDA_CONTEXT,
         title: 'UDA 1',
         currentLessonPosition: 5,
         lessons: [{ position: 1, titolo: 'A', sottotitolo: null }],
       },
       {
+        ...UDA_CONTEXT,
         title: '  ',
         currentLessonPosition: 1,
         lessons: [{ position: 1, titolo: 'A', sottotitolo: null }],
       },
       {
+        ...UDA_CONTEXT,
         title: 'UDA 1',
         currentLessonPosition: 1,
         lessons: [{ position: 1, titolo: '  ', sottotitolo: null }],

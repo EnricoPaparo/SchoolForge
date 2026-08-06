@@ -54,6 +54,9 @@ const FULL_LESSON_AI = {
   obiettivi: ['capire i livelli'],
   udaContext: {
     title: 'UDA 1',
+    descrizione: 'Le reti locali e il loro funzionamento.',
+    competenze: ['Progettare una LAN'],
+    obiettivi: ['Riconoscere i livelli'],
     currentLessonPosition: 1,
     lessons: [{ position: 1, titolo: 'Le reti', sottotitolo: null }],
   },
