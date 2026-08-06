@@ -15,6 +15,49 @@ Il flusso «dichiaro i metadati → genero la lezione» è il cuore del prodotto
 produce una lezione che il docente deve riscrivere, SchoolForge gli fa perdere
 tempo invece di fargliene guadagnare, ed è la sola cosa che non può permettersi.
 
+### Che cosa deve essere una lezione generata
+
+Senza un bersaglio dichiarato non si può giudicare se una modifica migliora
+qualcosa, quindi il bersaglio va scritto. Una lezione generata è accettabile
+quando il docente **la porta in classe così com'è**.
+
+In concreto significa che:
+
+- **regge un'ora di lezione.** Non è un riassunto, non è una scaletta, non è un
+  paragrafo: è il testo su cui uno studente studia e su cui un docente spiega;
+- **ogni concetto chiave è sviluppato**, non nominato. Definirlo e passare oltre
+  è il modo più comune di sembrare completi restando inutili;
+- **è motivata.** Ogni affermazione a cui uno studente chiederebbe «perché?»
+  riceve la risposta dove serve, non altrove;
+- **è autosufficiente.** Si legge da sola, senza rimandi a ciò che il docente
+  «dirà a voce» o ad altre lezioni;
+- **contiene i passaggi intermedi**, cioè i prerequisiti e le definizioni che
+  servono ad arrivare al concetto chiave, anche se nessuno li ha elencati.
+
+La formulazione del docente è più diretta: *«le lezioni devono essere perfette,
+senza se e senza ma»*. Operativamente il bersaglio è quello sopra; «perfetta»
+qui non è un assoluto irraggiungibile, è **pronta all'uso senza riscrittura**.
+
+### La regola economica che governa tutto
+
+C'è un criterio che viene prima di ogni scelta tecnica, ed è quello che il
+docente ha espresso così: *«i side concept sta al modello toccarli, non al
+docente, altrimenti fa prima a scriverla lui a mano la lezione; deve far
+risparmiare tempo, non richiederne di più del normale»*.
+
+Da qui discende un vincolo che vale per **ogni** pacchetto futuro:
+
+> Qualunque soluzione che richieda al docente di **descrivere di più** per
+> ottenere una lezione migliore è una soluzione sbagliata, anche se funziona.
+
+È la scorciatoia più tentante — «basta che il docente scriva cinque concetti
+invece di due» — ed è esattamente il fallimento del prodotto: se compilare i
+metadati costa quanto scrivere la lezione, lo strumento non serve. Il lavoro di
+individuare i concetti di supporto appartiene al modello.
+
+Questo non contraddice il perimetro: il docente resta l'autorità su **che cosa**
+la lezione tratta. Non lo è su **quanto** e su **come** ci si arriva.
+
 ## 1. Principi invarianti
 
 - I **concetti chiave dicono che cosa trattare, non quanto scrivere.** È il
@@ -30,6 +73,10 @@ tempo invece di fargliene guadagnare, ed è la sola cosa che non può permetters
 - Il rigore epistemico già validato (niente dati inventati, niente causalità
   non provate, coerenza interna) **non si tocca**: si aggiunge profondità, non
   si toglie severità.
+- **Nessuna soluzione può chiedere al docente di scrivere di più.** Il criterio
+  economico sopra prevale: la ricchezza dell'input non è una leva ammessa.
+- Il bersaglio è la lezione **pronta all'uso senza riscrittura**, non la lezione
+  «migliore di prima».
 - Nessuna modifica a Rules, indici, schema Firestore o dipendenze.
 
 ## 2. Evidenze — che cosa è stato misurato
@@ -76,6 +123,25 @@ insieme**: perimetro didattico e budget di contenuto. Il prompt chiedeva di
 «fissare adeguatamente concetti chiave e obiettivi forniti» e di non trattare
 «un argomento più ampio»: due concetti dichiarati diventavano due blocchi, e la
 lezione usciva lunga la metà. Il modello non sbagliava, obbediva.
+
+La catena, per esteso, è questa:
+
+1. il docente dichiara due concetti chiave, perché sono davvero i due concetti
+   della lezione — non sta sbagliando a compilare;
+2. il prompt tratta quell'elenco come il **contenuto da produrre**, non come
+   l'argomento da trattare;
+3. il modello sviluppa due blocchi e considera il compito assolto;
+4. nessuna istruzione gli dice che una lezione scolastica ha una consistenza
+   propria, indipendente da quante voci ha ricevuto;
+5. il controllo finale, tutto di verifica e potatura, gli fa semmai **togliere**
+   qualcosa;
+6. esce una lezione formalmente corretta, epistemicamente rigorosa e
+   didatticamente insufficiente — la combinazione peggiore, perché supera ogni
+   controllo automatico e fallisce l'unico che conta, cioè l'uso in classe.
+
+Il punto 6 spiega anche perché il benchmark dava 12/12 PASS mentre il docente
+vedeva lezioni scarne: la rubrica misurava correttezza e coerenza su un input
+ricco, e su quello il modello lavorava bene davvero.
 
 Cause concorrenti, in ordine di peso stimato:
 
