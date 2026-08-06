@@ -775,7 +775,17 @@ qualunque combinazione di maiuscole, `Difficoltà`/`Difficolta`,
 `Obiettivi`/`Obbiettivi`, spazi attorno ai due punti, i simboli `-`, `*`, `•`,
 `·`, `–`, `—`, gli elenchi numerati `1.`/`1)`, le voci senza simbolo dentro una
 sezione già aperta, le virgolette esterne (dritte, curve, caporali) e un blocco
-di codice Markdown che avvolga tutto. Restano invece errori una riga prima della
+di codice Markdown che avvolga tutto.
+
+Gli apostrofi seguono una regola propria, ed è una regola italiana: `'900`,
+`’800`, `'60` sono elisioni di secolo o decennio, non virgolette aperte. Un
+apostrofo iniziale toglie una coppia **solo** se il valore finisce con lo stesso
+carattere; altrimenti resta testo. Il costo di sbagliare è asimmetrico —
+rifiutare «'900 e società di massa» come virgoletta non chiusa respingerebbe un
+titolo sensato senza che il docente possa capire cosa correggere, mentre leggere
+`'Titolo'` come testo lascia due apostrofi visibili e correggibili. Le virgolette
+vere (`"`, `“`, `‘`, `«`) restano invece strette: nessuna parola italiana comincia
+così, quindi una apertura senza chiusura significa testo troncato. Restano invece errori una riga prima della
 prima voce, un titolo o una difficoltà mancanti, un elenco obbligatorio assente o
 vuoto, un campo o una sezione ripetuti, un'etichetta sconosciuta, una voce vuota,
 virgolette aperte e non chiuse, un fence malformato, un titolo duplicato, i

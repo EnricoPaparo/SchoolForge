@@ -149,22 +149,40 @@ export function suggestLabel(written: string, known: readonly string[]): string 
 
 // ── Virgolette ───────────────────────────────────────────────────────────────
 
-/** Coppie ammesse. L'apostrofo dritto è incluso perché i modelli AI lo usano. */
-const QUOTE_PAIRS: ReadonlyArray<readonly [string, string]> = [
+/**
+ * Coppie che, se aperte, **devono** essere chiuse. Sono virgolette e nient'altro:
+ * nessuna parola italiana comincia con `"`, `“`, `‘` o `«`, quindi trovarne una
+ * senza la sua chiusura significa che il testo incollato è troncato.
+ */
+const STRICT_PAIRS: ReadonlyArray<readonly [string, string]> = [
   ['"', '"'],
-  ["'", "'"],
   ['“', '”'],
   ['‘', '’'],
   ['«', '»'],
 ];
 
-const OPENING_QUOTES = new Set(QUOTE_PAIRS.map(([open]) => open));
+/**
+ * Apostrofi. Qui la regola è diversa, e la differenza è tutta italiana:
+ * `'900`, `’800`, `'60` sono elisioni di secolo o decennio, non virgolette
+ * aperte. Un apostrofo iniziale è una coppia **solo** se il valore finisce con
+ * lo stesso carattere; altrimenti è testo, e resta dov'è.
+ *
+ * Il costo di sbagliare è asimmetrico. Trattare `'900 e società di massa` come
+ * virgolette non chiuse rifiuterebbe un titolo perfettamente sensato, e il
+ * docente non avrebbe modo di capire cosa correggere. Trattare `'Titolo'` come
+ * testo lascerebbe due apostrofi in un titolo — visibile e correggibile.
+ */
+const APOSTROPHES = new Set(["'", '’']);
+
+const STRICT_OPENERS = new Set(STRICT_PAIRS.map(([open]) => open));
 
 /**
- * Toglie **una sola** coppia completa di virgolette esterne. Se il valore ne
- * apre una e non la chiude, è un errore e non un valore: accettarlo
- * significherebbe importare un titolo che comincia con un carattere che il
- * docente non voleva.
+ * Toglie **una sola** coppia completa di virgolette esterne.
+ *
+ * Un apertura stretta senza la sua chiusura è un errore: importarla
+ * significherebbe accettare un titolo che comincia con un carattere che il
+ * docente non voleva. Un apostrofo senza chiusura è invece semplicemente un
+ * apostrofo.
  */
 export function unquote(
   value: string,
@@ -172,9 +190,17 @@ export function unquote(
   const trimmed = value.trim();
   if (trimmed.length === 0) return { ok: true, value: trimmed };
   const first = trimmed[0]!;
-  if (!OPENING_QUOTES.has(first)) return { ok: true, value: trimmed };
+
+  if (APOSTROPHES.has(first)) {
+    // Stesso carattere in apertura e in chiusura ⇒ coppia; altrimenti elisione.
+    return trimmed.length >= 2 && trimmed.endsWith(first)
+      ? { ok: true, value: trimmed.slice(1, -1).trim() }
+      : { ok: true, value: trimmed };
+  }
+
+  if (!STRICT_OPENERS.has(first)) return { ok: true, value: trimmed };
   if (trimmed.length < 2) return { ok: false, reason: 'unbalanced' };
-  const closer = QUOTE_PAIRS.find(([open]) => open === first)![1];
+  const closer = STRICT_PAIRS.find(([open]) => open === first)![1];
   if (!trimmed.endsWith(closer)) return { ok: false, reason: 'unbalanced' };
   return { ok: true, value: trimmed.slice(1, -1).trim() };
 }

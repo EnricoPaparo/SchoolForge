@@ -232,6 +232,69 @@ Obiettivi:
     expect(uda.competenze[0]).toBe('L’apostrofo tipografico');
   });
 
+  it('un apostrofo iniziale non chiuso è un’elisione, non una virgoletta', () => {
+    // «'900», «’800», «'60»: elisioni di secolo e decennio. Rifiutarle come
+    // virgolette non chiuse significherebbe respingere titoli di storia
+    // perfettamente sensati, senza che il docente possa capire cosa correggere.
+    const uda = ok(
+      parseSimpleUdaStructure(`UDA: '900 e società di massa
+Descrizione: L’Italia del ’900
+Competenze:
+- '60 e contestazione giovanile
+- ’68 e movimenti studenteschi
+Obiettivi:
+- Un obiettivo
+`),
+    )[0]!;
+    expect(uda.titolo).toBe("'900 e società di massa");
+    expect(uda.descrizione).toBe('L’Italia del ’900');
+    expect(uda.competenze).toEqual([
+      "'60 e contestazione giovanile",
+      '’68 e movimenti studenteschi',
+    ]);
+  });
+
+  it('lo stesso vale per le lezioni', () => {
+    const lezione = ok(
+      parseSimpleLessonStructure(`LEZIONE: ’800 europeo
+Sottotitolo: Dall’Ottocento al '900
+Difficoltà: base
+Concetti chiave:
+- '48 e le rivoluzioni
+Obiettivi:
+- Un obiettivo
+`),
+    )[0]!;
+    expect(lezione.titolo).toBe('’800 europeo');
+    expect(lezione.sottotitolo).toBe("Dall’Ottocento al '900");
+    expect(lezione.concettiChiave).toEqual(["'48 e le rivoluzioni"]);
+  });
+
+  it('un apostrofo che invece chiude davvero è una coppia, e sparisce', () => {
+    for (const [scritto, atteso] of [
+      ["'Titolo racchiuso'", 'Titolo racchiuso'],
+      ['’Titolo racchiuso’', 'Titolo racchiuso'],
+      ['‘Titolo racchiuso’', 'Titolo racchiuso'],
+    ] as const) {
+      const uda = ok(parseSimpleUdaStructure(UDA_BASE.replace('Prima unità', scritto)))[0]!;
+      expect(uda.titolo).toBe(atteso);
+    }
+  });
+
+  it('le virgolette vere, se aperte e non chiuse, restano un errore', () => {
+    // Nessuna parola italiana comincia con una di queste: trovarne una senza
+    // chiusura significa che il testo incollato è troncato.
+    for (const aperta of ['"Titolo', '“Titolo', '«Titolo', '‘Titolo']) {
+      expect(err(parseSimpleUdaStructure(UDA_BASE.replace('Prima unità', aperta))).code).toBe(
+        'unbalanced_quotes',
+      );
+    }
+    // Anche dentro un elenco.
+    expect(
+      err(parseSimpleUdaStructure(UDA_BASE.replace('- Prima competenza', '- "Competenza'))).code,
+    ).toBe('unbalanced_quotes');
+  });
+
   it('toglie una sola coppia di virgolette, non quelle interne', () => {
     const testo = UDA_BASE.replace('Prima unità', '"Le reti "locali" in breve"');
     expect(ok(parseSimpleUdaStructure(testo))[0]!.titolo).toBe('Le reti "locali" in breve');
