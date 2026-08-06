@@ -1,9 +1,10 @@
 # STRUCTURE-IMPORT — Importazione di UDA e lezioni senza contenuto
 
-> **Stato:** contratto congelato; **STRUCTURE-IMPORT-01, 02A e 02B
+> **Stato:** contratto congelato; **STRUCTURE-IMPORT-01, 02A, 02B e 03
 > implementati**. Sono reali sia `Azioni corso → Importa struttura UDA` sia
-> `Azioni UDA → Importa lezioni`. `03` (contesto IA) e il Gate GSTRUCT restano
-> aperti. Questo documento non autorizza merge, deploy o migrazioni.
+> `Azioni UDA → Importa lezioni`, e la generazione lezione riceve il contesto
+> generale dell'UDA. **Il Gate GSTRUCT resta aperto.** Questo documento non
+> autorizza merge, deploy o migrazioni.
 
 ## 1. Obiettivo
 
@@ -218,7 +219,8 @@ La generazione lezione corrente usa:
 - titolo UDA;
 - indice ordinato di titoli e sottotitoli delle lezioni dell'UDA.
 
-Non usa ancora `descrizione`, `competenze` e `obiettivi` dell'UDA. Per sfruttare
+Fino a `STRUCTURE-IMPORT-02B` non usava `descrizione`, `competenze` e
+`obiettivi` dell'UDA. Per sfruttare
 davvero i metadati UDA importati, `STRUCTURE-IMPORT-03` estende il contesto IA
 con questi soli campi, presi dall'albero già caricato: zero nuove letture,
 payload chiuso e limitato, validazione server, partecipazione all'`inputHash` e
@@ -248,7 +250,7 @@ di generazione; non introduce chiamate aggiuntive.
 | **STRUCTURE-IMPORT-01** ✅ | Parser YAML isolati, validatori fail-closed, normalizzazione, template scaricabili, planner puro di ID/order/manifest e test di collisione. Nessuna UI e nessuna scrittura. | **Implementato** in `apps/web/src/features/repository/structureImport/`. Suite completa su fixture valide/malformate, alias/ancore/tag/documenti multipli/chiavi duplicate/extra key/limiti; helper canonici estratti in `repository/canonicalNaming.ts` senza cambiare il comportamento di `createUda`/`createLesson`; test statico di purezza sull'intera chiusura transitiva degli import. Nessun runtime Firebase mutato. |
 | **STRUCTURE-IMPORT-02A** ✅ | `Azioni corso → Importa struttura UDA`, dialog, preview e append atomico delle UDA. | **Implementato.** Un solo commit transazionale rende visibili insieme tutte le UDA; identità del tentativo `requestId` + `SHA-256(manifestCanonical)`; cleanup limitato al manifest; albero locale aggiornato dal manifest, senza refetch. Nessuna Rule, Function, indice o dipendenza aggiunta. |
 | **STRUCTURE-IMPORT-02B** ✅ | `Azioni UDA → Importa lezioni`, dialog, preview, append atomico, corpi vuoti/pool assenti e filtro UI studente degli scheletri vuoti. | **Implementato.** Stessa macchina di 02A (`structureAppendProtocol`), lease **per singola UDA**, commit unico con `LessonDoc` + `publicLessons` + incremento unico di `lessonCount`; identità del tentativo estesa a `kind` e UDA di destinazione; filtro studente sulle proiezioni con `content` vuoto. Nessuna Rule, Function, indice o dipendenza aggiunta. |
-| **STRUCTURE-IMPORT-03** | Contesto IA UDA bounded (`descrizione`, `competenze`, `obiettivi`) dai dati già in memoria. | Zero nuove letture; payload/inputHash/stima aggiornati; gerarchia prompt invariata salvo il nuovo contesto autorevole. |
+| **STRUCTURE-IMPORT-03** ✅ | Contesto IA UDA bounded (`descrizione`, `competenze`, `obiettivi`) dai dati già in memoria. | **Implementato.** I tre campi vivono nello stesso `udaContext` (nessun secondo oggetto parallelo), passano da un unico confine di mapping, partecipano a payload canonico, `inputHash`, replay, stima, prenotazione e prompt effettivo. Zero nuove letture, query, listener o polling. Prompt del pool byte-identico; prompt lezione byte-identico su UDA legacy. Nessuna Rule, Function, indice o dipendenza aggiunta. |
 | **Gate GSTRUCT** | Smoke DEV docente/studente e chiusura evidenze. | Import UDA + lezioni, collisione, retry, mobile/Brave, generazione IA da uno scheletro, nessuna esposizione di card vuote. |
 
 ## 13. Fuori scope
@@ -600,3 +602,55 @@ I costi sono nella tabella di §14.8, insieme a quelli di 02A.
 - **Collisioni tecniche.** I guardrail su id e Storage path sono difese in
   profondità: con la numerazione canonica non dovrebbero essere raggiungibili,
   e il preflight reale di 02A/02B resta comunque obbligatorio.
+
+### 14.11 STRUCTURE-IMPORT-03 — contesto generale dell'UDA nella generazione
+
+Quello che la generazione lezione **già** riceveva, verificato nel codice
+(`aiContentCore.parseLessonRequest`, `aiContentPrompt.buildLessonPrompt`,
+`CourseWorkspace` → `LessonDetail`): titolo, sottotitolo, difficoltà, concetti
+chiave e obiettivi della lezione corrente; titolo dell'UDA; posizione corrente
+nell'UDA; indice ordinato delle lezioni dell'UDA con titolo e sottotitolo; corpo
+attuale; indicazioni del docente. Il delta mancante era soltanto il **contesto
+generale dell'UDA**, ed è l'unica cosa aggiunta.
+
+**Origine del dato.** Esclusivamente l'UDA già presente nell'albero caricato da
+`CourseWorkspace` (`tree.udas`), che `listUdas` normalizza già a
+`descrizione: string | null`, `competenze: string[]`, `obiettivi: string[]`.
+Nessuna nuova lettura, query, listener o polling: il costo passivo è invariato,
+e un test strutturale lo difende leggendo il sorgente (`lessonUdaContext.ts` non
+importa Firebase; `CourseWorkspace` ha un solo punto di costruzione).
+
+**Confine di mapping.** Uno solo: `buildLessonUdaContext`. I nomi canonici
+italiani entrano nel payload lì e nient'altro li ricostruisce; il resto della
+catena trasporta. I campi stanno **dentro** `udaContext`, non accanto.
+
+**Legacy e fail-closed.** Descrizione assente ⇒ `null`; competenze e obiettivi
+assenti ⇒ liste vuote; valore presente ma di tipo sbagliato ⇒ il contesto
+fallisce chiuso **prima** della callable, e il server rifiuta comunque con
+`invalid_input`. Nessun valore inventato e nessun fallback dal corpo Markdown.
+
+**Contratto server.** `parseUdaContext` accetta esattamente
+`title`, `descrizione`, `competenze`, `obiettivi`, `currentLessonPosition`,
+`lessons`: qualunque proprietà extra è `invalid_input`. La descrizione ha un cap
+dedicato (`MAX_UDA_DESCRIPTION_CHARS = 2000`, più generoso di un titolo perché
+una descrizione legacy può essere un paragrafo estratto dal corpo); competenze e
+obiettivi riusano i limiti già canonici delle liste. Il cap complessivo in byte
+UTF-8 della richiesta è invariato. Su input non valido non c'è provider, budget,
+run o scrittura.
+
+**Identità e costo.** I tre campi entrano nella richiesta canonica, quindi
+nell'`inputHash`, nel replay/idempotenza e nella chiave di prenotazione:
+cambiarli rende la vecchia `requestId` non riutilizzabile. Entrano anche nella
+stima dei token di input e — attraverso il prompt effettivo — nel limite
+superiore della prenotazione.
+
+**Prompt.** Un solo blocco compatto `CONTESTO_GENERALE_UDA`, accanto
+all'`INDICE_UDA`, che chiarisce quattro cose e nient'altro: i tre campi orientano
+taglio ed esempi; il perimetro resta quello dei `METADATI_DIDATTICI` della
+lezione corrente e non si allarga all'intera UDA; non vanno riportati né
+parafrasati meccanicamente nel Markdown; sono dati, non istruzioni eseguibili.
+Su UDA legacy il blocco non compare affatto. Il tuning pedagogico già validato —
+gerarchia, profondità, esercizi e auto-verifica, stile, cap dei token, schema di
+output, profili, modelli, listino, generazione pool e correzione IA — non è stato
+riscritto: due prove di regressione ancorano il prompt del pool e, su UDA legacy,
+il prompt utente della lezione a un SHA-256 calcolato **prima** di questa fase.

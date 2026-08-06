@@ -100,8 +100,19 @@ export const MAX_EXISTING_POOL_QUESTIONS = 1_000;
  * e limitato anche per un'UDA molto lunga.
  */
 export const MAX_UDA_OUTLINE_ITEMS = 60;
-/** Dimensione UTF-8 massima dell'intero indice UDA serializzato. */
+/**
+ * Dimensione UTF-8 massima dell'intero contesto UDA serializzato — indice
+ * **e**, da STRUCTURE-IMPORT-03, descrizione/competenze/obiettivi dell'UDA.
+ */
 export const MAX_UDA_OUTLINE_BYTES = 20_000;
+/**
+ * STRUCTURE-IMPORT-03 — cap sulla descrizione dell'UDA. Più generoso di un
+ * titolo perché una descrizione legacy può derivare dalla prima riga del corpo
+ * Markdown (`extractDescription`) ed essere un paragrafo intero: un cap da
+ * titolo bloccherebbe la generazione su corsi già esistenti. Resta comunque
+ * chiuso, e il cap complessivo della richiesta continua ad applicarsi.
+ */
+export const MAX_UDA_DESCRIPTION_CHARS = 2_000;
 /** Lunghezza massima (caratteri) del valore libero `difficolta` della lezione. */
 export const MAX_DIFFICOLTA_CHARS = 120;
 /**
@@ -183,6 +194,18 @@ export interface LessonUdaOutlineItem {
  */
 export interface LessonUdaContext {
   title: string;
+  /**
+   * STRUCTURE-IMPORT-03 — contesto generale dell'UDA. Nomi canonici italiani,
+   * gli stessi di `UdaDoc`: il mapping dal documento avviene una sola volta, al
+   * confine del payload lato client.
+   *
+   * `null` quando l'UDA non ha descrizione; array vuoti per le UDA legacy prive
+   * di competenze o obiettivi. Nessun valore sintetico, nessun fallback dal
+   * corpo Markdown della lezione.
+   */
+  descrizione: string | null;
+  competenze: string[];
+  obiettivi: string[];
   /** Posizione (1-based) della lezione corrente dentro `lessons`. */
   currentLessonPosition: number;
   lessons: LessonUdaOutlineItem[];
@@ -283,6 +306,12 @@ export function canonicalRequest(request: AiContentRequest): string {
           udaTitle: request.udaTitle,
           udaContext: {
             title: request.udaContext.title,
+            // STRUCTURE-IMPORT-03: il contesto generale dell'UDA fa parte del
+            // payload canonico, quindi dell'`inputHash`: cambiarlo invalida la
+            // requestId precedente come ogni altro campo.
+            descrizione: request.udaContext.descrizione,
+            competenze: request.udaContext.competenze,
+            obiettivi: request.udaContext.obiettivi,
             currentLessonPosition: request.udaContext.currentLessonPosition,
             lessons: request.udaContext.lessons.map((l) => ({
               position: l.position,
@@ -356,6 +385,24 @@ function parseStringArray(value: unknown, label: string): string[] {
   return items;
 }
 
+/**
+ * Testo facoltativo e più lungo di un titolo: assente o `null` ⇒ `null`, ma un
+ * valore presente di tipo sbagliato è un errore — a differenza di `parseTitle`,
+ * che degrada a `null` per retrocompatibilità dei sottotitoli.
+ */
+function parseOptionalLongText(value: unknown, label: string, maxChars: number): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') {
+    throw new AiContentError('invalid_input', `${label} deve essere una stringa.`);
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > maxChars) {
+    throw new AiContentError('invalid_input', `${label} supera la lunghezza massima.`);
+  }
+  return trimmed;
+}
+
 function parseTitle(value: unknown, label: string): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -401,8 +448,26 @@ function parseUdaContext(value: unknown): LessonUdaContext {
   if (!isPlainObject(value)) {
     throw new AiContentError('invalid_input', 'Contesto UDA mancante o non valido.');
   }
-  assertNoExtraKeys(value, ['title', 'currentLessonPosition', 'lessons']);
+  assertNoExtraKeys(value, [
+    'title',
+    'descrizione',
+    'competenze',
+    'obiettivi',
+    'currentLessonPosition',
+    'lessons',
+  ]);
   const title = parseRequiredText(value.title, 'Titolo UDA del contesto', MAX_TITLE_CHARS);
+  // STRUCTURE-IMPORT-03 — contesto generale dell'UDA. Facoltativo per natura:
+  // una UDA legacy può non avere descrizione, competenze o obiettivi, e la loro
+  // assenza non deve impedire una generazione che oggi funziona. Un valore
+  // *presente ma malformato* resta invece un errore, senza fallback.
+  const descrizione = parseOptionalLongText(
+    value.descrizione,
+    "Descrizione dell'UDA",
+    MAX_UDA_DESCRIPTION_CHARS,
+  );
+  const competenze = parseStringArray(value.competenze, "Competenze dell'UDA");
+  const obiettivi = parseStringArray(value.obiettivi, "Obiettivi dell'UDA");
 
   if (!Array.isArray(value.lessons)) {
     throw new AiContentError('invalid_input', "L'indice dell'UDA non è valido.");
@@ -443,7 +508,14 @@ function parseUdaContext(value: unknown): LessonUdaContext {
     );
   }
 
-  const context: LessonUdaContext = { title, currentLessonPosition, lessons };
+  const context: LessonUdaContext = {
+    title,
+    descrizione,
+    competenze,
+    obiettivi,
+    currentLessonPosition,
+    lessons,
+  };
   if (utf8ByteLength(JSON.stringify(context)) > MAX_UDA_OUTLINE_BYTES) {
     throw new AiContentError('content_too_large', "L'indice dell'UDA è troppo grande.");
   }
