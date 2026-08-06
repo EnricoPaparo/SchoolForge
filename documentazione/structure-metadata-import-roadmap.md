@@ -45,7 +45,7 @@ Ogni dialog riusa `DialogShell` e ha quattro stati:
 Non sono previste mappature campo-per-campo, drag-and-drop, selezione di file,
 wizard multipagina o conferme annidate. Gli esempi copiabili vivono nella
 sezione **Template**, unico punto autorevole: i dialog non li duplicano e non
-offrono un proprio download (STRUCTURE-IMPORT-UI-PASTE-01, §14.12).
+offrono un proprio download (STRUCTURE-IMPORT-UI-PASTE-01, §14.13).
 
 ## 3. Formato UDA
 
@@ -55,22 +55,23 @@ Nome consigliato: `schoolforge-udas.yaml`.
 schema: schoolforge-uda-metadata/v1
 
 udas:
-  - titolo: Introduzione alle reti
-    descrizione: Fondamenti della comunicazione tra dispositivi.
+  - titolo: Titolo della prima UDA
+    descrizione: Breve descrizione della prima UDA
     competenze:
-      - Comprendere il funzionamento generale di una rete
-      - Distinguere i principali dispositivi di rete
+      - Prima competenza sviluppata dalla UDA
+      - Seconda competenza sviluppata dalla UDA
     obiettivi:
-      - Conoscere il concetto di protocollo
-      - Comprendere il ruolo degli indirizzi IP
+      - Primo obiettivo didattico della UDA
+      - Secondo obiettivo didattico della UDA
 
-  - titolo: Il livello di trasporto
-    descrizione: Affidabilità e comunicazione end-to-end.
+  - titolo: Titolo della seconda UDA
+    descrizione: Breve descrizione della seconda UDA
     competenze:
-      - Analizzare una comunicazione TCP e UDP
+      - Prima competenza sviluppata dalla UDA
+      - Seconda competenza sviluppata dalla UDA
     obiettivi:
-      - Comprendere affidabilità e ritrasmissione
-      - Confrontare TCP e UDP
+      - Primo obiettivo didattico della UDA
+      - Secondo obiettivo didattico della UDA
 ```
 
 Contratto chiuso di ogni voce:
@@ -92,28 +93,25 @@ destinazione.
 schema: schoolforge-lesson-metadata/v1
 
 lessons:
-  - titolo: Che cos'è una rete
-    sottotitolo: Dispositivi, collegamenti e comunicazione
-    difficolta: introduttiva
+  - titolo: Titolo della prima lezione
+    sottotitolo: Breve sottotitolo della prima lezione
+    difficolta: Livello di difficoltà della prima lezione
     concettiChiave:
-      - nodo
-      - collegamento
-      - protocollo
+      - Primo concetto chiave della lezione
+      - Secondo concetto chiave della lezione
     obiettivi:
-      - Definire correttamente una rete informatica
-      - Distinguere nodi e collegamenti
+      - Primo obiettivo didattico della lezione
+      - Secondo obiettivo didattico della lezione
 
-  - titolo: Indirizzi IP e instradamento
-    sottotitolo: Come i pacchetti raggiungono la destinazione
-    difficolta: intermedia
+  - titolo: Titolo della seconda lezione
+    sottotitolo: Breve sottotitolo della seconda lezione
+    difficolta: Livello di difficoltà della seconda lezione
     concettiChiave:
-      - indirizzo IP
-      - pacchetto
-      - router
-      - instradamento
+      - Primo concetto chiave della lezione
+      - Secondo concetto chiave della lezione
     obiettivi:
-      - Comprendere la funzione dell'indirizzo IP
-      - Ricostruire il percorso logico di un pacchetto
+      - Primo obiettivo didattico della lezione
+      - Secondo obiettivo didattico della lezione
 ```
 
 Contratto chiuso di ogni voce, allineato ai limiti del payload IA esistente:
@@ -665,13 +663,13 @@ il prompt utente della lezione a un SHA-256 calcolato **prima** di questa fase.
 La sezione docente **Template** espone, accanto alla struttura ZIP, due esempi
 pronti all'uso: struttura UDA e struttura lezioni. I contenuti non sono copie
 manuali: importano direttamente `UDA_METADATA_TEMPLATE` e
-`LESSON_METADATA_TEMPLATE`, le stesse costanti canoniche scaricate dai dialog
-di importazione e validate in round-trip dai parser reali. Ogni esempio può
+`LESSON_METADATA_TEMPLATE`, le costanti canoniche validate in round-trip dai
+parser reali e ormai unica fonte degli esempi. Ogni esempio può
 essere copiato; i due YAML possono anche essere scaricati con il filename
 canonico. Il layout è a tre colonne su desktop, due su tablet e una su mobile.
 Nessuna lettura, scrittura, Function o costo passivo viene introdotto.
 
-### 14.12 STRUCTURE-IMPORT-UI-PASTE-01 — si incolla lo YAML, non si sceglie un file
+### 14.13 STRUCTURE-IMPORT-UI-PASTE-01 — si incolla lo YAML, non si sceglie un file
 
 **Da dove veniva la complessità.** Il flusso chiedeva un *file*, e un file non
 esiste finché il docente non lo fabbrica: scaricare il modello dal dialog,
@@ -713,3 +711,34 @@ dialog. Nessun tentativo, lease, upload o documento viene creato: la validazione
 **Costi.** Invariati. La fase di inserimento e la verifica sono interamente
 client-side: zero letture, scritture, upload e callable finché il docente non
 conferma il riepilogo, dopodiché vale il modello di costo di §14.8.
+
+### 14.14 STRUCTURE-TEMPLATE-GENERIC-01 — modelli generici, senza nulla da ripulire
+
+Finché il modello si scaricava come file, un esempio disciplinare concreto era
+innocuo: il docente lo apriva in un editor e ci lavorava sopra. Da quando lo YAML
+si **incolla** (§14.13) l'esempio è diventato un costo: va cancellato riga per
+riga prima di scrivere il proprio, e i commenti `#` sono la parte che più
+facilmente sopravvive per sbaglio all'incollaggio, con un risultato che sembra
+funzionare finché non lo si importa.
+
+I due modelli contengono ora soltanto lo schema tecnico obbligatorio, la
+struttura YAML valida e **segnaposto generici** che dicono implicitamente cosa
+inserire («Titolo della prima UDA», «Primo obiettivo didattico della lezione»).
+Spariti commenti introduttivi, spiegazioni operative e ogni riferimento
+disciplinare. La proprietà `schema` resta e non cambia valore: è ciò che i
+validatori esigono per riconoscere il formato.
+
+Entrambi mostrano **due voci complete**, con tutti i campi del formato
+valorizzati: chi copia vede la forma intera, non una versione minima da
+indovinare. Il round-trip con i validatori reali è invariato e resta la difesa
+principale — un modello si può ripulire fino a romperlo, e i test lo impediscono.
+
+Le costanti sono l'unica fonte autorevole per visualizzazione, copia e download
+della sezione Template: un test verifica che i tre percorsi consegnino gli stessi
+identici byte, così il docente non può incollare un testo diverso da quello che
+ha letto. Layout, pulsanti, filename canonici e comportamento responsive
+(tre colonne desktop, due tablet, una mobile) restano invariati, misurati in
+Chromium a 1440, 1024, 820, 390 e 320 px.
+
+Parser, validatori, planner e runtime non sono stati toccati: sono i modelli a
+rispettare il contratto esistente.
