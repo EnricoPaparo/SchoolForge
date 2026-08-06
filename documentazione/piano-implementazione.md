@@ -32,6 +32,8 @@ Il Modulo 3 (Portale digitale) è diviso in **M3-lite** e **M3-full**, entrambi 
 **STRUCTURE-IMPORT: 01, 02A, 02B e 03 sono implementati; il Gate GSTRUCT resta
 aperto.** La sequenza autorizzata era 01 parser/planner puri → 02A import UDA →
 02B import lezioni → 03 contesto UDA per la generazione IA → Gate GSTRUCT.
+I due modelli YAML canonici sono inoltre consultabili, copiabili e scaricabili
+dalla sezione docente **Template**, senza duplicare lo schema nel codice UI.
 Nessuna fase successiva può dichiarare implementata la precedente senza le
 evidenze previste nel contratto.
 

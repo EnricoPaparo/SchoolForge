@@ -89,7 +89,10 @@ describe('confine puro dei moduli STRUCTURE-IMPORT', () => {
   const closure = transitiveClosure();
 
   it('include i moduli attesi e li raggiunge davvero', () => {
-    const names = [...closure.keys()].map((file) => file.replace(`${srcRoot}/`, ''));
+    const portableSrcRoot = srcRoot.replaceAll('\\', '/');
+    const names = [...closure.keys()].map((file) =>
+      file.replaceAll('\\', '/').replace(`${portableSrcRoot}/`, ''),
+    );
     for (const expected of [
       'features/repository/structureImport/parseStructureYaml.ts',
       'features/repository/structureImport/validateUdaMetadataFile.ts',

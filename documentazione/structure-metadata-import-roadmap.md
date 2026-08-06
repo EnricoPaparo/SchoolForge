@@ -654,3 +654,14 @@ gerarchia, profondità, esercizi e auto-verifica, stile, cap dei token, schema d
 output, profili, modelli, listino, generazione pool e correzione IA — non è stato
 riscritto: due prove di regressione ancorano il prompt del pool e, su UDA legacy,
 il prompt utente della lezione a un SHA-256 calcolato **prima** di questa fase.
+
+### 14.12 Modelli STRUCTURE-IMPORT nella sezione Template
+
+La sezione docente **Template** espone, accanto alla struttura ZIP, due esempi
+pronti all'uso: struttura UDA e struttura lezioni. I contenuti non sono copie
+manuali: importano direttamente `UDA_METADATA_TEMPLATE` e
+`LESSON_METADATA_TEMPLATE`, le stesse costanti canoniche scaricate dai dialog
+di importazione e validate in round-trip dai parser reali. Ogni esempio può
+essere copiato; i due YAML possono anche essere scaricati con il filename
+canonico. Il layout è a tre colonne su desktop, due su tablet e una su mobile.
+Nessuna lettura, scrittura, Function o costo passivo viene introdotto.

@@ -131,21 +131,93 @@
   margin-top: 0.25rem;
 }
 
-.zipTree {
-  margin: 0;
-  padding: 1rem 1.15rem;
-  overflow-x: auto;
-  color: var(--color-text-muted);
-  background: var(--color-surface-subtle);
+.examplesGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.exampleCard {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-surface-raised);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
+}
+
+.exampleHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.8rem 0.85rem;
+}
+
+.exampleInfo {
+  min-width: 0;
+}
+
+.exampleInfo h3 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 0.875rem;
+}
+
+.exampleInfo p {
+  margin: 0.2rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.exampleActions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.35rem;
+}
+
+.exampleAction {
+  min-height: 2.125rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.5rem;
+  color: var(--color-primary-hover);
+  font-size: 0.72rem;
+}
+
+.exampleCode {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 18rem;
+  max-height: 22rem;
+  margin: 0;
+  padding: 0.9rem;
+  overflow: auto;
+  color: var(--color-text-muted);
+  background: var(--color-surface-subtle);
+  border-top: 1px solid var(--color-border);
   font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.copyStatus {
+  min-height: 1.2rem;
+  margin: 0.35rem 0 0;
+  color: var(--color-text-muted);
   font-size: 0.75rem;
-  line-height: 1.55;
 }
 
 @media (max-width: 900px) {
-  .templateList {
+  .templateList,
+  .examplesGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -162,7 +234,26 @@
 }
 
 @media (max-width: 480px) {
-  .templateList {
+  .templateList,
+  .examplesGrid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .exampleHeader {
+    flex-direction: column;
+  }
+
+  .exampleActions {
+    width: 100%;
+  }
+
+  .exampleAction {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .exampleCode {
+    min-height: 0;
+    max-height: 18rem;
   }
 }
