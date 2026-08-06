@@ -1,34 +1,36 @@
 import { type FormEvent, useRef, useState } from 'react';
 import { DialogShell } from '../../components/DialogShell.js';
-import {
-  UDA_METADATA_TEMPLATE,
-  UDA_TEMPLATE_FILENAME,
-  validateUdaMetadataFile,
-} from '../repository/structureImport/index.js';
+import { validateUdaMetadataFile } from '../repository/structureImport/index.js';
 import type { NormalizedUdaMetadata } from '../repository/structureImport/index.js';
 import styles from './DidatticaView.module.css';
 
 /**
  * STRUCTURE-IMPORT-02A — «Importa struttura UDA».
  *
- * Adds UDAs to the open course from a single YAML file of metadata. It never
- * imports lessons, content or pools, and never touches an existing UDA — the
- * summary says so explicitly, because a teacher who expects lesson bodies would
- * otherwise discover the truth only afterwards.
+ * Aggiunge UDA al corso aperto da una struttura YAML di soli metadati. Non
+ * importa mai lezioni, contenuti o pool, e non tocca mai una UDA esistente — il
+ * riepilogo lo dice esplicitamente, perché un docente che si aspetta i corpi
+ * delle lezioni lo scoprirebbe altrimenti solo dopo.
  *
- * The file is read with `file.arrayBuffer()` and validated **byte-first** by the
- * STRUCTURE-IMPORT-01 API: extension, size limit on the original bytes and
- * strict UTF-8 all apply before anything else, and before any Firebase
- * operation. `File.text()` is never used: it would repair invalid UTF-8 into
- * U+FFFD and import mangled titles instead of refusing the file.
+ * STRUCTURE-IMPORT-UI-PASTE-01 — il docente **incolla** lo YAML invece di
+ * scegliere un file. Il file era il vero costo del flusso: obbligava a salvare
+ * un modello su disco, ritrovarlo, e scoprire solo al secondo passaggio che
+ * l'estensione o la codifica non andavano bene. Gli esempi copiabili vivono
+ * nella sezione Template, che resta l'unico punto autorevole.
  *
- * The template download is entirely client-side, from the canonical constant.
+ * Il percorso di validazione **non cambia**: il testo incollato diventa byte
+ * UTF-8 con `TextEncoder` e viene consegnato alla stessa API byte-first di
+ * STRUCTURE-IMPORT-01, che applica limite sui byte, decodifica UTF-8 fatale,
+ * parser e validatori nell'ordine di sempre. Nessun parser testuale parallelo, e
+ * nessuna API permissiva di lettura file: qui non si legge più alcun file.
+ *
+ * `variant="wide-scroll"`: lo YAML ha bisogno di larghezza, ed è la stessa
+ * variante già usata dai dialog di generazione IA — non una misura inventata qui.
  */
 
 type DialogState =
-  | { phase: 'select' }
-  | { phase: 'validating' }
-  | { phase: 'summary'; bytes: Uint8Array; filename: string; udas: NormalizedUdaMetadata[] }
+  | { phase: 'input' }
+  | { phase: 'summary'; bytes: Uint8Array; udas: NormalizedUdaMetadata[] }
   | { phase: 'done'; count: number };
 
 export function ImportUdaStructureDialog({
@@ -45,69 +47,64 @@ export function ImportUdaStructureDialog({
   error: string | null;
   onCancel: () => void;
   /** Resolves with the number of UDAs added, or `null` when the import failed. */
-  onConfirm: (bytes: Uint8Array, filename: string) => Promise<number | null>;
+  onConfirm: (bytes: Uint8Array) => Promise<number | null>;
 }) {
-  const [state, setState] = useState<DialogState>({ phase: 'select' });
+  const [state, setState] = useState<DialogState>({ phase: 'input' });
+  const [yaml, setYaml] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
-  const runIdRef = useRef(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Synchronous guard: `busy` is async React state and would let a double click
   // through in the same tick.
   const inFlightRef = useRef(false);
 
-  async function handleFile(file: File | null): Promise<void> {
-    const runId = ++runIdRef.current;
+  /**
+   * Fase 1 → 2. L'ordine è vincolante: stringa → byte UTF-8 → limite sui byte →
+   * parser e validatori esistenti. Il testo non viene toccato prima di essere
+   * codificato: spazi, accenti, apostrofi e indentazione arrivano al parser
+   * esattamente come il docente li ha incollati.
+   */
+  function verify(): void {
     setLocalError(null);
-    setState({ phase: 'select' });
-    if (!file) return;
-    setState({ phase: 'validating' });
-    try {
-      // Byte-first: the bytes, never `file.text()`.
-      const buffer = await file.arrayBuffer();
-      if (runId !== runIdRef.current) return;
-      const bytes = new Uint8Array(buffer);
-      const validation = validateUdaMetadataFile(bytes, { filename: file.name });
-      if (runId !== runIdRef.current) return;
-      if (!validation.ok) {
-        setLocalError(validation.error.message);
-        setState({ phase: 'select' });
-        return;
-      }
-      setState({ phase: 'summary', bytes, filename: file.name, udas: validation.value });
-    } catch {
-      if (runId !== runIdRef.current) return;
-      setLocalError('Impossibile leggere il file selezionato. Riprova.');
-      setState({ phase: 'select' });
+    const bytes = new TextEncoder().encode(yaml);
+    const validation = validateUdaMetadataFile(bytes);
+    if (!validation.ok) {
+      // Il testo resta dov'è: si corregge, non si reincolla da capo.
+      setLocalError(validation.error.message);
+      textareaRef.current?.focus();
+      return;
     }
-  }
-
-  function downloadTemplate(): void {
-    const blob = new Blob([UDA_METADATA_TEMPLATE], { type: 'text/yaml;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = UDA_TEMPLATE_FILENAME;
-    link.click();
-    URL.revokeObjectURL(url);
+    setState({ phase: 'summary', bytes, udas: validation.value });
   }
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
-    if (state.phase !== 'summary' || busy || inFlightRef.current) return;
+    if (busy || inFlightRef.current) return;
+    if (state.phase === 'input') {
+      verify();
+      return;
+    }
+    if (state.phase !== 'summary') return;
     inFlightRef.current = true;
     try {
-      const count = await onConfirm(state.bytes, state.filename);
+      const count = await onConfirm(state.bytes);
       // On failure the summary stays exactly as it is, so the teacher can retry
-      // without picking the file again.
+      // without pasting again.
       if (count !== null) setState({ phase: 'done', count });
     } finally {
       inFlightRef.current = false;
     }
   }
 
-  const canSubmit = state.phase === 'summary' && !busy;
+  const hasText = yaml.trim().length > 0;
+  const canSubmit = state.phase === 'input' ? hasText && !busy : state.phase === 'summary' && !busy;
 
   return (
-    <DialogShell title="Importa struttura UDA" onCancel={onCancel} busy={busy}>
+    <DialogShell
+      title="Importa struttura UDA"
+      onCancel={onCancel}
+      busy={busy}
+      variant="wide-scroll"
+    >
       <form onSubmit={(event) => void submit(event)} className={styles.dialogForm}>
         {state.phase === 'done' ? (
           <p className={styles.dialogMessage} role="status">
@@ -119,37 +116,45 @@ export function ImportUdaStructureDialog({
         ) : (
           <>
             <p className={styles.dialogHint}>
-              Aggiunge nuove UDA al corso «{courseTitle}» a partire da un file YAML di soli
+              Aggiunge nuove UDA al corso «{courseTitle}» a partire da una struttura YAML di soli
               metadati. Le UDA esistenti non vengono modificate. Non importa lezioni, contenuti o
               pool di domande.
             </p>
 
-            <label className={styles.dialogLabel}>
-              File YAML delle UDA
-              <input
-                type="file"
-                accept=".yaml,.yml"
-                autoFocus
-                aria-label="File YAML delle UDA"
-                disabled={busy}
-                onChange={(event) => void handleFile(event.target.files?.[0] ?? null)}
-              />
-            </label>
+            {state.phase === 'input' && (
+              <label className={styles.dialogLabel} htmlFor="import-uda-structure-yaml">
+                Struttura UDA in YAML
+                <textarea
+                  id="import-uda-structure-yaml"
+                  ref={textareaRef}
+                  className={styles.structureTextarea}
+                  rows={14}
+                  autoFocus
+                  spellCheck={false}
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  autoComplete="off"
+                  disabled={busy}
+                  aria-invalid={localError !== null}
+                  aria-describedby="import-uda-structure-help"
+                  value={yaml}
+                  onChange={(event) => setYaml(event.target.value)}
+                />
+              </label>
+            )}
 
-            <p className={styles.dialogHint}>
-              <button type="button" onClick={downloadTemplate} disabled={busy}>
-                Scarica modello YAML
-              </button>
-            </p>
+            {state.phase === 'input' && (
+              <p id="import-uda-structure-help" className={styles.dialogHint}>
+                Incolla qui la struttura YAML. Puoi copiare un esempio dalla sezione Template.
+              </p>
+            )}
 
             <p role="status" aria-live="polite" aria-busy={busy} className={styles.dialogHint}>
-              {state.phase === 'validating'
-                ? 'Controllo del file in corso…'
-                : busy
-                  ? 'Importazione in corso… Non chiudere questa finestra.'
-                  : state.phase === 'summary'
-                    ? `${state.udas.length} UDA verranno aggiunte in coda a quelle esistenti.`
-                    : ''}
+              {busy
+                ? 'Importazione in corso… Non chiudere questa finestra.'
+                : state.phase === 'summary'
+                  ? `${state.udas.length} UDA verranno aggiunte in coda a quelle esistenti.`
+                  : ''}
             </p>
 
             {state.phase === 'summary' && (
@@ -191,7 +196,11 @@ export function ImportUdaStructureDialog({
           </button>
           {state.phase !== 'done' && (
             <button type="submit" className="btn-primary" disabled={!canSubmit}>
-              {busy ? 'Importazione…' : 'Importa UDA'}
+              {state.phase === 'input'
+                ? 'Verifica struttura'
+                : busy
+                  ? 'Importazione…'
+                  : 'Importa UDA'}
             </button>
           )}
         </div>

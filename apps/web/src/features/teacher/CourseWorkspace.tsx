@@ -768,7 +768,6 @@ export function CourseWorkspace({
   async function handleImportLessonStructure(
     udaId: string,
     bytes: Uint8Array,
-    filename: string,
   ): Promise<number | null> {
     if (!card.activeImportId) return null;
     if (!lessonStructureRequestIdRef.current) {
@@ -781,7 +780,10 @@ export function CourseWorkspace({
     await withBusy(async () => {
       try {
         const result = await importLessonStructure(
-          { programId: card.programId, udaId, ownerUid, requestId, bytes, filename },
+          // STRUCTURE-IMPORT-UI-PASTE-01 — non esiste più un file, quindi
+          // nessun `filename`: il controllo di estensione non ha bersaglio e il
+          // resto della validazione byte-first è identico.
+          { programId: card.programId, udaId, ownerUid, requestId, bytes },
           createFirestoreLessonStructureImportDeps(db),
         );
         if (!mountedRef.current) return;
@@ -857,10 +859,7 @@ export function CourseWorkspace({
    * `requestId` survives those retries: the same request with the same manifest
    * hash is a replay, never a second import.
    */
-  async function handleImportUdaStructure(
-    bytes: Uint8Array,
-    filename: string,
-  ): Promise<number | null> {
+  async function handleImportUdaStructure(bytes: Uint8Array): Promise<number | null> {
     if (!card.activeImportId) return null;
     if (!udaStructureRequestIdRef.current) udaStructureRequestIdRef.current = crypto.randomUUID();
     const requestId = udaStructureRequestIdRef.current;
@@ -870,7 +869,7 @@ export function CourseWorkspace({
     await withBusy(async () => {
       try {
         const result = await importUdaStructure(
-          { programId: card.programId, ownerUid, requestId, bytes, filename },
+          { programId: card.programId, ownerUid, requestId, bytes },
           createFirestoreUdaStructureImportDeps(db),
         );
         if (!mountedRef.current) return;
@@ -2253,9 +2252,7 @@ export function CourseWorkspace({
           busy={wsBusy}
           error={wsError}
           onCancel={closeDialog}
-          onConfirm={(bytes, filename) =>
-            handleImportLessonStructure(wsDialog.udaId, bytes, filename)
-          }
+          onConfirm={(bytes) => handleImportLessonStructure(wsDialog.udaId, bytes)}
         />
       )}
       {wsDialog.kind === 'classes' && (

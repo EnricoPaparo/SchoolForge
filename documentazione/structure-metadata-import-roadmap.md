@@ -11,8 +11,9 @@
 Permettere al docente di preparare rapidamente lo scheletro didattico di un
 corso senza importare contenuti, pool o soluzioni:
 
-1. dal corso, un file YAML aggiunge più UDA con i rispettivi metadati;
-2. da una UDA, un file YAML aggiunge più lezioni con i rispettivi metadati;
+1. dal corso, una struttura YAML aggiunge più UDA con i rispettivi metadati;
+2. da una UDA, una struttura YAML aggiunge più lezioni con i rispettivi
+   metadati;
 3. ogni lezione nasce con corpo Markdown vuoto e pool assente;
 4. il docente può poi aprirla, modificare i metadati e usare la generazione IA
    già esistente per produrre il contenuto.
@@ -27,8 +28,8 @@ aggiunti pulsanti permanenti alle toolbar o alle card.
 
 | Contesto | Nuova voce | Risultato |
 |---|---|---|
-| `Didattica → corso → Azioni` | **Importa struttura UDA** | Accoda tutte le UDA valide del file all'import attivo del corso. |
-| `Didattica → corso → UDA → Azioni` | **Importa lezioni** | Accoda tutte le lezioni valide del file alla UDA aperta. |
+| `Didattica → corso → Azioni` | **Importa struttura UDA** | Accoda tutte le UDA valide della struttura all'import attivo del corso. |
+| `Didattica → corso → UDA → Azioni` | **Importa lezioni** | Accoda tutte le lezioni valide della struttura alla UDA aperta. |
 
 Le azioni esistenti **Importa ZIP** e **Importa UDA** restano invariate:
 importano contenuti completi. Le nuove azioni dichiarano sempre
@@ -36,13 +37,15 @@ importano contenuti completi. Le nuove azioni dichiarano sempre
 
 Ogni dialog riusa `DialogShell` e ha quattro stati:
 
-1. selezione file e link **Scarica modello YAML**;
+1. inserimento della struttura YAML in una textarea (**Verifica struttura**);
 2. validazione locale;
 3. riepilogo leggibile dell'append (numero, titoli, destinazione, errori);
-4. importazione e risultato.
+4. conferma, importazione e risultato.
 
-Non sono previste mappature campo-per-campo, drag-and-drop obbligatorio,
-wizard multipagina o conferme annidate.
+Non sono previste mappature campo-per-campo, drag-and-drop, selezione di file,
+wizard multipagina o conferme annidate. Gli esempi copiabili vivono nella
+sezione **Template**, unico punto autorevole: i dialog non li duplicano e non
+offrono un proprio download (STRUCTURE-IMPORT-UI-PASTE-01, §14.12).
 
 ## 3. Formato UDA
 
@@ -126,8 +129,10 @@ Contratto chiuso di ogni voce, allineato ai limiti del payload IA esistente:
 
 ## 5. Limiti operativi
 
-- solo `.yaml` e `.yml`, UTF-8;
-- massimo 256.000 byte UTF-8 per file;
+- YAML, UTF-8 (il controllo di estensione si applica solo quando esiste un
+  nome file: da UI il docente incolla il testo, quindi non c'è estensione da
+  verificare);
+- massimo 256.000 byte UTF-8 per importazione;
 - da 1 a 40 UDA per importazione;
 - da 1 a 40 lezioni per importazione, coerente con
   `UDA_ARCHIVE_LIMITS.MAX_LESSONS`;
@@ -665,3 +670,46 @@ di importazione e validate in round-trip dai parser reali. Ogni esempio può
 essere copiato; i due YAML possono anche essere scaricati con il filename
 canonico. Il layout è a tre colonne su desktop, due su tablet e una su mobile.
 Nessuna lettura, scrittura, Function o costo passivo viene introdotto.
+
+### 14.12 STRUCTURE-IMPORT-UI-PASTE-01 — si incolla lo YAML, non si sceglie un file
+
+**Da dove veniva la complessità.** Il flusso chiedeva un *file*, e un file non
+esiste finché il docente non lo fabbrica: scaricare il modello dal dialog,
+aprirlo in un editor, salvarlo con l'estensione giusta e nella codifica giusta,
+ritrovarlo nel selettore. Tre delle possibili risposte d'errore —
+`invalid_extension`, `invalid_encoding` e `file_too_large` — riguardavano il
+contenitore, non la struttura didattica. E il dialog portava un secondo punto di
+distribuzione dei modelli, in concorrenza con la sezione Template.
+
+**Anatomia definitiva delle due finestre.** Una textarea etichettata
+(«Struttura UDA in YAML» / «Struttura lezioni in YAML»), il testo di supporto
+«Incolla qui la struttura YAML. Puoi copiare un esempio dalla sezione
+Template.», e i comandi «Annulla» / «Verifica struttura». Sono spariti input
+file, drag and drop, «Scarica modello YAML», nome e dimensione del file e lo
+spazio che occupavano. La macchina degli stati resta quella di sempre:
+inserimento → validazione → riepilogo → conferma → importazione → risultato. La
+verifica **non** importa: il riepilogo esistente resta un passaggio obbligato.
+
+**Percorso del dato.** `stringa → TextEncoder UTF-8 → limite sui byte → parser e
+validatori STRUCTURE-IMPORT-01 → planner e runtime`. È lo stesso ingresso
+byte-first di prima: nessun parser testuale parallelo, nessuna
+`validate*MetadataFileText` chiamata dalla UI, nessuna API permissiva di lettura
+(`FileReader`, `File.text()`) reintrodotta — semplicemente non si legge più
+alcun file. Restano invariati schema canonico, rifiuto di documenti multipli,
+alias, anchor e tag, chiavi chiuse, limiti, normalizzazione, duplicati,
+`sourceHash`, `manifestHash`, idempotenza, collision check, lease, staging,
+commit, cleanup e modello di costo.
+
+**Il testo non viene persistito.** Nel record del tentativo finiscono
+`requestId`, i due hash, la destinazione, gli id creati e i path; su Storage
+finiscono solo i file del manifest (i documenti canonici generati). Lo YAML
+incollato non compare in alcun documento, log o audit.
+
+**Su errore.** Il testo resta intatto nella textarea, il focus torna lì, il
+controllo è marcato `aria-invalid` e l'errore è annunciato come già avviene nei
+dialog. Nessun tentativo, lease, upload o documento viene creato: la validazione
+è locale e precede qualunque operazione Firebase.
+
+**Costi.** Invariati. La fase di inserimento e la verifica sono interamente
+client-side: zero letture, scritture, upload e callable finché il docente non
+conferma il riepilogo, dopodiché vale il modello di costo di §14.8.
