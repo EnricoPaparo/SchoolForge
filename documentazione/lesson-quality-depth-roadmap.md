@@ -1,9 +1,9 @@
 # SchoolForge — Roadmap qualità e profondità delle lezioni generate
 
-**Stato:** diagnosi conclusa e misurata; `LESSON-DEPTH-01` implementato ma **non
-validato** (PR draft #353); `LESSON-DEPTH-02` pronto da eseguire (PR draft #355).
-Nessun prompt nuovo è ancora passato dal benchmark. **Per riprendere il lavoro
-partire dalla §10.**
+**Stato:** `LESSON-DEPTH-01` **misurato e in produzione** (candidato E, PR #353
+merged); `LESSON-DEPTH-02` e `02B` eseguiti, dataset merged (#355, #357). Restano
+aperti `LESSON-DEPTH-03` (limiti di spesa) e `LESSON-DEPTH-04` (UI), più le
+decisioni D1-D4. **Per riprendere il lavoro partire dalla §10.**
 **Data baseline:** 6 agosto 2026.
 **Dipendenze:** M5 operativo su DEV con Gate G7 PASS; AIGEN-01→03,
 AIGEN-PROMPT-01, AIGEN-CONTEXT-01, STRUCTURE-IMPORT-01→03 e SIMPLE-01 completati.
@@ -310,9 +310,38 @@ Esecuzione: identica a LESSON-DEPTH-02, con `ISOVARIANT=1` al posto di
 attive entrambe, perché il report non direbbe da solo quale dataset è stato
 eseguito). Sei chiamate su `quality`: stesso costo di un'esecuzione B.
 
-**DoD:** una esecuzione reale sul dataset isovariante con il candidato E;
-verdetto sul merge di LESSON-DEPTH-01 fondato su una variabile isolata; se la
-lunghezza resta proporzionale al conteggio, apertura di un candidato F.
+**Esito misurato** (candidato E, profilo `quality`, 155.985 µUSD, nessuno
+scenario con `priorBillingRisk`), parole per scenario:
+
+| | 1 concetto | 2 concetti | 3 concetti | escursione |
+|---|---:|---:|---:|---:|
+| **Storia** | 2.161 | 2.253 | 2.069 | ±4% |
+| **Fisica** | 1.702 | 2.119 | 2.055 | +24% poi −3% |
+
+In storia la lunghezza è **indipendente** dal numero di concetti dichiarati, e il
+massimo cade su **due** concetti, non su tre. In fisica resta un gradino fra uno
+e due, poi si appiattisce. Nel dataset sparse lo stesso salto valeva +54% (A) e
++43% (B): isolata la variabile scende a +4% e +24%, cioè gran parte di quel
+numero era la disciplina, non il conteggio — che è esattamente ciò che il
+disegno sparse non poteva distinguere.
+
+Le lezioni si assestano fra 1.700 e 2.250 parole, circa un'ora d'aula, usando
+meno di un terzo del tetto tecnico. Il candidato E è stato promosso in
+produzione su questa base.
+
+**Limite dichiarato:** sull'isovariante è stato eseguito **solo** il braccio E.
+La conclusione sostenuta è «sotto E la lunghezza non scala con il numero di
+concetti», non «E ha eliminato una proporzionalità dimostrata sotto D». Per la
+seconda servirebbe una terza esecuzione, che non è stata ritenuta necessaria
+perché la decisione da prendere riguardava E, non D.
+
+**Questione aperta, di qualità e non di quantità:** la lunghezza è la dimensione
+più facile da misurare e la meno indicativa. Che i concetti di supporto scelti
+dal modello siano *quelli giusti* nessun conteggio può dirlo: serve la rubrica a
+15 criteri, che a questi output non è ancora stata applicata.
+
+**DoD:** raggiunto — esecuzione reale effettuata, verdetto su LESSON-DEPTH-01
+fondato su una variabile isolata.
 
 ### LESSON-DEPTH-03 — limiti di spesa
 
