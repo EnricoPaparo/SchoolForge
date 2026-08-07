@@ -263,6 +263,57 @@ tetto prudenziale di 1,70 USD: rientra nel budget mensile da 5 USD, ma non è
 trascurabile come sembrava. Su `economy` il ciclo completo sta sotto i 0,16 USD
 e resta un'opzione se serve solo l'ordine di grandezza della differenza.
 
+### LESSON-DEPTH-02B — dataset isovariante e misura a variabile singola
+
+Dipende da: LESSON-DEPTH-02 (eseguito).
+
+**Esito della misura A/B su dataset sparse** (A = candidato D, B = candidato E,
+profilo `quality`, split `tuning`), parole per scenario:
+
+| Scenario | Conc. | Depth | A | B | Δ |
+|---|---:|---|---:|---:|---:|
+| LD02-01 grammatica | 1 | complete | 1.141 | 1.498 | +31% |
+| LD02-02 fisica | 1 | complete | 1.205 | 1.423 | +18% |
+| LD02-03 storia | 2 | complete | 1.958 | 2.290 | +17% |
+| LD02-04 programmazione | 2 | complete | 1.653 | 1.874 | +13% |
+| LD02-05 biologia | 3 | complete | 1.275 | 1.818 | +43% |
+| LD02-06 matematica | 2 | **in_depth** | 1.285 | 2.230 | +74% |
+
+Il candidato E migliora tutti e sei gli scenari e corregge il difetto più grave
+trovato in A: `in_depth` produceva meno testo di `complete` a parità di
+concetti, e ora produce il testo più lungo del set. Il guadagno è massimo dove
+l'input era più povero, che è il comportamento voluto.
+
+**Ma il dataset sparse non può reggere la conclusione più importante.** Il suo
+disegno fa variare due cose insieme — disciplina e numero di concetti — quindi
+il residuo «+43% da uno a due concetti» non è attribuibile: LD02-05 ha tre
+concetti e meno testo di uno scenario a due, il che mostra che la materia pesa
+quanto il conteggio. Il difetto è nel disegno, non nella misura.
+
+Il dataset `lesson-depth-03-isovariant-v1` corregge esattamente questo. Gli
+scenari sono organizzati in **terne**: stessa materia, stessa lezione, stessi
+obiettivi, stessa UDA, stessa profondità; cambia soltanto quanti concetti chiave
+sono dichiarati, e i concetti sono **annidati come prefisso** (1 ⊂ 2 ⊂ 3). Due
+terne su discipline diverse — storia e fisica — perché una sola non
+distinguerebbe il comportamento del prompt da una peculiarità della materia. Il
+parser rifiuta il caricamento se un solo invariante del disegno cade: un dataset
+degradato continuerebbe a produrre numeri, ma i numeri non significherebbero più
+quello che diciamo che significano.
+
+**L'esito è decidibile senza rubrica:** se il prompt tratta i concetti chiave
+come *perimetro*, le tre lezioni di una terna hanno lunghezza simile; se li
+tratta come *budget di contenuto*, la lunghezza cresce con il conteggio — ed è
+il difetto che LESSON-DEPTH-01 deve eliminare.
+
+Esecuzione: identica a LESSON-DEPTH-02, con `ISOVARIANT=1` al posto di
+`SPARSE=1` (le due variabili sono alternative e il comando si ferma se sono
+attive entrambe, perché il report non direbbe da solo quale dataset è stato
+eseguito). Sei chiamate su `quality`: stesso costo di un'esecuzione B.
+
+**DoD:** una esecuzione reale sul dataset isovariante con il candidato E;
+verdetto sul merge di LESSON-DEPTH-01 fondato su una variabile isolata; se la
+lunghezza resta proporzionale al conteggio, apertura di un candidato F.
+
 ### LESSON-DEPTH-03 — limiti di spesa
 
 Dipende da: LESSON-DEPTH-02 (per avere numeri fondati), D1, D2.
