@@ -9,6 +9,7 @@ import { resolveContentModel, type LessonRequest } from './aiContentCore.js';
 import { createContentProvider, type ContentProvider } from './aiContentProvider.js';
 import { AI_CONTENT_PROMPT_VERSION } from './aiContentPrompt.js';
 import { validateLessonProposal } from './aiContentValidation.js';
+import { loadLessonDepthSparseDataset } from './lessonDepthSparseBenchmark.js';
 import {
   buildLessonTuneExecutionPlan,
   buildLessonTuneRequest,
@@ -269,7 +270,11 @@ async function main(): Promise<void> {
     stdinIsTTY: Boolean(stdin.isTTY),
     stdoutIsTTY: Boolean(stdout.isTTY),
     nodeMajorVersion: Number.parseInt(process.versions.node.split('.')[0] ?? '', 10),
-    loadDataset: () => loadLessonTuneDataset(),
+    // LESSON-DEPTH-02 — `SPARSE=1` esegue il dataset del caso povero invece di
+    // quello congelato. È un interruttore sull'ingresso, non un secondo runner:
+    // piano, esecuzione, costi e report restano quelli già validati.
+    loadDataset: () =>
+      process.env.SPARSE === '1' ? loadLessonDepthSparseDataset() : loadLessonTuneDataset(),
     buildPlan: buildLessonTuneExecutionPlan,
     confirm: defaultConfirmation,
     createProvider: (apiKey) => createContentProvider({ mode: 'openai', openAiApiKey: apiKey }),

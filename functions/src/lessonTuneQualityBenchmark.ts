@@ -114,7 +114,7 @@ function requestIdForScenario(id: string): string {
   return `00000000-0000-4000-9000-${String(numeric).padStart(12, '0')}`;
 }
 
-function validateScenarioRequest(
+export function validateScenarioRequest(
   raw: Record<string, unknown>,
   id: string,
   modelProfile: ModelProfile = LESSON_MANUAL_QUALITY_PROFILE,
