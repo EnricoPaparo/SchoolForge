@@ -1,0 +1,248 @@
+{
+  "datasetVersion": "lesson-depth-03-isovariant-v1",
+  "baseDatasetVersion": "lesson-manual-02-scenarios-v1",
+  "rubricVersion": "lesson-manual-02-rubric-v1",
+  "generatedSamplesIncluded": false,
+  "scenarios": [
+    {
+      "id": "LD03-01",
+      "split": "tuning",
+      "category": "history_arity_1",
+      "titolo": "La rivoluzione industriale inglese",
+      "sottotitolo": null,
+      "difficolta": "3 — intermedia",
+      "concettiChiave": [
+        "macchina a vapore"
+      ],
+      "obiettivi": [
+        "Spiegare perché la rivoluzione industriale nasce in Inghilterra",
+        "Descrivere che cosa cambia nel lavoro e nella vita quotidiana"
+      ],
+      "udaTitle": "L'età delle rivoluzioni",
+      "udaContext": {
+        "title": "L'età delle rivoluzioni",
+        "currentLessonPosition": 2,
+        "lessons": [
+          {
+            "position": 1,
+            "titolo": "La rivoluzione agricola",
+            "sottotitolo": "Recinzioni e nuove colture"
+          },
+          {
+            "position": 2,
+            "titolo": "La rivoluzione industriale inglese",
+            "sottotitolo": null
+          },
+          {
+            "position": 3,
+            "titolo": "La questione sociale",
+            "sottotitolo": "Condizioni operaie e primi sindacati"
+          }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": null
+    },
+    {
+      "id": "LD03-02",
+      "split": "tuning",
+      "category": "history_arity_2",
+      "titolo": "La rivoluzione industriale inglese",
+      "sottotitolo": null,
+      "difficolta": "3 — intermedia",
+      "concettiChiave": [
+        "macchina a vapore",
+        "fabbrica"
+      ],
+      "obiettivi": [
+        "Spiegare perché la rivoluzione industriale nasce in Inghilterra",
+        "Descrivere che cosa cambia nel lavoro e nella vita quotidiana"
+      ],
+      "udaTitle": "L'età delle rivoluzioni",
+      "udaContext": {
+        "title": "L'età delle rivoluzioni",
+        "currentLessonPosition": 2,
+        "lessons": [
+          {
+            "position": 1,
+            "titolo": "La rivoluzione agricola",
+            "sottotitolo": "Recinzioni e nuove colture"
+          },
+          {
+            "position": 2,
+            "titolo": "La rivoluzione industriale inglese",
+            "sottotitolo": null
+          },
+          {
+            "position": 3,
+            "titolo": "La questione sociale",
+            "sottotitolo": "Condizioni operaie e primi sindacati"
+          }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": null
+    },
+    {
+      "id": "LD03-03",
+      "split": "tuning",
+      "category": "history_arity_3",
+      "titolo": "La rivoluzione industriale inglese",
+      "sottotitolo": null,
+      "difficolta": "3 — intermedia",
+      "concettiChiave": [
+        "macchina a vapore",
+        "fabbrica",
+        "urbanizzazione"
+      ],
+      "obiettivi": [
+        "Spiegare perché la rivoluzione industriale nasce in Inghilterra",
+        "Descrivere che cosa cambia nel lavoro e nella vita quotidiana"
+      ],
+      "udaTitle": "L'età delle rivoluzioni",
+      "udaContext": {
+        "title": "L'età delle rivoluzioni",
+        "currentLessonPosition": 2,
+        "lessons": [
+          {
+            "position": 1,
+            "titolo": "La rivoluzione agricola",
+            "sottotitolo": "Recinzioni e nuove colture"
+          },
+          {
+            "position": 2,
+            "titolo": "La rivoluzione industriale inglese",
+            "sottotitolo": null
+          },
+          {
+            "position": 3,
+            "titolo": "La questione sociale",
+            "sottotitolo": "Condizioni operaie e primi sindacati"
+          }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": null
+    },
+    {
+      "id": "LD03-04",
+      "split": "tuning",
+      "category": "physics_arity_1",
+      "titolo": "La corrente elettrica",
+      "sottotitolo": null,
+      "difficolta": "3 — intermedia",
+      "concettiChiave": [
+        "intensità di corrente"
+      ],
+      "obiettivi": [
+        "Descrivere che cosa accade in un circuito quando passa la corrente",
+        "Collegare fra loro le grandezze che descrivono un circuito"
+      ],
+      "udaTitle": "L'elettricità",
+      "udaContext": {
+        "title": "L'elettricità",
+        "currentLessonPosition": 2,
+        "lessons": [
+          {
+            "position": 1,
+            "titolo": "La carica elettrica",
+            "sottotitolo": "Conduttori e isolanti"
+          },
+          {
+            "position": 2,
+            "titolo": "La corrente elettrica",
+            "sottotitolo": null
+          },
+          {
+            "position": 3,
+            "titolo": "I circuiti in serie e in parallelo",
+            "sottotitolo": null
+          }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": null
+    },
+    {
+      "id": "LD03-05",
+      "split": "tuning",
+      "category": "physics_arity_2",
+      "titolo": "La corrente elettrica",
+      "sottotitolo": null,
+      "difficolta": "3 — intermedia",
+      "concettiChiave": [
+        "intensità di corrente",
+        "differenza di potenziale"
+      ],
+      "obiettivi": [
+        "Descrivere che cosa accade in un circuito quando passa la corrente",
+        "Collegare fra loro le grandezze che descrivono un circuito"
+      ],
+      "udaTitle": "L'elettricità",
+      "udaContext": {
+        "title": "L'elettricità",
+        "currentLessonPosition": 2,
+        "lessons": [
+          {
+            "position": 1,
+            "titolo": "La carica elettrica",
+            "sottotitolo": "Conduttori e isolanti"
+          },
+          {
+            "position": 2,
+            "titolo": "La corrente elettrica",
+            "sottotitolo": null
+          },
+          {
+            "position": 3,
+            "titolo": "I circuiti in serie e in parallelo",
+            "sottotitolo": null
+          }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": null
+    },
+    {
+      "id": "LD03-06",
+      "split": "tuning",
+      "category": "physics_arity_3",
+      "titolo": "La corrente elettrica",
+      "sottotitolo": null,
+      "difficolta": "3 — intermedia",
+      "concettiChiave": [
+        "intensità di corrente",
+        "differenza di potenziale",
+        "resistenza"
+      ],
+      "obiettivi": [
+        "Descrivere che cosa accade in un circuito quando passa la corrente",
+        "Collegare fra loro le grandezze che descrivono un circuito"
+      ],
+      "udaTitle": "L'elettricità",
+      "udaContext": {
+        "title": "L'elettricità",
+        "currentLessonPosition": 2,
+        "lessons": [
+          {
+            "position": 1,
+            "titolo": "La carica elettrica",
+            "sottotitolo": "Conduttori e isolanti"
+          },
+          {
+            "position": 2,
+            "titolo": "La corrente elettrica",
+            "sottotitolo": null
+          },
+          {
+            "position": 3,
+            "titolo": "I circuiti in serie e in parallelo",
+            "sottotitolo": null
+          }
+        ]
+      },
+      "depth": "complete",
+      "teacherGuidance": null
+    }
+  ]
+}

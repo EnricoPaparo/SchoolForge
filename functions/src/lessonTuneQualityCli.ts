@@ -9,6 +9,7 @@ import { resolveContentModel, type LessonRequest } from './aiContentCore.js';
 import { createContentProvider, type ContentProvider } from './aiContentProvider.js';
 import { AI_CONTENT_PROMPT_VERSION } from './aiContentPrompt.js';
 import { validateLessonProposal } from './aiContentValidation.js';
+import { loadLessonDepthIsovariantDataset } from './lessonDepthIsovariantBenchmark.js';
 import { loadLessonDepthSparseDataset } from './lessonDepthSparseBenchmark.js';
 import {
   buildLessonTuneExecutionPlan,
@@ -270,11 +271,21 @@ async function main(): Promise<void> {
     stdinIsTTY: Boolean(stdin.isTTY),
     stdoutIsTTY: Boolean(stdout.isTTY),
     nodeMajorVersion: Number.parseInt(process.versions.node.split('.')[0] ?? '', 10),
-    // LESSON-DEPTH-02 — `SPARSE=1` esegue il dataset del caso povero invece di
-    // quello congelato. È un interruttore sull'ingresso, non un secondo runner:
-    // piano, esecuzione, costi e report restano quelli già validati.
-    loadDataset: () =>
-      process.env.SPARSE === '1' ? loadLessonDepthSparseDataset() : loadLessonTuneDataset(),
+    // LESSON-DEPTH-02/03 — `SPARSE=1` esegue il dataset del caso povero e
+    // `ISOVARIANT=1` quello a variabile singola, invece di quello congelato.
+    // Sono interruttori sull'ingresso, non runner alternativi: piano,
+    // esecuzione, costi e report restano quelli già validati. Se sono attivi
+    // entrambi il comando si ferma, perché il report non direbbe da solo quale
+    // dei due dataset è stato eseguito.
+    loadDataset: () => {
+      const sparse = process.env.SPARSE === '1';
+      const isovariant = process.env.ISOVARIANT === '1';
+      if (sparse && isovariant) {
+        throw new Error('SPARSE e ISOVARIANT sono alternativi: impostane uno solo.');
+      }
+      if (isovariant) return loadLessonDepthIsovariantDataset();
+      return sparse ? loadLessonDepthSparseDataset() : loadLessonTuneDataset();
+    },
     buildPlan: buildLessonTuneExecutionPlan,
     confirm: defaultConfirmation,
     createProvider: (apiKey) => createContentProvider({ mode: 'openai', openAiApiKey: apiKey }),
