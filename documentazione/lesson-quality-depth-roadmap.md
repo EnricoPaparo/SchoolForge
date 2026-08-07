@@ -1,7 +1,9 @@
 # SchoolForge — Roadmap qualità e profondità delle lezioni generate
 
 **Stato:** diagnosi conclusa e misurata; `LESSON-DEPTH-01` implementato ma **non
-validato** (PR draft #353). Nessun prompt nuovo è ancora passato dal benchmark.
+validato** (PR draft #353); `LESSON-DEPTH-02` pronto da eseguire (PR draft #355).
+Nessun prompt nuovo è ancora passato dal benchmark. **Per riprendere il lavoro
+partire dalla §10.**
 **Data baseline:** 6 agosto 2026.
 **Dipendenze:** M5 operativo su DEV con Gate G7 PASS; AIGEN-01→03,
 AIGEN-PROMPT-01, AIGEN-CONTEXT-01, STRUCTURE-IMPORT-01→03 e SIMPLE-01 completati.
@@ -12,6 +14,49 @@ generate con l'IA escono scarne.** Non è una percezione: la sezione 2 la misura
 Il flusso «dichiaro i metadati → genero la lezione» è il cuore del prodotto. Se
 produce una lezione che il docente deve riscrivere, SchoolForge gli fa perdere
 tempo invece di fargliene guadagnare, ed è la sola cosa che non può permettersi.
+
+### Che cosa deve essere una lezione generata
+
+Senza un bersaglio dichiarato non si può giudicare se una modifica migliora
+qualcosa, quindi il bersaglio va scritto. Una lezione generata è accettabile
+quando il docente **la porta in classe così com'è**.
+
+In concreto significa che:
+
+- **regge un'ora di lezione.** Non è un riassunto, non è una scaletta, non è un
+  paragrafo: è il testo su cui uno studente studia e su cui un docente spiega;
+- **ogni concetto chiave è sviluppato**, non nominato. Definirlo e passare oltre
+  è il modo più comune di sembrare completi restando inutili;
+- **è motivata.** Ogni affermazione a cui uno studente chiederebbe «perché?»
+  riceve la risposta dove serve, non altrove;
+- **è autosufficiente.** Si legge da sola, senza rimandi a ciò che il docente
+  «dirà a voce» o ad altre lezioni;
+- **contiene i passaggi intermedi**, cioè i prerequisiti e le definizioni che
+  servono ad arrivare al concetto chiave, anche se nessuno li ha elencati.
+
+La formulazione del docente è più diretta: *«le lezioni devono essere perfette,
+senza se e senza ma»*. Operativamente il bersaglio è quello sopra; «perfetta»
+qui non è un assoluto irraggiungibile, è **pronta all'uso senza riscrittura**.
+
+### La regola economica che governa tutto
+
+C'è un criterio che viene prima di ogni scelta tecnica, ed è quello che il
+docente ha espresso così: *«i side concept sta al modello toccarli, non al
+docente, altrimenti fa prima a scriverla lui a mano la lezione; deve far
+risparmiare tempo, non richiederne di più del normale»*.
+
+Da qui discende un vincolo che vale per **ogni** pacchetto futuro:
+
+> Qualunque soluzione che richieda al docente di **descrivere di più** per
+> ottenere una lezione migliore è una soluzione sbagliata, anche se funziona.
+
+È la scorciatoia più tentante — «basta che il docente scriva cinque concetti
+invece di due» — ed è esattamente il fallimento del prodotto: se compilare i
+metadati costa quanto scrivere la lezione, lo strumento non serve. Il lavoro di
+individuare i concetti di supporto appartiene al modello.
+
+Questo non contraddice il perimetro: il docente resta l'autorità su **che cosa**
+la lezione tratta. Non lo è su **quanto** e su **come** ci si arriva.
 
 ## 1. Principi invarianti
 
@@ -28,6 +73,10 @@ tempo invece di fargliene guadagnare, ed è la sola cosa che non può permetters
 - Il rigore epistemico già validato (niente dati inventati, niente causalità
   non provate, coerenza interna) **non si tocca**: si aggiunge profondità, non
   si toglie severità.
+- **Nessuna soluzione può chiedere al docente di scrivere di più.** Il criterio
+  economico sopra prevale: la ricchezza dell'input non è una leva ammessa.
+- Il bersaglio è la lezione **pronta all'uso senza riscrittura**, non la lezione
+  «migliore di prima».
 - Nessuna modifica a Rules, indici, schema Firestore o dipendenze.
 
 ## 2. Evidenze — che cosa è stato misurato
@@ -74,6 +123,25 @@ insieme**: perimetro didattico e budget di contenuto. Il prompt chiedeva di
 «fissare adeguatamente concetti chiave e obiettivi forniti» e di non trattare
 «un argomento più ampio»: due concetti dichiarati diventavano due blocchi, e la
 lezione usciva lunga la metà. Il modello non sbagliava, obbediva.
+
+La catena, per esteso, è questa:
+
+1. il docente dichiara due concetti chiave, perché sono davvero i due concetti
+   della lezione — non sta sbagliando a compilare;
+2. il prompt tratta quell'elenco come il **contenuto da produrre**, non come
+   l'argomento da trattare;
+3. il modello sviluppa due blocchi e considera il compito assolto;
+4. nessuna istruzione gli dice che una lezione scolastica ha una consistenza
+   propria, indipendente da quante voci ha ricevuto;
+5. il controllo finale, tutto di verifica e potatura, gli fa semmai **togliere**
+   qualcosa;
+6. esce una lezione formalmente corretta, epistemicamente rigorosa e
+   didatticamente insufficiente — la combinazione peggiore, perché supera ogni
+   controllo automatico e fallisce l'unico che conta, cioè l'uso in classe.
+
+Il punto 6 spiega anche perché il benchmark dava 12/12 PASS mentre il docente
+vedeva lezioni scarne: la rubrica misurava correttezza e coerenza su un input
+ricco, e su quello il modello lavorava bene davvero.
 
 Cause concorrenti, in ordine di peso stimato:
 
@@ -305,3 +373,129 @@ giornaliero e mensile devono accogliere.
   va verificato che non produca contenuto arbitrario.
 - **Il budget mensile diventa il collo di bottiglia** prima che la qualità sia
   soddisfacente, e la decisione si sposta da tecnica a economica.
+
+## 10. Stato operativo e ripresa
+
+Questa sezione è **volatile**: serve a chi riprende il lavoro — persona o agente
+— a sapere in trenta secondi dove siamo e qual è la prossima azione. Va
+aggiornata o rimossa quando il Gate GLESSON chiude.
+
+**Ultimo aggiornamento:** 6 agosto 2026.
+
+### 10.1 La prossima azione, in una riga
+
+**Eseguire il confronto A/B del benchmark** (§5, LESSON-DEPTH-02) e portare i due
+report. Tutto il resto è pronto e verde; senza quella misura non si merga nulla.
+
+### 10.2 Rami e PR
+
+| Ramo | PR | Contenuto | Stato |
+|---|---|---|---|
+| — | #354 | Questa roadmap | **mergiata** |
+| `lesson-depth-01` | #353 | Candidato E del prompt | aperta, draft, CI verde |
+| `lesson-depth-02-sparse` | #355 | Dataset del caso povero | aperta, draft, CI verde |
+| `lesson-depth-ab` | nessuna | Ramo di **sola misura**: dataset povero + candidato E | **non va mergiato** |
+
+`lesson-depth-ab` esiste perché dataset e prompt vivono su due rami diversi:
+eseguire la seconda misura da `lesson-depth-01` girerebbe sul dataset congelato
+**senza segnalarlo**, ed è il modo peggiore di sbagliare — il report sembrerebbe
+valido.
+
+### 10.3 Che cosa cambia il candidato E
+
+In `aiContentPrompt.ts`, sei modifiche: blocco «Ampiezza e profondità» in cima al
+contratto; `DEPTH_SEMANTICS` ancorata al singolo concetto chiave; distinzione fra
+*più ampio* (vietato) e *più profondo* (richiesto); criterio decidibile del
+perimetro; tetti alle attività condizionati alla profondità; completezza come
+primo punto del controllo finale. In `aiContentPayload.ts`, tetti di output
+8.000 / 14.000 / 18.000. Versione del prompt a `lesson-depth-01-candidate-e-v1`.
+
+Il prompt del **pool** resta byte-identico, ancorato a SHA-256 in test.
+
+### 10.4 Come si esegue la misura
+
+Due esecuzioni, stessa riga di comando, rami diversi:
+
+| | Ramo | Prompt atteso nel report |
+|---|---|---|
+| **A — baseline** | `lesson-depth-02-sparse` | `lesson-tune-01-candidate-d-v1` |
+| **B — candidato E** | `lesson-depth-ab` | `lesson-depth-01-candidate-e-v1` |
+
+```bash
+git checkout <ramo>
+cd functions
+pnpm build
+
+# Simulazione, costo zero: verifica il piano prima di pagare.
+SPARSE=1 node lib/lessonTuneQualityCli.js \
+  --benchmark-split=tuning --benchmark-model-profile=quality
+
+# Esecuzione reale.
+SPARSE=1 OPENAI_API_KEY=sk-… node lib/lessonTuneQualityCli.js \
+  --benchmark-split=tuning --benchmark-model-profile=quality \
+  --execute-real-openai --i-understand-this-costs-money
+```
+
+In PowerShell le variabili si impostano prima, con
+`$env:SPARSE = "1"`, e il comando va su una riga sola.
+
+L'output finisce in `functions/lib/lesson-tune-01-tuning-<timestamp>/`:
+`lesson-tune-01-report.json` più un Markdown per scenario. **`functions/lib` è in
+`.gitignore`**, quindi i report restano locali e vanno copiati a mano se servono
+altrove.
+
+### 10.5 Perché un agente non può eseguirla
+
+Il CLI ha tre guardrail espliciti, ed è giusto che li abbia:
+
+1. `nodeMajorVersion !== 22` ⇒ rifiuto;
+2. `!stdinIsTTY || !stdoutIsTTY` ⇒ rifiuto — un ambiente automatico non ha un
+   terminale interattivo;
+3. conferma da digitare a mano: `ESEGUI 8 LEZIONI TUNING REALI QUALITY` (dice
+   «8» perché è il testo fisso del profilo; le chiamate reali sono 6).
+
+Il secondo esiste **apposta** per impedire che uno script, una CI o un agente
+spendano sul conto OpenAI senza una persona presente. Non va aggirato per
+comodità: chi riprende il lavoro faccia eseguire la misura a una persona, oppure
+proponga esplicitamente al proprietario di introdurre una modalità non
+interattiva, che è una decisione di governance e non un dettaglio tecnico.
+
+Nell'ambiente di sviluppo remoto non esiste `OPENAI_API_KEY`, e anche
+aggiungendola il guardrail 2 resterebbe.
+
+### 10.6 Come si legge il risultato
+
+Nell'ordine, dal più decisivo:
+
+1. **Token di output di LD02-01/02 (un concetto) contro LD02-05 (tre).** Se nel
+   candidato E la lunghezza smette di essere proporzionale al numero di concetti,
+   il principio ha funzionato. È la domanda originale.
+2. **`Profondità coerente con depth`** e **`Densità informativa`** sulla rubrica:
+   una lezione più lunga e più diluita è un peggioramento, non un progresso.
+3. **`Perimetro`**: se peggiora, il candidato E ha smesso di divagare meno. È un
+   **blocker**, non un compromesso accettabile.
+4. Lettura a occhio di `LD02-03` (storia, due concetti) nelle due versioni.
+
+**Criterio di decisione.** Merge di #353 solo se: nessun criterio della rubrica
+peggiora, il perimetro resta intatto e la profondità migliora sul caso povero.
+Altrimenti candidato F, ripartendo dal punto che i numeri indicano.
+
+### 10.7 Trappole già incontrate
+
+- I flag del CLI sono `--benchmark-split=` e `--benchmark-model-profile=`, non
+  `--split`/`--profile`: documentato sbagliato una prima volta.
+- Da dentro `functions/`, `pnpm benchmark:lesson-tune-quality` fallisce perché
+  pnpm risolve lo script sul workspace radice: usare `node lib/…`.
+- Il CLI scrive in `lib/` **relativo alla cartella corrente**: va lanciato da
+  `functions/`.
+- `estimatedCostMicroUsd` assume che il modello riempia tutto il budget di
+  output, cosa che non fa: in LESSON-TUNE-07 il costo reale è stato il 38% della
+  stima. Attesi ~0,34 USD reali per le due esecuzioni su `quality`.
+
+### 10.8 Alternativa senza benchmark
+
+Se la misura formale resta bloccata, esiste una verifica più povera ma non
+inutile: generare **due lezioni a mano dall'app**, stesso titolo e stessi due
+concetti chiave, una con il prompt attuale e una dopo aver deployato il candidato
+E su DEV, e leggerle affiancate. Non produce punteggi e non chiude il Gate, ma
+risponde alla domanda «il problema è risolto?» senza Node 22 e senza CLI.
