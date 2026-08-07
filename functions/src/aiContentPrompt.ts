@@ -26,7 +26,7 @@
 import { POOL_LEVEL_DIFFICULTY, type PoolRequest, type LessonRequest } from './aiContentCore.js';
 
 /** Da congelare in ogni benchmark; va incrementata a ogni modifica dei prompt. */
-export const AI_CONTENT_PROMPT_VERSION = 'lesson-tune-01-candidate-d-v1' as const;
+export const AI_CONTENT_PROMPT_VERSION = 'lesson-depth-01-candidate-e-v1' as const;
 
 /**
  * Preambolo di sicurezza comune (livello 1), il più autorevole del prompt.
@@ -178,12 +178,21 @@ export function buildPoolPrompt(request: PoolRequest): BuiltPrompt {
 }
 
 /** Semantica pedagogica della profondità (non è un numero di caratteri). */
+/**
+ * LESSON-DEPTH-01 — la profondità è una regola operativa, non un aggettivo.
+ *
+ * «Trattazione piena» non dice al modello quando ha finito, e un modello che non
+ * sa quando ha finito finisce presto. Ancorare la profondità al **singolo
+ * concetto chiave** dà un criterio verificabile e non gonfiabile: il testo cresce
+ * dove c'è qualcosa da spiegare, non per riempire una quota di parole.
+ */
 const DEPTH_SEMANTICS: Readonly<Record<LessonRequest['depth'], string>> = {
   synthetic:
-    'sintetica: essenziale ma completa rispetto ai concetti selezionati, senza omettere nulla di necessario alla comprensione',
-  complete: 'completa: trattazione piena, con spiegazioni, collegamenti ed esempi adeguati',
+    'sintetica: OGNI concetto chiave riceve comunque una spiegazione motivata e comprensibile; si riduce l’ampiezza di esempi e applicazioni, mai la spiegazione',
+  complete:
+    'completa: OGNI concetto chiave riceve una spiegazione motivata, almeno un esempio concreto svolto e il perché del suo funzionamento; i concetti vengono collegati fra loro quando il collegamento chiarisce',
   in_depth:
-    'approfondita: trattazione estesa, con motivazioni, casi, applicazioni ed esercizi quando coerenti',
+    'approfondita: OGNI concetto chiave riceve spiegazione motivata, più esempi o casi, applicazioni, condizioni di validità ed errori tipici; motivazioni profonde e limiti vengono esplicitati, non sottintesi',
 };
 
 /** Contratto pedagogico della lezione (livello 2). */
@@ -234,6 +243,22 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
   const contract = [
     `Scrivi il corpo Markdown di una lezione scolastica in italiano, profondità ${DEPTH_SEMANTICS[request.depth]}.`,
     '',
+    '',
+    'Ampiezza e profondità — regola fondamentale, prevale in caso di dubbio:',
+    '- i CONCETTI CHIAVE dicono CHE COSA va trattato, non QUANTO scrivere: una lezione con due',
+    '  concetti chiave non è mezza lezione, è una lezione che tratta due concetti in profondità;',
+    '- l’unità di misura è la LEZIONE SCOLASTICA completa — un testo che sostiene un’ora di lezione',
+    '  in classe — qualunque sia il numero di voci ricevute nei metadati;',
+    '- MENO concetti chiave ricevi, PIÙ a fondo vanno trattati: cresci in esempi, casi, motivazioni,',
+    '  applicazioni, errori tipici e condizioni di validità, non in numero di argomenti;',
+    '- individua e introduci tu i CONCETTI DI SUPPORTO necessari a una progressione comprensibile —',
+    '  prerequisiti, definizioni intermedie, motivazioni, conseguenze, applicazioni: è compito tuo,',
+    '  non del docente, che ha dichiarato la meta e non ogni passo per arrivarci;',
+    '- il confine è verificabile, e va applicato a ogni contenuto che aggiungi: è DENTRO il perimetro',
+    '  se togliendolo uno dei concetti chiave dichiarati diventa meno comprensibile; è FUORI se la',
+    '  sua assenza non toglie nulla alla comprensione di quei concetti. Ciò che è fuori non va',
+    '  scritto, per quanto interessante: la lezione resta su questi concetti, trattati a fondo.',
+    '',
     'La lezione deve essere didatticamente completa, chiara, motivata e autosufficiente:',
     '- spiega ogni concetto nuovo prima di utilizzarlo e costruisci una progressione comprensibile;',
     '- collega i concetti quando il collegamento aiuta la comprensione e motiva le affermazioni e i',
@@ -246,9 +271,9 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '- se il contenuto è operativo, procedurale, tecnico o di calcolo, inserisci pochi esempi o',
     '  esercizi realmente utili; svolgili integralmente passo passo, motivando metodo, passaggi,',
     '  risultato, controllo ed errori tipici pertinenti;',
-    '- se il contenuto è prevalentemente teorico, puoi creare al massimo UNA sola sezione di',
-    '  attività/autoverifica, contenente non più di due domande risolte che richiedano comprensione,',
-    '  collegamento o ragionamento, non semplice memoria; non distribuire altre attività altrove;',
+    request.depth === 'in_depth'
+      ? '- se il contenuto è prevalentemente teorico, puoi creare al massimo DUE sezioni di attività/autoverifica, con non più di quattro domande risolte in totale, che richiedano comprensione, collegamento o ragionamento, non semplice memoria; non distribuire altre attività altrove;'
+      : '- se il contenuto è prevalentemente teorico, puoi creare al massimo UNA sola sezione di attività/autoverifica, contenente non più di due domande risolte che richiedano comprensione, collegamento o ragionamento, non semplice memoria; non distribuire altre attività altrove;',
     '- se un’attività non aggiunge valore didattico, omettila; non creare raccolte ripetitive e non',
     '  lasciare esercizi senza soluzione nel corpo della lezione;',
     '- non comprimere definizioni, spiegazioni o nessi causali per fare spazio agli esercizi.',
@@ -287,7 +312,9 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '',
     'Perimetro didattico (METADATI_DIDATTICI):',
     '- titolo, difficoltà, concetti chiave e obiettivi della lezione corrente sono i riferimenti',
-    '  AUTOREVOLI: sviluppa quell’argomento, non un argomento diverso o più ampio;',
+    '  AUTOREVOLI: sviluppa quell’argomento, non un argomento diverso né più AMPIO. Più ampio',
+    '  significa altri argomenti; più PROFONDO — prerequisiti, motivazioni, esempi, casi e limiti di',
+    '  questi concetti — è invece sempre richiesto, e non allarga il perimetro;',
     '- la difficoltà indica il LIVELLO PEDAGOGICO richiesto (linguaggio, profondità concettuale,',
     '  complessità di esempi ed esercizi) e non va confusa con la profondità, che riguarda invece',
     '  quanto estesa è la trattazione;',
@@ -329,17 +356,22 @@ export function buildLessonPrompt(request: LessonRequest): BuiltPrompt {
     '  un vantaggio didattico concreto e non ripetono quanto già spiegato.',
     '',
     'Prima di rispondere esegui in silenzio questo controllo finale obbligatorio:',
-    '1) ricalcola da zero ogni esercizio usando i dati originali e verifica ogni soluzione;',
-    '2) confronta ogni esempio e conclusione con definizioni, formule, condizioni e fatti già',
+    '1) verifica che OGNI concetto chiave e OGNI obiettivo dichiarato sia stato davvero sviluppato e',
+    '   non soltanto nominato o definito di sfuggita, e che la lezione regga come lezione scolastica',
+    '   completa; se un concetto è solo accennato o la trattazione è più povera di quanto la',
+    '   profondità richiesta esige, ESPANDILA prima di rispondere: è l’unico punto di questo',
+    '   controllo che può farti aggiungere testo, e viene prima degli altri proprio per questo;',
+    '2) ricalcola da zero ogni esercizio usando i dati originali e verifica ogni soluzione;',
+    '3) confronta ogni esempio e conclusione con definizioni, formule, condizioni e fatti già',
     '   dichiarati; verifica che diagnosi e nessi causali non dicano più di quanto provano i dati;',
-    '3) verifica da zero che tutte le premesse di ogni caso possano coesistere e che esempi,',
+    '4) verifica da zero che tutte le premesse di ogni caso possano coesistere e che esempi,',
     '   termini tecnici ed etichette appartengano davvero alle categorie dichiarate; se il caso è',
     '   incoerente, correggilo o sostituiscilo prima di produrre l’output;',
-    '4) elimina ogni riferimento all’indice, a lezioni precedenti/successive o a ciò che sarà',
+    '5) elimina ogni riferimento all’indice, a lezioni precedenti/successive o a ciò che sarà',
     '   studiato in seguito;',
-    '5) verifica numero e collocazione delle attività, sintassi Markdown e assenza di LaTeX,',
+    '6) verifica numero e collocazione delle attività, sintassi Markdown e assenza di LaTeX,',
     '   Mermaid, HTML, front matter e separatori orizzontali;',
-    '6) correggi ortografia, parole spezzate, etichette residue, terminologia italiana, nomi delle',
+    '7) correggi ortografia, parole spezzate, etichette residue, terminologia italiana, nomi delle',
     '   variabili, simboli, unità, calcoli, soluzioni e coerenza interna.',
     'Restituisci soltanto il Markdown finale corretto.',
     '',
