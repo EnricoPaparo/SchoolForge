@@ -53,7 +53,8 @@ SchoolForge è un repository didattico Markdown-first per un solo docente. Se è
 12. [vex-contract.md](vex-contract.md) — VEX varianti equivalenti: contratto, builder assistito docente, assegnazione server-side idempotente, svolgimento, correzione/IA/restituzione sulla variante. VEX-01A→02C implementati e distribuiti su DEV; **Gate GVEX PASS**. Prototipo builder: [prototipi/vex-builder.html](prototipi/vex-builder.html).
 13. [teacher-workflow-upgrades-roadmap.md](teacher-workflow-upgrades-roadmap.md) — TWU: rifiniture e miglioramenti del flusso docente. TWU-01→04B, CORR-PDF-01 e recovery chunk completati; contratto Importa UDA in [uda-import-contract.md](uda-import-contract.md), export archivistico in [correction-archive-export-contract.md](correction-archive-export-contract.md). **Gate GTWU PASS** — [evidenze](evidenze/gtwu-checklist-finale.md).
 14. [structure-metadata-import-roadmap.md](structure-metadata-import-roadmap.md) — importazione strutturale append-only: UDA e lezioni con soli metadati, nessun contenuto/pool/IA durante l'import.
-15. [lesson-quality-depth-roadmap.md](lesson-quality-depth-roadmap.md) — profondità delle lezioni generate: i concetti chiave dicono che cosa trattare, non quanto scrivere. Diagnosi misurata, candidato E da validare, limiti di spesa. **Gate GLESSON aperto.**
+15. [lesson-quality-depth-roadmap.md](lesson-quality-depth-roadmap.md) — profondità delle lezioni generate: i concetti chiave dicono che cosa trattare, non quanto scrivere. Diagnosi misurata, candidato E in produzione, limiti di spesa. **Gate GLESSON aperto.**
+16. [verifiche-differenziate-roadmap.md](verifiche-differenziate-roadmap.md) — esiti per lezione (sola lettura, derivazione pura) e verifiche differenziate per etichetta. Progettazione conclusa, nessuna riga implementata.
 
 ## Per sviluppare un modulo
 
