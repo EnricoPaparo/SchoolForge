@@ -1,8 +1,8 @@
 # SchoolForge — Roadmap: esiti per lezione e verifiche differenziate
 
-**Stato:** progettazione conclusa, nessuna riga implementata. Decisioni di
-interfaccia e di contratto prese esplicitamente (§2 e §3); una sola resta
-aperta ed è marcata come tale.
+**Stato:** progettazione conclusa, nessuna riga implementata. Tutte le
+decisioni di interfaccia e di contratto sono prese e motivate (§2 e §3);
+nessuna resta aperta.
 **Data:** 8 agosto 2026.
 **Dipendenze:** M4 (correzione) e VEX (varianti equivalenti) operativi;
 LESSON-DEPTH-01 in produzione.
@@ -58,10 +58,29 @@ nessuna scrittura, nessuna migrazione, nessuna Rule, nessun prompt.
 
 1. per ogni domanda, media di `points / maxPoints` sulle sole correzioni in
    stato `completed` (una correzione in corso non è un dato);
-2. aggregazione per lezione e per UDA, pesata sul numero di valutazioni;
-3. le lezioni sotto una **soglia minima di valutazioni** non compaiono
-   affatto. Un dato debole mostrato timidamente viene letto come un dato: qui
-   viene omesso.
+2. aggregazione per lezione e per UDA, pesata sul numero di valutazioni.
+
+### Come si difende dai numeri che sembrano fatti
+
+«Fotosintesi 43%» ha l'aria di un fatto anche quando è una media su quattro
+valutazioni. Le cose che possono essere poche sono però **due**, con problemi
+opposti, e vanno trattate in modo opposto:
+
+| | Se è poco | Il numero è | Rimedio |
+|---|---|---|---|
+| **consegne corrette** | 4 su 22 | **instabile** — cambierà finendo di correggere | copertura, non soglia |
+| **domande di quella lezione** | 1 sola | **stretto** — stabile, ma misura quella domanda, non la lezione | dichiararlo, non nasconderlo |
+
+Da cui tre regole, e **nessuna soglia arbitraria da calibrare**:
+
+- gli Esiti si aprono su verifiche con correzione **completa**; se incompleta,
+  la copertura («corrette 18 su 22») è dichiarata in evidenza, non in nota;
+- ogni riga porta **su quante domande** si basa: «Fotosintesi 43% — 1 domanda»
+  dice tutto ciò che serve per decidere quanto crederci, e il docente sa se
+  quella domanda era rappresentativa. Nasconderla sarebbe peggio: è comunque
+  l'unica informazione disponibile su quell'argomento;
+- il solo caso davvero tagliato è l'incrocio dei due — poche domande **e**
+  poche consegne — dove il numero non dice nulla in nessuna direzione.
 
 ### Interfaccia
 
@@ -83,8 +102,8 @@ disponibile. Non è rinviata: è fuori perimetro.
 ### DoD
 
 Vista `Esiti` funzionante su una verifica chiusa reale; nessuna scrittura
-introdotta; test sulla derivazione (media, aggregazione, soglia, correzioni
-non completate escluse).
+introdotta; test sulla derivazione (media, aggregazione, correzioni non
+completate escluse, copertura dichiarata, numero di domande per riga).
 
 ## 3. Pacchetto B — Verifiche differenziate per etichetta
 
@@ -193,9 +212,10 @@ ordine.
   distinto, proprietà della consegna e non della selezione;
 - qualunque forma di condivisione fra docenti o multi-utenza.
 
-## 6. Decisione ancora aperta
+## 6. Decisioni aperte
 
-**Soglia minima di valutazioni** sotto la quale una lezione non compare negli
-Esiti. Va scelta guardando una verifica reale già corretta, non a tavolino:
-dipende da quanto sono numerose le classi e da quante domande per lezione
-entrano di norma in una verifica.
+Nessuna. L'unica rimasta — la soglia minima di valutazioni negli Esiti — è
+stata **eliminata invece che rimandata**: la regola di §2 («copertura
+dichiarata, numero di domande per riga») non richiede alcun numero da
+calibrare a mano, ed è onesta in entrambe le direzioni: non nasconde un dato
+che potrebbe servire, e non fa sembrare solido un dato che non lo è.
