@@ -55,6 +55,7 @@ SchoolForge è un repository didattico Markdown-first per un solo docente. Se è
 14. [structure-metadata-import-roadmap.md](structure-metadata-import-roadmap.md) — importazione strutturale append-only: UDA e lezioni con soli metadati, nessun contenuto/pool/IA durante l'import.
 15. [lesson-quality-depth-roadmap.md](lesson-quality-depth-roadmap.md) — profondità delle lezioni generate: i concetti chiave dicono che cosa trattare, non quanto scrivere. Diagnosi misurata, candidato E in produzione, limiti di spesa. **Gate GLESSON aperto.**
 16. [verifiche-differenziate-roadmap.md](verifiche-differenziate-roadmap.md) — esiti per lezione (sola lettura, derivazione pura) e verifiche differenziate per etichetta. Progettazione conclusa, nessuna riga implementata.
+17. [mappa-concettuale-roadmap.md](mappa-concettuale-roadmap.md) — mappa concettuale della lezione: elenco, sintesi, diagramma a caratteri e avvertenza, generata dal corpo della lezione e visibile allo studente solo a lezione svolta. Progettazione conclusa, nessuna riga implementata.
 
 ## Per sviluppare un modulo
 
