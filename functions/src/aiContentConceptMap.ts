@@ -96,6 +96,13 @@ const HTML_TAG_RE = /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?\/?>/;
 const HTML_META_RE = /<!--|<!\[CDATA\[|<!\s*doctype/i;
 /** Voce di elenco puntato: marker `-`, `*` o `+`, con indentazione libera. */
 const LIST_ITEM_RE = /^\s*[-*+]\s+\S/;
+/**
+ * Voce di elenco **ordinato** Markdown: `1. testo` o `2) testo`, con
+ * indentazione libera. Lo spazio dopo il marcatore è **obbligatorio**, ed è ciò
+ * che distingue un elenco da un numero in mezzo alla prosa: «2026 è stato…» e
+ * «3.14 è approssimato» restano prosa, perché dopo il punto non c'è uno spazio.
+ */
+const ORDERED_LIST_ITEM_RE = /^\s*\d{1,9}[.)]\s+\S/;
 
 function invalidOutput(message: string): never {
   throw new AiContentError('provider_invalid_output', message);
@@ -170,8 +177,9 @@ function assertOutlineShape(value: string): void {
 /**
  * La sintesi deve essere prosa. Un elenco qui duplicherebbe l'ossatura che sta
  * due righe sopra, e la mappa perderebbe l'unica parte che lega i concetti in un
- * discorso: il rifiuto è su qualunque riga puntata, non solo su un elenco
- * integrale, perché una sintesi «mezza a punti» è già quel fallimento a metà.
+ * discorso: il rifiuto è su qualunque riga di elenco — **puntata o numerata** —
+ * e non solo su un elenco integrale, perché una sintesi «mezza a punti» è già
+ * quel fallimento a metà.
  */
 function assertSummaryShape(value: string): void {
   const nonEmpty = value.split('\n').filter((line) => line.trim().length > 0);
@@ -179,7 +187,7 @@ function assertSummaryShape(value: string): void {
     invalidOutput('Sintesi: il testo non può essere vuoto.');
   }
   for (const line of nonEmpty) {
-    if (LIST_ITEM_RE.test(line)) {
+    if (LIST_ITEM_RE.test(line) || ORDERED_LIST_ITEM_RE.test(line)) {
       invalidOutput('Sintesi: deve essere prosa, non un elenco.');
     }
   }

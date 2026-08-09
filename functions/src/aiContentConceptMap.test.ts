@@ -451,10 +451,44 @@ describe('contratto dei tre campi — forma di ciascuna sezione', () => {
     );
   });
 
-  it('rifiuta una sintesi scritta come elenco', () => {
+  it('rifiuta una sintesi scritta come elenco puntato', () => {
     expect(() =>
       validateConceptMapProposal(proposal({ summaryMarkdown: '- primo punto\n- secondo punto' })),
     ).toThrow(/prosa, non un elenco/);
+  });
+
+  it('rifiuta una sintesi scritta come elenco numerato', () => {
+    expect(() =>
+      validateConceptMapProposal(
+        proposal({ summaryMarkdown: '1. Primo concetto\n2. Secondo concetto' }),
+      ),
+    ).toThrow(/prosa, non un elenco/);
+  });
+
+  it('rifiuta una sintesi in cui compare una sola voce numerata', () => {
+    expect(() =>
+      validateConceptMapProposal(
+        proposal({ summaryMarkdown: 'La densità lega massa e volume.\n2) altro punto' }),
+      ),
+    ).toThrow(/prosa, non un elenco/);
+  });
+
+  it('rifiuta anche le voci numerate indentate', () => {
+    expect(() =>
+      validateConceptMapProposal(proposal({ summaryMarkdown: 'Testo.\n   3. terzo punto' })),
+    ).toThrow(/prosa, non un elenco/);
+  });
+
+  it('non scambia per elenco un numero in mezzo alla prosa', () => {
+    // Lo spazio dopo il marcatore è ciò che distingue «1. voce» da «3.14 è…».
+    for (const text of [
+      '2026 è un anno bisestile.',
+      'Il valore 3.14 è approssimato.',
+      'La densità dell’acqua è 1.0 g/cm³.',
+      'Il capitolo 2) resta valido.',
+    ]) {
+      expect(() => validateConceptMapProposal(proposal({ summaryMarkdown: text }))).not.toThrow();
+    }
   });
 
   it('rifiuta una sintesi anche solo parzialmente puntata', () => {
@@ -634,6 +668,18 @@ describe('validazione del Markdown persistito', () => {
     expect(() => parseCanonicalConceptMapMarkdown(withHeading)).toThrow(
       /intestazioni non sono ammesse|struttura canonica/,
     );
+  });
+
+  it('rifiuta una sintesi numerata dentro il documento persistito', () => {
+    // Struttura canonica perfetta, contenuto non conforme: il replay riapplica
+    // i contratti dei campi alle sezioni estratte, quindi non passa.
+    const numbered = composeConceptMapMarkdown({
+      outlineMarkdown: '- voce',
+      summaryMarkdown: '1. Primo concetto\n2. Secondo concetto',
+      diagram: 'RADICE',
+    });
+    expect(() => parseCanonicalConceptMapMarkdown(numbered)).toThrow(/prosa, non un elenco/);
+    expect(isValidStoredConceptMapOutput({ conceptMapMarkdown: numbered })).toBe(false);
   });
 
   it('rifiuta contenuto dopo l’avvertenza', () => {
