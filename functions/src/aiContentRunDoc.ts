@@ -12,6 +12,7 @@
 
 import { Timestamp } from 'firebase-admin/firestore';
 import { AI_CONTENT_CONTRACT_VERSION, AI_CONTENT_LIMITS, utf8ByteLength } from './aiContentCore.js';
+import { isValidStoredConceptMapOutput } from './aiContentConceptMap.js';
 import type { StoredAiContentRun } from './aiContentEngine.js';
 
 const RUN_KINDS = new Set(['pool', 'lesson', 'concept_map']);
@@ -76,15 +77,13 @@ function isCoherentCompletedOutput(kind: StoredAiContentRun['kind'], output: unk
     if (typeof body !== 'string' || body.trim().length === 0) return false;
     return utf8ByteLength(body) <= AI_CONTENT_LIMITS.MAX_LESSON_OUTPUT_BYTES;
   }
-  // CONCEPT-MAP-01 — il run della mappa persiste il Markdown canonico composto
-  // dal server, mai i tre campi grezzi: un documento che contenesse quelli non
-  // sarebbe replayabile come artefatto finale.
-  if (kind === 'concept_map') {
-    if ('questions' in o || 'body' in o) return false;
-    const markdown = o.conceptMapMarkdown;
-    if (typeof markdown !== 'string' || markdown.trim().length === 0) return false;
-    return utf8ByteLength(markdown) <= AI_CONTENT_LIMITS.MAX_CONCEPT_MAP_OUTPUT_BYTES;
-  }
+  // CONCEPT-MAP-01 — il run della mappa persiste il Markdown **canonico**
+  // composto dal server, mai i tre campi grezzi. Il controllo non si limita a
+  // «stringa non vuota entro il cap»: verifica l'intera struttura (quattro parti
+  // nell'ordine giusto, fence singola e chiusa, avvertenza esatta, nessun
+  // contenuto dopo). Un documento accettato in replay è così, per costruzione,
+  // indistinguibile da uno appena prodotto.
+  if (kind === 'concept_map') return isValidStoredConceptMapOutput(o);
   // kind === 'pool'
   if ('body' in o || 'conceptMapMarkdown' in o) return false;
   return Array.isArray(o.questions) && o.questions.length > 0;

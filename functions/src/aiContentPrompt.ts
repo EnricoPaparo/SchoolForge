@@ -29,6 +29,10 @@ import {
   type PoolRequest,
   type LessonRequest,
 } from './aiContentCore.js';
+// La larghezza del diagramma è un vincolo di **contratto**, non di prompt: il
+// prompt la dichiara al modello, `aiContentConceptMap` la fa rispettare. Vive
+// quindi lì, così non può divergere fra ciò che si chiede e ciò che si accetta.
+import { CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS } from './aiContentConceptMap.js';
 
 /** Da congelare in ogni benchmark; va incrementata a ogni modifica dei prompt. */
 export const AI_CONTENT_PROMPT_VERSION = 'lesson-depth-01-candidate-e-v1' as const;
@@ -227,14 +231,6 @@ export function buildPoolPrompt(request: PoolRequest): BuiltPrompt {
     .join('\n\n');
   return { system: SECURITY_PREAMBLE, user };
 }
-
-/**
- * CONCEPT-MAP-01 — larghezza massima di una riga del diagramma. Il valore è
- * ripetuto al modello e **verificato** dal validator: il prompt chiede, il
- * server rifiuta. Un albero più largo costringerebbe a scorrere anche su
- * desktop, e uno scorrimento su un ripasso è attrito puro.
- */
-export const CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS = 80;
 
 /**
  * Contratto di output della mappa concettuale (livello 2).

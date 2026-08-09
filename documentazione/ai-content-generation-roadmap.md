@@ -110,9 +110,12 @@ Campi ammessi dal client (qualsiasi altra proprietà ⇒ `invalid_input`):
 
 **Comuni**
 - `requestId: string` (UUID client, stabile tra i retry della stessa operazione)
-- `kind: 'pool' | 'lesson'`
+- `kind: 'pool' | 'lesson' | 'concept_map'`
 - `modelProfile: 'economy' | 'quality'`
 - `teacherGuidance?: string` (trim, ≤ 500 caratteri, nessun troncamento silenzioso — oltre ⇒ `invalid_input`)
+
+`teacherGuidance` e `modelProfile` libero valgono per `pool` e `lesson`: la
+mappa concettuale (§ 6bis) ha un payload proprio e più povero, e non li ammette.
 
 **`kind: 'pool'`** → `poolConfig`:
 - `level: 'base' | 'balanced' | 'advanced'` (range difficoltà: base 1–3, balanced 1–5, advanced 3–5)
@@ -124,6 +127,18 @@ Campi ammessi dal client (qualsiasi altra proprietà ⇒ `invalid_input`):
 - `depth: 'synthetic' | 'complete' | 'in_depth'`
 - `context`: `{ titolo?, sottotitolo?, concettiChiave?: string[], obiettivi?: string[], currentBody?: string, udaTitle? }` — solo dati **già in memoria** nell'editor; nessuna nuova query per arricchire il prompt
 - `hasCurrentContent: boolean`
+
+**`kind: 'concept_map'`** (CONCEPT-MAP-01, implementato):
+- `modelProfile: 'economy'` — **fisso**, non un default: `quality` è rifiutato,
+  mai degradato in silenzio;
+- `lessonBody: string` — corpo Markdown della lezione, non vuoto, entro
+  `MAX_LESSON_SOURCE_BYTES` (200.000 byte UTF-8), **non normalizzato** (nessun
+  trim: al prompt arriva ciò che è realmente salvato, e l'`inputHash` copre quel
+  testo);
+- nient'altro. Niente titolo, metadati, UDA, indice, pool o indicazioni docente:
+  la mappa deve poter affermare soltanto ciò che è ricavabile dal corpo, e ciò
+  che non riceve non può contraddirlo. Qualunque proprietà extra ⇒
+  `invalid_input`.
 
 ### 2.3 Ordine dei controlli (fail-closed)
 
@@ -207,6 +222,10 @@ Il limite Firestore di 1 MiB riguarda **l'intero documento** — tutti i campi, 
 - **Limite canonico della lezione salvata**: **`MAX_LESSON_CONTENT_BYTES = 700_000`** byte UTF-8 — **invariato** (contratto esistente `lessonContentSize.ts`, riguarda il documento lezione canonico).
 - **Limite dell'output temporaneo in `aiContentRuns`**: **≤ 600_000 byte** UTF-8 per il campo `output` (pool o corpo lezione). Più prudente dei 700_000 canonici, così i restanti campi tecnici del run (hash, metadata, lease, costi) restano sotto 1 MiB.
 - **Pool**: massimo 30 domande, dentro lo stesso cap 600_000 byte.
+- **Mappa concettuale**: **≤ 32_000 byte** UTF-8 (`MAX_CONCEPT_MAP_OUTPUT_BYTES`),
+  applicati al **documento composto** e non ai campi grezzi — è il documento che
+  verrà persistito e proiettato. Due ordini di grandezza sotto la lezione: una
+  mappa lunga è una mappa fallita.
 - **Controllo pre-scrittura**: la dimensione complessiva stimata del documento `aiContentRuns` è verificata **prima** della persistenza.
 
 Un output oltre il limite temporaneo **fallisce prima della persistenza** (`output_too_large`), **senza** provider replay incompleto e **senza** scrivere un documento sovradimensionato. Il costo già speso resta registrato solo se il run può essere persistito entro i limiti; altrimenti la generazione è respinta come fallita in modo pulito.
@@ -352,6 +371,71 @@ Validazioni: stringa non vuota; UTF-8 valido; dimensione entro `MAX_LESSON_CONTE
 3. il **validator rifiuta** costrutti esplicitamente non ammessi (front matter YAML, blocchi `<script>`/`<style>`, tag noti pericolosi) come segnale di output non conforme → `output_invalid`, senza dichiarare copertura assoluta.
 
 La bozza è comunque sempre renderizzata attraverso il renderer sanitizzato esistente, quindi la difesa finale contro XSS resta quella già in produzione, invariata.
+
+---
+
+## 6bis. Operazione 3 — Mappa concettuale (CONCEPT-MAP-01, implementato)
+
+Contratto di prodotto e interfaccia: [`mappa-concettuale-roadmap.md`](mappa-concettuale-roadmap.md).
+Qui si registra soltanto ciò che riguarda la generazione IA.
+
+### 6bis.1 Struttura decisa dal server, non dal prompt
+
+Il provider **non** produce il documento. Restituisce uno Structured Output
+strict a tre campi — `outlineMarkdown`, `summaryMarkdown`, `diagram` — e il
+server compone il Markdown canonico aggiungendo intestazioni, la fence del
+diagramma e l'avvertenza, che è una **costante SchoolForge** e non un campo
+dello schema.
+
+Un prompt può chiedere quattro sezioni nell'ordine giusto; non può garantirle.
+Così presenza e sequenza delle quattro parti sono proprietà del codice.
+
+### 6bis.2 Contratto dei tre campi (fail-closed, nessun aggiustamento)
+
+Comune ai tre campi: niente fence ```` ``` ````, front matter, heading ATX o
+Setext, HTML (tag reali, commenti, doctype, CDATA), spazi iniziali o finali. Gli
+spazi esterni sono **rifiutati esplicitamente** invece di essere normalizzati:
+il documento composto deve restare riconoscibile byte per byte dal validator del
+replay. Il controllo HTML è deliberatamente non generico su `<`, così un
+confronto come «a < b» non diventa markup.
+
+- `outlineMarkdown` — elenco Markdown annidato: ogni riga non vuota è una voce
+  (`-`, `*`, `+`, indentazione libera), almeno una voce, nessuna prosa fuori
+  elenco;
+- `summaryMarkdown` — prosa: nessuna riga puntata, nemmeno parziale (un elenco
+  qui duplicherebbe l'ossatura);
+- `diagram` — albero a caratteri, ogni riga entro **80 code point** (i caratteri
+  di disegno non contano doppio).
+
+Nessun troncamento, nessuna rimozione, nessun riempimento: un output non
+conforme è rifiutato per intero.
+
+### 6bis.3 Documento persistito e replay
+
+Il run persiste `{ conceptMapMarkdown }` — il **documento composto**, mai i tre
+campi grezzi: è quello che CONCEPT-MAP-02 salverà e proietterà, quindi è quello
+che il replay deve restituire.
+
+La validazione in lettura non si accontenta di «stringa non vuota entro il cap».
+Verifica: oggetto con **esattamente una chiave**; quattro parti presenti una sola
+volta e nell'ordine canonico; **una sola** fence, correttamente chiusa;
+avvertenza esatta; nessun contenuto dopo di essa oltre la newline finale; e le
+tre sezioni estratte devono soddisfare gli stessi contratti dei campi generati.
+
+L'oracolo finale è l'uguaglianza: se il documento non è byte per byte ciò che il
+compositore avrebbe prodotto dalle sue stesse sezioni, non è canonico. Il replay
+**non ricompone**: restituisce il Markdown persistito identico.
+
+### 6bis.4 Versione del prompt
+
+`AI_CONCEPT_MAP_PROMPT_VERSION` è **separata** da `AI_CONTENT_PROMPT_VERSION`,
+che resta congelata nei benchmark di pool e lezione: un ritocco alla mappa non
+deve invalidare misure che non la riguardano.
+
+**Non è ancora persistita nel documento run** e non è usata per replay, audit o
+confronto: esiste come costante, e nessun consumatore la legge. Cablarla adesso
+avrebbe significato toccare il contratto del run senza un motivo. Va dichiarata
+operativa solo quando un consumatore esisterà davvero.
 
 ---
 
