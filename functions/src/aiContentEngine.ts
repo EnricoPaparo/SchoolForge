@@ -23,6 +23,7 @@ import {
 } from './aiContentCore.js';
 import { estimateContentCost } from './aiContentCost.js';
 import { validateLessonProposal, validatePoolProposal } from './aiContentValidation.js';
+import { validateAndComposeConceptMap } from './aiContentConceptMap.js';
 import { actualCostMicroUsd, normalizeUsageActual } from './aiCorrectionCost.js';
 import type { AiRuntimeConfig } from './aiCorrectionRuntimeConfig.js';
 import type { ContentProviderOutcome } from './aiContentProvider.js';
@@ -475,7 +476,16 @@ export async function generateContent(
     output =
       request.kind === 'pool'
         ? validatePoolProposal(providerOutcome.output, request.counts, request.level)
-        : validateLessonProposal(providerOutcome.output);
+        : request.kind === 'concept_map'
+          ? // CONCEPT-MAP-01 — il run persiste il **Markdown canonico** già
+            // composto dal server, non i tre campi grezzi: è quello che verrà
+            // salvato e proiettato, quindi è quello che il replay deve
+            // restituire identico.
+            {
+              conceptMapMarkdown: validateAndComposeConceptMap(providerOutcome.output)
+                .conceptMapMarkdown,
+            }
+          : validateLessonProposal(providerOutcome.output);
   } catch (e) {
     await ports.failRun({
       opaqueRunId,
