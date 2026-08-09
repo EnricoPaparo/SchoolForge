@@ -437,6 +437,20 @@ confronto: esiste come costante, e nessun consumatore la legge. Cablarla adesso
 avrebbe significato toccare il contratto del run senza un motivo. Va dichiarata
 operativa solo quando un consumatore esisterà davvero.
 
+### 6bis.5 Persistenza (CONCEPT-MAP-02, implementato)
+
+Il Markdown canonico prodotto qui non resta nel run: viene salvato dal client
+sul `LessonDoc` (copia autorevole, owner-only) e proiettato in
+`publicLessons.conceptMapMarkdown` **soltanto** quando la lezione è marcata
+svolta. Salvataggio e cambio svolta/non svolta sono due transazioni, non due
+batch, perché entrambe decidono in base a uno stato letto.
+
+Contratto, invarianti, Rules e costi: [`mappa-concettuale-roadmap.md`](mappa-concettuale-roadmap.md) §4
+e §8 (CONCEPT-MAP-02). Il cap dei 32 KB è lo stesso valore su entrambi i lati —
+`MAX_CONCEPT_MAP_OUTPUT_BYTES` nelle Functions, `MAX_CONCEPT_MAP_BYTES` nel web
+— così il documento che il generatore produce entra sempre in quello che la
+persistenza accetta.
+
 ---
 
 ## 7. Cost model (esempi indicativi, non garanzie)

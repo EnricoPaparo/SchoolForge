@@ -1,11 +1,13 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
   limit,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -18,8 +20,10 @@ import type {
   LessonDoc,
   ProgramDoc,
   ProgrammaMeta,
+  PublicLessonDoc,
   UdaDoc,
 } from '../../../types/firestore.js';
+import { isValidConceptMap } from './conceptMapContract.js';
 import { composeMarkdownWithFrontMatter } from '../validation/frontMatter.js';
 import { deleteFile, deleteImportPrefix, writeText } from '../gateway/repositoryGatewayClient.js';
 
@@ -303,6 +307,36 @@ export async function getImportMeta(
   return data.programmaMeta ?? null;
 }
 
+/**
+ * CONCEPT-MAP-02 — errore del cambio svolta/non svolta. Tipizzato perché la UI
+ * possa distinguerlo da un errore di rete e mostrare il motivo reale.
+ */
+export class LessonCompletionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LessonCompletionError';
+  }
+}
+
+/**
+ * Marca (o smarca) una lezione come svolta, sincronizzando la proiezione
+ * studente e registrando l'audit in un **unico commit**.
+ *
+ * **Perché una transazione e non più un `writeBatch`.** Da CONCEPT-MAP-02 il
+ * flag `completed` governa anche la visibilità della mappa concettuale, e
+ * decidere se copiarla o rimuoverla richiede di **leggere** la mappa privata
+ * corrente. Un batch scrive senza leggere: quella lettura vivrebbe fuori
+ * dall'atomicità, e una mappa salvata fra la lettura e il commit lascerebbe una
+ * lezione svolta senza mappa — o, nel verso pericoloso, una proiezione non
+ * svolta che conserva la mappa. La transazione ritenta finché le due letture e
+ * le scritture non sono coerenti fra loro.
+ *
+ * L'invariante difeso, identico a quello delle Rules: **una proiezione con
+ * `completed != true` non contiene mai `conceptMapMarkdown`**, né durante una
+ * race né dopo un errore.
+ *
+ * Firma e comportamento pubblico invariati: `CourseWorkspace` non cambia.
+ */
 export async function setLessonCompleted(
   programId: string,
   importId: string,
@@ -312,21 +346,64 @@ export async function setLessonCompleted(
   ownerUid: string,
   db: Firestore,
 ): Promise<void> {
-  const batch = writeBatch(db);
-  batch.update(doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId), {
-    completed,
-    completedAt: completed ? serverTimestamp() : null,
+  await runTransaction(db, async (tx) => {
+    const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
+    const publicRef = doc(db, 'publicLessons', publicLessonId);
+    const [lessonSnap, publicSnap] = await Promise.all([tx.get(lessonRef), tx.get(publicRef)]);
+
+    if (!lessonSnap.exists()) throw new LessonCompletionError('La lezione non esiste.');
+    if (!publicSnap.exists()) {
+      throw new LessonCompletionError('La proiezione della lezione non esiste.');
+    }
+    const lesson = lessonSnap.data() as LessonDoc;
+    const publicLesson = publicSnap.data() as PublicLessonDoc;
+    if (lesson.ownerUid !== ownerUid || publicLesson.ownerUid !== ownerUid) {
+      throw new LessonCompletionError('La lezione non appartiene a questo utente.');
+    }
+    if (lesson.importId !== importId || publicLesson.importId !== importId) {
+      throw new LessonCompletionError('La lezione non appartiene a questa importazione.');
+    }
+
+    // L'aggiornamento pubblico è calcolato **prima** di qualunque scrittura: se
+    // la mappa privata è corrotta la transazione deve fallire senza aver
+    // accodato nemmeno una `tx.update`. In una transazione reale nulla verrebbe
+    // comunque committato, ma «zero write» deve essere vero a ogni livello, non
+    // solo al commit.
+    const publicUpdate: Record<string, unknown> = { completed };
+    if (completed) {
+      // Una mappa privata **presente ma malformata** ferma tutto: copiarla
+      // violerebbe il contratto della proiezione, ignorarla silenziosamente
+      // nasconderebbe un dato corrotto. Assente è invece normale, e significa
+      // soltanto che non c'è nulla da proiettare.
+      const rawMap = lesson.conceptMapMarkdown;
+      if (rawMap !== undefined && !isValidConceptMap(rawMap)) {
+        throw new LessonCompletionError(
+          'La mappa concettuale salvata non è valida: correggila prima di marcare la lezione come svolta.',
+        );
+      }
+      publicUpdate.conceptMapMarkdown = rawMap === undefined ? deleteField() : rawMap;
+    } else {
+      // Smarcare rimuove **sempre** la mappa dalla proiezione, anche se non
+      // risultava presente: è l'unico modo per garantire l'invariante pure a
+      // fronte di un documento scritto male in passato.
+      publicUpdate.conceptMapMarkdown = deleteField();
+    }
+
+    tx.update(lessonRef, {
+      completed,
+      completedAt: completed ? serverTimestamp() : null,
+    });
+    tx.update(publicRef, publicUpdate);
+
+    tx.set(doc(collection(db, 'auditEvents')), {
+      actorUid: ownerUid,
+      action: 'lesson.completed',
+      targetId: lessonId,
+      outcome: 'success',
+      reason: completed ? 'marked as completed' : 'marked as not completed',
+      timestamp: serverTimestamp(),
+    });
   });
-  batch.update(doc(db, 'publicLessons', publicLessonId), { completed });
-  batch.set(doc(collection(db, 'auditEvents')), {
-    actorUid: ownerUid,
-    action: 'lesson.completed',
-    targetId: lessonId,
-    outcome: 'success',
-    reason: completed ? 'marked as completed' : 'marked as not completed',
-    timestamp: serverTimestamp(),
-  });
-  await batch.commit();
 }
 
 export const PROGRAM_DELETE_BLOCKED_MESSAGE =

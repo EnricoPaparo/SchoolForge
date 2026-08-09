@@ -1,8 +1,8 @@
 # SchoolForge — Roadmap: mappa concettuale della lezione
 
-**Stato:** **CONCEPT-MAP-01 implementato** (core e backend IA); `02`
-(persistenza e Rules) e `03` (interfaccia e smoke DEV) restano aperti, insieme
-al gate umano. Tutte le decisioni di contratto sono prese e motivate; nessuna
+**Stato:** **CONCEPT-MAP-01 e 02 implementati** (core e backend IA;
+persistenza, proiezione condizionale e Rules); `03` (interfaccia e smoke DEV)
+resta aperto, insieme al gate umano. Tutte le decisioni di contratto sono prese e motivate; nessuna
 resta aperta.
 **Data:** 9 agosto 2026.
 **Dipendenze:** AIGEN-01→03 e LESSON-DEPTH-01 in produzione; editor Markdown
@@ -296,10 +296,59 @@ e lezione. Nessuna UI, persistenza o deploy.
 usata per replay, audit o confronto. Nessun consumatore la legge. Va dichiarata
 operativa solo quando un consumatore esisterà davvero.
 
-### CONCEPT-MAP-02 — persistenza e Rules ⏳ aperto
+### CONCEPT-MAP-02 — persistenza e Rules ✅ implementato
 
 Campi tipizzati, servizio di salvataggio, proiezione condizionale, transazione
 di completamento, audit e Rules emulator. Nessuna UI e nessuna chiamata IA.
+
+**Come è stato realizzato**, con le decisioni che la progettazione non aveva
+fissato:
+
+- **contratto puro separato** (`conceptMapContract.ts`): cap in byte UTF-8,
+  validazione che non modifica mai il testo, e due letture fail-closed. La
+  lettura pubblica riapplica l'invariante di visibilità — `completed !== true`
+  ⇒ `null` **anche** se un documento malformato contenesse il campo. Difesa in
+  profondità: le Rules impediscono di scriverlo, la lettura impedisce di
+  mostrarlo se ci fosse finito comunque;
+- **servizio dedicato** (`conceptMapService.ts`) invece che dentro il repository
+  editor: quello gestisce il ciclo di vita dei documenti attraverso Storage e
+  batch, questa è una singola operazione transazionale su due documenti che
+  Storage non lo tocca;
+- **validazione prima della transazione.** Un payload non valido non costa
+  nemmeno le due letture: la garanzia «zero write» diventa «zero operazioni»;
+- **coerenza della coppia verificata**, non assunta: `ownerUid` su entrambi i
+  documenti, `importId` su entrambi e `programId` sulla proiezione. Senza,
+  un `publicLessonId` sbagliato scriverebbe la mappa di una lezione sulla
+  proiezione di un'altra;
+- **`setLessonCompleted` passa da `writeBatch` a `runTransaction`.** Un batch
+  scrive senza leggere, e da qui in avanti la decisione dipende dalla mappa
+  privata **letta**: quella lettura fuori dall'atomicità lascerebbe una lezione
+  svolta senza mappa o — nel verso pericoloso — una proiezione non svolta che la
+  conserva. Firma pubblica invariata: `CourseWorkspace` non cambia. Un test
+  statico impedisce di reintrodurre il batch;
+- **mappa privata malformata ⇒ fail-closed.** Assente è normale e significa
+  «niente da proiettare»; presente ma non valida ferma il cambio svolta con zero
+  scritture, perché copiarla violerebbe il contratto e ignorarla nasconderebbe
+  un dato corrotto;
+- **audit `lesson.conceptMapSaved`.** La roadmap proponeva
+  `lesson.concept_map.saved`; è stato preferito il `camelCase` dopo il punto di
+  tutte le trenta azioni esistenti — la coerenza del registro vale più della
+  sfumatura di leggibilità.
+
+**Confine delle Rules, dichiarato.** Le Rules verificano l'invariante di
+visibilità, il tipo, la non-vuotezza e un tetto di 32.000 **caratteri**:
+`size()` sulle stringhe conta caratteri, non byte UTF-8, quindi quel bound è più
+**debole** di quello applicativo da 32.000 byte (per un testo non ASCII i byte
+sono più dei caratteri). Le Rules fermano payload assurdi e la visibilità; il
+limite dimensionale autorevole e la struttura canonica restano applicativi.
+Attribuire alle Rules una garanzia che non possono dare sarebbe peggio che
+dichiararne il limite.
+
+**Costi effettivi.** Zero costo passivo, listener, polling e indici. Salvataggio:
+2 letture puntuali transazionali, 1 scrittura privata, 1 scrittura pubblica
+**solo** se serve sincronizzare o rimuovere, 1 audit. Cambio svolta: 2 letture
+puntuali transazionali, 2 aggiornamenti, 1 audit. Un retry transazionale ripete
+le letture, che restano fatturate.
 
 ### CONCEPT-MAP-03 — interfaccia e smoke DEV ⏳ aperto
 
