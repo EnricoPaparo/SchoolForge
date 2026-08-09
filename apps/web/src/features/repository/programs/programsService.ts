@@ -24,6 +24,11 @@ import type {
   UdaDoc,
 } from '../../../types/firestore.js';
 import { isValidConceptMap } from './conceptMapContract.js';
+import {
+  checkLessonBeforeProjection,
+  checkProjectionMatchesLesson,
+  identityFailureMessage,
+} from './lessonProjectionIdentity.js';
 import { composeMarkdownWithFrontMatter } from '../validation/frontMatter.js';
 import { deleteFile, deleteImportPrefix, writeText } from '../gateway/repositoryGatewayClient.js';
 
@@ -347,21 +352,35 @@ export async function setLessonCompleted(
   db: Firestore,
 ): Promise<void> {
   await runTransaction(db, async (tx) => {
+    // 1. documento tecnico: esistenza, appartenenza, id pubblico atteso. Le due
+    // letture sono **sequenziali** perché l'indirizzo della proiezione è una
+    // conseguenza del `LessonDoc`, non un dato del chiamante: leggerle in
+    // parallelo significherebbe fidarsi del `publicLessonId` ricevuto.
     const lessonRef = doc(db, 'programs', programId, 'imports', importId, 'lessons', lessonId);
-    const publicRef = doc(db, 'publicLessons', publicLessonId);
-    const [lessonSnap, publicSnap] = await Promise.all([tx.get(lessonRef), tx.get(publicRef)]);
+    const lessonSnap = await tx.get(lessonRef);
+    const lesson = lessonSnap.exists() ? (lessonSnap.data() as LessonDoc) : null;
+    const gate = checkLessonBeforeProjection({
+      lesson,
+      lessonId,
+      requestedPublicLessonId: publicLessonId,
+      ownerUid,
+      importId,
+    });
+    if (!gate.ok) throw new LessonCompletionError(identityFailureMessage(gate.failure));
+    const technicalLesson = lesson as LessonDoc;
 
-    if (!lessonSnap.exists()) throw new LessonCompletionError('La lezione non esiste.');
-    if (!publicSnap.exists()) {
-      throw new LessonCompletionError('La proiezione della lezione non esiste.');
-    }
-    const lesson = lessonSnap.data() as LessonDoc;
-    const publicLesson = publicSnap.data() as PublicLessonDoc;
-    if (lesson.ownerUid !== ownerUid || publicLesson.ownerUid !== ownerUid) {
-      throw new LessonCompletionError('La lezione non appartiene a questo utente.');
-    }
-    if (lesson.importId !== importId || publicLesson.importId !== importId) {
-      throw new LessonCompletionError('La lezione non appartiene a questa importazione.');
+    // 2. proiezione all'indirizzo **derivato**, mai a quello ricevuto.
+    const publicRef = doc(db, 'publicLessons', gate.publicLessonId);
+    const publicSnap = await tx.get(publicRef);
+    const projectionGate = checkProjectionMatchesLesson({
+      lesson: technicalLesson,
+      publicLesson: publicSnap.exists() ? (publicSnap.data() as PublicLessonDoc) : null,
+      programId,
+      importId,
+      ownerUid,
+    });
+    if (!projectionGate.ok) {
+      throw new LessonCompletionError(identityFailureMessage(projectionGate.failure));
     }
 
     // L'aggiornamento pubblico è calcolato **prima** di qualunque scrittura: se
@@ -375,7 +394,7 @@ export async function setLessonCompleted(
       // violerebbe il contratto della proiezione, ignorarla silenziosamente
       // nasconderebbe un dato corrotto. Assente è invece normale, e significa
       // soltanto che non c'è nulla da proiettare.
-      const rawMap = lesson.conceptMapMarkdown;
+      const rawMap = technicalLesson.conceptMapMarkdown;
       if (rawMap !== undefined && !isValidConceptMap(rawMap)) {
         throw new LessonCompletionError(
           'La mappa concettuale salvata non è valida: correggila prima di marcare la lezione come svolta.',

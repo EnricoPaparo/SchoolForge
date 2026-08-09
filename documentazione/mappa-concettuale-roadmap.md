@@ -316,10 +316,23 @@ fissato:
   Storage non lo tocca;
 - **validazione prima della transazione.** Un payload non valido non costa
   nemmeno le due letture: la garanzia «zero write» diventa «zero operazioni»;
-- **coerenza della coppia verificata**, non assunta: `ownerUid` su entrambi i
-  documenti, `importId` su entrambi e `programId` sulla proiezione. Senza,
-  un `publicLessonId` sbagliato scriverebbe la mappa di una lezione sulla
-  proiezione di un'altra;
+- **identità della coppia dimostrata, non assunta.** Verificare owner, import e
+  corso non basta: due lezioni dello stesso corso, import e docente li superano
+  tutti, quindi l'id pubblico della lezione B passato mentre si modifica la A
+  scriverebbe la copia privata su A e quella pubblica su B. La correzione è
+  cambiare la **fonte** dell'id: quello ricevuto dal chiamante non è autorevole,
+  si deriva dal `LessonDoc` con `resolvePublicLessonId` e il valore ricevuto
+  viene solo **confrontato**. Le letture sono perciò **sequenziali** — prima il
+  documento tecnico, poi la proiezione al suo indirizzo derivato — e un
+  disallineamento costa una lettura sola, senza scritture né audit. Dopo la
+  seconda lettura si confrontano anche i campi identitari stabili `udaDir`,
+  `path` e `filename`: l'indirizzo giusto non basta se il documento che ci sta
+  è un altro. Il tutto vive in `lessonProjectionIdentity.ts`, puro e senza
+  Firebase, condiviso dai due servizi perché non possano divergere su che cosa
+  considerano coerente;
+- **legacy senza sorprese**: `publicLessonId` presente ⇒ si usa esattamente
+  quello; assente ⇒ si ricade sul `lessonId` nudo. Mai un id provato e poi un
+  altro, mai una query per «trovare» la proiezione;
 - **`setLessonCompleted` passa da `writeBatch` a `runTransaction`.** Un batch
   scrive senza leggere, e da qui in avanti la decisione dipende dalla mappa
   privata **letta**: quella lettura fuori dall'atomicità lascerebbe una lezione

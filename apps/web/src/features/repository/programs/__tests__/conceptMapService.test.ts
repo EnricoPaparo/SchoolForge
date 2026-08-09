@@ -41,8 +41,23 @@ function snap(data: Record<string, unknown> | null) {
   return { exists: () => data !== null, data: () => data };
 }
 
-const LESSON = { ownerUid: 'owner-1', importId: 'import-1', completed: false };
-const PUBLIC = { ownerUid: 'owner-1', importId: 'import-1', programId: 'program-1' };
+const LESSON = {
+  ownerUid: 'owner-1',
+  importId: 'import-1',
+  completed: false,
+  udaDir: 'uda-01-reti',
+  path: 'uda-01-reti/lezione-001.md',
+  filename: 'lezione-001.md',
+  publicLessonId: 'import-1_lesson-1',
+};
+const PUBLIC = {
+  ownerUid: 'owner-1',
+  importId: 'import-1',
+  programId: 'program-1',
+  udaDir: 'uda-01-reti',
+  path: 'uda-01-reti/lezione-001.md',
+  filename: 'lezione-001.md',
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -63,6 +78,7 @@ function save(
     lesson?: unknown;
     publicLesson?: unknown;
     conceptMapMarkdown?: unknown;
+    publicLessonId?: string | null;
   } = {},
 ) {
   const lesson = 'lesson' in over ? over.lesson : LESSON;
@@ -74,7 +90,8 @@ function save(
     programId: 'program-1',
     importId: 'import-1',
     lessonId: 'lesson-1',
-    publicLessonId: 'import-1_lesson-1',
+    publicLessonId:
+      'publicLessonId' in over ? (over.publicLessonId as string | null) : 'import-1_lesson-1',
     ownerUid: 'owner-1',
     conceptMapMarkdown: ('conceptMapMarkdown' in over ? over.conceptMapMarkdown : MAP) as string,
     db: fakeDb,
@@ -148,33 +165,38 @@ describe('coerenza fail-closed', () => {
     expect(mockTxUpdate).not.toHaveBeenCalled();
   });
 
-  it('rifiuta un owner diverso su uno qualunque dei due documenti', async () => {
+  it('rifiuta un owner diverso sul documento tecnico', async () => {
     await expect(save({ lesson: { ...LESSON, ownerUid: 'altro' } })).rejects.toThrow(
-      /non appartiene a questo utente/,
+      /La lezione non appartiene a questo utente/,
     );
-    vi.clearAllMocks();
-    mockDoc.mockImplementation(pathStub);
-    mockCollection.mockImplementation(pathStub);
-    mockRunTransaction.mockImplementation(
-      async (_db: unknown, fn: (tx: unknown) => Promise<unknown>) =>
-        fn({ get: mockTxGet, update: mockTxUpdate, set: mockTxSet }),
-    );
+    // Il rifiuto arriva al primo cancello: la proiezione non viene nemmeno letta.
+    expect(mockTxGet).toHaveBeenCalledTimes(1);
+    expect(mockTxUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rifiuta un owner diverso sulla proiezione', async () => {
     await expect(save({ publicLesson: { ...PUBLIC, ownerUid: 'altro' } })).rejects.toThrow(
-      /non appartiene a questo utente/,
+      /La proiezione non appartiene a questo utente/,
     );
     expect(mockTxUpdate).not.toHaveBeenCalled();
   });
 
-  it('rifiuta un import incoerente', async () => {
+  it('rifiuta un import incoerente sul documento tecnico', async () => {
     await expect(save({ lesson: { ...LESSON, importId: 'import-2' } })).rejects.toThrow(
-      /non appartiene a questa importazione/,
+      /La lezione non appartiene a questa importazione/,
+    );
+    expect(mockTxGet).toHaveBeenCalledTimes(1);
+    expect(mockTxUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rifiuta un import incoerente sulla proiezione', async () => {
+    await expect(save({ publicLesson: { ...PUBLIC, importId: 'import-2' } })).rejects.toThrow(
+      /La proiezione non appartiene a questa importazione/,
     );
     expect(mockTxUpdate).not.toHaveBeenCalled();
   });
 
   it('rifiuta una proiezione di un altro corso', async () => {
-    // Difende dal `publicLessonId` sbagliato: senza questo controllo la mappa
-    // di una lezione finirebbe sulla proiezione di un'altra.
     await expect(save({ publicLesson: { ...PUBLIC, programId: 'program-2' } })).rejects.toThrow(
       /non appartiene a questo corso/,
     );
@@ -184,6 +206,59 @@ describe('coerenza fail-closed', () => {
   it('propaga l’errore della transazione senza stato parziale', async () => {
     mockRunTransaction.mockRejectedValueOnce(new Error('transazione fallita'));
     await expect(save()).rejects.toThrow('transazione fallita');
+    expect(mockTxUpdate).not.toHaveBeenCalled();
+    expect(mockTxSet).not.toHaveBeenCalled();
+  });
+});
+
+describe('identità LessonDoc ↔ proiezione (review fix)', () => {
+  it('rifiuta il publicLessonId di un’altra lezione dello stesso owner/import/corso', async () => {
+    // Il blocker: owner, import e programId coincidono, ma la proiezione è di
+    // un'altra lezione. Il rifiuto arriva **prima** della seconda lettura.
+    await expect(save({ publicLessonId: 'import-1_lesson-2' })).rejects.toThrow(
+      /non corrisponde a questa lezione/,
+    );
+    expect(mockTxGet).toHaveBeenCalledTimes(1);
+    expect(mockTxUpdate).not.toHaveBeenCalled();
+    expect(mockTxSet).not.toHaveBeenCalled();
+  });
+
+  it('accetta il publicLessonId import-scoped corretto', async () => {
+    await expect(save({ publicLessonId: 'import-1_lesson-1' })).resolves.toBeUndefined();
+    expect(mockTxGet).toHaveBeenCalledTimes(2);
+  });
+
+  it('legacy senza publicLessonId: accetta l’id uguale al lessonId', async () => {
+    await expect(
+      save({
+        lesson: { ...LESSON, publicLessonId: undefined },
+        publicLessonId: 'lesson-1',
+      }),
+    ).resolves.toBeUndefined();
+    // La proiezione viene letta all'indirizzo legacy derivato, non a quello
+    // import-scoped.
+    expect(mockDoc).toHaveBeenCalledWith(fakeDb, 'publicLessons', 'lesson-1');
+  });
+
+  it('legacy + id import-scoped inventato: rifiutato senza secondo tentativo', async () => {
+    await expect(
+      save({
+        lesson: { ...LESSON, publicLessonId: undefined },
+        publicLessonId: 'import-1_lesson-1',
+      }),
+    ).rejects.toThrow(/non corrisponde a questa lezione/);
+    expect(mockTxGet).toHaveBeenCalledTimes(1);
+    expect(mockTxUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['udaDir', { udaDir: 'uda-02-altro' }],
+    ['path', { path: 'uda-01-reti/lezione-009.md' }],
+    ['filename', { filename: 'lezione-009.md' }],
+  ])('rifiuta una proiezione con %s divergente', async (_label, over) => {
+    await expect(save({ publicLesson: { ...PUBLIC, ...over } })).rejects.toThrow(
+      /non corrisponde a questa lezione/,
+    );
     expect(mockTxUpdate).not.toHaveBeenCalled();
     expect(mockTxSet).not.toHaveBeenCalled();
   });
