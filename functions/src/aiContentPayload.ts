@@ -11,7 +11,7 @@
  * validator runtime (`aiContentValidation`) resta comunque autorevole.
  */
 
-import { buildLessonPrompt, buildPoolPrompt } from './aiContentPrompt.js';
+import { buildConceptMapPrompt, buildLessonPrompt, buildPoolPrompt } from './aiContentPrompt.js';
 import { type AiContentRequest, type LessonDepth } from './aiContentCore.js';
 import type { OpenAiStructuredRequest } from './openAiGrader.js';
 
@@ -62,6 +62,14 @@ export const LESSON_OUTPUT_TOKENS: Readonly<Record<LessonDepth, number>> = {
 };
 
 /**
+ * CONCEPT-MAP-01 — tetto di output della mappa concettuale. Qui, a differenza
+ * della lezione, il tetto **è** anche un messaggio: una mappa lunga è una mappa
+ * fallita, e il cap è il modo più diretto di dirlo anche al modello. Volutamente
+ * un ordine di grandezza sotto la lezione più breve.
+ */
+export const CONCEPT_MAP_OUTPUT_TOKENS = 2_000;
+
+/**
  * Hard `max_output_tokens` realmente trasmesso al provider per la richiesta: è il
  * **tetto** dell'output fatturabile e la base della componente output della
  * prenotazione.
@@ -75,11 +83,15 @@ export function resolveMaxOutputTokens(request: AiContentRequest): number {
         CLOSED_QUESTION_OUTPUT_TOKENS
     );
   }
+  if (request.kind === 'concept_map') return CONCEPT_MAP_OUTPUT_TOKENS;
   return LESSON_OUTPUT_TOKENS[request.depth];
 }
 
 /** Stima **informativa** dei token di input (euristica caratteri/token). */
 export function estimateInputTokens(request: AiContentRequest): number {
+  if (request.kind === 'concept_map') {
+    return Math.ceil(request.lessonBody.length / CHARS_PER_TOKEN) + PROMPT_OVERHEAD_TOKENS;
+  }
   const chars =
     request.kind === 'pool'
       ? request.lessonSource.length + (request.teacherGuidance?.length ?? 0)
@@ -214,6 +226,23 @@ export const LESSON_OUTPUT_SCHEMA: Record<string, unknown> = {
 };
 
 /**
+ * CONCEPT-MAP-01 — schema strict a **tre campi**. Il modello non produce il
+ * documento: intestazioni, ordine, fence del diagramma e avvertenza li aggiunge
+ * il server (`aiContentConceptMap`). Nessun campo per l'avvertenza, che è una
+ * costante e non un contenuto negoziabile.
+ */
+export const CONCEPT_MAP_OUTPUT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['outlineMarkdown', 'summaryMarkdown', 'diagram'],
+  properties: {
+    outlineMarkdown: { type: 'string' },
+    summaryMarkdown: { type: 'string' },
+    diagram: { type: 'string' },
+  },
+};
+
+/**
  * Costruisce l'**esatta** `OpenAiStructuredRequest` (system+user+schema strict+
  * `max_output_tokens` reale, `store: false`). Pura: nessun trasporto, nessun
  * dato identificativo. Usata identica da stima, prenotazione e provider reale.
@@ -222,8 +251,18 @@ export function buildContentStructuredRequest(
   request: AiContentRequest,
   model: string,
 ): OpenAiStructuredRequest {
-  const prompt = request.kind === 'pool' ? buildPoolPrompt(request) : buildLessonPrompt(request);
-  const schema = request.kind === 'pool' ? buildPoolOutputSchema(request) : LESSON_OUTPUT_SCHEMA;
+  const prompt =
+    request.kind === 'pool'
+      ? buildPoolPrompt(request)
+      : request.kind === 'concept_map'
+        ? buildConceptMapPrompt(request)
+        : buildLessonPrompt(request);
+  const schema =
+    request.kind === 'pool'
+      ? buildPoolOutputSchema(request)
+      : request.kind === 'concept_map'
+        ? CONCEPT_MAP_OUTPUT_SCHEMA
+        : LESSON_OUTPUT_SCHEMA;
   return {
     model,
     input: [

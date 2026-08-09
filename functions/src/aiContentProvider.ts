@@ -92,6 +92,21 @@ class MockContentProvider implements ContentProvider {
         priorBillingRisk: false,
       };
     }
+    if (request.kind === 'concept_map') {
+      // Strutturalmente valido per il validator reale: tre campi non vuoti,
+      // nessuna fence, diagramma entro la larghezza massima.
+      return {
+        status: 'ok',
+        output: {
+          outlineMarkdown: '- Concetto principale\n  - dettaglio ──spiegato da──▶ esempio',
+          summaryMarkdown: 'Sintesi di riferimento (mock).',
+          diagram: 'CONCETTO PRINCIPALE\n└─ dettaglio ──spiegato da──▶ esempio',
+        },
+        usage: { inputTokens: 0, outputTokens: 0 },
+        metered: false,
+        priorBillingRisk: false,
+      };
+    }
     return {
       status: 'ok',
       output: { body: `## ${request.titolo ?? 'Lezione'}\n\nBozza generata (mock).` },

@@ -132,6 +132,13 @@ export const AI_CONTENT_LIMITS = {
   MAX_POOL_OUTPUT_BYTES: 200_000,
   /** Output lezione persistito nel run (più prudente dei 700_000 canonici). */
   MAX_LESSON_OUTPUT_BYTES: 600_000,
+  /**
+   * CONCEPT-MAP-01 — Markdown canonico della mappa concettuale, composto dal
+   * server. Due ordini di grandezza sotto la lezione: una mappa lunga è una
+   * mappa fallita, e il cap tiene l'artefatto lontano dal limite documentale
+   * Firestore anche quando verrà persistito sul `LessonDoc` (CONCEPT-MAP-02).
+   */
+  MAX_CONCEPT_MAP_OUTPUT_BYTES: 32_000,
   /** Lezione salvata canonica (invariata) — riferimento, applicata in AIGEN-02. */
   MAX_LESSON_CANONICAL_BYTES: 700_000,
   /** Tetto prudenziale della dimensione complessiva del documento run. */
@@ -150,7 +157,7 @@ export const POOL_LEVEL_DIFFICULTY: Readonly<Record<PoolLevel, { min: number; ma
 export const LESSON_DEPTHS = ['synthetic', 'complete', 'in_depth'] as const;
 export type LessonDepth = (typeof LESSON_DEPTHS)[number];
 
-export type ContentKind = 'pool' | 'lesson';
+export type ContentKind = 'pool' | 'lesson' | 'concept_map';
 export const QUESTION_TYPES = ['aperta', 'chiusa_singola', 'chiusa_multipla'] as const;
 export type QuestionType = (typeof QUESTION_TYPES)[number];
 
@@ -232,7 +239,27 @@ export interface LessonRequest {
   hasCurrentContent: boolean;
 }
 
-export type AiContentRequest = PoolRequest | LessonRequest;
+/**
+ * CONCEPT-MAP-01 — mappa concettuale di una lezione già scritta.
+ *
+ * Payload deliberatamente **povero**: solo il corpo della lezione. Niente
+ * titolo, metadati, UDA, indice, pool o indicazioni docente — la mappa deve
+ * poter affermare soltanto ciò che è ricavabile dal corpo, e ciò che non le
+ * viene dato non può contraddirlo.
+ *
+ * Il profilo è fisso a `economy`: riorganizzare e sintetizzare un testo già
+ * scritto non è creare una lezione. Non è un default sostituibile — un profilo
+ * diverso è rifiutato, non degradato.
+ */
+export interface ConceptMapRequest {
+  kind: 'concept_map';
+  requestId: string;
+  modelProfile: 'economy';
+  /** Corpo Markdown della lezione — dato non attendibile, delimitato nel prompt. */
+  lessonBody: string;
+}
+
+export type AiContentRequest = PoolRequest | LessonRequest | ConceptMapRequest;
 
 // ─── Helpers puri ─────────────────────────────────────────────────────────────
 
@@ -278,6 +305,16 @@ export function computeBudgetReservationKey(
  * Deterministico e stabile tra i retry dello stesso payload.
  */
 export function canonicalRequest(request: AiContentRequest): string {
+  // CONCEPT-MAP-01 — l'aggiunta di un terzo kind non deve spostare un solo byte
+  // della forma canonica di pool e lezione: `inputHash` è la chiave di replay dei
+  // run già memorizzati, e cambiarla li invaliderebbe tutti in silenzio.
+  if (request.kind === 'concept_map') {
+    return JSON.stringify({
+      kind: 'concept_map',
+      modelProfile: request.modelProfile,
+      lessonBody: request.lessonBody,
+    });
+  }
   const canonical: unknown =
     request.kind === 'pool'
       ? {
@@ -552,9 +589,39 @@ export function validateAiContentRequest(input: unknown): AiContentRequest {
   if (typeof requestId !== 'string' || !UUID_RE.test(requestId)) {
     throw new AiContentError('invalid_input', 'requestId mancante o malformato.');
   }
-  if (input.kind !== 'pool' && input.kind !== 'lesson') {
+  if (input.kind !== 'pool' && input.kind !== 'lesson' && input.kind !== 'concept_map') {
     throw new AiContentError('invalid_input', 'kind non supportato.');
   }
+
+  // CONCEPT-MAP-01 — payload povero, validato prima di tutto il resto: non
+  // condivide profilo libero né indicazioni docente con gli altri due kind, e
+  // farlo passare dal percorso comune significherebbe accettarne i campi.
+  if (input.kind === 'concept_map') {
+    assertNoExtraKeys(input, ['kind', 'requestId', 'modelProfile', 'lessonBody']);
+    // Profilo fisso, non un default: `quality` è rifiutato, mai degradato a
+    // `economy`. Una mappa non è una lezione e non deve poter costare come tale.
+    if (input.modelProfile !== 'economy') {
+      throw new AiContentError(
+        'invalid_input',
+        'La mappa concettuale usa esclusivamente il profilo economico.',
+      );
+    }
+    if (typeof input.lessonBody !== 'string' || input.lessonBody.trim().length === 0) {
+      throw new AiContentError('invalid_input', 'Il corpo della lezione è mancante o vuoto.');
+    }
+    if (utf8ByteLength(input.lessonBody) > AI_CONTENT_LIMITS.MAX_LESSON_SOURCE_BYTES) {
+      throw new AiContentError('content_too_large', 'Il corpo della lezione è troppo grande.');
+    }
+    return enforceTotalRequestSize({
+      kind: 'concept_map',
+      requestId,
+      modelProfile: 'economy',
+      // Nessun `trim()`: il corpo va al prompt esattamente com'è salvato, e una
+      // normalizzazione qui cambierebbe l'`inputHash` rispetto al testo reale.
+      lessonBody: input.lessonBody,
+    });
+  }
+
   const modelProfile = parseProfile(input.modelProfile);
   const teacherGuidance = parseGuidance(input.teacherGuidance);
 

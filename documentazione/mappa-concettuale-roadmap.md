@@ -1,7 +1,9 @@
 # SchoolForge — Roadmap: mappa concettuale della lezione
 
-**Stato:** progettazione conclusa, nessuna riga implementata. Tutte le
-decisioni sono prese e motivate; nessuna resta aperta.
+**Stato:** **CONCEPT-MAP-01 implementato** (core e backend IA); `02`
+(persistenza e Rules) e `03` (interfaccia e smoke DEV) restano aperti, insieme
+al gate umano. Tutte le decisioni di contratto sono prese e motivate; nessuna
+resta aperta.
 **Data:** 9 agosto 2026.
 **Dipendenze:** AIGEN-01→03 e LESSON-DEPTH-01 in produzione; editor Markdown
 della lezione (`lessonEditors`) esistente; proiezione studente `publicLessons`
@@ -257,19 +259,49 @@ una stima di costo errata.
 
 ## 8. Fasi di implementazione
 
-### CONCEPT-MAP-01 — core e backend IA
+### CONCEPT-MAP-01 — core e backend IA ✅ implementato
 
 Nuovo kind `concept_map`, payload chiuso, prompt dedicato, Structured Output a
 tre campi, compositore Markdown deterministico, validazione dimensionale e di
 larghezza, token/costi, replay e test di non-regressione byte-identica di pool
 e lezione. Nessuna UI, persistenza o deploy.
 
-### CONCEPT-MAP-02 — persistenza e Rules
+**Come è stato realizzato**, oltre a quanto già scritto sopra:
+
+- **contratto dei tre campi**, fail-closed e senza aggiustamenti: niente heading
+  ATX o Setext, niente HTML (tag reali, commenti, doctype, CDATA), niente fence,
+  niente front matter, niente spazi iniziali o finali. L'ossatura deve essere
+  davvero un elenco (`-`, `*`, `+`, almeno una voce, nessuna prosa fuori
+  elenco); la sintesi deve essere prosa (nessuna riga puntata, nemmeno
+  parziale); il diagramma resta entro 80 code point per riga. Il controllo HTML
+  non è generico su `<`: «a < b» non è markup e non viene rifiutato;
+- **spazi esterni rifiutati, non normalizzati.** Era l'unica alternativa
+  coerente con «nessun aggiustamento silenzioso»: un ritorno a capo in coda a
+  una sezione renderebbe ambiguo il confine con la riga vuota che il compositore
+  inserisce, e il documento non sarebbe più riconoscibile byte per byte;
+- **validazione del documento persistito.** Il replay non accetta «una stringa
+  non vuota entro il cap»: verifica oggetto con **esattamente una chiave**,
+  quattro parti presenti una sola volta e nell'ordine canonico, **una sola**
+  fence correttamente chiusa, avvertenza esatta, nessun contenuto dopo di essa
+  oltre la newline finale, e riapplica alle sezioni estratte gli stessi
+  contratti dei campi generati. L'oracolo finale è l'uguaglianza con la
+  ricomposizione: se il documento non è ciò che il compositore avrebbe prodotto,
+  non è canonico. Il Markdown viene restituito **identico**, mai ricomposto;
+- **non-regressione ancorata.** Due `inputHash` di pool e lezione sono congelati
+  come costanti nei test: sono la chiave di replay dei run già memorizzati, e
+  cambiarli in silenzio li invaliderebbe tutti.
+
+**Limite dichiarato:** `AI_CONCEPT_MAP_PROMPT_VERSION` esiste ed è separata da
+`AI_CONTENT_PROMPT_VERSION`, ma **non è persistita nel documento run** e non è
+usata per replay, audit o confronto. Nessun consumatore la legge. Va dichiarata
+operativa solo quando un consumatore esisterà davvero.
+
+### CONCEPT-MAP-02 — persistenza e Rules ⏳ aperto
 
 Campi tipizzati, servizio di salvataggio, proiezione condizionale, transazione
 di completamento, audit e Rules emulator. Nessuna UI e nessuna chiamata IA.
 
-### CONCEPT-MAP-03 — interfaccia e smoke DEV
+### CONCEPT-MAP-03 — interfaccia e smoke DEV ⏳ aperto
 
 Azione docente, dialog di stima/generazione, editor/anteprima, conferma di
 rigenerazione, sezione studente, rimozione del PDF morto, rollout DEV e smoke
