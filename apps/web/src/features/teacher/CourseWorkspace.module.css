@@ -381,22 +381,47 @@
 }
 
 /* ── Lesson tabs ────────────────────────────────────────────────────────── */
+/*
+ * CONCEPT-MAP-04 — con quattro schede, e una dall'etichetta lunga («Mappa
+ * concettuale»), mandare a capo su schermo stretto spezzerebbe la barra in due
+ * righe: due righe di schede si leggono come due gruppi distinti, che è
+ * esattamente il contrario di ciò che una tablist deve comunicare. La barra
+ * scorre quindi **dentro sé stessa**, con la scrollbar nascosta perché su
+ * quattro voci sarebbe rumore. A 1024 px e oltre le quattro schede entrano e
+ * non compare alcuno scorrimento.
+ */
 .tablist {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.25rem;
   border-bottom: 1px solid var(--color-border);
   margin-bottom: 1rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.tablist::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 .tab {
+  flex: 0 0 auto;
   border: none;
   background: transparent;
   padding: 0.45rem 0.85rem;
   cursor: pointer;
   font-size: 0.85rem;
+  white-space: nowrap;
   color: var(--color-text-muted);
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+}
+
+/* Target touch: la scheda è il controllo primario della vista lezione. */
+@media (pointer: coarse), (max-width: 640px) {
+  .tab {
+    min-height: 44px;
+  }
 }
 .tab:hover {
   color: var(--color-text);
@@ -634,11 +659,25 @@
   .title {
     font-size: 1rem;
   }
+  /*
+   * CONCEPT-MAP-04 — su mobile le schede restano una griglia, non una barra
+   * scorrevole: «Mappa concettuale» è un'etichetta lunga, e una barra che
+   * scorre a 320 px la troncherebbe costringendo a scoprire uno scorrimento
+   * che non si vede. Due colonne per due righe tengono tutte e quattro le
+   * etichette leggibili per intero e sopra i 44 px.
+   *
+   * Il numero di colonne segue il numero di schede: la regola precedente ne
+   * fissava tre, e la quarta sarebbe finita da sola su una riga.
+   */
   .tablist {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     overflow: hidden;
     gap: 0;
+  }
+  .tab {
+    white-space: normal;
+    text-align: center;
   }
   .dataTable {
     width: 100%;
@@ -744,20 +783,4 @@
 .lessonErrorDl dd {
   margin: 0;
   word-break: break-word;
-}
-
-/*
- * CONCEPT-MAP-03 — motivo per cui una voce del menu è disabilitata.
- *
- * Vive dentro il menu e non in un tooltip soltanto: il `title` non è
- * raggiungibile da tastiera né da lettore di schermo, e una voce disabilitata
- * senza spiegazione è indistinguibile da un guasto.
- */
-.menuHint {
-  display: block;
-  padding: 0 0.75rem 0.5rem;
-  font-size: 0.75rem;
-  line-height: 1.35;
-  color: var(--color-text-muted);
-  max-width: 22rem;
 }

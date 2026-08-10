@@ -733,17 +733,23 @@ describe('CourseWorkspace — lesson tabs (DUX-03)', () => {
   it('moves selection AND focus with arrow/Home/End keys, keeping one tabbable tab', async () => {
     await openLesson();
     const tabContenuto = screen.getByRole('tab', { name: 'Contenuto' });
+    // CONCEPT-MAP-04: la mappa è la seconda scheda, quindi è lei la prima a
+    // destra del contenuto.
+    const tabMappa = screen.getByRole('tab', { name: 'Mappa concettuale' });
     const tabDomande = screen.getByRole('tab', { name: 'Domande' });
     const tabInformazioni = screen.getByRole('tab', { name: 'Informazioni' });
+    const allTabs = [tabContenuto, tabMappa, tabDomande, tabInformazioni];
 
     tabContenuto.focus();
     fireEvent.keyDown(tabContenuto, { key: 'ArrowRight' });
+    expect(tabMappa.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tabMappa);
+    // Roving tabindex: exactly one tab is in the tab order.
+    expect(allTabs.filter((t) => t.tabIndex === 0)).toEqual([tabMappa]);
+
+    fireEvent.keyDown(tabMappa, { key: 'ArrowRight' });
     expect(tabDomande.getAttribute('aria-selected')).toBe('true');
     expect(document.activeElement).toBe(tabDomande);
-    // Roving tabindex: exactly one tab is in the tab order.
-    expect([tabContenuto, tabDomande, tabInformazioni].filter((t) => t.tabIndex === 0)).toEqual([
-      tabDomande,
-    ]);
 
     fireEvent.keyDown(tabDomande, { key: 'End' });
     expect(tabInformazioni.getAttribute('aria-selected')).toBe('true');

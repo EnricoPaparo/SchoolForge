@@ -322,23 +322,61 @@
 }
 
 /*
- * CONCEPT-MAP-03 — sezione «Mappa concettuale» della lezione studente.
+ * CONCEPT-MAP-04 — pannello «Mappa concettuale» della lezione studente.
  *
- * Separata dal corpo da un filetto, non da una card: è parte della stessa
- * lezione, non un contenuto autonomo. Lo scorrimento orizzontale del diagramma
- * resta confinato al proprio `<pre>` (`.prose pre` ha già `overflow-x: auto`),
- * quindi la pagina non si trascina dietro nulla su schermo stretto.
+ * Non è più una sezione in fondo al corpo ma il pannello di una scheda: il
+ * filetto separatore non serve più, perché la separazione la fa la tablist.
+ * Lo scorrimento orizzontale del diagramma resta confinato al proprio `<pre>`
+ * (`.prose pre` ha già `overflow-x: auto`), quindi la pagina non si trascina
+ * dietro nulla su schermo stretto.
  */
 .conceptMap {
-  margin-top: 2rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--color-border);
+  padding-top: 1rem;
   /* Difesa esplicita: nessun figlio può allargare la pagina. */
   max-width: 100%;
   overflow-x: hidden;
 }
 
-.conceptMapTitle {
-  margin: 0 0 0.75rem;
-  font-size: 1.05rem;
+/*
+ * Schede della lezione studente. Su schermo stretto la barra scorre in
+ * orizzontale **dentro sé stessa** invece di mandare a capo: due schede su due
+ * righe sembrerebbero due gruppi distinti. La scrollbar è nascosta perché la
+ * barra è larga quanto basta e una barra di scorrimento visibile su due voci
+ * sarebbe rumore.
+ */
+.lessonTablist {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.lessonTablist::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.lessonTab {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  /* Target touch: la scheda è il controllo primario di questa vista. */
+  min-height: 44px;
+}
+.lessonTab:hover {
+  color: var(--color-text);
+}
+.lessonTabActive {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  font-weight: 700;
 }

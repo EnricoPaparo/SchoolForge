@@ -40,8 +40,11 @@ import {
 } from '../repository/programs/programsService.js';
 import { saveLessonConceptMap } from '../repository/programs/conceptMapService.js';
 import { readPrivateConceptMap } from '../repository/programs/conceptMapContract.js';
-import { createAiConceptMapCallables } from '../repository/pools/aiConceptMapClient.js';
-import { ConceptMapDialog } from './ConceptMapDialog.js';
+import {
+  createAiConceptMapCallables,
+  type AiConceptMapCallables,
+} from '../repository/pools/aiConceptMapClient.js';
+import { ConceptMapEditor } from './ConceptMapEditor.js';
 import {
   createLesson,
   createUda,
@@ -288,7 +291,7 @@ type Selection =
   | { kind: 'uda'; udaDir: string }
   | { kind: 'lesson'; lessonId: string };
 
-type LessonTab = 'contenuto' | 'domande' | 'informazioni';
+type LessonTab = 'contenuto' | 'mappa' | 'domande' | 'informazioni';
 
 export function CourseWorkspace({
   card,
@@ -350,6 +353,7 @@ export function CourseWorkspace({
   // switching tabs so the pool is read once per lesson.
   const [activeTab, setActiveTab] = useState<LessonTab>('contenuto');
   const [domandeVisited, setDomandeVisited] = useState(false);
+  const [mappaVisited, setMappaVisited] = useState(false);
   const [poolDirty, setPoolDirty] = useState(false);
   // Navigation held back until the teacher confirms losing unsaved edits (any
   // of pool / content / metadata).
@@ -362,11 +366,11 @@ export function CourseWorkspace({
   const [infoDirty, setInfoDirty] = useState(false);
   const [contentStatus, setContentStatus] = useState<EditStatus>(NO_STATUS);
   /**
-   * CONCEPT-MAP-03 — la finestra della mappa concettuale. Aprirla non costa
-   * nessuna lettura: corpo e mappa sono già nell'albero e nel contenuto
-   * caricati, e le callable partono solo su azione esplicita del docente.
+   * CONCEPT-MAP-04 — la mappa è una scheda della lezione, non una finestra.
+   * Selezionarla non costa nessuna lettura: corpo e mappa sono già nell'albero
+   * e nel contenuto caricati, e le callable partono solo su azione esplicita.
    */
-  const [conceptMapOpen, setConceptMapOpen] = useState(false);
+  const [conceptMapDirty, setConceptMapDirty] = useState(false);
   const conceptMapCallables = useMemo(() => createAiConceptMapCallables(functions), []);
   const [infoStatus, setInfoStatus] = useState<EditStatus>(NO_STATUS);
   const [completedBusy, setCompletedBusy] = useState(false);
@@ -391,7 +395,7 @@ export function CourseWorkspace({
     };
   }, []);
 
-  const anyDirty = poolDirty || contentDirty || infoDirty;
+  const anyDirty = poolDirty || contentDirty || infoDirty || conceptMapDirty;
 
   const isMobile = useIsMobile();
   // Organize mode (DUX-04C): reorder UDAs (course level) or lessons (UDA
@@ -472,6 +476,7 @@ export function CourseWorkspace({
     setContentDirty(false);
     setInfoDirty(false);
     setPoolDirty(false);
+    setConceptMapDirty(false);
     setContentStatus(NO_STATUS);
     setInfoStatus(NO_STATUS);
   }
@@ -479,6 +484,7 @@ export function CourseWorkspace({
   function selectTab(tab: LessonTab) {
     setActiveTab(tab);
     if (tab === 'domande') setDomandeVisited(true);
+    if (tab === 'mappa') setMappaVisited(true);
   }
 
   function handlePoolCountChange(
@@ -509,6 +515,8 @@ export function CourseWorkspace({
     // contextual (pool + editor) state so nothing from it can bleed through.
     setActiveTab('contenuto');
     setDomandeVisited(false);
+    setMappaVisited(false);
+    setConceptMapDirty(false);
     setPoolDirty(false);
     setEditingContent(false);
     setEditingInfo(false);
@@ -1238,6 +1246,8 @@ export function CourseWorkspace({
         setSelection({ kind: 'lesson', lessonId });
         setActiveTab('contenuto');
         setDomandeVisited(false);
+        setMappaVisited(false);
+        setConceptMapDirty(false);
         setPoolDirty(false);
         setEditingContent(false);
         setEditingInfo(false);
@@ -1344,11 +1354,11 @@ export function CourseWorkspace({
    * fail-closed dall'albero **già in memoria**: nessuna lettura aggiuntiva.
    */
   const selectedConceptMap = selectedLesson ? readPrivateConceptMap(selectedLesson) : null;
-  const hasConceptMap = selectedConceptMap !== null;
   /**
-   * Motivo per cui l'azione è disabilitata, o `null` se è disponibile. Una
+   * Motivo per cui la generazione è impossibile, o `null` se è disponibile. Una
    * mappa generata da un corpo non salvato descriverebbe un testo che non
    * esiste ancora per nessuno: né per lo studente, né al prossimo caricamento.
+   * Il motivo vive nella scheda, accanto al pulsante che disabilita.
    */
   const conceptMapBlockedReason: string | null =
     lessonContent === null
@@ -2116,34 +2126,6 @@ export function CourseWorkspace({
                     <IconBookOpen size={15} />
                     Modifica informazioni
                   </button>
-                  {/*
-                    CONCEPT-MAP-03 — la mappa si genera dal corpo **salvato**:
-                    la voce resta visibile ma disabilitata quando non c'è un
-                    corpo o quando ce n'è uno modificato e non ancora salvato.
-                    Nasconderla lascerebbe il docente senza sapere perché non
-                    c'è; il motivo è nel `title` e in `aria-describedby`.
-                  */}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setConceptMapOpen(true);
-                    }}
-                    disabled={conceptMapBlockedReason !== null}
-                    title={conceptMapBlockedReason ?? undefined}
-                    aria-describedby={
-                      conceptMapBlockedReason ? 'concept-map-blocked-reason' : undefined
-                    }
-                  >
-                    <IconLayers size={15} />
-                    {hasConceptMap ? 'Modifica mappa concettuale' : 'Genera mappa concettuale'}
-                  </button>
-                  {conceptMapBlockedReason && (
-                    <span id="concept-map-blocked-reason" className={styles.menuHint}>
-                      {conceptMapBlockedReason}
-                    </span>
-                  )}
                   <button
                     type="button"
                     role="menuitem"
@@ -2199,17 +2181,6 @@ export function CourseWorkspace({
               )}
             </div>
           )}
-          {conceptMapOpen && selectedLesson && lessonContent !== null && (
-            <ConceptMapDialog
-              lessonTitle={selectedLesson.titolo ?? selectedLesson.filename}
-              lessonBody={lessonContent}
-              initialConceptMap={selectedConceptMap}
-              callables={conceptMapCallables}
-              onSave={(markdown) => handleSaveConceptMap(selectedLesson, markdown)}
-              onClose={() => setConceptMapOpen(false)}
-            />
-          )}
-
           {selection.kind === 'lesson' && selectedLesson && (
             <LessonDetail
               lesson={selectedLesson}
@@ -2240,6 +2211,7 @@ export function CourseWorkspace({
               activeTab={activeTab}
               onSelectTab={selectTab}
               domandeVisited={domandeVisited}
+              mappaVisited={mappaVisited}
               programId={card.programId}
               importId={card.activeImportId}
               ownerUid={ownerUid}
@@ -2265,6 +2237,11 @@ export function CourseWorkspace({
               }}
               onContentDirtyChange={setContentDirty}
               onInfoDirtyChange={setInfoDirty}
+              conceptMap={selectedConceptMap}
+              conceptMapBlockedReason={conceptMapBlockedReason}
+              conceptMapCallables={conceptMapCallables}
+              onSaveConceptMap={(markdown) => handleSaveConceptMap(selectedLesson, markdown)}
+              onConceptMapDirtyChange={setConceptMapDirty}
             />
           )}
         </div>
@@ -2724,6 +2701,9 @@ function UdaOverview({
 
 const LESSON_TABS: { id: LessonTab; label: string }[] = [
   { id: 'contenuto', label: 'Contenuto' },
+  // CONCEPT-MAP-04 — la mappa segue il contenuto perché ne è la sintesi: si
+  // legge dopo, mai al posto suo.
+  { id: 'mappa', label: 'Mappa concettuale' },
   { id: 'domande', label: 'Domande' },
   { id: 'informazioni', label: 'Informazioni' },
 ];
@@ -2739,6 +2719,7 @@ function LessonDetail({
   activeTab,
   onSelectTab,
   domandeVisited,
+  mappaVisited,
   programId,
   importId,
   ownerUid,
@@ -2755,6 +2736,11 @@ function LessonDetail({
   onContentDirtyChange,
   onInfoDirtyChange,
   lessonAi,
+  conceptMap,
+  conceptMapBlockedReason,
+  conceptMapCallables,
+  onSaveConceptMap,
+  onConceptMapDirtyChange,
 }: {
   lesson: LessonItem;
   metadata: LessonMetadata;
@@ -2766,6 +2752,7 @@ function LessonDetail({
   activeTab: LessonTab;
   onSelectTab: (tab: LessonTab) => void;
   domandeVisited: boolean;
+  mappaVisited: boolean;
   programId: string;
   importId: string | null;
   ownerUid: string;
@@ -2782,6 +2769,11 @@ function LessonDetail({
   onContentDirtyChange: (dirty: boolean) => void;
   onInfoDirtyChange: (dirty: boolean) => void;
   lessonAi: LessonAiButtonContext;
+  conceptMap: string | null;
+  conceptMapBlockedReason: string | null;
+  conceptMapCallables: AiConceptMapCallables;
+  onSaveConceptMap: (conceptMapMarkdown: string) => Promise<void>;
+  onConceptMapDirtyChange: (dirty: boolean) => void;
 }) {
   const { title } = resolveLessonTitle(lesson.filename, metadata.titolo ?? lesson.titolo);
 
@@ -2906,6 +2898,33 @@ function LessonDetail({
               )}
             </>
           )
+        )}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="panel-mappa"
+        aria-labelledby="tab-mappa"
+        hidden={activeTab !== 'mappa'}
+      >
+        {/*
+          CONCEPT-MAP-04 — montato alla prima apertura e mantenuto montato:
+          passare a un'altra scheda della stessa lezione non deve perdere una
+          proposta pagata né una modifica manuale. Il montaggio non costa nulla
+          — nessuna callable parte da solo — e la chiave lega lo stato alla
+          lezione, così cambiare lezione riparte da zero invece di trascinarsi
+          dietro il testo della precedente.
+        */}
+        {mappaVisited && (
+          <ConceptMapEditor
+            key={lesson.id}
+            lessonBody={content}
+            initialConceptMap={conceptMap}
+            blockedReason={conceptMapBlockedReason}
+            callables={conceptMapCallables}
+            onSave={onSaveConceptMap}
+            onDirtyChange={onConceptMapDirtyChange}
+          />
         )}
       </div>
 
