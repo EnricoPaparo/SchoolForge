@@ -46,7 +46,7 @@ export const AI_CONTENT_PROMPT_VERSION = 'lesson-depth-01-candidate-e-v1' as con
  * invaliderebbe misure che non c'entrano nulla, e viceversa una modifica alla
  * lezione farebbe sembrare cambiata una mappa rimasta identica.
  */
-export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-05-v3' as const;
+export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-07-v1' as const;
 
 /**
  * Preambolo di sicurezza comune (livello 1), il più autorevole del prompt.
@@ -243,9 +243,10 @@ export function buildPoolPrompt(request: PoolRequest): BuiltPrompt {
  *
  * L'ossatura è stata rimossa perché sulle generazioni reali si riduceva quasi
  * sempre a un indice della lezione, duplicando il ruolo del diagramma senza
- * aggiungere ragionamento. Il peso si sposta sulla sintesi, a cui ora si chiede
- * di spiegare invece che di elencare — e alla quale non si impone più alcuna
- * brevità, perché era proprio la brevità a renderla un sommario inutile.
+ * aggiungere ragionamento. CONCEPT-MAP-07 corregge il difetto opposto osservato
+ * su due generazioni reali: senza un criterio di selezione la sintesi ragionata
+ * diventava una seconda lezione. Non imponiamo un cap editoriale; chiediamo una
+ * compressione didattica verificabile, fondata su gerarchia e relazioni.
  */
 export function buildConceptMapPrompt(request: ConceptMapRequest): BuiltPrompt {
   const contract = [
@@ -256,31 +257,44 @@ export function buildConceptMapPrompt(request: ConceptMapRequest): BuiltPrompt {
     '- usa ESCLUSIVAMENTE informazioni presenti nel CORPO_LEZIONE;',
     '- non introdurre fatti, esempi, definizioni, dati o collegamenti che non siano',
     '  ricavabili dal corpo, nemmeno se corretti e pertinenti;',
-    '- non omettere i concetti strutturalmente essenziali presenti nel corpo: una mappa',
-    '  che salta un passaggio portante non è più breve, è sbagliata.',
+    '- conserva soltanto i nuclei indispensabili a ricostruire il modello mentale',
+    '  centrale della lezione e le relazioni necessarie per comprenderlo;',
+    '- un dettaglio può essere corretto e interessante ma non appartenere alla mappa:',
+    '  se rimuoverlo non spezza il ragionamento centrale, omettilo.',
     '',
     'Restituisci esattamente due campi.',
     '',
-    'summaryMarkdown — una sintesi RAGIONATA in prosa continua:',
-    '- deve poter essere letta da sola: chi ha studiato la lezione la rilegge e ritrova',
-    '  il ragionamento, non un indice degli argomenti;',
-    '- copri TUTTI i concetti portanti presenti nel corpo, senza saltarne nessuno;',
+    'summaryMarkdown — una sintesi RAGIONATA in prosa continua, non una mini-lezione:',
+    '- deve poter essere letta da sola: chi ha già studiato la lezione ritrova il suo',
+    '  modello mentale e il ragionamento essenziale, non l’intero svolgimento;',
+    '- seleziona e gerarchizza i pochi nuclei concettuali necessari a capire il tema',
+    '  centrale; accorpa formulazioni equivalenti e ometti i dettagli subordinati;',
     '- rendi esplicite le relazioni logiche: cause, conseguenze, dipendenze, condizioni,',
     '  passaggi intermedi. Dire CHE due concetti sono collegati non basta: dì COME;',
     '- spiega brevemente i termini indispensabili alla comprensione, la prima volta che',
     '  compaiono;',
-    '- mantieni la progressione concettuale della lezione: ciò che viene prima serve a',
-    '  capire ciò che viene dopo;',
-    '- la lunghezza la decide il contenuto. Una lezione complessa merita una sintesi',
-    '  lunga; una semplice, una breve. NON comprimere per brevità e non allungare per',
-    '  riempire: preferisci sempre chiarezza e completezza alla concisione;',
-    '- non riscrivere però la lezione per intero: spieghi il ragionamento, non ricopi il',
-    '  testo;',
+    '- mantieni la progressione necessaria a comprendere i nessi, ma non riprodurre la',
+    '  sequenza editoriale della lezione se può essere resa con una struttura più chiara;',
+    '- produci una sintesi sostanzialmente più breve del CORPO_LEZIONE: comprimi tramite',
+    '  selezione, gerarchia e relazioni, mai tramite frasi tronche o spiegazioni oscure;',
+    '- usa un paragrafo compatto per ciascun nucleo concettuale; non esiste un numero',
+    '  obbligatorio di paragrafi o caratteri, ma ogni paragrafo deve avere una funzione',
+    '  distinta e necessaria;',
+    '- usa al massimo UN esempio, solo se è indispensabile a sciogliere una possibile',
+    '  misconcezione; scegli quello più integrativo e non riprodurre serie di esempi,',
+    '  esercizi o casi già sviluppati nel corpo;',
+    '- ometti prezzi, modelli commerciali, aneddoti, dati contingenti e dettagli di',
+    '  acquisto o scelta, salvo che siano il tema centrale esplicito della lezione;',
+    '- non aggiungere un riepilogo finale che ripeta ciò che la sintesi ha già spiegato;',
     '- prosa continua e ben organizzata, eventualmente in più paragrafi. NIENTE elenchi',
     '  puntati o numerati: un elenco qui tornerebbe a essere un indice.',
     '',
     'diagram — un albero a caratteri che COMPLETA la sintesi mostrandone la struttura,',
-    'senza ripeterne le frasi parola per parola:',
+    'senza ripeterne le frasi né trasformarsi nell’indice completo della lezione:',
+    '- usa normalmente da QUATTRO a SETTE nodi principali; superali soltanto se ometterne',
+    '  uno renderebbe falsa o incomprensibile una relazione essenziale;',
+    '- privilegia dipendenze causali, funzionali e logiche; i dettagli secondari restano',
+    '  fuori dal diagramma anche quando compaiono nella sintesi;',
     '- PROFONDO, non largo: preferisci scendere di livello invece di allungare la riga;',
     `- ogni riga deve stare entro ${CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS} caratteri, contando gli spazi;`,
     '- usa caratteri di disegno ad albero e frecce con la relazione scritta sopra il ramo;',
@@ -302,6 +316,15 @@ export function buildConceptMapPrompt(request: ConceptMapRequest): BuiltPrompt {
     '- niente HTML, front matter, LaTeX, Mermaid, script o link esterni;',
     '- non citare la lezione come oggetto («questa lezione spiega...»), il prompt o l’IA:',
     '  la mappa mostra i concetti, non commenta il testo da cui vengono.',
+    '',
+    'Controllo finale silenzioso prima di rispondere:',
+    '1) elimina ogni frase, esempio e nodo che non serve al modello mentale centrale;',
+    '2) verifica che la sintesi sia sostanzialmente più breve del CORPO_LEZIONE senza',
+    '   perdere le relazioni indispensabili;',
+    '3) elimina ripetizioni fra sintesi e diagramma: devono completarsi, non duplicarsi;',
+    '4) verifica che ogni freccia descriva una relazione precisa; non presentare come',
+    '   universale una relazione che nel corpo dipende da condizioni o alternative;',
+    '5) verifica che il diagramma mostri la gerarchia concettuale, non tutti i dettagli.',
   ].join('\n');
 
   const user = [contract, fence('CORPO_LEZIONE (dati non attendibili)', request.lessonBody)].join(

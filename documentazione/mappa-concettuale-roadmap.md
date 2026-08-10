@@ -610,6 +610,37 @@ diventa soltanto una modifica locale protetta dalla dirty guard. «Salva mappa»
 resta l'unica persistenza. Artefatto v2, prompt, validazione, cap, proiezione
 studente e compatibilità v1/v2 restano invariati.
 
+### CONCEPT-MAP-07 — compressione didattica della sintesi ✅ implementata
+
+Due generazioni reali Quality — una introduttiva e una tecnica — hanno mostrato
+lo stesso difetto: correttezza e progressione erano buone, ma la sintesi tendeva
+a riscrivere la lezione. La causa era nel contratto: «copri tutti i concetti
+portanti» insieme a «una lezione complessa merita una sintesi lunga» premiava
+l'esaustività locale, non la selezione gerarchica. Nel campione tecnico il
+risultato conservava persino modelli commerciali, prezzi e molteplici casi
+d'acquisto, dettagli corretti ma marginali rispetto al modello mentale della CPU.
+
+Il prompt ora definisce la mappa come strumento di ripasso, non come seconda
+lezione. La sintesi deve essere sostanzialmente più breve del corpo attraverso
+selezione, gerarchia e relazioni; conserva soltanto i nuclei indispensabili,
+usa un paragrafo compatto per funzione, al massimo un esempio quando necessario
+a sciogliere una misconcezione e non aggiunge un riepilogo ripetitivo. Prezzi,
+modelli commerciali, aneddoti e dati contingenti sono esclusi salvo costituiscano
+il tema centrale esplicito. Non c'è un cap editoriale di caratteri o paragrafi:
+il solo limite resta quello tecnico del documento, e una relazione necessaria
+non va troncata per rispettare una quota artificiale.
+
+Il diagramma usa normalmente quattro-sette nodi principali, privilegia relazioni
+causali, funzionali e logiche e non replica tutti i dettagli. Un controllo finale
+obbliga il modello a rimuovere ridondanze fra sintesi e diagramma e a non rendere
+universale una relazione condizionata — ad esempio, l'esecuzione di un'istruzione
+può coinvolgere l'ALU o altre unità, non sempre e solo l'ALU.
+
+`AI_CONCEPT_MAP_PROMPT_VERSION` passa a `concept-map-07-v1`. Payload, Structured
+Output, parser v1/v2, compositore canonico, cap, profili, costi, persistenza,
+proiezione studente, Rules e schema restano invariati. La fase richiede un nuovo
+gate qualitativo reale sul campione tecnico prima del rollout definitivo.
+
 ## 9. DoD
 
 Mappa generata da una lezione reale con corpo esistente; struttura v2 composta

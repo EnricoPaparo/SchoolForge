@@ -311,21 +311,42 @@ describe('prompt della mappa concettuale', () => {
     expect(user).not.toMatch(/ossatura/i);
   });
 
-  it('chiede una sintesi ragionata, senza imporre brevità', () => {
+  it('chiede una sintesi ragionata con compressione didattica, senza cap editoriale', () => {
     const { user } = buildConceptMapPrompt(conceptMapRequest());
-    // Il difetto che CONCEPT-MAP-05 corregge era proprio la brevità imposta:
-    // produceva un sommario che non aiutava a ripassare.
+    // Nessun limite rigido: la compressione nasce dalla selezione dei nuclei e
+    // delle relazioni, non dal taglio arbitrario di parole o paragrafi.
     expect(user).not.toMatch(/poche righe/);
     expect(user).toMatch(/RAGIONATA/);
     expect(user).toMatch(/cause, conseguenze, dipendenze/);
-    expect(user).toMatch(/la lunghezza la decide il contenuto/i);
+    expect(user).toMatch(/sostanzialmente più breve del CORPO_LEZIONE/i);
+    expect(user).toMatch(/non esiste un numero\s+obbligatorio di paragrafi o caratteri/i);
+    expect(user).toMatch(/selezione, gerarchia e relazioni/i);
     expect(user).toMatch(/NIENTE elenchi/);
+  });
+
+  it('impedisce che la sintesi diventi una seconda lezione', () => {
+    const { user } = buildConceptMapPrompt(conceptMapRequest());
+    expect(user).toMatch(/non una mini-lezione/i);
+    expect(user).toMatch(/al massimo UN esempio/i);
+    expect(user).toMatch(/non riprodurre serie di esempi/i);
+    expect(user).toMatch(/prezzi, modelli commerciali, aneddoti/i);
+    expect(user).toMatch(/non aggiungere un riepilogo finale/i);
+    expect(user).not.toMatch(/copri TUTTI i concetti portanti/i);
+    expect(user).not.toMatch(/una lezione complessa merita una sintesi lunga/i);
+  });
+
+  it('chiede un diagramma selettivo e relazioni non assolutizzate', () => {
+    const { user } = buildConceptMapPrompt(conceptMapRequest());
+    expect(user).toMatch(/QUATTRO a SETTE nodi principali/);
+    expect(user).toMatch(/non tutti i dettagli/);
+    expect(user).toMatch(/non presentare come\s+universale una relazione/i);
+    expect(user).toMatch(/completarsi, non duplicarsi/i);
   });
 
   it('la versione del prompt della mappa è stata incrementata', () => {
     // Il prompt è cambiato in modo sostanziale: lasciare la versione precedente
     // renderebbe indistinguibili due contratti diversi.
-    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-05-v3');
+    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-07-v1');
   });
 });
 
