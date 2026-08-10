@@ -1,0 +1,152 @@
+{
+  "datasetVersion": "pool-tune-00-dataset-v1",
+  "rubricVersion": "pool-tune-00-rubric-v1",
+  "generatedSamplesIncluded": false,
+  "sourceProvenance": "Lezioni Quality congelate dai dataset LESSON-TUNE-01 candidato D; tuning e holdout restano separati.",
+  "scenarios": [
+    {
+      "id": "PT00-01",
+      "split": "tuning",
+      "category": "introductory_theory",
+      "sourceFile": "PT00-01.md",
+      "sourceSha256": "f1cd3f78c14fcc348b8bf1755b483435d5f1613e525ba87dd28f12b50ee1bfac",
+      "level": "base",
+      "counts": { "aperta": 2, "chiusa_singola": 2, "chiusa_multipla": 2 },
+      "teacherGuidance": null,
+      "coverageTargets": ["nodo", "collegamento", "protocollo", "risorsa condivisa"],
+      "reasoningTargets": ["distinguere componenti e funzioni", "applicare la definizione a un caso quotidiano"]
+    },
+    {
+      "id": "PT00-02",
+      "split": "tuning",
+      "category": "technical_diagnosis",
+      "sourceFile": "PT00-02.md",
+      "sourceSha256": "8048f43b6dc05d988a812fcfab518a9377163f337aaa9fac2e86c31938774e59",
+      "level": "balanced",
+      "counts": { "aperta": 3, "chiusa_singola": 3, "chiusa_multipla": 2 },
+      "teacherGuidance": "Inserisci almeno un caso diagnostico in cui si debba motivare quale parametro IPv4 controllare per primo.",
+      "coverageTargets": ["indirizzo IPv4", "subnet mask", "gateway", "DNS", "verifica progressiva"],
+      "reasoningTargets": ["diagnosticare senza tentativi casuali", "collegare un parametro errato al sintomo osservato"]
+    },
+    {
+      "id": "PT00-03",
+      "split": "tuning",
+      "category": "multi_mechanism_classification",
+      "sourceFile": "PT00-03.md",
+      "sourceSha256": "60f35d8a08af26c73f2a2a7b05b3b837d1f15d2f282ed5a8e0d4c8b7b57c2d44",
+      "level": "balanced",
+      "counts": { "aperta": 3, "chiusa_singola": 3, "chiusa_multipla": 2 },
+      "teacherGuidance": null,
+      "coverageTargets": ["conduzione", "convezione", "irraggiamento", "meccanismi simultanei"],
+      "reasoningTargets": ["classificare motivando", "riconoscere più meccanismi nello stesso fenomeno"]
+    },
+    {
+      "id": "PT00-04",
+      "split": "tuning",
+      "category": "worked_mathematics",
+      "sourceFile": "PT00-04.md",
+      "sourceSha256": "757f98a415997581c0998f0de872f825f47ded4b6f8fcbd8987745f389b5ef36",
+      "level": "balanced",
+      "counts": { "aperta": 4, "chiusa_singola": 2, "chiusa_multipla": 2 },
+      "teacherGuidance": "Le domande aperte possono includere esercizi: le soluzioni devono mostrare trasformazioni, motivazione e verifica per sostituzione.",
+      "coverageTargets": ["principi di equivalenza", "isolamento dell'incognita", "verifica", "errori di segno"],
+      "reasoningTargets": ["risolvere passo passo", "individuare e correggere un errore"]
+    },
+    {
+      "id": "PT00-05",
+      "split": "tuning",
+      "category": "historical_source_reasoning",
+      "sourceFile": "PT00-05.md",
+      "sourceSha256": "9447bad3df5c8e0a79d4cd834ff9d4e4ad57c5a94901fceeb5ca6ec7e09d1eb4",
+      "level": "balanced",
+      "counts": { "aperta": 3, "chiusa_singola": 3, "chiusa_multipla": 2 },
+      "teacherGuidance": "Almeno una domanda aperta deve chiedere di distinguere osservazione e inferenza su una breve fonte autosufficiente.",
+      "coverageTargets": ["fonte primaria", "contesto", "punto di vista", "attendibilità", "inferenza"],
+      "reasoningTargets": ["separare evidenza e interpretazione", "valutare limiti senza classificare la fonte come semplicemente vera o falsa"]
+    },
+    {
+      "id": "PT00-06",
+      "split": "tuning",
+      "category": "misconception_correction",
+      "sourceFile": "PT00-06.md",
+      "sourceSha256": "dd2c39c9b258418c47dbeb4ff591d267323f3bb8320f91181cd9ab62ab0abdb4",
+      "level": "balanced",
+      "counts": { "aperta": 3, "chiusa_singola": 3, "chiusa_multipla": 2 },
+      "teacherGuidance": null,
+      "coverageTargets": ["massa", "forza peso", "accelerazione di gravità", "chilogrammo", "newton"],
+      "reasoningTargets": ["correggere una misconcezione", "applicare P = m·g motivando unità e significato"]
+    },
+    {
+      "id": "PT00-07",
+      "split": "tuning",
+      "category": "programming_debugging",
+      "sourceFile": "PT00-07.md",
+      "sourceSha256": "f851db4263e0192c63cd27ca843b7d325fe27b2aa5b06688ef94c5d468bcf557",
+      "level": "advanced",
+      "counts": { "aperta": 4, "chiusa_singola": 2, "chiusa_multipla": 2 },
+      "teacherGuidance": "Le aperte includano almeno due esercizi di debugging con traccia dello stato e soluzione completa, non soltanto teoria.",
+      "coverageTargets": ["ciclo for", "range", "indice", "stato delle variabili", "off-by-one"],
+      "reasoningTargets": ["tracciare un programma", "distinguere errore logico, sintattico e runtime", "motivare la correzione"]
+    },
+    {
+      "id": "PT00-08",
+      "split": "tuning",
+      "category": "argumentative_reasoning",
+      "sourceFile": "PT00-08.md",
+      "sourceSha256": "e5cf8f1c25ef2366e52ff99785e1372b6435d7f82cfe971c2737922bdf95f8c5",
+      "level": "balanced",
+      "counts": { "aperta": 3, "chiusa_singola": 3, "chiusa_multipla": 2 },
+      "teacherGuidance": "Includi una domanda aperta che chieda di costruire o valutare un'argomentazione completa, non di ripetere definizioni.",
+      "coverageTargets": ["tesi", "ragione", "evidenza", "controargomento", "confutazione"],
+      "reasoningTargets": ["valutare pertinenza e sostegno", "costruire una catena argomentativa"]
+    },
+    {
+      "id": "PT00-09",
+      "split": "holdout",
+      "category": "database_normalization",
+      "sourceFile": "PT00-09.md",
+      "sourceSha256": "f8dc51bde659ee0998a03906201878f762a1d6ab62a3bf08aede63697f20a5ca",
+      "level": "advanced",
+      "counts": { "aperta": 4, "chiusa_singola": 3, "chiusa_multipla": 3 },
+      "teacherGuidance": null,
+      "coverageTargets": ["dipendenza funzionale", "chiave candidata", "1NF", "2NF", "3NF", "decomposizione"],
+      "reasoningTargets": ["riconoscere anomalie", "normalizzare motivando ogni decomposizione"]
+    },
+    {
+      "id": "PT00-10",
+      "split": "holdout",
+      "category": "transport_protocol_reasoning",
+      "sourceFile": "PT00-10.md",
+      "sourceSha256": "e5905a23a26bd11c3fbc11a9b003f957a4164cef832f9b872a9b035c1a441441",
+      "level": "advanced",
+      "counts": { "aperta": 4, "chiusa_singola": 3, "chiusa_multipla": 3 },
+      "teacherGuidance": null,
+      "coverageTargets": ["numero di sequenza", "ACK", "timeout", "ritrasmissione", "ordinamento"],
+      "reasoningTargets": ["ricostruire una perdita", "distinguere affidabilità TCP e instradamento IP"]
+    },
+    {
+      "id": "PT00-11",
+      "split": "holdout",
+      "category": "stoichiometric_problem",
+      "sourceFile": "PT00-11.md",
+      "sourceSha256": "242fb25db090fae67a442e08d8456bfbfc3f9d433f510f6fc174b81fc4683c90",
+      "level": "advanced",
+      "counts": { "aperta": 4, "chiusa_singola": 2, "chiusa_multipla": 2 },
+      "teacherGuidance": null,
+      "coverageTargets": ["equazione bilanciata", "mole", "massa molare", "rapporto stechiometrico", "controllo dimensionale"],
+      "reasoningTargets": ["convertire massa e moli", "verificare unità e plausibilità"]
+    },
+    {
+      "id": "PT00-12",
+      "split": "holdout",
+      "category": "systems_feedback",
+      "sourceFile": "PT00-12.md",
+      "sourceSha256": "89844bd6d1fcc49b78ce51fb32c0e365d3ef2112eddf48b7fc91db5be2241401",
+      "level": "advanced",
+      "counts": { "aperta": 3, "chiusa_singola": 3, "chiusa_multipla": 2 },
+      "teacherGuidance": null,
+      "coverageTargets": ["sistema", "variabile", "retroazione", "feedback positivo", "feedback negativo", "equilibrio dinamico"],
+      "reasoningTargets": ["ricostruire catene causali", "non confondere positivo con buono e negativo con cattivo"]
+    }
+  ]
+}

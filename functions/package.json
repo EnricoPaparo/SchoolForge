@@ -11,6 +11,7 @@
     "benchmark:m5-quality:reevaluate": "node lib/m5ReevaluateCli.js",
     "benchmark:lesson-manual-quality": "node lib/lessonManualQualityCli.js",
     "benchmark:lesson-tune-quality": "node lib/lessonTuneQualityCli.js",
+    "benchmark:pool-tune": "node lib/poolTuneCli.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
