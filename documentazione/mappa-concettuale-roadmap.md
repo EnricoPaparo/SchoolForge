@@ -144,7 +144,7 @@ idempotenza, validazione dell'output):
 {
   kind: 'concept_map';
   requestId: string;
-  modelProfile: 'economy';
+  modelProfile: 'economy' | 'quality';
   lessonBody: string;
 }
 ```
@@ -159,12 +159,11 @@ lezione devono restare byte-identici nei rispettivi prompt e payload.
 - **nessun altro contesto**: niente titolo, metadati, UDA, indice delle lezioni,
   pool o indicazioni docente. La mappa deve poter affermare soltanto ciò che è
   ricavabile dal corpo;
-- **output**: breve per definizione. Il tetto di token va tenuto **stretto**:
-  una mappa lunga è una mappa fallita, e il tetto è il modo più diretto di
-  dirlo anche al modello. Il tetto iniziale è **2.000 token di output**;
-- **modello**: profilo `economy`, fisso e dichiarato nell'interfaccia. Questa è
-  un'operazione di riorganizzazione e sintesi, non di creazione di una lezione;
-  la prima versione non espone un selettore del modello;
+- **output**: breve per definizione. Il provider dispone di **6.000 token** per
+  ragionamento e Structured Output, ma il documento accettato resta vincolato
+  al cap autonomo di **32.000 byte UTF-8**;
+- **modello**: profilo `economy` o `quality`, scelto esplicitamente nel dialog;
+  `quality` è il default visivo, mai un fallback silenzioso;
 - **costo**: il più basso di tutte le generazioni del portale — l'input è un
   testo già esistente e l'output è corto;
 - **verifica**: non serve un benchmark. La domanda è «la mappa dice solo cose
@@ -273,8 +272,10 @@ e lezione. Nessuna UI, persistenza o deploy.
 - **contratto dei tre campi**, fail-closed: niente heading
   ATX o Setext, niente HTML (tag reali, commenti, doctype, CDATA), niente fence,
   niente front matter. L'ossatura deve essere
-  davvero un elenco (`-`, `*`, `+`, almeno una voce, nessuna prosa fuori
-  elenco); la sintesi deve essere prosa (nessuna riga puntata, nemmeno
+  davvero un elenco (`-`, `*`, `+`, almeno una voce). Una voce può continuare
+  su più righe secondo CommonMark, comprese le continuazioni lazy; dopo una
+  riga vuota una continuazione deve essere indentata, così un nuovo paragrafo
+  di prosa resta rifiutato. La sintesi deve essere prosa (nessuna riga puntata, nemmeno
   parziale); il diagramma resta entro 80 code point per riga. Il controllo HTML
   non è generico su `<`: «a < b» non è markup e non viene rifiutato;
 - **normalizzazione controllata del provider.** I tre campi strutturati vengono
@@ -411,8 +412,8 @@ all'apertura: la spesa parte solo da un gesto esplicito.
 **Payload verso il server.** `aiConceptMapClient` costruisce esattamente quattro
 campi (`kind`, `requestId`, `modelProfile`, `lessonBody`) e riusa le callable
 esistenti `aiContentPreview`/`aiContentGenerate`: nessuna Function nuova. Il
-profilo `economy` è il contratto del kind, non un default, e non è esposto nella
-firma. Preview e generate ricevono lo **stesso** payload con lo stesso
+profilo `economy` o `quality` è scelto esplicitamente nel dialog; `quality` è
+soltanto il default iniziale. Preview e generate ricevono lo **stesso** payload con lo stesso
 `requestId`, così la stima mostrata e la spesa effettuata riguardano la stessa
 richiesta.
 

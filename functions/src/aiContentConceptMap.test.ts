@@ -264,6 +264,12 @@ describe('prompt della mappa concettuale', () => {
     const { user } = buildConceptMapPrompt(conceptMapRequest());
     expect(user).toContain(`entro ${CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS} caratteri`);
   });
+
+  it('dichiara che le righe fisiche possono continuare la voce precedente', () => {
+    const { user } = buildConceptMapPrompt(conceptMapRequest());
+    expect(user).toMatch(/righe successive continuano la stessa voce/);
+    expect(user).toMatch(/non aggiungere un nuovo marker/);
+  });
 });
 
 describe('schema e payload trasmesso', () => {
@@ -449,10 +455,33 @@ describe('contratto dei tre campi — forma di ciascuna sezione', () => {
     ).toThrow(/voce di elenco/);
   });
 
-  it('rifiuta un’ossatura mista elenco e prosa', () => {
+  it('accetta una continuazione CommonMark lazy della voce precedente', () => {
+    const outline = '- densità ──dipende da──▶ massa e volume\nche descrivono la materia';
+    expect(validateConceptMapProposal(proposal({ outlineMarkdown: outline })).outlineMarkdown).toBe(
+      outline,
+    );
+  });
+
+  it('accetta una continuazione indentata dopo una riga vuota', () => {
+    const outline = '- densità ──dipende da──▶ massa e volume\n\n  che descrivono la materia';
+    expect(validateConceptMapProposal(proposal({ outlineMarkdown: outline })).outlineMarkdown).toBe(
+      outline,
+    );
+  });
+
+  it('rifiuta un paragrafo non indentato dopo una riga vuota', () => {
     expect(() =>
-      validateConceptMapProposal(proposal({ outlineMarkdown: '- densità\nprosa fuori elenco' })),
-    ).toThrow(/voce di elenco/);
+      validateConceptMapProposal(
+        proposal({ outlineMarkdown: '- densità\n\nprosa davvero fuori elenco' }),
+      ),
+    ).toThrow(/appartenere a una voce di elenco/);
+  });
+
+  it('accetta righe vuote fra due vere voci di elenco', () => {
+    const outline = '- densità\n\n- volume';
+    expect(validateConceptMapProposal(proposal({ outlineMarkdown: outline })).outlineMarkdown).toBe(
+      outline,
+    );
   });
 
   it('rifiuta un marker di elenco senza contenuto', () => {
@@ -603,6 +632,16 @@ describe('validazione del Markdown persistito', () => {
     expect(returned).toBe(markdown);
     // Identità referenziale del contenuto: nessuna ricomposizione restituita.
     expect(Buffer.from(returned, 'utf8').equals(Buffer.from(markdown, 'utf8'))).toBe(true);
+  });
+
+  it('accetta e riproduce byte per byte un’ossatura con continuazione lazy', () => {
+    const markdown = composeConceptMapMarkdown({
+      outlineMarkdown: '- densità ──dipende da──▶ massa e volume\nche descrivono la materia',
+      summaryMarkdown: 'La densità collega massa e volume.',
+      diagram: 'DENSITÀ\n└─ dipende da ─▶ MASSA E VOLUME',
+    });
+    expect(parseCanonicalConceptMapMarkdown(markdown)).toBe(markdown);
+    expect(isValidStoredConceptMapOutput({ conceptMapMarkdown: markdown })).toBe(true);
   });
 
   it('rifiuta un documento con la sola intestazione dell’ossatura', () => {
