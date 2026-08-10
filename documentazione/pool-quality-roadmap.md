@@ -1,6 +1,7 @@
 # Qualità dei pool generati — roadmap POOL-TUNE
 
-Stato: **POOL-TUNE-00 implementato; nessuna chiamata reale eseguita.**
+Stato: **POOL-TUNE-00 implementato; primo profile probe reale interrotto senza
+evidenze recuperabili; POOL-TUNE-01 ancora aperto.**
 
 Questa roadmap definisce come misurare e migliorare il prompt dei pool senza
 ottimizzarlo su pochi esempi favorevoli. Il contratto canonico del pool, il
@@ -172,6 +173,47 @@ provider e non usa la rete. L'esecuzione reale richiede entrambi i flag
 `--execute-real-openai` e `--i-understand-this-costs-money`, una fase, il profilo
 quando previsto, Node 22, terminale interattivo e la frase esatta mostrata dal
 runner. Gli output restano in `functions/lib/`, fuori da Firestore e Storage.
+
+### 8.1 Checkpoint e ripresa
+
+Ogni sessione reale crea la propria directory in `functions/lib/` **prima**
+della prima chiamata e aggiorna in modo atomico il report dopo ogni campione
+validato. Il report può essere `running`, `failed` o `complete`; una sessione
+fallita conserva il prefisso già completato e identifica il successivo campione
+non prodotto.
+
+La ripresa richiede gli stessi flag economici, una nuova conferma interattiva e
+`--resume-session=<directory>`. Prima della rete il runner rilegge e valida
+fail-closed:
+
+- versione di dataset, rubrica e prompt, fase, profilo, piano e tetto di costo;
+- prefisso esatto degli scenari e dei profili previsti;
+- ogni JSON tramite il contratto semantico del pool e il DTO persistito canonico;
+- usage, listino, costo per campione e totale;
+- stato e identità dell'eventuale errore.
+
+Una ripresa chiama il provider soltanto per il suffisso mancante. Un checkpoint
+completo rimasto `running` per un'interruzione fra l'ultimo salvataggio e la
+finalizzazione viene marcato `complete` senza leggere la API key e senza nuove
+chiamate. Directory esterne a `functions/lib`, report incompleti, alterati o
+appartenenti a un altro piano sono rifiutati; non vengono corretti né
+sovrascritti.
+
+### 8.2 Evidenza del tentativo interrotto del 10 agosto 2026
+
+Il primo profile probe reale ha completato in memoria le prime quattro
+combinazioni e ha ricevuto `invocation_unknown` su `PT00-04/economy`, la quinta.
+La versione del runner allora disponibile scriveva soltanto al termine del lotto:
+non è stata creata una directory di output e i primi quattro pool non sono
+revisionabili. Il tentativo **non produce alcun verdetto qualitativo** e non
+completa POOL-TUNE-01.
+
+Il costo effettivo non è ricostruibile dall'output locale. Il limite prudenziale
+per le cinque combinazioni che possono avere raggiunto il provider è
+`201.192 µUSD` (`0,201192 USD`); la loro stima nominale era `65.389 µUSD`. Non si
+dichiara come costo reale né l'uno né l'altra. Poiché il vecchio runner non ha
+salvato checkpoint, la prossima esecuzione autorizzata dovrà ripartire dall'intero
+profile probe; da quel momento un'eventuale nuova interruzione sarà riprendibile.
 
 ## 9. Gate GPOOL-QUALITY
 

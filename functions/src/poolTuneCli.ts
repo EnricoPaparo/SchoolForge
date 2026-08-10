@@ -1,5 +1,5 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +23,8 @@ export const POOL_TUNE_EXECUTE_FLAG = '--execute-real-openai';
 export const POOL_TUNE_COST_ACK_FLAG = '--i-understand-this-costs-money';
 export const POOL_TUNE_PHASE_FLAG_PREFIX = '--benchmark-phase=';
 export const POOL_TUNE_PROFILE_FLAG_PREFIX = '--benchmark-model-profile=';
+export const POOL_TUNE_RESUME_FLAG_PREFIX = '--resume-session=';
+export const DEFAULT_POOL_TUNE_OUTPUT_ROOT = fileURLToPath(new URL('../lib/', import.meta.url));
 
 const CONFIRMATIONS: Readonly<Record<PoolTunePhase, Readonly<Record<ModelProfile, string>>>> = {
   profile_probe: {
@@ -50,6 +52,35 @@ export interface PoolTuneGeneratedSample {
   priorBillingRisk: boolean;
 }
 
+type PoolTuneSessionStatus = 'running' | 'failed' | 'complete';
+
+interface PoolTuneSessionFailure {
+  scenarioId: string;
+  modelProfile: ModelProfile;
+  reason: string;
+}
+
+interface PoolTuneResumeState {
+  outputPath: string;
+  generatedAt: string;
+  samples: Array<PoolTuneGeneratedSample & { proposal: ValidatedPoolProposal }>;
+}
+
+interface PoolTuneSessionReport {
+  datasetVersion: string;
+  rubricVersion: string;
+  promptVersion: string;
+  phase: PoolTunePhase;
+  selectedModelProfile: ModelProfile | 'paired';
+  plannedCalls: number;
+  generatedAt: string;
+  status: PoolTuneSessionStatus;
+  failure: PoolTuneSessionFailure | null;
+  samples: PoolTuneGeneratedSample[];
+  totalActualCostMicroUsd: number | null;
+  costUpperBoundMicroUsd: number;
+}
+
 export interface PoolTuneCliDeps {
   argv: readonly string[];
   getApiKey: () => string | undefined;
@@ -64,11 +95,21 @@ export interface PoolTuneCliDeps {
   ) => PoolTuneExecutionPlan;
   confirm: (prompt: string) => Promise<string>;
   createProvider: (apiKey: string) => ContentProvider;
+  loadResume: (params: {
+    outputPath: string;
+    dataset: PoolTuneDataset;
+    plan: PoolTuneExecutionPlan;
+    phase: PoolTunePhase;
+    modelProfile: ModelProfile;
+  }) => Promise<PoolTuneResumeState>;
   writeOutput: (params: {
     dataset: PoolTuneDataset;
     plan: PoolTuneExecutionPlan;
     generatedAt: string;
     samples: Array<PoolTuneGeneratedSample & { proposal: ValidatedPoolProposal }>;
+    outputPath: string | null;
+    status: PoolTuneSessionStatus;
+    failure: PoolTuneSessionFailure | null;
   }) => Promise<string>;
   now: () => Date;
   log: (message: string) => void;
@@ -94,6 +135,25 @@ function parseModelProfile(argv: readonly string[]): ModelProfile {
     throw new Error('Profilo non supportato: usare economy oppure quality.');
   }
   return value;
+}
+
+function parseResumePath(argv: readonly string[]): string | null {
+  const flags = argv.filter((arg) => arg.startsWith(POOL_TUNE_RESUME_FLAG_PREFIX));
+  if (flags.length > 1) throw new Error('Specificare una sola sessione da riprendere.');
+  if (flags.length === 0) return null;
+  const value = flags[0]?.slice(POOL_TUNE_RESUME_FLAG_PREFIX.length).trim();
+  if (!value) throw new Error('Il percorso della sessione da riprendere è vuoto.');
+  return value;
+}
+
+function resumeConfirmation(
+  remainingCalls: number,
+  phase: PoolTunePhase,
+  modelProfile: ModelProfile,
+): string {
+  const phaseLabel = phase === 'profile_probe' ? 'PROFILE' : phase.toUpperCase();
+  const profileLabel = phase === 'profile_probe' ? '' : ` ${modelProfile.toUpperCase()}`;
+  return `RIPRENDI ${remainingCalls} POOL ${phaseLabel} REALI${profileLabel}`;
 }
 
 function usageValue(value: number | undefined): number | null {
@@ -139,12 +199,14 @@ export async function runPoolTuneCli(deps: PoolTuneCliDeps): Promise<'dry-run' |
       arg.startsWith('--') &&
       !allowed.has(arg) &&
       !arg.startsWith(POOL_TUNE_PHASE_FLAG_PREFIX) &&
-      !arg.startsWith(POOL_TUNE_PROFILE_FLAG_PREFIX),
+      !arg.startsWith(POOL_TUNE_PROFILE_FLAG_PREFIX) &&
+      !arg.startsWith(POOL_TUNE_RESUME_FLAG_PREFIX),
   );
   if (unknown.length > 0) throw new Error(`Flag non supportato: ${unknown.join(', ')}.`);
 
   const phase = parsePhase(deps.argv);
   const modelProfile = parseModelProfile(deps.argv);
+  const resumePath = parseResumePath(deps.argv);
   if (
     phase === 'profile_probe' &&
     deps.argv.some((arg) => arg.startsWith(POOL_TUNE_PROFILE_FLAG_PREFIX))
@@ -156,6 +218,9 @@ export async function runPoolTuneCli(deps: PoolTuneCliDeps): Promise<'dry-run' |
   deps.log(JSON.stringify({ ...plan, promptVersion: AI_POOL_PROMPT_VERSION }, null, 2));
 
   if (!deps.argv.includes(POOL_TUNE_EXECUTE_FLAG)) {
+    if (resumePath !== null) {
+      throw new Error('La ripresa di una sessione richiede l’esecuzione reale esplicita.');
+    }
     deps.log('DRY-RUN: nessuna API key letta, nessun provider e nessuna chiamata di rete.');
     return 'dry-run';
   }
@@ -168,29 +233,122 @@ export async function runPoolTuneCli(deps: PoolTuneCliDeps): Promise<'dry-run' |
   if (!deps.stdinIsTTY || !deps.stdoutIsTTY) {
     throw new Error('Esecuzione reale negata senza terminale interattivo.');
   }
-  const confirmation = CONFIRMATIONS[phase][modelProfile];
+  const selectedRuns = selectPoolTuneRuns(dataset, phase, modelProfile);
+  let generatedAt = deps.now().toISOString();
+  let outputPath: string | null = null;
+  let samples: Array<PoolTuneGeneratedSample & { proposal: ValidatedPoolProposal }> = [];
+  if (resumePath !== null) {
+    const resume = await deps.loadResume({
+      outputPath: resumePath,
+      dataset,
+      plan,
+      phase,
+      modelProfile,
+    });
+    generatedAt = resume.generatedAt;
+    outputPath = resume.outputPath;
+    samples = resume.samples;
+  }
+  const remainingRuns = selectedRuns.slice(samples.length);
+  if (remainingRuns.length === 0) {
+    if (resumePath === null || outputPath === null) {
+      throw new Error('Il piano benchmark non contiene chiamate da eseguire.');
+    }
+    await deps.writeOutput({
+      dataset,
+      plan,
+      generatedAt,
+      samples,
+      outputPath,
+      status: 'complete',
+      failure: null,
+    });
+    deps.log(`Sessione completa recuperata senza nuove chiamate: ${outputPath}.`);
+    return 'executed';
+  }
+  const confirmation =
+    resumePath === null
+      ? CONFIRMATIONS[phase][modelProfile]
+      : resumeConfirmation(remainingRuns.length, phase, modelProfile);
+  const attemptsPerCall = plan.maximumProviderAttempts / plan.plannedCalls;
+  if (!Number.isInteger(attemptsPerCall) || attemptsPerCall < 1) {
+    throw new Error('Il piano benchmark dichiara un numero di tentativi incoerente.');
+  }
   const answer = await deps.confirm(
-    `Per confermare ${plan.plannedCalls} chiamate pianificate (fino a ${plan.maximumProviderAttempts} tentativi), digitare esattamente “${confirmation}”: `,
+    `Per confermare ${remainingRuns.length} chiamate ancora necessarie (fino a ${remainingRuns.length * attemptsPerCall} tentativi), digitare esattamente “${confirmation}”: `,
   );
   if (answer !== confirmation) throw new Error('Conferma non valida: benchmark annullato.');
   const apiKey = deps.getApiKey()?.trim();
   if (!apiKey) throw new Error('OPENAI_API_KEY non disponibile: benchmark annullato.');
 
   const provider = deps.createProvider(apiKey);
-  const generatedAt = deps.now().toISOString();
-  const samples: Array<PoolTuneGeneratedSample & { proposal: ValidatedPoolProposal }> = [];
-  for (const run of selectPoolTuneRuns(dataset, phase, modelProfile)) {
-    samples.push(
-      await generateOne(
+  if (outputPath === null) {
+    outputPath = await deps.writeOutput({
+      dataset,
+      plan,
+      generatedAt,
+      samples,
+      outputPath: null,
+      status: 'running',
+      failure: null,
+    });
+  }
+  deps.log(`Sessione benchmark: ${outputPath}.`);
+  for (const run of remainingRuns) {
+    let sample: PoolTuneGeneratedSample & { proposal: ValidatedPoolProposal };
+    try {
+      sample = await generateOne(
         provider,
         buildPoolTuneRequest(run.scenario, run.modelProfile),
         run.scenario.id,
         phase,
         run.modelProfile,
-      ),
-    );
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Errore provider non classificato.';
+      await deps.writeOutput({
+        dataset,
+        plan,
+        generatedAt,
+        samples,
+        outputPath,
+        status: 'failed',
+        failure: {
+          scenarioId: run.scenario.id,
+          modelProfile: run.modelProfile,
+          reason,
+        },
+      });
+      throw new Error(`${reason} Checkpoint conservato in ${outputPath}.`);
+    }
+    samples.push(sample);
+    try {
+      await deps.writeOutput({
+        dataset,
+        plan,
+        generatedAt,
+        samples,
+        outputPath,
+        status: 'running',
+        failure: null,
+      });
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : 'Errore locale non classificato nel checkpoint.';
+      throw new Error(
+        `${run.scenario.id}/${run.modelProfile}: risultato ottenuto ma checkpoint non confermato (${reason}). Non riprendere questa sessione senza verifica manuale.`,
+      );
+    }
   }
-  const outputPath = await deps.writeOutput({ dataset, plan, generatedAt, samples });
+  await deps.writeOutput({
+    dataset,
+    plan,
+    generatedAt,
+    samples,
+    outputPath,
+    status: 'complete',
+    failure: null,
+  });
   deps.log(`Report e ${samples.length} pool originali scritti localmente in ${outputPath}.`);
   deps.log('Nessun dato è stato scritto su Firestore o Storage.');
   return 'executed';
@@ -205,44 +363,277 @@ async function defaultConfirmation(promptText: string): Promise<string> {
   }
 }
 
-async function defaultWriteOutput(params: {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function assertExactKeys(value: Record<string, unknown>, keys: readonly string[], label: string) {
+  const actual = Object.keys(value);
+  if (actual.length !== keys.length || actual.some((key) => !keys.includes(key))) {
+    throw new Error(`${label}: proprietà mancanti o non ammesse.`);
+  }
+}
+
+function safeSessionDirectory(value: string): string {
+  const outputRoot = resolve(DEFAULT_POOL_TUNE_OUTPUT_ROOT);
+  const outputPath = resolve(value);
+  const child = relative(outputRoot, outputPath);
+  if (child.length === 0 || child.startsWith('..') || isAbsolute(child)) {
+    throw new Error('La sessione deve essere una directory figlia di functions/lib.');
+  }
+  return outputPath;
+}
+
+function optionalUsage(value: unknown, label: string): number | null {
+  if (value === null) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${label}: valore non valido.`);
+  }
+  return value;
+}
+
+function parseCanonicalTimestamp(value: unknown): string {
+  if (typeof value !== 'string') throw new Error('Timestamp della sessione non valido.');
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString() !== value) {
+    throw new Error('Timestamp della sessione non valido.');
+  }
+  return value;
+}
+
+function expectedActualCost(sample: PoolTuneGeneratedSample): number | null {
+  if (sample.priorBillingRisk || sample.inputTokens === null || sample.outputTokens === null) {
+    return null;
+  }
+  const { model, priceListVersion } = resolveContentModel(sample.modelProfile);
+  return actualCostMicroUsd(sample.inputTokens, sample.outputTokens, priceListVersion, model);
+}
+
+function parseStoredPoolProposal(value: unknown, request: PoolRequest): ValidatedPoolProposal {
+  if (!isPlainObject(value)) throw new Error('Proposta persistita non valida.');
+  assertExactKeys(value, ['questions'], 'Proposta persistita');
+  if (!Array.isArray(value.questions)) throw new Error('Domande persistite non valide.');
+  const providerQuestions = value.questions.map((question, index) => {
+    if (!isPlainObject(question)) throw new Error(`Domanda persistita ${index + 1} non valida.`);
+    if (question.tipo === 'aperta') {
+      assertExactKeys(
+        question,
+        ['order', 'tipo', 'testo', 'difficolta', 'soluzione'],
+        `Domanda persistita ${index + 1}`,
+      );
+      return {
+        tipo: question.tipo,
+        testo: question.testo,
+        difficolta: question.difficolta,
+        soluzione: question.soluzione,
+      };
+    }
+    if (question.tipo === 'chiusa_singola' || question.tipo === 'chiusa_multipla') {
+      assertExactKeys(
+        question,
+        ['order', 'tipo', 'testo', 'difficolta', 'opzioni', 'soluzioneIndici'],
+        `Domanda persistita ${index + 1}`,
+      );
+      return {
+        tipo: question.tipo,
+        testo: question.testo,
+        difficolta: question.difficolta,
+        opzioni: question.opzioni,
+        soluzione: question.soluzioneIndici,
+      };
+    }
+    throw new Error(`Tipo della domanda persistita ${index + 1} non valido.`);
+  });
+  const validated = validatePoolProposal(
+    { questions: providerQuestions },
+    request.counts,
+    request.level,
+  );
+  if (JSON.stringify(validated) !== JSON.stringify(value)) {
+    throw new Error('La proposta persistita non coincide con il DTO canonico validato.');
+  }
+  return validated;
+}
+
+export async function loadPoolTuneResume(params: {
+  outputPath: string;
+  dataset: PoolTuneDataset;
+  plan: PoolTuneExecutionPlan;
+  phase: PoolTunePhase;
+  modelProfile: ModelProfile;
+}): Promise<PoolTuneResumeState> {
+  const outputPath = safeSessionDirectory(params.outputPath);
+  const raw = JSON.parse(
+    await readFile(resolve(outputPath, 'pool-tune-00-report.json'), 'utf8'),
+  ) as unknown;
+  if (!isPlainObject(raw)) throw new Error('Report della sessione non valido.');
+  assertExactKeys(
+    raw,
+    [
+      'datasetVersion',
+      'rubricVersion',
+      'promptVersion',
+      'phase',
+      'selectedModelProfile',
+      'plannedCalls',
+      'generatedAt',
+      'status',
+      'failure',
+      'samples',
+      'totalActualCostMicroUsd',
+      'costUpperBoundMicroUsd',
+    ],
+    'Report della sessione',
+  );
+  if (
+    raw.datasetVersion !== params.dataset.datasetVersion ||
+    raw.rubricVersion !== params.dataset.rubricVersion ||
+    raw.promptVersion !== AI_POOL_PROMPT_VERSION ||
+    raw.phase !== params.phase ||
+    raw.selectedModelProfile !== params.plan.selectedModelProfile ||
+    raw.plannedCalls !== params.plan.plannedCalls ||
+    raw.costUpperBoundMicroUsd !== params.plan.costUpperBoundMicroUsd
+  ) {
+    throw new Error('La sessione non appartiene al piano benchmark corrente.');
+  }
+  if (raw.status === 'complete') throw new Error('La sessione indicata è già completa.');
+  if (raw.status !== 'running' && raw.status !== 'failed') {
+    throw new Error('Stato della sessione non valido.');
+  }
+  const generatedAt = parseCanonicalTimestamp(raw.generatedAt);
+  if (!Array.isArray(raw.samples)) throw new Error('Campioni della sessione non validi.');
+  const selectedRuns = selectPoolTuneRuns(params.dataset, params.phase, params.modelProfile);
+  if (raw.samples.length > selectedRuns.length) throw new Error('Troppi campioni nella sessione.');
+  const samples: Array<PoolTuneGeneratedSample & { proposal: ValidatedPoolProposal }> = [];
+  for (const [index, value] of raw.samples.entries()) {
+    if (!isPlainObject(value)) throw new Error(`Campione ${index + 1} non valido.`);
+    assertExactKeys(
+      value,
+      [
+        'scenarioId',
+        'phase',
+        'modelProfile',
+        'fileName',
+        'inputTokens',
+        'outputTokens',
+        'actualCostMicroUsd',
+        'priorBillingRisk',
+      ],
+      `Campione ${index + 1}`,
+    );
+    const expected = selectedRuns[index];
+    if (!expected) throw new Error(`Campione ${index + 1} fuori piano.`);
+    const expectedFile = `pool-tune-00-${expected.scenario.id}-${expected.modelProfile}.json`;
+    if (
+      value.scenarioId !== expected.scenario.id ||
+      value.phase !== params.phase ||
+      value.modelProfile !== expected.modelProfile ||
+      value.fileName !== expectedFile ||
+      typeof value.priorBillingRisk !== 'boolean'
+    ) {
+      throw new Error(`Campione ${index + 1} non è il prefisso canonico del piano.`);
+    }
+    const proposalRaw = JSON.parse(
+      await readFile(resolve(outputPath, expectedFile), 'utf8'),
+    ) as unknown;
+    const request = buildPoolTuneRequest(expected.scenario, expected.modelProfile);
+    const proposal = parseStoredPoolProposal(proposalRaw, request);
+    const sample: PoolTuneGeneratedSample & { proposal: ValidatedPoolProposal } = {
+      scenarioId: expected.scenario.id,
+      phase: params.phase,
+      modelProfile: expected.modelProfile,
+      fileName: expectedFile,
+      inputTokens: optionalUsage(value.inputTokens, `${expectedFile}.inputTokens`),
+      outputTokens: optionalUsage(value.outputTokens, `${expectedFile}.outputTokens`),
+      actualCostMicroUsd: optionalUsage(
+        value.actualCostMicroUsd,
+        `${expectedFile}.actualCostMicroUsd`,
+      ),
+      priorBillingRisk: value.priorBillingRisk,
+      proposal,
+    };
+    if (sample.actualCostMicroUsd !== expectedActualCost(sample)) {
+      throw new Error(`${expectedFile}.actualCostMicroUsd non è coerente con usage e listino.`);
+    }
+    samples.push(sample);
+  }
+
+  const expectedTotal = samples.every((sample) => sample.actualCostMicroUsd !== null)
+    ? samples.reduce((total, sample) => total + (sample.actualCostMicroUsd ?? 0), 0)
+    : null;
+  if (raw.totalActualCostMicroUsd !== expectedTotal) {
+    throw new Error('Il costo totale della sessione non coincide con i campioni persistiti.');
+  }
+  if (raw.status === 'running') {
+    if (raw.failure !== null) {
+      throw new Error('Una sessione in corso non può contenere un errore terminale.');
+    }
+  } else {
+    if (!isPlainObject(raw.failure)) {
+      throw new Error('Una sessione fallita deve descrivere il campione non completato.');
+    }
+    assertExactKeys(raw.failure, ['scenarioId', 'modelProfile', 'reason'], 'Errore sessione');
+    const next = selectedRuns[samples.length];
+    if (
+      !next ||
+      raw.failure.scenarioId !== next.scenario.id ||
+      raw.failure.modelProfile !== next.modelProfile ||
+      typeof raw.failure.reason !== 'string' ||
+      raw.failure.reason.length === 0 ||
+      raw.failure.reason.length > 1_000 ||
+      /[\r\n]/u.test(raw.failure.reason)
+    ) {
+      throw new Error('La sessione fallita non coincide con il prossimo campione canonico.');
+    }
+  }
+  return { outputPath, generatedAt, samples };
+}
+
+export async function writePoolTuneCheckpoint(params: {
   dataset: PoolTuneDataset;
   plan: PoolTuneExecutionPlan;
   generatedAt: string;
   samples: Array<PoolTuneGeneratedSample & { proposal: ValidatedPoolProposal }>;
+  outputPath: string | null;
+  status: PoolTuneSessionStatus;
+  failure: PoolTuneSessionFailure | null;
 }): Promise<string> {
   const timestamp = params.generatedAt.replaceAll(':', '-').replaceAll('.', '-');
-  const outputDir = resolve('lib', `pool-tune-00-${params.plan.phase}-${timestamp}`);
-  await mkdir(outputDir, { recursive: false });
+  const outputDir =
+    params.outputPath === null
+      ? safeSessionDirectory(
+          resolve(DEFAULT_POOL_TUNE_OUTPUT_ROOT, `pool-tune-00-${params.plan.phase}-${timestamp}`),
+        )
+      : safeSessionDirectory(params.outputPath);
+  if (params.outputPath === null) await mkdir(outputDir, { recursive: false });
   for (const sample of params.samples) {
-    await writeFile(
-      resolve(outputDir, sample.fileName),
-      `${JSON.stringify(sample.proposal, null, 2)}\n`,
-      'utf8',
-    );
+    const proposalPath = resolve(outputDir, sample.fileName);
+    const temporaryProposalPath = `${proposalPath}.tmp`;
+    await writeFile(temporaryProposalPath, `${JSON.stringify(sample.proposal, null, 2)}\n`, 'utf8');
+    await rename(temporaryProposalPath, proposalPath);
   }
   const publicSamples = params.samples.map(({ proposal: _proposal, ...sample }) => sample);
   const costs = publicSamples.map((sample) => sample.actualCostMicroUsd);
-  await writeFile(
-    resolve(outputDir, 'pool-tune-00-report.json'),
-    `${JSON.stringify(
-      {
-        datasetVersion: params.dataset.datasetVersion,
-        rubricVersion: params.dataset.rubricVersion,
-        promptVersion: AI_POOL_PROMPT_VERSION,
-        phase: params.plan.phase,
-        generatedAt: params.generatedAt,
-        samples: publicSamples,
-        totalActualCostMicroUsd: costs.every((cost): cost is number => cost !== null)
-          ? costs.reduce((total, cost) => total + cost, 0)
-          : null,
-        costUpperBoundMicroUsd: params.plan.costUpperBoundMicroUsd,
-      },
-      null,
-      2,
-    )}\n`,
-    'utf8',
-  );
+  const report: PoolTuneSessionReport = {
+    datasetVersion: params.dataset.datasetVersion,
+    rubricVersion: params.dataset.rubricVersion,
+    promptVersion: AI_POOL_PROMPT_VERSION,
+    phase: params.plan.phase,
+    selectedModelProfile: params.plan.selectedModelProfile,
+    plannedCalls: params.plan.plannedCalls,
+    generatedAt: params.generatedAt,
+    status: params.status,
+    failure: params.failure,
+    samples: publicSamples,
+    totalActualCostMicroUsd: costs.every((cost): cost is number => cost !== null)
+      ? costs.reduce((total, cost) => total + cost, 0)
+      : null,
+    costUpperBoundMicroUsd: params.plan.costUpperBoundMicroUsd,
+  };
+  const reportPath = resolve(outputDir, 'pool-tune-00-report.json');
+  const temporaryReportPath = `${reportPath}.tmp`;
+  await writeFile(temporaryReportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+  await rename(temporaryReportPath, reportPath);
   return outputDir;
 }
 
@@ -257,7 +648,8 @@ async function main(): Promise<void> {
     buildPlan: buildPoolTuneExecutionPlan,
     confirm: defaultConfirmation,
     createProvider: (apiKey) => createContentProvider({ mode: 'openai', openAiApiKey: apiKey }),
-    writeOutput: defaultWriteOutput,
+    loadResume: loadPoolTuneResume,
+    writeOutput: writePoolTuneCheckpoint,
     now: () => new Date(),
     log: console.log,
   });
