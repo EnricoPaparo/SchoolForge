@@ -15,6 +15,10 @@ import { describe, expect, it } from 'vitest';
 const dir = resolve(process.cwd(), 'src');
 const css = readFileSync(resolve(dir, 'features/teacher/ConceptMapEditor.module.css'), 'utf8');
 const tsx = readFileSync(resolve(dir, 'features/teacher/ConceptMapEditor.tsx'), 'utf8');
+const dialogTsx = readFileSync(
+  resolve(dir, 'features/teacher/AiConceptMapGenerationDialog.tsx'),
+  'utf8',
+);
 const shellCss = readFileSync(resolve(dir, 'components/DialogShell.module.css'), 'utf8');
 const globalCss = readFileSync(resolve(dir, 'index.css'), 'utf8');
 
@@ -42,23 +46,29 @@ describe('target touch ≥ 44 px', () => {
 
 describe('la regola è opt-in e non tocca i dialog globali', () => {
   it('tutte le righe di azioni della finestra la adottano', () => {
-    const rows = tsx.match(/className=\{`dialog-actions \$\{styles\.actions\}`\}/g) ?? [];
-    // Stima, lettura, modifica e le due conferme modali: se una riga restasse
-    // indietro, avrebbe target diversi nella stessa superficie.
-    expect(rows).toHaveLength(5);
+    const editorRows = tsx.match(/className=\{`dialog-actions \$\{styles\.actions\}`\}/g) ?? [];
+    const dialogRows =
+      dialogTsx.match(/className=\{`dialog-actions \$\{editorStyles\.actions\}`\}/g) ?? [];
+    // Lettura, modifica, conferma di annullamento e le quattro fasi azionabili
+    // della popup IA: nessuna può restare col target globale da 36 px.
+    expect(editorRows).toHaveLength(3);
+    expect(dialogRows).toHaveLength(4);
     expect(tsx).not.toMatch(/className="dialog-actions"/);
+    expect(dialogTsx).not.toMatch(/className="dialog-actions"/);
   });
 
   it('la classe condivisa è affiancata, non sostituita', () => {
     // Layout, gap e wrapping restano quelli del portale: cambia solo l'altezza.
     expect(tsx).toContain('dialog-actions ${styles.actions}');
+    expect(dialogTsx).toContain('dialog-actions ${editorStyles.actions}');
   });
 
   it('nessuna altra superficie usa la classe', () => {
     expect(css).toContain('.actions button');
-    // La classe vive in un CSS module: è raggiungibile solo da chi importa
-    // questo foglio, e l'unico importatore è la finestra stessa.
+    // La classe vive in un CSS module: la usano soltanto la scheda e il suo
+    // dialog IA, non tutte le finestre del portale.
     expect(tsx).toContain("from './ConceptMapEditor.module.css'");
+    expect(dialogTsx).toContain("from './ConceptMapEditor.module.css'");
   });
 
   it('DialogShell e il foglio globale restano invariati sui target', () => {

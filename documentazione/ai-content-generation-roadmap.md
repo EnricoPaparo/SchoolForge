@@ -128,9 +128,9 @@ mappa concettuale (§ 6bis) ha un payload proprio e più povero, e non li ammett
 - `context`: `{ titolo?, sottotitolo?, concettiChiave?: string[], obiettivi?: string[], currentBody?: string, udaTitle? }` — solo dati **già in memoria** nell'editor; nessuna nuova query per arricchire il prompt
 - `hasCurrentContent: boolean`
 
-**`kind: 'concept_map'`** (CONCEPT-MAP-01, implementato):
-- `modelProfile: 'economy'` — **fisso**, non un default: `quality` è rifiutato,
-  mai degradato in silenzio;
+**`kind: 'concept_map'`** (CONCEPT-MAP-01→06, implementato):
+- `modelProfile: 'economy' | 'quality'` — scelta esplicita per ogni sessione;
+  la UI preseleziona `quality`, il server non applica fallback;
 - `lessonBody: string` — corpo Markdown della lezione, non vuoto, entro
   `MAX_LESSON_SOURCE_BYTES` (200.000 byte UTF-8), **non normalizzato** (nessun
   trim: al prompt arriva ciò che è realmente salvato, e l'`inputHash` copre quel

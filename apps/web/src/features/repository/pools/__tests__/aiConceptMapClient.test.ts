@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  CONCEPT_MAP_MODEL_PROFILE,
   buildConceptMapRequest,
   createAiConceptMapCallables,
   validateConceptMapResult,
@@ -18,8 +17,8 @@ vi.mock('firebase/functions', () => ({
 /**
  * CONCEPT-MAP-03 — il contratto del payload verso le callable esistenti. Il
  * valore difeso qui è la **povertà** del payload: qualunque campo in più
- * sarebbe rifiutato dal server. Dopo CONCEPT-MAP-05 non resta **alcuna**
- * configurazione: il profilo è fisso a `quality` e non è esposto nella firma.
+ * sarebbe rifiutato dal server. Il profilo è sempre esplicito: il dialog lo
+ * chiede a ogni apertura e preview/generate condividono lo stesso payload.
  */
 
 const REQUEST_ID = '55555555-5555-4555-8555-555555555555';
@@ -29,6 +28,7 @@ describe('payload della mappa concettuale', () => {
   it('contiene esattamente quattro campi e nient’altro', () => {
     const req = buildConceptMapRequest({
       requestId: REQUEST_ID,
+      modelProfile: 'quality',
       lessonBody: BODY,
     });
     expect(req).toEqual({
@@ -40,21 +40,11 @@ describe('payload della mappa concettuale', () => {
     expect(Object.keys(req).sort()).toEqual(['kind', 'lessonBody', 'modelProfile', 'requestId']);
   });
 
-  it('il profilo è quality e non è parametrizzabile', () => {
-    expect(CONCEPT_MAP_MODEL_PROFILE).toBe('quality');
-    expect(buildConceptMapRequest({ requestId: REQUEST_ID, lessonBody: BODY }).modelProfile).toBe(
-      'quality',
-    );
-  });
-
-  it('non esiste alcun percorso che produca economy', () => {
-    // La firma non accetta un profilo: non c'è modo — né visibile né nascosto —
-    // di costruire una richiesta economy da questo client.
-    const serialized = JSON.stringify(
-      buildConceptMapRequest({ requestId: REQUEST_ID, lessonBody: BODY }),
-    );
-    expect(serialized).not.toContain('economy');
-    expect(Object.keys(buildConceptMapRequest)).not.toContain('modelProfile');
+  it.each(['economy', 'quality'] as const)('trasporta esplicitamente il profilo %s', (profile) => {
+    expect(
+      buildConceptMapRequest({ requestId: REQUEST_ID, modelProfile: profile, lessonBody: BODY })
+        .modelProfile,
+    ).toBe(profile);
   });
 
   it('non normalizza il corpo: al server arriva il testo salvato', () => {
@@ -62,6 +52,7 @@ describe('payload della mappa concettuale', () => {
     expect(
       buildConceptMapRequest({
         requestId: REQUEST_ID,
+        modelProfile: 'quality',
         lessonBody: quirky,
       }).lessonBody,
     ).toBe(quirky);
@@ -71,6 +62,7 @@ describe('payload della mappa concettuale', () => {
     const serialized = JSON.stringify(
       buildConceptMapRequest({
         requestId: REQUEST_ID,
+        modelProfile: 'quality',
         lessonBody: BODY,
       }),
     );
@@ -97,6 +89,7 @@ describe('callable condivise', () => {
     const callables = createAiConceptMapCallables({} as Functions);
     const req = buildConceptMapRequest({
       requestId: REQUEST_ID,
+      modelProfile: 'quality',
       lessonBody: BODY,
     });
     await callables.preview(req);
@@ -107,8 +100,8 @@ describe('callable condivise', () => {
 
   it('lo stesso requestId produce lo stesso payload per entrambe', () => {
     const id = newRequestId();
-    const a = buildConceptMapRequest({ requestId: id, lessonBody: BODY });
-    const b = buildConceptMapRequest({ requestId: id, lessonBody: BODY });
+    const a = buildConceptMapRequest({ requestId: id, modelProfile: 'quality', lessonBody: BODY });
+    const b = buildConceptMapRequest({ requestId: id, modelProfile: 'quality', lessonBody: BODY });
     expect(a).toEqual(b);
   });
 });
