@@ -9,11 +9,20 @@ import { describe, expect, it } from 'vitest';
 const firebaseJsonPath = resolve(process.cwd(), '../../firebase.json');
 const firebaseConfig = JSON.parse(readFileSync(firebaseJsonPath, 'utf-8')) as {
   hosting: {
+    public: string;
+    predeploy: string[];
     headers: { source: string; headers: { key: string; value: string }[] }[];
   };
 };
 
 const headerBlocks = firebaseConfig.hosting.headers;
+
+describe('Firebase Hosting build predeploy', () => {
+  it('costruisce esplicitamente apps/web prima di pubblicarne dist', () => {
+    expect(firebaseConfig.hosting.public).toBe('apps/web/dist');
+    expect(firebaseConfig.hosting.predeploy).toEqual(['pnpm --dir apps/web build']);
+  });
+});
 
 function blockFor(source: string) {
   const block = headerBlocks.find((b) => b.source === source);
