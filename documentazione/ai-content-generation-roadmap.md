@@ -502,6 +502,7 @@ Tutti gli esempi restano **ordini di grandezza sotto** il cap per operazione (25
 Riuso dei codici esistenti (`unauthenticated`, `not_owner`, `feature_disabled`, `provider_config_invalid`, `invalid_input`, `limit_exceeded`, `operation_budget_exceeded`, `daily_budget_exceeded`, `budget_exceeded`, `budget_unavailable`) **estesi** con codici AIGEN dedicati:
 - `content_too_large` — input oltre i cap §3.4/§6.6;
 - `output_invalid` — output provider non conforme allo schema/validazioni;
+- `output_incomplete` — provider interrotto prima di completare lo Structured Output;
 - `output_too_large` — output oltre il cap dimensionale;
 - `run_conflict` — replay con `inputHash` diverso sullo stesso `requestId` (mappato a `invalid_input` verso il client se si preferisce non esporlo).
 

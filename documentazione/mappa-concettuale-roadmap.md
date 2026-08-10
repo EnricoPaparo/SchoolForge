@@ -222,9 +222,10 @@ Costi aggiunti:
 - **Azione sulla riga della lezione** in Didattica, dentro lo stesso menu delle
   altre azioni: «Genera mappa concettuale» quando assente, «Modifica mappa
   concettuale» quando presente.
-- **Conferma IA compatta**: mostra profilo economico e stima; nessuna textarea,
-  profondità o configurazione aggiuntiva. Dopo la conferma genera e apre la
-  proposta nell'editor, senza autosalvataggio.
+- **Conferma IA compatta**: il docente sceglie `Quality` o `Economy` (default
+  `Quality`) e vede la stima; nessuna textarea, profondità o configurazione
+  aggiuntiva. Dopo la conferma genera e apre la proposta nell'editor, senza
+  autosalvataggio.
 - **Editor con anteprima**, lo stesso della lezione (`lessonEditors`): la
   mappa è modificabile a mano esattamente come il corpo.
 - **Rigenerazione** disponibile; sovrascrive previa conferma, perché una mappa
@@ -269,17 +270,26 @@ e lezione. Nessuna UI, persistenza o deploy.
 
 **Come è stato realizzato**, oltre a quanto già scritto sopra:
 
-- **contratto dei tre campi**, fail-closed e senza aggiustamenti: niente heading
+- **contratto dei tre campi**, fail-closed: niente heading
   ATX o Setext, niente HTML (tag reali, commenti, doctype, CDATA), niente fence,
-  niente front matter, niente spazi iniziali o finali. L'ossatura deve essere
+  niente front matter. L'ossatura deve essere
   davvero un elenco (`-`, `*`, `+`, almeno una voce, nessuna prosa fuori
   elenco); la sintesi deve essere prosa (nessuna riga puntata, nemmeno
   parziale); il diagramma resta entro 80 code point per riga. Il controllo HTML
   non è generico su `<`: «a < b» non è markup e non viene rifiutato;
-- **spazi esterni rifiutati, non normalizzati.** Era l'unica alternativa
-  coerente con «nessun aggiustamento silenzioso»: un ritorno a capo in coda a
-  una sezione renderebbe ambiguo il confine con la riga vuota che il compositore
-  inserisce, e il documento non sarebbe più riconoscibile byte per byte;
+- **normalizzazione controllata del provider.** I tre campi strutturati vengono
+  privati esclusivamente degli spazi esterni prima della validazione; spazi e
+  righe interne restano byte-identici. La prova DEV ha mostrato che il provider
+  può aggiungere una newline finale innocua: rifiutarla rendeva instabile una
+  risposta semanticamente valida. Il documento composto e il replay restano
+  canonici byte per byte;
+- **profili e margine tecnico.** `economy` e `quality` sono entrambi accettati
+  fail-closed e partecipano a `inputHash`, stima, prenotazione e replay. Il
+  massimo provider è 6.000 token per consentire ragionamento e Structured
+  Output; non autorizza mappe più lunghe, che restano limitate a 32 KB UTF-8;
+- **errori distinti.** Un provider interrotto da `max_output_tokens` produce
+  `output_incomplete`; un documento realmente oltre il cap conserva
+  `output_too_large`. Il client non confonde più i due casi.
 - **validazione del documento persistito.** Il replay non accetta «una stringa
   non vuota entro il cap»: verifica oggetto con **esattamente una chiave**,
   quattro parti presenti una sola volta e nell'ordine canonico, **una sola**

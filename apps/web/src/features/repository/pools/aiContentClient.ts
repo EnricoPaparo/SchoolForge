@@ -227,6 +227,8 @@ export function describeAiContentError(err: unknown): string {
       return 'Il servizio di generazione non è disponibile ora. Riprova.';
     case 'provider_invalid_output':
       return 'La risposta generata non è valida. Riprova.';
+    case 'output_incomplete':
+      return 'La generazione si è interrotta prima di completare il risultato. Riprova.';
     case 'output_too_large':
       return 'Il risultato generato supera il limite di dimensione.';
     case 'running':

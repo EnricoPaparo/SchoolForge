@@ -403,9 +403,14 @@ export async function generateContent(
       nowMs: ctx.nowMs,
     });
     if (providerOutcome.reason === 'max_output_tokens') {
+      // Diagnostica sanitizzata: nessun prompt, contenuto, UID o requestId.
+      console.warn('ai_content_provider_output_incomplete', {
+        kind: request.kind,
+        reason: 'max_output_tokens',
+      });
       throw new AiContentError(
-        'output_too_large',
-        'La generazione ha raggiunto il limite di output. Riduci il numero di domande e riprova.',
+        'output_incomplete',
+        'La generazione si è interrotta prima di completare il risultato.',
       );
     }
     throw new AiContentError(

@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  CONCEPT_MAP_MODEL_PROFILE,
   buildConceptMapRequest,
   createAiConceptMapCallables,
   validateConceptMapResult,
@@ -18,8 +17,8 @@ vi.mock('firebase/functions', () => ({
 /**
  * CONCEPT-MAP-03 — il contratto del payload verso le callable esistenti. Il
  * valore difeso qui è la **povertà** del payload: qualunque campo in più
- * sarebbe rifiutato dal server (payload chiuso), e un profilo scelto dal client
- * violerebbe il contratto del kind.
+ * sarebbe rifiutato dal server. Il profilo è l'unica configurazione ed è un
+ * enum chiuso, mai un model ID.
  */
 
 const REQUEST_ID = '55555555-5555-4555-8555-555555555555';
@@ -27,35 +26,55 @@ const BODY = '## La densità\n\nLa densità è massa su volume.';
 
 describe('payload della mappa concettuale', () => {
   it('contiene esattamente quattro campi e nient’altro', () => {
-    const req = buildConceptMapRequest({ requestId: REQUEST_ID, lessonBody: BODY });
+    const req = buildConceptMapRequest({
+      requestId: REQUEST_ID,
+      modelProfile: 'quality',
+      lessonBody: BODY,
+    });
     expect(req).toEqual({
       kind: 'concept_map',
       requestId: REQUEST_ID,
-      modelProfile: 'economy',
+      modelProfile: 'quality',
       lessonBody: BODY,
     });
     expect(Object.keys(req).sort()).toEqual(['kind', 'lessonBody', 'modelProfile', 'requestId']);
   });
 
-  it('il profilo è economy e non è parametrizzabile', () => {
-    expect(CONCEPT_MAP_MODEL_PROFILE).toBe('economy');
-    // La firma non espone alcun modo di scegliere il profilo: è il contratto
-    // del kind, non un default.
-    expect(buildConceptMapRequest({ requestId: REQUEST_ID, lessonBody: BODY }).modelProfile).toBe(
-      'economy',
-    );
+  it('trasporta esattamente il profilo scelto', () => {
+    expect(
+      buildConceptMapRequest({
+        requestId: REQUEST_ID,
+        modelProfile: 'economy',
+        lessonBody: BODY,
+      }).modelProfile,
+    ).toBe('economy');
+    expect(
+      buildConceptMapRequest({
+        requestId: REQUEST_ID,
+        modelProfile: 'quality',
+        lessonBody: BODY,
+      }).modelProfile,
+    ).toBe('quality');
   });
 
   it('non normalizza il corpo: al server arriva il testo salvato', () => {
     const quirky = '  ## Titolo\n\n   testo   \n';
-    expect(buildConceptMapRequest({ requestId: REQUEST_ID, lessonBody: quirky }).lessonBody).toBe(
-      quirky,
-    );
+    expect(
+      buildConceptMapRequest({
+        requestId: REQUEST_ID,
+        modelProfile: 'quality',
+        lessonBody: quirky,
+      }).lessonBody,
+    ).toBe(quirky);
   });
 
   it('non trasporta profondità, indicazioni, metadati, modello o listino', () => {
     const serialized = JSON.stringify(
-      buildConceptMapRequest({ requestId: REQUEST_ID, lessonBody: BODY }),
+      buildConceptMapRequest({
+        requestId: REQUEST_ID,
+        modelProfile: 'quality',
+        lessonBody: BODY,
+      }),
     );
     // Chiavi JSON complete: `model` come sottostringa colpirebbe il legittimo
     // `modelProfile`, e il test fallirebbe per la ragione sbagliata.
@@ -78,7 +97,11 @@ describe('callable condivise', () => {
   it('preview e generate usano le stesse due Function di pool e lezione', async () => {
     mockCallable.mockResolvedValue({ data: { ok: true } });
     const callables = createAiConceptMapCallables({} as Functions);
-    const req = buildConceptMapRequest({ requestId: REQUEST_ID, lessonBody: BODY });
+    const req = buildConceptMapRequest({
+      requestId: REQUEST_ID,
+      modelProfile: 'quality',
+      lessonBody: BODY,
+    });
     await callables.preview(req);
     await callables.generate(req);
     expect(mockCallable).toHaveBeenNthCalledWith(1, 'aiContentPreview', req);
@@ -87,8 +110,8 @@ describe('callable condivise', () => {
 
   it('lo stesso requestId produce lo stesso payload per entrambe', () => {
     const id = newRequestId();
-    const a = buildConceptMapRequest({ requestId: id, lessonBody: BODY });
-    const b = buildConceptMapRequest({ requestId: id, lessonBody: BODY });
+    const a = buildConceptMapRequest({ requestId: id, modelProfile: 'quality', lessonBody: BODY });
+    const b = buildConceptMapRequest({ requestId: id, modelProfile: 'quality', lessonBody: BODY });
     expect(a).toEqual(b);
   });
 });

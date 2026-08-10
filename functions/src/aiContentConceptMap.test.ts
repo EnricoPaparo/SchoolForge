@@ -93,11 +93,14 @@ describe('payload della mappa concettuale', () => {
     ]);
   });
 
-  it('rifiuta il profilo quality invece di degradarlo a economy', () => {
-    // Il punto non è che `quality` sia costoso: è che un profilo non richiesto
-    // non deve poter essere scelto in silenzio, in nessuna delle due direzioni.
-    expect(() => conceptMapRequest({ modelProfile: 'quality' })).toThrow(AiContentError);
-    expect(() => conceptMapRequest({ modelProfile: 'quality' })).toThrow(/profilo economico/);
+  it('accetta entrambi i profili chiusi senza degradarli', () => {
+    expect(conceptMapRequest({ modelProfile: 'economy' }).modelProfile).toBe('economy');
+    expect(conceptMapRequest({ modelProfile: 'quality' }).modelProfile).toBe('quality');
+  });
+
+  it('rifiuta un profilo sconosciuto senza fallback', () => {
+    expect(() => conceptMapRequest({ modelProfile: 'ultra' })).toThrow(AiContentError);
+    expect(() => conceptMapRequest({ modelProfile: 'ultra' })).toThrow(/Profilo modello/);
   });
 
   it.each([
@@ -136,6 +139,12 @@ describe('payload della mappa concettuale', () => {
 });
 
 describe('inputHash e idempotenza', () => {
+  it('cambia se cambia il profilo scelto', () => {
+    const economy = computeInputHash(conceptMapRequest({ modelProfile: 'economy' }));
+    const quality = computeInputHash(conceptMapRequest({ modelProfile: 'quality' }));
+    expect(economy).not.toBe(quality);
+  });
+
   it('cambia se cambia il corpo della lezione', () => {
     const a = computeInputHash(conceptMapRequest({ lessonBody: 'Corpo A' }));
     const b = computeInputHash(conceptMapRequest({ lessonBody: 'Corpo B' }));
@@ -272,8 +281,8 @@ describe('schema e payload trasmesso', () => {
     ]);
   });
 
-  it('il tetto di output è stretto e dichiarato', () => {
-    expect(CONCEPT_MAP_OUTPUT_TOKENS).toBe(2_000);
+  it('il margine tecnico di output è dichiarato e non modifica il cap del documento', () => {
+    expect(CONCEPT_MAP_OUTPUT_TOKENS).toBe(6_000);
     expect(resolveMaxOutputTokens(conceptMapRequest())).toBe(CONCEPT_MAP_OUTPUT_TOKENS);
   });
 
@@ -334,17 +343,21 @@ describe('contratto dei tre campi — struttura', () => {
   });
 });
 
-describe('contratto dei tre campi — nessun aggiustamento silenzioso', () => {
-  it('rifiuta esplicitamente gli spazi esterni invece di normalizzarli', () => {
-    // La scelta è dichiarata: normalizzare renderebbe il documento composto
-    // diverso dai campi ricevuti, e il validator del replay non potrebbe più
-    // riconoscerlo byte per byte.
-    expect(() =>
-      validateConceptMapProposal(proposal({ summaryMarkdown: '  Sintesi con spazi.  ' })),
-    ).toThrow(/spazi iniziali o finali/);
-    expect(() => validateConceptMapProposal(proposal({ outlineMarkdown: '- voce\n' }))).toThrow(
-      /spazi iniziali o finali/,
+describe('contratto dei tre campi — normalizzazione controllata del provider', () => {
+  it('rimuove solo gli spazi esterni prima della composizione canonica', () => {
+    const parts = validateConceptMapProposal(
+      proposal({
+        outlineMarkdown: '\n  - voce  \n',
+        summaryMarkdown: '  Sintesi con spazi interni.  ',
+        diagram: '\nRADICE ──▶ FIGLIO\n',
+      }),
     );
+    expect(parts).toEqual({
+      outlineMarkdown: '- voce',
+      summaryMarkdown: 'Sintesi con spazi interni.',
+      diagram: 'RADICE ──▶ FIGLIO',
+    });
+    expect(composeConceptMapMarkdown(parts)).toContain('\n- voce\n\n## Sintesi');
   });
 
   it('conserva gli spazi interni e le righe vuote', () => {
@@ -447,7 +460,7 @@ describe('contratto dei tre campi — forma di ciascuna sezione', () => {
       /voce di elenco/,
     );
     expect(() => validateConceptMapProposal(proposal({ outlineMarkdown: '-   ' }))).toThrow(
-      /incompleta|spazi iniziali o finali/,
+      /incompleta|voce di elenco/,
     );
   });
 

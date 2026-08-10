@@ -877,7 +877,7 @@ describe('generateContent', () => {
     expect(arg.settledMicroUsd).toBeGreaterThan(0);
   });
 
-  it('max-output incomplete ⇒ clear output_too_large error and conservative settlement', async () => {
+  it('max-output incomplete ⇒ distinct error and conservative settlement', async () => {
     const failRun = vi.fn(async () => undefined);
     await expect(
       generateContent(
@@ -892,7 +892,7 @@ describe('generateContent', () => {
           failRun,
         }),
       ),
-    ).rejects.toMatchObject({ code: 'output_too_large' });
+    ).rejects.toMatchObject({ code: 'output_incomplete' });
     expect(
       (failRun.mock.calls[0]![0] as { settledMicroUsd: number }).settledMicroUsd,
     ).toBeGreaterThan(0);

@@ -37,6 +37,7 @@ export type AiContentErrorCode =
   | 'provider_config_invalid'
   | 'provider_unavailable'
   | 'provider_invalid_output'
+  | 'output_incomplete'
   | 'output_too_large'
   | 'run_conflict'
   | 'internal';
@@ -247,14 +248,14 @@ export interface LessonRequest {
  * poter affermare soltanto ciò che è ricavabile dal corpo, e ciò che non le
  * viene dato non può contraddirlo.
  *
- * Il profilo è fisso a `economy`: riorganizzare e sintetizzare un testo già
- * scritto non è creare una lezione. Non è un default sostituibile — un profilo
- * diverso è rifiutato, non degradato.
+ * Il profilo è scelto esplicitamente dal docente fra gli stessi due profili
+ * chiusi degli altri generatori. Model ID, listino e prezzi restano risolti
+ * esclusivamente dal server.
  */
 export interface ConceptMapRequest {
   kind: 'concept_map';
   requestId: string;
-  modelProfile: 'economy';
+  modelProfile: ModelProfile;
   /** Corpo Markdown della lezione — dato non attendibile, delimitato nel prompt. */
   lessonBody: string;
 }
@@ -593,19 +594,12 @@ export function validateAiContentRequest(input: unknown): AiContentRequest {
     throw new AiContentError('invalid_input', 'kind non supportato.');
   }
 
-  // CONCEPT-MAP-01 — payload povero, validato prima di tutto il resto: non
-  // condivide profilo libero né indicazioni docente con gli altri due kind, e
-  // farlo passare dal percorso comune significherebbe accettarne i campi.
+  // CONCEPT-MAP-01 — payload povero, validato prima di tutto il resto. Il
+  // profilo resta un enum chiuso economy|quality, risolto col parser condiviso;
+  // nessun model ID, listino o prezzo proviene dal client.
   if (input.kind === 'concept_map') {
     assertNoExtraKeys(input, ['kind', 'requestId', 'modelProfile', 'lessonBody']);
-    // Profilo fisso, non un default: `quality` è rifiutato, mai degradato a
-    // `economy`. Una mappa non è una lezione e non deve poter costare come tale.
-    if (input.modelProfile !== 'economy') {
-      throw new AiContentError(
-        'invalid_input',
-        'La mappa concettuale usa esclusivamente il profilo economico.',
-      );
-    }
+    const modelProfile = parseProfile(input.modelProfile);
     if (typeof input.lessonBody !== 'string' || input.lessonBody.trim().length === 0) {
       throw new AiContentError('invalid_input', 'Il corpo della lezione è mancante o vuoto.');
     }
@@ -615,7 +609,7 @@ export function validateAiContentRequest(input: unknown): AiContentRequest {
     return enforceTotalRequestSize({
       kind: 'concept_map',
       requestId,
-      modelProfile: 'economy',
+      modelProfile,
       // Nessun `trim()`: il corpo va al prompt esattamente com'è salvato, e una
       // normalizzazione qui cambierebbe l'`inputHash` rispetto al testo reale.
       lessonBody: input.lessonBody,

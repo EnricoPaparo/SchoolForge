@@ -70,6 +70,9 @@ describe('describeAiContentError (sanitized)', () => {
     expect(describeAiContentError({ details: { code: 'provider_unavailable' } })).toMatch(
       /non è disponibile/,
     );
+    expect(describeAiContentError({ details: { code: 'output_incomplete' } })).toMatch(
+      /interrotta prima di completare/,
+    );
     // Unknown → generic, never the raw error text.
     const msg = describeAiContentError(new Error('sk-secret internal stacktrace'));
     expect(msg).toBe('Impossibile completare la generazione IA. Riprova.');
