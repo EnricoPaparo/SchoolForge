@@ -1,12 +1,11 @@
 # SchoolForge — Roadmap: mappa concettuale della lezione
 
-**Stato:** **CONCEPT-MAP-01, 02, 03, 04 e 05 implementati** (core e backend IA;
+**Stato:** **CONCEPT-MAP-01→06 implementati** (core e backend IA;
 persistenza, proiezione condizionale e Rules; interfaccia docente e studente;
-mappa come scheda strutturale della lezione; quality-only e artefatto v2
-Sintesi + Diagramma). Restano aperti il **rollout DEV**
-e il **gate umano**: nessun deploy è stato fatto e nessuna generazione OpenAI
-reale è stata eseguita. Tutte le decisioni di contratto sono prese e motivate;
-nessuna resta aperta.
+mappa come scheda strutturale della lezione; artefatto v2 Sintesi + Diagramma;
+generazione modale con scelta esplicita Economy/Quality e default Quality).
+Il **rollout DEV è autorizzato con CONCEPT-MAP-06**; il **gate umano** resta
+aperto fino allo smoke reale dei due profili e della nuova review.
 **Data:** 10 agosto 2026.
 **Dipendenze:** AIGEN-01→03 e LESSON-DEPTH-01 in produzione; editor Markdown
 della lezione (`lessonEditors`) esistente; proiezione studente `publicLessons`
@@ -588,10 +587,33 @@ indici, dipendenze, `saveLessonConceptMap`, la matrice privata/pubblica di
 CONCEPT-MAP-02 e il comportamento di «Segna svolta» non sono toccati; il costo
 passivo resta zero.
 
+### CONCEPT-MAP-06 — generazione modale e profilo esplicito ✅ implementata
+
+CONCEPT-MAP-05 aveva eliminato la scelta del profilo per rimuovere uno stato
+invisibile e intermittente. La causa, però, non era l'esistenza di Economy: era
+il fatto che profilo, stima e generazione vivessero dentro l'editor e fossero
+renderizzati soltanto in una delle sue modalità. CONCEPT-MAP-06 sostituisce
+quella sola decisione UX con lo stesso confine già usato dalla generazione
+della lezione.
+
+Ogni pressione su «Genera con IA» o «Rigenera con IA» apre una **nuova finestra**
+con entrambi i profili, `Quality` preselezionato, e la sequenza configurazione →
+stima → conferma → generazione → revisione → «Usa questa bozza». Il profilo non
+sopravvive alla chiusura: una nuova apertura riparte sempre da Quality. Cambiare
+profilo invalida stima e `requestId`; preview e generate ricevono lo stesso
+payload e la stessa `requestId`.
+
+Il server accetta soltanto i due valori chiusi `economy|quality`, senza fallback
+né degradazione silenziosa. La proposta non sostituisce il draft corrente e non
+produce scritture finché il docente non preme «Usa questa bozza»; anche allora
+diventa soltanto una modifica locale protetta dalla dirty guard. «Salva mappa»
+resta l'unica persistenza. Artefatto v2, prompt, validazione, cap, proiezione
+studente e compatibilità v1/v2 restano invariati.
+
 ## 9. DoD
 
-Mappa generata da una lezione reale con corpo esistente; struttura a quattro
-parti composta dal server; diagramma entro 80 caratteri per riga e scorrevole
+Mappa generata da una lezione reale con corpo esistente; struttura v2 composta
+dal server (Sintesi + Diagramma); diagramma entro 80 caratteri per riga e scorrevole
 nel proprio riquadro su mobile; editor con anteprima funzionante e modifica
 persistente; rigenerazione con conferma; mappa assente — non soltanto nascosta
 dalla UI — dalla proiezione studente finché la lezione non è marcata svolta e

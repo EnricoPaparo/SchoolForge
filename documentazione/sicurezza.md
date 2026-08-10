@@ -338,6 +338,17 @@ Contratto completo e mitigazioni in [m5-ai-assisted-roadmap.md](m5-ai-assisted-r
 
 **CONCEPT-MAP-05 — quality-only e artefatto v2.** Il vincolo di profilo è applicato **due volte e in modo asimmetrico**: il client non espone `modelProfile` nella firma di `buildConceptMapRequest` — quindi nessun percorso dell'interfaccia può costruire una richiesta Economy — e il server la rifiuta comunque `invalid_input` nella validazione del payload, che precede secret, provider, stima, prenotazione, lease, run e qualunque scrittura. La difesa che conta è la seconda: un client è codice che gira sulla macchina di qualcun altro, e un payload arbitrario resta sempre possibile. Il rifiuto non è una degradazione silenziosa a quality — sarebbe una spesa non richiesta — ma un errore. Pool e lezione non sono toccati: il vincolo vive nel ramo `concept_map` della validazione, non nel parser condiviso del profilo, così gli altri due kind non perdono metà del proprio contratto per un effetto collaterale. Lo Structured Output passa a **due** campi e `outlineMarkdown` è rifiutato come qualunque proprietà extra: la superficie che il modello può riempire si restringe, non si allarga. La struttura resta decisa dal server — intestazioni, fence e avvertenza sono costanti — e la validazione resta fail-closed e senza aggiustamenti. **Compatibilità senza indebolimento:** il parser del documento persistito riconosce anche la forma v1 già salvata, ma la tolleranza è esclusivamente sulla *forma canonica*, non sui vincoli: una v1 con ossatura in prosa, sintesi numerata, diagramma troppo largo o avvertenza alterata è rifiutata esattamente come una v2 malformata, e il documento è restituito byte per byte senza conversioni. La pipeline di sanificazione, la CSP e il contratto di visibilità studente (CONCEPT-MAP-02) non cambiano.
 
+**CONCEPT-MAP-06 — profilo esplicito dentro una sessione modale.** Questa fase
+sostituisce esclusivamente la decisione quality-only della fase precedente:
+il server accetta i soli valori chiusi `economy|quality`, senza fallback, e il
+client li rende entrambi visibili a ogni nuova generazione con Quality
+preselezionato. Il profilo non è memorizzato nell'editor né riutilizzato in modo
+invisibile fra sessioni. Cambiare configurazione invalida stima e `requestId`;
+preview e generate ricevono lo stesso payload. Il risultato resta isolato nella
+review e non tocca il draft corrente prima di «Usa questa bozza»; nessuna
+scrittura avviene prima di «Salva mappa». Non cambiano secret, provider,
+prenotazione, validazione output, sanificazione, Rules o visibilità studente.
+
 - **Feature flag** globale `disabled|mock|openai` risolto da `AI_CORRECTION_MODE`, default sicuro `disabled`; sul percorso `openai`, kill switch e modello arrivano dalla config runtime validata, senza fallback. Provider/modello definitivi = Human Gate aperto.
 - **Gateway server-side owner-only:** verifica dell'uid dal token Firebase e confronto con `settings/owner` (stesso pattern del `repositoryGateway`) — **implementato in M5-01**.
 - **Autorizzazione per ID, mai per testo:** il client invia solo ID (`verificationId`, `submissionIds`, `requestId`); il server rilegge submission, snapshot e soluzioni via Admin SDK. Il client non può iniettare testi arbitrari come parte della verifica.

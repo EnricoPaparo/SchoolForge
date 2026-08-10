@@ -75,6 +75,18 @@ function textarea() {
   return screen.getByRole('textbox', { name: /Markdown della mappa/ }) as HTMLTextAreaElement;
 }
 
+async function requestEstimate() {
+  fireEvent.click(screen.getByRole('button', { name: 'Calcola stima' }));
+  return screen.findByRole('button', { name: 'Genera bozza' });
+}
+
+async function generateAndUseDraft() {
+  const generate = await requestEstimate();
+  fireEvent.click(generate);
+  const useDraft = await screen.findByRole('button', { name: 'Usa questa bozza' });
+  fireEvent.click(useDraft);
+}
+
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -130,7 +142,7 @@ describe('generazione', () => {
   it('usa lo stesso requestId e lo stesso payload per preview e generate', async () => {
     const { api } = setup();
     fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Genera mappa' }));
+    fireEvent.click(await requestEstimate());
     await waitFor(() => expect(api.generate).toHaveBeenCalled());
 
     const previewArg = (api.preview as ReturnType<typeof vi.fn>).mock.calls[0]![0];
@@ -139,97 +151,60 @@ describe('generazione', () => {
     expect(previewArg.kind).toBe('concept_map');
   });
 
-  it('genera in quality dalla modalità lettura', async () => {
-    const { api } = setup();
-    fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
-    await waitFor(() => expect(api.preview).toHaveBeenCalled());
-    expect((api.preview as ReturnType<typeof vi.fn>).mock.calls[0]![0].modelProfile).toBe(
-      'quality',
-    );
-  });
-
-  it('genera in quality dalla modalità modifica', async () => {
-    const { api } = setup();
-    openEditor();
-    fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
-    await waitFor(() => expect(api.preview).toHaveBeenCalled());
-    expect((api.preview as ReturnType<typeof vi.fn>).mock.calls[0]![0].modelProfile).toBe(
-      'quality',
-    );
-  });
-
-  it('rigenera in quality', async () => {
-    const { api } = setup({ initialConceptMap: MAP });
+  it.each([
+    ['lettura', false],
+    ['modifica', true],
+  ] as const)('apre sempre la popup con entrambi i profili da %s', (_label, edit) => {
+    setup({ initialConceptMap: MAP });
+    if (edit) openEditor();
     fireEvent.click(screen.getByRole('button', { name: /Rigenera con IA/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Rigenera' }));
-    await waitFor(() => expect(api.preview).toHaveBeenCalled());
-    expect((api.preview as ReturnType<typeof vi.fn>).mock.calls[0]![0].modelProfile).toBe(
-      'quality',
+
+    expect(screen.getByRole('dialog', { name: 'Genera mappa concettuale con IA' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: /Economy/ })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: /Quality/ }).getAttribute('aria-checked')).toBe(
+      'true',
     );
   });
 
-  it('la stima dichiara il profilo Quality', async () => {
-    setup();
+  it('permette di scegliere Economy e usa la scelta sia per stima sia per generazione', async () => {
+    const { api } = setup();
     fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
-    await screen.findByRole('button', { name: 'Genera mappa' });
-    expect(document.body.textContent).toContain('Profilo: Quality');
+    fireEvent.click(screen.getByRole('radio', { name: /Economy/ }));
+    fireEvent.click(await requestEstimate());
+    await waitFor(() => expect(api.generate).toHaveBeenCalled());
+
+    const previewArg = (api.preview as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    const generateArg = (api.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(previewArg.modelProfile).toBe('economy');
+    expect(generateArg).toEqual(previewArg);
   });
 
   it('non salva automaticamente la mappa generata', async () => {
     const { onSave } = setup();
     fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Genera mappa' }));
-    await waitFor(() => expect(document.body.textContent).toContain('Non è ancora salvata'));
+    await generateAndUseDraft();
     expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /Salva mappa/ })).toBeTruthy();
   });
 
   it('un errore di generazione conserva il testo precedente', async () => {
     const api = callables({ generate: vi.fn().mockRejectedValue(new Error('boom')) });
     setup({ initialConceptMap: MAP, api });
     fireEvent.click(screen.getByRole('button', { name: /Rigenera con IA/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Rigenera' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Genera mappa' }));
+    fireEvent.click(await requestEstimate());
 
     await screen.findByRole('alert');
+    fireEvent.click(screen.getByRole('button', { name: 'Chiudi' }));
     expect(document.body.textContent).toContain('densità');
   });
 });
 
-describe('quality-only: nessuna scelta, in nessuna modalità', () => {
-  /*
-   * Il difetto corretto da CONCEPT-MAP-05: il selettore viveva solo nella
-   * modalità modifica, ma il pulsante di generazione esisteva in entrambe e
-   * usava comunque lo stato interno. Dalla lettura il docente non vedeva alcuna
-   * scelta e un profilo veniva usato lo stesso; peggio, una scelta fatta in
-   * modifica sopravviveva ad «Annulla» e restava invisibile.
-   */
-  it('non mostra alcun radiogroup del profilo, in lettura', () => {
-    setup({ initialConceptMap: MAP });
-    expect(screen.queryByRole('radiogroup')).toBeNull();
-    expect(screen.queryByRole('radio')).toBeNull();
-  });
-
-  it('non mostra alcun radiogroup del profilo, in modifica', () => {
-    setup({ initialConceptMap: MAP });
-    openEditor();
-    expect(screen.queryByRole('radiogroup')).toBeNull();
-    expect(screen.queryByRole('radio')).toBeNull();
-  });
-
-  it('la parola Economy non compare da nessuna parte', async () => {
-    setup({ initialConceptMap: MAP });
-    expect(document.body.textContent).not.toMatch(/economy/i);
-    openEditor();
-    expect(document.body.textContent).not.toMatch(/economy/i);
-    fireEvent.click(screen.getByRole('button', { name: /Rigenera con IA/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Rigenera' }));
-    await screen.findByRole('button', { name: 'Genera mappa' });
-    expect(document.body.textContent).not.toMatch(/economy/i);
-  });
-
-  it('lettura e modifica producono lo stesso identico payload', async () => {
+describe('sessioni indipendenti', () => {
+  it('lettura e modifica producono lo stesso payload a parità di scelta', async () => {
     const fromView = setup();
     fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /Economy/ }));
+    await requestEstimate();
     await waitFor(() => expect(fromView.api.preview).toHaveBeenCalled());
     const viewArg = (fromView.api.preview as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     cleanup();
@@ -237,6 +212,8 @@ describe('quality-only: nessuna scelta, in nessuna modalità', () => {
     const fromEdit = setup();
     openEditor();
     fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
+    fireEvent.click(screen.getByRole('radio', { name: /Economy/ }));
+    await requestEstimate();
     await waitFor(() => expect(fromEdit.api.preview).toHaveBeenCalled());
     const editArg = (fromEdit.api.preview as ReturnType<typeof vi.fn>).mock.calls[0]![0];
 
@@ -244,41 +221,26 @@ describe('quality-only: nessuna scelta, in nessuna modalità', () => {
     // diversa fra due generazioni distinte.
     expect({ ...viewArg, requestId: null }).toEqual({ ...editArg, requestId: null });
   });
-});
 
-describe('rigenerazione', () => {
-  it('chiede conferma quando esiste già del testo', async () => {
-    const { api } = setup({ initialConceptMap: MAP });
-    fireEvent.click(screen.getByRole('button', { name: /Rigenera con IA/ }));
-    expect(await screen.findByText('Rigenerare la mappa?')).toBeTruthy();
-    // La stima non parte finché la conferma non è accettata.
-    expect(api.preview).not.toHaveBeenCalled();
-  });
-
-  it('«Continua la modifica» conserva il testo e non chiama nulla', async () => {
-    const { api } = setup({ initialConceptMap: MAP });
-    fireEvent.click(screen.getByRole('button', { name: /Rigenera con IA/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Continua la modifica' }));
-    expect(api.preview).not.toHaveBeenCalled();
-    openEditor();
-    expect(textarea().value).toBe(MAP);
-  });
-
-  it('la nuova proposta non sostituisce il testo prima della conferma', async () => {
+  it('ogni nuova apertura riparte da Quality anche dopo una scelta Economy annullata', () => {
     setup({ initialConceptMap: MAP });
     fireEvent.click(screen.getByRole('button', { name: /Rigenera con IA/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Rigenera' }));
-    await screen.findByRole('button', { name: 'Genera mappa' });
+    fireEvent.click(screen.getByRole('radio', { name: /Economy/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
-    openEditor();
-    expect(textarea().value).toBe(MAP);
+    fireEvent.click(screen.getByRole('button', { name: /Rigenera con IA/ }));
+    expect(screen.getByRole('radio', { name: /Quality/ }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
   });
 
-  it('non chiede conferma quando non c’è nulla da perdere', async () => {
-    const { api } = setup();
-    fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
-    await waitFor(() => expect(api.preview).toHaveBeenCalled());
-    expect(screen.queryByText('Rigenerare la mappa?')).toBeNull();
+  it('rigenerare non sostituisce la mappa finché non si usa esplicitamente la bozza', async () => {
+    const { api } = setup({ initialConceptMap: MAP });
+    fireEvent.click(screen.getByRole('button', { name: /Rigenera con IA/ }));
+    expect(api.preview).not.toHaveBeenCalled();
+    const generate = await requestEstimate();
+    fireEvent.click(generate);
+    await screen.findByRole('button', { name: 'Usa questa bozza' });
+    expect(document.body.textContent).toContain('densità');
   });
 });
 

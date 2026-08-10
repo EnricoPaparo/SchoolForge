@@ -1,6 +1,7 @@
 import { httpsCallable } from 'firebase/functions';
 import type { Functions } from 'firebase/functions';
 import { isValidConceptMap } from '../programs/conceptMapContract.js';
+import type { PoolModelProfile } from './aiContentClient.js';
 
 /**
  * CONCEPT-MAP-03 — client tipizzato delle **stesse** callable
@@ -15,22 +16,16 @@ import { isValidConceptMap } from '../programs/conceptMapContract.js';
  * Il payload è deliberatamente **povero**: profilo e corpo della lezione.
  * Nessuna profondità, indicazione docente, model ID o listino.
  *
- * CONCEPT-MAP-05 — il profilo è **fisso a `quality`** e non è un parametro. Sulle
- * generazioni reali `economy` produceva mappe qualitativamente insufficienti, e
- * una mappa sbagliata non è un risparmio: è un ripasso che disinforma. La
- * costante vive qui e non nel componente perché è una proprietà del contratto,
- * non una preferenza dell'interfaccia — e il server rifiuta comunque qualunque
- * altro valore.
+ * Il profilo è una scelta esplicita della singola generazione, esattamente come
+ * per pool e lezione. Il dialog parte da Quality ma non conserva scelte
+ * invisibili fra un'apertura e l'altra.
  */
-
-/** Unico profilo ammesso per la mappa concettuale. */
-export const CONCEPT_MAP_MODEL_PROFILE = 'quality' as const;
 
 /** Payload chiuso, identico per preview e generate. */
 export interface AiConceptMapRequest {
   kind: 'concept_map';
   requestId: string;
-  modelProfile: typeof CONCEPT_MAP_MODEL_PROFILE;
+  modelProfile: PoolModelProfile;
   lessonBody: string;
 }
 
@@ -73,15 +68,13 @@ export interface AiConceptMapCallables {
  */
 export function buildConceptMapRequest(params: {
   requestId: string;
+  modelProfile: PoolModelProfile;
   lessonBody: string;
 }): AiConceptMapRequest {
   return {
     kind: 'concept_map',
     requestId: params.requestId,
-    // Non è un default sostituibile: la firma non espone alcun modo di
-    // scegliere il profilo, quindi non esiste un percorso — visibile o meno —
-    // che possa generare una mappa con economy.
-    modelProfile: CONCEPT_MAP_MODEL_PROFILE,
+    modelProfile: params.modelProfile,
     lessonBody: params.lessonBody,
   };
 }

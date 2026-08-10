@@ -123,24 +123,8 @@ describe('payload della mappa concettuale', () => {
     ]);
   });
 
-  it('accetta solo il profilo quality (CONCEPT-MAP-05)', () => {
-    expect(conceptMapRequest({ modelProfile: 'quality' }).modelProfile).toBe('quality');
-  });
-
-  it('rifiuta economy prima di provider, prenotazione, run e scritture', () => {
-    /*
-     * Il rifiuto avviene nella validazione del payload, che nell'ordine
-     * fail-closed della callable precede secret, stima, prenotazione, lease e
-     * qualunque scrittura: una richiesta economy non arriva mai a costare nulla.
-     * Non è una degradazione silenziosa a quality — è un errore.
-     */
-    expect(() => conceptMapRequest({ modelProfile: 'economy' })).toThrow(AiContentError);
-    expect(() => conceptMapRequest({ modelProfile: 'economy' })).toThrow(/solo con il profilo/);
-    try {
-      conceptMapRequest({ modelProfile: 'economy' });
-    } catch (err) {
-      expect((err as AiContentError).code).toBe('invalid_input');
-    }
+  it.each(['economy', 'quality'] as const)('accetta il profilo chiuso %s', (modelProfile) => {
+    expect(conceptMapRequest({ modelProfile }).modelProfile).toBe(modelProfile);
   });
 
   it('rifiuta un profilo sconosciuto senza fallback', () => {
@@ -184,14 +168,12 @@ describe('payload della mappa concettuale', () => {
 });
 
 describe('inputHash e idempotenza', () => {
-  it('il profilo resta parte della richiesta canonica, quindi dell’hash', () => {
-    /*
-     * Con la mappa ridotta a quality-only non esistono più due profili da
-     * confrontare per questo kind, ma il campo deve restare nella forma
-     * canonica: se ne uscisse, un domani un secondo profilo riuserebbe l'hash
-     * — e quindi il run — di una generazione fatta con l'altro.
-     */
-    expect(canonicalRequest(conceptMapRequest())).toContain('"modelProfile":"quality"');
+  it('il profilo resta parte della richiesta canonica e cambia l’hash', () => {
+    const economy = conceptMapRequest({ modelProfile: 'economy' });
+    const quality = conceptMapRequest({ modelProfile: 'quality' });
+    expect(canonicalRequest(economy)).toContain('"modelProfile":"economy"');
+    expect(canonicalRequest(quality)).toContain('"modelProfile":"quality"');
+    expect(computeInputHash(economy)).not.toBe(computeInputHash(quality));
   });
 
   it('cambia se cambia il corpo della lezione', () => {
@@ -263,10 +245,7 @@ describe('non-regressione di pool e lezione', () => {
     });
   }
 
-  it('il pool accetta ancora economy (CONCEPT-MAP-05 non lo tocca)', () => {
-    // Il vincolo quality-only è del kind `concept_map`, non del profilo: se
-    // fosse finito nel parser condiviso, pool e lezione avrebbero perso
-    // silenziosamente metà del loro contratto.
+  it('il pool accetta ancora economy', () => {
     expect(poolRequest().modelProfile).toBe('economy');
   });
 
@@ -962,7 +941,7 @@ describe('provider mock', () => {
   });
 });
 
-// ─── CONCEPT-MAP-05: quality-only e convivenza v1/v2 ─────────────────────────
+// ─── CONCEPT-MAP-05/06: convivenza v1/v2 e profilo esplicito ─────────────────
 
 describe('convivenza v1/v2 nel documento persistito', () => {
   it('accetta una mappa v2 e la restituisce byte per byte', () => {
