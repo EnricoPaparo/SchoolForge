@@ -365,6 +365,7 @@ const ERROR_MAP: Record<string, FunctionsErrorCode> = {
   provider_config_invalid: 'failed-precondition',
   provider_unavailable: 'unavailable',
   provider_invalid_output: 'internal',
+  output_incomplete: 'resource-exhausted',
   output_too_large: 'resource-exhausted',
   internal: 'internal',
 };

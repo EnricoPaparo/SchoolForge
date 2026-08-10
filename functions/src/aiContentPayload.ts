@@ -67,7 +67,11 @@ export const LESSON_OUTPUT_TOKENS: Readonly<Record<LessonDepth, number>> = {
  * fallita, e il cap è il modo più diretto di dirlo anche al modello. Volutamente
  * un ordine di grandezza sotto la lezione più breve.
  */
-export const CONCEPT_MAP_OUTPUT_TOKENS = 2_000;
+/**
+ * Margine tecnico per ragionamento + Structured Output. Non è una richiesta di
+ * produrre mappe più lunghe: il documento canonico resta limitato a 32 KB.
+ */
+export const CONCEPT_MAP_OUTPUT_TOKENS = 6_000;
 
 /**
  * Hard `max_output_tokens` realmente trasmesso al provider per la richiesta: è il

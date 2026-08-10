@@ -116,22 +116,20 @@ function asObject(value: unknown, message: string): Record<string, unknown> {
 }
 
 /**
- * Legge un campo obbligatorio **senza modificarlo**. `trim()` è usato solo come
- * predicato di vuotezza; il valore restituito è l'originale. Gli spazi esterni
- * sono **rifiutati esplicitamente** invece di essere normalizzati: il documento
- * composto deve essere riconoscibile byte per byte dal validator del replay, e
- * un ritorno a capo in coda a una sezione renderebbe ambiguo il confine con la
- * riga vuota che il compositore inserisce.
+ * Normalizza esclusivamente gli spazi esterni dei campi generati dal provider.
+ * È un confine controllato: nessun contenuto interno viene riscritto, troncato o
+ * corretto. Il documento composto e persistito resta canonico byte per byte.
  */
 function requiredField(source: Record<string, unknown>, key: string): string {
   const value = source[key];
-  if (typeof value !== 'string' || value.trim().length === 0) {
+  if (typeof value !== 'string') {
     invalidOutput('La mappa generata è incompleta.');
   }
-  if (value !== value.trim()) {
-    invalidOutput('La mappa generata contiene spazi iniziali o finali non ammessi.');
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    invalidOutput('La mappa generata è incompleta.');
   }
-  return value;
+  return normalized;
 }
 
 /** Vincoli che valgono per tutti e tre i campi. */
@@ -203,8 +201,8 @@ function assertDiagramShape(value: string): void {
 }
 
 /**
- * Valida i tre campi restituiti dal provider. Fail-closed e **senza
- * aggiustamenti**: i valori tornano indietro identici a come sono arrivati.
+ * Valida i tre campi restituiti dal provider. Fail-closed; l'unico adattamento
+ * ammesso è il trim esterno documentato da `requiredField`.
  */
 export function validateConceptMapProposal(output: unknown): ValidatedConceptMapProposal {
   const root = asObject(output, 'Struttura della mappa non valida.');

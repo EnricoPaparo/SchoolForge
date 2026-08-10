@@ -10,9 +10,12 @@ import {
   type AiConceptMapRequest,
 } from '../repository/pools/aiConceptMapClient.js';
 import {
+  DEFAULT_POOL_MODEL_PROFILE,
+  POOL_MODEL_PROFILE_OPTIONS,
   describeAiContentError,
   formatMicroUsd,
   newRequestId,
+  type PoolModelProfile,
 } from '../repository/pools/aiContentClient.js';
 import styles from './ConceptMapDialog.module.css';
 
@@ -66,6 +69,7 @@ export function ConceptMapDialog({
   const [lastCost, setLastCost] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<null | 'regenerate' | 'abandon'>(null);
+  const [modelProfile, setModelProfile] = useState<PoolModelProfile>(DEFAULT_POOL_MODEL_PROFILE);
 
   /**
    * Baseline del testo salvato: `dirty` confronta con questa, non con la
@@ -112,6 +116,7 @@ export function ConceptMapDialog({
     // payload: è ciò che rende la generazione idempotente lato server.
     const request = buildConceptMapRequest({
       requestId: requestIdRef.current,
+      modelProfile,
       lessonBody,
     });
     try {
@@ -221,11 +226,13 @@ export function ConceptMapDialog({
       {phase === 'confirm' && preview ? (
         <div className={styles.estimate}>
           <p>
-            La mappa viene generata dal <strong>contenuto salvato</strong> di questa lezione, con il
-            profilo economico.
+            La mappa viene generata dal <strong>contenuto salvato</strong> di questa lezione.
           </p>
           <ul className={styles.estimateList}>
-            <li>Profilo: Economy</li>
+            <li>
+              Profilo:{' '}
+              {POOL_MODEL_PROFILE_OPTIONS.find((option) => option.value === modelProfile)?.label}
+            </li>
             <li>Token stimati: {preview.estimatedInputTokens + preview.maxOutputTokens}</li>
             <li>Costo stimato: {formatMicroUsd(preview.estimatedCostMicroUsd)}</li>
             <li>Tetto massimo prenotabile: {formatMicroUsd(preview.reservationCostMicroUsd)}</li>
@@ -252,6 +259,36 @@ export function ConceptMapDialog({
         </div>
       ) : (
         <>
+          <div className={styles.profileField}>
+            <span className={styles.profileLabel} id="concept-map-profile-label">
+              Profilo modello
+            </span>
+            <div
+              className={styles.profileOptions}
+              role="radiogroup"
+              aria-labelledby="concept-map-profile-label"
+            >
+              {POOL_MODEL_PROFILE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={modelProfile === option.value}
+                  className={`${styles.profileChoice}${modelProfile === option.value ? ` ${styles.profileChoiceSelected}` : ''}`}
+                  disabled={busy}
+                  onClick={() => {
+                    if (modelProfile === option.value) return;
+                    setModelProfile(option.value);
+                    resetEstimate();
+                  }}
+                >
+                  <span className={styles.profileChoiceLabel}>{option.label}</span>
+                  <span className={styles.profileChoiceMeta}>{option.description}</span>
+                  <span className={styles.profileChoiceMeta}>Modello: {option.modelId}</span>
+                </button>
+              ))}
+            </div>
+          </div>
           <div className={styles.tabs} role="tablist" aria-label="Editor mappa concettuale">
             <button
               type="button"

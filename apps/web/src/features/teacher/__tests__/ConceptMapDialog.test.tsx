@@ -20,7 +20,7 @@ function callables(over: Partial<AiConceptMapCallables> = {}): AiConceptMapCalla
       kind: 'concept_map',
       modelProfile: 'economy',
       estimatedInputTokens: 500,
-      maxOutputTokens: 2000,
+      maxOutputTokens: 6000,
       estimatedCostMicroUsd: 1000,
       reservationCostMicroUsd: 4000,
       requestedTotal: null,
@@ -104,8 +104,22 @@ describe('generazione', () => {
     const previewArg = (api.preview as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     const generateArg = (api.generate as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(generateArg).toEqual(previewArg);
-    expect(previewArg.modelProfile).toBe('economy');
+    expect(previewArg.modelProfile).toBe('quality');
     expect(previewArg.kind).toBe('concept_map');
+  });
+
+  it('permette di scegliere Economy e invalida la precedente identità di richiesta', async () => {
+    const { api } = setup();
+    const quality = screen.getByRole('radio', { name: /Quality/ });
+    const economy = screen.getByRole('radio', { name: /Economy/ });
+    expect(quality.getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.click(economy);
+    expect(economy.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
+    await waitFor(() => expect(api.preview).toHaveBeenCalled());
+    const request = (api.preview as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(request.modelProfile).toBe('economy');
   });
 
   it('non salva automaticamente la mappa generata', async () => {

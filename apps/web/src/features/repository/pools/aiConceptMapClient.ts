@@ -1,6 +1,7 @@
 import { httpsCallable } from 'firebase/functions';
 import type { Functions } from 'firebase/functions';
 import { isValidConceptMap } from '../programs/conceptMapContract.js';
+import type { PoolModelProfile } from './aiContentClient.js';
 
 /**
  * CONCEPT-MAP-03 — client tipizzato delle **stesse** callable
@@ -12,21 +13,15 @@ import { isValidConceptMap } from '../programs/conceptMapContract.js';
  * tipi del risultato, perché il contratto di questo kind è diverso dagli altri
  * due — ed è diverso in meno, non in più.
  *
- * Il payload è deliberatamente **povero**: solo il corpo della lezione. Nessun
- * profilo scelto dall'utente, nessuna profondità, nessuna indicazione docente,
- * nessun model ID o listino. Il profilo è fisso a `economy` come costante del
- * modulo: non è un default sostituibile ma parte del contratto, e il server
- * rifiuta qualunque altro valore.
+ * Il payload è deliberatamente **povero**: profilo chiuso e corpo della lezione.
+ * Nessuna profondità, indicazione docente, model ID o listino.
  */
-
-/** Profilo **fisso**: non è un parametro, è una proprietà del kind. */
-export const CONCEPT_MAP_MODEL_PROFILE = 'economy' as const;
 
 /** Payload chiuso, identico per preview e generate. */
 export interface AiConceptMapRequest {
   kind: 'concept_map';
   requestId: string;
-  modelProfile: typeof CONCEPT_MAP_MODEL_PROFILE;
+  modelProfile: PoolModelProfile;
   lessonBody: string;
 }
 
@@ -69,12 +64,13 @@ export interface AiConceptMapCallables {
  */
 export function buildConceptMapRequest(params: {
   requestId: string;
+  modelProfile: PoolModelProfile;
   lessonBody: string;
 }): AiConceptMapRequest {
   return {
     kind: 'concept_map',
     requestId: params.requestId,
-    modelProfile: CONCEPT_MAP_MODEL_PROFILE,
+    modelProfile: params.modelProfile,
     lessonBody: params.lessonBody,
   };
 }
