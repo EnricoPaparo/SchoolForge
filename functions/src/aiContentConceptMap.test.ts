@@ -53,7 +53,7 @@ function conceptMapPayload(over: Record<string, unknown> = {}): Record<string, u
   return {
     kind: 'concept_map',
     requestId: CONCEPT_MAP_REQUEST_ID,
-    modelProfile: 'economy',
+    modelProfile: 'quality',
     lessonBody: '## La densità\n\nLa densità è il rapporto fra massa e volume.',
     ...over,
   };
@@ -63,19 +63,49 @@ function conceptMapRequest(over: Record<string, unknown> = {}): ConceptMapReques
   return validateAiContentRequest(conceptMapPayload(over)) as ConceptMapRequest;
 }
 
-/** Output del provider strutturalmente valido, base di ogni caso negativo. */
+/** Output del provider strutturalmente valido (v2), base di ogni caso negativo. */
 function proposal(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    outlineMarkdown: '- densità\n  - massa ──divisa per──▶ volume',
     summaryMarkdown: 'La densità lega massa e volume di un corpo.',
     diagram: 'DENSITÀ\n└─ massa ──divisa per──▶ volume',
     ...over,
   };
 }
 
-/** Documento canonico di riferimento, prodotto dalla composizione reale. */
+/** Documento canonico v2 di riferimento, prodotto dalla composizione reale. */
 function canonicalMarkdown(over: Record<string, unknown> = {}): string {
   return validateAndComposeConceptMap(proposal(over)).conceptMapMarkdown;
+}
+
+/**
+ * Documento canonico **v1**, scritto a mano perché il compositore non è più in
+ * grado di produrlo: è esattamente ciò che si trova nelle mappe già salvate.
+ */
+function legacyMarkdown(
+  over: { outline?: string; summary?: string; diagram?: string } = {},
+): string {
+  const outline = over.outline ?? '- densità\n  - massa ──divisa per──▶ volume';
+  const summary = over.summary ?? 'La densità lega massa e volume di un corpo.';
+  const diagram = over.diagram ?? 'DENSITÀ\n└─ massa ──divisa per──▶ volume';
+  return [
+    '## Ossatura della lezione',
+    '',
+    outline,
+    '',
+    '## Sintesi',
+    '',
+    summary,
+    '',
+    '## Diagramma',
+    '',
+    '```text',
+    diagram,
+    '```',
+    '',
+    '> [!IMPORTANT]',
+    `> ${CONCEPT_MAP_DISCLAIMER}`,
+    '',
+  ].join('\n');
 }
 
 // ─── Payload ──────────────────────────────────────────────────────────────────
@@ -84,7 +114,7 @@ describe('payload della mappa concettuale', () => {
   it('accetta il payload minimo e non trattiene altro', () => {
     const request = conceptMapRequest();
     expect(request.kind).toBe('concept_map');
-    expect(request.modelProfile).toBe('economy');
+    expect(request.modelProfile).toBe('quality');
     expect(Object.keys(request).sort()).toEqual([
       'kind',
       'lessonBody',
@@ -93,9 +123,24 @@ describe('payload della mappa concettuale', () => {
     ]);
   });
 
-  it('accetta entrambi i profili chiusi senza degradarli', () => {
-    expect(conceptMapRequest({ modelProfile: 'economy' }).modelProfile).toBe('economy');
+  it('accetta solo il profilo quality (CONCEPT-MAP-05)', () => {
     expect(conceptMapRequest({ modelProfile: 'quality' }).modelProfile).toBe('quality');
+  });
+
+  it('rifiuta economy prima di provider, prenotazione, run e scritture', () => {
+    /*
+     * Il rifiuto avviene nella validazione del payload, che nell'ordine
+     * fail-closed della callable precede secret, stima, prenotazione, lease e
+     * qualunque scrittura: una richiesta economy non arriva mai a costare nulla.
+     * Non è una degradazione silenziosa a quality — è un errore.
+     */
+    expect(() => conceptMapRequest({ modelProfile: 'economy' })).toThrow(AiContentError);
+    expect(() => conceptMapRequest({ modelProfile: 'economy' })).toThrow(/solo con il profilo/);
+    try {
+      conceptMapRequest({ modelProfile: 'economy' });
+    } catch (err) {
+      expect((err as AiContentError).code).toBe('invalid_input');
+    }
   });
 
   it('rifiuta un profilo sconosciuto senza fallback', () => {
@@ -139,10 +184,14 @@ describe('payload della mappa concettuale', () => {
 });
 
 describe('inputHash e idempotenza', () => {
-  it('cambia se cambia il profilo scelto', () => {
-    const economy = computeInputHash(conceptMapRequest({ modelProfile: 'economy' }));
-    const quality = computeInputHash(conceptMapRequest({ modelProfile: 'quality' }));
-    expect(economy).not.toBe(quality);
+  it('il profilo resta parte della richiesta canonica, quindi dell’hash', () => {
+    /*
+     * Con la mappa ridotta a quality-only non esistono più due profili da
+     * confrontare per questo kind, ma il campo deve restare nella forma
+     * canonica: se ne uscisse, un domani un secondo profilo riuserebbe l'hash
+     * — e quindi il run — di una generazione fatta con l'altro.
+     */
+    expect(canonicalRequest(conceptMapRequest())).toContain('"modelProfile":"quality"');
   });
 
   it('cambia se cambia il corpo della lezione', () => {
@@ -214,6 +263,17 @@ describe('non-regressione di pool e lezione', () => {
     });
   }
 
+  it('il pool accetta ancora economy (CONCEPT-MAP-05 non lo tocca)', () => {
+    // Il vincolo quality-only è del kind `concept_map`, non del profilo: se
+    // fosse finito nel parser condiviso, pool e lezione avrebbero perso
+    // silenziosamente metà del loro contratto.
+    expect(poolRequest().modelProfile).toBe('economy');
+  });
+
+  it('la lezione accetta ancora economy', () => {
+    expect(lessonRequest().modelProfile).toBe('economy');
+  });
+
   it('la forma canonica del pool è invariata', () => {
     expect(computeInputHash(poolRequest())).toBe(POOL_INPUT_HASH);
   });
@@ -265,26 +325,43 @@ describe('prompt della mappa concettuale', () => {
     expect(user).toContain(`entro ${CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS} caratteri`);
   });
 
-  it('dichiara che le righe fisiche possono continuare la voce precedente', () => {
+  it('chiede due campi e non nomina più l’ossatura', () => {
     const { user } = buildConceptMapPrompt(conceptMapRequest());
-    expect(user).toMatch(/righe successive continuano la stessa voce/);
-    expect(user).toMatch(/non aggiungere un nuovo marker/);
+    expect(user).toContain('Restituisci esattamente due campi.');
+    expect(user).not.toContain('outlineMarkdown');
+    expect(user).not.toMatch(/ossatura/i);
+  });
+
+  it('chiede una sintesi ragionata, senza imporre brevità', () => {
+    const { user } = buildConceptMapPrompt(conceptMapRequest());
+    // Il difetto che CONCEPT-MAP-05 corregge era proprio la brevità imposta:
+    // produceva un sommario che non aiutava a ripassare.
+    expect(user).not.toMatch(/poche righe/);
+    expect(user).toMatch(/RAGIONATA/);
+    expect(user).toMatch(/cause, conseguenze, dipendenze/);
+    expect(user).toMatch(/la lunghezza la decide il contenuto/i);
+    expect(user).toMatch(/NIENTE elenchi/);
+  });
+
+  it('la versione del prompt della mappa è stata incrementata', () => {
+    // Il prompt è cambiato in modo sostanziale: lasciare la versione precedente
+    // renderebbe indistinguibili due contratti diversi.
+    expect(AI_CONCEPT_MAP_PROMPT_VERSION).toBe('concept-map-05-v3');
   });
 });
 
 describe('schema e payload trasmesso', () => {
-  it('lo schema è strict e ha esattamente i tre campi', () => {
+  it('lo schema è strict e ha esattamente i due campi v2', () => {
     expect(CONCEPT_MAP_OUTPUT_SCHEMA.additionalProperties).toBe(false);
-    expect(CONCEPT_MAP_OUTPUT_SCHEMA.required).toEqual([
-      'outlineMarkdown',
-      'summaryMarkdown',
-      'diagram',
-    ]);
+    expect(CONCEPT_MAP_OUTPUT_SCHEMA.required).toEqual(['summaryMarkdown', 'diagram']);
     expect(Object.keys(CONCEPT_MAP_OUTPUT_SCHEMA.properties as object)).toEqual([
-      'outlineMarkdown',
       'summaryMarkdown',
       'diagram',
     ]);
+  });
+
+  it('lo schema non ammette più outlineMarkdown', () => {
+    expect(JSON.stringify(CONCEPT_MAP_OUTPUT_SCHEMA)).not.toContain('outlineMarkdown');
   });
 
   it('il margine tecnico di output è dichiarato e non modifica il cap del documento', () => {
@@ -301,37 +378,32 @@ describe('schema e payload trasmesso', () => {
   });
 });
 
-// ─── Contratto dei tre campi ──────────────────────────────────────────────────
+// ─── Contratto dei due campi ──────────────────────────────────────────────────
 
-describe('contratto dei tre campi — struttura', () => {
+describe('contratto dei due campi — struttura', () => {
   it('accetta una proposta conforme e restituisce i valori identici', () => {
     const input = proposal();
     const parts = validateConceptMapProposal(input);
-    expect(parts.outlineMarkdown).toBe(input.outlineMarkdown);
     expect(parts.summaryMarkdown).toBe(input.summaryMarkdown);
     expect(parts.diagram).toBe(input.diagram);
+    expect(Object.keys(parts).sort()).toEqual(['diagram', 'summaryMarkdown']);
   });
 
-  it('accetta un elenco annidato con i tre marker ammessi', () => {
-    for (const marker of ['-', '*', '+']) {
-      expect(() =>
-        validateConceptMapProposal(
-          proposal({ outlineMarkdown: `${marker} radice\n    ${marker} figlio` }),
-        ),
-      ).not.toThrow();
-    }
+  it('rifiuta outlineMarkdown come qualunque altra proprietà extra', () => {
+    // È il campo che il modello potrebbe ancora produrre per abitudine: deve
+    // essere rifiutato come tutti gli altri, non ignorato in silenzio.
+    expect(() => validateConceptMapProposal(proposal({ outlineMarkdown: '- una voce' }))).toThrow(
+      /campi non ammessi/,
+    );
   });
 
-  it.each(['outlineMarkdown', 'summaryMarkdown', 'diagram'])(
-    'rifiuta %s mancante o vuoto',
-    (field) => {
-      expect(() => validateConceptMapProposal(proposal({ [field]: '' }))).toThrow(/incompleta/);
-      expect(() => validateConceptMapProposal(proposal({ [field]: '   ' }))).toThrow(/incompleta/);
-      expect(() => validateConceptMapProposal(proposal({ [field]: undefined }))).toThrow(
-        /incompleta/,
-      );
-    },
-  );
+  it.each(['summaryMarkdown', 'diagram'])('rifiuta %s mancante o vuoto', (field) => {
+    expect(() => validateConceptMapProposal(proposal({ [field]: '' }))).toThrow(/incompleta/);
+    expect(() => validateConceptMapProposal(proposal({ [field]: '   ' }))).toThrow(/incompleta/);
+    expect(() => validateConceptMapProposal(proposal({ [field]: undefined }))).toThrow(
+      /incompleta/,
+    );
+  });
 
   it('rifiuta proprietà extra, anche innocue', () => {
     expect(() => validateConceptMapProposal(proposal({ note: 'extra' }))).toThrow(
@@ -349,33 +421,33 @@ describe('contratto dei tre campi — struttura', () => {
   });
 });
 
-describe('contratto dei tre campi — normalizzazione controllata del provider', () => {
+describe('contratto dei due campi — normalizzazione controllata del provider', () => {
   it('rimuove solo gli spazi esterni prima della composizione canonica', () => {
     const parts = validateConceptMapProposal(
       proposal({
-        outlineMarkdown: '\n  - voce  \n',
         summaryMarkdown: '  Sintesi con spazi interni.  ',
         diagram: '\nRADICE ──▶ FIGLIO\n',
       }),
     );
     expect(parts).toEqual({
-      outlineMarkdown: '- voce',
       summaryMarkdown: 'Sintesi con spazi interni.',
       diagram: 'RADICE ──▶ FIGLIO',
     });
-    expect(composeConceptMapMarkdown(parts)).toContain('\n- voce\n\n## Sintesi');
+    expect(composeConceptMapMarkdown(parts)).toContain(
+      '## Sintesi\n\nSintesi con spazi interni.\n\n## Diagramma',
+    );
   });
 
   it('conserva gli spazi interni e le righe vuote', () => {
-    const outline = '- prima  voce\n\n-  seconda   voce';
-    const parts = validateConceptMapProposal(proposal({ outlineMarkdown: outline }));
-    expect(parts.outlineMarkdown).toBe(outline);
-    expect(composeConceptMapMarkdown(parts)).toContain(outline);
+    const summary = 'Primo  paragrafo.\n\nSecondo   paragrafo.';
+    const parts = validateConceptMapProposal(proposal({ summaryMarkdown: summary }));
+    expect(parts.summaryMarkdown).toBe(summary);
+    expect(composeConceptMapMarkdown(parts)).toContain(summary);
   });
 });
 
-describe('contratto dei tre campi — markup vietato', () => {
-  it.each(['outlineMarkdown', 'summaryMarkdown', 'diagram'])('rifiuta le fence in %s', (field) => {
+describe('contratto dei due campi — markup vietato', () => {
+  it.each(['summaryMarkdown', 'diagram'])('rifiuta le fence in %s', (field) => {
     // Una fence dentro il diagramma chiuderebbe a metà il blocco ```text
     // composto dal server: l'output *sembrerebbe* valido e non lo sarebbe.
     expect(() => validateConceptMapProposal(proposal({ [field]: '- testo\n```\naltro' }))).toThrow(
@@ -383,10 +455,7 @@ describe('contratto dei tre campi — markup vietato', () => {
     );
   });
 
-  it('rifiuta gli heading ATX in tutti e tre i campi', () => {
-    expect(() =>
-      validateConceptMapProposal(proposal({ outlineMarkdown: '## Sezione\n- voce' })),
-    ).toThrow(/intestazioni non sono ammesse/);
+  it('rifiuta gli heading ATX in entrambi i campi', () => {
     expect(() => validateConceptMapProposal(proposal({ summaryMarkdown: '# Titolo' }))).toThrow(
       /intestazioni non sono ammesse/,
     );
@@ -406,13 +475,13 @@ describe('contratto dei tre campi — markup vietato', () => {
 
   it('rifiuta qualunque tag HTML, non solo script e iframe', () => {
     for (const html of [
-      '- <b>grassetto</b>',
-      '- <div>contenuto</div>',
-      '- <img src="x.png">',
-      '- <span class="x">testo</span>',
-      '- <script>alert(1)</script>',
+      'Testo <b>grassetto</b>.',
+      'Testo <div>contenuto</div>.',
+      'Testo <img src="x.png">.',
+      'Testo <span class="x">testo</span>.',
+      'Testo <script>alert(1)</script>.',
     ]) {
-      expect(() => validateConceptMapProposal(proposal({ outlineMarkdown: html }))).toThrow(
+      expect(() => validateConceptMapProposal(proposal({ summaryMarkdown: html }))).toThrow(
         /HTML non è ammesso/,
       );
     }
@@ -448,51 +517,63 @@ describe('contratto dei tre campi — markup vietato', () => {
   });
 });
 
-describe('contratto dei tre campi — forma di ciascuna sezione', () => {
+/**
+ * CONCEPT-MAP-05 — i contratti dell'ossatura non sono spariti con il campo: una
+ * mappa v1 già salvata deve continuare a rispettarli per essere accettata in
+ * replay. Sono quindi verificati attraverso la sola porta rimasta, il parser del
+ * documento persistito, con gli stessi casi di prima.
+ */
+describe('forma dell’ossatura nelle mappe v1 già salvate', () => {
   it('rifiuta un’ossatura che sia prosa libera', () => {
     expect(() =>
-      validateConceptMapProposal(proposal({ outlineMarkdown: 'La densità lega massa e volume.' })),
+      parseCanonicalConceptMapMarkdown(
+        legacyMarkdown({ outline: 'La densità lega massa e volume.' }),
+      ),
     ).toThrow(/voce di elenco/);
   });
 
-  it('accetta una continuazione CommonMark lazy della voce precedente', () => {
-    const outline = '- densità ──dipende da──▶ massa e volume\nche descrivono la materia';
-    expect(validateConceptMapProposal(proposal({ outlineMarkdown: outline })).outlineMarkdown).toBe(
-      outline,
-    );
+  it('accetta una continuazione CommonMark lazy e la restituisce byte per byte', () => {
+    const doc = legacyMarkdown({
+      outline: '- densità ──dipende da──▶ massa e volume\nche descrivono la materia',
+    });
+    expect(parseCanonicalConceptMapMarkdown(doc)).toBe(doc);
   });
 
   it('accetta una continuazione indentata dopo una riga vuota', () => {
-    const outline = '- densità ──dipende da──▶ massa e volume\n\n  che descrivono la materia';
-    expect(validateConceptMapProposal(proposal({ outlineMarkdown: outline })).outlineMarkdown).toBe(
-      outline,
-    );
+    const doc = legacyMarkdown({
+      outline: '- densità ──dipende da──▶ massa e volume\n\n  che descrivono la materia',
+    });
+    expect(parseCanonicalConceptMapMarkdown(doc)).toBe(doc);
   });
 
   it('rifiuta un paragrafo non indentato dopo una riga vuota', () => {
     expect(() =>
-      validateConceptMapProposal(
-        proposal({ outlineMarkdown: '- densità\n\nprosa davvero fuori elenco' }),
+      parseCanonicalConceptMapMarkdown(
+        legacyMarkdown({ outline: '- densità\n\nprosa davvero fuori elenco' }),
       ),
     ).toThrow(/appartenere a una voce di elenco/);
   });
 
   it('accetta righe vuote fra due vere voci di elenco', () => {
-    const outline = '- densità\n\n- volume';
-    expect(validateConceptMapProposal(proposal({ outlineMarkdown: outline })).outlineMarkdown).toBe(
-      outline,
-    );
+    const doc = legacyMarkdown({ outline: '- densità\n\n- volume' });
+    expect(parseCanonicalConceptMapMarkdown(doc)).toBe(doc);
+  });
+
+  it('accetta i tre marker di elenco ammessi', () => {
+    for (const marker of ['-', '*', '+']) {
+      const doc = legacyMarkdown({ outline: `${marker} radice\n    ${marker} figlio` });
+      expect(parseCanonicalConceptMapMarkdown(doc)).toBe(doc);
+    }
   });
 
   it('rifiuta un marker di elenco senza contenuto', () => {
-    expect(() => validateConceptMapProposal(proposal({ outlineMarkdown: '-' }))).toThrow(
-      /voce di elenco/,
-    );
-    expect(() => validateConceptMapProposal(proposal({ outlineMarkdown: '-   ' }))).toThrow(
-      /incompleta|voce di elenco/,
+    expect(() => parseCanonicalConceptMapMarkdown(legacyMarkdown({ outline: '-' }))).toThrow(
+      /voce di elenco|struttura canonica/,
     );
   });
+});
 
+describe('contratto dei due campi — forma di ciascuna sezione', () => {
   it('rifiuta una sintesi scritta come elenco puntato', () => {
     expect(() =>
       validateConceptMapProposal(proposal({ summaryMarkdown: '- primo punto\n- secondo punto' })),
@@ -567,18 +648,13 @@ describe('contratto dei tre campi — forma di ciascuna sezione', () => {
 // ─── Composizione ─────────────────────────────────────────────────────────────
 
 describe('composizione del Markdown canonico', () => {
-  it('produce esattamente le quattro parti, nell’ordine fisso', () => {
+  it('produce esattamente le tre parti v2, nell’ordine fisso', () => {
     const markdown = composeConceptMapMarkdown({
-      outlineMarkdown: '- primo',
       summaryMarkdown: 'Sintesi.',
       diagram: 'RADICE\n└─ foglia',
     });
     expect(markdown).toBe(
       [
-        '## Ossatura della lezione',
-        '',
-        '- primo',
-        '',
         '## Sintesi',
         '',
         'Sintesi.',
@@ -608,7 +684,6 @@ describe('composizione del Markdown canonico', () => {
     const reordered = {
       diagram: base.diagram,
       summaryMarkdown: base.summaryMarkdown,
-      outlineMarkdown: base.outlineMarkdown,
     };
     expect(composeConceptMapMarkdown(validateConceptMapProposal(reordered))).toBe(
       canonicalMarkdown(),
@@ -711,15 +786,10 @@ describe('validazione del Markdown persistito', () => {
     expect(() => parseCanonicalConceptMapMarkdown(wide)).toThrow(/supera 80 caratteri/);
   });
 
-  it('rifiuta un heading extra dentro l’ossatura persistita', () => {
-    const withHeading = composeConceptMapMarkdown({
-      outlineMarkdown: '- voce\n### intruso',
-      summaryMarkdown: 'Sintesi.',
-      diagram: 'RADICE',
-    });
-    expect(() => parseCanonicalConceptMapMarkdown(withHeading)).toThrow(
-      /intestazioni non sono ammesse|struttura canonica/,
-    );
+  it('rifiuta un heading extra dentro l’ossatura di una mappa v1', () => {
+    expect(() =>
+      parseCanonicalConceptMapMarkdown(legacyMarkdown({ outline: '- voce\n### intruso' })),
+    ).toThrow(/intestazioni non sono ammesse|struttura canonica/);
   });
 
   it('rifiuta una sintesi numerata dentro il documento persistito', () => {
@@ -889,5 +959,79 @@ describe('provider mock', () => {
     // Il mock non genera costo: mai un costo inventato.
     expect(outcome.usage).toEqual({ inputTokens: 0, outputTokens: 0 });
     expect(outcome.metered).toBe(false);
+  });
+});
+
+// ─── CONCEPT-MAP-05: quality-only e convivenza v1/v2 ─────────────────────────
+
+describe('convivenza v1/v2 nel documento persistito', () => {
+  it('accetta una mappa v2 e la restituisce byte per byte', () => {
+    const doc = canonicalMarkdown();
+    expect(parseCanonicalConceptMapMarkdown(doc)).toBe(doc);
+  });
+
+  it('accetta una mappa v1 già salvata e la restituisce byte per byte', () => {
+    const doc = legacyMarkdown();
+    expect(parseCanonicalConceptMapMarkdown(doc)).toBe(doc);
+  });
+
+  it('non converte una v1 in v2 durante il replay', () => {
+    // Convertire cambierebbe ciò che il docente ha salvato e ciò che lo
+    // studente sta già leggendo, senza che nessuno l'abbia chiesto.
+    const doc = legacyMarkdown();
+    const replayed = parseCanonicalConceptMapMarkdown(doc);
+    expect(replayed).toContain('## Ossatura della lezione');
+    expect(replayed).toBe(doc);
+  });
+
+  it('una v2 non contiene alcuna ossatura', () => {
+    expect(canonicalMarkdown()).not.toContain('## Ossatura della lezione');
+    expect(canonicalMarkdown().startsWith('## Sintesi\n')).toBe(true);
+  });
+
+  it('rifiuta una v1 malformata come rifiuta una v2 malformata', () => {
+    // Ossatura in prosa, sintesi numerata, diagramma troppo largo, avvertenza
+    // alterata: la tolleranza verso il legacy è sulla *forma*, non sui vincoli.
+    expect(() =>
+      parseCanonicalConceptMapMarkdown(legacyMarkdown({ outline: 'prosa fuori elenco' })),
+    ).toThrow(AiContentError);
+    expect(() =>
+      parseCanonicalConceptMapMarkdown(legacyMarkdown({ summary: '1. primo\n2. secondo' })),
+    ).toThrow(AiContentError);
+    expect(() =>
+      parseCanonicalConceptMapMarkdown(
+        legacyMarkdown({ diagram: 'x'.repeat(CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS + 1) }),
+      ),
+    ).toThrow(AiContentError);
+    expect(() =>
+      parseCanonicalConceptMapMarkdown(legacyMarkdown().replace(CONCEPT_MAP_DISCLAIMER, 'Altro.')),
+    ).toThrow(AiContentError);
+  });
+
+  it('rifiuta un ibrido: ossatura senza sintesi, o sezioni fuori ordine', () => {
+    const swapped = [
+      '## Ossatura della lezione',
+      '',
+      '- voce',
+      '',
+      '## Diagramma',
+      '',
+      '```text',
+      'RADICE',
+      '```',
+      '',
+      '> [!IMPORTANT]',
+      `> ${CONCEPT_MAP_DISCLAIMER}`,
+      '',
+    ].join('\n');
+    expect(() => parseCanonicalConceptMapMarkdown(swapped)).toThrow(AiContentError);
+  });
+
+  it('l’output persistito accetta entrambe le versioni sotto la stessa chiave', () => {
+    expect(isValidStoredConceptMapOutput({ conceptMapMarkdown: canonicalMarkdown() })).toBe(true);
+    expect(isValidStoredConceptMapOutput({ conceptMapMarkdown: legacyMarkdown() })).toBe(true);
+    expect(
+      isValidStoredConceptMapOutput({ conceptMapMarkdown: '## Sintesi\n\nsolo questo\n' }),
+    ).toBe(false);
   });
 });

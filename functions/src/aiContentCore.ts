@@ -600,6 +600,23 @@ export function validateAiContentRequest(input: unknown): AiContentRequest {
   if (input.kind === 'concept_map') {
     assertNoExtraKeys(input, ['kind', 'requestId', 'modelProfile', 'lessonBody']);
     const modelProfile = parseProfile(input.modelProfile);
+    /*
+     * CONCEPT-MAP-05 — la mappa è **quality-only**. Sulle generazioni reali il
+     * profilo economy produceva mappe qualitativamente insufficienti, e una
+     * mappa sbagliata non è un risparmio: è un ripasso che disinforma. Il
+     * rifiuto è fail-closed e avviene qui, nella validazione del payload, cioè
+     * **prima** di provider, stima, prenotazione, run e qualunque scrittura —
+     * non è un default sostituibile né una degradazione silenziosa.
+     *
+     * Pool e lezione conservano il proprio contratto: il vincolo è di questo
+     * kind, non del profilo in sé.
+     */
+    if (modelProfile !== 'quality') {
+      throw new AiContentError(
+        'invalid_input',
+        'La mappa concettuale è disponibile solo con il profilo quality.',
+      );
+    }
     if (typeof input.lessonBody !== 'string' || input.lessonBody.trim().length === 0) {
       throw new AiContentError('invalid_input', 'Il corpo della lezione è mancante o vuoto.');
     }

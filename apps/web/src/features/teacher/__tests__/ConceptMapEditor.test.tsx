@@ -139,7 +139,16 @@ describe('generazione', () => {
     expect(previewArg.kind).toBe('concept_map');
   });
 
-  it('il profilo predefinito è quality e la scelta viene trasmessa', async () => {
+  it('genera in quality dalla modalità lettura', async () => {
+    const { api } = setup();
+    fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
+    await waitFor(() => expect(api.preview).toHaveBeenCalled());
+    expect((api.preview as ReturnType<typeof vi.fn>).mock.calls[0]![0].modelProfile).toBe(
+      'quality',
+    );
+  });
+
+  it('genera in quality dalla modalità modifica', async () => {
     const { api } = setup();
     openEditor();
     fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
@@ -149,15 +158,21 @@ describe('generazione', () => {
     );
   });
 
-  it('scegliere Economy cambia il profilo trasmesso', async () => {
-    const { api } = setup();
-    openEditor();
-    fireEvent.click(screen.getByRole('radio', { name: /Economy/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
+  it('rigenera in quality', async () => {
+    const { api } = setup({ initialConceptMap: MAP });
+    fireEvent.click(screen.getByRole('button', { name: /Rigenera con IA/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Rigenera' }));
     await waitFor(() => expect(api.preview).toHaveBeenCalled());
     expect((api.preview as ReturnType<typeof vi.fn>).mock.calls[0]![0].modelProfile).toBe(
-      'economy',
+      'quality',
     );
+  });
+
+  it('la stima dichiara il profilo Quality', async () => {
+    setup();
+    fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
+    await screen.findByRole('button', { name: 'Genera mappa' });
+    expect(document.body.textContent).toContain('Profilo: Quality');
   });
 
   it('non salva automaticamente la mappa generata', async () => {
@@ -177,6 +192,57 @@ describe('generazione', () => {
 
     await screen.findByRole('alert');
     expect(document.body.textContent).toContain('densità');
+  });
+});
+
+describe('quality-only: nessuna scelta, in nessuna modalità', () => {
+  /*
+   * Il difetto corretto da CONCEPT-MAP-05: il selettore viveva solo nella
+   * modalità modifica, ma il pulsante di generazione esisteva in entrambe e
+   * usava comunque lo stato interno. Dalla lettura il docente non vedeva alcuna
+   * scelta e un profilo veniva usato lo stesso; peggio, una scelta fatta in
+   * modifica sopravviveva ad «Annulla» e restava invisibile.
+   */
+  it('non mostra alcun radiogroup del profilo, in lettura', () => {
+    setup({ initialConceptMap: MAP });
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+    expect(screen.queryByRole('radio')).toBeNull();
+  });
+
+  it('non mostra alcun radiogroup del profilo, in modifica', () => {
+    setup({ initialConceptMap: MAP });
+    openEditor();
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+    expect(screen.queryByRole('radio')).toBeNull();
+  });
+
+  it('la parola Economy non compare da nessuna parte', async () => {
+    setup({ initialConceptMap: MAP });
+    expect(document.body.textContent).not.toMatch(/economy/i);
+    openEditor();
+    expect(document.body.textContent).not.toMatch(/economy/i);
+    fireEvent.click(screen.getByRole('button', { name: /Rigenera con IA/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Rigenera' }));
+    await screen.findByRole('button', { name: 'Genera mappa' });
+    expect(document.body.textContent).not.toMatch(/economy/i);
+  });
+
+  it('lettura e modifica producono lo stesso identico payload', async () => {
+    const fromView = setup();
+    fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
+    await waitFor(() => expect(fromView.api.preview).toHaveBeenCalled());
+    const viewArg = (fromView.api.preview as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    cleanup();
+
+    const fromEdit = setup();
+    openEditor();
+    fireEvent.click(screen.getByRole('button', { name: /Genera con IA/ }));
+    await waitFor(() => expect(fromEdit.api.preview).toHaveBeenCalled());
+    const editArg = (fromEdit.api.preview as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+
+    // Le due strade differiscono solo per la requestId, che è per definizione
+    // diversa fra due generazioni distinte.
+    expect({ ...viewArg, requestId: null }).toEqual({ ...editArg, requestId: null });
   });
 });
 

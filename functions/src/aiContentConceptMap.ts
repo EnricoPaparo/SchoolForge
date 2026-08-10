@@ -43,7 +43,12 @@ export const CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS = 80;
 export const CONCEPT_MAP_DISCLAIMER =
   'Questa mappa è un supporto al ripasso e non sostituisce lo studio della lezione.';
 
-/** Intestazioni canoniche delle tre sezioni generate. */
+/**
+ * Intestazioni canoniche. `outline` **non è più prodotta** (CONCEPT-MAP-05): resta
+ * dichiarata perché il parser deve continuare a riconoscere le mappe v1 già
+ * salvate, che la contengono. Rimuoverla renderebbe illeggibile ciò che è già
+ * su disco.
+ */
 export const CONCEPT_MAP_HEADINGS = {
   outline: '## Ossatura della lezione',
   summary: '## Sintesi',
@@ -56,11 +61,22 @@ export const CONCEPT_MAP_CALLOUT_MARKER = '> [!IMPORTANT]';
 /** Apertura della fence del diagramma. */
 export const CONCEPT_MAP_DIAGRAM_FENCE = '```text';
 
-/** I tre campi dello Structured Output, validati. */
+/**
+ * I due campi dello Structured Output **v2**, validati.
+ *
+ * CONCEPT-MAP-05 ha rimosso `outlineMarkdown`: nelle generazioni reali l'ossatura
+ * si era rivelata quasi sempre un indice della lezione, e duplicava il ruolo
+ * strutturale del diagramma senza aggiungere ragionamento. Restano le due parti
+ * che fanno lavori diversi — la sintesi spiega, il diagramma mostra.
+ */
 export interface ValidatedConceptMapProposal {
-  outlineMarkdown: string;
   summaryMarkdown: string;
   diagram: string;
+}
+
+/** Sezioni di una mappa **v1** già salvata: solo lettura, mai più prodotte. */
+export interface LegacyConceptMapSections extends ValidatedConceptMapProposal {
+  outlineMarkdown: string;
 }
 
 /** Esito completo: i campi validati e il Markdown canonico già composto. */
@@ -68,7 +84,7 @@ export interface ComposedConceptMap extends ValidatedConceptMapProposal {
   conceptMapMarkdown: string;
 }
 
-const ALLOWED_PROPOSAL_KEYS = ['outlineMarkdown', 'summaryMarkdown', 'diagram'] as const;
+const ALLOWED_PROPOSAL_KEYS = ['summaryMarkdown', 'diagram'] as const;
 
 // ─── Vincoli comuni ai tre campi ──────────────────────────────────────────────
 
@@ -193,11 +209,16 @@ function assertOutlineShape(value: string): void {
 }
 
 /**
- * La sintesi deve essere prosa. Un elenco qui duplicherebbe l'ossatura che sta
- * due righe sopra, e la mappa perderebbe l'unica parte che lega i concetti in un
- * discorso: il rifiuto è su qualunque riga di elenco — **puntata o numerata** —
- * e non solo su un elenco integrale, perché una sintesi «mezza a punti» è già
- * quel fallimento a metà.
+ * La sintesi deve essere prosa. Con l'ossatura rimossa (CONCEPT-MAP-05) la
+ * sintesi è diventata la sola parte discorsiva dell'artefatto: un elenco qui la
+ * farebbe ricadere in ciò che l'ossatura già faceva male, cioè un indice. Il
+ * rifiuto è su qualunque riga di elenco — **puntata o numerata** — e non solo su
+ * un elenco integrale, perché una sintesi «mezza a punti» è già quel fallimento
+ * a metà.
+ *
+ * Non esiste alcun limite di lunghezza pedagogico: la sintesi deve essere
+ * proporzionata alla complessità del contenuto, e l'unico tetto è quello tecnico
+ * sul documento composto.
  */
 function assertSummaryShape(value: string): void {
   const nonEmpty = value.split('\n').filter((line) => line.trim().length > 0);
@@ -232,31 +253,40 @@ export function validateConceptMapProposal(output: unknown): ValidatedConceptMap
     }
   }
 
-  const outlineMarkdown = requiredField(root, 'outlineMarkdown');
   const summaryMarkdown = requiredField(root, 'summaryMarkdown');
   const diagram = requiredField(root, 'diagram');
 
-  assertCommonFieldRules(outlineMarkdown, 'Ossatura');
   assertCommonFieldRules(summaryMarkdown, 'Sintesi');
   assertCommonFieldRules(diagram, 'Diagramma');
 
-  assertOutlineShape(outlineMarkdown);
   assertSummaryShape(summaryMarkdown);
   assertDiagramShape(diagram);
 
-  return { outlineMarkdown, summaryMarkdown, diagram };
+  return { summaryMarkdown, diagram };
 }
 
 /**
- * Compone il Markdown canonico. Ordine e intestazioni sono fissi; l'avvertenza
- * è una costante. È l'unico punto in cui la mappa diventa un documento.
+ * Valida le sezioni estratte da una mappa **v1** già salvata. Non è la
+ * validazione di una proposta del provider — quella forma non è più producibile
+ * — ma il contratto che un documento legacy deve comunque rispettare per essere
+ * accettato in replay.
+ */
+function validateLegacySections(parts: LegacyConceptMapSections): void {
+  assertCommonFieldRules(parts.outlineMarkdown, 'Ossatura');
+  assertOutlineShape(parts.outlineMarkdown);
+  validateConceptMapProposal({
+    summaryMarkdown: parts.summaryMarkdown,
+    diagram: parts.diagram,
+  });
+}
+
+/**
+ * Compone il Markdown canonico **v2**. Ordine e intestazioni sono fissi;
+ * l'avvertenza è una costante. È l'unico punto in cui la mappa diventa un
+ * documento, ed è l'unica forma che le nuove generazioni possono assumere.
  */
 export function composeConceptMapMarkdown(parts: ValidatedConceptMapProposal): string {
   return [
-    CONCEPT_MAP_HEADINGS.outline,
-    '',
-    parts.outlineMarkdown,
-    '',
     CONCEPT_MAP_HEADINGS.summary,
     '',
     parts.summaryMarkdown,
@@ -287,32 +317,78 @@ export function validateAndComposeConceptMap(output: unknown): ComposedConceptMa
   return { ...parts, conceptMapMarkdown };
 }
 
+/**
+ * Compone una mappa **v1**. Non è più raggiungibile da una generazione: esiste
+ * soltanto come **oracolo di uguaglianza** del parser legacy, che accetta un
+ * documento salvato solo se è byte per byte ciò che la composizione v1 avrebbe
+ * prodotto dalle sue stesse sezioni.
+ */
+function composeLegacyConceptMapMarkdown(parts: LegacyConceptMapSections): string {
+  return [
+    CONCEPT_MAP_HEADINGS.outline,
+    '',
+    parts.outlineMarkdown,
+    '',
+    CONCEPT_MAP_HEADINGS.summary,
+    '',
+    parts.summaryMarkdown,
+    '',
+    CONCEPT_MAP_HEADINGS.diagram,
+    '',
+    CONCEPT_MAP_DIAGRAM_FENCE,
+    parts.diagram,
+    '```',
+    '',
+    CONCEPT_MAP_CALLOUT_MARKER,
+    `> ${CONCEPT_MAP_DISCLAIMER}`,
+    '',
+  ].join('\n');
+}
+
 // ─── Validazione del documento persistito (replay) ────────────────────────────
 
 function escapeForRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Coda comune alle due forme: diagramma in fence, avvertenza, newline finale. */
+const CANONICAL_TAIL = [
+  escapeForRegExp(CONCEPT_MAP_HEADINGS.diagram),
+  '\\n\\n',
+  escapeForRegExp(CONCEPT_MAP_DIAGRAM_FENCE),
+  '\\n([\\s\\S]*?)\\n```\\n\\n',
+  escapeForRegExp(CONCEPT_MAP_CALLOUT_MARKER),
+  '\\n> ',
+  escapeForRegExp(CONCEPT_MAP_DISCLAIMER),
+  '\\n$',
+].join('');
+
 /**
- * Scheletro canonico, ancorato all'inizio e alla fine del documento. I gruppi
- * non-greedy catturano le tre sezioni; la chiusura `\n$` garantisce che dopo
- * l'avvertenza non ci sia altro se non la newline finale canonica.
+ * Scheletro canonico **v2**: Sintesi + Diagramma + avvertenza. È l'unica forma
+ * che una generazione può produrre da CONCEPT-MAP-05 in poi.
  */
-const CANONICAL_MARKDOWN_RE = new RegExp(
+const CANONICAL_V2_RE = new RegExp(
+  [
+    '^',
+    escapeForRegExp(CONCEPT_MAP_HEADINGS.summary),
+    '\\n\\n([\\s\\S]*?)\\n\\n',
+    CANONICAL_TAIL,
+  ].join(''),
+);
+
+/**
+ * Scheletro canonico **v1**: Ossatura + Sintesi + Diagramma + avvertenza.
+ * Riconosciuto in sola lettura, per le mappe già salvate. Nessuna conversione:
+ * un documento v1 resta v1.
+ */
+const CANONICAL_V1_RE = new RegExp(
   [
     '^',
     escapeForRegExp(CONCEPT_MAP_HEADINGS.outline),
     '\\n\\n([\\s\\S]*?)\\n\\n',
     escapeForRegExp(CONCEPT_MAP_HEADINGS.summary),
     '\\n\\n([\\s\\S]*?)\\n\\n',
-    escapeForRegExp(CONCEPT_MAP_HEADINGS.diagram),
-    '\\n\\n',
-    escapeForRegExp(CONCEPT_MAP_DIAGRAM_FENCE),
-    '\\n([\\s\\S]*?)\\n```\\n\\n',
-    escapeForRegExp(CONCEPT_MAP_CALLOUT_MARKER),
-    '\\n> ',
-    escapeForRegExp(CONCEPT_MAP_DISCLAIMER),
-    '\\n$',
+    CANONICAL_TAIL,
   ].join(''),
 );
 
@@ -327,7 +403,10 @@ function countOccurrences(haystack: string, needle: string): number {
 }
 
 /**
- * Valida il Markdown **persistito** e lo restituisce **identico**.
+ * Valida il Markdown **persistito** e lo restituisce **identico**, in entrambe
+ * le forme canoniche: **v2** (Sintesi + Diagramma) e **v1** legacy (Ossatura +
+ * Sintesi + Diagramma). Riconoscere solo la v2 renderebbe irreplayabili — e in
+ * prospettiva illeggibili — le mappe già salvate, che non vengono migrate.
  *
  * Il replay non ricompone nulla: la ricomposizione è usata soltanto come oracolo
  * di uguaglianza — se il documento non è byte per byte ciò che il compositore
@@ -344,15 +423,21 @@ export function parseCanonicalConceptMapMarkdown(value: unknown): string {
     throw new AiContentError('output_too_large', 'La mappa persistita supera il limite.');
   }
 
+  // La versione si riconosce dalla presenza dell'intestazione dell'ossatura, che
+  // solo le mappe v1 hanno. Non è un'euristica sul contenuto: è un'ancora
+  // canonica che il compositore v2 non produce mai.
+  const legacy = countOccurrences(value, CONCEPT_MAP_HEADINGS.outline) > 0;
+
   // Unicità delle ancore: lo scheletro impone l'ordine, il conteggio impone che
   // non ce ne siano altre altrove (una seconda fence, un secondo disclaimer).
-  for (const [needle, label] of [
-    [CONCEPT_MAP_HEADINGS.outline, "l'intestazione dell'ossatura"],
+  const anchors: readonly (readonly [string, string])[] = [
+    ...(legacy ? ([[CONCEPT_MAP_HEADINGS.outline, "l'intestazione dell'ossatura"]] as const) : []),
     [CONCEPT_MAP_HEADINGS.summary, "l'intestazione della sintesi"],
     [CONCEPT_MAP_HEADINGS.diagram, "l'intestazione del diagramma"],
     [CONCEPT_MAP_CALLOUT_MARKER, "il marcatore dell'avvertenza"],
     [CONCEPT_MAP_DISCLAIMER, "l'avvertenza"],
-  ] as const) {
+  ];
+  for (const [needle, label] of anchors) {
     if (countOccurrences(value, needle) !== 1) {
       invalidOutput(`La mappa persistita deve contenere ${label} esattamente una volta.`);
     }
@@ -362,19 +447,36 @@ export function parseCanonicalConceptMapMarkdown(value: unknown): string {
     invalidOutput('La mappa persistita deve contenere un solo blocco di diagramma.');
   }
 
-  const match = CANONICAL_MARKDOWN_RE.exec(value);
+  if (legacy) {
+    const match = CANONICAL_V1_RE.exec(value);
+    if (!match) {
+      invalidOutput('La mappa persistita non rispetta la struttura canonica.');
+    }
+    const parts: LegacyConceptMapSections = {
+      outlineMarkdown: match[1] ?? '',
+      summaryMarkdown: match[2] ?? '',
+      diagram: match[3] ?? '',
+    };
+    validateLegacySections(parts);
+    if (composeLegacyConceptMapMarkdown(parts) !== value) {
+      invalidOutput('La mappa persistita non rispetta la struttura canonica.');
+    }
+    // Identico all'input: una v1 resta v1, non viene convertita in v2.
+    return value;
+  }
+
+  const match = CANONICAL_V2_RE.exec(value);
   if (!match) {
     invalidOutput('La mappa persistita non rispetta la struttura canonica.');
   }
   const parts: ValidatedConceptMapProposal = {
-    outlineMarkdown: match[1] ?? '',
-    summaryMarkdown: match[2] ?? '',
-    diagram: match[3] ?? '',
+    summaryMarkdown: match[1] ?? '',
+    diagram: match[2] ?? '',
   };
 
   // Le sezioni estratte devono soddisfare gli **stessi** contratti dei campi
-  // generati: nessun heading interno, nessun HTML, ossatura a elenco, sintesi in
-  // prosa, diagramma entro la larghezza massima.
+  // generati: nessun heading interno, nessun HTML, sintesi in prosa, diagramma
+  // entro la larghezza massima.
   validateConceptMapProposal(parts);
 
   if (composeConceptMapMarkdown(parts) !== value) {
