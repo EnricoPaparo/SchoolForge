@@ -38,6 +38,10 @@ import {
   type ProgramItem,
   type UdaItem,
 } from '../repository/programs/programsService.js';
+import { saveLessonConceptMap } from '../repository/programs/conceptMapService.js';
+import { readPrivateConceptMap } from '../repository/programs/conceptMapContract.js';
+import { createAiConceptMapCallables } from '../repository/pools/aiConceptMapClient.js';
+import { ConceptMapDialog } from './ConceptMapDialog.js';
 import {
   createLesson,
   createUda,
@@ -357,6 +361,13 @@ export function CourseWorkspace({
   const [contentDirty, setContentDirty] = useState(false);
   const [infoDirty, setInfoDirty] = useState(false);
   const [contentStatus, setContentStatus] = useState<EditStatus>(NO_STATUS);
+  /**
+   * CONCEPT-MAP-03 — la finestra della mappa concettuale. Aprirla non costa
+   * nessuna lettura: corpo e mappa sono già nell'albero e nel contenuto
+   * caricati, e le callable partono solo su azione esplicita del docente.
+   */
+  const [conceptMapOpen, setConceptMapOpen] = useState(false);
+  const conceptMapCallables = useMemo(() => createAiConceptMapCallables(functions), []);
   const [infoStatus, setInfoStatus] = useState<EditStatus>(NO_STATUS);
   const [completedBusy, setCompletedBusy] = useState(false);
   const [completedError, setCompletedError] = useState<string | null>(null);
@@ -1328,6 +1339,52 @@ export function CourseWorkspace({
     })();
   }
 
+  /**
+   * CONCEPT-MAP-03 — mappa già salvata sulla lezione selezionata, letta
+   * fail-closed dall'albero **già in memoria**: nessuna lettura aggiuntiva.
+   */
+  const selectedConceptMap = selectedLesson ? readPrivateConceptMap(selectedLesson) : null;
+  const hasConceptMap = selectedConceptMap !== null;
+  /**
+   * Motivo per cui l'azione è disabilitata, o `null` se è disponibile. Una
+   * mappa generata da un corpo non salvato descriverebbe un testo che non
+   * esiste ancora per nessuno: né per lo studente, né al prossimo caricamento.
+   */
+  const conceptMapBlockedReason: string | null =
+    lessonContent === null
+      ? 'Contenuto della lezione non disponibile.'
+      : lessonContent.trim().length === 0
+        ? 'La lezione non ha ancora un contenuto: scrivilo e salvalo prima di generare la mappa.'
+        : contentDirty
+          ? 'Salva prima le modifiche al contenuto: la mappa si genera dal testo salvato.'
+          : null;
+
+  async function handleSaveConceptMap(lesson: LessonItem, markdown: string): Promise<void> {
+    if (!card.activeImportId) throw new Error('Importazione non disponibile.');
+    await saveLessonConceptMap({
+      programId: card.programId,
+      importId: card.activeImportId,
+      lessonId: lesson.id,
+      publicLessonId: resolvePublicLessonId(lesson, lesson.id),
+      ownerUid,
+      conceptMapMarkdown: markdown,
+      db,
+    });
+    if (!mountedRef.current) return;
+    // Aggiornamento locale dell'albero: la lezione selezionata riflette subito
+    // la nuova mappa senza rileggere nulla.
+    setTree((prev) =>
+      prev
+        ? {
+            udas: prev.udas,
+            lessons: prev.lessons.map((l) =>
+              l.id === lesson.id ? { ...l, conceptMapMarkdown: markdown } : l,
+            ),
+          }
+        : prev,
+    );
+  }
+
   function handleToggleCompleted(lesson: LessonItem) {
     if (!card.activeImportId) return;
     const importId = card.activeImportId;
@@ -2059,6 +2116,34 @@ export function CourseWorkspace({
                     <IconBookOpen size={15} />
                     Modifica informazioni
                   </button>
+                  {/*
+                    CONCEPT-MAP-03 — la mappa si genera dal corpo **salvato**:
+                    la voce resta visibile ma disabilitata quando non c'è un
+                    corpo o quando ce n'è uno modificato e non ancora salvato.
+                    Nasconderla lascerebbe il docente senza sapere perché non
+                    c'è; il motivo è nel `title` e in `aria-describedby`.
+                  */}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setConceptMapOpen(true);
+                    }}
+                    disabled={conceptMapBlockedReason !== null}
+                    title={conceptMapBlockedReason ?? undefined}
+                    aria-describedby={
+                      conceptMapBlockedReason ? 'concept-map-blocked-reason' : undefined
+                    }
+                  >
+                    <IconLayers size={15} />
+                    {hasConceptMap ? 'Modifica mappa concettuale' : 'Genera mappa concettuale'}
+                  </button>
+                  {conceptMapBlockedReason && (
+                    <span id="concept-map-blocked-reason" className={styles.menuHint}>
+                      {conceptMapBlockedReason}
+                    </span>
+                  )}
                   <button
                     type="button"
                     role="menuitem"
@@ -2114,6 +2199,17 @@ export function CourseWorkspace({
               )}
             </div>
           )}
+          {conceptMapOpen && selectedLesson && lessonContent !== null && (
+            <ConceptMapDialog
+              lessonTitle={selectedLesson.titolo ?? selectedLesson.filename}
+              lessonBody={lessonContent}
+              initialConceptMap={selectedConceptMap}
+              callables={conceptMapCallables}
+              onSave={(markdown) => handleSaveConceptMap(selectedLesson, markdown)}
+              onClose={() => setConceptMapOpen(false)}
+            />
+          )}
+
           {selection.kind === 'lesson' && selectedLesson && (
             <LessonDetail
               lesson={selectedLesson}

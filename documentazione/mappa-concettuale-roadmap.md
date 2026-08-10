@@ -1,10 +1,11 @@
 # SchoolForge — Roadmap: mappa concettuale della lezione
 
-**Stato:** **CONCEPT-MAP-01 e 02 implementati** (core e backend IA;
-persistenza, proiezione condizionale e Rules); `03` (interfaccia e smoke DEV)
-resta aperto, insieme al gate umano. Tutte le decisioni di contratto sono prese e motivate; nessuna
-resta aperta.
-**Data:** 9 agosto 2026.
+**Stato:** **CONCEPT-MAP-01, 02 e 03 implementati** (core e backend IA;
+persistenza, proiezione condizionale e Rules; interfaccia docente e studente).
+Restano aperti il **rollout DEV** e il **gate umano**: nessun deploy è stato
+fatto e nessuna generazione OpenAI reale è stata eseguita. Tutte le decisioni di
+contratto sono prese e motivate; nessuna resta aperta.
+**Data:** 10 agosto 2026.
 **Dipendenze:** AIGEN-01→03 e LESSON-DEPTH-01 in produzione; editor Markdown
 della lezione (`lessonEditors`) esistente; proiezione studente `publicLessons`
 e stato `LessonDoc.completed` esistenti.
@@ -363,12 +364,68 @@ dichiararne il limite.
 puntuali transazionali, 2 aggiornamenti, 1 audit. Un retry transazionale ripete
 le letture, che restano fatturate.
 
-### CONCEPT-MAP-03 — interfaccia e smoke DEV ⏳ aperto
+### CONCEPT-MAP-03 — interfaccia ✅ implementata; rollout DEV ⏳ aperto
 
-Azione docente, dialog di stima/generazione, editor/anteprima, conferma di
-rigenerazione, sezione studente, rimozione del PDF morto, rollout DEV e smoke
-umano su una lezione teorica e una tecnica. Gate umano prima di considerare la
-funzione conclusa.
+**Una finestra sola.** La mappa non ha una fase di configurazione — il payload è
+il corpo salvato della lezione e nient'altro — quindi separare «genera» da
+«modifica» avrebbe prodotto due dialog che si passano un testo, con due punti in
+cui perderlo. `ConceptMapDialog` tiene il testo in un solo stato e ogni
+transizione dichiara che cosa ne fa: schede editor/anteprima, stima prima della
+spesa, conferma prima di sostituire, salvataggio esplicito.
+
+**Il testo non si perde mai in silenzio.** Una proposta generata costa denaro
+reale e una modifica manuale costa lavoro del docente: backdrop ed Escape non le
+scartano quando c'è del lavoro non salvato, e ogni percorso che sostituirebbe il
+testo — rigenerazione, chiusura — passa da una conferma modale, mai da controlli
+che compaiono spostando il layout. `dirty` è calcolato rispetto alla **baseline
+salvata**, non rispetto alla proposta accettata: una generazione non ancora
+salvata resta riconoscibile come non salvata.
+
+**Nessun autosave.** «Salva mappa» è l'unica azione che scrive, ed è protetta da
+una guardia sincrona: un doppio click nello stesso tick invoca il service una
+volta sola, prima ancora che React abbia riprodotto lo stato `saving`.
+
+**L'azione è disabilitata, non nascosta, e dice perché.** La voce «Genera/Modifica
+mappa concettuale» nel menu «Azioni» esiste sempre; è disabilitata quando il
+corpo non è disponibile, è vuoto, oppure ha modifiche non salvate — con il motivo
+in chiaro accanto, legato via `aria-describedby`. Generare da un corpo non
+salvato produrrebbe una mappa di un testo che non esiste per nessuno: né per lo
+studente, né al prossimo caricamento. L'etichetta cambia in base alla presenza
+della mappa: una sola voce che cambia nome, non due voci alternative.
+
+**Zero letture nuove.** La mappa già salvata è letta dall'albero in memoria con
+`readPrivateConceptMap(selectedLesson)`: aprire la finestra non aggiunge alcun
+`getDoc`, né listener, polling, indici o dipendenze. Nessuna callable è invocata
+all'apertura: la spesa parte solo da un gesto esplicito.
+
+**Payload verso il server.** `aiConceptMapClient` costruisce esattamente quattro
+campi (`kind`, `requestId`, `modelProfile`, `lessonBody`) e riusa le callable
+esistenti `aiContentPreview`/`aiContentGenerate`: nessuna Function nuova. Il
+profilo `economy` è il contratto del kind, non un default, e non è esposto nella
+firma. Preview e generate ricevono lo **stesso** payload con lo stesso
+`requestId`, così la stima mostrata e la spesa effettuata riguardano la stessa
+richiesta.
+
+**Lato studente la sezione esiste solo se la mappa c'è davvero.** Nessun
+placeholder, nessun «non disponibile», nessun pulsante inerte: un segnaposto
+racconterebbe allo studente che esiste qualcosa che non può vedere. La
+visibilità è già decisa dai dati (CONCEPT-MAP-02); la vista rende soltanto ciò
+che è arrivato, con la stessa variante manuale del corpo lezione — una pagina
+sola, un linguaggio solo.
+
+**Codice morto rimosso.** `lessonPdf.ts` e il suo test sono stati eliminati:
+nessun modulo li importava. Gli altri PDF (programma svolto, verifiche,
+correzioni) restano intatti.
+
+**Smoke responsive eseguito** a 1440/1024/390/320 px su Chromium: nessuna
+larghezza produce scorrimento orizzontale di pagina, il footer del dialog resta
+raggiungibile ovunque, e il diagramma a caratteri scorre **dentro il proprio
+`<pre>`** (verificato: `scrollWidth > clientWidth` con `overflow-x: auto`), non
+trascinando la pagina. Le schede editor/anteprima hanno target ≥ 44 px; i
+pulsanti del footer restano quelli condivisi da tutti i dialog del portale
+(36 px), invariati per non divergere dal resto dell'interfaccia.
+
+**Ancora aperti:** rollout DEV e gate umano (vedi §10).
 
 ## 9. DoD
 
@@ -379,3 +436,30 @@ persistente; rigenerazione con conferma; mappa assente — non soltanto nascosta
 dalla UI — dalla proiezione studente finché la lezione non è marcata svolta e
 rimossa atomicamente se smarcata; pool e lezione IA byte-identici; `lessonPdf`
 e il suo test rimossi; nessuna dipendenza nuova nel `package.json`.
+
+## 10. Checklist di rollout DEV
+
+Da eseguire **manualmente** su `schoolforge-dev`, dopo il deploy, con
+`AI_CONTENT_MODE=openai`. Ogni riga è una verifica osservabile, non un'opinione.
+
+1. **Lezione teorica** — apri una lezione con corpo salvato, «Azioni» → «Genera
+   mappa concettuale». La stima compare **prima** di qualunque spesa.
+2. **Generazione economy** — conferma: la proposta arriva, il costo effettivo è
+   mostrato, e la mappa **non è salvata** (il pulsante «Salva mappa» è attivo).
+3. **Lezione tecnica** — ripeti su una lezione con formule/codice: il diagramma
+   resta entro 80 caratteri per riga e non sfonda il riquadro.
+4. **Modifica manuale** — cambia il Markdown in editor, controlla l'anteprima,
+   salva. Riapri: il testo salvato è quello.
+5. **Rigenerazione con annullo** — «Rigenera con IA» → «Continua la modifica»:
+   nessuna chiamata, testo intatto. Poi «Rigenera» → «Annulla» alla stima:
+   nessuna spesa, testo ancora intatto.
+6. **Lezione non svolta** — dal portale studente la sezione «Mappa concettuale»
+   **non compare**, e un `get()` diretto sul documento pubblico non contiene il
+   campo.
+7. **Lezione marcata svolta** — lo studente vede la mappa.
+8. **Ritorno a non svolta** — la mappa sparisce dal portale studente e il campo
+   è rimosso dal documento pubblico.
+9. **Mobile 390 e 320 px** — dialog usabile, footer raggiungibile, diagramma
+   scorrevole nel proprio riquadro, pagina senza scorrimento orizzontale.
+10. **Costo** — il totale speso nello smoke è coerente con le stime mostrate
+    (`actual ≤ settled ≤ reservation`).
