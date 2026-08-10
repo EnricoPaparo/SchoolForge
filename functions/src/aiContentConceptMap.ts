@@ -159,16 +159,36 @@ function assertCommonFieldRules(value: string, label: string): void {
   });
 }
 
-/** L'ossatura deve essere davvero un elenco, non prosa travestita. */
+/**
+ * L'ossatura deve iniziare con una vera voce di elenco. Le righe fisiche
+ * successive possono essere continuazioni Markdown della voce precedente:
+ * CommonMark ammette sia le continuazioni indentate sia quelle "lazy" senza
+ * marker. Dopo una riga vuota, invece, una continuazione deve essere
+ * indentata; altrimenti sarebbe un nuovo paragrafo di prosa fuori elenco.
+ */
 function assertOutlineShape(value: string): void {
-  const nonEmpty = value.split('\n').filter((line) => line.trim().length > 0);
-  if (nonEmpty.length === 0) {
-    invalidOutput('Ossatura: serve almeno una voce di elenco.');
-  }
-  for (const line of nonEmpty) {
-    if (!LIST_ITEM_RE.test(line)) {
-      invalidOutput('Ossatura: ogni riga deve essere una voce di elenco.');
+  const lines = value.split('\n');
+  let hasListItem = false;
+  let followsBlankLine = false;
+
+  for (const line of lines) {
+    if (line.trim().length === 0) {
+      followsBlankLine = hasListItem;
+      continue;
     }
+    if (LIST_ITEM_RE.test(line)) {
+      hasListItem = true;
+      followsBlankLine = false;
+      continue;
+    }
+    if (!hasListItem || (followsBlankLine && !/^\s{2,}\S/.test(line))) {
+      invalidOutput('Ossatura: il testo deve appartenere a una voce di elenco.');
+    }
+    followsBlankLine = false;
+  }
+
+  if (!hasListItem) {
+    invalidOutput('Ossatura: serve almeno una voce di elenco.');
   }
 }
 

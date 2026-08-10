@@ -46,7 +46,7 @@ export const AI_CONTENT_PROMPT_VERSION = 'lesson-depth-01-candidate-e-v1' as con
  * invaliderebbe misure che non c'entrano nulla, e viceversa una modifica alla
  * lezione farebbe sembrare cambiata una mappa rimasta identica.
  */
-export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-01-v1' as const;
+export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-01-v2' as const;
 
 /**
  * Preambolo di sicurezza comune (livello 1), il più autorevole del prompt.
@@ -256,6 +256,8 @@ export function buildConceptMapPrompt(request: ConceptMapRequest): BuiltPrompt {
     '',
     'outlineMarkdown — l’ossatura come elenco Markdown annidato:',
     '- ogni voce è un concetto, non un paragrafo riscritto;',
+    '- se una voce richiede più righe, le righe successive continuano la stessa voce:',
+    '  non aggiungere un nuovo marker finché non inizia un nuovo concetto;',
     '- NOMINA esplicitamente la relazione tra i concetti («la clorofilla CATTURA la luce»,',
     '  «la pressione DIPENDE DA temperatura e volume»): sono vietati i collegamenti muti',
     '  che affiancano due termini senza dire che rapporto hanno;',
