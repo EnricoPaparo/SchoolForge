@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { DialogShell } from './workspaceDialogs.js';
+import { DialogShell } from '../../components/DialogShell.js';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer.js';
 import { AiReviewExitConfirm } from './AiReviewExitConfirm.js';
 import styles from './AiPoolGenerationDialog.module.css';
