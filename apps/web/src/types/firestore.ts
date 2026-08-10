@@ -21,6 +21,13 @@ export type AuditAction =
   | 'uda.reordered'
   | 'lesson.created'
   | 'lesson.completed'
+  /**
+   * CONCEPT-MAP-02 — salvataggio della mappa concettuale di una lezione.
+   * Nome in `camelCase` dopo il punto come tutte le azioni esistenti
+   * (`program.metadataUpdated`, `verification.visibilityChanged`): la
+   * coerenza del registro vale più di una sfumatura di leggibilità.
+   */
+  | 'lesson.conceptMapSaved'
   | 'lesson.updated'
   | 'lesson.deleted'
   | 'lesson.reordered'
@@ -156,6 +163,20 @@ export interface LessonDoc {
   completed?: boolean;
   completedAt?: Timestamp | null;
   /**
+   * CONCEPT-MAP-02 — copia **autorevole** della mappa concettuale, dentro la
+   * sottocollezione owner-only. È la sorgente da cui la proiezione studente
+   * viene sincronizzata, mai il contrario.
+   *
+   * Assente su ogni lezione che non ha (ancora) una mappa: nessuna migrazione,
+   * e un documento legacy senza il campo è valido. Quando presente è una
+   * stringa non vuota entro `MAX_CONCEPT_MAP_BYTES` (32.000 byte UTF-8) — vedi
+   * `conceptMapContract.ts`, che è l'unico punto in cui il vincolo è deciso.
+   * Il valore non viene mai normalizzato: si legge attraverso
+   * `readPrivateConceptMap`, che tratta assente/malformato come `null` e mai
+   * come mappa vuota.
+   */
+  conceptMapMarkdown?: string;
+  /**
    * Parsed from the lesson's own optional YAML front matter at import time
    * (never required — see LessonMetadata). Absent on lessons imported
    * before this field existed; read back as `null`, never as "no title".
@@ -235,6 +256,22 @@ export interface PublicLessonDoc {
   /** Teacher-managed completion state; absent on legacy projections means false. */
   completed?: boolean;
   content?: string;
+  /**
+   * CONCEPT-MAP-02 — proiezione studente della mappa concettuale, presente
+   * **soltanto** quando `completed === true` e una mappa privata valida esiste
+   * davvero.
+   *
+   * La visibilità è un confine **dati**, non una condizione di interfaccia:
+   * finché la lezione non è svolta il campo non deve esistere in questo
+   * documento, così uno studente non può leggerlo nemmeno con un `get()`
+   * diretto. Le Security Rules difendono lo stesso invariante — un documento
+   * con `completed != true` che contenga il campo è rifiutato in scrittura — e
+   * `readPublicConceptMap` lo riapplica in lettura per difesa in profondità.
+   *
+   * Smarcare la lezione **rimuove** il campo nella stessa transazione.
+   * Proiezioni legacy prive del campo restano valide, senza migrazione.
+   */
+  conceptMapMarkdown?: string;
 }
 
 /**

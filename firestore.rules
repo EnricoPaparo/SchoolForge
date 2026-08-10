@@ -666,7 +666,41 @@ service cloud.firestore {
                  .data.get('classIds', []))
           && !examModeAppliesToClass(myStudentClassId())
         );
-      allow create, update: if isOwner() && request.resource.data.ownerUid == request.auth.uid;
+      // CONCEPT-MAP-02: la mappa concettuale può esistere in questa proiezione
+      // SOLO se la lezione è marcata svolta. È un confine dati, non una
+      // condizione di interfaccia: finché `completed != true` il campo non deve
+      // proprio esistere nel documento, così uno studente non può leggerlo
+      // nemmeno con un get() diretto su un id noto. La stessa regola impedisce
+      // al docente di lasciarsi dietro la mappa quando smarca la lezione: se
+      // l'update porta `completed` a false, `conceptMapMarkdown` deve sparire
+      // nello stesso commit.
+      //
+      // CONFINE DICHIARATO: le Rules verificano tipo, non-vuotezza e un tetto
+      // di 32.000 **caratteri** — `size()` sulle stringhe conta caratteri, non
+      // byte UTF-8, quindi questo bound è più DEBOLE di quello applicativo da
+      // 32.000 byte (per un testo non ASCII i byte sono più dei caratteri). Le
+      // Rules fermano payload assurdi e l'invariante di visibilità; la
+      // validazione dimensionale autorevole e quella della struttura canonica
+      // restano applicative (conceptMapContract.ts e, per la generazione,
+      // functions/src/aiContentConceptMap.ts). Attribuire alle Rules una
+      // garanzia che non possono dare sarebbe peggio che dichiararne il limite.
+      allow create, update: if isOwner()
+        && request.resource.data.ownerUid == request.auth.uid
+        && (
+          !('conceptMapMarkdown' in request.resource.data)
+          || (
+            // `.get('completed', false)`, non `.completed`: su una proiezione
+            // legacy priva del campo l'accesso diretto solleva un errore di
+            // valutazione. L'esito sarebbe comunque un rifiuto — le Rules
+            // negano su errore — ma un rifiuto per errore è indistinguibile da
+            // un bug, e nei log lo si legge come tale. Assente significa «non
+            // svolta», ed è meglio dirlo che ricavarlo da un'eccezione.
+            request.resource.data.get('completed', false) == true
+            && request.resource.data.conceptMapMarkdown is string
+            && request.resource.data.conceptMapMarkdown.size() > 0
+            && request.resource.data.conceptMapMarkdown.size() <= 32000
+          )
+        );
       allow delete: if isOwner();
     }
 
