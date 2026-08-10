@@ -1,12 +1,25 @@
 /*
- * CONCEPT-MAP-03 — stili della finestra mappa concettuale.
+ * CONCEPT-MAP-04 — stili della scheda «Mappa concettuale».
  *
  * Ricalcano quelli dell'editor lezione (`lessonEditors.module.css`) invece di
  * inventare un linguaggio nuovo: la mappa è Markdown come il corpo, e deve
- * sembrarlo. La differenza sostanziale è che qui l'editor vive dentro un dialog,
- * quindi l'altezza è vincolata e lo scorrimento è **interno** — il footer del
- * dialog deve restare raggiungibile a qualunque larghezza.
+ * sembrarlo. L'altezza resta vincolata e lo scorrimento **interno** anche fuori
+ * dal dialog: dentro il pannello di una scheda, un editor che cresce senza
+ * limite spingerebbe i comandi sotto il bordo dello schermo su mobile.
  */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding-top: 0.9rem;
+}
+
+.blocked {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
 
 .tabs {
   display: flex;
@@ -78,8 +91,8 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.85rem;
   /*
-   * Niente maniglia di ridimensionamento: dentro un dialog trascinarla romperebbe
-   * il contenimento nella viewport e spingerebbe il footer fuori schermo. La
+   * Niente maniglia di ridimensionamento: trascinarla romperebbe il
+   * contenimento nella viewport e spingerebbe i comandi fuori schermo. La
    * regola globale sulle textarea vive una sola volta in `index.css` e qui non
    * va ridichiarata: `textareaResize.test.ts` protegge quell'unicità.
    */
@@ -127,7 +140,7 @@
 }
 
 /*
- * Target touch ≥ 44 px, **solo per questa finestra**.
+ * Target touch ≥ 44 px, **solo per questa superficie**.
  *
  * I pulsanti dei dialog del portale misurano 36 px: alzarli globalmente
  * cambierebbe l'altezza di ogni conferma dell'applicazione, che non è ciò che

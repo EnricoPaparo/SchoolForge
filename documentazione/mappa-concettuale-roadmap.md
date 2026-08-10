@@ -1,10 +1,11 @@
 # SchoolForge — Roadmap: mappa concettuale della lezione
 
-**Stato:** **CONCEPT-MAP-01, 02 e 03 implementati** (core e backend IA;
-persistenza, proiezione condizionale e Rules; interfaccia docente e studente).
-Restano aperti il **rollout DEV** e il **gate umano**: nessun deploy è stato
-fatto e nessuna generazione OpenAI reale è stata eseguita. Tutte le decisioni di
-contratto sono prese e motivate; nessuna resta aperta.
+**Stato:** **CONCEPT-MAP-01, 02, 03 e 04 implementati** (core e backend IA;
+persistenza, proiezione condizionale e Rules; interfaccia docente e studente;
+mappa come scheda strutturale della lezione). Restano aperti il **rollout DEV**
+e il **gate umano**: nessun deploy è stato fatto e nessuna generazione OpenAI
+reale è stata eseguita. Tutte le decisioni di contratto sono prese e motivate;
+nessuna resta aperta.
 **Data:** 10 agosto 2026.
 **Dipendenze:** AIGEN-01→03 e LESSON-DEPTH-01 in produzione; editor Markdown
 della lezione (`lessonEditors`) esistente; proiezione studente `publicLessons`
@@ -218,9 +219,11 @@ Costi aggiunti:
 
 ## 5. Interfaccia
 
-- **Azione sulla riga della lezione** in Didattica, dentro lo stesso menu delle
-  altre azioni: «Genera mappa concettuale» quando assente, «Modifica mappa
-  concettuale» quando presente.
+- **Scheda della lezione**, non azione di menu (CONCEPT-MAP-04). La mappa è una
+  parte strutturale della lezione quanto il corpo: l'ordine definitivo lato
+  docente è **Contenuto → Mappa concettuale → Domande → Informazioni**. La
+  scheda esiste sempre; è la *generazione* a essere disabilitata con il motivo
+  visibile quando manca un corpo salvato.
 - **Conferma IA compatta**: il docente sceglie `Quality` o `Economy` (default
   `Quality`) e vede la stima; nessuna textarea, profondità o configurazione
   aggiuntiva. Dopo la conferma genera e apre la proposta nell'editor, senza
@@ -233,9 +236,10 @@ Costi aggiunti:
   e che il docente usa già per altro: nessun secondo interruttore da
   ricordare. Se la lezione viene **smarcata**, la mappa torna nascosta —
   l'interruttore vale in entrambi i versi.
-- **Portale studente**: la sezione «Mappa concettuale» compare soltanto se la
-  proiezione pubblica contiene davvero la mappa. Prima non mostra placeholder,
-  teaser o messaggi che suggeriscano una scorciatoia nascosta.
+- **Portale studente**: la scheda «Mappa concettuale» — dopo «Contenuto» —
+  compare soltanto se la proiezione pubblica contiene davvero la mappa. Prima
+  non mostra scheda disabilitata, placeholder, teaser o messaggi che
+  suggeriscano una scorciatoia nascosta.
 
 ## 6. Pulizia inclusa nel pacchetto
 
@@ -455,6 +459,62 @@ desktop con mouse i pulsanti restano quelli di tutti gli altri dialog del
 portale — verificato nello smoke su entrambi i tipi di puntatore.
 
 **Ancora aperti:** rollout DEV e gate umano (vedi §10).
+
+### CONCEPT-MAP-04 — la mappa come scheda della lezione ✅ implementata
+
+**Perché l'assetto precedente era incoerente.** In CONCEPT-MAP-03 la mappa era
+una voce del menu «Azioni» che apriva una finestra. Il menu «Azioni» contiene
+operazioni *sulla* lezione — modificarne il contenuto, le informazioni,
+eliminarla — mentre la mappa è un **contenuto** della lezione, come il corpo e
+come le domande. Metterla lì la faceva sembrare un'operazione occasionale, e
+soprattutto costringeva a uscire dalla lezione per leggerla: il docente non
+poteva guardare mappa e contenuto nello stesso posto in cui lo studente li
+guarda. L'incoerenza non era estetica ma di modello: una cosa che *è* parte
+della lezione veniva presentata come qualcosa che *si fa* alla lezione.
+
+**Anatomia docente.** Quattro schede — Contenuto, Mappa concettuale, Domande,
+Informazioni — con la stessa grammatica: `role="tablist"`/`tab`/`tabpanel`,
+`aria-selected`/`aria-controls`/`aria-labelledby`, roving tabindex, ←/→ ciclici,
+Home ed End, ritorno a «Contenuto» al cambio lezione. La scheda mappa ha due
+modalità, perché sono due intenzioni diverse: **lettura** (la mappa salvata
+resa come la legge lo studente, o uno stato vuoto compatto) e **modifica**
+(editor e anteprima, salvataggio esplicito). La generazione resta disponibile in
+entrambe.
+
+**Anatomia studente.** Due schede — Contenuto, Mappa concettuale — con la stessa
+navigazione da tastiera. La tablist **non esiste affatto** quando la mappa non è
+proiettata: nessuna scheda disabilitata, nessun placeholder. La vecchia sezione
+in fondo al contenuto è stata rimossa.
+
+**Il componente è stato estratto, non duplicato.** `ConceptMapEditor` contiene
+la macchina a stati verificata in CONCEPT-MAP-03 — stessa `requestId` fra stima
+e generazione, stessa validazione autorevole del risultato, conferma prima di
+rigenerare, conferma prima di abbandonare, guardia anti-doppio-click, nessun
+aggiornamento dopo unmount — spostata dentro il pannello invece che riscritta.
+`ConceptMapDialog` è stato **rimosso**: restava senza chiamanti. Restano modali
+soltanto le due conferme distruttive, con `role="alertdialog"`: sono gli unici
+momenti in cui una risposta sbagliata perde del lavoro.
+
+**Dirty guard.** La mappa entra nella guardia **già esistente** del workspace
+(`anyDirty`), non in una seconda: cambiare lezione, tornare alla libreria o
+lasciare la vista con una modifica non salvata passa dalla stessa conferma di
+corpo, metadati e pool. Cambiare scheda non perde nulla, perché il pannello
+resta montato dopo la prima apertura; «Annulla» ripristina l'ultima mappa
+salvata; un errore IA non tocca il draft; un salvataggio riuscito aggiorna la
+baseline locale.
+
+**Confine di sicurezza invariato.** La visibilità studente resta decisa dal
+campo realmente presente nella proiezione pubblica (CONCEPT-MAP-02), non da una
+condizione dell'interfaccia su `completed`: legare la scheda al flag
+significherebbe sostituire un confine dati con un confine di rendering. Zero
+letture, query, listener, indici o dipendenze nuove; Functions, prompt, payload,
+provider, costi, Rules e schema non sono toccati.
+
+**Responsive.** A 1440 e 1024 px le quattro schede stanno su una riga sola. A
+390 e 320 px la griglia mobile passa da tre a **due** colonne: la regola
+precedente ne fissava tre e la quarta sarebbe finita da sola su una riga. Tutte
+e quattro le etichette restano leggibili per intero, con target ≥ 44 px e senza
+alcuno scorrimento orizzontale di pagina.
 
 ## 9. DoD
 

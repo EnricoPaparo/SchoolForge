@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { DialogShell } from '../../components/DialogShell.js';
 import { MarkdownRenderer } from '../../components/MarkdownRenderer.js';
-import { IconSparkles } from '../../components/icons.js';
+import { IconPencil, IconSparkles } from '../../components/icons.js';
 import {
   buildConceptMapRequest,
   validateConceptMapResult,
@@ -17,52 +17,66 @@ import {
   newRequestId,
   type PoolModelProfile,
 } from '../repository/pools/aiContentClient.js';
-import styles from './ConceptMapDialog.module.css';
+import styles from './ConceptMapEditor.module.css';
 
 /**
- * CONCEPT-MAP-03 — finestra unica della mappa concettuale: generazione,
- * modifica manuale e salvataggio.
+ * CONCEPT-MAP-04 — la mappa concettuale come **superficie della lezione**, non
+ * come finestra.
  *
- * **Perché una finestra sola.** La mappa non ha una fase di configurazione: il
- * payload è il corpo della lezione e basta. Separare «genera» da «modifica»
- * avrebbe prodotto due dialog che si passano un testo, con due punti in cui
- * perderlo; qui il testo vive in un solo stato e ogni transizione dichiara che
- * cosa ne fa.
+ * La mappa è una parte della lezione quanto il corpo: viverne dentro un dialog
+ * la faceva sembrare un'operazione occasionale, e costringeva il docente a
+ * uscire dalla lezione per vederla. Qui la macchina a stati verificata in
+ * CONCEPT-MAP-03 resta identica — stessa `requestId` fra stima e generazione,
+ * stessa validazione autorevole del risultato, stesse conferme prima di
+ * distruggere del lavoro — ma vive dentro il pannello della scheda.
  *
- * **Il testo non viene mai perso senza una conferma esplicita.** Una proposta
- * generata costa denaro reale e una modifica manuale costa lavoro del docente:
- * backdrop ed Escape non le scartano mai, e ogni percorso che le sostituirebbe
- * passa da una conferma modale — mai da controlli che compaiono spostando il
- * layout.
+ * Restano modali soltanto le **conferme distruttive**: rigenerare sopra una
+ * mappa esistente e abbandonare modifiche non salvate. Sono gli unici due
+ * momenti in cui una risposta sbagliata perde del lavoro, e un `alertdialog`
+ * è ciò che impedisce di darla per sbaglio.
  *
- * Nessun autosave: «Salva mappa» è l'unica azione che scrive.
+ * Due modalità, perché sono due intenzioni diverse:
+ * - **lettura** — la mappa salvata resa come la legge lo studente;
+ * - **modifica** — editor e anteprima, con salvataggio esplicito.
+ *
+ * Nessun autosave: «Salva mappa» è l'unica azione che scrive. Nessuna callable
+ * parte all'apertura o alla semplice selezione della scheda.
  */
 
 type Phase = 'idle' | 'previewing' | 'confirm' | 'generating' | 'saving' | 'error';
+type Mode = 'view' | 'edit';
 
-export interface ConceptMapDialogProps {
-  /** Titolo della lezione, solo per l'intestazione. */
-  lessonTitle: string;
-  /** Corpo **salvato** della lezione: l'unico input della generazione. */
-  lessonBody: string;
+export interface ConceptMapEditorProps {
+  /**
+   * Corpo **salvato** della lezione: l'unico input della generazione. `null`
+   * quando il contenuto non è disponibile.
+   */
+  lessonBody: string | null;
   /** Mappa già salvata, o `null` se non esiste ancora. */
   initialConceptMap: string | null;
+  /**
+   * Motivo per cui la generazione non è possibile, o `null`. Deciso dal
+   * workspace, che è l'unico a sapere se il corpo ha modifiche pendenti.
+   */
+  blockedReason: string | null;
   callables: AiConceptMapCallables;
   /** Persistenza: una sola invocazione per click, gestita qui. */
   onSave: (conceptMapMarkdown: string) => Promise<void>;
-  onClose: () => void;
+  /** Notifica il workspace, che integra la mappa nella sua dirty guard. */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
-export function ConceptMapDialog({
-  lessonTitle,
+export function ConceptMapEditor({
   lessonBody,
   initialConceptMap,
+  blockedReason,
   callables,
   onSave,
-  onClose,
-}: ConceptMapDialogProps) {
+  onDirtyChange,
+}: ConceptMapEditorProps) {
   const [draft, setDraft] = useState(initialConceptMap ?? '');
-  const [tab, setTab] = useState<'editor' | 'preview'>(initialConceptMap ? 'preview' : 'editor');
+  const [mode, setMode] = useState<Mode>('view');
+  const [tab, setTab] = useState<'editor' | 'preview'>('editor');
   const [phase, setPhase] = useState<Phase>('idle');
   const [preview, setPreview] = useState<AiConceptMapPreviewResult | null>(null);
   const [previewRequest, setPreviewRequest] = useState<AiConceptMapRequest | null>(null);
@@ -92,12 +106,15 @@ export function ConceptMapDialog({
 
   const dirty = draft !== savedRef.current;
   const busy = phase === 'previewing' || phase === 'generating' || phase === 'saving';
-  /**
-   * Dal momento in cui c'è qualcosa da perdere, il dialog è
-   * «explicit-dismiss only»: un click fuori o un Escape non buttano via una
-   * proposta pagata né una modifica manuale.
-   */
-  const protectedState = busy || dirty;
+
+  // Il workspace deve sapere che c'è del lavoro da perdere: la mappa entra
+  // nella stessa guardia di corpo, metadati e pool, senza una seconda.
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+  useEffect(() => {
+    return () => onDirtyChange?.(false);
+  }, [onDirtyChange]);
 
   function resetEstimate() {
     setPreview(null);
@@ -106,9 +123,9 @@ export function ConceptMapDialog({
     requestIdRef.current = newRequestId();
   }
 
-  /** Passo 1: stima. Nessuna chiamata parte all'apertura del dialog. */
+  /** Passo 1: stima. Nessuna chiamata parte alla selezione della scheda. */
   async function requestPreview() {
-    if (previewStartedRef.current || lessonBody.trim().length === 0) return;
+    if (previewStartedRef.current || !lessonBody || lessonBody.trim().length === 0) return;
     previewStartedRef.current = true;
     setError(null);
     setPhase('previewing');
@@ -152,6 +169,9 @@ export function ConceptMapDialog({
         return;
       }
       setDraft(validated.conceptMapMarkdown);
+      // La proposta arriva in modifica, non in lettura: non è ancora salvata,
+      // e la scheda non deve far credere il contrario.
+      setMode('edit');
       setTab('preview');
       setLastCost(
         res.actualCostMicroUsd === null
@@ -170,8 +190,8 @@ export function ConceptMapDialog({
   }
 
   /**
-   * «Rigenera con IA»: se c'è qualcosa da perdere — una mappa salvata o una
-   * modifica manuale — chiede conferma **prima** di iniziare la stima.
+   * «Genera/Rigenera con IA»: se c'è qualcosa da perdere — una mappa salvata o
+   * una modifica manuale — chiede conferma **prima** di iniziare la stima.
    */
   function startGeneration() {
     if (draft.trim().length > 0) {
@@ -190,10 +210,13 @@ export function ConceptMapDialog({
       await onSave(draft);
       if (!mountedRef.current) return;
       savedRef.current = draft;
-      onClose();
+      setLastCost(null);
+      setPhase('idle');
+      setMode('view');
     } catch (err) {
       if (!mountedRef.current) return;
-      // Il testo resta e il dialog resta aperto: si riprova senza riscrivere.
+      // Il testo resta e la scheda resta in modifica: si riprova senza
+      // riscrivere nulla.
       setError(err instanceof Error ? err.message : 'Impossibile salvare la mappa. Riprova.');
       setPhase('error');
     } finally {
@@ -201,28 +224,81 @@ export function ConceptMapDialog({
     }
   }
 
-  /** Uscita esplicita: con modifiche non salvate passa dalla conferma modale. */
-  function requestClose() {
+  /** «Annulla»: ripristina l'ultima mappa salvata, con conferma se serve. */
+  function requestCancel() {
     if (busy) return;
     if (dirty) {
       setConfirm('abandon');
       return;
     }
-    onClose();
+    leaveEdit();
   }
 
-  const canGenerate = lessonBody.trim().length > 0 && !busy;
+  function leaveEdit() {
+    setDraft(savedRef.current);
+    setMode('view');
+    setPhase('idle');
+    setError(null);
+    setLastCost(null);
+    resetEstimate();
+  }
+
+  const canGenerate = blockedReason === null && !busy;
   const canSave = draft.trim().length > 0 && !busy && dirty;
+  const savedMap = savedRef.current;
+
+  const profileField = (
+    <div className={styles.profileField}>
+      <span className={styles.profileLabel} id="concept-map-profile-label">
+        Profilo modello
+      </span>
+      <div
+        className={styles.profileOptions}
+        role="radiogroup"
+        aria-labelledby="concept-map-profile-label"
+      >
+        {POOL_MODEL_PROFILE_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={modelProfile === option.value}
+            className={`${styles.profileChoice}${modelProfile === option.value ? ` ${styles.profileChoiceSelected}` : ''}`}
+            disabled={busy}
+            onClick={() => {
+              if (modelProfile === option.value) return;
+              setModelProfile(option.value);
+              resetEstimate();
+            }}
+          >
+            <span className={styles.profileChoiceLabel}>{option.label}</span>
+            <span className={styles.profileChoiceMeta}>{option.description}</span>
+            <span className={styles.profileChoiceMeta}>Modello: {option.modelId}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const generateButton = (
+    <button
+      type="button"
+      onClick={startGeneration}
+      disabled={!canGenerate}
+      aria-describedby={blockedReason ? 'concept-map-blocked-reason' : undefined}
+    >
+      <IconSparkles size={14} /> {draft.trim().length > 0 ? 'Rigenera con IA' : 'Genera con IA'}
+    </button>
+  );
+
+  const blockedNote = blockedReason && (
+    <p id="concept-map-blocked-reason" className={styles.blocked}>
+      {blockedReason}
+    </p>
+  );
 
   return (
-    <DialogShell
-      title={`Mappa concettuale — ${lessonTitle}`}
-      onCancel={requestClose}
-      busy={busy}
-      variant="wide-scroll"
-      closeOnBackdrop={!protectedState}
-      closeOnEscape={!protectedState}
-    >
+    <div className={styles.root}>
       {phase === 'confirm' && preview ? (
         <div className={styles.estimate}>
           <p>
@@ -257,38 +333,42 @@ export function ConceptMapDialog({
           <span className="spinner" aria-hidden="true" />
           <span>{phase === 'previewing' ? 'Calcolo della stima…' : 'Generazione in corso…'}</span>
         </div>
+      ) : mode === 'view' ? (
+        <>
+          {savedMap.trim().length > 0 ? (
+            // Stessa pipeline sanificata del corpo lezione: la variante
+            // `lesson` è l'unica che rende i callout, e l'avvertenza della
+            // mappa è un callout. Nessun HTML inserito dopo `sanitize()`.
+            <MarkdownRenderer markdown={savedMap} variant="lesson" />
+          ) : (
+            <p className="state-empty">
+              Nessuna mappa concettuale per questa lezione: generala con l’IA oppure scrivila a
+              mano.
+            </p>
+          )}
+          {blockedNote}
+          {error && phase === 'error' && (
+            <p role="alert" className="text-error">
+              {error}
+            </p>
+          )}
+          <div className={`dialog-actions ${styles.actions}`}>
+            {generateButton}
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                setMode('edit');
+                setTab('editor');
+              }}
+            >
+              <IconPencil size={14} /> Modifica
+            </button>
+          </div>
+        </>
       ) : (
         <>
-          <div className={styles.profileField}>
-            <span className={styles.profileLabel} id="concept-map-profile-label">
-              Profilo modello
-            </span>
-            <div
-              className={styles.profileOptions}
-              role="radiogroup"
-              aria-labelledby="concept-map-profile-label"
-            >
-              {POOL_MODEL_PROFILE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={modelProfile === option.value}
-                  className={`${styles.profileChoice}${modelProfile === option.value ? ` ${styles.profileChoiceSelected}` : ''}`}
-                  disabled={busy}
-                  onClick={() => {
-                    if (modelProfile === option.value) return;
-                    setModelProfile(option.value);
-                    resetEstimate();
-                  }}
-                >
-                  <span className={styles.profileChoiceLabel}>{option.label}</span>
-                  <span className={styles.profileChoiceMeta}>{option.description}</span>
-                  <span className={styles.profileChoiceMeta}>Modello: {option.modelId}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          {blockedReason === null && profileField}
           <div className={styles.tabs} role="tablist" aria-label="Editor mappa concettuale">
             <button
               type="button"
@@ -322,9 +402,6 @@ export function ConceptMapDialog({
           ) : (
             <div className={styles.preview}>
               {draft.trim().length > 0 ? (
-                // Stessa pipeline sanificata del corpo lezione: la variante
-                // `lesson` è l'unica che rende i callout, e l'avvertenza della
-                // mappa è un callout. Nessun HTML inserito dopo `sanitize()`.
                 <MarkdownRenderer markdown={draft} variant="lesson" />
               ) : (
                 <p className={styles.empty}>
@@ -339,6 +416,7 @@ export function ConceptMapDialog({
               Mappa generata. Costo: {lastCost}. Non è ancora salvata.
             </p>
           )}
+          {blockedNote}
           {error && phase === 'error' && (
             <p role="alert" className="text-error">
               {error}
@@ -346,13 +424,10 @@ export function ConceptMapDialog({
           )}
 
           <div className={`dialog-actions ${styles.actions}`}>
-            <button type="button" onClick={requestClose} disabled={busy}>
-              Chiudi
+            <button type="button" onClick={requestCancel} disabled={busy}>
+              Annulla
             </button>
-            <button type="button" onClick={startGeneration} disabled={!canGenerate}>
-              <IconSparkles size={14} />{' '}
-              {draft.trim().length > 0 ? 'Rigenera con IA' : 'Genera con IA'}
-            </button>
+            {generateButton}
             <button
               type="button"
               className="btn-success"
@@ -395,7 +470,7 @@ export function ConceptMapDialog({
 
       {confirm === 'abandon' && (
         <DialogShell
-          title="Chiudere senza salvare?"
+          title="Annullare le modifiche?"
           role="alertdialog"
           onCancel={() => setConfirm(null)}
         >
@@ -409,14 +484,14 @@ export function ConceptMapDialog({
               className="btn-danger"
               onClick={() => {
                 setConfirm(null);
-                onClose();
+                leaveEdit();
               }}
             >
-              Chiudi senza salvare
+              Annulla le modifiche
             </button>
           </div>
         </DialogShell>
       )}
-    </DialogShell>
+    </div>
   );
 }

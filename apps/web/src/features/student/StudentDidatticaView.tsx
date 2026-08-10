@@ -519,6 +519,13 @@ function LessonRowLabel({
   );
 }
 
+type StudentLessonTab = 'contenuto' | 'mappa';
+
+const LESSON_VIEW_TABS: { id: StudentLessonTab; label: string }[] = [
+  { id: 'contenuto', label: 'Contenuto' },
+  { id: 'mappa', label: 'Mappa concettuale' },
+];
+
 function LessonContent({
   lesson,
   canOpenNotes,
@@ -541,6 +548,52 @@ function LessonContent({
   onOpenNotes: () => void;
 }) {
   const title = resolveLessonTitle(lesson.filename, lesson.titolo).title;
+
+  /**
+   * La mappa esiste per lo studente solo se è **nella proiezione**: il
+   * normalizzatore autorevole (`readPublicConceptMap`, applicato al confine da
+   * `loadStudentLessons`) ha già deciso, e qui non si rilegge nulla.
+   */
+  const hasConceptMap =
+    typeof lesson.conceptMapMarkdown === 'string' && lesson.conceptMapMarkdown.length > 0;
+
+  const [activeTab, setActiveTab] = useState<StudentLessonTab>('contenuto');
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // Cambio lezione: si torna sempre a «Contenuto». La mappa della lezione
+  // precedente non deve restare selezionata su una lezione che magari non ne
+  // ha nessuna.
+  useEffect(() => {
+    setActiveTab('contenuto');
+  }, [lesson.id]);
+
+  // Stessa navigazione delle schede docente: ←/→ ciclici, Home ed End.
+  function onTabKeyDown(e: React.KeyboardEvent) {
+    const idx = LESSON_VIEW_TABS.findIndex((t) => t.id === activeTab);
+    let next = idx;
+    if (e.key === 'ArrowRight') next = (idx + 1) % LESSON_VIEW_TABS.length;
+    else if (e.key === 'ArrowLeft')
+      next = (idx - 1 + LESSON_VIEW_TABS.length) % LESSON_VIEW_TABS.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = LESSON_VIEW_TABS.length - 1;
+    else return;
+    e.preventDefault();
+    setActiveTab(LESSON_VIEW_TABS[next]!.id);
+    tabRefs.current[next]?.focus();
+  }
+
+  const body =
+    lesson.content === null ? (
+      <p role="alert" className="text-error">
+        Contenuto temporaneamente non disponibile.
+      </p>
+    ) : (
+      // LESSON-MANUAL-01 — vista lezione studente: stessa variante del docente,
+      // quindi resa equivalente fra i due ruoli. Titolo, sottotitolo e metadati
+      // restano nella testata esistente, senza duplicazioni.
+      <MarkdownRenderer markdown={lesson.content} variant="lesson" />
+    );
+
   return (
     <article className={styles.lessonContent}>
       <header className={styles.lessonHeader}>
@@ -598,35 +651,64 @@ function LessonContent({
           )}
         </div>
       )}
-      {lesson.content === null ? (
-        <p role="alert" className="text-error">
-          Contenuto temporaneamente non disponibile.
-        </p>
-      ) : (
-        // LESSON-MANUAL-01 — vista lezione studente: stessa variante del docente,
-        // quindi resa equivalente fra i due ruoli. Titolo, sottotitolo e metadati
-        // restano nella testata esistente, senza duplicazioni.
-        <MarkdownRenderer markdown={lesson.content} variant="lesson" />
-      )}
       {/*
-        CONCEPT-MAP-03 — la sezione compare **solo** se la proiezione contiene
-        davvero una mappa. Niente placeholder, niente «non disponibile», niente
-        pulsante inerte: un segnaposto racconterebbe allo studente che esiste
-        qualcosa che non può vedere, ed è l'opposto di ciò che la roadmap
-        chiede. La visibilità è già decisa dai dati (CONCEPT-MAP-02): qui si
-        rende soltanto ciò che è arrivato.
+        CONCEPT-MAP-04 — le schede compaiono **solo** quando la proiezione
+        pubblica contiene davvero una mappa. Niente scheda disabilitata, niente
+        placeholder, niente «non disponibile»: un segnaposto racconterebbe allo
+        studente che esiste qualcosa che non può vedere, ed è l'opposto di ciò
+        che la roadmap chiede.
 
-        Il controllo è positivo (stringa non vuota) e non `!== null`: un oggetto
-        lezione privo del campo darebbe `undefined !== null`, cioè `true`, e
-        manderebbe `undefined` dentro il renderer.
+        La condizione non è `completed`: è la presenza reale del campo nella
+        proiezione, già governata da CONCEPT-MAP-02. Legarla allo stato svolta
+        significherebbe fidarsi di un flag dell'interfaccia al posto del confine
+        dati. Il controllo è positivo (stringa non vuota) e non `!== null`: un
+        documento legacy privo del campo darebbe `undefined !== null`, cioè
+        `true`, e manderebbe `undefined` dentro il renderer.
       */}
-      {typeof lesson.conceptMapMarkdown === 'string' && lesson.conceptMapMarkdown.length > 0 && (
-        <section className={styles.conceptMap} aria-labelledby={`concept-map-${lesson.id}`}>
-          <h3 id={`concept-map-${lesson.id}`} className={styles.conceptMapTitle}>
-            Mappa concettuale
-          </h3>
-          <MarkdownRenderer markdown={lesson.conceptMapMarkdown} variant="lesson" />
-        </section>
+      {hasConceptMap ? (
+        <>
+          <div className={styles.lessonTablist} role="tablist" aria-label="Schede lezione">
+            {LESSON_VIEW_TABS.map((t, i) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`student-tab-${t.id}`}
+                ref={(el) => {
+                  tabRefs.current[i] = el;
+                }}
+                aria-selected={activeTab === t.id}
+                aria-controls={`student-panel-${t.id}`}
+                tabIndex={activeTab === t.id ? 0 : -1}
+                className={`${styles.lessonTab}${activeTab === t.id ? ` ${styles.lessonTabActive}` : ''}`}
+                onClick={() => setActiveTab(t.id)}
+                onKeyDown={onTabKeyDown}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div
+            role="tabpanel"
+            id="student-panel-contenuto"
+            aria-labelledby="student-tab-contenuto"
+            hidden={activeTab !== 'contenuto'}
+          >
+            {body}
+          </div>
+          <div
+            role="tabpanel"
+            id="student-panel-mappa"
+            aria-labelledby="student-tab-mappa"
+            hidden={activeTab !== 'mappa'}
+          >
+            <div className={styles.conceptMap}>
+              <MarkdownRenderer markdown={lesson.conceptMapMarkdown!} variant="lesson" />
+            </div>
+          </div>
+        </>
+      ) : (
+        body
       )}
     </article>
   );
