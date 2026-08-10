@@ -38,10 +38,19 @@ import { CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS } from './aiContentConceptMap.js';
 export const AI_CONTENT_PROMPT_VERSION = 'lesson-depth-01-candidate-e-v1' as const;
 
 /**
+ * Identità indipendente del prompt pool. Il prompt pool è rimasto invariato
+ * mentre quello lezione ha attraversato i candidati LESSON-DEPTH: usare la
+ * versione condivisa nel benchmark pool attribuirebbe quindi l'output al
+ * candidato sbagliato, pur eseguendo il prompt corretto.
+ */
+export const AI_POOL_PROMPT_VERSION = 'aigen-prompt-01-pool-v1' as const;
+
+/**
  * CONCEPT-MAP-01 — versione **separata** del prompt della mappa concettuale.
  *
- * Non è pedanteria di versioning: `AI_CONTENT_PROMPT_VERSION` è congelata nei
- * benchmark di pool e lezione ed è il riferimento delle evidenze già raccolte.
+ * Non è pedanteria di versioning: `AI_CONTENT_PROMPT_VERSION` e
+ * `AI_POOL_PROMPT_VERSION` sono congelate nei rispettivi benchmark e sono il
+ * riferimento delle evidenze raccolte.
  * Se la mappa ne condividesse la versione, ogni ritocco al suo prompt
  * invaliderebbe misure che non c'entrano nulla, e viceversa una modifica alla
  * lezione farebbe sembrare cambiata una mappa rimasta identica.
