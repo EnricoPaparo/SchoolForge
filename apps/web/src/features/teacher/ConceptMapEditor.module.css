@@ -13,6 +13,22 @@
   flex-direction: column;
   gap: 0.9rem;
   padding-top: 0.9rem;
+  /*
+   * Contenimento esplicito. Senza, il diagramma — che è un `<pre>` largo — è un
+   * figlio flex con `min-width: auto` e si allarga oltre il contenitore invece
+   * di scorrere dentro di sé: su 390 e 320 px trascinava in orizzontale
+   * l'intera pagina. Il `<pre>` ha già `overflow-x: auto`; qui gli si dice
+   * soltanto quanto spazio ha davvero.
+   */
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Mappa salvata in lettura: stesso contenimento del pannello di anteprima. */
+.reading {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .blocked {
@@ -27,44 +43,6 @@
   border-bottom: 1px solid var(--color-border);
 }
 
-.profileField {
-  display: grid;
-  gap: 0.4rem;
-}
-.profileLabel {
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.profileOptions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-.profileChoice {
-  display: grid;
-  gap: 0.15rem;
-  min-width: 0;
-  padding: 0.55rem 0.7rem;
-  text-align: left;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-}
-.profileChoiceSelected {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
-}
-.profileChoiceLabel {
-  color: var(--color-text);
-  font-weight: 700;
-}
-.profileChoiceMeta {
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-}
 .tab {
   border: none;
   background: transparent;
@@ -160,9 +138,6 @@
 }
 
 @media (max-width: 640px) {
-  .profileOptions {
-    grid-template-columns: 1fr;
-  }
   .textarea,
   .preview {
     min-height: 45vh;

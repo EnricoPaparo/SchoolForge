@@ -10,12 +10,9 @@ import {
   type AiConceptMapRequest,
 } from '../repository/pools/aiConceptMapClient.js';
 import {
-  DEFAULT_POOL_MODEL_PROFILE,
-  POOL_MODEL_PROFILE_OPTIONS,
   describeAiContentError,
   formatMicroUsd,
   newRequestId,
-  type PoolModelProfile,
 } from '../repository/pools/aiContentClient.js';
 import styles from './ConceptMapEditor.module.css';
 
@@ -41,6 +38,16 @@ import styles from './ConceptMapEditor.module.css';
  *
  * Nessun autosave: «Salva mappa» è l'unica azione che scrive. Nessuna callable
  * parte all'apertura o alla semplice selezione della scheda.
+ *
+ * **Perché non c'è più alcuna scelta del profilo (CONCEPT-MAP-05).** Il selettore
+ * viveva soltanto nella modalità modifica, mentre il pulsante di generazione
+ * esisteva in entrambe e leggeva comunque lo stato interno: generando dalla
+ * lettura il docente non vedeva alcuna scelta ma un profilo veniva usato lo
+ * stesso, e una scelta fatta in modifica restava appiccicata anche dopo
+ * «Annulla». Il profilo non è però una preferenza: `economy` produceva mappe
+ * insufficienti, quindi la risposta giusta non era mostrare il selettore anche
+ * in lettura ma toglierlo del tutto. La mappa è **quality-only**, deciso dal
+ * contratto del client e imposto fail-closed dal server.
  */
 
 type Phase = 'idle' | 'previewing' | 'confirm' | 'generating' | 'saving' | 'error';
@@ -83,7 +90,6 @@ export function ConceptMapEditor({
   const [lastCost, setLastCost] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<null | 'regenerate' | 'abandon'>(null);
-  const [modelProfile, setModelProfile] = useState<PoolModelProfile>(DEFAULT_POOL_MODEL_PROFILE);
 
   /**
    * Baseline del testo salvato: `dirty` confronta con questa, non con la
@@ -133,7 +139,6 @@ export function ConceptMapEditor({
     // payload: è ciò che rende la generazione idempotente lato server.
     const request = buildConceptMapRequest({
       requestId: requestIdRef.current,
-      modelProfile,
       lessonBody,
     });
     try {
@@ -247,39 +252,6 @@ export function ConceptMapEditor({
   const canSave = draft.trim().length > 0 && !busy && dirty;
   const savedMap = savedRef.current;
 
-  const profileField = (
-    <div className={styles.profileField}>
-      <span className={styles.profileLabel} id="concept-map-profile-label">
-        Profilo modello
-      </span>
-      <div
-        className={styles.profileOptions}
-        role="radiogroup"
-        aria-labelledby="concept-map-profile-label"
-      >
-        {POOL_MODEL_PROFILE_OPTIONS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={modelProfile === option.value}
-            className={`${styles.profileChoice}${modelProfile === option.value ? ` ${styles.profileChoiceSelected}` : ''}`}
-            disabled={busy}
-            onClick={() => {
-              if (modelProfile === option.value) return;
-              setModelProfile(option.value);
-              resetEstimate();
-            }}
-          >
-            <span className={styles.profileChoiceLabel}>{option.label}</span>
-            <span className={styles.profileChoiceMeta}>{option.description}</span>
-            <span className={styles.profileChoiceMeta}>Modello: {option.modelId}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-
   const generateButton = (
     <button
       type="button"
@@ -305,10 +277,7 @@ export function ConceptMapEditor({
             La mappa viene generata dal <strong>contenuto salvato</strong> di questa lezione.
           </p>
           <ul className={styles.estimateList}>
-            <li>
-              Profilo:{' '}
-              {POOL_MODEL_PROFILE_OPTIONS.find((option) => option.value === modelProfile)?.label}
-            </li>
+            <li>Profilo: Quality</li>
             <li>Token stimati: {preview.estimatedInputTokens + preview.maxOutputTokens}</li>
             <li>Costo stimato: {formatMicroUsd(preview.estimatedCostMicroUsd)}</li>
             <li>Tetto massimo prenotabile: {formatMicroUsd(preview.reservationCostMicroUsd)}</li>
@@ -339,7 +308,9 @@ export function ConceptMapEditor({
             // Stessa pipeline sanificata del corpo lezione: la variante
             // `lesson` è l'unica che rende i callout, e l'avvertenza della
             // mappa è un callout. Nessun HTML inserito dopo `sanitize()`.
-            <MarkdownRenderer markdown={savedMap} variant="lesson" />
+            <div className={styles.reading}>
+              <MarkdownRenderer markdown={savedMap} variant="lesson" />
+            </div>
           ) : (
             <p className="state-empty">
               Nessuna mappa concettuale per questa lezione: generala con l’IA oppure scrivila a
@@ -368,7 +339,6 @@ export function ConceptMapEditor({
         </>
       ) : (
         <>
-          {blockedReason === null && profileField}
           <div className={styles.tabs} role="tablist" aria-label="Editor mappa concettuale">
             <button
               type="button"

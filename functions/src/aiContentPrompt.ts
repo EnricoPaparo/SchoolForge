@@ -46,7 +46,7 @@ export const AI_CONTENT_PROMPT_VERSION = 'lesson-depth-01-candidate-e-v1' as con
  * invaliderebbe misure che non c'entrano nulla, e viceversa una modifica alla
  * lezione farebbe sembrare cambiata una mappa rimasta identica.
  */
-export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-01-v2' as const;
+export const AI_CONCEPT_MAP_PROMPT_VERSION = 'concept-map-05-v3' as const;
 
 /**
  * Preambolo di sicurezza comune (livello 1), il più autorevole del prompt.
@@ -235,15 +235,22 @@ export function buildPoolPrompt(request: PoolRequest): BuiltPrompt {
 /**
  * Contratto di output della mappa concettuale (livello 2).
  *
- * Il modello non scrive il documento: restituisce **tre campi**, e il server
- * compone il Markdown canonico aggiungendo intestazioni e avvertenza. Perciò
- * qui gli si chiede esplicitamente di NON produrre heading, fence o avvertenza:
- * sarebbero duplicati dalla composizione, non varianti innocue.
+ * Il modello non scrive il documento: restituisce **due campi** (CONCEPT-MAP-05),
+ * e il server compone il Markdown canonico aggiungendo intestazioni e
+ * avvertenza. Perciò qui gli si chiede esplicitamente di NON produrre heading,
+ * fence o avvertenza: sarebbero duplicati dalla composizione, non varianti
+ * innocue.
+ *
+ * L'ossatura è stata rimossa perché sulle generazioni reali si riduceva quasi
+ * sempre a un indice della lezione, duplicando il ruolo del diagramma senza
+ * aggiungere ragionamento. Il peso si sposta sulla sintesi, a cui ora si chiede
+ * di spiegare invece che di elencare — e alla quale non si impone più alcuna
+ * brevità, perché era proprio la brevità a renderla un sommario inutile.
  */
 export function buildConceptMapPrompt(request: ConceptMapRequest): BuiltPrompt {
   const contract = [
     'Costruisci la mappa concettuale di una lezione scolastica già scritta, in italiano.',
-    'Non stai scrivendo una lezione: stai riorganizzando ciò che la lezione dice già.',
+    'Non stai scrivendo una lezione: stai riorganizzando e spiegando ciò che la lezione dice già.',
     '',
     'Fonte unica:',
     '- usa ESCLUSIVAMENTE informazioni presenti nel CORPO_LEZIONE;',
@@ -252,23 +259,28 @@ export function buildConceptMapPrompt(request: ConceptMapRequest): BuiltPrompt {
     '- non omettere i concetti strutturalmente essenziali presenti nel corpo: una mappa',
     '  che salta un passaggio portante non è più breve, è sbagliata.',
     '',
-    'Restituisci esattamente tre campi.',
+    'Restituisci esattamente due campi.',
     '',
-    'outlineMarkdown — l’ossatura come elenco Markdown annidato:',
-    '- ogni voce è un concetto, non un paragrafo riscritto;',
-    '- se una voce richiede più righe, le righe successive continuano la stessa voce:',
-    '  non aggiungere un nuovo marker finché non inizia un nuovo concetto;',
-    '- NOMINA esplicitamente la relazione tra i concetti («la clorofilla CATTURA la luce»,',
-    '  «la pressione DIPENDE DA temperatura e volume»): sono vietati i collegamenti muti',
-    '  che affiancano due termini senza dire che rapporto hanno;',
-    '- annida secondo la struttura logica del contenuto, non secondo l’ordine dei paragrafi.',
+    'summaryMarkdown — una sintesi RAGIONATA in prosa continua:',
+    '- deve poter essere letta da sola: chi ha studiato la lezione la rilegge e ritrova',
+    '  il ragionamento, non un indice degli argomenti;',
+    '- copri TUTTI i concetti portanti presenti nel corpo, senza saltarne nessuno;',
+    '- rendi esplicite le relazioni logiche: cause, conseguenze, dipendenze, condizioni,',
+    '  passaggi intermedi. Dire CHE due concetti sono collegati non basta: dì COME;',
+    '- spiega brevemente i termini indispensabili alla comprensione, la prima volta che',
+    '  compaiono;',
+    '- mantieni la progressione concettuale della lezione: ciò che viene prima serve a',
+    '  capire ciò che viene dopo;',
+    '- la lunghezza la decide il contenuto. Una lezione complessa merita una sintesi',
+    '  lunga; una semplice, una breve. NON comprimere per brevità e non allungare per',
+    '  riempire: preferisci sempre chiarezza e completezza alla concisione;',
+    '- non riscrivere però la lezione per intero: spieghi il ragionamento, non ricopi il',
+    '  testo;',
+    '- prosa continua e ben organizzata, eventualmente in più paragrafi. NIENTE elenchi',
+    '  puntati o numerati: un elenco qui tornerebbe a essere un indice.',
     '',
-    'summaryMarkdown — una sintesi breve in prosa:',
-    '- lega l’ossatura in un discorso che si legge da solo;',
-    '- non ripete l’elenco voce per voce e non riassume l’intera lezione;',
-    '- poche righe: serve a dare il filo, non a sostituire lo studio.',
-    '',
-    'diagram — un albero a caratteri:',
+    'diagram — un albero a caratteri che COMPLETA la sintesi mostrandone la struttura,',
+    'senza ripeterne le frasi parola per parola:',
     '- PROFONDO, non largo: preferisci scendere di livello invece di allungare la riga;',
     `- ogni riga deve stare entro ${CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS} caratteri, contando gli spazi;`,
     '- usa caratteri di disegno ad albero e frecce con la relazione scritta sopra il ramo;',
@@ -283,7 +295,7 @@ export function buildConceptMapPrompt(request: ConceptMapRequest): BuiltPrompt {
     '└─ USCITE',
     '    └─ glucosio ──immagazzina──▶ energia chimica',
     '',
-    'Vincoli tecnici sui tre campi:',
+    'Vincoli tecnici su entrambi i campi:',
     '- NON produrre intestazioni Markdown (#, ##, ...): le aggiunge il server;',
     '- NON produrre l’avvertenza finale sullo studio: la aggiunge il server;',
     '- NON racchiudere nulla in fence Markdown (```): il server le aggiunge dove servono;',

@@ -93,12 +93,11 @@ class MockContentProvider implements ContentProvider {
       };
     }
     if (request.kind === 'concept_map') {
-      // Strutturalmente valido per il validator reale: tre campi non vuoti,
-      // nessuna fence, diagramma entro la larghezza massima.
+      // Strutturalmente valido per il validator reale: due campi non vuoti
+      // (CONCEPT-MAP-05), nessuna fence, diagramma entro la larghezza massima.
       return {
         status: 'ok',
         output: {
-          outlineMarkdown: '- Concetto principale\n  - dettaglio ──spiegato da──▶ esempio',
           summaryMarkdown: 'Sintesi di riferimento (mock).',
           diagram: 'CONCETTO PRINCIPALE\n└─ dettaglio ──spiegato da──▶ esempio',
         },

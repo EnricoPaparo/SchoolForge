@@ -238,9 +238,8 @@ export const LESSON_OUTPUT_SCHEMA: Record<string, unknown> = {
 export const CONCEPT_MAP_OUTPUT_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: ['outlineMarkdown', 'summaryMarkdown', 'diagram'],
+  required: ['summaryMarkdown', 'diagram'],
   properties: {
-    outlineMarkdown: { type: 'string' },
     summaryMarkdown: { type: 'string' },
     diagram: { type: 'string' },
   },

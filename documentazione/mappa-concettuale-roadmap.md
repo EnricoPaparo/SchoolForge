@@ -1,8 +1,9 @@
 # SchoolForge — Roadmap: mappa concettuale della lezione
 
-**Stato:** **CONCEPT-MAP-01, 02, 03 e 04 implementati** (core e backend IA;
+**Stato:** **CONCEPT-MAP-01, 02, 03, 04 e 05 implementati** (core e backend IA;
 persistenza, proiezione condizionale e Rules; interfaccia docente e studente;
-mappa come scheda strutturale della lezione). Restano aperti il **rollout DEV**
+mappa come scheda strutturale della lezione; quality-only e artefatto v2
+Sintesi + Diagramma). Restano aperti il **rollout DEV**
 e il **gate umano**: nessun deploy è stato fatto e nessuna generazione OpenAI
 reale è stata eseguita. Tutte le decisioni di contratto sono prese e motivate;
 nessuna resta aperta.
@@ -43,12 +44,19 @@ a mano, che è il tempo che SchoolForge deve restituire, non consumare.
 
 Struttura **fissa**, quattro parti, in quest'ordine:
 
-1. **elenco** — l'ossatura della lezione come elenco annidato, con le
-   relazioni **nominate** («la clorofilla *cattura* la luce»), mai frecce mute;
-2. **sintesi scritta** — poche righe di prosa che legano l'ossatura;
-3. **diagramma** — albero a caratteri dentro un blocco di codice;
-4. **avvertenza** — questa mappa non sostituisce lo studio della lezione, è un
+1. **sintesi ragionata** — prosa continua che spiega il contenuto: copre tutti i
+   concetti portanti, rende esplicite cause, conseguenze e dipendenze, e segue la
+   progressione della lezione. La lunghezza la decide il contenuto, non una
+   regola;
+2. **diagramma** — albero a caratteri dentro un blocco di codice, che *mostra* la
+   struttura che la sintesi *spiega*;
+3. **avvertenza** — questa mappa non sostituisce lo studio della lezione, è un
    supporto al ripasso.
+
+L'**ossatura** era la prima parte fino a CONCEPT-MAP-04 ed è stata rimossa (v2):
+sulle generazioni reali si riduceva quasi sempre a un indice della lezione, e
+duplicava il ruolo strutturale del diagramma senza aggiungere ragionamento.
+Restano due parti che fanno lavori diversi invece di tre che ne facevano due.
 
 ### Perché il diagramma è a caratteri e non un grafo
 
@@ -515,6 +523,70 @@ provider, costi, Rules e schema non sono toccati.
 precedente ne fissava tre e la quarta sarebbe finita da sola su una riga. Tutte
 e quattro le etichette restano leggibili per intero, con target ≥ 44 px e senza
 alcuno scorrimento orizzontale di pagina.
+
+### CONCEPT-MAP-05 — quality-only e sintesi ragionata ✅ implementata
+
+**Perché la scelta del modello era intermittente.** Il selettore Economy/Quality
+era renderizzato **solo** dentro il ramo della modalità modifica, mentre il
+pulsante «Genera/Rigenera con IA» esisteva in **entrambe** le modalità e leggeva
+comunque lo stato interno del componente. Generando dalla lettura non compariva
+alcuna scelta, ma un profilo veniva usato lo stesso — quello corrente. Peggio:
+lo stato sopravviveva al cambio di modalità, perché `leaveEdit()` ripristinava
+bozza, fase, errore e stima ma **non** il profilo. Un docente che avesse scelto
+Economy in modifica e poi premuto «Annulla» continuava a generare in Economy
+dalla lettura, senza che nulla lo mostrasse.
+
+**Perché la risposta non è stato mostrare il selettore anche in lettura.** Il
+profilo non era una preferenza legittima: `economy` produceva mappe
+qualitativamente insufficienti, e una mappa sbagliata non è un risparmio — è un
+ripasso che disinforma. La mappa è quindi **quality-only**, e la coerenza è
+ottenuta togliendo la scelta, non replicandola.
+
+**Doppia difesa.** Il client non espone il profilo nella firma di
+`buildConceptMapRequest`: non esiste alcun percorso, visibile o nascosto, che
+produca una richiesta Economy. Il server la rifiuta comunque `fail-closed` nella
+validazione del payload, cioè **prima** di provider, stima, prenotazione, run e
+qualunque scrittura. Pool e lezione conservano entrambi i profili: il vincolo è
+del kind, non del profilo.
+
+**Sintesi ragionata.** Alla sintesi non si chiede più di essere breve — era
+proprio la brevità imposta («poche righe») a renderla un sommario inutile. Ora
+deve coprire tutti i concetti portanti, esplicitare cause, conseguenze,
+dipendenze e passaggi, spiegare i termini indispensabili e mantenere la
+progressione della lezione, con la lunghezza proporzionata alla complessità
+effettiva. Resta vietato l'elenco — puntato o numerato — perché un elenco qui
+tornerebbe a essere l'indice che l'ossatura già era; resta il solo cap tecnico di
+32.000 byte UTF-8 sul documento composto.
+
+**Compatibilità: nessuna migrazione.** Le mappe già salvate non vengono toccate,
+riscritte né convertite. Il parser del documento persistito è version-aware e
+riconosce fail-closed **entrambe** le forme canoniche — v1 (Ossatura + Sintesi +
+Diagramma + avvertenza) e v2 (Sintesi + Diagramma + avvertenza) — restituendo il
+Markdown byte per byte. Una v1 resta v1 anche in replay: convertirla cambierebbe
+ciò che il docente ha salvato e ciò che lo studente sta già leggendo, senza che
+nessuno l'abbia chiesto. La tolleranza è però solo sulla *forma*: una v1
+malformata è rifiutata esattamente come una v2 malformata. Le nuove risposte del
+provider possono produrre **soltanto** v2, e `outlineMarkdown` è rifiutato come
+qualunque altra proprietà extra.
+
+**Limite dichiarato sui run legacy.** Un run Economy memorizzato prima di questa
+fase non autorizza una nuova generazione Economy: la richiesta viene rifiutata
+alla validazione del payload, prima di raggiungere la logica di replay. I run
+hanno TTL di 24 ore, quindi la finestra si chiude da sola, e l'ordine fail-closed
+delle callable non è stato allentato per recuperare un artefatto temporaneo.
+
+**Versione del prompt.** `AI_CONCEPT_MAP_PROMPT_VERSION` passa a
+`concept-map-05-v3`; quelle di pool e lezione non sono toccate. Come già in
+CONCEPT-MAP-01, questa versione **non è persistita nel run** e non è usata per
+replay né per audit: resta una costante di codice, ed è bene che la
+documentazione dica ciò che è operativo e non ciò che sarebbe elegante.
+
+**Persistenza, visibilità e costi invariati.** Il contratto persistito resta una
+stringa non vuota entro 32 KB UTF-8, deliberatamente **non** irrigidito sulla
+sola struttura v2: irrigidirlo romperebbe le mappe già salvate. Rules, schema,
+indici, dipendenze, `saveLessonConceptMap`, la matrice privata/pubblica di
+CONCEPT-MAP-02 e il comportamento di «Segna svolta» non sono toccati; il costo
+passivo resta zero.
 
 ## 9. DoD
 

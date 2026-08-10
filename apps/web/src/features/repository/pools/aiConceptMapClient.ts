@@ -1,7 +1,6 @@
 import { httpsCallable } from 'firebase/functions';
 import type { Functions } from 'firebase/functions';
 import { isValidConceptMap } from '../programs/conceptMapContract.js';
-import type { PoolModelProfile } from './aiContentClient.js';
 
 /**
  * CONCEPT-MAP-03 — client tipizzato delle **stesse** callable
@@ -13,15 +12,25 @@ import type { PoolModelProfile } from './aiContentClient.js';
  * tipi del risultato, perché il contratto di questo kind è diverso dagli altri
  * due — ed è diverso in meno, non in più.
  *
- * Il payload è deliberatamente **povero**: profilo chiuso e corpo della lezione.
+ * Il payload è deliberatamente **povero**: profilo e corpo della lezione.
  * Nessuna profondità, indicazione docente, model ID o listino.
+ *
+ * CONCEPT-MAP-05 — il profilo è **fisso a `quality`** e non è un parametro. Sulle
+ * generazioni reali `economy` produceva mappe qualitativamente insufficienti, e
+ * una mappa sbagliata non è un risparmio: è un ripasso che disinforma. La
+ * costante vive qui e non nel componente perché è una proprietà del contratto,
+ * non una preferenza dell'interfaccia — e il server rifiuta comunque qualunque
+ * altro valore.
  */
+
+/** Unico profilo ammesso per la mappa concettuale. */
+export const CONCEPT_MAP_MODEL_PROFILE = 'quality' as const;
 
 /** Payload chiuso, identico per preview e generate. */
 export interface AiConceptMapRequest {
   kind: 'concept_map';
   requestId: string;
-  modelProfile: PoolModelProfile;
+  modelProfile: typeof CONCEPT_MAP_MODEL_PROFILE;
   lessonBody: string;
 }
 
@@ -64,13 +73,15 @@ export interface AiConceptMapCallables {
  */
 export function buildConceptMapRequest(params: {
   requestId: string;
-  modelProfile: PoolModelProfile;
   lessonBody: string;
 }): AiConceptMapRequest {
   return {
     kind: 'concept_map',
     requestId: params.requestId,
-    modelProfile: params.modelProfile,
+    // Non è un default sostituibile: la firma non espone alcun modo di
+    // scegliere il profilo, quindi non esiste un percorso — visibile o meno —
+    // che possa generare una mappa con economy.
+    modelProfile: CONCEPT_MAP_MODEL_PROFILE,
     lessonBody: params.lessonBody,
   };
 }
