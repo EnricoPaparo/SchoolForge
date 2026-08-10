@@ -608,6 +608,26 @@ function LessonContent({
         // restano nella testata esistente, senza duplicazioni.
         <MarkdownRenderer markdown={lesson.content} variant="lesson" />
       )}
+      {/*
+        CONCEPT-MAP-03 — la sezione compare **solo** se la proiezione contiene
+        davvero una mappa. Niente placeholder, niente «non disponibile», niente
+        pulsante inerte: un segnaposto racconterebbe allo studente che esiste
+        qualcosa che non può vedere, ed è l'opposto di ciò che la roadmap
+        chiede. La visibilità è già decisa dai dati (CONCEPT-MAP-02): qui si
+        rende soltanto ciò che è arrivato.
+
+        Il controllo è positivo (stringa non vuota) e non `!== null`: un oggetto
+        lezione privo del campo darebbe `undefined !== null`, cioè `true`, e
+        manderebbe `undefined` dentro il renderer.
+      */}
+      {typeof lesson.conceptMapMarkdown === 'string' && lesson.conceptMapMarkdown.length > 0 && (
+        <section className={styles.conceptMap} aria-labelledby={`concept-map-${lesson.id}`}>
+          <h3 id={`concept-map-${lesson.id}`} className={styles.conceptMapTitle}>
+            Mappa concettuale
+          </h3>
+          <MarkdownRenderer markdown={lesson.conceptMapMarkdown} variant="lesson" />
+        </section>
+      )}
     </article>
   );
 }

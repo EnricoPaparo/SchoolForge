@@ -3,6 +3,7 @@ import type { Firestore } from 'firebase/firestore';
 import type { PublicLessonDoc, ProgramDoc } from '../../../types/firestore.js';
 import { getOwnStudentDoc } from '../students/studentsService.js';
 import { normalizeLessonContent } from './lessonContentSize.js';
+import { readPublicConceptMap } from './conceptMapContract.js';
 
 export type StudentProgram = Pick<ProgramDoc, 'title' | 'classIds'> & {
   id: string;
@@ -14,8 +15,18 @@ export type StudentProgram = Pick<ProgramDoc, 'title' | 'classIds'> & {
  * student UI must treat that as "projection missing" explicitly, not as an
  * absent-but-optional field it might accidentally skip checking.
  */
-export type StudentLesson = { id: string } & Omit<PublicLessonDoc, 'content'> & {
+export type StudentLesson = { id: string } & Omit<
+  PublicLessonDoc,
+  'content' | 'conceptMapMarkdown'
+> & {
     content: string | null;
+    /**
+     * CONCEPT-MAP-02/03 — mappa concettuale già normalizzata fail-closed:
+     * `null` quando assente, malformata, oltre il cap **o** quando la lezione
+     * non è marcata svolta. La vista non deve rifare quel ragionamento, e non
+     * può dimenticarsene.
+     */
+    conceptMapMarkdown: string | null;
   };
 
 /**
@@ -100,6 +111,9 @@ export async function loadStudentLessons(
             concettiChiave: raw.concettiChiave ?? [],
             obiettivi: raw.obiettivi ?? [],
             content: normalizeLessonContent(raw.content),
+            // L'invariante di visibilità è riapplicato in lettura: una
+            // proiezione non svolta legge `null` anche se contenesse il campo.
+            conceptMapMarkdown: readPublicConceptMap(raw),
           } as StudentLesson;
         })
         // STRUCTURE-IMPORT-02B: una lezione importata come scheletro ha corpo

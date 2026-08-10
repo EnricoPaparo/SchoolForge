@@ -745,3 +745,19 @@
   margin: 0;
   word-break: break-word;
 }
+
+/*
+ * CONCEPT-MAP-03 — motivo per cui una voce del menu è disabilitata.
+ *
+ * Vive dentro il menu e non in un tooltip soltanto: il `title` non è
+ * raggiungibile da tastiera né da lettore di schermo, e una voce disabilitata
+ * senza spiegazione è indistinguibile da un guasto.
+ */
+.menuHint {
+  display: block;
+  padding: 0 0.75rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+  max-width: 22rem;
+}

@@ -61,7 +61,18 @@ describe('superfici', () => {
   it('la vista lezione dello studente usa la variante', () => {
     const code = src('features/student/StudentDidatticaView.tsx');
     expect(code).toMatch(/<MarkdownRenderer markdown=\{lesson\.content\} variant="lesson" \/>/);
-    expect(code.match(/<MarkdownRenderer/g)).toHaveLength(1);
+    // CONCEPT-MAP-03 — la vista rende due Markdown: il corpo e la mappa
+    // concettuale. Ciò che il test difende non è il conteggio in sé, ma che
+    // **ogni** occorrenza usi la variante lezione: una superficie legacy
+    // accanto a una manuale renderebbe la stessa pagina in due linguaggi.
+    const occurrences = code.match(/<MarkdownRenderer[^/]*\/>/g) ?? [];
+    expect(occurrences).toHaveLength(2);
+    for (const occurrence of occurrences) {
+      expect(occurrence).toContain('variant="lesson"');
+    }
+    expect(code).toMatch(
+      /<MarkdownRenderer markdown=\{lesson\.conceptMapMarkdown\} variant="lesson" \/>/,
+    );
   });
 
   it('l’anteprima dell’editor resta legacy', () => {

@@ -320,3 +320,25 @@
     padding: 0.45rem 0.65rem;
   }
 }
+
+/*
+ * CONCEPT-MAP-03 — sezione «Mappa concettuale» della lezione studente.
+ *
+ * Separata dal corpo da un filetto, non da una card: è parte della stessa
+ * lezione, non un contenuto autonomo. Lo scorrimento orizzontale del diagramma
+ * resta confinato al proprio `<pre>` (`.prose pre` ha già `overflow-x: auto`),
+ * quindi la pagina non si trascina dietro nulla su schermo stretto.
+ */
+.conceptMap {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--color-border);
+  /* Difesa esplicita: nessun figlio può allargare la pagina. */
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.conceptMapTitle {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
