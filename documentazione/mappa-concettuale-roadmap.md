@@ -417,13 +417,31 @@ sola, un linguaggio solo.
 nessun modulo li importava. Gli altri PDF (programma svolto, verifiche,
 correzioni) restano intatti.
 
-**Smoke responsive eseguito** a 1440/1024/390/320 px su Chromium: nessuna
-larghezza produce scorrimento orizzontale di pagina, il footer del dialog resta
-raggiungibile ovunque, e il diagramma a caratteri scorre **dentro il proprio
-`<pre>`** (verificato: `scrollWidth > clientWidth` con `overflow-x: auto`), non
-trascinando la pagina. Le schede editor/anteprima hanno target ≥ 44 px; i
-pulsanti del footer restano quelli condivisi da tutti i dialog del portale
-(36 px), invariati per non divergere dal resto dell'interfaccia.
+**Il risultato IA è validato con il contratto autorevole.** `validateConceptMapResult`
+usa `isValidConceptMap` — lo stesso metro della persistenza — quindi tipo,
+non-vuotezza e cap di 32.000 **byte UTF-8**. Il cap non è riscritto nel client:
+duplicarlo avrebbe prodotto due limiti destinati a divergere e, soprattutto, un
+limite in caratteri. Una mappa ricca di accenti o di caratteri di disegno del
+diagramma pesa in byte molto più di quanto sia lunga: con un cap in caratteri una
+proposta sarebbe stata accettata dall'anteprima e poi rifiutata dal salvataggio,
+con il testo precedente ormai sostituito. Rifiutare subito, con lo stesso metro,
+è ciò che rende impossibile quello stato.
+
+**Smoke responsive eseguito** a 1440/1024/390/320 px su Chromium, con e senza
+puntatore touch: nessuna larghezza produce scorrimento orizzontale di pagina, il
+dialog sta dentro la viewport, il footer resta raggiungibile ovunque, e il
+diagramma a caratteri scorre **dentro il proprio `<pre>`** (verificato:
+`scrollWidth > clientWidth` con `overflow-x: auto`), non trascinando la pagina.
+
+**Target touch ≥ 44 px, opt-in.** Le schede editor/anteprima li hanno per
+costruzione; i pulsanti delle azioni li raggiungono tramite una classe del CSS
+module che si **affianca** a `dialog-actions` senza sostituirla — layout, gap e
+wrapping restano quelli condivisi, cambia solo `min-height`. La regola vale su
+`(pointer: coarse)` **oppure** viewport ≤ 640 px: legarla alla sola larghezza
+avrebbe lasciato a 36 px un tablet in orizzontale, che è largo e si tocca
+comunque con un dito. `DialogShell` e il foglio globale non sono toccati, e su
+desktop con mouse i pulsanti restano quelli di tutti gli altri dialog del
+portale — verificato nello smoke su entrambi i tipi di puntatore.
 
 **Ancora aperti:** rollout DEV e gate umano (vedi §10).
 

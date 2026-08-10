@@ -87,6 +87,26 @@
   color: var(--color-text-muted);
 }
 
+/*
+ * Target touch ≥ 44 px, **solo per questa finestra**.
+ *
+ * I pulsanti dei dialog del portale misurano 36 px: alzarli globalmente
+ * cambierebbe l'altezza di ogni conferma dell'applicazione, che non è ciò che
+ * questa fase deve fare. La classe è quindi opt-in e si affianca a
+ * `dialog-actions` senza sostituirla: layout, gap e wrapping restano quelli
+ * condivisi, cambia solo l'altezza minima.
+ *
+ * Vale su puntatore grossolano **oppure** viewport stretta, non solo su
+ * `max-width`: un tablet in orizzontale è largo e si tocca comunque con un dito.
+ * Nessuna forzatura di cascata serve: `min-height` non è nemmeno dichiarata
+ * dalla regola globale delle azioni, quindi non c'è conflitto da vincere.
+ */
+@media (pointer: coarse), (max-width: 640px) {
+  .actions button {
+    min-height: 44px;
+  }
+}
+
 @media (max-width: 640px) {
   .textarea,
   .preview {

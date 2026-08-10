@@ -230,7 +230,7 @@ export function ConceptMapDialog({
             <li>Costo stimato: {formatMicroUsd(preview.estimatedCostMicroUsd)}</li>
             <li>Tetto massimo prenotabile: {formatMicroUsd(preview.reservationCostMicroUsd)}</li>
           </ul>
-          <div className="dialog-actions">
+          <div className={`dialog-actions ${styles.actions}`}>
             <button
               type="button"
               onClick={() => {
@@ -308,7 +308,7 @@ export function ConceptMapDialog({
             </p>
           )}
 
-          <div className="dialog-actions">
+          <div className={`dialog-actions ${styles.actions}`}>
             <button type="button" onClick={requestClose} disabled={busy}>
               Chiudi
             </button>
@@ -338,7 +338,7 @@ export function ConceptMapDialog({
             La mappa attuale verrà sostituita da una nuova generazione. Il testo di adesso resta
             intatto finché la nuova mappa non è pronta.
           </p>
-          <div className="dialog-actions">
+          <div className={`dialog-actions ${styles.actions}`}>
             <button type="button" onClick={() => setConfirm(null)}>
               Continua la modifica
             </button>
@@ -363,7 +363,7 @@ export function ConceptMapDialog({
           onCancel={() => setConfirm(null)}
         >
           <p>Le modifiche alla mappa non salvate andranno perse.</p>
-          <div className="dialog-actions">
+          <div className={`dialog-actions ${styles.actions}`}>
             <button type="button" onClick={() => setConfirm(null)}>
               Continua la modifica
             </button>

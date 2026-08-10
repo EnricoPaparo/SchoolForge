@@ -7,6 +7,7 @@ import {
   type AiConceptMapGenerateResult,
 } from '../aiConceptMapClient.js';
 import { newRequestId } from '../aiContentClient.js';
+import { MAX_CONCEPT_MAP_BYTES, isValidConceptMap } from '../../programs/conceptMapContract.js';
 import type { Functions } from 'firebase/functions';
 
 const mockCallable = vi.fn();
@@ -115,7 +116,63 @@ describe('validazione del risultato', () => {
     expect(validateConceptMapResult(result({ output: { conceptMapMarkdown: '  ' } })).ok).toBe(
       false,
     );
+    expect(
+      validateConceptMapResult(result({ output: { conceptMapMarkdown: '\n\t \r\n' } })).ok,
+    ).toBe(false);
     expect(validateConceptMapResult(result({ output: {} })).ok).toBe(false);
     expect(validateConceptMapResult(result({ output: { conceptMapMarkdown: 42 } })).ok).toBe(false);
+    expect(validateConceptMapResult(result({ output: { conceptMapMarkdown: null } })).ok).toBe(
+      false,
+    );
+    expect(
+      validateConceptMapResult(result({ output: { conceptMapMarkdown: ['- voce'] } })).ok,
+    ).toBe(false);
+    expect(validateConceptMapResult(result({ output: undefined })).ok).toBe(false);
+  });
+
+  it('rifiuta un risultato oltre il cap in byte', () => {
+    expect(
+      validateConceptMapResult(
+        result({ output: { conceptMapMarkdown: 'x'.repeat(MAX_CONCEPT_MAP_BYTES + 1) } }),
+      ).ok,
+    ).toBe(false);
+    expect(
+      validateConceptMapResult(
+        result({ output: { conceptMapMarkdown: 'x'.repeat(MAX_CONCEPT_MAP_BYTES) } }),
+      ).ok,
+    ).toBe(true);
+  });
+
+  it('il cap è in byte UTF-8, non in caratteri', () => {
+    // Questo è il caso che un cap in caratteri lascerebbe passare, e che il
+    // salvataggio rifiuterebbe **dopo** aver già sostituito il testo del
+    // docente: 20.000 caratteri (ben sotto 32.000) ma 60.000 byte.
+    const emDash = '─'; // U+2500, 3 byte in UTF-8
+    const multibyte = emDash.repeat(20_000);
+    expect(multibyte.length).toBeLessThan(MAX_CONCEPT_MAP_BYTES);
+    expect(new TextEncoder().encode(multibyte).length).toBeGreaterThan(MAX_CONCEPT_MAP_BYTES);
+    expect(validateConceptMapResult(result({ output: { conceptMapMarkdown: multibyte } })).ok).toBe(
+      false,
+    );
+  });
+
+  it('applica lo stesso metro del salvataggio, senza duplicarlo', () => {
+    // Se i due limiti divergessero, esisterebbe una proposta accettata
+    // dall'anteprima e rifiutata dal salvataggio: il docente perderebbe il
+    // testo precedente in cambio di nulla. Il contratto è uno solo.
+    const cases: unknown[] = [
+      '## Ossatura\n\n- voce',
+      '',
+      '   ',
+      42,
+      null,
+      'ù'.repeat(MAX_CONCEPT_MAP_BYTES), // 2 byte per carattere: oltre il cap
+      'x'.repeat(MAX_CONCEPT_MAP_BYTES),
+    ];
+    for (const value of cases) {
+      expect(validateConceptMapResult(result({ output: { conceptMapMarkdown: value } })).ok).toBe(
+        isValidConceptMap(value),
+      );
+    }
   });
 });

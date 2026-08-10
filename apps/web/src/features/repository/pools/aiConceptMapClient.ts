@@ -1,5 +1,6 @@
 import { httpsCallable } from 'firebase/functions';
 import type { Functions } from 'firebase/functions';
+import { isValidConceptMap } from '../programs/conceptMapContract.js';
 
 /**
  * CONCEPT-MAP-03 — client tipizzato delle **stesse** callable
@@ -94,15 +95,26 @@ export function createAiConceptMapCallables(functions: Functions): AiConceptMapC
 }
 
 /**
- * Valida la forma del risultato prima di mostrarlo. Il server ha già verificato
- * la struttura canonica (CONCEPT-MAP-01); qui si difende soltanto dal risultato
- * malformato o vuoto, che non deve mai sostituire il testo corrente.
+ * Valida il risultato prima di mostrarlo, con il **contratto autorevole** già
+ * usato dalla persistenza (`isValidConceptMap`): tipo, non-vuotezza e cap di
+ * 32.000 **byte UTF-8**.
+ *
+ * Il cap non è riscritto qui. Duplicarlo avrebbe creato due limiti destinati a
+ * divergere, e soprattutto un limite in caratteri: una mappa ricca di accenti o
+ * di caratteri di disegno del diagramma pesa in byte molto più di quanto sia
+ * lunga, quindi una proposta accettata dal client sarebbe stata poi rifiutata
+ * dal salvataggio — con il testo precedente ormai sostituito. Rifiutare qui, con
+ * lo stesso metro, è ciò che rende impossibile quello stato.
+ *
+ * Il server ha già verificato la struttura canonica (CONCEPT-MAP-01); questa è
+ * difesa in profondità, non un secondo validatore strutturale. Un risultato
+ * invalido non sostituisce mai il testo corrente.
  */
 export function validateConceptMapResult(
   result: AiConceptMapGenerateResult,
 ): { ok: true; conceptMapMarkdown: string } | { ok: false; error: string } {
   const markdown = result.output?.conceptMapMarkdown;
-  if (typeof markdown !== 'string' || markdown.trim().length === 0) {
+  if (!isValidConceptMap(markdown)) {
     return { ok: false, error: 'La mappa generata non è valida. Riprova.' };
   }
   return { ok: true, conceptMapMarkdown: markdown };
