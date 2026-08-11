@@ -12,8 +12,10 @@ import {
   type PoolTuneCliDeps,
 } from './poolTuneCli.js';
 import {
+  buildPoolTuneRequest,
   buildPoolTuneExecutionPlan,
   loadPoolTuneDataset,
+  selectPoolTuneRuns,
   type PoolTuneDataset,
 } from './poolTuneBenchmark.js';
 
@@ -113,7 +115,11 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
   it('esegue il probe locale col provider mock e conserva otto output separati', async () => {
     const checkpoints: Parameters<PoolTuneCliDeps['writeOutput']>[0][] = [];
     const writeOutput = vi.fn(async (params: Parameters<PoolTuneCliDeps['writeOutput']>[0]) => {
-      checkpoints.push({ ...params, samples: [...params.samples] });
+      checkpoints.push({
+        ...params,
+        samples: [...params.samples],
+        rejections: [...params.rejections],
+      });
       return 'C:/tmp/pool-report';
     });
     const options = deps({
@@ -129,6 +135,7 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
       0, 1, 2, 3, 4, 5, 6, 7, 8, 8,
     ]);
     expect(checkpoints.at(-1)?.status).toBe('complete');
+    expect(checkpoints.at(-1)?.rejections).toEqual([]);
     const samples = checkpoints.at(-1)?.samples ?? [];
     expect(samples.map((sample) => sample.modelProfile)).toEqual([
       'economy',
@@ -205,10 +212,63 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
     expect(last?.samples).toHaveLength(4);
   });
 
+  it('conserva un output semanticamente invalido come evidenza e continua il probe', async () => {
+    const workingProvider = createContentProvider({ mode: 'mock' });
+    let invocation = 0;
+    const provider = {
+      generate: vi.fn(async (...args: Parameters<typeof workingProvider.generate>) => {
+        const outcome = await workingProvider.generate(...args);
+        invocation += 1;
+        if (invocation !== 1 || outcome.status !== 'ok') return outcome;
+        const output = structuredClone(outcome.output) as {
+          questions: Array<{ opzioni?: string[]; soluzione?: number[] }>;
+        };
+        const closed = output.questions.find((question) => question.opzioni);
+        if (!closed) throw new Error('Fixture del probe priva di domanda chiusa.');
+        closed.soluzione = [99];
+        return { ...outcome, output };
+      }),
+    };
+    const checkpoints: Parameters<PoolTuneCliDeps['writeOutput']>[0][] = [];
+    const writeOutput = vi.fn(async (params: Parameters<PoolTuneCliDeps['writeOutput']>[0]) => {
+      checkpoints.push({
+        ...params,
+        samples: [...params.samples],
+        rejections: [...params.rejections],
+      });
+      return 'C:/tmp/pool-invalid-output';
+    });
+    const options = deps({
+      argv: [POOL_TUNE_EXECUTE_FLAG, POOL_TUNE_COST_ACK_FLAG],
+      confirm: vi.fn(async () => 'ESEGUI 8 POOL PROFILE REALI'),
+      createProvider: vi.fn(() => provider),
+      writeOutput,
+    });
+
+    await expect(runPoolTuneCli(options)).resolves.toBe('executed');
+    expect(provider.generate).toHaveBeenCalledTimes(8);
+    const completed = checkpoints.at(-1);
+    expect(completed).toMatchObject({ status: 'complete', failure: null });
+    expect(completed?.samples).toHaveLength(7);
+    expect(completed?.rejections).toEqual([
+      expect.objectContaining({
+        scenarioId: 'PT00-01',
+        modelProfile: 'economy',
+        evidence: 'raw_output',
+        fileName: 'pool-tune-00-PT00-01-economy-rejected.json',
+        validationError: 'La soluzione deve riferirsi alle opzioni fornite.',
+      }),
+    ]);
+  });
+
   it('riprende il prefisso validato senza richiamare i campioni già salvati', async () => {
     const firstCheckpoints: Parameters<PoolTuneCliDeps['writeOutput']>[0][] = [];
     const firstWrite = vi.fn(async (params: Parameters<PoolTuneCliDeps['writeOutput']>[0]) => {
-      firstCheckpoints.push({ ...params, samples: [...params.samples] });
+      firstCheckpoints.push({
+        ...params,
+        samples: [...params.samples],
+        rejections: [...params.rejections],
+      });
       return 'C:/tmp/pool-first';
     });
     const first = deps({
@@ -223,7 +283,11 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
     const generate = vi.spyOn(provider, 'generate');
     const resumedCheckpoints: Parameters<PoolTuneCliDeps['writeOutput']>[0][] = [];
     const resumedWrite = vi.fn(async (params: Parameters<PoolTuneCliDeps['writeOutput']>[0]) => {
-      resumedCheckpoints.push({ ...params, samples: [...params.samples] });
+      resumedCheckpoints.push({
+        ...params,
+        samples: [...params.samples],
+        rejections: [...params.rejections],
+      });
       return 'C:/tmp/pool-first';
     });
     const resumed = deps({
@@ -234,6 +298,7 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
         outputPath: 'C:/tmp/pool-first',
         generatedAt: '2026-08-10T10:00:00.000Z',
         samples: prefix,
+        rejections: [],
       })),
       writeOutput: resumedWrite,
     });
@@ -267,6 +332,7 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
         outputPath: 'C:/tmp/pool-full',
         generatedAt: '2026-08-10T10:00:00.000Z',
         samples: [...completedSamples],
+        rejections: [],
       })),
       writeOutput,
     });
@@ -310,7 +376,11 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
         argv: [POOL_TUNE_EXECUTE_FLAG, POOL_TUNE_COST_ACK_FLAG],
         confirm: vi.fn(async () => 'ESEGUI 8 POOL PROFILE REALI'),
         writeOutput: vi.fn(async (params: Parameters<PoolTuneCliDeps['writeOutput']>[0]) => {
-          snapshots.push({ ...params, samples: [...params.samples] });
+          snapshots.push({
+            ...params,
+            samples: [...params.samples],
+            rejections: [...params.rejections],
+          });
           return 'C:/tmp/seed';
         }),
       });
@@ -322,6 +392,7 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
         plan,
         generatedAt: '2026-08-10T10:00:00.000Z',
         samples,
+        rejections: [],
         outputPath,
         status: 'failed',
         failure: {
@@ -363,6 +434,7 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
         plan,
         generatedAt: '2026-08-10T10:00:00.000Z',
         samples,
+        rejections: [],
         outputPath,
         status: 'failed',
         failure: {
@@ -384,6 +456,212 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
           modelProfile: 'quality',
         }),
       ).rejects.toThrow(/costo totale/);
+    } finally {
+      await rm(outputPath, { recursive: true, force: true });
+    }
+  });
+
+  it('migra il checkpoint v1 fallito per validazione e riparte dal secondo campione', async () => {
+    await mkdir(DEFAULT_POOL_TUNE_OUTPUT_ROOT, { recursive: true });
+    const outputPath = await mkdtemp(resolve(DEFAULT_POOL_TUNE_OUTPUT_ROOT, 'pool-tune-v1-'));
+    try {
+      const plan = buildPoolTuneExecutionPlan(dataset, 'profile_probe', 'quality');
+      await writeFile(
+        resolve(outputPath, 'pool-tune-00-report.json'),
+        `${JSON.stringify(
+          {
+            datasetVersion: dataset.datasetVersion,
+            rubricVersion: dataset.rubricVersion,
+            promptVersion: 'aigen-prompt-01-pool-v1',
+            phase: 'profile_probe',
+            selectedModelProfile: 'paired',
+            plannedCalls: 8,
+            generatedAt: '2026-08-11T06:10:20.882Z',
+            status: 'failed',
+            failure: {
+              scenarioId: 'PT00-01',
+              modelProfile: 'economy',
+              reason: 'La soluzione deve riferirsi alle opzioni fornite.',
+            },
+            samples: [],
+            totalActualCostMicroUsd: 0,
+            costUpperBoundMicroUsd: plan.costUpperBoundMicroUsd,
+          },
+          null,
+          2,
+        )}\n`,
+        'utf8',
+      );
+
+      const resume = await loadPoolTuneResume({
+        outputPath,
+        dataset,
+        plan,
+        phase: 'profile_probe',
+        modelProfile: 'quality',
+      });
+      expect(resume.samples).toEqual([]);
+      expect(resume.rejections).toEqual([
+        expect.objectContaining({
+          scenarioId: 'PT00-01',
+          modelProfile: 'economy',
+          evidence: 'legacy_checkpoint_without_raw',
+          fileName: null,
+          actualCostMicroUsd: null,
+          priorBillingRisk: true,
+        }),
+      ]);
+
+      const provider = createContentProvider({ mode: 'mock' });
+      const generate = vi.spyOn(provider, 'generate');
+      const writeOutput = vi.fn(async () => outputPath);
+      const options = deps({
+        argv: [POOL_TUNE_EXECUTE_FLAG, POOL_TUNE_COST_ACK_FLAG, `--resume-session=${outputPath}`],
+        confirm: vi.fn(async () => 'RIPRENDI 7 POOL PROFILE REALI'),
+        createProvider: vi.fn(() => provider),
+        loadResume: vi.fn(async () => resume),
+        writeOutput,
+      });
+      await expect(runPoolTuneCli(options)).resolves.toBe('executed');
+      expect(generate).toHaveBeenCalledTimes(7);
+      expect(options.confirm).toHaveBeenCalledWith(
+        expect.stringContaining('RIPRENDI 7 POOL PROFILE REALI'),
+      );
+      expect(writeOutput.mock.calls.at(-1)?.[0]).toMatchObject({
+        status: 'complete',
+        samples: expect.any(Array),
+        rejections: [expect.objectContaining({ scenarioId: 'PT00-01' })],
+      });
+      expect(writeOutput.mock.calls.at(-1)?.[0].samples).toHaveLength(7);
+    } finally {
+      await rm(outputPath, { recursive: true, force: true });
+    }
+  });
+
+  it('persiste, ricarica e riverifica il raw output rifiutato', async () => {
+    await mkdir(DEFAULT_POOL_TUNE_OUTPUT_ROOT, { recursive: true });
+    const outputPath = await mkdtemp(resolve(DEFAULT_POOL_TUNE_OUTPUT_ROOT, 'pool-tune-rejected-'));
+    try {
+      const plan = buildPoolTuneExecutionPlan(dataset, 'profile_probe', 'quality');
+      const run = selectPoolTuneRuns(dataset, 'profile_probe', 'quality')[0];
+      if (!run) throw new Error('Scenario del probe mancante.');
+      const request = buildPoolTuneRequest(run.scenario, run.modelProfile);
+      const provider = createContentProvider({ mode: 'mock' });
+      const outcome = await provider.generate(request, plan.scenarios[0]?.model ?? 'mock');
+      if (outcome.status !== 'ok') throw new Error('Provider mock non disponibile.');
+      const rawOutput = structuredClone(outcome.output) as {
+        questions: Array<{ opzioni?: string[]; soluzione?: number[] }>;
+      };
+      const closed = rawOutput.questions.find((question) => question.opzioni);
+      if (!closed) throw new Error('Scenario del probe privo di domanda chiusa.');
+      closed.soluzione = [99];
+      const fileName = 'pool-tune-00-PT00-01-economy-rejected.json';
+      await writePoolTuneCheckpoint({
+        dataset,
+        plan,
+        generatedAt: '2026-08-11T06:10:20.882Z',
+        samples: [],
+        rejections: [
+          {
+            scenarioId: 'PT00-01',
+            phase: 'profile_probe',
+            modelProfile: 'economy',
+            fileName,
+            inputTokens: 0,
+            outputTokens: 0,
+            actualCostMicroUsd: 0,
+            priorBillingRisk: false,
+            validationError: 'La soluzione deve riferirsi alle opzioni fornite.',
+            evidence: 'raw_output',
+            rawOutput,
+          },
+        ],
+        outputPath,
+        status: 'running',
+        failure: null,
+      });
+
+      await expect(
+        loadPoolTuneResume({
+          outputPath,
+          dataset,
+          plan,
+          phase: 'profile_probe',
+          modelProfile: 'quality',
+        }),
+      ).resolves.toMatchObject({
+        samples: [],
+        rejections: [
+          expect.objectContaining({
+            scenarioId: 'PT00-01',
+            evidence: 'raw_output',
+            rawOutput: expect.any(Object),
+          }),
+        ],
+      });
+
+      closed.soluzione = [0];
+      await writeFile(
+        resolve(outputPath, fileName),
+        `${JSON.stringify(rawOutput, null, 2)}\n`,
+        'utf8',
+      );
+      await expect(
+        loadPoolTuneResume({
+          outputPath,
+          dataset,
+          plan,
+          phase: 'profile_probe',
+          modelProfile: 'quality',
+        }),
+      ).rejects.toThrow(/non riproduce lo stesso errore/);
+    } finally {
+      await rm(outputPath, { recursive: true, force: true });
+    }
+  });
+
+  it('non migra un errore provider v1: il campione resta da ritentare', async () => {
+    await mkdir(DEFAULT_POOL_TUNE_OUTPUT_ROOT, { recursive: true });
+    const outputPath = await mkdtemp(
+      resolve(DEFAULT_POOL_TUNE_OUTPUT_ROOT, 'pool-tune-v1-provider-'),
+    );
+    try {
+      const plan = buildPoolTuneExecutionPlan(dataset, 'profile_probe', 'quality');
+      await writeFile(
+        resolve(outputPath, 'pool-tune-00-report.json'),
+        `${JSON.stringify(
+          {
+            datasetVersion: dataset.datasetVersion,
+            rubricVersion: dataset.rubricVersion,
+            promptVersion: 'aigen-prompt-01-pool-v1',
+            phase: 'profile_probe',
+            selectedModelProfile: 'paired',
+            plannedCalls: 8,
+            generatedAt: '2026-08-11T06:10:20.882Z',
+            status: 'failed',
+            failure: {
+              scenarioId: 'PT00-01',
+              modelProfile: 'economy',
+              reason: 'PT00-01/economy: provider non disponibile (invocation_unknown).',
+            },
+            samples: [],
+            totalActualCostMicroUsd: 0,
+            costUpperBoundMicroUsd: plan.costUpperBoundMicroUsd,
+          },
+          null,
+          2,
+        )}\n`,
+        'utf8',
+      );
+      await expect(
+        loadPoolTuneResume({
+          outputPath,
+          dataset,
+          plan,
+          phase: 'profile_probe',
+          modelProfile: 'quality',
+        }),
+      ).resolves.toMatchObject({ samples: [], rejections: [] });
     } finally {
       await rm(outputPath, { recursive: true, force: true });
     }

@@ -1,7 +1,8 @@
 # Qualità dei pool generati — roadmap POOL-TUNE
 
-Stato: **POOL-TUNE-00 implementato; primo profile probe reale interrotto senza
-evidenze recuperabili; POOL-TUNE-01 ancora aperto.**
+Stato: **POOL-TUNE-00 implementato; il profile probe reale ha già rilevato un
+blocker strutturale su `PT00-01/economy` e deve completare le altre sette
+combinazioni; POOL-TUNE-01 ancora aperto.**
 
 Questa roadmap definisce come misurare e migliorare il prompt dei pool senza
 ottimizzarlo su pochi esempi favorevoli. Il contratto canonico del pool, il
@@ -177,19 +178,25 @@ runner. Gli output restano in `functions/lib/`, fuori da Firestore e Storage.
 ### 8.1 Checkpoint e ripresa
 
 Ogni sessione reale crea la propria directory in `functions/lib/` **prima**
-della prima chiamata e aggiorna in modo atomico il report dopo ogni campione
-validato. Il report può essere `running`, `failed` o `complete`; una sessione
-fallita conserva il prefisso già completato e identifica il successivo campione
-non prodotto.
+della prima chiamata e aggiorna in modo atomico il report dopo ogni risposta del
+provider. Il report può essere `running`, `failed` o `complete`. Un pool valido
+viene conservato come campione; un output ricevuto ma respinto dal contratto
+semantico viene conservato separatamente come evidenza negativa e conta come
+combinazione già eseguita. Solo un errore che non produce una risposta
+revisionabile (`pre_invocation` o `invocation_unknown`) interrompe la sessione e
+lascia quella combinazione da ritentare.
 
 La ripresa richiede gli stessi flag economici, una nuova conferma interattiva e
 `--resume-session=<directory>`. Prima della rete il runner rilegge e valida
 fail-closed:
 
 - versione di dataset, rubrica e prompt, fase, profilo, piano e tetto di costo;
-- prefisso esatto degli scenari e dei profili previsti;
-- ogni JSON tramite il contratto semantico del pool e il DTO persistito canonico;
-- usage, listino, costo per campione e totale;
+- prefisso esatto degli scenari e dei profili previsti, comprendendo campioni
+  validi e output rifiutati;
+- ogni JSON valido tramite il contratto semantico del pool e il DTO persistito
+  canonico;
+- ogni JSON rifiutato riproducendo lo stesso errore semantico registrato;
+- usage, listino, costo per risultato e totale;
 - stato e identità dell'eventuale errore.
 
 Una ripresa chiama il provider soltanto per il suffisso mancante. Un checkpoint
@@ -198,6 +205,12 @@ finalizzazione viene marcato `complete` senza leggere la API key e senza nuove
 chiamate. Directory esterne a `functions/lib`, report incompleti, alterati o
 appartenenti a un altro piano sono rifiutati; non vengono corretti né
 sovrascritti.
+
+Il formato `pool-tune-session-v2` conserva anche il raw output rifiutato. Un
+checkpoint legacy v1 che si era fermato su un errore di validazione viene
+recuperato senza ripetere la chiamata, ma resta marcato esplicitamente come
+`legacy_checkpoint_without_raw`: non inventa usage, costo o risposta perduti e
+non può essere revisionato oltre al blocker registrato.
 
 ### 8.2 Evidenza del tentativo interrotto del 10 agosto 2026
 
@@ -214,6 +227,21 @@ per le cinque combinazioni che possono avere raggiunto il provider è
 dichiara come costo reale né l'uno né l'altra. Poiché il vecchio runner non ha
 salvato checkpoint, la prossima esecuzione autorizzata dovrà ripartire dall'intero
 profile probe; da quel momento un'eventuale nuova interruzione sarà riprendibile.
+
+### 8.3 Evidenza del nuovo tentativo dell'11 agosto 2026
+
+Il nuovo profile probe ha ricevuto una risposta per `PT00-01/economy`, ma il
+validator l'ha respinta con «La soluzione deve riferirsi alle opzioni fornite»:
+almeno una domanda chiusa indicava quindi una soluzione fuori dall'insieme delle
+opzioni. È già un **blocker** e impedisce al profilo Economy di superare il probe
+col prompt corrente.
+
+La versione v1 del checkpoint ha conservato scenario, profilo e motivo, ma non
+raw output né usage. Il loader v2 la rappresenta come evidenza legacy
+incompleta, assume costo non conoscibile e riparte dalla seconda combinazione:
+restano **sette** chiamate, senza ripagare `PT00-01/economy`. Il profile probe non
+ha ancora un verdetto comparativo: deve completare il suffisso e revisionare gli
+output validi e rifiutati.
 
 ## 9. Gate GPOOL-QUALITY
 
