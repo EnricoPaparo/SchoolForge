@@ -1,8 +1,7 @@
 # Qualità dei pool generati — roadmap POOL-TUNE
 
-Stato: **POOL-TUNE-00 e POOL-TUNE-01 completati. Il profile probe seleziona
-`quality`; il candidato A di POOL-TUNE-02 è implementato e ha superato review
-statica e dry-run. Il lotto reale, la review qualitativa, POOL-TUNE-03 e il Gate
+Stato: **POOL-TUNE-00, POOL-TUNE-01 e POOL-TUNE-02 completati. Il candidato A
+Quality supera il tuning reale ed è congelato. POOL-TUNE-03 holdout e il Gate
 GPOOL-QUALITY restano aperti.**
 
 Questa roadmap definisce come misurare e migliorare il prompt dei pool senza
@@ -272,9 +271,33 @@ Il dry-run Quality pianifica 8 chiamate e fino a 16 tentativi, con stima
 provider o usato la rete. Il lotto reale richiede una nuova autorizzazione
 esplicita; nessuna autorizzazione precedente può essere riusata.
 
+### 8.6 Tuning reale del candidato A
+
+Il lotto Quality dell'11 agosto 2026 ha prodotto 8/8 pool validi e zero output
+rifiutati. La review completa è in
+[`evidenze/pool-tune-02-candidate-a-real-review.md`](evidenze/pool-tune-02-candidate-a-real-review.md).
+
+- 62 domande totali: 25 aperte e 37 chiuse;
+- 25/25 soluzioni aperte corrette e formative;
+- 37/37 chiavi chiuse corrette e univoche;
+- zero blocker;
+- punteggio 318/320, media 3,975/4;
+- fedeltà e soluzioni aperte: 4/4;
+- costo effettivo: 136.214 µUSD (0,136214 USD), contro la stima di
+  216.257 µUSD e il tetto di 676.954 µUSD.
+
+I difetti misurati nel profile probe sono risolti: nessun indice 1-based,
+nessuna duplicazione sostanziale in `PT00-01` e nessun escape letterale in
+`PT00-07`.
+
+**POOL-TUNE-02 è PASS.** Il prompt `pool-tune-02-candidate-a-v1` è congelato
+per l'holdout e non deve essere ritoccato prima di eseguire i quattro scenari
+separati. L'holdout richiede dry-run, review economica e una nuova autorizzazione
+esplicita.
+
 ## 9. Gate GPOOL-QUALITY
 
-Il gate resta **APERTO** finché non sono completati profile probe, tuning e
-holdout con evidenze revisionate. POOL-TUNE-00 dimostra soltanto che il protocollo
-è riproducibile e fail-closed: non afferma ancora che il prompt attuale sia
-buono, né autorizza modifiche runtime o deploy.
+Il gate resta **APERTO**: profile probe e tuning sono completati, ma l'holdout
+separato non è ancora stato eseguito e revisionato. Il PASS del tuning non può
+essere usato per anticipare il verdetto finale, né autorizza nuove chiamate o
+deploy.
