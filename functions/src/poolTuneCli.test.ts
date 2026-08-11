@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createContentProvider } from './aiContentProvider.js';
+import { AI_POOL_PROMPT_VERSION } from './aiContentPrompt.js';
 import {
   DEFAULT_POOL_TUNE_OUTPUT_ROOT,
   POOL_TUNE_COST_ACK_FLAG,
@@ -56,7 +57,7 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
     expect(options.writeOutput).not.toHaveBeenCalled();
     const output = vi.mocked(options.log).mock.calls.flat().join('\n');
     expect(output).toContain('DRY-RUN');
-    expect(output).toContain('aigen-prompt-01-pool-v1');
+    expect(output).toContain(AI_POOL_PROMPT_VERSION);
     expect(output).not.toContain('lesson-depth-01-candidate-e-v1');
   });
 
@@ -472,7 +473,7 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
           {
             datasetVersion: dataset.datasetVersion,
             rubricVersion: dataset.rubricVersion,
-            promptVersion: 'aigen-prompt-01-pool-v1',
+            promptVersion: AI_POOL_PROMPT_VERSION,
             phase: 'profile_probe',
             selectedModelProfile: 'paired',
             plannedCalls: 8,
@@ -533,6 +534,49 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
         rejections: [expect.objectContaining({ scenarioId: 'PT00-01' })],
       });
       expect(writeOutput.mock.calls.at(-1)?.[0].samples).toHaveLength(7);
+    } finally {
+      await rm(outputPath, { recursive: true, force: true });
+    }
+  });
+
+  it('non riusa un checkpoint del prompt precedente per il candidato A', async () => {
+    await mkdir(DEFAULT_POOL_TUNE_OUTPUT_ROOT, { recursive: true });
+    const outputPath = await mkdtemp(
+      resolve(DEFAULT_POOL_TUNE_OUTPUT_ROOT, 'pool-tune-old-prompt-'),
+    );
+    try {
+      const plan = buildPoolTuneExecutionPlan(dataset, 'profile_probe', 'quality');
+      await writeFile(
+        resolve(outputPath, 'pool-tune-00-report.json'),
+        `${JSON.stringify(
+          {
+            datasetVersion: dataset.datasetVersion,
+            rubricVersion: dataset.rubricVersion,
+            promptVersion: 'aigen-prompt-01-pool-v1',
+            phase: 'profile_probe',
+            selectedModelProfile: 'paired',
+            plannedCalls: 8,
+            generatedAt: '2026-08-11T06:10:20.882Z',
+            status: 'failed',
+            failure: null,
+            samples: [],
+            totalActualCostMicroUsd: 0,
+            costUpperBoundMicroUsd: plan.costUpperBoundMicroUsd,
+          },
+          null,
+          2,
+        )}\n`,
+        'utf8',
+      );
+      await expect(
+        loadPoolTuneResume({
+          outputPath,
+          dataset,
+          plan,
+          phase: 'profile_probe',
+          modelProfile: 'quality',
+        }),
+      ).rejects.toThrow(/non appartiene al piano benchmark corrente/);
     } finally {
       await rm(outputPath, { recursive: true, force: true });
     }
@@ -633,7 +677,7 @@ describe('POOL-TUNE-00 — runner fail-closed', () => {
           {
             datasetVersion: dataset.datasetVersion,
             rubricVersion: dataset.rubricVersion,
-            promptVersion: 'aigen-prompt-01-pool-v1',
+            promptVersion: AI_POOL_PROMPT_VERSION,
             phase: 'profile_probe',
             selectedModelProfile: 'paired',
             plannedCalls: 8,

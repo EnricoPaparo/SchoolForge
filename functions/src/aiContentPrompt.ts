@@ -3,7 +3,7 @@
  * pedagogici** per pool e lezione. In caso di conflitto vince sempre il livello
  * più alto.
  *
- * **Pool** (invariato): 1 sicurezza/schema/limiti · 2 contratto del contenuto ·
+ * **Pool**: 1 sicurezza/schema/limiti · 2 contratto del contenuto ·
  * 3 configurazione strutturata · 4 `INDICAZIONI_DOCENTE` · 5 `METADATI_DIDATTICI`
  * · 6 `MATERIALE_LEZIONE`/`CONTENUTO_ATTUALE` (dati non attendibili).
  *
@@ -38,12 +38,11 @@ import { CONCEPT_MAP_DIAGRAM_MAX_LINE_CHARS } from './aiContentConceptMap.js';
 export const AI_CONTENT_PROMPT_VERSION = 'lesson-depth-01-candidate-e-v1' as const;
 
 /**
- * Identità indipendente del prompt pool. Il prompt pool è rimasto invariato
- * mentre quello lezione ha attraversato i candidati LESSON-DEPTH: usare la
- * versione condivisa nel benchmark pool attribuirebbe quindi l'output al
- * candidato sbagliato, pur eseguendo il prompt corretto.
+ * Identità indipendente del prompt pool. POOL-TUNE-02 modifica esclusivamente
+ * questo prompt sulla base del profile probe reale, senza attribuire il cambio
+ * alle versioni di lezione o mappa concettuale.
  */
-export const AI_POOL_PROMPT_VERSION = 'aigen-prompt-01-pool-v1' as const;
+export const AI_POOL_PROMPT_VERSION = 'pool-tune-02-candidate-a-v1' as const;
 
 /**
  * CONCEPT-MAP-01 — versione **separata** del prompt della mappa concettuale.
@@ -197,7 +196,10 @@ export function buildPoolPrompt(request: PoolRequest): BuiltPrompt {
     '',
     'Varietà e copertura:',
     '- copri in modo equilibrato i concetti e gli obiettivi del materiale;',
-    '- evita domande duplicate o semplici parafrasi della stessa domanda;',
+    '- prima di scrivere, prepara mentalmente una matrice privata che assegni a ogni domanda un',
+    '  concetto bersaglio, uno scenario e un’operazione cognitiva; NON includerla nell’output;',
+    '- evita domande duplicate o semplici parafrasi: due domande non devono riutilizzare insieme',
+    '  lo stesso scenario e la stessa operazione cognitiva, neppure se appartengono a tipi diversi;',
     '- quando coerente, alterna comprensione, applicazione, analisi e collegamento;',
     '- non inventare nozioni sostanziali non supportate dal materiale; puoi usare esempi nuovi se',
     '  sono una corretta applicazione dei principi spiegati.',
@@ -218,6 +220,16 @@ export function buildPoolPrompt(request: PoolRequest): BuiltPrompt {
     'Domande a risposta multipla: ALMENO DUE opzioni corrette e ALMENO UNA errata; distrattori',
     'plausibili; opzioni distinguibili; nessuna soluzione duplicata; selezionare tutte le opzioni',
     'non deve essere corretto.',
+    'Nel campo soluzione usa ESCLUSIVAMENTE indici interi ZERO-BASED delle opzioni: la prima',
+    'opzione ha indice 0, la seconda 1 e l’ultima `numero_opzioni - 1`. Non numerare mai da 1.',
+    'Dopo aver fissato le opzioni, controlla ogni indice: tutte le opzioni selezionate devono essere',
+    'vere e tutte quelle non selezionate false; la singola ha esattamente un indice, la multipla',
+    'almeno due indici e lascia almeno un’opzione non selezionata.',
+    '',
+    'Formattazione di testo e codice:',
+    '- usa vere interruzioni di riga quando servono; non scrivere le sequenze letterali `\\n`,',
+    '  `\\r` o `\\t` per simulare a capo o tabulazioni;',
+    '- negli esercizi di programmazione mantieni il codice leggibile su più righe reali.',
     '',
     `Difficoltà: intero tra ${range.min} e ${range.max}, in base alla complessità cognitiva reale`,
     '(non alla lunghezza del testo): 1 richiamo/applicazione immediata; 2 comprensione e semplice',
@@ -227,6 +239,10 @@ export function buildPoolPrompt(request: PoolRequest): BuiltPrompt {
     '',
     'Le soluzioni delle chiuse sono riferite alle opzioni fornite per indice. Non produrre ID',
     'tecnici, punteggi o pesi: solo contenuto semantico.',
+    '',
+    'Controllo finale silenzioso prima dell’output (non aggiungere un report): quantità e tipi',
+    'esatti; copertura senza duplicazioni; indici zero-based coerenti con le opzioni definitive;',
+    'nessuna sequenza di escape letterale usata al posto della formattazione.',
   ].join('\n');
 
   const user = [

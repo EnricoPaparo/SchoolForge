@@ -1,8 +1,9 @@
 # Qualità dei pool generati — roadmap POOL-TUNE
 
-Stato: **POOL-TUNE-00 implementato; il profile probe reale ha già rilevato un
-blocker strutturale su `PT00-01/economy` e deve completare le altre sette
-combinazioni; POOL-TUNE-01 ancora aperto.**
+Stato: **POOL-TUNE-00 e POOL-TUNE-01 completati. Il profile probe seleziona
+`quality`; il candidato A di POOL-TUNE-02 è implementato e ha superato review
+statica e dry-run. Il lotto reale, la review qualitativa, POOL-TUNE-03 e il Gate
+GPOOL-QUALITY restano aperti.**
 
 Questa roadmap definisce come misurare e migliorare il prompt dei pool senza
 ottimizzarlo su pochi esempi favorevoli. Il contratto canonico del pool, il
@@ -233,15 +234,43 @@ profile probe; da quel momento un'eventuale nuova interruzione sarà riprendibil
 Il nuovo profile probe ha ricevuto una risposta per `PT00-01/economy`, ma il
 validator l'ha respinta con «La soluzione deve riferirsi alle opzioni fornite»:
 almeno una domanda chiusa indicava quindi una soluzione fuori dall'insieme delle
-opzioni. È già un **blocker** e impedisce al profilo Economy di superare il probe
-col prompt corrente.
+opzioni. È un **blocker** e impedisce al profilo Economy di superare il probe col
+prompt corrente.
 
 La versione v1 del checkpoint ha conservato scenario, profilo e motivo, ma non
 raw output né usage. Il loader v2 la rappresenta come evidenza legacy
-incompleta, assume costo non conoscibile e riparte dalla seconda combinazione:
-restano **sette** chiamate, senza ripagare `PT00-01/economy`. Il profile probe non
-ha ancora un verdetto comparativo: deve completare il suffisso e revisionare gli
-output validi e rifiutati.
+incompleta, assume costo non conoscibile e ha ripreso dalla seconda combinazione
+senza ripagare `PT00-01/economy`.
+
+### 8.4 Verdetto del profile probe
+
+Il suffisso di sette chiamate è stato completato l'11 agosto 2026. La review
+completa è in
+[`evidenze/pool-tune-01-profile-review.md`](evidenze/pool-tune-01-profile-review.md).
+
+- Economy: 1 output rifiutato e 3 pool formalmente validi con chiavi di risposta
+  errate; fallimento in 4/4 scenari.
+- Quality: 4 pool validi, tutte le 17 chiavi chiuse e le 13 soluzioni aperte
+  corrette; due scenari PASS e due con revisione locale.
+- Costo Quality noto: 68.259 µUSD complessivi. Costo Economy totale non
+  ricostruibile per il campione legacy; media nota circa 4,23 volte inferiore.
+
+**Profilo selezionato per POOL-TUNE-02: `quality`.** Il prompt corrente non è
+ancora accettato: deve correggere indici zero-based, escape letterali e
+duplicazione dello stesso scenario prima del nuovo lotto reale. La selezione non
+modifica automaticamente il profilo runtime.
+
+### 8.5 Candidato A e dry-run
+
+Il candidato `pool-tune-02-candidate-a-v1` implementa soltanto le correzioni
+derivate dal probe: indici zero-based con audit delle opzioni, matrice privata
+anti-duplicazione e vere interruzioni di riga. La review statica è in
+[`evidenze/pool-tune-02-candidate-a-review.md`](evidenze/pool-tune-02-candidate-a-review.md).
+
+Il dry-run Quality pianifica 8 chiamate e fino a 16 tentativi, con stima
+216.257 µUSD e tetto prudenziale 676.954 µUSD. Non ha letto la API key, creato il
+provider o usato la rete. Il lotto reale richiede una nuova autorizzazione
+esplicita; nessuna autorizzazione precedente può essere riusata.
 
 ## 9. Gate GPOOL-QUALITY
 

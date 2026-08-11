@@ -2047,14 +2047,14 @@ describe('STRUCTURE-IMPORT-03 — blocco CONTESTO_GENERALE_UDA nel prompt', () =
 });
 
 describe('STRUCTURE-IMPORT-03 — il tuning validato resta invariato', () => {
-  it('il prompt del pool è byte-identico a prima della modifica', () => {
-    // Riferimenti calcolati sul codice precedente a STRUCTURE-IMPORT-03: se
-    // cambiano, il pool è stato toccato — cosa che questo task esclude.
+  it('il prompt del pool è ancorato al candidato A di POOL-TUNE-02', () => {
+    // STRUCTURE-IMPORT-03 continua a non possedere il prompt. L'ancora è stata
+    // avanzata soltanto dal tuning dedicato, dopo il profile probe reale.
     const pool = buildPoolPrompt(poolReq() as never);
     expect(sha(pool.system)).toBe(
       '667c96bb26ed12895fa6deb8b83962d45cd63878c2d7c1041ceb915f5278aa28',
     );
-    expect(sha(pool.user)).toBe('08a6105b5a40c1cdfff722171e854b6fb68e224738f26b829dd47c95e1d60d31');
+    expect(sha(pool.user)).toBe('991595f484b23e6db3b6a5d62a200c226678b398e77f4dfc7f230816f01e7020');
   });
 
   it('il prompt utente della lezione è ancorato al candidato E', () => {
@@ -2172,12 +2172,14 @@ describe('LESSON-DEPTH-01 — profondità e perimetro', () => {
     expect(AI_CONTENT_PROMPT_VERSION).not.toContain('candidate-d');
   });
 
-  it('il prompt del pool resta byte-identico: qui non si tocca', () => {
+  it('il prompt del pool resta ancorato al candidato del tuning dedicato', () => {
+    // LESSON-DEPTH continua a non possedere il prompt pool. Il nuovo hash è
+    // quello deliberatamente introdotto e versionato da POOL-TUNE-02.
     const pool = buildPoolPrompt(poolReq() as never);
     expect(sha(pool.system)).toBe(
       '667c96bb26ed12895fa6deb8b83962d45cd63878c2d7c1041ceb915f5278aa28',
     );
-    expect(sha(pool.user)).toBe('08a6105b5a40c1cdfff722171e854b6fb68e224738f26b829dd47c95e1d60d31');
+    expect(sha(pool.user)).toBe('991595f484b23e6db3b6a5d62a200c226678b398e77f4dfc7f230816f01e7020');
   });
 });
 

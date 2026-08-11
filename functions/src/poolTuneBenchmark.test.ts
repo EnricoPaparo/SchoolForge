@@ -154,11 +154,29 @@ describe('POOL-TUNE-00 — disegno sperimentale', () => {
     expect(POOL_TUNE_BLOCKERS).toContain('riferimento_alla_posizione_nella_lezione');
   });
 
-  it('non modifica il prompt e usa la versione attualmente congelata', async () => {
+  it('congela il candidato A e include i vincoli derivati dal profile probe', async () => {
     const request = buildPoolTuneRequest((await loadPoolTuneDataset()).scenarios[0]!, 'quality');
     const prompt = buildPoolPrompt(request);
-    expect(AI_POOL_PROMPT_VERSION).toBe('aigen-prompt-01-pool-v1');
+    expect(AI_POOL_PROMPT_VERSION).toBe('pool-tune-02-candidate-a-v1');
     expect(prompt.user).toContain('MATERIALE_LEZIONE');
     expect(prompt.user).toContain(request.lessonSource);
+    expect(prompt.user).toContain('indici interi ZERO-BASED');
+    expect(prompt.user).toContain('opzione ha indice 0');
+    expect(prompt.user).toContain('Non numerare mai da 1');
+    expect(prompt.user).toContain('tutte le opzioni selezionate devono essere');
+    expect(prompt.user).toContain('lo stesso scenario e la stessa operazione cognitiva');
+    expect(prompt.user).toContain('neppure se appartengono a tipi diversi');
+    expect(prompt.user).toContain('non scrivere le sequenze letterali `\\n`');
+    expect(prompt.user).toContain('Controllo finale silenzioso');
+  });
+
+  it('non invia al modello la matrice di valutazione congelata', async () => {
+    const scenario = (await loadPoolTuneDataset()).scenarios[0]!;
+    const prompt = buildPoolPrompt(buildPoolTuneRequest(scenario, 'quality'));
+    for (const target of [...scenario.coverageTargets, ...scenario.reasoningTargets]) {
+      if (!scenario.lessonSource.includes(target)) expect(prompt.user).not.toContain(target);
+    }
+    expect(prompt.user).not.toContain('coverageTargets');
+    expect(prompt.user).not.toContain('reasoningTargets');
   });
 });
