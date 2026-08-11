@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { Timestamp } from 'firebase-admin/firestore';
 import {
   AiContentError,
@@ -10,6 +11,7 @@ import {
   resolveAiContentMode,
   resolveContentModel,
   validateAiContentRequest,
+  validateAiContentRequestForOfflinePoolBenchmark,
   MAX_UDA_OUTLINE_ITEMS,
   MAX_UDA_DESCRIPTION_CHARS,
   type AiContentRequest,
@@ -148,6 +150,32 @@ describe('validateAiContentRequest', () => {
       /Profilo/,
     );
   });
+  it('rejects Economy for pools without a silent Quality fallback', () => {
+    expect(() => validateAiContentRequest(poolPayload({ modelProfile: 'economy' }))).toThrowError(
+      expect.objectContaining({ code: 'invalid_input' }),
+    );
+  });
+  it('rejects Economy before parsing the rest of the pool payload', () => {
+    expect(() =>
+      validateAiContentRequest(
+        poolPayload({
+          modelProfile: 'economy',
+          teacherGuidance: 'x'.repeat(501),
+          counts: { aperta: 0, chiusa_singola: 0, chiusa_multipla: 0 },
+        }),
+      ),
+    ).toThrow(/richiede il profilo Quality/);
+  });
+  it('allows Economy only through the explicitly offline benchmark validator', () => {
+    const request = validateAiContentRequestForOfflinePoolBenchmark(
+      poolPayload({ modelProfile: 'economy' }),
+    );
+    expect(request).toMatchObject({ kind: 'pool', modelProfile: 'economy' });
+  });
+  it.each(['economy', 'quality'] as const)('keeps lesson profile %s valid', (modelProfile) => {
+    const request = validateAiContentRequest(lessonPayload({ modelProfile }));
+    expect(request.modelProfile).toBe(modelProfile);
+  });
   it('rejects guidance over 500 chars', () => {
     expect(() =>
       validateAiContentRequest(poolPayload({ teacherGuidance: 'x'.repeat(501) })),
@@ -219,6 +247,39 @@ describe('validateAiContentRequest', () => {
   });
 });
 
+describe('POOL-ROLLOUT-01 gateway fail-closed order', () => {
+  const gatewaySource = readFileSync(new URL('./aiContentGateway.ts', import.meta.url), 'utf8');
+
+  it('never imports or calls the offline benchmark validator', () => {
+    expect(gatewaySource).not.toContain('validateAiContentRequestForOfflinePoolBenchmark');
+  });
+
+  it.each([
+    ['preview', 'export const aiContentPreview', 'export const aiContentGenerate'],
+    ['generate', 'export const aiContentGenerate', null],
+  ])('validates %s before config, secret, ports or engine', (_name, startMarker, endMarker) => {
+    const start = gatewaySource.indexOf(startMarker);
+    const end = endMarker
+      ? gatewaySource.indexOf(endMarker, start + startMarker.length)
+      : gatewaySource.length;
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const block = gatewaySource.slice(start, end);
+    const validation = block.indexOf('validateAiContentRequest(request.data)');
+    expect(validation).toBeGreaterThanOrEqual(0);
+    for (const later of [
+      'loadRuntimeConfig(database)',
+      'readOpenAiSecret()',
+      'createPorts(',
+      'previewContent(',
+      'generateContent(',
+    ]) {
+      const index = block.indexOf(later);
+      if (index >= 0) expect(validation).toBeLessThan(index);
+    }
+  });
+});
+
 // ─── Hashing (§10 full inputHash) ────────────────────────────────────────────
 
 describe('hash fingerprints', () => {
@@ -237,11 +298,10 @@ describe('hash fingerprints', () => {
     const b = validateAiContentRequest(poolPayload()) as AiContentRequest;
     expect(computeInputHash(a)).toBe(computeInputHash(b));
   });
-  it('every pool field change alters the hash', () => {
+  it('every mutable pool field change alters the hash', () => {
     const base = validateAiContentRequest(poolPayload()) as AiContentRequest;
     const baseHash = computeInputHash(base);
     const variants: Record<string, unknown>[] = [
-      { modelProfile: 'economy' },
       { level: 'advanced' },
       { counts: { aperta: 2, chiusa_singola: 1, chiusa_multipla: 0 } },
       { teacherGuidance: 'sii conciso' },

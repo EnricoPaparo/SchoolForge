@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AI_POOL_GENERATION_PROFILE,
   buildLessonContentRequest,
   buildPoolContentRequest,
   describeAiContentError,
@@ -16,7 +17,6 @@ describe('buildPoolContentRequest', () => {
   it('builds the closed payload with only allowed fields', () => {
     const req = buildPoolContentRequest({
       requestId: REQ,
-      modelProfile: 'quality',
       level: 'balanced',
       counts: { aperta: 2, chiusa_singola: 1, chiusa_multipla: 0 },
       lessonSource: 'Le reti.',
@@ -41,7 +41,6 @@ describe('buildPoolContentRequest', () => {
   it('omits an empty/whitespace guidance', () => {
     const req = buildPoolContentRequest({
       requestId: REQ,
-      modelProfile: 'economy',
       level: 'base',
       counts: { aperta: 1, chiusa_singola: 0, chiusa_multipla: 0 },
       lessonSource: 'x',
@@ -49,6 +48,19 @@ describe('buildPoolContentRequest', () => {
       teacherGuidance: '   ',
     });
     expect('teacherGuidance' in req).toBe(false);
+  });
+
+  it('makes Economy unrepresentable and always injects the qualified profile', () => {
+    expect(AI_POOL_GENERATION_PROFILE).toBe('quality');
+    const req = buildPoolContentRequest({
+      requestId: REQ,
+      level: 'advanced',
+      counts: { aperta: 1, chiusa_singola: 1, chiusa_multipla: 0 },
+      lessonSource: 'x',
+      existingPoolQuestionCount: 0,
+    });
+    expect(req.modelProfile).toBe('quality');
+    expect(buildPoolContentRequest.toString()).not.toContain('params.modelProfile');
   });
 });
 

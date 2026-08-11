@@ -349,6 +349,18 @@ review e non tocca il draft corrente prima di «Usa questa bozza»; nessuna
 scrittura avviene prima di «Salva mappa». Non cambiano secret, provider,
 prenotazione, validazione output, sanificazione, Rules o visibilità studente.
 
+**POOL-ROLLOUT-01 — Quality obbligatorio per i pool.** Il profilo inviato dal
+client non è una fonte autorevole: il builder ufficiale rende Economy
+irrappresentabile, ma il confine di sicurezza è la validazione server del ramo
+`kind:'pool'`. Un payload Economy viene rifiutato `invalid_input` prima di
+configurazione runtime, secret, costruzione del provider/porte, stima, budget,
+lease, run e qualunque scrittura. Il server non sostituisce mai Economy con
+Quality: un fallback silenzioso trasformerebbe una richiesta meno costosa in
+una spesa maggiore non confermata. Il vincolo non è nel parser condiviso del
+profilo, quindi lezioni, mappe concettuali e correzione IA mantengono i propri
+contratti. Nessuna nuova Rule, collection, chiave, dipendenza o superficie di
+rete.
+
 - **Feature flag** globale `disabled|mock|openai` risolto da `AI_CORRECTION_MODE`, default sicuro `disabled`; sul percorso `openai`, kill switch e modello arrivano dalla config runtime validata, senza fallback. Provider/modello definitivi = Human Gate aperto.
 - **Gateway server-side owner-only:** verifica dell'uid dal token Firebase e confronto con `settings/owner` (stesso pattern del `repositoryGateway`) — **implementato in M5-01**.
 - **Autorizzazione per ID, mai per testo:** il client invia solo ID (`verificationId`, `submissionIds`, `requestId`); il server rilegge submission, snapshot e soluzioni via Admin SDK. Il client non può iniettare testi arbitrari come parte della verifica.

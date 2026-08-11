@@ -325,3 +325,26 @@ non è stato rivalutato sul candidato A, quindi resta non qualificato. Il Gate
 non promuove automaticamente un profilo runtime e non autorizza da solo un
 deploy. Default o obbligatorietà di Quality, rollout DEV e rollback devono
 essere decisi in un pacchetto operativo separato.
+
+### 9.1 POOL-ROLLOUT-01 — decisione runtime
+
+La decisione è **Quality obbligatorio per il solo `kind: 'pool'`**. Il client
+non espone più una scelta Economy: il builder tipizzato inserisce sempre
+`modelProfile: 'quality'` e il dialog mostra il profilo come informazione, non
+come controllo. Il server ripete il vincolo nel ramo pool della validazione del
+payload e rifiuta `economy` con `invalid_input`, prima di configurazione runtime,
+secret, provider, stima, budget, lease, run e scritture. Non esiste fallback o
+conversione silenziosa da Economy a Quality.
+
+La scelta è deliberatamente confinata: generazione delle lezioni, mappe
+concettuali e correzione IA conservano i propri profili e contratti. Prompt
+`pool-tune-02-candidate-a-v1`, schema, payload restante, cap, cost model,
+persistenza canonica e review del docente non cambiano. Il rollback applicativo
+consiste nel ripristinare il selettore client e rimuovere il vincolo dal solo
+ramo pool; non richiede migrazioni di dati, Rules, indici o schema.
+
+L'implementazione è completata nel codice ma **non equivale al rollout**: dopo
+merge e deploy DEV restano obbligatori uno smoke con creazione di un nuovo pool,
+uno con append a un pool esistente, review/modifica locale e verifica di una
+sola scrittura canonica. Fino a quel gate operativo non si dichiara la fase
+distribuita.

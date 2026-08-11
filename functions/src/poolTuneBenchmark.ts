@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   resolveContentModel,
-  validateAiContentRequest,
+  validateAiContentRequestForOfflinePoolBenchmark,
   type PoolCounts,
   type PoolLevel,
   type PoolRequest,
@@ -149,7 +149,7 @@ function validateRequest(
   lessonSource: string,
   modelProfile: ModelProfile,
 ): PoolRequest {
-  const request = validateAiContentRequest({
+  const request = validateAiContentRequestForOfflinePoolBenchmark({
     kind: 'pool',
     requestId: requestIdForScenario(scenario.id),
     modelProfile,

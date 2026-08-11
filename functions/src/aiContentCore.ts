@@ -582,7 +582,10 @@ function parseProfile(value: unknown): ModelProfile {
  * non valido, guidance oltre limite e conteggi/dimensioni fuori contratto.
  * Le dimensioni dei sorgenti sono controllate qui (`content_too_large`).
  */
-export function validateAiContentRequest(input: unknown): AiContentRequest {
+function validateAiContentRequestWithPolicy(
+  input: unknown,
+  policy: 'runtime' | 'offline_pool_benchmark',
+): AiContentRequest {
   if (!isPlainObject(input)) {
     throw new AiContentError('invalid_input', 'Payload mancante o non valido.');
   }
@@ -617,9 +620,18 @@ export function validateAiContentRequest(input: unknown): AiContentRequest {
   }
 
   const modelProfile = parseProfile(input.modelProfile);
-  const teacherGuidance = parseGuidance(input.teacherGuidance);
 
   if (input.kind === 'pool') {
+    // POOL-ROLLOUT-01 — il Gate qualitativo qualifica esclusivamente Quality.
+    // Nessun fallback: Economy viene rifiutato prima di guidance, stima,
+    // configurazione runtime, budget, run, provider o scritture.
+    if (policy === 'runtime' && modelProfile !== 'quality') {
+      throw new AiContentError(
+        'invalid_input',
+        'La generazione dei pool richiede il profilo Quality.',
+      );
+    }
+    const teacherGuidance = parseGuidance(input.teacherGuidance);
     assertNoExtraKeys(input, [
       'kind',
       'requestId',
@@ -675,6 +687,7 @@ export function validateAiContentRequest(input: unknown): AiContentRequest {
   }
 
   // kind === 'lesson'
+  const teacherGuidance = parseGuidance(input.teacherGuidance);
   assertNoExtraKeys(input, [
     'kind',
     'requestId',
@@ -730,6 +743,22 @@ export function validateAiContentRequest(input: unknown): AiContentRequest {
     currentBody,
     hasCurrentContent,
   });
+}
+
+/**
+ * Porta autorevole usata dalle callable: applica tutti i vincoli runtime,
+ * incluso Quality obbligatorio per i pool.
+ */
+export function validateAiContentRequest(input: unknown): AiContentRequest {
+  return validateAiContentRequestWithPolicy(input, 'runtime');
+}
+
+/**
+ * Eccezione deliberata e solo offline per ricostruire i benchmark storici
+ * Economy/Quality. Non deve essere usata da gateway, callable o applicazione.
+ */
+export function validateAiContentRequestForOfflinePoolBenchmark(input: unknown): AiContentRequest {
+  return validateAiContentRequestWithPolicy(input, 'offline_pool_benchmark');
 }
 
 /** Risoluzione **server-side** profilo → modello/listino (riuso, mai dal client). */

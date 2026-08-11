@@ -104,8 +104,26 @@ describe('AiPoolGenerationDialog', () => {
     expect(generateReqs).toHaveLength(1);
     expect(generateReqs[0]).toEqual(previewReqs[0]); // same requestId + same normalized payload
     expect(previewReqs[0].kind).toBe('pool');
+    expect(previewReqs[0].modelProfile).toBe('quality');
     expect(previewReqs[0].counts).toEqual({ aperta: 3, chiusa_singola: 3, chiusa_multipla: 0 });
     expect('ownerUid' in previewReqs[0]).toBe(false);
+  });
+
+  it('shows Quality as informational and exposes no profile selector or Economy option', () => {
+    const { callables } = makeCallables();
+    render(
+      <AiPoolGenerationDialog
+        lessonSource="Reti"
+        existingPool={null}
+        callables={callables}
+        onApply={vi.fn(async () => {})}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText('Profilo modello: Quality')).toBeTruthy();
+    expect(screen.getByText('Qualità validata per la generazione dei pool.')).toBeTruthy();
+    expect(screen.queryByText('Economy')).toBeNull();
+    expect(screen.queryByRole('radio', { name: /Economy/ })).toBeNull();
   });
 
   it('shows estimate and the conservative reservation cap, no cost yet', async () => {

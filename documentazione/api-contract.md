@@ -55,6 +55,16 @@ M3-lite non introduce Cloud Functions. Nella baseline corrente le Cloud Function
 > persistita fino a «Salva mappa». Structured Output v2, parser v1/v2, cap,
 > prompt, Rules e proiezione studente restano quelli di CONCEPT-MAP-05.
 
+> **Contratto POOL-ROLLOUT-01 (implementato nel codice, rollout DEV separato).**
+> Per il solo `kind:'pool'`, `modelProfile` deve essere `quality`. Il builder
+> web non accetta un profilo dal chiamante e inserisce la costante Quality; il
+> dialog la mostra come informazione non interattiva. Un client arbitrario che
+> invia `economy` riceve `invalid_input` nella validazione chiusa del payload,
+> prima di config runtime, secret, costruzione provider/porte, stima, budget,
+> lease, run e scritture. Non esiste fallback Economy→Quality. Il resto del
+> payload pool e i contratti di lezione, mappa concettuale e correzione IA sono
+> invariati.
+
 La specifica corrente di **M3-full** è client-only: usa Firebase SDK + Security Rules, `submissions/{id}` e `submissionReceipts/{id}`. Non introduce `startDigitalAttempt`/`continueDigitalAttempt`, cookie HttpOnly o Cloud Functions dedicate. Le Cloud Function IA (`aiCorrectionPreview`/`aiCorrectionRun`) appartengono al Modulo 5 (§5); **M5-01** le ha implementate in **modalità mock** (0 token, nessuna scrittura), il comportamento pieno è M5-02.
 
 #### Repository Storage Gateway (SGW) — TARGET, non ancora implementato
