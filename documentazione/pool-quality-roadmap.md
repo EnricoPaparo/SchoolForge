@@ -1,8 +1,8 @@
 # Qualità dei pool generati — roadmap POOL-TUNE
 
-Stato: **POOL-TUNE-00, POOL-TUNE-01 e POOL-TUNE-02 completati. Il candidato A
-Quality supera il tuning reale ed è congelato. POOL-TUNE-03 holdout e il Gate
-GPOOL-QUALITY restano aperti.**
+Stato: **POOL-TUNE-00 → POOL-TUNE-03 completati. Il candidato A supera tuning
+e holdout sul profilo Quality; Gate GPOOL-QUALITY PASS per Quality. Economy
+resta non qualificato e non è autorizzato da questo Gate.**
 
 Questa roadmap definisce come misurare e migliorare il prompt dei pool senza
 ottimizzarlo su pochi esempi favorevoli. Il contratto canonico del pool, il
@@ -295,9 +295,33 @@ per l'holdout e non deve essere ritoccato prima di eseguire i quattro scenari
 separati. L'holdout richiede dry-run, review economica e una nuova autorizzazione
 esplicita.
 
+### 8.7 Holdout reale Quality
+
+Il lotto holdout dell'11 agosto 2026 ha usato una sola volta i quattro scenari
+separati, dopo il congelamento del candidato. La review completa è in
+[`evidenze/pool-tune-03-holdout-review.md`](evidenze/pool-tune-03-holdout-review.md).
+
+- 4/4 pool validi e zero output rifiutati;
+- 36 domande: 15 aperte e 21 chiuse;
+- 15/15 soluzioni aperte e 21/21 chiavi chiuse corrette;
+- zero blocker;
+- punteggio 159/160, media 3,975/4;
+- fedeltà e soluzioni aperte: 4/4;
+- costo effettivo 79.859 µUSD (0,079859 USD), contro la stima di
+  124.437 µUSD e il tetto prudenziale di 392.964 µUSD.
+
+Tuning e holdout insieme totalizzano 12/12 pool validi, 477/480 punti e
+216.073 µUSD (0,216073 USD) di costo reale. Il prompt non è stato modificato
+dopo l'apertura dell'holdout.
+
 ## 9. Gate GPOOL-QUALITY
 
-Il gate resta **APERTO**: profile probe e tuning sono completati, ma l'holdout
-separato non è ancora stato eseguito e revisionato. Il PASS del tuning non può
-essere usato per anticipare il verdetto finale, né autorizza nuove chiamate o
-deploy.
+Il Gate è **PASS per `pool-tune-02-candidate-a-v1` sul profilo `quality`**:
+validità 100%, zero blocker, ogni dimensione almeno 3/4, media 3,975/4 e medie
+di fedeltà e soluzioni aperte pari a 4/4 sia nel tuning sia nell'holdout.
+
+Il confine è deliberatamente stretto: `economy` ha fallito il profile probe e
+non è stato rivalutato sul candidato A, quindi resta non qualificato. Il Gate
+non promuove automaticamente un profilo runtime e non autorizza da solo un
+deploy. Default o obbligatorietà di Quality, rollout DEV e rollback devono
+essere decisi in un pacchetto operativo separato.
