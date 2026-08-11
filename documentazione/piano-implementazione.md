@@ -1133,7 +1133,7 @@ contratti in [teacher-workflow-upgrades-roadmap.md](teacher-workflow-upgrades-ro
 | POOL-TUNE-02 ✅ | Correzione mirata e tuning reale del prompt pool sui difetti misurati nel profile probe. | POOL-TUNE-01 | **PASS sul tuning.** `pool-tune-02-candidate-a-v1`: 8/8 output validi, 62 domande, 25/25 soluzioni aperte e 37/37 chiavi chiuse corrette, zero blocker, 318/320 (3,975/4). Risolti indici 1-based, duplicazione sostanziale ed escape letterali. Costo reale 136.214 µUSD. Prompt congelato fino all'holdout. Evidenze: `evidenze/pool-tune-02-candidate-a-review.md` e `evidenze/pool-tune-02-candidate-a-real-review.md`. Schema, payload, cap, profilo runtime, cost model e backend invariati. `POOL-TUNE-03` e Gate GPOOL-QUALITY restano aperti. |
 | POOL-TUNE-03 ✅ | Holdout reale separato sui quattro scenari mai usati per scegliere o modificare il candidato. | POOL-TUNE-02 | **PASS.** Quality: 4/4 pool validi, 15/15 soluzioni aperte e 21/21 chiavi chiuse corrette, zero blocker, 159/160 (3,975/4), costo reale 79.859 µUSD. Il prompt congelato non è stato ritoccato. Tuning + holdout: 12/12 validi, 477/480 e 216.073 µUSD. Evidenza: `evidenze/pool-tune-03-holdout-review.md`. |
 | Gate GPOOL-QUALITY ✅ | Chiusura evidence-based della qualità dei pool generati. | POOL-TUNE-01→03 | **PASS esclusivamente per `pool-tune-02-candidate-a-v1` + profilo `quality`.** Economy resta non qualificato dopo il fallimento 4/4 nel probe e non è stato rieseguito sul candidato. Il Gate non cambia automaticamente profilo runtime e non autorizza da solo il deploy. |
-| POOL-ROLLOUT-01 ✅ | Quality obbligatorio e reversibile per la sola generazione IA dei pool; rollout DEV del candidato validato. | Gate GPOOL-QUALITY | **Implementato nel codice, rollout DEV ancora da eseguire.** Il builder client rende Economy irrappresentabile e il dialog mostra Quality come dato non interattivo; il server rifiuta `kind:'pool' + economy` con `invalid_input` prima di config/secret/provider/stima/budget/lease/run/write, senza fallback. Lezioni, mappe concettuali e correzione IA restano invariate. Dopo merge/deploy DEV: smoke nuovo pool + append, review locale e singolo salvataggio canonico. |
+| POOL-ROLLOUT-01 ✅ | Quality obbligatorio e reversibile per la sola generazione IA dei pool; rollout DEV del candidato validato. | Gate GPOOL-QUALITY | **Implementato, distribuito su DEV e confermato dal docente.** Il builder client rende Economy irrappresentabile e il dialog mostra Quality come dato non interattivo; il server rifiuta `kind:'pool' + economy` con `invalid_input` prima di config/secret/provider/stima/budget/lease/run/write, senza fallback. Lezioni, mappe concettuali e correzione IA restano invariate. Smoke reale PASS su nuovo pool, append, review locale e singolo salvataggio canonico — [evidenze/pool-e-mappe-conferma-docente.md](evidenze/pool-e-mappe-conferma-docente.md). `economy` resta non qualificato; nessun deploy PROD autorizzato. |
 
 ---
 
@@ -1148,6 +1148,13 @@ prototipo in
 prototipo statico in
 [prototipi/verifiche-differenziate.html](prototipi/verifiche-differenziate.html).
 **Gate GVDIF aperto.**
+
+**Stato del percorso.** Con la conferma del docente su pool IA Quality e mappe
+concettuali ([evidenze/pool-e-mappe-conferma-docente.md](evidenze/pool-e-mappe-conferma-docente.md)),
+**l'unico blocco applicativo principale ancora aperto in questa linea di lavoro è
+VDIF** (VDIF-01→05 + Gate GVDIF), più il pacchetto **indipendente e successivo**
+ESITI-01. Restano tracciati altrove e fuori da questa affermazione i Gate GAIGEN,
+GLESSON e GSTRUCT, e ogni attività di provisioning o deploy PROD.
 
 **Fuori scope da VDIF, in ogni fase e in ogni forma** (asse distinto, roadmap
 autonoma, mai introdotto «già che ci siamo»): tempo aggiuntivo; limiti

@@ -69,7 +69,12 @@
         color: var(--color-text);
         background: var(--color-surface-subtle);
         -webkit-font-smoothing: antialiased;
-        overflow-x: hidden;
+        /*
+         * Deliberatamente NESSUN `overflow-x: hidden` qui: nasconderebbe un
+         * eventuale overflow orizzontale invece di eliminarlo, e renderebbe
+         * inutile qualunque controllo su `scrollWidth`. Se una riga sborda si
+         * deve vedere e correggere, non mascherare.
+         */
       }
       h1,
       h2,
@@ -348,6 +353,16 @@
         min-width: 0;
       }
 
+      /*
+       * `display: flex` su una classe batte la regola UA `[hidden]{display:none}`
+       * per specificità: senza questa riga i tre pannelli restano tutti visibili
+       * anche quando `hidden` è impostato. Vale per ogni elemento nascosto del
+       * prototipo, non solo per i pannelli.
+       */
+      [hidden] {
+        display: none !important;
+      }
+
       .fullWidthBtn {
         width: 100%;
         min-height: 2.5rem;
@@ -358,14 +373,21 @@
         gap: 0.75rem;
         flex-wrap: wrap;
       }
+      /*
+       * `flex-basis` è la dimensione sull'asse principale: con
+       * `flex-direction: column` (mobile) un basis di 220px diventerebbe
+       * un'ALTEZZA di 220px. Qui il basis resta `auto` e la larghezza minima
+       * è espressa da `min-width`, che significa la stessa cosa su entrambi
+       * gli assi.
+       */
       .filterRow input[type='text'] {
-        flex: 1 1 220px;
-        min-width: 0;
+        flex: 1 1 auto;
+        min-width: min(220px, 100%);
       }
       .filterRow select {
         flex: 0 0 auto;
         width: auto;
-        min-width: 160px;
+        min-width: min(160px, 100%);
       }
 
       /* ── RecordCard ─────────────────────────────────────────────────── */
@@ -1097,7 +1119,7 @@
             aria-selected="true"
             tabindex="0"
           >
-            Studenti<span class="tabCount">2</span>
+            Studenti<span class="tabCount" id="pendingCount">0</span>
           </button>
           <button
             type="button"
@@ -1301,10 +1323,19 @@
 
       function initialState() {
         return {
+          /*
+           * Forma del documento etichetta: sette chiavi (labelId, ownerUid,
+           * name, nameKey, assignedCount, createdAt, updatedAt). Il prototipo
+           * ne rappresenta le tre che hanno un effetto osservabile in UI —
+           * labelId, name e assignedCount — perché ownerUid e i due timestamp
+           * non cambiano nulla di ciò che si deve approvare qui.
+           * `assignedCount` è il contatore transazionale: è ciò che autorizza
+           * l'eliminazione, mentre il numero mostrato sulla card è derivato.
+           */
           labels: [
-            { id: 'lab-a', name: 'Percorso A' },
-            { id: 'lab-b', name: 'Obiettivi essenziali' },
-            { id: 'lab-c', name: 'Gruppo 2' },
+            { id: 'lab-a', name: 'Percorso A', assignedCount: 2 },
+            { id: 'lab-b', name: 'Obiettivi essenziali', assignedCount: 1 },
+            { id: 'lab-c', name: 'Gruppo 2', assignedCount: 0 },
           ],
           classes: [
             { id: 'cls-1', name: '4A Informatica' },
@@ -1499,9 +1530,19 @@
         return false;
       }
 
-      /** Motivo di blocco dell'eliminazione, o null se libera. */
+      /**
+       * Motivo di blocco dell'eliminazione, o null se libera.
+       *
+       * Nel prototipo il conteggio mostrato sulla card è **derivato** dagli
+       * studenti in memoria (`studentsWithLabel`): serve solo a disabilitare la
+       * voce di menu come affordance. Ciò che autorizza davvero è
+       * `assignedCount`, che nel sistema reale viene riletto dentro la
+       * transazione di eliminazione (§5.E.1). Le verifiche attive e chiuse non
+       * contano mai come uso: il loro snapshot è autosufficiente (§5.D.10).
+       */
       function deleteBlockReason(labelId) {
-        var assigned = studentsWithLabel(labelId);
+        var label = labelById(labelId);
+        var assigned = label ? label.assignedCount : 0;
         var inDraft = labelUsedInDraft(labelId);
         if (!assigned && !inDraft) return null;
         var parts = [];
@@ -1952,6 +1993,27 @@
             ICON_CHECK +
             '<span>Nessun blocker: ogni etichetta riceve almeno una domanda.</span></p>';
         }
+        /*
+         * Discriminante tecnico pubblico (§5.D.5b): l'unico campo che la
+         * proiezione studente riceve in più. È neutro per costruzione — dice
+         * quale percorso usare, non che la verifica sia differenziata — ed è
+         * identico per ogni studente della classe.
+         */
+        var serverResolved =
+          s.substitutions + s.omissions > 0 ||
+          state.questions.some(function (q) {
+            return q.role === 'vex';
+          });
+        blockersHtml +=
+          '<p class="note note--info">' +
+          ICON_INFO +
+          '<span>Proiezione pubblica: <code>assignmentMode: ' +
+          (serverResolved ? 'server_resolved' : 'same_questions') +
+          '</code>' +
+          (serverResolved
+            ? ' — le domande assegnate arrivano dal server. Nessun campo dice che questa verifica è differenziata.'
+            : ' — le domande sono già tutte nella proiezione.') +
+          '</span></p>';
         document.getElementById('activationBlockers').innerHTML = blockersHtml;
 
         document.getElementById('activateBtn').disabled = s.blockers.length > 0;
@@ -1979,6 +2041,13 @@
           document.getElementById('panel-' + tabs[i]).hidden = !selected;
         }
 
+        var pending = state.students.filter(function (s) {
+          return s.status === 'pending';
+        }).length;
+        var badge = document.getElementById('pendingCount');
+        badge.textContent = String(pending);
+        badge.hidden = pending === 0;
+
         renderStudents();
         renderClasses();
         renderLabels();
@@ -1996,46 +2065,130 @@
 
       var dialogRoot = document.getElementById('dialogRoot');
       var lastTrigger = null;
+      /** Dialog attualmente aperto: title/render/mount/isDirty/onSave. */
+      var current = null;
+      /** Guardia sincrona: due Escape ravvicinati non aprono due conferme. */
+      var transitionGuard = false;
 
       function closeDialog() {
         dialogRoot.innerHTML = '';
+        current = null;
+        transitionGuard = false;
         if (lastTrigger && document.body.contains(lastTrigger)) lastTrigger.focus();
         lastTrigger = null;
       }
 
+      function focusableIn(dialog) {
+        return dialog.querySelectorAll(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+      }
+
+      /**
+       * Dirty guard (§9.2). La conferma NON è una seconda finestra: è una fase
+       * della stessa, quindi resta un unico focus trap. La `min-height` fissata
+       * prima dello scambio impedisce il salto di layout, e il pulsante
+       * distruttivo non è mai quello a fuoco all'apertura.
+       */
+      function showDiscardConfirm() {
+        if (transitionGuard || !current) return;
+        transitionGuard = true;
+        var dialog = dialogRoot.querySelector('.dialog');
+        if (!dialog) return;
+        dialog.style.minHeight = Math.round(dialog.getBoundingClientRect().height) + 'px';
+        dialog.innerHTML =
+          '<h3 class="dialogTitle" id="dlg-title">Abbandonare le modifiche?</h3>' +
+          '<p>Le modifiche non salvate di questa finestra andranno perse.</p>' +
+          '<div class="dialogActions">' +
+          '<button type="button" id="dlgKeep">Continua modifica</button>' +
+          (current.onSave
+            ? '<button type="button" class="btn-primary" id="dlgSaveClose">Salva e chiudi</button>'
+            : '') +
+          '<button type="button" class="btn-danger" id="dlgDiscard">Abbandona modifiche</button>' +
+          '</div>';
+        dialog.querySelector('#dlgKeep').addEventListener('click', function () {
+          transitionGuard = false;
+          renderDialogBody(true);
+        });
+        var saveClose = dialog.querySelector('#dlgSaveClose');
+        if (saveClose) {
+          saveClose.addEventListener('click', function () {
+            if (!current) return;
+            var save = current.onSave;
+            transitionGuard = false;
+            save();
+          });
+        }
+        var discard = dialog.querySelector('#dlgDiscard');
+        discard.addEventListener('click', function () {
+          if (!current) return; // doppio click protetto: il primo azzera `current`
+          closeDialog();
+          render();
+        });
+        dialog.querySelector('#dlgKeep').focus();
+      }
+
+      /** Escape, backdrop e «Chiudi» passano tutti da qui. */
+      function requestClose() {
+        if (!current) return;
+        if (current.isDirty && current.isDirty()) {
+          showDiscardConfirm();
+          return;
+        }
+        closeDialog();
+      }
+
+      function renderDialogBody(restoreFocus) {
+        var dialog = dialogRoot.querySelector('.dialog');
+        if (!dialog || !current) return;
+        var active = document.activeElement;
+        var activeId = active && active.id ? active.id : null;
+        dialog.innerHTML =
+          '<h3 class="dialogTitle" id="dlg-title">' +
+          esc(current.title) +
+          '</h3>' +
+          current.render();
+        if (current.mount) current.mount(dialog);
+        if (restoreFocus) {
+          var target = activeId ? dialog.querySelector('#' + activeId) : null;
+          (target || focusableIn(dialog)[0] || dialog).focus();
+        }
+      }
+
       function openDialog(options) {
         lastTrigger = document.activeElement;
+        transitionGuard = false;
+        current = {
+          title: options.title,
+          render: options.render || function () {
+            return options.body;
+          },
+          mount: options.onMount,
+          isDirty: options.isDirty,
+          onSave: options.onSave,
+        };
         var wide = options.wide ? ' dialog--wide' : '';
         dialogRoot.innerHTML =
           '<div class="backdrop" data-backdrop><div class="dialog' +
           wide +
-          '" role="dialog" aria-modal="true" aria-labelledby="dlg-title" tabindex="-1">' +
-          '<h3 class="dialogTitle" id="dlg-title">' +
-          esc(options.title) +
-          '</h3>' +
-          options.body +
-          '</div></div>';
+          '" role="dialog" aria-modal="true" aria-labelledby="dlg-title" tabindex="-1"></div></div>';
 
         var dialog = dialogRoot.querySelector('.dialog');
-        var focusables = dialog.querySelectorAll(
-          'button:not([disabled]), input, select, [tabindex]:not([tabindex="-1"])',
-        );
-        (focusables[0] || dialog).focus();
+        renderDialogBody(false);
+        (focusableIn(dialog)[0] || dialog).focus();
 
-        dialogRoot.querySelector('[data-backdrop]').addEventListener('click', closeDialog);
+        dialogRoot.querySelector('[data-backdrop]').addEventListener('click', requestClose);
         dialog.addEventListener('click', function (event) {
           event.stopPropagation();
         });
         dialog.addEventListener('keydown', function (event) {
           if (event.key === 'Escape') {
             event.preventDefault();
-            closeDialog();
+            requestClose();
             return;
           }
           if (event.key !== 'Tab') return;
-          var items = dialog.querySelectorAll(
-            'button:not([disabled]), input, select, [tabindex]:not([tabindex="-1"])',
-          );
+          var items = focusableIn(dialog);
           if (items.length === 0) return;
           var first = items[0];
           var last = items[items.length - 1];
@@ -2047,78 +2200,98 @@
             first.focus();
           }
         });
-        if (options.onMount) options.onMount(dialog);
       }
 
       /** Dialog «Nuova etichetta» / «Modifica etichetta». */
       function openLabelDialog(labelId) {
         var existing = labelId ? labelById(labelId) : null;
-        var body =
-          '<div>' +
-          '<div class="fieldHead"><label for="labelNameInput">Nome etichetta</label>' +
-          '<span class="counter" id="labelCounter" aria-live="polite">' +
-          (existing ? existing.name.length : 0) +
-          '/' +
-          LABEL_NAME_MAX +
-          '</span></div>' +
-          '<input type="text" id="labelNameInput" maxlength="' +
-          LABEL_NAME_MAX +
-          '" value="' +
-          esc(existing ? existing.name : '') +
-          '" placeholder="es. Percorso A" />' +
-          '</div>' +
-          '<p class="note note--info">' +
-          ICON_INFO +
-          '<span>Usa una denominazione operativa neutrale. L’etichetta resta privata: non compare mai in ciò che lo studente vede.</span></p>' +
-          '<p class="text-error" id="labelError" role="alert" hidden></p>' +
-          '<div class="dialogActions">' +
-          '<button type="button" data-dlg-cancel>Annulla</button>' +
-          '<button type="button" class="btn-primary" id="labelSaveBtn">' +
-          (existing ? 'Salva' : 'Aggiungi') +
-          '</button></div>';
+        var initial = existing ? existing.name : '';
+        /* Il draft vive fuori dal DOM: sopravvive al passaggio alla conferma
+           e al ritorno, e sopravvive a un errore di validazione. */
+        var draft = { value: initial, error: null };
+        var saving = false;
+
+        function body() {
+          return (
+            '<div>' +
+            '<div class="fieldHead"><label for="labelNameInput">Nome etichetta</label>' +
+            '<span class="counter" id="labelCounter" aria-live="polite">' +
+            draft.value.length +
+            '/' +
+            LABEL_NAME_MAX +
+            '</span></div>' +
+            '<input type="text" id="labelNameInput" maxlength="' +
+            LABEL_NAME_MAX +
+            '" value="' +
+            esc(draft.value) +
+            '" placeholder="es. Percorso A" />' +
+            '</div>' +
+            '<p class="note note--info">' +
+            ICON_INFO +
+            '<span>Usa una denominazione operativa neutrale. L’etichetta resta privata: non compare mai in ciò che lo studente vede.</span></p>' +
+            '<p class="text-error" id="labelError" role="alert"' +
+            (draft.error ? '' : ' hidden') +
+            '>' +
+            esc(draft.error || '') +
+            '</p>' +
+            '<div class="dialogActions">' +
+            '<button type="button" id="labelCancelBtn">Annulla</button>' +
+            '<button type="button" class="btn-primary" id="labelSaveBtn">' +
+            (existing ? 'Salva' : 'Aggiungi') +
+            '</button></div>'
+          );
+        }
+
+        function save() {
+          if (saving) return; // guardia anti-doppio-click
+          var name = draft.value.trim();
+          if (!name) {
+            draft.error = 'Indica un nome per l’etichetta.';
+            renderDialogBody(false);
+            dialogRoot.querySelector('#labelNameInput').focus();
+            return;
+          }
+          /*
+           * Simula la prenotazione transazionale di §5.A.6: nel sistema reale
+           * il conflitto emerge dal `create` su
+           * `differentiationLabelNames/{SHA-256(ownerUid + U+0000 + nameKey)}`
+           * dentro la stessa transazione che crea l'etichetta, non da questo
+           * confronto su una lista in memoria.
+           */
+          var key = nameKey(name);
+          for (var i = 0; i < state.labels.length; i++) {
+            if (state.labels[i].id !== labelId && nameKey(state.labels[i].name) === key) {
+              // Il testo digitato resta: l'errore non svuota il campo.
+              draft.error =
+                'Esiste già un’etichetta con questo nome: «' + state.labels[i].name + '».';
+              renderDialogBody(false);
+              dialogRoot.querySelector('#labelNameInput').focus();
+              return;
+            }
+          }
+          saving = true;
+          if (existing) existing.name = name;
+          else state.labels.push({ id: 'lab-' + Date.now(), name: name, assignedCount: 0 });
+          closeDialog();
+          render();
+        }
 
         openDialog({
           title: existing ? 'Modifica etichetta' : 'Nuova etichetta',
-          body: body,
+          render: body,
+          isDirty: function () {
+            return !saving && draft.value !== initial;
+          },
+          onSave: save,
           onMount: function (dialog) {
             var input = dialog.querySelector('#labelNameInput');
             var counter = dialog.querySelector('#labelCounter');
-            var error = dialog.querySelector('#labelError');
-            var saving = false;
-
             input.addEventListener('input', function () {
+              draft.value = input.value;
               counter.textContent = input.value.length + '/' + LABEL_NAME_MAX;
             });
-
-            function save() {
-              if (saving) return; // guardia anti-doppio-click
-              var name = input.value.trim();
-              if (!name) {
-                error.hidden = false;
-                error.textContent = 'Indica un nome per l’etichetta.';
-                input.focus();
-                return;
-              }
-              var key = nameKey(name);
-              for (var i = 0; i < state.labels.length; i++) {
-                if (state.labels[i].id !== labelId && nameKey(state.labels[i].name) === key) {
-                  // Il testo digitato resta: l'errore non svuota il campo.
-                  error.hidden = false;
-                  error.textContent =
-                    'Esiste già un’etichetta con questo nome: «' + state.labels[i].name + '».';
-                  input.focus();
-                  return;
-                }
-              }
-              saving = true;
-              if (existing) existing.name = name;
-              else state.labels.push({ id: 'lab-' + Date.now(), name: name });
-              closeDialog();
-              render();
-            }
-
             dialog.querySelector('#labelSaveBtn').addEventListener('click', save);
-            dialog.querySelector('[data-dlg-cancel]').addEventListener('click', closeDialog);
+            dialog.querySelector('#labelCancelBtn').addEventListener('click', requestClose);
             input.addEventListener('keydown', function (event) {
               if (event.key === 'Enter') {
                 event.preventDefault();
@@ -2139,6 +2312,9 @@
             '<p>Eliminare «' +
             esc(lab.name) +
             '»? Nessuno studente e nessuna bozza la usano, quindi l’eliminazione non modifica nulla.</p>' +
+            '<p class="note note--info">' +
+            ICON_INFO +
+            '<span>Le verifiche già attivate non sono toccate: la loro configurazione è congelata al momento dell’attivazione, nome dell’etichetta compreso, e resta leggibile anche dopo l’eliminazione.</span></p>' +
             '<div class="dialogActions"><button type="button" data-dlg-cancel>Annulla</button>' +
             '<button type="button" class="btn-danger" id="confirmDelete">Elimina</button></div>',
           onMount: function (dialog) {
@@ -2159,16 +2335,21 @@
         var q = questionById(questionId);
         if (!q || q.role === 'vex') return;
         var draft = {};
-        var current = state.differentiation[questionId] || {};
+        var saved = state.differentiation[questionId] || {};
+        var saving = false;
         var sorted = state.labels.slice().sort(function (a, b) {
           return a.name.localeCompare(b.name, 'it');
         });
         for (var i = 0; i < sorted.length; i++) {
-          var existing = current[sorted[i].id];
+          var existing = saved[sorted[i].id];
           draft[sorted[i].id] = existing
             ? { kind: existing.kind, altId: existing.altId }
             : { kind: 'base' };
         }
+        /* Istantanea del draft all'apertura: la dirty guard confronta con
+           questa, non con la configurazione salvata, così tornare a mano al
+           valore iniziale rende di nuovo il dialog pulito. */
+        var opened = JSON.stringify(draft);
 
         /* Filtro delle alternative: stessa lezione, non selezionate nella
            verifica, non VEX, non capaci di creare duplicazioni per la
@@ -2293,28 +2474,32 @@
             html += '<p class="state-empty">Nessuna etichetta definita.</p>';
           }
           html +=
-            '<div class="dialogActions"><button type="button" data-dlg-cancel>Annulla</button>' +
+            '<div class="dialogActions"><button type="button" id="variantsCancel">Annulla</button>' +
             '<button type="button" class="btn-primary" id="saveVariants">Salva varianti</button></div>';
           return html;
         }
 
+        function saveVariants() {
+          if (saving) return; // guardia anti-doppio-click
+          var next = {};
+          var any = false;
+          for (var lid in draft) {
+            if (!Object.prototype.hasOwnProperty.call(draft, lid)) continue;
+            if (draft[lid].kind === 'base') continue; // potatura esplicita
+            next[lid] = { kind: draft[lid].kind, altId: draft[lid].altId };
+            any = true;
+          }
+          saving = true;
+          if (any) state.differentiation[questionId] = next;
+          else delete state.differentiation[questionId];
+          state.draftDirty = true; // nessuna scrittura: solo la bozza locale
+          closeDialog();
+          render();
+        }
+
         function mount(dialog) {
-          dialog.querySelector('[data-dlg-cancel]').addEventListener('click', closeDialog);
-          dialog.querySelector('#saveVariants').addEventListener('click', function () {
-            var next = {};
-            var any = false;
-            for (var lid in draft) {
-              if (!Object.prototype.hasOwnProperty.call(draft, lid)) continue;
-              if (draft[lid].kind === 'base') continue; // potatura esplicita
-              next[lid] = { kind: draft[lid].kind, altId: draft[lid].altId };
-              any = true;
-            }
-            if (any) state.differentiation[questionId] = next;
-            else delete state.differentiation[questionId];
-            state.draftDirty = true;
-            closeDialog();
-            render();
-          });
+          dialog.querySelector('#variantsCancel').addEventListener('click', requestClose);
+          dialog.querySelector('#saveVariants').addEventListener('click', saveVariants);
 
           var radios = dialog.querySelectorAll('[data-choice]');
           for (var r = 0; r < radios.length; r++) {
@@ -2325,7 +2510,7 @@
                 var opts = availableFor(lid);
                 draft[lid].altId = opts.length > 0 ? opts[0].id : undefined;
               }
-              refresh();
+              renderDialogBody(true);
             });
           }
           var selects = dialog.querySelectorAll('[data-alt]');
@@ -2333,28 +2518,20 @@
             selects[s].addEventListener('change', function (event) {
               var lid = event.target.getAttribute('data-alt');
               draft[lid] = { kind: 'alternative', altId: event.target.value };
-              refresh();
+              renderDialogBody(true);
             });
           }
         }
 
-        function refresh() {
-          var dialog = dialogRoot.querySelector('.dialog');
-          if (!dialog) return;
-          var active = document.activeElement;
-          var activeSel = active && active.id ? '#' + active.id : null;
-          dialog.innerHTML =
-            '<h3 class="dialogTitle" id="dlg-title">Varianti — Domanda ' + q.n + '</h3>' + bodyMarkup();
-          mount(dialog);
-          var restore = activeSel ? dialog.querySelector(activeSel) : null;
-          (restore || dialog.querySelector('button, input, select') || dialog).focus();
-        }
-
         openDialog({
           title: 'Varianti — Domanda ' + q.n,
-          body: bodyMarkup(),
+          render: bodyMarkup,
           wide: true,
           onMount: mount,
+          isDirty: function () {
+            return !saving && JSON.stringify(draft) !== opened;
+          },
+          onSave: saveVariants,
         });
       }
 
@@ -2380,7 +2557,7 @@
             '</div>' +
             '<p class="note note--info">' +
             ICON_INFO +
-            '<span>Le etichette restano private: non compaiono nella verifica servita allo studente, nella correzione restituita, nei PDF o negli export.</span></p>' +
+            '<span>Le etichette restano private: non compaiono nella verifica servita allo studente, nella correzione restituita, nei PDF o negli export. La proiezione pubblica riceve un solo dato tecnico, <code>assignmentMode: server_resolved</code>, che dice da dove arrivano le domande e nulla sul perché.</span></p>' +
             '<div class="dialogActions"><button type="button" data-dlg-cancel>Annulla</button>' +
             '<button type="button" class="btn-success" id="confirmActivate">Conferma attivazione</button></div>',
           onMount: function (dialog) {
@@ -2511,10 +2688,25 @@
           ? event.target.getAttribute('data-student-label')
           : null;
         if (labelSelect) {
+          /*
+           * Simula la transazione di §5.A.7: l'assegnazione e i due
+           * `increment` sul contatore vivono nello stesso commit, così
+           * `assignedCount` non può divergere dalle assegnazioni reali.
+           */
           for (var i = 0; i < state.students.length; i++) {
-            if (state.students[i].uid === labelSelect) {
-              state.students[i].labelId = event.target.value || null;
+            if (state.students[i].uid !== labelSelect) continue;
+            var previous = state.students[i].labelId;
+            var next = event.target.value || null;
+            if (previous === next) break;
+            if (previous) {
+              var prevLabel = labelById(previous);
+              if (prevLabel) prevLabel.assignedCount = Math.max(0, prevLabel.assignedCount - 1);
             }
+            if (next) {
+              var nextLabel = labelById(next);
+              if (nextLabel) nextLabel.assignedCount = nextLabel.assignedCount + 1;
+            }
+            state.students[i].labelId = next;
           }
           render();
           return;
@@ -2590,7 +2782,43 @@
         render();
       });
 
+      /*
+       * Deep link di stato (`#etichette`, `#varianti`, …). Serve a chi rivede il
+       * prototipo — e alla cattura degli screenshot di evidenza — per aprire
+       * direttamente lo stato da guardare, senza ripetere la stessa sequenza di
+       * click. Non fa parte della UI proposta: nel portale reale la navigazione
+       * resta quella normale del portale.
+       */
+      function applyDeepLink() {
+        var hash = (location.hash || '').replace('#', '').toLowerCase();
+        if (!hash) return;
+        if (hash === 'studenti') {
+          state.screen = 'students';
+          state.activeTab = 'students';
+        } else if (hash === 'classi') {
+          state.screen = 'students';
+          state.activeTab = 'classes';
+        } else if (hash === 'etichette') {
+          state.screen = 'students';
+          state.activeTab = 'labels';
+        } else if (hash === 'bozza' || hash === 'riepilogo' || hash === 'varianti') {
+          state.screen = 'draft';
+        } else if (hash === 'blocker') {
+          state.screen = 'draft';
+          document.getElementById('demoBlocker').click();
+          return;
+        }
+        render();
+        if (hash === 'varianti') openVariantsDialog('q1');
+        if (hash === 'riepilogo') {
+          var stats = document.getElementById('activationStats');
+          if (stats) stats.scrollIntoView({ block: 'center' });
+        }
+      }
+
       render();
+      applyDeepLink();
+      window.addEventListener('hashchange', applyDeepLink);
     </script>
   </body>
 </html>

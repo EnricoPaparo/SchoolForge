@@ -3,6 +3,10 @@
 Stato: **POOL-TUNE-00 → POOL-TUNE-03 completati. Il candidato A supera tuning
 e holdout sul profilo Quality; Gate GPOOL-QUALITY PASS per Quality. Economy
 resta non qualificato e non è autorizzato da questo Gate.**
+**POOL-ROLLOUT-01 è distribuito su DEV e lo smoke reale — nuovo pool, append,
+revisione locale e singolo salvataggio canonico — è confermato dal docente:**
+vedi [`evidenze/pool-e-mappe-conferma-docente.md`](evidenze/pool-e-mappe-conferma-docente.md).
+La conferma non riabilita `economy` e non autorizza alcun deploy PROD.
 
 Questa roadmap definisce come misurare e migliorare il prompt dei pool senza
 ottimizzarlo su pochi esempi favorevoli. Il contratto canonico del pool, il
