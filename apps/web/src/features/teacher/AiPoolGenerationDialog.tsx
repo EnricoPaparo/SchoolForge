@@ -15,17 +15,14 @@ import {
   formatMicroUsd,
   newRequestId,
   DEFAULT_POOL_LEVEL,
-  DEFAULT_POOL_MODEL_PROFILE,
   MAX_POOL_TOTAL_QUESTIONS,
   MAX_TEACHER_GUIDANCE_CHARS,
   POOL_LEVEL_OPTIONS,
-  POOL_MODEL_PROFILE_OPTIONS,
   type AiContentCallables,
   type AiPoolContentRequest,
   type AiPoolGenerateResult,
   type AiPoolPreviewResult,
   type PoolLevel,
-  type PoolModelProfile,
 } from '../repository/pools/aiContentClient.js';
 import {
   buildPoolFromProposal,
@@ -46,7 +43,7 @@ import {
  *
  * Preview e generate usano la **stessa** `requestId` e lo **stesso** payload
  * normalizzato (idempotenza server-side AIGEN-01). Ogni modifica di
- * profilo/stile/quantità/indicazioni invalida la stima e genera una nuova
+ * stile/quantità/indicazioni invalida la stima e genera una nuova
  * `requestId`. Le modifiche alla proposta restano **solo** nello stato locale:
  * nessuna write finché il docente non conferma l'applicazione; un replay
  * restituisce la proposta originale, non le modifiche locali.
@@ -84,7 +81,6 @@ export function AiPoolGenerationDialog({
   callables,
   onApply,
   onClose,
-  defaultModelProfile = DEFAULT_POOL_MODEL_PROFILE,
 }: {
   /** Testo Markdown della lezione già in memoria (nessuna nuova lettura Storage). */
   lessonSource: string;
@@ -94,13 +90,11 @@ export function AiPoolGenerationDialog({
   /** Persistenza canonica del pool combinato (savePool). Lancia in caso di errore. */
   onApply: (pool: ParsedPool) => Promise<void>;
   onClose: () => void;
-  defaultModelProfile?: PoolModelProfile;
 }) {
   const isNewPool = existingPool === null;
   const existingCount = existingPool?.questions.length ?? 0;
 
   const [phase, setPhase] = useState<Phase>('configure');
-  const [modelProfile, setModelProfile] = useState<PoolModelProfile>(defaultModelProfile);
   const [level, setLevel] = useState<PoolLevel>(DEFAULT_POOL_LEVEL);
   const [counts, setCounts] = useState<CountsDraft>({
     aperta: '3',
@@ -168,10 +162,6 @@ export function AiPoolGenerationDialog({
     setPhase('configure');
   }
 
-  function updateModelProfile(next: PoolModelProfile) {
-    setModelProfile(next);
-    invalidateEstimate();
-  }
   function updateLevel(next: PoolLevel) {
     setLevel(next);
     invalidateEstimate();
@@ -188,7 +178,6 @@ export function AiPoolGenerationDialog({
   function currentRequest(): AiPoolContentRequest {
     return buildPoolContentRequest({
       requestId: requestIdRef.current,
-      modelProfile,
       level,
       counts: {
         aperta: parsedCounts.aperta ?? 0,
@@ -246,7 +235,7 @@ export function AiPoolGenerationDialog({
   /**
    * Torna alla configurazione **senza chiudere il dialog**: scarta proposta e
    * modifiche locali e rigenera la `requestId` (via `invalidateEstimate`), ma
-   * conserva profilo, stile, quantità e indicazioni già scelti dal docente, che
+   * conserva stile, quantità e indicazioni già scelti dal docente, che
    * può così correggerli e rigenerare. Nessuna callable, nessuna write, nessun
    * costo.
    */
@@ -341,30 +330,14 @@ export function AiPoolGenerationDialog({
       {/* 1) CONFIGURAZIONE */}
       {phase === 'configure' && (
         <div className={styles.config}>
-          {/* Profilo modello */}
+          {/* POOL-ROLLOUT-01 — profilo qualificato, informativo e non interattivo. */}
           <div className={styles.field}>
-            <span className={styles.fieldLabel} id="ai-pool-profile-label">
-              Profilo modello
-            </span>
-            <div
-              className={styles.optionRow}
-              role="radiogroup"
-              aria-labelledby="ai-pool-profile-label"
-            >
-              {POOL_MODEL_PROFILE_OPTIONS.map((o) => (
-                <button
-                  key={o.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={modelProfile === o.value}
-                  className={`${styles.choice} ${modelProfile === o.value ? styles.choiceSelected : ''}`}
-                  onClick={() => updateModelProfile(o.value)}
-                >
-                  <span className={styles.choiceLabel}>{o.label}</span>
-                  <span className={styles.choiceMeta}>{o.description}</span>
-                  <span className={styles.choiceMeta}>Modello: {o.modelId}</span>
-                </button>
-              ))}
+            <span className={styles.fieldLabel}>Profilo modello</span>
+            <div className={styles.fixedProfile} aria-label="Profilo modello: Quality">
+              <span className={styles.fixedProfileName}>Quality</span>
+              <span className={styles.choiceMeta}>
+                Qualità validata per la generazione dei pool.
+              </span>
             </div>
           </div>
 
@@ -491,9 +464,7 @@ export function AiPoolGenerationDialog({
             <li>Aperte: {parsedCounts.aperta ?? 0}</li>
             <li>Risposta singola: {parsedCounts.chiusa_singola ?? 0}</li>
             <li>Risposta multipla: {parsedCounts.chiusa_multipla ?? 0}</li>
-            <li>
-              Profilo: {POOL_MODEL_PROFILE_OPTIONS.find((o) => o.value === modelProfile)?.label}
-            </li>
+            <li>Profilo: Quality</li>
             <li>Stile: {POOL_LEVEL_OPTIONS.find((o) => o.value === level)?.label}</li>
             <li>Token stimati: {preview.estimatedInputTokens + preview.maxOutputTokens}</li>
             <li>Costo stimato: {formatMicroUsd(preview.estimatedCostMicroUsd)}</li>

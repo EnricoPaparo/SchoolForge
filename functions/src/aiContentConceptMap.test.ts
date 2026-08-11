@@ -203,14 +203,16 @@ describe('non-regressione di pool e lezione', () => {
   // invaliderebbe in silenzio il replay di ogni run già memorizzato. Se questi
   // test falliscono, la domanda non è «aggiorno la costante?» ma «perché la
   // serializzazione è cambiata?».
-  const POOL_INPUT_HASH = 'e4636cb932697c7bfb22a66e1954855b50382e10d02d97b5de193b822df179b3';
+  // POOL-ROLLOUT-01: stessa forma canonica storica, fissata sul solo profilo
+  // ora valido per il kind pool.
+  const POOL_INPUT_HASH = '0938486c38232b6c997e4bb365bbaa8764dddedeb4de58db5e1a2f9fa528967f';
   const LESSON_INPUT_HASH = '2c0dacd58d9ed5304fd964ed973e8c21a370824ef973ab367ed79ba64485798f';
 
   function poolRequest(): AiContentRequest {
     return validateAiContentRequest({
       kind: 'pool',
       requestId: '11111111-1111-4111-8111-111111111111',
-      modelProfile: 'economy',
+      modelProfile: 'quality',
       teacherGuidance: null,
       level: 'balanced',
       counts: { aperta: 1, chiusa_singola: 1, chiusa_multipla: 1 },
@@ -245,8 +247,17 @@ describe('non-regressione di pool e lezione', () => {
     });
   }
 
-  it('il pool accetta ancora economy', () => {
-    expect(poolRequest().modelProfile).toBe('economy');
+  it('il pool accetta il profilo Quality qualificato', () => {
+    expect(poolRequest().modelProfile).toBe('quality');
+  });
+
+  it('il pool rifiuta Economy senza fallback', () => {
+    expect(() =>
+      validateAiContentRequest({
+        ...poolRequest(),
+        modelProfile: 'economy',
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'invalid_input' }));
   });
 
   it('la lezione accetta ancora economy', () => {

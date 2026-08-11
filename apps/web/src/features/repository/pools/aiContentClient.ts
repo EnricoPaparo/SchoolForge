@@ -15,10 +15,17 @@ import type { Functions } from 'firebase/functions';
  * (`kind: 'lesson'`) sono AIGEN-03.
  */
 
-/** Profilo modello **chiuso**: il client sceglie solo economy/quality. */
+/** Profilo astratto condiviso dalle UI di lezione e mappa concettuale. */
 export type PoolModelProfile = 'economy' | 'quality';
 
 export const DEFAULT_POOL_MODEL_PROFILE: PoolModelProfile = 'quality';
+
+/**
+ * POOL-ROLLOUT-01 — unico profilo qualificato per la generazione dei pool.
+ * La costante è distinta dall'enum condiviso: lezioni e mappe concettuali
+ * continuano a poter rappresentare entrambi i profili.
+ */
+export const AI_POOL_GENERATION_PROFILE = 'quality' as const;
 
 /**
  * Opzioni del profilo. `modelId` è il nome tecnico del modello server-side,
@@ -90,7 +97,7 @@ export const MAX_TEACHER_GUIDANCE_CHARS = 500;
 export interface AiPoolContentRequest {
   kind: 'pool';
   requestId: string;
-  modelProfile: PoolModelProfile;
+  modelProfile: typeof AI_POOL_GENERATION_PROFILE;
   teacherGuidance?: string;
   level: PoolLevel;
   counts: PoolCounts;
@@ -154,7 +161,6 @@ export function newRequestId(): string {
  */
 export function buildPoolContentRequest(params: {
   requestId: string;
-  modelProfile: PoolModelProfile;
   level: PoolLevel;
   counts: PoolCounts;
   lessonSource: string;
@@ -165,7 +171,7 @@ export function buildPoolContentRequest(params: {
   return {
     kind: 'pool',
     requestId: params.requestId,
-    modelProfile: params.modelProfile,
+    modelProfile: AI_POOL_GENERATION_PROFILE,
     level: params.level,
     counts: {
       aperta: params.counts.aperta,

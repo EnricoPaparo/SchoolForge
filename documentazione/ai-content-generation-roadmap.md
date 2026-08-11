@@ -114,10 +114,15 @@ Campi ammessi dal client (qualsiasi altra proprietà ⇒ `invalid_input`):
 - `modelProfile: 'economy' | 'quality'`
 - `teacherGuidance?: string` (trim, ≤ 500 caratteri, nessun troncamento silenzioso — oltre ⇒ `invalid_input`)
 
-`teacherGuidance` e `modelProfile` libero valgono per `pool` e `lesson`: la
-mappa concettuale (§ 6bis) ha un payload proprio e più povero, e non li ammette.
+`teacherGuidance` vale per `pool` e `lesson`. Il tipo comune del profilo resta
+`economy|quality`, ma POOL-ROLLOUT-01 restringe il solo `kind:'pool'` a
+`quality`: Economy è `invalid_input`, non viene convertito. Le lezioni
+conservano entrambi i profili; la mappa concettuale segue il contratto separato
+del § 6bis.
 
 **`kind: 'pool'`** → `poolConfig`:
+- `modelProfile: 'quality'` — obbligatorio: il client lo inserisce senza
+  selettore e il server rifiuta Economy prima di qualunque operazione costosa;
 - `level: 'base' | 'balanced' | 'advanced'` (range difficoltà: base 1–3, balanced 1–5, advanced 3–5)
 - `counts: { aperta: number; chiusa_singola: number; chiusa_multipla: number }` (ogni valore intero ≥ 0; totale ≥ 1 e ≤ 30)
 - `lessonContext`: metadati + testo lezione (materiale didattico, delimitato e non attendibile), entro i cap di input (`content_too_large`, §8.1)
@@ -299,7 +304,8 @@ Tono scolastico professionale; chiarezza didattica; coerenza con obiettivi/conce
 Disponibile sia per creare il primo pool sia per aggiungere domande a un pool esistente.
 
 ### 5.2 Dialog configurazione
-1. **Profilo**: Economy / Quality.
+1. **Profilo**: Quality obbligatorio, mostrato come informazione non
+   interattiva; nessun selettore e nessun fallback da Economy.
 2. **Livello**: Base (1–3) / Bilanciato (1–5) / Avanzato (3–5).
 3. **Quantità per tipo**: aperte, risposta singola, risposta multipla — interi ≥ 0, totale ≥ 1, **max 30**, nessun campo libero per tipi non supportati.
 4. **Indicazioni**: opzionale, trim, **≤ 500** caratteri, contatore, nessun troncamento silenzioso.

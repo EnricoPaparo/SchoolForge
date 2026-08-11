@@ -68,6 +68,17 @@ describe('AIGEN guidance textarea', () => {
   });
 });
 
+describe('POOL-ROLLOUT-01 fixed Quality profile', () => {
+  it('keeps the informative profile panel compact and wrappable on narrow viewports', () => {
+    const block = aigen.match(/\.fixedProfile\s*\{[^}]*\}/s)?.[0] ?? '';
+    expect(block).toMatch(/display:\s*flex/);
+    expect(block).toMatch(/flex-wrap:\s*wrap/);
+    expect(block).toMatch(/gap:/);
+    expect(block).not.toMatch(/width:\s*\d+px/);
+    expect(block).not.toMatch(/min-width:/);
+  });
+});
+
 describe('AIGEN review card compact metadata row', () => {
   it('lays the metadata row out inline with an ordered wrap', () => {
     expect(aigen).toMatch(/\.reviewHead\s*\{[^}]*display:\s*flex/s);
